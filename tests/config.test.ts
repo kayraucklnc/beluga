@@ -19,6 +19,15 @@ describe('parseConfig', () => {
     expect(c).toMatchObject({ mode: 'join', invite: 'klaude:x', shares: [], agent: false });
   });
 
+  it('refuses to implicitly share the home folder or filesystem root', () => {
+    const fromHome = parseConfig(['host'], '/Users/kay', '/Users/kay');
+    expect(fromHome.shares).toEqual([]);
+    expect(fromHome.notes[0]).toMatch(/too broad/);
+    expect(parseConfig(['host'], '/', '/Users/kay').shares).toEqual([]);
+    expect(parseConfig(['host', '-s', '.'], '/Users/kay', '/Users/kay').shares).toHaveLength(1); // explicit is fine
+    expect(parseConfig(['host'], '/Users/kay/proj', '/Users/kay').notes).toEqual([]);
+  });
+
   it('validates input', () => {
     expect(() => parseConfig(['dance'])).toThrow(/Unknown command/);
     expect(() => parseConfig(['join'])).toThrow(/Usage/);

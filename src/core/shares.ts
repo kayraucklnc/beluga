@@ -23,6 +23,9 @@ const HIDDEN_SEGMENTS = new Set(['.git', 'node_modules']);
 
 export class ShareError extends Error {}
 
+const WATCH_DEPTH = 8;
+const WATCH_IGNORED = /[\\/](node_modules|\.git|\.Trash|Library|\.cache|dist|build)([\\/]|$)/;
+
 const segmentsOf = (p: string): string[] => p.split(/[\\/]/).filter(Boolean).map((s) => s.toLowerCase());
 
 export function isSecretPath(p: string): boolean {
@@ -159,16 +162,29 @@ export class ShareService {
   }
 
   /** Watch all shares and report changed files as (share, relative path). */
-  watch(onChange: (share: string, relPath: string) => void): void {
+  watch(onChange: (share: string, relPath: string) => void, onError: (message: string) => void = () => undefined): void {
     if (this.shares.length === 0) return;
     this.watcher = watch(
       this.shares.map((s) => s.root),
       {
         ignoreInitial: true,
-        ignored: (p: string) => /[\\/](node_modules|\.git)([\\/]|$)/.test(p),
+        // Folders macOS protects (e.g. ~/.Trash) throw EPERM; skip them instead of crashing.
+        ignorePermissionErrors: true,
+        depth: WATCH_DEPTH,
+        ignored: (p: string) => WATCH_IGNORED.test(p) || isSecretPath(p),
         awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 },
       },
     );
+    // Warn once and stop watching: huge trees (like ~) exhaust file handles and would spam errors.
+    let warned = false;
+    this.watcher.on('error', (err: unknown) => {
+      // Keep a listener attached: an unhandled 'error' event would crash the process.
+      if (warned) return;
+      warned = true;
+      const reason = err instanceof Error ? err.message : String(err);
+      onError(`Live file updates are off (${reason}). Share a smaller folder to get them back.`);
+      void this.close();
+    });
     const report = (abs: string): void => {
       const hit = this.locate(abs);
       if (hit) onChange(hit.share, hit.path);
@@ -177,6 +193,12 @@ export class ShareService {
   }
 
   async close(): Promise<void> {
-    await this.watcher?.close();
+    const watcher = this.watcher;
+    this.watcher = undefined;
+    if (!watcher) return;
+    const closing = watcher.close();
+    // close() strips listeners; swallow late errors from in-flight fs calls so they can't crash us.
+    watcher.on('error', () => undefined);
+    await closing;
   }
 }

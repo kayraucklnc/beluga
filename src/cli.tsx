@@ -122,6 +122,7 @@ async function main(): Promise<void> {
   };
 
   for (const note of room.notes) session.system(note, note.startsWith('No ') ? 'warn' : 'info');
+  for (const note of config.notes) session.system(note, 'warn');
   session.system('Type to chat · @claude <task> for your agent · @claude:<friend> for theirs · :help');
 
   process.stdout.write('\x1b[?1049h\x1b[H');
