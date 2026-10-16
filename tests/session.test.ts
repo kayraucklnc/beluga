@@ -1,0 +1,352 @@
+import { mkdtempSync, realpathSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { AgentBackend, AgentRunInput, RoomBridge } from '../src/agent/types.js';
+import { Session } from '../src/core/session.js';
+import { ShareService } from '../src/core/shares.js';
+import { Store, initialState, type AppState, type Policy } from '../src/core/store.js';
+import { deriveKeys, generateSecret } from '../src/net/crypto.js';
+import { startHub, type Hub } from '../src/net/hub.js';
+import { PeerClient } from '../src/net/peer-client.js';
+import { waitFor } from './helpers.js';
+
+const keys = deriveKeys(generateSecret());
+let hub: Hub;
+const sessions: Session[] = [];
+
+afterEach(async () => {
+  for (const s of sessions.splice(0)) await s.stop();
+  await hub?.close();
+});
+
+type Script = (input: AgentRunInput, bridge: RoomBridge) => Promise<string>;
+
+interface Peer {
+  session: Session;
+  state: () => AppState;
+  runs: AgentRunInput[];
+  bridge: RoomBridge;
+  root: string;
+  quit: { called: boolean };
+}
+
+function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: boolean; files?: Record<string, string> } = {}): Peer {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), `klaude-${name}-`)));
+  for (const [file, content] of Object.entries(opts.files ?? {})) writeFileSync(path.join(root, file), content);
+  const shares = new ShareService([{ name: 'proj', root, writable: true }]);
+  const store = new Store(initialState('test', opts.policy ?? 'ask'));
+  const client = new PeerClient({ url: `ws://127.0.0.1:${hub.port}`, keys, profile: { name, shares: shares.infos, agent: opts.agent !== false }, reconnect: false });
+  const runs: AgentRunInput[] = [];
+  let bridge!: RoomBridge;
+  const quit = { called: false };
+  const session = new Session({
+    client,
+    store,
+    shares,
+    agentCwd: root,
+    requestTimeoutMs: 2000,
+    agentTimeoutMs: 2000,
+    onQuit: () => (quit.called = true),
+    createAgent:
+      opts.agent === false
+        ? undefined
+        : (b): AgentBackend => {
+            bridge = b;
+            return {
+              run: async (input) => {
+                runs.push(input);
+                return opts.script ? opts.script(input, b) : `echo: ${input.prompt}`;
+              },
+            };
+          },
+  });
+  session.start();
+  sessions.push(session);
+  return { session, state: store.getState, runs, get bridge() { return bridge; }, root, quit };
+}
+
+const agentItems = (s: AppState) => s.log.filter((l) => l.type === 'agent');
+const systemText = (s: AppState) => s.log.filter((l) => l.type === 'system').map((l) => (l.type === 'system' ? l.text : ''));
+
+async function room(...peers: Peer[]): Promise<void> {
+  await waitFor(() => peers.every((p) => p.state().peers.length === peers.length && p.state().self));
+}
+
+describe('Session', () => {
+  it('chats and runs your own agent with @claude', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    kay.session.submit('hi bob');
+    await waitFor(() => bob.state().log.some((l) => l.type === 'chat' && l.text === 'hi bob'));
+
+    kay.session.submit('@claude summarize');
+    await waitFor(() => agentItems(bob.state()).some((a) => a.type === 'agent' && a.status === 'done'));
+    expect(agentItems(bob.state())[0]).toMatchObject({ ownerName: 'kay', requesterName: 'kay', text: 'echo: summarize' });
+    expect(kay.runs[0]?.context).toContain('kay: hi bob');
+  });
+
+  it("asks the owner before running a friend's request, and honours 'always'", async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+
+    kay.session.submit('@claude:bob check the api');
+    await waitFor(() => bob.state().approvals.length === 1);
+    expect(agentItems(kay.state())[0]).toMatchObject({ status: 'awaiting_approval' });
+    expect(bob.session.answerApproval('always')).toBe(true);
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'done'));
+    expect(bob.runs[0]?.requesterName).toBe('kay');
+    expect(bob.state().trusted).toContain(kay.session.selfId);
+
+    kay.session.submit('@claude:bob again');
+    await waitFor(() => bob.runs.length === 2);
+    expect(bob.state().approvals).toHaveLength(0);
+  });
+
+  it('reports declined and denied requests', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    const cat = peer('cat', { policy: 'deny' });
+    const dan = peer('dan', { agent: false });
+    await room(kay, bob, cat, dan);
+
+    kay.session.submit('@claude:bob do it');
+    await waitFor(() => bob.state().approvals.length === 1);
+    bob.session.answerApproval('no');
+    kay.session.submit('@claude:cat do it');
+    kay.session.submit('@claude:dan do it');
+    kay.session.submit('@claude:zed do it');
+    await waitFor(() => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.status === 'denied').length === 3);
+    expect(systemText(kay.state())).toContain('No peer named "zed"');
+    expect(bob.runs).toHaveLength(0);
+    expect(bob.session.answerApproval('yes')).toBe(false);
+  });
+
+  it('runs every agent with @claudes when policy is auto', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', { policy: 'auto' });
+    const bob = peer('bob', { policy: 'auto' });
+    await room(kay, bob);
+    bob.session.submit('@claudes status?');
+    await waitFor(() => kay.runs.length === 1 && bob.runs.length === 1);
+    await waitFor(() => agentItems(bob.state()).filter((a) => a.type === 'agent' && a.status === 'done').length === 2);
+  });
+
+  it('streams agent text/tool events and approves tool use', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: async (input) => {
+        input.onEvent('tool', 'Bash ls');
+        const ok = await input.canUseTool('Bash', { command: 'ls' });
+        input.onEvent('text', ok ? 'allowed' : 'blocked');
+        const again = await input.canUseTool('Bash', { command: 'pwd' });
+        return again ? 'finished' : 'nope';
+      },
+    });
+    await room(kay);
+    kay.session.submit('@claude list files');
+    await waitFor(() => kay.state().approvals[0]?.kind === 'tool');
+    expect(kay.state().approvals[0]?.detail).toBe('ls');
+    kay.session.answerApproval('always');
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'done'));
+    expect(agentItems(kay.state())[0]).toMatchObject({ text: 'finished', steps: ['Bash ls'] });
+  });
+
+  it('surfaces agent failures and stop requests', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: (input) =>
+        input.prompt === 'crash'
+          ? Promise.reject(new Error('kaboom'))
+          : new Promise((_, reject) => input.signal.addEventListener('abort', () => reject(new Error('aborted')))),
+    });
+    await room(kay);
+    kay.session.submit('@claude crash');
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'error' && a.text === 'kaboom'));
+    kay.session.submit('@claude hang');
+    await waitFor(() => kay.runs.length === 2);
+    kay.session.submit(':stop');
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'Stopped by owner'));
+    kay.session.submit(':stop');
+    expect(systemText(kay.state())).toContain('Your claude is idle');
+  });
+
+  it("browses and reads a friend's shared folder, live-reloading on change", async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob', { files: { 'README.md': 'v1', '.env': 'SECRET' } });
+    await room(kay, bob);
+
+    const bobRow = kay.state().browser.rows.findIndex((r) => r.label === 'bob:proj');
+    kay.session.store.dispatch({ type: 'browser_cursor', delta: bobRow });
+    await kay.session.browserEnter();
+    expect(kay.state().browser.rows.map((r) => r.label)).toEqual(['..', 'README.md']);
+    kay.session.store.dispatch({ type: 'browser_cursor', delta: 1 });
+    await kay.session.browserEnter();
+    expect(kay.state().viewer).toMatchObject({ content: 'v1', path: 'README.md' });
+    await waitFor(() => bob.state().focus[kay.session.selfId]?.path === 'README.md');
+
+    await new Promise((r) => setTimeout(r, 300));
+    writeFileSync(path.join(bob.root, 'README.md'), 'v2');
+    await waitFor(() => kay.state().viewer?.content === 'v2', 5000);
+
+    kay.session.submit(`:open bob:proj/.env`);
+    await waitFor(() => kay.state().viewer?.error === 'That file is private');
+    kay.session.submit(':open bob:proj/missing.md');
+    await waitFor(() => kay.state().viewer?.error?.includes('ENOENT'));
+    kay.session.submit(':open nope');
+    expect(systemText(kay.state()).some((t) => t.includes('Cannot open'))).toBe(true);
+
+    kay.session.store.dispatch({ type: 'browser_cursor', delta: -10 });
+    await kay.session.browserEnter(); // '..' goes back to root
+    expect(kay.state().browser.at).toBeUndefined();
+    await kay.session.browseTo({ owner: bob.session.selfId, share: 'nope', path: '' });
+    expect(kay.state().browser.error).toMatch(/No share/);
+  });
+
+  it('follows a friend and their agent like Google Docs', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob', {
+      files: { 'a.md': 'A', 'b.md': 'B' },
+      policy: 'auto',
+      script: async (_input, bridge) => {
+        const where = await bridge.writeReport('Audit Results', 'all good');
+        return where;
+      },
+    });
+    await room(kay, bob);
+    await bob.session.openLocation({ owner: bob.session.selfId, share: 'proj', path: 'a.md' });
+    kay.session.submit(':follow bob');
+    await waitFor(() => kay.state().viewer?.content === 'A');
+    expect(kay.state().viewer?.by).toBe('bob');
+
+    await bob.session.openLocation({ owner: bob.session.selfId, share: 'proj', path: 'b.md' });
+    await waitFor(() => kay.state().viewer?.content === 'B');
+
+    kay.session.submit('@claude:bob audit');
+    await waitFor(() => kay.state().viewer?.path.startsWith('.klaude/reports/') && kay.state().viewer?.content.includes('all good'));
+    expect(kay.state().viewer?.by).toBe("bob's claude");
+    const reports = readdirSync(path.join(bob.root, '.klaude', 'reports'));
+    expect(readFileSync(path.join(bob.root, '.klaude', 'reports', reports[0]!), 'utf8')).toBe('# Audit Results\n\nall good');
+    expect(systemText(kay.state()).some((t) => t.includes("bob's claude wrote a report"))).toBe(true);
+
+    kay.session.submit(':unfollow');
+    expect(kay.state().follow).toBeUndefined();
+    kay.session.submit(':follow zed');
+    expect(systemText(kay.state())).toContain('No peer named "zed"');
+  });
+
+  it('lets agents talk to each other and browse peers through the bridge', async () => {
+    hub = await startHub({ keys });
+    const bob = peer('bob', { policy: 'auto', files: { 'notes.txt': 'bob notes' } });
+    const nop = peer('nop', { agent: false });
+    const kay = peer('kay', {
+      script: async (_input, bridge) => {
+        const peers = bridge.listPeers().map((p) => p.name).sort();
+        const files = await bridge.listPeerFiles('bob', 'proj', '');
+        const notes = await bridge.readPeerFile('bob', 'proj', 'notes.txt');
+        const answer = await bridge.askAgent('bob', 'what do you think?');
+        bridge.sendChat('agent says hi');
+        await expect(bridge.askAgent('nop', 'x')).rejects.toThrow(/no agent/);
+        await expect(bridge.readPeerFile('zed', 'proj', 'x')).rejects.toThrow(/No peer/);
+        return JSON.stringify({ me: bridge.selfName(), peers, files: files.map((f) => f.name), notes, answer });
+      },
+    });
+    await room(kay, bob, nop);
+    kay.session.submit('@claude coordinate');
+    const done = await waitFor(() => agentItems(kay.state()).find((a) => a.type === 'agent' && a.owner === kay.session.selfId && a.status === 'done'));
+    expect(JSON.parse(done.type === 'agent' ? done.text : '')).toEqual({
+      me: 'kay',
+      peers: ['bob', 'kay', 'nop'],
+      files: ['notes.txt'],
+      notes: 'bob notes',
+      answer: 'echo: what do you think?',
+    });
+    expect(bob.runs[0]).toMatchObject({ viaAgent: true, requesterName: 'kay' });
+    await waitFor(() => bob.state().log.some((l) => l.type === 'chat' && l.byAgent && l.name === "kay's claude"));
+  });
+
+  it('runs commands', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    for (const cmd of [':help', ':peers', ':invite', ':policy', ':policy auto', ':trust bob', ':untrust bob', ':trust', ':y', ':wat', ':open', ':close']) {
+      kay.session.submit(cmd);
+    }
+    const text = systemText(kay.state());
+    expect(text.some((t) => t.includes('@claude:bob <task>'))).toBe(true);
+    expect(text.some((t) => t.startsWith('* kay'))).toBe(true);
+    expect(text).toContain('Only the host has the invite code (ask them)');
+    expect(text).toContain('Requests for your claude: auto');
+    expect(text).toContain("bob's requests need approval again");
+    expect(text).toContain('Usage: :trust <peer>');
+    expect(text).toContain('Nothing to approve');
+    expect(text).toContain('Unknown command :wat (try :help)');
+    expect(kay.state().policy).toBe('auto');
+    kay.session.submit(':clear');
+    expect(kay.state().log).toHaveLength(0);
+    kay.session.submit(':q');
+    expect(kay.quit.called).toBe(true);
+  });
+});
+
+describe('Session hardening', () => {
+  it(':stop cancels queued runs and pending tool approvals', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: async (input) => {
+        await input.canUseTool('Bash', { command: 'sleep 100' });
+        return 'should not matter';
+      },
+    });
+    await room(kay);
+    kay.session.submit('@claude first');
+    kay.session.submit('@claude second');
+    await waitFor(() => kay.state().approvals.length === 1);
+    kay.session.stopAgent();
+    await waitFor(() => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.status === 'error').length === 2);
+    expect(kay.state().approvals).toHaveLength(0);
+    expect(kay.runs).toHaveLength(1);
+    expect(agentItems(kay.state()).map((a) => (a.type === 'agent' ? a.text : ''))).toContain('Cancelled by owner');
+  });
+
+  it('scopes "always" tool approval to one requester', async () => {
+    hub = await startHub({ keys });
+    const bob = peer('bob', {
+      policy: 'auto',
+      script: async (input) => ((await input.canUseTool('Bash', { command: 'ls' })) ? 'ran' : 'blocked'),
+    });
+    const kay = peer('kay');
+    const cat = peer('cat');
+    await room(bob, kay, cat);
+    kay.session.submit('@claude:bob go');
+    await waitFor(() => bob.state().approvals.length === 1);
+    bob.session.answerApproval('always');
+    await waitFor(() => bob.runs.length === 1 && bob.state().approvals.length === 0);
+    kay.session.submit('@claude:bob again');
+    await waitFor(() => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.status === 'done').length === 2);
+    expect(bob.state().approvals).toHaveLength(0);
+    cat.session.submit('@claude:bob me too');
+    await waitFor(() => bob.state().approvals.length === 1); // cat still needs approval
+    bob.session.answerApproval('no');
+  });
+
+  it('builds agent context from its own chat log, not the requester', async () => {
+    hub = await startHub({ keys });
+    const bob = peer('bob', { policy: 'auto' });
+    const kay = peer('kay');
+    await room(bob, kay);
+    kay.session.submit('the plan is X');
+    await waitFor(() => bob.state().log.some((l) => l.type === 'chat'));
+    kay.session.submit('@claude:bob thoughts?');
+    await waitFor(() => bob.runs.length === 1);
+    expect(bob.runs[0]?.context).toEqual(['kay: the plan is X', 'kay: @claude:bob thoughts?']);
+  });
+});

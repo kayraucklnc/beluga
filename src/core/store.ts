@@ -1,0 +1,304 @@
+import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
+import type { ConnectionStatus } from '../net/peer-client.js';
+
+export type Policy = 'ask' | 'auto' | 'deny';
+
+export type LogItem =
+  | { readonly id: string; readonly type: 'chat'; readonly from: string; readonly name: string; readonly text: string; readonly ts: number; readonly byAgent: boolean }
+  | { readonly id: string; readonly type: 'system'; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error' }
+  | {
+      readonly id: string;
+      readonly type: 'agent';
+      readonly requestId: string;
+      readonly owner: string;
+      readonly ownerName: string;
+      readonly requesterName: string;
+      readonly status: AgentEventKind;
+      readonly text: string;
+      readonly steps: readonly string[];
+      readonly ts: number;
+    };
+
+export interface Approval {
+  readonly id: string;
+  readonly kind: 'request' | 'tool';
+  readonly title: string;
+  readonly detail: string;
+}
+
+export interface Location {
+  readonly owner: string;
+  readonly share: string;
+  readonly path: string;
+}
+
+export interface BrowserRow {
+  readonly label: string;
+  readonly dir: boolean;
+  readonly target: Location | 'up';
+  readonly size?: number;
+}
+
+export interface BrowserState {
+  readonly at?: Location;
+  readonly rows: readonly BrowserRow[];
+  readonly cursor: number;
+  readonly loading: boolean;
+  readonly error?: string;
+}
+
+export interface ViewerState extends Location {
+  readonly content: string;
+  readonly truncated: boolean;
+  readonly loading: boolean;
+  readonly error?: string;
+  readonly scroll: number;
+  readonly by?: string;
+}
+
+export interface Focus extends Location {
+  readonly actor: 'human' | 'agent';
+  readonly ts: number;
+}
+
+export interface AppState {
+  readonly room: string;
+  readonly invite?: string;
+  readonly status: ConnectionStatus;
+  readonly self?: PeerInfo;
+  readonly peers: readonly PeerInfo[];
+  readonly log: readonly LogItem[];
+  readonly approvals: readonly Approval[];
+  readonly browser: BrowserState;
+  readonly viewer?: ViewerState;
+  readonly follow?: string;
+  readonly focus: Readonly<Record<string, Focus>>;
+  readonly policy: Policy;
+  readonly trusted: readonly string[];
+}
+
+export type Action =
+  | { type: 'status'; status: ConnectionStatus }
+  | { type: 'invite'; invite: string }
+  | { type: 'welcome'; self: PeerInfo }
+  | { type: 'peers'; peers: readonly PeerInfo[] }
+  | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean }
+  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error' }
+  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number }
+  | { type: 'approval_add'; approval: Approval }
+  | { type: 'approval_remove'; id: string }
+  | { type: 'browser_root' }
+  | { type: 'browser_loading'; at: Location }
+  | { type: 'browser_entries'; at: Location; entries: readonly FsEntry[] }
+  | { type: 'browser_error'; error: string }
+  | { type: 'browser_cursor'; delta: number }
+  | { type: 'viewer_open'; at: Location; by?: string }
+  | { type: 'viewer_content'; at: Location; content: string; truncated: boolean }
+  | { type: 'viewer_error'; at: Location; error: string }
+  | { type: 'viewer_scroll'; delta: number }
+  | { type: 'viewer_close' }
+  | { type: 'focus'; actorKey: string; focus: Focus }
+  | { type: 'follow'; peerId?: string }
+  | { type: 'policy'; policy: Policy }
+  | { type: 'trust'; peerId: string; trusted: boolean }
+  | { type: 'clear' };
+
+const LOG_LIMIT = 1000;
+
+/** Strip terminal control sequences from peer-supplied text (keeps newlines and tabs). */
+// eslint-disable-next-line no-control-regex
+export const clean = (s: string): string => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
+const MAX_STEPS = 6;
+
+export function initialState(room: string, policy: Policy = 'ask'): AppState {
+  return {
+    room,
+    status: 'connecting',
+    peers: [],
+    log: [],
+    approvals: [],
+    browser: { rows: [], cursor: 0, loading: false },
+    focus: {},
+    policy,
+    trusted: [],
+  };
+}
+
+let seq = 0;
+const nextId = (): string => `l${Date.now().toString(36)}${(seq++).toString(36)}`;
+
+export const peerName = (state: AppState, peerId: string): string =>
+  state.peers.find((p) => p.peerId === peerId)?.name ?? (state.self?.peerId === peerId ? state.self.name : peerId.slice(0, 6));
+
+const sameLoc = (a: Location | undefined, b: Location): boolean =>
+  Boolean(a) && a?.owner === b.owner && a.share === b.share && a.path === b.path;
+
+const appendLog = (log: readonly LogItem[], item: LogItem): readonly LogItem[] => [...log, item].slice(-LOG_LIMIT);
+
+function rootRows(peers: readonly PeerInfo[]): BrowserRow[] {
+  return peers.flatMap((p) =>
+    p.shares.map((s) => ({
+      label: `${p.name}:${s.name}${s.writable ? '' : ' (ro)'}`,
+      dir: true,
+      target: { owner: p.peerId, share: s.name, path: '' },
+    })),
+  );
+}
+
+function reduceAgent(state: AppState, raw: Extract<Action, { type: 'agent_event' }>): AppState {
+  const a = { ...raw, text: clean(raw.text) };
+  const idx = state.log.findIndex((l) => l.type === 'agent' && l.requestId === a.requestId && l.owner === a.owner);
+  const existing = idx >= 0 ? (state.log[idx] as Extract<LogItem, { type: 'agent' }>) : undefined;
+  const base = existing ?? {
+    id: nextId(),
+    type: 'agent' as const,
+    requestId: a.requestId,
+    owner: a.owner,
+    ownerName: peerName(state, a.owner),
+    requesterName: peerName(state, a.requester),
+    status: a.event,
+    text: '',
+    steps: [],
+    ts: a.ts,
+  };
+  const updated = {
+    ...base,
+    status: a.event === 'text' || a.event === 'tool' ? 'started' : a.event,
+    text:
+      a.event === 'text'
+        ? (base.text ? `${base.text}\n` : '') + a.text
+        : a.event === 'done' || a.event === 'error' || a.event === 'denied'
+          ? a.text || base.text
+          : base.text,
+    steps: a.event === 'tool' ? [...base.steps, a.text].slice(-MAX_STEPS) : base.steps,
+  } satisfies LogItem;
+  const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
+  return { ...state, log };
+}
+
+export function reduce(state: AppState, action: Action): AppState {
+  switch (action.type) {
+    case 'status':
+      return { ...state, status: action.status };
+    case 'invite':
+      return { ...state, invite: action.invite };
+    case 'welcome':
+      return { ...state, self: action.self };
+    case 'peers': {
+      const browser = state.browser.at ? state.browser : { ...state.browser, rows: rootRows(action.peers), cursor: 0 };
+      const ids = new Set(action.peers.map((p) => p.peerId));
+      const follow = state.follow && ids.has(state.follow) ? state.follow : undefined;
+      // Peer ids are self-chosen, so trust never outlives the connection that earned it.
+      const trusted = state.trusted.filter((t) => ids.has(t));
+      return { ...state, peers: action.peers, browser, follow, trusted };
+    }
+    case 'chat':
+      return {
+        ...state,
+        log: appendLog(state.log, {
+          id: action.id,
+          type: 'chat',
+          from: action.from,
+          name: peerName(state, action.from) + (action.byAgent ? "'s claude" : ''),
+          text: clean(action.text),
+          ts: action.ts,
+          byAgent: action.byAgent,
+        }),
+      };
+    case 'system':
+      return { ...state, log: appendLog(state.log, { id: nextId(), type: 'system', text: clean(action.text), ts: Date.now(), level: action.level ?? 'info' }) };
+    case 'agent_event':
+      return reduceAgent(state, action);
+    case 'approval_add':
+      return {
+        ...state,
+        approvals: [...state.approvals, { ...action.approval, title: clean(action.approval.title), detail: clean(action.approval.detail) }],
+      };
+    case 'approval_remove':
+      return { ...state, approvals: state.approvals.filter((a) => a.id !== action.id) };
+    case 'browser_root':
+      return { ...state, browser: { rows: rootRows(state.peers), cursor: 0, loading: false } };
+    case 'browser_loading':
+      return { ...state, browser: { ...state.browser, at: action.at, loading: true, error: undefined } };
+    case 'browser_entries': {
+      if (!sameLoc(state.browser.at, action.at)) return state;
+      const rows: BrowserRow[] = [
+        { label: '..', dir: true, target: 'up' },
+        ...action.entries.map((e) => ({
+          label: e.name,
+          dir: e.dir,
+          size: e.size,
+          target: { ...action.at, path: action.at.path ? `${action.at.path}/${e.name}` : e.name },
+        })),
+      ];
+      return { ...state, browser: { at: action.at, rows, cursor: 0, loading: false } };
+    }
+    case 'browser_error':
+      return { ...state, browser: { ...state.browser, loading: false, error: action.error } };
+    case 'browser_cursor': {
+      const max = Math.max(0, state.browser.rows.length - 1);
+      const cursor = Math.min(max, Math.max(0, state.browser.cursor + action.delta));
+      return { ...state, browser: { ...state.browser, cursor } };
+    }
+    case 'viewer_open': {
+      const keep = sameLoc(state.viewer, action.at) ? state.viewer : undefined;
+      return {
+        ...state,
+        viewer: { ...action.at, content: keep?.content ?? '', truncated: keep?.truncated ?? false, loading: true, scroll: keep?.scroll ?? 0, by: action.by },
+      };
+    }
+    case 'viewer_content':
+      if (!state.viewer || !sameLoc(state.viewer, action.at)) return state;
+      return { ...state, viewer: { ...state.viewer, content: clean(action.content), truncated: action.truncated, loading: false, error: undefined } };
+    case 'viewer_error':
+      if (!state.viewer || !sameLoc(state.viewer, action.at)) return state;
+      return { ...state, viewer: { ...state.viewer, loading: false, error: action.error } };
+    case 'viewer_scroll': {
+      if (!state.viewer) return state;
+      const lines = state.viewer.content.split('\n').length;
+      const scroll = Math.min(Math.max(0, lines - 1), Math.max(0, state.viewer.scroll + action.delta));
+      return { ...state, viewer: { ...state.viewer, scroll } };
+    }
+    case 'viewer_close':
+      return { ...state, viewer: undefined };
+    case 'focus':
+      return { ...state, focus: { ...state.focus, [action.actorKey]: action.focus } };
+    case 'follow':
+      return { ...state, follow: action.peerId };
+    case 'policy':
+      return { ...state, policy: action.policy };
+    case 'trust':
+      return {
+        ...state,
+        trusted: action.trusted ? [...new Set([...state.trusted, action.peerId])] : state.trusted.filter((t) => t !== action.peerId),
+      };
+    case 'clear':
+      return { ...state, log: [] };
+    default:
+      return state;
+  }
+}
+
+/** Minimal observable store; the UI subscribes via useSyncExternalStore. */
+export class Store {
+  private state: AppState;
+  private readonly listeners = new Set<() => void>();
+
+  constructor(initial: AppState) {
+    this.state = initial;
+  }
+
+  getState = (): AppState => this.state;
+
+  dispatch = (action: Action): void => {
+    const next = reduce(this.state, action);
+    if (next === this.state) return;
+    this.state = next;
+    for (const l of this.listeners) l();
+  };
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+}
