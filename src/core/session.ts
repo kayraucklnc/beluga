@@ -67,7 +67,10 @@ export class Session {
   }
 
   start(): void {
-    this.opts.shares.watch((share, relPath) => this.queueFsChanged(share, relPath));
+    this.opts.shares.watch(
+      (share, relPath) => this.queueFsChanged(share, relPath),
+      (message) => this.system(message, 'warn'),
+    );
     this.opts.client.connect();
   }
 

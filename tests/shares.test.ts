@@ -80,3 +80,16 @@ describe('ShareService', () => {
     await waitFor(() => seen.includes('proj:src/b.ts'), 5000);
   });
 });
+
+describe('ShareService.watch errors', () => {
+  it('reports watcher errors instead of crashing', async () => {
+    const s = new ShareService([{ name: 'x', root, writable: false }]);
+    const errors: string[] = [];
+    s.watch(() => undefined, (m) => errors.push(m));
+    const watcher = (s as unknown as { watcher: { emit: (e: string, err: Error) => void } }).watcher;
+    watcher.emit('error', new Error('EMFILE: too many'));
+    watcher.emit('error', new Error('EMFILE: again'));
+    expect(errors).toEqual(['Live file updates are off (EMFILE: too many). Share a smaller folder to get them back.']);
+    await s.close();
+  });
+});

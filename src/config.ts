@@ -1,4 +1,5 @@
 import os from 'node:os';
+import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { type ShareConfig, parseShareSpec } from './core/shares.js';
 import type { Policy } from './core/store.js';
@@ -36,6 +37,8 @@ export interface Config {
   readonly tunnel: TunnelKind;
   readonly lan: boolean;
   readonly port: number;
+  /** Warnings to show in the room once the TUI starts. */
+  readonly notes: readonly string[];
 }
 
 const TUNNELS: readonly TunnelKind[] = ['auto', 'ngrok', 'cloudflared', 'none'];
@@ -45,7 +48,13 @@ export function sanitizeName(raw: string): string {
   return raw.replace(/[^\w.-]/g, '').slice(0, 32) || 'anon';
 }
 
-export function parseConfig(argv: readonly string[], cwd: string = process.cwd()): Config {
+/** Folders too broad to share implicitly: someone ran klaude from ~ or /. */
+function isTooBroad(dir: string, home: string): boolean {
+  const resolved = path.resolve(dir);
+  return resolved === path.resolve(home) || resolved === path.parse(resolved).root;
+}
+
+export function parseConfig(argv: readonly string[], cwd: string = process.cwd(), home: string = os.homedir()): Config {
   const { values, positionals } = parseArgs({
     args: [...argv],
     allowPositionals: true,
@@ -75,7 +84,12 @@ export function parseConfig(argv: readonly string[], cwd: string = process.cwd()
   const port = values.port ? Number(values.port) : 0;
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('--port must be 0-65535');
 
-  const specs = values['no-share'] ? [] : (values.share ?? ['.']);
+  const notes: string[] = [];
+  let specs = values['no-share'] ? [] : (values.share ?? ['.']);
+  if (!values.share && !values['no-share'] && isTooBroad(cwd, home)) {
+    specs = [];
+    notes.push(`Not sharing ${cwd} (too broad). cd into a project or pass --share <folder>.`);
+  }
   const shares = specs.map((s) => parseShareSpec(s, cwd));
   const names = new Set<string>();
   for (const s of shares) {
@@ -94,5 +108,6 @@ export function parseConfig(argv: readonly string[], cwd: string = process.cwd()
     tunnel,
     lan: Boolean(values.lan),
     port,
+    notes,
   };
 }
