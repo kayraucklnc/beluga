@@ -79,7 +79,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             if (block.type === 'text' && block.text.trim()) input.onEvent('text', block.text.trim());
             if (block.type === 'tool_use') {
               const toolInput = (block.input ?? {}) as Record<string, unknown>;
-              input.onEvent('tool', summarizeTool(block.name, toolInput));
+              input.onEvent('tool', summarizeTool(block.name, toolInput, opts.cwd));
               if (WRITE_TOOLS.has(block.name) && typeof toolInput.file_path === 'string') {
                 input.onFileTouched(toolInput.file_path);
               }

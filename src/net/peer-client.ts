@@ -33,7 +33,7 @@ export interface IncomingMessage {
 
 interface ClientEvents {
   status: [ConnectionStatus];
-  welcome: [PeerInfo];
+  welcome: [PeerInfo, string | undefined];
   peers: [readonly PeerInfo[]];
   message: [IncomingMessage];
   error: [string];
@@ -142,7 +142,7 @@ export class PeerClient extends EventEmitter<ClientEvents> {
         this.ready = true;
         this.attempt = 0;
         this.emit('status', 'connected');
-        this.emit('welcome', frame.you);
+        this.emit('welcome', frame.you, payload.data.room);
         this.emit('peers', payload.data.peers);
         for (const msg of payload.data.history) this.deliver(msg);
         return;

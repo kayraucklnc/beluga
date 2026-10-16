@@ -61,8 +61,28 @@ export interface Focus extends Location {
   readonly ts: number;
 }
 
+export type HostingPhase = 'tunnel' | 'reachable' | 'ready' | 'local' | 'failed';
+
+export interface Hosting {
+  readonly phase: HostingPhase;
+  readonly detail?: string;
+  /** Whether the invite was actually placed on the clipboard. */
+  readonly copied?: boolean;
+}
+
+export interface Toast {
+  readonly id: number;
+  readonly text: string;
+  readonly level: 'info' | 'success' | 'warn' | 'error';
+}
+
+export type Overlay = 'help';
+
 export interface AppState {
   readonly room: string;
+  readonly hosting?: Hosting;
+  readonly toast?: Toast;
+  readonly overlay?: Overlay;
   readonly invite?: string;
   readonly status: ConnectionStatus;
   readonly self?: PeerInfo;
@@ -80,6 +100,11 @@ export interface AppState {
 export type Action =
   | { type: 'status'; status: ConnectionStatus }
   | { type: 'invite'; invite: string }
+  | { type: 'room'; room: string }
+  | { type: 'hosting'; hosting: Hosting }
+  | { type: 'toast'; text: string; level?: Toast['level'] }
+  | { type: 'toast_clear'; id: number }
+  | { type: 'overlay'; overlay?: Overlay }
   | { type: 'welcome'; self: PeerInfo }
   | { type: 'peers'; peers: readonly PeerInfo[] }
   | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean }
@@ -182,6 +207,16 @@ export function reduce(state: AppState, action: Action): AppState {
       return { ...state, status: action.status };
     case 'invite':
       return { ...state, invite: action.invite };
+    case 'room':
+      return { ...state, room: clean(action.room) };
+    case 'hosting':
+      return { ...state, hosting: action.hosting };
+    case 'toast':
+      return { ...state, toast: { id: (state.toast?.id ?? 0) + 1, text: clean(action.text), level: action.level ?? 'info' } };
+    case 'toast_clear':
+      return state.toast?.id === action.id ? { ...state, toast: undefined } : state;
+    case 'overlay':
+      return { ...state, overlay: action.overlay };
     case 'welcome':
       return { ...state, self: action.self };
     case 'peers': {
@@ -199,7 +234,7 @@ export function reduce(state: AppState, action: Action): AppState {
           id: action.id,
           type: 'chat',
           from: action.from,
-          name: peerName(state, action.from) + (action.byAgent ? "'s claude" : ''),
+          name: peerName(state, action.from) + (action.byAgent ? "'s Claude" : ''),
           text: clean(action.text),
           ts: action.ts,
           byAgent: action.byAgent,

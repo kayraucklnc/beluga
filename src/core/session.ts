@@ -19,6 +19,8 @@ export interface SessionOptions {
   readonly requestTimeoutMs?: number;
   readonly agentTimeoutMs?: number;
   readonly onQuit?: () => void;
+  /** Clipboard writer (injected so tests don't touch the real clipboard). */
+  readonly copy?: (text: string) => Promise<unknown>;
 }
 
 /** In-flight requests remember who must answer, so other peers can't spoof responses. */
@@ -126,9 +128,9 @@ export class Session {
         return;
       case 'agent':
         this.sendChat(parsed.text, false);
-        for (const name of parsed.unknown) this.system(`No peer named "${name}"`, 'warn');
+        for (const name of parsed.unknown) this.toast(`Nobody named "${name}" is here`, 'warn');
         for (const target of parsed.targets) this.requestAgent(target, parsed.prompt, false);
-        if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.system('No agents are online', 'warn');
+        if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.toast('No Claude is online', 'warn');
         return;
     }
   }
@@ -137,9 +139,41 @@ export class Session {
     this.store.dispatch({ type: 'system', text, level });
   }
 
+  toast(text: string, level: 'info' | 'success' | 'warn' | 'error' = 'info'): void {
+    this.store.dispatch({ type: 'toast', text, level });
+  }
+
+  async copyInvite(): Promise<void> {
+    const { invite, hosting } = this.store.getState();
+    if (!invite) {
+      this.toast(hosting && hosting.phase !== 'failed' ? 'The invite link is still being created…' : 'No invite link available', 'warn');
+      return;
+    }
+    await this.copyOrShow(`klaude join ${invite}`, 'Invite copied. Paste it to a friend');
+  }
+
+  async copyLastAnswer(): Promise<void> {
+    const last = [...this.store.getState().log].reverse().find((l) => l.type === 'agent' && l.status === 'done');
+    if (!last || last.type !== 'agent') {
+      this.toast('No Claude answer to copy yet', 'warn');
+      return;
+    }
+    await this.copyOrShow(last.text, `Copied ${last.ownerName}'s Claude answer`);
+  }
+
+  private async copyOrShow(text: string, success: string): Promise<void> {
+    try {
+      await (this.opts.copy ?? (async () => { throw new Error('no clipboard'); }))(text);
+      this.toast(success, 'success');
+    } catch {
+      this.system(text);
+      this.toast('Could not reach the clipboard. Copy it from the chat instead', 'warn');
+    }
+  }
+
   sendChat(text: string, byAgent: boolean): void {
     if (!this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent }, { keep: true })) {
-      this.system('Not connected; message not sent', 'warn');
+      this.toast('Not connected, so the message was not sent', 'error');
     }
   }
 
@@ -161,7 +195,7 @@ export class Session {
   openSpec(spec: string): void {
     const loc = parseLocation(spec, this.store.getState().peers);
     if (!loc) {
-      this.system(`Cannot open "${spec}". Use :open <peer>:<share>/<path>`, 'warn');
+      this.toast(`Can't open "${spec}". Use /open <name>:<folder>/<file>`, 'warn');
       return;
     }
     void this.openLocation(loc);
@@ -200,13 +234,13 @@ export class Session {
   follow(name: string | undefined): void {
     if (!name) {
       this.store.dispatch({ type: 'follow', peerId: undefined });
-      this.system('Stopped following');
+      this.toast('Stopped following');
       return;
     }
     const peer = this.findPeer(name);
-    if (!peer) return this.system(`No peer named "${name}"`, 'warn');
+    if (!peer) return this.toast(`Nobody named "${name}" is here`, 'warn');
     this.store.dispatch({ type: 'follow', peerId: peer.peerId });
-    this.system(`Following ${peer.name} (and their claude). :unfollow to stop`);
+    this.toast(`Following ${peer.name} and their Claude. /unfollow to stop`, 'success');
     const state = this.store.getState();
     const latest = [state.focus[peer.peerId], state.focus[`${peer.peerId}:agent`]]
       .filter((f) => f !== undefined)
@@ -226,13 +260,13 @@ export class Session {
 
   stopAgent(): void {
     if (!this.current) {
-      this.system('Your claude is idle');
+      this.toast('Your Claude is not running anything');
       return;
     }
     this.generation++;
     this.current.abort();
     for (const id of [...this.toolApprovals]) this.answerApproval('no', id);
-    this.system('Stopping your claude (queued requests cancelled)...');
+    this.toast('Stopping your Claude (queued requests cancelled)', 'warn');
   }
 
   findPeer(name: string): PeerInfo | undefined {
@@ -256,8 +290,9 @@ export class Session {
   private wire(): void {
     const { client, store } = this.opts;
     client.on('status', (status) => store.dispatch({ type: 'status', status }));
-    client.on('welcome', (self) => {
+    client.on('welcome', (self, room) => {
       store.dispatch({ type: 'welcome', self });
+      if (room) store.dispatch({ type: 'room', room });
       const queued = this.outbox;
       this.outbox = [];
       for (const item of queued) this.send(item.body, item.opts);
@@ -296,7 +331,7 @@ export class Session {
         return;
       }
       case 'report':
-        this.system(`${peerName(this.store.getState(), from)}'s claude wrote a report: ${peerName(this.store.getState(), from)}:${body.share}/${body.path}`);
+        this.system(`${peerName(this.store.getState(), from)}'s Claude wrote a report. Open it with /open ${peerName(this.store.getState(), from)}:${body.share}/${body.path}`);
         return;
     }
   }
@@ -307,7 +342,7 @@ export class Session {
     this.store.dispatch({ type: 'focus', actorKey: key, focus });
     const state = this.store.getState();
     if (state.follow === from && from !== this.selfId) {
-      const by = `${peerName(state, from)}${body.actor === 'agent' ? "'s claude" : ''}`;
+      const by = `${peerName(state, from)}${body.actor === 'agent' ? "'s Claude" : ''}`;
       await this.openLocation(focus, { by, broadcast: false });
     }
   }
@@ -405,7 +440,7 @@ export class Session {
     if (state.policy === 'auto' || state.trusted.includes(from)) return true;
     const name = peerName(state, from);
     this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`);
-    const answer = await this.ask('request', `${name}${body.viaAgent ? "'s claude" : ''} wants your claude to run`, body.prompt);
+    const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to run this`, body.prompt);
     if (answer === 'always') this.store.dispatch({ type: 'trust', peerId: from, trusted: true });
     return answer !== 'no';
   }
@@ -454,7 +489,7 @@ export class Session {
     const scope = `${requester}:${toolName}`;
     if (this.alwaysTools.has(scope)) return true;
     const detail = typeof input.command === 'string' ? input.command : JSON.stringify(input);
-    const answer = await this.ask('tool', `Your claude (for ${requesterName}) wants to use ${toolName}`, detail);
+    const answer = await this.ask('tool', `Your Claude (working for ${requesterName}) wants to use ${toolName}`, detail);
     if (answer === 'always') this.alwaysTools.add(scope);
     return answer !== 'no';
   }
@@ -504,7 +539,7 @@ export class Session {
           const requestId = this.requestAgent(peer.peerId, prompt, true);
           const timer = setTimeout(() => {
             this.agentWaiters.delete(requestId);
-            reject(new Error(`${peer.name}'s claude did not finish in time`));
+            reject(new Error(`${peer.name}'s Claude did not finish in time`));
           }, this.opts.agentTimeoutMs ?? 15 * 60_000);
           this.agentWaiters.set(requestId, { peer: peer.peerId, resolve, reject, timer });
         });

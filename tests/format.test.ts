@@ -1,14 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { approvalLines, colorFor, formatSize, renderLog, windowLines, wrapText } from '../src/ui/format.js';
 import type { LogItem } from '../src/core/store.js';
+import { approvalLines, card, renderLog } from '../src/ui/format.js';
+import { inline, renderMarkdown } from '../src/ui/markdown.js';
+import { formatDuration, formatSize, lineWidth, pad, truncate, windowLines, wrapText } from '../src/ui/text.js';
+import { colorFor } from '../src/ui/theme.js';
 
-describe('format', () => {
+const text = (line: readonly { text: string }[]): string => line.map((s) => s.text).join('');
+
+describe('text helpers', () => {
   it('wraps text within width', () => {
     const lines = wrapText('the quick brown fox jumps over the lazy dog', 10);
     expect(lines.every((l) => l.length <= 10)).toBe(true);
     expect(lines.join(' ')).toBe('the quick brown fox jumps over the lazy dog');
     expect(wrapText('a'.repeat(25), 10)).toEqual(['a'.repeat(10), 'a'.repeat(10), 'a'.repeat(5)]);
     expect(wrapText('a\n\nb', 10)).toEqual(['a', '', 'b']);
+  });
+
+  it('truncates and pads styled lines by display width', () => {
+    expect(text(truncate([{ text: 'hello' }, { text: ' world' }], 8))).toBe('hello w…');
+    expect(truncate([{ text: 'hi' }], 8)).toEqual([{ text: 'hi' }]);
+    expect(lineWidth(pad([{ text: 'hi' }], 6))).toBe(6);
+    expect(lineWidth(pad([{ text: '日本語テキスト' }], 6))).toBeLessThanOrEqual(6);
   });
 
   it('windows lines from the bottom', () => {
@@ -18,19 +30,68 @@ describe('format', () => {
     expect(windowLines(lines, 2, 99)).toEqual([1, 2]);
   });
 
-  it('renders every log item type', () => {
-    const items: LogItem[] = [
-      { id: '1', type: 'chat', from: 'me', name: 'kay', text: 'hello', ts: 0, byAgent: false },
-      { id: '2', type: 'system', text: 'oops', ts: 0, level: 'error' },
-      { id: '3', type: 'agent', requestId: 'r', owner: 'b', ownerName: 'bob', requesterName: 'kay', status: 'started', text: 'thinking', steps: ['Read a.ts'], ts: 0 },
-      { id: '4', type: 'agent', requestId: 'q', owner: 'b', ownerName: 'bob', requesterName: 'kay', status: 'done', text: '', steps: [], ts: 0 },
-    ];
-    const lines = renderLog(items, 60, 'me');
-    expect(lines[0]?.text).toContain('kay (you): hello');
-    expect(lines[1]).toMatchObject({ color: 'red' });
-    expect(lines.some((l) => l.text.includes("bob's claude ← kay · working"))).toBe(true);
-    expect(lines.some((l) => l.text.includes('↳ Read a.ts'))).toBe(true);
-    expect(lines.at(-1)?.text).toContain('done');
+  it('formats sizes, durations and stable colors', () => {
+    expect(formatSize(10)).toBe('10B');
+    expect(formatSize(2048)).toBe('2K');
+    expect(formatSize(3 * 1024 * 1024)).toBe('3.0M');
+    expect(formatDuration(5_400)).toBe('5s');
+    expect(formatDuration(125_000)).toBe('2m05s');
+    expect(colorFor('bob')).toBe(colorFor('bob'));
+  });
+});
+
+describe('markdown', () => {
+  it('styles inline code and bold', () => {
+    expect(inline('run `npm test` **now**')).toEqual([
+      { text: 'run ' },
+      { text: 'npm test', color: 'cyan' },
+      { text: ' ' },
+      { text: 'now', bold: true },
+    ]);
+    expect(inline('')).toEqual([{ text: '' }]);
+  });
+
+  it('renders headings, bullets, quotes and code blocks', () => {
+    const lines = renderMarkdown('# Title\n- one\n  - two\n> quoted\n```\nconst a = 1;\n```\nplain', 40).map(text);
+    expect(lines).toEqual(['Title', '• one', '  • two', '│ quoted', '▎ const a = 1;', 'plain']);
+  });
+});
+
+describe('renderLog', () => {
+  const base = { ts: Date.parse('2026-10-16T12:00:00Z') };
+  const items: LogItem[] = [
+    { id: '1', type: 'chat', from: 'me', name: 'kay', text: 'hello', byAgent: false, ...base },
+    { id: '2', type: 'chat', from: 'me', name: 'kay', text: 'second', byAgent: false, ...base },
+    { id: '3', type: 'chat', from: 'b', name: "bob's Claude", text: 'beep', byAgent: true, ...base },
+    { id: '4', type: 'system', text: 'oops', level: 'error', ...base },
+    { id: '5', type: 'agent', requestId: 'r', owner: 'b', ownerName: 'bob', requesterName: 'kay', status: 'started', text: 'thinking **hard**', steps: ['Read a.ts'], ...base },
+    { id: '6', type: 'agent', requestId: 'q', owner: 'b', ownerName: 'bob', requesterName: 'bob', status: 'done', text: '', steps: ['a', 'b', 'c', 'd'], ...base },
+    { id: '7', type: 'agent', requestId: 'w', owner: 'b', ownerName: 'bob', requesterName: 'kay', status: 'awaiting_approval', text: '', steps: [], ...base },
+  ];
+  const lines = renderLog(items, 60, { selfId: 'me', frame: 0, now: base.ts + 3000 }).map(text);
+
+  it('groups consecutive messages from the same person', () => {
+    expect(lines[0]).toMatch(/^you {2}\d\d:\d\d$/);
+    expect(lines[1]).toBe('  hello');
+    expect(lines[2]).toBe('  second');
+    expect(lines.some((l) => l.startsWith("◆ bob's Claude"))).toBe(true);
+  });
+
+  it('renders agent work as cards with live status', () => {
+    const top = lines.find((l) => l.includes('working · 3s'));
+    expect(top).toMatch(/^╭─ ◆ bob's Claude {2}asked by kay ─+ ⠋ working · 3s ─╮$/);
+    expect(top).toHaveLength(60);
+    expect(lines).toContain(`│ ↳ Read a.ts${' '.repeat(45)} │`);
+    expect(lines.some((l) => l.includes('thinking hard'))).toBe(true);
+    expect(lines.some((l) => l.includes('…1 earlier steps'))).toBe(true);
+    expect(lines.some((l) => l.includes('✓ done'))).toBe(true);
+    expect(lines.some((l) => l.includes('bob needs to approve this'))).toBe(true);
+    expect(lines.every((l) => l.length <= 60)).toBe(true);
+  });
+
+  it('draws cards without a right label', () => {
+    const c = card([{ text: 'Title' }], [], [[{ text: 'body' }]], 20, 'cyan').map(text);
+    expect(c).toEqual(['╭─ Title ──────────╮', '│ body             │', '╰──────────────────╯']);
   });
 
   it('wraps approval details, summarising very long ones', () => {
@@ -38,12 +99,5 @@ describe('format', () => {
     const long = approvalLines('x'.repeat(1000), 40);
     expect(long).toHaveLength(6);
     expect(long[5]).toContain('more lines (1000 chars)');
-  });
-
-  it('formats sizes and stable colors', () => {
-    expect(formatSize(10)).toBe('10B');
-    expect(formatSize(2048)).toBe('2K');
-    expect(formatSize(3 * 1024 * 1024)).toBe('3.0M');
-    expect(colorFor('bob')).toBe(colorFor('bob'));
   });
 });

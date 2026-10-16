@@ -1,28 +1,26 @@
 #!/usr/bin/env node
 import os from 'node:os';
-import { spawn } from 'node:child_process';
 import React from 'react';
 import { render } from 'ink';
 import { USAGE, type Config, parseConfig } from './config.js';
 import { createClaudeBackend } from './agent/runner.js';
+import { copyNative, copyText, pasteText } from './core/clipboard.js';
 import { Session } from './core/session.js';
 import { ShareService } from './core/shares.js';
 import { Store, initialState } from './core/store.js';
 import { deriveKeys, generateSecret } from './net/crypto.js';
 import { startHub, type Hub } from './net/hub.js';
-import { decodeInvite, encodeInvite, toWsUrl } from './net/invite.js';
+import { decodeInvite, encodeInvite, findInvite, toWsUrl } from './net/invite.js';
 import { PeerClient } from './net/peer-client.js';
-import { openTunnel, type Tunnel } from './net/tunnel.js';
+import { closeAllTunnels, openTunnel, waitUntilReachable } from './net/tunnel.js';
 import { App } from './ui/App.js';
 
 interface Room {
   readonly url: string;
   readonly secret: string;
   readonly room: string;
-  readonly invite?: string;
-  readonly notes: readonly string[];
   readonly hub?: Hub;
-  readonly tunnel?: Tunnel;
+  readonly invite?: string;
 }
 
 function lanAddress(): string | undefined {
@@ -31,42 +29,74 @@ function lanAddress(): string | undefined {
     .find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
 }
 
-function copyToClipboard(text: string): boolean {
-  if (process.platform !== 'darwin') return false;
-  const child = spawn('pbcopy', { stdio: ['pipe', 'ignore', 'ignore'] });
-  child.on('error', () => undefined);
-  child.stdin.end(text);
-  return true;
-}
-
 async function hostRoom(config: Config): Promise<Room> {
   const secret = generateSecret();
-  const hub = await startHub({ keys: deriveKeys(secret), port: config.port, host: config.lan ? '0.0.0.0' : '127.0.0.1' });
   const room = `${config.name}'s room`;
-  const notes: string[] = [];
-  let tunnel: Tunnel | undefined;
-  try {
-    tunnel = await openTunnel(config.tunnel, hub.port);
-  } catch (err) {
-    notes.push(err instanceof Error ? err.message : String(err));
-  }
-  const lan = lanAddress();
-  const publicUrl = tunnel ? toWsUrl(tunnel.publicUrl) : config.lan && lan ? `ws://${lan}:${hub.port}` : undefined;
-  const invite = publicUrl ? encodeInvite({ url: publicUrl, secret, room }) : undefined;
-  if (tunnel) notes.push(`Tunnel up via ${tunnel.kind}: ${tunnel.publicUrl}`);
-  if (invite) {
-    notes.push(`Invite your friends:  klaude join ${invite}`);
-    if (copyToClipboard(`klaude join ${invite}`)) notes.push('(copied to clipboard)');
-  } else {
-    notes.push(`No public URL. Hub is on 127.0.0.1:${hub.port}; restart with --lan or install ngrok/cloudflared.`);
-  }
-  notes.push('Everything is end-to-end encrypted with the secret inside the invite. Only share it with friends.');
-  return { url: `ws://127.0.0.1:${hub.port}`, secret, room, invite, notes, hub, tunnel };
+  const lan = config.lan || config.tunnel === 'none';
+  const hub = await startHub({ keys: deriveKeys(secret), port: config.port, host: lan ? '0.0.0.0' : '127.0.0.1', roomName: room });
+  return { url: `ws://127.0.0.1:${hub.port}`, secret, room, hub };
 }
 
-function joinRoom(config: Config): Room {
-  const invite = decodeInvite(config.invite ?? '');
-  return { url: invite.url, secret: invite.secret, room: invite.room ?? 'room', notes: [`Joining ${invite.room ?? 'room'}…`] };
+async function resolveJoinInvite(config: Config): Promise<string> {
+  if (config.invite) return config.invite;
+  const found = findInvite((await pasteText()) ?? '');
+  if (!found) throw new Error('No invite given and none found on your clipboard. Copy the link your friend sent, then run: klaude join');
+  return found;
+}
+
+async function joinRoom(config: Config): Promise<Room> {
+  const code = await resolveJoinInvite(config);
+  const invite = decodeInvite(code);
+  const host = new URL(invite.url.replace(/^ws/, 'http')).host;
+  return { url: invite.url, secret: invite.secret, room: host, invite: encodeInvite(invite) };
+}
+
+/** Bring remote access up in the background so the UI appears instantly. */
+async function publish(config: Config, room: Room, session: Session, isClosing: () => boolean): Promise<void> {
+  const store = session.store;
+  const port = room.hub?.port ?? 0;
+  const lanInvite = (): string | undefined => {
+    const ip = lanAddress();
+    return ip ? encodeInvite({ url: `ws://${ip}:${port}`, secret: room.secret }) : undefined;
+  };
+  const announce = async (invite: string, phase: 'ready' | 'local'): Promise<void> => {
+    if (isClosing()) return;
+    store.dispatch({ type: 'invite', invite });
+    store.dispatch({ type: 'hosting', hosting: { phase } });
+    // Only auto-copy with a real clipboard tool; never silently push secrets through the terminal.
+    const copied = await copyNative(`klaude join ${invite}`).catch(() => false);
+    if (!isClosing()) store.dispatch({ type: 'hosting', hosting: { phase, copied } });
+  };
+
+  if (config.tunnel === 'none') {
+    const invite = lanInvite();
+    if (invite) await announce(invite, 'local');
+    else store.dispatch({ type: 'hosting', hosting: { phase: 'failed', detail: 'No network address found.' } });
+    return;
+  }
+  store.dispatch({ type: 'hosting', hosting: { phase: 'tunnel' } });
+  try {
+    const tunnel = await openTunnel(config.tunnel, port, {
+      onProgress: (detail) => store.dispatch({ type: 'hosting', hosting: { phase: 'tunnel', detail } }),
+      onDied: (reason) => {
+        if (isClosing()) return;
+        store.dispatch({ type: 'hosting', hosting: { phase: 'failed', detail: `${reason}. Restart klaude host to get a new invite.` } });
+        session.toast('Remote access stopped: the tunnel closed', 'error');
+      },
+    });
+    if (!tunnel || isClosing()) return;
+    store.dispatch({ type: 'hosting', hosting: { phase: 'reachable' } });
+    if (!(await waitUntilReachable(tunnel.publicUrl))) throw new Error('The tunnel never became reachable');
+    await announce(encodeInvite({ url: toWsUrl(tunnel.publicUrl), secret: room.secret }), 'ready');
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    const fallback = config.lan ? lanInvite() : undefined;
+    if (fallback) await announce(fallback, 'local');
+    store.dispatch({
+      type: 'hosting',
+      hosting: { phase: 'failed', detail: `${reason}. ${fallback ? 'Friends on your Wi-Fi can still join with /invite.' : 'Restart with --lan to invite people on your Wi-Fi.'}` },
+    });
+  }
 }
 
 async function main(): Promise<void> {
@@ -76,10 +106,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  const room = config.mode === 'host' ? await hostRoom(config) : joinRoom(config);
+  const room = config.mode === 'host' ? await hostRoom(config) : await joinRoom(config);
   const shares = new ShareService(config.shares);
   const store = new Store(initialState(room.room, config.policy));
-  if (room.invite) store.dispatch({ type: 'invite', invite: `klaude join ${room.invite}` });
+  if (room.invite) store.dispatch({ type: 'invite', invite: room.invite });
 
   const client = new PeerClient({
     url: room.url,
@@ -95,6 +125,7 @@ async function main(): Promise<void> {
     store,
     shares,
     agentCwd,
+    copy: (text) => copyText(text),
     createAgent: config.agent
       ? (bridge) =>
           createClaudeBackend({
@@ -112,24 +143,28 @@ async function main(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
-    app.unmount();
-    await session.stop();
-    room.tunnel?.close();
-    await room.hub?.close();
-    process.stdout.write('\x1b[?1049l');
-    if (room.invite) process.stdout.write('klaude: room closed.\n');
-    process.exit(0);
+    closeAllTunnels();
+    try {
+      app.unmount();
+      await session.stop();
+      await room.hub?.close();
+    } finally {
+      process.stdout.write('\x1b[?1049l');
+      process.stdout.write('klaude: left the room. See you soon!\n');
+      process.exit(0);
+    }
   };
 
-  for (const note of room.notes) session.system(note, note.startsWith('No ') ? 'warn' : 'info');
   for (const note of config.notes) session.system(note, 'warn');
-  session.system('Type to chat · @claude <task> for your agent · @claude:<friend> for theirs · :help');
+  if (config.mode === 'join') session.system(`Joining ${room.room}…`);
 
   process.stdout.write('\x1b[?1049h\x1b[H');
   const app = render(<App session={session} />, { exitOnCtrlC: false });
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
+  process.on('SIGHUP', () => void shutdown()); // terminal window closed
   session.start();
+  if (config.mode === 'host') void publish(config, room, session, () => shuttingDown);
 }
 
 main().catch((err: unknown) => {

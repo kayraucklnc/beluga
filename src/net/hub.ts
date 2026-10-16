@@ -19,6 +19,8 @@ export interface HubOptions {
   /** Messages per second allowed per connection before frames are dropped. */
   readonly rateLimit?: number;
   readonly authTimeoutMs?: number;
+  /** Shown to everyone who joins. */
+  readonly roomName?: string;
 }
 
 interface Conn {
@@ -122,7 +124,7 @@ export function startHub(opts: HubOptions): Promise<Hub> {
     }
     const peer: PeerInfo = { ...profile.data, name: uniqueName(profile.data.name), peerId: frame.peerId };
     conn.peer = peer;
-    send(conn, { t: 'welcome', you: peer, box: seal(opts.keys, { peers: peerList(), history }) });
+    send(conn, { t: 'welcome', you: peer, box: seal(opts.keys, { room: opts.roomName, peers: peerList(), history }) });
     broadcastPeers();
   };
 

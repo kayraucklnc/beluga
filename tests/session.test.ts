@@ -29,6 +29,8 @@ interface Peer {
   bridge: RoomBridge;
   root: string;
   quit: { called: boolean };
+  toasts: string[];
+  copied: string[];
 }
 
 function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: boolean; files?: Record<string, string> } = {}): Peer {
@@ -40,7 +42,19 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
   const runs: AgentRunInput[] = [];
   let bridge!: RoomBridge;
   const quit = { called: false };
+  const toasts: string[] = [];
+  const copied: string[] = [];
+  let lastToast: unknown;
+  store.subscribe(() => {
+    const t = store.getState().toast;
+    if (t && t !== lastToast) toasts.push(t.text);
+    lastToast = t;
+  });
   const session = new Session({
+    copy: async (text) => {
+      if (text.includes('FAIL')) throw new Error('no clipboard');
+      copied.push(text);
+    },
     client,
     store,
     shares,
@@ -63,7 +77,7 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
   });
   session.start();
   sessions.push(session);
-  return { session, state: store.getState, runs, get bridge() { return bridge; }, root, quit };
+  return { session, state: store.getState, runs, get bridge() { return bridge; }, root, quit, toasts, copied };
 }
 
 const agentItems = (s: AppState) => s.log.filter((l) => l.type === 'agent');
@@ -122,7 +136,7 @@ describe('Session', () => {
     kay.session.submit('@claude:dan do it');
     kay.session.submit('@claude:zed do it');
     await waitFor(() => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.status === 'denied').length === 3);
-    expect(systemText(kay.state())).toContain('No peer named "zed"');
+    expect(kay.toasts).toContain('Nobody named "zed" is here');
     expect(bob.runs).toHaveLength(0);
     expect(bob.session.answerApproval('yes')).toBe(false);
   });
@@ -173,7 +187,7 @@ describe('Session', () => {
     kay.session.submit(':stop');
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'Stopped by owner'));
     kay.session.submit(':stop');
-    expect(systemText(kay.state())).toContain('Your claude is idle');
+    expect(kay.toasts).toContain('Your Claude is not running anything');
   });
 
   it("browses and reads a friend's shared folder, live-reloading on change", async () => {
@@ -200,7 +214,7 @@ describe('Session', () => {
     kay.session.submit(':open bob:proj/missing.md');
     await waitFor(() => kay.state().viewer?.error?.includes('ENOENT'));
     kay.session.submit(':open nope');
-    expect(systemText(kay.state()).some((t) => t.includes('Cannot open'))).toBe(true);
+    expect(kay.toasts.some((t) => t.includes("Can't open"))).toBe(true);
 
     kay.session.store.dispatch({ type: 'browser_cursor', delta: -10 });
     await kay.session.browserEnter(); // '..' goes back to root
@@ -231,15 +245,15 @@ describe('Session', () => {
 
     kay.session.submit('@claude:bob audit');
     await waitFor(() => kay.state().viewer?.path.startsWith('.klaude/reports/') && kay.state().viewer?.content.includes('all good'));
-    expect(kay.state().viewer?.by).toBe("bob's claude");
+    expect(kay.state().viewer?.by).toBe("bob's Claude");
     const reports = readdirSync(path.join(bob.root, '.klaude', 'reports'));
     expect(readFileSync(path.join(bob.root, '.klaude', 'reports', reports[0]!), 'utf8')).toBe('# Audit Results\n\nall good');
-    expect(systemText(kay.state()).some((t) => t.includes("bob's claude wrote a report"))).toBe(true);
+    expect(systemText(kay.state()).some((t) => t.includes("bob's Claude wrote a report. Open it with /open bob:proj/.klaude/reports/"))).toBe(true);
 
     kay.session.submit(':unfollow');
     expect(kay.state().follow).toBeUndefined();
-    kay.session.submit(':follow zed');
-    expect(systemText(kay.state())).toContain('No peer named "zed"');
+    kay.session.submit('/follow zed');
+    expect(kay.toasts).toContain('Nobody named "zed" is here');
   });
 
   it('lets agents talk to each other and browse peers through the bridge', async () => {
@@ -269,31 +283,67 @@ describe('Session', () => {
       answer: 'echo: what do you think?',
     });
     expect(bob.runs[0]).toMatchObject({ viaAgent: true, requesterName: 'kay' });
-    await waitFor(() => bob.state().log.some((l) => l.type === 'chat' && l.byAgent && l.name === "kay's claude"));
+    await waitFor(() => bob.state().log.some((l) => l.type === 'chat' && l.byAgent && l.name === "kay's Claude"));
   });
 
-  it('runs commands', async () => {
-    hub = await startHub({ keys });
+  it('runs slash commands (and legacy colon commands)', async () => {
+    hub = await startHub({ keys, roomName: "kay's room" });
     const kay = peer('kay');
     const bob = peer('bob');
     await room(kay, bob);
-    for (const cmd of [':help', ':peers', ':invite', ':policy', ':policy auto', ':trust bob', ':untrust bob', ':trust', ':y', ':wat', ':open', ':close']) {
+    expect(kay.state().room).toBe("kay's room");
+    for (const cmd of ['/people', '/policy', '/policy auto', ':trust bob', '/untrust bob', '/trust', '/y', '/wat', '/open', '/close']) {
       kay.session.submit(cmd);
     }
-    const text = systemText(kay.state());
-    expect(text.some((t) => t.includes('@claude:bob <task>'))).toBe(true);
-    expect(text.some((t) => t.startsWith('* kay'))).toBe(true);
-    expect(text).toContain('Only the host has the invite code (ask them)');
-    expect(text).toContain('Requests for your claude: auto');
-    expect(text).toContain("bob's requests need approval again");
-    expect(text).toContain('Usage: :trust <peer>');
-    expect(text).toContain('Nothing to approve');
-    expect(text).toContain('Unknown command :wat (try :help)');
+    expect(systemText(kay.state()).some((t) => t.startsWith('kay (you) · claude on · shares proj'))).toBe(true);
+    for (const t of [
+      'Policy is "ask". Use /policy ask, auto or deny',
+      "Friends' requests for your Claude: auto",
+      "bob's requests are auto-approved",
+      "bob's requests need approval again",
+      'Usage: /trust <name>',
+      'Nothing to approve',
+      'Unknown command /wat. Type /help (or // to send a message starting with /)',
+      'Usage: /open <name>:<folder>/<file>',
+    ]) {
+      expect(kay.toasts).toContain(t);
+    }
     expect(kay.state().policy).toBe('auto');
-    kay.session.submit(':clear');
+    kay.session.submit('/help');
+    expect(kay.state().overlay).toBe('help');
+    kay.session.submit('//not a command');
+    await waitFor(() => bob.state().log.some((l) => l.type === 'chat' && l.text === '/not a command'));
+    kay.session.submit('/clear');
     expect(kay.state().log).toHaveLength(0);
-    kay.session.submit(':q');
+    kay.session.submit('/quit');
     expect(kay.quit.called).toBe(true);
+  });
+
+  it('copies the invite and the last Claude answer', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    await room(kay);
+    kay.session.submit('/invite');
+    await waitFor(() => kay.toasts.includes('No invite link available'));
+    kay.session.store.dispatch({ type: 'hosting', hosting: { phase: 'tunnel' } });
+    kay.session.submit('/invite');
+    await waitFor(() => kay.toasts.includes('The invite link is still being created…'));
+    kay.session.store.dispatch({ type: 'invite', invite: 'https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx' });
+    kay.session.submit('/invite');
+    await waitFor(() => kay.copied.length === 1);
+    expect(kay.copied[0]).toBe('klaude join https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx');
+    expect(kay.toasts).toContain('Invite copied. Paste it to a friend');
+
+    kay.session.submit('/copy');
+    await waitFor(() => kay.toasts.includes('No Claude answer to copy yet'));
+    kay.session.submit('@claude hello');
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'done'));
+    kay.session.submit('/copy');
+    await waitFor(() => kay.copied.includes('echo: hello'));
+
+    kay.session.store.dispatch({ type: 'invite', invite: 'FAIL' });
+    await kay.session.copyInvite(); // clipboard unavailable -> shown in chat instead
+    expect(kay.toasts.at(-1)).toBe('Could not reach the clipboard. Copy it from the chat instead');
   });
 });
 

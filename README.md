@@ -9,39 +9,57 @@ once. Agents can talk to each other, browse each other's shared folders, and wri
 everyone watches update live. Follow a friend (or their agent) like in Google Docs and your
 viewer jumps to whatever they open.
 
+<!-- Screenshot: run `klaude host` and you'll see the invite card, people, shared files and chat. -->
+
 ```
- klaude kay's room ● connected │ ★kay◆ ●bob◆ │ following bob
-╭──────────────────────╮╭──────────────────────────────────────────╮╭─────────────────────────────╮
-│ shared folders       ││ 15:57 bob: hello from bob!               ││ bob:api/NOTES.md ◉ bob ● live│
-│›▸ kay:proj           ││ 15:57 kay (you): @claude:bob summarize   ││1 # Bob API                  │
-│ ▸ bob:api (ro)       ││   NOTES.md into a report                 ││2                            │
-│                      ││ 15:57 ✓ bob's claude ← kay · done        ││3 TODO: add auth             │
-│                      ││     ↳ write_report Notes Review          ││                             │
-│                      ││     ↳ send_chat                          ││                             │
-│                      ││ 15:57 ◆ bob's claude: report is up       ││                             │
-╰──────────────────────╯╰──────────────────────────────────────────╯╰─────────────────────────────╯
- NORMAL  chat  policy:ask · i chat · : cmd · @ ask claude · Tab pane · j/k move · q quit
+✦ klaude  kay's room                                           2 people   ● live   /invite
+╭─ People ───────────╮╭─ Chat ────────────────────────────────────────────────────────╮
+│ ● kay (you)        ││ bob  16:43                                                    │
+│   ◆ Claude ready   ││   hey kay! check out my notes in NOTES.md                      │
+│ ● bob              ││                                                               │
+│   ⠋ working for kay││ you  16:43                                                    │
+╰────────────────────╯│   @claude:bob what is in NOTES.md?                            │
+╭─ Shared files ─────╮│                                                               │
+│ ▸ kay:proj         ││ ╭─ ◆ bob's Claude  asked by kay ────────── ⠋ working · 5s ─╮ │
+│ ▸ bob:api (ro)     ││ │ ↳ Read NOTES.md                                          │ │
+╰────────────────────╯╰───────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────────────╮
+│ › Message the room…  try @claude or /help                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────╯
+  Enter send · @ mention a Claude · / commands · Tab files · Ctrl+C quit
 ```
 
 ## Quick start
 
 Requirements: Node 20+, and [Claude Code](https://claude.com/claude-code) installed and logged in
-(`claude` → `/login`) on every machine that offers an agent.
+(`claude`, then `/login`) on every machine that offers a Claude.
 
 ```bash
-git clone <this repo> && cd klaude
+git clone https://github.com/kayraucklnc/klaude.git && cd klaude
 npm install && npm run build && npm link     # puts `klaude` on your PATH
-
-# You: start a room (shares the current folder read-only by default)
-klaude host --name kay
-
-# Friend: paste the invite you sent them
-klaude join klaude:eyJ1cmwiOi... --name bob
 ```
 
-`klaude host` exposes the room through **ngrok** if installed, otherwise a free
-**cloudflared** quick tunnel (no account needed). The invite is printed in the chat and copied
-to your clipboard. On the same Wi-Fi you can skip tunnels with `--lan --tunnel none`.
+**Host** (inside the project you want to share):
+
+```bash
+klaude host
+```
+
+klaude opens a free, encrypted Cloudflare tunnel (no account needed; the helper downloads
+itself the first time) and copies the invite to your clipboard. Send it to your friends in any
+messenger. Type `/invite` to copy it again later.
+
+**Join** (copy the invite your friend sent you, then):
+
+```bash
+klaude join
+```
+
+That's it: `klaude join` reads the invite from your clipboard. You can also paste it:
+`klaude join https://calm-river.trycloudflare.com#k3Jd…`.
+
+Works from anywhere: different Wi-Fi, different countries, behind NAT. For a LAN-only room use
+`klaude host --tunnel none`.
 
 ## Talking to agents
 
@@ -65,34 +83,34 @@ Agents get room tools (an in-process MCP server), so they can:
 
 ## Keys and commands
 
-klaude starts in INSERT mode so you can just type. `Esc` gives NORMAL mode, `:` gives COMMAND mode.
+There are no modes. You're always typing, like in Slack. Type `/` or `@` and suggestions pop up.
 
-| NORMAL key | Action |
+| Key | Action |
 | --- | --- |
-| `i` / `Enter` | type in chat |
-| `@` | start an agent mention |
-| `Tab` / `Shift-Tab` | cycle panes: files, chat, viewer |
-| `j` `k` / `Ctrl-d` `Ctrl-u` / `g` `G` | move or scroll |
-| `l` / `Enter`, `h` / `-` | open, or go up a folder (files pane) |
-| `x` | close viewer |
-| `Ctrl-Y` / `Ctrl-N` | allow / deny a pending approval (any mode) |
-| `y` / `n` / `a` | allow / deny / always-allow (for that person + tool) in NORMAL mode |
-| `q` / `Ctrl-c` | quit |
+| `Enter` | send (or complete a half-typed `/command`) |
+| `Tab` | complete a suggestion, or move between chat, files and viewer |
+| `Esc` | back to chat, or hide suggestions |
+| `↑` `↓` | message history, or pick a suggestion |
+| `PgUp` `PgDn` | scroll the chat |
+| `Ctrl+Y` / `Ctrl+N` / `Ctrl+T` | allow / deny / always-allow a pending approval |
+| `Ctrl+C` twice | quit |
 
 | Command | |
 | --- | --- |
-| `:open bob:api/src/app.ts` | view a friend's file (live-reloads when it changes) |
-| `:follow bob` / `:unfollow` | follow bob and bob's Claude |
-| `:peers`, `:invite`, `:help`, `:clear`, `:q` | |
-| `:policy ask\|auto\|deny` | how requests from friends for your Claude are handled |
-| `:trust bob` / `:untrust bob` | auto-approve one friend |
-| `:stop` | abort your Claude's current run |
+| `/invite` | copy the invite link |
+| `/copy` | copy the last Claude answer |
+| `/open bob:api/src/app.ts` | view a friend's file (live-reloads when it changes) |
+| `/follow bob` / `/unfollow` | follow bob and bob's Claude around their files |
+| `/policy ask\|auto\|deny` | how requests from friends for your Claude are handled |
+| `/trust bob` / `/untrust bob` | auto-approve one friend for this session |
+| `/stop` | stop your Claude |
+| `/people`, `/clear`, `/help`, `/quit` | |
 
 ## CLI
 
 ```
-klaude host [options]            start a room and print an invite code
-klaude join <invite> [options]   join a friend's room
+klaude host [options]            start a room and get an invite link
+klaude join [invite] [options]   join a room (reads the invite from your clipboard if omitted)
 
   -n, --name <name>        display name
   -s, --share <spec>       [name=]path[:rw], repeatable. :rw lets your Claude edit there without asking
@@ -100,7 +118,7 @@ klaude join <invite> [options]   join a friend's room
       --no-agent           don't offer your Claude to the room
       --policy <p>         ask | auto | deny (default ask)
       --model <id>         model for your Claude
-      --tunnel <kind>      auto | ngrok | cloudflared | none (host)
+      --tunnel <kind>      auto | cloudflared | ngrok | none (host; default: free Cloudflare tunnel)
       --lan                listen on all interfaces (host)
   -p, --port <port>        hub port
 ```

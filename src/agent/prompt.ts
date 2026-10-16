@@ -27,9 +27,11 @@ export function buildPrompt(input: Pick<AgentRunInput, 'prompt' | 'requesterName
   return `${recent}Request from ${who}:\n${input.prompt}`;
 }
 
-export function summarizeTool(name: string, input: Record<string, unknown>): string {
+export function summarizeTool(name: string, input: Record<string, unknown>, cwd?: string): string {
   const short = name.replace(/^mcp__klaude__/, '');
   const arg = input.file_path ?? input.command ?? input.pattern ?? input.path ?? input.peer ?? input.title ?? input.url;
-  const text = typeof arg === 'string' ? arg : '';
+  const raw = typeof arg === 'string' ? arg : '';
+  // Show paths relative to the shared folder: "Read src/app.ts", not the full home path.
+  const text = cwd && raw.startsWith(`${cwd}/`) ? raw.slice(cwd.length + 1) : raw;
   return text ? `${short} ${text.length > 80 ? `${text.slice(0, 77)}...` : text}` : short;
 }

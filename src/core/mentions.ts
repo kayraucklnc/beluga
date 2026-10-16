@@ -16,16 +16,17 @@ const MENTION = /^@(claudes|claude(?::([\w.-]+))?)$/i;
 
 /**
  * Turn a line typed in the prompt into an action.
- *   :cmd args         -> command
+ *   /cmd args         -> command (":cmd" also works; "//text" sends "/text")
  *   @claude fix it    -> your own agent
- *   @claude:bob hi    -> bob's agent (runs on bob's machine, his subscription)
+ *   @claude:bob hi    -> bob's agent (runs on bob's machine, on bob's subscription)
  *   @claudes review   -> every agent in the room
  *   anything else     -> group chat
  */
 export function parseInput(raw: string, selfId: string, peers: readonly PeerInfo[]): ParsedInput {
   const text = raw.trim();
   if (!text) return { kind: 'empty' };
-  if (text.startsWith(':')) {
+  if (text.startsWith('//')) return { kind: 'chat', text: text.slice(1) };
+  if (text.startsWith(':') || text.startsWith('/')) {
     const [name = '', ...args] = text.slice(1).trim().split(/\s+/);
     return { kind: 'command', name: name.toLowerCase(), args };
   }

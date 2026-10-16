@@ -30,7 +30,7 @@ describe('parseConfig', () => {
 
   it('validates input', () => {
     expect(() => parseConfig(['dance'])).toThrow(/Unknown command/);
-    expect(() => parseConfig(['join'])).toThrow(/Usage/);
+    expect(parseConfig(['join']).invite).toBeUndefined(); // read from clipboard later
     expect(() => parseConfig(['host', '--tunnel', 'x'])).toThrow(/--tunnel/);
     expect(() => parseConfig(['host', '--policy', 'x'])).toThrow(/--policy/);
     expect(() => parseConfig(['host', '-p', '99999'])).toThrow(/--port/);

@@ -8,8 +8,8 @@ import type { TunnelKind } from './net/tunnel.js';
 export const USAGE = `klaude — a multiplayer terminal for you, your friends, and everyone's Claude
 
 Usage:
-  klaude host [options]            start a room and print an invite code
-  klaude join <invite> [options]   join a friend's room
+  klaude host [options]            start a room and get an invite link
+  klaude join [invite] [options]   join a friend's room (reads the invite from your clipboard if omitted)
 
 Options:
   -n, --name <name>        display name (default: your OS username)
@@ -20,7 +20,7 @@ Options:
       --policy <p>         requests from friends for your claude: ask | auto | deny (default ask)
       --model <id>         model for your claude (default: your Claude Code default)
   host only:
-      --tunnel <kind>      auto | ngrok | cloudflared | none (default auto)
+      --tunnel <kind>      auto | cloudflared | ngrok | none (default auto: free Cloudflare tunnel, no account)
       --lan                listen on all interfaces so LAN peers can dial ws://<your-ip>:<port>
   -p, --port <port>        hub port (default random)
   -h, --help               show this help
@@ -75,7 +75,6 @@ export function parseConfig(argv: readonly string[], cwd: string = process.cwd()
   const [command, invite] = positionals;
   const mode = values.help || !command ? 'help' : command;
   if (mode !== 'help' && mode !== 'host' && mode !== 'join') throw new Error(`Unknown command "${command}". Try klaude --help`);
-  if (mode === 'join' && !invite) throw new Error('Usage: klaude join <invite-code>');
 
   const tunnel = (values.tunnel ?? 'auto') as TunnelKind;
   if (!TUNNELS.includes(tunnel)) throw new Error(`--tunnel must be one of ${TUNNELS.join(', ')}`);
