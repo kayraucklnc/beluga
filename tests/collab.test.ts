@@ -27,7 +27,7 @@ afterEach(async () => {
 type Script = (input: AgentRunInput) => Promise<string>;
 
 function peer(name: string, opts: { script?: Script; workspaces?: WorkspaceManager; host?: boolean; approvalTimeoutMs?: number; findConversation?: SessionOpts['findConversation'] } = {}) {
-  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), `klaude-${name}-`)));
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), `klaud-${name}-`)));
   const shares = new ShareService([{ name: 'proj', root, writable: false }]);
   const store = new Store(initialState('test', 'ask'));
   const client = new PeerClient({ url: `ws://127.0.0.1:${hub.port}`, keys, profile: { name, shares: shares.infos, agent: true }, reconnect: false, ...(opts.host ? { identity: HOST } : {}) });
@@ -207,7 +207,7 @@ describe('sharing a folder with one person', () => {
     const bob = peer('bob');
     const eve = peer('eve');
     await room(kay, bob, eve);
-    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaude-notes-')));
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-notes-')));
     (await import('node:fs')).writeFileSync(path.join(dir, 'plan.md'), '# plan');
     kay.session.shareFolder(dir, false, [bob.session.selfId]);
     const offer = await waitFor(() => bob.state().offers[0]);
@@ -327,7 +327,7 @@ describe('on your own', () => {
     expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes('Sent to the Claude in add-auth'))).toBe(true);
   });
 
-  it("opening a workspace klaude hasn't used shows its Claude Code conversation and continues it", async () => {
+  it("opening a workspace klaud hasn't used shows its Claude Code conversation and continues it", async () => {
     hub = await startHub({ keys });
     const mgr = await createDemoWorkspaces();
     const seen: string[] = [];
@@ -346,5 +346,37 @@ describe('on your own', () => {
     expect(seen).toEqual([ws.path]);
     expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes('Continuing "Fix login"'))).toBe(true);
     expect(mgr.find(ws.id)?.sessionId).toBe('sess-1');
+  });
+});
+
+describe('workspaces work in parallel', () => {
+  it("runs different workspaces' Claudes at the same time, and one conversation in order", async () => {
+    hub = await startHub({ keys });
+    const mgr = await createDemoWorkspaces();
+    let inFlight = 0;
+    let peak = 0;
+    const order: string[] = [];
+    const kay = peer('kay', {
+      workspaces: mgr,
+      script: async (input) => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 150));
+        order.push(input.prompt);
+        inFlight--;
+        return 'ok';
+      },
+    });
+    await room(kay);
+    await kay.session.workspaces!.refresh();
+    const all = mgr.list.flatMap((p) => p.workspaces);
+    const a = all.find((w) => w.name === 'add-auth')!;
+    const b = all.find((w) => w.name === 'new-hero')!;
+    kay.session.askOwnClaude('a1', `ws:${a.id}`);
+    kay.session.askOwnClaude('a2', `ws:${a.id}`);
+    kay.session.askOwnClaude('b1', `ws:${b.id}`);
+    await waitFor(() => order.length === 3, 4000);
+    expect(peak).toBe(2); // add-auth and new-hero side by side
+    expect(order.indexOf('a1')).toBeLessThan(order.indexOf('a2')); // same workspace stays in order
   });
 });

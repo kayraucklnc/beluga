@@ -1,7 +1,7 @@
 import { parentPort } from 'node:worker_threads';
 import { decodeImage } from './decode.js';
 
-/** Decodes one image per message off the UI thread, so a big photo never freezes klaude. */
+/** Decodes one image per message off the UI thread, so a big photo never freezes klaud. */
 parentPort?.on('message', (msg: { id: number; bytes: Uint8Array; name: string }) => {
   try {
     const image = decodeImage(msg.bytes, msg.name);

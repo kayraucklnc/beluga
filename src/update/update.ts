@@ -1,4 +1,4 @@
-import { type Run, type Status, decide, fetchLatest, installRoot, installedVersion, isGitCheckout, makeRun, readStatus } from './check.js';
+import { type Run, type Status, compareVersions, decide, fetchLatest, installRoot, installedVersion, isGitCheckout, isGlobalNpmInstall, latestOnNpm, makeRun, readStatus } from './check.js';
 import { type Out, bar, ink, line, step, stdout, title } from './screen.js';
 
 const MAX_LISTED = 8;
@@ -22,28 +22,65 @@ function listIncoming(out: Out, s: Status): void {
   line(out);
 }
 
-/** `klaude update`: check GitHub for a newer klaude and install it in place. Returns the exit code. */
+/** Installed with `npm install -g klaud`: ask npm for a newer version and install it. */
+async function updateFromNpm(out: Out, run: Run, root: string, checkOnly: boolean): Promise<number> {
+  const current = installedVersion(root);
+  try {
+    if (!(await isGlobalNpmInstall(run, root))) {
+      line(out, `${ink.warn('!')} ${ink.text(`klaud in ${root} is part of another project, so update it there (npm install klaud@latest).`)}`);
+      line(out);
+      return 1;
+    }
+    const latest = await step(out, 'Checking npm for a newer klaud', () => latestOnNpm(run), (v) => `Latest on npm: ${v}`);
+    if (compareVersions(latest, current) <= 0) {
+      line(out);
+      line(out, `${ink.ok('●')} ${ink.text(`You're on the latest klaud (${current})`)}`);
+      line(out);
+      return 0;
+    }
+    line(out);
+    line(out, `${ink.info('●')} ${ink.text(`klaud ${latest} is available`)} ${ink.muted(`you have ${current}`)}`);
+    line(out, `  ${ink.muted('What changed:')} ${ink.text('https://github.com/kayraucklnc/klaud/releases')}`);
+    line(out);
+    if (checkOnly) {
+      line(out, `${ink.muted('Run')} ${ink.text('klaud update')} ${ink.muted('to install.')}`);
+      line(out);
+      return 0;
+    }
+    await step(out, `Installing klaud ${latest}`, () => run('npm', ['install', '-g', '--no-audit', '--no-fund', '--loglevel=error', `klaud@${latest}`]), () => `Installed klaud ${latest}`);
+    line(out);
+    await bar(out, 'finishing');
+    line(out, `${ink.ok('●')} ${ink.text(`klaud ${latest} is installed`)} ${ink.muted(`${current} → ${latest}`)}`);
+    line(out, `  ${ink.muted('Start it with')} ${ink.text('klaud')}`);
+    line(out);
+    return 0;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    line(out);
+    line(out, `${ink.error('✗')} ${ink.text("Couldn't update:")} ${ink.muted(message)}`);
+    line(out, `  ${ink.muted(/EACCES|permission/i.test(message) ? 'Your global npm folder needs admin rights. Try:' : 'Update by hand:')} ${ink.text(`${/EACCES|permission/i.test(message) ? 'sudo ' : ''}npm install -g klaud@latest`)}`);
+    line(out);
+    return 1;
+  }
+}
+
+/** `klaud update`: check GitHub for a newer klaud and install it in place. Returns the exit code. */
 export async function runUpdate(opts: UpdateOptions = {}): Promise<number> {
   const out = opts.out ?? stdout;
   const root = opts.root ?? installRoot();
   const run = opts.run ?? makeRun(root);
   await title(out, opts.checkOnly ? 'update check' : 'update');
 
-  if (!(await isGitCheckout(run, root))) {
-    line(out, `${ink.warn('!')} ${ink.text(`klaude in ${root} wasn't installed from git, so it can't update itself.`)}`);
-    line(out, `  ${ink.muted('Reinstall:')} ${ink.text('git clone https://github.com/kayraucklnc/klaude.git && cd klaude && npm install && npm run build && npm link')}`);
-    line(out);
-    return 1;
-  }
+  if (!(await isGitCheckout(run, root))) return updateFromNpm(out, run, root, opts.checkOnly === true);
 
   try {
-    await step(out, 'Checking GitHub for a newer klaude', () => fetchLatest(run), () => 'Checked GitHub');
+    await step(out, 'Checking GitHub for a newer klaud', () => fetchLatest(run), () => 'Checked GitHub');
     const status = await readStatus(run);
     const decision = decide(status);
 
     if (decision.kind === 'latest') {
       line(out);
-      line(out, `${ink.ok('●')} ${ink.text(`You're on the latest klaude (${installedVersion(root)})`)} ${ink.muted(`${status.head} · ${status.branch}`)}`);
+      line(out, `${ink.ok('●')} ${ink.text(`You're on the latest klaud (${installedVersion(root)})`)} ${ink.muted(`${status.head} · ${status.branch}`)}`);
       line(out);
       return 0;
     }
@@ -58,7 +95,7 @@ export async function runUpdate(opts: UpdateOptions = {}): Promise<number> {
       return 1;
     }
     if (opts.checkOnly) {
-      line(out, `${ink.muted('Run')} ${ink.text('klaude update')} ${ink.muted('to install.')}`);
+      line(out, `${ink.muted('Run')} ${ink.text('klaud update')} ${ink.muted('to install.')}`);
       line(out);
       return 0;
     }
@@ -78,8 +115,8 @@ export async function runUpdate(opts: UpdateOptions = {}): Promise<number> {
     const head = (await run('git', ['rev-parse', '--short', 'HEAD'])).trim();
     line(out);
     await bar(out, 'finishing');
-    line(out, `${ink.ok('●')} ${ink.text(`klaude ${installedVersion(root)} is installed`)} ${ink.muted(`${status.head} → ${head}`)}`);
-    line(out, `  ${ink.muted('Start it with')} ${ink.text('klaude')}`);
+    line(out, `${ink.ok('●')} ${ink.text(`klaud ${installedVersion(root)} is installed`)} ${ink.muted(`${status.head} → ${head}`)}`);
+    line(out, `  ${ink.muted('Start it with')} ${ink.text('klaud')}`);
     line(out);
     return 0;
   } catch (err) {

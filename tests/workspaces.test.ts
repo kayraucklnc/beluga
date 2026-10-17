@@ -33,7 +33,7 @@ let mgr: WorkspaceManager;
 const repos = () => mgr.list.filter((p) => p.root);
 
 beforeEach(async () => {
-  base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaude-ws-')));
+  base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-ws-')));
   repo = makeRepo(base, 'app');
   const store = new WorkspaceStore(path.join(base, 'home'));
   store.saveConfig({ roots: [path.join(base, 'code')], projects: [], hidden: [] });
@@ -77,9 +77,9 @@ describe('projects', () => {
 describe('worktree lifecycle', () => {
   it('creates a worktree from origin, tracks status, reviews and merges it', async () => {
     const ws = await mgr.createWorktree(repos()[0]!.id, 'Fix Auth!');
-    expect(ws).toMatchObject({ name: 'fix-auth', branch: 'klaude/fix-auth', base: 'origin/main', kind: 'worktree', external: false });
+    expect(ws).toMatchObject({ name: 'fix-auth', branch: 'klaud/fix-auth', base: 'origin/main', kind: 'worktree', external: false });
     expect(existsSync(path.join(ws.path, 'README.md'))).toBe(true);
-    expect(readFileSync(path.join(repo, '.git', 'info', 'exclude'), 'utf8')).toContain('.klaude/');
+    expect(readFileSync(path.join(repo, '.git', 'info', 'exclude'), 'utf8')).toContain('.klaud/');
 
     writeFileSync(path.join(ws.path, 'new.txt'), 'x');
     await mgr.refresh();
@@ -122,7 +122,7 @@ describe('worktree lifecycle', () => {
     await mgr.refresh();
 
     const fork = await mgr.fork(ws.id, 'idea 2');
-    expect(fork).toMatchObject({ name: 'idea-2', forkedFrom: ws.id, forkFromSession: 'session-1', branch: 'klaude/idea-2' });
+    expect(fork).toMatchObject({ name: 'idea-2', forkedFrom: ws.id, forkFromSession: 'session-1', branch: 'klaud/idea-2' });
     expect(existsSync(path.join(fork.path, 'idea.txt'))).toBe(true); // starts from the parent's state
     expect(mgr.loadHistory(fork.id)).toEqual([{ text: 'hello' }]);
     mgr.rememberSession(fork.id, 'session-2');
@@ -139,7 +139,7 @@ describe('worktree lifecycle', () => {
 
     await mgr.remove(fork.id);
     expect(mgr.find(fork.id)).toBeUndefined();
-    expect(sh(repo, 'branch', '--list', 'klaude/idea-2')).toBe('');
+    expect(sh(repo, 'branch', '--list', 'klaud/idea-2')).toBe('');
     await expect(mgr.archive(repos()[0]!.workspaces[0]!.id)).rejects.toThrow(/main folder/);
     const again = await mgr.createWorktree(repos()[0]!.id, 'idea'); // name taken by a live worktree → idea-2
     expect(again.name).toBe('idea');

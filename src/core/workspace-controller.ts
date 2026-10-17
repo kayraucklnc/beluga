@@ -92,7 +92,7 @@ export class WorkspaceController {
   }
 
   /**
-   * A workspace klaude hasn't talked in yet (a worktree from Conductor, Claude Code, or your
+   * A workspace klaud hasn't talked in yet (a worktree from Conductor, Claude Code, or your
    * main folder) shows the latest Claude Code conversation from that folder, and Claude
    * continues it from there.
    */
@@ -226,7 +226,7 @@ export class WorkspaceController {
     }
   }
 
-  async commit(id: string, message = 'Work from klaude'): Promise<void> {
+  async commit(id: string, message = 'Work from klaud'): Promise<void> {
     const committed = await this.act("Couldn't commit", () => this.deps.manager.commitAll(id, message));
     if (committed !== undefined) this.deps.toast(committed ? 'Committed all changes' : 'Nothing to commit', committed ? 'success' : 'info');
   }

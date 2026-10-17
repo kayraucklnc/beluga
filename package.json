@@ -1,24 +1,51 @@
 {
-  "name": "klaude",
-  "version": "0.2.1",
-  "description": "Multiplayer terminal for Claude Code: group chat with friends and everyone's Claude agents over a P2P tunnel.",
+  "name": "klaud",
+  "version": "0.3.0",
+  "description": "A terminal home for all your projects and the Claude working in them: a worktree per task, sub-agents you can watch, and friends with their own Claude in the same room.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "ai",
+    "agents",
+    "terminal",
+    "tui",
+    "worktree",
+    "git",
+    "pair-programming",
+    "multiplayer"
+  ],
+  "homepage": "https://github.com/kayraucklnc/klaud#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kayraucklnc/klaud.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kayraucklnc/klaud/issues"
+  },
+  "author": "Kayra Uckilinc",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "klaude": "dist/cli.js"
+    "klaud": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "dev": "tsx src/cli.tsx",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.301",

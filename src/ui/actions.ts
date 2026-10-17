@@ -26,7 +26,7 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
   switch (focus) {
     case 'header':
       return [
-        { id: 'chat', text: 'Use these buttons', key: '↵ then Tab / ← →' },
+        { id: 'chat', text: 'Use the buttons', key: '↵' },
         { id: 'projects', text: 'Next area', key: 'Tab' },
         { id: 'chat', text: 'Back to chat', key: 'Esc' },
       ];

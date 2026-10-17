@@ -29,7 +29,7 @@ export function decodeInvite(code: string): Invite {
   const trimmed = code.trim();
   if (trimmed.startsWith(LEGACY_PREFIX)) return decodeLegacy(trimmed);
   const m = /^(https?|wss?):\/\/([^\s#/@]+)\/?#([\w-]+)$/.exec(trimmed);
-  if (!m) throw new Error('That does not look like a klaude invite (expected https://…#secret)');
+  if (!m) throw new Error('That does not look like a klaud invite (expected https://…#secret)');
   const scheme = m[1] === 'https' || m[1] === 'wss' ? 'wss' : 'ws';
   const parsed = InvitePayload.safeParse({ url: `${scheme}://${m[2]}`, secret: m[3] });
   if (!parsed.success) throw new Error('Invite code is invalid');
@@ -48,7 +48,7 @@ function decodeLegacy(code: string): Invite {
   return parsed.data;
 }
 
-/** Find an invite inside arbitrary pasted text (e.g. "klaude join https://…#abc"). */
+/** Find an invite inside arbitrary pasted text (e.g. "klaud join https://…#abc"). */
 export function findInvite(text: string): string | undefined {
   const link = /(https?|wss?):\/\/[^\s#/@]+\/?#[\w-]{16,256}/.exec(text);
   if (link) return link[0];

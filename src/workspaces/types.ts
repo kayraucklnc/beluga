@@ -25,7 +25,7 @@ export interface WorkspaceRecord {
 /** A workspace as shown in the UI: record + live git status. */
 export interface Workspace extends WorkspaceRecord {
   readonly projectId: string;
-  /** A worktree that exists in git but wasn't created by klaude (e.g. by another tool). */
+  /** A worktree that exists in git but wasn't created by klaud (e.g. by another tool). */
   readonly external: boolean;
   readonly status?: Status;
 }

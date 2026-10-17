@@ -53,7 +53,7 @@ function writeTree(root: string, files: Record<string, string>): void {
 
 /** Sample folders for the demo: yours and a pretend friend's. */
 export function createDemoFolders(): { mine: string; bob: string } {
-  const base = mkdtempSync(path.join(os.tmpdir(), 'klaude-demo-'));
+  const base = mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-'));
   const mine = path.join(base, 'landing');
   const bob = path.join(base, 'api');
   writeTree(mine, YOUR_FILES);
@@ -61,31 +61,37 @@ export function createDemoFolders(): { mine: string; bob: string } {
   return { mine, bob };
 }
 
-const BOB_LINES = ['hey! just pushed my API notes', 'can your Claude take a look at the auth plan?', 'nice, thanks!'];
+const FRIENDS = {
+  bob: { lines: ['hey! just pushed my API notes', 'can your Claude take a look at the auth plan?', 'nice, thanks!'], share: 'api', usage: 64, first: 1200 },
+  mia: { lines: ['hi all, joining from the landing page side', 'my Claude is on the hero copy, yours on auth?', 'perfect, ship it'], share: 'notes', usage: 22, first: 2600 },
+} as const;
 
 /**
  * A pretend friend who joins the room, shares a folder, lets you use a (simulated)
  * Claude, and chats back. Lets you try every feature alone.
  */
-export function startDemoFriend(url: string, keys: RoomKeys, folder: string): Session {
-  const shares = new ShareService([{ name: 'api', root: folder, writable: false }]);
+export function startDemoFriend(url: string, keys: RoomKeys, folder: string, name: keyof typeof FRIENDS = 'bob'): Session {
+  const friend = FRIENDS[name];
+  const shares = new ShareService([{ name: friend.share, root: folder, writable: false }]);
   const store = new Store(initialState('demo', 'auto'));
-  const client = new PeerClient({ url, keys, profile: { name: 'bob', shares: shares.infos, agent: true } });
-  const bob = new Session({ client, store, shares, agentCwd: folder, createAgent: (bridge) => createMockBackend(bridge) });
+  const client = new PeerClient({ url, keys, profile: { name, shares: shares.infos, agent: true } });
+  const session = new Session({ client, store, shares, agentCwd: folder, createAgent: (bridge) => createMockBackend(bridge) });
   let said = 0;
   const say = (delay: number): void => {
-    const line = BOB_LINES[said++];
-    if (line) setTimeout(() => bob.sendChat(line, false), delay);
+    const line = friend.lines[said++];
+    if (line) setTimeout(() => session.sendChat(line, false), delay);
   };
   client.once('welcome', () => {
-    bob.updateUsage({ plan: 'pro', fiveHour: { pct: 64 }, week: { pct: 41 } });
-    say(1200);
+    session.updateUsage({ plan: 'pro', fiveHour: { pct: friend.usage }, week: { pct: 41 } });
+    say(friend.first);
   });
   client.on('message', (msg) => {
-    if (msg.from !== client.peerId && msg.body.kind === 'chat' && !msg.body.byAgent && said < BOB_LINES.length) say(1500);
+    // Answer you (not each other), one line per message you send.
+    const fromYou = msg.from !== client.peerId && !store.getState().peers.find((p) => p.peerId === msg.from && (p.name === 'bob' || p.name === 'mia'));
+    if (fromYou && msg.body.kind === 'chat' && !msg.body.byAgent && said < friend.lines.length) say(name === 'bob' ? 1500 : 2400);
   });
-  bob.start();
-  return bob;
+  session.start();
+  return session;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +100,7 @@ export function startDemoFriend(url: string, keys: RoomKeys, folder: string): Se
 
 
 const gitIn = (cwd: string, ...args: string[]): void => {
-  execFileSync('git', ['-c', 'user.email=demo@klaude.dev', '-c', 'user.name=klaude demo', ...args], { cwd, stdio: 'ignore' });
+  execFileSync('git', ['-c', 'user.email=demo@klaud.dev', '-c', 'user.name=klaud demo', ...args], { cwd, stdio: 'ignore' });
 };
 
 function demoRepo(base: string, name: string, files: Record<string, string>): string {
@@ -114,7 +120,7 @@ function demoRepo(base: string, name: string, files: Record<string, string>): st
 
 /** Two sample projects with worktrees in different states, plus saved conversations. */
 export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
-  const base = mkdtempSync(path.join(os.tmpdir(), 'klaude-demo-projects-'));
+  const base = mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-projects-'));
   demoRepo(base, 'bob-api', BOB_FILES);
   demoRepo(base, 'landing', YOUR_FILES);
   const store = new WorkspaceStore(path.join(base, 'home'));

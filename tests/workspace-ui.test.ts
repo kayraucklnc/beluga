@@ -9,7 +9,7 @@ import type { Project, Workspace } from '../src/workspaces/types.js';
 
 const text = (lines: readonly (readonly { text: string }[])[]) => lines.map((l) => l.map((s) => s.text).join(''));
 const ws = (over: Partial<Workspace>): Workspace => ({
-  id: 'w1', projectRoot: '/p', name: 'fix-auth', path: '/wt/fix-auth', kind: 'worktree', branch: 'klaude/fix-auth', base: 'origin/main',
+  id: 'w1', projectRoot: '/p', name: 'fix-auth', path: '/wt/fix-auth', kind: 'worktree', branch: 'klaud/fix-auth', base: 'origin/main',
   createdAt: 1, projectId: 'p1', external: false, status: { changed: 2, ahead: 3, behind: 0 }, ...over,
 });
 const project: Project = {
@@ -178,7 +178,7 @@ describe('workspace UI models', () => {
     const m = workspaceHeaderModel(s, project.workspaces[1]!, 140);
     const [title, bar] = text(m.lines);
     expect(title).toContain('app › fix-auth');
-    expect(title).toContain('⌥ klaude/fix-auth');
+    expect(title).toContain('⌥ klaud/fix-auth');
     expect(title).toContain('2 uncommitted changes');
     expect(bar).toContain(' Diff ');
     expect(bar).toContain(' Review ');

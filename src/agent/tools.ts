@@ -25,7 +25,7 @@ export const ROOM_TOOL_NAMES = [
   'list_peer_files',
   'read_peer_file',
   'write_report',
-].map((n) => `mcp__klaude__${n}`);
+].map((n) => `mcp__klaud__${n}`);
 
 export function createRoomToolDefs(bridge: RoomBridge) {
   return [
@@ -64,7 +64,7 @@ export function createRoomToolDefs(bridge: RoomBridge) {
       ),
       tool(
         'write_report',
-        'Write a Markdown report to .klaude/reports/ and announce it so everyone can follow it live.',
+        'Write a Markdown report to .klaud/reports/ and announce it so everyone can follow it live.',
         { title: z.string().min(1).max(200), markdown: z.string().min(1).max(200_000) },
         (a) => guarded(async () => `Report written to ${await bridge.writeReport(a.title, a.markdown)}`),
       ),
@@ -72,5 +72,5 @@ export function createRoomToolDefs(bridge: RoomBridge) {
 }
 
 export function createRoomTools(bridge: RoomBridge) {
-  return createSdkMcpServer({ name: 'klaude', version: '0.1.0', tools: createRoomToolDefs(bridge) });
+  return createSdkMcpServer({ name: 'klaud', version: '0.1.0', tools: createRoomToolDefs(bridge) });
 }

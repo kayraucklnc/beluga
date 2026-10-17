@@ -58,7 +58,7 @@ async function hostRoom(config: Config): Promise<Room> {
 async function resolveJoinInvite(config: Config): Promise<string> {
   if (config.invite) return config.invite;
   const found = findInvite((await pasteText()) ?? '');
-  if (!found) throw new Error('No invite given and none found on your clipboard. Copy the link your friend sent, then run: klaude join');
+  if (!found) throw new Error('No invite given and none found on your clipboard. Copy the link your friend sent, then run: klaud join');
   return found;
 }
 
@@ -84,7 +84,7 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
     store.dispatch({ type: 'invite', invite });
     store.dispatch({ type: 'hosting', hosting: { phase } });
     // Only auto-copy with a real clipboard tool; never silently push secrets through the terminal.
-    const copied = await copyNative(`klaude join ${invite}`).catch(() => false);
+    const copied = await copyNative(`klaud join ${invite}`).catch(() => false);
     if (!isClosing()) store.dispatch({ type: 'hosting', hosting: { phase, copied } });
   };
 
@@ -100,7 +100,7 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
       onProgress: (detail) => store.dispatch({ type: 'hosting', hosting: { phase: 'tunnel', detail } }),
       onDied: (reason) => {
         if (isClosing()) return;
-        store.dispatch({ type: 'hosting', hosting: { phase: 'failed', detail: `${reason}. Restart klaude host to get a new invite.` } });
+        store.dispatch({ type: 'hosting', hosting: { phase: 'failed', detail: `${reason}. Restart klaud host to get a new invite.` } });
         session.toast('Remote access stopped: the tunnel closed', 'error');
       },
     });
@@ -123,7 +123,7 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args[0] === '--version' || args[0] === '-v' || args[0] === 'version') {
-    process.stdout.write(`klaude ${installedVersion()}\n`);
+    process.stdout.write(`klaud ${installedVersion()}\n`);
     return;
   }
   if (args[0] === 'view') {
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
   const room = config.mode === 'join' ? await joinRoom(config) : await hostRoom(config);
   const shares = new ShareService(config.shares);
   applyTheme(config.theme);
-  // Remember an explicitly chosen name, so plain `klaude` uses it next time.
+  // Remember an explicitly chosen name, so plain `klaud` uses it next time.
   if (process.argv.includes('--name') || process.argv.includes('-n')) saveSettings({ name: config.name });
   const store = new Store(initialState(room.room, config.policy, { theme: config.theme, mouse: config.mouse, tunnel: config.tunnel, selfApproval: config.selfApproval }));
   if (room.invite) store.dispatch({ type: 'invite', invite: room.invite });
@@ -198,7 +198,7 @@ async function main(): Promise<void> {
     },
     saveSettings: (patch) => void saveSettings(patch),
     createAgent: demo
-      ? (bridge) => createMockBackend(bridge)
+      ? (bridge) => createMockBackend(bridge, Number(process.env.KLAUD_DEMO_PACE) || 2.6) // unhurried, so you can watch workspaces run side by side
       : config.agent
       ? (bridge) =>
           createClaudeBackend({
@@ -207,7 +207,7 @@ async function main(): Promise<void> {
             additionalDirectories: config.shares.slice(1).map((s) => s.root),
             bridge,
             model: config.model,
-            claudePath: process.env.KLAUDE_CLAUDE_PATH,
+            claudePath: process.env.KLAUD_CLAUDE_PATH,
           })
       : undefined,
     onQuit: () => void shutdown(),
@@ -227,7 +227,7 @@ async function main(): Promise<void> {
     } finally {
       if (config.mouse) process.stdout.write(MOUSE_OFF);
       process.stdout.write('\x1b[?1049l');
-      process.stdout.write('klaude: left the room. See you soon!\n');
+      process.stdout.write('klaud: left the room. See you soon!\n');
       process.exit(0);
     }
   };
@@ -263,15 +263,16 @@ async function main(): Promise<void> {
     // A pretend friend and a fake invite so every part of the UI has something to show.
     store.dispatch({ type: 'invite', invite: 'https://calm-river-demo.trycloudflare.com#k3JdQ9vXr2Lm8TzW4yBn' });
     store.dispatch({ type: 'hosting', hosting: { phase: 'ready', copied: true } });
-    session.system('Demo mode: bob and both Claudes are simulated. Nothing leaves your computer.');
+    session.system('Demo mode: bob, mia and every Claude are simulated. Nothing leaves your computer.');
     setTimeout(() => session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } }), 300);
     // bob "arrives" a moment later so you first see how inviting works.
-    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob), 2500);
+    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob, 'bob'), 2500);
+    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.mine, 'mia'), 3500);
   }
 }
 
 main().catch((err: unknown) => {
   process.stdout.write(MOUSE_OFF + '\x1b[?1049l');
-  process.stderr.write(`klaude: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.stderr.write(`klaud: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });

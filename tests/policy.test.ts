@@ -6,7 +6,7 @@ const rw = { ...ctx, autoEdit: true };
 
 describe('decideTool', () => {
   it('allows room tools, planning, and reads inside shares', () => {
-    for (const t of ['mcp__klaude__send_chat', 'TodoWrite', 'ToolSearch']) expect(decideTool(t, {}, ctx)).toBe('allow');
+    for (const t of ['mcp__klaud__send_chat', 'TodoWrite', 'ToolSearch']) expect(decideTool(t, {}, ctx)).toBe('allow');
     expect(decideTool('Read', { file_path: 'src/a.ts' }, ctx)).toBe('allow');
     expect(decideTool('Grep', { pattern: 'TODO' }, ctx)).toBe('allow');
     expect(decideTool('Glob', { path: '/work/docs/guides' }, ctx)).toBe('allow');
@@ -32,7 +32,7 @@ describe('decideTool', () => {
   });
 
   it('asks before anything powerful', () => {
-    for (const tool of ['WebFetch', 'WebSearch', 'mcp__klaude__ask_agent']) expect(decideTool(tool, {}, ctx)).toBe('ask');
+    for (const tool of ['WebFetch', 'WebSearch', 'mcp__klaud__ask_agent']) expect(decideTool(tool, {}, ctx)).toBe('ask');
   });
 
   it('lets edits through only inside a :rw share', () => {
