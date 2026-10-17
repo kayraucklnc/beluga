@@ -31,6 +31,9 @@ const CONTEXT_LINES = 20;
 const MAX_PENDING_APPROVALS = 20;
 const SEEN_REQUESTS = 1000;
 const FS_DEBOUNCE_MS = 250;
+const DIR_CACHE_MS = 5_000;
+
+export const dirKey = (at: Location): string => `${at.owner}:${at.share}/${at.path}`;
 
 /** Glue between the network, local shares, the agent, and UI state. */
 export class Session {
@@ -49,6 +52,7 @@ export class Session {
   /** Final agent events that could not be sent while disconnected. */
   private outbox: Array<{ body: BodyInput; opts: { to?: string; keep?: boolean } }> = [];
   private readonly fsTimers = new Map<string, NodeJS.Timeout>();
+  private readonly dirFetched = new Map<string, number>();
 
   constructor(private readonly opts: SessionOptions) {
     this.bridge = this.createBridge();
@@ -199,6 +203,19 @@ export class Session {
       return;
     }
     void this.openLocation(loc);
+  }
+
+  /** Fetch a directory for /open autocomplete (cached for a few seconds). */
+  async loadDir(at: Location): Promise<void> {
+    const key = dirKey(at);
+    const last = this.dirFetched.get(key);
+    if (last && Date.now() - last < DIR_CACHE_MS) return;
+    this.dirFetched.set(key, Date.now());
+    try {
+      this.store.dispatch({ type: 'dir_cache', key, entries: await this.listFiles(at) });
+    } catch {
+      // Not a folder (yet): nothing to suggest.
+    }
   }
 
   async browseTo(at: Location): Promise<void> {

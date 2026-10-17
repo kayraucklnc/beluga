@@ -14,7 +14,7 @@ export function ApprovalCard({ approvals, width }: { approvals: readonly Approva
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.warn} paddingX={1} width={width}>
       <Text bold color={theme.warn} wrap="truncate">
-        {first.kind === 'tool' ? '⚠  ' : '✋ '}
+        {first.kind === 'tool' ? '! ' : '? '}
         {first.title}
         {approvals.length > 1 ? <Text color={theme.muted}>  (+{approvals.length - 1} waiting)</Text> : null}
       </Text>
@@ -24,18 +24,18 @@ export function ApprovalCard({ approvals, width }: { approvals: readonly Approva
         </Text>
       ))}
       <Text>
-        <Text color="black" backgroundColor={theme.ok} bold>
-          {' Ctrl+Y '}
+        <Text color={theme.ok} bold>
+          Ctrl+Y
         </Text>
-        <Text> allow   </Text>
-        <Text color="black" backgroundColor={theme.error} bold>
-          {' Ctrl+N '}
+        <Text color={theme.muted}> allow    </Text>
+        <Text color={theme.error} bold>
+          Ctrl+N
         </Text>
-        <Text> deny   </Text>
-        <Text color="black" backgroundColor={theme.info} bold>
-          {' Ctrl+T '}
+        <Text color={theme.muted}> deny    </Text>
+        <Text color={theme.text} bold>
+          Ctrl+T
         </Text>
-        <Text> always allow this person</Text>
+        <Text color={theme.muted}> always allow this person</Text>
       </Text>
     </Box>
   );

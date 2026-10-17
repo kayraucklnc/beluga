@@ -3,7 +3,7 @@ import type { LogItem } from '../src/core/store.js';
 import { approvalLines, card, renderLog } from '../src/ui/format.js';
 import { inline, renderMarkdown } from '../src/ui/markdown.js';
 import { formatDuration, formatSize, lineWidth, pad, truncate, windowLines, wrapText } from '../src/ui/text.js';
-import { colorFor } from '../src/ui/theme.js';
+import { colorFor, theme } from '../src/ui/theme.js';
 
 const text = (line: readonly { text: string }[]): string => line.map((s) => s.text).join('');
 
@@ -44,7 +44,7 @@ describe('markdown', () => {
   it('styles inline code and bold', () => {
     expect(inline('run `npm test` **now**')).toEqual([
       { text: 'run ' },
-      { text: 'npm test', color: 'cyan' },
+      { text: 'npm test', color: theme.info },
       { text: ' ' },
       { text: 'now', bold: true },
     ]);
@@ -65,7 +65,7 @@ describe('renderLog', () => {
     { id: '3', type: 'chat', from: 'b', name: "bob's Claude", text: 'beep', byAgent: true, ...base },
     { id: '4', type: 'system', text: 'oops', level: 'error', ...base },
     { id: '5', type: 'agent', requestId: 'r', owner: 'b', ownerName: 'bob', requesterName: 'kay', status: 'started', text: 'thinking **hard**', steps: ['Read a.ts'], ...base },
-    { id: '6', type: 'agent', requestId: 'q', owner: 'b', ownerName: 'bob', requesterName: 'bob', status: 'done', text: '', steps: ['a', 'b', 'c', 'd'], ...base },
+    { id: '6', type: 'agent', requestId: 'q', owner: 'b', ownerName: 'bob', requesterName: 'bob', status: 'done', text: '', steps: ['ToolSearch x', 'a', 'b', 'c', 'd'], endTs: base.ts + 14_000, ...base },
     { id: '7', type: 'agent', requestId: 'w', owner: 'b', ownerName: 'bob', requesterName: 'kay', status: 'awaiting_approval', text: '', steps: [], ...base },
   ];
   const lines = renderLog(items, 60, { selfId: 'me', frame: 0, now: base.ts + 3000 }).map(text);
@@ -77,14 +77,15 @@ describe('renderLog', () => {
     expect(lines.some((l) => l.startsWith("◆ bob's Claude"))).toBe(true);
   });
 
-  it('renders agent work as cards with live status', () => {
+  it('renders agent work as a rail with live status', () => {
     const top = lines.find((l) => l.includes('working · 3s'));
-    expect(top).toMatch(/^╭─ ◆ bob's Claude {2}asked by kay ─+ ⠋ working · 3s ─╮$/);
+    expect(top).toMatch(/^◆ bob's Claude {2}for kay +⠋ working · 3s$/);
     expect(top).toHaveLength(60);
-    expect(lines).toContain(`│ ↳ Read a.ts${' '.repeat(45)} │`);
+    expect(lines).toContain('│ ↳ Read a.ts');
     expect(lines.some((l) => l.includes('thinking hard'))).toBe(true);
     expect(lines.some((l) => l.includes('…1 earlier steps'))).toBe(true);
-    expect(lines.some((l) => l.includes('✓ done'))).toBe(true);
+    expect(lines.some((l) => l.includes('✓ done · 14s'))).toBe(true);
+    expect(lines.some((l) => l.includes('ToolSearch'))).toBe(false); // plumbing is hidden
     expect(lines.some((l) => l.includes('bob needs to approve this'))).toBe(true);
     expect(lines.every((l) => l.length <= 60)).toBe(true);
   });

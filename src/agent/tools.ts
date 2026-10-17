@@ -29,7 +29,7 @@ export const ROOM_TOOL_NAMES = [
 
 export function createRoomToolDefs(bridge: RoomBridge) {
   return [
-      tool('send_chat', 'Post a message to the klaude group chat.', { text: z.string().min(1).max(4000) }, (a) =>
+      tool('send_chat', 'Post a mid-task update or question to the group chat. Do not use it to repeat your final answer; the room already sees that.', { text: z.string().min(1).max(4000) }, (a) =>
         guarded(() => {
           bridge.sendChat(a.text);
           return 'sent';

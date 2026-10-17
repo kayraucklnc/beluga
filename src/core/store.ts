@@ -17,6 +17,8 @@ export type LogItem =
       readonly text: string;
       readonly steps: readonly string[];
       readonly ts: number;
+      /** When the run finished (done/error/denied). */
+      readonly endTs?: number;
     };
 
 export interface Approval {
@@ -95,6 +97,8 @@ export interface AppState {
   readonly focus: Readonly<Record<string, Focus>>;
   readonly policy: Policy;
   readonly trusted: readonly string[];
+  /** Directory listings used for /open autocomplete, keyed "owner:share/path". */
+  readonly dirCache: Readonly<Record<string, readonly FsEntry[]>>;
 }
 
 export type Action =
@@ -126,6 +130,7 @@ export type Action =
   | { type: 'follow'; peerId?: string }
   | { type: 'policy'; policy: Policy }
   | { type: 'trust'; peerId: string; trusted: boolean }
+  | { type: 'dir_cache'; key: string; entries: readonly FsEntry[] }
   | { type: 'clear' };
 
 const LOG_LIMIT = 1000;
@@ -146,6 +151,7 @@ export function initialState(room: string, policy: Policy = 'ask'): AppState {
     focus: {},
     policy,
     trusted: [],
+    dirCache: {},
   };
 }
 
@@ -196,6 +202,7 @@ function reduceAgent(state: AppState, raw: Extract<Action, { type: 'agent_event'
           ? a.text || base.text
           : base.text,
     steps: a.event === 'tool' ? [...base.steps, a.text].slice(-MAX_STEPS) : base.steps,
+    endTs: a.event === 'done' || a.event === 'error' || a.event === 'denied' ? a.ts : base.endTs,
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
   return { ...state, log };
@@ -307,6 +314,8 @@ export function reduce(state: AppState, action: Action): AppState {
         ...state,
         trusted: action.trusted ? [...new Set([...state.trusted, action.peerId])] : state.trusted.filter((t) => t !== action.peerId),
       };
+    case 'dir_cache':
+      return { ...state, dirCache: { ...state.dirCache, [action.key]: action.entries } };
     case 'clear':
       return { ...state, log: [] };
     default:

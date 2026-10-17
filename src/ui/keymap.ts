@@ -123,10 +123,6 @@ function submit(ui: UiState): KeyResult {
   return raw ? { ui: next, effect: { type: 'submit', text: raw } } : { ui: next };
 }
 
-/** A bare "/fol" should complete on Enter rather than run an unknown command. */
-function isPartialCommand(buffer: string, suggestions: readonly Suggestion[]): boolean {
-  return /^\/\w*$/.test(buffer) && suggestions.length > 0 && !suggestions.some((s) => s.value.trim() === buffer);
-}
 
 const scrollChat = (ui: UiState, ctx: KeyContext, delta: number): UiState => ({
   ...ui,
@@ -139,7 +135,11 @@ function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): 
   if (key.escape) return { ui: shown.length ? { ...ui, suggestHidden: true } : ui };
   if (key.tab && pick) return { ui: setBuffer(ui, pick.value) };
   if (key.return) {
-    if (pick && isPartialCommand(ui.buffer, shown)) return { ui: setBuffer(ui, pick.value) };
+    // Enter accepts the highlighted suggestion: "complete" keeps you typing ("@cla" -> "@claude "),
+    // "submit" sends it ("/open bob:api/REA" -> opens README.md). An exact match just runs.
+    if (pick && pick.value.trim() !== ui.buffer.trim()) {
+      return pick.enter === 'submit' ? submit(setBuffer(ui, pick.value)) : { ui: setBuffer(ui, pick.value) };
+    }
     return submit(ui);
   }
   if ((key.upArrow || key.downArrow) && shown.length) {
