@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LogItem } from '../src/core/store.js';
 import { approvalLines, card, renderLog } from '../src/ui/format.js';
-import { inline, renderMarkdown } from '../src/ui/markdown.js';
+import { inline, isMarkdownPath, renderMarkdown } from '../src/ui/markdown.js';
 import { formatDuration, formatSize, lineWidth, pad, truncate, windowLines, wrapText } from '../src/ui/text.js';
 import { colorFor, theme } from '../src/ui/theme.js';
 
@@ -51,9 +51,20 @@ describe('markdown', () => {
     expect(inline('')).toEqual([{ text: '' }]);
   });
 
-  it('renders headings, bullets, quotes and code blocks', () => {
-    const lines = renderMarkdown('# Title\n- one\n  - two\n> quoted\n```\nconst a = 1;\n```\nplain', 40).map(text);
-    expect(lines).toEqual(['Title', '• one', '  • two', '│ quoted', '▎ const a = 1;', 'plain']);
+  it('renders headings, lists, quotes, rules and code blocks', () => {
+    const lines = renderMarkdown('# Title\n## Sub\n### Small\n- one\n  - two\n3. three\n> quoted\n---\n```\nconst a = 1;\n```\nplain', 40).map(text);
+    expect(lines).toEqual(['Title', '━'.repeat(40), 'Sub', '─'.repeat(40), 'Small', '• one', '  • two', '3. three', '│ quoted', '─'.repeat(40), '▎ const a = 1;', 'plain']);
+  });
+
+  it('renders links and italics inline', () => {
+    expect(inline('see [docs](https://x.dev) and *this*')).toEqual([
+      { text: 'see ' },
+      { text: 'docs', color: theme.info },
+      { text: ' and ' },
+      { text: 'this', italic: true },
+    ]);
+    expect(isMarkdownPath('README.md')).toBe(true);
+    expect(isMarkdownPath('a.ts')).toBe(false);
   });
 });
 

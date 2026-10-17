@@ -14,6 +14,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'follow', args: '<name>', desc: "follow someone's screen and their Claude" },
   { name: 'unfollow', desc: 'stop following' },
   { name: 'open', args: '<file>', desc: 'open a shared file live, e.g. /open bob:api/README.md' },
+  { name: 'get', args: '<file>', desc: 'download a shared file to ~/Downloads/klaude' },
   { name: 'close', desc: 'close the file viewer' },
   { name: 'stop', desc: 'stop your Claude' },
   { name: 'policy', args: 'ask|auto|deny', desc: "how friends' requests for your Claude are handled" },
@@ -53,6 +54,11 @@ export function runCommand(session: Session, name: string, args: readonly string
       if (!arg) return session.toast('Usage: /open <name>:<folder>/<file>', 'warn');
       session.openSpec(arg);
       return;
+    case 'get':
+    case 'download':
+      if (!arg) return session.toast('Usage: /get <name>:<folder>/<file>', 'warn');
+      session.downloadSpec(arg);
+      return;
     case 'close':
       session.store.dispatch({ type: 'viewer_close' });
       return;
@@ -75,7 +81,7 @@ export function runCommand(session: Session, name: string, args: readonly string
       return;
     case 'policy':
       if (!arg || !POLICIES.includes(arg as Policy)) return session.toast(`Policy is "${state.policy}". Use /policy ask, auto or deny`);
-      session.store.dispatch({ type: 'policy', policy: arg as Policy });
+      session.setClaudeSharing(arg as Policy);
       session.toast(`Friends' requests for your Claude: ${arg}`, 'success');
       return;
     case 'trust':

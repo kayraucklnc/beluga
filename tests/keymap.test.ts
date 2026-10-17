@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { handleKey, initialUi, type KeyContext, type KeyInfo, type UiState } from '../src/ui/keymap.js';
 import type { Suggestion } from '../src/ui/suggest.js';
 
-const ctx: KeyContext = { hasApproval: false, hasViewer: false, overlay: false, page: 20, maxChatScroll: 50, suggestions: [] };
+const ctx: KeyContext = { hasApproval: false, hasViewer: false, overlay: false, page: 20, maxChatScroll: 50, suggestions: [], peopleCount: 3, menuSize: 0 };
 const type = (ui: UiState, text: string, c = ctx): UiState => [...text].reduce((u, ch) => handleKey(u, ch, {}, c).ui, ui);
 const key = (ui: UiState, k: KeyInfo, input = '', c = ctx) => handleKey(ui, input, k, c);
 const sugg = (...values: string[]): Suggestion[] => values.map((v) => ({ label: v, hint: '', value: v, enter: 'complete' as const }));
@@ -98,22 +98,52 @@ describe('keymap: suggestions', () => {
   it('hides suggestions with Esc until the next edit', () => {
     const hidden = key(type(initialUi, '/f', c), { escape: true }, '', c).ui;
     expect(hidden.suggestHidden).toBe(true);
-    expect(key(hidden, { tab: true }, '', c).ui.focus).toBe('files'); // Tab now moves focus
+    expect(key(hidden, { tab: true }, '', c).ui.focus).toBe('people'); // Tab now moves focus
     expect(key(hidden, {}, 'o', c).ui.suggestHidden).toBe(false);
     expect(key(initialUi, { escape: true }).ui).toBe(initialUi);
   });
 });
 
 describe('keymap: panels', () => {
-  it('cycles focus with Tab and returns with Esc', () => {
-    const files = key(initialUi, { tab: true }).ui;
+  it('cycles focus with Tab (chat → people → files → viewer) and returns with Esc', () => {
+    const people = key(initialUi, { tab: true }).ui;
+    expect(people.focus).toBe('people');
+    const files = key(people, { tab: true }).ui;
     expect(files.focus).toBe('files');
     expect(key(files, { tab: true }).ui.focus).toBe('chat');
     const viewerCtx = { ...ctx, hasViewer: true };
     expect(key(files, { tab: true }, '', viewerCtx).ui.focus).toBe('viewer');
     expect(key(initialUi, { tab: true, shift: true }, '', viewerCtx).ui.focus).toBe('viewer');
     expect(key(files, { escape: true }).ui.focus).toBe('chat');
-    expect(key({ ...initialUi, focus: 'viewer' }, { tab: true }).ui.focus).toBe('files'); // viewer gone
+    expect(key({ ...initialUi, focus: 'viewer' }, { tab: true }).ui.focus).toBe('people'); // viewer gone → chat → people
+  });
+
+  it('moves through people and opens their action menu', () => {
+    const people: UiState = { ...initialUi, focus: 'people' };
+    const down = key(people, { downArrow: true }).ui;
+    expect(down.peopleCursor).toBe(1);
+    expect(key({ ...people, peopleCursor: 2 }, { downArrow: true }).ui.peopleCursor).toBe(2);
+    expect(key(people, { upArrow: true }).ui.peopleCursor).toBe(0);
+    expect(key(down, { return: true }).ui.menu).toEqual({ menu: { kind: 'person', index: 1 }, selected: 0 });
+    expect(key(people, {}, 'h').ui).toMatchObject({ focus: 'chat', buffer: 'h' });
+  });
+
+  it('toggles fullscreen and source view in the viewer; Esc leaves fullscreen first', () => {
+    const c = { ...ctx, hasViewer: true };
+    const viewer: UiState = { ...initialUi, focus: 'viewer' };
+    const full = key(viewer, {}, 'f', c).ui;
+    expect(full.viewerFull).toBe(true);
+    expect(key(full, {}, 'f', c).ui.viewerFull).toBe(false);
+    expect(key(viewer, {}, 'r', c).ui.viewerRaw).toBe(true);
+    const esc = key(full, { escape: true }, '', c).ui;
+    expect(esc).toMatchObject({ focus: 'viewer', viewerFull: false });
+    expect(key(esc, { escape: true }, '', c).ui.focus).toBe('chat');
+    expect(key(full, { backspace: true }, '', c).ui.viewerFull).toBe(false);
+  });
+
+  it('downloads the selected file with d', () => {
+    expect(key({ ...initialUi, focus: 'files' }, {}, 'd').effect).toEqual({ type: 'download' });
+    expect(key({ ...initialUi, focus: 'viewer' }, {}, 'd', { ...ctx, hasViewer: true }).effect).toEqual({ type: 'download' });
   });
 
   it('navigates files and jumps back to chat when you type', () => {
@@ -137,6 +167,26 @@ describe('keymap: panels', () => {
     expect(key(viewer, { pageUp: true }, '', c).effect).toEqual({ type: 'viewer_scroll', delta: -18 });
     expect(key(viewer, { backspace: true }, '', c)).toMatchObject({ ui: { focus: 'chat' }, effect: { type: 'viewer_close' } });
     expect(key(viewer, {}, 'y', c).ui).toMatchObject({ focus: 'chat', buffer: 'y' });
+  });
+});
+
+describe('keymap: menus', () => {
+  const c = { ...ctx, menuSize: 3 };
+  const welcome: UiState = { ...initialUi, menu: { menu: { kind: 'welcome' }, selected: 0 } };
+  const person: UiState = { ...initialUi, menu: { menu: { kind: 'person', index: 1 }, selected: 0 } };
+
+  it('moves the highlight and picks with Enter or a number', () => {
+    const down = key(welcome, { downArrow: true }, '', c).ui;
+    expect(down.menu?.selected).toBe(1);
+    expect(key(welcome, { upArrow: true }, '', c).ui.menu?.selected).toBe(2); // wraps
+    expect(key(down, { return: true }, '', c)).toMatchObject({ ui: { menu: undefined }, effect: { type: 'menu_select', menu: { kind: 'welcome' }, index: 1 } });
+    expect(key(welcome, {}, '3', c).effect).toEqual({ type: 'menu_select', menu: { kind: 'welcome' }, index: 2 });
+    expect(key(welcome, {}, '9', c).effect).toBeUndefined();
+  });
+
+  it('Esc picks the safe default on the welcome screen but just closes other menus', () => {
+    expect(key(welcome, { escape: true }, '', c).effect).toEqual({ type: 'menu_select', menu: { kind: 'welcome' }, index: 0 });
+    expect(key(person, { escape: true }, '', c)).toEqual({ ui: { ...person, menu: undefined } });
   });
 });
 

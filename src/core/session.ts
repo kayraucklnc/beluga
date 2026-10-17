@@ -3,11 +3,12 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
-import { type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo } from '../protocol.js';
+import { type BodyInput, type BodyOf, CHUNK_BYTES, type FsEntry, MAX_TEXT, type PeerInfo } from '../protocol.js';
 import { parseInput, parseLocation } from './mentions.js';
 import { type ShareService } from './shares.js';
 import { type Location, type Store, peerName } from './store.js';
 import { runCommand } from './commands.js';
+import { DEFAULT_DOWNLOAD_DIR, downloadFile } from './downloads.js';
 
 export interface SessionOptions {
   readonly client: PeerClient;
@@ -21,6 +22,8 @@ export interface SessionOptions {
   readonly onQuit?: () => void;
   /** Clipboard writer (injected so tests don't touch the real clipboard). */
   readonly copy?: (text: string) => Promise<unknown>;
+  /** Where downloads are saved (default ~/Downloads/klaude). */
+  readonly downloadDir?: string;
 }
 
 /** In-flight requests remember who must answer, so other peers can't spoof responses. */
@@ -336,8 +339,11 @@ export class Session {
         return this.reply(from, body.reqId, async () => ({ kind: 'fs_list_result', reqId: body.reqId, ok: true, entries: await this.opts.shares.list(body.share, body.path) }), 'fs_list_result');
       case 'fs_read':
         return this.reply(from, body.reqId, async () => ({ kind: 'fs_read_result', reqId: body.reqId, ok: true, ...(await this.opts.shares.read(body.share, body.path)) }), 'fs_read_result');
+      case 'fs_fetch':
+        return this.serveChunk(from, body);
       case 'fs_list_result':
       case 'fs_read_result':
+      case 'fs_chunk':
         this.settle(from, body.reqId, body);
         return;
       case 'fs_changed': {
@@ -387,13 +393,59 @@ export class Session {
     });
   }
 
-  private settle(from: string, reqId: string, body: BodyOf<'fs_list_result'> | BodyOf<'fs_read_result'>): void {
+  private settle(from: string, reqId: string, body: BodyOf<'fs_list_result'> | BodyOf<'fs_read_result'> | BodyOf<'fs_chunk'>): void {
     const p = this.pending.get(reqId);
     if (!p || p.peer !== from) return;
     clearTimeout(p.timer);
     this.pending.delete(reqId);
     if (body.ok) p.resolve(body);
     else p.reject(new Error(body.error ?? 'Request failed'));
+  }
+
+  /** Owner side of a download: send one encrypted chunk, and tell the owner who is downloading. */
+  private async serveChunk(from: string, body: BodyOf<'fs_fetch'>): Promise<void> {
+    try {
+      const { data, total } = await this.opts.shares.readChunk(body.share, body.path, body.offset, CHUNK_BYTES);
+      if (body.offset === 0) this.system(`${peerName(this.store.getState(), from)} is downloading ${body.share}/${body.path}`);
+      this.send({ kind: 'fs_chunk', reqId: body.reqId, ok: true, data: data.toString('base64'), offset: body.offset, total }, { to: from });
+    } catch (err) {
+      this.send({ kind: 'fs_chunk', reqId: body.reqId, ok: false, error: errorText(err) }, { to: from });
+    }
+  }
+
+  /** Download a file from a friend's share into ~/Downloads/klaude/<friend>/. */
+  async download(at: Location): Promise<string | undefined> {
+    const from = peerName(this.store.getState(), at.owner);
+    if (!at.path || at.path.endsWith('/')) {
+      this.toast('Pick a file to download, not a folder', 'warn');
+      return undefined;
+    }
+    this.toast(`Downloading ${at.path} from ${from}…`);
+    try {
+      const saved = await downloadFile(at, from, (to, b) => this.request(to, b), this.store, this.opts.downloadDir ?? DEFAULT_DOWNLOAD_DIR);
+      this.system(`Saved ${at.path} from ${from} → ${saved}`);
+      this.toast(`Downloaded ${path.basename(saved)}`, 'success');
+      return saved;
+    } catch (err) {
+      this.toast(`Download failed: ${errorText(err)}`, 'error');
+      return undefined;
+    }
+  }
+
+  downloadSpec(spec: string): void {
+    const loc = parseLocation(spec, this.store.getState().peers);
+    if (!loc) return this.toast(`Can't find "${spec}". Use /get <name>:<folder>/<file>`, 'warn');
+    void this.download(loc);
+  }
+
+  /** Choose whether people in the room may use your Claude (from onboarding or /policy). */
+  setClaudeSharing(policy: 'ask' | 'auto' | 'deny'): void {
+    this.store.dispatch({ type: 'policy', policy });
+    const state = this.store.getState();
+    if (state.self) {
+      const me = state.self;
+      this.opts.client.updateProfile({ name: me.name, shares: me.shares, agent: this.hasAgent && policy !== 'deny' });
+    }
   }
 
   async listFiles(at: Location): Promise<readonly FsEntry[]> {

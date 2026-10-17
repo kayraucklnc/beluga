@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import type { Approval } from '../../core/store.js';
 import { approvalLines } from '../format.js';
+import { APPROVAL_BUTTONS, APPROVAL_GAP } from '../hit.js';
 import { theme } from '../theme.js';
 
 export function approvalHeight(approval: Approval | undefined, width: number): number {
@@ -24,18 +25,20 @@ export function ApprovalCard({ approvals, width }: { approvals: readonly Approva
         </Text>
       ))}
       <Text>
-        <Text color={theme.ok} bold>
-          Ctrl+Y
-        </Text>
-        <Text color={theme.muted}> allow    </Text>
-        <Text color={theme.error} bold>
-          Ctrl+N
-        </Text>
-        <Text color={theme.muted}> deny    </Text>
-        <Text color={theme.text} bold>
-          Ctrl+T
-        </Text>
-        <Text color={theme.muted}> always allow this person</Text>
+        {APPROVAL_BUTTONS.map((b, i) => {
+          const [key, ...rest] = b.label.split(' ');
+          const color = b.answer === 'yes' ? theme.ok : b.answer === 'no' ? theme.error : theme.text;
+          return (
+            <Text key={b.answer}>
+              {i > 0 ? ' '.repeat(APPROVAL_GAP) : ''}
+              <Text color={color} bold>
+                {key}
+              </Text>
+              <Text color={theme.muted}> {rest.join(' ')}</Text>
+            </Text>
+          );
+        })}
+        <Text color={theme.muted}>{'    '}(or click)</Text>
       </Text>
     </Box>
   );

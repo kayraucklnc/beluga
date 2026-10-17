@@ -11,6 +11,8 @@ describe('parseConfig', () => {
     const c = parseConfig(['host', '-n', 'kay!', '-s', 'web=./site:rw', '--tunnel', 'none', '--lan', '-p', '4000', '--policy', 'auto'], '/tmp');
     expect(c).toMatchObject({ mode: 'host', name: 'kay', tunnel: 'none', lan: true, port: 4000, policy: 'auto', agent: true });
     expect(c.shares).toEqual([{ name: 'web', root: '/tmp/site', writable: true }]);
+    expect(c).toMatchObject({ policyChosen: true, mouse: true });
+    expect(parseConfig(['host', '--no-mouse'], '/tmp/p')).toMatchObject({ policyChosen: false, mouse: false });
   });
 
   it('shares cwd read-only by default and supports --no-share/--no-agent', () => {

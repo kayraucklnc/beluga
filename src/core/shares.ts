@@ -1,7 +1,7 @@
 import { promises as fs, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
-import { type FsEntry, MAX_FILE_BYTES, type ShareInfo } from '../protocol.js';
+import { type FsEntry, MAX_DOWNLOAD_BYTES, MAX_FILE_BYTES, type ShareInfo } from '../protocol.js';
 
 export interface ShareConfig {
   readonly name: string;
@@ -156,6 +156,23 @@ export class ShareService {
       await handle.read(buf, 0, length, 0);
       if (buf.includes(0)) return { content: '[binary file]', truncated: false };
       return { content: buf.toString('utf8'), truncated: stat.size > MAX_FILE_BYTES };
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /** Read one chunk of any file (binary-safe) for downloads. */
+  async readChunk(shareName: string, relPath: string, offset: number, length: number): Promise<{ data: Buffer; total: number }> {
+    const file = resolveInShare(this.find(shareName), relPath);
+    const stat = await fs.stat(file);
+    if (stat.isDirectory()) throw new ShareError('That is a folder; pick a file');
+    if (stat.size > MAX_DOWNLOAD_BYTES) throw new ShareError(`File is too large to send (max ${MAX_DOWNLOAD_BYTES / 1024 / 1024} MB)`);
+    const handle = await fs.open(file, 'r');
+    try {
+      const size = Math.max(0, Math.min(length, stat.size - offset));
+      const data = Buffer.alloc(size);
+      if (size > 0) await handle.read(data, 0, size, offset);
+      return { data, total: stat.size };
     } finally {
       await handle.close();
     }

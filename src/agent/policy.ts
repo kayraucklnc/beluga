@@ -10,25 +10,61 @@ const READ_TOOLS: Readonly<Record<string, string>> = {
   NotebookRead: 'notebook_path',
 };
 
-/** Room tools that only touch the chat or go through the remote owner's own checks. */
-const ROOM_SAFE = new Set(['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report'].map((n) => `mcp__klaude__${n}`));
+/** File-editing tools and the input field that names the file they change. */
+const WRITE_TOOLS: Readonly<Record<string, string>> = {
+  Write: 'file_path',
+  Edit: 'file_path',
+  MultiEdit: 'file_path',
+  NotebookEdit: 'notebook_path',
+};
+
+/** Tools that only touch the chat, plan, or go through the remote owner's own checks. */
+const ALWAYS_OK = new Set([
+  'TodoWrite',
+  'ToolSearch',
+  ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report'].map((n) => `mcp__klaude__${n}`),
+]);
+
+/** Shell commands that mention credential stores are refused outright. */
+const SECRET_IN_COMMAND = /(^|[\s'"/=])(\.env(\.[\w-]+)?|id_(rsa|ed25519|ecdsa|dsa)|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.npmrc|\.netrc|\.git-credentials|credentials(\.json)?)([\s'"/]|$)/;
 
 export type Decision = 'allow' | 'deny' | 'ask';
 
+export interface PolicyContext {
+  readonly cwd: string;
+  readonly roots: readonly string[];
+  /** The primary share was marked :rw, so edits inside it don't need approval. */
+  readonly autoEdit: boolean;
+}
+
 const inside = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
+const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, typeof raw === 'string' && raw ? raw : '.');
 
 /**
  * Decide whether a tool call can run without asking the machine owner.
- *  - credential files are always denied
- *  - read-only tools inside the shared roots are allowed
- *  - everything else (Bash, web, edits, reads outside shares, ask_agent) asks the owner
+ * This runs as a PreToolUse hook, so it applies even to tools Claude Code would
+ * auto-approve on its own (e.g. "read-only" shell commands).
+ *  - credential files (by path or in a shell command) are always denied
+ *  - read-only tools inside the shared folders are allowed
+ *  - edits inside a :rw share are allowed
+ *  - everything else (Bash, web, other edits, reads outside shares, ask_agent) asks the owner
  */
-export function decideTool(toolName: string, input: Record<string, unknown>, cwd: string, roots: readonly string[]): Decision {
-  if (ROOM_SAFE.has(toolName) || toolName === 'TodoWrite') return 'allow';
-  const field = READ_TOOLS[toolName];
-  if (!field) return 'ask';
-  const raw = input[field];
-  const target = path.resolve(cwd, typeof raw === 'string' && raw ? raw : '.');
-  if (isSecretPath(target) || (typeof input.pattern === 'string' && isSecretPath(input.pattern))) return 'deny';
-  return roots.some((r) => inside(path.resolve(r), target)) ? 'allow' : 'ask';
+export function decideTool(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): Decision {
+  if (ALWAYS_OK.has(toolName)) return 'allow';
+  if (toolName === 'Bash') return typeof input.command === 'string' && SECRET_IN_COMMAND.test(input.command) ? 'deny' : 'ask';
+  const readField = READ_TOOLS[toolName];
+  if (readField) {
+    const target = resolveTarget(ctx.cwd, input[readField]);
+    if (isSecretPath(target) || (typeof input.pattern === 'string' && isSecretPath(input.pattern))) return 'deny';
+    return ctx.roots.some((r) => inside(path.resolve(r), target)) ? 'allow' : 'ask';
+  }
+  const writeField = WRITE_TOOLS[toolName];
+  if (writeField) {
+    const target = resolveTarget(ctx.cwd, input[writeField]);
+    if (isSecretPath(target)) return 'deny';
+    return ctx.autoEdit && inside(path.resolve(ctx.cwd), target) ? 'allow' : 'ask';
+  }
+  return 'ask';
 }
+
+export const DENY_REASON = 'klaude blocks agents from touching credential files.';

@@ -1,10 +1,11 @@
 import React from 'react';
 import { Text } from 'ink';
-import type { Line } from '../text.js';
+import { type Line, lineWidth } from '../text.js';
 
 /** Render one pre-styled line. Lines are already sized, so Ink must not re-wrap them. */
 export function LineView({ line }: { line: Line }) {
-  if (line.length === 0) return <Text> </Text>;
+  // An empty Text collapses to zero height in Ink, which would swallow blank lines.
+  if (lineWidth(line) === 0) return <Text> </Text>;
   return (
     <Text wrap="truncate">
       {line.map((s, i) => (

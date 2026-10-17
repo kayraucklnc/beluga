@@ -1,6 +1,6 @@
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { buildPrompt, buildSystemAppend, summarizeTool } from './prompt.js';
-import { decideTool } from './policy.js';
+import { DENY_REASON, decideTool } from './policy.js';
 import { createRoomTools } from './tools.js';
 import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
 
@@ -29,7 +29,10 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
     async run(input: AgentRunInput): Promise<string> {
       const abortController = new AbortController();
       input.signal.addEventListener('abort', () => abortController.abort(), { once: true });
-      const roots = [opts.cwd, ...opts.additionalDirectories];
+      const policy = { cwd: opts.cwd, roots: [opts.cwd, ...opts.additionalDirectories], autoEdit: opts.autoEdit };
+      const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
+        hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: reason },
+      });
       const options: Options = {
         cwd: opts.cwd,
         additionalDirectories: [...opts.additionalDirectories],
@@ -37,7 +40,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         abortController,
         permissionMode: opts.autoEdit ? 'acceptEdits' : 'default',
         mcpServers: { klaude: roomTools },
-        // Hooks run even for tools Claude Code would auto-allow, so secrets stay off-limits.
+        // The hook runs before Claude Code's own permission logic, even for commands it would
+        // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
           PreToolUse: [
             {
@@ -45,14 +49,12 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                 async (hookInput) => {
                   if (hookInput.hook_event_name !== 'PreToolUse') return {};
                   const toolInput = (hookInput.tool_input ?? {}) as Record<string, unknown>;
-                  if (decideTool(hookInput.tool_name, toolInput, opts.cwd, roots) !== 'deny') return {};
-                  return {
-                    hookSpecificOutput: {
-                      hookEventName: 'PreToolUse',
-                      permissionDecision: 'deny',
-                      permissionDecisionReason: 'klaude blocks agents from reading credential files.',
-                    },
-                  };
+                  const decision = decideTool(hookInput.tool_name, toolInput, policy);
+                  if (decision === 'allow') return {};
+                  if (decision === 'deny') return verdict('deny', DENY_REASON);
+                  return (await input.canUseTool(hookInput.tool_name, toolInput))
+                    ? verdict('allow', 'Approved by the machine owner.')
+                    : verdict('deny', 'The machine owner declined this action.');
                 },
               ],
             },
@@ -64,8 +66,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(opts.model ? { model: opts.model } : {}),
         ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
         canUseTool: async (toolName, toolInput) => {
-          const decision = decideTool(toolName, toolInput, opts.cwd, roots);
-          if (decision === 'deny') return { behavior: 'deny', message: 'klaude blocks agents from reading credential files.' };
+          const decision = decideTool(toolName, toolInput, policy);
+          if (decision === 'deny') return { behavior: 'deny', message: DENY_REASON };
           if (decision === 'allow' || (await input.canUseTool(toolName, toolInput))) return { behavior: 'allow', updatedInput: toolInput };
           return { behavior: 'deny', message: 'The machine owner declined this action.' };
         },
