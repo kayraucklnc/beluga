@@ -36,7 +36,9 @@ export function settingsMenu(state: AppState): MenuSpec {
       { id: 'set-policy', label: 'Who can use my Claude', hint: `${POLICY_LABELS[state.policy]}  ·  Enter to switch` },
       { id: 'set-mouse', label: 'Mouse clicks', hint: `${state.prefs.mouse ? 'On' : 'Off (keeps native text selection)'}  ·  Enter to switch` },
       { id: 'set-tunnel', label: 'Remote access', hint: `${TUNNEL_LABELS[state.prefs.tunnel]}  ·  applies next start` },
-      { id: 'set-size', label: 'Text size', hint: 'set by your terminal: ⌘ + / ⌘ − (Ctrl + / − on Linux & Windows)' },
+      { id: 'size-in', label: 'Make text bigger', hint: 'Option+↑ (Alt+↑) anywhere' },
+      { id: 'size-out', label: 'Make text smaller', hint: 'Option+↓ (Alt+↓) anywhere' },
+      { id: 'size-reset', label: 'Normal text size', hint: '' },
       { id: 'close', label: 'Done', hint: 'Esc' },
     ],
   };

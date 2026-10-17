@@ -25,6 +25,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'settings', desc: 'name, theme, sharing, mouse, remote access' },
   { name: 'name', args: '<new name>', desc: 'change the name friends see' },
   { name: 'theme', args: 'calm|light|contrast|mono', desc: 'switch the color theme' },
+  { name: 'zoom', args: 'in|out|reset', desc: 'make the text bigger or smaller (also Option+↑ / Option+↓)' },
   { name: 'clear', desc: 'clear the chat' },
   { name: 'help', desc: 'show keys and commands' },
   { name: 'quit', desc: 'leave the room' },
@@ -116,6 +117,12 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'name':
       session.rename(args.join(''));
       return;
+    case 'zoom':
+    case 'text': {
+      const dir = arg === 'out' || arg === 'smaller' || arg === '-' ? 'out' : arg === 'reset' || arg === '0' ? 'reset' : 'in';
+      void session.zoom(dir);
+      return;
+    }
     case 'theme':
       if (!arg || !THEMES.includes(arg as ThemeName)) return session.toast(`Themes: ${THEMES.join(', ')}`);
       session.setPrefs({ theme: arg as ThemeName });

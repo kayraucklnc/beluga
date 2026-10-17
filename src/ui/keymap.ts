@@ -47,6 +47,7 @@ export interface KeyInfo {
   readonly pageDown?: boolean;
   readonly ctrl?: boolean;
   readonly shift?: boolean;
+  readonly meta?: boolean;
 }
 
 export type Effect =
@@ -61,7 +62,8 @@ export type Effect =
   | { readonly type: 'viewer_scroll'; readonly delta: number }
   | { readonly type: 'viewer_close' }
   | { readonly type: 'download' }
-  | { readonly type: 'menu_select'; readonly menu: MenuKind; readonly index: number };
+  | { readonly type: 'menu_select'; readonly menu: MenuKind; readonly index: number }
+  | { readonly type: 'zoom'; readonly dir: 'in' | 'out' };
 
 export interface KeyContext {
   readonly hasApproval: boolean;
@@ -244,6 +246,9 @@ export function handleKey(raw: UiState, input: string, key: KeyInfo, ctx: KeyCon
     if (ui.quitArmed) return { ui, effect: { type: 'quit' } };
     return { ui: { ...ui, quitArmed: true }, effect: { type: 'toast', text: 'Press Ctrl+C again to quit' } };
   }
+  // Text size on any keyboard layout (⌘+ can be unreachable, e.g. Shift+4 on Turkish Q).
+  // Option/Alt+↑↓ is the advertised key; Ctrl+↑↓ also works where the OS doesn't claim it.
+  if ((key.meta || key.ctrl) && (key.upArrow || key.downArrow)) return { ui, effect: { type: 'zoom', dir: key.upArrow ? 'in' : 'out' } };
   // Approvals come first so they can be answered even while help is open.
   if (ctx.hasApproval && key.ctrl && (input === 'y' || input === 'n' || input === 't')) {
     const answer = input === 'y' ? 'yes' : input === 'n' ? 'no' : 'always';

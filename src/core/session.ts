@@ -8,6 +8,7 @@ import { parseInput, parseLocation } from './mentions.js';
 import { type ShareService } from './shares.js';
 import { type Location, type Prefs, type Store, peerName } from './store.js';
 import type { Settings } from './settings.js';
+import { type ZoomDir, zoom as zoomTerminal } from './zoom.js';
 import { runCommand } from './commands.js';
 import { DEFAULT_DOWNLOAD_DIR, downloadFile } from './downloads.js';
 
@@ -27,6 +28,8 @@ export interface SessionOptions {
   readonly downloadDir?: string;
   /** Persist a settings change (name, policy, theme…). */
   readonly saveSettings?: (patch: Partial<Settings>) => void;
+  /** Change the terminal's text size (injected so tests don't resize real windows). */
+  readonly zoom?: (dir: ZoomDir) => Promise<{ ok: boolean; message: string }>;
 }
 
 /** In-flight requests remember who must answer, so other peers can't spoof responses. */
@@ -468,6 +471,12 @@ export class Session {
     this.updateProfile({ name });
     this.opts.saveSettings?.({ name });
     this.toast(`You're now ${name}`, 'success');
+  }
+
+  /** Make the terminal's text bigger or smaller, without needing a keyboard shortcut. */
+  async zoom(dir: ZoomDir): Promise<void> {
+    const result = await (this.opts.zoom ?? zoomTerminal)(dir);
+    this.toast(result.message, result.ok ? 'success' : 'warn');
   }
 
   /** Update a display preference and remember it. */

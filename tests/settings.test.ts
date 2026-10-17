@@ -29,9 +29,10 @@ describe('settings', () => {
   });
 
   it('respects KLAUDE_HOME', () => {
+    const before = process.env.KLAUDE_HOME;
     process.env.KLAUDE_HOME = '/tmp/kh';
     expect(settingsPath()).toBe('/tmp/kh/settings.json');
-    delete process.env.KLAUDE_HOME;
+    process.env.KLAUDE_HOME = before;
   });
 });
 
