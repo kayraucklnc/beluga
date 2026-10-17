@@ -12,7 +12,7 @@ export interface WorkspaceUsage {
   readonly runs: number;
   /** The SDK reports running totals per conversation; remembered to add only what's new. */
   readonly lastSession?: string;
-  readonly lastTotal?: number;
+  readonly last?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number; readonly cost: number };
 }
 
 export type WorkspaceKind = 'main' | 'worktree' | 'chat';
@@ -80,4 +80,6 @@ export interface ProjectsConfig {
   readonly groups?: readonly ProjectGroup[];
   /** Setup / run commands you set per project (by project root), over klaude.json and guesses. */
   readonly scripts?: Readonly<Record<string, ProjectScripts>>;
+  /** Setup commands from a project's own klaude.json/conductor.json you allowed to run (by root → command hashes). */
+  readonly approvedScripts?: Readonly<Record<string, readonly string[]>>;
 }

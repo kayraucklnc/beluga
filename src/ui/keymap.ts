@@ -224,6 +224,8 @@ function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): 
   }
   // Alt+Enter (or Ctrl+Enter where the terminal reports it) sends now instead of queueing.
   if (key.return && (key.meta || key.ctrl)) return submit(ui, true);
+  // Answering a prompt (e.g. a project's setup command) with nothing is a real answer: clear it.
+  if (key.return && ui.pending && !ui.buffer.trim() && !shown.length) return { ui: setBuffer(ui, ''), effect: { type: 'submit', text: '' } };
   if (key.return) {
     // Enter accepts the highlighted suggestion: "complete" keeps you typing ("@cla" -> "@claude "),
     // "submit" sends it ("/open bob:api/REA" -> opens README.md). An exact match just runs.

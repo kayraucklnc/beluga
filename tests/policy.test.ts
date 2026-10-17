@@ -25,11 +25,13 @@ describe('decideTool', () => {
   });
 
   it('treats sending a file like reading it', () => {
-    expect(decideTool('mcp__klaude__send_file', { path: 'NOTES.md' }, ctx)).toBe('allow');
+    expect(decideTool('mcp__klaude__send_file', { path: '/work/proj/NOTES.md' }, ctx)).toBe('allow');
+    // Relative paths are refused: the file checked must be the file sent.
+    expect(decideTool('mcp__klaude__send_file', { path: 'NOTES.md' }, ctx)).toBe('deny');
     expect(decideTool('mcp__klaude__send_file', { path: '/Users/me/Desktop/a.pdf' }, ctx)).toBe('ask');
     expect(decideTool('mcp__klaude__send_file', { path: '/Users/me/Desktop/a.pdf' }, { ...ctx, scope: 'full' })).toBe('allow');
     expect(decideTool('mcp__klaude__send_file', { path: '/Users/me/.ssh/id_rsa' }, { ...ctx, scope: 'full' })).toBe('deny');
-    expect(decideTool('mcp__klaude__send_file', { path: '.env' }, ctx)).toBe('deny');
+    expect(decideTool('mcp__klaude__send_file', { path: '/work/proj/.env' }, ctx)).toBe('deny');
   });
 
   it('lets whole-computer access read anywhere, but still asks before edits outside :rw', () => {

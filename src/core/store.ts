@@ -582,6 +582,8 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'follow':
       return { ...state, follow: action.peerId };
     case 'full_trust':
+      // Taking back full trust only changes someone who had it.
+      if (!action.trusted && state.levels[action.peerId] !== 'full') return state;
       return reduce(state, { type: 'trust_level', peerId: action.peerId, level: action.trusted ? 'full' : 'ask' });
     case 'trust_level': {
       const { [action.peerId]: _old, ...rest } = state.levels;
@@ -592,6 +594,7 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'policy':
       return { ...state, policy: action.policy };
     case 'trust':
+      if (!action.trusted && state.levels[action.peerId] !== 'trusted') return state;
       return reduce(state, { type: 'trust_level', peerId: action.peerId, level: action.trusted ? (state.levels[action.peerId] === 'full' ? 'full' : 'trusted') : 'ask' });
     case 'prefs':
       return { ...state, prefs: { ...state.prefs, ...action.prefs } };

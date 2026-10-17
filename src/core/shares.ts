@@ -18,9 +18,12 @@ const SECRET_FILE = [
   /^\.env(\..*)?$/i,
   /\.(pem|key|p12|pfx|keystore|jks)$/i,
   /^id_(rsa|ed25519|ecdsa|dsa)$/i,
-  /^\.(npmrc|netrc|pypirc|git-credentials)$/i,
-  /^credentials(\.json)?$/i,
+  /^\.(npmrc|netrc|pypirc|git-credentials|pgpass)$/i,
+  /^\.?credentials(\.json)?$/i,
+  /^\.(zsh|bash|sh|python|node_repl|psql|mysql|lesshst)_?history$/i,
 ];
+/** Credential folders deeper in a path (e.g. the GitHub CLI's token, the macOS keychains). */
+const SECRET_PATHS = [/(^|[\\/])\.config[\\/](gh|hub|gcloud|op|1password|doctl)([\\/]|$)/i, /(^|[\\/])library[\\/]keychains([\\/]|$)/i, /(^|[\\/])\.claude[\\/]\.credentials/i];
 /** Heavy or internal folders that are hidden from peers. */
 const HIDDEN_SEGMENTS = new Set(['.git', 'node_modules']);
 
@@ -30,9 +33,24 @@ const MAX_WATCHED = 200;
 
 const segmentsOf = (p: string): string[] => p.split(/[\\/]/).filter(Boolean).map((s) => s.toLowerCase());
 
+/** klaude's own home (~/.klaude): your identity key, settings and trust choices live there. */
+const klaudeHomeDir = (): string => path.resolve(process.env.KLAUDE_HOME ?? path.join(process.env.HOME ?? '~', '.klaude'));
+
 export function isSecretPath(p: string): boolean {
   const segments = segmentsOf(p);
   if (segments.some((s) => SECRET_SEGMENTS.has(s))) return true;
+  if (SECRET_PATHS.some((re) => re.test(p))) return true;
+  // klaude's own files in ~/.klaude (identity key, settings, trust choices, history). Worktrees,
+  // chat folders and files deliberately put in the outbox live there too, and stay usable.
+  if (path.isAbsolute(p)) {
+    const home = klaudeHomeDir();
+    const abs = path.resolve(p);
+    if (abs === home) return true;
+    if (abs.startsWith(home + path.sep)) {
+      const top = abs.slice(home.length + 1).split(path.sep)[0] ?? '';
+      if (!['workspaces', 'chats', 'outbox'].includes(top)) return true;
+    }
+  }
   const base = segments.at(-1) ?? '';
   return SECRET_FILE.some((re) => re.test(base));
 }

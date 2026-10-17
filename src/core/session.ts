@@ -88,6 +88,7 @@ type AgentWaiter = { peer: string; resolve: (text: string) => void; reject: (e: 
 
 const CONTEXT_LINES = 20;
 const MAX_PENDING_APPROVALS = 20;
+const MAX_APPROVALS_PER_PERSON = 3;
 const SEEN_REQUESTS = 1000;
 const FS_DEBOUNCE_MS = 250;
 const DIR_CACHE_MS = 5_000;
@@ -116,7 +117,10 @@ export class Session {
   private readonly approvals = new Map<string, (answer: 'yes' | 'no' | 'always') => void>();
   private readonly alwaysTools = new Set<string>();
   /** Requests waiting for the agent, run one at a time (urgent ones jump the line). */
-  private waiting: Array<{ from: string; body: BodyOf<'agent_request'>; urgent?: boolean }> = [];
+  /** `askTo`: who gets Claude's questions (default: whoever asked). */
+  private waiting: Array<{ from: string; body: BodyOf<'agent_request'>; urgent?: boolean; askTo?: string }> = [];
+  /** Approvals waiting per person, so one person can't crowd out everyone else's. */
+  private readonly approvalsBy = new Map<string, number>();
   private pumping = false;
   private interruptedBy?: string;
   private current?: AbortController;
@@ -162,6 +166,7 @@ export class Session {
         toast: (text, level) => this.toast(text, level),
         askClaude: (prompt, channel) => this.askOwnClaude(prompt, channel),
         setPrefs: (prefs) => this.setPrefs(prefs),
+        confirm: (title, detail) => this.ask('request', title, detail),
         open: opts.open,
         listModels: async () => (await this.agent?.listModels?.()) as readonly ModelChoice[] | undefined,
         findPr: opts.findPr,
@@ -198,7 +203,8 @@ export class Session {
       shares: opts.shares,
       controller: this.workspaces,
       sharing: this.sharing,
-      approve: (title, detail) => this.ask('request', title, detail).then((a) => a !== 'no'),
+      approve: (title, detail, peer) => this.ask('request', title, detail, peer).then((a) => a !== 'no'),
+      runOnBehalf: (from, channel, prompt) => this.runOnBehalf(from, channel, prompt),
       runFor: (from, channel, prompt, plan) => this.runFor(from, channel, prompt, plan),
       askAndWait: (prompt, channel, timeoutMs) => this.askAndWait(prompt, channel, timeoutMs),
       askOwnClaude: (prompt, channel) => this.askOwnClaude(prompt, channel),
@@ -416,6 +422,18 @@ export class Session {
     const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId: randomUUID(), prompt: prompt.slice(0, MAX_TEXT), viaAgent: false, channel, urgent: false, plan };
     this.questions.track(body.requestId, this.selfId, channel);
     void this.onAgentRequest(from, body);
+  }
+
+  /**
+   * Run your Claude in one of your conversations with text that came from someone else (e.g. a
+   * handoff note). Their trust level decides what it may do without asking you; its questions
+   * come to you.
+   */
+  runOnBehalf(from: string, channel: string, prompt: string): void {
+    const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId: randomUUID(), prompt: prompt.slice(0, MAX_TEXT), viaAgent: true, channel, urgent: false, plan: false };
+    this.questions.track(body.requestId, this.selfId, channel);
+    if (trustOf(this.store.getState(), from) === 'blocked') return;
+    this.enqueue(from, body, this.selfId);
   }
 
   /** Ask your own Claude in a conversation (shown there) and wait for its final answer. */
@@ -1013,7 +1031,7 @@ export class Session {
    * Queue a request. Normal requests wait their turn (and say so); urgent ones from you
    * interrupt the current run and go next, continuing the same conversation.
    */
-  private enqueue(from: string, body: BodyOf<'agent_request'>): void {
+  private enqueue(from: string, body: BodyOf<'agent_request'>, askTo?: string): void {
     const urgent = body.urgent && from === this.selfId;
     if (urgent) {
       // After earlier urgent messages (keeping your order), ahead of everything else.
@@ -1028,7 +1046,7 @@ export class Session {
         this.emitAgent(body.requestId, from, 'denied', 'Too many requests waiting; try again when the current ones finish.', body.channel);
         return;
       }
-      this.waiting.push({ from, body });
+      this.waiting.push({ from, body, ...(askTo ? { askTo } : {}) });
       if (this.current || this.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', 'Waiting for the current task to finish', body.channel);
     }
     void this.pump();
@@ -1039,7 +1057,7 @@ export class Session {
     this.pumping = true;
     try {
       for (let next = this.waiting.shift(); next; next = this.waiting.shift()) {
-        await this.runAgent(next.from, next.body).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
+        await this.runAgent(next.from, next.body, next.askTo).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
       }
     } finally {
       this.pumping = false;
@@ -1055,13 +1073,16 @@ export class Session {
     const name = peerName(state, from);
     this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`, body.channel);
     const reach = reachOf(state, from) === 'full' ? 'whole computer' : 'shared folders; anything else asks you';
-    const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to run this (${reach})`, body.prompt);
+    const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to run this (${reach})`, body.prompt, from);
     if (answer === 'always') this.people.setTrust(from, 'trusted');
     return answer !== 'no';
   }
 
-  private ask(kind: 'request' | 'tool', title: string, detail: string): Promise<'yes' | 'no' | 'always'> {
+  /** Ask you to approve something; `peer` is who it's for (each person can have a few waiting at most). */
+  ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string): Promise<'yes' | 'no' | 'always'> {
     if (this.approvals.size >= MAX_PENDING_APPROVALS) return Promise.resolve('no');
+    if (peer && peer !== this.selfId && (this.approvalsBy.get(peer) ?? 0) >= MAX_APPROVALS_PER_PERSON) return Promise.resolve('no');
+    if (peer) this.approvalsBy.set(peer, (this.approvalsBy.get(peer) ?? 0) + 1);
     const id = randomUUID();
     if (kind === 'tool') this.toolApprovals.add(id);
     return new Promise((resolve) => {
@@ -1073,13 +1094,14 @@ export class Session {
       this.approvals.set(id, (answer) => {
         clearTimeout(expiry);
         this.toolApprovals.delete(id);
+        if (peer) this.approvalsBy.set(peer, Math.max(0, (this.approvalsBy.get(peer) ?? 1) - 1));
         resolve(answer);
       });
       this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail } });
     });
   }
 
-  private async runAgent(from: string, body: BodyOf<'agent_request'>): Promise<void> {
+  private async runAgent(from: string, body: BodyOf<'agent_request'>, askTo = from): Promise<void> {
     const agent = this.agent as AgentBackend;
     const controller = new AbortController();
     this.current = controller;
@@ -1104,7 +1126,7 @@ export class Session {
         onEvent: (kind, text) => this.emitAgent(body.requestId, from, kind, text, body.channel),
         onFileTouched: (abs) => this.announceAgentFocus(abs),
         canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input),
-        askUser: (question) => this.questions.ask(from, body.requestId, body.channel, question),
+        askUser: (question) => this.questions.ask(askTo, body.requestId, body.channel, question),
         plan: body.plan,
         ...this.modelFor(place?.model),
       });
@@ -1139,7 +1161,7 @@ export class Session {
     const scope = `${requester}:${toolName}`;
     if (this.alwaysTools.has(scope)) return true;
     const detail = typeof input.command === 'string' ? input.command : JSON.stringify(input);
-    const answer = await this.ask('tool', `Your Claude (working for ${requesterName}) wants to use ${toolName}`, detail);
+    const answer = await this.ask('tool', `Your Claude (working for ${requesterName}) wants to use ${toolName}`, detail, requester);
     if (answer === 'always') this.alwaysTools.add(scope);
     return answer !== 'no';
   }

@@ -22,6 +22,8 @@ export interface WorkbenchDeps {
   /** Ask your Claude in a workspace conversation. */
   readonly askClaude: (prompt: string, channel: string) => void;
   readonly setPrefs: (prefs: Partial<Prefs>) => void;
+  /** Ask you before something runs by itself the first time (e.g. a repo's own setup command). */
+  readonly confirm?: (title: string, detail: string) => Promise<'yes' | 'no' | 'always'>;
   /** Open a URL or a file with the system's default app. */
   readonly open?: (target: string) => void;
   /** Models your Claude Code offers (asked once). */
@@ -41,6 +43,17 @@ export const shellId = (wsId: string): string => wsId;
 export const setupId = (wsId: string): string => `${wsId}:setup`;
 export const runId = (wsId: string): string => `${wsId}:run`;
 
+/** What changed about a pull request that's worth telling you. */
+export function prNews(name: string, channel: string, before: PullRequest | undefined, pr: PullRequest): NoticeEvent[] {
+  if (!before) return [{ kind: 'pr', title: `Pull request #${pr.number} is open for ${name}`, body: pr.title, channel }];
+  const out: NoticeEvent[] = [];
+  if (before.checks !== pr.checks && (pr.checks === 'passing' || pr.checks === 'failing')) out.push({ kind: pr.checks === 'failing' ? 'problems' : 'pr', title: `Checks ${pr.checks} on PR #${pr.number}`, body: `${name} · ${pr.title}`, channel });
+  if (before.state !== 'MERGED' && pr.state === 'MERGED') out.push({ kind: 'pr', title: `PR #${pr.number} was merged`, body: name, channel });
+  if (before.review !== pr.review && pr.review === 'CHANGES_REQUESTED') out.push({ kind: 'pr', title: `Changes requested on PR #${pr.number}`, body: name, channel });
+  if (before.review !== pr.review && pr.review === 'APPROVED') out.push({ kind: 'pr', title: `PR #${pr.number} was approved`, body: name, channel });
+  return out;
+}
+
 const systemOpen = (target: string): void => {
   const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
   spawn(opener, [target], { stdio: 'ignore', detached: true }).on('error', () => undefined).unref();
@@ -54,6 +67,7 @@ export class Workbench {
   private diskTimer?: NodeJS.Timeout;
   private prTimer?: NodeJS.Timeout;
   private readonly watchers = new Map<string, () => void>();
+  private prsSeeded = false;
 
   constructor(private readonly deps: WorkbenchDeps) {}
 
@@ -147,16 +161,20 @@ export class Workbench {
     const find = this.deps.findPr ?? findPr;
     const state = this.deps.store.getState();
     const list = this.manager.list.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && w.branch && !w.archived && (only ? w.id === only : (w.status?.ahead ?? 0) > 0 || state.prs[w.id]));
+    // The first look after starting only learns what exists; news is what changes after that.
+    const quiet = !this.prsSeeded && !only;
     for (const ws of list) {
-      const pr = await find(ws.path, ws.branch!).catch(() => undefined);
+      let pr: PullRequest | undefined;
+      try {
+        pr = await find(ws.path, ws.branch!);
+      } catch {
+        continue; // gh couldn't tell this time: keep what we knew
+      }
       const before = this.deps.store.getState().prs[ws.id];
       this.deps.store.dispatch({ type: 'pr', id: ws.id, pr });
-      if (!pr) continue;
-      if (!before) this.deps.notify({ kind: 'pr', title: `Pull request #${pr.number} is open for ${ws.name}`, body: pr.title, channel: `ws:${ws.id}` });
-      else if (before.checks !== pr.checks && (pr.checks === 'passing' || pr.checks === 'failing')) {
-        this.deps.notify({ kind: pr.checks === 'failing' ? 'problems' : 'pr', title: `Checks ${pr.checks} on PR #${pr.number}`, body: `${ws.name} · ${pr.title}`, channel: `ws:${ws.id}` });
-      } else if (before.state !== 'MERGED' && pr.state === 'MERGED') this.deps.notify({ kind: 'pr', title: `PR #${pr.number} was merged`, body: ws.name, channel: `ws:${ws.id}` });
+      if (pr && !quiet) for (const e of prNews(ws.name, `ws:${ws.id}`, before, pr)) this.deps.notify(e);
     }
+    if (!only) this.prsSeeded = true;
   }
 
   /** Open your PR instructions in your editor (created with the built-in text the first time). */
@@ -210,6 +228,9 @@ export class Workbench {
     this.watchers.delete(key);
     this.deps.terminals?.close(key);
     this.deps.store.dispatch({ type: 'terminal', id: key });
+    // A setup that was closed before it finished isn't "setting up" anymore.
+    const wsId = key.endsWith(':setup') ? key.slice(0, -':setup'.length) : undefined;
+    if (wsId && this.deps.store.getState().setup[wsId]?.status === 'running') this.deps.store.dispatch({ type: 'setup', id: wsId });
   }
 
   private watchExit(key: string, session: TerminalSession, onExit: (code: number | null) => void): void {
@@ -224,16 +245,36 @@ export class Workbench {
     this.watchers.set(key, off);
   }
 
-  /** Run the project's setup in a new worktree (visible in its Terminal tab). */
+  /**
+   * Run the project's setup in a new worktree (visible in its Terminal tab). A command that comes
+   * from the repository itself (klaude.json / conductor.json) asks you the first time it would
+   * run by itself, and again whenever it changes.
+   */
   runSetup(wsId: string, auto = false): void {
     const ws = this.manager.find(wsId);
     const project = ws ? this.manager.list.find((p) => p.id === ws.projectId) : undefined;
-    const command = project?.scripts?.setup?.command;
-    if (!ws || !command) {
+    const setup = project?.scripts?.setup;
+    const command = setup?.command;
+    if (!ws || !project || !command) {
       if (!auto) this.deps.toast('This project has no setup command. Set one in its ⋯ menu', 'warn');
       return;
     }
     if (!this.deps.terminals) return;
+    const fromRepo = setup.source === 'klaude.json' || setup.source === 'conductor.json';
+    if (auto && fromRepo && !this.manager.isScriptApproved(project.id, command)) {
+      if (!this.deps.confirm) return;
+      void this.deps.confirm(`${project.name}'s ${setup.source} wants to run its setup in new worktrees`, `${command}\n\nThis comes from the repository. Allow it if you trust what's in it. "Always" remembers this exact command.`).then((answer) => {
+        if (answer === 'no') return void this.deps.toast('Setup skipped. Run it any time from the Terminal tab');
+        if (answer === 'always') this.manager.approveScript(project.id, command);
+        this.startSetup(ws, command);
+      });
+      return;
+    }
+    this.startSetup(ws, command);
+  }
+
+  private startSetup(ws: Workspace, command: string): void {
+    const wsId = ws.id;
     this.closeTerminal(setupId(wsId));
     const session = this.openSession(setupId(wsId), ws, command);
     if (!session) return;

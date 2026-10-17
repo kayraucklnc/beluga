@@ -96,7 +96,9 @@ export function Composer({ width, buffer, cursor, focus, suggestions, selected, 
         {right ? (
           <>
             <Box flexGrow={1} />
-            <LineView line={right} />
+            <Box flexShrink={0}>
+              <LineView line={right} />
+            </Box>
           </>
         ) : null}
       </Box>

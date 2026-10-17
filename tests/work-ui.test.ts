@@ -601,11 +601,11 @@ describe('workspaceHeaderModel overflow and hidden buttons', () => {
     expect(more.hint).toBe('PR, Fork, Finder, Archive, Share');
   });
 
-  it('hides buttons listed in hiddenButtons (merge also hides "Solve conflict")', () => {
+  it('hides buttons listed in hiddenButtons, but never "Solve conflict"', () => {
     let s = withProjects([project()], initialState('r', 'ask', { hiddenButtons: ['review_claude', 'merge', 'share'] }));
     expect(wsActions(header(s, 200))).toEqual(['commit', 'pr', 'handoff', 'fork', 'finder', 'archive']);
     s = reduce(s, { type: 'conflicts', id: 'w1', files: ['a.ts'] });
-    expect(wsActions(header(s, 200))).not.toContain('merge_claude');
+    expect(wsActions(header(s, 200))).toContain('merge_claude');
     const shown = reduce(withProjects([project()]), { type: 'conflicts', id: 'w1', files: ['a.ts'] });
     expect(wsActions(header(shown, 200))).toContain('merge_claude');
   });

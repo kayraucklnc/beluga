@@ -30,13 +30,14 @@ export function pickRoute(e: RouteEnv): NotifyRoute {
 }
 
 // eslint-disable-next-line no-control-regex
-const safe = (s: string, max: number): string => s.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, max);
+const safe = (s: string, max: number): string => s.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').slice(0, max);
 const appleString = (s: string): string => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
 /** The escape sequence or command for a route (exported for tests). */
 export function plan(route: NotifyRoute, n: DesktopNotice, env: NodeJS.ProcessEnv = process.env): { write?: string; cmd?: string; args?: string[] } {
-  const title = safe(n.title, 120);
-  const body = safe(n.body, 240);
+  // Never start with "-": some notifiers would read it as an option.
+  const title = safe(n.title, 120).replace(/^-+/, '');
+  const body = safe(n.body, 240).replace(/^-+/, '');
   const bell = n.sound ? '\x07' : '';
   switch (route) {
     case 'osc9':
@@ -50,7 +51,7 @@ export function plan(route: NotifyRoute, n: DesktopNotice, env: NodeJS.ProcessEn
     case 'osascript':
       return { cmd: 'osascript', args: ['-e', `display notification ${appleString(body || ' ')} with title "klaude" subtitle ${appleString(title)}${n.sound ? ' sound name "Glass"' : ''}`] };
     case 'notify-send':
-      return { cmd: 'notify-send', args: ['-a', 'klaude', title, body] };
+      return { cmd: 'notify-send', args: ['-a', 'klaude', '--', title, body] };
     case 'bell':
       return { write: bell };
   }

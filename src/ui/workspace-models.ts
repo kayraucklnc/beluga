@@ -536,7 +536,8 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
         sharedButton(state, ws.id),
       ];
   // You choose which buttons show (Settings → Workspaces → Top bar buttons); hidden ones still work as /commands.
-  const buttons = all.filter((b) => !state.prefs.hiddenButtons.includes(b.action === 'merge_claude' ? 'merge' : b.action));
+  // "Solve conflict" is never hidden: it's the way out of a conflict.
+  const buttons = all.filter((b) => b.action === 'merge_claude' || !state.prefs.hiddenButtons.includes(b.action));
   const segs: Seg[] = [];
   let x = 0;
   for (const [label, tab, hint] of tabs) {
@@ -567,7 +568,7 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
     x += text.length;
   }
   const rest = buttons.slice(fit).filter((b) => !b.disabled);
-  if (fit < buttons.length) {
+  if (rest.length) {
     segs.push({ text: MORE, color: theme.muted, bold: true });
     zones.push({ x0: x, x1: x + MORE.length - 1, y: 1, action: { type: 'ws_more', id: ws.id, actions: rest.map((b) => ({ action: b.action, label: b.label, hint: b.hint })) }, hint: rest.map((b) => b.label).join(', ') });
   }

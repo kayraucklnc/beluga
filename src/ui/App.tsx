@@ -190,10 +190,15 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
   const termSession: TerminalSession | undefined = termKey ? bench?.terminals?.get(termKey) : undefined;
   const [, setTermTick] = useState(0);
   // The shell starts the first time you open the Terminal tab (or after it exited and you come back).
+  const termRunning = termSession?.running ?? false;
   useEffect(() => {
-    if (!termWs || termKey !== shellId(termWs) || (termSession && termSession.running)) return;
+    if (!termWs || termKey !== shellId(termWs) || termSession) return;
     if (bench?.shell(termWs, termPane)) setTermTick((n) => n + 1);
   }, [termWs, termKey, termSession]);
+  // A shell that exited gives the keyboard back; clicking the terminal starts a new one.
+  useEffect(() => {
+    if (!termRunning && uiRef.current.focus === 'terminal' && termSession) patchUi({ focus: 'chat' });
+  }, [termRunning, termSession]);
   useEffect(() => {
     if (!termSession) return;
     return termSession.onChange(() => setTermTick((n) => n + 1));
@@ -202,7 +207,7 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
     termSession?.resize(termPane.cols, termPane.rows);
   }, [termSession, termPane.cols, termPane.rows]);
   // While the terminal is focused, every key goes to it (Ctrl+] gives the keyboard back).
-  const termFocused = d.focus === 'terminal' && Boolean(termSession);
+  const termFocused = d.focus === 'terminal' && Boolean(termSession?.running);
   useEffect(() => {
     if (!setRawInput) return;
     if (!termFocused || !termSession) {
@@ -210,7 +215,10 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
       return;
     }
     setRawInput((data) => {
-      if (isLeaveChord(data)) {
+      // Ctrl+] gives the keyboard back, even inside a burst of typed keys.
+      const leave = data.indexOf('\x1d');
+      if (isLeaveChord(data) || leave >= 0) {
+        if (leave > 0) termSession.write(data.slice(0, leave));
         patchUi({ focus: 'chat' });
         return;
       }
@@ -453,7 +461,6 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
       answerTyped(session, question, text);
       return;
     }
-    // An empty Enter in a pending prompt (e.g. clearing a setup command) still counts.
     if (latest.view.kind === 'draft' && ctl && !text.startsWith('/')) {
       void ctl.startChat(latest.view.projectId, text, latest.view.dir);
       return;
@@ -464,6 +471,11 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
     }
     const pending = uiRef.current.pending;
     if (pending && ctl) {
+      // Only commands may be empty (to clear them); names and tasks need words.
+      if (!text.trim() && pending.kind !== 'setup' && pending.kind !== 'run') {
+        session.toast(pending.kind === 'remote' ? 'Describe the task first, or Esc to cancel' : 'Type a name first, or Esc to cancel', 'warn');
+        return;
+      }
       patchUi({ pending: undefined });
       if (pending.kind === 'group') void ctl.setGroup(pending.projectId, text);
       else if (pending.kind === 'setup' || pending.kind === 'run') bench?.setScript(pending.projectId, pending.kind, text);
@@ -688,9 +700,15 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
       case 'main':
         patchUi({ focus: 'main' });
         return;
-      case 'terminal':
+      case 'terminal': {
+        const latest = session.store.getState();
+        const wsId = latest.view.kind === 'workspace' ? latest.view.id : undefined;
+        const key = uiRef.current.termKey;
+        // An exited shell starts again when you click it.
+        if (wsId && (!key || key === shellId(wsId)) && !bench?.terminals?.get(shellId(wsId))?.running) bench?.shell(wsId, termPane);
         patchUi({ focus: 'terminal' });
         return;
+      }
       case 'chat':
       case 'composer':
         patchUi({ focus: 'chat' });

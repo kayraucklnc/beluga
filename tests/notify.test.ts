@@ -400,7 +400,9 @@ describe('plan', () => {
   });
 
   it('builds notify-send args', () => {
-    expect(plan('notify-send', n)).toEqual({ cmd: 'notify-send', args: ['-a', 'klaude', 'Claude finished', 'All good'] });
+    expect(plan('notify-send', n)).toEqual({ cmd: 'notify-send', args: ['-a', 'klaude', '--', 'Claude finished', 'All good'] });
+    // A name that looks like an option can't become one.
+    expect(plan('notify-send', { ...n, title: '--wait bob joined' }).args?.[3]).toBe('wait bob joined');
   });
 
   it('rings the bell only with sound on', () => {

@@ -249,18 +249,23 @@ describe('trust actions', () => {
     expect(s.levels).toEqual({ c: 'ask' });
   });
 
-  it('trust: on -> trusted, keeps full, off -> ask', () => {
+  it('trust: on -> trusted, keeps full; off only takes back "trusted"', () => {
     let s = reduce(s0(), { type: 'trust', peerId: 'b', trusted: true });
     expect(s.levels.b).toBe('trusted');
+    expect(reduce(s, { type: 'trust', peerId: 'b', trusted: false }).levels.b).toBe('ask');
     s = reduce(s, { type: 'trust_level', peerId: 'b', level: 'full' });
     expect(reduce(s, { type: 'trust', peerId: 'b', trusted: true }).levels.b).toBe('full');
-    expect(reduce(s, { type: 'trust', peerId: 'b', trusted: false }).levels.b).toBe('ask');
+    expect(reduce(s, { type: 'trust', peerId: 'b', trusted: false }).levels.b).toBe('full');
+    const blocked = reduce(s0(), { type: 'trust_level', peerId: 'b', level: 'blocked' });
+    expect(reduce(blocked, { type: 'trust', peerId: 'b', trusted: false }).levels.b).toBe('blocked');
   });
 
   it('full_trust: on -> full, off -> ask', () => {
     const s = reduce(s0(), { type: 'full_trust', peerId: 'b', trusted: true });
     expect(s.levels.b).toBe('full');
     expect(reduce(s, { type: 'full_trust', peerId: 'b', trusted: false }).levels.b).toBe('ask');
+    const trusted = reduce(s0(), { type: 'trust_level', peerId: 'b', level: 'trusted' });
+    expect(reduce(trusted, { type: 'full_trust', peerId: 'b', trusted: false }).levels.b).toBe('trusted');
   });
 
   it('peers prunes levels and access of people who left', () => {

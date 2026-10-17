@@ -78,7 +78,16 @@ export function createRoomToolDefs(bridge: RoomBridge) {
       tool(
         'send_file',
         "Send a file from this computer to a peer (for example the result of work they asked for). It's saved in their Downloads/klaude folder. Use it to send results back to whoever asked you.",
-        { peer: z.string().describe('Peer name from list_peers'), path: z.string().min(1).max(4096).describe('File on this computer'), note: z.string().max(1000).optional() },
+        {
+          peer: z.string().describe('Peer name from list_peers'),
+          path: z
+            .string()
+            .min(1)
+            .max(4096)
+            .refine((p) => p.startsWith('/') || p.startsWith('~/'), 'Use a full path (/… or ~/…)')
+            .describe('Full path of the file on this computer (/… or ~/…)'),
+          note: z.string().max(1000).optional(),
+        },
         (a) => guarded(() => bridge.sendFile(a.peer, a.path, a.note)),
       ),
       tool(

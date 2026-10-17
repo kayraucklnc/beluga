@@ -381,17 +381,18 @@ export class WorkspaceManager {
     const ws = this.find(id);
     if (!ws) return undefined;
     const prev = ws.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, runs: 0 };
-    const total = run.input + run.output + run.cacheRead + run.cacheWrite;
-    const continues = run.session !== undefined && run.session === prev.lastSession && total >= (prev.lastTotal ?? 0);
-    const scale = continues && total > 0 ? (total - (prev.lastTotal ?? 0)) / total : 1;
+    const last = prev.last;
+    // Same conversation and nothing went down: these are running totals, so only the growth is new.
+    const continues = run.session !== undefined && run.session === prev.lastSession && last !== undefined && run.input >= last.input && run.output >= last.output && run.cacheRead >= last.cacheRead && run.cacheWrite >= last.cacheWrite && run.cost >= last.cost;
+    const delta = (k: 'input' | 'output' | 'cacheRead' | 'cacheWrite' | 'cost'): number => (continues && last ? run[k] - last[k] : run[k]);
     const next: WorkspaceUsage = {
-      input: prev.input + Math.round(run.input * scale),
-      output: prev.output + Math.round(run.output * scale),
-      cacheRead: prev.cacheRead + Math.round(run.cacheRead * scale),
-      cacheWrite: prev.cacheWrite + Math.round(run.cacheWrite * scale),
-      cost: prev.cost + run.cost * scale,
+      input: prev.input + delta('input'),
+      output: prev.output + delta('output'),
+      cacheRead: prev.cacheRead + delta('cacheRead'),
+      cacheWrite: prev.cacheWrite + delta('cacheWrite'),
+      cost: prev.cost + delta('cost'),
       runs: prev.runs + 1,
-      ...(run.session ? { lastSession: run.session, lastTotal: total } : {}),
+      ...(run.session ? { lastSession: run.session, last: { input: run.input, output: run.output, cacheRead: run.cacheRead, cacheWrite: run.cacheWrite, cost: run.cost } } : {}),
     };
     this.patchRecord(id, { usage: next });
     return next;
@@ -424,6 +425,20 @@ export class WorkspaceManager {
     this.store.saveConfig(this.config);
   }
 
+  /** Whether you allowed this exact command (from the project's own files) to run by itself. */
+  isScriptApproved(projectId: string, command: string): boolean {
+    const project = this.projects.find((p) => p.id === projectId);
+    return Boolean(project?.root && this.config.approvedScripts?.[project.root]?.includes(commandHash(command)));
+  }
+
+  approveScript(projectId: string, command: string): void {
+    const project = this.projects.find((p) => p.id === projectId);
+    if (!project?.root) return;
+    const list = this.config.approvedScripts?.[project.root] ?? [];
+    this.config = { ...this.config, approvedScripts: { ...(this.config.approvedScripts ?? {}), [project.root]: [...new Set([...list, commandHash(command)])].slice(-20) } };
+    this.store.saveConfig(this.config);
+  }
+
   // ---------------------------------------------------------------- handoff
 
   /** The project whose origin points at the same repository as `remote` (any URL style). */
@@ -443,13 +458,13 @@ export class WorkspaceManager {
   }
 
   /** A new worktree on an existing branch (e.g. one fetched from a friend's handoff). */
-  async createWorktreeOn(projectId: string, name: string, branch: string, extra: Partial<WorkspaceRecord> = {}): Promise<Workspace> {
+  async createWorktreeOn(projectId: string, name: string, branch: string, extra: Partial<WorkspaceRecord> = {}, opts: { copyEnv?: boolean } = {}): Promise<Workspace> {
     const project = this.projects.find((p) => p.id === projectId);
     if (!project) throw new WorkspaceError('Project not found');
     const dir = this.freeDir(project, slug(name));
     await g.git(project.root, ['worktree', 'add', dir, branch]);
     await g.excludeKlaudeDir(dir);
-    await copyEnvFiles(project.root, dir);
+    if (opts.copyEnv !== false) await copyEnvFiles(project.root, dir);
     const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: slug(name), path: dir, kind: 'worktree', branch, base: project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...extra };
     this.saveRecord(record);
     await this.refresh();
@@ -542,16 +557,19 @@ export class WorkspaceManager {
   }
 }
 
-/** github.com/kay/api for https://github.com/kay/api.git, git@github.com:kay/api, ssh://… */
+const commandHash = (command: string): string => createHash('sha256').update(command.trim()).digest('hex').slice(0, 16);
+
+/** github.com/kay/api for https://github.com/kay/api.git, git@github.com:kay/api, ssh://git@github.com:22/kay/api… */
 export function normalizeRemote(url: string): string {
-  return url
-    .trim()
-    .replace(/^[a-z+]+:\/\//i, '')
-    .replace(/^[^@/]+@/, '')
-    .replace(/:(?!\d)/, '/')
-    .replace(/\.git$/, '')
-    .replace(/\/+$/, '')
-    .toLowerCase();
+  const raw = url.trim();
+  const scp = /^[^@/\s]+@([^:/\s]+):(?!\/)(.+)$/.exec(raw);
+  const hostPath = scp
+    ? `${scp[1]}/${scp[2]}`
+    : raw
+        .replace(/^[a-z+]+:\/\//i, '')
+        .replace(/^[^@/]+@/, '')
+        .replace(/^([^/:]+):\d+(?=\/)/, '$1');
+  return hostPath.replace(/\.git$/, '').replace(/\/+$/, '').toLowerCase();
 }
 
 function stripLive(ws: Workspace): WorkspaceRecord {

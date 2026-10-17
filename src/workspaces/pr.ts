@@ -121,13 +121,14 @@ export function parsePr(json: string): PullRequest | undefined {
   }
 }
 
-/** The pull request for a branch, if there is one. */
+/** The pull request for a branch, if there is one. Throws when gh couldn't tell (offline, rate limit…). */
 export async function findPr(dir: string, branch: string): Promise<PullRequest | undefined> {
   if (!(await hasGh())) return undefined;
   try {
     return parsePr(await run('gh', ['pr', 'view', branch, '--json', 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision'], dir));
-  } catch {
-    return undefined;
+  } catch (err) {
+    if (err instanceof Error && /no pull requests? found/i.test(err.message)) return undefined;
+    throw err;
   }
 }
 

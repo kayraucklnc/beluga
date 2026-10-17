@@ -105,7 +105,8 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   if (focus === 'viewer' && !(state.viewer && viewerOk)) focus = 'chat';
   if (focus === 'files' && !filesVisible) focus = 'chat';
   if (focus === 'main' && !reviewing && state.view.kind !== 'overview' && state.view.kind !== 'usage' && state.view.kind !== 'search') focus = 'chat';
-  if (focus === 'terminal' && !(state.view.kind === 'workspace' && state.view.tab === 'terminal')) focus = 'chat';
+  // The terminal gives the keyboard back while a menu, help or an approval needs it.
+  if (focus === 'terminal' && (!(state.view.kind === 'workspace' && state.view.tab === 'terminal') || ui.menu || state.overlay || state.approvals.length)) focus = 'chat';
   // Claude's questions come first; then "how much do you trust this new person?".
   const trustPeer = !pendingQuestion && !ui.menu ? state.trustPrompts.find((id) => state.peers.some((p) => p.peerId === id)) : undefined;
   const approval = state.approvals[0];

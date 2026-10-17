@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -120,7 +120,7 @@ describe('files between computers', () => {
     writeFileSync(file, 'quarterly numbers');
 
     const saved = kay.session.remote.getFile(bob.id(), file, path.join(base, 'kay-desktop'), 'for the review');
-    expect(await approve(bob)).toBe('kay wants a file from your computer');
+    expect(await approve(bob)).toMatch(/^kay \(#[\w-]{6}\) wants a file from your computer$/);
     expect(readFileSync(await saved, 'utf8')).toBe('quarterly numbers');
     expect(path.dirname(await saved)).toBe(path.join(base, 'kay-desktop'));
   });
@@ -133,7 +133,16 @@ describe('files between computers', () => {
     const env = path.join(base, '.env');
     writeFileSync(env, 'TOKEN=1');
     await expect(kay.session.remote.getFile(bob.id(), env)).rejects.toThrow(/secrets/);
-    await expect(kay.session.remote.getFile(bob.id(), path.join(base, 'nope.txt'))).rejects.toThrow(/no file/);
+    // Whether a file exists is only revealed after bob says yes.
+    const missing = kay.session.remote.getFile(bob.id(), path.join(base, 'nope.txt'));
+    await approve(bob);
+    await expect(missing).rejects.toThrow(/no file/);
+    // klaude's own key and settings never leave, whatever the trust.
+    bob.session.people.setTrust(kay.id(), 'full', true);
+    await expect(kay.session.remote.getFile(bob.id(), path.join(process.env.KLAUDE_HOME!, 'identity.json'))).rejects.toThrow(/secrets/);
+    // A link with a harmless name pointing at a secret is caught too.
+    symlinkSync(env, path.join(base, 'notes.txt'));
+    await expect(kay.session.remote.getFile(bob.id(), path.join(base, 'notes.txt'))).rejects.toThrow(/secrets/);
     bob.session.people.setTrust(kay.id(), 'blocked', true);
     writeFileSync(path.join(base, 'ok.txt'), 'x');
     await expect(kay.session.remote.getFile(bob.id(), path.join(base, 'ok.txt'))).rejects.toThrow(/declined/);
@@ -161,7 +170,7 @@ describe('files between computers', () => {
     writeFileSync(out, 'a,b\n1,2\n');
     // Without asking for it, kay approves what bob sends.
     await bob.session.remote.sendFile(kay.id(), out, 'here you go');
-    expect(await approve(kay)).toBe('bob sends you a file');
+    expect(await approve(kay)).toMatch(/^bob \(#[\w-]{6}\) sends you a file$/);
     const first = path.join(base, 'kay', 'Downloads', 'bob', 'result.csv');
     await waitFor(() => existsSync(first), 4000);
     // While kay's Claude works with bob's, what bob sends just arrives.
@@ -191,7 +200,7 @@ describe('work on a friend’s computer', () => {
     await waitFor(() => kay.state().peers.find((p) => p.name === 'bob')?.projects?.includes('app'), 4000);
 
     const asked = kay.session.remote.requestWorktree(bob.id(), 'app', 'add a health check endpoint');
-    expect(await approve(bob)).toBe('kay wants to start a worktree in app on your computer');
+    expect(await approve(bob)).toMatch(/^kay \(#[\w-]{6}\) wants to start a worktree in app on your computer$/);
     await asked;
     await waitFor(() => bob.runs.length === 1, 4000);
     expect(bob.runs[0]).toMatchObject({ prompt: 'add a health check endpoint', requesterName: 'kay' });
@@ -244,7 +253,7 @@ describe('handoff', () => {
 
     expect(await kay.session.remote.handoff(ws.id, bob.id())).toBe(true);
     expect(kay.runs[0]?.prompt).toBe(handoffNotePrompt('bob'));
-    expect(await approve(bob)).toBe('kay wants to hand add-auth (app) over to you');
+    expect(await approve(bob)).toMatch(/^kay \(#[\w-]{6}\) wants to hand add-auth \(app\) over to you$/);
     await waitFor(() => bob.runs.length === 1, 6000);
     expect(bob.runs[0]?.prompt).toContain('taking over this work from kay');
     expect(bob.runs[0]?.prompt).toContain('expired sessions test');

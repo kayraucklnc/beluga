@@ -103,7 +103,14 @@ describe('setup and run scripts', () => {
     const kay = await solo(dir);
     expect(projectOf(kay.workspaces).scripts?.setup).toEqual({ command: 'echo installing && touch .ready', source: 'klaude.json' });
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'feature');
+    // It comes from the repository, so the first time it asks; "always" remembers this command.
+    await waitFor(() => kay.state().approvals.length === 1, 4000);
+    expect(kay.state().approvals[0]?.title).toBe("app's klaude.json wants to run its setup in new worktrees");
+    kay.session.answerApproval('always');
     await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', 8000);
+    const next = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'second');
+    await waitFor(() => kay.state().setup[next!.id]?.status === 'done', 8000);
+    expect(kay.state().approvals).toHaveLength(0);
     const setup = terminals.get(setupId(ws!.id))!;
     expect(setup.snapshot().lines.map((l) => l.map((s) => s.text).join('')).join('\n')).toContain('installing');
 
@@ -119,12 +126,14 @@ describe('setup and run scripts', () => {
     const dir = repo({ 'klaude.json': JSON.stringify({ scripts: { setup: 'exit 3' } }) });
     const kay = await solo(dir);
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'broken');
+    await waitFor(() => kay.state().approvals.length === 1, 4000);
+    kay.session.answerApproval('yes');
     await waitFor(() => kay.state().setup[ws!.id]?.status === 'failed', 8000);
     expect(kay.state().setup[ws!.id]?.detail).toBe('exit code 3');
     // You're looking at it, so it's a toast; from elsewhere it goes to the inbox (and the desktop).
     expect(kay.state().toast?.text).toContain('Setup failed in broken');
     kay.session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
-    kay.bench.runSetup(ws!.id);
+    kay.bench.runSetup(ws!.id); // you asked for it: no question
     await waitFor(() => kay.state().inbox.some((n) => n.title === 'Setup failed in broken'), 8000);
     await waitFor(() => kay.desktop.includes('Setup failed in broken'), 4000);
     kay.session.setPrefs({ autoSetup: false });

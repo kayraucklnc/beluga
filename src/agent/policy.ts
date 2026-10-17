@@ -55,7 +55,10 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
   if (ALWAYS_OK.has(toolName)) return 'allow';
   // Sending a file reads it: same rules as Read (secrets never leave; outside shared folders asks).
   if (toolName === 'mcp__klaude__send_file') {
-    const target = resolveTarget(ctx.cwd, typeof input.path === 'string' ? input.path.replace(/^~(?=$|\/)/, process.env.HOME ?? '~') : undefined);
+    const raw = typeof input.path === 'string' ? input.path.replace(/^~(?=$|\/)/, process.env.HOME ?? '~') : '';
+    // Only full paths: the same file is checked here and read when it's sent.
+    if (!path.isAbsolute(raw)) return 'deny';
+    const target = path.resolve(raw);
     if (isSecretPath(target)) return 'deny';
     if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
     return ctx.scope === 'full' ? 'allow' : 'ask';
