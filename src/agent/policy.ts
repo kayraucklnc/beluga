@@ -35,7 +35,7 @@ export interface PolicyContext {
   readonly roots: readonly string[];
   /** The primary share was marked :rw, so edits inside it don't need approval. */
   readonly autoEdit: boolean;
-  /** 'folder' hard-blocks files outside the shared folders; 'full' lets the owner approve them. */
+  /** 'folder': reading outside the shared folders asks the owner; 'full': it just runs. */
   readonly scope?: 'folder' | 'full';
 }
 
@@ -47,7 +47,7 @@ const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, t
  * This runs as a PreToolUse hook, so it applies even to tools Claude Code would
  * auto-approve on its own (e.g. "read-only" shell commands).
  *  - credential files (by path or in a shell command) are always denied
- *  - read-only tools inside the shared folders are allowed
+ *  - read-only tools inside the shared folders are allowed; outside them the owner is asked
  *  - edits inside a :rw share are allowed
  *  - everything else (Bash, web, other edits, reads outside shares, ask_agent) asks the owner
  */
@@ -59,7 +59,8 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
     const target = resolveTarget(ctx.cwd, input[readField]);
     if (isSecretPath(target) || (typeof input.pattern === 'string' && isSecretPath(input.pattern))) return 'deny';
     if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
-    return ctx.scope === 'full' ? 'allow' : 'deny';
+    // Outside the shared folders the owner decides (or it just runs, with full trust).
+    return ctx.scope === 'full' ? 'allow' : 'ask';
   }
   const writeField = WRITE_TOOLS[toolName];
   if (writeField) {

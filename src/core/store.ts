@@ -1,11 +1,13 @@
 import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
-import type { Settings, ThemeName } from './settings.js';
+import type { Effort, NotifySettings, Settings, ThemeName, TrustLevel } from './settings.js';
+import { NotifySettings as NotifySchema } from './settings.js';
 import type { Review } from '../workspaces/git.js';
 import type { Project, ProjectGroup } from '../workspaces/types.js';
 import type { EnvChange } from '../workspaces/env.js';
 import type { Bitmap } from '../image/bitmap.js';
 import { type CollabAction, type CollabState, initialCollab, reduceCollab } from './collab-store.js';
+import { type WorkAction, type WorkState, initialWork, reduceWork } from './work-store.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
 
@@ -99,13 +101,23 @@ export interface Toast {
 
 export type Overlay = 'help' | 'settings' | 'welcome' | 'clear';
 
-/** Display preferences mirrored from ~/.klaude/settings.json. */
+/** Preferences mirrored from ~/.klaude/settings.json (every key here is a settings key). */
 export interface Prefs {
   readonly theme: ThemeName;
   readonly mouse: boolean;
-  readonly tunnel: 'auto' | 'cloudflared' | 'ngrok' | 'none';
+  readonly tunnel: Settings['tunnel'];
   /** 'never': your own Claude just works; 'ask': it asks before risky actions. */
   readonly selfApproval: 'never' | 'ask';
+  readonly notify: NotifySettings;
+  /** Default model for new conversations (undefined: Claude Code's default). */
+  readonly model?: string;
+  readonly effort?: Effort;
+  readonly autoSetup: boolean;
+  readonly contextMeter: boolean;
+  readonly subagents: Settings['subagents'];
+  readonly hiddenButtons: readonly string[];
+  readonly friendWorktrees: Settings['friendWorktrees'];
+  readonly shell?: string;
 }
 
 export interface Transfer {
@@ -124,13 +136,19 @@ export type View =
   | { readonly kind: 'room' }
   | { readonly kind: 'files' }
   | { readonly kind: 'overview' }
-  | { readonly kind: 'workspace'; readonly id: string; readonly tab: 'chat' | 'files' | 'review' }
+  | { readonly kind: 'workspace'; readonly id: string; readonly tab: WorkspaceTab }
+  /** Search every conversation. */
+  | { readonly kind: 'search' }
+  /** Disk space and Claude usage per workspace. */
+  | { readonly kind: 'usage' }
   /** A new chat that doesn't exist until you send the first message. */
   | { readonly kind: 'draft'; readonly projectId: string; readonly dir?: string; readonly back: View }
   /** A new worktree: your first message names it (via a small model) and starts the work. */
   | { readonly kind: 'draft_worktree'; readonly projectId: string; readonly back: View }
   /** Someone else's workspace that they shared with you. */
   | { readonly kind: 'shared'; readonly owner: string; readonly id: string; readonly tab: 'chat' | 'files' };
+
+export type WorkspaceTab = 'chat' | 'files' | 'review' | 'terminal';
 
 export interface ReviewState {
   readonly workspaceId: string;
@@ -158,7 +176,7 @@ export interface Compaction {
 export const channelOf = (view: View): string =>
   view.kind === 'workspace' || view.kind === 'shared' ? `ws:${view.id}` : view.kind === 'draft' || view.kind === 'draft_worktree' ? 'draft' : 'room';
 
-export interface AppState extends CollabState {
+export interface AppState extends CollabState, WorkState {
   readonly room: string;
   readonly view: View;
   readonly projects: readonly Project[];
@@ -188,10 +206,10 @@ export interface AppState extends CollabState {
   readonly viewer?: ViewerState;
   readonly follow?: string;
   readonly focus: Readonly<Record<string, Focus>>;
+  /** Your default for people you haven't picked a trust level for. */
   readonly policy: Policy;
-  readonly trusted: readonly string[];
-  /** People whose requests AND actions run without any prompts. */
-  readonly fullTrust: readonly string[];
+  /** Trust levels you picked per person (see core/trust.ts). */
+  readonly levels: Readonly<Record<string, TrustLevel>>;
   /** How far each friend's requests may reach on this computer (default: shared folders only). */
   readonly access: Readonly<Record<string, 'folder' | 'full'>>;
   /** Directory listings used for /open autocomplete, keyed "owner:share/path". */
@@ -239,13 +257,15 @@ export type Action =
   | { type: 'policy'; policy: Policy }
   | { type: 'trust'; peerId: string; trusted: boolean }
   | { type: 'full_trust'; peerId: string; trusted: boolean }
+  | { type: 'trust_level'; peerId: string; level?: TrustLevel }
   | { type: 'access'; peerId: string; scope: 'folder' | 'full' }
   | { type: 'dir_cache'; key: string; entries: readonly FsEntry[] }
   | { type: 'transfer'; transfer: Transfer }
   | { type: 'prefs'; prefs: Partial<Prefs> }
   | { type: 'clear'; channel?: string }
   | { type: 'context_reset'; channel: string }
-  | CollabAction;
+  | CollabAction
+  | WorkAction;
 
 const LOG_LIMIT = 1000;
 const TRANSFER_LIMIT = 20;
@@ -255,9 +275,26 @@ const TRANSFER_LIMIT = 20;
 export const clean = (s: string): string => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
 const MAX_STEPS = 6;
 
-const DEFAULT_PREFS: Prefs = { theme: 'calm', mouse: true, tunnel: 'auto', selfApproval: 'never' };
+export const DEFAULT_PREFS: Prefs = {
+  theme: 'calm',
+  mouse: true,
+  tunnel: 'auto',
+  selfApproval: 'never',
+  notify: NotifySchema.parse({}),
+  autoSetup: true,
+  contextMeter: true,
+  subagents: 'full',
+  hiddenButtons: [],
+  friendWorktrees: 'ask',
+};
 
-export function initialState(room: string, policy: Policy = 'ask', prefs: Prefs = DEFAULT_PREFS): AppState {
+/** The preference fields out of saved settings. */
+export function prefsFrom(settings: Partial<Settings>): Prefs {
+  const picked = Object.fromEntries(Object.keys(DEFAULT_PREFS).concat(['model', 'effort', 'shell']).filter((k) => settings[k as keyof Settings] !== undefined).map((k) => [k, settings[k as keyof Settings]]));
+  return { ...DEFAULT_PREFS, ...picked };
+}
+
+export function initialState(room: string, policy: Policy = 'ask', prefs: Partial<Prefs> = DEFAULT_PREFS): AppState {
   return {
     room,
     view: { kind: 'room' },
@@ -276,13 +313,13 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Prefs 
     browser: { rows: [], cursor: 0, loading: false },
     focus: {},
     policy,
-    trusted: [],
-    fullTrust: [],
+    levels: {},
     access: {},
     dirCache: {},
     transfers: [],
-    prefs,
+    prefs: { ...DEFAULT_PREFS, ...prefs },
     ...initialCollab,
+    ...initialWork,
   };
 }
 
@@ -432,12 +469,10 @@ export function reduce(state: AppState, action: Action): AppState {
       const browser = state.browser.at ? state.browser : { ...state.browser, rows: rootRows({ ...state, peers: action.peers }), cursor: 0 };
       const ids = new Set(action.peers.map((p) => p.peerId));
       const follow = state.follow && ids.has(state.follow) ? state.follow : undefined;
-      // Peer ids are self-chosen, so trust never outlives the connection that earned it.
-      const trusted = state.trusted.filter((t) => ids.has(t));
-      const fullTrust = state.fullTrust.filter((t) => ids.has(t));
-      // Like trust, extra access ends when the connection that earned it does.
+      // Trust is re-applied from your saved choices when someone comes back (see Session).
+      const levels = Object.fromEntries(Object.entries(state.levels).filter(([id]) => ids.has(id)));
       const access = Object.fromEntries(Object.entries(state.access).filter(([id]) => ids.has(id)));
-      return { ...state, peers: action.peers, browser, follow, trusted, fullTrust, access };
+      return { ...state, peers: action.peers, browser, follow, levels, access };
     }
     case 'chat':
       return bumpUnread({
@@ -546,19 +581,17 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'follow':
       return { ...state, follow: action.peerId };
     case 'full_trust':
-      return {
-        ...state,
-        fullTrust: action.trusted ? [...new Set([...state.fullTrust, action.peerId])] : state.fullTrust.filter((t) => t !== action.peerId),
-      };
+      return reduce(state, { type: 'trust_level', peerId: action.peerId, level: action.trusted ? 'full' : 'ask' });
+    case 'trust_level': {
+      const { [action.peerId]: _old, ...rest } = state.levels;
+      return { ...state, levels: action.level ? { ...rest, [action.peerId]: action.level } : rest };
+    }
     case 'access':
       return { ...state, access: { ...state.access, [action.peerId]: action.scope } };
     case 'policy':
       return { ...state, policy: action.policy };
     case 'trust':
-      return {
-        ...state,
-        trusted: action.trusted ? [...new Set([...state.trusted, action.peerId])] : state.trusted.filter((t) => t !== action.peerId),
-      };
+      return reduce(state, { type: 'trust_level', peerId: action.peerId, level: action.trusted ? (state.levels[action.peerId] === 'full' ? 'full' : 'trusted') : 'ask' });
     case 'prefs':
       return { ...state, prefs: { ...state.prefs, ...action.prefs } };
     case 'transfer': {
@@ -582,11 +615,26 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'plan_mode':
     case 'peer_gone':
     case 'shared_clear':
+    case 'trust_prompt':
     case 'offer': {
       const next = { ...state, ...reduceCollab(state, action) };
       // The Shared files list updates live while you're looking at it.
       return next.browser.at ? next : { ...next, browser: { ...next.browser, rows: rootRows(next) } };
     }
+    case 'notice_add':
+    case 'notice_read':
+    case 'notice_clear':
+    case 'away':
+    case 'models':
+    case 'disk':
+    case 'pr':
+    case 'setup':
+    case 'search':
+    case 'templates':
+    case 'terminal':
+    case 'pr_custom':
+    case 'remembered':
+      return { ...state, ...reduceWork(state, action) };
     case 'context_reset': {
       const { [action.channel]: _gone, ...context } = state.context;
       return { ...state, context };

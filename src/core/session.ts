@@ -20,6 +20,8 @@ import { runCommand } from './commands.js';
 import { DEFAULT_DOWNLOAD_DIR, downloadFile, fetchBytes } from './downloads.js';
 import { MAX_IMAGE_BYTES, isImagePath } from '../image/decode.js';
 import { decodeImageAsync } from '../image/decode-async.js';
+import { reachOf, trustOf } from './trust.js';
+import { People } from './people.js';
 
 export interface SessionOptions {
   readonly client: PeerClient;
@@ -49,6 +51,8 @@ export interface SessionOptions {
   readonly zoom?: (dir: ZoomDir) => Promise<{ ok: boolean; message: string }>;
   /** Only on the host: who may be in the room, and the invite link. */
   readonly room?: RoomControl;
+  /** Trust levels you chose for people before (by key-derived id). */
+  readonly savedPeople?: Settings['people'];
   /** Read Claude Code conversations from other tools (omitted in tests and the demo). */
   readonly findConversation?: (dir: string, self: { id: string; name: string }) => Promise<Conversation | undefined>;
 }
@@ -110,6 +114,7 @@ export class Session {
   private usageFetched = false;
   readonly questions: QuestionBroker;
   readonly sharing: WorkspaceSharing;
+  readonly people: People;
 
   constructor(private readonly opts: SessionOptions) {
     this.bridge = this.createBridge();
@@ -137,6 +142,13 @@ export class Session {
       send: (body, o) => this.send(body, o),
       shares: opts.shares,
       workspaces: opts.workspaces,
+      toast: (text, level) => this.toast(text, level),
+    });
+    this.people = new People({
+      store: opts.store,
+      selfId: () => this.selfId,
+      saved: opts.savedPeople ?? {},
+      save: (people) => opts.saveSettings?.({ people }),
       toast: (text, level) => this.toast(text, level),
     });
     this.agent = opts.createAgent?.(this.bridge);
@@ -446,8 +458,7 @@ export class Session {
     const name = peerName(this.store.getState(), peerId);
     if (!room || peerId === this.selfId) return;
     for (const wsId of Object.keys(this.store.getState().members)) this.sharing.remove(wsId, peerId);
-    this.store.dispatch({ type: 'trust', peerId, trusted: false });
-    this.store.dispatch({ type: 'full_trust', peerId, trusted: false });
+    this.people.setTrust(peerId, 'blocked');
     room.removePerson(peerId);
     this.system(`You removed ${name} from the room. The invite link changed, so the old one no longer works.`);
     this.toast(`${name} was removed. Use Copy invite for the new link`, 'success');
@@ -541,6 +552,7 @@ export class Session {
     client.on('peers', (peers) => {
       const before = store.getState().peers;
       store.dispatch({ type: 'peers', peers });
+      this.people.onPeers(before, peers);
       const gone = before.filter((p) => !peers.some((n) => n.peerId === p.peerId)).map((p) => p.peerId);
       if (gone.length) {
         // A dropped connection isn't leaving: workspace seats survive, only open questions end.
@@ -741,7 +753,7 @@ export class Session {
   /** Update a display preference and remember it. */
   setPrefs(prefs: Partial<Prefs>): void {
     this.store.dispatch({ type: 'prefs', prefs });
-    this.opts.saveSettings?.(prefs);
+    this.opts.saveSettings?.(prefs as Partial<Settings>);
   }
 
   /** Share a folder with the room (read-only unless `writable`). */
@@ -922,13 +934,14 @@ export class Session {
   private async authorizeRequest(from: string, body: BodyOf<'agent_request'>): Promise<boolean> {
     if (from === this.selfId) return true;
     const state = this.store.getState();
-    if (state.policy === 'deny') return false;
-    if (state.policy === 'auto' || state.trusted.includes(from) || state.fullTrust.includes(from)) return true;
+    const level = trustOf(state, from);
+    if (level === 'blocked') return false;
+    if (level === 'trusted' || level === 'full') return true;
     const name = peerName(state, from);
     this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`, body.channel);
-    const reach = state.access[from] === 'full' ? 'whole computer' : 'shared folders only';
+    const reach = reachOf(state, from) === 'full' ? 'whole computer' : 'shared folders; anything else asks you';
     const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to run this (${reach})`, body.prompt);
-    if (answer === 'always') this.store.dispatch({ type: 'trust', peerId: from, trusted: true });
+    if (answer === 'always') this.people.setTrust(from, 'trusted');
     return answer !== 'no';
   }
 
@@ -971,7 +984,7 @@ export class Session {
         viaAgent: body.viaAgent,
         context: this.recentChat(body.channel),
         ...(place ? { place } : {}),
-        scope: from === this.selfId ? 'full' : (this.store.getState().access[from] ?? 'folder'),
+        scope: from === this.selfId ? 'full' : reachOf(this.store.getState(), from),
         signal: controller.signal,
         onEvent: (kind, text) => this.emitAgent(body.requestId, from, kind, text, body.channel),
         onFileTouched: (abs) => this.announceAgentFocus(abs),
@@ -998,7 +1011,7 @@ export class Session {
     // Your own Claude doesn't nag you (unless you asked it to); fully trusted friends don't either.
     const state = this.store.getState();
     if (requester === this.selfId && state.prefs.selfApproval === 'never') return true;
-    if (state.fullTrust.includes(requester)) return true;
+    if (requester !== this.selfId && trustOf(state, requester) === 'full') return true;
     // "Always" is scoped to one requester and one tool, never global.
     const scope = `${requester}:${toolName}`;
     if (this.alwaysTools.has(scope)) return true;

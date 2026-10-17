@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseConfig } from '../src/config.js';
-import { loadSettings, saveSettings, settingsPath } from '../src/core/settings.js';
+import { Settings, loadSettings, saveSettings, settingsPath } from '../src/core/settings.js';
 import { PALETTES, applyTheme, colorFor, theme } from '../src/ui/theme.js';
 
 const tmpFile = () => path.join(mkdtempSync(path.join(os.tmpdir(), 'klaude-settings-')), 'settings.json');
@@ -11,7 +11,7 @@ const tmpFile = () => path.join(mkdtempSync(path.join(os.tmpdir(), 'klaude-setti
 describe('settings', () => {
   it('defaults when the file is missing or broken', () => {
     const file = tmpFile();
-    expect(loadSettings(file)).toEqual({ theme: 'calm', mouse: true, tunnel: 'auto', selfApproval: 'never' });
+    expect(loadSettings(file)).toMatchObject({ theme: 'calm', mouse: true, tunnel: 'auto', selfApproval: 'never', autoSetup: true, contextMeter: true });
     writeFileSync(file, '{not json');
     expect(loadSettings(file).theme).toBe('calm');
     writeFileSync(file, JSON.stringify({ theme: 'neon' }));
@@ -37,7 +37,7 @@ describe('settings', () => {
 });
 
 describe('plain `klaude` uses saved settings', () => {
-  const saved = { name: 'kay', theme: 'light' as const, policy: 'auto' as const, mouse: false, tunnel: 'none' as const, selfApproval: 'never' as const };
+  const saved = Settings.parse({ name: 'kay', theme: 'light', policy: 'auto', mouse: false, tunnel: 'none', selfApproval: 'never' });
 
   it('hosts by default with the saved name and choices', () => {
     const c = parseConfig([], '/tmp/p', '/Users/x', saved);
@@ -52,7 +52,7 @@ describe('plain `klaude` uses saved settings', () => {
   });
 
   it('shows the welcome screen only until a sharing choice is saved', () => {
-    expect(parseConfig([], '/tmp/p', '/Users/x', { theme: 'calm', mouse: true, tunnel: 'auto', selfApproval: 'never' }).policyChosen).toBe(false);
+    expect(parseConfig([], '/tmp/p', '/Users/x', Settings.parse({})).policyChosen).toBe(false);
   });
 });
 
