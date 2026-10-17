@@ -8,6 +8,7 @@ import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
 import type { Usage } from '../protocol.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
+const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 export interface ClaudeBackendOptions {
   readonly cwd: string;
@@ -87,6 +88,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       };
 
       let final = '';
+      let contextUsed = 0;
       for await (const msg of query({ prompt: buildPrompt(input), options })) {
         if (msg.type === 'system' && msg.subtype === 'init') remember(msg.session_id);
         if (msg.type === 'rate_limit_event') {
@@ -95,6 +97,15 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         }
         if (msg.type === 'assistant') {
           for (const e of subagents.assistant(msg.parent_tool_use_id, msg.message.content)) input.onEvent('sub', JSON.stringify(e));
+        }
+        if (msg.type === 'system' && msg.subtype === 'compact_boundary') {
+          const meta = msg.compact_metadata;
+          input.onEvent('compact', JSON.stringify({ pre: meta.pre_tokens, post: meta.post_tokens ?? 0, trigger: meta.trigger }));
+          contextUsed = meta.post_tokens ?? 0;
+        }
+        if (msg.type === 'assistant' && msg.parent_tool_use_id === null && msg.message.usage) {
+          const u = msg.message.usage;
+          contextUsed = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
         }
         if (msg.type === 'system' && 'task_id' in msg) {
           for (const e of subagents.task(msg as Parameters<SubAgentTracker['task']>[0])) input.onEvent('sub', JSON.stringify(e));
@@ -116,6 +127,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         }
         if (msg.type === 'result') {
           remember(msg.session_id);
+          const window = Object.values(msg.modelUsage ?? {})[0]?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+          if (contextUsed) input.onEvent('context', JSON.stringify({ used: contextUsed, window }));
           if (msg.subtype === 'success') final = msg.result;
           else throw new Error(`Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`);
         }

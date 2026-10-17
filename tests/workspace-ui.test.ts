@@ -3,7 +3,8 @@ import { SubAgentTracker } from '../src/agent/subagents.js';
 import { initialState, reduce, channelOf, type AppState } from '../src/core/store.js';
 import { derive } from '../src/ui/derive.js';
 import { initialUi } from '../src/ui/keymap.js';
-import { activityOf, overviewModel, projectsModel, reviewModel, tabsModel, workspaceHeaderModel } from '../src/ui/workspace-models.js';
+import { activityOf, contextMeter, isCompacting, overviewModel, projectsModel, reviewModel, tabsModel, workspaceHeaderModel } from '../src/ui/workspace-models.js';
+import { confirmMenu } from '../src/ui/menus.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
 const text = (lines: readonly (readonly { text: string }[])[]) => lines.map((l) => l.map((s) => s.text).join(''));
@@ -180,5 +181,65 @@ describe('derive', () => {
     const overview = derive({ state: reduce(s, { type: 'view', view: { kind: 'overview' } }), ui: initialUi, selfId: 'me', columns: 120, rows: 40, frame: 0 });
     expect(overview.overview).toBeDefined();
     expect(overview.zones.some((z) => z.action.type === 'ws' && z.action.action === 'merge')).toBe(true);
+  });
+});
+
+describe('context meter and compaction', () => {
+  const ev = (event: 'context' | 'compact', data: object, ts = 1000) =>
+    ({ type: 'agent_event' as const, owner: 'me', requestId: 'r', requester: 'me', event, text: JSON.stringify(data), ts, channel: 'ws:w1' });
+
+  it('tracks context usage and animates compaction', () => {
+    let s = base();
+    s = reduce(s, ev('context', { used: 150_000, window: 200_000 }));
+    expect(s.context['ws:w1']).toEqual({ used: 150_000, window: 200_000 });
+    expect(s.log).toHaveLength(0); // no chat noise
+    expect(contextMeter(s, 'ws:w1', 10).map((x) => x.text).join('')).toBe('context ▰▰▰▰▰▰▰▰▱▱ 75% · 150k/200k');
+    s = reduce(s, ev('compact', { pre: 168_000, post: 21_000 }, 10_000));
+    expect(s.context['ws:w1']?.used).toBe(21_000);
+    expect(s.log.at(-1)).toMatchObject({ type: 'system', text: 'Context compacted: 168k → 21k tokens (88% freed)' });
+    const mid = contextMeter(s, 'ws:w1', 10, 10_400).map((x) => x.text).join('');
+    expect(mid).toContain('compacting…');
+    const after = contextMeter(s, 'ws:w1', 10, 12_000).map((x) => x.text).join('');
+    expect(after).toContain('11% · 21k/200k');
+    expect(after).toContain('compacted 168k→21k');
+    expect(isCompacting(s, 12_000)).toBe(true);
+    expect(isCompacting(s, 99_000)).toBe(false);
+    expect(contextMeter(s, 'ws:other', 10)).toEqual([]);
+    expect(reduce(s, ev('context', {}))).toBe(s);
+    expect(reduce(s, { ...ev('context', {}), text: 'not json' })).toBe(s);
+  });
+
+  it('shows the meter and a Compact button in the workspace header', () => {
+    let s = reduce(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    s = reduce(s, ev('context', { used: 190_000, window: 200_000 }));
+    const m = workspaceHeaderModel(s, project.workspaces[1]!, 140);
+    expect(text(m.lines)[0]).toContain('95% · 190k/200k');
+    expect(m.zones.some((z) => z.action.type === 'ws' && z.action.action === 'compact')).toBe(true);
+  });
+});
+
+describe('store: per-conversation history', () => {
+  it('/clear only clears the conversation you are in and caps history per conversation', () => {
+    let s = base();
+    s = reduce(s, { type: 'chat', id: '1', from: 'me', text: 'room', ts: 1, byAgent: false });
+    s = reduce(s, { type: 'chat', id: '2', from: 'me', text: 'ws', ts: 1, byAgent: false, channel: 'ws:w1' });
+    expect(reduce(s, { type: 'clear' }).log.map((l) => l.channel)).toEqual(['ws:w1']);
+    expect(reduce(s, { type: 'clear', channel: 'ws:w1' }).log.map((l) => l.channel)).toEqual(['room']);
+    for (let i = 0; i < 1005; i++) s = reduce(s, { type: 'system', text: `n${i}` });
+    expect(s.log.filter((l) => l.channel === 'room')).toHaveLength(1000);
+    expect(s.log.some((l) => l.channel === 'ws:w1')).toBe(true); // never trimmed by another conversation
+  });
+});
+
+describe('confirm dialogs', () => {
+  it('lists env key changes (names only) and offers to copy them back', () => {
+    const s = reduce(base(), { type: 'env_changes', id: 'w1', changes: [{ file: '.env', added: ['NEW'], changed: ['API'], removed: ['OLD'], binary: false }, { file: '.aws/config', added: [], changed: [], removed: [], binary: true }] });
+    const archive = confirmMenu(s, 'archive', 'w1')!;
+    expect(archive.intro.join('\n')).toContain('.env  +NEW  ~API  −OLD');
+    expect(archive.intro.join('\n')).toContain('.aws/config  (file differs)');
+    expect(archive.options.map((o) => o.id)).toEqual(['confirm-archive-env', 'confirm-commit-archive', 'confirm-archive-force', 'close']);
+    expect(confirmMenu(s, 'delete', 'w1')!.options.map((o) => o.id)).toEqual(['confirm-delete-env', 'confirm-delete', 'close']);
+    expect(confirmMenu(base(), 'archive', 'main')!.options.map((o) => o.id)).toEqual(['confirm-archive', 'close']);
+    expect(confirmMenu(base(), 'archive', 'nope')).toBeUndefined();
   });
 });

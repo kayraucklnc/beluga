@@ -14,6 +14,8 @@ export const Settings = z.object({
   policy: z.enum(['ask', 'auto', 'deny']).optional(),
   mouse: z.boolean().default(true),
   tunnel: z.enum(['auto', 'cloudflared', 'ngrok', 'none']).default('auto'),
+  /** Whether your own Claude asks before shell commands and other risky actions. */
+  selfApproval: z.enum(['never', 'ask']).default('never'),
 });
 export type Settings = z.infer<typeof Settings>;
 

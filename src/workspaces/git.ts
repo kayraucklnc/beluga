@@ -155,10 +155,17 @@ export async function commitAll(dir: string, message: string): Promise<boolean> 
   return true;
 }
 
-export type MergeResult = { readonly ok: true } | { readonly ok: false; readonly reason: 'dirty' | 'conflict'; readonly files: readonly string[] };
+export type MergeResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: 'dirty' | 'conflict'; readonly files: readonly string[] }
+  | { readonly ok: false; readonly reason: 'wrong_branch'; readonly files: readonly string[]; readonly current: string; readonly expected: string };
 
-/** Merge `branch` into the main checkout. Aborts cleanly on conflicts. */
-export async function mergeInto(mainDir: string, branch: string): Promise<MergeResult> {
+/** Merge `branch` into the main checkout, which must be on `target`. Aborts cleanly on conflicts. */
+export async function mergeInto(mainDir: string, branch: string, target?: string): Promise<MergeResult> {
+  if (target) {
+    const current = (await tryGit(mainDir, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim() ?? 'HEAD';
+    if (current !== target) return { ok: false, reason: 'wrong_branch', files: [], current, expected: target };
+  }
   const dirty = (await git(mainDir, ['status', '--porcelain'])).split('\n').filter(Boolean);
   if (dirty.length) return { ok: false, reason: 'dirty', files: dirty.map((l) => l.slice(3)) };
   try {

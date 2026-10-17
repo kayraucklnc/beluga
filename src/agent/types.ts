@@ -11,7 +11,7 @@ export interface AgentRunInput {
   /** 'folder': only the shared folders. 'full': the whole computer (secrets still blocked). */
   readonly scope: AccessScope;
   readonly signal: AbortSignal;
-  readonly onEvent: (kind: 'text' | 'tool' | 'sub', text: string) => void;
+  readonly onEvent: (kind: 'text' | 'tool' | 'sub' | 'context' | 'compact', text: string) => void;
   /** Where to run: a workspace folder with its own Claude conversation. Defaults to the room's folder. */
   readonly place?: AgentPlace;
   /** Called with absolute paths the agent wrote to, so the room can follow along. */

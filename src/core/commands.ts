@@ -16,6 +16,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'new', args: '<name>', desc: 'new worktree from the latest origin (in the current project)' },
   { name: 'chat', args: '<title>', desc: 'new Claude chat in the current project, no worktree' },
   { name: 'review', desc: "see this workspace's changes" },
+  { name: 'compact', args: '[focus]', desc: "shrink this conversation's context (Claude keeps what matters)" },
   { name: 'merge', desc: 'merge this worktree into the main folder' },
   { name: 'commit', args: '[message]', desc: 'commit all changes in this workspace' },
   { name: 'fork', args: '<name>', desc: 'copy this workspace and its conversation' },
@@ -79,6 +80,7 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'worktree':
     case 'chat':
     case 'review':
+    case 'compact':
     case 'merge':
     case 'commit':
     case 'fork':
@@ -205,6 +207,9 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
   switch (name) {
     case 'review':
       ctl.open(ws.id, 'review');
+      return;
+    case 'compact':
+      ctl.compact(ws.id, text);
       return;
     case 'merge':
       void ctl.merge(ws.id);

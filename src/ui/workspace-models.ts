@@ -12,7 +12,47 @@ export interface Zone {
   readonly action: UiAction;
 }
 
-export type WorkspaceAction = 'merge' | 'fork' | 'commit' | 'finder' | 'archive' | 'restore' | 'delete' | 'review_claude' | 'merge_claude';
+export type WorkspaceAction = 'merge' | 'fork' | 'commit' | 'finder' | 'archive' | 'restore' | 'delete' | 'review_claude' | 'merge_claude' | 'compact';
+
+const COMPACT_ANIMATION_MS = 1600;
+
+/**
+ * A context meter: "context ▰▰▰▰▱▱▱▱ 48% · 96k/200k". Right after a compaction it animates
+ * shrinking from the old size to the new one.
+ */
+export function contextMeter(state: AppState, channel: string, width: number, now = Date.now()): Line {
+  const info = state.context[channel];
+  if (!info) return [];
+  const compaction = state.compactions[channel];
+  const sinceCompact = compaction ? now - compaction.at : Infinity;
+  let used = info.used;
+  let label = '';
+  if (compaction && sinceCompact < COMPACT_ANIMATION_MS) {
+    const t = Math.max(0, sinceCompact) / COMPACT_ANIMATION_MS;
+    const eased = 1 - (1 - t) ** 3;
+    used = Math.round(compaction.pre + (compaction.post - compaction.pre) * eased);
+    label = ' compacting…';
+  } else if (compaction && sinceCompact < COMPACT_ANIMATION_MS + 4000) {
+    label = ` compacted ${fmtK(compaction.pre)}→${fmtK(compaction.post)}`;
+  }
+  const pct = Math.max(0, Math.min(100, Math.round((used / Math.max(1, info.window)) * 100)));
+  const cells = Math.max(6, Math.min(16, width));
+  const filled = Math.round((pct / 100) * cells);
+  const color = label === ' compacting…' ? theme.info : pct >= 90 ? theme.error : pct >= 70 ? theme.warn : theme.muted;
+  return [
+    { text: 'context ', color: theme.muted },
+    { text: '▰'.repeat(filled), color },
+    { text: '▱'.repeat(cells - filled), color: theme.border },
+    { text: ` ${pct}% · ${fmtK(used)}/${fmtK(info.window)}`, color },
+    { text: label, color: theme.info },
+  ];
+}
+
+const fmtK = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+
+/** True while a compaction animation is playing somewhere (keeps frames ticking). */
+export const isCompacting = (state: AppState, now = Date.now()): boolean =>
+  Object.values(state.compactions).some((c) => now - c.at < COMPACT_ANIMATION_MS + 4000);
 
 export type UiAction =
   | { readonly type: 'open_ws'; readonly id: string; readonly tab?: 'chat' | 'files' | 'review' }
@@ -218,7 +258,7 @@ export function overviewModel(state: AppState, frame: number, width: number, now
   const gap = 2;
   const cardW = Math.floor((width - gap * (cols - 1)) / cols);
   for (let i = 0; i < live.length; i += cols) {
-    const rowCards = live.slice(i, i + cols).map(({ p, w }) => card(p, w, activityOf(state.log, `ws:${w.id}`), frame, cardW, now));
+    const rowCards = live.slice(i, i + cols).map(({ p, w }) => card(state, p, w, activityOf(state.log, `ws:${w.id}`), frame, cardW, now));
     const top = lines.length;
     for (let r = 0; r < CARD_HEIGHT; r++) {
       const segs: Seg[] = [];
@@ -251,7 +291,7 @@ export function overviewModel(state: AppState, frame: number, width: number, now
   return { lines, zones };
 }
 
-function card(p: Project, w: Workspace, act: Activity, frame: number, width: number, now: number): Model {
+function card(state: AppState, p: Project, w: Workspace, act: Activity, frame: number, width: number, now: number): Model {
   const inner = width - 4;
   const border = act.awaiting ? theme.warn : act.running ? theme.claude : theme.border;
   const b = (t: string): Seg => ({ text: t, color: border });
@@ -267,7 +307,8 @@ function card(p: Project, w: Workspace, act: Activity, frame: number, width: num
           { text: act.background ? ` · ${act.background} in background` : '', color: theme.info },
         ]
       : [{ text: act.lastTs ? `idle · ${ago(act.lastTs, now)}` : 'no conversation yet', color: theme.muted }];
-  const last: Line = plain(act.last ? `"${act.last}"` : ' ', { color: theme.muted, italic: true });
+  const ctx = contextMeter(state, `ws:${w.id}`, 8, now);
+  const last: Line = ctx.length ? ctx : plain(act.last ? `"${act.last}"` : ' ', { color: theme.muted, italic: true });
   const buttons: Array<{ label: string; action: UiAction }> = [
     { label: 'Open', action: { type: 'open_ws', id: w.id } },
     ...(w.kind !== 'chat' ? [{ label: 'Review', action: { type: 'open_ws', id: w.id, tab: 'review' } as UiAction }] : []),
@@ -311,6 +352,7 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
   const actions: Array<[string, WorkspaceAction]> = ws.archived
     ? [['Restore', 'restore'], ['Delete', 'delete']]
     : [
+        ...(state.context[`ws:${ws.id}`] ? ([['Compact', 'compact']] as Array<[string, WorkspaceAction]>) : []),
         ...(ws.kind === 'worktree' ? ([['Merge', 'merge'], ['Commit', 'commit']] as Array<[string, WorkspaceAction]>) : []),
         ...(ws.kind !== 'chat' ? ([['Fork', 'fork']] as Array<[string, WorkspaceAction]>) : []),
         ['Finder', 'finder'],
@@ -335,7 +377,10 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
     segs.push({ text: '  ·  ', color: theme.border });
     x += text.length + 5;
   }
-  return { lines: [truncate(title, width), truncate(segs.slice(0, -1), width), [{ text: '─'.repeat(width), color: theme.border }]], zones: zones.filter((z) => z.x0 < width) };
+  // Context meter on the right of the title line.
+  const meter = contextMeter(state, `ws:${ws.id}`, 12);
+  const titleLine = meter.length ? split(title, meter, width) : truncate(title, width);
+  return { lines: [titleLine, truncate(segs.slice(0, -1), width), [{ text: '─'.repeat(width), color: theme.border }]], zones: zones.filter((z) => z.x0 < width) };
 }
 
 /** Review screen: changed files on the left, the selected file's diff on the right. */

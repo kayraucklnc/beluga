@@ -110,6 +110,10 @@ export class ShareService {
     this.shares = this.shares.filter((s) => s.name !== name);
   }
 
+  isPrivate(name: string): boolean {
+    return this.shares.find((s) => s.name === name)?.private === true;
+  }
+
   /** Whether `peerId` may open this share (you always can; private shares need an invite). */
   canAccess(name: string, peerId: string, selfId: string): boolean {
     const share = this.shares.find((s) => s.name === name);
