@@ -5,6 +5,7 @@ import type { Review } from '../workspaces/git.js';
 import type { Project, ProjectGroup } from '../workspaces/types.js';
 import type { EnvChange } from '../workspaces/env.js';
 import type { Bitmap } from '../image/bitmap.js';
+import { type CollabAction, type CollabState, initialCollab, reduceCollab } from './collab-store.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
 
@@ -96,7 +97,7 @@ export interface Toast {
   readonly level: 'info' | 'success' | 'warn' | 'error';
 }
 
-export type Overlay = 'help' | 'settings' | 'welcome';
+export type Overlay = 'help' | 'settings' | 'welcome' | 'clear';
 
 /** Display preferences mirrored from ~/.klaude/settings.json. */
 export interface Prefs {
@@ -125,7 +126,11 @@ export type View =
   | { readonly kind: 'overview' }
   | { readonly kind: 'workspace'; readonly id: string; readonly tab: 'chat' | 'files' | 'review' }
   /** A new chat that doesn't exist until you send the first message. */
-  | { readonly kind: 'draft'; readonly projectId: string; readonly dir?: string; readonly back: View };
+  | { readonly kind: 'draft'; readonly projectId: string; readonly dir?: string; readonly back: View }
+  /** A new worktree: your first message names it (via a small model) and starts the work. */
+  | { readonly kind: 'draft_worktree'; readonly projectId: string; readonly back: View }
+  /** Someone else's workspace that they shared with you. */
+  | { readonly kind: 'shared'; readonly owner: string; readonly id: string; readonly tab: 'chat' | 'files' };
 
 export interface ReviewState {
   readonly workspaceId: string;
@@ -150,9 +155,10 @@ export interface Compaction {
   readonly at: number;
 }
 
-export const channelOf = (view: View): string => (view.kind === 'workspace' ? `ws:${view.id}` : view.kind === 'draft' ? 'draft' : 'room');
+export const channelOf = (view: View): string =>
+  view.kind === 'workspace' || view.kind === 'shared' ? `ws:${view.id}` : view.kind === 'draft' || view.kind === 'draft_worktree' ? 'draft' : 'room';
 
-export interface AppState {
+export interface AppState extends CollabState {
   readonly room: string;
   readonly view: View;
   readonly projects: readonly Project[];
@@ -237,7 +243,9 @@ export type Action =
   | { type: 'dir_cache'; key: string; entries: readonly FsEntry[] }
   | { type: 'transfer'; transfer: Transfer }
   | { type: 'prefs'; prefs: Partial<Prefs> }
-  | { type: 'clear'; channel?: string };
+  | { type: 'clear'; channel?: string }
+  | { type: 'context_reset'; channel: string }
+  | CollabAction;
 
 const LOG_LIMIT = 1000;
 const TRANSFER_LIMIT = 20;
@@ -274,6 +282,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Prefs 
     dirCache: {},
     transfers: [],
     prefs,
+    ...initialCollab,
   };
 }
 
@@ -295,14 +304,15 @@ function appendLog(log: readonly LogItem[], item: LogItem): readonly LogItem[] {
   return next.filter((_l, i) => i !== drop);
 }
 
-function rootRows(peers: readonly PeerInfo[]): BrowserRow[] {
-  return peers.flatMap((p) =>
-    p.shares.map((s) => ({
-      label: `${p.name}:${s.name}${s.writable ? '' : ' (ro)'}`,
-      dir: true,
-      target: { owner: p.peerId, share: s.name, path: '' },
-    })),
+/** Every folder you can open: shared with the room, shared with just you, and workspaces you were invited into. */
+function rootRows(state: AppState): BrowserRow[] {
+  const name = (id: string) => state.peers.find((p) => p.peerId === id)?.name ?? 'someone';
+  const room = state.peers.flatMap((p) =>
+    p.shares.map((s) => ({ label: `${p.name} · ${s.name}${s.writable ? '' : ' (read-only)'}`, dir: true, target: { owner: p.peerId, share: s.name, path: '' } })),
   );
+  const offers = state.offers.map((o) => ({ label: `${name(o.owner)} · ${o.name} (shared with you)`, dir: true, target: { owner: o.owner, share: o.name, path: '' } }));
+  const workspaces = state.shared.map((w) => ({ label: `${name(w.owner)} · ${w.name} (workspace)`, dir: true, target: { owner: w.owner, share: w.share, path: '' } }));
+  return [...room, ...offers, ...workspaces];
 }
 
 function reduceAgent(state: AppState, raw: Extract<Action, { type: 'agent_event' }>): AppState {
@@ -419,7 +429,7 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'welcome':
       return { ...state, self: action.self };
     case 'peers': {
-      const browser = state.browser.at ? state.browser : { ...state.browser, rows: rootRows(action.peers), cursor: 0 };
+      const browser = state.browser.at ? state.browser : { ...state.browser, rows: rootRows({ ...state, peers: action.peers }), cursor: 0 };
       const ids = new Set(action.peers.map((p) => p.peerId));
       const follow = state.follow && ids.has(state.follow) ? state.follow : undefined;
       // Peer ids are self-chosen, so trust never outlives the connection that earned it.
@@ -484,7 +494,7 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'approval_remove':
       return { ...state, approvals: state.approvals.filter((a) => a.id !== action.id) };
     case 'browser_root':
-      return { ...state, browser: { rows: rootRows(state.peers), cursor: 0, loading: false } };
+      return { ...state, browser: { rows: rootRows(state), cursor: 0, loading: false } };
     case 'browser_loading':
       return { ...state, browser: { ...state.browser, at: action.at, loading: true, error: undefined } };
     case 'browser_entries': {
@@ -560,6 +570,26 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'clear': {
       const channel = action.channel ?? channelOf(state.view);
       return { ...state, log: state.log.filter((l) => l.channel !== channel) };
+    }
+    case 'question_add':
+    case 'question_pick':
+    case 'question_remove':
+    case 'room_open':
+    case 'shared_add':
+    case 'shared_remove':
+    case 'member_set':
+    case 'roster':
+    case 'plan_mode':
+    case 'peer_gone':
+    case 'shared_clear':
+    case 'offer': {
+      const next = { ...state, ...reduceCollab(state, action) };
+      // The Shared files list updates live while you're looking at it.
+      return next.browser.at ? next : { ...next, browser: { ...next.browser, rows: rootRows(next) } };
+    }
+    case 'context_reset': {
+      const { [action.channel]: _gone, ...context } = state.context;
+      return { ...state, context };
     }
     default:
       return state;

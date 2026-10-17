@@ -31,6 +31,7 @@ Options:
       --lan                listen on all interfaces so LAN peers can dial ws://<your-ip>:<port>
   -p, --port <port>        hub port (default random)
   -h, --help               show this help
+  -v, --version            show the installed version
 
 Your name, theme and other choices are saved in ~/.klaude/settings.json.
 Change them any time inside klaude with /settings.

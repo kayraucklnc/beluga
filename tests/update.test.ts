@@ -73,6 +73,7 @@ describe('klaude update', () => {
     expect(plain.calls.some((c) => c.startsWith('npm install'))).toBe(false);
     expect(plain.calls).toContain('npm run --silent build');
     expect(plain.text()).toContain('aaa → bbb');
+    expect(plain.text()).toContain('is installed');
 
     const deps = fakeGit({ behind: 1, deps: true });
     await runUpdate({ run: deps.run, out: deps.out, root: '/k' });

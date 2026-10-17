@@ -1,4 +1,5 @@
 import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
+import { slugify } from './namer.js';
 
 interface Script {
   readonly match: RegExp;
@@ -69,15 +70,65 @@ const sleep = (ms: number, signal: AbortSignal): Promise<void> =>
     });
   });
 
+const MOCK_PLAN = `## Plan: add auth
+
+1. Add \`src/auth.ts\` with a \`requireUser()\` middleware
+2. Protect \`/api/payments/*\`
+3. Cover it with 3 tests (missing, expired, valid session)
+
+Nothing is changed until you approve.`;
+
+async function mockPlan(input: AgentRunInput, pace: number): Promise<string> {
+  for (const step of ['Read src/server.ts', 'Grep "app.get"', 'Read NOTES.md']) {
+    await sleep(450 * pace, input.signal);
+    input.onEvent('tool', step);
+  }
+  input.onEvent('text', MOCK_PLAN);
+  const answer = input.askUser ? await input.askUser({ kind: 'plan', plan: MOCK_PLAN }) : ({ kind: 'skip' } as const);
+  if (answer.kind !== 'plan' || !answer.approve) return answer.kind === 'plan' && answer.feedback ? `Got it. I'll revise the plan: ${answer.feedback}` : 'Okay, I left everything as it was.';
+  for (const step of ['Write src/auth.ts', 'Edit src/server.ts', 'Bash npm test']) {
+    await sleep(450 * pace, input.signal);
+    input.onEvent('tool', step);
+  }
+  return 'Done. `requireUser()` protects `/api/payments/*` and all **27 tests** pass.';
+}
+
 export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   let contextUsed = 52_000;
   return {
+    nameTask: async (prompt) => {
+      await new Promise((r) => setTimeout(r, 600 * pace));
+      return slugify(prompt);
+    },
     async run(input: AgentRunInput): Promise<string> {
       const script = SCRIPTS.find((s) => s.match.test(input.prompt)) ?? FALLBACK;
       if (/^\/compact/.test(input.prompt.trim())) {
         await sleep(900 * pace, input.signal);
         input.onEvent('compact', JSON.stringify({ pre: 168_000, post: 21_000, trigger: 'manual' }));
         return 'Compacted the conversation. I kept the plan, decisions so far, and open TODOs.';
+      }
+      // Plan mode, and questions back to you, work in the demo too.
+      if (input.plan) return mockPlan(input, pace);
+      if (/\b(which|choose|pick)\b/i.test(input.prompt) && input.askUser) {
+        await sleep(450 * pace, input.signal);
+        input.onEvent('tool', 'Read src/server.ts');
+        const answer = await input.askUser({
+          kind: 'question',
+          questions: [
+            {
+              question: 'Which session store should auth use?',
+              header: 'Sessions',
+              multiSelect: false,
+              options: [
+                { label: 'Signed cookies', description: 'no server state, simplest' },
+                { label: 'Redis', description: 'shared across servers' },
+                { label: 'Postgres', description: 'reuses the existing database' },
+              ],
+            },
+          ],
+        });
+        const picked = answer.kind === 'answers' ? Object.values(answer.answers)[0] : undefined;
+        return picked ? `Going with **${picked}**. I'll wire \`requireUser()\` to it next.` : "No preference, so I'll start with **signed cookies**: the simplest option.";
       }
       for (const step of script.steps) {
         await sleep(450 * pace, input.signal);

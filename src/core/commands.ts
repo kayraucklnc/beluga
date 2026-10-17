@@ -1,5 +1,5 @@
 import type { Session } from './session.js';
-import type { Policy } from './store.js';
+import { type Policy, channelOf } from './store.js';
 import { THEMES, type ThemeName } from './settings.js';
 
 export interface CommandSpec {
@@ -42,7 +42,11 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'name', args: '<new name>', desc: 'change the name friends see' },
   { name: 'theme', args: 'calm|light|contrast|mono', desc: 'switch the color theme' },
   { name: 'zoom', args: 'in|out|reset', desc: 'make the text bigger or smaller (also Option+↑ / Option+↓)' },
-  { name: 'clear', desc: 'clear the chat' },
+  { name: 'clear', desc: 'clear this conversation (choose: just you, everyone, or a fresh Claude)' },
+  { name: 'plan', args: 'on|off', desc: 'Claude plans first and asks you to approve before changing anything' },
+  { name: 'remove', args: '<name>', desc: 'host: remove someone from the room (the invite link changes)' },
+  { name: 'newlink', desc: 'host: make a new invite link; the old one stops working' },
+  { name: 'lock', args: 'on|off', desc: 'host: stop (or allow) new people joining' },
   { name: 'help', desc: 'show keys and commands' },
   { name: 'quit', desc: 'leave the room' },
 ];
@@ -157,7 +161,25 @@ export function runCommand(session: Session, name: string, args: readonly string
       return;
     }
     case 'clear':
-      session.store.dispatch({ type: 'clear' });
+      session.store.dispatch({ type: 'overlay', overlay: 'clear' });
+      return;
+    case 'plan': {
+      const channel = channelOf(state.view);
+      session.setPlanMode(channel, arg ? arg !== 'off' : !state.planMode[channel]);
+      return;
+    }
+    case 'remove': {
+      const target = state.peers.find((p) => p.name.toLowerCase() === (arg ?? '').toLowerCase());
+      if (!session.isHost) return session.toast('Only the host can remove people', 'warn');
+      if (!target) return session.toast(`Nobody called "${arg}" is here`, 'warn');
+      session.removePerson(target.peerId);
+      return;
+    }
+    case 'newlink':
+      session.newInviteLink();
+      return;
+    case 'lock':
+      session.setRoomOpen(arg === 'off');
       return;
     case 'settings':
     case 'prefs':

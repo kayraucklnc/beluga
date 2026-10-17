@@ -10,7 +10,7 @@ import { ShareService } from './core/shares.js';
 import { Store, initialState } from './core/store.js';
 import { saveSettings } from './core/settings.js';
 import { applyTheme } from './ui/theme.js';
-import { deriveKeys, generateSecret } from './net/crypto.js';
+import { type Identity, deriveKeys, generateIdentity, generateSecret } from './net/crypto.js';
 import { startHub, type Hub } from './net/hub.js';
 import { decodeInvite, encodeInvite, findInvite, toWsUrl } from './net/invite.js';
 import { PeerClient } from './net/peer-client.js';
@@ -19,6 +19,7 @@ import { App } from './ui/App.js';
 import { ErrorBoundary } from './ui/components/ErrorBoundary.js';
 import { createMockBackend } from './agent/mock.js';
 import { runUpdate } from './update/update.js';
+import { installedVersion } from './update/check.js';
 import { runView } from './image/view-cli.js';
 import { createDemoFolders, createDemoWorkspaces, startDemoFriend } from './demo.js';
 import { WorkspaceManager } from './workspaces/manager.js';
@@ -26,10 +27,15 @@ import { MOUSE_OFF, MOUSE_ON, type MouseEvent, createMouseInput } from './ui/mou
 
 interface Room {
   readonly url: string;
-  readonly secret: string;
+  /** Changes when the host replaces the invite link. */
+  secret: string;
   readonly room: string;
   readonly hub?: Hub;
   readonly invite?: string;
+  /** The host's signing identity (its peer id is marked as host in the room). */
+  readonly identity?: Identity;
+  /** Where friends reach the room, once remote access is up. */
+  publicUrl?: string;
 }
 
 function lanAddress(): string | undefined {
@@ -42,8 +48,10 @@ async function hostRoom(config: Config): Promise<Room> {
   const secret = generateSecret();
   const room = `${config.name}'s room`;
   const lan = config.lan || config.tunnel === 'none';
-  const hub = await startHub({ keys: deriveKeys(secret), port: config.port, host: lan ? '0.0.0.0' : '127.0.0.1', roomName: room });
-  return { url: `ws://127.0.0.1:${hub.port}`, secret, room, hub };
+  // The host's peer id comes from its own key, so nobody else can claim to be the host.
+  const identity = generateIdentity();
+  const hub = await startHub({ keys: deriveKeys(secret), port: config.port, host: lan ? '0.0.0.0' : '127.0.0.1', roomName: room, hostId: identity.peerId });
+  return { url: `ws://127.0.0.1:${hub.port}`, secret, room, hub, identity };
 }
 
 async function resolveJoinInvite(config: Config): Promise<string> {
@@ -66,7 +74,9 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
   const port = room.hub?.port ?? 0;
   const lanInvite = (): string | undefined => {
     const ip = lanAddress();
-    return ip ? encodeInvite({ url: `ws://${ip}:${port}`, secret: room.secret }) : undefined;
+    if (!ip) return undefined;
+    room.publicUrl = `ws://${ip}:${port}`;
+    return encodeInvite({ url: room.publicUrl, secret: room.secret });
   };
   const announce = async (invite: string, phase: 'ready' | 'local'): Promise<void> => {
     if (isClosing()) return;
@@ -96,7 +106,8 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
     if (!tunnel || isClosing()) return;
     store.dispatch({ type: 'hosting', hosting: { phase: 'reachable' } });
     if (!(await waitUntilReachable(tunnel.publicUrl))) throw new Error('The tunnel never became reachable');
-    await announce(encodeInvite({ url: toWsUrl(tunnel.publicUrl), secret: room.secret }), 'ready');
+    room.publicUrl = toWsUrl(tunnel.publicUrl);
+    await announce(encodeInvite({ url: room.publicUrl, secret: room.secret }), 'ready');
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     const fallback = config.lan ? lanInvite() : undefined;
@@ -110,6 +121,10 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  if (args[0] === '--version' || args[0] === '-v' || args[0] === 'version') {
+    process.stdout.write(`klaude ${installedVersion()}\n`);
+    return;
+  }
   if (args[0] === 'view') {
     process.exitCode = await runView(args.slice(1));
     return;
@@ -138,7 +153,26 @@ async function main(): Promise<void> {
     url: room.url,
     keys: deriveKeys(room.secret),
     profile: { name: config.name, shares: shares.infos, agent: config.agent },
+    ...(room.identity ? { identity: room.identity } : {}),
   });
+  const hub = room.hub;
+  const replaceInvite = (): void => {
+    if (!hub) return;
+    room.secret = generateSecret();
+    hub.replaceInvite(room.secret, deriveKeys(room.secret));
+    if (room.publicUrl) store.dispatch({ type: 'invite', invite: encodeInvite({ url: room.publicUrl, secret: room.secret }) });
+  };
+  const roomControl = hub
+    ? {
+        removePerson: (peerId: string) => {
+          hub.kick(peerId);
+          replaceInvite();
+        },
+        newInvite: replaceInvite,
+        setOpen: (open: boolean) => hub.setOpen(open),
+        clearHistory: () => hub.clearHistory(),
+      }
+    : undefined;
 
   const primary = config.shares[0];
   const agentCwd = primary?.root ?? process.cwd();
@@ -177,6 +211,7 @@ async function main(): Promise<void> {
       : undefined,
     onQuit: () => void shutdown(),
     launchDir: process.cwd(),
+    ...(roomControl ? { room: roomControl } : {}),
   });
 
   const shutdown = async (): Promise<void> => {

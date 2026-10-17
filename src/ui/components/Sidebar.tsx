@@ -38,6 +38,7 @@ export function Sidebar({ state, width, projectsHeight, peopleHeight, projects, 
                 <Text color={p.color}>{glyph.dot} </Text>
                 <Text bold>{p.name}</Text>
                 {p.you ? <Text color={theme.muted}> (you)</Text> : null}
+                {p.tags ? <Text color={theme.ok}> {p.tags}</Text> : null}
                 {state.follow === p.peerId ? <Text color={theme.warn}> {glyph.eye} following</Text> : null}
               </Text>
               <Box paddingLeft={2}>

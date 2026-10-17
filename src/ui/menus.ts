@@ -1,4 +1,7 @@
 import type { AppState } from '../core/store.js';
+import { worktreeOrigin } from '../workspaces/origin.js';
+import { clearMenu, invitePersonMenu, sharedMenu, wsShareMenu } from './collab-menus.js';
+import { shareFolderMenu, shareWhoMenu } from './share-menus.js';
 import { THEME_LABELS } from './theme.js';
 import { describeWindow } from '../agent/usage.js';
 import type { Usage } from '../protocol.js';
@@ -26,7 +29,14 @@ export type MenuKind =
   | { readonly kind: 'person'; readonly index: number }
   | { readonly kind: 'confirm'; readonly action: 'archive' | 'delete'; readonly id: string }
   | { readonly kind: 'project'; readonly id: string }
-  | { readonly kind: 'archived'; readonly id: string };
+  | { readonly kind: 'archived'; readonly id: string }
+  | { readonly kind: 'agents'; readonly projectId: string }
+  | { readonly kind: 'ws_share'; readonly id: string }
+  | { readonly kind: 'shared'; readonly owner: string; readonly id: string }
+  | { readonly kind: 'clear'; readonly channel: string; readonly host: boolean }
+  | { readonly kind: 'invite_person'; readonly peerId: string }
+  | { readonly kind: 'share_folder'; readonly launchDir: string; readonly mine: ReadonlyArray<{ name: string; root?: string; private?: boolean; allowed?: readonly string[] }> }
+  | { readonly kind: 'share_who'; readonly dir: string };
 
 /** The ⋯ menu on a project: start work, organize into groups, hide, open in Finder. */
 export function projectMenu(state: AppState, id: string): MenuSpec | undefined {
@@ -46,6 +56,25 @@ export function projectMenu(state: AppState, id: string): MenuSpec | undefined {
       { id: 'p-newgroup', label: 'Move to a new group…', hint: 'type a name' },
       ...(group ? [{ id: 'p-ungroup', label: `Remove from "${group.name}"`, hint: '' }] : []),
       { id: 'p-hide', label: 'Hide this project', hint: 'add it back with /project add' },
+      { id: 'close', label: 'Close', hint: 'Esc' },
+    ],
+  };
+}
+
+/** The ⋯ on a project's "Claude Code agents" group: tidy up what sub-agents left behind. */
+export function agentsMenu(state: AppState, projectId: string): MenuSpec | undefined {
+  const p = state.projects.find((x) => x.id === projectId);
+  if (!p) return undefined;
+  const agents = p.workspaces.filter((w) => !w.archived && worktreeOrigin(w) === 'agent');
+  const clean = agents.filter((w) => w.status?.changed === 0).length;
+  return {
+    title: `Claude Code agent worktrees in ${p.name}`,
+    intro: [
+      `${agents.length} worktree${agents.length === 1 ? '' : 's'} that Claude Code sub-agents created under .claude/worktrees.`,
+      `${clean} have no uncommitted changes. Removing them keeps their branches, so no commits are lost.`,
+    ],
+    options: [
+      ...(clean ? [{ id: 'agents-clean', label: `Remove ${clean} finished worktree${clean === 1 ? '' : 's'}`, hint: 'branches are kept' }] : []),
       { id: 'close', label: 'Close', hint: 'Esc' },
     ],
   };
@@ -175,15 +204,31 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
   if (!peer) return undefined;
   const isSelf = peer.peerId === state.self?.peerId;
   const share = peer.shares[0];
+  const host = state.self?.host === true;
+  const roomOptions: MenuOption[] = host
+    ? [
+        { id: 'invite', label: state.invite ? 'Copy invite link' : 'Invite friends', hint: 'bring more people' },
+        ...(state.invite ? [{ id: 'room-new-link', label: 'Make a new invite link', hint: 'the old one stops working; people here stay' }] : []),
+        state.roomOpen
+          ? { id: 'room-close', label: 'Close the room to new people', hint: 'nobody new can join, even with the link' }
+          : { id: 'room-open', label: 'Let new people join again', hint: 'now: closed' },
+      ]
+    : [
+        ...(state.invite ? [{ id: 'invite', label: 'Copy invite link', hint: 'bring more friends' }] : []),
+        { id: 'leave-room', label: 'Leave the room', hint: 'closes klaude' },
+      ];
   const options: MenuOption[] = isSelf
     ? [
         { id: 'ask-self', label: 'Ask my Claude', hint: 'start a message with @claude' },
-        ...(state.invite ? [{ id: 'invite', label: 'Copy invite link', hint: 'bring more friends' }] : []),
+        { id: 'share-folder', label: 'Share a folder…', hint: 'with everyone, or just one person' },
+        ...roomOptions,
         { id: 'sharing', label: 'Change who can use my Claude', hint: `now: ${state.policy}` },
         { id: 'settings', label: 'Settings', hint: 'name, theme, mouse, remote access' },
       ]
     : [
         ...(peer.agent ? [{ id: 'ask', label: `Ask ${peer.name}'s Claude`, hint: `runs on ${peer.name}'s computer` }] : []),
+        { id: 'person-invite-ws', label: `Invite ${peer.name} into a workspace…`, hint: 'work together on a worktree or chat' },
+        { id: 'person-share', label: `Share a folder with ${peer.name}…`, hint: 'pick the folder, then "Only ' + peer.name + '"' },
         state.access[peer.peerId] === 'full'
           ? { id: 'access-folder', label: `Limit ${peer.name} to my shared folders`, hint: 'now: whole computer' }
           : { id: 'access-full', label: `Give ${peer.name} access to my whole computer`, hint: 'now: shared folders only' },
@@ -197,6 +242,7 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
         state.trusted.includes(peer.peerId)
           ? { id: 'untrust', label: `Ask before ${peer.name} uses my Claude` }
           : { id: 'trust', label: `Let ${peer.name} use my Claude without asking`, hint: 'still asks before commands' },
+        ...(host ? [{ id: 'person-remove', label: `Remove ${peer.name} from the room`, hint: 'they are disconnected; the invite link changes' }] : []),
       ];
   const about = isSelf ? 'What would you like to do?' : `${peer.agent ? 'Claude is on' : 'No Claude'} · shares ${peer.shares.map((s) => s.name).join(', ') || 'nothing'}`;
   const access = isSelf
@@ -215,5 +261,12 @@ export function menuSpec(state: AppState, menu: MenuKind): MenuSpec | undefined 
   if (menu.kind === 'confirm') return confirmMenu(state, menu.action, menu.id);
   if (menu.kind === 'project') return projectMenu(state, menu.id);
   if (menu.kind === 'archived') return archivedMenu(state, menu.id);
+  if (menu.kind === 'agents') return agentsMenu(state, menu.projectId);
+  if (menu.kind === 'ws_share') return wsShareMenu(state, menu.id);
+  if (menu.kind === 'shared') return sharedMenu(state, menu.owner, menu.id);
+  if (menu.kind === 'clear') return clearMenu(state, menu.channel, menu.host);
+  if (menu.kind === 'invite_person') return invitePersonMenu(state, menu.peerId);
+  if (menu.kind === 'share_folder') return shareFolderMenu(state, menu.launchDir, menu.mine);
+  if (menu.kind === 'share_who') return shareWhoMenu(state, menu.dir);
   return personMenu(state, menu.index);
 }

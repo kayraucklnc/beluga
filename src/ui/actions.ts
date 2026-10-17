@@ -70,6 +70,16 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
           { id: 'actions', text: 'Actions', key: 'Tab' },
           { id: 'review', text: 'Diff', key: '' },
           { id: 'overview', text: 'Overview', key: '' },
+          { id: 'clear', text: 'Clear', key: '' },
+          { id: 'settings', text: 'Settings', key: '' },
+          { id: 'help', text: 'Help', key: '' },
+        ];
+      }
+      if (state.view.kind === 'files') {
+        return [
+          { id: 'share-folder', text: '+ Share a folder', key: '' },
+          { id: 'projects', text: 'Projects', key: 'Tab' },
+          { id: 'invite', text: state.invite ? 'Copy invite' : 'Invite friends', key: '' },
           { id: 'settings', text: 'Settings', key: '' },
           { id: 'help', text: 'Help', key: '' },
         ];
@@ -79,6 +89,8 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
         { id: 'commands', text: 'Commands', key: '/' },
         { id: 'projects', text: 'Projects', key: 'Tab' },
         { id: 'invite', text: state.invite ? 'Copy invite' : 'Invite friends', key: '' },
+        { id: 'share-folder', text: 'Share', key: '' },
+        { id: 'clear', text: 'Clear', key: '' },
         { id: 'settings', text: 'Settings', key: '' },
         { id: 'help', text: 'Help', key: '' },
       ];

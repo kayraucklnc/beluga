@@ -134,6 +134,8 @@ export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
     const tests = await mgr.createWorktree(api.id, 'webhook-retries');
     writeTree(tests.path, { 'src/webhooks.ts': '// retry with backoff\nexport const MAX_RETRIES = 5;\n' });
     await mgr.createChat(api.id, 'How do deploys work?');
+    // Worktrees Claude Code sub-agents leave behind (they fold into their own group).
+    for (const id of ['a3f9c1e07b2d', 'a8b24d6e91c0']) gitIn(api.root, 'worktree', 'add', '-q', '-b', `agent-${id}`, path.join(api.root, '.claude', 'worktrees', `agent-${id}`));
   }
   if (landing) {
     const hero = await mgr.createWorktree(landing.id, 'new-hero');

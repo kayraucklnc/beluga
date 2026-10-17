@@ -200,7 +200,7 @@ describe('Session', () => {
     const bob = peer('bob', { files: { 'README.md': 'v1', '.env': 'SECRET' } });
     await room(kay, bob);
 
-    const bobRow = kay.state().browser.rows.findIndex((r) => r.label === 'bob:proj');
+    const bobRow = kay.state().browser.rows.findIndex((r) => r.label === 'bob · proj');
     kay.session.store.dispatch({ type: 'browser_cursor', delta: bobRow });
     await kay.session.browserEnter();
     expect(kay.state().browser.rows.map((r) => r.label)).toEqual(['..', 'README.md']);
@@ -321,7 +321,9 @@ describe('Session', () => {
     expect(kay.state().overlay).toBe('help');
     kay.session.submit('//not a command');
     await waitFor(() => bob.state().log.some((l) => l.type === 'chat' && l.text === '/not a command'));
-    kay.session.submit('/clear');
+    kay.session.submit('/clear'); // asks how to clear (just me / everyone)
+    expect(kay.state().overlay).toBe('clear');
+    kay.session.clearChat('room');
     expect(kay.state().log).toHaveLength(0);
     kay.session.submit('/quit');
     expect(kay.quit.called).toBe(true);
