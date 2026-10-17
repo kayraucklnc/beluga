@@ -92,6 +92,11 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     if (this.ready) this.sendHello('');
   }
 
+  /** The profile currently advertised to the room. */
+  get currentProfile(): Profile {
+    return this.profile;
+  }
+
   get connected(): boolean {
     return this.ready;
   }

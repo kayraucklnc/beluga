@@ -1,4 +1,11 @@
 import type { AppState } from '../core/store.js';
+import { describeWindow } from '../agent/usage.js';
+import type { Usage } from '../protocol.js';
+
+function usageLines(usage: Usage | undefined): string[] {
+  if (!usage) return [];
+  return [`Claude usage${usage.plan ? ` (${usage.plan})` : ''}:  5-hour ${describeWindow(usage.fiveHour)}   ·   week ${describeWindow(usage.week)}`];
+}
 
 export interface MenuOption {
   readonly id: string;
@@ -50,6 +57,9 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
       ]
     : [
         ...(peer.agent ? [{ id: 'ask', label: `Ask ${peer.name}'s Claude`, hint: `runs on ${peer.name}'s computer` }] : []),
+        state.access[peer.peerId] === 'full'
+          ? { id: 'access-folder', label: `Limit ${peer.name} to my shared folders`, hint: 'now: whole computer' }
+          : { id: 'access-full', label: `Give ${peer.name} access to my whole computer`, hint: 'now: shared folders only' },
         state.follow === peer.peerId
           ? { id: 'unfollow', label: `Stop following ${peer.name}` }
           : { id: 'follow', label: `Follow ${peer.name}`, hint: 'see the files they and their Claude open' },
@@ -58,11 +68,15 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
           ? { id: 'untrust', label: `Ask before ${peer.name} uses my Claude` }
           : { id: 'trust', label: `Let ${peer.name} use my Claude without asking`, hint: 'this session only' },
       ];
-  return {
-    title: isSelf ? `${peer.name} (you)` : peer.name,
-    intro: [isSelf ? 'What would you like to do?' : `${peer.agent ? 'Claude is on' : 'No Claude'} · shares ${peer.shares.map((s) => s.name).join(', ') || 'nothing'}`],
-    options,
-  };
+  const about = isSelf ? 'What would you like to do?' : `${peer.agent ? 'Claude is on' : 'No Claude'} · shares ${peer.shares.map((s) => s.name).join(', ') || 'nothing'}`;
+  const access = isSelf
+    ? []
+    : [
+        state.access[peer.peerId] === 'full'
+          ? `When ${peer.name} asks your Claude, it can read anything on this computer (secrets stay blocked).`
+          : `When ${peer.name} asks your Claude, it can only use your shared folders.`,
+      ];
+  return { title: isSelf ? `${peer.name} (you)` : peer.name, intro: [about, ...usageLines(peer.usage), ...access], options };
 }
 
 export function menuSpec(state: AppState, menu: MenuKind): MenuSpec | undefined {

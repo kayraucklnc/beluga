@@ -14,6 +14,7 @@ const bridge: RoomBridge = {
     throw new Error('private');
   },
   writeReport: async (title) => `proj/.klaude/reports/${title}.md`,
+  reportUsage: () => undefined,
 };
 
 describe('room tools', () => {

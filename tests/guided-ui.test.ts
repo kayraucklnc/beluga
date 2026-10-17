@@ -42,10 +42,10 @@ describe('menus', () => {
 
   it('offers actions for a friend', () => {
     const spec = personMenu(room(), 1)!;
-    expect(spec.options.map((o) => o.id)).toEqual(['ask', 'follow', 'browse', 'trust']);
+    expect(spec.options.map((o) => o.id)).toEqual(['ask', 'access-full', 'follow', 'browse', 'trust']);
     const followed = reduce(reduce(room(), { type: 'follow', peerId: 'b' }), { type: 'trust', peerId: 'b', trusted: true });
-    expect(personMenu(followed, 1)!.options.map((o) => o.id)).toEqual(['ask', 'unfollow', 'browse', 'untrust']);
-    expect(personMenu(room(), 2)!.options.map((o) => o.id)).toEqual(['follow', 'trust']); // no Claude, no shares
+    expect(personMenu(followed, 1)!.options.map((o) => o.id)).toEqual(['ask', 'access-full', 'unfollow', 'browse', 'untrust']);
+    expect(personMenu(room(), 2)!.options.map((o) => o.id)).toEqual(['access-full', 'follow', 'trust']); // no Claude, no shares
     expect(personMenu(room(), 9)).toBeUndefined();
   });
 

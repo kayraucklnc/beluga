@@ -175,6 +175,13 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         if (peer) session.store.dispatch({ type: 'trust', peerId: peer.peerId, trusted: option.id === 'trust' });
         session.toast(option.id === 'trust' ? `${peer?.name} can use your Claude without asking` : `${peer?.name} needs your approval again`, 'success');
         return;
+      case 'access-full':
+      case 'access-folder':
+        if (peer) {
+          session.setAccess(peer.peerId, option.id === 'access-full' ? 'full' : 'folder');
+          session.toast(option.id === 'access-full' ? `${peer.name} can reach your whole computer` : `${peer.name} is limited to your shared folders`, 'success');
+        }
+        return;
       case 'invite':
         void session.copyInvite();
         return;

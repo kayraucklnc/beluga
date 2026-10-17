@@ -1,4 +1,5 @@
 import type { AppState } from '../core/store.js';
+import type { Usage } from '../protocol.js';
 import { card, isRunning } from './format.js';
 import { type Line, plain, wrapText } from './text.js';
 import { SPINNER, colorFor, glyph, theme } from './theme.js';
@@ -65,8 +66,21 @@ export function peopleRows(state: AppState, frame: number): PersonRow[] {
     else if (run?.type === 'agent' && run.status === 'awaiting_approval') agent = plain(`${glyph.wait} needs approval`, { color: theme.warn });
     else if (run?.type === 'agent') agent = plain(`${spin} working for ${run.requesterName}`, { color: theme.claude });
     else agent = plain(`${glyph.claude} Claude ready`, { color: theme.muted });
-    return { peerId: p.peerId, name: p.name, you: p.peerId === state.self?.peerId, color: colorFor(p.name), agent };
+    const meter = usageMeter(p.usage);
+    return { peerId: p.peerId, name: p.name, you: p.peerId === state.self?.peerId, color: colorFor(p.name), agent: meter ? [...agent, ...meter] : agent };
   });
+}
+
+/** Compact "· 5h 42%" meter; turns sand/clay as a window fills up. */
+export function usageMeter(usage: Usage | undefined): Line | undefined {
+  const w = usage?.fiveHour ?? usage?.week;
+  if (!w) return undefined;
+  const label = usage?.fiveHour ? '5h' : 'wk';
+  const color = w.pct >= 90 ? theme.error : w.pct >= 70 ? theme.warn : theme.muted;
+  return [
+    { text: ' · ', color: theme.muted },
+    { text: `${label} ${w.pct}%`, color },
+  ];
 }
 
 export const anyActivity = (state: AppState): boolean =>

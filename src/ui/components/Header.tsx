@@ -13,6 +13,7 @@ const STATUS = {
 export function Header({ state, width }: { state: AppState; width: number }) {
   const st = STATUS[state.status];
   const people = state.peers.length;
+  const mine = state.peers.find((p) => p.peerId === state.self?.peerId)?.usage;
   return (
     <Box width={width} paddingX={1} height={1}>
       <Text bold color={theme.accent}>
@@ -24,6 +25,14 @@ export function Header({ state, width }: { state: AppState; width: number }) {
       {state.follow ? (
         <Text color={theme.warn}>
           {glyph.eye} following {peerName(state, state.follow)}
+          {'   '}
+        </Text>
+      ) : null}
+      {mine?.fiveHour || mine?.week ? (
+        <Text color={theme.muted}>
+          your Claude {mine.fiveHour ? `5h ${mine.fiveHour.pct}%` : ''}
+          {mine.fiveHour && mine.week ? ' · ' : ''}
+          {mine.week ? `week ${mine.week.pct}%` : ''}
           {'   '}
         </Text>
       ) : null}
