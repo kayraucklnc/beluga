@@ -216,6 +216,10 @@ describe('Session', () => {
     kay.session.submit(':open nope');
     expect(kay.toasts.some((t) => t.includes("Can't open"))).toBe(true);
 
+    await kay.session.loadDir({ owner: bob.session.selfId, share: 'proj', path: '' });
+    expect(kay.state().dirCache[`${bob.session.selfId}:proj/`]?.map((e) => e.name)).toEqual(['README.md']);
+    await kay.session.loadDir({ owner: bob.session.selfId, share: 'proj', path: 'nope' }); // errors are ignored
+
     kay.session.store.dispatch({ type: 'browser_cursor', delta: -10 });
     await kay.session.browserEnter(); // '..' goes back to root
     expect(kay.state().browser.at).toBeUndefined();

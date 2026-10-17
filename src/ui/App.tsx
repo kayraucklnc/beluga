@@ -10,7 +10,7 @@ import { HelpOverlay } from './components/HelpOverlay.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Viewer } from './components/Viewer.js';
 import { type Effect, type UiState, handleKey, initialUi } from './keymap.js';
-import { suggest } from './suggest.js';
+import { openTarget, suggest } from './suggest.js';
 
 const TOAST_MS = 3500;
 const FRAME_MS = 100;
@@ -60,7 +60,14 @@ export function App({ session }: { session: Session }) {
     return () => clearTimeout(t);
   }, [state.toast, session]);
 
-  const suggestions = ui.focus === 'chat' && !ui.suggestHidden ? suggest(ui.buffer, state.peers, session.selfId) : [];
+  const suggestCtx = { peers: state.peers, selfId: session.selfId, dirCache: state.dirCache };
+  const suggestions = ui.focus === 'chat' && !ui.suggestHidden ? suggest(ui.buffer, suggestCtx) : [];
+
+  // Fetch folder contents as you type a path after /open.
+  useEffect(() => {
+    const target = openTarget(ui.buffer, state.peers);
+    if (target) void session.loadDir(target);
+  }, [ui.buffer, state.peers, session]);
   const sideWidth = Math.min(34, Math.max(24, Math.floor(columns * 0.22)));
   const viewerWidth = state.viewer ? Math.floor((columns - sideWidth) * 0.48) : 0;
   const chatWidth = columns - sideWidth - viewerWidth;
@@ -114,7 +121,10 @@ export function App({ session }: { session: Session }) {
       overlay: Boolean(latest.overlay),
       page: bodyHeight - 2,
       maxChatScroll: Math.max(0, total - (bodyHeight - 2)),
-      suggestions: current.focus === 'chat' && !current.suggestHidden ? suggest(current.buffer, latest.peers, session.selfId) : [],
+      suggestions:
+        current.focus === 'chat' && !current.suggestHidden
+          ? suggest(current.buffer, { peers: latest.peers, selfId: session.selfId, dirCache: latest.dirCache })
+          : [],
     });
     setUi(result.ui);
     if (result.effect) run(result.effect);

@@ -32,7 +32,7 @@ function statusOf(item: AgentItem, opts: RenderOptions): StatusStyle {
     case 'awaiting_approval':
       return { label: `${glyph.wait} waiting for ${item.ownerName} to approve`, color: theme.warn };
     case 'done':
-      return { label: `${glyph.ok} done`, color: theme.ok };
+      return { label: `${glyph.ok} done${item.endTs ? ` · ${formatDuration(item.endTs - item.ts)}` : ''}`, color: theme.ok };
     case 'error':
       return { label: `${glyph.fail} failed`, color: theme.error };
     case 'denied':
@@ -58,12 +58,16 @@ export function card(title: Line, right: Line, body: readonly Line[], cols: numb
   ];
 }
 
+/** Tool calls that are plumbing, not progress worth showing to the room. */
+const HIDDEN_STEPS = /^(ToolSearch|TodoWrite)\b/;
+
 function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] {
   const st = statusOf(item, opts);
-  const inner = Math.max(10, cols - 4);
+  const inner = Math.max(10, cols - 2);
   const running = isRunning(item.status);
-  const steps = running ? item.steps : item.steps.slice(-DONE_STEPS);
-  const hidden = item.steps.length - steps.length;
+  const visible = item.steps.filter((s) => !HIDDEN_STEPS.test(s));
+  const steps = running ? visible : visible.slice(-DONE_STEPS);
+  const hidden = visible.length - steps.length;
   const body: Line[] = [
     ...(hidden > 0 ? [plain(`${glyph.arrow} …${hidden} earlier steps`, { color: theme.muted })] : []),
     ...steps.flatMap((s) => wrapText(`${glyph.arrow} ${s}`, inner).map((t) => plain(t, { color: theme.muted }))),
@@ -78,9 +82,12 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
   }
   const title: Line = [
     { text: `${glyph.claude} ${item.ownerName}'s Claude`, color: theme.claude, bold: true },
-    { text: item.requesterName === item.ownerName ? '' : `  asked by ${item.requesterName}`, color: theme.muted },
+    { text: item.requesterName === item.ownerName ? '' : `  for ${item.requesterName}`, color: theme.muted },
   ];
-  return card(title, plain(st.label, { color: st.color }), body, cols, running ? st.color : theme.border);
+  const status = plain(st.label, { color: st.color });
+  const gap = Math.max(2, cols - lineWidth(title) - lineWidth(status));
+  const rail: Seg = { text: `${glyph.bar} `, color: running ? theme.claude : theme.border };
+  return [[...truncate(title, cols - lineWidth(status) - 2), { text: ' '.repeat(gap) }, ...status], ...body.map((l) => [rail, ...truncate(l, inner)])];
 }
 
 function chatHeader(item: ChatItem, opts: RenderOptions): Line {

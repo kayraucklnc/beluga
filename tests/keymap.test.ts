@@ -5,7 +5,7 @@ import type { Suggestion } from '../src/ui/suggest.js';
 const ctx: KeyContext = { hasApproval: false, hasViewer: false, overlay: false, page: 20, maxChatScroll: 50, suggestions: [] };
 const type = (ui: UiState, text: string, c = ctx): UiState => [...text].reduce((u, ch) => handleKey(u, ch, {}, c).ui, ui);
 const key = (ui: UiState, k: KeyInfo, input = '', c = ctx) => handleKey(ui, input, k, c);
-const sugg = (...values: string[]): Suggestion[] => values.map((v) => ({ label: v, hint: '', value: v }));
+const sugg = (...values: string[]): Suggestion[] => values.map((v) => ({ label: v, hint: '', value: v, enter: 'complete' as const }));
 
 describe('keymap: typing', () => {
   it('types and submits chat right away (no modes)', () => {
@@ -75,6 +75,19 @@ describe('keymap: suggestions', () => {
     const res = key(type(initialUi, '/fo', c), { return: true }, '', c);
     expect(res.effect).toBeUndefined();
     expect(res.ui.buffer).toBe('/follow ');
+  });
+
+  it('completes a half-typed @mention on Enter instead of sending it', () => {
+    const c2 = { ...ctx, suggestions: sugg('@claude ') };
+    const res = key(type(initialUi, '@cla', c2), { return: true }, '', c2);
+    expect(res.effect).toBeUndefined();
+    expect(res.ui.buffer).toBe('@claude ');
+  });
+
+  it('sends "submit" suggestions straight away (e.g. a file for /open)', () => {
+    const c2 = { ...ctx, suggestions: [{ label: 'README.md', hint: 'file', value: '/open bob:api/README.md', enter: 'submit' as const }] };
+    const res = key(type(initialUi, '/open bob:api/RE', c2), { return: true }, '', c2);
+    expect(res.effect).toEqual({ type: 'submit', text: '/open bob:api/README.md' });
   });
 
   it('runs an exact command on Enter', () => {
