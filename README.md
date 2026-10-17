@@ -77,8 +77,19 @@ To bring a friend in, click **Invite** (or run `klaude --invite`) and send them 
     <td><img src="assets/screenshot-image.png" alt="An SVG drawn in the terminal"><br><b>Images.</b> A friend's SVG, drawn right in the viewer.</td>
   </tr>
   <tr>
-    <td><img src="assets/screenshot-chat.png" alt="Asking a friend's Claude"><br><b>Friends' Claude.</b> Ask anyone's Claude: live steps, then a clear answer.</td>
+    <td><img src="assets/screenshot-terminal.png" alt="A real terminal in a workspace"><br><b>Terminal.</b> A real shell in every workspace, next to its setup and run commands.</td>
+    <td><img src="assets/screenshot-inbox.png" alt="The inbox"><br><b>Notifications.</b> What finished or needs you while you were elsewhere, on the desktop and in the Inbox.</td>
+  </tr>
   <tr>
+    <td><img src="assets/screenshot-usage.png" alt="Disk space and Claude usage per workspace"><br><b>Usage.</b> Disk space and Claude tokens per workspace, with Archive to free space.</td>
+    <td><img src="assets/screenshot-search.png" alt="Searching every conversation"><br><b>Search.</b> Every conversation, archived ones too.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshot-pr.png" alt="The pull request menu"><br><b>Pull requests.</b> Claude pushes and writes a short description, with your own instructions.</td>
+    <td><img src="assets/screenshot-trust.png" alt="Choosing how much to trust someone"><br><b>Trust, in one click.</b> Someone joins: pick what they may do with your Claude.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshot-chat.png" alt="Asking a friend's Claude"><br><b>Friends' Claude.</b> Ask anyone's Claude: live steps, then a clear answer.</td>
     <td><img src="assets/screenshot-settings.png" alt="Settings"><br><b>Settings.</b> Name, theme, text size, approvals, sharing, mouse and remote access.</td>
   </tr>
 </table>

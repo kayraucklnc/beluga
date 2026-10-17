@@ -109,6 +109,21 @@ const approve = async (p: Person, answer: 'yes' | 'no' = 'yes'): Promise<string>
   return title;
 };
 
+describe('approvals', () => {
+  it('lets one person have only a few requests waiting for you at once', async () => {
+    hub = await startHub({ keys });
+    const kay = await person('kay');
+    const bob = await person('bob');
+    await together(kay, bob);
+    for (const f of ['a', 'b', 'c', 'd', 'e']) writeFileSync(path.join(base, `${f}.txt`), f);
+    const asks = ['a', 'b', 'c', 'd', 'e'].map((f) => kay.session.remote.getFile(bob.id(), path.join(base, `${f}.txt`)).catch((e: Error) => e.message));
+    await waitFor(() => bob.state().approvals.length === 3, 4000);
+    const results = await Promise.race([Promise.all(asks.slice(3)), new Promise((r) => setTimeout(() => r('waiting'), 2000))]);
+    expect(results).toEqual(['bob declined', 'bob declined']);
+    for (let i = 0; i < 3; i++) bob.session.answerApproval('no');
+  });
+});
+
 describe('files between computers', () => {
   it('gets a file from anywhere on a friend’s computer once they approve', async () => {
     hub = await startHub({ keys });
@@ -243,6 +258,7 @@ describe('handoff', () => {
     const note = '## Handoff\n- [x] session check\n- [ ] expired sessions test';
     const kay = await person('kay', { repo: dirs.kay, script: async (input) => (input.prompt.includes('handoff note') ? note : 'ok') });
     const bob = await person('bob', { repo: dirs.bob });
+    writeFileSync(path.join(dirs.bob!, '.env'), 'STRIPE_KEY=secret\n');
     await together(kay, bob);
     const ws = await kay.workspaces!.createWorktree(kay.workspaces!.list.find((p) => p.root)!.id, 'add-auth');
     writeFileSync(path.join(ws.path, 'auth.ts'), 'export const requireUser = () => true;\n');
@@ -263,6 +279,12 @@ describe('handoff', () => {
     expect(readFileSync(path.join(theirs!.path, 'auth.ts'), 'utf8')).toContain('requireUser');
     expect(readFileSync(path.join(theirs!.path, 'wip.ts'), 'utf8')).toContain('half done');
     expect(bob.workspaces!.loadHistory<{ text: string }>(theirs!.id).some((l) => l.text.includes('Their note'))).toBe(true);
+    // bob doesn't fully trust kay: his .env stays out of her branch, setup waits for him, and her
+    // note runs with what kay may do on bob's computer (not as bob himself).
+    expect(existsSync(path.join(theirs!.path, '.env'))).toBe(false);
+    expect(bob.workspaces!.loadHistory<{ text: string }>(theirs!.id).some((l) => l.text.includes("Setup didn't run"))).toBe(true);
+    expect(bob.runs[0]?.requesterName).toBe('kay');
+    expect(bob.runs[0]?.scope).toBe('folder');
     // kay hears back, and can follow along.
     await waitFor(() => kay.workspaces!.find(ws.id)?.handedTo === 'bob', 4000);
     await waitFor(() => kay.state().shared.some((w) => w.id === theirs?.id), 4000);
