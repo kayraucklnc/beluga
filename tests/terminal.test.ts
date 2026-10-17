@@ -284,7 +284,7 @@ describe('helpers', () => {
 
   it('childEnv sets TERM/COLORTERM and drops outer-terminal variables', () => {
     const env = childEnv({ FOO: 'bar' }, { PATH: '/bin', COLUMNS: '80', CLAUDECODE: '1', TERM: 'screen', UNDEF: undefined });
-    expect(env).toEqual({ PATH: '/bin', TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'klaude', FOO: 'bar' });
+    expect(env).toEqual({ PATH: '/bin', TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'klaud', FOO: 'bar' });
   });
 
   it('defaultShell prefers $SHELL when it exists', () => {

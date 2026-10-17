@@ -69,7 +69,7 @@ export interface Template {
 
 export interface WorkState {
   readonly inbox: readonly Notice[];
-  /** The terminal window klaude runs in is in the background (from focus reports). */
+  /** The terminal window klaud runs in is in the background (from focus reports). */
   readonly away: boolean;
   readonly models: readonly ModelChoice[];
   /** Folder size in bytes per workspace (worktrees and chats). */

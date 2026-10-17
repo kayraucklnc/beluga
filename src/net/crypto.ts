@@ -82,7 +82,7 @@ function identityFrom(privateKey: KeyObject): Identity {
 }
 
 /**
- * Your long-lived identity, kept in ~/.klaude/identity.json (readable only by you). It lets
+ * Your long-lived identity, kept in ~/.klaud/identity.json (readable only by you). It lets
  * friends recognize you across sessions, so the trust level they gave you comes back.
  */
 export function loadIdentity(file: string): Identity {
@@ -108,7 +108,7 @@ export function loadIdentity(file: string): Identity {
  * What a message signature covers: the whole sealed box (a hash of it; the GCM tag alone isn't
  * enough, since everyone in the room holds the key) and who it's for.
  */
-const signed = (box: Box, to: string): Buffer => Buffer.from(`klaude-msg:${createHash('sha256').update(box.iv).update(':').update(box.ct).update(':').update(box.tag).digest('base64')}:${to}`);
+const signed = (box: Box, to: string): Buffer => Buffer.from(`klaud-msg:${createHash('sha256').update(box.iv).update(':').update(box.ct).update(':').update(box.tag).digest('base64')}:${to}`);
 
 /** Sign one sealed message so nobody (not even the room's host) can send it in your name. */
 export function signBox(identity: Identity, box: Box, to = ''): string {

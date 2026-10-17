@@ -8,20 +8,20 @@ let home: string;
 let previous: string | undefined;
 
 beforeEach(() => {
-  previous = process.env.KLAUDE_HOME;
-  home = mkdtempSync(path.join(os.tmpdir(), 'klaude-templates-'));
-  process.env.KLAUDE_HOME = home;
+  previous = process.env.KLAUD_HOME;
+  home = mkdtempSync(path.join(os.tmpdir(), 'klaud-templates-'));
+  process.env.KLAUD_HOME = home;
 });
 
 afterEach(() => {
-  if (previous === undefined) delete process.env.KLAUDE_HOME;
-  else process.env.KLAUDE_HOME = previous;
+  if (previous === undefined) delete process.env.KLAUD_HOME;
+  else process.env.KLAUD_HOME = previous;
 });
 
 const custom = (file = templatesFile()): unknown => JSON.parse(readFileSync(file, 'utf8'));
 
 describe('templates', () => {
-  it('lives under KLAUDE_HOME', () => {
+  it('lives under KLAUD_HOME', () => {
     expect(templatesFile()).toBe(path.join(home, 'templates.json'));
   });
 

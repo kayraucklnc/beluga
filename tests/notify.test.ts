@@ -266,7 +266,7 @@ describe('Notifier', () => {
     vi.advanceTimersByTime(0);
     expect(desktop).toHaveBeenCalledTimes(1);
     const arg = desktop.mock.calls[0]![0];
-    expect(arg.title).toBe('5 updates in klaude');
+    expect(arg.title).toBe('5 updates in klaud');
     expect(arg.body.split(' · ')).toHaveLength(4);
     expect(arg.sound).toBe(false);
     expect(store.getState().inbox).toHaveLength(5);
@@ -284,7 +284,7 @@ describe('Notifier', () => {
     expect(desktop).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(1);
     expect(desktop).toHaveBeenCalledTimes(2);
-    expect(desktop.mock.calls[1]![0]).toMatchObject({ title: '2 updates in klaude' });
+    expect(desktop.mock.calls[1]![0]).toMatchObject({ title: '2 updates in klaud' });
   });
 
   it('marks notices read when you open their conversation or come back', () => {
@@ -369,7 +369,7 @@ describe('plan', () => {
 
   it('writes OSC 99 title and body', () => {
     expect(plan('osc99', { ...n, sound: false })).toEqual({
-      write: '\x1b]99;i=klaude:d=0;Claude finished\x1b\\\x1b]99;i=klaude:d=1:p=body;All good\x1b\\',
+      write: '\x1b]99;i=klaud:d=0;Claude finished\x1b\\\x1b]99;i=klaud:d=1:p=body;All good\x1b\\',
     });
     expect(plan('osc99', n).write?.endsWith('\x1b\\\x07')).toBe(true);
   });
@@ -384,23 +384,23 @@ describe('plan', () => {
   it('builds terminal-notifier args with sound and activation', () => {
     expect(plan('terminal-notifier', n, { __CFBundleIdentifier: 'com.googlecode.iterm2' })).toEqual({
       cmd: 'terminal-notifier',
-      args: ['-title', 'klaude', '-subtitle', 'Claude finished', '-message', 'All good', '-group', 'klaude', '-sound', 'default', '-activate', 'com.googlecode.iterm2'],
+      args: ['-title', 'klaud', '-subtitle', 'Claude finished', '-message', 'All good', '-group', 'klaud', '-sound', 'default', '-activate', 'com.googlecode.iterm2'],
     });
     expect(plan('terminal-notifier', { ...n, body: '', sound: false }, {})).toEqual({
       cmd: 'terminal-notifier',
-      args: ['-title', 'klaude', '-subtitle', 'Claude finished', '-message', ' ', '-group', 'klaude'],
+      args: ['-title', 'klaud', '-subtitle', 'Claude finished', '-message', ' ', '-group', 'klaud'],
     });
   });
 
   it('builds an AppleScript with quotes and backslashes escaped', () => {
     const p = plan('osascript', { title: 'say "hi"', body: 'path C:\\x "q"', sound: true });
     expect(p.cmd).toBe('osascript');
-    expect(p.args).toEqual(['-e', 'display notification "path C:\\\\x \\"q\\"" with title "klaude" subtitle "say \\"hi\\"" sound name "Glass"']);
-    expect(plan('osascript', { title: 't', body: '', sound: false }).args).toEqual(['-e', 'display notification " " with title "klaude" subtitle "t"']);
+    expect(p.args).toEqual(['-e', 'display notification "path C:\\\\x \\"q\\"" with title "klaud" subtitle "say \\"hi\\"" sound name "Glass"']);
+    expect(plan('osascript', { title: 't', body: '', sound: false }).args).toEqual(['-e', 'display notification " " with title "klaud" subtitle "t"']);
   });
 
   it('builds notify-send args', () => {
-    expect(plan('notify-send', n)).toEqual({ cmd: 'notify-send', args: ['-a', 'klaude', '--', 'Claude finished', 'All good'] });
+    expect(plan('notify-send', n)).toEqual({ cmd: 'notify-send', args: ['-a', 'klaud', '--', 'Claude finished', 'All good'] });
     // A name that looks like an option can't become one.
     expect(plan('notify-send', { ...n, title: '--wait bob joined' }).args?.[3]).toBe('wait bob joined');
   });

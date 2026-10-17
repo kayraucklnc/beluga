@@ -109,7 +109,7 @@ export interface NotifierDeps {
 /**
  * Watches the room and your workspaces, keeps an inbox of what happened while you were
  * looking elsewhere, and raises desktop notifications for it. Nothing is announced
- * about the conversation you're looking at while klaude is in front.
+ * about the conversation you're looking at while klaud is in front.
  */
 export class Notifier {
   private prev: AppState;
@@ -180,7 +180,7 @@ export class Notifier {
       this.deps.desktop(
         batch.length === 1
           ? { title: first.title, body: first.body, sound }
-          : { title: `${batch.length} updates in klaude`, body: batch.map((e) => e.title).slice(0, 4).join(' · '), sound },
+          : { title: `${batch.length} updates in klaud`, body: batch.map((e) => e.title).slice(0, 4).join(' · '), sound },
       );
     }, wait);
     this.timer.unref?.();

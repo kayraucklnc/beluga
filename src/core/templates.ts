@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { klaudeHome } from '../workspaces/store.js';
+import { klaudHome } from '../workspaces/store.js';
 import type { Template } from './work-store.js';
 
 /** Ready-made ways to start common tasks. Your own templates are listed after these. */
@@ -19,7 +19,7 @@ export const BUILT_IN_TEMPLATES: readonly Template[] = [
 
 const SavedTemplate = z.object({ id: z.string().max(40), name: z.string().trim().min(1).max(60), prompt: z.string().trim().min(1).max(8000), plan: z.boolean().optional() });
 
-export const templatesFile = (): string => path.join(klaudeHome(), 'templates.json');
+export const templatesFile = (): string => path.join(klaudHome(), 'templates.json');
 
 export function loadTemplates(file = templatesFile()): Template[] {
   try {

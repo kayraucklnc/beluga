@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { type BodyInput, type BodyOf, MAX_DOWNLOAD_BYTES } from '../protocol.js';
 import { git } from '../workspaces/git.js';
-import { klaudeHome } from '../workspaces/store.js';
+import { klaudHome } from '../workspaces/store.js';
 import { formatBytes } from '../workspaces/disk.js';
 import { type Requester, downloadFile, fetchBytes, safeFileName, uniquePath } from './downloads.js';
 import type { NoticeEvent } from './notify.js';
@@ -37,7 +37,7 @@ export interface RemoteWorkDeps {
   readonly notify: (event: NoticeEvent) => void;
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;
   readonly onWorktreeCreated?: (ws: Workspace) => void;
-  /** Where downloads land (default ~/Downloads/klaude). */
+  /** Where downloads land (default ~/Downloads/klaud). */
   readonly downloadDir?: string;
   /** How long a request waits for the other person (default 6 minutes: approvals take time). */
   readonly waitMs?: number;
@@ -50,7 +50,7 @@ const AUTO_ACCEPT_BYTES = 50 * 1024 * 1024;
 const AUTO_ACCEPT_PER_10_MIN = 10;
 
 /** Files waiting to be fetched by someone. Private to you; old ones are swept, yours removed on quit. */
-export const outboxDir = (): string => path.join(klaudeHome(), 'outbox');
+export const outboxDir = (): string => path.join(klaudHome(), 'outbox');
 
 const mine = new Set<string>();
 process.once('exit', () => {
@@ -63,7 +63,7 @@ process.once('exit', () => {
   }
 });
 
-/** Remove outbox copies older than their lifetime (e.g. left by a klaude that crashed). */
+/** Remove outbox copies older than their lifetime (e.g. left by a klaud that crashed). */
 export async function sweepOutbox(now = Date.now()): Promise<number> {
   const entries = await fs.readdir(outboxDir()).catch(() => [] as string[]);
   let removed = 0;
@@ -204,7 +204,7 @@ export class RemoteWork {
   /** Copy one file into a private, one-person share (so nothing else in its folder is exposed). */
   private async offerFile(abs: string, to: string): Promise<{ share: string; path: string; name: string; size: number }> {
     const real = await fs.realpath(abs).catch(() => abs);
-    if (isSecretPath(abs) || isSecretPath(real)) throw new Error('That file holds secrets, so klaude never sends it');
+    if (isSecretPath(abs) || isSecretPath(real)) throw new Error('That file holds secrets, so klaud never sends it');
     const stat = await fs.stat(real).catch(() => undefined);
     if (!stat?.isFile()) throw new Error(`${abs} is not a file`);
     if (stat.size > MAX_DOWNLOAD_BYTES) throw new Error(`${path.basename(abs)} is larger than ${formatBytes(MAX_DOWNLOAD_BYTES)}`);
@@ -228,7 +228,7 @@ export class RemoteWork {
 
   /**
    * Get a file from anywhere on a friend's computer (they approve unless they fully trust you).
-   * Saved to `saveTo` (a folder) or ~/Downloads/klaude/<friend>/. Returns where it was saved.
+   * Saved to `saveTo` (a folder) or ~/Downloads/klaud/<friend>/. Returns where it was saved.
    */
   async getFile(peerId: string, remotePath: string, saveTo?: string, why = ''): Promise<string> {
     const reqId = randomUUID();
@@ -265,7 +265,7 @@ export class RemoteWork {
     const asked = expandPath(body.path);
     // Follow links first, so a harmless-looking name can't point at a secret.
     const abs = await fs.realpath(asked).catch(() => asked);
-    if (isSecretPath(asked) || isSecretPath(abs)) return void reply({ ok: false, error: `${unavailable}: it holds secrets, so klaude never sends it` });
+    if (isSecretPath(asked) || isSecretPath(abs)) return void reply({ ok: false, error: `${unavailable}: it holds secrets, so klaud never sends it` });
     // Whether a file exists is only revealed once you said yes (or fully trust them).
     const ok = await this.allowed(from, `${this.who(from)} wants a file from your computer`, `${asked.replace(os.homedir(), '~')}${body.why ? `\n${clean(body.why)}` : ''}`);
     if (!ok) return void reply({ ok: false, error: `${this.state.self?.name ?? 'The owner'} declined` });
@@ -481,7 +481,7 @@ export class RemoteWork {
       branch = await ctl.manager.freeBranchName(project.root, body.ws.name);
       if (body.bundle) {
         const bytes = await fetchBytes({ owner: from, share: body.bundle.share, path: body.bundle.path }, this.deps.request, MAX_DOWNLOAD_BYTES);
-        const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'klaude-handoff-'));
+        const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'klaud-handoff-'));
         const tmp = path.join(tmpDir, 'branch.bundle');
         await fs.writeFile(tmp, bytes, { mode: 0o600 });
         try {

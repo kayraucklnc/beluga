@@ -17,7 +17,7 @@ export type WorkMenuKind =
   | { readonly kind: 'ws_more'; readonly id: string; readonly actions: ReadonlyArray<{ readonly action: string; readonly label: string; readonly hint: string }> };
 
 const findWs = (state: AppState, id: string) => state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id);
-const SOURCE = { yours: 'set by you', 'klaude.json': 'from klaude.json', 'conductor.json': 'from conductor.json', detected: 'guessed from the project' } as const;
+const SOURCE = { yours: 'set by you', 'klaud.json': 'from klaud.json', 'conductor.json': 'from conductor.json', detected: 'guessed from the project' } as const;
 
 function prMenu(state: AppState, id: string): MenuSpec | undefined {
   const ws = findWs(state, id);
@@ -58,7 +58,7 @@ function scriptsMenu(state: AppState, projectId: string): MenuSpec | undefined {
     options: [
       { id: 's-setup', label: `Setup: ${s.setup?.command ?? 'none'}`, hint: `${s.setup ? SOURCE[s.setup.source] : 'nothing found'}  ·  Enter to change` },
       { id: 's-run', label: `Run: ${s.run?.command ?? 'none'}`, hint: `${s.run ? SOURCE[s.run.source] : 'nothing found'}  ·  Enter to change` },
-      ...(s.setup?.source === 'yours' || s.run?.source === 'yours' ? [{ id: 's-team', label: 'Save them to klaude.json', hint: 'so everyone on the project gets them' }] : []),
+      ...(s.setup?.source === 'yours' || s.run?.source === 'yours' ? [{ id: 's-team', label: 'Save them to klaud.json', hint: 'so everyone on the project gets them' }] : []),
       { id: 'close', label: 'Done', hint: 'Esc' },
     ],
   };

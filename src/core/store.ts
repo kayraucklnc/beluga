@@ -101,7 +101,7 @@ export interface Toast {
 
 export type Overlay = 'help' | 'settings' | 'welcome' | 'clear' | 'model' | 'inbox' | 'templates' | 'handoff';
 
-/** Preferences mirrored from ~/.klaude/settings.json (every key here is a settings key). */
+/** Preferences mirrored from ~/.klaud/settings.json (every key here is a settings key). */
 export interface Prefs {
   readonly theme: ThemeName;
   readonly mouse: boolean;

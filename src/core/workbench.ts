@@ -247,7 +247,7 @@ export class Workbench {
 
   /**
    * Run the project's setup in a new worktree (visible in its Terminal tab). A command that comes
-   * from the repository itself (klaude.json / conductor.json) asks you the first time it would
+   * from the repository itself (klaud.json / conductor.json) asks you the first time it would
    * run by itself, and again whenever it changes.
    */
   runSetup(wsId: string, auto = false): void {
@@ -260,7 +260,7 @@ export class Workbench {
       return;
     }
     if (!this.deps.terminals) return;
-    const fromRepo = setup.source === 'klaude.json' || setup.source === 'conductor.json';
+    const fromRepo = setup.source === 'klaud.json' || setup.source === 'conductor.json';
     if (auto && fromRepo && !this.manager.isScriptApproved(project.id, command)) {
       if (!this.deps.confirm) return;
       void this.deps.confirm(`${project.name}'s ${setup.source} wants to run its setup in new worktrees`, `${command}\n\nThis comes from the repository. Allow it if you trust what's in it. "Always" remembers this exact command.`).then((answer) => {
@@ -325,13 +325,13 @@ export class Workbench {
     }
   }
 
-  /** Put your commands in the project's klaude.json so teammates get them. */
+  /** Put your commands in the project's klaud.json so teammates get them. */
   shareScripts(projectId: string): void {
     const p = this.manager.list.find((x) => x.id === projectId);
     if (!p?.scripts) return;
     this.manager.setScripts(projectId, { setup: p.scripts.setup?.command, run: p.scripts.run?.command }, { inRepo: true });
     void this.deps.controller.refresh();
-    this.deps.toast(`Saved to ${p.name}/klaude.json. Commit it to share it`, 'success');
+    this.deps.toast(`Saved to ${p.name}/klaud.json. Commit it to share it`, 'success');
   }
 
   // ------------------------------------------------------- usage & space

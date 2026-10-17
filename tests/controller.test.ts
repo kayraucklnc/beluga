@@ -22,7 +22,7 @@ let asked: Array<{ prompt: string; channel: string }>;
 let repo: string;
 
 beforeEach(async () => {
-  const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaude-ctl-')));
+  const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-ctl-')));
   repo = path.join(base, 'code', 'app');
   mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '--bare', '-b', 'main', path.join(base, 'app.git')], { stdio: 'pipe' });
@@ -113,7 +113,7 @@ describe('WorkspaceController', () => {
     expect(toasts.some((t) => t.includes('uncommitted changes'))).toBe(true);
     execFileSync('rm', [path.join(repo, 'dirty.txt')]);
     await ctl.merge(ws.id);
-    expect(toasts.some((t) => t.startsWith('Merged klaude/clean'))).toBe(true);
+    expect(toasts.some((t) => t.startsWith('Merged klaud/clean'))).toBe(true);
 
     const fork = (await ctl.fork(ws.id, 'clean v2'))!;
     expect(fork.forkedFrom).toBe(ws.id);
@@ -128,7 +128,7 @@ describe('WorkspaceController', () => {
     expect(toasts.some((t) => t.startsWith("Couldn't archive"))).toBe(true);
   });
 
-  it('turns a draft into a chat with the first message, in the folder klaude started in', async () => {
+  it('turns a draft into a chat with the first message, in the folder klaud started in', async () => {
     const launch = path.dirname(repo);
     await ctl.startChat('chats', 'explain   this repo please', launch);
     const chat = store.getState().projects.find((p) => p.id === 'chats')!.workspaces[0]!;

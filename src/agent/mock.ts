@@ -16,9 +16,9 @@ const SCRIPTS: readonly Script[] = [
     match: /review|changes|check my work/i,
     steps: ['Bash git diff origin/main --stat'],
     subagents: [
-      { title: 'code-reviewer · correctness', steps: ['Read src/auth.ts', 'Read src/server.ts', 'Grep "session"'] },
-      { title: 'security-reviewer · auth flow', steps: ['Read src/auth.ts', 'Grep "cookie"'] },
-      { title: 'test-runner · run tests', steps: ['Bash npm test'] },
+      { title: 'code-reviewer · correctness', steps: ['Read src/auth.ts', 'Read src/server.ts', 'Grep "session"', 'Read src/payments.ts'] },
+      { title: 'security-reviewer · auth flow', steps: ['Read src/auth.ts', 'Grep "cookie"', 'Grep "secret"'] },
+      { title: 'test-runner · run tests', steps: ['Bash npm test', 'Bash npm test -- --coverage'] },
     ],
     answer:
       '**Looks good to merge.** 3 reviewers checked it.\n\n- `requireUser()` correctly rejects missing sessions\n- Cookie is `httpOnly` and `sameSite=lax`\n- All **27 tests** pass\n\n**One suggestion:** add a test for expired sessions.',
@@ -27,8 +27,8 @@ const SCRIPTS: readonly Script[] = [
     match: /build|implement|add|create|make/i,
     steps: ['Read src/server.ts'],
     subagents: [
-      { title: 'Explore · find the right place', steps: ['Glob src/**/*.ts', 'Grep "app.get"'] },
-      { title: 'Plan · design the change', steps: ['Read README.md'] },
+      { title: 'Explore · find the right place', steps: ['Glob src/**/*.ts', 'Grep "app.get"', 'Read src/server.ts'] },
+      { title: 'Plan · design the change', steps: ['Read README.md', 'Read content/hero.md'] },
     ],
     answer: 'Done. Added `src/auth.ts` with a `requireUser()` middleware and wired it into `/api/payments/*`. Run `npm test` to see the new tests.',
   },
@@ -41,7 +41,7 @@ const SCRIPTS: readonly Script[] = [
   {
     match: /report|write up|summary|summarize/i,
     steps: ['Glob **/*.md', 'Read README.md', 'write_report Project overview'],
-    answer: 'Wrote **Project overview** to `.klaude/reports/`. Open it from the files panel.',
+    answer: 'Wrote **Project overview** to `.klaud/reports/`. Open it from the files panel.',
     report: {
       title: 'Project overview',
       markdown: '# Project overview\n\n- **Stack:** Node + TypeScript\n- **Status:** payments in progress, auth not started\n- **Next:** add auth middleware, then deploy\n',

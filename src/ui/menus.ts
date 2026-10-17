@@ -146,7 +146,7 @@ export function confirmMenu(state: AppState, action: 'archive' | 'delete', id: s
     intro: [
       ws.kind === 'worktree' && !ws.external
         ? `This deletes the worktree folder, the branch ${ws.branch ?? ''} and the conversation. This can't be undone.`
-        : "This removes it from klaude and deletes the conversation. This can't be undone.",
+        : "This removes it from klaud and deletes the conversation. This can't be undone.",
       ...envLines,
     ],
     options: [
@@ -196,7 +196,7 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
       ]
     : [
         ...(state.invite ? [{ id: 'invite', label: 'Copy invite link', hint: 'bring more friends' }] : []),
-        { id: 'leave-room', label: 'Leave the room', hint: 'closes klaude' },
+        { id: 'leave-room', label: 'Leave the room', hint: 'closes klaud' },
       ];
   const options: MenuOption[] = isSelf
     ? [

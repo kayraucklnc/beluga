@@ -2,11 +2,11 @@ import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { PullRequest } from '../core/work-store.js';
-import { klaudeHome } from './store.js';
+import { klaudHome } from './store.js';
 
 /**
  * What Claude does when you click PR. Edit it in Settings → Claude → Pull request
- * instructions (saved to ~/.klaude/prompts/pull-request.md). {{branch}}, {{base}},
+ * instructions (saved to ~/.klaud/prompts/pull-request.md). {{branch}}, {{base}},
  * {{baseBranch}} and {{project}} are filled in.
  */
 export const DEFAULT_PR_PROMPT = `Open a pull request for the work in this workspace.
@@ -30,7 +30,7 @@ export const DEFAULT_PR_PROMPT = `Open a pull request for the work in this works
    push the new commits and update its title and description with gh pr edit instead.
 6. Reply with the pull request URL and a one-paragraph explanation of the change.`;
 
-export const prPromptFile = (): string => path.join(klaudeHome(), 'prompts', 'pull-request.md');
+export const prPromptFile = (): string => path.join(klaudHome(), 'prompts', 'pull-request.md');
 
 /** Your customized instructions, if you saved any. */
 export function customPrPrompt(file = prPromptFile()): string | undefined {
@@ -59,7 +59,7 @@ export interface PrContext {
   readonly branch: string;
   readonly base: string;
   readonly project: string;
-  /** Project-specific additions from klaude.json. */
+  /** Project-specific additions from klaud.json. */
   readonly projectPrompt?: string;
   /** What you typed for this one PR ("/pr mention the migration"). */
   readonly extra?: string;
@@ -69,7 +69,7 @@ export interface PrContext {
 export function buildPrPrompt(ctx: PrContext, template = customPrPrompt() ?? DEFAULT_PR_PROMPT): string {
   const baseBranch = ctx.base.replace(/^origin\//, '');
   const filled = template.replaceAll('{{branch}}', ctx.branch).replaceAll('{{baseBranch}}', baseBranch).replaceAll('{{base}}', ctx.base).replaceAll('{{project}}', ctx.project);
-  const project = ctx.projectPrompt?.trim() ? `\n\nProject guidelines for pull requests (from klaude.json):\n${ctx.projectPrompt.trim()}` : '';
+  const project = ctx.projectPrompt?.trim() ? `\n\nProject guidelines for pull requests (from klaud.json):\n${ctx.projectPrompt.trim()}` : '';
   const extra = ctx.extra?.trim() ? `\n\nFor this pull request, also: ${ctx.extra.trim()}` : '';
   return `${filled}${project}${extra}`;
 }

@@ -18,7 +18,7 @@ describe('ReplayGuard', () => {
 
   it('remembers across restarts, privately, and forgets what has expired', () => {
     let now = 2_000_000_000;
-    const file = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaude-replay-')), 'seen.json');
+    const file = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-replay-')), 'seen.json');
     const first = new ReplayGuard(file, FRESH_MS, () => now);
     expect(first.admit('bob:iv1', now)).toBe(true);
     first.flush();
@@ -31,7 +31,7 @@ describe('ReplayGuard', () => {
   });
 
   it('starts empty when the file is missing or broken', () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaude-replay-'));
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-replay-'));
     const missing = new ReplayGuard(path.join(dir, 'nope', 'seen.json'));
     expect(missing.admit('x', Date.now())).toBe(true);
     missing.flush();

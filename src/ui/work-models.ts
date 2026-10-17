@@ -46,7 +46,7 @@ export function topBarModel(state: AppState, width: number): Model {
   const left: Line = [
     { text: glyph.logo, color: theme.text, bold: true },
     { text: '_ ', color: theme.accent, bold: true },
-    { text: 'klaude', color: theme.text, bold: true },
+    { text: 'klaud', color: theme.text, bold: true },
     { text: '  ' },
     { text: state.room, bold: true },
   ];

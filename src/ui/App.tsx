@@ -16,6 +16,7 @@ import { MainPane } from './components/MainPane.js';
 import { isLeaveKey } from '../terminal/index.js';
 import { shellId } from '../core/workbench.js';
 import { ModelBlock } from './components/ModelBlock.js';
+import { Panel } from './components/Panel.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Viewer, viewerInner, viewerLegend, viewerLines } from './components/Viewer.js';
 import { type Derived, derive } from './derive.js';
@@ -247,8 +248,9 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
     const latest = session.store.getState();
     // While Claude waits on a question in this conversation, what you type here is your answer.
     const question = latest.questions[0];
-    if (question && question.channel === channelOf(latest.view) && !text.startsWith('/')) {
+    if (question && (question.channel === channelOf(latest.view) || uiRef.current.planFull === question.qid) && !text.startsWith('/')) {
       answerTyped(session, question, text);
+      patchUi({ planFull: undefined, planScroll: 0 });
       return;
     }
     if (latest.view.kind === 'draft' && ctl && !text.startsWith('/')) {
@@ -642,6 +644,8 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
         filesVisible: latest.view.kind === 'files' || (latest.view.kind === 'workspace' && latest.view.tab === 'files'),
         draft: latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree',
         headerStart: dd.headerStart,
+        planId: dd.planId,
+        planMaxScroll: dd.planMaxScroll,
         questionOptions: latest.questions[0]?.channel === dd.channel ? (currentQuestion(latest.questions[0])?.options.length ?? 0) : 0,
       });
       setUi(result.ui);
@@ -684,7 +688,11 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
         <ModelBlock lines={d.topBar.lines} height={1} />
       </Box>
       <Box height={g.bodyHeight}>
-        {fullscreen ? (
+        {d.planFull ? (
+          <Panel title="Claude's plan" right="Esc closes · Ctrl+F" width={columns} height={g.bodyHeight} focused>
+            <ModelBlock lines={d.planFull.lines} height={g.bodyHeight - 2} />
+          </Panel>
+        ) : fullscreen ? (
           <Viewer state={state} width={columns} height={g.bodyHeight} focused raw={ui.viewerRaw} full />
         ) : (
           <>

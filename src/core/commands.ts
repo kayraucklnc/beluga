@@ -40,7 +40,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'follow', args: '<name>', desc: "follow someone's screen and their Claude" },
   { name: 'unfollow', desc: 'stop following' },
   { name: 'open', args: '<file>', desc: 'open a shared file live, e.g. /open bob:api/README.md' },
-  { name: 'get', args: '<file>', desc: 'download a shared file to ~/Downloads/klaude' },
+  { name: 'get', args: '<file>', desc: 'download a shared file to ~/Downloads/klaud' },
   { name: 'close', desc: 'close the file viewer' },
   { name: 'stop', desc: 'stop your Claude' },
   { name: 'policy', args: 'ask|auto|deny', desc: "how friends' requests for your Claude are handled" },

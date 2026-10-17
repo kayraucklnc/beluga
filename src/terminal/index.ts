@@ -1,6 +1,6 @@
 /**
  * Embedded terminal engine: a PTY-backed shell whose screen (kept by a
- * headless xterm) is exposed as klaude `Line[]` snapshots.
+ * headless xterm) is exposed as klaud `Line[]` snapshots.
  *
  *   const term = manager.open('ws-1', { cwd, cols, rows });
  *   const off = term.onChange(() => rerender());

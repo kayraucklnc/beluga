@@ -211,9 +211,9 @@ export class WorkspaceManager {
     if (!project) throw new WorkspaceError('Project not found');
     const s = slug(name);
     const dir = this.freeDir(project, s);
-    const branch = await this.freeBranch(project.root, `klaude/${s}`);
+    const branch = await this.freeBranch(project.root, `klaud/${s}`);
     await g.addWorktree(project.root, dir, branch, project.base);
-    await g.excludeKlaudeDir(dir);
+    await g.excludeKlaudDir(dir);
     await copyEnvFiles(project.root, dir);
     const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
     this.saveRecord(record);
@@ -261,7 +261,7 @@ export class WorkspaceManager {
   /** A Claude chat with no project: its own scratch folder for anything Claude makes. */
   async createStandaloneChat(title: string, inDir?: string): Promise<Workspace> {
     const id = `chat-${randomUUID().slice(0, 8)}`;
-    // Runs in the folder you give it (e.g. where you started klaude), or its own scratch folder.
+    // Runs in the folder you give it (e.g. where you started klaud), or its own scratch folder.
     const dir = inDir ?? path.join(this.chatsDir, id);
     mkdirSync(dir, { recursive: true });
     const record: WorkspaceRecord = { id, projectRoot: '', name: title.trim().slice(0, 40) || 'chat', path: real(dir), kind: 'chat', createdAt: Date.now() };
@@ -277,9 +277,9 @@ export class WorkspaceManager {
     const s = slug(name);
     const dir = this.freeDir(project, s);
     const from = source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD');
-    const branch = await this.freeBranch(project.root, `klaude/${s}`);
+    const branch = await this.freeBranch(project.root, `klaud/${s}`);
     await g.addWorktree(project.root, dir, branch, from);
-    await g.excludeKlaudeDir(dir);
+    await g.excludeKlaudDir(dir);
     await copyEnvFiles(source.kind === 'chat' ? project.root : source.path, dir);
     const record: WorkspaceRecord = {
       id: freshId(),
@@ -327,14 +327,14 @@ export class WorkspaceManager {
   /** Permanently delete: worktree folder, its branch, and its conversation. */
   async remove(id: string): Promise<void> {
     const ws = this.require(id);
-    if (ws.kind === 'main') throw new WorkspaceError("The main folder can't be deleted from klaude");
+    if (ws.kind === 'main') throw new WorkspaceError("The main folder can't be deleted from klaud");
     if (ws.kind === 'worktree') {
       // Never force-remove worktrees made by other tools: their uncommitted work isn't ours to discard.
       if (!ws.archived && existsSync(ws.path)) await g.removeWorktree(ws.projectRoot, ws.path, !ws.external);
       if (ws.branch && !ws.external) await g.deleteBranch(ws.projectRoot, ws.branch).catch(() => undefined);
     }
     rmSync(this.store.historyFile(id), { force: true });
-    // Only ever delete klaude's own scratch folders, never a folder you started a chat in.
+    // Only ever delete klaud's own scratch folders, never a folder you started a chat in.
     if (ws.projectRoot === '' && real(ws.path).startsWith(real(this.chatsDir) + path.sep)) rmSync(ws.path, { recursive: true, force: true });
     this.records = this.records.filter((r) => r.id !== id);
     this.store.saveRecords(this.records);
@@ -404,14 +404,14 @@ export class WorkspaceManager {
 
   // ---------------------------------------------------------------- scripts
 
-  /** The setup / run commands for a project (yours, then klaude.json, then a guess). */
+  /** The setup / run commands for a project (yours, then klaud.json, then a guess). */
   scripts(projectId: string): ResolvedScripts {
     const project = this.projects.find((p) => p.id === projectId);
     if (!project?.root) return {};
     return resolveScripts(project.root, this.config.scripts?.[project.root]);
   }
 
-  /** Set a project's commands just for you, or in its klaude.json so the whole team gets them. */
+  /** Set a project's commands just for you, or in its klaud.json so the whole team gets them. */
   setScripts(projectId: string, scripts: ProjectScripts, opts: { inRepo?: boolean } = {}): void {
     const project = this.projects.find((p) => p.id === projectId);
     if (!project?.root) throw new WorkspaceError('Project not found');
@@ -463,7 +463,7 @@ export class WorkspaceManager {
     if (!project) throw new WorkspaceError('Project not found');
     const dir = this.freeDir(project, slug(name));
     await g.git(project.root, ['worktree', 'add', dir, branch]);
-    await g.excludeKlaudeDir(dir);
+    await g.excludeKlaudDir(dir);
     if (opts.copyEnv !== false) await copyEnvFiles(project.root, dir);
     const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: slug(name), path: dir, kind: 'worktree', branch, base: project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...extra };
     this.saveRecord(record);
@@ -471,9 +471,9 @@ export class WorkspaceManager {
     return this.require(record.id);
   }
 
-  /** A free local branch name like klaude/<name>, klaude/<name>-2… */
+  /** A free local branch name like klaud/<name>, klaud/<name>-2… */
   freeBranchName(projectRoot: string, name: string): Promise<string> {
-    return this.freeBranch(projectRoot, `klaude/${slug(name)}`);
+    return this.freeBranch(projectRoot, `klaud/${slug(name)}`);
   }
 
   forgetSession(id: string): void {
@@ -539,7 +539,7 @@ export class WorkspaceManager {
 
   contextDir(id: string): string {
     const ws = this.require(id);
-    return path.join(ws.path, '.klaude');
+    return path.join(ws.path, '.klaud');
   }
 
   openInFinder(id: string): void {

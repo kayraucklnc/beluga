@@ -61,7 +61,7 @@ export class RoomFiles {
     this.deps.system(text, level);
   }
 
-  /** Cancel what's waiting (klaude is quitting). */
+  /** Cancel what's waiting (klaud is quitting). */
   stop(): void {
     for (const t of this.fsTimers.values()) clearTimeout(t);
     for (const p of this.pending.values()) {
@@ -200,7 +200,7 @@ export class RoomFiles {
     }
   }
 
-  /** Download a file from a friend's share into ~/Downloads/klaude/<friend>/. */
+  /** Download a file from a friend's share into ~/Downloads/klaud/<friend>/. */
   async download(at: Location): Promise<string | undefined> {
     const from = peerName(this.store.getState(), at.owner);
     if (!at.path || at.path.endsWith('/')) {

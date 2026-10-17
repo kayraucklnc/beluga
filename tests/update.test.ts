@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Run, type Status, decide, parseCommits, readStatus } from '../src/update/check.js';
+import { type Run, type Status, compareVersions, decide, parseCommits, readStatus } from '../src/update/check.js';
 import { runUpdate } from '../src/update/update.js';
 
 const base: Status = { branch: 'main', upstream: 'origin/main', head: 'aaa', behind: 0, ahead: 0, dirty: false, incoming: [], depsChanged: false };
@@ -27,7 +27,7 @@ function fakeGit(o: { behind: number; ahead?: number; dirty?: boolean; deps?: bo
   return { run, calls, out: { write: (s: string) => void (text += s), tty: false }, text: () => text };
 }
 
-describe('klaude update', () => {
+describe('klaud update', () => {
   it('parses one-line logs', () => {
     expect(parseCommits('abc fix: a thing\ndef feat: b\n')).toEqual([
       { sha: 'abc', subject: 'fix: a thing' },
@@ -54,7 +54,7 @@ describe('klaude update', () => {
   it('says so when already up to date and installs nothing', async () => {
     const g = fakeGit({ behind: 0 });
     expect(await runUpdate({ run: g.run, out: g.out, root: '/k' })).toBe(0);
-    expect(g.text()).toContain("You're on the latest klaude");
+    expect(g.text()).toContain("You're on the latest klaud");
     expect(g.calls.some((c) => c.includes('merge'))).toBe(false);
   });
 
@@ -93,14 +93,45 @@ describe('klaude update', () => {
     expect(fail.text()).toContain('TS1005');
     expect(fail.text()).toContain('npm run build'); // tells you how to finish
 
-    const nogit = fakeGit({ behind: 0, git: false });
-    expect(await runUpdate({ run: nogit.run, out: nogit.out, root: '/k' })).toBe(1);
-    expect(nogit.text()).toContain('git clone');
   });
 
-  it('never updates a project that merely contains klaude (e.g. in node_modules)', async () => {
+  it('updates an npm install from npm', async () => {
+    const calls: string[] = [];
+    const npm = (latest: string, globalRoot = '/usr/lib/node_modules') => async (cmd: string, args: readonly string[]) => {
+      const key = `${cmd} ${args.join(' ')}`;
+      calls.push(key);
+      if (key.includes('--show-toplevel')) throw new Error('not a repo');
+      if (key === 'npm root -g') return `${globalRoot}\n`;
+      if (key === 'npm view klaud version') return `${latest}\n`;
+      return '';
+    };
+    let text = '';
+    const out = { write: (s: string) => void (text += s), tty: false };
+    const root = '/usr/lib/node_modules/klaud';
+    // installedVersion reads root/package.json, which doesn't exist here → "unknown" (0.0.0)
+    expect(await runUpdate({ run: npm('9.9.9'), out, root })).toBe(0);
+    expect(calls).toContain('npm install -g --no-audit --no-fund --loglevel=error klaud@9.9.9');
+    expect(text).toContain('klaud 9.9.9 is installed');
+
+    text = '';
+    expect(await runUpdate({ run: npm('9.9.9'), out, root, checkOnly: true })).toBe(0);
+    expect(text).toContain('available');
+
+    text = '';
+    expect(await runUpdate({ run: npm('9.9.9', '/elsewhere'), out, root })).toBe(1);
+    expect(text).toContain('part of another project');
+  });
+
+  it('compares versions', () => {
+    expect(compareVersions('0.3.0', '0.2.9')).toBe(1);
+    expect(compareVersions('0.2.1', '0.2.1')).toBe(0);
+    expect(compareVersions('1.0.0-rc.1', '1.0.0')).toBe(-1);
+    expect(compareVersions('0.10.0', '0.9.0')).toBe(1);
+  });
+
+  it('never updates a project that merely contains klaud (e.g. in node_modules)', async () => {
     const g = fakeGit({ behind: 2, toplevel: '/my-app\n' });
-    expect(await runUpdate({ run: g.run, out: g.out, root: '/my-app/node_modules/klaude' })).toBe(1);
+    expect(await runUpdate({ run: g.run, out: g.out, root: '/my-app/node_modules/klaud' })).toBe(1);
     expect(g.calls.some((c) => c.includes('fetch') || c.includes('merge'))).toBe(false);
   });
 });

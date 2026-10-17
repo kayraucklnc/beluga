@@ -6,7 +6,7 @@ import type { Session } from './session.js';
 
 /** Where your Claude writes reports, and how they're announced to the room. */
 export async function writeReport(session: Session, cwd: string, title: string, markdown: string): Promise<string> {
-  const dir = path.join(cwd, '.klaude', 'reports');
+  const dir = path.join(cwd, '.klaud', 'reports');
   await fs.mkdir(dir, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'report';

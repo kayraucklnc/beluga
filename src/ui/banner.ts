@@ -32,7 +32,7 @@ export function inviteBanner(state: AppState, cols: number, frame: number): Line
     case 'local':
       if (invite) {
         body.push(plain('Send this to a friend. They paste it into their terminal:', { color: theme.muted }));
-        for (const l of wrapText(`klaude join ${invite}`, inner)) body.push(plain(l, { color: theme.text, bold: true }));
+        for (const l of wrapText(`klaud join ${invite}`, inner)) body.push(plain(l, { color: theme.text, bold: true }));
         body.push(
           hosting.copied
             ? [

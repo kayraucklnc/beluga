@@ -22,7 +22,7 @@ const WRITE_TOOLS: Readonly<Record<string, string>> = {
 const ALWAYS_OK = new Set([
   'TodoWrite',
   'ToolSearch',
-  ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report'].map((n) => `mcp__klaude__${n}`),
+  ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report'].map((n) => `mcp__klaud__${n}`),
 ]);
 
 /** Shell commands that mention credential stores are refused outright. */
@@ -54,7 +54,7 @@ const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, t
 export function decideTool(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): Decision {
   if (ALWAYS_OK.has(toolName)) return 'allow';
   // Sending a file reads it: same rules as Read (secrets never leave; outside shared folders asks).
-  if (toolName === 'mcp__klaude__send_file') {
+  if (toolName === 'mcp__klaud__send_file') {
     const raw = typeof input.path === 'string' ? input.path.replace(/^~(?=$|\/)/, process.env.HOME ?? '~') : '';
     // Only full paths: the same file is checked here and read when it's sent.
     if (!path.isAbsolute(raw)) return 'deny';
@@ -83,4 +83,4 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
   return 'ask';
 }
 
-export const DENY_REASON = 'klaude blocked this: credential files are off-limits, and this request may only use the shared folders.';
+export const DENY_REASON = 'klaud blocked this: credential files are off-limits, and this request may only use the shared folders.';

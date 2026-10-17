@@ -33,17 +33,17 @@ const MAX_WATCHED = 200;
 
 const segmentsOf = (p: string): string[] => p.split(/[\\/]/).filter(Boolean).map((s) => s.toLowerCase());
 
-/** klaude's own home (~/.klaude): your identity key, settings and trust choices live there. */
-const klaudeHomeDir = (): string => path.resolve(process.env.KLAUDE_HOME ?? path.join(process.env.HOME ?? '~', '.klaude'));
+/** klaud's own home (~/.klaud): your identity key, settings and trust choices live there. */
+const klaudHomeDir = (): string => path.resolve(process.env.KLAUD_HOME ?? path.join(process.env.HOME ?? '~', '.klaud'));
 
 export function isSecretPath(p: string): boolean {
   const segments = segmentsOf(p);
   if (segments.some((s) => SECRET_SEGMENTS.has(s))) return true;
   if (SECRET_PATHS.some((re) => re.test(p))) return true;
-  // klaude's own files in ~/.klaude (identity key, settings, trust choices, history). Worktrees,
+  // klaud's own files in ~/.klaud (identity key, settings, trust choices, history). Worktrees,
   // chat folders and files deliberately put in the outbox live there too, and stay usable.
   if (path.isAbsolute(p)) {
-    const home = klaudeHomeDir();
+    const home = klaudHomeDir();
     const abs = path.resolve(p);
     if (abs === home) return true;
     if (abs.startsWith(home + path.sep)) {

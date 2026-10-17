@@ -149,7 +149,7 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
       return true;
     }
     case 'n-test':
-      session.notifier.notify({ kind: 'done', title: 'Notifications work', body: 'This is how klaude tells you Claude finished or needs you' });
+      session.notifier.notify({ kind: 'done', title: 'Notifications work', body: 'This is how klaud tells you Claude finished or needs you' });
       session.toast('Sent a test notification', 'success');
       reopen();
       return true;

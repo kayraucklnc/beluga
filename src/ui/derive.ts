@@ -12,7 +12,7 @@ import { type Model, type UiAction, type Zone, findWorkspace, overviewModel, pro
 import { highlightRange } from './text.js';
 import { theme } from './theme.js';
 import { workspaceMentions } from '../core/mentions.js';
-import { questionModel, sharedHeaderModel, sharedSection } from './collab-models.js';
+import { planFullModel, questionModel, sharedHeaderModel, sharedSection } from './collab-models.js';
 import type { SharedWorkspace } from '../core/collab-store.js';
 import type { Workspace } from '../workspaces/types.js';
 import { draftModel, searchCursorRow, searchModel, topBarModel, trustCardModel, usageModel } from './work-models.js';
@@ -44,6 +44,11 @@ export interface Derived {
   readonly review?: Model;
   /** Claude's question or plan card (first one waiting). */
   readonly question?: Model;
+  /** Claude's plan, full screen (takes the whole body). */
+  readonly planFull?: Model;
+  readonly planMaxScroll: number;
+  /** The plan waiting for approval, if any. */
+  readonly planId?: string;
   readonly questionId?: string;
   /** Someone else's workspace you're in. */
   readonly shared?: SharedWorkspace;
@@ -98,6 +103,7 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   const workspace = state.view.kind === 'workspace' ? findWorkspace(state.projects, state.view.id) : undefined;
   const shared = state.view.kind === 'shared' ? state.shared.find((w) => w.id === (state.view as { id: string }).id) : undefined;
   const pendingQuestion = state.questions[0];
+  const planOpen = Boolean(ui.planFull && pendingQuestion?.qid === ui.planFull && pendingQuestion.question.kind === 'plan');
   const reviewing = state.view.kind === 'workspace' && state.view.tab === 'review';
   const filesVisible = state.view.kind === 'files' || ((state.view.kind === 'workspace' || state.view.kind === 'shared') && state.view.tab === 'files');
   const viewerOk = state.view.kind === 'room' || filesVisible;
@@ -119,7 +125,7 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
     approvalDetail: approval?.detail,
     viewerFull: ui.viewerFull && focus === 'viewer',
     workspaceHeader: Boolean(workspace || shared) && !ui.menu,
-    questionLines: pendingQuestion && !ui.menu ? questionModel(state, pendingQuestion, Math.max(10, columns - 4)).lines.length : trustPeer ? trustCardModel(state, trustPeer, Math.max(10, columns - 4)).lines.length : 0,
+    questionLines: pendingQuestion && !ui.menu && !planOpen ? questionModel(state, pendingQuestion, Math.max(10, columns - 4)).lines.length : trustPeer ? trustCardModel(state, trustPeer, Math.max(10, columns - 4)).lines.length : 0,
   });
   const g = geometry;
   const menu = ui.menu ? menuSpec(state, ui.menu.menu) : undefined;
@@ -222,9 +228,12 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
         { text: ' ⇧Tab', color: theme.muted },
       ]
     : undefined;
-  const hint = (headerHover ?? tab.zone ?? proj.zone ?? ov?.zone ?? rv?.zone ?? qv?.zone ?? pv?.zone ?? top.zone ?? hoverModel)?.hint;
+  const planRaw = planOpen && pendingQuestion ? planFullModel(state, pendingQuestion, Math.max(10, columns - 4), Math.max(4, g.bodyHeight - 2), ui.planScroll) : undefined;
+  const planV = planRaw ? emphasize(planRaw, 2, g.bodyTop + 1, hover) : undefined;
+  const hint = (planV?.zone ?? headerHover ?? tab.zone ?? proj.zone ?? ov?.zone ?? rv?.zone ?? qv?.zone ?? pv?.zone ?? top.zone ?? hoverModel)?.hint;
 
   const zones: Zone[] = [];
+  if (planV) zones.push(...offsetZones(planV.model.zones, 2, g.bodyTop + 1));
   if (g.sideWidth > 0) {
     zones.push(...offsetZones(projects.zones, 2, g.bodyTop + 1 - projectsScroll).filter((z) => z.y > g.bodyTop && z.y < g.bodyTop + g.projectsHeight - 1));
     zones.push(...offsetZones(tabs.zones, g.mainX + 1, g.tabsY));
@@ -262,6 +271,9 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
     review,
     question,
     questionId: pendingQuestion?.qid,
+    planFull: planV?.model,
+    planMaxScroll: planRaw?.maxScroll ?? 0,
+    planId: pendingQuestion?.question.kind === 'plan' ? pendingQuestion.qid : undefined,
     shared,
     zones,
     topBar: top.model,

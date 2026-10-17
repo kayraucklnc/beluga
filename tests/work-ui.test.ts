@@ -14,7 +14,7 @@ const ids = (spec: { options: readonly { id: string }[] } | null | undefined): s
 const zoneText = (line: Lines[number], z: Zone): string => line.map((s) => s.text).join('').slice(z.x0, z.x1 + 1);
 
 const ws = (over: Partial<Workspace>): Workspace => ({
-  id: 'w1', projectRoot: '/p', name: 'fix-auth', path: '/wt/fix-auth', kind: 'worktree', branch: 'klaude/fix-auth', base: 'origin/main',
+  id: 'w1', projectRoot: '/p', name: 'fix-auth', path: '/wt/fix-auth', kind: 'worktree', branch: 'klaud/fix-auth', base: 'origin/main',
   createdAt: 1, projectId: 'p1', external: false, status: { changed: 2, ahead: 3, behind: 0 }, ...over,
 });
 const usage = (tokens: number, cost = 0) => ({ input: tokens, output: 0, cacheRead: 0, cacheWrite: 0, cost, runs: 1 });
@@ -66,7 +66,7 @@ describe('topBarModel', () => {
   it('puts the Inbox button at the far right with a zone covering exactly it', () => {
     const m = topBarModel(connected([ME]), 80);
     const line = text(m.lines)[0]!;
-    expect(line.startsWith('❯_ klaude  my-room')).toBe(true);
+    expect(line.startsWith('❯_ klaud  my-room')).toBe(true);
     expect(line).toContain('○ solo');
     expect(line).toContain('1 person');
     expect(line.endsWith(' Inbox ')).toBe(true);
@@ -109,7 +109,7 @@ describe('topBarModel', () => {
     expect(text(topBarModel(initialState('r'), 80).lines)[0]).toContain('connecting…');
     expect(text(topBarModel(reduce(initialState('r'), { type: 'status', status: 'disconnected' }), 80).lines)[0]).toContain('offline · reconnecting');
     // hosting alone is not "solo"
-    const invited = reduce(connected([ME]), { type: 'invite', invite: 'klaude://x' });
+    const invited = reduce(connected([ME]), { type: 'invite', invite: 'klaud://x' });
     expect(text(topBarModel(invited, 80).lines)[0]).toContain('● live');
   });
 });
@@ -208,7 +208,7 @@ describe('usageModel', () => {
     expect(rows[4]).toContain('$1.00');
   });
 
-  it('offers Archive only for worktrees klaude made', () => {
+  it('offers Archive only for worktrees klaud made', () => {
     const m = usageModel(make(), 120);
     const archives = m.zones.filter((z) => z.action.type === 'ws');
     expect(archives.map((z) => z.action)).toEqual([
@@ -464,7 +464,7 @@ describe('workMenuSpec', () => {
   it('pr: without a PR offers to create one', () => {
     const m = spec(base(), { kind: 'pr', id: 'w1' })!;
     expect(m.title).toBe('Pull request · fix-auth');
-    expect(m.intro[0]).toBe('No pull request for klaude/fix-auth yet.');
+    expect(m.intro[0]).toBe('No pull request for klaud/fix-auth yet.');
     expect(m.intro[1]).toMatch(/^Claude commits/);
     expect(ids(m)).toEqual(['pr-create', 'pr-create-note', 'pr-edit-prompt', 'close']);
     expect(m.options[2]!.hint).toBe('built-in');
@@ -501,12 +501,12 @@ describe('workMenuSpec', () => {
   });
 
   it('scripts: shows commands with where they came from', () => {
-    const p = project({ scripts: { setup: { command: 'npm i', source: 'yours' }, run: { command: 'npm start', source: 'klaude.json' } } });
+    const p = project({ scripts: { setup: { command: 'npm i', source: 'yours' }, run: { command: 'npm start', source: 'klaud.json' } } });
     const m = spec(withProjects([p]), { kind: 'scripts', projectId: 'p1' })!;
     expect(m.title).toBe('app · setup and run');
     expect(ids(m)).toEqual(['s-setup', 's-run', 's-team', 'close']);
     expect(m.options[0]).toMatchObject({ label: 'Setup: npm i', hint: 'set by you  ·  Enter to change' });
-    expect(m.options[1]).toMatchObject({ label: 'Run: npm start', hint: 'from klaude.json  ·  Enter to change' });
+    expect(m.options[1]).toMatchObject({ label: 'Run: npm start', hint: 'from klaud.json  ·  Enter to change' });
     expect(m.intro[2]).toBe('Setup in new worktrees is on.');
   });
 

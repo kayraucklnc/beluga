@@ -55,6 +55,8 @@ export type UiAction =
   | { readonly type: 'ws'; readonly id: string; readonly action: WorkspaceAction }
   | { readonly type: 'review_file'; readonly index: number }
   | { readonly type: 'plan_toggle'; readonly channel: string }
+  /** Open (or close) Claude's proposed plan full screen. */
+  | { readonly type: 'plan_full'; readonly qid?: string }
   | { readonly type: 'open_shared'; readonly owner: string; readonly id: string; readonly tab?: 'chat' | 'files' }
   | { readonly type: 'shared_menu'; readonly owner: string; readonly id: string }
   /** Answer a question card: pick an option, skip, approve or revise a plan, or finish a multi-select. */
@@ -305,11 +307,11 @@ export function projectsModel(state: AppState, toggled: ReadonlySet<string>, fra
     );
     if (!open) return;
     const live = p.workspaces.filter((w) => !w.archived);
-    for (const ws of live.filter((w) => worktreeOrigin(w) === 'klaude')) wsRow(ws, '  ');
+    for (const ws of live.filter((w) => worktreeOrigin(w) === 'klaud')) wsRow(ws, '  ');
     // Worktrees other tools made (Claude Code sub-agents, other apps) stay folded so they don't drown yours.
     const foldable: Array<{ key: string; label: string; list: Workspace[]; hint: string; action?: UiAction }> = [
       { key: `agents:${p.id}`, label: 'Claude Code agents', list: live.filter((w) => worktreeOrigin(w) === 'agent'), hint: 'Worktrees Claude Code sub-agents created', action: { type: 'agents_menu', projectId: p.id } },
-      { key: `external:${p.id}`, label: 'Other worktrees', list: live.filter((w) => worktreeOrigin(w) === 'external'), hint: 'Worktrees made outside klaude' },
+      { key: `external:${p.id}`, label: 'Other worktrees', list: live.filter((w) => worktreeOrigin(w) === 'external'), hint: 'Worktrees made outside klaud' },
     ];
     for (const f of foldable) {
       if (!f.list.length) continue;

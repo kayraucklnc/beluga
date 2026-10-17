@@ -225,9 +225,8 @@ describe('hub: removing people and replacing the invite', () => {
     await waitFor(() => stranger.errors.length);
     expect(stranger.errors[0]).toMatch(/isn't taking new people/);
     a.close();
-    // The hub may not have seen `a` leave yet ("already connected"); that isn't fatal, so retry.
-    const back = new PeerClient({ url: `ws://127.0.0.1:${hub.port}`, keys, profile: { name: 'a', shares: [], agent: true }, identity: memberA });
-    back.on('error', () => undefined);
+    await new Promise((r) => setTimeout(r, 150)); // let the hub see the old connection go
+    const back = new PeerClient({ url: `ws://127.0.0.1:${hub.port}`, keys, profile: { name: 'a', shares: [], agent: true }, identity: memberA, reconnect: false });
     clients.push(back);
     back.connect();
     await waitFor(() => back.connected);

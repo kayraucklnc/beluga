@@ -1,6 +1,6 @@
 # Direct peer-to-peer connections
 
-klaude can connect friends straight to the host's computer, with no tunnel provider in the
+klaud can connect friends straight to the host's computer, with no tunnel provider in the
 path. It uses the Hyperswarm DHT (`hyperdht`): UDP hole-punching plus a Noise-encrypted stream.
 The room is still a star through the host's hub; each friend just gets a direct line to it.
 
@@ -22,15 +22,15 @@ direct-only link can still join directly; they just have no fallback.
 ## Invite format
 
 ```
-klaude://<host key>#<secret>                          direct only
-klaude://<host key>?relay=https://x.trycloudflare.com#<secret>   direct + fallback relay
+klaud://<host key>#<secret>                          direct only
+klaud://<host key>?relay=https://x.trycloudflare.com#<secret>   direct + fallback relay
 https://x.trycloudflare.com#<secret>                  relay only (unchanged, still accepted)
 ```
 
 - `<host key>` is the host's 32-byte Ed25519 DHT public key in z-base-32 (52 characters).
 - The secret stays in the `#fragment`. Browsers and proxies never send fragments, and the
   secret never goes to the DHT or to the relay.
-- `findInvite` finds all three forms inside pasted text. Older `klaude:<base64>` codes still work.
+- `findInvite` finds all three forms inside pasted text. Older `klaud:<base64>` codes still work.
 
 ## What is encrypted where
 

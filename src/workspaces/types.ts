@@ -47,7 +47,7 @@ export interface WorkspaceRecord {
 /** A workspace as shown in the UI: record + live git status. */
 export interface Workspace extends WorkspaceRecord {
   readonly projectId: string;
-  /** A worktree that exists in git but wasn't created by klaude (e.g. by another tool). */
+  /** A worktree that exists in git but wasn't created by klaud (e.g. by another tool). */
   readonly external: boolean;
   readonly status?: Status;
 }
@@ -78,8 +78,8 @@ export interface ProjectsConfig {
   readonly hidden: readonly string[];
   /** Your own grouping of projects in the sidebar. */
   readonly groups?: readonly ProjectGroup[];
-  /** Setup / run commands you set per project (by project root), over klaude.json and guesses. */
+  /** Setup / run commands you set per project (by project root), over klaud.json and guesses. */
   readonly scripts?: Readonly<Record<string, ProjectScripts>>;
-  /** Setup commands from a project's own klaude.json/conductor.json you allowed to run (by root → command hashes). */
+  /** Setup commands from a project's own klaud.json/conductor.json you allowed to run (by root → command hashes). */
   readonly approvedScripts?: Readonly<Record<string, readonly string[]>>;
 }

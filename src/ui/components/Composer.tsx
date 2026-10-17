@@ -5,10 +5,9 @@ import { type ActionButton, buttonLabel } from '../actions.js';
 import { ACTION_GAP } from '../hit.js';
 import type { Focus } from '../keymap.js';
 import { type Suggestion, suggestionWindow } from '../suggest.js';
-import { formatSize } from '../text.js';
-import { glyph, theme } from '../theme.js';
-import type { Line } from '../text.js';
+import { type Line, type Seg, formatSize, lineWidth, truncate, width } from '../text.js';
 import { LineView } from './LineView.js';
+import { glyph, theme } from '../theme.js';
 
 interface ComposerProps {
   readonly width: number;
@@ -102,27 +101,35 @@ export function Composer({ width, buffer, cursor, focus, suggestions, selected, 
           </>
         ) : null}
       </Box>
-      <Box paddingX={2} height={1}>
-        {buttons.map((b, i) => (
-          <Text key={b.id}>
-            {i > 0 ? ' '.repeat(ACTION_GAP) : ''}
-            <Text color={theme.text} inverse={b.id === hoveredButton}>
-              {b.text}
-            </Text>
-            {b.key ? <Text color={theme.muted}> {b.key}</Text> : null}
-          </Text>
-        ))}
-        <Box flexGrow={1} />
+      {/* One line that never wraps: a wrapped bar would push the screen up and leave stray text behind. */}
+      <Box paddingX={2} height={1} overflow="hidden">
         {transfer?.status === 'active' ? (
-          <TransferStatus t={transfer} />
-        ) : toast ? (
-          <Text color={TOAST_COLORS[toast.level]}>{toast.text}</Text>
-        ) : hint ? (
-          <Text color={theme.info}>{hint}</Text>
-        ) : null}
+          <>
+            <Text wrap="truncate">{actionBarText(buttons)}</Text>
+            <Box flexGrow={1} />
+            <TransferStatus t={transfer} />
+          </>
+        ) : (
+          <LineView line={barLine(buttons, hoveredButton, toast ? { text: toast.text, color: TOAST_COLORS[toast.level] } : hint ? { text: hint, color: theme.info } : undefined, width - 4)} />
+        )}
       </Box>
     </Box>
   );
+}
+
+/** The bottom bar as one line: buttons on the left, the hint (shortened to fit) on the right. */
+export function barLine(buttons: readonly ActionButton[], hovered: string | undefined, right: { text: string; color: string } | undefined, max: number): Line {
+  const left: Seg[] = [];
+  buttons.forEach((b, i) => {
+    if (i > 0) left.push({ text: ' '.repeat(ACTION_GAP) });
+    left.push({ text: b.text, color: theme.text, inverse: b.id === hovered });
+    if (b.key) left.push({ text: ` ${b.key}`, color: theme.muted });
+  });
+  const used = lineWidth(left);
+  const room = max - used - 2;
+  if (!right || room < 8) return truncate(left, max);
+  const text = width(right.text) <= room ? right.text : `${right.text.slice(0, room - 1)}…`;
+  return [...left, { text: ' '.repeat(Math.max(2, max - used - width(text))) }, { text, color: right.color }];
 }
 
 export const actionBarText = (buttons: readonly ActionButton[]): string => buttons.map(buttonLabel).join(' '.repeat(ACTION_GAP));

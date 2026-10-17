@@ -31,7 +31,7 @@ const blocksOf = (message: unknown): Block[] => {
 };
 
 /**
- * Turn a Claude Code conversation into klaude's chat: your messages, and one Claude card
+ * Turn a Claude Code conversation into klaud's chat: your messages, and one Claude card
  * per turn with its steps and final words. Sub-agent chatter and tool output are left out.
  */
 export function transcriptToLog(messages: readonly TranscriptMessage[], opts: { selfId: string; selfName: string; cwd: string; start: number; end: number }): LogItem[] {

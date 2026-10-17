@@ -63,7 +63,7 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
     case 'notify':
       return {
         title: 'Settings › Notifications',
-        intro: ['klaude tells you when something needs you, on the desktop and in the inbox (top right).', 'Nothing is announced about the conversation you are looking at.', ''],
+        intro: ['klaud tells you when something needs you, on the desktop and in the inbox (top right).', 'Nothing is announced about the conversation you are looking at.', ''],
         options: [
           { id: 'n-desktop', label: 'Desktop notifications', hint: `${onOff(p.notify.desktop)}${sw}` },
           { id: 'n-sound', label: 'Sound', hint: `${onOff(p.notify.sound)}${sw}` },
@@ -134,7 +134,7 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
       const others = state.peers.filter((x) => x.peerId !== state.self?.peerId).length;
       return {
         title: 'Settings',
-        intro: ['Saved to ~/.klaude/settings.json and used every time you run klaude.', ''],
+        intro: ['Saved to ~/.klaud/settings.json and used every time you run klaud.', ''],
         options: [
           { id: 'set-name', label: 'Your name', hint: `${state.self?.name ?? '–'}  ·  type a new one` },
           { id: 'set-theme', label: 'Color theme', hint: `${THEME_LABELS[p.theme]}${sw}` },
@@ -172,7 +172,7 @@ export function inboxMenu(state: AppState, now = Date.now()): MenuSpec {
   const list = state.inbox.slice(0, 30);
   return {
     title: 'Inbox',
-    intro: [list.length ? `${state.inbox.filter((x) => !x.read).length} new · click one to open it` : 'Nothing yet. klaude lists what happens in other workspaces here.', ''],
+    intro: [list.length ? `${state.inbox.filter((x) => !x.read).length} new · click one to open it` : 'Nothing yet. klaud lists what happens in other workspaces here.', ''],
     options: [
       ...list.map((x) => ({ id: `notice:${x.id}`, label: `${x.read ? '  ' : '● '}${x.title}`, hint: `${AGO(x.ts, now)}${x.body ? `  ·  ${x.body}` : ''}` })),
       ...(list.length ? [{ id: 'inbox-read', label: 'Mark all as read', hint: '' }, { id: 'inbox-clear', label: 'Clear the inbox', hint: '' }] : []),

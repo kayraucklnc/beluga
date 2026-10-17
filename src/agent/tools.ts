@@ -27,7 +27,7 @@ export const ROOM_TOOL_NAMES = [
   'get_peer_file',
   'send_file',
   'write_report',
-].map((n) => `mcp__klaude__${n}`);
+].map((n) => `mcp__klaud__${n}`);
 
 export function createRoomToolDefs(bridge: RoomBridge) {
   return [
@@ -70,14 +70,14 @@ export function createRoomToolDefs(bridge: RoomBridge) {
         {
           peer: z.string().describe('Peer name from list_peers'),
           path: z.string().min(1).max(4096).describe('Path on their computer; ~ means their home folder'),
-          save_to: z.string().max(4096).optional().describe('Folder on THIS computer to save into (e.g. ~/Desktop). Default: ~/Downloads/klaude/<peer>'),
+          save_to: z.string().max(4096).optional().describe('Folder on THIS computer to save into (e.g. ~/Desktop). Default: ~/Downloads/klaud/<peer>'),
           why: z.string().max(500).optional().describe('One line shown to them when they approve'),
         },
         (a) => guarded(async () => `Saved to ${await bridge.getPeerFile(a.peer, a.path, a.save_to, a.why)}`),
       ),
       tool(
         'send_file',
-        "Send a file from this computer to a peer (for example the result of work they asked for). It's saved in their Downloads/klaude folder. Use it to send results back to whoever asked you.",
+        "Send a file from this computer to a peer (for example the result of work they asked for). It's saved in their Downloads/klaud folder. Use it to send results back to whoever asked you.",
         {
           peer: z.string().describe('Peer name from list_peers'),
           path: z
@@ -92,7 +92,7 @@ export function createRoomToolDefs(bridge: RoomBridge) {
       ),
       tool(
         'write_report',
-        'Write a Markdown report to .klaude/reports/ and announce it so everyone can follow it live.',
+        'Write a Markdown report to .klaud/reports/ and announce it so everyone can follow it live.',
         { title: z.string().min(1).max(200), markdown: z.string().min(1).max(200_000) },
         (a) => guarded(async () => `Report written to ${await bridge.writeReport(a.title, a.markdown)}`),
       ),
@@ -100,5 +100,5 @@ export function createRoomToolDefs(bridge: RoomBridge) {
 }
 
 export function createRoomTools(bridge: RoomBridge) {
-  return createSdkMcpServer({ name: 'klaude', version: '0.1.0', tools: createRoomToolDefs(bridge) });
+  return createSdkMcpServer({ name: 'klaud', version: '0.1.0', tools: createRoomToolDefs(bridge) });
 }

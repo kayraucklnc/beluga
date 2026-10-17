@@ -28,7 +28,7 @@ export type Decision =
   | { readonly kind: 'available'; readonly count: number }
   | { readonly kind: 'blocked'; readonly reason: string };
 
-/** The folder klaude runs from (dist/update/check.js → repo root). */
+/** The folder klaud runs from (dist/update/check.js → repo root). */
 export function installRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 }
@@ -62,7 +62,7 @@ const canonical = (p: string): string => {
 };
 
 /**
- * True only when `root` is itself the top of a git checkout. A klaude installed inside
+ * True only when `root` is itself the top of a git checkout. A klaud installed inside
  * someone's project (node_modules) sits *inside* their repo; updating that would
  * pull and install into their project, so it must not count.
  */
@@ -72,6 +72,38 @@ export async function isGitCheckout(run: Run, root: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Is `root` the global npm install of klaud (npm install -g klaud)? */
+export async function isGlobalNpmInstall(run: Run, root: string): Promise<boolean> {
+  try {
+    return canonical(path.join((await run('npm', ['root', '-g'])).trim(), 'klaud')) === canonical(root);
+  } catch {
+    return false;
+  }
+}
+
+/** The newest klaud on npm. */
+export async function latestOnNpm(run: Run): Promise<string> {
+  return (await run('npm', ['view', 'klaud', 'version'])).trim();
+}
+
+/** -1, 0 or 1, comparing "1.2.3" versions (pre-release tags sort before the release). */
+export function compareVersions(a: string, b: string): number {
+  const parse = (v: string) => {
+    const [main = '', pre = ''] = v.split('-');
+    return { nums: main.split('.').map((n) => Number(n) || 0), pre };
+  };
+  const x = parse(a);
+  const y = parse(b);
+  for (let i = 0; i < 3; i++) {
+    const d = (x.nums[i] ?? 0) - (y.nums[i] ?? 0);
+    if (d) return Math.sign(d);
+  }
+  if (x.pre === y.pre) return 0;
+  if (!x.pre) return 1;
+  if (!y.pre) return -1;
+  return x.pre < y.pre ? -1 : 1;
 }
 
 export async function fetchLatest(run: Run): Promise<void> {
@@ -110,10 +142,10 @@ export async function readStatus(run: Run): Promise<Status> {
   return { branch, upstream, head, behind, ahead, dirty, incoming, depsChanged };
 }
 
-/** What `klaude update` can do from here. */
+/** What `klaud update` can do from here. */
 export function decide(s: Status): Decision {
   if (s.behind === 0) return { kind: 'latest' };
-  if (s.dirty) return { kind: 'blocked', reason: 'You have local edits in the klaude folder. Commit or discard them, then run klaude update again.' };
-  if (s.ahead > 0) return { kind: 'blocked', reason: `Your copy has ${s.ahead} commit(s) that aren't on ${s.upstream}. Pull or rebase by hand, then run klaude update again.` };
+  if (s.dirty) return { kind: 'blocked', reason: 'You have local edits in the klaud folder. Commit or discard them, then run klaud update again.' };
+  if (s.ahead > 0) return { kind: 'blocked', reason: `Your copy has ${s.ahead} commit(s) that aren't on ${s.upstream}. Pull or rebase by hand, then run klaud update again.` };
   return { kind: 'available', count: s.behind };
 }

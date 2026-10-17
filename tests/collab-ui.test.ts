@@ -4,7 +4,7 @@ import { toQuestion } from '../src/agent/runner.js';
 import type { PendingQuestion } from '../src/core/collab-store.js';
 import { cleanQuestion } from '../src/core/questions.js';
 import { initialState, reduce, type AppState } from '../src/core/store.js';
-import { questionModel, sharedHeaderModel, sharedSection } from '../src/ui/collab-models.js';
+import { planFullModel, questionModel, sharedHeaderModel, sharedSection } from '../src/ui/collab-models.js';
 import { clearMenu, invitePersonMenu, sharedMenu, wsShareMenu } from '../src/ui/collab-menus.js';
 import { initialUi, handleKey, type KeyContext } from '../src/ui/keymap.js';
 import { personMenu } from '../src/ui/menus.js';
@@ -13,7 +13,7 @@ import { workspaceHeaderModel } from '../src/ui/workspace-models.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
 const text = (lines: readonly (readonly { text: string }[])[]) => lines.map((l) => l.map((s) => s.text).join(''));
-const ws: Workspace = { id: 'w1', projectRoot: '/p', name: 'add-auth', path: '/wt', kind: 'worktree', branch: 'klaude/add-auth', createdAt: 1, projectId: 'p1', external: false, status: { changed: 0, ahead: 1, behind: 0 } };
+const ws: Workspace = { id: 'w1', projectRoot: '/p', name: 'add-auth', path: '/wt', kind: 'worktree', branch: 'klaud/add-auth', createdAt: 1, projectId: 'p1', external: false, status: { changed: 0, ahead: 1, behind: 0 } };
 const project: Project = { id: 'p1', name: 'api', root: '/p', base: 'origin/main', workspaces: [ws] };
 
 function room(host = true): AppState {
@@ -63,7 +63,7 @@ describe("Claude's question card", () => {
     const plan: PendingQuestion = { ...question, qid: 'q2', question: { kind: 'plan', plan: '1. add auth\n2. test it' } };
     const m = questionModel(room(), plan, 80);
     expect(text(m.lines)[0]).toContain('proposes a plan');
-    expect(m.zones.map((z) => (z.action as { pick: string }).pick)).toEqual(['approve', 'revise']);
+    expect(m.zones.map((z) => (z.action as { pick: string }).pick)).toEqual(['approve', 'revise', undefined]); // + Full screen
   });
 
   it('number keys pick an option while the composer is empty', () => {
@@ -122,5 +122,30 @@ describe('sharing and people', () => {
     expect(menu.options.map((o) => o.id)).toEqual(['sf-dir:/home/kay/site', 'sf-dir:/p', 'sf-type', 'sf-stop:notes', 'close']);
     expect(menu.options.find((o) => o.id === 'sf-stop:notes')?.hint).toBe('with bob');
     expect(shareWhoMenu(room(), '/p').options.map((o) => o.id)).toEqual(['sw-all', 'sw-peer:b', 'sw-all-rw', 'close']);
+  });
+});
+
+describe('plan full screen', () => {
+  const long = Array.from({ length: 60 }, (_, i) => `${i + 1}. step number ${i + 1}`).join('\n');
+  const plan: PendingQuestion = { qid: 'p1', requestId: 'r', owner: 'me', channel: 'ws:w1', picked: {}, question: { kind: 'plan', plan: long } };
+
+  it('the card offers full screen; the full view scrolls and keeps Approve / Keep planning visible', () => {
+    const s = reduce(room(), { type: 'question_add', question: plan });
+    expect(questionModel(s, plan, 100).zones.map((z) => (z.action as { type: string }).type)).toContain('plan_full');
+    const top = planFullModel(s, plan, 100, 20, 0);
+    expect(top.lines).toHaveLength(20);
+    expect(top.maxScroll).toBeGreaterThan(30);
+    expect(top.zones.map((z) => (z.action as { pick?: string; type: string }).pick ?? z.action.type)).toEqual(['approve', 'revise', 'plan_full']);
+    const end = planFullModel(s, plan, 100, 20, 999);
+    expect(end.lines.map((l) => l.map((x) => x.text).join('')).join('\n')).toContain('60. step number 60');
+  });
+
+  it('Ctrl+F opens it, arrows scroll, Esc closes', () => {
+    const ctx: KeyContext = { hasApproval: false, hasViewer: false, overlay: false, page: 20, maxChatScroll: 0, suggestions: [], peopleCount: 1, menuSize: 0, planId: 'p1', planMaxScroll: 40 };
+    const open = handleKey(initialUi, 'f', { ctrl: true }, ctx).ui;
+    expect(open.planFull).toBe('p1');
+    const scrolled = handleKey(open, '', { pageDown: true }, ctx).ui;
+    expect(scrolled.planScroll).toBe(18);
+    expect(handleKey(scrolled, '', { escape: true }, ctx).ui.planFull).toBeUndefined();
   });
 });

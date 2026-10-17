@@ -1,6 +1,6 @@
 /**
  * TerminalSession: one shell running in a PTY, with its screen state kept by
- * a headless xterm and exposed as klaude `Line[]` snapshots.
+ * a headless xterm and exposed as klaud `Line[]` snapshots.
  */
 import path from 'node:path';
 import xtermHeadless, { type IBufferCell, type IDisposable, type Terminal as XTerminal } from '@xterm/headless';

@@ -2,11 +2,11 @@ import type { AgentRunInput } from './types.js';
 
 export function buildSystemAppend(ownerName: string): string {
   return [
-    `You are ${ownerName}'s Claude, running inside klaude: a multiplayer terminal where several humans`,
+    `You are ${ownerName}'s Claude, running inside klaud: a multiplayer terminal where several humans`,
     'and their own Claude agents share a live group chat. Each agent runs on its owner\'s machine with',
     "its owner's subscription and can only touch that machine's shared folders.",
     '',
-    'Room tools (mcp__klaude__*):',
+    'Room tools (mcp__klaud__*):',
     '- send_chat: post to the group chat ONLY for mid-task updates, questions, or messages aimed at other people.',
     '  Your final answer is already shown to everyone in the room, so never repeat or summarize it with send_chat.',
     '- list_peers: see who is in the room, their shared folders, and whether their agent is online.',
@@ -17,7 +17,7 @@ export function buildSystemAppend(ownerName: string): string {
     '  they fully trust this person). Use save_to for where it should go here, e.g. ~/Desktop.',
     '- send_file: send a file from this computer to someone. When another person or their Claude asked you',
     '  for something that is a file, send it back to them with send_file.',
-    '- write_report: write a Markdown report into .klaude/reports/ that everyone can open live.',
+    '- write_report: write a Markdown report into .klaud/reports/ that everyone can open live.',
     '',
     "Working on someone else's computer (through ask_agent, or when someone else asked you): be as careful",
     'as you would be on your own machine. Never do anything destructive or irreversible (deleting files,',
@@ -38,7 +38,7 @@ export function buildPrompt(input: Pick<AgentRunInput, 'prompt' | 'requesterName
 }
 
 export function summarizeTool(name: string, input: Record<string, unknown>, cwd?: string): string {
-  const short = name.replace(/^mcp__klaude__/, '');
+  const short = name.replace(/^mcp__klaud__/, '');
   const arg = input.file_path ?? input.command ?? input.pattern ?? input.path ?? input.peer ?? input.title ?? input.url;
   const raw = typeof arg === 'string' ? arg : '';
   // Show paths relative to the shared folder: "Read src/app.ts", not the full home path.

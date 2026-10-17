@@ -22,11 +22,11 @@ let hub: Hub;
 let base: string;
 let terminals: TerminalManager;
 const sessions: Session[] = [];
-const home = process.env.KLAUDE_HOME;
+const home = process.env.KLAUD_HOME;
 
 beforeEach(() => {
-  base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaude-bench-')));
-  process.env.KLAUDE_HOME = path.join(base, 'klaude-home');
+  base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-bench-')));
+  process.env.KLAUD_HOME = path.join(base, 'klaud-home');
   terminals = new TerminalManager();
 });
 
@@ -34,7 +34,7 @@ afterEach(async () => {
   for (const s of sessions.splice(0)) await s.stop();
   terminals.closeAll();
   await hub?.close();
-  process.env.KLAUDE_HOME = home;
+  process.env.KLAUD_HOME = home;
 });
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
@@ -99,13 +99,13 @@ const projectOf = (w: WorkspaceManager) => w.list.find((p) => p.root)!;
 describe('setup and run scripts', () => {
   it('runs the setup command in every new worktree, in its terminal, and reports the result', async () => {
     hub = await startHub({ keys });
-    const dir = repo({ 'klaude.json': JSON.stringify({ scripts: { setup: 'echo installing && touch .ready', run: 'echo serving; sleep 30' } }) });
+    const dir = repo({ 'klaud.json': JSON.stringify({ scripts: { setup: 'echo installing && touch .ready', run: 'echo serving; sleep 30' } }) });
     const kay = await solo(dir);
-    expect(projectOf(kay.workspaces).scripts?.setup).toEqual({ command: 'echo installing && touch .ready', source: 'klaude.json' });
+    expect(projectOf(kay.workspaces).scripts?.setup).toEqual({ command: 'echo installing && touch .ready', source: 'klaud.json' });
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'feature');
     // It comes from the repository, so the first time it asks; "always" remembers this command.
     await waitFor(() => kay.state().approvals.length === 1, 4000);
-    expect(kay.state().approvals[0]?.title).toBe("app's klaude.json wants to run its setup in new worktrees");
+    expect(kay.state().approvals[0]?.title).toBe("app's klaud.json wants to run its setup in new worktrees");
     kay.session.answerApproval('always');
     await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', 8000);
     const next = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'second');
@@ -123,7 +123,7 @@ describe('setup and run scripts', () => {
 
   it('tells you when setup fails, and can be turned off', async () => {
     hub = await startHub({ keys });
-    const dir = repo({ 'klaude.json': JSON.stringify({ scripts: { setup: 'exit 3' } }) });
+    const dir = repo({ 'klaud.json': JSON.stringify({ scripts: { setup: 'exit 3' } }) });
     const kay = await solo(dir);
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'broken');
     await waitFor(() => kay.state().approvals.length === 1, 4000);
@@ -141,7 +141,7 @@ describe('setup and run scripts', () => {
     expect(kay.state().setup[quiet!.id]).toBeUndefined();
   });
 
-  it('lets you set the commands for yourself or for the team (klaude.json)', async () => {
+  it('lets you set the commands for yourself or for the team (klaud.json)', async () => {
     hub = await startHub({ keys });
     const dir = repo({ 'package-lock.json': '{}', 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
     const kay = await solo(dir);
@@ -151,7 +151,7 @@ describe('setup and run scripts', () => {
     await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.source === 'yours', 4000);
     kay.bench.shareScripts(id);
     await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.command === 'npm ci', 4000);
-    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaude.json')]).toString())).toEqual({ scripts: { setup: 'npm ci', run: 'npm run dev' } });
+    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaud.json')]).toString())).toEqual({ scripts: { setup: 'npm ci', run: 'npm run dev' } });
   });
 });
 
@@ -164,7 +164,7 @@ describe('pull requests', () => {
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'auth');
     kay.bench.createPr(ws!.id, 'mention the migration');
     await waitFor(() => kay.runs.length === 1, 4000);
-    expect(kay.runs[0]?.prompt).toContain('gh pr create --base main --head klaude/auth');
+    expect(kay.runs[0]?.prompt).toContain('gh pr create --base main --head klaud/auth');
     expect(kay.runs[0]?.prompt).toContain('For this pull request, also: mention the migration');
     expect(kay.runs[0]?.prompt).toContain('## Why');
 

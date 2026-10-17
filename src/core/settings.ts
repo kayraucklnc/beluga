@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { klaudHome } from './home.js';
 import { z } from 'zod';
 
 export const THEMES = ['calm', 'light', 'contrast', 'mono'] as const;
@@ -36,7 +37,7 @@ export type NotifySettings = z.infer<typeof NotifySettings>;
 
 const peerKey = z.string().regex(/^[\w-]{8,64}$/);
 
-/** Choices that persist between runs in ~/.klaude/settings.json. */
+/** Choices that persist between runs in ~/.klaud/settings.json. */
 export const Settings = z.object({
   name: z.string().regex(/^[\w.-]{1,32}$/).optional(),
   theme: z.enum(THEMES).default('calm'),
@@ -67,7 +68,7 @@ export const Settings = z.object({
 });
 export type Settings = z.infer<typeof Settings>;
 
-export const settingsPath = (): string => path.join(process.env.KLAUDE_HOME ?? path.join(os.homedir(), '.klaude'), 'settings.json');
+export const settingsPath = (): string => path.join(klaudHome(), 'settings.json');
 
 export function loadSettings(file: string = settingsPath()): Settings {
   let raw: unknown;

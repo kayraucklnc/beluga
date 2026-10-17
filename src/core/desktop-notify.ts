@@ -43,15 +43,15 @@ export function plan(route: NotifyRoute, n: DesktopNotice, env: NodeJS.ProcessEn
     case 'osc9':
       return { write: `\x1b]9;${title}: ${body}\x07${bell}` };
     case 'osc99':
-      return { write: `\x1b]99;i=klaude:d=0;${title}\x1b\\\x1b]99;i=klaude:d=1:p=body;${body}\x1b\\${bell}` };
+      return { write: `\x1b]99;i=klaud:d=0;${title}\x1b\\\x1b]99;i=klaud:d=1:p=body;${body}\x1b\\${bell}` };
     case 'terminal-notifier': {
       const app = env.__CFBundleIdentifier;
-      return { cmd: 'terminal-notifier', args: ['-title', 'klaude', '-subtitle', title, '-message', body || ' ', '-group', 'klaude', ...(n.sound ? ['-sound', 'default'] : []), ...(app ? ['-activate', app] : [])] };
+      return { cmd: 'terminal-notifier', args: ['-title', 'klaud', '-subtitle', title, '-message', body || ' ', '-group', 'klaud', ...(n.sound ? ['-sound', 'default'] : []), ...(app ? ['-activate', app] : [])] };
     }
     case 'osascript':
-      return { cmd: 'osascript', args: ['-e', `display notification ${appleString(body || ' ')} with title "klaude" subtitle ${appleString(title)}${n.sound ? ' sound name "Glass"' : ''}`] };
+      return { cmd: 'osascript', args: ['-e', `display notification ${appleString(body || ' ')} with title "klaud" subtitle ${appleString(title)}${n.sound ? ' sound name "Glass"' : ''}`] };
     case 'notify-send':
-      return { cmd: 'notify-send', args: ['-a', 'klaude', '--', title, body] };
+      return { cmd: 'notify-send', args: ['-a', 'klaud', '--', title, body] };
     case 'bell':
       return { write: bell };
   }

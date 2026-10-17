@@ -37,15 +37,15 @@ export interface SessionOptions {
   readonly requestTimeoutMs?: number;
   readonly agentTimeoutMs?: number;
   readonly onQuit?: () => void;
-  /** Folder klaude was started in; new stand-alone chats run here. */
+  /** Folder klaud was started in; new stand-alone chats run here. */
   readonly launchDir?: string;
   /** Clipboard writer (injected so tests don't touch the real clipboard). */
   readonly copy?: (text: string) => Promise<unknown>;
-  /** Where downloads are saved (default ~/Downloads/klaude). */
+  /** Where downloads are saved (default ~/Downloads/klaud). */
   readonly downloadDir?: string;
   /** Persist a settings change (name, policy, theme…). */
   readonly saveSettings?: (patch: Partial<Settings>) => void;
-  /** Open remote access and create an invite (klaude starts solo; this runs on first Invite). */
+  /** Open remote access and create an invite (klaud starts solo; this runs on first Invite). */
   readonly startInvite?: () => void;
   /** How long an unanswered approval waits before it's declined (default 5 minutes). */
   readonly approvalTimeoutMs?: number;
@@ -278,7 +278,7 @@ export class Session {
       this.toast('Opening a secure link for friends… it will be copied when ready');
       return;
     }
-    await this.copyOrShow(`klaude join ${invite}`, 'Invite copied. Paste it to a friend');
+    await this.copyOrShow(`klaud join ${invite}`, 'Invite copied. Paste it to a friend');
   }
 
   async copyLastAnswer(): Promise<void> {
@@ -577,7 +577,7 @@ export class Session {
       if (invite && /#[\w-]+$/.test(invite)) store.dispatch({ type: 'invite', invite: invite.replace(/#[\w-]+$/, `#${secret}`) });
     });
     client.on('ended', (why) => {
-      this.system(`${why}. You can keep working on your own; restart klaude to join a room again.`, 'warn');
+      this.system(`${why}. You can keep working on your own; restart klaud to join a room again.`, 'warn');
       this.toast(why, 'warn');
       store.dispatch({ type: 'shared_clear' });
     });

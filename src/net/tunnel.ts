@@ -29,7 +29,7 @@ const TIMEOUT_MS = 45_000;
 export const CLOUDFLARE_URL = /(https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com)/;
 export const NGROK_URL = /"url":"(https:\/\/[^"]+)"/;
 
-/** Every tunnel process we spawned, so none outlive klaude (they expose your hub publicly). */
+/** Every tunnel process we spawned, so none outlive klaud (they expose your hub publicly). */
 const children = new Set<ChildProcess>();
 
 export function closeAllTunnels(): void {

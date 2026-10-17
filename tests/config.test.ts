@@ -20,8 +20,8 @@ describe('parseConfig', () => {
     expect(parseConfig(['host'], '/tmp/proj').shares).toEqual([]);
     expect(parseConfig(['host']).inviteNow).toBe(false);
     expect(parseConfig(['host', '--invite']).inviteNow).toBe(true);
-    const c = parseConfig(['join', 'klaude:x', '--no-share', '--no-agent']);
-    expect(c).toMatchObject({ mode: 'join', invite: 'klaude:x', shares: [], agent: false });
+    const c = parseConfig(['join', 'klaud:x', '--no-share', '--no-agent']);
+    expect(c).toMatchObject({ mode: 'join', invite: 'klaud:x', shares: [], agent: false });
   });
 
   it('warns when you explicitly share your whole home folder or disk', () => {

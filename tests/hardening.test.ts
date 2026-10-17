@@ -8,19 +8,19 @@ import { prNews } from '../src/core/workbench.js';
 import { outboxDir, safeRef, sweepOutbox, continuePrompt } from '../src/core/remote-work.js';
 import type { PullRequest } from '../src/core/work-store.js';
 
-const home = process.env.KLAUDE_HOME;
+const home = process.env.KLAUD_HOME;
 let base: string;
 beforeEach(() => {
-  base = mkdtempSync(path.join(os.tmpdir(), 'klaude-hard-'));
-  process.env.KLAUDE_HOME = path.join(base, '.klaude');
+  base = mkdtempSync(path.join(os.tmpdir(), 'klaud-hard-'));
+  process.env.KLAUD_HOME = path.join(base, '.klaud');
 });
 afterEach(() => {
-  process.env.KLAUDE_HOME = home;
+  process.env.KLAUD_HOME = home;
 });
 
 describe('secrets', () => {
-  it("covers klaude's own key and settings, but not worktrees, chats or the outbox", () => {
-    const k = process.env.KLAUDE_HOME!;
+  it("covers klaud's own key and settings, but not worktrees, chats or the outbox", () => {
+    const k = process.env.KLAUD_HOME!;
     expect(isSecretPath(path.join(k, 'identity.json'))).toBe(true);
     expect(isSecretPath(path.join(k, 'settings.json'))).toBe(true);
     expect(isSecretPath(path.join(k, 'history', 'x.json'))).toBe(true);
@@ -32,7 +32,7 @@ describe('secrets', () => {
 
   it('covers CLI tokens, shell history, Claude credentials and keychains', () => {
     for (const p of ['/u/.config/gh/hosts.yml', '/u/.config/gcloud/credentials.db', '/u/.zsh_history', '/u/.bash_history', '/u/.pgpass', '/u/.claude/.credentials.json', '/u/Library/Keychains/login.keychain-db']) expect(isSecretPath(p)).toBe(true);
-    for (const p of ['/u/.config/nvim/init.lua', '/u/project/history.md', '/u/Desktop/report.pdf', 'src/.klaude/reports/r.md']) expect(isSecretPath(p)).toBe(false);
+    for (const p of ['/u/.config/nvim/init.lua', '/u/project/history.md', '/u/Desktop/report.pdf', 'src/.klaud/reports/r.md']) expect(isSecretPath(p)).toBe(false);
   });
 });
 
@@ -47,7 +47,7 @@ describe('matching the same repository on two computers', () => {
 
 describe('branch names from someone else', () => {
   it('only accepts plain branch names', () => {
-    for (const ok of ['main', 'klaude/add-auth', 'feature/x.y_z-1', 'origin/main']) expect(safeRef(ok)).toBe(true);
+    for (const ok of ['main', 'klaud/add-auth', 'feature/x.y_z-1', 'origin/main']) expect(safeRef(ok)).toBe(true);
     for (const bad of ['-D', '--upload-pack=evil', 'a..b', 'a//b', 'x/', 'x.lock', '', ' main', 'a b', 'x;rm']) expect(safeRef(bad)).toBe(false);
   });
 

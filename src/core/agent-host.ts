@@ -32,6 +32,17 @@ const CONTEXT_LINES = 20;
 /** Requests one person may have waiting for your Claude at once. */
 const MAX_QUEUED_PER_PERSON = 10;
 
+/** The queue for one conversation (the room, or a workspace). `askTo`: who gets Claude's questions. */
+interface Lane {
+  waiting: Array<{ from: string; body: BodyOf<'agent_request'>; urgent?: boolean; askTo?: string }>;
+  pumping: boolean;
+  current?: AbortController;
+  interruptedBy?: string;
+}
+
+/** Conversations whose Claude may work at the same time (keeps your plan's limits in mind). */
+const MAX_PARALLEL_RUNS = 4;
+
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
@@ -44,16 +55,14 @@ export class AgentHost {
   currentChannel = 'room';
   private readonly approvals = new Map<string, (answer: 'yes' | 'no' | 'always') => void>();
   private readonly alwaysTools = new Set<string>();
-  /** Requests waiting for the agent, run one at a time (urgent ones jump the line). */
-  /** `askTo`: who gets Claude's questions (default: whoever asked). */
-  private waiting: Array<{ from: string; body: BodyOf<'agent_request'>; urgent?: boolean; askTo?: string }> = [];
+  /**
+   * One queue per conversation: each workspace's Claude works on its own, at the same time as
+   * the others, while messages within one conversation run in order (urgent ones jump the line).
+   */
+  private readonly lanes = new Map<string, Lane>();
+  private running = 0;
   /** Approvals waiting per person, so one person can't crowd out everyone else's. */
   private readonly approvalsBy = new Map<string, number>();
-  private pumping = false;
-  private interruptedBy?: string;
-  private current?: AbortController;
-  /** Bumped by :stop so queued runs are cancelled too. */
-  private generation = 0;
   private readonly seenRequests: string[] = [];
   private readonly toolApprovals = new Set<string>();
   /** Final agent events that could not be sent while disconnected. */
@@ -89,9 +98,18 @@ export class AgentHost {
     this.deps.system(text, level);
   }
 
-  /** Stop whatever is running (when klaude quits). */
+  /** Stop whatever is running (when klaud quits). */
   abort(): void {
-    this.current?.abort();
+    for (const lane of this.lanes.values()) lane.current?.abort();
+  }
+
+  private lane(channel: string): Lane {
+    let lane = this.lanes.get(channel);
+    if (!lane) {
+      lane = { waiting: [], pumping: false };
+      this.lanes.set(channel, lane);
+    }
+    return lane;
   }
 
   /** Send the final results that couldn't go out while you were disconnected. */
@@ -131,19 +149,22 @@ export class AgentHost {
   }
 
   stopAgent(): void {
-    if (!this.current && this.waiting.length === 0) {
+    const lanes = [...this.lanes.values()];
+    if (!lanes.some((l) => l.current || l.waiting.length)) {
       this.toast('Your Claude is not running anything');
       return;
     }
-    this.generation++;
-    this.current?.abort();
     for (const id of [...this.toolApprovals]) this.answerApproval('no', id);
     this.deps.questions.cancelAll();
-    const cancelled = this.waiting;
-    this.waiting = [];
-    for (const { from, body } of cancelled) this.emitAgent(body.requestId, from, 'error', 'Cancelled by owner', body.channel);
-    this.toast('Stopping your Claude (queued requests cancelled)', 'warn');
+    for (const lane of lanes) {
+      const cancelled = lane.waiting;
+      lane.waiting = [];
+      lane.current?.abort();
+      for (const { from, body } of cancelled) this.emitAgent(body.requestId, from, 'error', 'Cancelled by owner', body.channel);
+    }
+    this.toast('Stopping your Claude everywhere (queued requests cancelled)', 'warn');
   }
+
 
   private emitAgent(requestId: string, requester: string, event: BodyOf<'agent_event'>['event'], text = '', channel = 'room'): void {
     const final = event === 'done' || event === 'error' || event === 'denied';
@@ -183,35 +204,43 @@ export class AgentHost {
    * interrupt the current run and go next, continuing the same conversation.
    */
   private enqueue(from: string, body: BodyOf<'agent_request'>, askTo?: string): void {
+    const lane = this.lane(body.channel);
     const urgent = body.urgent && from === this.selfId;
     if (urgent) {
-      // After earlier urgent messages (keeping your order), ahead of everything else.
-      const at = this.waiting.findIndex((w) => !w.urgent);
-      this.waiting.splice(at === -1 ? this.waiting.length : at, 0, { from, body, urgent: true });
-      if (this.current) {
-        this.interruptedBy = body.requestId;
-        this.current.abort();
+      // After earlier urgent messages (keeping your order), ahead of everything else in this conversation.
+      const at = lane.waiting.findIndex((w) => !w.urgent);
+      lane.waiting.splice(at === -1 ? lane.waiting.length : at, 0, { from, body, urgent: true });
+      if (lane.current) {
+        lane.interruptedBy = body.requestId;
+        lane.current.abort();
       }
     } else {
-      if (this.waiting.filter((w) => w.from === from).length >= MAX_QUEUED_PER_PERSON) {
+      const queued = [...this.lanes.values()].reduce((n, l) => n + l.waiting.filter((w) => w.from === from).length, 0);
+      if (queued >= MAX_QUEUED_PER_PERSON) {
         this.emitAgent(body.requestId, from, 'denied', 'Too many requests waiting; try again when the current ones finish.', body.channel);
         return;
       }
-      this.waiting.push({ from, body, ...(askTo ? { askTo } : {}) });
-      if (this.current || this.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', 'Waiting for the current task to finish', body.channel);
+      lane.waiting.push({ from, body, ...(askTo ? { askTo } : {}) });
+      if (lane.current || lane.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', 'Waiting for the current task to finish', body.channel);
     }
-    void this.pump();
+    void this.pump(lane);
   }
 
-  private async pump(): Promise<void> {
-    if (this.pumping) return;
-    this.pumping = true;
+  private async pump(lane: Lane): Promise<void> {
+    if (lane.pumping) return;
+    lane.pumping = true;
     try {
-      for (let next = this.waiting.shift(); next; next = this.waiting.shift()) {
-        await this.runAgent(next.from, next.body, next.askTo).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
+      for (let next = lane.waiting.shift(); next; next = lane.waiting.shift()) {
+        while (this.running >= MAX_PARALLEL_RUNS) await new Promise((r) => setTimeout(r, 200));
+        this.running++;
+        try {
+          await this.runAgent(next.from, next.body, lane, next.askTo).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
+        } finally {
+          this.running--;
+        }
       }
     } finally {
-      this.pumping = false;
+      lane.pumping = false;
     }
   }
 
@@ -252,15 +281,15 @@ export class AgentHost {
     });
   }
 
-  private async runAgent(from: string, body: BodyOf<'agent_request'>, askTo = from): Promise<void> {
+  private async runAgent(from: string, body: BodyOf<'agent_request'>, lane: Lane, askTo = from): Promise<void> {
     const agent = this.agent as AgentBackend;
     const controller = new AbortController();
-    this.current = controller;
+    lane.current = controller;
     const requesterName = peerName(this.store.getState(), from);
     const place = this.deps.workspaces?.place(body.channel);
     if (body.channel !== 'room' && !place) {
       this.emitAgent(body.requestId, from, 'error', 'That workspace is archived or missing.', body.channel);
-      if (this.current === controller) this.current = undefined;
+      if (lane.current === controller) lane.current = undefined;
       return;
     }
     this.currentChannel = body.channel;
@@ -284,13 +313,12 @@ export class AgentHost {
       if (controller.signal.aborted) throw new Error('aborted');
       this.emitAgent(body.requestId, from, 'done', final || '(done)', body.channel);
     } catch (err) {
-      const reason = this.interruptedBy ? 'Interrupted by a newer message' : controller.signal.aborted ? 'Stopped by owner' : errorText(err);
-      this.interruptedBy = undefined;
+      const reason = lane.interruptedBy ? 'Interrupted by a newer message' : controller.signal.aborted ? 'Stopped by owner' : errorText(err);
+      lane.interruptedBy = undefined;
       this.emitAgent(body.requestId, from, 'error', reason, body.channel);
     } finally {
-      if (this.current === controller) this.current = undefined;
-      this.interruptedBy = undefined; // never carry an interrupt label into the next run
-      this.currentChannel = 'room';
+      if (lane.current === controller) lane.current = undefined;
+      lane.interruptedBy = undefined; // never carry an interrupt label into the next run
       void this.deps.refreshUsage();
       if (body.channel !== 'room') void this.deps.workspaces?.refresh();
     }

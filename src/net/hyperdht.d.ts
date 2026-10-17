@@ -1,4 +1,4 @@
-// Minimal types for the parts of hyperdht klaude uses (the package ships none).
+// Minimal types for the parts of hyperdht klaud uses (the package ships none).
 declare module 'hyperdht' {
   import type { EventEmitter } from 'node:events';
   import type { Duplex } from 'node:stream';

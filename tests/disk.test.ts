@@ -64,7 +64,7 @@ describe('measureAll', () => {
 
 describe('folderSize', () => {
   it('measures a real folder in bytes', async () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaude-disk-'));
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-disk-'));
     writeFileSync(path.join(dir, 'blob'), Buffer.alloc(64 * KB, 1));
     const size = await folderSize(dir);
     expect(size).toBeGreaterThan(0);
@@ -72,6 +72,6 @@ describe('folderSize', () => {
   });
 
   it('returns undefined for a missing folder', async () => {
-    expect(await folderSize(path.join(os.tmpdir(), 'klaude-disk-missing-' + process.pid + '-' + Date.now()))).toBeUndefined();
+    expect(await folderSize(path.join(os.tmpdir(), 'klaud-disk-missing-' + process.pid + '-' + Date.now()))).toBeUndefined();
   });
 });

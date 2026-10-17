@@ -9,7 +9,7 @@ const touch = (name: string, content = '') => writeFileSync(path.join(dir, name)
 const pkg = (scripts: Record<string, unknown>) => touch('package.json', JSON.stringify({ name: 'x', scripts }));
 
 beforeEach(() => {
-  dir = mkdtempSync(path.join(os.tmpdir(), 'klaude-scripts-'));
+  dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-scripts-'));
 });
 
 describe('detectSetup', () => {
@@ -91,7 +91,7 @@ describe('detectRun', () => {
   it('detects cargo and go', () => {
     touch('Cargo.toml');
     expect(detectRun(dir)).toBe('cargo run');
-    const other = mkdtempSync(path.join(os.tmpdir(), 'klaude-scripts-go-'));
+    const other = mkdtempSync(path.join(os.tmpdir(), 'klaud-scripts-go-'));
     writeFileSync(path.join(other, 'go.mod'), 'module x\n');
     expect(detectRun(other)).toBe('go run .');
   });
@@ -111,20 +111,20 @@ describe('detectRun', () => {
 describe('readProjectFile', () => {
   it('returns nothing for missing or invalid files', () => {
     expect(readProjectFile(dir)).toEqual({ file: undefined, conductor: undefined });
-    touch('klaude.json', '{oops');
+    touch('klaud.json', '{oops');
     touch('conductor.json', JSON.stringify({ scripts: { setup: '' } }));
     expect(readProjectFile(dir)).toEqual({ file: undefined, conductor: undefined });
   });
 
   it('defaults scripts to {} and trims commands', () => {
-    touch('klaude.json', JSON.stringify({ prPrompt: 'hi' }));
+    touch('klaud.json', JSON.stringify({ prPrompt: 'hi' }));
     touch('conductor.json', JSON.stringify({ scripts: { run: '  make  ' } }));
     expect(readProjectFile(dir)).toEqual({ file: { scripts: {}, prPrompt: 'hi' }, conductor: { run: 'make' } });
   });
 });
 
 describe('resolveScripts', () => {
-  it('prefers yours > klaude.json > conductor.json > detected', () => {
+  it('prefers yours > klaud.json > conductor.json > detected', () => {
     touch('package-lock.json');
     pkg({ dev: 'vite' });
     expect(resolveScripts(dir)).toEqual({ setup: { command: 'npm install', source: 'detected' }, run: { command: 'npm run dev', source: 'detected' } });
@@ -132,76 +132,76 @@ describe('resolveScripts', () => {
     touch('conductor.json', JSON.stringify({ scripts: { setup: 'c-setup', run: 'c-run' } }));
     expect(resolveScripts(dir)).toEqual({ setup: { command: 'c-setup', source: 'conductor.json' }, run: { command: 'c-run', source: 'conductor.json' } });
 
-    touch('klaude.json', JSON.stringify({ scripts: { setup: 'k-setup' } }));
-    expect(resolveScripts(dir)).toEqual({ setup: { command: 'k-setup', source: 'klaude.json' }, run: { command: 'c-run', source: 'conductor.json' } });
+    touch('klaud.json', JSON.stringify({ scripts: { setup: 'k-setup' } }));
+    expect(resolveScripts(dir)).toEqual({ setup: { command: 'k-setup', source: 'klaud.json' }, run: { command: 'c-run', source: 'conductor.json' } });
 
-    expect(resolveScripts(dir, { run: 'mine' })).toEqual({ setup: { command: 'k-setup', source: 'klaude.json' }, run: { command: 'mine', source: 'yours' } });
+    expect(resolveScripts(dir, { run: 'mine' })).toEqual({ setup: { command: 'k-setup', source: 'klaud.json' }, run: { command: 'mine', source: 'yours' } });
   });
 
   it('treats an empty string of yours as unset', () => {
-    touch('klaude.json', JSON.stringify({ scripts: { setup: 'k-setup' } }));
-    expect(resolveScripts(dir, { setup: '' }).setup).toEqual({ command: 'k-setup', source: 'klaude.json' });
+    touch('klaud.json', JSON.stringify({ scripts: { setup: 'k-setup' } }));
+    expect(resolveScripts(dir, { setup: '' }).setup).toEqual({ command: 'k-setup', source: 'klaud.json' });
   });
 
   it('omits keys when nothing is found', () => {
     expect(resolveScripts(dir)).toEqual({});
   });
 
-  it('includes prPrompt from klaude.json', () => {
-    touch('klaude.json', JSON.stringify({ prPrompt: 'Link the ticket.' }));
+  it('includes prPrompt from klaud.json', () => {
+    touch('klaud.json', JSON.stringify({ prPrompt: 'Link the ticket.' }));
     expect(resolveScripts(dir)).toEqual({ prPrompt: 'Link the ticket.' });
   });
 
   it('ignores an empty prPrompt', () => {
-    touch('klaude.json', JSON.stringify({ prPrompt: '' }));
+    touch('klaud.json', JSON.stringify({ prPrompt: '' }));
     expect(resolveScripts(dir)).not.toHaveProperty('prPrompt');
   });
 });
 
 describe('saveProjectFile', () => {
-  const read = () => JSON.parse(readFileSync(path.join(dir, 'klaude.json'), 'utf8')) as Record<string, unknown>;
+  const read = () => JSON.parse(readFileSync(path.join(dir, 'klaud.json'), 'utf8')) as Record<string, unknown>;
 
-  it('creates klaude.json with a trailing newline', () => {
+  it('creates klaud.json with a trailing newline', () => {
     saveProjectFile(dir, { setup: 'npm ci' });
-    const text = readFileSync(path.join(dir, 'klaude.json'), 'utf8');
+    const text = readFileSync(path.join(dir, 'klaud.json'), 'utf8');
     expect(text.endsWith('}\n')).toBe(true);
     expect(read()).toEqual({ scripts: { setup: 'npm ci' } });
   });
 
   it('keeps other fields and existing scripts', () => {
-    touch('klaude.json', JSON.stringify({ prPrompt: 'p', other: 1, scripts: { setup: 'old', run: 'keep' } }));
+    touch('klaud.json', JSON.stringify({ prPrompt: 'p', other: 1, scripts: { setup: 'old', run: 'keep' } }));
     saveProjectFile(dir, { setup: 'new' });
     expect(read()).toEqual({ prPrompt: 'p', other: 1, scripts: { setup: 'new', run: 'keep' } });
   });
 
   it('overwrites an unreadable file', () => {
-    touch('klaude.json', '{nope');
+    touch('klaud.json', '{nope');
     saveProjectFile(dir, { run: 'go' });
     expect(read()).toEqual({ scripts: { run: 'go' } });
   });
 
   it('round-trips through resolveScripts', () => {
     saveProjectFile(dir, { setup: 's', run: 'r' });
-    expect(resolveScripts(dir)).toEqual({ setup: { command: 's', source: 'klaude.json' }, run: { command: 'r', source: 'klaude.json' } });
+    expect(resolveScripts(dir)).toEqual({ setup: { command: 's', source: 'klaud.json' }, run: { command: 'r', source: 'klaud.json' } });
   });
 });
 
 describe('scriptEnv', () => {
-  it('sets klaude and conductor variables', () => {
+  it('sets klaud and conductor variables', () => {
     expect(scriptEnv({ path: '/w', name: 'tokyo', projectRoot: '/p', branch: 'feat/x' })).toEqual({
-      KLAUDE_WORKSPACE_PATH: '/w',
-      KLAUDE_WORKSPACE_NAME: 'tokyo',
-      KLAUDE_ROOT_PATH: '/p',
-      KLAUDE_BRANCH: 'feat/x',
+      KLAUD_WORKSPACE_PATH: '/w',
+      KLAUD_WORKSPACE_NAME: 'tokyo',
+      KLAUD_ROOT_PATH: '/p',
+      KLAUD_BRANCH: 'feat/x',
       CONDUCTOR_WORKSPACE_PATH: '/w',
       CONDUCTOR_WORKSPACE_NAME: 'tokyo',
       CONDUCTOR_ROOT_PATH: '/p',
     });
   });
 
-  it('omits KLAUDE_BRANCH without a branch', () => {
+  it('omits KLAUD_BRANCH without a branch', () => {
     expect(Object.keys(scriptEnv({ path: '/w', name: 'n', projectRoot: '/p' })).sort()).toEqual(
-      ['CONDUCTOR_ROOT_PATH', 'CONDUCTOR_WORKSPACE_NAME', 'CONDUCTOR_WORKSPACE_PATH', 'KLAUDE_ROOT_PATH', 'KLAUDE_WORKSPACE_NAME', 'KLAUDE_WORKSPACE_PATH'],
+      ['CONDUCTOR_ROOT_PATH', 'CONDUCTOR_WORKSPACE_NAME', 'CONDUCTOR_WORKSPACE_PATH', 'KLAUD_ROOT_PATH', 'KLAUD_WORKSPACE_NAME', 'KLAUD_WORKSPACE_PATH'],
     );
   });
 });
