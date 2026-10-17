@@ -65,6 +65,13 @@ describe('ShareService', () => {
     await expect(svc.read('nope', 'x')).rejects.toThrow(/No share/);
   });
 
+  it('reads binary-safe chunks for downloads', async () => {
+    const { data, total } = await svc.readChunk('proj', 'bin.dat', 1, 10);
+    expect(total).toBe(3);
+    expect([...data]).toEqual([0, 2]);
+    await expect(svc.readChunk('proj', 'src', 0, 10)).rejects.toThrow(/folder/);
+  });
+
   it('locates absolute paths inside shares', () => {
     expect(svc.locate(path.join(root, 'src', 'a.ts'))).toEqual({ share: 'proj', path: 'src/a.ts' });
     expect(svc.locate(path.join(outside, 'secret.txt'))).toBeUndefined();

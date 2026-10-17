@@ -65,6 +65,7 @@ describe('store reducer', () => {
     s = reduce(s, { type: 'viewer_content', at: file, content: 'a\nb\nc', truncated: false });
     s = reduce(s, { type: 'viewer_scroll', delta: 99 });
     expect(s.viewer?.scroll).toBe(2);
+    expect(reduce(s, { type: 'viewer_scroll', delta: 99, max: 10 }).viewer?.scroll).toBe(10); // rendered view can be longer
     s = reduce(s, { type: 'viewer_open', at: file });
     expect(s.viewer).toMatchObject({ content: 'a\nb\nc', scroll: 2 }); // reopen keeps content/scroll
     expect(reduce(s, { type: 'viewer_content', at: at, content: 'x', truncated: false })).toBe(s);

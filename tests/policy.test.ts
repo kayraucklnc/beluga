@@ -1,32 +1,46 @@
 import { describe, expect, it } from 'vitest';
 import { decideTool } from '../src/agent/policy.js';
 
-const cwd = '/work/proj';
-const roots = [cwd, '/work/docs'];
+const ctx = { cwd: '/work/proj', roots: ['/work/proj', '/work/docs'], autoEdit: false };
+const rw = { ...ctx, autoEdit: true };
 
 describe('decideTool', () => {
-  it('allows room tools and reads inside shares', () => {
-    expect(decideTool('mcp__klaude__send_chat', {}, cwd, roots)).toBe('allow');
-    expect(decideTool('TodoWrite', {}, cwd, roots)).toBe('allow');
-    expect(decideTool('Read', { file_path: 'src/a.ts' }, cwd, roots)).toBe('allow');
-    expect(decideTool('Grep', { pattern: 'TODO' }, cwd, roots)).toBe('allow');
-    expect(decideTool('Glob', { path: '/work/docs/guides' }, cwd, roots)).toBe('allow');
+  it('allows room tools, planning, and reads inside shares', () => {
+    for (const t of ['mcp__klaude__send_chat', 'TodoWrite', 'ToolSearch']) expect(decideTool(t, {}, ctx)).toBe('allow');
+    expect(decideTool('Read', { file_path: 'src/a.ts' }, ctx)).toBe('allow');
+    expect(decideTool('Grep', { pattern: 'TODO' }, ctx)).toBe('allow');
+    expect(decideTool('Glob', { path: '/work/docs/guides' }, ctx)).toBe('allow');
+  });
+
+  it('asks before shell commands, even "read-only" ones Claude Code would auto-approve', () => {
+    expect(decideTool('Bash', { command: 'ls' }, ctx)).toBe('ask');
+    expect(decideTool('Bash', { command: 'cat NOTES.md' }, rw)).toBe('ask');
   });
 
   it('asks before reading outside shares or using anything powerful', () => {
-    expect(decideTool('Read', { file_path: '/etc/hosts' }, cwd, roots)).toBe('ask');
-    expect(decideTool('Read', { file_path: '../other/x' }, cwd, roots)).toBe('ask');
-    expect(decideTool('LS', { path: '/work/proj-evil' }, cwd, roots)).toBe('ask');
-    for (const tool of ['Bash', 'WebFetch', 'WebSearch', 'Write', 'mcp__klaude__ask_agent']) {
-      expect(decideTool(tool, {}, cwd, roots)).toBe('ask');
-    }
+    expect(decideTool('Read', { file_path: '/etc/hosts' }, ctx)).toBe('ask');
+    expect(decideTool('Read', { file_path: '../other/x' }, ctx)).toBe('ask');
+    expect(decideTool('LS', { path: '/work/proj-evil' }, ctx)).toBe('ask');
+    for (const tool of ['WebFetch', 'WebSearch', 'mcp__klaude__ask_agent']) expect(decideTool(tool, {}, ctx)).toBe('ask');
   });
 
-  it('denies credential files anywhere', () => {
-    expect(decideTool('Read', { file_path: '.env' }, cwd, roots)).toBe('deny');
-    expect(decideTool('Read', { file_path: '/Users/me/.ssh/id_ed25519' }, cwd, roots)).toBe('deny');
-    expect(decideTool('Read', { file_path: 'config/.AWS/credentials' }, cwd, roots)).toBe('deny');
-    expect(decideTool('Glob', { pattern: '**/.env.local' }, cwd, roots)).toBe('deny');
-    expect(decideTool('NotebookRead', { notebook_path: 'keys/server.pem' }, cwd, roots)).toBe('deny');
+  it('lets edits through only inside a :rw share', () => {
+    expect(decideTool('Edit', { file_path: 'src/a.ts' }, ctx)).toBe('ask');
+    expect(decideTool('Edit', { file_path: 'src/a.ts' }, rw)).toBe('allow');
+    expect(decideTool('Write', { file_path: '/work/docs/x.md' }, rw)).toBe('ask'); // other share, not the primary
+    expect(decideTool('Write', { file_path: '/tmp/x' }, rw)).toBe('ask');
+  });
+
+  it('denies credential files anywhere, by path or in shell commands', () => {
+    expect(decideTool('Read', { file_path: '.env' }, ctx)).toBe('deny');
+    expect(decideTool('Read', { file_path: '/Users/me/.ssh/id_ed25519' }, ctx)).toBe('deny');
+    expect(decideTool('Read', { file_path: 'config/.AWS/credentials' }, ctx)).toBe('deny');
+    expect(decideTool('Glob', { pattern: '**/.env.local' }, ctx)).toBe('deny');
+    expect(decideTool('NotebookRead', { notebook_path: 'keys/server.pem' }, ctx)).toBe('deny');
+    expect(decideTool('Write', { file_path: '.env' }, rw)).toBe('deny');
+    for (const command of ['cat .env', 'cat ~/.ssh/id_rsa', "grep KEY '.env.local'", 'cp ~/.aws/credentials /tmp']) {
+      expect(decideTool('Bash', { command }, ctx)).toBe('deny');
+    }
+    expect(decideTool('Bash', { command: 'echo environment' }, ctx)).toBe('ask');
   });
 });

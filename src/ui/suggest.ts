@@ -24,7 +24,7 @@ export interface SuggestContext {
 
 const MAX = 6;
 const PEER_COMMANDS = new Set(['follow', 'trust', 'untrust']);
-const OPEN_SPEC = /^\/(?:open|e) ([\w.-]+):([\w.-]+)\/(.*)$/;
+const OPEN_SPEC = /^\/(?:open|e|get) ([\w.-]+):([\w.-]+)\/(.*)$/;
 
 function commandSuggestions(buffer: string): Suggestion[] {
   const typed = buffer.slice(1).toLowerCase();
@@ -74,7 +74,7 @@ function argumentSuggestions(cmd: string, partial: string, ctx: SuggestContext):
       .filter((p) => p.peerId !== ctx.selfId && p.name.toLowerCase().startsWith(lower))
       .map((p) => ({ label: p.name, hint: p.agent ? 'has Claude on' : '', value: `/${cmd} ${p.name}`, enter: 'submit' as const }));
   }
-  if (cmd === 'open' || cmd === 'e') return openSuggestions(partial, ctx);
+  if (cmd === 'open' || cmd === 'e' || cmd === 'get') return openSuggestions(partial, ctx).map((s) => ({ ...s, value: s.value.replace(/^\/open /, `/${cmd} `) }));
   if (cmd === 'policy') {
     const opts = { ask: 'approve each request', auto: 'run without asking', deny: 'refuse all requests' } as const;
     return (Object.keys(opts) as Array<keyof typeof opts>)

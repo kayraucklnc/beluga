@@ -5,6 +5,9 @@ export const PROTOCOL_VERSION = 1;
 
 export const MAX_TEXT = 64_000;
 export const MAX_FILE_BYTES = 512 * 1024;
+/** Downloads are sent in chunks small enough to fit comfortably in one frame. */
+export const CHUNK_BYTES = 256 * 1024;
+export const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024;
 
 const shortStr = z.string().min(1).max(256);
 const relPath = z.string().max(4096);
@@ -109,6 +112,25 @@ export const FsChangedBody = z.object({
   path: relPath,
 });
 
+export const FsFetchBody = z.object({
+  kind: z.literal('fs_fetch'),
+  reqId: shortStr,
+  share: shortStr,
+  path: relPath,
+  offset: z.number().int().min(0),
+});
+
+export const FsChunkBody = z.object({
+  kind: z.literal('fs_chunk'),
+  reqId: shortStr,
+  ok: z.boolean(),
+  /** base64 bytes */
+  data: z.string().max(Math.ceil((CHUNK_BYTES * 4) / 3) + 8).optional(),
+  offset: z.number().int().min(0).optional(),
+  total: z.number().int().min(0).optional(),
+  error: z.string().optional(),
+});
+
 export const ReportBody = z.object({
   kind: z.literal('report'),
   share: shortStr,
@@ -126,6 +148,8 @@ export const Body = z.discriminatedUnion('kind', [
   FsReadBody,
   FsReadResultBody,
   FsChangedBody,
+  FsFetchBody,
+  FsChunkBody,
   ReportBody,
 ]);
 export type Body = z.infer<typeof Body>;

@@ -80,6 +80,17 @@ export interface Toast {
 
 export type Overlay = 'help';
 
+export interface Transfer {
+  readonly id: string;
+  readonly name: string;
+  readonly from: string;
+  readonly received: number;
+  readonly total: number;
+  readonly status: 'active' | 'done' | 'failed';
+  readonly savedTo?: string;
+  readonly error?: string;
+}
+
 export interface AppState {
   readonly room: string;
   readonly hosting?: Hosting;
@@ -99,6 +110,8 @@ export interface AppState {
   readonly trusted: readonly string[];
   /** Directory listings used for /open autocomplete, keyed "owner:share/path". */
   readonly dirCache: Readonly<Record<string, readonly FsEntry[]>>;
+  /** Recent downloads (newest last). */
+  readonly transfers: readonly Transfer[];
 }
 
 export type Action =
@@ -124,16 +137,18 @@ export type Action =
   | { type: 'viewer_open'; at: Location; by?: string }
   | { type: 'viewer_content'; at: Location; content: string; truncated: boolean }
   | { type: 'viewer_error'; at: Location; error: string }
-  | { type: 'viewer_scroll'; delta: number }
+  | { type: 'viewer_scroll'; delta: number; max?: number }
   | { type: 'viewer_close' }
   | { type: 'focus'; actorKey: string; focus: Focus }
   | { type: 'follow'; peerId?: string }
   | { type: 'policy'; policy: Policy }
   | { type: 'trust'; peerId: string; trusted: boolean }
   | { type: 'dir_cache'; key: string; entries: readonly FsEntry[] }
+  | { type: 'transfer'; transfer: Transfer }
   | { type: 'clear' };
 
 const LOG_LIMIT = 1000;
+const TRANSFER_LIMIT = 20;
 
 /** Strip terminal control sequences from peer-supplied text (keeps newlines and tabs). */
 // eslint-disable-next-line no-control-regex
@@ -152,6 +167,7 @@ export function initialState(room: string, policy: Policy = 'ask'): AppState {
     policy,
     trusted: [],
     dirCache: {},
+    transfers: [],
   };
 }
 
@@ -297,8 +313,8 @@ export function reduce(state: AppState, action: Action): AppState {
       return { ...state, viewer: { ...state.viewer, loading: false, error: action.error } };
     case 'viewer_scroll': {
       if (!state.viewer) return state;
-      const lines = state.viewer.content.split('\n').length;
-      const scroll = Math.min(Math.max(0, lines - 1), Math.max(0, state.viewer.scroll + action.delta));
+      const max = action.max ?? state.viewer.content.split('\n').length - 1;
+      const scroll = Math.min(Math.max(0, max), Math.max(0, state.viewer.scroll + action.delta));
       return { ...state, viewer: { ...state.viewer, scroll } };
     }
     case 'viewer_close':
@@ -314,6 +330,10 @@ export function reduce(state: AppState, action: Action): AppState {
         ...state,
         trusted: action.trusted ? [...new Set([...state.trusted, action.peerId])] : state.trusted.filter((t) => t !== action.peerId),
       };
+    case 'transfer': {
+      const others = state.transfers.filter((t) => t.id !== action.transfer.id);
+      return { ...state, transfers: [...others, action.transfer].slice(-TRANSFER_LIMIT) };
+    }
     case 'dir_cache':
       return { ...state, dirCache: { ...state.dirCache, [action.key]: action.entries } };
     case 'clear':

@@ -14,6 +14,7 @@ import { decodeInvite, encodeInvite, findInvite, toWsUrl } from './net/invite.js
 import { PeerClient } from './net/peer-client.js';
 import { closeAllTunnels, openTunnel, waitUntilReachable } from './net/tunnel.js';
 import { App } from './ui/App.js';
+import { MOUSE_OFF, MOUSE_ON, type MouseEvent, createMouseInput } from './ui/mouse.js';
 
 interface Room {
   readonly url: string;
@@ -149,6 +150,7 @@ async function main(): Promise<void> {
       await session.stop();
       await room.hub?.close();
     } finally {
+      if (config.mouse) process.stdout.write(MOUSE_OFF);
       process.stdout.write('\x1b[?1049l');
       process.stdout.write('klaude: left the room. See you soon!\n');
       process.exit(0);
@@ -158,8 +160,19 @@ async function main(): Promise<void> {
   for (const note of config.notes) session.system(note, 'warn');
   if (config.mode === 'join') session.system(`Joining ${room.room}…`);
 
+  const mouseListeners = new Set<(e: MouseEvent) => void>();
+  const stdin = config.mouse && process.stdin.isTTY ? createMouseInput(process.stdin, (e) => mouseListeners.forEach((l) => l(e))) : process.stdin;
+  const subscribeMouse = config.mouse
+    ? (listener: (e: MouseEvent) => void) => {
+        mouseListeners.add(listener);
+        return () => void mouseListeners.delete(listener);
+      }
+    : undefined;
+
   process.stdout.write('\x1b[?1049h\x1b[H');
-  const app = render(<App session={session} />, { exitOnCtrlC: false });
+  if (config.mouse) process.stdout.write(MOUSE_ON);
+  const onboarding = config.agent && !config.policyChosen;
+  const app = render(<App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} />, { exitOnCtrlC: false, stdin });
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGHUP', () => void shutdown()); // terminal window closed
@@ -168,7 +181,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  process.stdout.write('\x1b[?1049l');
+  process.stdout.write(MOUSE_OFF + '\x1b[?1049l');
   process.stderr.write(`klaude: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });

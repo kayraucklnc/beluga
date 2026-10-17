@@ -1,6 +1,12 @@
+import type { MenuKind } from './menus.js';
 import type { Suggestion } from './suggest.js';
 
-export type Focus = 'chat' | 'files' | 'viewer';
+export type Focus = 'chat' | 'people' | 'files' | 'viewer';
+
+export interface MenuState {
+  readonly menu: MenuKind;
+  readonly selected: number;
+}
 
 export interface UiState {
   readonly focus: Focus;
@@ -16,6 +22,14 @@ export interface UiState {
   readonly quitArmed: boolean;
   /** Scroll offset inside the help overlay. */
   readonly overlayScroll: number;
+  /** Highlighted person in the People panel. */
+  readonly peopleCursor: number;
+  /** An open choice menu (welcome screen, person actions). */
+  readonly menu?: MenuState;
+  /** File viewer takes the whole screen. */
+  readonly viewerFull: boolean;
+  /** Show Markdown as source instead of rendered. */
+  readonly viewerRaw: boolean;
 }
 
 /** Subset of Ink's Key we rely on, so the keymap stays framework-agnostic. */
@@ -45,7 +59,9 @@ export type Effect =
   | { readonly type: 'browser_enter' }
   | { readonly type: 'browser_up' }
   | { readonly type: 'viewer_scroll'; readonly delta: number }
-  | { readonly type: 'viewer_close' };
+  | { readonly type: 'viewer_close' }
+  | { readonly type: 'download' }
+  | { readonly type: 'menu_select'; readonly menu: MenuKind; readonly index: number };
 
 export interface KeyContext {
   readonly hasApproval: boolean;
@@ -54,6 +70,9 @@ export interface KeyContext {
   readonly page: number;
   readonly maxChatScroll: number;
   readonly suggestions: readonly Suggestion[];
+  readonly peopleCount: number;
+  /** Number of options in the open menu (0 when none). */
+  readonly menuSize: number;
 }
 
 export interface KeyResult {
@@ -72,6 +91,9 @@ export const initialUi: UiState = {
   suggestHidden: false,
   quitArmed: false,
   overlayScroll: 0,
+  peopleCursor: 0,
+  viewerFull: false,
+  viewerRaw: false,
 };
 
 const HISTORY_LIMIT = 200;
@@ -160,6 +182,29 @@ function typeIntoChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext)
   return handleChat({ ...ui, focus: 'chat' }, input, key, ctx);
 }
 
+function handleMenu(ui: UiState, state: MenuState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  const size = Math.max(1, ctx.menuSize);
+  const pick = (index: number): KeyResult => ({ ui: { ...ui, menu: undefined }, effect: { type: 'menu_select', menu: state.menu, index } });
+  if (key.upArrow) return { ui: { ...ui, menu: { ...state, selected: (state.selected - 1 + size) % size } } };
+  if (key.downArrow || key.tab) return { ui: { ...ui, menu: { ...state, selected: (state.selected + 1) % size } } };
+  if (key.return) return pick(state.selected);
+  const digit = Number(input);
+  if (Number.isInteger(digit) && digit >= 1 && digit <= size) return pick(digit - 1);
+  // The welcome screen needs an answer; Esc picks the safe default. Other menus just close.
+  if (key.escape) return state.menu.kind === 'welcome' ? pick(0) : { ui: { ...ui, menu: undefined } };
+  return { ui };
+}
+
+function handlePeople(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  const max = Math.max(0, ctx.peopleCount - 1);
+  if (key.upArrow) return { ui: { ...ui, peopleCursor: Math.max(0, ui.peopleCursor - 1) } };
+  if (key.downArrow) return { ui: { ...ui, peopleCursor: Math.min(max, ui.peopleCursor + 1) } };
+  if (key.return || key.rightArrow) {
+    return { ui: { ...ui, menu: { menu: { kind: 'person', index: Math.min(ui.peopleCursor, max) }, selected: 0 } } };
+  }
+  return typeIntoChat(ui, input, key, ctx) ?? { ui };
+}
+
 function handleFiles(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
   if (key.upArrow) return { ui, effect: { type: 'browser_move', delta: -1 } };
   if (key.downArrow) return { ui, effect: { type: 'browser_move', delta: 1 } };
@@ -167,6 +212,7 @@ function handleFiles(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext):
   if (key.pageDown) return { ui, effect: { type: 'browser_move', delta: ctx.page } };
   if (key.return || key.rightArrow) return { ui, effect: { type: 'browser_enter' } };
   if (key.leftArrow || key.backspace || key.delete) return { ui, effect: { type: 'browser_up' } };
+  if (input === 'd') return { ui, effect: { type: 'download' } };
   return typeIntoChat(ui, input, key, ctx) ?? { ui };
 }
 
@@ -176,12 +222,15 @@ function handleViewer(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext)
   if (key.downArrow) return { ui, effect: { type: 'viewer_scroll', delta: 1 } };
   if (key.pageUp) return { ui, effect: { type: 'viewer_scroll', delta: -page } };
   if (key.pageDown) return { ui, effect: { type: 'viewer_scroll', delta: page } };
-  if (key.backspace || key.delete) return { ui: { ...ui, focus: 'chat' }, effect: { type: 'viewer_close' } };
+  if (key.backspace || key.delete) return { ui: { ...ui, focus: 'chat', viewerFull: false }, effect: { type: 'viewer_close' } };
+  if (input === 'd') return { ui, effect: { type: 'download' } };
+  if (input === 'f') return { ui: { ...ui, viewerFull: !ui.viewerFull } };
+  if (input === 'r') return { ui: { ...ui, viewerRaw: !ui.viewerRaw } };
   return typeIntoChat(ui, input, key, ctx) ?? { ui };
 }
 
 function cycleFocus(ui: UiState, ctx: KeyContext, dir: 1 | -1): UiState {
-  const order: Focus[] = ctx.hasViewer ? ['chat', 'files', 'viewer'] : ['chat', 'files'];
+  const order: Focus[] = ctx.hasViewer ? ['chat', 'people', 'files', 'viewer'] : ['chat', 'people', 'files'];
   const idx = Math.max(0, order.indexOf(ui.focus));
   return { ...ui, focus: order[(idx + dir + order.length) % order.length] ?? 'chat' };
 }
@@ -200,6 +249,7 @@ export function handleKey(raw: UiState, input: string, key: KeyInfo, ctx: KeyCon
     const answer = input === 'y' ? 'yes' : input === 'n' ? 'no' : 'always';
     return { ui, effect: { type: 'approve', answer } };
   }
+  if (ui.menu) return handleMenu(ui, ui.menu, input, key, ctx);
   if (ctx.overlay) {
     if (key.escape || key.return || input === 'q') return { ui: { ...ui, overlayScroll: 0 }, effect: { type: 'close_overlay' } };
     const delta = key.upArrow ? -1 : key.downArrow ? 1 : key.pageUp ? -ctx.page : key.pageDown ? ctx.page : 0;
@@ -209,11 +259,13 @@ export function handleKey(raw: UiState, input: string, key: KeyInfo, ctx: KeyCon
   const current = focus === ui.focus ? ui : { ...ui, focus };
   const suggesting = current.focus === 'chat' && !current.suggestHidden && ctx.suggestions.length > 0;
   if (key.tab && !suggesting) return { ui: cycleFocus(current, ctx, key.shift ? -1 : 1) };
+  if (key.escape && current.focus === 'viewer' && current.viewerFull) return { ui: { ...current, viewerFull: false } };
   if (key.escape && current.focus !== 'chat') return { ui: { ...current, focus: 'chat' } };
   // Fast typing or pasting can deliver "text\r" as one chunk: type the text, then press Enter.
   if (current.focus === 'chat' && !key.return && input.length > 1 && /[\r\n]$/.test(input)) {
     return submit(handleChat(current, input.replace(/[\r\n]+$/, ''), key, ctx).ui);
   }
+  if (current.focus === 'people') return handlePeople(current, input, key, ctx);
   if (current.focus === 'files') return handleFiles(current, input, key, ctx);
   if (current.focus === 'viewer') return handleViewer(current, input, key, ctx);
   return handleChat(current, input, key, ctx);

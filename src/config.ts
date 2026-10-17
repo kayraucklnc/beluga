@@ -19,6 +19,7 @@ Options:
       --no-agent           don't offer your claude to the room
       --policy <p>         requests from friends for your claude: ask | auto | deny (default ask)
       --model <id>         model for your claude (default: your Claude Code default)
+      --no-mouse           keyboard only (keeps your terminal's native text selection)
   host only:
       --tunnel <kind>      auto | cloudflared | ngrok | none (default auto: free Cloudflare tunnel, no account)
       --lan                listen on all interfaces so LAN peers can dial ws://<your-ip>:<port>
@@ -39,6 +40,9 @@ export interface Config {
   readonly port: number;
   /** Warnings to show in the room once the TUI starts. */
   readonly notes: readonly string[];
+  /** True when --policy was given, so the welcome screen can be skipped. */
+  readonly policyChosen: boolean;
+  readonly mouse: boolean;
 }
 
 const TUNNELS: readonly TunnelKind[] = ['auto', 'ngrok', 'cloudflared', 'none'];
@@ -63,6 +67,7 @@ export function parseConfig(argv: readonly string[], cwd: string = process.cwd()
       share: { type: 'string', short: 's', multiple: true },
       'no-share': { type: 'boolean' },
       'no-agent': { type: 'boolean' },
+      'no-mouse': { type: 'boolean' },
       policy: { type: 'string' },
       model: { type: 'string' },
       tunnel: { type: 'string' },
@@ -108,5 +113,7 @@ export function parseConfig(argv: readonly string[], cwd: string = process.cwd()
     lan: Boolean(values.lan),
     port,
     notes,
+    policyChosen: values.policy !== undefined,
+    mouse: !values['no-mouse'],
   };
 }

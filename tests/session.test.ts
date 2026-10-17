@@ -62,6 +62,7 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
     requestTimeoutMs: 2000,
     agentTimeoutMs: 2000,
     onQuit: () => (quit.called = true),
+    downloadDir: path.join(root, 'downloads'),
     createAgent:
       opts.agent === false
         ? undefined
@@ -402,5 +403,40 @@ describe('Session hardening', () => {
     kay.session.submit('@claude:bob thoughts?');
     await waitFor(() => bob.runs.length === 1);
     expect(bob.runs[0]?.context).toEqual(['kay: the plan is X', 'kay: @claude:bob thoughts?']);
+  });
+
+  it('downloads a file from a friend in encrypted chunks and tells the owner', async () => {
+    hub = await startHub({ keys });
+    const big = Buffer.alloc(600 * 1024, 7); // spans 3 chunks
+    const kay = peer('kay');
+    const bob = peer('bob', { files: { 'notes.md': 'hi from bob' } });
+    writeFileSync(path.join(bob.root, 'blob.bin'), big);
+    await room(kay, bob);
+    const saved = await kay.session.download({ owner: bob.session.selfId, share: 'proj', path: 'blob.bin' });
+    expect(saved).toBe(path.join(kay.root, 'downloads', 'bob', 'blob.bin'));
+    expect(readFileSync(saved!).equals(big)).toBe(true);
+    await waitFor(() => systemText(bob.state()).some((t) => t === 'kay is downloading proj/blob.bin'));
+    expect(kay.toasts).toContain('Downloaded blob.bin');
+
+    kay.session.submit('/get bob:proj/notes.md');
+    await waitFor(() => kay.toasts.includes('Downloaded notes.md'));
+    expect(await kay.session.download({ owner: bob.session.selfId, share: 'proj', path: '.env' })).toBeUndefined();
+    expect(kay.toasts.at(-1)).toMatch(/Download failed/);
+    expect(await kay.session.download({ owner: bob.session.selfId, share: 'proj', path: '' })).toBeUndefined();
+    kay.session.submit('/get nope');
+    kay.session.submit('/get');
+    expect(kay.toasts).toContain('Usage: /get <name>:<folder>/<file>');
+  });
+
+  it('lets you keep your Claude private', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    bob.session.setClaudeSharing('deny');
+    await waitFor(() => kay.state().peers.find((p) => p.name === 'bob')?.agent === false);
+    expect(bob.state().policy).toBe('deny');
+    bob.session.submit('/policy ask');
+    await waitFor(() => kay.state().peers.find((p) => p.name === 'bob')?.agent === true);
   });
 });
