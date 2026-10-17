@@ -25,6 +25,8 @@ export interface SessionOptions {
   readonly requestTimeoutMs?: number;
   readonly agentTimeoutMs?: number;
   readonly onQuit?: () => void;
+  /** Folder klaude was started in; new stand-alone chats run here. */
+  readonly launchDir?: string;
   /** Clipboard writer (injected so tests don't touch the real clipboard). */
   readonly copy?: (text: string) => Promise<unknown>;
   /** Where downloads are saved (default ~/Downloads/klaude). */
@@ -109,6 +111,10 @@ export class Session {
 
   private get approvalTimeoutMs(): number {
     return this.opts.approvalTimeoutMs ?? 5 * 60_000;
+  }
+
+  get launchDir(): string {
+    return this.opts.launchDir ?? process.cwd();
   }
 
   get hasAgent(): boolean {

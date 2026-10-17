@@ -20,7 +20,7 @@ const values = (buffer: string) => suggest(buffer, ctx).map((s) => s.value);
 
 describe('suggest', () => {
   it('lists matching commands as soon as you type /', () => {
-    expect(values('/').length).toBe(6);
+    expect(values('/').length).toBe(35); // every command, shown in a scrolling list
     expect(values('/fo')).toEqual(['/fork ', '/follow ']);
     expect(values('/he')).toEqual(['/help']);
     expect(suggest('/fol', ctx)[0]).toMatchObject({ label: '/follow <name>', hint: expect.stringContaining('follow') });

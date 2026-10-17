@@ -15,6 +15,15 @@ export interface ControllerDeps {
 }
 
 const HISTORY_SAVE_MS = 400;
+
+export const REVIEW_PROMPT = [
+  'Review everything done in this workspace compared to its base branch. Use parallel sub-agents for:',
+  '1. Correctness and bugs (logic errors, edge cases, error handling)',
+  '2. Security (injection, secrets, auth, unsafe input, dependency risks)',
+  '3. Tests (run them; check coverage of the new code; add missing tests if quick)',
+  '4. Quality (readability, duplication, naming, dead code)',
+  'Then summarize: what changed, issues found ranked by severity with file:line, and what you fixed. Say clearly whether it is ready to merge.',
+].join('\n');
 const WS_PREFIX = 'ws:';
 
 export const workspaceIdOf = (channel: string): string | undefined => (channel.startsWith(WS_PREFIX) ? channel.slice(WS_PREFIX.length) : undefined);
@@ -58,7 +67,7 @@ export class WorkspaceController {
         else this.deps.shares.upsert({ name, root: w.path, writable: false, private: true });
       }
     }
-    this.deps.store.dispatch({ type: 'projects', projects });
+    this.deps.store.dispatch({ type: 'projects', projects, groups: this.deps.manager.groups });
   }
 
   /** Show a workspace (chat, files, or review), loading its saved conversation the first time. */
@@ -113,10 +122,17 @@ export class WorkspaceController {
     return ws;
   }
 
-  async newChat(projectId: string, title: string): Promise<Workspace | undefined> {
-    const ws = await this.act("Couldn't start the chat", () => this.deps.manager.createChat(projectId, title));
+  async newChat(projectId: string, title: string, inDir?: string): Promise<Workspace | undefined> {
+    const ws = await this.act("Couldn't start the chat", () => this.deps.manager.createChat(projectId, title, inDir));
     if (ws) this.open(ws.id);
     return ws;
+  }
+
+  /** Turn a draft into a real chat with your first message, then send it to Claude. */
+  async startChat(projectId: string, firstMessage: string, inDir?: string): Promise<void> {
+    const title = firstMessage.replace(/\s+/g, ' ').trim().slice(0, 40);
+    const ws = await this.newChat(projectId, title, inDir);
+    if (ws) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
   }
 
   async fork(id: string, name: string): Promise<Workspace | undefined> {
@@ -185,6 +201,7 @@ export class WorkspaceController {
     if (!ws) return;
     const result = await this.act("Couldn't merge", () => this.deps.manager.merge(id));
     if (!result) return;
+    this.deps.store.dispatch({ type: 'conflicts', id, files: !result.ok && result.reason === 'conflict' ? result.files : [] });
     if (result.ok) {
       this.deps.toast(`Merged ${ws.branch} into the main folder`, 'success');
       return;
@@ -197,11 +214,27 @@ export class WorkspaceController {
       this.deps.toast(`The main folder has uncommitted changes (${result.files.slice(0, 3).join(', ')}). Commit or stash them first.`, 'warn');
       return;
     }
-    this.deps.toast(`Merge conflicts in ${result.files.length} file(s). Asking Claude to resolve them…`, 'warn');
-    this.askClaudeToMerge(id, result.files);
+    this.deps.toast(`Merge conflict in ${result.files.length} file(s). Click "Solve merge conflict" to let Claude handle it.`, 'warn');
   }
 
-  askClaudeToMerge(id: string, conflicts: readonly string[] = []): void {
+  /** Put a project in a group (or none). */
+  async setGroup(projectId: string, group: string | undefined): Promise<void> {
+    try {
+      this.deps.manager.setGroup(projectId, group);
+      await this.refresh();
+      this.deps.toast(group ? `Moved to group "${group}"` : 'Removed from its group', 'success');
+    } catch (err) {
+      this.deps.toast(errorText(err), 'error');
+    }
+  }
+
+  async hideProject(projectId: string): Promise<void> {
+    this.deps.manager.hideProject(projectId);
+    await this.refresh();
+    this.deps.toast('Project hidden. Add it back with /project add <path>', 'success');
+  }
+
+  askClaudeToMerge(id: string, conflicts: readonly string[] = this.deps.store.getState().conflicts[id] ?? []): void {
     const ws = this.deps.manager.find(id);
     if (!ws?.branch) return;
     const project = this.deps.manager.list.find((p) => p.id === ws.projectId);
@@ -220,12 +253,10 @@ export class WorkspaceController {
     this.deps.askClaude(`/compact${instructions ? ` ${instructions}` : ''}`, `${WS_PREFIX}${id}`);
   }
 
+  /** A thorough review of everything done in this workspace, posted into its chat. */
   askClaudeToReview(id: string): void {
     this.open(id);
-    this.deps.askClaude(
-      'Review all changes in this workspace compared to its base branch. Summarize what changed, point out bugs or risks, and suggest fixes. Use sub-agents for independent parts if helpful.',
-      `${WS_PREFIX}${id}`,
-    );
+    this.deps.askClaude(REVIEW_PROMPT, `${WS_PREFIX}${id}`);
   }
 
   openInFinder(id: string): void {

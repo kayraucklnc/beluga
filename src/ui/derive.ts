@@ -7,11 +7,15 @@ import { offsetZones } from './hit.js';
 import type { UiState } from './keymap.js';
 import { type Geometry, computeLayout } from './layout.js';
 import { type MenuSpec, menuSpec } from './menus.js';
-import { type Suggestion, suggest } from './suggest.js';
+import { type Suggestion, suggest, suggestionWindow } from './suggest.js';
 import { type Model, type UiAction, type Zone, findWorkspace, overviewModel, projectsModel, reviewModel, tabsModel, workspaceHeaderModel } from './workspace-models.js';
+import { highlightRange } from './text.js';
 import type { Workspace } from '../workspaces/types.js';
 
 export interface Derived {
+  /** Description of the hovered (or keyboard-selected) control, shown in the bottom bar. */
+  readonly hint?: string;
+  readonly headerItems: readonly UiAction[];
   readonly geometry: Geometry;
   readonly suggestions: readonly Suggestion[];
   readonly focus: UiState['focus'];
@@ -41,10 +45,23 @@ export interface DeriveInput {
   readonly rows: number;
   readonly frame: number;
   readonly listLocalDirs?: (dir: string) => readonly FsEntry[];
+  /** Mouse position for hover feedback. */
+  readonly hover?: { readonly x: number; readonly y: number };
+}
+
+const HOVER = { inverse: true } as const;
+
+/** Highlight the zone under `pt` (or at a keyboard cursor) inside a model drawn at (ox, oy). */
+function emphasize(model: Model, ox: number, oy: number, pt: { x: number; y: number } | undefined, scroll = 0): { model: Model; zone?: Zone } {
+  if (!pt) return { model };
+  const zone = model.zones.find((z) => z.y + oy - scroll === pt.y && pt.x >= z.x0 + ox && pt.x <= z.x1 + ox && z.action.type !== 'none');
+  if (!zone) return { model };
+  const lines = model.lines.map((l, i) => (i === zone.y ? highlightRange(l, zone.x0, zone.x1, zone.disabled ? { underline: true } : HOVER) : l));
+  return { model: { ...model, lines }, zone };
 }
 
 /** Everything the screen shows and where, so rendering and clicks always agree. */
-export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs }: DeriveInput): Derived {
+export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs, hover }: DeriveInput): Derived {
   const suggestions = ui.focus === 'chat' && !ui.suggestHidden && !ui.menu ? suggest(ui.buffer, { peers: state.peers, selfId, dirCache: state.dirCache, listLocalDirs }) : [];
   const workspace = state.view.kind === 'workspace' ? findWorkspace(state.projects, state.view.id) : undefined;
   const reviewing = state.view.kind === 'workspace' && state.view.tab === 'review';
@@ -54,13 +71,14 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs 
   if (focus === 'viewer' && !(state.viewer && viewerOk)) focus = 'chat';
   if (focus === 'files' && !filesVisible) focus = 'chat';
   if (focus === 'main' && !reviewing && state.view.kind !== 'overview') focus = 'chat';
+  if (focus === 'header' && !workspace) focus = 'chat';
   const approval = state.approvals[0];
   const geometry = computeLayout({
     columns,
     rows,
     peopleCount: state.peers.length,
     hasViewer: Boolean(state.viewer) && viewerOk,
-    suggestionCount: suggestions.length,
+    suggestionCount: suggestionWindow(suggestions.length, ui.selected).rows,
     approvalDetail: approval?.detail,
     viewerFull: ui.viewerFull && focus === 'viewer',
     workspaceHeader: Boolean(workspace) && !ui.menu,
@@ -69,18 +87,40 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs 
   const menu = ui.menu ? menuSpec(state, ui.menu.menu) : undefined;
 
   // Projects tree, scrolled so the keyboard cursor stays visible.
-  const projects = projectsModel(state, new Set(ui.collapsed), frame, Math.max(1, g.sideWidth - 4));
-  const itemRows = [...new Set(projects.zones.map((z) => z.y))];
-  const projectItems = itemRows.map((y) => projects.zones.find((z) => z.y === y)!.action);
+  const projectsRaw = projectsModel(state, new Set(ui.collapsed), frame, Math.max(1, g.sideWidth - 4));
+  const itemRows = [...new Set(projectsRaw.zones.filter((z) => z.action.type !== 'none').map((z) => z.y))];
+  const projectItems = itemRows.map((y) => projectsRaw.zones.filter((z) => z.y === y && z.action.type !== 'none').at(-1)!.action);
   const cursorRow = itemRows[Math.min(ui.projectsCursor, itemRows.length - 1)];
   const visibleRows = Math.max(1, g.projectsHeight - 2);
   const projectsScroll = focus === 'projects' && cursorRow !== undefined ? Math.max(0, cursorRow - visibleRows + 2) : 0;
 
-  const tabs = tabsModel(state, Math.max(1, g.mainWidth - 2));
-  const header = workspace && g.headerHeight ? workspaceHeaderModel(state, workspace, Math.max(1, g.mainWidth - 2)) : undefined;
+  const tabsRaw = tabsModel(state, Math.max(1, g.mainWidth - 2));
+  const headerRaw = workspace && g.headerHeight ? workspaceHeaderModel(state, workspace, Math.max(1, g.mainWidth - 2), frame) : undefined;
+  const headerZones = headerRaw?.zones.filter((z) => z.y === 1) ?? [];
+  const headerItems = headerZones.map((z) => z.action);
   const paneInner = Math.max(1, g.mainWidth - 4);
-  const overview = state.view.kind === 'overview' && !menu ? overviewModel(state, frame, paneInner) : undefined;
-  const review = reviewing && !menu ? reviewModel(state.review, paneInner, Math.max(1, g.paneHeight - 2)) : undefined;
+  const overviewRaw = state.view.kind === 'overview' && !menu ? overviewModel(state, frame, paneInner) : undefined;
+  const reviewRaw = reviewing && !menu ? reviewModel(state.review, paneInner, Math.max(1, g.paneHeight - 2)) : undefined;
+
+  // Hover feedback (and the keyboard cursor in the action row) highlight what you'd click.
+  const proj = emphasize(projectsRaw, 2, g.bodyTop + 1, hover, projectsScroll);
+  const projects = proj.model;
+  const tab = emphasize(tabsRaw, g.mainX + 1, g.tabsY, hover);
+  const tabs = tab.model;
+  let header = headerRaw;
+  let headerHover: Zone | undefined;
+  if (headerRaw) {
+    const cursorZone = focus === 'header' ? headerZones[Math.min(ui.headerCursor, headerZones.length - 1)] : undefined;
+    const pt = cursorZone ? { x: cursorZone.x0 + g.mainX + 1, y: cursorZone.y + g.headerTop } : hover;
+    const h = emphasize(headerRaw, g.mainX + 1, g.headerTop, pt);
+    header = h.model;
+    headerHover = h.zone;
+  }
+  const ov = overviewRaw ? emphasize(overviewRaw, g.mainX + 2, g.paneTop + 1, hover, Math.min(ui.overviewScroll, Math.max(0, overviewRaw.lines.length - (g.paneHeight - 2)))) : undefined;
+  const overview = ov?.model;
+  const rv = reviewRaw ? emphasize(reviewRaw, g.mainX + 2, g.paneTop + 1, hover) : undefined;
+  const review = rv?.model;
+  const hint = (headerHover ?? proj.zone ?? tab.zone ?? ov?.zone ?? rv?.zone)?.hint;
 
   const zones: Zone[] = [];
   if (g.sideWidth > 0) {
@@ -107,6 +147,8 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs 
     projectsScroll,
     projectItems,
     projectsCursorRow: cursorRow,
+    hint,
+    headerItems,
     tabs,
     header,
     overview,

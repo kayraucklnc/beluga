@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { readdirSync, statSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { Box, useApp, useInput, useStdout } from 'ink';
@@ -25,7 +26,7 @@ import { type Target, hitTest } from './hit.js';
 import { type Effect, type UiState, handleKey, initialUi } from './keymap.js';
 import { type MenuKind, menuSpec } from './menus.js';
 import { MOUSE_OFF, MOUSE_ON, type MouseEvent } from './mouse.js';
-import { openTarget } from './suggest.js';
+import { openTarget, suggestionWindow } from './suggest.js';
 import { applyTheme, theme } from './theme.js';
 import { type UiAction, isCompacting } from './workspace-models.js';
 
@@ -34,6 +35,20 @@ const FRAME_MS = 100;
 const WHEEL_LINES = 3;
 const POLICY_BY_OPTION: Record<string, Policy> = { 'share-ask': 'ask', 'share-auto': 'auto', 'share-deny': 'deny' };
 const POLICY_INDEX: Record<Policy, number> = { ask: 0, auto: 1, deny: 2 };
+
+/** What each bottom-bar button does, shown while hovering it. */
+const BUTTON_HINTS: Record<string, string> = {
+  ask: 'Mention a Claude: yours, a friend’s, or everyone’s',
+  commands: 'See every command',
+  projects: 'Jump to your projects and chats on the left',
+  invite: 'Open a secure link for friends and copy it',
+  settings: 'Name, theme, text size, mouse and sharing',
+  help: 'Keys and commands',
+  review: 'See exactly what changed in this workspace',
+  actions: 'Use Review, Commit, Merge and more from the keyboard (← → then Enter)',
+  overview: 'Every worktree and chat at a glance',
+  chat: 'Back to typing',
+};
 
 export interface AppProps {
   readonly session: Session;
@@ -110,7 +125,10 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   const frame = useFrame(isWorking(state));
   const ctl = session.workspaces;
 
-  const view = (s: AppState = state, u: UiState = ui): Derived => derive({ state: s, ui: u, selfId: session.selfId, columns, rows, frame, listLocalDirs });
+  // Mouse position for hover feedback; only re-render when what's under the pointer changes.
+  const [hover, setHover] = useState<{ x: number; y: number } | undefined>(undefined);
+  const hoverKey = useRef('');
+  const view = (s: AppState = state, u: UiState = ui): Derived => derive({ state: s, ui: u, selfId: session.selfId, columns, rows, frame, listLocalDirs, hover });
   const d = view();
   const g = d.geometry;
 
@@ -164,10 +182,21 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
 
   const typeInto = (buffer: string): void => patchUi({ focus: 'chat', buffer, cursor: buffer.length, suggestHidden: false, selected: 0 });
 
-  const askForName = (kind: 'worktree' | 'chat', projectId: string): void => {
+  const askForName = (kind: 'worktree' | 'chat' | 'group', projectId: string): void => {
     const project = session.store.getState().projects.find((p) => p.id === projectId);
     patchUi({ focus: 'chat', buffer: '', cursor: 0, pending: { kind, projectId } });
-    session.toast(`Type a name for the new ${kind} in ${project?.name ?? 'the project'}, then Enter`);
+    const where = project?.root ? ` in ${project.name}` : '';
+    session.toast(kind === 'group' ? `Type a name for the new group, then Enter` : `Type a name for the new ${kind}${where}, then Enter`);
+  };
+
+  const openFolder = (dir: string): void => {
+    const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
+    spawn(opener, [dir], { stdio: 'ignore', detached: true }).unref();
+  };
+
+  const toggle = (key: string): void => {
+    const collapsed = uiRef.current.collapsed;
+    patchUi({ collapsed: collapsed.includes(key) ? collapsed.filter((c) => c !== key) : [...collapsed, key] });
   };
 
   const runUiAction = (action: UiAction): void => {
@@ -176,17 +205,35 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         ctl?.open(action.id, action.tab);
         if (action.tab === 'review') patchUi({ focus: 'main' });
         return;
-      case 'toggle_project': {
-        const collapsed = uiRef.current.collapsed;
-        patchUi({ collapsed: collapsed.includes(action.id) ? collapsed.filter((c) => c !== action.id) : [...collapsed, action.id] });
+      case 'toggle_project':
+        toggle(action.id);
         return;
-      }
+      case 'toggle_group':
+        toggle(`group:${action.name}`);
+        return;
+      case 'toggle_archive':
+        toggle(`archive:${action.projectId}`);
+        return;
+      case 'project_menu':
+        patchUi({ menu: { menu: { kind: 'project', id: action.id }, selected: 0 } });
+        return;
+      case 'archived_menu':
+        patchUi({ menu: { menu: { kind: 'archived', id: action.id }, selected: 0 } });
+        return;
+      case 'none':
+        return;
       case 'new_worktree':
         askForName('worktree', action.projectId);
         return;
-      case 'new_chat':
-        askForName('chat', action.projectId);
+      case 'new_chat': {
+        // An empty chat opens right away; it's only created when you send the first message.
+        const latest = session.store.getState();
+        const back = latest.view.kind === 'draft' ? latest.view.back : latest.view;
+        const dir = action.projectId === 'chats' ? session.launchDir : undefined;
+        session.store.dispatch({ type: 'view', view: { kind: 'draft', projectId: action.projectId, dir, back } });
+        patchUi({ focus: 'chat', buffer: '', cursor: 0 });
         return;
+      }
       case 'add_project':
         typeInto('/project add ~/');
         return;
@@ -253,7 +300,48 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     }
     const reopen = (): void => patchUi({ menu: { menu, selected: index } });
     const confirmId = menu.kind === 'confirm' ? menu.id : undefined;
+    const project = menu.kind === 'project' ? latest.projects.find((p) => p.id === menu.id) : undefined;
+    const archived = menu.kind === 'archived' ? ctl?.manager.find(menu.id) : undefined;
+    if (option.id.startsWith('p-group:') && project) {
+      void ctl?.setGroup(project.id, option.id.slice('p-group:'.length));
+      return;
+    }
     switch (option.id) {
+      case 'p-worktree':
+        if (project) askForName('worktree', project.id);
+        return;
+      case 'p-chat':
+        if (project) runUiAction({ type: 'new_chat', projectId: project.id });
+        return;
+      case 'p-main': {
+        const main = project?.workspaces.find((w) => w.kind === 'main');
+        if (main) ctl?.open(main.id);
+        return;
+      }
+      case 'p-finder':
+        if (project) openFolder(project.root);
+        return;
+      case 'p-newgroup':
+        if (project) askForName('group', project.id);
+        return;
+      case 'p-ungroup':
+        if (project) void ctl?.setGroup(project.id, undefined);
+        return;
+      case 'p-hide':
+        if (project) void ctl?.hideProject(project.id);
+        return;
+      case 'a-restore':
+        if (archived) void ctl?.restore(archived.id);
+        return;
+      case 'a-open':
+        if (archived) ctl?.open(archived.id);
+        return;
+      case 'a-finder':
+        if (archived) openFolder(archived.projectRoot || archived.path);
+        return;
+      case 'a-delete':
+        if (archived) patchUi({ menu: { menu: { kind: 'confirm', action: 'delete', id: archived.id }, selected: 0 } });
+        return;
       case 'confirm-archive':
       case 'confirm-archive-force':
         if (confirmId) void ctl?.archive(confirmId, option.id === 'confirm-archive-force');
@@ -357,10 +445,16 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   };
 
   const submit = (text: string, urgent = false): void => {
+    const latest = session.store.getState();
+    if (latest.view.kind === 'draft' && ctl && !text.startsWith('/')) {
+      void ctl.startChat(latest.view.projectId, text, latest.view.dir);
+      return;
+    }
     const pending = uiRef.current.pending;
     if (pending && ctl) {
       patchUi({ pending: undefined });
-      void (pending.kind === 'worktree' ? ctl.newWorktree(pending.projectId, text) : ctl.newChat(pending.projectId, text));
+      if (pending.kind === 'group') void ctl.setGroup(pending.projectId, text);
+      else void (pending.kind === 'worktree' ? ctl.newWorktree(pending.projectId, text) : ctl.newChat(pending.projectId, text));
       return;
     }
     session.submit(text, urgent);
@@ -420,6 +514,11 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         if (review && count) void ctl?.selectFile(Math.max(0, Math.min(count - 1, review.selected + effect.delta)));
         return;
       }
+      case 'cancel_draft': {
+        const latest = session.store.getState();
+        if (latest.view.kind === 'draft') session.store.dispatch({ type: 'view', view: latest.view.back });
+        return;
+      }
       case 'review_scroll': {
         if (session.store.getState().view.kind === 'overview') {
           patchUi({ overviewScroll: Math.max(0, uiRef.current.overviewScroll + effect.delta) });
@@ -452,6 +551,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         return;
       case 'projects':
         patchUi({ focus: 'projects' });
+        return;
+      case 'actions':
+        patchUi({ focus: 'header', headerCursor: 0 });
         return;
       case 'people':
         patchUi({ focus: 'people' });
@@ -511,7 +613,8 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     const current = uiRef.current;
     switch (target.kind) {
       case 'zone':
-        runUiAction(target.action);
+        if (target.disabled) session.toast(target.hint ?? 'Not available right now');
+        else runUiAction(target.action);
         return;
       case 'person':
         patchUi({ focus: 'people', peopleCursor: target.index, menu: { menu: { kind: 'person', index: target.index }, selected: 0 } });
@@ -547,7 +650,8 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         }
         return;
       case 'suggestion': {
-        const pick = view(session.store.getState(), current).suggestions[target.index];
+        const all = view(session.store.getState(), current).suggestions;
+        const pick = all[suggestionWindow(all.length, current.selected).start + target.index];
         if (!pick) return;
         if (pick.enter === 'submit') {
           patchUi({ buffer: '', cursor: 0, history: [...current.history, pick.value] });
@@ -572,6 +676,11 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   const onWheel = (target: Target, dir: 1 | -1): void => {
     const current = uiRef.current;
     const latest = session.store.getState();
+    if (target.kind === 'suggestion') {
+      const total = view(latest, current).suggestions.length;
+      patchUi({ selected: Math.max(0, Math.min(total - 1, current.selected + dir)) });
+      return;
+    }
     if (target.kind === 'viewer') scrollViewer(dir * WHEEL_LINES);
     else if (target.kind === 'file' || target.kind === 'files') session.store.dispatch({ type: 'browser_cursor', delta: dir });
     else if (target.kind === 'main' && latest.review) run({ type: 'review_scroll', delta: dir * WHEEL_LINES });
@@ -606,12 +715,20 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         const target = hitTest(dd.geometry, e.x, e.y, {
           state: latest,
           menu: dd.menu,
-          suggestionCount: dd.suggestions.length,
+          suggestionCount: suggestionWindow(dd.suggestions.length, uiRef.current.selected).rows,
           buttons: dd.buttons,
           approvalDetailLines: dd.approvalDetailLines,
           viewerLegend: latest.viewer ? viewerLegend(latest.viewer, uiRef.current.viewerFull, uiRef.current.viewerRaw) : undefined,
           zones: dd.zones,
         });
+        if (e.button === 'move') {
+          const key = JSON.stringify(target);
+          if (key !== hoverKey.current) {
+            hoverKey.current = key;
+            setHover({ x: e.x, y: e.y });
+          }
+          return;
+        }
         if (e.button === 'wheelUp' || e.button === 'wheelDown') onWheel(target, e.button === 'wheelDown' ? 1 : -1);
         else if (e.button === 'left' && e.kind === 'press') onClick(target);
       }),
@@ -634,8 +751,10 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         peopleCount: latest.peers.length,
         menuSize: dd.menu?.options.length ?? 0,
         projectItems: dd.projectItems,
+        headerItems: dd.headerItems,
         mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || latest.view.kind === 'overview',
         filesVisible: latest.view.kind === 'files' || (latest.view.kind === 'workspace' && latest.view.tab === 'files'),
+        draft: latest.view.kind === 'draft',
       });
       setUi(result.ui);
       if (result.effect) run(result.effect);
@@ -643,6 +762,15 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   );
 
   const fullscreen = g.sideWidth === 0;
+  // Hovered button in the bottom bar (highlighted, with its description).
+  const hoveredButton =
+    hover && hover.y === g.actionBarY
+      ? (() => {
+          const t = hitTest(g, hover.x, hover.y, { state, suggestionCount: d.suggestions.length, buttons: d.buttons, approvalDetailLines: d.approvalDetailLines });
+          return t.kind === 'action' ? t.id : undefined;
+        })()
+      : undefined;
+  const hoveredButtonHint = hoveredButton ? BUTTON_HINTS[hoveredButton] : undefined;
   const sideFocus = d.focus === 'projects' || d.focus === 'people' ? d.focus : 'other';
   const activeTransfer = [...state.transfers].reverse().find((t) => t.status === 'active');
   const paneW = g.mainWidth;
@@ -684,17 +812,23 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         }
         return <ChatView state={state} channel={d.channel} title={`Claude in ${ws.name}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />;
       }
+      case 'draft': {
+        const where = state.view.dir ?? state.projects.find((p) => p.id === (state.view as { projectId: string }).projectId)?.root ?? '';
+        return <ChatView state={state} channel="draft" title={`New Claude chat · ${where.replace(os.homedir(), '~')}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={0} frame={frame} />;
+      }
       default:
         return (
           <>
-            <ChatView state={state} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />
+            <ChatView state={state} title="Group chat · everyone in the room" width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />
             {viewer}
           </>
         );
     }
   };
 
-  const placeholder = ui.pending
+  const placeholder = state.view.kind === 'draft'
+    ? 'Ask Claude anything… your first message starts the chat · Esc to cancel'
+    : ui.pending
     ? `Name for the new ${ui.pending.kind} in ${state.projects.find((p) => p.id === ui.pending?.projectId)?.name ?? 'the project'} · Enter to create · Esc to cancel`
     : d.workspace
       ? `Tell Claude what to do in ${d.workspace.name}…`
@@ -744,6 +878,8 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         selected={Math.min(ui.selected, Math.max(0, d.suggestions.length - 1))}
         buttons={d.buttons}
         toast={state.toast}
+        hint={d.hint ?? hoveredButtonHint}
+        hoveredButton={hoveredButton}
         transfer={activeTransfer}
         placeholder={placeholder}
         accent={ui.pending ? theme.accent : undefined}

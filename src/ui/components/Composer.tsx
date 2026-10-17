@@ -4,7 +4,7 @@ import type { Toast, Transfer } from '../../core/store.js';
 import { type ActionButton, buttonLabel } from '../actions.js';
 import { ACTION_GAP } from '../hit.js';
 import type { Focus } from '../keymap.js';
-import type { Suggestion } from '../suggest.js';
+import { type Suggestion, suggestionWindow } from '../suggest.js';
 import { formatSize } from '../text.js';
 import { glyph, theme } from '../theme.js';
 
@@ -22,6 +22,9 @@ interface ComposerProps {
   readonly placeholder?: string;
   /** Highlight the composer border (e.g. while naming something). */
   readonly accent?: string;
+  /** Description of the hovered control. */
+  readonly hint?: string;
+  readonly hoveredButton?: string;
 }
 
 const TOAST_COLORS: Record<Toast['level'], string> = { info: theme.info, success: theme.ok, warn: theme.warn, error: theme.error };
@@ -37,22 +40,37 @@ function TransferStatus({ t }: { t: Transfer }) {
   );
 }
 
-export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent }: ComposerProps) {
+export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent, hint, hoveredButton }: ComposerProps) {
   const active = focus === 'chat';
-  const labelWidth = Math.min(30, Math.max(...suggestions.map((s) => s.label.length), 0) + 2);
+  const labelWidth = Math.min(34, Math.max(...suggestions.map((s) => s.label.length), 0) + 2);
+  const win = suggestionWindow(suggestions.length, selected);
+  const fit = (label: string): string => (label.length > labelWidth - 1 ? `${label.slice(0, labelWidth - 2)}…` : label).padEnd(labelWidth);
   return (
     <Box flexDirection="column" width={width}>
       {active && suggestions.length > 0 ? (
         <Box flexDirection="column" paddingX={2}>
-          {suggestions.map((s, i) => (
-            <Text key={s.value} wrap="truncate">
-              <Text color={i === selected ? theme.accent : theme.muted}>{i === selected ? '▸ ' : '  '}</Text>
-              <Text bold={i === selected} color={i === selected ? theme.text : theme.muted}>
-                {s.label.padEnd(labelWidth)}
+          {suggestions.slice(win.start, win.end).map((s, k) => {
+            const i = win.start + k;
+            return (
+              <Text key={`${s.value}-${i}`} wrap="truncate">
+                <Text color={i === selected ? theme.accent : theme.muted}>{i === selected ? '▸ ' : '  '}</Text>
+                <Text bold={i === selected} color={i === selected ? theme.text : theme.muted}>
+                  {fit(s.label)}
+                </Text>
+                <Text color={theme.muted}>{s.hint}</Text>
               </Text>
-              <Text color={theme.muted}>{s.hint}</Text>
+            );
+          })}
+          {win.rows > win.end - win.start ? (
+            <Text color={theme.muted}>
+              {'  '}
+              {win.above ? `↑ ${win.above} more  ` : ''}
+              {win.below ? `↓ ${win.below} more  ` : ''}
+              <Text color={theme.border}>
+                ({selected + 1}/{suggestions.length}) ↑↓ to scroll
+              </Text>
             </Text>
-          ))}
+          ) : null}
         </Box>
       ) : null}
       <Box borderStyle="round" borderColor={accent ?? (active ? theme.focus : theme.border)} paddingX={1} width={width}>
@@ -74,12 +92,20 @@ export function Composer({ width, buffer, cursor, focus, suggestions, selected, 
         {buttons.map((b, i) => (
           <Text key={b.id}>
             {i > 0 ? ' '.repeat(ACTION_GAP) : ''}
-            <Text color={theme.text}>{b.text}</Text>
+            <Text color={theme.text} inverse={b.id === hoveredButton}>
+              {b.text}
+            </Text>
             {b.key ? <Text color={theme.muted}> {b.key}</Text> : null}
           </Text>
         ))}
         <Box flexGrow={1} />
-        {transfer?.status === 'active' ? <TransferStatus t={transfer} /> : toast ? <Text color={TOAST_COLORS[toast.level]}>{toast.text}</Text> : null}
+        {transfer?.status === 'active' ? (
+          <TransferStatus t={transfer} />
+        ) : toast ? (
+          <Text color={TOAST_COLORS[toast.level]}>{toast.text}</Text>
+        ) : hint ? (
+          <Text color={theme.info}>{hint}</Text>
+        ) : null}
       </Box>
     </Box>
   );

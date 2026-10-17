@@ -144,6 +144,24 @@ describe('keymap: panels', () => {
     expect(key(m, {}, 'q').ui).toMatchObject({ focus: 'chat', buffer: 'q' });
   });
 
+  it('Esc leaves an unsent new chat', () => {
+    expect(key(initialUi, { escape: true }, '', { ...ctx, draft: true }).effect).toEqual({ type: 'cancel_draft' });
+  });
+
+  it('moves through the workspace action row with ← → and runs with Enter', () => {
+    const items = [{ type: 'open_ws', id: 'w', tab: 'chat' }, { type: 'ws', id: 'w', action: 'merge' }] as const;
+    const c = { ...ctx, headerItems: items };
+    const h: UiState = { ...initialUi, focus: 'header' };
+    const right = key(h, { rightArrow: true }, '', c).ui;
+    expect(right.headerCursor).toBe(1);
+    expect(key(right, { rightArrow: true }, '', c).ui.headerCursor).toBe(1);
+    expect(key(right, { leftArrow: true }, '', c).ui.headerCursor).toBe(0);
+    expect(key(right, { return: true }, '', c).effect).toEqual({ type: 'ui_action', action: { type: 'ws', id: 'w', action: 'merge' } });
+    expect(key(h, {}, 'x', c).ui).toMatchObject({ focus: 'chat', buffer: 'x' });
+    expect(key(initialUi, { tab: true }, '', c).ui.focus).toBe('projects');
+    expect(key({ ...initialUi, focus: 'projects' }, { tab: true }, '', c).ui.focus).toBe('header');
+  });
+
   it('Esc cancels naming a new worktree', () => {
     const naming: UiState = { ...initialUi, buffer: 'half', cursor: 4, pending: { kind: 'worktree', projectId: 'p' } };
     expect(key(naming, { escape: true }).ui).toMatchObject({ buffer: '', pending: undefined });

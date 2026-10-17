@@ -39,6 +39,12 @@ export interface Project {
   readonly error?: string;
 }
 
+export interface ProjectGroup {
+  readonly name: string;
+  /** Project roots in this group. */
+  readonly projects: readonly string[];
+}
+
 export interface ProjectsConfig {
   /** Parent folders scanned for git projects. */
   readonly roots: readonly string[];
@@ -46,4 +52,6 @@ export interface ProjectsConfig {
   readonly projects: readonly string[];
   /** Projects you chose to hide. */
   readonly hidden: readonly string[];
+  /** Your own grouping of projects in the sidebar. */
+  readonly groups?: readonly ProjectGroup[];
 }

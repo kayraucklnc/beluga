@@ -83,3 +83,28 @@ export function formatDuration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
 }
+
+/** Restyle columns [x0, x1] of a line (used for hover and keyboard highlights). */
+export function highlightRange(line: Line, x0: number, x1: number, style: Omit<Seg, 'text'>): Line {
+  const out: Seg[] = [];
+  let x = 0;
+  for (const seg of line) {
+    const chars = [...seg.text];
+    let buf = '';
+    let bufHot: boolean | undefined;
+    const flush = (): void => {
+      if (!buf) return;
+      out.push(bufHot ? { ...seg, ...style, text: buf } : { ...seg, text: buf });
+      buf = '';
+    };
+    for (const ch of chars) {
+      const hot = x >= x0 && x <= x1;
+      if (bufHot !== undefined && hot !== bufHot) flush();
+      bufHot = hot;
+      buf += ch;
+      x += width(ch);
+    }
+    flush();
+  }
+  return out;
+}

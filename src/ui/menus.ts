@@ -24,7 +24,49 @@ export type MenuKind =
   | { readonly kind: 'welcome' }
   | { readonly kind: 'settings' }
   | { readonly kind: 'person'; readonly index: number }
-  | { readonly kind: 'confirm'; readonly action: 'archive' | 'delete'; readonly id: string };
+  | { readonly kind: 'confirm'; readonly action: 'archive' | 'delete'; readonly id: string }
+  | { readonly kind: 'project'; readonly id: string }
+  | { readonly kind: 'archived'; readonly id: string };
+
+/** The ⋯ menu on a project: start work, organize into groups, hide, open in Finder. */
+export function projectMenu(state: AppState, id: string): MenuSpec | undefined {
+  const p = state.projects.find((x) => x.id === id);
+  if (!p) return undefined;
+  const group = state.projectGroups.find((g) => g.projects.includes(p.root));
+  const otherGroups = state.projectGroups.filter((g) => g.name !== group?.name);
+  return {
+    title: p.name,
+    intro: [p.root, group ? `In group: ${group.name}` : 'Not in a group'],
+    options: [
+      { id: 'p-worktree', label: 'New worktree', hint: 'from the latest origin' },
+      { id: 'p-chat', label: 'New Claude chat here', hint: "in the project's main folder" },
+      { id: 'p-main', label: 'Open the main folder', hint: 'chat with Claude in the original checkout' },
+      { id: 'p-finder', label: 'Open in Finder', hint: '' },
+      ...otherGroups.map((g) => ({ id: `p-group:${g.name}`, label: `Move to "${g.name}"`, hint: 'group' })),
+      { id: 'p-newgroup', label: 'Move to a new group…', hint: 'type a name' },
+      ...(group ? [{ id: 'p-ungroup', label: `Remove from "${group.name}"`, hint: '' }] : []),
+      { id: 'p-hide', label: 'Hide this project', hint: 'add it back with /project add' },
+      { id: 'close', label: 'Close', hint: 'Esc' },
+    ],
+  };
+}
+
+/** An archived workspace: bring it back, look at its project folder, or delete it for good. */
+export function archivedMenu(state: AppState, id: string): MenuSpec | undefined {
+  const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id);
+  if (!ws) return undefined;
+  return {
+    title: `${ws.name} (archived)`,
+    intro: [ws.kind === 'worktree' ? `Branch ${ws.branch ?? ''} and its conversation are kept.` : 'Its conversation is kept.'],
+    options: [
+      { id: 'a-restore', label: 'Restore', hint: ws.kind === 'worktree' ? 'recreate the worktree from its branch' : 'show it again' },
+      { id: 'a-open', label: 'Read its conversation', hint: 'without restoring' },
+      { id: 'a-finder', label: 'Open the project folder in Finder', hint: '' },
+      { id: 'a-delete', label: 'Delete permanently', hint: 'branch and conversation' },
+      { id: 'close', label: 'Close', hint: 'Esc' },
+    ],
+  };
+}
 
 /** "Are you sure?" for archive and delete, explaining exactly what happens. */
 export function confirmMenu(state: AppState, action: 'archive' | 'delete', id: string): MenuSpec | undefined {
@@ -171,5 +213,7 @@ export function menuSpec(state: AppState, menu: MenuKind): MenuSpec | undefined 
   if (menu.kind === 'welcome') return welcomeMenu(state);
   if (menu.kind === 'settings') return settingsMenu(state);
   if (menu.kind === 'confirm') return confirmMenu(state, menu.action, menu.id);
+  if (menu.kind === 'project') return projectMenu(state, menu.id);
+  if (menu.kind === 'archived') return archivedMenu(state, menu.id);
   return personMenu(state, menu.index);
 }

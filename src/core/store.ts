@@ -2,7 +2,7 @@ import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Settings, ThemeName } from './settings.js';
 import type { Review } from '../workspaces/git.js';
-import type { Project } from '../workspaces/types.js';
+import type { Project, ProjectGroup } from '../workspaces/types.js';
 import type { EnvChange } from '../workspaces/env.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
@@ -120,7 +120,9 @@ export type View =
   | { readonly kind: 'room' }
   | { readonly kind: 'files' }
   | { readonly kind: 'overview' }
-  | { readonly kind: 'workspace'; readonly id: string; readonly tab: 'chat' | 'files' | 'review' };
+  | { readonly kind: 'workspace'; readonly id: string; readonly tab: 'chat' | 'files' | 'review' }
+  /** A new chat that doesn't exist until you send the first message. */
+  | { readonly kind: 'draft'; readonly projectId: string; readonly dir?: string; readonly back: View };
 
 export interface ReviewState {
   readonly workspaceId: string;
@@ -145,12 +147,15 @@ export interface Compaction {
   readonly at: number;
 }
 
-export const channelOf = (view: View): string => (view.kind === 'workspace' ? `ws:${view.id}` : 'room');
+export const channelOf = (view: View): string => (view.kind === 'workspace' ? `ws:${view.id}` : view.kind === 'draft' ? 'draft' : 'room');
 
 export interface AppState {
   readonly room: string;
   readonly view: View;
   readonly projects: readonly Project[];
+  readonly projectGroups: readonly ProjectGroup[];
+  /** Files with merge conflicts from the last merge attempt, per workspace. */
+  readonly conflicts: Readonly<Record<string, readonly string[]>>;
   /** Workspaces open as tabs, in order. */
   readonly tabs: readonly string[];
   readonly review?: ReviewState;
@@ -200,7 +205,8 @@ export type Action =
   | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string }
   | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string }
   | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string }
-  | { type: 'projects'; projects: readonly Project[] }
+  | { type: 'projects'; projects: readonly Project[]; groups?: readonly ProjectGroup[] }
+  | { type: 'conflicts'; id: string; files: readonly string[] }
   | { type: 'view'; view: View }
   | { type: 'close_tab'; id: string }
   | { type: 'review'; review?: ReviewState }
@@ -244,6 +250,8 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Prefs 
     room,
     view: { kind: 'room' },
     projects: [],
+    projectGroups: [],
+    conflicts: {},
     tabs: [],
     unread: {},
     context: {},
@@ -436,8 +444,12 @@ export function reduce(state: AppState, action: Action): AppState {
         ...state,
         log: appendLog(state.log, { id: nextId(), type: 'system', channel: action.channel ?? 'room', text: clean(action.text), ts: Date.now(), level: action.level ?? 'info' }),
       };
+    case 'conflicts': {
+      const { [action.id]: _old, ...rest } = state.conflicts;
+      return { ...state, conflicts: action.files.length ? { ...rest, [action.id]: action.files } : rest };
+    }
     case 'projects':
-      return { ...state, projects: action.projects, tabs: state.tabs.filter((t) => action.projects.some((p) => p.workspaces.some((w) => w.id === t))) };
+      return { ...state, projects: action.projects, projectGroups: action.groups ?? state.projectGroups, tabs: state.tabs.filter((t) => action.projects.some((p) => p.workspaces.some((w) => w.id === t))) };
     case 'view': {
       const tabs = action.view.kind === 'workspace' && !state.tabs.includes(action.view.id) ? [...state.tabs, action.view.id] : state.tabs;
       const channel = channelOf(action.view);

@@ -27,6 +27,11 @@ const EMPTY_HINT: Line[] = [
   [{ text: '  /help ', color: theme.info, bold: true }, { text: 'everything else', color: theme.muted }],
 ];
 
+const DRAFT_HINT: Line[] = [
+  [{ text: 'A fresh conversation with Claude, with all its tools.', color: theme.text }],
+  [{ text: 'Type your first message below to start. Esc goes back without creating anything.', color: theme.muted }],
+];
+
 const WORKSPACE_HINT: Line[] = [
   [{ text: 'This is your private conversation with Claude in this workspace.', color: theme.muted }],
   [{ text: 'Claude works inside its folder. Just type what you want done.', color: theme.muted }],
@@ -40,7 +45,8 @@ export function chatLines(state: AppState, cols: number, frame: number, channel 
   const items = state.log.filter((l) => l.channel === channel);
   const banner = channel === 'room' ? inviteBanner(state, cols, frame) : [];
   const log = renderLog(items, cols, { selfId: state.self?.peerId, frame, now: Date.now() });
-  return [...banner, ...(items.length ? log : channel === 'room' ? EMPTY_HINT : WORKSPACE_HINT)];
+  const empty = channel === 'room' ? EMPTY_HINT : channel === 'draft' ? DRAFT_HINT : WORKSPACE_HINT;
+  return [...banner, ...(items.length ? log : empty)];
 }
 
 export function ChatView({ state, channel = 'room', title = 'Chat', width, height, focused, scroll, frame }: ChatViewProps) {
