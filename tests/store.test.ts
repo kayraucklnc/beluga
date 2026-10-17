@@ -20,7 +20,7 @@ describe('store reducer', () => {
     const s0 = base();
     const s1 = reduce(s0, { type: 'chat', id: '1', from: 'b', text: 'yo', ts: 1, byAgent: true });
     expect(s0.log).toHaveLength(0);
-    expect(s1.log[0]).toMatchObject({ type: 'chat', name: "bob's claude", text: 'yo' });
+    expect(s1.log[0]).toMatchObject({ type: 'chat', name: "bob's Claude", text: 'yo' });
     const s2 = reduce(s1, { type: 'system', text: 'hi', level: 'warn' });
     expect(s2.log[1]).toMatchObject({ type: 'system', level: 'warn' });
     expect(reduce(s2, { type: 'clear' }).log).toHaveLength(0);

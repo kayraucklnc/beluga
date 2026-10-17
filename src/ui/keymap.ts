@@ -1,14 +1,21 @@
-export type Mode = 'normal' | 'insert' | 'command';
-export type Pane = 'chat' | 'files' | 'viewer';
+import type { Suggestion } from './suggest.js';
+
+export type Focus = 'chat' | 'files' | 'viewer';
 
 export interface UiState {
-  readonly mode: Mode;
-  readonly pane: Pane;
+  readonly focus: Focus;
   readonly buffer: string;
   readonly cursor: number;
   readonly chatScroll: number;
   readonly history: readonly string[];
   readonly historyIndex: number;
+  readonly selected: number;
+  /** Suggestions hidden with Esc until the next edit. */
+  readonly suggestHidden: boolean;
+  /** First Ctrl-C arms quitting; a second one quits. */
+  readonly quitArmed: boolean;
+  /** Scroll offset inside the help overlay. */
+  readonly overlayScroll: number;
 }
 
 /** Subset of Ink's Key we rely on, so the keymap stays framework-agnostic. */
@@ -31,7 +38,9 @@ export interface KeyInfo {
 export type Effect =
   | { readonly type: 'submit'; readonly text: string }
   | { readonly type: 'quit' }
+  | { readonly type: 'toast'; readonly text: string }
   | { readonly type: 'approve'; readonly answer: 'yes' | 'no' | 'always' }
+  | { readonly type: 'close_overlay' }
   | { readonly type: 'browser_move'; readonly delta: number }
   | { readonly type: 'browser_enter' }
   | { readonly type: 'browser_up' }
@@ -41,9 +50,10 @@ export type Effect =
 export interface KeyContext {
   readonly hasApproval: boolean;
   readonly hasViewer: boolean;
+  readonly overlay: boolean;
   readonly page: number;
-  /** Largest useful chat scroll offset (lines above the bottom). */
   readonly maxChatScroll: number;
+  readonly suggestions: readonly Suggestion[];
 }
 
 export interface KeyResult {
@@ -52,120 +62,159 @@ export interface KeyResult {
 }
 
 export const initialUi: UiState = {
-  mode: 'insert',
-  pane: 'chat',
+  focus: 'chat',
   buffer: '',
   cursor: 0,
   chatScroll: 0,
   history: [],
   historyIndex: -1,
+  selected: 0,
+  suggestHidden: false,
+  quitArmed: false,
+  overlayScroll: 0,
 };
 
 const HISTORY_LIMIT = 200;
+
+const setBuffer = (ui: UiState, buffer: string, cursor = buffer.length): UiState => ({
+  ...ui,
+  buffer,
+  cursor,
+  selected: 0,
+  suggestHidden: false,
+});
 
 function edit(ui: UiState, input: string, key: KeyInfo): UiState | undefined {
   const { buffer, cursor } = ui;
   if (key.backspace || key.delete) {
     if (cursor === 0) return ui;
-    return { ...ui, buffer: buffer.slice(0, cursor - 1) + buffer.slice(cursor), cursor: cursor - 1 };
+    return setBuffer(ui, buffer.slice(0, cursor - 1) + buffer.slice(cursor), cursor - 1);
   }
   if (key.leftArrow) return { ...ui, cursor: Math.max(0, cursor - 1) };
   if (key.rightArrow) return { ...ui, cursor: Math.min(buffer.length, cursor + 1) };
   if (key.ctrl && input === 'a') return { ...ui, cursor: 0 };
   if (key.ctrl && input === 'e') return { ...ui, cursor: buffer.length };
-  if (key.ctrl && input === 'u') return { ...ui, buffer: buffer.slice(cursor), cursor: 0 };
+  if (key.ctrl && input === 'u') return setBuffer(ui, buffer.slice(cursor), 0);
   if (key.ctrl && input === 'w') {
     const before = buffer.slice(0, cursor).replace(/\S+\s*$/, '');
-    return { ...ui, buffer: before + buffer.slice(cursor), cursor: before.length };
-  }
-  if (key.upArrow || key.downArrow) {
-    const { history } = ui;
-    if (history.length === 0) return ui;
-    const idx = key.upArrow
-      ? Math.min(history.length - 1, ui.historyIndex + 1)
-      : Math.max(-1, ui.historyIndex - 1);
-    const text = idx === -1 ? '' : (history[history.length - 1 - idx] ?? '');
-    return { ...ui, buffer: text, cursor: text.length, historyIndex: idx };
+    return setBuffer(ui, before + buffer.slice(cursor), before.length);
   }
   if (key.ctrl || !input) return undefined;
   const clean = input.replace(/\r?\n/g, ' ');
-  return { ...ui, buffer: buffer.slice(0, cursor) + clean + buffer.slice(cursor), cursor: cursor + clean.length };
+  return setBuffer(ui, buffer.slice(0, cursor) + clean + buffer.slice(cursor), cursor + clean.length);
 }
 
-function handleEditing(ui: UiState, input: string, key: KeyInfo): KeyResult {
-  if (key.escape) return { ui: { ...ui, mode: 'normal', buffer: '', cursor: 0, historyIndex: -1 } };
+function recall(ui: UiState, dir: 1 | -1): UiState {
+  const { history } = ui;
+  if (history.length === 0) return ui;
+  const idx = dir === 1 ? Math.min(history.length - 1, ui.historyIndex + 1) : Math.max(-1, ui.historyIndex - 1);
+  const text = idx === -1 ? '' : (history[history.length - 1 - idx] ?? '');
+  return { ...setBuffer(ui, text), historyIndex: idx };
+}
+
+function submit(ui: UiState): KeyResult {
+  const raw = ui.buffer.trim();
+  const next: UiState = {
+    ...setBuffer(ui, ''),
+    historyIndex: -1,
+    chatScroll: 0,
+    history: raw ? [...ui.history, raw].slice(-HISTORY_LIMIT) : ui.history,
+  };
+  return raw ? { ui: next, effect: { type: 'submit', text: raw } } : { ui: next };
+}
+
+/** A bare "/fol" should complete on Enter rather than run an unknown command. */
+function isPartialCommand(buffer: string, suggestions: readonly Suggestion[]): boolean {
+  return /^\/\w*$/.test(buffer) && suggestions.length > 0 && !suggestions.some((s) => s.value.trim() === buffer);
+}
+
+const scrollChat = (ui: UiState, ctx: KeyContext, delta: number): UiState => ({
+  ...ui,
+  chatScroll: Math.min(ctx.maxChatScroll, Math.max(0, ui.chatScroll - delta)),
+});
+
+function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  const shown = ui.suggestHidden ? [] : ctx.suggestions;
+  const pick = shown[Math.min(ui.selected, shown.length - 1)];
+  if (key.escape) return { ui: shown.length ? { ...ui, suggestHidden: true } : ui };
+  if (key.tab && pick) return { ui: setBuffer(ui, pick.value) };
   if (key.return) {
-    const raw = ui.buffer.trim();
-    const next: UiState = {
-      ...ui,
-      mode: ui.mode === 'command' ? 'normal' : 'insert',
-      buffer: '',
-      cursor: 0,
-      historyIndex: -1,
-      chatScroll: 0,
-      history: raw ? [...ui.history, ui.mode === 'command' ? `:${raw}` : raw].slice(-HISTORY_LIMIT) : ui.history,
-    };
-    if (!raw) return { ui: next };
-    return { ui: next, effect: { type: 'submit', text: ui.mode === 'command' ? `:${raw}` : raw } };
+    if (pick && isPartialCommand(ui.buffer, shown)) return { ui: setBuffer(ui, pick.value) };
+    return submit(ui);
   }
-  if (ui.mode === 'command' && (key.backspace || key.delete) && ui.buffer === '') {
-    return { ui: { ...ui, mode: 'normal' } };
+  if ((key.upArrow || key.downArrow) && shown.length) {
+    const delta = key.upArrow ? -1 : 1;
+    return { ui: { ...ui, selected: (ui.selected + delta + shown.length) % shown.length } };
   }
+  if (key.upArrow) return { ui: recall(ui, 1) };
+  if (key.downArrow) return { ui: recall(ui, -1) };
+  const half = Math.max(1, Math.floor(ctx.page / 2));
+  if (key.pageUp) return { ui: scrollChat(ui, ctx, -half) };
+  if (key.pageDown) return { ui: scrollChat(ui, ctx, half) };
   return { ui: edit(ui, input, key) ?? ui };
 }
 
-function nextPane(ui: UiState, ctx: KeyContext, dir: 1 | -1): Pane {
-  const panes: Pane[] = ctx.hasViewer ? ['files', 'chat', 'viewer'] : ['files', 'chat'];
-  const idx = panes.indexOf(ui.pane);
-  return panes[(idx + dir + panes.length) % panes.length] ?? 'chat';
+/** Printable keys in side panels jump back to the composer and start typing. */
+function typeIntoChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult | undefined {
+  if (key.ctrl || !input || input.length !== 1 || input < ' ') return undefined;
+  return handleChat({ ...ui, focus: 'chat' }, input, key, ctx);
 }
 
-function move(ui: UiState, ctx: KeyContext, delta: number): KeyResult {
-  if (ui.pane === 'files') return { ui, effect: { type: 'browser_move', delta } };
-  if (ui.pane === 'viewer') return { ui, effect: { type: 'viewer_scroll', delta } };
-  // Chat scroll counts lines up from the bottom, so "down" reduces it.
-  return { ui: { ...ui, chatScroll: Math.min(ctx.maxChatScroll, Math.max(0, ui.chatScroll - delta)) } };
+function handleFiles(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  if (key.upArrow) return { ui, effect: { type: 'browser_move', delta: -1 } };
+  if (key.downArrow) return { ui, effect: { type: 'browser_move', delta: 1 } };
+  if (key.pageUp) return { ui, effect: { type: 'browser_move', delta: -ctx.page } };
+  if (key.pageDown) return { ui, effect: { type: 'browser_move', delta: ctx.page } };
+  if (key.return || key.rightArrow) return { ui, effect: { type: 'browser_enter' } };
+  if (key.leftArrow || key.backspace || key.delete) return { ui, effect: { type: 'browser_up' } };
+  return typeIntoChat(ui, input, key, ctx) ?? { ui };
 }
 
-function handleNormal(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
-  if (ctx.hasApproval && (input === 'y' || input === 'n' || input === 'a')) {
-    return { ui, effect: { type: 'approve', answer: input === 'y' ? 'yes' : input === 'n' ? 'no' : 'always' } };
-  }
-  if (key.tab) return { ui: { ...ui, pane: nextPane(ui, ctx, key.shift ? -1 : 1) } };
-  if (input === ':') return { ui: { ...ui, mode: 'command', buffer: '', cursor: 0 } };
-  if (input === '@') return { ui: { ...ui, mode: 'insert', pane: 'chat', buffer: '@', cursor: 1 } };
-  if (input === 'i' || input === 'a' || (key.return && ui.pane === 'chat')) {
-    return { ui: { ...ui, mode: 'insert', pane: 'chat' } };
-  }
-  if (input === 'q') return { ui, effect: { type: 'quit' } };
-  const half = Math.max(1, Math.floor(ctx.page / 2));
-  if (input === 'j' || key.downArrow) return move(ui, ctx, 1);
-  if (input === 'k' || key.upArrow) return move(ui, ctx, -1);
-  if ((key.ctrl && input === 'd') || key.pageDown) return move(ui, ctx, half);
-  if ((key.ctrl && input === 'u') || key.pageUp) return move(ui, ctx, -half);
-  if (input === 'G') return move(ui, ctx, 100_000);
-  if (input === 'g') return move(ui, ctx, -100_000);
-  if (ui.pane === 'files') {
-    if (input === 'l' || key.return || key.rightArrow) return { ui, effect: { type: 'browser_enter' } };
-    if (input === 'h' || input === '-' || key.leftArrow) return { ui, effect: { type: 'browser_up' } };
-  }
-  if (ui.pane === 'viewer' && input === 'x') return { ui: { ...ui, pane: 'chat' }, effect: { type: 'viewer_close' } };
-  return { ui };
+function handleViewer(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  const page = Math.max(1, ctx.page - 2);
+  if (key.upArrow) return { ui, effect: { type: 'viewer_scroll', delta: -1 } };
+  if (key.downArrow) return { ui, effect: { type: 'viewer_scroll', delta: 1 } };
+  if (key.pageUp) return { ui, effect: { type: 'viewer_scroll', delta: -page } };
+  if (key.pageDown) return { ui, effect: { type: 'viewer_scroll', delta: page } };
+  if (key.backspace || key.delete) return { ui: { ...ui, focus: 'chat' }, effect: { type: 'viewer_close' } };
+  return typeIntoChat(ui, input, key, ctx) ?? { ui };
 }
 
-/** Pure vim-flavoured key handling: (state, key) -> (state, side effect). */
-export function handleKey(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
-  if (key.ctrl && input === 'c') return { ui, effect: { type: 'quit' } };
-  // Ctrl-Y / Ctrl-N answer approvals from any mode; plain y/n would be too easy to hit while typing.
-  if (ctx.hasApproval && key.ctrl && (input === 'y' || input === 'n')) {
-    return { ui, effect: { type: 'approve', answer: input === 'y' ? 'yes' : 'no' } };
+function cycleFocus(ui: UiState, ctx: KeyContext, dir: 1 | -1): UiState {
+  const order: Focus[] = ctx.hasViewer ? ['chat', 'files', 'viewer'] : ['chat', 'files'];
+  const idx = Math.max(0, order.indexOf(ui.focus));
+  return { ...ui, focus: order[(idx + dir + order.length) % order.length] ?? 'chat' };
+}
+
+/** Modeless key handling: you're always typing, Tab moves between panels, Esc comes back. */
+export function handleKey(raw: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  const isCtrlC = Boolean(key.ctrl) && input === 'c';
+  const ui = isCtrlC || !raw.quitArmed ? raw : { ...raw, quitArmed: false };
+  if (isCtrlC) {
+    if (ui.buffer) return { ui: setBuffer(ui, '') };
+    if (ui.quitArmed) return { ui, effect: { type: 'quit' } };
+    return { ui: { ...ui, quitArmed: true }, effect: { type: 'toast', text: 'Press Ctrl+C again to quit' } };
   }
-  if (ui.mode === 'normal') return handleNormal(ui, input, key, ctx);
-  if (key.tab && ui.mode === 'insert') return { ui: { ...ui, mode: 'normal', pane: nextPane(ui, ctx, 1) } };
+  // Approvals come first so they can be answered even while help is open.
+  if (ctx.hasApproval && key.ctrl && (input === 'y' || input === 'n' || input === 't')) {
+    const answer = input === 'y' ? 'yes' : input === 'n' ? 'no' : 'always';
+    return { ui, effect: { type: 'approve', answer } };
+  }
+  if (ctx.overlay) {
+    if (key.escape || key.return || input === 'q') return { ui: { ...ui, overlayScroll: 0 }, effect: { type: 'close_overlay' } };
+    const delta = key.upArrow ? -1 : key.downArrow ? 1 : key.pageUp ? -ctx.page : key.pageDown ? ctx.page : 0;
+    return { ui: { ...ui, overlayScroll: Math.max(0, ui.overlayScroll + delta) } };
+  }
+  const focus = ui.focus === 'viewer' && !ctx.hasViewer ? 'chat' : ui.focus;
+  const current = focus === ui.focus ? ui : { ...ui, focus };
+  const suggesting = current.focus === 'chat' && !current.suggestHidden && ctx.suggestions.length > 0;
+  if (key.tab && !suggesting) return { ui: cycleFocus(current, ctx, key.shift ? -1 : 1) };
+  if (key.escape && current.focus !== 'chat') return { ui: { ...current, focus: 'chat' } };
   // Fast typing or pasting can deliver "text\r" as one chunk: type the text, then press Enter.
-  if (!key.return && input.length > 1 && /[\r\n]$/.test(input)) {
-    const typed = handleEditing(ui, input.replace(/[\r\n]+$/, ''), key).ui;
-    return handleEditing(typed, '', { return: true });
+  if (current.focus === 'chat' && !key.return && input.length > 1 && /[\r\n]$/.test(input)) {
+    return submit(handleChat(current, input.replace(/[\r\n]+$/, ''), key, ctx).ui);
   }
-  return handleEditing(ui, input, key);
+  if (current.focus === 'files') return handleFiles(current, input, key, ctx);
+  if (current.focus === 'viewer') return handleViewer(current, input, key, ctx);
+  return handleChat(current, input, key, ctx);
 }

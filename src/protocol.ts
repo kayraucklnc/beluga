@@ -175,6 +175,7 @@ export const Frame = z.discriminatedUnion('t', [
 export type Frame = z.infer<typeof Frame>;
 
 export const WelcomePayload = z.object({
+  room: z.string().max(64).optional(),
   peers: z.array(PeerInfo),
   history: z.array(MsgFrame),
 });

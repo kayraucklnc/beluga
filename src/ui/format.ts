@@ -1,106 +1,129 @@
 import type { LogItem } from '../core/store.js';
+import { renderMarkdown } from './markdown.js';
+import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate, wrapText } from './text.js';
+import { SPINNER, colorFor, glyph, theme } from './theme.js';
 
-export interface Line {
-  readonly text: string;
-  readonly color?: string;
-  readonly bold?: boolean;
-  readonly dim?: boolean;
+export interface RenderOptions {
+  readonly selfId?: string;
+  /** Spinner frame counter, advanced by the UI while something is running. */
+  readonly frame?: number;
+  readonly now?: number;
 }
 
-const PALETTE = ['cyan', 'green', 'yellow', 'blue', 'magenta', 'redBright', 'cyanBright', 'greenBright'];
+type AgentItem = Extract<LogItem, { type: 'agent' }>;
+type ChatItem = Extract<LogItem, { type: 'chat' }>;
 
-export function colorFor(name: string): string {
-  let h = 0;
-  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return PALETTE[h % PALETTE.length] ?? 'cyan';
-}
-
-/** Word-aware hard wrap that never returns lines wider than `width`. */
-export function wrapText(text: string, width: number): string[] {
-  const w = Math.max(4, width);
-  const out: string[] = [];
-  for (const para of text.replace(/\t/g, '  ').split('\n')) {
-    let line = '';
-    for (const word of para.split(/(\s+)/)) {
-      if ((line + word).length <= w) {
-        line += word;
-        continue;
-      }
-      if (line.trim()) out.push(line.trimEnd());
-      line = word.trimStart();
-      while (line.length > w) {
-        out.push(line.slice(0, w));
-        line = line.slice(w);
-      }
-    }
-    out.push(line.trimEnd());
-  }
-  return out;
-}
+const GROUP_GAP_MS = 3 * 60_000;
+const DONE_STEPS = 3;
 
 const time = (ts: number): string => new Date(ts).toTimeString().slice(0, 5);
 
-const STATUS: Record<string, { icon: string; label: string; color: string }> = {
-  awaiting_approval: { icon: '⏳', label: 'waiting for approval', color: 'yellow' },
-  started: { icon: '◆', label: 'working…', color: 'magenta' },
-  text: { icon: '◆', label: 'working…', color: 'magenta' },
-  tool: { icon: '◆', label: 'working…', color: 'magenta' },
-  done: { icon: '✓', label: 'done', color: 'green' },
-  error: { icon: '✗', label: 'failed', color: 'red' },
-  denied: { icon: '⊘', label: 'declined', color: 'yellow' },
-};
+export const isRunning = (status: AgentItem['status']): boolean =>
+  status === 'started' || status === 'text' || status === 'tool' || status === 'awaiting_approval';
 
-function agentLines(item: Extract<LogItem, { type: 'agent' }>, width: number): Line[] {
-  const st = STATUS[item.status] ?? STATUS.started!;
-  const header: Line = {
-    text: `${time(item.ts)} ${st.icon} ${item.ownerName}'s claude ← ${item.requesterName} · ${st.label}`,
-    color: st.color,
-    bold: true,
-  };
-  const running = item.status === 'started';
-  const steps: Line[] = (running ? item.steps : item.steps.slice(-2)).flatMap((s) =>
-    wrapText(`↳ ${s}`, width - 4).map((t) => ({ text: `    ${t}`, dim: true })),
-  );
-  const body = wrapText(item.text, width - 4).filter((t, i, all) => t || i < all.length - 1);
-  return [header, ...steps, ...(item.text ? body.map((t) => ({ text: `    ${t}` })) : [])];
+interface StatusStyle {
+  readonly label: string;
+  readonly color: string;
 }
 
-/** Flatten the room log into terminal lines for a pane of the given width. */
-export function renderLog(items: readonly LogItem[], width: number, selfId?: string): Line[] {
-  return items.flatMap((item): Line[] => {
+function statusOf(item: AgentItem, opts: RenderOptions): StatusStyle {
+  const spin = SPINNER[(opts.frame ?? 0) % SPINNER.length];
+  switch (item.status) {
+    case 'awaiting_approval':
+      return { label: `${glyph.wait} waiting for ${item.ownerName} to approve`, color: theme.warn };
+    case 'done':
+      return { label: `${glyph.ok} done`, color: theme.ok };
+    case 'error':
+      return { label: `${glyph.fail} failed`, color: theme.error };
+    case 'denied':
+      return { label: `${glyph.denied} declined`, color: theme.warn };
+    default:
+      return { label: `${spin} working · ${formatDuration((opts.now ?? Date.now()) - item.ts)}`, color: theme.claude };
+  }
+}
+
+/** Draw a rounded card around body lines, with a title on the top border. */
+export function card(title: Line, right: Line, body: readonly Line[], cols: number, border: string): Line[] {
+  const inner = Math.max(10, cols - 4);
+  const rightWidth = lineWidth(right);
+  const titleLine = truncate(title, Math.max(4, cols - rightWidth - 10));
+  const b = (text: string): Seg => ({ text, color: border });
+  const top: Line = rightWidth
+    ? [b('╭─ '), ...titleLine, b(` ${'─'.repeat(Math.max(1, cols - 8 - lineWidth(titleLine) - rightWidth))} `), ...right, b(' ─╮')]
+    : [b('╭─ '), ...titleLine, b(` ${'─'.repeat(Math.max(1, cols - 5 - lineWidth(titleLine)))}╮`)];
+  return [
+    top,
+    ...body.map((l) => [b('│ '), ...pad(l, inner), b(' │')]),
+    [b(`╰${'─'.repeat(cols - 2)}╯`)],
+  ];
+}
+
+function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] {
+  const st = statusOf(item, opts);
+  const inner = Math.max(10, cols - 4);
+  const running = isRunning(item.status);
+  const steps = running ? item.steps : item.steps.slice(-DONE_STEPS);
+  const hidden = item.steps.length - steps.length;
+  const body: Line[] = [
+    ...(hidden > 0 ? [plain(`${glyph.arrow} …${hidden} earlier steps`, { color: theme.muted })] : []),
+    ...steps.flatMap((s) => wrapText(`${glyph.arrow} ${s}`, inner).map((t) => plain(t, { color: theme.muted }))),
+  ];
+  if (item.text) {
+    if (body.length) body.push([]);
+    body.push(...renderMarkdown(item.text, inner));
+  }
+  if (body.length === 0) {
+    const idle = item.status === 'awaiting_approval' ? `${item.ownerName} needs to approve this before their Claude starts.` : running ? 'thinking…' : '';
+    body.push(plain(idle, { dim: true }));
+  }
+  const title: Line = [
+    { text: `${glyph.claude} ${item.ownerName}'s Claude`, color: theme.claude, bold: true },
+    { text: item.requesterName === item.ownerName ? '' : `  asked by ${item.requesterName}`, color: theme.muted },
+  ];
+  return card(title, plain(st.label, { color: st.color }), body, cols, running ? st.color : theme.border);
+}
+
+function chatHeader(item: ChatItem, opts: RenderOptions): Line {
+  const self = item.from === opts.selfId && !item.byAgent;
+  const name = item.byAgent ? `${glyph.claude} ${item.name}` : self ? 'you' : item.name;
+  const color = item.byAgent ? theme.claude : colorFor(item.name);
+  return [
+    { text: name, color, bold: true },
+    { text: `  ${time(item.ts)}`, color: theme.muted },
+  ];
+}
+
+/** Flatten the room log into terminal lines: grouped chat, system notes, and agent cards. */
+export function renderLog(items: readonly LogItem[], cols: number, opts: RenderOptions = {}): Line[] {
+  const out: Line[] = [];
+  let prev: LogItem | undefined;
+  for (const item of items) {
     if (item.type === 'system') {
-      const color = item.level === 'error' ? 'red' : item.level === 'warn' ? 'yellow' : 'gray';
-      return wrapText(item.text, width - 2).map((t) => ({ text: `  ${t}`, color, dim: item.level === 'info' }));
+      const color = item.level === 'error' ? theme.error : item.level === 'warn' ? theme.warn : theme.muted;
+      if (prev && prev.type !== 'system') out.push([]);
+      for (const t of wrapText(item.text, cols - 2)) out.push(plain(`  ${t}`, { color, dim: item.level === 'info' }));
+    } else if (item.type === 'agent') {
+      if (prev) out.push([]);
+      out.push(...agentLines(item, cols, opts));
+    } else {
+      const grouped =
+        prev?.type === 'chat' && prev.from === item.from && prev.byAgent === item.byAgent && item.ts - prev.ts < GROUP_GAP_MS;
+      if (!grouped) {
+        if (prev) out.push([]);
+        out.push(chatHeader(item, opts));
+      }
+      for (const l of renderMarkdown(item.text, cols - 2)) out.push([{ text: '  ' }, ...l]);
     }
-    if (item.type === 'agent') return agentLines(item, width);
-    const prefix = `${time(item.ts)} ${item.byAgent ? '◆ ' : ''}${item.name}${item.from === selfId && !item.byAgent ? ' (you)' : ''}: `;
-    const [first = '', ...rest] = wrapText(prefix + item.text, width);
-    return [
-      { text: first, color: item.byAgent ? 'magenta' : colorFor(item.name.replace(/'s claude$/, '')), bold: false },
-      ...rest.map((t) => ({ text: t })),
-    ];
-  });
-}
-
-/** Pick the visible window of lines given a scroll offset from the bottom. */
-export function windowLines<T>(lines: readonly T[], height: number, scrollFromBottom: number): T[] {
-  const maxScroll = Math.max(0, lines.length - height);
-  const scroll = Math.min(scrollFromBottom, maxScroll);
-  const end = lines.length - scroll;
-  return lines.slice(Math.max(0, end - height), end);
-}
-
-export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}K`;
-  return `${(bytes / 1024 / 1024).toFixed(1)}M`;
+    prev = item;
+  }
+  return out;
 }
 
 const APPROVAL_LINES = 6;
 
 /** Wrap an approval's detail (e.g. a shell command) so the owner sees as much of it as possible. */
-export function approvalLines(detail: string, width: number): string[] {
-  const lines = wrapText(detail, width);
+export function approvalLines(detail: string, cols: number): string[] {
+  const lines = wrapText(detail, cols);
   if (lines.length <= APPROVAL_LINES) return lines;
   return [...lines.slice(0, APPROVAL_LINES - 1), `… ${lines.length - APPROVAL_LINES + 1} more lines (${detail.length} chars)`];
 }

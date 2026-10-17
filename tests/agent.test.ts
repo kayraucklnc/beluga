@@ -54,5 +54,6 @@ describe('prompts', () => {
     expect(summarizeTool('mcp__klaude__ask_agent', { peer: 'bob' })).toBe('ask_agent bob');
     expect(summarizeTool('Bash', { command: 'x'.repeat(100) })).toHaveLength(85);
     expect(summarizeTool('TodoWrite', {})).toBe('TodoWrite');
+    expect(summarizeTool('Read', { file_path: '/home/kay/proj/src/a.ts' }, '/home/kay/proj')).toBe('Read src/a.ts');
   });
 });

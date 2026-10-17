@@ -8,7 +8,8 @@ export interface RoomKeys {
 }
 
 export function generateSecret(): string {
-  return randomBytes(32).toString('base64url');
+  // 144 bits: plenty for HKDF-derived keys, short enough to paste comfortably.
+  return randomBytes(18).toString('base64url');
 }
 
 export function deriveKeys(secret: string): RoomKeys {
