@@ -27,6 +27,7 @@ const EMPTY_HINT: Line[] = [
 
 /** Chat lines for a pane of this size (exported so App can bound scrolling). */
 export function chatLines(state: AppState, cols: number, frame: number): Line[] {
+  if (cols <= 0) return []; // hidden (e.g. the viewer is fullscreen)
   const banner = inviteBanner(state, cols, frame);
   const log = renderLog(state.log, cols, { selfId: state.self?.peerId, frame, now: Date.now() });
   return [...banner, ...(state.log.length ? log : EMPTY_HINT)];

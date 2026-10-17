@@ -1,4 +1,5 @@
 import type { AppState } from '../core/store.js';
+import { THEME_LABELS } from './theme.js';
 import { describeWindow } from '../agent/usage.js';
 import type { Usage } from '../protocol.js';
 
@@ -19,7 +20,27 @@ export interface MenuSpec {
   readonly options: readonly MenuOption[];
 }
 
-export type MenuKind = { readonly kind: 'welcome' } | { readonly kind: 'person'; readonly index: number };
+export type MenuKind = { readonly kind: 'welcome' } | { readonly kind: 'settings' } | { readonly kind: 'person'; readonly index: number };
+
+const POLICY_LABELS = { ask: 'Ask me each time', auto: 'Everyone, without asking', deny: 'Nobody (private)' } as const;
+const TUNNEL_LABELS = { auto: 'Cloudflare, automatic', cloudflared: 'Cloudflare', ngrok: 'ngrok', none: 'Local network only' } as const;
+
+/** Everything you can change, with its current value. Enter/click changes it on the spot. */
+export function settingsMenu(state: AppState): MenuSpec {
+  return {
+    title: 'Settings',
+    intro: ['Saved to ~/.klaude/settings.json and used every time you run klaude.', ''],
+    options: [
+      { id: 'set-name', label: 'Your name', hint: `${state.self?.name ?? '–'}  ·  type a new one` },
+      { id: 'set-theme', label: 'Color theme', hint: `${THEME_LABELS[state.prefs.theme]}  ·  Enter to switch` },
+      { id: 'set-policy', label: 'Who can use my Claude', hint: `${POLICY_LABELS[state.policy]}  ·  Enter to switch` },
+      { id: 'set-mouse', label: 'Mouse clicks', hint: `${state.prefs.mouse ? 'On' : 'Off (keeps native text selection)'}  ·  Enter to switch` },
+      { id: 'set-tunnel', label: 'Remote access', hint: `${TUNNEL_LABELS[state.prefs.tunnel]}  ·  applies next start` },
+      { id: 'set-size', label: 'Text size', hint: 'set by your terminal: ⌘ + / ⌘ − (Ctrl + / − on Linux & Windows)' },
+      { id: 'close', label: 'Done', hint: 'Esc' },
+    ],
+  };
+}
 
 /** First screen after joining: decide whether friends may use your Claude. */
 export function welcomeMenu(state: AppState): MenuSpec {
@@ -54,6 +75,7 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
         { id: 'ask-self', label: 'Ask my Claude', hint: 'start a message with @claude' },
         ...(state.invite ? [{ id: 'invite', label: 'Copy invite link', hint: 'bring more friends' }] : []),
         { id: 'sharing', label: 'Change who can use my Claude', hint: `now: ${state.policy}` },
+        { id: 'settings', label: 'Settings', hint: 'name, theme, mouse, remote access' },
       ]
     : [
         ...(peer.agent ? [{ id: 'ask', label: `Ask ${peer.name}'s Claude`, hint: `runs on ${peer.name}'s computer` }] : []),
@@ -80,5 +102,7 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
 }
 
 export function menuSpec(state: AppState, menu: MenuKind): MenuSpec | undefined {
-  return menu.kind === 'welcome' ? welcomeMenu(state) : personMenu(state, menu.index);
+  if (menu.kind === 'welcome') return welcomeMenu(state);
+  if (menu.kind === 'settings') return settingsMenu(state);
+  return personMenu(state, menu.index);
 }

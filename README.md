@@ -1,193 +1,180 @@
-# klaude
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+    <img src="assets/banner-light.svg" alt="klaude: you, your friends, and everyone's Claude" width="720">
+  </picture>
+</p>
 
-**A multiplayer terminal for you, your friends, and everyone's Claude.**
+<p align="center">
+  <a href="#quick-start"><b>Quick start</b></a> ·
+  <a href="#what-you-can-do"><b>Features</b></a> ·
+  <a href="#how-it-works"><b>How it works</b></a> ·
+  <a href="#security"><b>Security</b></a>
+</p>
 
-klaude is a full-screen, vim-flavoured TUI where a few people share a live group chat with
-each other *and* with each person's own Claude Code agent. Ask your Claude, ask your friend's
-Claude (it runs on **their** machine with **their** subscription), or ask all of them at
-once. Agents can talk to each other, browse each other's shared folders, and write reports that
-everyone watches update live. Follow a friend (or their agent) like in Google Docs and your
-viewer jumps to whatever they open.
+<p align="center">
+  <img src="assets/demo.gif" alt="klaude demo: chat with a friend, browse their files, ask their Claude" width="900">
+  <br><sub>Recorded with <code>klaude demo</code> (the friend and Claude replies are simulated)</sub>
+</p>
 
-<!-- Screenshot: run `klaude host` and you'll see the invite card, people, shared files and chat. -->
+## What you can do
 
-```
-✦ klaude  kay's room                                           2 people   ● live   /invite
-╭─ People ───────────╮╭─ Chat ────────────────────────────────────────────────────────╮
-│ ● kay (you)        ││ bob  16:43                                                    │
-│   ◆ Claude ready   ││   hey kay! check out my notes in NOTES.md                      │
-│ ● bob              ││                                                               │
-│   ⠋ working for kay││ you  16:43                                                    │
-╰────────────────────╯│   @claude:bob what is in NOTES.md?                            │
-╭─ Shared files ─────╮│                                                               │
-│ ▸ kay:proj         ││ ╭─ ◆ bob's Claude  asked by kay ────────── ⠋ working · 5s ─╮ │
-│ ▸ bob:api (ro)     ││ │ ↳ Read NOTES.md                                          │ │
-╰────────────────────╯╰───────────────────────────────────────────────────────────────╯
-╭──────────────────────────────────────────────────────────────────────────────────────╮
-│ › Message the room…  try @claude or /help                                             │
-╰──────────────────────────────────────────────────────────────────────────────────────╯
-  Enter send · @ mention a Claude · / commands · Tab files · Ctrl+C quit
-```
+| | |
+|---|---|
+| 💬 **Group chat with Claude in it** | Talk with friends, and type `@claude` to bring your Claude in. Everyone watches it work live. |
+| 🤝 **Ask a friend's Claude** | `@claude:bob` runs on **bob's** computer with **bob's** subscription, after bob approves. |
+| 📂 **Browse and download shared folders** | Click through a friend's shared folder, read files (Markdown is formatted), and download securely. |
+| 👀 **Follow along** | Follow a friend, Google Docs style: your viewer jumps to whatever they or their Claude open. |
+| 🔒 **Private by design** | End-to-end encrypted. You decide who can use your Claude, and which folders it can touch. |
+| 🌍 **Works from anywhere** | Free encrypted Cloudflare tunnel with no account and nothing to configure. |
 
 ## Quick start
 
-Requirements: Node 20+, and [Claude Code](https://claude.com/claude-code) installed and logged in
-(`claude`, then `/login`) on every machine that offers a Claude.
-
 ```bash
 git clone https://github.com/kayraucklnc/klaude.git && cd klaude
-npm install && npm run build && npm link     # puts `klaude` on your PATH
+npm install && npm run build && npm link
 ```
 
-**Host** (inside the project you want to share):
+| You | Your friend |
+|---|---|
+| `klaude` starts a room and copies the invite | copy the invite, then run `klaude join` |
 
-```bash
-klaude host
-```
+Want to look around first? **`klaude demo`** opens a room with a pretend friend and simulated Claude replies.
 
-klaude opens a free, encrypted Cloudflare tunnel (no account needed; the helper downloads
-itself the first time) and copies the invite to your clipboard. Send it to your friends in any
-messenger. Type `/invite` to copy it again later.
+You need Node 20+ and [Claude Code](https://claude.com/claude-code) signed in (`claude`, then `/login`).
 
-**Join** (copy the invite your friend sent you, then):
+## A quick tour
 
-```bash
-klaude join
-```
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-welcome.png" alt="Welcome screen"><br><b>Welcome.</b> Choose who can use your Claude.</td>
+    <td width="50%"><img src="assets/screenshot-chat.png" alt="Chat with a friend's Claude"><br><b>Ask anyone's Claude.</b> Live steps, then a clear answer.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshot-person.png" alt="Person menu"><br><b>Click a person.</b> Ask their Claude, follow them, browse their files, set their access.</td>
+    <td><img src="assets/screenshot-readme.png" alt="Formatted README, fullscreen"><br><b>Read files formatted.</b> Fullscreen, source view, and download are one click away.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshot-viewer.png" alt="Files and viewer"><br><b>Shared files.</b> Browse friends' folders; files update live.</td>
+    <td><img src="assets/screenshot-settings.png" alt="Settings"><br><b>Settings.</b> Name, theme, sharing, mouse and remote access, all remembered.</td>
+  </tr>
+</table>
 
-That's it: `klaude join` reads the invite from your clipboard. You can also paste it:
-`klaude join https://calm-river.trycloudflare.com#k3Jd…`.
+Everything is clickable. The bar at the bottom always shows what you can do next, so there are no shortcuts to memorize.
 
-Works from anywhere: different Wi-Fi, different countries, behind NAT. For a LAN-only room use
-`klaude host --tunnel none`.
+---
 
-## Talking to agents
+## Using klaude
 
-| You type | What happens |
-| --- | --- |
-| `hey all` | group chat |
-| `@claude refactor the parser` | **your** Claude runs on your machine |
-| `@claude:bob why is the API slow?` | **bob's** Claude runs on bob's machine, on bob's subscription, after bob approves |
-| `@claudes review this plan` | every Claude in the room answers in parallel |
+### Talking
 
-Everyone sees each agent's progress stream live (tool calls, text, final answer).
+| Type | What happens |
+|---|---|
+| `hey all` | message everyone |
+| `@claude fix the failing test` | your Claude, on your computer |
+| `@claude:bob how does auth work?` | bob's Claude, on bob's computer, after bob approves |
+| `@claudes review this plan` | every Claude in the room at once |
 
-Agents get room tools (an in-process MCP server), so they can:
+Type `@` or `/` and suggestions appear: Tab or Enter picks one. Claude's progress shows as a live card with its steps and a formatted answer.
 
-- `send_chat`: post to the group chat
-- `list_peers`: see who's here, their shares, and whose agent is online
-- `ask_agent`: delegate to another person's Claude and get the answer back (agent to agent)
-- `list_peer_files` / `read_peer_file`: browse a friend's shared folders (read-only)
-- `write_report`: write `.klaude/reports/<date>-<title>.md`, announce it, and make every
-  follower's viewer jump to it live
+Each Claude also gets **room tools**: post to the chat, see who's here, ask another person's Claude (agent to agent), read a friend's shared files, and write a Markdown report that everyone can open.
 
-## Keys and commands
-
-There are no modes. You're always typing, like in Slack. Type `/` or `@` and suggestions pop up.
-
-| Key | Action |
-| --- | --- |
-| `Enter` | send (or complete a half-typed `/command`) |
-| `Tab` | complete a suggestion, or move between chat, files and viewer |
-| `Esc` | back to chat, or hide suggestions |
-| `↑` `↓` | message history, or pick a suggestion |
-| `PgUp` `PgDn` | scroll the chat |
-| `Ctrl+Y` / `Ctrl+N` / `Ctrl+T` | allow / deny / always-allow a pending approval |
-| `Ctrl+C` twice | quit |
+### Commands
 
 | Command | |
-| --- | --- |
+|---|---|
 | `/invite` | copy the invite link |
+| `/open bob:api/README.md` | open a shared file (autocompletes as you type) |
+| `/get bob:api/data.csv` | download a file to `~/Downloads/klaude/bob/` |
+| `/follow bob` · `/unfollow` | follow bob and bob's Claude |
 | `/copy` | copy the last Claude answer |
-| `/open bob:api/src/app.ts` | view a friend's file (live-reloads when it changes) |
-| `/follow bob` / `/unfollow` | follow bob and bob's Claude around their files |
-| `/policy ask\|auto\|deny` | how requests from friends for your Claude are handled |
-| `/trust bob` / `/untrust bob` | auto-approve one friend for this session |
-| `/stop` | stop your Claude |
-| `/people`, `/clear`, `/help`, `/quit` | |
+| `/settings` | name, theme, sharing, mouse, remote access |
+| `/name kay` · `/theme mono` | quick changes |
+| `/policy ask\|auto\|deny` | who can use your Claude |
+| `/trust bob` · `/untrust bob` | let bob skip approval for this session |
+| `/stop` · `/people` · `/clear` · `/help` · `/quit` | |
 
-## CLI
+### Keys (all optional, since everything is also clickable)
+
+| Key | |
+|---|---|
+| `Enter` | send, or accept the highlighted suggestion |
+| `Tab` / `Shift+Tab` | complete a suggestion, or move between chat, people, files and viewer |
+| `Esc` | back to chat |
+| `↑ ↓` · `PgUp PgDn` | history or suggestions · scroll |
+| `f` · `r` · `d` (in the viewer) | fullscreen · source/formatted · download |
+| `Ctrl+Y` · `Ctrl+N` · `Ctrl+T` | allow · deny · always allow this person |
+| `Ctrl+C` twice | quit |
+
+### Settings
+
+Your choices are saved in `~/.klaude/settings.json`, so plain `klaude` always starts the way you like it. Open **Settings** from the bottom bar or with `/settings`:
+
+- **Name**: what friends see
+- **Color theme**: Calm (dark), Light terminal, High contrast, Monochrome
+- **Who can use my Claude**: ask each time, everyone, or nobody
+- **Mouse clicks**: turn off to get your terminal's native text selection back
+- **Remote access**: Cloudflare (default), ngrok, or local network only
+- **Text size** belongs to your terminal: `⌘ +` / `⌘ −`
+
+### Command line
 
 ```
-klaude host [options]            start a room and get an invite link
-klaude join [invite] [options]   join a room (reads the invite from your clipboard if omitted)
+klaude                           start a room with your saved settings
+klaude join [invite]             join a room (reads the invite from your clipboard)
+klaude demo                      try everything alone
 
-  -n, --name <name>        display name
-  -s, --share <spec>       [name=]path[:rw], repeatable. :rw lets your Claude edit there without asking
-      --no-share           share nothing (default: current folder, read-only)
-      --no-agent           don't offer your Claude to the room
-      --policy <p>         ask | auto | deny (default ask)
+  -n, --name <name>        display name (remembered)
+  -s, --share <spec>       share a folder: [name=]path[:rw], repeatable
+      --no-share           share nothing (default: the current folder, read-only)
+      --no-agent           don't offer your Claude
+      --policy <p>         ask | auto | deny
+      --tunnel <kind>      auto | cloudflared | ngrok | none
+      --no-mouse           keyboard only
       --model <id>         model for your Claude
-      --tunnel <kind>      auto | cloudflared | ngrok | none (host; default: free Cloudflare tunnel)
-      --lan                listen on all interfaces (host)
-  -p, --port <port>        hub port
 ```
-
-Set `KLAUDE_CLAUDE_PATH` to point at a specific `claude` executable.
 
 ## How it works
 
 ```
- kay's machine                                        bob's machine
-┌─────────────────────────────┐                     ┌─────────────────────────────┐
-│ klaude TUI (Ink)            │                     │ klaude TUI (Ink)            │
-│  Session ─ Store ─ Shares   │                     │  Session ─ Store ─ Shares   │
-│  Claude Agent SDK (kay's    │   AES-GCM frames    │  Claude Agent SDK (bob's    │
-│  login) + room MCP tools    │◄──── wss ──────────►│  login) + room MCP tools    │
-│  Hub (relay, auth, history) │   ngrok/cloudflared │                             │
-└─────────────────────────────┘                     └─────────────────────────────┘
+ your computer                                       bob's computer
+┌──────────────────────────────┐                   ┌──────────────────────────────┐
+│ klaude                        │   encrypted       │ klaude                        │
+│  chat · files · approvals     │◄─── frames ──────►│  chat · files · approvals     │
+│  your Claude (your login)     │  via Cloudflare   │  bob's Claude (bob's login)   │
+│  room hub (relay)             │                   │                               │
+└──────────────────────────────┘                   └──────────────────────────────┘
 ```
 
-- **Hub** (`src/net/hub.ts`): a tiny relay on the host. It does HMAC challenge-response auth,
-  routes broadcast/direct frames, stamps `from` so peers can't spoof each other, rate-limits,
-  and keeps a short history for late joiners.
-- **End-to-end encryption** (`src/net/crypto.ts`): every payload is AES-256-GCM sealed with a
-  key HKDF-derived from the invite secret, so the tunnel provider only sees ciphertext.
-- **Session** (`src/core/session.ts`): routes chat, agent requests and approvals, file
-  requests, focus/follow, and the agent bridge.
-- **Agent** (`src/agent/`): the Claude Agent SDK drives each person's local Claude Code install,
-  so every agent uses its owner's own subscription. One session is kept per room so the agent
-  remembers context.
-- **Shares** (`src/core/shares.ts`): read-only file serving with traversal and symlink-escape
-  protection. `.env*`, keys, `.ssh`, `.git` and `node_modules` are never served.
+- **Room hub**: a tiny relay on the host's computer. It checks the invite secret, relays messages, and keeps a short history for late joiners.
+- **End-to-end encryption**: every message is sealed with AES-256-GCM using a key derived from the invite, so the tunnel only ever sees ciphertext.
+- **Each Claude runs at home**: the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) drives each person's own Claude Code, with their own subscription and their own permissions.
+- **Plan usage**: everyone's 5-hour and weekly limits show next to their name.
 
-## Security model
+## Security
 
-- The **invite is the key**. Anyone holding it can join and read the room. Only send it to
-  people you trust, and start a new room (new secret) to revoke access.
-- Friends **cannot** run your agent unless you approve (`policy: ask`, the default), trust
-  them for the session, or set `policy: auto`. Trust ends when they disconnect.
-- Your agent only auto-runs read-only tools **inside your shares**. Bash, web access, reads
-  outside your shares, edits outside `:rw` shares, and `ask_agent` all prompt **you**, whoever
-  asked for the work. "Always" is scoped to one person + one tool.
-- Credential files (`.env*`, keys, `.ssh`, `.aws`, …) are never served to peers and are blocked
-  for your agent by a `PreToolUse` hook. Claude Code settings files are not loaded for room
-  sessions, so a friend with `:rw` access can't plant permission rules.
-- Each message's sender id is sealed inside the encrypted box, so a tunnel can't re-attribute
-  messages. Replayed agent requests are dropped.
-- Chat context given to agents is built from **your own** log and marked as untrusted. Still,
-  prompt injection is a real risk: keep `policy: ask` with people you don't fully trust.
-
-**Fair use:** each person runs their own Claude with their own account. klaude never shares
-credentials between machines; requests for bob's Claude run on bob's computer.
+- **The invite is the key.** Anyone with it can join. Start a new room to revoke access.
+- **You approve requests.** Friends can't run your Claude unless you allow it (each time, for one person, or for everyone).
+- **You set the reach.** Per friend: *shared folders only* (the default; everything else is blocked) or *whole computer*.
+- **Risky actions always ask.** Every shell command, web request and edit outside a `:rw` folder needs your OK, even ones Claude Code would normally auto-approve.
+- **Secrets stay put.** `.env` files, keys, `.ssh`, `.aws` and similar are never shared or readable by agents.
+- **Fair use.** Each person uses their own Claude account. Nothing is shared between machines except chat, files you share, and results.
 
 ## Development
 
 ```bash
 npm install
-npm run dev -- host --tunnel none   # run from source
-npm test                            # unit + multi-peer integration tests
-npm run test:coverage               # ≥80% enforced
+npm run dev -- demo        # run from source
+npm test                   # 160+ unit and multi-peer integration tests
 npm run typecheck
 ```
 
 ## Roadmap
 
-- CRDT co-editing (Yjs) of shared files, beyond live viewing
-- Serverless P2P via hyperswarm/holepunching (no tunnel needed)
-- Threaded agent-to-agent conversations visible as their own panes
-- Per-peer share ACLs and write access for humans
-- Syntax highlighting and diff view for agent edits
+- **Projects and workspaces**: auto-detect projects; spin up a git worktree per task from `origin`; review, merge, fork, and archive from the app; per-workspace Claude conversations
+- Share a project or a single workspace with friends; invite them into its chat
+- Show sub-agents nested under Claude's card
+- Inline images in the viewer
 
 ## License
 

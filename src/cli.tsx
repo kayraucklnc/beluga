@@ -8,12 +8,17 @@ import { copyNative, copyText, pasteText } from './core/clipboard.js';
 import { Session } from './core/session.js';
 import { ShareService } from './core/shares.js';
 import { Store, initialState } from './core/store.js';
+import { saveSettings } from './core/settings.js';
+import { applyTheme } from './ui/theme.js';
 import { deriveKeys, generateSecret } from './net/crypto.js';
 import { startHub, type Hub } from './net/hub.js';
 import { decodeInvite, encodeInvite, findInvite, toWsUrl } from './net/invite.js';
 import { PeerClient } from './net/peer-client.js';
 import { closeAllTunnels, openTunnel, waitUntilReachable } from './net/tunnel.js';
 import { App } from './ui/App.js';
+import { ErrorBoundary } from './ui/components/ErrorBoundary.js';
+import { createMockBackend } from './agent/mock.js';
+import { createDemoFolders, startDemoFriend } from './demo.js';
 import { MOUSE_OFF, MOUSE_ON, type MouseEvent, createMouseInput } from './ui/mouse.js';
 
 interface Room {
@@ -101,15 +106,20 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
 }
 
 async function main(): Promise<void> {
-  const config = parseConfig(process.argv.slice(2));
+  let config = parseConfig(process.argv.slice(2));
   if (config.mode === 'help') {
     process.stdout.write(USAGE);
     return;
   }
 
-  const room = config.mode === 'host' ? await hostRoom(config) : await joinRoom(config);
+  const demo = config.mode === 'demo' ? createDemoFolders() : undefined;
+  if (demo) config = { ...config, tunnel: 'none', policyChosen: true, shares: [{ name: 'landing', root: demo.mine, writable: true }] };
+  const room = config.mode === 'join' ? await joinRoom(config) : await hostRoom(config);
   const shares = new ShareService(config.shares);
-  const store = new Store(initialState(room.room, config.policy));
+  applyTheme(config.theme);
+  // Remember an explicitly chosen name, so plain `klaude` uses it next time.
+  if (process.argv.includes('--name') || process.argv.includes('-n')) saveSettings({ name: config.name });
+  const store = new Store(initialState(room.room, config.policy, { theme: config.theme, mouse: config.mouse, tunnel: config.tunnel }));
   if (room.invite) store.dispatch({ type: 'invite', invite: room.invite });
 
   const client = new PeerClient({
@@ -127,7 +137,10 @@ async function main(): Promise<void> {
     shares,
     agentCwd,
     copy: (text) => copyText(text),
-    createAgent: config.agent
+    saveSettings: (patch) => void saveSettings(patch),
+    createAgent: demo
+      ? (bridge) => createMockBackend(bridge)
+      : config.agent
       ? (bridge) =>
           createClaudeBackend({
             cwd: agentCwd,
@@ -172,12 +185,26 @@ async function main(): Promise<void> {
   process.stdout.write('\x1b[?1049h\x1b[H');
   if (config.mouse) process.stdout.write(MOUSE_ON);
   const onboarding = config.agent && !config.policyChosen;
-  const app = render(<App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} />, { exitOnCtrlC: false, stdin });
+  const app = render(
+    <ErrorBoundary>
+      <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} />
+    </ErrorBoundary>,
+    { exitOnCtrlC: false, stdin },
+  );
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGHUP', () => void shutdown()); // terminal window closed
   session.start();
   if (config.mode === 'host') void publish(config, room, session, () => shuttingDown);
+  if (demo) {
+    // A pretend friend and a fake invite so every part of the UI has something to show.
+    store.dispatch({ type: 'invite', invite: 'https://calm-river-demo.trycloudflare.com#k3JdQ9vXr2Lm8TzW4yBn' });
+    store.dispatch({ type: 'hosting', hosting: { phase: 'ready', copied: true } });
+    session.system('Demo mode: bob and both Claudes are simulated. Nothing leaves your computer.');
+    setTimeout(() => session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } }), 300);
+    // bob "arrives" a moment later so you first see how inviting works.
+    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob), 2500);
+  }
 }
 
 main().catch((err: unknown) => {

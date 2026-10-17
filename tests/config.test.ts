@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { parseConfig, sanitizeName } from '../src/config.js';
 
 describe('parseConfig', () => {
-  it('defaults to help', () => {
-    expect(parseConfig([]).mode).toBe('help');
+  it('defaults to hosting; help on request', () => {
+    expect(parseConfig([], '/tmp/p', '/Users/x', { theme: 'calm', mouse: true, tunnel: 'auto' }).mode).toBe('host');
     expect(parseConfig(['host', '-h']).mode).toBe('help');
   });
 

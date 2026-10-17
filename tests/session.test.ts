@@ -475,4 +475,25 @@ describe('Session hardening', () => {
     expect(bob.state().approvals[0]?.title).toBe('kay wants your Claude to run this (shared folders only)');
     bob.session.answerApproval('no');
   });
+
+  it('renames and remembers settings changes', async () => {
+    hub = await startHub({ keys });
+    const saved: object[] = [];
+    const kay = peer('kay');
+    (kay.session as unknown as { opts: { saveSettings: (p: object) => void } }).opts.saveSettings = (p) => void saved.push(p);
+    const bob = peer('bob');
+    await room(kay, bob);
+    kay.session.submit('/name kayra');
+    await waitFor(() => bob.state().peers.some((p) => p.name === 'kayra'));
+    kay.session.submit('/name !!!');
+    expect(kay.toasts).toContain('Usage: /name <new name> (letters, numbers, . - _)');
+    kay.session.submit('/theme mono');
+    expect(kay.state().prefs.theme).toBe('mono');
+    kay.session.submit('/theme neon');
+    expect(kay.toasts).toContain('Themes: calm, light, contrast, mono');
+    kay.session.setClaudeSharing('auto');
+    expect(saved).toEqual([{ name: 'kayra' }, { theme: 'mono' }, { policy: 'auto' }]);
+    kay.session.submit('/settings');
+    expect(kay.state().overlay).toBe('settings');
+  });
 });

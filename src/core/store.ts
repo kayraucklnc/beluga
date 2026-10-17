@@ -1,5 +1,6 @@
 import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
+import type { Settings, ThemeName } from './settings.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
 
@@ -78,7 +79,14 @@ export interface Toast {
   readonly level: 'info' | 'success' | 'warn' | 'error';
 }
 
-export type Overlay = 'help';
+export type Overlay = 'help' | 'settings';
+
+/** Display preferences mirrored from ~/.klaude/settings.json. */
+export interface Prefs {
+  readonly theme: ThemeName;
+  readonly mouse: boolean;
+  readonly tunnel: 'auto' | 'cloudflared' | 'ngrok' | 'none';
+}
 
 export interface Transfer {
   readonly id: string;
@@ -114,6 +122,7 @@ export interface AppState {
   readonly dirCache: Readonly<Record<string, readonly FsEntry[]>>;
   /** Recent downloads (newest last). */
   readonly transfers: readonly Transfer[];
+  readonly prefs: Prefs;
 }
 
 export type Action =
@@ -148,6 +157,7 @@ export type Action =
   | { type: 'access'; peerId: string; scope: 'folder' | 'full' }
   | { type: 'dir_cache'; key: string; entries: readonly FsEntry[] }
   | { type: 'transfer'; transfer: Transfer }
+  | { type: 'prefs'; prefs: Partial<Prefs> }
   | { type: 'clear' };
 
 const LOG_LIMIT = 1000;
@@ -158,7 +168,9 @@ const TRANSFER_LIMIT = 20;
 export const clean = (s: string): string => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
 const MAX_STEPS = 6;
 
-export function initialState(room: string, policy: Policy = 'ask'): AppState {
+const DEFAULT_PREFS: Prefs = { theme: 'calm', mouse: true, tunnel: 'auto' };
+
+export function initialState(room: string, policy: Policy = 'ask', prefs: Prefs = DEFAULT_PREFS): AppState {
   return {
     room,
     status: 'connecting',
@@ -172,6 +184,7 @@ export function initialState(room: string, policy: Policy = 'ask'): AppState {
     access: {},
     dirCache: {},
     transfers: [],
+    prefs,
   };
 }
 
@@ -338,6 +351,8 @@ export function reduce(state: AppState, action: Action): AppState {
         ...state,
         trusted: action.trusted ? [...new Set([...state.trusted, action.peerId])] : state.trusted.filter((t) => t !== action.peerId),
       };
+    case 'prefs':
+      return { ...state, prefs: { ...state.prefs, ...action.prefs } };
     case 'transfer': {
       const others = state.transfers.filter((t) => t.id !== action.transfer.id);
       return { ...state, transfers: [...others, action.transfer].slice(-TRANSFER_LIMIT) };

@@ -51,6 +51,7 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
         { id: 'commands', text: 'Commands', key: '/' },
         { id: 'people', text: 'People & files', key: 'Tab' },
         ...(state.invite ? [{ id: 'invite', text: 'Invite', key: '' }] : []),
+        { id: 'settings', text: 'Settings', key: '' },
         { id: 'help', text: 'Help', key: '' },
       ];
   }

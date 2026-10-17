@@ -8,6 +8,7 @@ export interface Seg {
   readonly dim?: boolean;
   readonly italic?: boolean;
   readonly inverse?: boolean;
+  readonly underline?: boolean;
 }
 export type Line = readonly Seg[];
 

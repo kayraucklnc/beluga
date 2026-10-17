@@ -166,7 +166,9 @@ export function startHub(opts: HubOptions): Promise<Hub> {
         // Profile update (e.g. shares changed) from an already-authenticated peer.
         const profile = Profile.safeParse(open(opts.keys, frame.box));
         if (profile.success && frame.peerId === conn.peer.peerId) {
-          conn.peer = { ...profile.data, name: conn.peer.name, peerId: conn.peer.peerId };
+          // Renames are allowed but stay unique within the room.
+          const name = profile.data.name === conn.peer.name ? conn.peer.name : uniqueName(profile.data.name);
+          conn.peer = { ...profile.data, name, peerId: conn.peer.peerId };
           broadcastPeers();
         }
       }
