@@ -18,10 +18,27 @@ export const ShareInfo = z.object({
 });
 export type ShareInfo = z.infer<typeof ShareInfo>;
 
+export const UsageWindow = z.object({
+  /** Percent of the window used, 0-100. */
+  pct: z.number().min(0).max(100),
+  /** Epoch ms when the window resets. */
+  resetsAt: z.number().optional(),
+});
+
+/** Claude plan usage, shared so friends can see whose Claude has room left. */
+export const Usage = z.object({
+  plan: z.string().max(32).optional(),
+  fiveHour: UsageWindow.optional(),
+  week: UsageWindow.optional(),
+  updatedAt: z.number(),
+});
+export type Usage = z.infer<typeof Usage>;
+
 export const Profile = z.object({
   name: z.string().regex(/^[\w.-]{1,32}$/),
   shares: z.array(ShareInfo).max(32),
   agent: z.boolean(),
+  usage: Usage.optional(),
 });
 export type Profile = z.infer<typeof Profile>;
 

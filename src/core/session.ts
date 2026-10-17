@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
-import { type BodyInput, type BodyOf, CHUNK_BYTES, type FsEntry, MAX_TEXT, type PeerInfo } from '../protocol.js';
+import { type BodyInput, type BodyOf, CHUNK_BYTES, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
 import { parseInput, parseLocation } from './mentions.js';
 import { type ShareService } from './shares.js';
 import { type Location, type Store, peerName } from './store.js';
@@ -35,6 +35,7 @@ const MAX_PENDING_APPROVALS = 20;
 const SEEN_REQUESTS = 1000;
 const FS_DEBOUNCE_MS = 250;
 const DIR_CACHE_MS = 5_000;
+const USAGE_REFRESH_MS = 10 * 60_000;
 
 export const dirKey = (at: Location): string => `${at.owner}:${at.share}/${at.path}`;
 
@@ -56,6 +57,8 @@ export class Session {
   private outbox: Array<{ body: BodyInput; opts: { to?: string; keep?: boolean } }> = [];
   private readonly fsTimers = new Map<string, NodeJS.Timeout>();
   private readonly dirFetched = new Map<string, number>();
+  private usageTimer?: NodeJS.Timeout;
+  private usageFetched = false;
 
   constructor(private readonly opts: SessionOptions) {
     this.bridge = this.createBridge();
@@ -81,12 +84,15 @@ export class Session {
       (message) => this.system(message, 'warn'),
     );
     this.opts.client.connect();
+    this.usageTimer = setInterval(() => void this.refreshUsage(), USAGE_REFRESH_MS);
+    this.usageTimer.unref();
   }
 
   async stop(): Promise<void> {
     this.current?.abort();
     this.opts.client.close();
     await this.opts.shares.close();
+    clearInterval(this.usageTimer);
     for (const t of this.fsTimers.values()) clearTimeout(t);
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
@@ -316,6 +322,10 @@ export class Session {
       const queued = this.outbox;
       this.outbox = [];
       for (const item of queued) this.send(item.body, item.opts);
+      if (!this.usageFetched) {
+        this.usageFetched = true;
+        void this.refreshUsage();
+      }
     });
     client.on('peers', (peers) => store.dispatch({ type: 'peers', peers }));
     client.on('error', (message) => this.system(message, 'error'));
@@ -441,11 +451,28 @@ export class Session {
   /** Choose whether people in the room may use your Claude (from onboarding or /policy). */
   setClaudeSharing(policy: 'ask' | 'auto' | 'deny'): void {
     this.store.dispatch({ type: 'policy', policy });
-    const state = this.store.getState();
-    if (state.self) {
-      const me = state.self;
-      this.opts.client.updateProfile({ name: me.name, shares: me.shares, agent: this.hasAgent && policy !== 'deny' });
-    }
+    this.updateProfile({ agent: this.hasAgent && policy !== 'deny' });
+  }
+
+  /** Give a friend access to only your shared folders, or your whole computer. */
+  setAccess(peerId: string, scope: 'folder' | 'full'): void {
+    this.store.dispatch({ type: 'access', peerId, scope });
+  }
+
+  private updateProfile(patch: Partial<Profile>): void {
+    this.opts.client.updateProfile({ ...this.opts.client.currentProfile, ...patch });
+  }
+
+  /** Merge new plan-usage numbers and share them with the room. */
+  updateUsage(update: Partial<Usage>): void {
+    const prev = this.opts.client.currentProfile.usage;
+    this.updateProfile({ usage: { ...prev, ...update, updatedAt: Date.now() } });
+  }
+
+  /** Ask the agent backend for fresh plan usage (no prompt is sent). */
+  async refreshUsage(): Promise<void> {
+    const usage = await this.agent?.refreshUsage?.().catch(() => undefined);
+    if (usage) this.updateUsage(usage);
   }
 
   async listFiles(at: Location): Promise<readonly FsEntry[]> {
@@ -509,7 +536,8 @@ export class Session {
     if (state.policy === 'auto' || state.trusted.includes(from)) return true;
     const name = peerName(state, from);
     this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`);
-    const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to run this`, body.prompt);
+    const reach = state.access[from] === 'full' ? 'whole computer' : 'shared folders only';
+    const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to run this (${reach})`, body.prompt);
     if (answer === 'always') this.store.dispatch({ type: 'trust', peerId: from, trusted: true });
     return answer !== 'no';
   }
@@ -539,6 +567,7 @@ export class Session {
         requesterName,
         viaAgent: body.viaAgent,
         context: this.recentChat(),
+        scope: from === this.selfId ? 'full' : (this.store.getState().access[from] ?? 'folder'),
         signal: controller.signal,
         onEvent: (kind, text) => this.emitAgent(body.requestId, from, kind, text),
         onFileTouched: (abs) => this.announceAgentFocus(abs),
@@ -550,6 +579,7 @@ export class Session {
       this.emitAgent(body.requestId, from, 'error', controller.signal.aborted ? 'Stopped by owner' : errorText(err));
     } finally {
       if (this.current === controller) this.current = undefined;
+      void this.refreshUsage();
     }
   }
 
@@ -616,6 +646,7 @@ export class Session {
       listPeerFiles: (name, share, p) => this.listFiles({ owner: this.requirePeer(name).peerId, share, path: p }),
       readPeerFile: async (name, share, p) => (await this.readFile({ owner: this.requirePeer(name).peerId, share, path: p })).content,
       writeReport: (title, markdown) => this.writeReport(title, markdown),
+      reportUsage: (usage) => this.updateUsage(usage),
     };
   }
 

@@ -439,4 +439,40 @@ describe('Session hardening', () => {
     bob.session.submit('/policy ask');
     await waitFor(() => kay.state().peers.find((p) => p.name === 'bob')?.agent === true);
   });
+
+  it("runs friends' requests with their access level and shares plan usage", async () => {
+    hub = await startHub({ keys });
+    const bob = peer('bob', {
+      policy: 'auto',
+      script: async (_input, bridge) => {
+        bridge.reportUsage({ fiveHour: { pct: 42 } });
+        return 'ok';
+      },
+    });
+    const kay = peer('kay');
+    await room(bob, kay);
+    kay.session.submit('@claude:bob hi');
+    await waitFor(() => bob.runs.length === 1);
+    expect(bob.runs[0]?.scope).toBe('folder');
+    await waitFor(() => kay.state().peers.find((p) => p.name === 'bob')?.usage?.fiveHour?.pct === 42);
+
+    bob.session.setAccess(kay.session.selfId, 'full');
+    kay.session.submit('@claude:bob again');
+    await waitFor(() => bob.runs.length === 2);
+    expect(bob.runs[1]?.scope).toBe('full');
+    bob.session.submit('@claude mine');
+    await waitFor(() => bob.runs.length === 3);
+    expect(bob.runs[2]?.scope).toBe('full'); // your own requests always have full reach
+  });
+
+  it('shows the access level in approval prompts', async () => {
+    hub = await startHub({ keys });
+    const bob = peer('bob');
+    const kay = peer('kay');
+    await room(bob, kay);
+    kay.session.submit('@claude:bob look around');
+    await waitFor(() => bob.state().approvals.length === 1);
+    expect(bob.state().approvals[0]?.title).toBe('kay wants your Claude to run this (shared folders only)');
+    bob.session.answerApproval('no');
+  });
 });

@@ -1,8 +1,12 @@
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { buildPrompt, buildSystemAppend, summarizeTool } from './prompt.js';
 import { DENY_REASON, decideTool } from './policy.js';
+import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
 import { createRoomTools } from './tools.js';
 import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
+import type { Usage } from '../protocol.js';
+
+const USAGE_TIMEOUT_MS = 20_000;
 
 export interface ClaudeBackendOptions {
   readonly cwd: string;
@@ -29,7 +33,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
     async run(input: AgentRunInput): Promise<string> {
       const abortController = new AbortController();
       input.signal.addEventListener('abort', () => abortController.abort(), { once: true });
-      const policy = { cwd: opts.cwd, roots: [opts.cwd, ...opts.additionalDirectories], autoEdit: opts.autoEdit };
+      const policy = { cwd: opts.cwd, roots: [opts.cwd, ...opts.additionalDirectories], autoEdit: opts.autoEdit, scope: input.scope };
       const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
         hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: reason },
       });
@@ -76,6 +80,10 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       let final = '';
       for await (const msg of query({ prompt: buildPrompt(input), options })) {
         if (msg.type === 'system' && msg.subtype === 'init') sessionId = msg.session_id;
+        if (msg.type === 'rate_limit_event') {
+          const update = fromRateLimitEvent(msg.rate_limit_info);
+          if (update) opts.bridge.reportUsage(update);
+        }
         if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {
           for (const block of msg.message.content) {
             if (block.type === 'text' && block.text.trim()) input.onEvent('text', block.text.trim());
@@ -95,6 +103,32 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         }
       }
       return final;
+    },
+
+    /**
+     * Read plan usage without sending a prompt: open a session whose input never
+     * yields, ask for /usage data, then close it. Uses an experimental SDK call,
+     * so it is feature-detected and failures are ignored.
+     */
+    async refreshUsage(): Promise<Usage | undefined> {
+      const idle = (async function* () {
+        await new Promise(() => undefined);
+      })() as AsyncIterable<never>;
+      const q = query({
+        prompt: idle,
+        options: { cwd: opts.cwd, settingSources: [], ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}) },
+      });
+      const getUsage = (q as unknown as Record<string, unknown>).usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+      try {
+        if (typeof getUsage !== 'function') return undefined;
+        const timeout = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), USAGE_TIMEOUT_MS).unref());
+        const res = await Promise.race([getUsage.call(q, { skipBehaviors: true }), timeout]);
+        return res ? fromUsageResponse(res as Parameters<typeof fromUsageResponse>[0]) : undefined;
+      } catch {
+        return undefined;
+      } finally {
+        q.close();
+      }
     },
   };
 }

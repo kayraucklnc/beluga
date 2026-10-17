@@ -1,0 +1,67 @@
+import { describe, expect, it } from 'vitest';
+import { describeWindow, fromRateLimitEvent, fromUsageResponse, toMs, toPct } from '../src/agent/usage.js';
+import { initialState, reduce } from '../src/core/store.js';
+import type { PeerInfo } from '../src/protocol.js';
+import { peopleRows, usageMeter } from '../src/ui/banner.js';
+import { personMenu } from '../src/ui/menus.js';
+
+describe('usage', () => {
+  it('normalizes percentages and timestamps', () => {
+    expect(toPct(0.42)).toBe(42);
+    expect(toPct(42)).toBe(42);
+    expect(toPct(140)).toBe(100);
+    expect(toPct(null)).toBeUndefined();
+    expect(toMs(1_700_000_000)).toBe(1_700_000_000_000);
+    expect(toMs(1_700_000_000_000)).toBe(1_700_000_000_000);
+    expect(toMs('2026-10-17T12:00:00Z')).toBe(Date.parse('2026-10-17T12:00:00Z'));
+    expect(toMs('nope')).toBeUndefined();
+    expect(toMs(undefined)).toBeUndefined();
+  });
+
+  it('maps streamed rate-limit events', () => {
+    expect(fromRateLimitEvent({ rateLimitType: 'five_hour', utilization: 0.5, resetsAt: 1_700_000_000 })).toEqual({ fiveHour: { pct: 50, resetsAt: 1_700_000_000_000 } });
+    expect(fromRateLimitEvent({ rateLimitType: 'seven_day', utilization: 12 })).toEqual({ week: { pct: 12, resetsAt: undefined } });
+    expect(fromRateLimitEvent({ rateLimitType: 'overage', utilization: 1 })).toBeUndefined();
+    expect(fromRateLimitEvent({ rateLimitType: 'five_hour' })).toBeUndefined();
+  });
+
+  it('maps the /usage response', () => {
+    const res = {
+      subscription_type: 'max',
+      rate_limits_available: true,
+      rate_limits: { five_hour: { utilization: 3, resets_at: '2026-10-17T15:10:00Z' }, seven_day: { utilization: 38, resets_at: null } },
+    };
+    expect(fromUsageResponse(res, 5)).toEqual({
+      plan: 'max',
+      fiveHour: { pct: 3, resetsAt: Date.parse('2026-10-17T15:10:00Z') },
+      week: { pct: 38, resetsAt: undefined },
+      updatedAt: 5,
+    });
+    expect(fromUsageResponse({ subscription_type: null, rate_limits_available: false, rate_limits: null })).toBeUndefined();
+    expect(describeWindow(undefined)).toBe('–');
+    expect(describeWindow({ pct: 3 })).toBe('3%');
+    expect(describeWindow({ pct: 3, resetsAt: Date.parse('2026-10-17T15:10:00Z') })).toMatch(/^3% · resets /);
+  });
+
+  it('shows usage in the People panel and person menu, colored as it fills', () => {
+    expect(usageMeter(undefined)).toBeUndefined();
+    expect(usageMeter({ week: { pct: 95 }, updatedAt: 1 })).toEqual([
+      { text: ' · ', color: expect.any(String) },
+      { text: 'wk 95%', color: expect.any(String) },
+    ]);
+    const peers: PeerInfo[] = [
+      { peerId: 'me', name: 'kay', agent: true, shares: [] },
+      { peerId: 'b', name: 'bob', agent: true, shares: [], usage: { plan: 'pro', fiveHour: { pct: 42 }, week: { pct: 10 }, updatedAt: 1 } },
+    ];
+    const s = reduce(reduce(initialState('r'), { type: 'peers', peers }), { type: 'welcome', self: peers[0]! });
+    expect(peopleRows(s, 0)[1]!.agent.map((x) => x.text).join('')).toBe('◆ Claude ready · 5h 42%');
+    const menu = personMenu(s, 1)!;
+    expect(menu.intro.join('\n')).toContain('Claude usage (pro):  5-hour 42%   ·   week 10%');
+    expect(menu.intro.join('\n')).toContain('can only use your shared folders');
+    expect(menu.options.map((o) => o.id)).toContain('access-full');
+    const full = reduce(s, { type: 'access', peerId: 'b', scope: 'full' });
+    expect(personMenu(full, 1)!.options.map((o) => o.id)).toContain('access-folder');
+    expect(personMenu(full, 1)!.intro.join('\n')).toContain('can read anything on this computer');
+    expect(reduce(full, { type: 'peers', peers: [peers[0]!] }).access).toEqual({}); // access ends when they leave
+  });
+});

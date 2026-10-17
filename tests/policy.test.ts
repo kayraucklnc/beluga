@@ -17,10 +17,21 @@ describe('decideTool', () => {
     expect(decideTool('Bash', { command: 'cat NOTES.md' }, rw)).toBe('ask');
   });
 
-  it('asks before reading outside shares or using anything powerful', () => {
-    expect(decideTool('Read', { file_path: '/etc/hosts' }, ctx)).toBe('ask');
-    expect(decideTool('Read', { file_path: '../other/x' }, ctx)).toBe('ask');
-    expect(decideTool('LS', { path: '/work/proj-evil' }, ctx)).toBe('ask');
+  it('blocks files outside the shared folders for folder-only access', () => {
+    expect(decideTool('Read', { file_path: '/etc/hosts' }, ctx)).toBe('deny');
+    expect(decideTool('Read', { file_path: '../other/x' }, ctx)).toBe('deny');
+    expect(decideTool('LS', { path: '/work/proj-evil' }, ctx)).toBe('deny');
+    expect(decideTool('Write', { file_path: '/tmp/x' }, rw)).toBe('deny');
+  });
+
+  it('lets whole-computer access read anywhere, but still asks before edits outside :rw', () => {
+    const full = { ...ctx, scope: 'full' as const };
+    expect(decideTool('Read', { file_path: '/etc/hosts' }, full)).toBe('allow');
+    expect(decideTool('Write', { file_path: '/tmp/x' }, full)).toBe('ask');
+    expect(decideTool('Read', { file_path: '/Users/me/.ssh/id_rsa' }, full)).toBe('deny');
+  });
+
+  it('asks before anything powerful', () => {
     for (const tool of ['WebFetch', 'WebSearch', 'mcp__klaude__ask_agent']) expect(decideTool(tool, {}, ctx)).toBe('ask');
   });
 
@@ -28,7 +39,6 @@ describe('decideTool', () => {
     expect(decideTool('Edit', { file_path: 'src/a.ts' }, ctx)).toBe('ask');
     expect(decideTool('Edit', { file_path: 'src/a.ts' }, rw)).toBe('allow');
     expect(decideTool('Write', { file_path: '/work/docs/x.md' }, rw)).toBe('ask'); // other share, not the primary
-    expect(decideTool('Write', { file_path: '/tmp/x' }, rw)).toBe('ask');
   });
 
   it('denies credential files anywhere, by path or in shell commands', () => {

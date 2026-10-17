@@ -35,6 +35,8 @@ export interface PolicyContext {
   readonly roots: readonly string[];
   /** The primary share was marked :rw, so edits inside it don't need approval. */
   readonly autoEdit: boolean;
+  /** 'folder' hard-blocks files outside the shared folders; 'full' lets the owner approve them. */
+  readonly scope?: 'folder' | 'full';
 }
 
 const inside = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
@@ -56,15 +58,18 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
   if (readField) {
     const target = resolveTarget(ctx.cwd, input[readField]);
     if (isSecretPath(target) || (typeof input.pattern === 'string' && isSecretPath(input.pattern))) return 'deny';
-    return ctx.roots.some((r) => inside(path.resolve(r), target)) ? 'allow' : 'ask';
+    if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
+    return ctx.scope === 'full' ? 'allow' : 'deny';
   }
   const writeField = WRITE_TOOLS[toolName];
   if (writeField) {
     const target = resolveTarget(ctx.cwd, input[writeField]);
     if (isSecretPath(target)) return 'deny';
-    return ctx.autoEdit && inside(path.resolve(ctx.cwd), target) ? 'allow' : 'ask';
+    if (ctx.autoEdit && inside(path.resolve(ctx.cwd), target)) return 'allow';
+    if (ctx.scope !== 'full' && !ctx.roots.some((r) => inside(path.resolve(r), target))) return 'deny';
+    return 'ask';
   }
   return 'ask';
 }
 
-export const DENY_REASON = 'klaude blocks agents from touching credential files.';
+export const DENY_REASON = 'klaude blocked this: credential files are off-limits, and this request may only use the shared folders.';

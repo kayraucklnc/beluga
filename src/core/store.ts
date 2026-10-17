@@ -108,6 +108,8 @@ export interface AppState {
   readonly focus: Readonly<Record<string, Focus>>;
   readonly policy: Policy;
   readonly trusted: readonly string[];
+  /** How far each friend's requests may reach on this computer (default: shared folders only). */
+  readonly access: Readonly<Record<string, 'folder' | 'full'>>;
   /** Directory listings used for /open autocomplete, keyed "owner:share/path". */
   readonly dirCache: Readonly<Record<string, readonly FsEntry[]>>;
   /** Recent downloads (newest last). */
@@ -143,6 +145,7 @@ export type Action =
   | { type: 'follow'; peerId?: string }
   | { type: 'policy'; policy: Policy }
   | { type: 'trust'; peerId: string; trusted: boolean }
+  | { type: 'access'; peerId: string; scope: 'folder' | 'full' }
   | { type: 'dir_cache'; key: string; entries: readonly FsEntry[] }
   | { type: 'transfer'; transfer: Transfer }
   | { type: 'clear' };
@@ -166,6 +169,7 @@ export function initialState(room: string, policy: Policy = 'ask'): AppState {
     focus: {},
     policy,
     trusted: [],
+    access: {},
     dirCache: {},
     transfers: [],
   };
@@ -248,7 +252,9 @@ export function reduce(state: AppState, action: Action): AppState {
       const follow = state.follow && ids.has(state.follow) ? state.follow : undefined;
       // Peer ids are self-chosen, so trust never outlives the connection that earned it.
       const trusted = state.trusted.filter((t) => ids.has(t));
-      return { ...state, peers: action.peers, browser, follow, trusted };
+      // Like trust, extra access ends when the connection that earned it does.
+      const access = Object.fromEntries(Object.entries(state.access).filter(([id]) => ids.has(id)));
+      return { ...state, peers: action.peers, browser, follow, trusted, access };
     }
     case 'chat':
       return {
@@ -323,6 +329,8 @@ export function reduce(state: AppState, action: Action): AppState {
       return { ...state, focus: { ...state.focus, [action.actorKey]: action.focus } };
     case 'follow':
       return { ...state, follow: action.peerId };
+    case 'access':
+      return { ...state, access: { ...state.access, [action.peerId]: action.scope } };
     case 'policy':
       return { ...state, policy: action.policy };
     case 'trust':
