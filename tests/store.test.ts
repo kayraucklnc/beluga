@@ -11,7 +11,7 @@ const at = { owner: 'b', share: 'api', path: '' };
 
 describe('store reducer', () => {
   it('builds root browser rows from peer shares', () => {
-    expect(base().browser.rows.map((r) => r.label)).toEqual(['kay:app', 'bob:api (ro)']);
+    expect(base().browser.rows.map((r) => r.label)).toEqual(['kay · app', 'bob · api (read-only)']);
     expect(peerName(base(), 'b')).toBe('bob');
     expect(peerName(base(), 'unknown-peer')).toBe('unknow');
   });

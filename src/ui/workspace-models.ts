@@ -1,5 +1,6 @@
 import type { AppState, LogItem, ReviewState } from '../core/store.js';
 import type { Project, ProjectGroup, Workspace } from '../workspaces/types.js';
+import { worktreeOrigin } from '../workspaces/origin.js';
 import { isRunning } from './format.js';
 import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate } from './text.js';
 import { SPINNER, glyph, theme } from './theme.js';
@@ -26,11 +27,14 @@ export type WorkspaceAction =
   | 'delete'
   | 'review_claude'
   | 'merge_claude'
-  | 'compact';
+  | 'compact'
+  | 'share';
 
 export type UiAction =
   | { readonly type: 'open_ws'; readonly id: string; readonly tab?: 'chat' | 'files' | 'review' }
   | { readonly type: 'toggle_project'; readonly id: string }
+  | { readonly type: 'toggle_fold'; readonly key: string }
+  | { readonly type: 'agents_menu'; readonly projectId: string }
   | { readonly type: 'toggle_group'; readonly name: string }
   | { readonly type: 'toggle_archive'; readonly projectId: string }
   | { readonly type: 'project_menu'; readonly id: string }
@@ -42,6 +46,11 @@ export type UiAction =
   | { readonly type: 'close_tab'; readonly id: string }
   | { readonly type: 'ws'; readonly id: string; readonly action: WorkspaceAction }
   | { readonly type: 'review_file'; readonly index: number }
+  | { readonly type: 'plan_toggle'; readonly channel: string }
+  | { readonly type: 'open_shared'; readonly owner: string; readonly id: string; readonly tab?: 'chat' | 'files' }
+  | { readonly type: 'shared_menu'; readonly owner: string; readonly id: string }
+  /** Answer a question card: pick an option, skip, approve or revise a plan, or finish a multi-select. */
+  | { readonly type: 'answer'; readonly qid: string; readonly pick: 'option' | 'skip' | 'approve' | 'revise' | 'done'; readonly label?: string; readonly question?: string }
   | { readonly type: 'none' };
 
 export interface Model {
@@ -134,7 +143,7 @@ export function findWorkspace(projects: readonly Project[], id: string): Workspa
 }
 
 /** Left / right columns on one line, right side kept visible. */
-function split(left: Line, right: Line, width: number): Line {
+export function split(left: Line, right: Line, width: number): Line {
   const rw = lineWidth(right);
   return [...pad(left, Math.max(1, width - rw - 1)), { text: ' ' }, ...right];
 }
@@ -277,7 +286,21 @@ export function projectsModel(state: AppState, toggled: ReadonlySet<string>, fra
       open ? `Collapse ${p.name}` : `Expand ${p.name}`,
     );
     if (!open) return;
-    for (const ws of p.workspaces.filter((w) => !w.archived)) wsRow(ws, '  ');
+    const live = p.workspaces.filter((w) => !w.archived);
+    for (const ws of live.filter((w) => worktreeOrigin(w) === 'klaude')) wsRow(ws, '  ');
+    // Worktrees other tools made (Claude Code sub-agents, other apps) stay folded so they don't drown yours.
+    const foldable: Array<{ key: string; label: string; list: Workspace[]; hint: string; action?: UiAction }> = [
+      { key: `agents:${p.id}`, label: 'Claude Code agents', list: live.filter((w) => worktreeOrigin(w) === 'agent'), hint: 'Worktrees Claude Code sub-agents created', action: { type: 'agents_menu', projectId: p.id } },
+      { key: `external:${p.id}`, label: 'Other worktrees', list: live.filter((w) => worktreeOrigin(w) === 'external'), hint: 'Worktrees made outside klaude' },
+    ];
+    for (const f of foldable) {
+      if (!f.list.length) continue;
+      const showing = toggled.has(f.key) || f.list.some((w) => w.id === current);
+      const left: Line = [{ text: `    ${showing ? '▾' : '▸'} ${f.label} `, color: theme.muted }, { text: String(f.list.length), color: theme.muted, bold: true }];
+      if (f.action) addWithButtons(left, [{ label: '⋯', color: theme.muted, action: f.action, hint: 'Clean up finished agent worktrees' }], { type: 'toggle_fold', key: f.key }, `${showing ? 'Hide' : 'Show'} ${f.hint.toLowerCase()}`);
+      else add(left, { type: 'toggle_fold', key: f.key }, `${showing ? 'Hide' : 'Show'} ${f.hint.toLowerCase()}`);
+      if (showing) for (const ws of f.list) wsRow(ws, '    ');
+    }
     const archived = p.workspaces.filter((w) => w.archived);
     if (archived.length) {
       const showing = toggled.has(`archive:${p.id}`);
@@ -324,6 +347,11 @@ export function tabsModel(state: AppState, width: number): Model {
     if (ws) segs.push({ text: `›  ${ws.name}`, color: theme.accent, bold: true });
   }
   if (v.kind === 'draft') segs.push({ text: '›  New chat', color: theme.accent, bold: true });
+  if (v.kind === 'draft_worktree') segs.push({ text: '›  New worktree', color: theme.accent, bold: true });
+  if (v.kind === 'shared') {
+    const w = state.shared.find((x) => x.id === (v as { id: string }).id);
+    if (w) segs.push({ text: `›  ${w.name}`, color: theme.ok, bold: true });
+  }
   return { lines: [truncate(segs, width), [{ text: '─'.repeat(Math.max(0, width)), color: theme.border }]], zones: zones.filter((z) => z.x0 < width) };
 }
 
@@ -335,7 +363,7 @@ const CARD_HEIGHT = 5;
 export function overviewModel(state: AppState, frame: number, width: number, now = Date.now()): Model {
   const lines: Line[] = [];
   const zones: Zone[] = [];
-  const all = state.projects.flatMap((p) => p.workspaces.filter((w) => !w.archived && w.kind !== 'main').map((w) => ({ p, w })));
+  const all = state.projects.flatMap((p) => p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && worktreeOrigin(w) !== 'agent').map((w) => ({ p, w })));
   const working = all.filter(({ w }) => activityOf(state.log, `ws:${w.id}`).running).length;
   const needsYou = all.filter(({ w }) => state.conflicts[w.id]?.length || activityOf(state.log, `ws:${w.id}`).awaiting).length;
   lines.push([
@@ -408,6 +436,17 @@ function card(state: AppState, p: Project, w: Workspace, frame: number, width: n
  * Workspace header: where you are + state, the Chat/Files/Diff tabs, and every action as
  * a button. Buttons that can't do anything right now are dimmed and explain why.
  */
+/** "Share" (or "Shared · 2") opens who's in this workspace and lets you invite or remove people. */
+function sharedButton(state: AppState, wsId: string): { label: string; action: WorkspaceAction; hint: string } {
+  const count = Object.keys(state.members[wsId] ?? {}).length;
+  const others = state.peers.filter((p) => p.peerId !== state.self?.peerId).length;
+  return {
+    label: count ? `Shared · ${count}` : 'Share',
+    action: 'share',
+    hint: count ? `${count} ${count === 1 ? 'person is' : 'people are'} in this workspace: invite or remove people` : others ? 'Invite people in the room to work here with you' : 'Invite a friend to work here with you',
+  };
+}
+
 export function workspaceHeaderModel(state: AppState, ws: Workspace, width: number, frame = 0): Model {
   const project = state.projects.find((p) => p.id === ws.projectId);
   const view = state.view.kind === 'workspace' ? state.view : undefined;
@@ -452,6 +491,7 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
         ...(ws.kind !== 'chat' ? ([{ label: 'Fork', action: 'fork', hint: 'Copy this workspace and its conversation into a new worktree' }] as Btn[]) : []),
         { label: 'Finder', action: 'finder', hint: 'Open this folder in Finder' },
         ...(ws.kind !== 'main' ? ([{ label: 'Archive', action: 'archive', hint: 'Put it away; keeps the branch and conversation' }] as Btn[]) : []),
+        sharedButton(state, ws.id),
       ];
   const segs: Seg[] = [];
   let x = 0;
@@ -464,11 +504,19 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
     segs.push({ text: ' ' });
     x += 1;
   }
+  // Plan first: a toggle, so it's obvious whether Claude will act or propose a plan.
+  const channel = `ws:${ws.id}`;
+  const planning = state.planMode[channel] === true;
+  const planText = ` ${planning ? '◉' : '○'} Plan `;
+  segs.push({ text: planText, color: planning ? theme.info : theme.muted, bold: planning });
+  zones.push({ x0: x, x1: x + planText.length - 1, y: 1, action: { type: 'plan_toggle', channel }, hint: planning ? 'Plan mode is on: Claude looks first and asks you to approve a plan. Click to turn off' : 'Turn on plan mode: Claude investigates first and asks you to approve a plan before changing anything' });
+  x += planText.length + 1;
+  segs.push({ text: ' ' });
   segs.push({ text: '│ ', color: theme.border });
   x += 2;
   for (const btn of buttons) {
     const text = ` ${btn.label} `;
-    segs.push({ text, color: btn.disabled ? theme.border : btn.danger ? theme.error : btn.label === 'Solve conflict' ? theme.error : theme.text, bold: !btn.disabled });
+    segs.push({ text, color: btn.disabled ? theme.border : btn.danger ? theme.error : btn.label === 'Solve conflict' ? theme.error : btn.action === 'share' ? theme.info : theme.text, bold: !btn.disabled });
     zones.push({ x0: x, x1: x + text.length - 1, y: 1, action: { type: 'ws', id: ws.id, action: btn.action }, hint: btn.hint, disabled: btn.disabled });
     x += text.length;
   }

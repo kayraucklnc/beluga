@@ -1,4 +1,4 @@
-import { type Run, type Status, decide, fetchLatest, installRoot, isGitCheckout, makeRun, readStatus } from './check.js';
+import { type Run, type Status, decide, fetchLatest, installRoot, installedVersion, isGitCheckout, makeRun, readStatus } from './check.js';
 import { type Out, bar, ink, line, step, stdout, title } from './screen.js';
 
 const MAX_LISTED = 8;
@@ -43,7 +43,7 @@ export async function runUpdate(opts: UpdateOptions = {}): Promise<number> {
 
     if (decision.kind === 'latest') {
       line(out);
-      line(out, `${ink.ok('●')} ${ink.text("You're on the latest klaude")} ${ink.muted(`${status.head} · ${status.branch}`)}`);
+      line(out, `${ink.ok('●')} ${ink.text(`You're on the latest klaude (${installedVersion(root)})`)} ${ink.muted(`${status.head} · ${status.branch}`)}`);
       line(out);
       return 0;
     }
@@ -78,7 +78,7 @@ export async function runUpdate(opts: UpdateOptions = {}): Promise<number> {
     const head = (await run('git', ['rev-parse', '--short', 'HEAD'])).trim();
     line(out);
     await bar(out, 'finishing');
-    line(out, `${ink.ok('●')} ${ink.text('klaude is up to date')} ${ink.muted(`${status.head} → ${head}`)}`);
+    line(out, `${ink.ok('●')} ${ink.text(`klaude ${installedVersion(root)} is installed`)} ${ink.muted(`${status.head} → ${head}`)}`);
     line(out, `  ${ink.muted('Start it with')} ${ink.text('klaude')}`);
     line(out);
     return 0;

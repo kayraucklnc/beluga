@@ -59,14 +59,15 @@ export function hitTest(g: Geometry, x: number, y: number, ctx: HitContext): Tar
     const hit = placeButtons(APPROVAL_BUTTONS, 2, APPROVAL_GAP).find((b) => x >= b.x0 && x <= b.x1);
     return hit ? { kind: 'approval', answer: hit.answer } : { kind: 'none' };
   }
-  if (!inside(y, g.bodyTop, g.bodyHeight)) return { kind: 'none' };
-
-  if (ctx.menu && x >= g.mainX) {
+  // Claude's question card sits below the body, so its buttons are checked before the body bounds.
+  const below = !inside(y, g.bodyTop, g.bodyHeight);
+  if (ctx.menu && x >= g.mainX && !below) {
     const index = y - (g.headerTop + 1 + ctx.menu.intro.length + 1);
     return index >= 0 && index < ctx.menu.options.length ? { kind: 'menu', index } : { kind: 'none' };
   }
   const zone = ctx.zones?.find((z) => z.y === y && x >= z.x0 && x <= z.x1 && z.action.type !== 'none');
   if (zone) return { kind: 'zone', action: zone.action, hint: zone.hint, disabled: zone.disabled };
+  if (below) return { kind: 'none' };
 
   if (x < g.sideWidth) {
     if (y >= g.peopleTop) {

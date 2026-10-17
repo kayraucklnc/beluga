@@ -60,11 +60,14 @@ export class WorkspaceController {
   /** Re-scan projects and publish them; every workspace's folder becomes a private share. */
   async refresh(): Promise<void> {
     const projects = await this.deps.manager.refresh();
+    const members = this.deps.store.getState().members;
     for (const p of projects) {
       for (const w of p.workspaces) {
         const name = shareNameOf(w.id);
+        // People you invited into a workspace can browse its folder; nobody else can.
+        const allowed = Object.keys(members[w.id] ?? {});
         if (w.archived) this.deps.shares.remove(name);
-        else this.deps.shares.upsert({ name, root: w.path, writable: false, private: true });
+        else this.deps.shares.upsert({ name, root: w.path, writable: false, private: true, allowed });
       }
     }
     this.deps.store.dispatch({ type: 'projects', projects, groups: this.deps.manager.groups });
@@ -132,6 +135,14 @@ export class WorkspaceController {
   async startChat(projectId: string, firstMessage: string, inDir?: string): Promise<void> {
     const title = firstMessage.replace(/\s+/g, ' ').trim().slice(0, 40);
     const ws = await this.newChat(projectId, title, inDir);
+    if (ws) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
+  }
+
+  /** Turn a draft into a worktree: a small model names it after your first message, then Claude starts on it. */
+  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>): Promise<void> {
+    this.deps.toast('Naming the worktree…');
+    const name = await nameTask(firstMessage);
+    const ws = await this.newWorktree(projectId, name);
     if (ws) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
   }
 
@@ -218,6 +229,16 @@ export class WorkspaceController {
   }
 
   /** Put a project in a group (or none). */
+  async cleanAgentWorktrees(projectId: string): Promise<void> {
+    const res = await this.act("Couldn't clean up", () => this.deps.manager.cleanAgentWorktrees(projectId));
+    if (res) this.deps.toast(`Removed ${res.removed} finished agent worktree${res.removed === 1 ? '' : 's'}${res.kept ? ` · kept ${res.kept} with uncommitted work` : ''}`, 'success');
+  }
+
+  /** Start a fresh Claude conversation in this workspace (the old one is no longer resumed). */
+  forgetConversation(id: string): void {
+    this.deps.manager.forgetSession(id);
+  }
+
   async setGroup(projectId: string, group: string | undefined): Promise<void> {
     try {
       this.deps.manager.setGroup(projectId, group);

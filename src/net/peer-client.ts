@@ -1,5 +1,4 @@
 import { EventEmitter } from 'node:events';
-import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { z } from 'zod';
 import {
@@ -10,16 +9,17 @@ import {
   type PeerInfo,
   PeerInfo as PeerInfoSchema,
   type Profile,
+  RekeyPayload,
   WelcomePayload,
   parseFrame,
 } from '../protocol.js';
-import { type RoomKeys, open, proveNonce, seal } from './crypto.js';
+import { type Identity, type RoomKeys, deriveKeys, generateIdentity, open, proveNonce, seal, signNonce } from './crypto.js';
 
 const SealedMessage = z.object({ f: z.string(), b: Body });
 const HEARTBEAT_MS = 25_000;
 const SEEN_LIMIT = 10_000;
 /** Hub rejections that retrying won't fix: bad secret, bad profile, room full. */
-const FATAL_CLOSE_CODES = new Set([4001, 4002, 4004]);
+const FATAL_CLOSE_CODES = new Set([4001, 4002, 4004, 4008, 4010]);
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -37,13 +37,18 @@ interface ClientEvents {
   peers: [readonly PeerInfo[]];
   message: [IncomingMessage];
   error: [string];
+  /** The host replaced the invite; this is the new secret (for showing or re-sharing the link). */
+  rekey: [string];
+  /** The connection ended for good: removed by the host, room closed, or the invite stopped working. */
+  ended: [string];
 }
 
 export interface PeerClientOptions {
   readonly url: string;
   readonly keys: RoomKeys;
   readonly profile: Profile;
-  readonly peerId?: string;
+  /** Your signing key for this run (your peer id comes from it). Made fresh if omitted. */
+  readonly identity?: Identity;
   readonly reconnect?: boolean;
 }
 
@@ -59,11 +64,20 @@ export class PeerClient extends EventEmitter<ClientEvents> {
   private heartbeat?: NodeJS.Timeout;
   private alive = true;
   private readonly seen = new Set<string>();
+  /** Proves you hold the invite (changes when the host replaces the invite). */
+  private inviteKeys: RoomKeys;
+  /** Seals every message (stays the same for the life of the room). */
+  private roomKeys: RoomKeys;
+  private lastError = '';
+  private readonly identity: Identity;
 
   constructor(private readonly opts: PeerClientOptions) {
     super();
-    this.peerId = opts.peerId ?? randomUUID();
+    this.identity = opts.identity ?? generateIdentity();
+    this.peerId = this.identity.peerId;
     this.profile = opts.profile;
+    this.inviteKeys = opts.keys;
+    this.roomKeys = opts.keys;
   }
 
   connect(): void {
@@ -82,7 +96,7 @@ export class PeerClient extends EventEmitter<ClientEvents> {
   send(body: BodyInput, opts: { to?: string; keep?: boolean } = {}): boolean {
     if (!this.ready || !this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
     // The sender id is sealed with the body so a tunnel in the middle can't re-attribute messages.
-    const frame: MsgFrame = { t: 'msg', box: seal(this.opts.keys, { f: this.peerId, b: Body.parse(body) }), ...opts };
+    const frame: MsgFrame = { t: 'msg', box: seal(this.roomKeys, { f: this.peerId, b: Body.parse(body) }), ...opts };
     this.ws.send(JSON.stringify(frame));
     return true;
   }
@@ -123,11 +137,14 @@ export class PeerClient extends EventEmitter<ClientEvents> {
   }
 
   private sendHello(nonce: string): void {
+    // Joining proves the invite and seals with its key; later profile updates use the room key.
     const frame: Frame = {
       t: 'hello',
       peerId: this.peerId,
-      proof: proveNonce(this.opts.keys, nonce, this.peerId),
-      box: seal(this.opts.keys, this.profile),
+      proof: proveNonce(this.inviteKeys, nonce, this.peerId),
+      pub: this.identity.publicKey,
+      sig: signNonce(this.identity, nonce),
+      box: seal(this.ready ? this.roomKeys : this.inviteKeys, this.profile),
     };
     this.ws?.send(JSON.stringify(frame));
   }
@@ -139,10 +156,16 @@ export class PeerClient extends EventEmitter<ClientEvents> {
         this.sendHello(frame.nonce);
         return;
       case 'welcome': {
-        const payload = WelcomePayload.safeParse(open(this.opts.keys, frame.box));
+        const payload = WelcomePayload.safeParse(open(this.inviteKeys, frame.box));
         if (!payload.success) {
           this.emit('error', 'Could not decrypt room state (wrong secret?)');
           return;
+        }
+        this.roomKeys = payload.data.roomKey ? { enc: Buffer.from(payload.data.roomKey, 'base64'), auth: this.inviteKeys.auth } : this.inviteKeys;
+        // You were away when the host replaced the invite: take the current one.
+        if (payload.data.secret) {
+          this.inviteKeys = deriveKeys(payload.data.secret);
+          this.emit('rekey', payload.data.secret);
         }
         this.ready = true;
         this.attempt = 0;
@@ -153,14 +176,22 @@ export class PeerClient extends EventEmitter<ClientEvents> {
         return;
       }
       case 'peers': {
-        const peers = PeerInfoSchema.array().safeParse(open(this.opts.keys, frame.box));
+        const peers = PeerInfoSchema.array().safeParse(open(this.roomKeys, frame.box));
         if (peers.success) this.emit('peers', peers.data);
+        return;
+      }
+      case 'rekey': {
+        const next = RekeyPayload.safeParse(open(this.roomKeys, frame.box));
+        if (!next.success) return;
+        this.inviteKeys = deriveKeys(next.data.secret);
+        this.emit('rekey', next.data.secret);
         return;
       }
       case 'msg':
         this.deliver(frame);
         return;
       case 'error':
+        this.lastError = frame.message;
         this.emit('error', frame.message);
         return;
       default:
@@ -172,7 +203,7 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     if (!frame.from) return;
     const id = `${frame.from}:${frame.box.iv}`;
     if (this.seen.has(id)) return; // history is replayed on every reconnect
-    const sealed = SealedMessage.safeParse(open(this.opts.keys, frame.box));
+    const sealed = SealedMessage.safeParse(open(this.roomKeys, frame.box));
     if (!sealed.success || sealed.data.f !== frame.from) return;
     this.seen.add(id);
     if (this.seen.size > SEEN_LIMIT) this.seen.delete(this.seen.values().next().value as string);
@@ -183,7 +214,10 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     this.ready = false;
     clearInterval(this.heartbeat);
     this.emit('status', 'disconnected');
-    if (FATAL_CLOSE_CODES.has(code)) this.closed = true;
+    if (FATAL_CLOSE_CODES.has(code)) {
+      this.closed = true;
+      this.emit('ended', this.lastError || 'The connection was closed');
+    }
     if (this.closed || this.opts.reconnect === false) return;
     const delay = Math.min(15_000, 500 * 2 ** this.attempt++);
     this.timer = setTimeout(() => this.connect(), delay);

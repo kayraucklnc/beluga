@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Box, useApp, useInput, useStdout } from 'ink';
 import type { Session } from '../core/session.js';
-import type { AppState, Location, Policy } from '../core/store.js';
+import { type AppState, type Location, channelOf } from '../core/store.js';
 import { THEMES } from '../core/settings.js';
 import { shareNameOf } from '../core/workspace-controller.js';
 import type { FsEntry } from '../protocol.js';
@@ -24,7 +24,9 @@ import { Viewer, viewerInner, viewerLegend, viewerLines } from './components/Vie
 import { type Derived, derive } from './derive.js';
 import { type Target, hitTest } from './hit.js';
 import { type Effect, type UiState, handleKey, initialUi } from './keymap.js';
-import { type MenuKind, menuSpec } from './menus.js';
+import { type MenuKind } from './menus.js';
+import { type MenuContext, POLICY_INDEX, runMenu as runMenuOption } from './menu-actions.js';
+import { answerByNumber, answerTyped, currentQuestion, runCollabUiAction } from './collab-actions.js';
 import { MOUSE_OFF, MOUSE_ON, type MouseEvent } from './mouse.js';
 import { openTarget, suggestionWindow } from './suggest.js';
 import { applyTheme, theme } from './theme.js';
@@ -33,8 +35,6 @@ import { type UiAction, isCompacting, toggleProject } from './workspace-models.j
 const TOAST_MS = 3500;
 const FRAME_MS = 100;
 const WHEEL_LINES = 3;
-const POLICY_BY_OPTION: Record<string, Policy> = { 'share-ask': 'ask', 'share-auto': 'auto', 'share-deny': 'deny' };
-const POLICY_INDEX: Record<Policy, number> = { ask: 0, auto: 1, deny: 2 };
 
 /** What each bottom-bar button does, shown while hovering it. */
 const BUTTON_HINTS: Record<string, string> = {
@@ -48,6 +48,8 @@ const BUTTON_HINTS: Record<string, string> = {
   actions: 'Use Review, Commit, Merge and more from the keyboard (← → then Enter)',
   overview: 'Every worktree and chat at a glance',
   chat: 'Back to typing',
+  clear: 'Clear this conversation (you choose: just you, everyone, or a fresh start)',
+  'share-folder': 'Share a folder with everyone, or just one person',
 };
 
 export interface AppProps {
@@ -141,6 +143,11 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
 
   // /settings opens the settings menu; inviting for the first time asks who may use your Claude.
   useEffect(() => {
+    if (state.overlay === 'clear') {
+      session.store.dispatch({ type: 'overlay', overlay: undefined });
+      patchUi({ menu: { menu: { kind: 'clear', channel: view().channel, host: session.isHost }, selected: 0 } });
+      return;
+    }
     if (state.overlay !== 'settings' && state.overlay !== 'welcome') return;
     const kind = state.overlay;
     session.store.dispatch({ type: 'overlay', overlay: undefined });
@@ -204,6 +211,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   };
 
   const runUiAction = (action: UiAction): void => {
+    if (runCollabUiAction(menuCtx, action)) return;
     switch (action.type) {
       case 'open_ws':
         ctl?.open(action.id, action.tab);
@@ -221,6 +229,12 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       case 'toggle_archive':
         toggle(`archive:${action.projectId}`);
         return;
+      case 'toggle_fold':
+        toggle(action.key);
+        return;
+      case 'agents_menu':
+        patchUi({ menu: { menu: { kind: 'agents', projectId: action.projectId }, selected: 0 } });
+        return;
       case 'project_menu':
         patchUi({ menu: { menu: { kind: 'project', id: action.id }, selected: 0 } });
         return;
@@ -229,9 +243,14 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         return;
       case 'none':
         return;
-      case 'new_worktree':
-        askForName('worktree', action.projectId);
+      case 'new_worktree': {
+        // Like a new chat: describe the task, and a small model names the worktree from it.
+        const latest = session.store.getState();
+        const back = latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree' ? latest.view.back : latest.view;
+        session.store.dispatch({ type: 'view', view: { kind: 'draft_worktree', projectId: action.projectId, back } });
+        patchUi({ focus: 'chat', buffer: '', cursor: 0 });
         return;
+      }
       case 'new_chat': {
         // An empty chat opens right away; it's only created when you send the first message.
         const latest = session.store.getState();
@@ -293,168 +312,23 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     }
   };
 
-  const runMenu = (menu: MenuKind, index: number): void => {
-    const latest = session.store.getState();
-    const option = menuSpec(latest, menu)?.options[index];
-    if (!option) return;
-    const peer = menu.kind === 'person' ? latest.peers[menu.index] : undefined;
-    const policy = POLICY_BY_OPTION[option.id];
-    if (policy) {
-      session.setClaudeSharing(policy);
-      const msg = { ask: "You'll approve each request for your Claude", auto: 'Everyone in the room can use your Claude', deny: 'Your Claude is private' };
-      session.toast(msg[policy], 'success');
-      return;
-    }
-    const reopen = (): void => patchUi({ menu: { menu, selected: index } });
-    const confirmId = menu.kind === 'confirm' ? menu.id : undefined;
-    const project = menu.kind === 'project' ? latest.projects.find((p) => p.id === menu.id) : undefined;
-    const archived = menu.kind === 'archived' ? ctl?.manager.find(menu.id) : undefined;
-    if (option.id.startsWith('p-group:') && project) {
-      void ctl?.setGroup(project.id, option.id.slice('p-group:'.length));
-      return;
-    }
-    switch (option.id) {
-      case 'p-worktree':
-        if (project) askForName('worktree', project.id);
-        return;
-      case 'p-chat':
-        if (project) runUiAction({ type: 'new_chat', projectId: project.id });
-        return;
-      case 'p-main': {
-        const main = project?.workspaces.find((w) => w.kind === 'main');
-        if (main) ctl?.open(main.id);
-        return;
-      }
-      case 'p-finder':
-        if (project) openFolder(project.root);
-        return;
-      case 'p-newgroup':
-        if (project) askForName('group', project.id);
-        return;
-      case 'p-ungroup':
-        if (project) void ctl?.setGroup(project.id, undefined);
-        return;
-      case 'p-hide':
-        if (project) void ctl?.hideProject(project.id);
-        return;
-      case 'a-restore':
-        if (archived) void ctl?.restore(archived.id);
-        return;
-      case 'a-open':
-        if (archived) ctl?.open(archived.id);
-        return;
-      case 'a-finder':
-        if (archived) openFolder(archived.projectRoot || archived.path);
-        return;
-      case 'a-delete':
-        if (archived) patchUi({ menu: { menu: { kind: 'confirm', action: 'delete', id: archived.id }, selected: 0 } });
-        return;
-      case 'confirm-archive':
-      case 'confirm-archive-force':
-        if (confirmId) void ctl?.archive(confirmId, option.id === 'confirm-archive-force');
-        return;
-      case 'confirm-commit-archive':
-        if (confirmId) void ctl?.commit(confirmId).then(() => ctl.archive(confirmId));
-        return;
-      case 'confirm-delete':
-        if (confirmId) void ctl?.remove(confirmId);
-        return;
-      case 'confirm-archive-env':
-      case 'confirm-delete-env':
-        if (confirmId && ctl) {
-          ctl.applyEnvBack(confirmId);
-          void (option.id === 'confirm-archive-env' ? ctl.archive(confirmId, true) : ctl.remove(confirmId));
-        }
-        return;
-      case 'set-name':
-        typeInto('/name ');
-        return;
-      case 'set-theme': {
-        const next = THEMES[(THEMES.indexOf(latest.prefs.theme) + 1) % THEMES.length] ?? 'calm';
-        applyTheme(next);
-        session.setPrefs({ theme: next });
-        reopen();
-        return;
-      }
-      case 'set-policy': {
-        const order = ['ask', 'auto', 'deny'] as const;
-        session.setClaudeSharing(order[(order.indexOf(latest.policy) + 1) % order.length] ?? 'ask');
-        reopen();
-        return;
-      }
-      case 'set-mouse':
-        write(latest.prefs.mouse ? MOUSE_OFF : MOUSE_ON);
-        session.setPrefs({ mouse: !latest.prefs.mouse });
-        reopen();
-        return;
-      case 'set-tunnel': {
-        const order = ['auto', 'cloudflared', 'ngrok', 'none'] as const;
-        session.setPrefs({ tunnel: order[(order.indexOf(latest.prefs.tunnel) + 1) % order.length] ?? 'auto' });
-        reopen();
-        return;
-      }
-      case 'size-in':
-      case 'size-out':
-      case 'size-reset':
-        void session.zoom(option.id === 'size-in' ? 'in' : option.id === 'size-out' ? 'out' : 'reset');
-        reopen();
-        return;
-      case 'settings':
-        patchUi({ menu: { menu: { kind: 'settings' }, selected: 0 } });
-        return;
-      case 'close':
-        return;
-      case 'ask':
-        typeInto(`@claude:${peer?.name ?? ''} `);
-        return;
-      case 'ask-self':
-        typeInto('@claude ');
-        return;
-      case 'follow':
-      case 'unfollow':
-        session.follow(option.id === 'follow' ? peer?.name : undefined);
-        return;
-      case 'browse': {
-        const share = peer?.shares[0];
-        if (peer && share) void session.browseTo({ owner: peer.peerId, share: share.name, path: '' });
-        session.store.dispatch({ type: 'view', view: { kind: 'files' } });
-        patchUi({ focus: 'files' });
-        return;
-      }
-      case 'fulltrust':
-      case 'unfulltrust':
-        if (peer) session.store.dispatch({ type: 'full_trust', peerId: peer.peerId, trusted: option.id === 'fulltrust' });
-        session.toast(option.id === 'fulltrust' ? `${peer?.name} is fully trusted: their requests and actions run without asking` : `${peer?.name} needs approvals again`, 'success');
-        return;
-      case 'set-self-approval':
-        session.setPrefs({ selfApproval: latest.prefs.selfApproval === 'ask' ? 'never' : 'ask' });
-        reopen();
-        return;
-      case 'trust':
-      case 'untrust':
-        if (peer) session.store.dispatch({ type: 'trust', peerId: peer.peerId, trusted: option.id === 'trust' });
-        session.toast(option.id === 'trust' ? `${peer?.name} can use your Claude without asking` : `${peer?.name} needs your approval again`, 'success');
-        return;
-      case 'access-full':
-      case 'access-folder':
-        if (peer) {
-          session.setAccess(peer.peerId, option.id === 'access-full' ? 'full' : 'folder');
-          session.toast(option.id === 'access-full' ? `${peer.name} can reach your whole computer` : `${peer.name} is limited to your shared folders`, 'success');
-        }
-        return;
-      case 'invite':
-        void session.copyInvite();
-        return;
-      case 'sharing':
-        patchUi({ menu: { menu: { kind: 'welcome' }, selected: POLICY_INDEX[latest.policy] } });
-        return;
-    }
-  };
+  const menuCtx: MenuContext = { session, patchUi, typeInto: (b) => typeInto(b), askForName: (k, p) => askForName(k, p), openFolder: (dir) => openFolder(dir), runUiAction: (a) => runUiAction(a), write };
+  const runMenu = (menu: MenuKind, index: number): void => runMenuOption(menuCtx, menu, index);
 
   const submit = (text: string, urgent = false): void => {
     const latest = session.store.getState();
+    // While Claude waits on a question in this conversation, what you type here is your answer.
+    const question = latest.questions[0];
+    if (question && question.channel === channelOf(latest.view) && !text.startsWith('/')) {
+      answerTyped(session, question, text);
+      return;
+    }
     if (latest.view.kind === 'draft' && ctl && !text.startsWith('/')) {
       void ctl.startChat(latest.view.projectId, text, latest.view.dir);
+      return;
+    }
+    if (latest.view.kind === 'draft_worktree' && ctl && !text.startsWith('/')) {
+      void ctl.startWorktree(latest.view.projectId, text, (prompt) => session.nameTask(prompt));
       return;
     }
     const pending = uiRef.current.pending;
@@ -521,9 +395,14 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         if (review && count) void ctl?.selectFile(Math.max(0, Math.min(count - 1, review.selected + effect.delta)));
         return;
       }
+      case 'question_number': {
+        const q = session.store.getState().questions[0];
+        if (q) answerByNumber(session, q, effect.n);
+        return;
+      }
       case 'cancel_draft': {
         const latest = session.store.getState();
-        if (latest.view.kind === 'draft') session.store.dispatch({ type: 'view', view: latest.view.back });
+        if (latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree') session.store.dispatch({ type: 'view', view: latest.view.back });
         return;
       }
       case 'review_scroll': {
@@ -606,6 +485,12 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         return;
       case 'invite':
         void session.copyInvite();
+        return;
+      case 'clear':
+        patchUi({ menu: { menu: { kind: 'clear', channel: view(latest, current).channel, host: session.isHost }, selected: 0 } });
+        return;
+      case 'share-folder':
+        patchUi({ menu: { menu: { kind: 'share_folder', launchDir: session.launchDir, mine: session.myShares }, selected: 0 } });
         return;
       case 'help':
         session.store.dispatch({ type: 'overlay', overlay: 'help' });
@@ -761,7 +646,8 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         headerItems: dd.headerItems,
         mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || latest.view.kind === 'overview',
         filesVisible: latest.view.kind === 'files' || (latest.view.kind === 'workspace' && latest.view.tab === 'files'),
-        draft: latest.view.kind === 'draft',
+        draft: latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree',
+        questionOptions: latest.questions[0]?.channel === dd.channel ? (currentQuestion(latest.questions[0])?.options.length ?? 0) : 0,
       });
       setUi(result.ui);
       if (result.effect) run(result.effect);
@@ -819,6 +705,23 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         }
         return <ChatView state={state} channel={d.channel} title={`Claude in ${ws.name}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />;
       }
+      case 'shared': {
+        const w = d.shared;
+        if (!w) return <Panel title="Shared workspace" width={paneW} height={g.paneHeight}>{null}</Panel>;
+        if (state.view.tab === 'files') {
+          return (
+            <>
+              <FilesPanel state={state} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'files'} title={`${w.name} files`} />
+              {viewer}
+            </>
+          );
+        }
+        return <ChatView state={state} channel={d.channel} title={`${w.name} · with ${state.peers.find((p) => p.peerId === w.owner)?.name ?? 'owner'}'s Claude`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />;
+      }
+      case 'draft_worktree': {
+        const project = state.projects.find((p) => p.id === (state.view as { projectId: string }).projectId);
+        return <ChatView state={state} channel="draft" title={`New worktree in ${project?.name ?? 'project'} · from the latest origin`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={0} frame={frame} />;
+      }
       case 'draft': {
         const where = state.view.dir ?? state.projects.find((p) => p.id === (state.view as { projectId: string }).projectId)?.root ?? '';
         return <ChatView state={state} channel="draft" title={`New Claude chat · ${where.replace(os.homedir(), '~')}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={0} frame={frame} />;
@@ -833,8 +736,14 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     }
   };
 
-  const placeholder = state.view.kind === 'draft'
+  const placeholder = state.questions[0] && state.questions[0].channel === d.channel
+    ? state.questions[0].question.kind === 'plan'
+      ? 'Approve the plan above, or type what to change and press Enter'
+      : 'Type your own answer and press Enter, or pick an option above'
+    : state.view.kind === 'draft'
     ? 'Ask Claude anything… your first message starts the chat · Esc to cancel'
+    : state.view.kind === 'draft_worktree'
+    ? 'Describe the task… Enter creates the worktree and starts Claude · Esc to cancel'
     : ui.pending
     ? `Name for the new ${ui.pending.kind} in ${state.projects.find((p) => p.id === ui.pending?.projectId)?.name ?? 'the project'} · Enter to create · Esc to cancel`
     : d.workspace
@@ -876,6 +785,11 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         )}
       </Box>
       <ApprovalCard approvals={state.approvals} width={columns} />
+      {d.question ? (
+        <Box borderStyle="round" borderColor={theme.info} paddingX={1} width={columns} flexDirection="column">
+          <ModelBlock lines={d.question.lines} height={d.question.lines.length} />
+        </Box>
+      ) : null}
       <Composer
         width={columns}
         buffer={ui.buffer}

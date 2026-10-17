@@ -3,9 +3,10 @@ import { buildPrompt, buildSystemAppend, summarizeTool } from './prompt.js';
 import { DENY_REASON, decideTool } from './policy.js';
 import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
 import { SubAgentTracker } from './subagents.js';
+import { nameTask } from './namer.js';
 import { createRoomTools } from './tools.js';
 import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
-import type { Usage } from '../protocol.js';
+import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
 const DEFAULT_CONTEXT_WINDOW = 200_000;
@@ -21,6 +22,14 @@ export interface ClaudeBackendOptions {
 }
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+/** Tools that talk to the person instead of touching anything: answered through askUser, not approvals. */
+const INTERACTIVE = new Set(['AskUserQuestion', 'ExitPlanMode']);
+
+/** Claude's AskUserQuestion input → our question card (unknown shapes are dropped safely). */
+export function toQuestion(input: Record<string, unknown>): ClaudeQuestion | undefined {
+  const parsed = ClaudeQuestion.safeParse({ kind: 'question', questions: input.questions });
+  return parsed.success ? parsed.data : undefined;
+}
 
 /**
  * Runs turns through the Claude Agent SDK, which drives the local Claude Code
@@ -52,7 +61,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         resume: place ? place.resume : sessionId,
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
-        permissionMode: autoEdit ? 'acceptEdits' : 'default',
+        permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
         mcpServers: { klaude: roomTools },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
@@ -62,6 +71,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
               hooks: [
                 async (hookInput) => {
                   if (hookInput.hook_event_name !== 'PreToolUse') return {};
+                  if (INTERACTIVE.has(hookInput.tool_name)) return {}; // answered in canUseTool
                   const toolInput = (hookInput.tool_input ?? {}) as Record<string, unknown>;
                   const decision = decideTool(hookInput.tool_name, toolInput, policy);
                   if (decision === 'allow') return {};
@@ -80,6 +90,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(opts.model ? { model: opts.model } : {}),
         ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
         canUseTool: async (toolName, toolInput) => {
+          if (toolName === 'AskUserQuestion') return answerQuestion(toolInput);
+          if (toolName === 'ExitPlanMode') return reviewPlan(toolInput);
           const decision = decideTool(toolName, toolInput, policy);
           if (decision === 'deny') return { behavior: 'deny', message: DENY_REASON };
           if (decision === 'allow' || (await input.canUseTool(toolName, toolInput))) return { behavior: 'allow', updatedInput: toolInput };
@@ -87,9 +99,30 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         },
       };
 
+      let lastText = '';
+      const ask = async (question: ClaudeQuestion): Promise<ClaudeAnswer> => (input.askUser ? input.askUser(question) : { kind: 'skip' });
+      const answerQuestion = async (toolInput: Record<string, unknown>) => {
+        const question = toQuestion(toolInput);
+        const answer = question ? await ask(question) : ({ kind: 'skip' } as const);
+        if (answer.kind === 'answers') return { behavior: 'allow' as const, updatedInput: { ...toolInput, answers: answer.answers } };
+        return { behavior: 'deny' as const, message: 'The user skipped this question. Continue with your best judgment and say what you assumed.' };
+      };
+      const reviewPlan = async (toolInput: Record<string, unknown>) => {
+        const plan = typeof toolInput.plan === 'string' && toolInput.plan.trim() ? toolInput.plan : lastText || '(Claude proposed a plan)';
+        const answer = await ask({ kind: 'plan', plan: plan.slice(0, 60_000) });
+        if (answer.kind === 'plan' && answer.approve) {
+          // Approved: leave plan mode so Claude can do the work.
+          await q.setPermissionMode(autoEdit ? 'acceptEdits' : 'default').catch(() => undefined);
+          return { behavior: 'allow' as const, updatedInput: toolInput };
+        }
+        const feedback = answer.kind === 'plan' && answer.feedback ? `The user wants changes to the plan: ${answer.feedback}` : 'The user did not approve the plan yet. Ask what they would like to change.';
+        return { behavior: 'deny' as const, message: feedback };
+      };
+
       let final = '';
       let contextUsed = 0;
-      for await (const msg of query({ prompt: buildPrompt(input), options })) {
+      const q = query({ prompt: buildPrompt(input), options });
+      for await (const msg of q) {
         if (msg.type === 'system' && msg.subtype === 'init') remember(msg.session_id);
         if (msg.type === 'rate_limit_event') {
           const update = fromRateLimitEvent(msg.rate_limit_info);
@@ -115,7 +148,10 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         }
         if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {
           for (const block of msg.message.content) {
-            if (block.type === 'text' && block.text.trim()) input.onEvent('text', block.text.trim());
+            if (block.type === 'text' && block.text.trim()) {
+              lastText = block.text.trim();
+              input.onEvent('text', lastText);
+            }
             if (block.type === 'tool_use' && !subagents.isLaunch(block)) {
               const toolInput = (block.input ?? {}) as Record<string, unknown>;
               input.onEvent('tool', summarizeTool(block.name, toolInput, cwd));
@@ -135,6 +171,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       }
       return final;
     },
+
+    nameTask: (prompt: string) => nameTask(prompt, { cwd: opts.cwd, claudePath: opts.claudePath }),
 
     /**
      * Read plan usage without sending a prompt: open a session whose input never

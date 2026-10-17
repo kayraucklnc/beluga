@@ -1,4 +1,4 @@
-import type { FsEntry, PeerInfo, Usage } from '../protocol.js';
+import type { ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
 
 /** How far a request may reach on the owner's computer. */
 export type AccessScope = 'folder' | 'full';
@@ -18,6 +18,10 @@ export interface AgentRunInput {
   readonly onFileTouched: (absPath: string) => void;
   /** Ask the owner whether a non-preapproved tool may run. */
   readonly canUseTool: (toolName: string, input: Record<string, unknown>) => Promise<boolean>;
+  /** Ask the person who made the request: Claude's questions, or a plan to approve. */
+  readonly askUser?: (question: ClaudeQuestion) => Promise<ClaudeAnswer>;
+  /** Plan first (read-only investigation, then a plan to approve) instead of acting right away. */
+  readonly plan?: boolean;
 }
 
 export interface AgentPlace {
@@ -46,6 +50,8 @@ export interface AgentBackend {
   run(input: AgentRunInput): Promise<string>;
   /** Fetch current plan usage without running a turn, when supported. */
   refreshUsage?(): Promise<Usage | undefined>;
+  /** A short worktree name for a task (a small model names it). */
+  nameTask?(prompt: string): Promise<string>;
 }
 
 /** What an agent may do to the room, exposed to it as MCP tools. */

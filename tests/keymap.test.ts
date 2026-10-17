@@ -158,8 +158,15 @@ describe('keymap: panels', () => {
     expect(key(right, { leftArrow: true }, '', c).ui.headerCursor).toBe(0);
     expect(key(right, { return: true }, '', c).effect).toEqual({ type: 'ui_action', action: { type: 'ws', id: 'w', action: 'merge' } });
     expect(key(h, {}, 'x', c).ui).toMatchObject({ focus: 'chat', buffer: 'x' });
-    expect(key(initialUi, { tab: true }, '', c).ui.focus).toBe('projects');
-    expect(key({ ...initialUi, focus: 'projects' }, { tab: true }, '', c).ui.focus).toBe('header');
+    // Tab from the composer lands on the first button, walks every button, then moves on
+    const first = key(initialUi, { tab: true }, '', c).ui;
+    expect(first).toMatchObject({ focus: 'header', headerCursor: 0 });
+    const second = key(first, { tab: true }, '', c).ui;
+    expect(second).toMatchObject({ focus: 'header', headerCursor: 1 });
+    expect(key(second, { tab: true }, '', c).ui.focus).toBe('projects');
+    expect(key(second, { tab: true, shift: true }, '', c).ui.headerCursor).toBe(0);
+    // Shift+Tab from the projects comes back to the last button
+    expect(key({ ...initialUi, focus: 'projects' }, { tab: true, shift: true }, '', c).ui).toMatchObject({ focus: 'header', headerCursor: 1 });
   });
 
   it('Esc cancels naming a new worktree', () => {
@@ -279,5 +286,12 @@ describe('keymap: queue or send now', () => {
     expect(handleKey(typed, '', { return: true }, ctx).effect).toEqual({ type: 'submit', text: 'fix it' });
     expect(handleKey(typed, '', { return: true, meta: true }, ctx).effect).toEqual({ type: 'submit', text: 'fix it', urgent: true });
     expect(handleKey(typed, '', { return: true, ctrl: true }, ctx).effect).toEqual({ type: 'submit', text: 'fix it', urgent: true });
+  });
+
+  it('types @ from Option chords when the terminal sends Option as Meta (Turkish, German, Spanish Macs)', () => {
+    expect(key(initialUi, { meta: true }, 'q').ui.buffer).toBe('@');
+    expect(key(initialUi, { meta: true }, 'l').ui.buffer).toBe('@');
+    expect(key(initialUi, { meta: true }, '2').ui.buffer).toBe('@');
+    expect(key(initialUi, {}, 'q').ui.buffer).toBe('q');
   });
 });

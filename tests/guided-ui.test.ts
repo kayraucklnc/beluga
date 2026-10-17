@@ -42,18 +42,18 @@ describe('menus', () => {
 
   it('offers actions for a friend', () => {
     const spec = personMenu(room(), 1)!;
-    expect(spec.options.map((o) => o.id)).toEqual(['ask', 'access-full', 'follow', 'browse', 'fulltrust', 'trust']);
+    expect(spec.options.map((o) => o.id)).toEqual(['ask', 'person-invite-ws', 'person-share', 'access-full', 'follow', 'browse', 'fulltrust', 'trust']);
     const followed = reduce(reduce(room(), { type: 'follow', peerId: 'b' }), { type: 'trust', peerId: 'b', trusted: true });
-    expect(personMenu(followed, 1)!.options.map((o) => o.id)).toEqual(['ask', 'access-full', 'unfollow', 'browse', 'fulltrust', 'untrust']);
+    expect(personMenu(followed, 1)!.options.map((o) => o.id)).toEqual(['ask', 'person-invite-ws', 'person-share', 'access-full', 'unfollow', 'browse', 'fulltrust', 'untrust']);
     expect(personMenu(reduce(room(), { type: 'full_trust', peerId: 'b', trusted: true }), 1)!.options.map((o) => o.id)).toContain('unfulltrust');
-    expect(personMenu(room(), 2)!.options.map((o) => o.id)).toEqual(['access-full', 'follow', 'fulltrust', 'trust']); // no Claude, no shares
+    expect(personMenu(room(), 2)!.options.map((o) => o.id)).toEqual(['person-invite-ws', 'person-share', 'access-full', 'follow', 'fulltrust', 'trust']); // no Claude, no shares
     expect(personMenu(room(), 9)).toBeUndefined();
   });
 
   it('offers your own actions', () => {
-    expect(personMenu(room(), 0)!.options.map((o) => o.id)).toEqual(['ask-self', 'sharing', 'settings']);
+    expect(personMenu(room(), 0)!.options.map((o) => o.id)).toEqual(['ask-self', 'share-folder', 'leave-room', 'sharing', 'settings']);
     const withInvite = reduce(room(), { type: 'invite', invite: 'https://x#y' });
-    expect(menuSpec(withInvite, { kind: 'person', index: 0 })!.options.map((o) => o.id)).toEqual(['ask-self', 'invite', 'sharing', 'settings']);
+    expect(menuSpec(withInvite, { kind: 'person', index: 0 })!.options.map((o) => o.id)).toEqual(['ask-self', 'share-folder', 'invite', 'leave-room', 'sharing', 'settings']);
     expect(menuSpec(room(), { kind: 'settings' })!.options.map((o) => o.id)).toEqual(['set-name', 'set-theme', 'set-policy', 'set-self-approval', 'set-mouse', 'set-tunnel', 'size-in', 'size-out', 'size-reset', 'close']);
     expect(menuSpec(room(), { kind: 'welcome' })?.title).toContain('Welcome');
   });
@@ -62,9 +62,9 @@ describe('menus', () => {
 describe('action bar', () => {
   it('shows what you can do in each panel', () => {
     const s = room();
-    expect(actionButtons('chat', s, false).map((b) => b.id)).toEqual(['ask', 'commands', 'projects', 'invite', 'settings', 'help']);
+    expect(actionButtons('chat', s, false).map((b) => b.id)).toEqual(['ask', 'commands', 'projects', 'invite', 'share-folder', 'clear', 'settings', 'help']);
     expect(actionButtons('chat', s, false).find((b) => b.id === 'invite')?.text).toBe('Invite friends');
-    expect(actionButtons('chat', reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w', tab: 'chat' } }), false).map((b) => b.id)).toEqual(['actions', 'review', 'overview', 'settings', 'help']);
+    expect(actionButtons('chat', reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w', tab: 'chat' } }), false).map((b) => b.id)).toEqual(['actions', 'review', 'overview', 'clear', 'settings', 'help']);
     expect(actionButtons('projects', s, false).map((b) => b.id)).toEqual(['open-project-item', 'overview', 'chat']);
     expect(actionButtons('main', s, false).map((b) => b.id)).toContain('review-claude');
     expect(actionButtons('main', reduce(s, { type: 'view', view: { kind: 'overview' } }), false).map((b) => b.id)).toEqual(['scroll', 'chat']);

@@ -4,7 +4,7 @@ import { initialState, reduce, channelOf, type AppState } from '../src/core/stor
 import { derive } from '../src/ui/derive.js';
 import { initialUi } from '../src/ui/keymap.js';
 import { activityOf, contextMeter, isCompacting, isProjectOpen, overviewModel, projectsModel, reviewModel, stateOf, tabsModel, toggleProject, workspaceHeaderModel } from '../src/ui/workspace-models.js';
-import { confirmMenu } from '../src/ui/menus.js';
+import { agentsMenu, confirmMenu } from '../src/ui/menus.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
 const text = (lines: readonly (readonly { text: string }[])[]) => lines.map((l) => l.map((s) => s.text).join(''));
@@ -299,5 +299,32 @@ describe('confirm dialogs', () => {
     expect(confirmMenu(s, 'delete', 'w1')!.options.map((o) => o.id)).toEqual(['confirm-delete-env', 'confirm-delete', 'close']);
     expect(confirmMenu(base(), 'archive', 'main')!.options.map((o) => o.id)).toEqual(['confirm-archive', 'close']);
     expect(confirmMenu(base(), 'archive', 'nope')).toBeUndefined();
+  });
+});
+
+describe('worktrees made by other tools', () => {
+  const crowded: Project = {
+    ...project,
+    workspaces: [
+      ...project.workspaces,
+      ...Array.from({ length: 5 }, (_, i) => ws({ id: `a${i}`, name: `agent-a${i}`, path: `/p/.claude/worktrees/agent-a${i}`, external: true, status: { changed: i % 2, ahead: 0, behind: 0 } })),
+      ws({ id: 'x1', name: 'berlin', path: '/elsewhere/berlin', external: true }),
+    ],
+  };
+  const s = reduce(initialState('room'), { type: 'projects', projects: [crowded] });
+
+  it('folds Claude Code agent worktrees and other tools\' worktrees into their own groups', () => {
+    const lines = text(projectsModel(s, new Set(['open:p1']), 0, 40).lines);
+    expect(lines.some((l) => l.includes('▸ Claude Code agents 5'))).toBe(true);
+    expect(lines.some((l) => l.includes('▸ Other worktrees 1'))).toBe(true);
+    expect(lines.some((l) => l.includes('agent-a0'))).toBe(false);
+    const open = text(projectsModel(s, new Set(['open:p1', 'agents:p1']), 0, 40).lines);
+    expect(open.filter((l) => l.includes('agent-a')).length).toBe(5);
+  });
+
+  it('keeps agent worktrees out of the overview and offers to clean up finished ones', () => {
+    expect(text(overviewModel(s, 0, 100).lines).some((l) => l.includes('agent-a'))).toBe(false);
+    const menu = agentsMenu(s, 'p1');
+    expect(menu?.options[0]?.label).toBe('Remove 3 finished worktrees');
   });
 });

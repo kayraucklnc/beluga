@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** Wire protocol version. Bump on breaking changes. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export const MAX_TEXT = 64_000;
 export const MAX_FILE_BYTES = 512 * 1024;
@@ -42,7 +42,8 @@ export const Profile = z.object({
 });
 export type Profile = z.infer<typeof Profile>;
 
-export const PeerInfo = Profile.extend({ peerId: shortStr });
+/** `host` is set by the hub (never by the peer) for the person whose computer runs the room. */
+export const PeerInfo = Profile.extend({ peerId: shortStr, host: z.boolean().optional() });
 export type PeerInfo = z.infer<typeof PeerInfo>;
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,8 @@ export const AgentRequestBody = z.object({
   channel: Channel,
   /** Interrupt whatever the agent is doing and handle this now (instead of queueing). */
   urgent: z.boolean().default(false),
+  /** Plan first: Claude investigates read-only and proposes a plan for you to approve. */
+  plan: z.boolean().default(false),
 });
 
 export const AgentEventKind = z.enum([
@@ -170,7 +173,73 @@ export const ReportBody = z.object({
   title: z.string().max(200),
 });
 
+/** The host cleared the group chat for everyone. */
+export const RoomClearedBody = z.object({ kind: z.literal('room_cleared') });
+
+// ---- Claude asking the person who asked it (questions, plans to approve) ----
+
+const QuestionOption = z.object({ label: z.string().max(200), description: z.string().max(1000).default('') });
+export const ClaudeQuestion = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('question'),
+    questions: z
+      .array(z.object({ question: z.string().max(1000), header: z.string().max(40).default(''), options: z.array(QuestionOption).max(6), multiSelect: z.boolean().default(false) }))
+      .min(1)
+      .max(4),
+  }),
+  z.object({ kind: z.literal('plan'), plan: z.string().max(MAX_TEXT) }),
+]);
+export type ClaudeQuestion = z.infer<typeof ClaudeQuestion>;
+
+export const ClaudeAnswer = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('answers'), answers: z.record(z.string().max(1000), z.string().max(4000)) }),
+  z.object({ kind: z.literal('plan'), approve: z.boolean(), feedback: z.string().max(4000).default('') }),
+  z.object({ kind: z.literal('skip') }),
+]);
+export type ClaudeAnswer = z.infer<typeof ClaudeAnswer>;
+
+export const AgentQuestionBody = z.object({
+  kind: z.literal('agent_question'),
+  requestId: shortStr,
+  qid: shortStr,
+  channel: Channel,
+  question: ClaudeQuestion,
+});
+export const AgentAnswerBody = z.object({ kind: z.literal('agent_answer'), qid: shortStr, answer: ClaudeAnswer });
+
+// ---- Sharing one workspace (its chat and folder) with people in the room ----
+
+export const WsRole = z.enum(['view', 'contribute']);
+export type WsRole = z.infer<typeof WsRole>;
+
+/** Owner → invitee: you're in. Carries what the workspace is, recent history, and its folder share. */
+export const WsInviteBody = z.object({
+  kind: z.literal('ws_invite'),
+  ws: z.object({ id: z.string().regex(/^[\w:.-]{1,80}$/), name: z.string().max(80), project: z.string().max(80), branch: z.string().max(200).optional() }),
+  role: WsRole,
+  share: z.string().regex(/^[\w.-]{1,64}$/),
+  history: z.array(z.object({ from: shortStr, text: z.string().max(8000), ts: z.number(), byAgent: z.boolean() })).max(80),
+});
+/** Owner → everyone in the workspace: who's in it now. */
+export const WsRosterBody = z.object({
+  kind: z.literal('ws_roster'),
+  id: z.string().regex(/^[\w:.-]{1,80}$/),
+  members: z.array(z.object({ peerId: shortStr, role: WsRole })).max(32),
+});
+/** Either way: the owner removed you, or you left. */
+export const WsLeaveBody = z.object({ kind: z.literal('ws_leave'), id: z.string().regex(/^[\w:.-]{1,80}$/) });
+
+/** A folder shared with only you (or no longer). Folders shared with everyone are in the profile instead. */
+export const ShareOfferBody = z.object({ kind: z.literal('share_offer'), name: z.string().regex(/^[\w.-]{1,64}$/), writable: z.boolean(), active: z.boolean() });
+
 export const Body = z.discriminatedUnion('kind', [
+  RoomClearedBody,
+  ShareOfferBody,
+  AgentQuestionBody,
+  AgentAnswerBody,
+  WsInviteBody,
+  WsRosterBody,
+  WsLeaveBody,
   ChatBody,
   FocusBody,
   AgentRequestBody,
@@ -200,7 +269,11 @@ export const ChallengeFrame = z.object({ t: z.literal('challenge'), v: z.number(
 export const HelloFrame = z.object({
   t: z.literal('hello'),
   peerId: shortStr,
+  /** HMAC with the invite key: proves you hold the invite. */
   proof: z.string(),
+  /** Your public key and a signature of the challenge: proves the peer id is yours. */
+  pub: z.string().max(200),
+  sig: z.string().max(200),
   box: Box,
 });
 export const WelcomeFrame = z.object({
@@ -219,6 +292,8 @@ export const MsgFrame = z.object({
 });
 export type MsgFrame = z.infer<typeof MsgFrame>;
 export const ErrorFrame = z.object({ t: z.literal('error'), message: z.string() });
+/** The host replaced the invite: members get the new secret (sealed with the room key) so they can reconnect. */
+export const RekeyFrame = z.object({ t: z.literal('rekey'), box: Box });
 
 export const Frame = z.discriminatedUnion('t', [
   ChallengeFrame,
@@ -227,16 +302,23 @@ export const Frame = z.discriminatedUnion('t', [
   PeersFrame,
   MsgFrame,
   ErrorFrame,
+  RekeyFrame,
 ]);
 export type Frame = z.infer<typeof Frame>;
 
 export const WelcomePayload = z.object({
   room: z.string().max(64).optional(),
+  /** The room's message key, when it differs from the key your invite derives (after the invite was replaced). */
+  roomKey: z.string().max(64).optional(),
+  /** The current invite secret, when you came back with an older one (you were away when it changed). */
+  secret: z.string().regex(/^[\w-]{16,256}$/).optional(),
   peers: z.array(PeerInfo),
   history: z.array(MsgFrame),
 });
 
 /** Parse untrusted JSON text into a frame, returning null if malformed. */
+export const RekeyPayload = z.object({ secret: z.string().regex(/^[\w-]{16,256}$/) });
+
 export function parseFrame(raw: string): Frame | null {
   try {
     const result = Frame.safeParse(JSON.parse(raw));
