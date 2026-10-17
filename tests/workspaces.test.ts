@@ -228,3 +228,10 @@ describe('helpers', () => {
     ]);
   });
 });
+
+describe('case-insensitive disks', () => {
+  it('scans a folder once even when listed with different letter case', () => {
+    const roots = [path.join(base, 'code'), path.join(base, 'CODE'), path.join(base, 'code')];
+    expect(findProjects(roots)).toEqual([repo]);
+  });
+});

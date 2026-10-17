@@ -15,10 +15,13 @@ export const slug = (s: string): string =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 40) || 'workspace';
 
-/** Resolve symlinks (macOS /var → /private/var) so paths from git and from us compare equal. */
+/**
+ * Canonical path: resolves symlinks (macOS /var → /private/var) and, via the native call,
+ * the on-disk letter case, so ~/projects and ~/Projects on a case-insensitive disk are one folder.
+ */
 export const real = (p: string): string => {
   try {
-    return realpathSync(p);
+    return realpathSync.native(p);
   } catch {
     return path.resolve(p);
   }
