@@ -47,6 +47,8 @@ export type UiAction =
   | { readonly type: 'ws'; readonly id: string; readonly action: WorkspaceAction }
   | { readonly type: 'review_file'; readonly index: number }
   | { readonly type: 'plan_toggle'; readonly channel: string }
+  /** Open (or close) Claude's proposed plan full screen. */
+  | { readonly type: 'plan_full'; readonly qid?: string }
   | { readonly type: 'open_shared'; readonly owner: string; readonly id: string; readonly tab?: 'chat' | 'files' }
   | { readonly type: 'shared_menu'; readonly owner: string; readonly id: string }
   /** Answer a question card: pick an option, skip, approve or revise a plan, or finish a multi-select. */

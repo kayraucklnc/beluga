@@ -31,6 +31,9 @@ export interface UiState {
   readonly viewerFull: boolean;
   /** Show Markdown as source instead of rendered. */
   readonly viewerRaw: boolean;
+  /** Claude's plan open full screen (question id), and how far it's scrolled. */
+  readonly planFull?: string;
+  readonly planScroll: number;
   /** Keyboard cursor in the Projects tree (index into its clickable rows). */
   readonly projectsCursor: number;
   /** Keyboard cursor over the workspace's action buttons (Chat/Files/Diff, Review, Merge…). */
@@ -112,6 +115,10 @@ export interface KeyContext {
   readonly questionOptions?: number;
   /** Where the top bar's keyboard cursor starts (the workspace's own buttons, past the tabs). */
   readonly headerStart?: number;
+  /** Claude is waiting on a plan (Ctrl+F opens it full screen); its id. */
+  readonly planId?: string;
+  /** How far the full-screen plan can scroll. */
+  readonly planMaxScroll?: number;
 }
 
 export interface KeyResult {
@@ -132,6 +139,7 @@ export const initialUi: UiState = {
   overlayScroll: 0,
   peopleCursor: 0,
   viewerFull: false,
+  planScroll: 0,
   viewerRaw: false,
   projectsCursor: 0,
   headerCursor: 0,
@@ -361,6 +369,14 @@ export function handleKey(raw: UiState, rawInput: string, rawKey: KeyInfo, ctx: 
     return { ui, effect: { type: 'approve', answer } };
   }
   if (ui.menu) return handleMenu(ui, ui.menu, input, key, ctx);
+  // Claude's plan, full screen: scroll it, close it, or keep typing what to change.
+  if (ctx.planId && key.ctrl && input === 'f') return { ui: { ...ui, planFull: ui.planFull ? undefined : ctx.planId, planScroll: 0, focus: 'chat' } };
+  if (ui.planFull && ctx.planId === ui.planFull) {
+    const max = ctx.planMaxScroll ?? 0;
+    const step = key.upArrow ? -1 : key.downArrow ? 1 : key.pageUp ? -Math.max(1, ctx.page - 2) : key.pageDown ? Math.max(1, ctx.page - 2) : 0;
+    if (step) return { ui: { ...ui, planScroll: Math.min(max, Math.max(0, ui.planScroll + step)) } };
+    if (key.escape) return { ui: { ...ui, planFull: undefined, planScroll: 0 } };
+  }
   if (ctx.overlay) {
     if (key.escape || key.return || input === 'q') return { ui: { ...ui, overlayScroll: 0 }, effect: { type: 'close_overlay' } };
     const delta = key.upArrow ? -1 : key.downArrow ? 1 : key.pageUp ? -ctx.page : key.pageDown ? ctx.page : 0;

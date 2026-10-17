@@ -123,7 +123,7 @@ Worktrees made by other tools (Conductor, Claude Code) show their latest Claude 
 
 When Claude needs a decision, a card appears above the box you type in:
 - **A question**: click an option, press its number, or type your own answer and press Enter. **Skip** lets Claude decide.
-- **A plan**: press **Shift+Tab** in a conversation to turn on plan mode (shown on the right of the input box). Claude then investigates read-only and proposes a plan: **Approve plan** lets it start, or type what to change.
+- **A plan**: press **Shift+Tab** in a conversation to turn on plan mode (shown on the right of the input box). Claude then investigates read-only and proposes a plan: **Approve plan** lets it start, or type what to change. **⛶ Full screen** (or **Ctrl+F**) opens the whole plan, scrollable.
 
 Questions go to whoever asked Claude, even when it's a friend's Claude on their computer. Unanswered questions time out after 5 minutes, so nothing waits forever.
 

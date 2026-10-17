@@ -55,13 +55,14 @@ export function questionModel(state: AppState, q: PendingQuestion, width: number
   if (q.question.kind === 'plan') {
     const rendered = renderMarkdownAnsi(q.question.plan, inner - 2).map(ansiToLine);
     for (const l of rendered.slice(0, PLAN_LINES)) lines.push(truncate([{ text: '  ' }, ...l], inner));
-    if (rendered.length > PLAN_LINES) lines.push(plain(`  … ${rendered.length - PLAN_LINES} more lines (the full plan is in the chat)`, { color: theme.muted }));
+    if (rendered.length > PLAN_LINES) lines.push(plain(`  … ${rendered.length - PLAN_LINES} more lines: open it full screen (Ctrl+F)`, { color: theme.muted }));
     lines.push([]);
     lines.push(
       buttonRow(
         [
           { label: '✓ Approve plan', color: theme.ok, action: { type: 'answer', qid: q.qid, pick: 'approve' }, hint: 'Claude starts doing the work' },
           { label: 'Keep planning', color: theme.muted, action: { type: 'answer', qid: q.qid, pick: 'revise' }, hint: "Claude won't change anything yet. Type what to change and press Enter" },
+          { label: '⛶ Full screen', color: theme.info, action: { type: 'plan_full', qid: q.qid }, hint: 'Read the whole plan full screen (Ctrl+F)' },
         ],
         lines.length,
         zones,
@@ -102,6 +103,37 @@ export function questionModel(state: AppState, q: PendingQuestion, width: number
   );
   lines.push(plain(current.multiSelect ? '  click options to select, or type your own answer and press Enter' : `  press ${current.options.length > 1 ? `1–${current.options.length}` : '1'}, click, or type your own answer and press Enter`, { color: theme.muted }));
   return { lines, zones };
+}
+
+/**
+ * Claude's plan, full screen: the whole thing, scrollable, with Approve / Keep planning
+ * always visible at the bottom. Returns lines for a box `height` rows tall.
+ */
+export function planFullModel(state: AppState, q: PendingQuestion, width: number, height: number, scroll: number): Model & { maxScroll: number } {
+  const zones: Zone[] = [];
+  const plan = q.question.kind === 'plan' ? q.question.plan : '';
+  const body = renderMarkdownAnsi(plan, Math.max(20, width - 2)).map(ansiToLine);
+  const room = Math.max(1, height - 3);
+  const maxScroll = Math.max(0, body.length - room);
+  const top = Math.min(Math.max(0, scroll), maxScroll);
+  const lines: Line[] = body.slice(top, top + room).map((l) => truncate([{ text: ' ' }, ...l], width));
+  while (lines.length < room) lines.push([]);
+  const more = maxScroll ? `${top > 0 ? '↑' : ' '}${top < maxScroll ? '↓' : ' '} ${Math.round(((top + room) / Math.max(room, body.length)) * 100)}% · ↑↓ PgUp PgDn` : '';
+  lines.push(more ? plain(` ${more}`, { color: theme.muted }) : []);
+  lines.push(
+    buttonRow(
+      [
+        { label: '✓ Approve plan', color: theme.ok, action: { type: 'answer', qid: q.qid, pick: 'approve' }, hint: 'Claude starts doing the work' },
+        { label: 'Keep planning', color: theme.muted, action: { type: 'answer', qid: q.qid, pick: 'revise' }, hint: "Claude won't change anything yet. Type what to change and press Enter" },
+        { label: 'Close', color: theme.muted, action: { type: 'plan_full' }, hint: 'Back to the card (Esc)' },
+      ],
+      lines.length,
+      zones,
+      1,
+    ),
+  );
+  lines.push(plain(` ${whoAsks(state, q)} proposes this plan · type below what to change and press Enter`, { color: theme.muted }));
+  return { lines: lines.slice(0, height), zones, maxScroll };
 }
 
 /** SHARED WITH ME: workspaces friends invited you into. */

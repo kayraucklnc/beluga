@@ -324,8 +324,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     const latest = session.store.getState();
     // While Claude waits on a question in this conversation, what you type here is your answer.
     const question = latest.questions[0];
-    if (question && question.channel === channelOf(latest.view) && !text.startsWith('/')) {
+    if (question && (question.channel === channelOf(latest.view) || uiRef.current.planFull === question.qid) && !text.startsWith('/')) {
       answerTyped(session, question, text);
+      patchUi({ planFull: undefined, planScroll: 0 });
       return;
     }
     if (latest.view.kind === 'draft' && ctl && !text.startsWith('/')) {
@@ -659,6 +660,8 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         filesVisible: latest.view.kind === 'files' || (latest.view.kind === 'workspace' && latest.view.tab === 'files'),
         draft: latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree',
         headerStart: dd.headerStart,
+        planId: dd.planId,
+        planMaxScroll: dd.planMaxScroll,
         questionOptions: latest.questions[0]?.channel === dd.channel ? (currentQuestion(latest.questions[0])?.options.length ?? 0) : 0,
       });
       setUi(result.ui);
@@ -768,7 +771,11 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     <Box flexDirection="column" width={columns} height={rows}>
       <Header state={state} width={columns} />
       <Box height={g.bodyHeight}>
-        {fullscreen ? (
+        {d.planFull ? (
+          <Panel title="Claude's plan" right="Esc closes · Ctrl+F" width={columns} height={g.bodyHeight} focused>
+            <ModelBlock lines={d.planFull.lines} height={g.bodyHeight - 2} />
+          </Panel>
+        ) : fullscreen ? (
           <Viewer state={state} width={columns} height={g.bodyHeight} focused raw={ui.viewerRaw} full />
         ) : (
           <>

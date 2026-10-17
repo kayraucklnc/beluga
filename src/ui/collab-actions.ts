@@ -166,6 +166,10 @@ export function runCollabUiAction(ctx: MenuContext, action: UiAction): boolean {
   switch (action.type) {
     case 'answer':
       answerQuestion(session, action);
+      if (action.pick === 'approve' || action.pick === 'revise') patchUi({ planFull: undefined, planScroll: 0 });
+      return true;
+    case 'plan_full':
+      patchUi({ planFull: action.qid, planScroll: 0, focus: 'chat' });
       return true;
     case 'plan_toggle':
       session.setPlanMode(action.channel, !session.store.getState().planMode[action.channel]);
