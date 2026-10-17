@@ -130,7 +130,7 @@ export class Notifier {
 
   /** Raise a notification directly (pull requests, setup scripts, handoffs). */
   notify(event: NoticeEvent): void {
-    this.handle([event], this.deps.store.getState());
+    this.handle([event], this.deps.store.getState(), true);
   }
 
   private onChange(): void {
@@ -150,13 +150,16 @@ export class Notifier {
     if (state.inbox.some((n) => !n.read && n.channel === channel)) this.deps.store.dispatch({ type: 'notice_read', channel });
   }
 
-  private handle(events: readonly NoticeEvent[], state: AppState): void {
+  private handle(events: readonly NoticeEvent[], state: AppState, direct = false): void {
     const prefs = state.prefs.notify;
     const visible = channelOf(state.view);
     for (const e of events) {
       if (!enabled(prefs, e.kind)) continue;
-      // You're looking right at it.
-      if (!state.away && e.channel !== undefined && e.channel === visible) continue;
+      // You're looking right at it: a direct notice (it isn't in the chat) still shows as a toast.
+      if (!state.away && e.channel !== undefined && e.channel === visible) {
+        if (direct) this.deps.store.dispatch({ type: 'toast', text: `${e.title}${e.body ? `: ${e.body}` : ''}`, level: e.kind === 'problems' ? 'warn' : 'info' });
+        continue;
+      }
       this.deps.store.dispatch({ type: 'notice_add', notice: { kind: e.kind, title: e.title, body: e.body, channel: e.channel } });
       if (prefs.desktop) this.queue.push(e);
     }

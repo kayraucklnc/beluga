@@ -17,7 +17,7 @@ export function inviteBanner(state: AppState, cols: number, frame: number): Line
   let color: string = theme.info;
   switch (hosting.phase) {
     case 'tunnel':
-      body.push(plain(`${spin} Opening a secure tunnel so friends can join from anywhere…`, { color: theme.info }));
+      body.push(plain(state.prefs.tunnel === 'auto' || state.prefs.tunnel === 'p2p' ? `${spin} Opening a direct, end-to-end encrypted connection so friends can join from anywhere…` : `${spin} Opening a secure tunnel so friends can join from anywhere…`, { color: theme.info }));
       if (hosting.detail) body.push(plain(hosting.detail, { color: theme.muted }));
       break;
     case 'reachable':

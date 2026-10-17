@@ -17,14 +17,19 @@ export const BUILT_IN_TEMPLATES: readonly Template[] = [
   { id: 'review-pr', name: 'Review a pull request', prompt: 'Review pull request # (use gh pr checkout and gh pr diff). Check correctness, security, tests and readability, and list issues by severity with file:line.', builtIn: true },
 ];
 
-const Saved = z.array(z.object({ id: z.string().max(40), name: z.string().min(1).max(60), prompt: z.string().min(1).max(8000), plan: z.boolean().optional() })).max(100);
+const SavedTemplate = z.object({ id: z.string().max(40), name: z.string().trim().min(1).max(60), prompt: z.string().trim().min(1).max(8000), plan: z.boolean().optional() });
 
 export const templatesFile = (): string => path.join(klaudeHome(), 'templates.json');
 
 export function loadTemplates(file = templatesFile()): Template[] {
   try {
-    const parsed = Saved.safeParse(JSON.parse(readFileSync(file, 'utf8')));
-    return [...BUILT_IN_TEMPLATES, ...(parsed.success ? parsed.data : [])];
+    const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    // One broken entry shouldn't take the others with it.
+    const saved = (Array.isArray(raw) ? raw : []).slice(0, 100).flatMap((t) => {
+      const parsed = SavedTemplate.safeParse(t);
+      return parsed.success ? [parsed.data] : [];
+    });
+    return [...BUILT_IN_TEMPLATES, ...saved];
   } catch {
     return [...BUILT_IN_TEMPLATES];
   }
@@ -40,6 +45,7 @@ function saveCustom(list: readonly Template[], file: string): void {
 /** Save a new template ("name: prompt" style input is split by the caller). */
 export function addTemplate(name: string, prompt: string, plan = false, file = templatesFile()): Template[] {
   const list = loadTemplates(file);
+  if (!name.trim() || !prompt.trim()) return list;
   const template: Template = { id: randomUUID().slice(0, 8), name: name.trim().slice(0, 60), prompt: prompt.trim().slice(0, 8000), ...(plan ? { plan } : {}) };
   const next = [...list.filter((t) => t.builtIn || t.name.toLowerCase() !== template.name.toLowerCase()), template];
   saveCustom(next, file);

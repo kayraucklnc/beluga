@@ -1,0 +1,280 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { AgentBackend, AgentRunInput } from '../src/agent/types.js';
+import { Session } from '../src/core/session.js';
+import { ShareService } from '../src/core/shares.js';
+import { Store, initialState } from '../src/core/store.js';
+import { deriveKeys, generateSecret } from '../src/net/crypto.js';
+import { startHub, type Hub } from '../src/net/hub.js';
+import { PeerClient } from '../src/net/peer-client.js';
+import { expandPath, handoffNotePrompt } from '../src/core/remote-work.js';
+import { WorkspaceManager } from '../src/workspaces/manager.js';
+import { WorkspaceStore } from '../src/workspaces/store.js';
+import { waitFor } from './helpers.js';
+
+const keys = deriveKeys(generateSecret());
+let hub: Hub;
+let base: string;
+const sessions: Session[] = [];
+const home = process.env.KLAUDE_HOME;
+
+beforeEach(() => {
+  base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaude-remote-')));
+  process.env.KLAUDE_HOME = path.join(base, 'klaude-home');
+});
+
+afterEach(async () => {
+  for (const s of sessions.splice(0)) await s.stop();
+  await hub?.close();
+  process.env.KLAUDE_HOME = home;
+});
+
+const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
+
+/** A shared origin and one clone of it per person (as if each cloned the project). */
+function repos(...names: string[]): Record<string, string> {
+  const origin = path.join(base, 'origin.git');
+  execFileSync('git', ['init', '--bare', '-b', 'main', origin], { stdio: 'pipe' });
+  const seed = path.join(base, 'seed');
+  mkdirSync(seed);
+  git(seed, 'init', '-b', 'main');
+  writeFileSync(path.join(seed, 'README.md'), '# app\n');
+  git(seed, 'add', '.');
+  git(seed, 'commit', '-m', 'init');
+  git(seed, 'remote', 'add', 'origin', origin);
+  git(seed, 'push', '-u', 'origin', 'main');
+  const out: Record<string, string> = {};
+  for (const name of names) {
+    const dir = path.join(base, name, 'code', 'app');
+    mkdirSync(path.dirname(dir), { recursive: true });
+    execFileSync('git', ['clone', '-q', origin, dir], { stdio: 'pipe' });
+    git(dir, 'remote', 'set-head', 'origin', 'main');
+    // klaude commits with plain `git commit`; keep this machine's signing setup out of the test.
+    git(dir, 'config', 'commit.gpgsign', 'false');
+    git(dir, 'config', 'user.email', `${name}@test`);
+    git(dir, 'config', 'user.name', name);
+    out[name] = dir;
+  }
+  return out;
+}
+
+type Script = (input: AgentRunInput) => Promise<string>;
+
+async function person(name: string, opts: { repo?: string; script?: Script } = {}) {
+  const root = realpathSync(mkdtempSync(path.join(base, `${name}-share-`)));
+  const shares = new ShareService([]);
+  const store = new Store(initialState('test', 'ask'));
+  const client = new PeerClient({ url: `ws://127.0.0.1:${hub.port}`, keys, profile: { name, shares: shares.infos, agent: true }, reconnect: false });
+  const runs: AgentRunInput[] = [];
+  let workspaces: WorkspaceManager | undefined;
+  if (opts.repo) {
+    const wsStore = new WorkspaceStore(path.join(base, name, 'home'));
+    wsStore.saveConfig({ roots: [], projects: [opts.repo], hidden: [] });
+    workspaces = new WorkspaceManager(wsStore);
+    await workspaces.refresh();
+  }
+  const session = new Session({
+    client,
+    store,
+    shares,
+    agentCwd: root,
+    requestTimeoutMs: 4000,
+    agentTimeoutMs: 4000,
+    downloadDir: path.join(base, name, 'Downloads'),
+    zoom: async () => ({ ok: true, message: '' }),
+    copy: async () => undefined,
+    hasGh: async () => false,
+    ...(workspaces ? { workspaces } : {}),
+    createAgent: (): AgentBackend => ({
+      run: async (input) => {
+        runs.push(input);
+        return opts.script ? opts.script(input) : `echo: ${input.prompt}`;
+      },
+    }),
+  });
+  session.start();
+  sessions.push(session);
+  return { session, state: store.getState, runs, workspaces, id: () => session.selfId };
+}
+
+type Person = Awaited<ReturnType<typeof person>>;
+const together = (...people: Person[]) => waitFor(() => people.every((p) => p.state().peers.length === people.length && p.state().self), 4000);
+const approve = async (p: Person, answer: 'yes' | 'no' = 'yes'): Promise<string> => {
+  await waitFor(() => p.state().approvals.length > 0, 4000);
+  const title = p.state().approvals[0]!.title;
+  p.session.answerApproval(answer);
+  return title;
+};
+
+describe('files between computers', () => {
+  it('gets a file from anywhere on a friend’s computer once they approve', async () => {
+    hub = await startHub({ keys });
+    const kay = await person('kay');
+    const bob = await person('bob');
+    await together(kay, bob);
+    const file = path.join(base, 'bob-desktop', 'report.txt');
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, 'quarterly numbers');
+
+    const saved = kay.session.remote.getFile(bob.id(), file, path.join(base, 'kay-desktop'), 'for the review');
+    expect(await approve(bob)).toBe('kay wants a file from your computer');
+    expect(readFileSync(await saved, 'utf8')).toBe('quarterly numbers');
+    expect(path.dirname(await saved)).toBe(path.join(base, 'kay-desktop'));
+  });
+
+  it('never sends secrets, and declines for people you blocked', async () => {
+    hub = await startHub({ keys });
+    const kay = await person('kay');
+    const bob = await person('bob');
+    await together(kay, bob);
+    const env = path.join(base, '.env');
+    writeFileSync(env, 'TOKEN=1');
+    await expect(kay.session.remote.getFile(bob.id(), env)).rejects.toThrow(/secrets/);
+    await expect(kay.session.remote.getFile(bob.id(), path.join(base, 'nope.txt'))).rejects.toThrow(/no file/);
+    bob.session.people.setTrust(kay.id(), 'blocked', true);
+    writeFileSync(path.join(base, 'ok.txt'), 'x');
+    await expect(kay.session.remote.getFile(bob.id(), path.join(base, 'ok.txt'))).rejects.toThrow(/declined/);
+  });
+
+  it('skips the question for people you fully trust', async () => {
+    hub = await startHub({ keys });
+    const kay = await person('kay');
+    const bob = await person('bob');
+    await together(kay, bob);
+    bob.session.people.setTrust(kay.id(), 'full', true);
+    writeFileSync(path.join(base, 'notes.md'), 'hi');
+    const saved = await kay.session.remote.getFile(bob.id(), path.join(base, 'notes.md'));
+    expect(readFileSync(saved, 'utf8')).toBe('hi');
+    expect(saved).toContain(path.join('kay', 'Downloads', 'bob'));
+    expect(bob.state().approvals).toHaveLength(0);
+  });
+
+  it('sends a file back, saved automatically when you were waiting on that person', async () => {
+    hub = await startHub({ keys });
+    const kay = await person('kay');
+    const bob = await person('bob');
+    await together(kay, bob);
+    const out = path.join(base, 'result.csv');
+    writeFileSync(out, 'a,b\n1,2\n');
+    // Without asking for it, kay approves what bob sends.
+    await bob.session.remote.sendFile(kay.id(), out, 'here you go');
+    expect(await approve(kay)).toBe('bob sends you a file');
+    const first = path.join(base, 'kay', 'Downloads', 'bob', 'result.csv');
+    await waitFor(() => existsSync(first), 4000);
+    // While kay's Claude works with bob's, what bob sends just arrives.
+    kay.session.remote.expectFrom(bob.id());
+    await bob.session.remote.sendFile(kay.id(), out);
+    await waitFor(() => existsSync(path.join(base, 'kay', 'Downloads', 'bob', 'result (1).csv')), 4000);
+    expect(kay.state().approvals).toHaveLength(0);
+    expect(kay.state().inbox.some((n) => n.title.startsWith('bob sent you'))).toBe(true);
+  });
+
+  it('expands ~ and relative paths to the home folder', () => {
+    expect(expandPath('~/Desktop/a.pdf', '/Users/x')).toBe('/Users/x/Desktop/a.pdf');
+    expect(expandPath('~', '/Users/x')).toBe('/Users/x');
+    expect(expandPath('Desktop/a.pdf', '/Users/x')).toBe('/Users/x/Desktop/a.pdf');
+    expect(expandPath('/tmp/../etc/hosts', '/Users/x')).toBe('/etc/hosts');
+  });
+});
+
+describe('work on a friend’s computer', () => {
+  it('starts a worktree on their computer for your task, with you in it', async () => {
+    hub = await startHub({ keys });
+    const dirs = repos('bob');
+    const kay = await person('kay');
+    const bob = await person('bob', { repo: dirs.bob });
+    await together(kay, bob);
+    // bob offers his projects (names only) to the room.
+    await waitFor(() => kay.state().peers.find((p) => p.name === 'bob')?.projects?.includes('app'), 4000);
+
+    const asked = kay.session.remote.requestWorktree(bob.id(), 'app', 'add a health check endpoint');
+    expect(await approve(bob)).toBe('kay wants to start a worktree in app on your computer');
+    await asked;
+    await waitFor(() => bob.runs.length === 1, 4000);
+    expect(bob.runs[0]).toMatchObject({ prompt: 'add a health check endpoint', requesterName: 'kay' });
+    const ws = bob.workspaces!.list.flatMap((p) => p.workspaces).find((w) => w.kind === 'worktree');
+    expect(ws?.branch).toMatch(/^klaude\/add-.*health-check/);
+    // kay is in it (SHARED WITH ME), and her screen opened it.
+    await waitFor(() => kay.state().shared.some((w) => w.id === ws?.id), 4000);
+    await waitFor(() => kay.state().view.kind === 'shared', 4000);
+    await waitFor(() => kay.state().log.some((l) => l.type === 'agent' && l.channel === `ws:${ws?.id}` && l.status === 'done'), 4000);
+  });
+
+  it('says why when they turned it off or decline', async () => {
+    hub = await startHub({ keys });
+    const dirs = repos('bob');
+    const kay = await person('kay');
+    const bob = await person('bob', { repo: dirs.bob });
+    await together(kay, bob);
+    const toasts: string[] = [];
+    kay.session.store.subscribe(() => {
+      const t = kay.state().toast?.text;
+      if (t && toasts.at(-1) !== t) toasts.push(t);
+    });
+    const declined = kay.session.remote.requestWorktree(bob.id(), 'app', 'x');
+    await approve(bob, 'no');
+    await declined;
+    expect(toasts.at(-1)).toContain("didn't start it: declined");
+    bob.session.setFriendWorktrees('off');
+    await kay.session.remote.requestWorktree(bob.id(), 'app', 'x');
+    expect(toasts.at(-1)).toContain('turned off work from friends');
+    bob.session.setFriendWorktrees('ask');
+    await kay.session.remote.requestWorktree(bob.id(), 'nope', 'x');
+    expect(toasts.at(-1)).toContain('no project called nope');
+  });
+});
+
+describe('handoff', () => {
+  it('hands a worktree to a friend: their branch, the note and the chat; their Claude continues', async () => {
+    hub = await startHub({ keys });
+    const dirs = repos('kay', 'bob');
+    const note = '## Handoff\n- [x] session check\n- [ ] expired sessions test';
+    const kay = await person('kay', { repo: dirs.kay, script: async (input) => (input.prompt.includes('handoff note') ? note : 'ok') });
+    const bob = await person('bob', { repo: dirs.bob });
+    await together(kay, bob);
+    const ws = await kay.workspaces!.createWorktree(kay.workspaces!.list.find((p) => p.root)!.id, 'add-auth');
+    writeFileSync(path.join(ws.path, 'auth.ts'), 'export const requireUser = () => true;\n');
+    git(ws.path, 'add', '.');
+    git(ws.path, 'commit', '-m', 'add requireUser');
+    writeFileSync(path.join(ws.path, 'wip.ts'), '// half done\n');
+    await kay.session.workspaces!.refresh();
+
+    expect(await kay.session.remote.handoff(ws.id, bob.id())).toBe(true);
+    expect(kay.runs[0]?.prompt).toBe(handoffNotePrompt('bob'));
+    expect(await approve(bob)).toBe('kay wants to hand add-auth (app) over to you');
+    await waitFor(() => bob.runs.length === 1, 6000);
+    expect(bob.runs[0]?.prompt).toContain('taking over this work from kay');
+    expect(bob.runs[0]?.prompt).toContain('expired sessions test');
+    const theirs = bob.workspaces!.list.flatMap((p) => p.workspaces).find((w) => w.kind === 'worktree');
+    expect(theirs?.handedFrom).toBe('kay');
+    // The committed work and the work in progress both came over.
+    expect(readFileSync(path.join(theirs!.path, 'auth.ts'), 'utf8')).toContain('requireUser');
+    expect(readFileSync(path.join(theirs!.path, 'wip.ts'), 'utf8')).toContain('half done');
+    expect(bob.workspaces!.loadHistory<{ text: string }>(theirs!.id).some((l) => l.text.includes('Their note'))).toBe(true);
+    // kay hears back, and can follow along.
+    await waitFor(() => kay.workspaces!.find(ws.id)?.handedTo === 'bob', 4000);
+    await waitFor(() => kay.state().shared.some((w) => w.id === theirs?.id), 4000);
+  });
+
+  it('declines cleanly when the friend does not have the repository', async () => {
+    hub = await startHub({ keys });
+    const dirs = repos('kay');
+    const other = path.join(base, 'bob', 'code', 'other');
+    mkdirSync(other, { recursive: true });
+    git(other, 'init', '-b', 'main');
+    writeFileSync(path.join(other, 'x'), 'x');
+    git(other, 'add', '.');
+    git(other, 'commit', '-m', 'x');
+    const kay = await person('kay', { repo: dirs.kay, script: async () => 'note' });
+    const bob = await person('bob', { repo: other });
+    await together(kay, bob);
+    const ws = await kay.workspaces!.createWorktree(kay.workspaces!.list.find((p) => p.root)!.id, 'feature');
+    await kay.session.remote.handoff(ws.id, bob.id());
+    await approve(bob);
+    await waitFor(() => kay.state().log.some((l) => l.type === 'system' && l.text.includes("didn't take it over")), 4000);
+    expect(kay.workspaces!.find(ws.id)?.handedTo).toBeUndefined();
+  });
+});

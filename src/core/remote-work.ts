@@ -311,8 +311,9 @@ export class RemoteWork {
     if (!note) note = `Handed over from ${this.state.self?.name ?? 'a friend'}. See the chat history and git log for what was done.`;
     try {
       await ctl.manager.commitAll(wsId, `WIP: hand off to ${to}`);
-    } catch {
-      // Nothing to commit, or a hook refused: the last commit goes over.
+    } catch (err) {
+      // A hook or signing setup refused: hand over what's committed, and say so.
+      this.deps.toast(`Couldn't commit the uncommitted changes (${err instanceof Error ? err.message.split('\n')[0] : String(err)}). Only committed work goes to ${to}`, 'warn');
     }
     const fresh = ctl.manager.find(wsId) ?? ws;
     const hid = randomUUID();
