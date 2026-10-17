@@ -58,6 +58,7 @@ export function projectMenu(state: AppState, id: string): MenuSpec | undefined {
       { id: 'p-worktree', label: 'New worktree', hint: 'from the latest origin' },
       { id: 'p-chat', label: 'New Claude chat here', hint: "in the project's main folder" },
       { id: 'p-main', label: 'Open the main folder', hint: 'chat with Claude in the original checkout' },
+      { id: 'p-scripts', label: 'Setup and run commands…', hint: p.scripts?.setup ? `setup: ${p.scripts.setup.command}` : 'none yet' },
       { id: 'p-finder', label: 'Open in Finder', hint: '' },
       ...otherGroups.map((g) => ({ id: `p-group:${g.name}`, label: `Move to "${g.name}"`, hint: 'group' })),
       { id: 'p-newgroup', label: 'Move to a new group…', hint: 'type a name' },
@@ -202,8 +203,8 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
         { id: 'ask-self', label: 'Ask my Claude', hint: 'start a message with @claude' },
         { id: 'share-folder', label: 'Share a folder…', hint: 'with everyone, or just one person' },
         ...roomOptions,
-        { id: 'sharing', label: 'Change who can use my Claude', hint: `now: ${state.policy}` },
-        { id: 'settings', label: 'Settings', hint: 'name, theme, mouse, remote access' },
+        { id: 'sharing', label: 'People & permissions…', hint: 'how much you trust each person' },
+        { id: 'settings', label: 'Settings', hint: 'name, theme, notifications, Claude, workspaces' },
       ]
     : [
         ...TRUST_LEVELS.map((level) => ({ id: `trust:${level}`, label: `${trustOf(state, peer.peerId) === level ? '◉' : '○'} ${TRUST_INFO[level].label}`, hint: TRUST_INFO[level].detail })),
@@ -248,5 +249,6 @@ export function menuSpec(state: AppState, menu: MenuKind): MenuSpec | undefined 
   if (menu.kind === 'invite_person') return invitePersonMenu(state, menu.peerId);
   if (menu.kind === 'share_folder') return shareFolderMenu(state, menu.launchDir, menu.mine);
   if (menu.kind === 'share_who') return shareWhoMenu(state, menu.dir);
-  return personMenu(state, menu.index);
+  if (menu.kind === 'person') return personMenu(state, menu.index);
+  return undefined;
 }

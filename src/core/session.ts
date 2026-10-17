@@ -22,6 +22,11 @@ import { MAX_IMAGE_BYTES, isImagePath } from '../image/decode.js';
 import { decodeImageAsync } from '../image/decode-async.js';
 import { reachOf, trustOf } from './trust.js';
 import { People } from './people.js';
+import { Notifier } from './notify.js';
+import { Workbench } from './workbench.js';
+import { RemoteWork } from './remote-work.js';
+import type { TerminalManager } from '../terminal/index.js';
+import type { ModelChoice } from './work-store.js';
 
 export interface SessionOptions {
   readonly client: PeerClient;
@@ -51,6 +56,15 @@ export interface SessionOptions {
   readonly zoom?: (dir: ZoomDir) => Promise<{ ok: boolean; message: string }>;
   /** Only on the host: who may be in the room, and the invite link. */
   readonly room?: RoomControl;
+  /** Terminal sessions for workspaces (omitted in tests). */
+  readonly terminals?: TerminalManager;
+  /** Show a desktop notification (omitted in tests: the inbox still fills). */
+  readonly desktopNotify?: (n: { title: string; body: string; sound: boolean }) => void;
+  /** Open a URL or file with the system (injected in tests). */
+  readonly open?: (target: string) => void;
+  /** Injected in tests: pull request lookups and the GitHub CLI check. */
+  readonly findPr?: import('./workbench.js').WorkbenchDeps['findPr'];
+  readonly hasGh?: () => Promise<boolean>;
   /** Trust levels you chose for people before (by key-derived id). */
   readonly savedPeople?: Settings['people'];
   /** Read Claude Code conversations from other tools (omitted in tests and the demo). */
@@ -115,6 +129,10 @@ export class Session {
   readonly questions: QuestionBroker;
   readonly sharing: WorkspaceSharing;
   readonly people: People;
+  readonly notifier: Notifier;
+  readonly workbench?: Workbench;
+  readonly remote: RemoteWork;
+  private projectsTimer?: NodeJS.Timeout;
 
   constructor(private readonly opts: SessionOptions) {
     this.bridge = this.createBridge();
@@ -127,6 +145,23 @@ export class Session {
         toast: (text, level) => this.toast(text, level),
         askClaude: (prompt, channel) => this.askOwnClaude(prompt, channel),
         findConversation: opts.findConversation ? (dir) => opts.findConversation!(dir, { id: this.selfId, name: this.store.getState().self?.name ?? 'you' }) : undefined,
+        onWorktreeCreated: (ws) => this.workbench?.onWorktreeCreated(ws),
+      });
+    }
+    this.notifier = new Notifier({ store: opts.store, desktop: (n) => opts.desktopNotify?.(n) });
+    if (this.workspaces) {
+      this.workbench = new Workbench({
+        store: opts.store,
+        controller: this.workspaces,
+        terminals: opts.terminals,
+        notify: (e) => this.notifier.notify(e),
+        toast: (text, level) => this.toast(text, level),
+        askClaude: (prompt, channel) => this.askOwnClaude(prompt, channel),
+        setPrefs: (prefs) => this.setPrefs(prefs),
+        open: opts.open,
+        listModels: async () => (await this.agent?.listModels?.()) as readonly ModelChoice[] | undefined,
+        findPr: opts.findPr,
+        hasGh: opts.hasGh,
       });
     }
     this.questions = new QuestionBroker({
@@ -150,6 +185,24 @@ export class Session {
       saved: opts.savedPeople ?? {},
       save: (people) => opts.saveSettings?.({ people }),
       toast: (text, level) => this.toast(text, level),
+    });
+    this.remote = new RemoteWork({
+      store: opts.store,
+      selfId: () => this.selfId,
+      send: (body, o) => this.send(body, o),
+      request: (to, b) => this.request(to, b),
+      shares: opts.shares,
+      controller: this.workspaces,
+      sharing: this.sharing,
+      approve: (title, detail) => this.ask('request', title, detail).then((a) => a !== 'no'),
+      runFor: (from, channel, prompt, plan) => this.runFor(from, channel, prompt, plan),
+      askAndWait: (prompt, channel, timeoutMs) => this.askAndWait(prompt, channel, timeoutMs),
+      askOwnClaude: (prompt, channel) => this.askOwnClaude(prompt, channel),
+      nameTask: (prompt) => this.nameTask(prompt),
+      notify: (e) => this.notifier.notify(e),
+      toast: (text, level) => this.toast(text, level),
+      onWorktreeCreated: (ws) => this.workbench?.onWorktreeCreated(ws),
+      downloadDir: opts.downloadDir,
     });
     this.agent = opts.createAgent?.(this.bridge);
     this.wire();
@@ -183,8 +236,11 @@ export class Session {
     this.opts.client.connect();
     this.usageTimer = setInterval(() => void this.refreshUsage(), USAGE_REFRESH_MS);
     this.usageTimer.unref();
+    this.workbench?.start();
     if (this.workspaces) {
-      void this.workspaces.refresh();
+      void this.workspaces.refresh().then(() => this.offerProjects());
+      this.projectsTimer = setInterval(() => this.offerProjects(), WORKSPACE_REFRESH_MS);
+      this.projectsTimer.unref();
       this.workspaceTimer = setInterval(() => void this.workspaces?.refresh(), WORKSPACE_REFRESH_MS);
       this.workspaceTimer.unref();
     }
@@ -197,6 +253,10 @@ export class Session {
     clearInterval(this.usageTimer);
     clearInterval(this.workspaceTimer);
     this.workspaces?.stop();
+    this.workbench?.stop();
+    this.notifier.stop();
+    this.remote.stop();
+    clearInterval(this.projectsTimer);
     for (const t of this.fsTimers.values()) clearTimeout(t);
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
@@ -345,6 +405,42 @@ export class Session {
     }
     this.sendChat(prompt, false, channel);
     this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent);
+  }
+
+  /** Run your Claude for someone else in one of your workspaces (they were invited to work there). */
+  runFor(from: string, channel: string, prompt: string, plan = false): void {
+    const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId: randomUUID(), prompt: prompt.slice(0, MAX_TEXT), viaAgent: false, channel, urgent: false, plan };
+    this.questions.track(body.requestId, this.selfId, channel);
+    void this.onAgentRequest(from, body);
+  }
+
+  /** Ask your own Claude in a conversation (shown there) and wait for its final answer. */
+  askAndWait(prompt: string, channel: string, timeoutMs = 5 * 60_000): Promise<string> {
+    this.sendChat(prompt, false, channel);
+    return new Promise<string>((resolve, reject) => {
+      const requestId = this.requestAgent(this.selfId, prompt, false, channel);
+      const timer = setTimeout(() => {
+        this.agentWaiters.delete(requestId);
+        reject(new Error('Claude did not finish in time'));
+      }, timeoutMs);
+      this.agentWaiters.set(requestId, { peer: this.selfId, resolve, reject, timer });
+    });
+  }
+
+  /** Tell the room which projects friends may ask to start work in (names only). */
+  private offerProjects(): void {
+    const state = this.store.getState();
+    const names = state.prefs.friendWorktrees === 'ask' && this.workspaces ? this.workspaces.manager.list.filter((p) => p.root && !p.error).map((p) => p.name).slice(0, 60) : [];
+    const current = this.opts.client.currentProfile.projects ?? [];
+    if (names.length === current.length && names.every((n, i) => n === current[i])) return;
+    this.updateProfile({ projects: names.length ? names : undefined });
+  }
+
+  /** Whether friends may ask to start worktrees here or hand work over to you. */
+  setFriendWorktrees(value: 'ask' | 'off'): void {
+    this.setPrefs({ friendWorktrees: value });
+    this.offerProjects();
+    this.toast(value === 'ask' ? 'Friends can ask to start work on this computer; you approve each request' : 'Friends can no longer start work on this computer', 'success');
   }
 
   /** A worktree name for a task: from a small model when your Claude is on, else from its words. */
@@ -595,6 +691,20 @@ export class Session {
         return this.questions.onAnswer(from, body);
       case 'ws_invite':
         return this.sharing.onInvite(from, body);
+      case 'ws_request':
+        return this.remote.onWsRequest(from, body);
+      case 'ws_request_result':
+        return this.remote.onWsRequestResult(from, body);
+      case 'ws_handoff':
+        return this.remote.onHandoff(from, body);
+      case 'ws_handoff_result':
+        return this.remote.onHandoffResult(from, body);
+      case 'file_request':
+        return this.remote.onFileRequest(from, body);
+      case 'file_request_result':
+        return this.remote.onFileRequestResult(from, body);
+      case 'file_offer':
+        return this.remote.onFileOffer(from, body);
       case 'ws_roster':
         return this.sharing.onRoster(from, body);
       case 'ws_leave':
@@ -991,6 +1101,7 @@ export class Session {
         canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input),
         askUser: (question) => this.questions.ask(from, body.requestId, body.channel, question),
         plan: body.plan,
+        ...this.modelFor(place?.model),
       });
       if (controller.signal.aborted) throw new Error('aborted');
       this.emitAgent(body.requestId, from, 'done', final || '(done)', body.channel);
@@ -1005,6 +1116,13 @@ export class Session {
       void this.refreshUsage();
       if (body.channel !== 'room') void this.workspaces?.refresh();
     }
+  }
+
+  /** The model and effort for a run: the conversation's own pick, else your defaults. */
+  private modelFor(own: string | undefined): { model?: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } {
+    const prefs = this.store.getState().prefs;
+    const model = own ?? prefs.model;
+    return { ...(model ? { model } : {}), ...(prefs.effort ? { effort: prefs.effort } : {}) };
   }
 
   private async authorizeTool(requester: string, requesterName: string, toolName: string, input: Record<string, unknown>): Promise<boolean> {
@@ -1029,6 +1147,10 @@ export class Session {
   private onAgentEvent(from: string, ts: number, body: BodyOf<'agent_event'>): void {
     // Only your own Claude writes into your workspaces; in one shared with you, only its owner's Claude.
     if (body.channel !== 'room' && from !== this.selfId && this.sharing.sharedFor(body.channel)?.owner !== from) return;
+    if (body.event === 'usage') {
+      if (from === this.selfId) this.workbench?.onUsage(body.channel, body.text);
+      return;
+    }
     this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel: body.channel });
     const waiter = this.agentWaiters.get(body.requestId);
     if (!waiter || waiter.peer !== from || !['done', 'error', 'denied'].includes(body.event)) return;
@@ -1064,6 +1186,8 @@ export class Session {
       askAgent: (name, prompt) => {
         const peer = this.requirePeer(name);
         if (!peer.agent) return Promise.reject(new Error(`${peer.name} has no agent online`));
+        // Their Claude may send files back for you: accept them without asking.
+        this.remote.expectFrom(peer.peerId);
         return new Promise<string>((resolve, reject) => {
           const requestId = this.requestAgent(peer.peerId, prompt, true);
           const timer = setTimeout(() => {
@@ -1077,6 +1201,8 @@ export class Session {
       readPeerFile: async (name, share, p) => (await this.readFile({ owner: this.requirePeer(name).peerId, share, path: p })).content,
       writeReport: (title, markdown) => this.writeReport(title, markdown),
       reportUsage: (usage) => this.updateUsage(usage),
+      getPeerFile: (name, file, saveTo, why) => this.remote.getFile(this.requirePeer(name).peerId, file, saveTo, why),
+      sendFile: (name, file, note) => this.remote.sendFile(this.requirePeer(name).peerId, file, note),
     };
   }
 

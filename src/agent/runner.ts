@@ -31,6 +31,18 @@ export function toQuestion(input: Record<string, unknown>): ClaudeQuestion | und
   return parsed.success ? parsed.data : undefined;
 }
 
+/** Tokens and cost of a run, summed over every model it used (sub-agents included). */
+export function usageOf(modelUsage: Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number }>, cost: number, session: string) {
+  const all = Object.values(modelUsage);
+  const sum = (pick: (u: (typeof all)[number]) => number): number => all.reduce((n, u) => n + (pick(u) || 0), 0);
+  return { input: sum((u) => u.inputTokens), output: sum((u) => u.outputTokens), cacheRead: sum((u) => u.cacheReadInputTokens), cacheWrite: sum((u) => u.cacheCreationInputTokens), cost, session };
+}
+
+/** Friendly rows for the model picker from Claude Code's own list. */
+export function toModelChoices(models: ReadonlyArray<{ value: string; displayName: string; description: string; supportedEffortLevels?: readonly string[] }>) {
+  return models.map((m) => ({ value: m.value === 'default' ? '' : m.value, label: m.displayName, description: m.description, ...(m.supportedEffortLevels ? { efforts: m.supportedEffortLevels } : {}) }));
+}
+
 /**
  * Runs turns through the Claude Agent SDK, which drives the local Claude Code
  * install and therefore uses the owner's own login/subscription. One session
@@ -87,7 +99,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
-        ...(opts.model ? { model: opts.model } : {}),
+        ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
+        ...(input.effort ? { effort: input.effort } : {}),
         ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
         canUseTool: async (toolName, toolInput) => {
           if (toolName === 'AskUserQuestion') return answerQuestion(toolInput);
@@ -165,6 +178,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           remember(msg.session_id);
           const window = Object.values(msg.modelUsage ?? {})[0]?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
           if (contextUsed) input.onEvent('context', JSON.stringify({ used: contextUsed, window }));
+          input.onEvent('usage', JSON.stringify(usageOf(msg.modelUsage ?? {}, msg.total_cost_usd ?? 0, msg.session_id)));
           if (msg.subtype === 'success') final = msg.result;
           else throw new Error(`Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`);
         }
@@ -173,6 +187,23 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
     },
 
     nameTask: (prompt: string) => nameTask(prompt, { cwd: opts.cwd, claudePath: opts.claudePath }),
+
+    /** Ask Claude Code which models it offers (no prompt is sent). */
+    async listModels() {
+      const idle = (async function* () {
+        await new Promise(() => undefined);
+      })() as AsyncIterable<never>;
+      const q = query({ prompt: idle, options: { cwd: opts.cwd, settingSources: [], ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}) } });
+      try {
+        const timeout = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), USAGE_TIMEOUT_MS).unref());
+        const models = await Promise.race([q.supportedModels(), timeout]);
+        return models?.length ? toModelChoices(models) : undefined;
+      } catch {
+        return undefined;
+      } finally {
+        q.close();
+      }
+    },
 
     /**
      * Read plan usage without sending a prompt: open a session whose input never

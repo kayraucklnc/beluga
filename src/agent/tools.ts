@@ -24,6 +24,8 @@ export const ROOM_TOOL_NAMES = [
   'ask_agent',
   'list_peer_files',
   'read_peer_file',
+  'get_peer_file',
+  'send_file',
   'write_report',
 ].map((n) => `mcp__klaude__${n}`);
 
@@ -61,6 +63,23 @@ export function createRoomToolDefs(bridge: RoomBridge) {
         "Read a text file from a peer's shared folder.",
         { peer: z.string(), share: z.string(), path: z.string() },
         (a) => guarded(() => bridge.readPeerFile(a.peer, a.share, a.path)),
+      ),
+      tool(
+        'get_peer_file',
+        "Copy a file from anywhere on a peer's computer to this one (e.g. their ~/Desktop/report.pdf). The peer approves unless they fully trust you; secrets are never sent. Returns where the file was saved here.",
+        {
+          peer: z.string().describe('Peer name from list_peers'),
+          path: z.string().min(1).max(4096).describe('Path on their computer; ~ means their home folder'),
+          save_to: z.string().max(4096).optional().describe('Folder on THIS computer to save into (e.g. ~/Desktop). Default: ~/Downloads/klaude/<peer>'),
+          why: z.string().max(500).optional().describe('One line shown to them when they approve'),
+        },
+        (a) => guarded(async () => `Saved to ${await bridge.getPeerFile(a.peer, a.path, a.save_to, a.why)}`),
+      ),
+      tool(
+        'send_file',
+        "Send a file from this computer to a peer (for example the result of work they asked for). It's saved in their Downloads/klaude folder. Use it to send results back to whoever asked you.",
+        { peer: z.string().describe('Peer name from list_peers'), path: z.string().min(1).max(4096).describe('File on this computer'), note: z.string().max(1000).optional() },
+        (a) => guarded(() => bridge.sendFile(a.peer, a.path, a.note)),
       ),
       tool(
         'write_report',

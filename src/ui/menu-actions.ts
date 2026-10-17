@@ -3,10 +3,10 @@ import type { Policy } from '../core/store.js';
 import { THEMES } from '../core/settings.js';
 import type { UiState } from './keymap.js';
 import { type MenuKind, menuSpec } from './menus.js';
-import { MOUSE_OFF, MOUSE_ON } from './mouse.js';
 import { applyTheme } from './theme.js';
 import type { UiAction } from './workspace-models.js';
 import { runCollabOption } from './collab-actions.js';
+import { runWorkOption } from './work-actions.js';
 
 export const POLICY_BY_OPTION: Record<string, Policy> = { 'share-ask': 'ask', 'share-auto': 'auto', 'share-deny': 'deny' };
 export const POLICY_INDEX: Record<Policy, number> = { ask: 0, auto: 1, deny: 2 };
@@ -24,12 +24,13 @@ export interface MenuContext {
 
 /** Run the option picked in a menu (by click, Enter or its number). */
 export function runMenu(ctx: MenuContext, menu: MenuKind, index: number): void {
-  const { session, patchUi, typeInto, askForName, openFolder, runUiAction, write } = ctx;
+  const { session, patchUi, typeInto, askForName, openFolder, runUiAction } = ctx;
   const ctl = session.workspaces;
   const latest = session.store.getState();
   const option = menuSpec(latest, menu)?.options[index];
   if (!option) return;
   if (runCollabOption(ctx, menu, option.id)) return;
+  if (runWorkOption(ctx, menu, option.id, index)) return;
   const peer = menu.kind === 'person' ? latest.peers[menu.index] : undefined;
   const policy = POLICY_BY_OPTION[option.id];
   if (policy) {
@@ -112,23 +113,6 @@ export function runMenu(ctx: MenuContext, menu: MenuKind, index: number): void {
       reopen();
       return;
     }
-    case 'set-policy': {
-      const order = ['ask', 'auto', 'deny'] as const;
-      session.setClaudeSharing(order[(order.indexOf(latest.policy) + 1) % order.length] ?? 'ask');
-      reopen();
-      return;
-    }
-    case 'set-mouse':
-      write(latest.prefs.mouse ? MOUSE_OFF : MOUSE_ON);
-      session.setPrefs({ mouse: !latest.prefs.mouse });
-      reopen();
-      return;
-    case 'set-tunnel': {
-      const order = ['auto', 'cloudflared', 'ngrok', 'none'] as const;
-      session.setPrefs({ tunnel: order[(order.indexOf(latest.prefs.tunnel) + 1) % order.length] ?? 'auto' });
-      reopen();
-      return;
-    }
     case 'size-in':
     case 'size-out':
     case 'size-reset':
@@ -157,31 +141,14 @@ export function runMenu(ctx: MenuContext, menu: MenuKind, index: number): void {
       patchUi({ focus: 'files' });
       return;
     }
-    case 'fulltrust':
-    case 'unfulltrust':
-      if (peer) session.store.dispatch({ type: 'full_trust', peerId: peer.peerId, trusted: option.id === 'fulltrust' });
-      session.toast(option.id === 'fulltrust' ? `${peer?.name} is fully trusted: their requests and actions run without asking` : `${peer?.name} needs approvals again`, 'success');
-      return;
     case 'set-self-approval':
       session.setPrefs({ selfApproval: latest.prefs.selfApproval === 'ask' ? 'never' : 'ask' });
       reopen();
-      return;
-    case 'trust':
-    case 'untrust':
-      if (peer) session.store.dispatch({ type: 'trust', peerId: peer.peerId, trusted: option.id === 'trust' });
-      session.toast(option.id === 'trust' ? `${peer?.name} can use your Claude without asking` : `${peer?.name} needs your approval again`, 'success');
-      return;
-    case 'access-full':
-    case 'access-folder':
-      if (peer) {
-        session.setAccess(peer.peerId, option.id === 'access-full' ? 'full' : 'folder');
-        session.toast(option.id === 'access-full' ? `${peer.name} can reach your whole computer` : `${peer.name} is limited to your shared folders`, 'success');
-      }
       return;
     case 'invite':
       void session.copyInvite();
       return;
     case 'sharing':
-      patchUi({ menu: { menu: { kind: 'welcome' }, selected: POLICY_INDEX[latest.policy] } });
+      patchUi({ menu: { menu: { kind: 'settings', section: 'people' }, selected: 0 } });
       return;
   }}

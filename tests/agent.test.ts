@@ -15,6 +15,8 @@ const bridge: RoomBridge = {
   },
   writeReport: async (title) => `proj/.klaude/reports/${title}.md`,
   reportUsage: () => undefined,
+  getPeerFile: async (peer, file, saveTo) => `${saveTo ?? '~/Downloads/klaude'}/${peer}/${file}`,
+  sendFile: async (peer, file) => `Offered ${file} to ${peer}`,
 };
 
 describe('room tools', () => {
@@ -34,6 +36,8 @@ describe('room tools', () => {
     expect((await call('ask_agent', { peer: 'bob', prompt: 'hi' })).content[0]?.text).toBe('bob says hi');
     expect((await call('list_peer_files', { peer: 'bob', share: 'p', path: '' })).content[0]?.text).toContain('"a"');
     expect((await call('write_report', { title: 'T', markdown: 'm' })).content[0]?.text).toContain('reports/T.md');
+    expect((await call('get_peer_file', { peer: 'bob', path: '~/Desktop/a.pdf', save_to: '~/Desktop' })).content[0]?.text).toBe('Saved to ~/Desktop/bob/~/Desktop/a.pdf');
+    expect((await call('send_file', { peer: 'bob', path: '/tmp/out.txt' })).content[0]?.text).toBe('Offered /tmp/out.txt to bob');
   });
 
   it('returns errors as tool errors instead of throwing', async () => {

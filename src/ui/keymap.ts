@@ -2,7 +2,7 @@ import type { MenuKind } from './menus.js';
 import type { Suggestion } from './suggest.js';
 import type { UiAction } from './workspace-models.js';
 
-export type Focus = 'chat' | 'projects' | 'header' | 'people' | 'files' | 'main' | 'viewer';
+export type Focus = 'chat' | 'projects' | 'header' | 'people' | 'files' | 'main' | 'viewer' | 'terminal';
 
 export interface MenuState {
   readonly menu: MenuKind;
@@ -44,8 +44,13 @@ export interface UiState {
    * (chat, top bar, projects, people…); inside, Tab and the arrows move between its items.
    */
   readonly entered: boolean;
-  /** A name is being typed for a new worktree/chat in this project. */
-  readonly pending?: { readonly kind: 'worktree' | 'chat' | 'group'; readonly projectId: string };
+  /**
+   * The box is asking for something specific: a name for a new worktree/chat/group, a setup
+   * or run command for a project, or a task for a friend's Claude (`projectId` is then their project's name).
+   */
+  readonly pending?: { readonly kind: 'worktree' | 'chat' | 'group' | 'setup' | 'run' | 'remote'; readonly projectId: string; readonly peerId?: string };
+  /** The built-in terminal has the keyboard. */
+  readonly terminalScroll?: number;
 }
 
 /** Subset of Ink's Key we rely on, so the keymap stays framework-agnostic. */

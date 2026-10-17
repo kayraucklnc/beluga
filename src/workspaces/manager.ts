@@ -7,7 +7,8 @@ import * as g from './git.js';
 import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
 import { WorkspaceStore } from './store.js';
 import { worktreeOrigin } from './origin.js';
-import type { Project, ProjectGroup, ProjectsConfig, Workspace, WorkspaceRecord } from './types.js';
+import type { Project, ProjectGroup, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
+import { type ProjectScripts, type ResolvedScripts, resolveScripts, saveProjectFile } from './scripts.js';
 
 export const slug = (s: string): string =>
   s
@@ -196,7 +197,7 @@ export class WorkspaceManager {
       const withStatus = await Promise.all(
         workspaces.map(async (w) => (w.archived || w.kind === 'chat' ? w : { ...w, status: await g.status(w.path, w.kind === 'main' ? undefined : w.base).catch(() => undefined) })),
       );
-      return { id, name, root, base, workspaces: withStatus.sort(order) };
+      return { id, name, root, base, workspaces: withStatus.sort(order), scripts: resolveScripts(root, this.config.scripts?.[root]) };
     } catch (err) {
       return { id, name, root, base: 'HEAD', workspaces: [], error: err instanceof Error ? err.message : String(err) };
     }
@@ -366,6 +367,100 @@ export class WorkspaceManager {
     return { removed, kept };
   }
 
+  /** Pick the model for one workspace's conversation (undefined: your default). */
+  setModel(id: string, model: string | undefined): void {
+    this.require(id);
+    this.patchRecord(id, { model: model || undefined });
+  }
+
+  /**
+   * Add one run's usage. The SDK reports running totals per conversation, so only the part
+   * beyond the last total we saw for the same conversation is new.
+   */
+  addUsage(id: string, run: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; session?: string }): WorkspaceUsage | undefined {
+    const ws = this.find(id);
+    if (!ws) return undefined;
+    const prev = ws.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, runs: 0 };
+    const total = run.input + run.output + run.cacheRead + run.cacheWrite;
+    const continues = run.session !== undefined && run.session === prev.lastSession && total >= (prev.lastTotal ?? 0);
+    const scale = continues && total > 0 ? (total - (prev.lastTotal ?? 0)) / total : 1;
+    const next: WorkspaceUsage = {
+      input: prev.input + Math.round(run.input * scale),
+      output: prev.output + Math.round(run.output * scale),
+      cacheRead: prev.cacheRead + Math.round(run.cacheRead * scale),
+      cacheWrite: prev.cacheWrite + Math.round(run.cacheWrite * scale),
+      cost: prev.cost + run.cost * scale,
+      runs: prev.runs + 1,
+      ...(run.session ? { lastSession: run.session, lastTotal: total } : {}),
+    };
+    this.patchRecord(id, { usage: next });
+    return next;
+  }
+
+  markHandedOff(id: string, to: string): void {
+    this.patchRecord(id, { handedTo: to });
+  }
+
+  // ---------------------------------------------------------------- scripts
+
+  /** The setup / run commands for a project (yours, then klaude.json, then a guess). */
+  scripts(projectId: string): ResolvedScripts {
+    const project = this.projects.find((p) => p.id === projectId);
+    if (!project?.root) return {};
+    return resolveScripts(project.root, this.config.scripts?.[project.root]);
+  }
+
+  /** Set a project's commands just for you, or in its klaude.json so the whole team gets them. */
+  setScripts(projectId: string, scripts: ProjectScripts, opts: { inRepo?: boolean } = {}): void {
+    const project = this.projects.find((p) => p.id === projectId);
+    if (!project?.root) throw new WorkspaceError('Project not found');
+    if (opts.inRepo) {
+      saveProjectFile(project.root, scripts);
+      return;
+    }
+    const current = this.config.scripts?.[project.root] ?? {};
+    const merged = Object.fromEntries(Object.entries({ ...current, ...scripts }).filter(([, v]) => v)) as ProjectScripts;
+    this.config = { ...this.config, scripts: { ...(this.config.scripts ?? {}), [project.root]: merged } };
+    this.store.saveConfig(this.config);
+  }
+
+  // ---------------------------------------------------------------- handoff
+
+  /** The project whose origin points at the same repository as `remote` (any URL style). */
+  async projectForRemote(remote: string): Promise<Project | undefined> {
+    const want = normalizeRemote(remote);
+    for (const p of this.projects.filter((x) => x.root)) {
+      const url = await g.git(p.root, ['remote', 'get-url', 'origin']).then((s) => s.trim(), () => '');
+      if (url && normalizeRemote(url) === want) return p;
+    }
+    return undefined;
+  }
+
+  async remoteOf(projectId: string): Promise<string | undefined> {
+    const project = this.projects.find((p) => p.id === projectId);
+    if (!project?.root) return undefined;
+    return g.git(project.root, ['remote', 'get-url', 'origin']).then((s) => s.trim() || undefined, () => undefined);
+  }
+
+  /** A new worktree on an existing branch (e.g. one fetched from a friend's handoff). */
+  async createWorktreeOn(projectId: string, name: string, branch: string, extra: Partial<WorkspaceRecord> = {}): Promise<Workspace> {
+    const project = this.projects.find((p) => p.id === projectId);
+    if (!project) throw new WorkspaceError('Project not found');
+    const dir = this.freeDir(project, slug(name));
+    await g.git(project.root, ['worktree', 'add', dir, branch]);
+    await g.excludeKlaudeDir(dir);
+    await copyEnvFiles(project.root, dir);
+    const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: slug(name), path: dir, kind: 'worktree', branch, base: project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...extra };
+    this.saveRecord(record);
+    await this.refresh();
+    return this.require(record.id);
+  }
+
+  /** A free local branch name like klaude/<name>, klaude/<name>-2… */
+  freeBranchName(projectRoot: string, name: string): Promise<string> {
+    return this.freeBranch(projectRoot, `klaude/${slug(name)}`);
+  }
+
   forgetSession(id: string): void {
     this.patchRecord(id, { sessionId: undefined, forkFromSession: undefined });
   }
@@ -445,6 +540,18 @@ export class WorkspaceManager {
   saveHistory(id: string, items: readonly unknown[]): void {
     this.store.saveHistory(id, items);
   }
+}
+
+/** github.com/kay/api for https://github.com/kay/api.git, git@github.com:kay/api, ssh://… */
+export function normalizeRemote(url: string): string {
+  return url
+    .trim()
+    .replace(/^[a-z+]+:\/\//i, '')
+    .replace(/^[^@/]+@/, '')
+    .replace(/:(?!\d)/, '/')
+    .replace(/\.git$/, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
 }
 
 function stripLive(ws: Workspace): WorkspaceRecord {

@@ -519,6 +519,7 @@ export function reduce(state: AppState, action: Action): AppState {
       return { ...state, log: [...action.items.slice(-LOG_LIMIT).map((i) => ({ ...i, channel: action.channel })), ...others] };
     }
     case 'agent_event':
+      if (action.event === 'usage') return state;
       if (action.event === 'context' || action.event === 'compact') return reduceContext(state, action);
       return reduceAgent(state, action);
     case 'approval_add':
@@ -633,6 +634,7 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'templates':
     case 'terminal':
     case 'pr_custom':
+    case 'gh':
     case 'remembered':
       return { ...state, ...reduceWork(state, action) };
     case 'context_reset': {

@@ -41,12 +41,17 @@ describe('menus', () => {
   });
 
   it('offers actions for a friend', () => {
+    const levels = ['trust:blocked', 'trust:ask', 'trust:trusted', 'trust:full'];
     const spec = personMenu(room(), 1)!;
-    expect(spec.options.map((o) => o.id)).toEqual(['ask', 'person-invite-ws', 'person-share', 'access-full', 'follow', 'browse', 'fulltrust', 'trust']);
+    expect(spec.options.map((o) => o.id)).toEqual([...levels, 'ask', 'person-invite-ws', 'person-share', 'follow', 'browse']);
+    expect(spec.options.find((o) => o.id === 'trust:ask')?.label).toBe('◉ Ask me each time');
     const followed = reduce(reduce(room(), { type: 'follow', peerId: 'b' }), { type: 'trust', peerId: 'b', trusted: true });
-    expect(personMenu(followed, 1)!.options.map((o) => o.id)).toEqual(['ask', 'person-invite-ws', 'person-share', 'access-full', 'unfollow', 'browse', 'fulltrust', 'untrust']);
-    expect(personMenu(reduce(room(), { type: 'full_trust', peerId: 'b', trusted: true }), 1)!.options.map((o) => o.id)).toContain('unfulltrust');
-    expect(personMenu(room(), 2)!.options.map((o) => o.id)).toEqual(['person-invite-ws', 'person-share', 'access-full', 'follow', 'fulltrust', 'trust']); // no Claude, no shares
+    expect(personMenu(followed, 1)!.options.map((o) => o.id)).toEqual([...levels, 'ask', 'person-invite-ws', 'person-share', 'unfollow', 'browse']);
+    expect(personMenu(followed, 1)!.options.find((o) => o.id === 'trust:trusted')?.label).toBe('◉ Trusted');
+    expect(personMenu(reduce(room(), { type: 'full_trust', peerId: 'b', trusted: true }), 1)!.intro.join(' ')).toContain('Now: Full trust');
+    expect(personMenu(room(), 2)!.options.map((o) => o.id)).toEqual([...levels, 'person-invite-ws', 'person-share', 'follow']); // no Claude, no shares
+    const offering = reduce(room(), { type: 'peers', peers: peers.map((p) => (p.peerId === 'b' ? { ...p, projects: ['api'] } : p)) });
+    expect(personMenu(offering, 1)!.options.map((o) => o.id)).toContain('person-remote-ws');
     expect(personMenu(room(), 9)).toBeUndefined();
   });
 
@@ -54,7 +59,10 @@ describe('menus', () => {
     expect(personMenu(room(), 0)!.options.map((o) => o.id)).toEqual(['ask-self', 'share-folder', 'leave-room', 'sharing', 'settings']);
     const withInvite = reduce(room(), { type: 'invite', invite: 'https://x#y' });
     expect(menuSpec(withInvite, { kind: 'person', index: 0 })!.options.map((o) => o.id)).toEqual(['ask-self', 'share-folder', 'invite', 'leave-room', 'sharing', 'settings']);
-    expect(menuSpec(room(), { kind: 'settings' })!.options.map((o) => o.id)).toEqual(['set-name', 'set-theme', 'set-policy', 'set-self-approval', 'set-mouse', 'set-tunnel', 'size-in', 'size-out', 'size-reset', 'close']);
+    expect(menuSpec(room(), { kind: 'settings' })!.options.map((o) => o.id)).toEqual(['set-name', 'set-theme', 'sec:people', 'sec:notify', 'sec:claude', 'sec:workspaces', 'sec:display', 'close']);
+    expect(menuSpec(room(), { kind: 'settings', section: 'people' })!.options.map((o) => o.id)).toEqual(['p-default', 'p-person:b', 'p-person:c', 'set-tunnel', 'set-back']);
+    expect(menuSpec(room(), { kind: 'settings', section: 'notify' })!.options.map((o) => o.id)).toContain('n-desktop');
+    expect(menuSpec(room(), { kind: 'settings', section: 'display' })!.options.map((o) => o.id)).toEqual(['set-mouse', 'd-context', 'd-subagents', 'size-in', 'size-out', 'size-reset', 'set-back']);
     expect(menuSpec(room(), { kind: 'welcome' })?.title).toContain('Welcome');
   });
 });

@@ -117,7 +117,7 @@ describe('Session', () => {
     expect(bob.session.answerApproval('always')).toBe(true);
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'done'));
     expect(bob.runs[0]?.requesterName).toBe('kay');
-    expect(bob.state().trusted).toContain(kay.session.selfId);
+    expect(bob.state().levels[kay.session.selfId]).toBe('trusted');
 
     kay.session.submit('@claude:bob again');
     await waitFor(() => bob.runs.length === 2);
@@ -478,7 +478,7 @@ describe('Session hardening', () => {
     await room(bob, kay);
     kay.session.submit('@claude:bob look around');
     await waitFor(() => bob.state().approvals.length === 1);
-    expect(bob.state().approvals[0]?.title).toBe('kay wants your Claude to run this (shared folders only)');
+    expect(bob.state().approvals[0]?.title).toBe('kay wants your Claude to run this (shared folders; anything else asks you)');
     bob.session.answerApproval('no');
   });
 

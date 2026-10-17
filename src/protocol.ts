@@ -39,6 +39,8 @@ export const Profile = z.object({
   shares: z.array(ShareInfo).max(32),
   agent: z.boolean(),
   usage: Usage.optional(),
+  /** Projects friends may ask to start a worktree in (names only; you approve each request). */
+  projects: z.array(z.string().max(80)).max(60).optional(),
 });
 export type Profile = z.infer<typeof Profile>;
 
@@ -95,6 +97,8 @@ export const AgentEventKind = z.enum([
   'context',
   /** The conversation was compacted; text is JSON {pre, post, trigger}. */
   'compact',
+  /** Tokens and cost of a run; text is JSON {input, output, cacheRead, cacheWrite, cost, session}. */
+  'usage',
 ]);
 export type AgentEventKind = z.infer<typeof AgentEventKind>;
 
@@ -232,7 +236,59 @@ export const WsLeaveBody = z.object({ kind: z.literal('ws_leave'), id: z.string(
 /** A folder shared with only you (or no longer). Folders shared with everyone are in the profile instead. */
 export const ShareOfferBody = z.object({ kind: z.literal('share_offer'), name: z.string().regex(/^[\w.-]{1,64}$/), writable: z.boolean(), active: z.boolean() });
 
+// ---- Working on each other's computers ----
+
+const wsIdStr = z.string().regex(/^[\w:.-]{1,80}$/);
+const historyItems = z.array(z.object({ from: shortStr, text: z.string().max(8000), ts: z.number(), byAgent: z.boolean() })).max(80);
+
+/** "Start a worktree on your computer": in one of the projects you offer, for this task. */
+export const WsRequestBody = z.object({ kind: z.literal('ws_request'), reqId: shortStr, project: z.string().min(1).max(80), task: z.string().min(1).max(MAX_TEXT), plan: z.boolean().default(false) });
+export const WsRequestResultBody = z.object({ kind: z.literal('ws_request_result'), reqId: shortStr, ok: z.boolean(), wsId: wsIdStr.optional(), error: z.string().max(500).optional() });
+
+/** Hand a workspace to someone: its branch (as a git bundle you download), a handoff note and the recent chat. */
+export const WsHandoffBody = z.object({
+  kind: z.literal('ws_handoff'),
+  hid: shortStr,
+  ws: z.object({ name: z.string().max(80), project: z.string().max(80), branch: z.string().max(200), base: z.string().max(200) }),
+  /** The project's origin URL, to find the same repository on the other computer. */
+  remote: z.string().max(500),
+  note: z.string().max(MAX_TEXT),
+  history: historyItems,
+  bundle: z.object({ share: z.string().regex(/^[\w.-]{1,64}$/), path: relPath, size: z.number().int().min(0) }).optional(),
+});
+export const WsHandoffResultBody = z.object({ kind: z.literal('ws_handoff_result'), hid: shortStr, ok: z.boolean(), error: z.string().max(500).optional() });
+
+/** Ask for a file anywhere on someone's computer (they approve unless they fully trust you). */
+export const FileRequestBody = z.object({ kind: z.literal('file_request'), reqId: shortStr, path: z.string().min(1).max(4096), why: z.string().max(500).default('') });
+export const FileRequestResultBody = z.object({
+  kind: z.literal('file_request_result'),
+  reqId: shortStr,
+  ok: z.boolean(),
+  share: z.string().regex(/^[\w.-]{1,64}$/).optional(),
+  path: relPath.optional(),
+  name: z.string().max(255).optional(),
+  size: z.number().int().min(0).optional(),
+  error: z.string().max(500).optional(),
+});
+/** "Here's a file for you": the recipient downloads it (automatically if they trust you). */
+export const FileOfferBody = z.object({
+  kind: z.literal('file_offer'),
+  fid: shortStr,
+  name: z.string().min(1).max(255),
+  size: z.number().int().min(0),
+  share: z.string().regex(/^[\w.-]{1,64}$/),
+  path: relPath,
+  note: z.string().max(1000).default(''),
+});
+
 export const Body = z.discriminatedUnion('kind', [
+  WsRequestBody,
+  WsRequestResultBody,
+  WsHandoffBody,
+  WsHandoffResultBody,
+  FileRequestBody,
+  FileRequestResultBody,
+  FileOfferBody,
   RoomClearedBody,
   ShareOfferBody,
   AgentQuestionBody,

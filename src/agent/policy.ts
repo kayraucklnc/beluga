@@ -53,6 +53,13 @@ const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, t
  */
 export function decideTool(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): Decision {
   if (ALWAYS_OK.has(toolName)) return 'allow';
+  // Sending a file reads it: same rules as Read (secrets never leave; outside shared folders asks).
+  if (toolName === 'mcp__klaude__send_file') {
+    const target = resolveTarget(ctx.cwd, typeof input.path === 'string' ? input.path.replace(/^~(?=$|\/)/, process.env.HOME ?? '~') : undefined);
+    if (isSecretPath(target)) return 'deny';
+    if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
+    return ctx.scope === 'full' ? 'allow' : 'ask';
+  }
   if (toolName === 'Bash') return typeof input.command === 'string' && SECRET_IN_COMMAND.test(input.command) ? 'deny' : 'ask';
   const readField = READ_TOOLS[toolName];
   if (readField) {

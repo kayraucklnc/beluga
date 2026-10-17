@@ -86,9 +86,9 @@ describe('store reducer', () => {
     s = reduce(s, { type: 'peers', peers });
     s = reduce(s, { type: 'trust', peerId: 'b', trusted: true });
     s = reduce(s, { type: 'trust', peerId: 'b', trusted: true });
-    expect(s.trusted).toEqual(['b']);
-    expect(reduce(s, { type: 'peers', peers: [peers[0]!] }).trusted).toEqual([]); // trust ends when they leave
-    expect(reduce(s, { type: 'trust', peerId: 'b', trusted: false }).trusted).toEqual([]);
+    expect(s.levels).toEqual({ b: 'trusted' });
+    expect(reduce(s, { type: 'peers', peers: [peers[0]!] }).levels).toEqual({}); // re-applied from saved choices when they return
+    expect(reduce(s, { type: 'trust', peerId: 'b', trusted: false }).levels).toEqual({ b: 'ask' });
     expect(reduce(s, { type: 'policy', policy: 'deny' }).policy).toBe('deny');
     s = reduce(s, { type: 'focus', actorKey: 'b:agent', focus: { ...at, actor: 'agent', ts: 1 } });
     expect(s.focus['b:agent']?.actor).toBe('agent');

@@ -82,6 +82,8 @@ export interface WorkState {
   readonly terminals: Readonly<Record<string, string>>;
   /** You customized the pull request instructions. */
   readonly prCustom: boolean;
+  /** The GitHub CLI is installed and signed in (undefined: not checked yet). */
+  readonly gh?: boolean;
   /** People you picked a trust level for in earlier sessions. */
   readonly remembered: Settings['people'];
 }
@@ -99,6 +101,7 @@ export type WorkAction =
   | { type: 'templates'; templates: readonly Template[] }
   | { type: 'terminal'; id: string; title?: string }
   | { type: 'pr_custom'; custom: boolean }
+  | { type: 'gh'; ok: boolean }
   | { type: 'remembered'; people: Settings['people'] };
 
 export const FALLBACK_MODELS: readonly ModelChoice[] = [
@@ -158,6 +161,8 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
       return { ...state, templates: action.templates };
     case 'pr_custom':
       return { ...state, prCustom: action.custom };
+    case 'gh':
+      return { ...state, gh: action.ok };
     case 'remembered':
       return { ...state, remembered: action.people };
     case 'terminal':
