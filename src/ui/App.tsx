@@ -192,8 +192,10 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         reopen();
         return;
       }
-      case 'set-size':
-        session.toast('Use ⌘ + / ⌘ − in your terminal to change text size');
+      case 'size-in':
+      case 'size-out':
+      case 'size-reset':
+        void session.zoom(option.id === 'size-in' ? 'in' : option.id === 'size-out' ? 'out' : 'reset');
         reopen();
         return;
       case 'settings':
@@ -279,6 +281,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       }
       case 'menu_select':
         runMenu(effect.menu, effect.index);
+        return;
+      case 'zoom':
+        void session.zoom(effect.dir);
         return;
     }
   };

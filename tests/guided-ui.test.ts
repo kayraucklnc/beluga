@@ -53,7 +53,7 @@ describe('menus', () => {
     expect(personMenu(room(), 0)!.options.map((o) => o.id)).toEqual(['ask-self', 'sharing', 'settings']);
     const withInvite = reduce(room(), { type: 'invite', invite: 'https://x#y' });
     expect(menuSpec(withInvite, { kind: 'person', index: 0 })!.options.map((o) => o.id)).toEqual(['ask-self', 'invite', 'sharing', 'settings']);
-    expect(menuSpec(room(), { kind: 'settings' })!.options.map((o) => o.id)).toEqual(['set-name', 'set-theme', 'set-policy', 'set-mouse', 'set-tunnel', 'set-size', 'close']);
+    expect(menuSpec(room(), { kind: 'settings' })!.options.map((o) => o.id)).toEqual(['set-name', 'set-theme', 'set-policy', 'set-mouse', 'set-tunnel', 'size-in', 'size-out', 'size-reset', 'close']);
     expect(menuSpec(room(), { kind: 'welcome' })?.title).toContain('Welcome');
   });
 });

@@ -19,6 +19,7 @@ const KEYS: ReadonlyArray<readonly [string, string]> = [
   ['↑ ↓', 'history (or pick a suggestion)'],
   ['PgUp PgDn', 'scroll chat'],
   ['Ctrl+Y / Ctrl+N / Ctrl+T', 'allow / deny / always allow'],
+  ['Option+↑ / Option+↓', 'make text bigger / smaller'],
   ['Ctrl+C twice', 'quit'],
 ];
 

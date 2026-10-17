@@ -51,6 +51,7 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
     lastToast = t;
   });
   const session = new Session({
+    zoom: async (dir) => ({ ok: true, message: `zoom ${dir}` }),
     copy: async (text) => {
       if (text.includes('FAIL')) throw new Error('no clipboard');
       copied.push(text);
@@ -495,5 +496,16 @@ describe('Session hardening', () => {
     expect(saved).toEqual([{ name: 'kayra' }, { theme: 'mono' }, { policy: 'auto' }]);
     kay.session.submit('/settings');
     expect(kay.state().overlay).toBe('settings');
+  });
+
+  it('changes text size via /zoom', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    await room(kay);
+    kay.session.submit('/zoom in');
+    kay.session.submit('/zoom smaller');
+    kay.session.submit('/zoom reset');
+    await waitFor(() => kay.toasts.includes('zoom reset'));
+    expect(kay.toasts).toEqual(expect.arrayContaining(['zoom in', 'zoom out', 'zoom reset']));
   });
 });
