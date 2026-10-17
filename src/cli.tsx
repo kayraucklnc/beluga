@@ -12,9 +12,9 @@ import { saveSettings } from './core/settings.js';
 import { applyTheme } from './ui/theme.js';
 import { type Identity, deriveKeys, generateIdentity, generateSecret } from './net/crypto.js';
 import { startHub, type Hub } from './net/hub.js';
-import { decodeInvite, encodeInvite, findInvite, toWsUrl } from './net/invite.js';
+import { P2P_SCHEME, decodeInvite, encodeInvite, findInvite, isDirect, toWsUrl } from './net/invite.js';
 import { PeerClient } from './net/peer-client.js';
-import { closeAllTunnels, openTunnel, waitUntilReachable } from './net/tunnel.js';
+import { closeAllTunnels, offersDirect, openTunnel, waitUntilReachable } from './net/tunnel.js';
 import { App } from './ui/App.js';
 import { ErrorBoundary } from './ui/components/ErrorBoundary.js';
 import { createMockBackend } from './agent/mock.js';
@@ -28,6 +28,8 @@ import { MOUSE_OFF, MOUSE_ON, type MouseEvent, createMouseInput } from './ui/mou
 
 interface Room {
   readonly url: string;
+  /** Joiners: the relay to use when a direct connection can't be made. */
+  readonly fallbackUrl?: string;
   /** Changes when the host replaces the invite link. */
   secret: string;
   readonly room: string;
@@ -35,9 +37,11 @@ interface Room {
   readonly invite?: string;
   /** The host's signing identity (its peer id is marked as host in the room). */
   readonly identity?: Identity;
-  /** Where friends reach the room, once remote access is up. */
-  publicUrl?: string;
+  /** Where friends reach the room, once remote access is up: direct (`p2p://`) or a relay, plus an optional fallback relay. */
+  reach?: { url: string; relay?: string };
 }
+
+const roomInvite = (room: Room): string | undefined => (room.reach ? encodeInvite({ ...room.reach, secret: room.secret }) : undefined);
 
 function lanAddress(): string | undefined {
   return Object.values(os.networkInterfaces())
@@ -65,22 +69,64 @@ async function resolveJoinInvite(config: Config): Promise<string> {
 async function joinRoom(config: Config): Promise<Room> {
   const code = await resolveJoinInvite(config);
   const invite = decodeInvite(code);
-  const host = new URL(invite.url.replace(/^ws/, 'http')).host;
-  return { url: invite.url, secret: invite.secret, room: host, invite: encodeInvite(invite) };
+  const relayHost = (url: string): string => new URL(url.replace(/^ws/, 'http')).host;
+  const label = isDirect(invite.url) ? (invite.relay ? relayHost(invite.relay) : `direct ${invite.url.slice(P2P_SCHEME.length, P2P_SCHEME.length + 6)}…`) : relayHost(invite.url);
+  return { url: invite.url, ...(invite.relay ? { fallbackUrl: invite.relay } : {}), secret: invite.secret, room: label, invite: encodeInvite(invite) };
+}
+
+type Announce = (phase: 'ready' | 'local') => Promise<void>;
+
+/** Start accepting direct connections; the invite is ready as soon as the host is on the DHT (~1-2s). */
+async function publishDirect(room: Room, hub: Hub, announce: Announce): Promise<boolean> {
+  try {
+    room.reach = { url: `${P2P_SCHEME}${await hub.listenP2P()}` };
+    await announce('ready');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `auto` with a direct invite already out: bring up a relay in the background for friends
+ * whose network blocks direct connections, and add it to the invite once it answers.
+ */
+async function addFallbackRelay(room: Room, session: Session, isClosing: () => boolean): Promise<void> {
+  const store = session.store;
+  const update = async (next: Room['reach']): Promise<void> => {
+    const before = roomInvite(room);
+    room.reach = next;
+    const after = roomInvite(room);
+    if (isClosing() || !after) return;
+    store.dispatch({ type: 'invite', invite: after });
+    // Refresh the clipboard only if it still holds the link we put there.
+    if (before && (await pasteText().catch(() => undefined))?.trim() === `klaude join ${before}`) await copyNative(`klaude join ${after}`).catch(() => false);
+  };
+  try {
+    const tunnel = await openTunnel('auto', room.hub?.port ?? 0, {
+      onDied: () => {
+        if (!isClosing() && room.reach) void update({ url: room.reach.url });
+      },
+    });
+    if (!tunnel || isClosing() || !(await waitUntilReachable(tunnel.publicUrl)) || !room.reach) return;
+    await update({ ...room.reach, relay: toWsUrl(tunnel.publicUrl) });
+  } catch {
+    // The direct invite still works; it just has no fallback.
+  }
 }
 
 /** Bring remote access up in the background so the UI appears instantly. */
 async function publish(config: Config, room: Room, session: Session, isClosing: () => boolean): Promise<void> {
   const store = session.store;
   const port = room.hub?.port ?? 0;
-  const lanInvite = (): string | undefined => {
+  const lanReach = (): boolean => {
     const ip = lanAddress();
-    if (!ip) return undefined;
-    room.publicUrl = `ws://${ip}:${port}`;
-    return encodeInvite({ url: room.publicUrl, secret: room.secret });
+    if (ip) room.reach = { url: `ws://${ip}:${port}` };
+    return Boolean(ip);
   };
-  const announce = async (invite: string, phase: 'ready' | 'local'): Promise<void> => {
-    if (isClosing()) return;
+  const announce: Announce = async (phase) => {
+    const invite = roomInvite(room);
+    if (isClosing() || !invite) return;
     store.dispatch({ type: 'invite', invite });
     store.dispatch({ type: 'hosting', hosting: { phase } });
     // Only auto-copy with a real clipboard tool; never silently push secrets through the terminal.
@@ -89,12 +135,22 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
   };
 
   if (config.tunnel === 'none') {
-    const invite = lanInvite();
-    if (invite) await announce(invite, 'local');
+    if (lanReach()) await announce('local');
     else store.dispatch({ type: 'hosting', hosting: { phase: 'failed', detail: 'No network address found.' } });
     return;
   }
   store.dispatch({ type: 'hosting', hosting: { phase: 'tunnel' } });
+  if (offersDirect(config.tunnel) && room.hub) {
+    if (await publishDirect(room, room.hub, announce)) {
+      if (config.tunnel === 'auto') void addFallbackRelay(room, session, isClosing);
+      return;
+    }
+    if (config.tunnel === 'p2p') {
+      store.dispatch({ type: 'hosting', hosting: { phase: 'failed', detail: 'Could not reach the peer-to-peer network. Check your connection, or switch Remote access to Cloudflare in /settings.' } });
+      return;
+    }
+    // auto: no direct connections today, so fall back to the relay alone.
+  }
   try {
     const tunnel = await openTunnel(config.tunnel, port, {
       onProgress: (detail) => store.dispatch({ type: 'hosting', hosting: { phase: 'tunnel', detail } }),
@@ -107,18 +163,21 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
     if (!tunnel || isClosing()) return;
     store.dispatch({ type: 'hosting', hosting: { phase: 'reachable' } });
     if (!(await waitUntilReachable(tunnel.publicUrl))) throw new Error('The tunnel never became reachable');
-    room.publicUrl = toWsUrl(tunnel.publicUrl);
-    await announce(encodeInvite({ url: room.publicUrl, secret: room.secret }), 'ready');
+    room.reach = { url: toWsUrl(tunnel.publicUrl) };
+    await announce('ready');
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    const fallback = config.lan ? lanInvite() : undefined;
-    if (fallback) await announce(fallback, 'local');
+    const fallback = config.lan && lanReach();
+    if (fallback) await announce('local');
     store.dispatch({
       type: 'hosting',
       hosting: { phase: 'failed', detail: `${reason}. ${fallback ? 'Friends on your Wi-Fi can still join with /invite.' : 'Restart with --lan to invite people on your Wi-Fi.'}` },
     });
   }
 }
+
+/** The store's prefs don't know 'p2p' yet (its Settings label is still to come); show it as 'auto' until then. */
+const storeTunnel = (kind: Config['tunnel']): Exclude<Config['tunnel'], 'p2p'> => (kind === 'p2p' ? 'auto' : kind);
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -147,11 +206,12 @@ async function main(): Promise<void> {
   applyTheme(config.theme);
   // Remember an explicitly chosen name, so plain `klaude` uses it next time.
   if (process.argv.includes('--name') || process.argv.includes('-n')) saveSettings({ name: config.name });
-  const store = new Store(initialState(room.room, config.policy, { theme: config.theme, mouse: config.mouse, tunnel: config.tunnel, selfApproval: config.selfApproval }));
+  const store = new Store(initialState(room.room, config.policy, { theme: config.theme, mouse: config.mouse, tunnel: storeTunnel(config.tunnel), selfApproval: config.selfApproval }));
   if (room.invite) store.dispatch({ type: 'invite', invite: room.invite });
 
   const client = new PeerClient({
     url: room.url,
+    ...(room.fallbackUrl ? { fallbackUrl: room.fallbackUrl } : {}),
     keys: deriveKeys(room.secret),
     profile: { name: config.name, shares: shares.infos, agent: config.agent },
     ...(room.identity ? { identity: room.identity } : {}),
@@ -161,7 +221,8 @@ async function main(): Promise<void> {
     if (!hub) return;
     room.secret = generateSecret();
     hub.replaceInvite(room.secret, deriveKeys(room.secret));
-    if (room.publicUrl) store.dispatch({ type: 'invite', invite: encodeInvite({ url: room.publicUrl, secret: room.secret }) });
+    const invite = roomInvite(room);
+    if (invite) store.dispatch({ type: 'invite', invite });
   };
   const roomControl = hub
     ? {

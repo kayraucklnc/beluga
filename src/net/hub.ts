@@ -1,4 +1,4 @@
-import { WebSocketServer, type WebSocket } from 'ws';
+import { WebSocketServer } from 'ws';
 import type { AddressInfo } from 'node:net';
 import {
   type Frame,
@@ -9,6 +9,8 @@ import {
   parseFrame,
 } from '../protocol.js';
 import { type RoomKeys, newNonce, open as openBox, seal, verifyNonce, verifyProof } from './crypto.js';
+import { type P2POptions, type P2PServer, listenP2P } from './p2p.js';
+import { type MessageSocket, fromWebSocket } from './transport.js';
 
 export interface HubOptions {
   readonly keys: RoomKeys;
@@ -27,7 +29,7 @@ export interface HubOptions {
 
 interface Conn {
   alive: boolean;
-  readonly ws: WebSocket;
+  readonly ws: MessageSocket;
   readonly nonce: string;
   peer?: PeerInfo;
   tokens: number;
@@ -49,6 +51,15 @@ export interface Hub {
   readonly isOpen: boolean;
   /** Forget the history shown to people who join later. */
   clearHistory(): void;
+  /** Serve one more connection (any transport); it goes through the same auth and limits. */
+  attach(socket: MessageSocket): void;
+  /**
+   * Also accept direct peer-to-peer connections. Resolves with the public key friends dial
+   * once the host is announced on the DHT. Safe to call again (returns the same key).
+   */
+  listenP2P(opts?: P2POptions): Promise<string>;
+  /** The direct-connection key, once listening. */
+  readonly p2pKey: string | undefined;
 }
 
 /** Close codes the client treats as final. */
@@ -98,7 +109,7 @@ export function startHub(opts: HubOptions): Promise<Hub> {
   const wss = new WebSocketServer({ port: opts.port ?? 0, host: opts.host ?? '127.0.0.1', maxPayload: MAX_PAYLOAD });
 
   const send = (conn: Conn, frame: Frame): void => {
-    if (conn.ws.readyState === conn.ws.OPEN) conn.ws.send(JSON.stringify(frame));
+    if (conn.ws.isOpen) conn.ws.send(JSON.stringify(frame));
   };
 
   const authed = (): Conn[] => [...conns].filter((c) => c.peer);
@@ -186,7 +197,7 @@ export function startHub(opts: HubOptions): Promise<Hub> {
     for (const c of targets) send(c, out);
   };
 
-  wss.on('connection', (ws) => {
+  const attach = (ws: MessageSocket): void => {
     if ([...conns].filter((c) => !c.peer).length >= MAX_PENDING_AUTH) {
       ws.close(4006, 'busy');
       return;
@@ -198,9 +209,8 @@ export function startHub(opts: HubOptions): Promise<Hub> {
       if (!conn.peer) ws.close(4005, 'auth timeout');
     }, authTimeoutMs);
 
-    ws.on('message', (data) => {
+    ws.on('message', (raw) => {
       if (!allow(conn)) return;
-      const raw = data.toString();
       if (!conn.peer && raw.length > MAX_PREAUTH_BYTES) {
         ws.close(4007, 'too large');
         return;
@@ -233,7 +243,19 @@ export function startHub(opts: HubOptions): Promise<Hub> {
     ws.on('error', () => ws.close());
 
     send(conn, { t: 'challenge', v: PROTOCOL_VERSION, nonce: conn.nonce });
-  });
+  };
+  wss.on('connection', (ws) => attach(fromWebSocket(ws)));
+
+  let p2p: Promise<P2PServer> | undefined;
+  let p2pKey: string | undefined;
+  let closing = false;
+  const startP2P = (p2pOpts: P2POptions = {}): Promise<string> => {
+    if (closing) return Promise.reject(new Error('The room is closing'));
+    p2p ??= listenP2P({ ...p2pOpts, maxBytes: MAX_PAYLOAD, onSocket: attach });
+    // A failed start can be retried later.
+    p2p.catch(() => (p2p = undefined));
+    return p2p.then((server) => (p2pKey = server.publicKey));
+  };
 
   const heartbeat = setInterval(() => {
     for (const c of conns) {
@@ -280,12 +302,17 @@ export function startHub(opts: HubOptions): Promise<Hub> {
           history = [];
           historyBytes = 0;
         },
-        close: () =>
-          new Promise<void>((done) => {
-            clearInterval(heartbeat);
-            for (const c of conns) c.ws.terminate();
-            wss.close(() => done());
-          }),
+        attach,
+        listenP2P: startP2P,
+        get p2pKey() {
+          return p2pKey;
+        },
+        close: async () => {
+          closing = true;
+          clearInterval(heartbeat);
+          for (const c of conns) c.ws.terminate();
+          await Promise.all([new Promise<void>((done) => wss.close(() => done())), p2p?.then((server) => server.close()).catch(() => undefined)]);
+        },
       });
     });
   });

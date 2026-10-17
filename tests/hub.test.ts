@@ -128,7 +128,7 @@ describe('hub resilience', () => {
     b.connect();
     await waitFor(() => inbox.length === 1);
     // Drop b's socket; it reconnects and receives the same history again.
-    (b as unknown as { ws: WebSocket }).ws.terminate();
+    (b as unknown as { socket: { terminate(): void } }).socket.terminate();
     await waitFor(() => !b.connected);
     await waitFor(() => b.connected, 5000);
     a.client.send({ kind: 'chat', text: 'after' });
@@ -225,7 +225,9 @@ describe('hub: removing people and replacing the invite', () => {
     await waitFor(() => stranger.errors.length);
     expect(stranger.errors[0]).toMatch(/isn't taking new people/);
     a.close();
-    const back = new PeerClient({ url: `ws://127.0.0.1:${hub.port}`, keys, profile: { name: 'a', shares: [], agent: true }, identity: memberA, reconnect: false });
+    // The hub may not have seen `a` leave yet ("already connected"); that isn't fatal, so retry.
+    const back = new PeerClient({ url: `ws://127.0.0.1:${hub.port}`, keys, profile: { name: 'a', shares: [], agent: true }, identity: memberA });
+    back.on('error', () => undefined);
     clients.push(back);
     back.connect();
     await waitFor(() => back.connected);

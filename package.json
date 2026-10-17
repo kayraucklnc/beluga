@@ -29,6 +29,7 @@
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "cloudflared": "^0.7.3",
+    "hyperdht": "^6.34.1",
     "ink": "^8.0.0",
     "jpeg-js": "^0.4.4",
     "marked": "^15.0.12",

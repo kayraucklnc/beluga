@@ -27,7 +27,7 @@ Options:
       --model <id>         model for your claude (default: your Claude Code default)
       --no-mouse           keyboard only (keeps your terminal's native text selection)
   host only:
-      --tunnel <kind>      auto | cloudflared | ngrok | none (default auto: free Cloudflare tunnel, no account)
+      --tunnel <kind>      auto | p2p | cloudflared | ngrok | none (default auto: direct peer-to-peer, Cloudflare as fallback)
       --lan                listen on all interfaces so LAN peers can dial ws://<your-ip>:<port>
   -p, --port <port>        hub port (default random)
   -h, --help               show this help
@@ -59,7 +59,7 @@ export interface Config {
   readonly inviteNow: boolean;
 }
 
-const TUNNELS: readonly TunnelKind[] = ['auto', 'ngrok', 'cloudflared', 'none'];
+const TUNNELS: readonly TunnelKind[] = ['auto', 'p2p', 'ngrok', 'cloudflared', 'none'];
 const POLICIES: readonly Policy[] = ['ask', 'auto', 'deny'];
 
 export function sanitizeName(raw: string): string {
