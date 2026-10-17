@@ -191,7 +191,7 @@ function handleMenu(ui: UiState, state: MenuState, input: string, key: KeyInfo, 
   const digit = Number(input);
   if (Number.isInteger(digit) && digit >= 1 && digit <= size) return pick(digit - 1);
   // The welcome screen needs an answer; Esc picks the safe default. Other menus just close.
-  if (key.escape) return state.menu.kind === 'welcome' ? pick(0) : { ui: { ...ui, menu: undefined } };
+  if (key.escape) return state.menu.kind === 'welcome' ? pick(state.selected) : { ui: { ...ui, menu: undefined } };
   return { ui };
 }
 

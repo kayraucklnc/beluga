@@ -43,7 +43,8 @@ function statusOf(item: AgentItem, opts: RenderOptions): StatusStyle {
 }
 
 /** Draw a rounded card around body lines, with a title on the top border. */
-export function card(title: Line, right: Line, body: readonly Line[], cols: number, border: string): Line[] {
+export function card(title: Line, right: Line, body: readonly Line[], rawCols: number, border: string): Line[] {
+  const cols = Math.max(12, rawCols);
   const inner = Math.max(10, cols - 4);
   const rightWidth = lineWidth(right);
   const titleLine = truncate(title, Math.max(4, cols - rightWidth - 10));
@@ -101,7 +102,8 @@ function chatHeader(item: ChatItem, opts: RenderOptions): Line {
 }
 
 /** Flatten the room log into terminal lines: grouped chat, system notes, and agent cards. */
-export function renderLog(items: readonly LogItem[], cols: number, opts: RenderOptions = {}): Line[] {
+export function renderLog(items: readonly LogItem[], rawCols: number, opts: RenderOptions = {}): Line[] {
+  const cols = Math.max(12, rawCols);
   const out: Line[] = [];
   let prev: LogItem | undefined;
   for (const item of items) {

@@ -17,7 +17,9 @@ import { type Target, hitTest } from './hit.js';
 import { type Effect, type UiState, handleKey, initialUi } from './keymap.js';
 import { computeLayout } from './layout.js';
 import { type MenuKind, menuSpec } from './menus.js';
-import type { MouseEvent } from './mouse.js';
+import { MOUSE_OFF, MOUSE_ON, type MouseEvent } from './mouse.js';
+import { THEMES } from '../core/settings.js';
+import { applyTheme } from './theme.js';
 import { type Suggestion, openTarget, suggest } from './suggest.js';
 
 const TOAST_MS = 3500;
@@ -98,6 +100,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   };
   const patchUi = (patch: Partial<UiState>): void => setUi({ ...uiRef.current, ...patch });
   const { exit } = useApp();
+  const { write } = useStdout();
   const { columns, rows } = useTerminalSize();
   const frame = useFrame(anyActivity(state) || state.transfers.some((t) => t.status === 'active'));
   const view = derive(state, ui, session.selfId, columns, rows);
@@ -109,6 +112,13 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     const t = setTimeout(() => session.store.dispatch({ type: 'toast_clear', id: toast.id }), TOAST_MS);
     return () => clearTimeout(t);
   }, [state.toast, session]);
+
+  // /settings opens the settings menu.
+  useEffect(() => {
+    if (state.overlay !== 'settings') return;
+    session.store.dispatch({ type: 'overlay', overlay: undefined });
+    patchUi({ menu: { menu: { kind: 'settings' }, selected: 0 } });
+  }, [state.overlay]);
 
   // Opening a file (yourself) moves you into the viewer so its controls are right there.
   // Files opened by someone you follow don't steal focus.
@@ -153,7 +163,44 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       session.toast(msg[policy], 'success');
       return;
     }
+    const reopen = (): void => patchUi({ menu: { menu, selected: index } });
     switch (option.id) {
+      case 'set-name':
+        typeInto('/name ');
+        return;
+      case 'set-theme': {
+        const next = THEMES[(THEMES.indexOf(latest.prefs.theme) + 1) % THEMES.length] ?? 'calm';
+        applyTheme(next);
+        session.setPrefs({ theme: next });
+        reopen();
+        return;
+      }
+      case 'set-policy': {
+        const order = ['ask', 'auto', 'deny'] as const;
+        session.setClaudeSharing(order[(order.indexOf(latest.policy) + 1) % order.length] ?? 'ask');
+        reopen();
+        return;
+      }
+      case 'set-mouse':
+        write(latest.prefs.mouse ? MOUSE_OFF : MOUSE_ON);
+        session.setPrefs({ mouse: !latest.prefs.mouse });
+        reopen();
+        return;
+      case 'set-tunnel': {
+        const order = ['auto', 'cloudflared', 'ngrok', 'none'] as const;
+        session.setPrefs({ tunnel: order[(order.indexOf(latest.prefs.tunnel) + 1) % order.length] ?? 'auto' });
+        reopen();
+        return;
+      }
+      case 'set-size':
+        session.toast('Use ⌘ + / ⌘ − in your terminal to change text size');
+        reopen();
+        return;
+      case 'settings':
+        patchUi({ menu: { menu: { kind: 'settings' }, selected: 0 } });
+        return;
+      case 'close':
+        return;
       case 'ask':
         typeInto(`@claude:${peer?.name ?? ''} `);
         return;
@@ -287,6 +334,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       case 'help':
         session.store.dispatch({ type: 'overlay', overlay: 'help' });
         return;
+      case 'settings':
+        patchUi({ menu: { menu: { kind: 'settings' }, selected: 0 } });
+        return;
     }
   };
 
@@ -359,7 +409,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   // Mouse: clicks act on what's under the pointer, the wheel scrolls it.
   useEffect(() => {
     if (!subscribeMouse) return;
-    return subscribeMouse((e) => {
+    return subscribeMouse((e) => safely('mouse', () => {
       const latest = session.store.getState();
       const d = derive(latest, uiRef.current, session.selfId, columns, rows);
       const target = hitTest(d.geometry, e.x, e.y, {
@@ -372,10 +422,19 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       });
       if (e.button === 'wheelUp' || e.button === 'wheelDown') onWheel(target, e.button === 'wheelDown' ? 1 : -1);
       else if (e.button === 'left' && e.kind === 'press') onClick(target);
-    });
+    }));
   });
 
-  useInput((input, key) => {
+  /** A bug in one handler should show a notice, never take the whole room down. */
+  const safely = (label: string, fn: () => void): void => {
+    try {
+      fn();
+    } catch (err) {
+      session.toast(`Something went wrong (${label}): ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  };
+
+  useInput((input, key) => safely('key', () => {
     const current = uiRef.current;
     const latest = session.store.getState();
     const d = derive(latest, current, session.selfId, columns, rows);
@@ -392,7 +451,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     });
     setUi(result.ui);
     if (result.effect) run(result.effect);
-  });
+  }));
 
   const mainWidth = columns - g.sideWidth;
   const sideFocus = view.focus === 'people' || view.focus === 'files' ? view.focus : 'other';

@@ -2,7 +2,9 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import type { AppState, ViewerState } from '../../core/store.js';
 import { peerName } from '../../core/store.js';
-import { isMarkdownPath, renderMarkdown } from '../markdown.js';
+import { isMarkdownPath } from '../markdown.js';
+import { renderMarkdownAnsi } from '../markdown-render.js';
+import { ansiToLine } from '../ansi.js';
 import { type Line, plain } from '../text.js';
 import { glyph, theme } from '../theme.js';
 import { LineView } from './LineView.js';
@@ -20,7 +22,7 @@ interface ViewerProps {
 /** Clickable controls drawn on the viewer's last line. Shared with mouse hit-testing. */
 export function viewerLegend(v: ViewerState, full: boolean, raw: boolean): Array<{ id: string; label: string }> {
   return [
-    { id: 'fullscreen', label: full ? '⤡ Exit fullscreen f' : '⤢ Fullscreen f' },
+    { id: 'fullscreen', label: full ? 'Exit fullscreen f' : 'Fullscreen f' },
     ...(isMarkdownPath(v.path) ? [{ id: 'raw', label: raw ? 'Rendered r' : 'Source r' }] : []),
     { id: 'download', label: '↓ Download d' },
     { id: 'close', label: '✕ Close ⌫' },
@@ -30,7 +32,7 @@ export const LEGEND_GAP = 3;
 
 /** All lines the viewer can show (rendered Markdown or numbered source). Exported for scroll bounds. */
 export function viewerLines(v: ViewerState, width: number, raw: boolean): Line[] {
-  if (isMarkdownPath(v.path) && !raw) return renderMarkdown(v.content, width - 4);
+  if (isMarkdownPath(v.path) && !raw) return renderMarkdownAnsi(v.content, width - 6).map(ansiToLine);
   const lines = v.content.split('\n');
   const gutter = String(lines.length).length;
   return lines.map((line, i) => [

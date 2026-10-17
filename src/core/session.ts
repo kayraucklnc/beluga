@@ -6,7 +6,8 @@ import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
 import { type BodyInput, type BodyOf, CHUNK_BYTES, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
 import { parseInput, parseLocation } from './mentions.js';
 import { type ShareService } from './shares.js';
-import { type Location, type Store, peerName } from './store.js';
+import { type Location, type Prefs, type Store, peerName } from './store.js';
+import type { Settings } from './settings.js';
 import { runCommand } from './commands.js';
 import { DEFAULT_DOWNLOAD_DIR, downloadFile } from './downloads.js';
 
@@ -24,6 +25,8 @@ export interface SessionOptions {
   readonly copy?: (text: string) => Promise<unknown>;
   /** Where downloads are saved (default ~/Downloads/klaude). */
   readonly downloadDir?: string;
+  /** Persist a settings change (name, policy, theme…). */
+  readonly saveSettings?: (patch: Partial<Settings>) => void;
 }
 
 /** In-flight requests remember who must answer, so other peers can't spoof responses. */
@@ -452,6 +455,25 @@ export class Session {
   setClaudeSharing(policy: 'ask' | 'auto' | 'deny'): void {
     this.store.dispatch({ type: 'policy', policy });
     this.updateProfile({ agent: this.hasAgent && policy !== 'deny' });
+    this.opts.saveSettings?.({ policy });
+  }
+
+  /** Change your display name for this room and future ones. */
+  rename(raw: string | undefined): void {
+    const name = (raw ?? '').replace(/[^\w.-]/g, '').slice(0, 32);
+    if (!name) {
+      this.toast('Usage: /name <new name> (letters, numbers, . - _)', 'warn');
+      return;
+    }
+    this.updateProfile({ name });
+    this.opts.saveSettings?.({ name });
+    this.toast(`You're now ${name}`, 'success');
+  }
+
+  /** Update a display preference and remember it. */
+  setPrefs(prefs: Partial<Prefs>): void {
+    this.store.dispatch({ type: 'prefs', prefs });
+    this.opts.saveSettings?.(prefs);
   }
 
   /** Give a friend access to only your shared folders, or your whole computer. */

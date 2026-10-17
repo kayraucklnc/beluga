@@ -50,9 +50,10 @@ describe('menus', () => {
   });
 
   it('offers your own actions', () => {
-    expect(personMenu(room(), 0)!.options.map((o) => o.id)).toEqual(['ask-self', 'sharing']);
+    expect(personMenu(room(), 0)!.options.map((o) => o.id)).toEqual(['ask-self', 'sharing', 'settings']);
     const withInvite = reduce(room(), { type: 'invite', invite: 'https://x#y' });
-    expect(menuSpec(withInvite, { kind: 'person', index: 0 })!.options.map((o) => o.id)).toEqual(['ask-self', 'invite', 'sharing']);
+    expect(menuSpec(withInvite, { kind: 'person', index: 0 })!.options.map((o) => o.id)).toEqual(['ask-self', 'invite', 'sharing', 'settings']);
+    expect(menuSpec(room(), { kind: 'settings' })!.options.map((o) => o.id)).toEqual(['set-name', 'set-theme', 'set-policy', 'set-mouse', 'set-tunnel', 'set-size', 'close']);
     expect(menuSpec(room(), { kind: 'welcome' })?.title).toContain('Welcome');
   });
 });
@@ -60,7 +61,7 @@ describe('menus', () => {
 describe('action bar', () => {
   it('shows what you can do in each panel', () => {
     const s = room();
-    expect(actionButtons('chat', s, false).map((b) => b.id)).toEqual(['ask', 'commands', 'people', 'help']);
+    expect(actionButtons('chat', s, false).map((b) => b.id)).toEqual(['ask', 'commands', 'people', 'settings', 'help']);
     expect(actionButtons('chat', reduce(s, { type: 'invite', invite: 'x' }), false).map((b) => b.id)).toContain('invite');
     expect(actionButtons('chat', s, true).map((b) => b.id)).toEqual(['accept', 'hide']);
     expect(actionButtons('people', s, false).map((b) => b.id)).toEqual(['menu', 'chat']);
@@ -68,7 +69,7 @@ describe('action bar', () => {
     expect(actionButtons('viewer', s, false, { full: true, raw: false }).map((b) => b.text)).toEqual(['Scroll', 'Leave fullscreen']);
     const md = reduce(s, { type: 'viewer_open', at: { owner: 'b', share: 'api', path: 'README.md' } });
     expect(viewerLegend(md.viewer!, false, false).map((b) => b.id)).toEqual(['fullscreen', 'raw', 'download', 'close']);
-    expect(viewerLegend({ ...md.viewer!, path: 'a.ts' }, true, true).map((b) => b.label)).toEqual(['⤡ Exit fullscreen f', '↓ Download d', '✕ Close ⌫']);
+    expect(viewerLegend({ ...md.viewer!, path: 'a.ts' }, true, true).map((b) => b.label)).toEqual(['Exit fullscreen f', '↓ Download d', '✕ Close ⌫']);
     expect(actionButtons('files', s, false).map((b) => b.id)).toEqual(['open', 'chat']);
     const at = { owner: 'b', share: 'api', path: '' };
     const inFolder = reduce(reduce(s, { type: 'browser_loading', at }), { type: 'browser_entries', at, entries: [{ name: 'a.md', dir: false, size: 1 }] });
@@ -115,7 +116,7 @@ describe('layout and hit testing', () => {
     expect(hitTest(g, 60, 0, ctx(s))).toEqual({ kind: 'none' });
     const viewer = computeLayout({ columns: 120, rows: 40, peopleCount: 3, hasViewer: true, suggestionCount: 0 });
     expect(hitTest(viewer, 110, 10, ctx(s))).toEqual({ kind: 'viewer' });
-    const legend = [{ id: 'fullscreen', label: '⤢ Fullscreen f' }, { id: 'download', label: '↓ Download d' }];
+    const legend = [{ id: 'fullscreen', label: '⤢ Fullscreen f' }, { id: 'download', label: '↓ Download d' }]; // labels are just widths here
     const legendY = viewer.bodyTop + viewer.bodyHeight - 2;
     const legendX = viewer.sideWidth + viewer.chatWidth + 2;
     expect(hitTest(viewer, legendX, legendY, ctx(s, { viewerLegend: legend }))).toEqual({ kind: 'viewer_action', id: 'fullscreen' });

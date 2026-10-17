@@ -1,5 +1,6 @@
 import type { Session } from './session.js';
 import type { Policy } from './store.js';
+import { THEMES, type ThemeName } from './settings.js';
 
 export interface CommandSpec {
   readonly name: string;
@@ -21,6 +22,9 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'trust', args: '<name>', desc: "auto-approve someone's requests this session" },
   { name: 'untrust', args: '<name>', desc: 'require approval again' },
   { name: 'people', desc: "list everyone and what they share" },
+  { name: 'settings', desc: 'name, theme, sharing, mouse, remote access' },
+  { name: 'name', args: '<new name>', desc: 'change the name friends see' },
+  { name: 'theme', args: 'calm|light|contrast|mono', desc: 'switch the color theme' },
   { name: 'clear', desc: 'clear the chat' },
   { name: 'help', desc: 'show keys and commands' },
   { name: 'quit', desc: 'leave the room' },
@@ -104,6 +108,18 @@ export function runCommand(session: Session, name: string, args: readonly string
     }
     case 'clear':
       session.store.dispatch({ type: 'clear' });
+      return;
+    case 'settings':
+    case 'prefs':
+      session.store.dispatch({ type: 'overlay', overlay: 'settings' });
+      return;
+    case 'name':
+      session.rename(args.join(''));
+      return;
+    case 'theme':
+      if (!arg || !THEMES.includes(arg as ThemeName)) return session.toast(`Themes: ${THEMES.join(', ')}`);
+      session.setPrefs({ theme: arg as ThemeName });
+      session.toast(`Theme: ${arg}`, 'success');
       return;
     default:
       session.toast(`Unknown command /${name}. Type /help (or // to send a message starting with /)`, 'warn');

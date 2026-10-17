@@ -101,14 +101,16 @@ describe('hub', () => {
     expect(a.inbox.length).toBeLessThan(10);
   });
 
-  it('accepts profile updates', async () => {
+  it('accepts profile updates, including unique renames', async () => {
     hub = await startHub({ keys });
     const a = join('a');
     const b = join('b');
     await waitFor(() => b.peers().length === 2);
     a.client.updateProfile({ name: 'ignored', shares: [{ name: 'docs', writable: false }], agent: false });
     await waitFor(() => b.peers().find((p) => p.peerId === a.client.peerId)?.shares.length === 1);
-    expect(b.peers().find((p) => p.peerId === a.client.peerId)).toMatchObject({ name: 'a', agent: false });
+    expect(b.peers().find((p) => p.peerId === a.client.peerId)).toMatchObject({ name: 'ignored', agent: false });
+    a.client.updateProfile({ name: 'b', shares: [], agent: false }); // taken by the other peer
+    await waitFor(() => b.peers().find((p) => p.peerId === a.client.peerId)?.name === 'b-2');
   });
 });
 
