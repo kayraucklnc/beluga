@@ -4,6 +4,7 @@ import type { Settings, ThemeName } from './settings.js';
 import type { Review } from '../workspaces/git.js';
 import type { Project, ProjectGroup } from '../workspaces/types.js';
 import type { EnvChange } from '../workspaces/env.js';
+import type { Bitmap } from '../image/bitmap.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
 
@@ -66,6 +67,8 @@ export interface BrowserState {
 
 export interface ViewerState extends Location {
   readonly content: string;
+  /** Decoded pixels when the file is an image. */
+  readonly image?: Bitmap;
   readonly truncated: boolean;
   readonly loading: boolean;
   readonly error?: string;
@@ -221,6 +224,7 @@ export type Action =
   | { type: 'browser_cursor'; delta: number }
   | { type: 'viewer_open'; at: Location; by?: string }
   | { type: 'viewer_content'; at: Location; content: string; truncated: boolean }
+  | { type: 'viewer_image'; at: Location; image: Bitmap }
   | { type: 'viewer_error'; at: Location; error: string }
   | { type: 'viewer_scroll'; delta: number; max?: number }
   | { type: 'viewer_close' }
@@ -510,6 +514,9 @@ export function reduce(state: AppState, action: Action): AppState {
         viewer: { ...action.at, content: keep?.content ?? '', truncated: keep?.truncated ?? false, loading: true, scroll: keep?.scroll ?? 0, by: action.by },
       };
     }
+    case 'viewer_image':
+      if (!state.viewer || !sameLoc(state.viewer, action.at)) return state;
+      return { ...state, viewer: { ...state.viewer, image: action.image, content: '', truncated: false, loading: false, error: undefined } };
     case 'viewer_content':
       if (!state.viewer || !sameLoc(state.viewer, action.at)) return state;
       return { ...state, viewer: { ...state.viewer, content: clean(action.content), truncated: action.truncated, loading: false, error: undefined } };

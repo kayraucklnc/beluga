@@ -20,7 +20,7 @@ import { Menu } from './components/Menu.js';
 import { ModelBlock } from './components/ModelBlock.js';
 import { Panel } from './components/Panel.js';
 import { Sidebar } from './components/Sidebar.js';
-import { Viewer, viewerLegend, viewerLines } from './components/Viewer.js';
+import { Viewer, viewerInner, viewerLegend, viewerLines } from './components/Viewer.js';
 import { type Derived, derive } from './derive.js';
 import { type Target, hitTest } from './hit.js';
 import { type Effect, type UiState, handleKey, initialUi } from './keymap.js';
@@ -28,7 +28,7 @@ import { type MenuKind, menuSpec } from './menus.js';
 import { MOUSE_OFF, MOUSE_ON, type MouseEvent } from './mouse.js';
 import { openTarget, suggestionWindow } from './suggest.js';
 import { applyTheme, theme } from './theme.js';
-import { type UiAction, isCompacting } from './workspace-models.js';
+import { type UiAction, isCompacting, toggleProject } from './workspace-models.js';
 
 const TOAST_MS = 3500;
 const FRAME_MS = 100;
@@ -176,8 +176,12 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     const latest = session.store.getState();
     if (!latest.viewer) return;
     const dd = view(latest, uiRef.current);
-    const total = viewerLines(latest.viewer, dd.geometry.viewerWidth, uiRef.current.viewerRaw).length;
-    session.store.dispatch({ type: 'viewer_scroll', delta, max: Math.max(0, total - (dd.geometry.paneHeight - 3)) });
+    // Fullscreen draws the viewer across the whole body, so measure with those sizes.
+    const full = uiRef.current.viewerFull && dd.focus === 'viewer';
+    const w = full ? dd.geometry.columns : dd.geometry.viewerWidth;
+    const h = full ? dd.geometry.bodyHeight : dd.geometry.paneHeight;
+    const total = viewerLines(latest.viewer, w, uiRef.current.viewerRaw, h).length;
+    session.store.dispatch({ type: 'viewer_scroll', delta, max: Math.max(0, total - viewerInner(h)) });
   };
 
   const typeInto = (buffer: string): void => patchUi({ focus: 'chat', buffer, cursor: buffer.length, suggestHidden: false, selected: 0 });
@@ -205,9 +209,12 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         ctl?.open(action.id, action.tab);
         if (action.tab === 'review') patchUi({ focus: 'main' });
         return;
-      case 'toggle_project':
-        toggle(action.id);
+      case 'toggle_project': {
+        const latest = session.store.getState();
+        const project = latest.projects.find((p) => p.id === action.id);
+        if (project) patchUi({ collapsed: toggleProject(latest, project, uiRef.current.collapsed) });
         return;
+      }
       case 'toggle_group':
         toggle(`group:${action.name}`);
         return;

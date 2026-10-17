@@ -1,0 +1,126 @@
+import { PNG } from 'pngjs';
+import jpeg from 'jpeg-js';
+import { describe, expect, it } from 'vitest';
+import { createBitmap, fitPixels, resize } from '../src/image/bitmap.js';
+import { decodeImage, detectFormat, isImagePath, sanitizeSvg } from '../src/image/decode.js';
+import { bitmapToLines, imageToLines } from '../src/image/render.js';
+import { lineWidth } from '../src/ui/text.js';
+
+function png(w: number, h: number, rgba: [number, number, number, number]): Buffer {
+  const img = new PNG({ width: w, height: h });
+  for (let i = 0; i < img.data.length; i += 4) img.data.set(rgba, i);
+  return PNG.sync.write(img);
+}
+
+describe('image engine', () => {
+  it('recognizes image files by name and by bytes', () => {
+    expect(isImagePath('a/b/Photo.JPG')).toBe(true);
+    expect(isImagePath('notes.md')).toBe(false);
+    expect(detectFormat(png(1, 1, [0, 0, 0, 255]))).toBe('png');
+    expect(detectFormat(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBe('svg');
+    expect(detectFormat(Buffer.from('hello'))).toBeUndefined();
+  });
+
+  it('decodes PNG, JPEG and SVG to RGBA', () => {
+    const p = decodeImage(png(3, 2, [255, 0, 0, 255]));
+    expect([p.width, p.height, p.data[0], p.data[3]]).toEqual([3, 2, 255, 255]);
+
+    const raw = { width: 4, height: 4, data: Buffer.alloc(64, 200) };
+    const j = decodeImage(jpeg.encode(raw, 90).data);
+    expect([j.width, j.height]).toEqual([4, 4]);
+
+    const s = decodeImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><rect width="10" height="5" fill="#00ff00"/></svg>'));
+    expect(s.width / s.height).toBeCloseTo(2);
+    expect(s.data[1]).toBe(255);
+  });
+
+  it('rejects non-images with a friendly message', () => {
+    expect(() => decodeImage(Buffer.from('just text'))).toThrow(/PNG, JPEG, GIF or SVG/);
+  });
+
+  it('area-averages when shrinking, so detail blends instead of vanishing', () => {
+    const b = createBitmap(2, 1);
+    b.data.set([255, 255, 255, 255, 0, 0, 0, 255]);
+    const one = resize(b, 1, 1);
+    expect(one.data[0]).toBe(128);
+  });
+
+  it('ignores transparent pixels when averaging color', () => {
+    const b = createBitmap(2, 1);
+    b.data.set([255, 0, 0, 255, 0, 0, 0, 0]);
+    const one = resize(b, 1, 1);
+    expect([one.data[0], one.data[3]]).toEqual([255, 128]);
+  });
+
+  it('fits within the cell box keeping aspect (a cell is 1×2 pixels)', () => {
+    expect(fitPixels({ width: 1000, height: 500 }, 80, 100)).toEqual({ width: 80, height: 40 });
+    expect(fitPixels({ width: 500, height: 1000 }, 80, 20)).toEqual({ width: 20, height: 40 });
+    expect(fitPixels({ width: 8, height: 8 }, 80, 20)).toEqual({ width: 8, height: 8 });
+    expect(fitPixels({ width: 8, height: 8 }, 80, 20, true)).toEqual({ width: 40, height: 40 });
+  });
+
+  it('renders half blocks: top pixel as color, bottom as background, merged runs', () => {
+    const b = createBitmap(3, 2, [255, 0, 0, 255]);
+    b.data.set([0, 0, 255, 255], 3 * 4); // bottom-left blue
+    const [line] = bitmapToLines(b);
+    expect(line).toEqual([
+      { text: '▀', color: '#ff0000', bg: '#0000ff' },
+      { text: '▀▀', color: '#ff0000', bg: '#ff0000' },
+    ]);
+  });
+
+  it('lets the terminal background show through transparent pixels', () => {
+    const b = createBitmap(3, 2);
+    b.data.set([255, 0, 0, 255], 0); // top-left only
+    b.data.set([0, 255, 0, 255], (3 + 1) * 4); // bottom-middle only
+    const [line] = bitmapToLines(b);
+    expect(line?.map((s) => s.text).join('')).toBe('▀▄ ');
+    expect(line?.[0]).toEqual({ text: '▀', color: '#ff0000' });
+  });
+
+  it('text art spans the full ramp even for dim images', () => {
+    const b = createBitmap(2, 2);
+    b.data.set([10, 10, 10, 255, 40, 40, 40, 255, 10, 10, 10, 255, 40, 40, 40, 255]);
+    const [line] = bitmapToLines(b, { mode: 'ascii' });
+    expect(line?.map((s) => s.text).join('')).toBe(' @');
+  });
+
+  it('never draws wider or taller than asked', () => {
+    const img = decodeImage(png(640, 480, [10, 20, 30, 255]));
+    const lines = imageToLines(img, 50, 10);
+    expect(lines.length).toBeLessThanOrEqual(10);
+    expect(Math.max(...lines.map(lineWidth))).toBeLessThanOrEqual(50);
+    expect(imageToLines(img, 0, 10)).toEqual([]);
+  });
+});
+
+describe('untrusted images', () => {
+  it('rejects a PNG that claims huge dimensions before inflating anything', () => {
+    const tiny = png(1, 1, [0, 0, 0, 255]);
+    tiny.writeUInt32BE(20000, 16);
+    tiny.writeUInt32BE(20000, 20);
+    const started = Date.now();
+    expect(() => decodeImage(tiny)).toThrow(/too large/);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it('rasterizes even extreme SVG aspect ratios at a bounded size', () => {
+    const started = Date.now();
+    expect(() => decodeImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="20000"><rect width="1" height="20000" fill="red"/></svg>'))).toThrow(/too thin/);
+    const tall = decodeImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="20000"><rect width="100" height="20000" fill="red"/></svg>'));
+    expect(Math.max(tall.width, tall.height)).toBeLessThanOrEqual(800);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('strips references to local files from SVGs, keeping #ids and data: URLs', () => {
+    expect(sanitizeSvg('<image href="/etc/secret.png"/>')).toBe('<image href=""/>');
+    expect(sanitizeSvg("<image xlink:href='file:///Users/me/a.png'/>")).toBe("<image xlink:href=''/>");
+    expect(sanitizeSvg('<use href="#dot"/>')).toBe('<use href="#dot"/>');
+    expect(sanitizeSvg('<image href="data:image/png;base64,AAAA"/>')).toBe('<image href="data:image/png;base64,AAAA"/>');
+  });
+
+  it('keeps at most 800px on the longest side after decoding', () => {
+    const big = decodeImage(png(1600, 400, [1, 2, 3, 255]));
+    expect([big.width, big.height]).toEqual([800, 200]);
+  });
+});

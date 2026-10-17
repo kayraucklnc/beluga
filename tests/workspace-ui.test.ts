@@ -3,7 +3,7 @@ import { SubAgentTracker } from '../src/agent/subagents.js';
 import { initialState, reduce, channelOf, type AppState } from '../src/core/store.js';
 import { derive } from '../src/ui/derive.js';
 import { initialUi } from '../src/ui/keymap.js';
-import { activityOf, contextMeter, isCompacting, overviewModel, projectsModel, reviewModel, stateOf, tabsModel, workspaceHeaderModel } from '../src/ui/workspace-models.js';
+import { activityOf, contextMeter, isCompacting, isProjectOpen, overviewModel, projectsModel, reviewModel, stateOf, tabsModel, toggleProject, workspaceHeaderModel } from '../src/ui/workspace-models.js';
 import { confirmMenu } from '../src/ui/menus.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
@@ -110,19 +110,25 @@ describe('workspace UI models', () => {
     expect(actions).toEqual(expect.arrayContaining(['new_chat', 'open_ws', 'add_project', 'new_worktree', 'project_menu', 'toggle_project']));
     expect(folded.zones.find((z) => z.action.type === 'new_worktree')?.hint).toContain('New worktree in app');
 
-    const open = projectsModel(s, new Set(['p1']), 0, 34);
+    const open = projectsModel(s, new Set(['open:p1']), 0, 34);
     const openLines = text(open.lines);
     expect(openLines.some((l) => l.includes('⌂ main'))).toBe(true);
     expect(openLines.some((l) => l.includes('⌥ fix-auth'))).toBe(true);
     expect(openLines.some((l) => l.includes('◇ question'))).toBe(true);
     expect(openLines.some((l) => l.includes('▸ Archived (1)'))).toBe(true);
     expect(openLines.some((l) => /\bold\b/.test(l))).toBe(false); // archived list folded
-    const archiveOpen = text(projectsModel(s, new Set(['p1', 'archive:p1']), 0, 34).lines);
+    const archiveOpen = text(projectsModel(s, new Set(['open:p1', 'archive:p1']), 0, 34).lines);
     expect(archiveOpen.some((l) => l.includes('○ old'))).toBe(true);
 
     // the project you're in opens itself
     const inside = reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
     expect(text(projectsModel(inside, new Set(), 0, 34).lines).some((l) => l.startsWith('▌') && l.includes('fix-auth'))).toBe(true);
+
+    // opening a project by hand, then entering one of its workspaces, keeps it open
+    const opened = toggleProject(s, project, []);
+    expect(isProjectOpen(inside, project, new Set(opened))).toBe(true);
+    // and closing it by hand wins even while you're inside
+    expect(isProjectOpen(inside, project, new Set(toggleProject(inside, project, opened)))).toBe(false);
   });
 
   it('shows your groups as collapsible sections', () => {

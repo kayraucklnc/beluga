@@ -4,6 +4,8 @@ import stringWidth from 'string-width';
 export interface Seg {
   readonly text: string;
   readonly color?: string;
+  /** Background color (used by the image renderer). */
+  readonly bg?: string;
   readonly bold?: boolean;
   readonly dim?: boolean;
   readonly italic?: boolean;

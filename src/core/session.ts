@@ -13,7 +13,9 @@ import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Settings } from './settings.js';
 import { type ZoomDir, zoom as zoomTerminal } from './zoom.js';
 import { runCommand } from './commands.js';
-import { DEFAULT_DOWNLOAD_DIR, downloadFile } from './downloads.js';
+import { DEFAULT_DOWNLOAD_DIR, downloadFile, fetchBytes } from './downloads.js';
+import { MAX_IMAGE_BYTES, isImagePath } from '../image/decode.js';
+import { decodeImageAsync } from '../image/decode-async.js';
 
 export interface SessionOptions {
   readonly client: PeerClient;
@@ -64,6 +66,7 @@ export class Session {
   /** Conversation the agent is currently working in (for its send_chat tool). */
   private currentChannel = 'room';
   private workspaceTimer?: NodeJS.Timeout;
+  private viewerLoad?: { key: string; again: boolean };
   private readonly agent?: AgentBackend;
   private readonly pending = new Map<string, Pending>();
   private readonly agentWaiters = new Map<string, AgentWaiter>();
@@ -614,8 +617,36 @@ export class Session {
     return { content: res.content ?? '', truncated: res.truncated ?? false };
   }
 
+  /**
+   * Load the viewer's file. Change notifications can arrive in bursts (or be sent on
+   * purpose), so at most one load per file runs at a time; extra requests collapse
+   * into a single reload once it finishes.
+   */
   private async loadViewer(at: Location): Promise<void> {
+    const key = `${at.owner}\0${at.share}\0${at.path}`;
+    if (this.viewerLoad?.key === key) {
+      this.viewerLoad.again = true;
+      return;
+    }
+    const load = { key, again: false };
+    this.viewerLoad = load;
     try {
+      do {
+        load.again = false;
+        await this.loadViewerOnce(at);
+      } while (load.again && this.viewerLoad === load);
+    } finally {
+      if (this.viewerLoad === load) this.viewerLoad = undefined;
+    }
+  }
+
+  private async loadViewerOnce(at: Location): Promise<void> {
+    try {
+      if (isImagePath(at.path)) {
+        const bytes = await fetchBytes(at, (to, b) => this.request(to, b), MAX_IMAGE_BYTES);
+        this.store.dispatch({ type: 'viewer_image', at, image: await decodeImageAsync(bytes, at.path) });
+        return;
+      }
       const { content, truncated } = await this.readFile(at);
       this.store.dispatch({ type: 'viewer_content', at, content, truncated });
     } catch (err) {

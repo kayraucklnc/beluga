@@ -154,7 +154,7 @@ export function stateOf(state: AppState, ws: Workspace, frame: number, now = Dat
   if (state.conflicts[ws.id]?.length) return { label: 'Merge conflict', color: theme.error, icon: '!' };
   if (act.awaiting) return { label: 'Needs your approval', color: theme.warn, icon: glyph.wait };
   if (act.running) {
-    const extra = act.subagents ? ` · ${act.subagents} sub-agent${act.subagents > 1 ? 's' : ''}` : act.background ? ' · background task' : '';
+    const extra = act.subagents ? ` · ${act.subagents} sub-agent${act.subagents > 1 ? 's' : ''} running` : act.background ? ' · background task' : '';
     return { label: `Claude working${act.startedAt ? ` ${formatDuration(now - act.startedAt)}` : ''}${extra}`, color: theme.claude, icon: spin };
   }
   if (ws.archived) return { label: 'Archived', color: theme.muted, icon: glyph.ring };
@@ -173,10 +173,23 @@ const BRANCH = '⌥'; // in every common terminal font, and it looks like a fork
  * Whether a project is unfolded: folded by default (only the one you're in opens itself);
  * `toggled` flips that.
  */
+/**
+ * Projects start folded, except the one you're working in. Clicking records an explicit
+ * choice (`open:<id>` / `closed:<id>`) that wins from then on, so moving between
+ * workspaces never flips a project you opened or closed yourself.
+ */
 export function isProjectOpen(state: AppState, p: Project, toggled: ReadonlySet<string>): boolean {
+  if (toggled.has(`open:${p.id}`)) return true;
+  if (toggled.has(`closed:${p.id}`)) return false;
   const current = state.view.kind === 'workspace' ? state.view.id : undefined;
-  const byDefault = p.workspaces.some((w) => w.id === current) || !p.root;
-  return toggled.has(p.id) ? !byDefault : byDefault;
+  return p.workspaces.some((w) => w.id === current) || !p.root;
+}
+
+/** The fold choices after clicking a project's row. */
+export function toggleProject(state: AppState, p: Project, choices: readonly string[]): string[] {
+  const open = isProjectOpen(state, p, new Set(choices));
+  const rest = choices.filter((c) => c !== `open:${p.id}` && c !== `closed:${p.id}`);
+  return [...rest, `${open ? 'closed' : 'open'}:${p.id}`];
 }
 
 const section = (title: string, color: string): Seg[] => [{ text: title, color, bold: true }];

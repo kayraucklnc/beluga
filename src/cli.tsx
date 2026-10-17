@@ -18,6 +18,8 @@ import { closeAllTunnels, openTunnel, waitUntilReachable } from './net/tunnel.js
 import { App } from './ui/App.js';
 import { ErrorBoundary } from './ui/components/ErrorBoundary.js';
 import { createMockBackend } from './agent/mock.js';
+import { runUpdate } from './update/update.js';
+import { runView } from './image/view-cli.js';
 import { createDemoFolders, createDemoWorkspaces, startDemoFriend } from './demo.js';
 import { WorkspaceManager } from './workspaces/manager.js';
 import { MOUSE_OFF, MOUSE_ON, type MouseEvent, createMouseInput } from './ui/mouse.js';
@@ -107,7 +109,16 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
 }
 
 async function main(): Promise<void> {
-  let config = parseConfig(process.argv.slice(2));
+  const args = process.argv.slice(2);
+  if (args[0] === 'view') {
+    process.exitCode = await runView(args.slice(1));
+    return;
+  }
+  if (args[0] === 'update') {
+    process.exitCode = await runUpdate({ checkOnly: args.includes('--check') });
+    return;
+  }
+  let config = parseConfig(args);
   if (config.mode === 'help') {
     process.stdout.write(USAGE);
     return;

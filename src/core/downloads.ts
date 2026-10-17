@@ -30,6 +30,24 @@ export async function uniquePath(dir: string, name: string): Promise<string> {
   }
 }
 
+/** Pull a whole file in end-to-end encrypted chunks (binary-safe), refusing anything over `max` bytes. */
+export async function fetchBytes(at: Location, request: Requester, max: number, onProgress?: (received: number, total: number) => void): Promise<Buffer> {
+  const parts: Buffer[] = [];
+  let offset = 0;
+  let total = 0;
+  do {
+    const chunk = await request<BodyOf<'fs_chunk'>>(at.owner, { kind: 'fs_fetch', reqId: randomUUID(), share: at.share, path: at.path, offset });
+    total = chunk.total ?? 0;
+    if (total > max) throw new Error('File is too large');
+    const data = Buffer.from(chunk.data ?? '', 'base64');
+    if (chunk.offset !== offset || (data.length === 0 && offset < total)) throw new Error('Transfer got out of sync');
+    parts.push(data);
+    offset += data.length;
+    onProgress?.(offset, total);
+  } while (offset < total);
+  return Buffer.concat(parts);
+}
+
 /**
  * Pulls a file from a friend's share in end-to-end encrypted chunks and saves it
  * under ~/Downloads/klaude/<friend>/. Progress is mirrored into the store.
@@ -44,24 +62,18 @@ export async function downloadFile(
   const id = randomUUID();
   const name = safeFileName(at.path);
   store.dispatch({ type: 'transfer', transfer: { id, name, from, received: 0, total: 0, status: 'active' } });
-  const parts: Buffer[] = [];
   let offset = 0;
   let total = 0;
   try {
-    do {
-      const chunk = await request<BodyOf<'fs_chunk'>>(at.owner, { kind: 'fs_fetch', reqId: randomUUID(), share: at.share, path: at.path, offset });
-      total = chunk.total ?? 0;
-      if (total > MAX_DOWNLOAD_BYTES) throw new Error('File is too large');
-      const data = Buffer.from(chunk.data ?? '', 'base64');
-      if (chunk.offset !== offset || (data.length === 0 && offset < total)) throw new Error('Transfer got out of sync');
-      parts.push(data);
-      offset += data.length;
-      store.dispatch({ type: 'transfer', transfer: { id, name, from, received: offset, total, status: 'active' } });
-    } while (offset < total);
+    const bytes = await fetchBytes(at, request, MAX_DOWNLOAD_BYTES, (received, size) => {
+      offset = received;
+      total = size;
+      store.dispatch({ type: 'transfer', transfer: { id, name, from, received, total, status: 'active' } });
+    });
     const dir = path.join(baseDir, safeFileName(from));
     await fs.mkdir(dir, { recursive: true });
     const target = await uniquePath(dir, name);
-    await fs.writeFile(target, Buffer.concat(parts));
+    await fs.writeFile(target, bytes);
     store.dispatch({ type: 'transfer', transfer: { id, name, from, received: total, total, status: 'done', savedTo: target } });
     return target;
   } catch (err) {
