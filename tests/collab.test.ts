@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentBackend, AgentRunInput } from '../src/agent/types.js';
-import { Session, type RoomControl } from '../src/core/session.js';
+import { Session, type RoomControl, type SessionOptions as SessionOpts } from '../src/core/session.js';
 import { ShareService } from '../src/core/shares.js';
 import { Store, initialState, type AppState } from '../src/core/store.js';
 import { createDemoWorkspaces } from '../src/demo.js';
@@ -26,7 +26,7 @@ afterEach(async () => {
 
 type Script = (input: AgentRunInput) => Promise<string>;
 
-function peer(name: string, opts: { script?: Script; workspaces?: WorkspaceManager; host?: boolean; approvalTimeoutMs?: number } = {}) {
+function peer(name: string, opts: { script?: Script; workspaces?: WorkspaceManager; host?: boolean; approvalTimeoutMs?: number; findConversation?: SessionOpts['findConversation'] } = {}) {
   const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), `klaude-${name}-`)));
   const shares = new ShareService([{ name: 'proj', root, writable: false }]);
   const store = new Store(initialState('test', 'ask'));
@@ -55,6 +55,7 @@ function peer(name: string, opts: { script?: Script; workspaces?: WorkspaceManag
     zoom: async () => ({ ok: true, message: '' }),
     copy: async () => undefined,
     ...(opts.workspaces ? { workspaces: opts.workspaces } : {}),
+    ...(opts.findConversation ? { findConversation: opts.findConversation } : {}),
     ...(room ? { room } : {}),
     createAgent: (): AgentBackend => ({
       run: async (input) => {
@@ -307,5 +308,43 @@ describe('review hardening', () => {
     bob.session.askOwnClaude('please', `ws:${ws.id}`);
     await new Promise((r) => setTimeout(r, 200));
     expect(kay.runs).toHaveLength(0);
+  });
+});
+
+describe('on your own', () => {
+  it('plain messages in the chat go to your Claude, and @workspace reaches the Claude working there', async () => {
+    hub = await startHub({ keys });
+    const mgr = await createDemoWorkspaces();
+    const kay = peer('kay', { workspaces: mgr });
+    await room(kay);
+    await kay.session.workspaces!.refresh();
+    kay.session.submit('what is this project?');
+    await waitFor(() => kay.runs.some((r) => r.prompt === 'what is this project?' && !r.place));
+    const ws = mgr.list.flatMap((p) => p.workspaces).find((w) => w.name === 'add-auth')!;
+    kay.session.submit('@add-auth add a test');
+    await waitFor(() => kay.runs.some((r) => r.prompt === 'add a test'));
+    expect(kay.runs.find((r) => r.prompt === 'add a test')?.place?.cwd).toBe(ws.path);
+    expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes('Sent to the Claude in add-auth'))).toBe(true);
+  });
+
+  it("opening a workspace klaude hasn't used shows its Claude Code conversation and continues it", async () => {
+    hub = await startHub({ keys });
+    const mgr = await createDemoWorkspaces();
+    const seen: string[] = [];
+    const kay = peer('kay', {
+      workspaces: mgr,
+      findConversation: async (dir) => {
+        seen.push(dir);
+        return { sessionId: 'sess-1', title: 'Fix login', lastModified: Date.now(), items: [{ id: 'c1', type: 'chat', channel: '', from: 'me', name: 'kay', text: 'earlier message', ts: 1, byAgent: false }] };
+      },
+    });
+    await room(kay);
+    await kay.session.workspaces!.refresh();
+    const ws = mgr.list.flatMap((p) => p.workspaces).find((w) => w.name === 'webhook-retries')!;
+    kay.session.workspaces!.open(ws.id);
+    await waitFor(() => kay.state().log.some((l) => l.channel === `ws:${ws.id}` && l.type === 'chat' && l.text === 'earlier message'));
+    expect(seen).toEqual([ws.path]);
+    expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes('Continuing "Fix login"'))).toBe(true);
+    expect(mgr.find(ws.id)?.sessionId).toBe('sess-1');
   });
 });

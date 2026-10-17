@@ -75,12 +75,10 @@ describe("Claude's question card", () => {
 });
 
 describe('sharing and people', () => {
-  it('the workspace header has a Plan toggle and Share', () => {
+  it('the workspace header has Share (plan mode lives on the input box: Shift+Tab)', () => {
     const m = workspaceHeaderModel(room(), ws, 140);
-    expect(text(m.lines)[1]).toContain('○ Plan');
+    expect(text(m.lines)[1]).not.toContain('Plan');
     expect(text(m.lines)[1]).toContain('Share');
-    const on = reduce(room(), { type: 'plan_mode', channel: 'ws:w1', on: true });
-    expect(text(workspaceHeaderModel(on, ws, 140).lines)[1]).toContain('◉ Plan');
     const shared = reduce(room(), { type: 'member_set', id: 'w1', peerId: 'b', role: 'contribute' });
     expect(text(workspaceHeaderModel(shared, ws, 140).lines)[1]).toContain('Shared · 1');
   });

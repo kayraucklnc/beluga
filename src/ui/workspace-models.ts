@@ -339,7 +339,8 @@ export function tabsModel(state: AppState, width: number): Model {
     segs.push({ text: '  ' });
     x += 2;
   };
-  tab('Group chat', v.kind === 'room', { type: 'view', view: { kind: 'room' } }, 'Chat with everyone in the room and their Claudes', state.unread.room);
+  const solo = state.peers.length <= 1;
+  tab(solo ? 'Chat' : 'Group chat', v.kind === 'room', { type: 'view', view: { kind: 'room' } }, solo ? 'Talk with your Claude, or @a-workspace to reach the Claude working there' : 'Chat with everyone in the room and their Claudes', state.unread.room);
   tab('Shared files', v.kind === 'files', { type: 'view', view: { kind: 'files' } }, "Browse folders people in the room share");
   tab('Overview', v.kind === 'overview', { type: 'view', view: { kind: 'overview' } }, 'Every worktree and chat at a glance');
   if (v.kind === 'workspace') {
@@ -504,14 +505,6 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
     segs.push({ text: ' ' });
     x += 1;
   }
-  // Plan first: a toggle, so it's obvious whether Claude will act or propose a plan.
-  const channel = `ws:${ws.id}`;
-  const planning = state.planMode[channel] === true;
-  const planText = ` ${planning ? '◉' : '○'} Plan `;
-  segs.push({ text: planText, color: planning ? theme.info : theme.muted, bold: planning });
-  zones.push({ x0: x, x1: x + planText.length - 1, y: 1, action: { type: 'plan_toggle', channel }, hint: planning ? 'Plan mode is on: Claude looks first and asks you to approve a plan. Click to turn off' : 'Turn on plan mode: Claude investigates first and asks you to approve a plan before changing anything' });
-  x += planText.length + 1;
-  segs.push({ text: ' ' });
   segs.push({ text: '│ ', color: theme.border });
   x += 2;
   for (const btn of buttons) {

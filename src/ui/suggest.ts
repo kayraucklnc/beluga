@@ -22,6 +22,8 @@ export interface SuggestContext {
   readonly dirCache?: Readonly<Record<string, readonly FsEntry[]>>;
   /** Lists folders on this computer for "/project add <path>" (entries' size = 1 marks a git project). */
   readonly listLocalDirs?: (dir: string) => readonly FsEntry[];
+  /** "@workspace" targets, offered in the main chat. */
+  readonly workspaces?: ReadonlyArray<{ readonly label: string; readonly hint: string }>;
 }
 
 /** Folder completion for adding projects: "~/Proj" → "~/Projects/". */
@@ -117,7 +119,7 @@ function argumentSuggestions(cmd: string, partial: string, ctx: SuggestContext):
 }
 
 function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
-  const m = /(^|\s)(@[\w.:-]*)$/.exec(buffer);
+  const m = /(^|\s)(@[\w.:/-]*)$/.exec(buffer);
   if (!m) return [];
   const token = (m[2] ?? '').toLowerCase();
   const before = buffer.slice(0, buffer.length - token.length);
@@ -126,7 +128,9 @@ function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
     ...ctx.peers
       .filter((p) => p.agent && p.peerId !== ctx.selfId)
       .map((p) => ({ label: `@claude:${p.name}`, hint: `ask ${p.name}'s Claude (on their machine)` })),
-    { label: '@claudes', hint: 'ask every Claude in the room' },
+    ...(ctx.peers.length > 1 ? [{ label: '@claudes', hint: 'ask every Claude in the room' }] : []),
+    // Only at the start: "@add-auth …" sends the whole message to that workspace's Claude.
+    ...(before.trim() ? [] : (ctx.workspaces ?? [])),
   ];
   return options
     .filter((o) => o.label.toLowerCase().startsWith(token) && o.label.toLowerCase() !== token)

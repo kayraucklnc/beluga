@@ -1,6 +1,6 @@
 {
   "name": "klaude",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Multiplayer terminal for Claude Code: group chat with friends and everyone's Claude agents over a P2P tunnel.",
   "license": "MIT",
   "type": "module",

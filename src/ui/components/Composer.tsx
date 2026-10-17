@@ -20,6 +20,8 @@ interface ComposerProps {
   readonly transfer?: Transfer;
   /** Overrides the hint text in an empty composer. */
   readonly placeholder?: string;
+  /** Plan mode for this conversation: shown on the right of the box (Shift+Tab switches it). */
+  readonly planMode?: boolean;
   /** Highlight the composer border (e.g. while naming something). */
   readonly accent?: string;
   /** Description of the hovered control. */
@@ -40,7 +42,7 @@ function TransferStatus({ t }: { t: Transfer }) {
   );
 }
 
-export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent, hint, hoveredButton }: ComposerProps) {
+export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent, hint, hoveredButton, planMode }: ComposerProps) {
   const active = focus === 'chat';
   const labelWidth = Math.min(34, Math.max(...suggestions.map((s) => s.label.length), 0) + 2);
   const win = suggestionWindow(suggestions.length, selected);
@@ -86,6 +88,15 @@ export function Composer({ width, buffer, cursor, focus, suggestions, selected, 
             {active ? <Text inverse> </Text> : null}
             <Text color={theme.muted}>{active ? (placeholder ?? 'Message the room…  @ to ask a Claude, / for commands') : 'Click here or press Esc to type'}</Text>
           </Text>
+        )}
+        {planMode === undefined ? null : (
+          <>
+            <Box flexGrow={1} />
+            <Text color={planMode ? theme.info : theme.border} bold={planMode}>
+              {planMode ? '◉ plan mode' : '○ plan mode'}
+            </Text>
+            <Text color={theme.muted}> ⇧Tab</Text>
+          </>
         )}
       </Box>
       <Box paddingX={2} height={1}>

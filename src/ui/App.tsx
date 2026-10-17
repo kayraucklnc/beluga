@@ -215,7 +215,8 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     switch (action.type) {
       case 'open_ws':
         ctl?.open(action.id, action.tab);
-        if (action.tab === 'review') patchUi({ focus: 'main' });
+        // Opening a view puts you inside it: the file list, the diff, or the chat.
+        patchUi(action.tab === 'review' ? { focus: 'main', entered: true } : action.tab === 'files' ? { focus: 'files', entered: true } : { focus: 'chat', entered: false });
         return;
       case 'toggle_project': {
         const latest = session.store.getState();
@@ -265,6 +266,10 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         return;
       case 'view':
         session.store.dispatch({ type: 'view', view: action.view });
+        if (action.view.kind === 'files') {
+          session.store.dispatch({ type: 'browser_cursor', delta: -10_000 });
+          patchUi({ focus: 'files', entered: true });
+        } else patchUi({ focus: action.view.kind === 'overview' ? 'main' : 'chat', entered: action.view.kind === 'overview' });
         return;
       case 'close_tab':
         session.store.dispatch({ type: 'close_tab', id: action.id });
@@ -393,6 +398,12 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         const review = session.store.getState().review;
         const count = review?.data?.files.length ?? 0;
         if (review && count) void ctl?.selectFile(Math.max(0, Math.min(count - 1, review.selected + effect.delta)));
+        return;
+      }
+      case 'toggle_plan': {
+        const channel = view(session.store.getState(), uiRef.current).channel;
+        if (channel === 'draft') return;
+        session.setPlanMode(channel, !session.store.getState().planMode[channel]);
         return;
       }
       case 'question_number': {
@@ -647,6 +658,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || latest.view.kind === 'overview',
         filesVisible: latest.view.kind === 'files' || (latest.view.kind === 'workspace' && latest.view.tab === 'files'),
         draft: latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree',
+        headerStart: dd.headerStart,
         questionOptions: latest.questions[0]?.channel === dd.channel ? (currentQuestion(latest.questions[0])?.options.length ?? 0) : 0,
       });
       setUi(result.ui);
@@ -729,7 +741,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       default:
         return (
           <>
-            <ChatView state={state} title="Group chat · everyone in the room" width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />
+            <ChatView state={state} title={state.peers.length > 1 ? 'Group chat · everyone in the room' : 'Chat · you and your Claude'} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />
             {viewer}
           </>
         );
@@ -748,7 +760,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     ? `Name for the new ${ui.pending.kind} in ${state.projects.find((p) => p.id === ui.pending?.projectId)?.name ?? 'the project'} · Enter to create · Esc to cancel`
     : d.workspace
       ? `Tell Claude what to do in ${d.workspace.name}…`
-      : undefined;
+      : state.view.kind === 'room' && state.peers.length <= 1
+        ? 'Talk to your Claude…  @workspace reaches the Claude working there, / for commands'
+        : undefined;
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
@@ -767,7 +781,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
               projectsScroll={d.projectsScroll}
               projectsCursorRow={d.projectsCursorRow}
               focus={sideFocus}
-              peopleCursor={ui.peopleCursor}
+              peopleCursor={ui.entered ? ui.peopleCursor : -1}
               frame={frame}
             />
             <Box flexDirection="column" width={paneW}>
@@ -803,6 +817,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         hoveredButton={hoveredButton}
         transfer={activeTransfer}
         placeholder={placeholder}
+        planMode={d.channel === 'draft' ? undefined : state.planMode[d.channel] === true}
         accent={ui.pending ? theme.accent : undefined}
       />
     </Box>

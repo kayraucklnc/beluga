@@ -19,6 +19,7 @@ import { App } from './ui/App.js';
 import { ErrorBoundary } from './ui/components/ErrorBoundary.js';
 import { createMockBackend } from './agent/mock.js';
 import { runUpdate } from './update/update.js';
+import { findConversation } from './agent/transcript.js';
 import { installedVersion } from './update/check.js';
 import { runView } from './image/view-cli.js';
 import { createDemoFolders, createDemoWorkspaces, startDemoFriend } from './demo.js';
@@ -211,6 +212,7 @@ async function main(): Promise<void> {
       : undefined,
     onQuit: () => void shutdown(),
     launchDir: process.cwd(),
+    ...(demo ? {} : { findConversation }),
     ...(roomControl ? { room: roomControl } : {}),
   });
 

@@ -150,11 +150,6 @@ export function sharedHeaderModel(state: AppState, w: SharedWorkspace, width: nu
   };
   add(' Chat ', { type: 'open_shared', owner: w.owner, id: w.id, tab: 'chat' }, `The conversation with ${owner}'s Claude`, view?.tab === 'chat' ? theme.text : theme.muted, view?.tab === 'chat');
   add(' Files ', { type: 'open_shared', owner: w.owner, id: w.id, tab: 'files' }, `Browse ${owner}'s worktree`, view?.tab === 'files' ? theme.text : theme.muted, view?.tab === 'files');
-  if (w.role === 'contribute') {
-    const channel = `ws:${w.id}`;
-    const planning = state.planMode[channel] === true;
-    add(` ${planning ? '◉' : '○'} Plan `, { type: 'plan_toggle', channel }, planning ? 'Plan mode on: Claude proposes a plan first' : 'Turn on plan mode', planning ? theme.info : theme.muted);
-  }
   segs.push({ text: '│ ', color: theme.border });
   x += 2;
   add(' Leave ', { type: 'shared_menu', owner: w.owner, id: w.id }, `Leave ${w.name}`, theme.error);
