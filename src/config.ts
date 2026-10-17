@@ -13,6 +13,8 @@ Usage:
   klaude host [options]            start a room and get an invite link
   klaude join [invite] [options]   join a friend's room (reads the invite from your clipboard if omitted)
   klaude demo                      try everything alone with a pretend friend and simulated Claude
+  klaude view <image> [--ascii]    show a PNG, JPEG, GIF or SVG right in the terminal
+  klaude update [--check]          get the latest klaude (or just check whether you have it)
 
 Options:
   -n, --name <name>        display name (default: your OS username)

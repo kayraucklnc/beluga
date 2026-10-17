@@ -8,114 +8,129 @@
 <p align="center">
   <a href="#quick-start"><b>Quick start</b></a> ·
   <a href="#what-you-can-do"><b>Features</b></a> ·
+  <a href="#a-quick-tour"><b>Tour</b></a> ·
   <a href="#how-it-works"><b>How it works</b></a> ·
   <a href="#security"><b>Security</b></a>
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="klaude demo: chat with a friend, browse their files, ask their Claude" width="900">
-  <br><sub>Recorded with <code>klaude demo</code> (the friend and Claude replies are simulated)</sub>
+  <img src="assets/demo.gif" alt="klaude demo: projects, a worktree, Claude reviewing with sub-agents, the overview, and an image" width="900">
+  <br><sub>Recorded with <code>klaude demo</code> (the friend and the Claude replies are simulated)</sub>
 </p>
+
+klaude is a home for all your projects and the Claude working in them. Spin up a worktree per task, watch every Claude at a glance, and review and merge without leaving the terminal. When you want company, invite friends: everyone brings their own Claude.
 
 ## What you can do
 
 | | |
 |---|---|
-| 💬 **Group chat with Claude in it** | Talk with friends, and type `@claude` to bring your Claude in. Everyone watches it work live. |
-| 🤝 **Ask a friend's Claude** | `@claude:bob` runs on **bob's** computer with **bob's** subscription, after bob approves. |
-| 📂 **Browse and download shared folders** | Click through a friend's shared folder, read files (Markdown is formatted), and download securely. |
-| 👀 **Follow along** | Follow a friend, Google Docs style: your viewer jumps to whatever they or their Claude open. |
-| 🔒 **Private by design** | End-to-end encrypted. You decide who can use your Claude, and which folders it can touch. |
-| 🌍 **Works from anywhere** | Free encrypted Cloudflare tunnel with no account and nothing to configure. |
-
-### In development: projects and workspaces
-
-The next release makes klaude the home for **all your projects**:
-
-| | |
-|---|---|
-| 🗂️ **Every project, one place** | klaude finds the git projects on your computer. You can also add a single project or a whole folder of them. |
-| 🌿 **A worktree per task** | Spin up a worktree from the latest `origin` in one click. Each has its own Claude conversation, notes and files, and opens in Finder. |
-| 🔭 **See what's happening everywhere** | Watch every worktree at a glance: what Claude is doing, what changed, and what's waiting for you. |
-| 🧩 **Sub-agents, visualized** | When Claude spins up sub-agents, they appear nested under its card with live progress. |
-| ✅ **Review, merge, fork, archive** | Review a worktree's changes, merge it back with Claude's help, fork it with its history, or archive it. |
-| 🤝 **Share a project or one worktree** | Invite friends into a project or a single worktree, with the access you choose. |
+| 🗂️ **Every project, one place** | klaude finds the git projects on your computer. Add a single project or a whole folder of them, sort them into groups, hide the rest. |
+| 🌿 **A worktree per task** | One click creates a worktree from the latest `origin`, with its own Claude conversation. Your `.env` files come along. |
+| 🔭 **See everything at a glance** | The Overview shows each workspace in plain words: *Claude is working*, *ready to merge*, *merge conflict*. |
+| 🧩 **Sub-agents, visualized** | When Claude fans out to sub-agents or background tasks, they nest under its card with live progress. |
+| ✅ **Review, merge, fork, archive** | **Review** runs a thorough check (bugs, security, tests, quality). **Merge** explains itself, and conflicts get a *Solve conflict* button. |
+| 💬 **Friends and their Claude** | Invite friends into a group chat. `@claude:bob` runs on **bob's** computer with **bob's** subscription. |
+| 🖼️ **Images in the terminal** | Open PNG, JPEG, GIF and SVG files, drawn in truecolor half-blocks or as text art. |
+| 🔒 **Private by default** | Solo until you click Invite. End-to-end encrypted, and you decide who may use your Claude and where. |
 
 ## Quick start
 
 ```bash
 git clone https://github.com/kayraucklnc/klaude.git && cd klaude
 npm install && npm run build && npm link
+klaude
 ```
 
-| You | Your friend |
-|---|---|
-| `klaude` starts a room and copies the invite | copy the invite, then run `klaude join` |
-
-Want to look around first? **`klaude demo`** opens a room with a pretend friend and simulated Claude replies.
-
 You need Node 20+ and [Claude Code](https://claude.com/claude-code) signed in (`claude`, then `/login`).
+
+- **`klaude`** opens your projects. Nothing is shared and no tunnel is opened until you click **Invite**.
+- **`klaude demo`** lets you look around with a pretend friend and simulated replies.
+- **`klaude update`** gets the latest version (or `klaude update --check` to just look).
+
+To bring a friend in, click **Invite** (or run `klaude --invite`) and send them the link. They run `klaude join`.
 
 ## A quick tour
 
 <table>
   <tr>
-    <td width="50%"><img src="assets/screenshot-welcome.png" alt="Welcome screen"><br><b>Welcome.</b> Choose who can use your Claude.</td>
-    <td width="50%"><img src="assets/screenshot-chat.png" alt="Chat with a friend's Claude"><br><b>Ask anyone's Claude.</b> Live steps, then a clear answer.</td>
+    <td width="50%"><img src="assets/screenshot-projects.png" alt="Projects and a worktree"><br><b>Projects.</b> Each project lists its worktrees and chats. Hover any button to see what it does.</td>
+    <td width="50%"><img src="assets/screenshot-subagents.png" alt="Claude working with sub-agents"><br><b>Sub-agents.</b> A review fans out to three reviewers, live.</td>
   </tr>
   <tr>
-    <td><img src="assets/screenshot-person.png" alt="Person menu"><br><b>Click a person.</b> Ask their Claude, follow them, browse their files, set their access.</td>
-    <td><img src="assets/screenshot-readme.png" alt="Formatted README, fullscreen"><br><b>Read files formatted.</b> Fullscreen, source view, and download are one click away.</td>
+    <td><img src="assets/screenshot-workspace.png" alt="A finished review in a workspace"><br><b>Workspaces.</b> Chat, Files and Diff, plus Review, Merge, Fork, Finder and Archive. Buttons that can't act are dimmed and say why.</td>
+    <td><img src="assets/screenshot-overview.png" alt="Overview of every workspace"><br><b>Overview.</b> Every workspace, one plain-language state each.</td>
   </tr>
   <tr>
-    <td><img src="assets/screenshot-viewer.png" alt="Files and viewer"><br><b>Shared files.</b> Browse friends' folders; files update live.</td>
-    <td><img src="assets/screenshot-settings.png" alt="Settings"><br><b>Settings.</b> Name, theme, sharing, mouse and remote access, all remembered.</td>
+    <td><img src="assets/screenshot-image.png" alt="An SVG drawn in the terminal"><br><b>Images.</b> A friend's SVG, drawn right in the viewer.</td>
+    <td><img src="assets/screenshot-chat.png" alt="Asking a friend's Claude"><br><b>Friends' Claude.</b> Ask anyone's Claude: live steps, then a clear answer.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshot-readme.png" alt="Formatted README, fullscreen"><br><b>Read files formatted.</b> Fullscreen, source view and download are one click away.</td>
+    <td><img src="assets/screenshot-settings.png" alt="Settings"><br><b>Settings.</b> Name, theme, text size, approvals, sharing, mouse and remote access.</td>
   </tr>
 </table>
 
-Everything is clickable. The bar at the bottom always shows what you can do next, so there are no shortcuts to memorize.
+Everything is clickable, and the bar at the bottom always says what you can do next. There are no shortcuts to memorize.
 
 ---
 
 ## Using klaude
 
+### Projects and workspaces
+
+- **CHATS** are conversations with Claude that aren't tied to a project. **+ new** opens an empty chat in the folder you started klaude in. Your first message creates it, and Esc cancels.
+- **PROJECTS** are your git repos. Each project row has three buttons:
+  - **+⌥** creates a new worktree from the latest `origin`, under `~/.klaude/workspaces/<project>/<name>`.
+  - **+◇** opens a new chat in the project folder.
+  - **⋯** moves the project to a group, hides it, or opens it in Finder.
+- **Inside a workspace**, the top bar has:
+  - **Chat**, **Files** and **Diff** views.
+  - **Review**: a thorough check by sub-agents covering correctness, security, tests and quality, then a verdict.
+  - **Commit** and **Merge**: merging into the main folder. A conflict shows a red banner and a **Solve conflict** button that asks Claude to fix it.
+  - **Compact**: summarizes the conversation when the context meter fills up.
+  - **Fork**: a new worktree that keeps the conversation.
+  - **Finder**: opens the folder.
+  - **Archive**: keeps the conversation, removes the worktree. Restore it any time from **Archived**.
+- **Env files**: `.env*` files (and `.ssh` / `.aws` folders inside the project) are copied into new worktrees. When you archive or delete one, klaude shows which keys changed and offers to copy them back to main.
+
 ### Talking
 
 | Type | What happens |
 |---|---|
-| `hey all` | message everyone |
+| `fix the failing test` (in a workspace) | your Claude, working in that workspace |
+| `hey all` (in the group chat) | message everyone |
 | `@claude fix the failing test` | your Claude, on your computer |
 | `@claude:bob how does auth work?` | bob's Claude, on bob's computer, after bob approves |
 | `@claudes review this plan` | every Claude in the room at once |
 
-Type `@` or `/` and suggestions appear: Tab or Enter picks one. Claude's progress shows as a live card with its steps and a formatted answer.
-
-Each Claude also gets **room tools**: post to the chat, see who's here, ask another person's Claude (agent to agent), read a friend's shared files, and write a Markdown report that everyone can open.
+- **Enter** sends. If Claude is busy, the message waits in line.
+- **Option+Enter** (or **Ctrl+Enter**) interrupts and sends right away.
+- Type `@` or `/` to get suggestions, and scroll through all of them with ↑ ↓.
 
 ### Commands
 
 | Command | |
 |---|---|
-| `/invite` | copy the invite link |
-| `/open bob:api/README.md` | open a shared file (autocompletes as you type) |
-| `/get bob:api/data.csv` | download a file to `~/Downloads/klaude/bob/` |
+| `/new name` · `/chat` · `/fork` · `/archive` | create, fork or archive workspaces |
+| `/review` · `/commit` · `/merge` · `/compact` · `/finder` | act on the current workspace |
+| `/overview` · `/room` | the overview, or back to the group chat |
+| `/invite` | open remote access and copy an invite link |
+| `/open bob:api/README.md` · `/get bob:api/data.csv` | open or download a shared file (autocompletes) |
 | `/follow bob` · `/unfollow` | follow bob and bob's Claude |
-| `/copy` | copy the last Claude answer |
-| `/settings` | name, theme, sharing, mouse, remote access |
-| `/name kay` · `/theme mono` | quick changes |
-| `/policy ask\|auto\|deny` | who can use your Claude |
-| `/trust bob` · `/untrust bob` | let bob skip approval for this session |
-| `/stop` · `/people` · `/clear` · `/help` · `/quit` | |
+| `/settings` · `/theme` · `/zoom in` · `/name` | settings and quick changes |
+| `/policy ask\|auto\|deny` · `/trust bob` | who can use your Claude |
+| `/stop` · `/copy` · `/people` · `/clear` · `/help` · `/quit` | |
 
 ### Keys (all optional, since everything is also clickable)
 
 | Key | |
 |---|---|
-| `Enter` | send, or accept the highlighted suggestion |
-| `Tab` / `Shift+Tab` | complete a suggestion, or move between chat, people, files and viewer |
-| `Esc` | back to chat |
+| `Enter` · `Option+Enter` | send (queued while Claude works) · interrupt and send now |
+| `Tab` / `Shift+Tab` | complete a suggestion, or move between areas |
+| `Esc` | back to typing, or cancel a new chat |
 | `↑ ↓` · `PgUp PgDn` | history or suggestions · scroll |
-| `f` · `r` · `d` (in the viewer) | fullscreen · source/formatted · download |
+| `Option+↑` / `Option+↓` | bigger or smaller text (works on every keyboard layout) |
+| `f` · `r` · `d` (in the viewer) | fullscreen · source/formatted (or color/text art) · download |
 | `Ctrl+Y` · `Ctrl+N` · `Ctrl+T` | allow · deny · always allow this person |
 | `Ctrl+C` twice | quit |
 
@@ -125,21 +140,23 @@ Your choices are saved in `~/.klaude/settings.json`, so plain `klaude` always st
 
 - **Name**: what friends see
 - **Color theme**: Calm (dark), Light terminal, High contrast, Monochrome
-- **Who can use my Claude**: ask each time, everyone, or nobody
-- **Mouse clicks**: turn off to get your terminal's native text selection back
+- **Text size**: bigger or smaller from inside klaude (Terminal, iTerm2, Warp and kitty)
+- **Approvals**: whether your own Claude asks before risky steps, and who else may use it (ask, everyone, nobody)
+- **Mouse**: turn it off to get your terminal's native text selection back
 - **Remote access**: Cloudflare (default), ngrok, or local network only
-- **Text size** belongs to your terminal: `⌘ +` / `⌘ −`
 
 ### Command line
 
 ```
-klaude                           start a room with your saved settings
-klaude join [invite]             join a room (reads the invite from your clipboard)
-klaude demo                      try everything alone
+klaude                           your projects, with your saved settings (solo)
+klaude --invite                  also open remote access and copy an invite
+klaude join [invite]             join a friend (reads the invite from your clipboard)
+klaude demo                      try everything with a pretend friend
+klaude view <image> [--ascii]    show a PNG, JPEG, GIF or SVG in the terminal
+klaude update [--check]          get the latest klaude, or just check
 
   -n, --name <name>        display name (remembered)
   -s, --share <spec>       share a folder: [name=]path[:rw], repeatable
-      --no-share           share nothing (default: the current folder, read-only)
       --no-agent           don't offer your Claude
       --policy <p>         ask | auto | deny
       --tunnel <kind>      auto | cloudflared | ngrok | none
@@ -153,39 +170,47 @@ klaude demo                      try everything alone
  your computer                                       bob's computer
 ┌──────────────────────────────┐                   ┌──────────────────────────────┐
 │ klaude                        │   encrypted       │ klaude                        │
-│  chat · files · approvals     │◄─── frames ──────►│  chat · files · approvals     │
+│  projects · chat · files      │◄─── frames ──────►│  projects · chat · files      │
 │  your Claude (your login)     │  via Cloudflare   │  bob's Claude (bob's login)   │
 │  room hub (relay)             │                   │                               │
 └──────────────────────────────┘                   └──────────────────────────────┘
 ```
 
-- **Room hub**: a tiny relay on the host's computer. It checks the invite secret, relays messages, and keeps a short history for late joiners.
-- **End-to-end encryption**: every message is sealed with AES-256-GCM using a key derived from the invite, so the tunnel only ever sees ciphertext.
-- **Each Claude runs at home**: the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) drives each person's own Claude Code, with their own subscription and their own permissions.
-- **Plan usage**: everyone's 5-hour and weekly limits show next to their name.
+- **Each Claude runs at home.** The [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) drives each person's own Claude Code, with their own subscription and permissions. Workspace conversations stay on your computer.
+- **Room hub.** When you invite people, the host runs a small relay. Friends connect through a free Cloudflare quick tunnel. The topology is a star through the host, not a mesh. The relay checks the invite secret, forwards messages, and keeps a short history for latecomers.
+- **End-to-end encryption.** Every frame is sealed with AES-256-GCM, using keys derived from the invite secret with HKDF. Neither the tunnel nor the relay can read or forge messages.
+- **Limits.**
+  - Up to 16 people per room and 120 messages per second per connection.
+  - Messages up to 1 MB. Files are sent in 256 KB encrypted chunks, up to 200 MB.
+  - Cloudflare quick tunnels have no uptime guarantee. Use ngrok or your own network if you need one.
+- **Images** are decoded in a background thread and shrunk before they're drawn, so big photos never freeze the screen.
 
 ## Security
 
-- **The invite is the key.** Anyone with it can join. Start a new room to revoke access.
-- **You approve requests.** Friends can't run your Claude unless you allow it (each time, for one person, or for everyone).
-- **You set the reach.** Per friend: *shared folders only* (the default; everything else is blocked) or *whole computer*.
-- **Risky actions always ask.** Every shell command, web request and edit outside a `:rw` folder needs your OK, even ones Claude Code would normally auto-approve.
-- **Secrets stay put.** `.env` files, keys, `.ssh`, `.aws` and similar are never shared or readable by agents.
-- **Fair use.** Each person uses their own Claude account. Nothing is shared between machines except chat, files you share, and results.
+Inviting someone exposes your Claude, with your permissions, to the internet. klaude is built around that:
+
+- **Solo by default.** No tunnel and no invite exist until you click Invite.
+- **The invite is the key.** Anyone with the link can join. Share it privately, and start a new room to revoke it.
+- **You approve requests.** A friend can't run your Claude unless you allow it: each time, for one person, or for everyone. **Fully trust** someone to skip approvals for them. Unanswered approvals are declined after 5 minutes, so nobody waits forever.
+- **You set the reach.** Per friend, choose *shared folders only* (the default) or *whole computer*. Risky steps (shell commands, web requests, edits outside a `:rw` folder) always ask, even ones Claude Code would normally auto-approve.
+- **Secrets stay put.** `.env` files, keys, `.ssh`, `.aws` and similar are never shared or readable by friends' requests.
+- **Untrusted files are handled carefully.** Images from friends are size-checked before decoding, and SVGs can't load files from your disk.
+- **Be aware:** a friend's message can try to talk your Claude into things (prompt injection). Keep approvals on for people you don't fully trust.
 
 ## Development
 
 ```bash
 npm install
 npm run dev -- demo        # run from source
-npm test                   # 160+ unit and multi-peer integration tests
+npm test                   # 240+ unit and multi-peer integration tests
 npm run typecheck
 ```
 
 ## Roadmap
 
-- Projects and workspaces (see [In development](#in-development-projects-and-workspaces))
-- Inline images in the viewer
+- Share a project or a single worktree with friends, with its chat, files and diff
+- Create a worktree on a friend's laptop
+- True peer-to-peer connections (WebRTC) with per-friend invites
 
 ## License
 

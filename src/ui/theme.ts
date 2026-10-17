@@ -107,7 +107,8 @@ export const glyph = {
   bar: '│',
 } as const;
 
-export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
+// Geometric shapes are in every common monospace font (braille spinners are not in Menlo or DejaVu).
+export const SPINNER = ['◐', '◓', '◑', '◒'] as const;
 
 export function colorFor(name: string): string {
   let h = 0;

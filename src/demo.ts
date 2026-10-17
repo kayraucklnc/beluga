@@ -11,11 +11,31 @@ import { PeerClient } from './net/peer-client.js';
 import { WorkspaceManager } from './workspaces/manager.js';
 import { WorkspaceStore } from './workspaces/store.js';
 
+const SUNSET_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d2440"/><stop offset="0.55" stop-color="#c8667a"/><stop offset="1" stop-color="#f3b07a"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b3f63"/><stop offset="1" stop-color="#14172a"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="180" fill="url(#sky)"/>
+  <circle cx="200" cy="112" r="30" fill="#ffd9a0"/>
+  <path d="M0 120 L60 70 L105 105 L150 60 L210 118 L250 88 L320 125 L320 180 L0 180 Z" fill="#2b2d4a"/>
+  <rect y="128" width="320" height="52" fill="url(#sea)"/>
+  <rect x="170" y="134" width="60" height="3" fill="#ffd9a0" opacity="0.7"/>
+  <rect x="182" y="144" width="36" height="2" fill="#ffd9a0" opacity="0.5"/>
+  <rect x="190" y="154" width="20" height="2" fill="#ffd9a0" opacity="0.35"/>
+</svg>
+`;
+
 const BOB_FILES: Record<string, string> = {
   'README.md':
     '# Bob API\n\nA tiny service that powers **bob\'s** side project. See [the docs](https://example.com).\n\n## Getting started\n\n1. `npm install`\n2. `npm run dev`\n3. Open http://localhost:3000\n\n## Status\n\n- Auth: *not started*\n- Payments: in progress\n- Deploy: done\n\n> Tip: ask kay\'s Claude to review the auth plan.\n',
   'NOTES.md': '# Notes\n\n- TODO: add auth\n- Stripe webhooks are flaky on retries\n',
   'src/server.ts': "import express from 'express';\n\nconst app = express();\n// TODO: add auth\napp.get('/api/health', (_req, res) => res.send('ok'));\n\napp.listen(3000);\n",
+  'design/sunset.svg': SUNSET_SVG,
   'package.json': '{\n  "name": "bob-api",\n  "scripts": { "dev": "tsx src/server.ts", "test": "vitest" }\n}\n',
 };
 

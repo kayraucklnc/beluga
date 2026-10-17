@@ -9,7 +9,7 @@ export function LineView({ line }: { line: Line }) {
   return (
     <Text wrap="truncate">
       {line.map((s, i) => (
-        <Text key={i} color={s.color} bold={s.bold} dimColor={s.dim} italic={s.italic} underline={s.underline} inverse={s.inverse}>
+        <Text key={i} color={s.color} backgroundColor={s.bg} bold={s.bold} dimColor={s.dim} italic={s.italic} underline={s.underline} inverse={s.inverse}>
           {s.text}
         </Text>
       ))}

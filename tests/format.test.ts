@@ -90,7 +90,7 @@ describe('renderLog', () => {
 
   it('renders agent work as a rail with live status', () => {
     const top = lines.find((l) => l.includes('working · 3s'));
-    expect(top).toMatch(/^◆ bob's Claude {2}for kay +⠋ working · 3s$/);
+    expect(top).toMatch(/^◆ bob's Claude {2}for kay +◐ working · 3s$/);
     expect(top).toHaveLength(60);
     expect(lines).toContain('│ ↳ Read a.ts');
     expect(lines.some((l) => l.includes('thinking hard'))).toBe(true);
@@ -98,7 +98,7 @@ describe('renderLog', () => {
     expect(lines.some((l) => l.includes('✓ done · 14s'))).toBe(true);
     expect(lines.some((l) => l.includes('ToolSearch'))).toBe(false); // plumbing is hidden
     expect(lines.some((l) => l.includes('bob needs to approve this'))).toBe(true);
-    expect(lines).toContain('│ ◇ ⠋ Explore · find auth · 1 step');
+    expect(lines).toContain('│ ◇ ◐ Explore · find auth · 1 step');
     expect(lines).toContain('│     ↳ Grep auth');
     expect(lines).toContain('│ ◇ ✓ Plan');
     expect(lines.every((l) => l.length <= 60)).toBe(true);
