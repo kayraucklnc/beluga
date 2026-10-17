@@ -91,7 +91,7 @@ export function applyTheme(name: ThemeName): void {
 }
 
 export const glyph = {
-  logo: '✦',
+  logo: '❯',
   claude: '◆',
   dot: '●',
   ring: '○',

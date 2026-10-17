@@ -16,8 +16,14 @@ export function Header({ state, width }: { state: AppState; width: number }) {
   const mine = state.peers.find((p) => p.peerId === state.self?.peerId)?.usage;
   return (
     <Box width={width} paddingX={1} height={1}>
+      <Text bold color={theme.text}>
+        {glyph.logo}
+      </Text>
       <Text bold color={theme.accent}>
-        {glyph.logo} klaude
+        _{' '}
+      </Text>
+      <Text bold color={theme.text}>
+        klaude
       </Text>
       <Text color={theme.muted}>{'  '}</Text>
       <Text bold>{state.room}</Text>

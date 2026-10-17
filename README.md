@@ -28,6 +28,19 @@
 | 🔒 **Private by design** | End-to-end encrypted. You decide who can use your Claude, and which folders it can touch. |
 | 🌍 **Works from anywhere** | Free encrypted Cloudflare tunnel with no account and nothing to configure. |
 
+### In development: projects and workspaces
+
+The next release makes klaude the home for **all your projects**:
+
+| | |
+|---|---|
+| 🗂️ **Every project, one place** | klaude finds the git projects on your computer. You can also add a single project or a whole folder of them. |
+| 🌿 **A worktree per task** | Spin up a worktree from the latest `origin` in one click. Each has its own Claude conversation, notes and files, and opens in Finder. |
+| 🔭 **See what's happening everywhere** | Watch every worktree at a glance: what Claude is doing, what changed, and what's waiting for you. |
+| 🧩 **Sub-agents, visualized** | When Claude spins up sub-agents, they appear nested under its card with live progress. |
+| ✅ **Review, merge, fork, archive** | Review a worktree's changes, merge it back with Claude's help, fork it with its history, or archive it. |
+| 🤝 **Share a project or one worktree** | Invite friends into a project or a single worktree, with the access you choose. |
+
 ## Quick start
 
 ```bash
@@ -171,9 +184,7 @@ npm run typecheck
 
 ## Roadmap
 
-- **Projects and workspaces**: auto-detect projects; spin up a git worktree per task from `origin`; review, merge, fork, and archive from the app; per-workspace Claude conversations
-- Share a project or a single workspace with friends; invite them into its chat
-- Show sub-agents nested under Claude's card
+- Projects and workspaces (see [In development](#in-development-projects-and-workspaces))
 - Inline images in the viewer
 
 ## License
