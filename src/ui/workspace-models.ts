@@ -2,7 +2,7 @@ import type { AppState, LogItem, ReviewState, WorkspaceTab } from '../core/store
 import type { TrustLevel } from '../core/settings.js';
 import { describePr } from '../workspaces/pr.js';
 import { formatBytes } from '../workspaces/disk.js';
-import type { Project, ProjectGroup, Workspace } from '../workspaces/types.js';
+import type { Project, Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { isRunning } from './format.js';
 import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate } from './text.js';

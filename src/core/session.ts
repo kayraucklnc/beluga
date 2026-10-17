@@ -22,6 +22,7 @@ import { MAX_IMAGE_BYTES, isImagePath } from '../image/decode.js';
 import { decodeImageAsync } from '../image/decode-async.js';
 import { reachOf, trustOf } from './trust.js';
 import { People } from './people.js';
+import { ReplayGuard } from './replay.js';
 import { Notifier } from './notify.js';
 import { Workbench } from './workbench.js';
 import { RemoteWork } from './remote-work.js';
@@ -67,6 +68,8 @@ export interface SessionOptions {
   readonly hasGh?: () => Promise<boolean>;
   /** Trust levels you chose for people before (by key-derived id). */
   readonly savedPeople?: Settings['people'];
+  /** Where recent requests are remembered across restarts (omit in tests: memory only). */
+  readonly replayFile?: string;
   /** Read Claude Code conversations from other tools (omitted in tests and the demo). */
   readonly findConversation?: (dir: string, self: { id: string; name: string }) => Promise<Conversation | undefined>;
 }
@@ -97,9 +100,28 @@ const MAX_QUEUED_PER_PERSON = 10;
 const USAGE_REFRESH_MS = 10 * 60_000;
 const WORKSPACE_REFRESH_MS = 30_000;
 
-/** Kinds that make this computer do something; they're only accepted when sent recently. */
-const STALE_SENSITIVE = new Set(['agent_request', 'agent_answer', 'file_request', 'ws_request', 'ws_handoff', 'file_offer', 'fs_fetch', 'fs_read', 'fs_list']);
-const STALE_MS = 10 * 60_000;
+/**
+ * Kinds that make this computer do something or change what you're part of: only accepted
+ * when sent recently, and only once (even across restarts).
+ */
+const GUARDED = new Set([
+  'agent_request',
+  'agent_answer',
+  'file_request',
+  'file_request_result',
+  'ws_request',
+  'ws_request_result',
+  'ws_handoff',
+  'ws_handoff_result',
+  'file_offer',
+  'fs_fetch',
+  'fs_read',
+  'fs_list',
+  'ws_invite',
+  'ws_leave',
+  'ws_roster',
+  'share_offer',
+]);
 
 export const dirKey = (at: Location): string => `${at.owner}:${at.share}/${at.path}`;
 
@@ -137,6 +159,7 @@ export class Session {
   readonly questions: QuestionBroker;
   readonly sharing: WorkspaceSharing;
   readonly people: People;
+  private readonly replay: ReplayGuard;
   readonly notifier: Notifier;
   readonly workbench?: Workbench;
   readonly remote: RemoteWork;
@@ -188,6 +211,7 @@ export class Session {
       workspaces: opts.workspaces,
       toast: (text, level) => this.toast(text, level),
     });
+    this.replay = new ReplayGuard(opts.replayFile);
     this.people = new People({
       store: opts.store,
       selfId: () => this.selfId,
@@ -265,6 +289,7 @@ export class Session {
     this.workspaces?.stop();
     this.workbench?.stop();
     this.notifier.stop();
+    this.replay.flush();
     this.remote.stop();
     clearInterval(this.projectsTimer);
     for (const t of this.fsTimers.values()) clearTimeout(t);
@@ -695,8 +720,8 @@ export class Session {
   }
 
   private async handle({ id, from, ts, sentAt, body }: IncomingMessage): Promise<void> {
-    // Requests that act on this computer must be fresh: an old signed request replayed later is dropped.
-    if (STALE_SENSITIVE.has(body.kind) && Math.abs(Date.now() - sentAt) > STALE_MS) return;
+    // Requests that act on this computer must be fresh and new: an old signed request replayed later is dropped.
+    if (GUARDED.has(body.kind) && !this.replay.admit(id, sentAt)) return;
     switch (body.kind) {
       case 'room_cleared':
         if (this.store.getState().peers.find((p) => p.peerId === from)?.host) {

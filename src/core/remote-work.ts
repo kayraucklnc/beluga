@@ -3,7 +3,6 @@ import { promises as fs, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { type BodyInput, type BodyOf, MAX_DOWNLOAD_BYTES } from '../protocol.js';
-import type { WorkspaceManager } from '../workspaces/manager.js';
 import { git } from '../workspaces/git.js';
 import { klaudeHome } from '../workspaces/store.js';
 import { formatBytes } from '../workspaces/disk.js';

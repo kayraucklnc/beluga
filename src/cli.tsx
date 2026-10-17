@@ -280,6 +280,7 @@ async function main(): Promise<void> {
     launchDir: process.cwd(),
     terminals,
     savedPeople: saved.people,
+    replayFile: path.join(klaudeHome(), 'seen.json'),
     ...(desktop ? { desktopNotify: desktop } : {}),
     ...(demo ? {} : { findConversation }),
     ...(roomControl ? { room: roomControl } : {}),
