@@ -11,7 +11,8 @@ const STATUS = {
 } as const;
 
 export function Header({ state, width }: { state: AppState; width: number }) {
-  const st = STATUS[state.status];
+  const solo = state.status === 'connected' && state.peers.length <= 1 && !state.hosting && !state.invite;
+  const st = solo ? { label: 'solo', color: theme.muted, icon: glyph.ring } : STATUS[state.status];
   const people = state.peers.length;
   const mine = state.peers.find((p) => p.peerId === state.self?.peerId)?.usage;
   return (

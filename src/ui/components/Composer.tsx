@@ -18,6 +18,10 @@ interface ComposerProps {
   readonly buttons: readonly ActionButton[];
   readonly toast?: Toast;
   readonly transfer?: Transfer;
+  /** Overrides the hint text in an empty composer. */
+  readonly placeholder?: string;
+  /** Highlight the composer border (e.g. while naming something). */
+  readonly accent?: string;
 }
 
 const TOAST_COLORS: Record<Toast['level'], string> = { info: theme.info, success: theme.ok, warn: theme.warn, error: theme.error };
@@ -33,7 +37,7 @@ function TransferStatus({ t }: { t: Transfer }) {
   );
 }
 
-export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer }: ComposerProps) {
+export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent }: ComposerProps) {
   const active = focus === 'chat';
   const labelWidth = Math.min(30, Math.max(...suggestions.map((s) => s.label.length), 0) + 2);
   return (
@@ -51,7 +55,7 @@ export function Composer({ width, buffer, cursor, focus, suggestions, selected, 
           ))}
         </Box>
       ) : null}
-      <Box borderStyle="round" borderColor={active ? theme.focus : theme.border} paddingX={1} width={width}>
+      <Box borderStyle="round" borderColor={accent ?? (active ? theme.focus : theme.border)} paddingX={1} width={width}>
         <Text color={active ? theme.accent : theme.muted}>{glyph.prompt} </Text>
         {buffer ? (
           <Text wrap="truncate-start">
@@ -62,7 +66,7 @@ export function Composer({ width, buffer, cursor, focus, suggestions, selected, 
         ) : (
           <Text wrap="truncate">
             {active ? <Text inverse> </Text> : null}
-            <Text color={theme.muted}>{active ? 'Message the room…  @ to ask a Claude, / for commands' : 'Click here or press Esc to type'}</Text>
+            <Text color={theme.muted}>{active ? (placeholder ?? 'Message the room…  @ to ask a Claude, / for commands') : 'Click here or press Esc to type'}</Text>
           </Text>
         )}
       </Box>

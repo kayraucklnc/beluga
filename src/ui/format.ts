@@ -19,7 +19,7 @@ const DONE_STEPS = 3;
 const time = (ts: number): string => new Date(ts).toTimeString().slice(0, 5);
 
 export const isRunning = (status: AgentItem['status']): boolean =>
-  status === 'started' || status === 'text' || status === 'tool' || status === 'awaiting_approval';
+  status === 'started' || status === 'text' || status === 'tool' || status === 'sub' || status === 'awaiting_approval' || status === 'queued';
 
 interface StatusStyle {
   readonly label: string;
@@ -31,6 +31,8 @@ function statusOf(item: AgentItem, opts: RenderOptions): StatusStyle {
   switch (item.status) {
     case 'awaiting_approval':
       return { label: `${glyph.wait} waiting for ${item.ownerName} to approve`, color: theme.warn };
+    case 'queued':
+      return { label: `${glyph.wait} queued`, color: theme.muted };
     case 'done':
       return { label: `${glyph.ok} done${item.endTs ? ` · ${formatDuration(item.endTs - item.ts)}` : ''}`, color: theme.ok };
     case 'error':
@@ -73,12 +75,33 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
     ...(hidden > 0 ? [plain(`${glyph.arrow} …${hidden} earlier steps`, { color: theme.muted })] : []),
     ...steps.flatMap((s) => wrapText(`${glyph.arrow} ${s}`, inner).map((t) => plain(t, { color: theme.muted }))),
   ];
+  // Sub-agents Claude spun up, nested with their own progress.
+  const spin = SPINNER[(opts.frame ?? 0) % SPINNER.length];
+  for (const sub of item.subagents) {
+    const live = sub.status === 'running';
+    const background = sub.kind === 'background';
+    body.push([
+      { text: background ? '▭ ' : '◇ ', color: background ? theme.info : theme.claude },
+      { text: live ? `${spin} ` : sub.status === 'failed' ? `${glyph.fail} ` : `${glyph.ok} `, color: live ? theme.claude : sub.status === 'failed' ? theme.error : theme.ok },
+      { text: background ? 'background · ' : '', color: theme.info },
+      { text: sub.title, color: live ? theme.text : theme.muted, bold: live },
+      { text: sub.steps.length ? ` · ${sub.steps.length} step${sub.steps.length === 1 ? '' : 's'}` : '', color: theme.muted },
+    ]);
+    if (live) for (const step of sub.steps.slice(-2)) body.push(plain(`    ${glyph.arrow} ${step}`, { color: theme.muted }));
+  }
   if (item.text) {
     if (body.length) body.push([]);
     body.push(...renderMarkdown(item.text, inner));
   }
   if (body.length === 0) {
-    const idle = item.status === 'awaiting_approval' ? `${item.ownerName} needs to approve this before their Claude starts.` : running ? 'thinking…' : '';
+    const idle =
+      item.status === 'awaiting_approval'
+        ? `${item.ownerName} needs to approve this before their Claude starts.`
+        : item.status === 'queued'
+          ? 'Starts when the current task finishes. (Alt+Enter sends right away.)'
+          : running
+            ? 'thinking…'
+            : '';
     body.push(plain(idle, { dim: true }));
   }
   const title: Line = [

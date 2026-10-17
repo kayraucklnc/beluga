@@ -7,6 +7,9 @@ export interface ShareConfig {
   readonly name: string;
   readonly root: string;
   readonly writable: boolean;
+  /** Not advertised to the room; only you and `allowed` peers can open it (e.g. a workspace). */
+  readonly private?: boolean;
+  readonly allowed?: readonly string[];
 }
 
 /** Credential stores: never served to peers and never readable by an agent without asking. */
@@ -23,8 +26,7 @@ const HIDDEN_SEGMENTS = new Set(['.git', 'node_modules']);
 
 export class ShareError extends Error {}
 
-const WATCH_DEPTH = 8;
-const WATCH_IGNORED = /[\\/](node_modules|\.git|\.Trash|Library|\.cache|dist|build)([\\/]|$)/;
+const MAX_WATCHED = 200;
 
 const segmentsOf = (p: string): string[] => p.split(/[\\/]/).filter(Boolean).map((s) => s.toLowerCase());
 
@@ -88,10 +90,31 @@ function realRoot(root: string): string {
 export class ShareService {
   private watcher?: FSWatcher;
 
-  constructor(private readonly shares: readonly ShareConfig[]) {}
+  private shares: readonly ShareConfig[];
 
+  constructor(initial: readonly ShareConfig[]) {
+    this.shares = initial;
+  }
+
+  /** Shares advertised to everyone in the room. */
   get infos(): ShareInfo[] {
-    return this.shares.map((s) => ({ name: s.name, writable: s.writable }));
+    return this.shares.filter((s) => !s.private).map((s) => ({ name: s.name, writable: s.writable }));
+  }
+
+  /** Add or replace a share at runtime (workspaces come and go). */
+  upsert(share: ShareConfig): void {
+    this.shares = [...this.shares.filter((s) => s.name !== share.name), share];
+  }
+
+  remove(name: string): void {
+    this.shares = this.shares.filter((s) => s.name !== name);
+  }
+
+  /** Whether `peerId` may open this share (you always can; private shares need an invite). */
+  canAccess(name: string, peerId: string, selfId: string): boolean {
+    const share = this.shares.find((s) => s.name === name);
+    if (!share) return false;
+    return peerId === selfId || !share.private || (share.allowed ?? []).includes(peerId);
   }
 
   get configs(): readonly ShareConfig[] {
@@ -179,34 +202,47 @@ export class ShareService {
   }
 
   /** Watch all shares and report changed files as (share, relative path). */
+  private onChange?: (share: string, relPath: string) => void;
+  private readonly watched = new Set<string>();
+
+  /**
+   * Live updates for files people actually have open. Nothing is crawled up front, so
+   * sharing a huge folder (like Desktop) stays instant.
+   */
   watch(onChange: (share: string, relPath: string) => void, onError: (message: string) => void = () => undefined): void {
-    if (this.shares.length === 0) return;
-    this.watcher = watch(
-      this.shares.map((s) => s.root),
-      {
-        ignoreInitial: true,
-        // Folders macOS protects (e.g. ~/.Trash) throw EPERM; skip them instead of crashing.
-        ignorePermissionErrors: true,
-        depth: WATCH_DEPTH,
-        ignored: (p: string) => WATCH_IGNORED.test(p) || isSecretPath(p),
-        awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 },
-      },
-    );
-    // Warn once and stop watching: huge trees (like ~) exhaust file handles and would spam errors.
+    this.onChange = onChange;
+    this.watcher = watch([], { ignoreInitial: true, ignorePermissionErrors: true, awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 } });
     let warned = false;
     this.watcher.on('error', (err: unknown) => {
       // Keep a listener attached: an unhandled 'error' event would crash the process.
       if (warned) return;
       warned = true;
-      const reason = err instanceof Error ? err.message : String(err);
-      onError(`Live file updates are off (${reason}). Share a smaller folder to get them back.`);
-      void this.close();
+      onError(`Live file updates paused: ${err instanceof Error ? err.message : String(err)}`);
     });
     const report = (abs: string): void => {
       const hit = this.locate(abs);
-      if (hit) onChange(hit.share, hit.path);
+      if (hit) this.onChange?.(hit.share, hit.path);
     };
     this.watcher.on('add', report).on('change', report).on('unlink', report);
+  }
+
+  /** Start live updates for one file (called when someone opens it). */
+  watchFile(shareName: string, relPath: string): void {
+    if (!this.watcher) return;
+    let abs: string;
+    try {
+      abs = resolveInShare(this.find(shareName), relPath);
+    } catch {
+      return;
+    }
+    if (this.watched.has(abs)) return;
+    if (this.watched.size >= MAX_WATCHED) {
+      const oldest = this.watched.values().next().value as string;
+      this.watched.delete(oldest);
+      this.watcher.unwatch(oldest);
+    }
+    this.watched.add(abs);
+    this.watcher.add(abs);
   }
 
   async close(): Promise<void> {

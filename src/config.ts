@@ -16,9 +16,10 @@ Usage:
 
 Options:
   -n, --name <name>        display name (default: your OS username)
-  -s, --share <spec>       share a folder: [name=]path[:rw]  (repeatable)
+  -s, --share <spec>       share a folder with the room: [name=]path[:rw]  (repeatable)
                            :rw lets your claude edit there without asking
-      --no-share           share nothing (default shares the current folder read-only)
+      --invite             open remote access and copy an invite right away
+                           (otherwise klaude starts solo; click Invite when you want company)
       --no-agent           don't offer your claude to the room
       --policy <p>         requests from friends for your claude: ask | auto | deny (default ask)
       --model <id>         model for your claude (default: your Claude Code default)
@@ -50,6 +51,8 @@ export interface Config {
   readonly policyChosen: boolean;
   readonly mouse: boolean;
   readonly theme: Settings['theme'];
+  /** Open the tunnel and create an invite right away (otherwise only when you click Invite). */
+  readonly inviteNow: boolean;
 }
 
 const TUNNELS: readonly TunnelKind[] = ['auto', 'ngrok', 'cloudflared', 'none'];
@@ -80,6 +83,7 @@ export function parseConfig(
       'no-share': { type: 'boolean' },
       'no-agent': { type: 'boolean' },
       'no-mouse': { type: 'boolean' },
+      invite: { type: 'boolean' },
       policy: { type: 'string' },
       model: { type: 'string' },
       tunnel: { type: 'string' },
@@ -102,10 +106,10 @@ export function parseConfig(
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('--port must be 0-65535');
 
   const notes: string[] = [];
-  let specs = values['no-share'] ? [] : (values.share ?? ['.']);
-  if (!values.share && !values['no-share'] && isTooBroad(cwd, home)) {
-    specs = [];
-    notes.push(`Not sharing ${cwd} (too broad). cd into a project or pass --share <folder>.`);
+  // Nothing is shared unless you ask: pass --share, or use /share inside klaude.
+  const specs = values['no-share'] ? [] : (values.share ?? []);
+  if (specs.some((spec) => isTooBroad(parseShareSpec(spec, cwd).root, home))) {
+    notes.push('Sharing your whole home folder or disk exposes a lot. Consider sharing a project folder instead.');
   }
   const shares = specs.map((s) => parseShareSpec(s, cwd));
   const names = new Set<string>();
@@ -128,6 +132,7 @@ export function parseConfig(
     notes,
     policyChosen: values.policy !== undefined || saved.policy !== undefined,
     mouse: values['no-mouse'] ? false : saved.mouse,
+    inviteNow: Boolean(values.invite),
     theme: saved.theme,
   };
 }

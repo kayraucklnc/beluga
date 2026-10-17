@@ -20,6 +20,27 @@ export interface SuggestContext {
   readonly peers: readonly PeerInfo[];
   readonly selfId: string;
   readonly dirCache?: Readonly<Record<string, readonly FsEntry[]>>;
+  /** Lists folders on this computer for "/project add <path>" (entries' size = 1 marks a git project). */
+  readonly listLocalDirs?: (dir: string) => readonly FsEntry[];
+}
+
+/** Folder completion for adding projects: "~/Proj" → "~/Projects/". */
+function localPathSuggestions(sub: string, typed: string, ctx: SuggestContext): Suggestion[] {
+  if (!ctx.listLocalDirs) return [];
+  const raw = typed || '~/';
+  const slash = raw.lastIndexOf('/');
+  const dir = slash >= 0 ? raw.slice(0, slash + 1) : '';
+  const partial = (slash >= 0 ? raw.slice(slash + 1) : raw).toLowerCase();
+  return ctx
+    .listLocalDirs(dir || './')
+    .filter((e) => e.dir && !e.name.startsWith('.') && e.name.toLowerCase().startsWith(partial))
+    .slice(0, MAX)
+    .map((e) => ({
+      label: `${e.name}/`,
+      hint: e.size === 1 ? 'git project · Enter adds it' : 'folder',
+      value: `/project ${sub} ${dir}${e.name}${e.size === 1 && sub === 'add' ? '' : '/'}`,
+      enter: e.size === 1 && sub === 'add' ? ('submit' as const) : ('complete' as const),
+    }));
 }
 
 const MAX = 6;
@@ -108,6 +129,14 @@ export function suggest(buffer: string, ctx: SuggestContext): Suggestion[] {
     if (space === -1) return commandSuggestions(buffer).slice(0, MAX);
     const cmd = buffer.slice(1, space).toLowerCase();
     const rest = buffer.slice(space + 1);
+    const project = /^(add|folder) (.*)$/.exec(rest);
+    if (cmd === 'project' && project) return localPathSuggestions(project[1] ?? 'add', project[2] ?? '', ctx);
+    if (cmd === 'project') {
+      return [
+        { label: 'add <path>', hint: 'add one git project', value: '/project add ~/', enter: 'complete' as const },
+        { label: 'folder <path>', hint: 'watch a folder of projects', value: '/project folder ~/', enter: 'complete' as const },
+      ].filter((s) => s.label.startsWith(rest));
+    }
     if (rest.includes(' ')) return [];
     return argumentSuggestions(cmd, rest, ctx).slice(0, MAX);
   }

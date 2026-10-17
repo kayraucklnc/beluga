@@ -15,19 +15,20 @@ describe('parseConfig', () => {
     expect(parseConfig(['host', '--no-mouse'], '/tmp/p')).toMatchObject({ policyChosen: false, mouse: false });
   });
 
-  it('shares cwd read-only by default and supports --no-share/--no-agent', () => {
-    expect(parseConfig(['host'], '/tmp/proj').shares).toEqual([{ name: 'proj', root: '/tmp/proj', writable: false }]);
+  it('shares nothing and stays solo by default; supports --no-share/--no-agent/--invite', () => {
+    expect(parseConfig(['host'], '/tmp/proj').shares).toEqual([]);
+    expect(parseConfig(['host']).inviteNow).toBe(false);
+    expect(parseConfig(['host', '--invite']).inviteNow).toBe(true);
     const c = parseConfig(['join', 'klaude:x', '--no-share', '--no-agent']);
     expect(c).toMatchObject({ mode: 'join', invite: 'klaude:x', shares: [], agent: false });
   });
 
-  it('refuses to implicitly share the home folder or filesystem root', () => {
-    const fromHome = parseConfig(['host'], '/Users/kay', '/Users/kay');
-    expect(fromHome.shares).toEqual([]);
-    expect(fromHome.notes[0]).toMatch(/too broad/);
-    expect(parseConfig(['host'], '/', '/Users/kay').shares).toEqual([]);
-    expect(parseConfig(['host', '-s', '.'], '/Users/kay', '/Users/kay').shares).toHaveLength(1); // explicit is fine
-    expect(parseConfig(['host'], '/Users/kay/proj', '/Users/kay').notes).toEqual([]);
+  it('warns when you explicitly share your whole home folder or disk', () => {
+    const home = parseConfig(['host', '-s', '.'], '/Users/kay', '/Users/kay');
+    expect(home.shares).toHaveLength(1); // explicit is allowed
+    expect(home.notes[0]).toMatch(/whole home folder/);
+    expect(parseConfig(['host', '-s', '/'], '/Users/kay', '/Users/kay').notes).toHaveLength(1);
+    expect(parseConfig(['host', '-s', '.'], '/Users/kay/proj', '/Users/kay').notes).toEqual([]);
   });
 
   it('validates input', () => {

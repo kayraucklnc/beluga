@@ -2,6 +2,7 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { buildPrompt, buildSystemAppend, summarizeTool } from './prompt.js';
 import { DENY_REASON, decideTool } from './policy.js';
 import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
+import { SubAgentTracker } from './subagents.js';
 import { createRoomTools } from './tools.js';
 import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
 import type { Usage } from '../protocol.js';
@@ -33,16 +34,24 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
     async run(input: AgentRunInput): Promise<string> {
       const abortController = new AbortController();
       input.signal.addEventListener('abort', () => abortController.abort(), { once: true });
-      const policy = { cwd: opts.cwd, roots: [opts.cwd, ...opts.additionalDirectories], autoEdit: opts.autoEdit, scope: input.scope };
+      // A workspace brings its own folder and conversation; otherwise use the room's.
+      const place = input.place;
+      const cwd = place?.cwd ?? opts.cwd;
+      const extraDirs = place ? place.additionalDirectories : opts.additionalDirectories;
+      const autoEdit = place?.autoEdit ?? opts.autoEdit;
+      const remember = (id: string): void => (place ? place.onSession(id) : void (sessionId = id));
+      const subagents = new SubAgentTracker(cwd);
+      const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope };
       const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
         hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: reason },
       });
       const options: Options = {
-        cwd: opts.cwd,
-        additionalDirectories: [...opts.additionalDirectories],
-        resume: sessionId,
+        cwd,
+        additionalDirectories: [...extraDirs],
+        resume: place ? place.resume : sessionId,
+        ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
-        permissionMode: opts.autoEdit ? 'acceptEdits' : 'default',
+        permissionMode: autoEdit ? 'acceptEdits' : 'default',
         mcpServers: { klaude: roomTools },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
@@ -79,17 +88,26 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
 
       let final = '';
       for await (const msg of query({ prompt: buildPrompt(input), options })) {
-        if (msg.type === 'system' && msg.subtype === 'init') sessionId = msg.session_id;
+        if (msg.type === 'system' && msg.subtype === 'init') remember(msg.session_id);
         if (msg.type === 'rate_limit_event') {
           const update = fromRateLimitEvent(msg.rate_limit_info);
           if (update) opts.bridge.reportUsage(update);
         }
+        if (msg.type === 'assistant') {
+          for (const e of subagents.assistant(msg.parent_tool_use_id, msg.message.content)) input.onEvent('sub', JSON.stringify(e));
+        }
+        if (msg.type === 'system' && 'task_id' in msg) {
+          for (const e of subagents.task(msg as Parameters<SubAgentTracker['task']>[0])) input.onEvent('sub', JSON.stringify(e));
+        }
+        if (msg.type === 'user' && msg.parent_tool_use_id === null) {
+          for (const e of subagents.user(msg.message.content as never)) input.onEvent('sub', JSON.stringify(e));
+        }
         if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {
           for (const block of msg.message.content) {
             if (block.type === 'text' && block.text.trim()) input.onEvent('text', block.text.trim());
-            if (block.type === 'tool_use') {
+            if (block.type === 'tool_use' && !subagents.isLaunch(block)) {
               const toolInput = (block.input ?? {}) as Record<string, unknown>;
-              input.onEvent('tool', summarizeTool(block.name, toolInput, opts.cwd));
+              input.onEvent('tool', summarizeTool(block.name, toolInput, cwd));
               if (WRITE_TOOLS.has(block.name) && typeof toolInput.file_path === 'string') {
                 input.onFileTouched(toolInput.file_path);
               }
@@ -97,7 +115,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           }
         }
         if (msg.type === 'result') {
-          sessionId = msg.session_id;
+          remember(msg.session_id);
           if (msg.subtype === 'success') final = msg.result;
           else throw new Error(`Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`);
         }

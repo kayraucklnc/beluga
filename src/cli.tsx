@@ -18,7 +18,8 @@ import { closeAllTunnels, openTunnel, waitUntilReachable } from './net/tunnel.js
 import { App } from './ui/App.js';
 import { ErrorBoundary } from './ui/components/ErrorBoundary.js';
 import { createMockBackend } from './agent/mock.js';
-import { createDemoFolders, startDemoFriend } from './demo.js';
+import { createDemoFolders, createDemoWorkspaces, startDemoFriend } from './demo.js';
+import { WorkspaceManager } from './workspaces/manager.js';
 import { MOUSE_OFF, MOUSE_ON, type MouseEvent, createMouseInput } from './ui/mouse.js';
 
 interface Room {
@@ -131,12 +132,24 @@ async function main(): Promise<void> {
   const primary = config.shares[0];
   const agentCwd = primary?.root ?? process.cwd();
   let shuttingDown = false;
+  let saveAsked = false;
+  const workspaces = demo ? await createDemoWorkspaces() : new WorkspaceManager();
   const session: Session = new Session({
+    workspaces,
     client,
     store,
     shares,
     agentCwd,
     copy: (text) => copyText(text),
+    // Remote access only opens when you ask for an invite.
+    startInvite: () => {
+      if (config.mode !== 'host' || demo) return;
+      if (config.agent && !config.policyChosen && !saveAsked) {
+        saveAsked = true;
+        store.dispatch({ type: 'overlay', overlay: 'welcome' });
+      }
+      void publish(config, room, session, () => shuttingDown);
+    },
     saveSettings: (patch) => void saveSettings(patch),
     createAgent: demo
       ? (bridge) => createMockBackend(bridge)
@@ -184,7 +197,8 @@ async function main(): Promise<void> {
 
   process.stdout.write('\x1b[?1049h\x1b[H');
   if (config.mouse) process.stdout.write(MOUSE_ON);
-  const onboarding = config.agent && !config.policyChosen;
+  // Who may use your Claude only matters once you invite someone (or join a room).
+  const onboarding = config.agent && !config.policyChosen && (config.mode === 'join' || config.inviteNow);
   const app = render(
     <ErrorBoundary>
       <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} />
@@ -195,7 +209,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGHUP', () => void shutdown()); // terminal window closed
   session.start();
-  if (config.mode === 'host') void publish(config, room, session, () => shuttingDown);
+  if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => shuttingDown);
   if (demo) {
     // A pretend friend and a fake invite so every part of the UI has something to show.
     store.dispatch({ type: 'invite', invite: 'https://calm-river-demo.trycloudflare.com#k3JdQ9vXr2Lm8TzW4yBn' });

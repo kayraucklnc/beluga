@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,6 +8,8 @@ import { ShareService } from './core/shares.js';
 import { Store, initialState } from './core/store.js';
 import { type RoomKeys } from './net/crypto.js';
 import { PeerClient } from './net/peer-client.js';
+import { WorkspaceManager } from './workspaces/manager.js';
+import { WorkspaceStore } from './workspaces/store.js';
 
 const BOB_FILES: Record<string, string> = {
   'README.md':
@@ -63,4 +66,59 @@ export function startDemoFriend(url: string, keys: RoomKeys, folder: string): Se
   });
   bob.start();
   return bob;
+}
+
+// ---------------------------------------------------------------------------
+// Demo projects: real git repos with worktrees, so every workspace feature works.
+// ---------------------------------------------------------------------------
+
+
+const gitIn = (cwd: string, ...args: string[]): void => {
+  execFileSync('git', ['-c', 'user.email=demo@klaude.dev', '-c', 'user.name=klaude demo', ...args], { cwd, stdio: 'ignore' });
+};
+
+function demoRepo(base: string, name: string, files: Record<string, string>): string {
+  const origin = path.join(base, 'remotes', `${name}.git`);
+  mkdirSync(path.dirname(origin), { recursive: true });
+  execFileSync('git', ['init', '--bare', '-b', 'main', origin], { stdio: 'ignore' });
+  const dir = path.join(base, 'Projects', name);
+  writeTree(dir, files);
+  gitIn(dir, 'init', '-b', 'main');
+  gitIn(dir, 'add', '.');
+  gitIn(dir, 'commit', '-m', 'Initial commit');
+  gitIn(dir, 'remote', 'add', 'origin', origin);
+  gitIn(dir, 'push', '-u', 'origin', 'main');
+  gitIn(dir, 'remote', 'set-head', 'origin', 'main');
+  return dir;
+}
+
+/** Two sample projects with worktrees in different states, plus saved conversations. */
+export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
+  const base = mkdtempSync(path.join(os.tmpdir(), 'klaude-demo-projects-'));
+  demoRepo(base, 'bob-api', BOB_FILES);
+  demoRepo(base, 'landing', YOUR_FILES);
+  const store = new WorkspaceStore(path.join(base, 'home'));
+  store.saveConfig({ roots: [path.join(base, 'Projects')], projects: [], hidden: [] });
+  const mgr = new WorkspaceManager(store);
+  await mgr.refresh();
+  const api = mgr.list.find((p) => p.name === 'bob-api');
+  const landing = mgr.list.find((p) => p.name === 'landing');
+  if (api) {
+    const auth = await mgr.createWorktree(api.id, 'add-auth');
+    writeTree(auth.path, { 'src/auth.ts': "export function requireUser(req: { session?: string }) {\n  if (!req.session) throw new Error('unauthorized');\n}\n" });
+    gitIn(auth.path, 'add', '.');
+    gitIn(auth.path, 'commit', '-m', 'Add requireUser middleware');
+    writeTree(auth.path, { 'src/server.ts': "import express from 'express';\nimport { requireUser } from './auth';\n\nconst app = express();\napp.use('/api/payments', requireUser);\napp.get('/api/health', (_req, res) => res.send('ok'));\n\napp.listen(3000);\n" });
+    gitIn(auth.path, 'add', '.');
+    gitIn(auth.path, 'commit', '-m', 'Protect payments routes');
+    const tests = await mgr.createWorktree(api.id, 'webhook-retries');
+    writeTree(tests.path, { 'src/webhooks.ts': '// retry with backoff\nexport const MAX_RETRIES = 5;\n' });
+    await mgr.createChat(api.id, 'How do deploys work?');
+  }
+  if (landing) {
+    const hero = await mgr.createWorktree(landing.id, 'new-hero');
+    writeTree(hero.path, { 'content/hero.md': '# Build together\n\nYou, your friends, and everyone\'s Claude.\n' });
+  }
+  await mgr.refresh();
+  return mgr;
 }

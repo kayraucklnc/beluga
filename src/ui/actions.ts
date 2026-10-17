@@ -24,6 +24,25 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
     ];
   }
   switch (focus) {
+    case 'projects':
+      return [
+        { id: 'open-project-item', text: 'Open', key: '↵' },
+        { id: 'overview', text: 'Overview', key: '' },
+        { id: 'chat', text: 'Back to chat', key: 'Esc' },
+      ];
+    case 'main':
+      if (state.view.kind === 'overview') {
+        return [
+          { id: 'scroll', text: 'Scroll', key: 'PgUp PgDn / wheel' },
+          { id: 'chat', text: 'Back', key: 'Esc' },
+        ];
+      }
+      return [
+        { id: 'scroll', text: 'Choose file', key: '↑↓' },
+        { id: 'scroll', text: 'Scroll diff', key: 'PgUp PgDn' },
+        { id: 'review-claude', text: 'Ask Claude to review', key: '' },
+        { id: 'chat', text: 'Back', key: 'Esc' },
+      ];
     case 'people':
       return [
         { id: 'menu', text: 'Actions', key: '↵' },
@@ -46,11 +65,20 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
         { id: 'chat', text: viewer.full ? 'Leave fullscreen' : 'Back to chat', key: 'Esc' },
       ];
     default:
+      if (state.view.kind === 'workspace') {
+        return [
+          { id: 'review', text: 'Review', key: '' },
+          { id: 'overview', text: 'Overview', key: '' },
+          { id: 'projects', text: 'Projects', key: 'Tab' },
+          { id: 'settings', text: 'Settings', key: '' },
+          { id: 'help', text: 'Help', key: '' },
+        ];
+      }
       return [
         { id: 'ask', text: 'Ask Claude', key: '@' },
         { id: 'commands', text: 'Commands', key: '/' },
-        { id: 'people', text: 'People & files', key: 'Tab' },
-        ...(state.invite ? [{ id: 'invite', text: 'Invite', key: '' }] : []),
+        { id: 'projects', text: 'Projects', key: 'Tab' },
+        { id: 'invite', text: state.invite ? 'Copy invite' : 'Invite friends', key: '' },
         { id: 'settings', text: 'Settings', key: '' },
         { id: 'help', text: 'Help', key: '' },
       ];

@@ -82,8 +82,12 @@ describe('ShareService', () => {
   it('reports file changes', async () => {
     const seen: string[] = [];
     svc.watch((s, p) => seen.push(`${s}:${p}`));
+    writeFileSync(path.join(root, 'src', 'b.ts'), 'v1');
+    svc.watchFile('proj', 'src/b.ts'); // only files someone opened are watched
+    svc.watchFile('proj', 'src/b.ts');
+    svc.watchFile('proj', '../escape');
     await new Promise((r) => setTimeout(r, 300));
-    writeFileSync(path.join(root, 'src', 'b.ts'), 'new');
+    writeFileSync(path.join(root, 'src', 'b.ts'), 'v2');
     await waitFor(() => seen.includes('proj:src/b.ts'), 5000);
   });
 });
@@ -96,7 +100,7 @@ describe('ShareService.watch errors', () => {
     const watcher = (s as unknown as { watcher: { emit: (e: string, err: Error) => void } }).watcher;
     watcher.emit('error', new Error('EMFILE: too many'));
     watcher.emit('error', new Error('EMFILE: again'));
-    expect(errors).toEqual(['Live file updates are off (EMFILE: too many). Share a smaller folder to get them back.']);
+    expect(errors).toEqual(['Live file updates paused: EMFILE: too many']);
     await s.close();
   });
 });

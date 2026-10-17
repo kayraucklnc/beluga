@@ -61,8 +61,13 @@ describe('menus', () => {
 describe('action bar', () => {
   it('shows what you can do in each panel', () => {
     const s = room();
-    expect(actionButtons('chat', s, false).map((b) => b.id)).toEqual(['ask', 'commands', 'people', 'settings', 'help']);
-    expect(actionButtons('chat', reduce(s, { type: 'invite', invite: 'x' }), false).map((b) => b.id)).toContain('invite');
+    expect(actionButtons('chat', s, false).map((b) => b.id)).toEqual(['ask', 'commands', 'projects', 'invite', 'settings', 'help']);
+    expect(actionButtons('chat', s, false).find((b) => b.id === 'invite')?.text).toBe('Invite friends');
+    expect(actionButtons('chat', reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w', tab: 'chat' } }), false).map((b) => b.id)).toEqual(['review', 'overview', 'projects', 'settings', 'help']);
+    expect(actionButtons('projects', s, false).map((b) => b.id)).toEqual(['open-project-item', 'overview', 'chat']);
+    expect(actionButtons('main', s, false).map((b) => b.id)).toContain('review-claude');
+    expect(actionButtons('main', reduce(s, { type: 'view', view: { kind: 'overview' } }), false).map((b) => b.id)).toEqual(['scroll', 'chat']);
+    expect(actionButtons('chat', reduce(s, { type: 'invite', invite: 'x' }), false).find((b) => b.id === 'invite')?.text).toBe('Copy invite');
     expect(actionButtons('chat', s, true).map((b) => b.id)).toEqual(['accept', 'hide']);
     expect(actionButtons('people', s, false).map((b) => b.id)).toEqual(['menu', 'chat']);
     expect(actionButtons('viewer', s, false).map((b) => b.text)).toEqual(['Scroll', 'Back to chat']);
@@ -90,35 +95,42 @@ describe('layout and hit testing', () => {
   });
 
   it('computes consistent regions', () => {
-    expect(g).toMatchObject({ sideWidth: 26, chatWidth: 94, bodyTop: 1, peopleHeight: 9, filesTop: 10, actionBarY: 39 });
+    expect(g).toMatchObject({ sideWidth: 28, mainX: 28, mainWidth: 92, bodyTop: 1, tabsY: 1, headerHeight: 0, paneTop: 3, peopleHeight: 9, actionBarY: 39 });
+    expect(g.projectsHeight + g.peopleHeight).toBe(g.bodyHeight);
     expect(g.composerTop + 3).toBe(g.actionBarY);
-    const withViewer = computeLayout({ columns: 120, rows: 40, peopleCount: 3, hasViewer: true, suggestionCount: 2, approvalDetail: 'ls' });
-    expect(withViewer.viewerWidth).toBeGreaterThan(0);
-    expect(withViewer.approvalHeight).toBe(5);
-    expect(withViewer.suggestionsTop).toBe(withViewer.approvalTop + 5);
-    expect(computeLayout({ columns: 40, rows: 10, peopleCount: 9, hasViewer: false, suggestionCount: 6 }).bodyHeight).toBe(8);
+    const ws = computeLayout({ columns: 120, rows: 40, peopleCount: 3, hasViewer: true, suggestionCount: 2, approvalDetail: 'ls', workspaceHeader: true });
+    expect(ws).toMatchObject({ headerHeight: 3, paneTop: 6, viewerWidth: 46, chatWidth: 46, approvalHeight: 5 });
+    expect(ws.suggestionsTop).toBe(ws.approvalTop + 5);
+    expect(computeLayout({ columns: 40, rows: 10, peopleCount: 9, hasViewer: false, suggestionCount: 6 }).bodyHeight).toBe(10);
     const full = computeLayout({ columns: 120, rows: 40, peopleCount: 3, hasViewer: true, suggestionCount: 0, viewerFull: true });
-    expect(full).toMatchObject({ sideWidth: 0, chatWidth: 0, viewerWidth: 120 });
+    expect(full).toMatchObject({ sideWidth: 0, chatWidth: 0, viewerWidth: 120, peopleHeight: 0 });
     expect(hitTest(full, 5, 10, ctx(room()))).toEqual({ kind: 'viewer' });
   });
 
-  it('finds people, files, chat and buttons under the pointer', () => {
+  it('finds people, projects, chat, zones and buttons under the pointer', () => {
     const s = room();
-    expect(hitTest(g, 3, 2, ctx(s))).toEqual({ kind: 'person', index: 0 });
-    expect(hitTest(g, 3, 4, ctx(s))).toEqual({ kind: 'person', index: 1 });
-    expect(hitTest(g, 3, 9, ctx(s))).toEqual({ kind: 'none' });
-    expect(hitTest(g, 3, g.filesTop + 1, ctx(s))).toEqual({ kind: 'file', index: 0 });
-    expect(hitTest(g, 3, g.filesTop + 8, ctx(s))).toEqual({ kind: 'files' });
+    expect(hitTest(g, 3, g.peopleTop + 1, ctx(s))).toEqual({ kind: 'person', index: 0 });
+    expect(hitTest(g, 3, g.peopleTop + 3, ctx(s))).toEqual({ kind: 'person', index: 1 });
+    expect(hitTest(g, 3, g.peopleTop + 8, ctx(s))).toEqual({ kind: 'none' });
+    expect(hitTest(g, 3, 5, ctx(s))).toEqual({ kind: 'projects' });
     expect(hitTest(g, 60, 10, ctx(s))).toEqual({ kind: 'chat' });
+    expect(hitTest(g, 60, 2, ctx(s))).toEqual({ kind: 'main' });
     expect(hitTest(g, 60, g.composerTop + 1, ctx(s))).toEqual({ kind: 'composer' });
     expect(hitTest(g, 2, g.actionBarY, ctx(s))).toEqual({ kind: 'action', id: 'ask' });
     expect(hitTest(g, 100, g.actionBarY, ctx(s))).toEqual({ kind: 'none' });
     expect(hitTest(g, 60, 0, ctx(s))).toEqual({ kind: 'none' });
+    const zone = { x0: 4, x1: 20, y: 5, action: { type: 'add_project' } as const };
+    expect(hitTest(g, 10, 5, ctx(s, { zones: [zone] }))).toEqual({ kind: 'zone', action: { type: 'add_project' } });
+    const overview = reduce(s, { type: 'view', view: { kind: 'overview' } });
+    expect(hitTest(g, 60, 10, ctx(overview))).toEqual({ kind: 'main' });
+    const files = reduce(s, { type: 'view', view: { kind: 'files' } });
+    expect(hitTest(g, 40, g.paneTop + 1, ctx(files))).toEqual({ kind: 'file', index: 0 });
+    expect(hitTest(g, 40, g.paneTop + 20, ctx(files))).toEqual({ kind: 'files' });
     const viewer = computeLayout({ columns: 120, rows: 40, peopleCount: 3, hasViewer: true, suggestionCount: 0 });
     expect(hitTest(viewer, 110, 10, ctx(s))).toEqual({ kind: 'viewer' });
     const legend = [{ id: 'fullscreen', label: '⤢ Fullscreen f' }, { id: 'download', label: '↓ Download d' }]; // labels are just widths here
-    const legendY = viewer.bodyTop + viewer.bodyHeight - 2;
-    const legendX = viewer.sideWidth + viewer.chatWidth + 2;
+    const legendY = viewer.paneTop + viewer.paneHeight - 2;
+    const legendX = viewer.mainX + viewer.chatWidth + 2;
     expect(hitTest(viewer, legendX, legendY, ctx(s, { viewerLegend: legend }))).toEqual({ kind: 'viewer_action', id: 'fullscreen' });
     expect(hitTest(viewer, legendX + 17, legendY, ctx(s, { viewerLegend: legend }))).toEqual({ kind: 'viewer_action', id: 'download' });
     expect(hitTest(viewer, 118, legendY, ctx(s, { viewerLegend: legend }))).toEqual({ kind: 'viewer' });
@@ -127,7 +139,7 @@ describe('layout and hit testing', () => {
   it('finds menu options, suggestions and approval buttons', () => {
     const s = room();
     const menu = welcomeMenu(s);
-    const firstOption = g.bodyTop + 1 + menu.intro.length + 1;
+    const firstOption = g.headerTop + 1 + menu.intro.length + 1;
     expect(hitTest(g, 60, firstOption + 1, ctx(s, { menu }))).toEqual({ kind: 'menu', index: 1 });
     expect(hitTest(g, 60, 3, ctx(s, { menu }))).toEqual({ kind: 'none' });
 
