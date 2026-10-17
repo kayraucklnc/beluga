@@ -149,6 +149,7 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       await sleep(400 * pace, input.signal);
       contextUsed = Math.min(195_000, contextUsed + 34_000 + script.steps.length * 9_000);
       input.onEvent('context', JSON.stringify({ used: contextUsed, window: 200_000 }));
+      input.onEvent('usage', JSON.stringify({ input: 18_000 + script.steps.length * 6_000, output: 2_400, cacheRead: contextUsed, cacheWrite: 9_000, cost: 0.21 + script.steps.length * 0.04 }));
       return script.answer;
     },
   };

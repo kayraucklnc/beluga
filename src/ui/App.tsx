@@ -317,6 +317,9 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
         bench?.openHit(action.index);
         patchUi({ focus: 'chat', buffer: '', cursor: 0 });
         return;
+      case 'ws_more':
+        patchUi({ menu: { menu: { kind: 'ws_more', id: action.id, actions: action.actions }, selected: 0 } });
+        return;
       case 'term_tab':
         patchUi({ termKey: action.key, terminalScroll: 0, focus: 'terminal' });
         return;
@@ -1015,6 +1018,7 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
         transfer={activeTransfer}
         placeholder={placeholder}
         right={d.composerRight}
+        idleHint={d.focus === 'terminal' ? 'Click here (or Ctrl+]) to talk to Claude again' : undefined}
         accent={ui.pending ? theme.accent : undefined}
       />
     </Box>

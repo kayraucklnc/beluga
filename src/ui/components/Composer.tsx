@@ -29,6 +29,8 @@ interface ComposerProps {
   /** Description of the hovered control. */
   readonly hint?: string;
   readonly hoveredButton?: string;
+  /** What the empty box says while something else has the keyboard. */
+  readonly idleHint?: string;
 }
 
 const TOAST_COLORS: Record<Toast['level'], string> = { info: theme.info, success: theme.ok, warn: theme.warn, error: theme.error };
@@ -44,7 +46,7 @@ function TransferStatus({ t }: { t: Transfer }) {
   );
 }
 
-export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent, hint, hoveredButton, right }: ComposerProps) {
+export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent, hint, hoveredButton, right, idleHint }: ComposerProps) {
   const active = focus === 'chat';
   const labelWidth = Math.min(34, Math.max(...suggestions.map((s) => s.label.length), 0) + 2);
   const win = suggestionWindow(suggestions.length, selected);
@@ -88,7 +90,7 @@ export function Composer({ width, buffer, cursor, focus, suggestions, selected, 
         ) : (
           <Text wrap="truncate">
             {active ? <Text inverse> </Text> : null}
-            <Text color={theme.muted}>{active ? (placeholder ?? 'Message the room…  @ to ask a Claude, / for commands') : 'Click here or press Esc to type'}</Text>
+            <Text color={theme.muted}>{active ? (placeholder ?? 'Message the room…  @ to ask a Claude, / for commands') : (idleHint ?? 'Click here or press Esc to type')}</Text>
           </Text>
         )}
         {right ? (

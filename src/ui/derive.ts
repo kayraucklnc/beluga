@@ -204,7 +204,7 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   const composerY = g.composerTop + 1;
   const planX1 = columns - 3;
   const planX0 = planX1 - planText.length - ' ⇧Tab'.length + 1;
-  const modelX1 = planX0 - 3;
+  const modelX1 = planX0 - 4;
   const modelX0 = modelX1 - modelText.length + 1;
   const composerZones: Zone[] = chatty
     ? [

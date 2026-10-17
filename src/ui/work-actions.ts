@@ -5,6 +5,7 @@ import { MOUSE_OFF, MOUSE_ON } from './mouse.js';
 import type { MenuContext } from './menu-actions.js';
 import type { MenuKind } from './menus.js';
 import { TUNNEL_ORDER, type SettingsSection } from './settings-menus.js';
+import type { WorkspaceAction } from './workspace-models.js';
 
 const SECTIONS: readonly SettingsSection[] = ['claude', 'notify', 'workspaces', 'people', 'display', 'buttons'];
 type NotifyKey = 'desktop' | 'sound' | 'done' | 'needsYou' | 'problems' | 'people' | 'pr';
@@ -92,6 +93,10 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
   if (id.startsWith('tpl-del:')) {
     bench?.removeTemplate(id.slice('tpl-del:'.length));
     reopen();
+    return true;
+  }
+  if (id.startsWith('wsact:') && menu.kind === 'ws_more') {
+    ctx.runUiAction({ type: 'ws', id: menu.id, action: id.slice('wsact:'.length) as WorkspaceAction });
     return true;
   }
   if (id.startsWith('ho:') && menu.kind === 'handoff') {

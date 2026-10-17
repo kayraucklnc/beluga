@@ -137,7 +137,7 @@ export function usageModel(state: AppState, width: number): Model {
     { text: 'Worktrees take ', color: theme.muted },
     { text: formatBytes(totalDisk), color: theme.text, bold: true },
     { text: '   ·   Claude used ', color: theme.muted },
-    { text: `${formatTokens(totalTokens)} tokens`, color: theme.text, bold: true },
+    { text: totalTokens ? `${formatTokens(totalTokens)} tokens` : 'nothing yet', color: theme.text, bold: true },
     { text: totalCost ? ` (≈ $${totalCost.toFixed(2)})` : '', color: theme.muted },
   ]);
   lines.push(plain('Archive a worktree to free its space; its branch and conversation are kept.', { color: theme.muted }));
@@ -147,7 +147,7 @@ export function usageModel(state: AppState, width: number): Model {
     return { lines, zones };
   }
   const nameW = Math.min(30, Math.max(14, Math.floor(width * 0.28)));
-  const cells = Math.max(6, Math.floor((width - nameW - 34) / 2));
+  const cells = Math.max(6, Math.floor((width - nameW - 46) / 2));
   const maxDisk = Math.max(...rows.map((r) => r.disk), 1);
   const maxTokens = Math.max(...rows.map((r) => r.tokens), 1);
   lines.push([
@@ -166,7 +166,7 @@ export function usageModel(state: AppState, width: number): Model {
       ...bar(r.disk, maxDisk, cells, theme.info),
       ...pad(plain(` ${r.disk ? formatBytes(r.disk) : '–'}`, { color: theme.info }), 10),
       ...bar(r.tokens, maxTokens, cells, theme.claude),
-      ...pad(plain(` ${r.tokens ? formatTokens(r.tokens) : '–'}`, { color: theme.claude }), 9),
+      ...pad(plain(` ${r.tokens ? formatTokens(r.tokens) : '–'}`, { color: r.tokens ? theme.claude : theme.muted }), 9),
       ...pad(plain(r.cost ? `$${r.cost.toFixed(2)}` : '', { color: theme.muted }), 8),
     ];
     const x = lineWidth(row) + 1;

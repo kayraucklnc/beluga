@@ -67,6 +67,8 @@ export type UiAction =
   | { readonly type: 'trust_later'; readonly peerId: string }
   | { readonly type: 'search_hit'; readonly index: number }
   | { readonly type: 'term_tab'; readonly key: string }
+  /** The workspace buttons that didn't fit in the top bar. */
+  | { readonly type: 'ws_more'; readonly id: string; readonly actions: ReadonlyArray<{ readonly action: WorkspaceAction; readonly label: string; readonly hint: string }> }
   | { readonly type: 'none' };
 
 export interface Model {
@@ -548,11 +550,26 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
   }
   segs.push({ text: '│ ', color: theme.border });
   x += 2;
-  for (const btn of buttons) {
+  // Buttons that don't fit go under "⋯ More" (a menu), so nothing is ever cut off.
+  const MORE = ' ⋯ More ';
+  const widths = buttons.map((b) => b.label.length + 2);
+  const total = widths.reduce((n, w) => n + w, 0);
+  let fit = buttons.length;
+  if (x + total > width) {
+    fit = 0;
+    let used = x + MORE.length;
+    while (fit < buttons.length && used + widths[fit]! <= width) used += widths[fit++]!;
+  }
+  for (const btn of buttons.slice(0, fit)) {
     const text = ` ${btn.label} `;
     segs.push({ text, color: btn.disabled ? theme.border : btn.danger ? theme.error : btn.label === 'Solve conflict' ? theme.error : (btn.color ?? (btn.action === 'share' ? theme.info : theme.text)), bold: !btn.disabled });
     zones.push({ x0: x, x1: x + text.length - 1, y: 1, action: { type: 'ws', id: ws.id, action: btn.action }, hint: btn.hint, disabled: btn.disabled });
     x += text.length;
+  }
+  const rest = buttons.slice(fit).filter((b) => !b.disabled);
+  if (fit < buttons.length) {
+    segs.push({ text: MORE, color: theme.muted, bold: true });
+    zones.push({ x0: x, x1: x + MORE.length - 1, y: 1, action: { type: 'ws_more', id: ws.id, actions: rest.map((b) => ({ action: b.action, label: b.label, hint: b.hint })) }, hint: rest.map((b) => b.label).join(', ') });
   }
   const third: Line = conflict
     ? [{ text: `! Merge conflict in ${state.conflicts[ws.id]?.join(', ')}`, color: theme.error, bold: true }, { text: '   Click "Solve conflict" and Claude will resolve it', color: theme.muted }]

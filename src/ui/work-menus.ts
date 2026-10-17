@@ -12,7 +12,9 @@ export type WorkMenuKind =
   /** Pick who takes over a workspace. */
   | { readonly kind: 'handoff'; readonly id: string }
   /** Pick a project on a friend's computer to start a worktree in. */
-  | { readonly kind: 'remote_ws'; readonly peerId: string };
+  | { readonly kind: 'remote_ws'; readonly peerId: string }
+  /** The workspace buttons that didn't fit in the top bar. */
+  | { readonly kind: 'ws_more'; readonly id: string; readonly actions: ReadonlyArray<{ readonly action: string; readonly label: string; readonly hint: string }> };
 
 const findWs = (state: AppState, id: string) => state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id);
 const SOURCE = { yours: 'set by you', 'klaude.json': 'from klaude.json', 'conductor.json': 'from conductor.json', detected: 'guessed from the project' } as const;
@@ -126,6 +128,8 @@ export function workMenuSpec(state: AppState, menu: { readonly kind: string }): 
       return handoffMenu(state, m.id);
     case 'remote_ws':
       return remoteWsMenu(state, m.peerId);
+    case 'ws_more':
+      return { title: 'More', intro: [''], options: [...m.actions.map((a) => ({ id: `wsact:${a.action}`, label: a.label, hint: a.hint })), { id: 'close', label: 'Close', hint: 'Esc' }] };
     default:
       return null;
   }
