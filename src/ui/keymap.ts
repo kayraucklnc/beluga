@@ -49,8 +49,10 @@ export interface UiState {
    * or run command for a project, or a task for a friend's Claude (`projectId` is then their project's name).
    */
   readonly pending?: { readonly kind: 'worktree' | 'chat' | 'group' | 'setup' | 'run' | 'remote'; readonly projectId: string; readonly peerId?: string };
-  /** The built-in terminal has the keyboard. */
+  /** Lines scrolled back in the built-in terminal (0 = following its output). */
   readonly terminalScroll?: number;
+  /** Which terminal session is showing (shell, setup or run). */
+  readonly termKey?: string;
 }
 
 /** Subset of Ink's Key we rely on, so the keymap stays framework-agnostic. */
@@ -91,7 +93,9 @@ export type Effect =
   | { readonly type: 'cancel_draft' }
   | { readonly type: 'question_number'; readonly n: number }
   /** Shift+Tab in the chat: plan first, or act right away. */
-  | { readonly type: 'toggle_plan' };
+  | { readonly type: 'toggle_plan' }
+  /** ↑↓ in Search: choose a result. */
+  | { readonly type: 'search_move'; readonly delta: number };
 
 export interface KeyContext {
   readonly hasApproval: boolean;
@@ -117,6 +121,10 @@ export interface KeyContext {
   readonly questionOptions?: number;
   /** Where the top bar's keyboard cursor starts (the workspace's own buttons, past the tabs). */
   readonly headerStart?: number;
+  /** The Search tab is open: ↑↓ choose a result instead of recalling history. */
+  readonly searching?: boolean;
+  /** The Terminal tab is showing (Tab can move into it). */
+  readonly terminalVisible?: boolean;
 }
 
 export interface KeyResult {
@@ -228,6 +236,7 @@ function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): 
     const delta = key.upArrow ? -1 : 1;
     return { ui: { ...ui, selected: (ui.selected + delta + shown.length) % shown.length } };
   }
+  if ((key.upArrow || key.downArrow) && ctx.searching) return { ui, effect: { type: 'search_move', delta: key.upArrow ? -1 : 1 } };
   if (key.upArrow) return { ui: recall(ui, 1) };
   if (key.downArrow) return { ui: recall(ui, -1) };
   const half = Math.max(1, Math.floor(ctx.page / 2));
@@ -331,6 +340,7 @@ function cycleFocus(ui: UiState, ctx: KeyContext, dir: 1 | -1): UiState {
   if (ctx.peopleCount > 1) order.push('people');
   if (ctx.filesVisible) order.push('files');
   if (ctx.mainFocusable) order.push('main');
+  if (ctx.terminalVisible) order.push('terminal');
   if (ctx.hasViewer) order.push('viewer');
   const idx = Math.max(0, order.indexOf(ui.focus));
   const focus = order[(idx + dir + order.length) % order.length] ?? 'chat';

@@ -44,11 +44,41 @@ export function parseMouse(chunk: string): { events: MouseEvent[]; rest: string 
   return { events, rest };
 }
 
+// Focus reports (after FOCUS_ON): the terminal window came to the front, or went to the back.
+const FOCUS = /\x1b\[([IO])/g;
+export const FOCUS_ON = '\x1b[?1004h';
+export const FOCUS_OFF = '\x1b[?1004l';
+
+/** Pull focus reports out of a chunk: true = focused, false = in the background. */
+export function parseFocus(chunk: string): { events: boolean[]; rest: string } {
+  const events: boolean[] = [];
+  const rest = chunk.replace(FOCUS, (_m, c: string) => {
+    events.push(c === 'I');
+    return '';
+  });
+  return { events, rest };
+}
+
+export interface InputHooks {
+  readonly onMouse?: (e: MouseEvent) => void;
+  readonly onFocus?: (focused: boolean) => void;
+  /**
+   * While this returns a function, keyboard input goes straight to it instead of Ink
+   * (the built-in terminal has the keyboard). Mouse and focus reports are still handled.
+   */
+  readonly rawSink?: () => ((data: string) => void) | undefined;
+}
+
 /**
  * A stdin stand-in for Ink: forwards keyboard input untouched but removes mouse
  * reports (so they never show up as typed text) and hands them to `onMouse`.
  */
 export function createMouseInput(source: NodeJS.ReadStream, onMouse: (e: MouseEvent) => void): NodeJS.ReadStream {
+  return createInput(source, { onMouse });
+}
+
+/** Like createMouseInput, plus focus reports and handing keys to the built-in terminal. */
+export function createInput(source: NodeJS.ReadStream, hooks: InputHooks): NodeJS.ReadStream {
   const proxy = new PassThrough({ encoding: 'utf8' }) as unknown as NodeJS.ReadStream & { isTTY: boolean };
   Object.assign(proxy, {
     isTTY: true,
@@ -67,9 +97,14 @@ export function createMouseInput(source: NodeJS.ReadStream, onMouse: (e: MouseEv
   });
   source.setEncoding('utf8');
   source.on('data', (data: string | Buffer) => {
-    const { events, rest } = parseMouse(data.toString());
-    for (const e of events) onMouse(e);
-    if (rest) proxy.write(rest);
+    const { events, rest: afterMouse } = parseMouse(data.toString());
+    for (const e of events) hooks.onMouse?.(e);
+    const { events: focus, rest } = parseFocus(afterMouse);
+    for (const f of focus) hooks.onFocus?.(f);
+    if (!rest) return;
+    const sink = hooks.rawSink?.();
+    if (sink) sink(rest);
+    else proxy.write(rest);
   });
   return proxy;
 }

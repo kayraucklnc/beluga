@@ -138,14 +138,16 @@ describe('workspace UI models', () => {
     expect(text(projectsModel(s, new Set(['group:work']), 0, 34).lines).some((l) => l.includes('▣ app'))).toBe(false);
   });
 
-  it('draws three clear tabs plus where you are', () => {
+  it('draws the tabs (chat, files, overview, search, usage) plus where you are', () => {
     const s = reduce(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
     const m = tabsModel(s, 100);
     expect(text(m.lines)[0]).toContain(' Chat '); // on your own it's just "Chat"
     expect(text(tabsModel(reduce(s, { type: 'peers', peers: [{ peerId: 'a', name: 'a', shares: [], agent: true }, { peerId: 'b', name: 'b', shares: [], agent: true }] }), 100).lines)[0]).toContain('Group chat');
     expect(text(m.lines)[0]).toContain('Overview');
     expect(text(m.lines)[0]).toContain('›  fix-auth');
-    expect(m.zones.map((z) => z.action.type)).toEqual(['view', 'view', 'view']);
+    expect(m.zones.map((z) => z.action.type)).toEqual(['view', 'view', 'view', 'view', 'view']);
+    expect(text(m.lines)[0]).toContain('Search');
+    expect(text(m.lines)[0]).toContain('Usage');
     expect(m.zones[0]?.hint).toContain('Talk with your Claude');
   });
 

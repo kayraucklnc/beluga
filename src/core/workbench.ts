@@ -199,7 +199,8 @@ export class Workbench {
     const ws = this.manager.find(wsId);
     if (!ws || ws.archived) return undefined;
     const existing = this.deps.terminals?.get(shellId(wsId));
-    if (existing && !existing.running) this.deps.terminals?.close(shellId(wsId));
+    if (existing?.running) return existing;
+    if (existing) this.deps.terminals?.close(shellId(wsId));
     return this.openSession(shellId(wsId), ws, undefined, size);
   }
 

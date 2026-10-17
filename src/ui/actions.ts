@@ -24,6 +24,11 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
     ];
   }
   switch (focus) {
+    case 'terminal':
+      return [
+        { id: 'chat', text: 'Leave the terminal', key: 'Ctrl+]' },
+        { id: 'scroll', text: 'Scroll back', key: 'wheel' },
+      ];
     case 'header':
       return [
         { id: 'chat', text: 'Use these buttons', key: '↵ then Tab / ← →' },
@@ -71,10 +76,28 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
         { id: 'chat', text: viewer.full ? 'Leave fullscreen' : 'Back to chat', key: 'Esc' },
       ];
     default:
+      if (state.view.kind === 'search') {
+        return [
+          { id: 'scroll', text: 'Choose', key: '↑↓' },
+          { id: 'open-hit', text: 'Open', key: '↵' },
+          { id: 'overview', text: 'Overview', key: '' },
+          { id: 'help', text: 'Help', key: '' },
+        ];
+      }
+      if (state.view.kind === 'usage') {
+        return [
+          { id: 'refresh-usage', text: 'Measure again', key: '' },
+          { id: 'overview', text: 'Overview', key: '' },
+          { id: 'settings', text: 'Settings', key: '' },
+          { id: 'help', text: 'Help', key: '' },
+        ];
+      }
       if (state.view.kind === 'workspace') {
         return [
           { id: 'actions', text: 'Actions', key: 'Tab' },
           { id: 'review', text: 'Diff', key: '' },
+          { id: 'terminal', text: 'Terminal', key: '' },
+          { id: 'templates', text: 'Templates', key: '' },
           { id: 'overview', text: 'Overview', key: '' },
           { id: 'clear', text: 'Clear', key: '' },
           { id: 'settings', text: 'Settings', key: '' },
@@ -93,6 +116,7 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
       return [
         { id: 'ask', text: 'Ask Claude', key: '@' },
         { id: 'commands', text: 'Commands', key: '/' },
+        ...(state.view.kind === 'draft' || state.view.kind === 'draft_worktree' ? [{ id: 'templates', text: 'Templates', key: '' }] : []),
         { id: 'projects', text: 'Projects', key: 'Tab' },
         { id: 'invite', text: state.invite ? 'Copy invite' : 'Invite friends', key: '' },
         { id: 'share-folder', text: 'Share', key: '' },

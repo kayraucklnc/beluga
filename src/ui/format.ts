@@ -8,6 +8,8 @@ export interface RenderOptions {
   /** Spinner frame counter, advanced by the UI while something is running. */
   readonly frame?: number;
   readonly now?: number;
+  /** How much sub-agent work to show: every step, one line each, or just a count. */
+  readonly subagents?: 'full' | 'compact' | 'hidden';
 }
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
@@ -77,7 +79,12 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
   ];
   // Sub-agents Claude spun up, nested with their own progress.
   const spin = SPINNER[(opts.frame ?? 0) % SPINNER.length];
-  for (const sub of item.subagents) {
+  const detail = opts.subagents ?? 'full';
+  if (detail === 'hidden' && item.subagents.length) {
+    const live = item.subagents.filter((x) => x.status === 'running').length;
+    body.push(plain(`◇ ${item.subagents.length} sub-agent${item.subagents.length === 1 ? '' : 's'}${live ? ` · ${live} running` : ''}`, { color: theme.muted }));
+  }
+  for (const sub of detail === 'hidden' ? [] : item.subagents) {
     const live = sub.status === 'running';
     const background = sub.kind === 'background';
     body.push([
@@ -87,7 +94,7 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
       { text: sub.title, color: live ? theme.text : theme.muted, bold: live },
       { text: sub.steps.length ? ` · ${sub.steps.length} step${sub.steps.length === 1 ? '' : 's'}` : '', color: theme.muted },
     ]);
-    if (live) for (const step of sub.steps.slice(-2)) body.push(plain(`    ${glyph.arrow} ${step}`, { color: theme.muted }));
+    if (live && detail === 'full') for (const step of sub.steps.slice(-2)) body.push(plain(`    ${glyph.arrow} ${step}`, { color: theme.muted }));
   }
   if (item.text) {
     if (body.length) body.push([]);

@@ -12,6 +12,7 @@ export type Target =
   | { readonly kind: 'files' }
   | { readonly kind: 'projects' }
   | { readonly kind: 'main' }
+  | { readonly kind: 'terminal' }
   | { readonly kind: 'menu'; readonly index: number }
   | { readonly kind: 'suggestion'; readonly index: number }
   | { readonly kind: 'approval'; readonly answer: 'yes' | 'no' | 'always' }
@@ -78,6 +79,7 @@ export function hitTest(g: Geometry, x: number, y: number, ctx: HitContext): Tar
   }
   if (y < g.paneTop) return { kind: 'main' };
   const view = ctx.state.view;
+  if (view.kind === 'workspace' && view.tab === 'terminal') return y > g.paneTop ? { kind: 'terminal' } : { kind: 'main' };
   const inViewer = x >= g.mainX + g.chatWidth && g.viewerWidth > 0;
   if (!inViewer && view.kind === 'files') {
     const win = fileWindow(ctx.state.browser, g.paneHeight);
@@ -92,6 +94,6 @@ export function hitTest(g: Geometry, x: number, y: number, ctx: HitContext): Tar
     }
     return { kind: 'viewer' };
   }
-  if (view.kind === 'overview' || (view.kind === 'workspace' && view.tab === 'review')) return { kind: 'main' };
+  if (view.kind === 'overview' || view.kind === 'search' || view.kind === 'usage' || (view.kind === 'workspace' && view.tab === 'review')) return { kind: 'main' };
   return { kind: 'chat' };
 }

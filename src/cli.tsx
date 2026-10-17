@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import os from 'node:os';
+import path from 'node:path';
 import React from 'react';
 import { render } from 'ink';
 import { USAGE, type Config, parseConfig } from './config.js';
@@ -7,10 +8,13 @@ import { createClaudeBackend } from './agent/runner.js';
 import { copyNative, copyText, pasteText } from './core/clipboard.js';
 import { Session } from './core/session.js';
 import { ShareService } from './core/shares.js';
-import { Store, initialState } from './core/store.js';
-import { saveSettings } from './core/settings.js';
+import { Store, initialState, prefsFrom } from './core/store.js';
+import { loadSettings, saveSettings } from './core/settings.js';
+import { createDesktopNotifier } from './core/desktop-notify.js';
+import { TerminalManager } from './terminal/index.js';
+import { klaudeHome } from './workspaces/store.js';
 import { applyTheme } from './ui/theme.js';
-import { type Identity, deriveKeys, generateIdentity, generateSecret } from './net/crypto.js';
+import { type Identity, deriveKeys, generateSecret, loadIdentity } from './net/crypto.js';
 import { startHub, type Hub } from './net/hub.js';
 import { P2P_SCHEME, decodeInvite, encodeInvite, findInvite, isDirect, toWsUrl } from './net/invite.js';
 import { PeerClient } from './net/peer-client.js';
@@ -24,7 +28,7 @@ import { installedVersion } from './update/check.js';
 import { runView } from './image/view-cli.js';
 import { createDemoFolders, createDemoWorkspaces, startDemoFriend } from './demo.js';
 import { WorkspaceManager } from './workspaces/manager.js';
-import { MOUSE_OFF, MOUSE_ON, type MouseEvent, createMouseInput } from './ui/mouse.js';
+import { FOCUS_OFF, FOCUS_ON, MOUSE_OFF, MOUSE_ON, type MouseEvent, createInput } from './ui/mouse.js';
 
 interface Room {
   readonly url: string;
@@ -49,12 +53,11 @@ function lanAddress(): string | undefined {
     .find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
 }
 
-async function hostRoom(config: Config): Promise<Room> {
+async function hostRoom(config: Config, identity: Identity): Promise<Room> {
   const secret = generateSecret();
   const room = `${config.name}'s room`;
   const lan = config.lan || config.tunnel === 'none';
   // The host's peer id comes from its own key, so nobody else can claim to be the host.
-  const identity = generateIdentity();
   const hub = await startHub({ keys: deriveKeys(secret), port: config.port, host: lan ? '0.0.0.0' : '127.0.0.1', roomName: room, hostId: identity.peerId });
   return { url: `ws://127.0.0.1:${hub.port}`, secret, room, hub, identity };
 }
@@ -176,9 +179,6 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
   }
 }
 
-/** The store's prefs don't know 'p2p' yet (its Settings label is still to come); show it as 'auto' until then. */
-const storeTunnel = (kind: Config['tunnel']): Exclude<Config['tunnel'], 'p2p'> => (kind === 'p2p' ? 'auto' : kind);
-
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args[0] === '--version' || args[0] === '-v' || args[0] === 'version') {
@@ -201,12 +201,15 @@ async function main(): Promise<void> {
 
   const demo = config.mode === 'demo' ? createDemoFolders() : undefined;
   if (demo) config = { ...config, tunnel: 'none', policyChosen: true, shares: [{ name: 'landing', root: demo.mine, writable: true }] };
-  const room = config.mode === 'join' ? await joinRoom(config) : await hostRoom(config);
+  // Your own key, kept between runs: friends recognize you, and the trust they gave you comes back.
+  const identity = loadIdentity(path.join(klaudeHome(), 'identity.json'));
+  const saved = loadSettings();
+  const room = config.mode === 'join' ? await joinRoom(config) : await hostRoom(config, identity);
   const shares = new ShareService(config.shares);
   applyTheme(config.theme);
   // Remember an explicitly chosen name, so plain `klaude` uses it next time.
   if (process.argv.includes('--name') || process.argv.includes('-n')) saveSettings({ name: config.name });
-  const store = new Store(initialState(room.room, config.policy, { theme: config.theme, mouse: config.mouse, tunnel: storeTunnel(config.tunnel), selfApproval: config.selfApproval }));
+  const store = new Store(initialState(room.room, config.policy, { ...prefsFrom(saved), theme: config.theme, mouse: config.mouse, tunnel: config.tunnel, selfApproval: config.selfApproval }));
   if (room.invite) store.dispatch({ type: 'invite', invite: room.invite });
 
   const client = new PeerClient({
@@ -214,7 +217,7 @@ async function main(): Promise<void> {
     ...(room.fallbackUrl ? { fallbackUrl: room.fallbackUrl } : {}),
     keys: deriveKeys(room.secret),
     profile: { name: config.name, shares: shares.infos, agent: config.agent },
-    ...(room.identity ? { identity: room.identity } : {}),
+    identity,
   });
   const hub = room.hub;
   const replaceInvite = (): void => {
@@ -241,6 +244,8 @@ async function main(): Promise<void> {
   let shuttingDown = false;
   let saveAsked = false;
   const workspaces = demo ? await createDemoWorkspaces() : new WorkspaceManager();
+  const terminals = new TerminalManager();
+  const desktop = await createDesktopNotifier((data) => process.stdout.write(data)).catch(() => undefined);
   const session: Session = new Session({
     workspaces,
     client,
@@ -273,6 +278,9 @@ async function main(): Promise<void> {
       : undefined,
     onQuit: () => void shutdown(),
     launchDir: process.cwd(),
+    terminals,
+    savedPeople: saved.people,
+    ...(desktop ? { desktopNotify: desktop } : {}),
     ...(demo ? {} : { findConversation }),
     ...(roomControl ? { room: roomControl } : {}),
   });
@@ -287,6 +295,7 @@ async function main(): Promise<void> {
       await room.hub?.close();
     } finally {
       if (config.mouse) process.stdout.write(MOUSE_OFF);
+      process.stdout.write(FOCUS_OFF);
       process.stdout.write('\x1b[?1049l');
       process.stdout.write('klaude: left the room. See you soon!\n');
       process.exit(0);
@@ -297,7 +306,15 @@ async function main(): Promise<void> {
   if (config.mode === 'join') session.system(`Joining ${room.room}…`);
 
   const mouseListeners = new Set<(e: MouseEvent) => void>();
-  const stdin = config.mouse && process.stdin.isTTY ? createMouseInput(process.stdin, (e) => mouseListeners.forEach((l) => l(e))) : process.stdin;
+  // The built-in terminal takes the keyboard while it's focused (raw keys go to its shell).
+  let rawSink: ((data: string) => void) | undefined;
+  const stdin = process.stdin.isTTY
+    ? createInput(process.stdin, {
+        onMouse: (e) => mouseListeners.forEach((l) => l(e)),
+        onFocus: (focused) => store.dispatch({ type: 'away', away: !focused }),
+        rawSink: () => rawSink,
+      })
+    : process.stdin;
   const subscribeMouse = config.mouse
     ? (listener: (e: MouseEvent) => void) => {
         mouseListeners.add(listener);
@@ -307,11 +324,13 @@ async function main(): Promise<void> {
 
   process.stdout.write('\x1b[?1049h\x1b[H');
   if (config.mouse) process.stdout.write(MOUSE_ON);
+  // Know when klaude is in the background, so notifications only fire when they help.
+  process.stdout.write(FOCUS_ON);
   // Who may use your Claude only matters once you invite someone (or join a room).
   const onboarding = config.agent && !config.policyChosen && (config.mode === 'join' || config.inviteNow);
   const app = render(
     <ErrorBoundary>
-      <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} />
+      <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} setRawInput={(sink) => (rawSink = sink)} />
     </ErrorBoundary>,
     { exitOnCtrlC: false, stdin },
   );
@@ -332,7 +351,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  process.stdout.write(MOUSE_OFF + '\x1b[?1049l');
+  process.stdout.write(MOUSE_OFF + FOCUS_OFF + '\x1b[?1049l');
   process.stderr.write(`klaude: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });

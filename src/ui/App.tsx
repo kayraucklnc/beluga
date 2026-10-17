@@ -14,7 +14,10 @@ import { ApprovalCard } from './components/ApprovalCard.js';
 import { ChatView, chatLines } from './components/ChatView.js';
 import { Composer } from './components/Composer.js';
 import { FilesPanel } from './components/FilesPanel.js';
-import { Header } from './components/Header.js';
+import { TerminalView, terminalSize } from './components/TerminalView.js';
+import { isLeaveChord, isLeaveKey, type TerminalSession } from '../terminal/index.js';
+import { runId, setupId, shellId } from '../core/workbench.js';
+import { terminalBarModel, type TerminalTabInfo } from './work-models.js';
 import { HelpOverlay } from './components/HelpOverlay.js';
 import { Menu } from './components/Menu.js';
 import { ModelBlock } from './components/ModelBlock.js';
@@ -50,6 +53,10 @@ const BUTTON_HINTS: Record<string, string> = {
   chat: 'Back to typing',
   clear: 'Clear this conversation (you choose: just you, everyone, or a fresh start)',
   'share-folder': 'Share a folder with everyone, or just one person',
+  terminal: "A real shell in this workspace's folder",
+  templates: 'Start from a ready-made task, or save your own',
+  'open-hit': 'Open the highlighted conversation',
+  'refresh-usage': 'Measure disk space again',
 };
 
 export interface AppProps {
@@ -58,6 +65,8 @@ export interface AppProps {
   readonly onboarding?: boolean;
   /** Subscribe to mouse events (clicks and wheel). Omit to run keyboard-only. */
   readonly subscribeMouse?: (listener: (e: MouseEvent) => void) => () => void;
+  /** Send keyboard input straight to a function (the built-in terminal) instead of Ink; undefined gives it back. */
+  readonly setRawInput?: (sink: ((data: string) => void) | undefined) => void;
 }
 
 function useTerminalSize(): { columns: number; rows: number } {
@@ -108,7 +117,7 @@ function listLocalDirs(dir: string): FsEntry[] {
 
 const isWorking = (state: AppState): boolean => anyActivity(state) || isCompacting(state) || state.transfers.some((t) => t.status === 'active');
 
-export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
+export function App({ session, onboarding = false, subscribeMouse, setRawInput }: AppProps) {
   const state = useSyncExternalStore(session.store.subscribe, session.store.getState);
   const [startUi] = useState<UiState>(() =>
     onboarding ? { ...initialUi, menu: { menu: { kind: 'welcome' }, selected: POLICY_INDEX[state.policy] } } : initialUi,
@@ -148,11 +157,76 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       patchUi({ menu: { menu: { kind: 'clear', channel: view().channel, host: session.isHost }, selected: 0 } });
       return;
     }
-    if (state.overlay !== 'settings' && state.overlay !== 'welcome') return;
-    const kind = state.overlay;
+    const overlay = state.overlay;
+    if (overlay === 'model' || overlay === 'inbox' || overlay === 'templates' || overlay === 'handoff') {
+      session.store.dispatch({ type: 'overlay', overlay: undefined });
+      const channel = view().channel;
+      const wsId = state.view.kind === 'workspace' ? state.view.id : undefined;
+      if (overlay === 'model') patchUi({ menu: { menu: { kind: 'model', ...(channel === 'room' || channel === 'draft' ? {} : { channel }) }, selected: 0 } });
+      else if (overlay === 'inbox') patchUi({ menu: { menu: { kind: 'inbox' }, selected: 0 } });
+      else if (overlay === 'templates') patchUi({ menu: { menu: { kind: 'templates' }, selected: 0 } });
+      else if (wsId) patchUi({ menu: { menu: { kind: 'handoff', id: wsId }, selected: 0 } });
+      return;
+    }
+    if (overlay !== 'settings' && overlay !== 'welcome') return;
     session.store.dispatch({ type: 'overlay', overlay: undefined });
-    patchUi({ menu: { menu: { kind }, selected: kind === 'welcome' ? POLICY_INDEX[state.policy] : 0 } });
+    patchUi({ menu: { menu: { kind: overlay }, selected: overlay === 'welcome' ? POLICY_INDEX[state.policy] : 0 } });
   }, [state.overlay]);
+
+  // Search as you type, when the Search tab is open.
+  const searchQuery = state.view.kind === 'search' && !ui.buffer.startsWith('/') ? ui.buffer : undefined;
+  useEffect(() => {
+    if (searchQuery === undefined) return;
+    const t = setTimeout(() => session.workbench?.search(searchQuery), 120);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // ---- the built-in terminal
+  const bench = session.workbench;
+  const termWs = state.view.kind === 'workspace' && state.view.tab === 'terminal' ? state.view.id : undefined;
+  const termKeys = termWs ? [shellId(termWs), setupId(termWs), runId(termWs)] : [];
+  const termKey = termWs ? (ui.termKey && termKeys.includes(ui.termKey) && bench?.terminals?.get(ui.termKey) ? ui.termKey : shellId(termWs)) : undefined;
+  const termPane = terminalSize(g.mainWidth, g.paneHeight);
+  const termSession: TerminalSession | undefined = termKey ? bench?.terminals?.get(termKey) : undefined;
+  const [, setTermTick] = useState(0);
+  // The shell starts the first time you open the Terminal tab (or after it exited and you come back).
+  useEffect(() => {
+    if (!termWs || termKey !== shellId(termWs) || (termSession && termSession.running)) return;
+    if (bench?.shell(termWs, termPane)) setTermTick((n) => n + 1);
+  }, [termWs, termKey, termSession]);
+  useEffect(() => {
+    if (!termSession) return;
+    return termSession.onChange(() => setTermTick((n) => n + 1));
+  }, [termSession]);
+  useEffect(() => {
+    termSession?.resize(termPane.cols, termPane.rows);
+  }, [termSession, termPane.cols, termPane.rows]);
+  // While the terminal is focused, every key goes to it (Ctrl+] gives the keyboard back).
+  const termFocused = d.focus === 'terminal' && Boolean(termSession);
+  useEffect(() => {
+    if (!setRawInput) return;
+    if (!termFocused || !termSession) {
+      setRawInput(undefined);
+      return;
+    }
+    setRawInput((data) => {
+      if (isLeaveChord(data)) {
+        patchUi({ focus: 'chat' });
+        return;
+      }
+      if (uiRef.current.terminalScroll) patchUi({ terminalScroll: 0 });
+      termSession.write(data);
+    });
+    return () => setRawInput(undefined);
+  }, [termFocused, termSession, setRawInput]);
+  const termTabs: TerminalTabInfo[] = termWs
+    ? termKeys
+        .map((key) => ({ key, s: bench?.terminals?.get(key) }))
+        .filter((t) => t.s || t.key === shellId(termWs))
+        .map(({ key, s }) => ({ key, label: key === shellId(termWs) ? 'Shell' : key.endsWith(':setup') ? 'Setup' : 'Run', running: s?.running ?? false, ...(s?.exited ? { exitCode: s.exited.code } : {}) }))
+    : [];
+  const termProject = termWs ? state.projects.find((p) => p.workspaces.some((w) => w.id === termWs)) : undefined;
+  const termBar = termWs && termKey ? terminalBarModel(termWs, termTabs, termKey, Math.max(1, g.mainWidth - 2), { hasRun: Boolean(termProject?.scripts?.run), hasSetup: Boolean(termProject?.scripts?.setup), focused: termFocused }) : undefined;
 
   // Opening a file (yourself) moves you into the viewer so its controls are right there.
   const openedKey = state.viewer && !state.viewer.by ? `${state.viewer.owner}:${state.viewer.share}/${state.viewer.path}` : undefined;
@@ -215,8 +289,36 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     switch (action.type) {
       case 'open_ws':
         ctl?.open(action.id, action.tab);
-        // Opening a view puts you inside it: the file list, the diff, or the chat.
-        patchUi(action.tab === 'review' ? { focus: 'main', entered: true } : action.tab === 'files' ? { focus: 'files', entered: true } : { focus: 'chat', entered: false });
+        // Opening a view puts you inside it: the file list, the diff, the terminal, or the chat.
+        patchUi(action.tab === 'review' ? { focus: 'main', entered: true } : action.tab === 'files' ? { focus: 'files', entered: true } : action.tab === 'terminal' ? { focus: 'terminal', terminalScroll: 0 } : { focus: 'chat', entered: false });
+        return;
+      case 'inbox':
+        patchUi({ menu: { menu: { kind: 'inbox' }, selected: 0 } });
+        return;
+      case 'model_menu':
+        patchUi({ menu: { menu: { kind: 'model', ...(action.channel === 'room' ? {} : { channel: action.channel }) }, selected: 0 } });
+        return;
+      case 'templates_menu':
+        patchUi({ menu: { menu: { kind: 'templates', manage: true }, selected: 0 } });
+        return;
+      case 'template': {
+        const t = session.store.getState().templates.find((x) => x.id === action.id);
+        if (t) runMenu({ kind: 'templates' }, session.store.getState().templates.indexOf(t));
+        return;
+      }
+      case 'trust':
+        session.people.setTrust(action.peerId, action.level);
+        return;
+      case 'trust_later':
+        session.people.dismissPrompt(action.peerId);
+        return;
+      case 'search_hit':
+        session.store.dispatch({ type: 'search', search: { cursor: action.index } });
+        bench?.openHit(action.index);
+        patchUi({ focus: 'chat', buffer: '', cursor: 0 });
+        return;
+      case 'term_tab':
+        patchUi({ termKey: action.key, terminalScroll: 0, focus: 'terminal' });
         return;
       case 'toggle_project': {
         const latest = session.store.getState();
@@ -312,6 +414,26 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
           case 'compact':
             ctl.compact(ws.id);
             return;
+          case 'pr':
+            patchUi({ menu: { menu: { kind: 'pr', id: ws.id }, selected: 0 } });
+            void bench?.refreshPrs(ws.id);
+            return;
+          case 'run':
+            bench?.run(ws.id);
+            ctl.open(ws.id, 'terminal');
+            patchUi({ termKey: runId(ws.id), terminalScroll: 0, focus: 'terminal' });
+            return;
+          case 'stop_run':
+            bench?.stopRun(ws.id);
+            return;
+          case 'setup':
+            bench?.runSetup(ws.id);
+            ctl.open(ws.id, 'terminal');
+            patchUi({ termKey: setupId(ws.id), terminalScroll: 0 });
+            return;
+          case 'handoff':
+            patchUi({ menu: { menu: { kind: 'handoff', id: ws.id }, selected: 0 } });
+            return;
         }
       }
     }
@@ -328,6 +450,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       answerTyped(session, question, text);
       return;
     }
+    // An empty Enter in a pending prompt (e.g. clearing a setup command) still counts.
     if (latest.view.kind === 'draft' && ctl && !text.startsWith('/')) {
       void ctl.startChat(latest.view.projectId, text, latest.view.dir);
       return;
@@ -340,7 +463,14 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     if (pending && ctl) {
       patchUi({ pending: undefined });
       if (pending.kind === 'group') void ctl.setGroup(pending.projectId, text);
+      else if (pending.kind === 'setup' || pending.kind === 'run') bench?.setScript(pending.projectId, pending.kind, text);
+      else if (pending.kind === 'remote' && pending.peerId) void session.remote.requestWorktree(pending.peerId, pending.projectId, text, latest.planMode.room === true);
       else void (pending.kind === 'worktree' ? ctl.newWorktree(pending.projectId, text) : ctl.newChat(pending.projectId, text));
+      return;
+    }
+    // In Search, Enter opens the highlighted result.
+    if (latest.view.kind === 'search' && !text.startsWith('/')) {
+      if (latest.search.hits.length) runUiAction({ type: 'search_hit', index: latest.search.cursor });
       return;
     }
     session.submit(text, urgent);
@@ -398,6 +528,11 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         const review = session.store.getState().review;
         const count = review?.data?.files.length ?? 0;
         if (review && count) void ctl?.selectFile(Math.max(0, Math.min(count - 1, review.selected + effect.delta)));
+        return;
+      }
+      case 'search_move': {
+        const search = session.store.getState().search;
+        if (search.hits.length) session.store.dispatch({ type: 'search', search: { cursor: Math.max(0, Math.min(search.hits.length - 1, search.cursor + effect.delta)) } });
         return;
       }
       case 'toggle_plan': {
@@ -463,6 +598,18 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         return;
       case 'review-claude':
         if (latest.view.kind === 'workspace') ctl?.askClaudeToReview(latest.view.id);
+        return;
+      case 'terminal':
+        if (latest.view.kind === 'workspace') runUiAction({ type: 'open_ws', id: latest.view.id, tab: 'terminal' });
+        return;
+      case 'templates':
+        patchUi({ menu: { menu: { kind: 'templates' }, selected: 0 } });
+        return;
+      case 'open-hit':
+        if (latest.search.hits.length) runUiAction({ type: 'search_hit', index: latest.search.cursor });
+        return;
+      case 'refresh-usage':
+        void bench?.measureDisk().then(() => session.toast('Measured again', 'success'));
         return;
       case 'open-project-item': {
         const item = view(latest, current).projectItems[current.projectsCursor];
@@ -538,6 +685,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       case 'main':
         patchUi({ focus: 'main' });
         return;
+      case 'terminal':
+        patchUi({ focus: 'terminal' });
+        return;
       case 'chat':
       case 'composer':
         patchUi({ focus: 'chat' });
@@ -584,9 +734,23 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       patchUi({ selected: Math.max(0, Math.min(total - 1, current.selected + dir)) });
       return;
     }
+    if (target.kind === 'terminal') {
+      const max = termSession?.snapshot().scrollback ?? 0;
+      patchUi({ terminalScroll: Math.min(max, Math.max(0, (current.terminalScroll ?? 0) - dir * WHEEL_LINES)) });
+      return;
+    }
+    if (target.kind === 'main' && latest.view.kind === 'search') {
+      const total = latest.search.hits.length;
+      if (total) session.store.dispatch({ type: 'search', search: { cursor: Math.max(0, Math.min(total - 1, latest.search.cursor + dir)) } });
+      return;
+    }
+    if (target.kind === 'main' && latest.view.kind === 'usage') {
+      patchUi({ overviewScroll: Math.max(0, current.overviewScroll + dir * WHEEL_LINES) });
+      return;
+    }
     if (target.kind === 'viewer') scrollViewer(dir * WHEEL_LINES);
     else if (target.kind === 'file' || target.kind === 'files') session.store.dispatch({ type: 'browser_cursor', delta: dir });
-    else if (target.kind === 'main' && latest.review) run({ type: 'review_scroll', delta: dir * WHEEL_LINES });
+    else if (target.kind === 'main' && latest.review && latest.view.kind === 'workspace') run({ type: 'review_scroll', delta: dir * WHEEL_LINES });
     else if (target.kind === 'main' && latest.view.kind === 'overview') {
       const max = Math.max(0, (view(latest, current).overview?.lines.length ?? 0) - 4);
       patchUi({ overviewScroll: Math.min(max, Math.max(0, current.overviewScroll + dir * WHEEL_LINES)) });
@@ -644,6 +808,12 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       const latest = session.store.getState();
       const dd = view(latest, current);
       const total = chatLines(latest, dd.geometry.chatWidth - 4, frame, dd.channel).length;
+      // No raw keyboard here (e.g. a test): translate Ink's keys for the terminal instead.
+      if (dd.focus === 'terminal' && termSession) {
+        if (isLeaveKey(input, key)) patchUi({ focus: 'chat' });
+        else termSession.writeKey(input, key);
+        return;
+      }
       const result = handleKey({ ...current, focus: dd.focus }, input, key, {
         hasApproval: latest.approvals.length > 0,
         hasViewer: dd.geometry.viewerWidth > 0,
@@ -655,7 +825,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         menuSize: dd.menu?.options.length ?? 0,
         projectItems: dd.projectItems,
         headerItems: dd.headerItems,
-        mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || latest.view.kind === 'overview',
+        mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || latest.view.kind === 'overview' || latest.view.kind === 'usage',
+        searching: latest.view.kind === 'search',
+        terminalVisible: latest.view.kind === 'workspace' && latest.view.tab === 'terminal',
         filesVisible: latest.view.kind === 'files' || (latest.view.kind === 'workspace' && latest.view.tab === 'files'),
         draft: latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree',
         headerStart: dd.headerStart,
@@ -697,6 +869,18 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
             <ModelBlock lines={d.overview?.lines ?? []} height={g.paneHeight - 2} scroll={d.overviewScroll} />
           </Panel>
         );
+      case 'search':
+        return (
+          <Panel title="Search" right="type below · ↑↓ choose · Enter opens" width={paneW} height={g.paneHeight} focused={d.focus === 'main' || d.focus === 'chat'}>
+            <ModelBlock lines={d.pane?.lines ?? []} height={g.paneHeight - 2} scroll={d.paneScroll} />
+          </Panel>
+        );
+      case 'usage':
+        return (
+          <Panel title="Usage" right="disk space and Claude tokens per workspace" width={paneW} height={g.paneHeight} focused={d.focus === 'main'}>
+            <ModelBlock lines={d.pane?.lines ?? []} height={g.paneHeight - 2} scroll={d.paneScroll} />
+          </Panel>
+        );
       case 'workspace': {
         const ws = d.workspace;
         if (!ws) return <Panel title="Workspace" width={paneW} height={g.paneHeight}>{null}</Panel>;
@@ -715,6 +899,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
             </>
           );
         }
+        if (state.view.tab === 'terminal' && termBar) {
+          return <TerminalView session={termSession} bar={termBar} width={paneW} height={g.paneHeight} focused={termFocused} scroll={ui.terminalScroll ?? 0} title={`${ws.name} terminal`} />;
+        }
         return <ChatView state={state} channel={d.channel} title={`Claude in ${ws.name}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />;
       }
       case 'shared': {
@@ -732,11 +919,19 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       }
       case 'draft_worktree': {
         const project = state.projects.find((p) => p.id === (state.view as { projectId: string }).projectId);
-        return <ChatView state={state} channel="draft" title={`New worktree in ${project?.name ?? 'project'} · from the latest origin`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={0} frame={frame} />;
+        return (
+          <Panel title={`New worktree in ${project?.name ?? 'project'} · from the latest origin`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'}>
+            <ModelBlock lines={d.pane?.lines ?? []} height={g.paneHeight - 2} scroll={d.paneScroll} />
+          </Panel>
+        );
       }
       case 'draft': {
         const where = state.view.dir ?? state.projects.find((p) => p.id === (state.view as { projectId: string }).projectId)?.root ?? '';
-        return <ChatView state={state} channel="draft" title={`New Claude chat · ${where.replace(os.homedir(), '~')}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={0} frame={frame} />;
+        return (
+          <Panel title={`New Claude chat · ${where.replace(os.homedir(), '~')}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'}>
+            <ModelBlock lines={d.pane?.lines ?? []} height={g.paneHeight - 2} scroll={d.paneScroll} />
+          </Panel>
+        );
       }
       default:
         return (
@@ -766,7 +961,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
-      <Header state={state} width={columns} />
+      <Box paddingX={1} height={1}>
+        <ModelBlock lines={d.topBar.lines} height={1} />
+      </Box>
       <Box height={g.bodyHeight}>
         {fullscreen ? (
           <Viewer state={state} width={columns} height={g.bodyHeight} focused raw={ui.viewerRaw} full />
@@ -817,7 +1014,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         hoveredButton={hoveredButton}
         transfer={activeTransfer}
         placeholder={placeholder}
-        planMode={d.channel === 'draft' ? undefined : state.planMode[d.channel] === true}
+        right={d.composerRight}
         accent={ui.pending ? theme.accent : undefined}
       />
     </Box>

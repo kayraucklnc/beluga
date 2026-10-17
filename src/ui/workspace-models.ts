@@ -1,4 +1,7 @@
-import type { AppState, LogItem, ReviewState } from '../core/store.js';
+import type { AppState, LogItem, ReviewState, WorkspaceTab } from '../core/store.js';
+import type { TrustLevel } from '../core/settings.js';
+import { describePr } from '../workspaces/pr.js';
+import { formatBytes } from '../workspaces/disk.js';
 import type { Project, ProjectGroup, Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { isRunning } from './format.js';
@@ -28,10 +31,15 @@ export type WorkspaceAction =
   | 'review_claude'
   | 'merge_claude'
   | 'compact'
-  | 'share';
+  | 'share'
+  | 'pr'
+  | 'run'
+  | 'stop_run'
+  | 'setup'
+  | 'handoff';
 
 export type UiAction =
-  | { readonly type: 'open_ws'; readonly id: string; readonly tab?: 'chat' | 'files' | 'review' }
+  | { readonly type: 'open_ws'; readonly id: string; readonly tab?: WorkspaceTab }
   | { readonly type: 'toggle_project'; readonly id: string }
   | { readonly type: 'toggle_fold'; readonly key: string }
   | { readonly type: 'agents_menu'; readonly projectId: string }
@@ -51,6 +59,14 @@ export type UiAction =
   | { readonly type: 'shared_menu'; readonly owner: string; readonly id: string }
   /** Answer a question card: pick an option, skip, approve or revise a plan, or finish a multi-select. */
   | { readonly type: 'answer'; readonly qid: string; readonly pick: 'option' | 'skip' | 'approve' | 'revise' | 'done'; readonly label?: string; readonly question?: string }
+  | { readonly type: 'inbox' }
+  | { readonly type: 'model_menu'; readonly channel: string }
+  | { readonly type: 'template'; readonly id: string }
+  | { readonly type: 'templates_menu' }
+  | { readonly type: 'trust'; readonly peerId: string; readonly level: TrustLevel }
+  | { readonly type: 'trust_later'; readonly peerId: string }
+  | { readonly type: 'search_hit'; readonly index: number }
+  | { readonly type: 'term_tab'; readonly key: string }
   | { readonly type: 'none' };
 
 export interface Model {
@@ -343,6 +359,8 @@ export function tabsModel(state: AppState, width: number): Model {
   tab(solo ? 'Chat' : 'Group chat', v.kind === 'room', { type: 'view', view: { kind: 'room' } }, solo ? 'Talk with your Claude, or @a-workspace to reach the Claude working there' : 'Chat with everyone in the room and their Claudes', state.unread.room);
   tab('Shared files', v.kind === 'files', { type: 'view', view: { kind: 'files' } }, "Browse folders people in the room share");
   tab('Overview', v.kind === 'overview', { type: 'view', view: { kind: 'overview' } }, 'Every worktree and chat at a glance');
+  tab('Search', v.kind === 'search', { type: 'view', view: { kind: 'search' } }, 'Search every conversation');
+  tab('Usage', v.kind === 'usage', { type: 'view', view: { kind: 'usage' } }, 'Disk space and Claude usage per workspace');
   if (v.kind === 'workspace') {
     const ws = findWorkspace(state.projects, v.id);
     if (ws) segs.push({ text: `›  ${ws.name}`, color: theme.accent, bold: true });
@@ -405,14 +423,25 @@ function card(state: AppState, p: Project, w: Workspace, frame: number, width: n
   const border = st.color === theme.ok || st.color === theme.muted ? theme.border : st.color;
   const b = (t: string): Seg => ({ text: t, color: border });
   const icon = w.kind === 'chat' ? '◇' : BRANCH;
-  const title: Line = [{ text: `${icon} `, color: theme.muted }, { text: w.name, color: theme.text, bold: true }, { text: p.root ? `  ${p.name}` : '', color: theme.muted }];
-  const status: Line = [{ text: `${st.icon} `, color: st.color }, { text: st.label, color: st.color }];
+  const disk = state.disk[w.id];
+  const title: Line = split([{ text: `${icon} `, color: theme.muted }, { text: w.name, color: theme.text, bold: true }, { text: p.root ? `  ${p.name}` : '', color: theme.muted }], disk ? [{ text: formatBytes(disk), color: theme.muted }] : [], inner);
+  const pr = state.prs[w.id];
+  const setup = state.setup[w.id];
+  const extra: Seg[] = pr
+    ? [{ text: `  ·  ${describePr(pr)}`, color: pr.checks === 'failing' ? theme.error : pr.state === 'MERGED' ? theme.ok : theme.info }]
+    : setup?.status === 'running'
+      ? [{ text: '  ·  setting up…', color: theme.info }]
+      : setup?.status === 'failed'
+        ? [{ text: '  ·  setup failed', color: theme.error }]
+        : [];
+  const status: Line = [{ text: `${st.icon} `, color: st.color }, { text: st.label, color: st.color }, ...extra];
   const buttons: Array<{ label: string; action: UiAction; hint: string }> = [
     { label: 'Open', action: { type: 'open_ws', id: w.id }, hint: `Open ${w.name}` },
     ...(state.conflicts[w.id]?.length ? [{ label: 'Solve conflict', action: { type: 'ws', id: w.id, action: 'merge_claude' } as UiAction, hint: 'Ask Claude to resolve the merge conflict' }] : []),
     ...(w.kind === 'worktree' && (w.status?.ahead ?? 0) > 0 && !(w.status?.changed ?? 0) && !state.conflicts[w.id]?.length
       ? [{ label: 'Merge', action: { type: 'ws', id: w.id, action: 'merge' } as UiAction, hint: `Merge ${w.branch} into ${p.name}'s main folder` }]
       : []),
+    ...(w.kind === 'worktree' && ((w.status?.ahead ?? 0) > 0 || pr) ? [{ label: pr ? `PR #${pr.number}` : 'PR', action: { type: 'ws', id: w.id, action: 'pr' } as UiAction, hint: pr ? describePr(pr) : 'Claude opens a pull request with a short description' }] : []),
   ];
   const zones: Zone[] = [];
   const btnSegs: Seg[] = [];
@@ -460,24 +489,33 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
     { text: '   ' },
     { text: `${st.icon} ${st.label}`, color: st.color },
   ];
-  const tabs: Array<[string, 'chat' | 'files' | 'review', string]> =
-    ws.kind === 'chat'
-      ? [['Chat', 'chat', 'Your conversation with Claude'], ['Files', 'files', 'Browse this folder']]
-      : [['Chat', 'chat', 'Your conversation with Claude'], ['Files', 'files', 'Browse this folder'], ['Diff', 'review', 'See exactly what changed']];
+  const tabs: Array<[string, WorkspaceTab, string]> = [
+    ['Chat', 'chat', 'Your conversation with Claude'],
+    ['Files', 'files', 'Browse this folder'],
+    ...(ws.kind === 'chat' ? [] : ([['Diff', 'review', 'See exactly what changed']] as Array<[string, WorkspaceTab, string]>)),
+    ['Terminal', 'terminal', 'A real shell in this folder, plus setup and run'],
+  ];
   const changed = ws.status?.changed ?? 0;
   const ahead = ws.status?.ahead ?? 0;
   const conflict = Boolean(state.conflicts[ws.id]?.length);
-  type Btn = { label: string; action: WorkspaceAction; hint: string; disabled?: boolean; danger?: boolean };
-  const buttons: Btn[] = ws.archived
+  const pr = state.prs[ws.id];
+  const scripts = project?.scripts;
+  const friends = state.peers.some((p) => p.peerId !== state.self?.peerId && p.agent);
+  type Btn = { label: string; action: WorkspaceAction; hint: string; disabled?: boolean; danger?: boolean; color?: string };
+  const all: Btn[] = ws.archived
     ? [
         { label: 'Restore', action: 'restore', hint: 'Bring this workspace back' },
         { label: 'Delete', action: 'delete', hint: 'Delete permanently', danger: true },
       ]
     : [
+        ...(scripts?.run ? ([{ label: 'Run', action: 'run', hint: `Start ${scripts.run.command} in the Terminal tab` }] as Btn[]) : []),
         { label: 'Review', action: 'review_claude', hint: 'Ask Claude to check everything: bugs, security, tests and quality' },
         ...(ws.kind === 'worktree'
           ? ([
               { label: 'Commit', action: 'commit', hint: changed ? `Commit ${changed} changed file(s)` : 'Nothing to commit', disabled: !changed },
+              pr
+                ? { label: `PR #${pr.number}${pr.checks === 'passing' ? ' ✓' : pr.checks === 'failing' ? ' ✗' : pr.checks === 'pending' ? ' …' : ''}`, action: 'pr', hint: `${describePr(pr)}: open it, fix checks, or update it`, color: pr.checks === 'failing' ? theme.error : pr.state === 'MERGED' ? theme.ok : theme.info }
+                : { label: 'PR', action: 'pr', hint: ahead || changed ? 'Claude pushes and opens a pull request with a short description' : 'Nothing to put in a pull request yet', disabled: !ahead && !changed },
               conflict
                 ? { label: 'Solve conflict', action: 'merge_claude', hint: 'Ask Claude to resolve the merge conflict and finish the merge' }
                 : {
@@ -486,6 +524,7 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
                     hint: changed ? 'Commit your changes first' : ahead ? `Merge ${ahead} commit(s) into ${project?.name ?? 'the'} main folder` : 'Nothing to merge yet',
                     disabled: !ahead || changed > 0,
                   },
+              { label: 'Hand off', action: 'handoff', hint: friends ? "Someone else's Claude continues this on their computer" : 'Invite someone first; then they can take this over', disabled: !friends },
             ] as Btn[])
           : []),
         ...(state.context[`ws:${ws.id}`] ? ([{ label: 'Compact', action: 'compact', hint: 'Shrink the conversation so Claude has room to keep going' }] as Btn[]) : []),
@@ -494,6 +533,8 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
         ...(ws.kind !== 'main' ? ([{ label: 'Archive', action: 'archive', hint: 'Put it away; keeps the branch and conversation' }] as Btn[]) : []),
         sharedButton(state, ws.id),
       ];
+  // You choose which buttons show (Settings → Workspaces → Top bar buttons); hidden ones still work as /commands.
+  const buttons = all.filter((b) => !state.prefs.hiddenButtons.includes(b.action === 'merge_claude' ? 'merge' : b.action));
   const segs: Seg[] = [];
   let x = 0;
   for (const [label, tab, hint] of tabs) {
@@ -509,15 +550,21 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
   x += 2;
   for (const btn of buttons) {
     const text = ` ${btn.label} `;
-    segs.push({ text, color: btn.disabled ? theme.border : btn.danger ? theme.error : btn.label === 'Solve conflict' ? theme.error : btn.action === 'share' ? theme.info : theme.text, bold: !btn.disabled });
+    segs.push({ text, color: btn.disabled ? theme.border : btn.danger ? theme.error : btn.label === 'Solve conflict' ? theme.error : (btn.color ?? (btn.action === 'share' ? theme.info : theme.text)), bold: !btn.disabled });
     zones.push({ x0: x, x1: x + text.length - 1, y: 1, action: { type: 'ws', id: ws.id, action: btn.action }, hint: btn.hint, disabled: btn.disabled });
     x += text.length;
   }
   const third: Line = conflict
     ? [{ text: `! Merge conflict in ${state.conflicts[ws.id]?.join(', ')}`, color: theme.error, bold: true }, { text: '   Click "Solve conflict" and Claude will resolve it', color: theme.muted }]
     : [{ text: '─'.repeat(width), color: theme.border }];
-  const meter = contextMeter(state, `ws:${ws.id}`, 12);
-  const titleLine = meter.length ? split(title, meter, width) : truncate(title, width);
+  const meter = state.prefs.contextMeter ? contextMeter(state, `ws:${ws.id}`, 12) : [];
+  const disk = state.disk[ws.id];
+  const tokens = ws.usage ? ws.usage.input + ws.usage.output + ws.usage.cacheWrite : 0;
+  const space: Line = [disk !== undefined ? formatBytes(disk) : '', tokens ? `${tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : tokens} tokens` : ''].filter(Boolean).length
+    ? [{ text: [disk !== undefined ? formatBytes(disk) : '', tokens ? `${tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : tokens} tokens` : ''].filter(Boolean).join(' · '), color: theme.muted }, { text: meter.length ? '   ' : '' }]
+    : [];
+  const right: Line = [...space, ...meter];
+  const titleLine = right.length ? split(title, right, width) : truncate(title, width);
   return { lines: [titleLine, truncate(segs, width), truncate(third, width)], zones: zones.filter((z) => z.x0 < width) };
 }
 

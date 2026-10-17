@@ -166,6 +166,7 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
     case 'remembered':
       return { ...state, remembered: action.people };
     case 'terminal':
+      if (action.title !== undefined && state.terminals[action.id] === action.title) return state;
       return { ...state, terminals: action.title === undefined ? without(state.terminals, action.id) : { ...state.terminals, [action.id]: action.title } };
   }
 }

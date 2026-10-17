@@ -15,6 +15,9 @@ import { workspaceMentions } from '../core/mentions.js';
 import { questionModel, sharedHeaderModel, sharedSection } from './collab-models.js';
 import type { SharedWorkspace } from '../core/collab-store.js';
 import type { Workspace } from '../workspaces/types.js';
+import { draftModel, searchCursorRow, searchModel, topBarModel, trustCardModel, usageModel } from './work-models.js';
+import { modelLabel, modelOf } from './menus.js';
+import type { Line } from './text.js';
 
 export interface Derived {
   /** Description of the hovered (or keyboard-selected) control, shown in the bottom bar. */
@@ -44,6 +47,15 @@ export interface Derived {
   readonly questionId?: string;
   /** Someone else's workspace you're in. */
   readonly shared?: SharedWorkspace;
+  /** The top line (logo, status, inbox). */
+  readonly topBar: Model;
+  /** Search, Usage or a draft's templates, drawn in the main pane. */
+  readonly pane?: Model;
+  readonly paneScroll: number;
+  /** Right side of the box you type in: the model picker and plan mode (both clickable). */
+  readonly composerRight?: Line;
+  /** The card above the box is a trust question for this person. */
+  readonly trustCard?: string;
   /** All clickable zones in screen coordinates. */
   readonly zones: readonly Zone[];
 }
@@ -81,7 +93,8 @@ function appendModel(a: Model, b: Model): Model {
 
 /** Everything the screen shows and where, so rendering and clicks always agree. */
 export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs, hover }: DeriveInput): Derived {
-  const suggestions = ui.focus === 'chat' && !ui.suggestHidden && !ui.menu ? suggest(ui.buffer, { peers: state.peers, selfId, dirCache: state.dirCache, listLocalDirs, workspaces: state.view.kind === 'room' ? workspaceMentions(state.projects) : [] }) : [];
+  const searching = state.view.kind === 'search';
+  const suggestions = ui.focus === 'chat' && !ui.suggestHidden && !ui.menu && !(searching && !ui.buffer.startsWith('/')) ? suggest(ui.buffer, { peers: state.peers, selfId, dirCache: state.dirCache, listLocalDirs, workspaces: state.view.kind === 'room' ? workspaceMentions(state.projects) : [] }) : [];
   const workspace = state.view.kind === 'workspace' ? findWorkspace(state.projects, state.view.id) : undefined;
   const shared = state.view.kind === 'shared' ? state.shared.find((w) => w.id === (state.view as { id: string }).id) : undefined;
   const pendingQuestion = state.questions[0];
@@ -91,7 +104,10 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   let focus = ui.focus;
   if (focus === 'viewer' && !(state.viewer && viewerOk)) focus = 'chat';
   if (focus === 'files' && !filesVisible) focus = 'chat';
-  if (focus === 'main' && !reviewing && state.view.kind !== 'overview') focus = 'chat';
+  if (focus === 'main' && !reviewing && state.view.kind !== 'overview' && state.view.kind !== 'usage' && state.view.kind !== 'search') focus = 'chat';
+  if (focus === 'terminal' && !(state.view.kind === 'workspace' && state.view.tab === 'terminal')) focus = 'chat';
+  // Claude's questions come first; then "how much do you trust this new person?".
+  const trustPeer = !pendingQuestion && !ui.menu ? state.trustPrompts.find((id) => state.peers.some((p) => p.peerId === id)) : undefined;
   const approval = state.approvals[0];
   const geometry = computeLayout({
     columns,
@@ -102,7 +118,7 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
     approvalDetail: approval?.detail,
     viewerFull: ui.viewerFull && focus === 'viewer',
     workspaceHeader: Boolean(workspace || shared) && !ui.menu,
-    questionLines: pendingQuestion && !ui.menu ? questionModel(state, pendingQuestion, Math.max(10, columns - 4)).lines.length : 0,
+    questionLines: pendingQuestion && !ui.menu ? questionModel(state, pendingQuestion, Math.max(10, columns - 4)).lines.length : trustPeer ? trustCardModel(state, trustPeer, Math.max(10, columns - 4)).lines.length : 0,
   });
   const g = geometry;
   const menu = ui.menu ? menuSpec(state, ui.menu.menu) : undefined;
@@ -126,7 +142,7 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
       : shared
         ? sharedHeaderModel(state, shared, Math.max(1, g.mainWidth - 2))
         : undefined;
-  const questionRaw = pendingQuestion && g.questionHeight ? questionModel(state, pendingQuestion, Math.max(10, columns - 4)) : undefined;
+  const questionRaw = pendingQuestion && g.questionHeight ? questionModel(state, pendingQuestion, Math.max(10, columns - 4)) : trustPeer && g.questionHeight ? trustCardModel(state, trustPeer, Math.max(10, columns - 4)) : undefined;
   // Keyboard order across the top: the tabs, then the workspace's buttons (Chat, Files, Diff, Review…).
   const tabZones = g.sideWidth > 0 ? tabsRaw.zones : [];
   const headerZones = headerRaw?.zones.filter((z) => z.y === 1 && z.action.type !== 'none') ?? [];
@@ -139,6 +155,22 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   const paneInner = Math.max(1, g.mainWidth - 4);
   const overviewRaw = state.view.kind === 'overview' && !menu ? overviewModel(state, frame, paneInner) : undefined;
   const reviewRaw = reviewing && !menu ? reviewModel(state.review, paneInner, Math.max(1, g.paneHeight - 2)) : undefined;
+  const paneRaw = menu
+    ? undefined
+    : state.view.kind === 'search'
+      ? searchModel(state, paneInner, frame)
+      : state.view.kind === 'usage'
+        ? usageModel(state, paneInner)
+        : state.view.kind === 'draft' || state.view.kind === 'draft_worktree'
+          ? draftModel(state, paneInner, state.view.kind === 'draft_worktree' ? 'worktree' : 'chat')
+          : undefined;
+  const paneRows = Math.max(1, g.paneHeight - 2);
+  const paneScroll = !paneRaw
+    ? 0
+    : state.view.kind === 'search'
+      ? Math.max(0, Math.min(searchCursorRow(state) - Math.floor(paneRows / 2), paneRaw.lines.length - paneRows))
+      : Math.min(ui.overviewScroll, Math.max(0, paneRaw.lines.length - paneRows));
+  const topRaw = topBarModel(state, Math.max(1, columns - 2));
 
   // Hover feedback (and the keyboard cursor in the action row) highlight what you'd click.
   const proj = emphasize(projectsRaw, 2, g.bodyTop + 1, hover, projectsScroll);
@@ -161,7 +193,35 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   const review = rv?.model;
   const qv = questionRaw ? emphasize(questionRaw, 2, g.questionTop + 1, hover) : undefined;
   const question = qv?.model;
-  const hint = (headerHover ?? tab.zone ?? proj.zone ?? ov?.zone ?? rv?.zone ?? qv?.zone)?.hint;
+  const pv = paneRaw ? emphasize(paneRaw, g.mainX + 2, g.paneTop + 1, hover, paneScroll) : undefined;
+  const top = emphasize(topRaw, 1, 0, hover);
+  // The composer's right side: model (click to change) and plan mode (click to switch).
+  const channel = channelOf(state.view);
+  const chatty = channel !== 'draft' && state.view.kind !== 'search' && state.view.kind !== 'usage' && state.view.kind !== 'overview' && state.view.kind !== 'files';
+  const modelText = ` ◆ ${modelLabel(state, channel === 'room' ? state.prefs.model : modelOf(state, channel))} ▾ `;
+  const plan = state.planMode[channel] === true;
+  const planText = plan ? ' ◉ plan mode ' : ' ○ plan mode ';
+  const composerY = g.composerTop + 1;
+  const planX1 = columns - 3;
+  const planX0 = planX1 - planText.length - ' ⇧Tab'.length + 1;
+  const modelX1 = planX0 - 3;
+  const modelX0 = modelX1 - modelText.length + 1;
+  const composerZones: Zone[] = chatty
+    ? [
+        { x0: modelX0, x1: modelX1, y: composerY, action: { type: 'model_menu', channel }, hint: 'Pick the model for this conversation' },
+        { x0: planX0, x1: planX1, y: composerY, action: { type: 'plan_toggle', channel }, hint: plan ? 'Plan mode is on: Claude plans first. Click to turn it off' : 'Turn on plan mode: Claude looks first and asks you to approve a plan' },
+      ]
+    : [];
+  const hoverModel = hover && composerZones.find((z) => z.y === hover.y && hover.x >= z.x0 && hover.x <= z.x1);
+  const composerRight: Line | undefined = chatty
+    ? [
+        { text: modelText, color: theme.muted, inverse: hoverModel?.action.type === 'model_menu' },
+        { text: '   ' },
+        { text: planText, color: plan ? theme.info : theme.border, bold: plan, inverse: hoverModel?.action.type === 'plan_toggle' },
+        { text: ' ⇧Tab', color: theme.muted },
+      ]
+    : undefined;
+  const hint = (headerHover ?? tab.zone ?? proj.zone ?? ov?.zone ?? rv?.zone ?? qv?.zone ?? pv?.zone ?? top.zone ?? hoverModel)?.hint;
 
   const zones: Zone[] = [];
   if (g.sideWidth > 0) {
@@ -175,6 +235,8 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   }
   if (review) zones.push(...offsetZones(review.zones, g.mainX + 2, g.paneTop + 1));
   if (question) zones.push(...offsetZones(question.zones, 2, g.questionTop + 1));
+  if (pv) zones.push(...offsetZones(pv.model.zones, g.mainX + 2, g.paneTop + 1 - paneScroll).filter((z) => z.y > g.paneTop && z.y < g.paneTop + g.paneHeight - 1));
+  zones.push(...offsetZones(top.model.zones, 1, 0), ...composerZones);
 
   return {
     geometry,
@@ -201,5 +263,10 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
     questionId: pendingQuestion?.qid,
     shared,
     zones,
+    topBar: top.model,
+    pane: pv?.model,
+    paneScroll,
+    composerRight,
+    trustCard: questionRaw && !pendingQuestion ? trustPeer : undefined,
   };
 }
