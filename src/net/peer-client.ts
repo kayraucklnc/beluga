@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import type DHT from 'hyperdht';
 import WebSocket from 'ws';
 import { z } from 'zod';
 import {
@@ -14,10 +15,15 @@ import {
   parseFrame,
 } from '../protocol.js';
 import { type Identity, type RoomKeys, deriveKeys, generateIdentity, open, proveNonce, seal, signNonce } from './crypto.js';
+import { P2P_SCHEME } from './invite.js';
+import { type P2POptions, createNode, dialP2P } from './p2p.js';
+import { type MessageSocket, fromWebSocket } from './transport.js';
 
 const SealedMessage = z.object({ f: z.string(), b: Body });
 const HEARTBEAT_MS = 25_000;
 const SEEN_LIMIT = 10_000;
+const MAX_INCOMING = 4 * 1024 * 1024;
+
 /** Hub rejections that retrying won't fix: bad secret, bad profile, room full. */
 const FATAL_CLOSE_CODES = new Set([4001, 4002, 4004, 4008, 4010]);
 
@@ -44,7 +50,14 @@ interface ClientEvents {
 }
 
 export interface PeerClientOptions {
+  /** `ws://…` / `wss://…` (relay or LAN) or `p2p://<key>` (direct to the host). */
   readonly url: string;
+  /** Tried when `url` can't be reached (e.g. hole-punching failed); whichever works is tried first next time. */
+  readonly fallbackUrl?: string;
+  /** Give up on a direct dial after this long and try the fallback. */
+  readonly dialTimeoutMs?: number;
+  /** DHT settings for direct dials (tests use a local testnet). */
+  readonly p2p?: P2POptions;
   readonly keys: RoomKeys;
   readonly profile: Profile;
   /** Your signing key for this run (your peer id comes from it). Made fresh if omitted. */
@@ -55,7 +68,10 @@ export interface PeerClientOptions {
 /** One participant's connection to the room hub. Handles auth, E2E crypto and reconnects. */
 export class PeerClient extends EventEmitter<ClientEvents> {
   readonly peerId: string;
-  private ws?: WebSocket;
+  private socket?: MessageSocket;
+  /** Where to dial, best first. */
+  private targets: readonly string[];
+  private node?: Promise<DHT>;
   private profile: Profile;
   private closed = false;
   private attempt = 0;
@@ -78,26 +94,72 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     this.profile = opts.profile;
     this.inviteKeys = opts.keys;
     this.roomKeys = opts.keys;
+    this.targets = [opts.url, ...(opts.fallbackUrl && opts.fallbackUrl !== opts.url ? [opts.fallbackUrl] : [])];
   }
 
   connect(): void {
     this.closed = false;
     this.emit('status', 'connecting');
-    const ws = new WebSocket(this.opts.url, { maxPayload: 4 * 1024 * 1024, handshakeTimeout: 15_000 });
-    this.ws = ws;
-    ws.on('open', () => this.startHeartbeat(ws));
-    ws.on('pong', () => (this.alive = true));
-    ws.on('message', (data) => this.onFrame(parseFrame(data.toString())));
-    ws.on('close', (code) => this.onClose(code));
-    ws.on('error', (err) => this.emit('error', `Connection error: ${err.message}`));
+    this.dial(0);
+  }
+
+  /** Where the current (or last) connection goes. */
+  get via(): string | undefined {
+    return this.targets[0];
+  }
+
+  private dial(index: number): void {
+    const url = this.targets[index] as string;
+    if (!url.startsWith(P2P_SCHEME)) {
+      this.attach(fromWebSocket(new WebSocket(url, { maxPayload: MAX_INCOMING, handshakeTimeout: 15_000 })), url, index);
+      return;
+    }
+    const node = (this.node ??= createNode(this.opts.p2p));
+    node.then(
+      (dht) => {
+        if (this.closed || dht.destroyed) return;
+        this.attach(dialP2P(dht, url.slice(P2P_SCHEME.length), { maxBytes: MAX_INCOMING, timeoutMs: this.opts.dialTimeoutMs }), url, index);
+      },
+      (err: Error) => {
+        // Direct connections are unavailable here (the native modules didn't load).
+        this.node = undefined;
+        if (index + 1 < this.targets.length) this.dial(index + 1);
+        else {
+          this.emit('error', `Direct connections are unavailable: ${err.message}`);
+          this.onClose(1006);
+        }
+      },
+    );
+  }
+
+  private attach(socket: MessageSocket, url: string, index: number): void {
+    const hasNext = index + 1 < this.targets.length;
+    let opened = false;
+    this.socket = socket;
+    socket.on('open', () => {
+      opened = true;
+      // Remember what worked so reconnects try it first.
+      this.targets = [url, ...this.targets.filter((t) => t !== url)];
+      this.startHeartbeat(socket);
+    });
+    socket.on('pong', () => (this.alive = true));
+    socket.on('message', (data) => this.onFrame(parseFrame(data)));
+    socket.on('close', (code) => {
+      if (!opened && hasNext && !this.closed) this.dial(index + 1);
+      else this.onClose(code);
+    });
+    socket.on('error', (err) => {
+      // A failed direct dial isn't worth reporting when there's still the relay to try.
+      if (opened || !hasNext) this.emit('error', `Connection error: ${err.message}`);
+    });
   }
 
   /** Send an application body. `to` targets one peer; omit to broadcast. */
   send(body: BodyInput, opts: { to?: string; keep?: boolean } = {}): boolean {
-    if (!this.ready || !this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    if (!this.ready || !this.socket?.isOpen) return false;
     // The sender id is sealed with the body so a tunnel in the middle can't re-attribute messages.
     const frame: MsgFrame = { t: 'msg', box: seal(this.roomKeys, { f: this.peerId, b: Body.parse(body) }), ...opts };
-    this.ws.send(JSON.stringify(frame));
+    this.socket.send(JSON.stringify(frame));
     return true;
   }
 
@@ -119,11 +181,14 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     this.closed = true;
     clearTimeout(this.timer);
     clearInterval(this.heartbeat);
-    this.ws?.close();
+    this.socket?.close();
+    const node = this.node;
+    this.node = undefined;
+    void node?.then((dht) => dht.destroy({ force: true })).catch(() => undefined);
   }
 
   /** Detect half-open connections (tunnels drop idle sockets silently). */
-  private startHeartbeat(ws: WebSocket): void {
+  private startHeartbeat(ws: MessageSocket): void {
     clearInterval(this.heartbeat);
     this.alive = true;
     this.heartbeat = setInterval(() => {
@@ -146,7 +211,7 @@ export class PeerClient extends EventEmitter<ClientEvents> {
       sig: signNonce(this.identity, nonce),
       box: seal(this.ready ? this.roomKeys : this.inviteKeys, this.profile),
     };
-    this.ws?.send(JSON.stringify(frame));
+    this.socket?.send(JSON.stringify(frame));
   }
 
   private onFrame(frame: Frame | null): void {

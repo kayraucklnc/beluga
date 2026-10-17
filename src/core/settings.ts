@@ -13,7 +13,7 @@ export const Settings = z.object({
   /** Unset until you answer the welcome screen once. */
   policy: z.enum(['ask', 'auto', 'deny']).optional(),
   mouse: z.boolean().default(true),
-  tunnel: z.enum(['auto', 'cloudflared', 'ngrok', 'none']).default('auto'),
+  tunnel: z.enum(['auto', 'p2p', 'cloudflared', 'ngrok', 'none']).default('auto'),
   /** Whether your own Claude asks before shell commands and other risky actions. */
   selfApproval: z.enum(['never', 'ask']).default('never'),
 });
