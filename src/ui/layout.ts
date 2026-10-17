@@ -62,7 +62,8 @@ export function computeLayout(input: LayoutInput): Geometry {
   const bottom = 4 + input.suggestionCount + approvalHeight + questionHeight;
   const bodyTop = 1;
   const bodyHeight = Math.max(10, rows - 1 - bottom);
-  const peopleHeight = full ? 0 : Math.min(input.peopleCount * 2 + 3, Math.max(5, Math.floor(bodyHeight * 0.4)));
+  // On your own there's nobody to list: People appears once someone joins.
+  const peopleHeight = full || input.peopleCount <= 1 ? 0 : Math.min(input.peopleCount * 2 + 3, Math.max(5, Math.floor(bodyHeight * 0.4)));
   const projectsHeight = full ? 0 : bodyHeight - peopleHeight;
   const tabsHeight = full ? 0 : TABS_HEIGHT;
   const headerHeight = !full && input.workspaceHeader ? HEADER_HEIGHT : 0;

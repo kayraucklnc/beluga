@@ -1,4 +1,6 @@
 import type { PeerInfo } from '../protocol.js';
+import { worktreeOrigin } from '../workspaces/origin.js';
+import type { Project } from '../workspaces/types.js';
 
 export type ParsedInput =
   | { readonly kind: 'empty' }
@@ -64,4 +66,36 @@ export function parseLocation(
   const peer = peers.find((p) => p.name.toLowerCase() === m[1]?.toLowerCase());
   if (!peer || !peer.shares.some((s) => s.name === m[2])) return undefined;
   return { owner: peer.peerId, share: m[2] as string, path: m[3] ?? '' };
+}
+
+/** A workspace you can message from the main chat with "@name". */
+export interface WorkspaceMention {
+  readonly label: string;
+  readonly id: string;
+  readonly hint: string;
+}
+
+/**
+ * "@add-auth" for every live workspace (worktrees, chats, main folders) on this computer.
+ * Names used twice get their project in front: "@api/add-auth".
+ */
+export function workspaceMentions(projects: readonly Project[]): WorkspaceMention[] {
+  const all = projects.flatMap((p) => p.workspaces.filter((w) => !w.archived && worktreeOrigin(w) !== 'agent').map((w) => ({ p, w })));
+  const slug = (s: string) => s.toLowerCase().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'workspace';
+  const counts = new Map<string, number>();
+  for (const { w } of all) counts.set(slug(w.name), (counts.get(slug(w.name)) ?? 0) + 1);
+  return all.map(({ p, w }) => {
+    const name = slug(w.name);
+    const label = (counts.get(name) ?? 0) > 1 && p.root ? `@${slug(p.name)}/${name}` : `@${name}`;
+    const where = p.root ? `${p.name} · ${w.kind === 'main' ? 'main folder' : w.kind === 'chat' ? 'chat' : 'worktree'}` : 'chat';
+    return { label, id: w.id, hint: `message the Claude in ${where}` };
+  });
+}
+
+/** "@add-auth fix the test" → the workspace and the message, when it names one of yours. */
+export function parseWorkspaceMention(raw: string, mentions: readonly WorkspaceMention[]): { id: string; label: string; prompt: string } | undefined {
+  const m = /^(@[\w./-]+)\s+([\s\S]+)$/.exec(raw.trim());
+  if (!m) return undefined;
+  const hit = mentions.find((x) => x.label.toLowerCase() === m[1]!.toLowerCase());
+  return hit ? { id: hit.id, label: hit.label, prompt: m[2]!.trim() } : undefined;
 }

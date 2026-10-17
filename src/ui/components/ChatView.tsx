@@ -27,6 +27,15 @@ const EMPTY_HINT: Line[] = [
   [{ text: '  /help ', color: theme.info, bold: true }, { text: 'everything else', color: theme.muted }],
 ];
 
+/** On your own: the chat is you and your Claude, plus a way to reach every workspace's Claude. */
+const SOLO_HINT: Line[] = [
+  [{ text: 'Just type to talk with your Claude.', color: theme.text }],
+  [],
+  [{ text: '  @add-auth ', color: theme.claude, bold: true }, { text: 'message the Claude working in a worktree or project (Tab completes)', color: theme.muted }],
+  [{ text: '  /invite ', color: theme.info, bold: true }, { text: 'bring friends in; this becomes a group chat', color: theme.muted }],
+  [{ text: '  /help ', color: theme.info, bold: true }, { text: 'everything else', color: theme.muted }],
+];
+
 const DRAFT_HINT: Line[] = [
   [{ text: 'A fresh conversation with Claude, with all its tools.', color: theme.text }],
   [{ text: 'Type your first message below to start. Esc goes back without creating anything.', color: theme.muted }],
@@ -51,7 +60,7 @@ export function chatLines(state: AppState, cols: number, frame: number, channel 
   const items = state.log.filter((l) => l.channel === channel);
   const banner = channel === 'room' ? inviteBanner(state, cols, frame) : [];
   const log = renderLog(items, cols, { selfId: state.self?.peerId, frame, now: Date.now() });
-  const empty = channel === 'room' ? EMPTY_HINT : channel === 'draft' ? (state.view.kind === 'draft_worktree' ? WORKTREE_DRAFT_HINT : DRAFT_HINT) : WORKSPACE_HINT;
+  const empty = channel === 'room' ? (state.peers.length <= 1 ? SOLO_HINT : EMPTY_HINT) : channel === 'draft' ? (state.view.kind === 'draft_worktree' ? WORKTREE_DRAFT_HINT : DRAFT_HINT) : WORKSPACE_HINT;
   return [...banner, ...(items.length ? log : empty)];
 }
 

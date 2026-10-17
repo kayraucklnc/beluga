@@ -116,7 +116,9 @@ describe('keymap: panels', () => {
     expect(files.focus).toBe('files');
     expect(key(files, { tab: true }, '', all).ui.focus).toBe('main');
     expect(key({ ...files, focus: 'main' }, { tab: true }, '', all).ui.focus).toBe('viewer');
-    expect(key(initialUi, { tab: true, shift: true }, '', all).ui.focus).toBe('viewer');
+    expect(key({ ...initialUi, focus: 'projects' }, { tab: true, shift: true }, '', all).ui.focus).toBe('chat');
+    // Shift+Tab in the chat switches plan mode instead
+    expect(key(initialUi, { tab: true, shift: true }, '', all).effect).toEqual({ type: 'toggle_plan' });
     expect(key(files, { escape: true }).ui.focus).toBe('chat');
     expect(key({ ...initialUi, focus: 'viewer' }, { tab: true }).ui.focus).toBe('projects'); // viewer gone → chat → projects
   });
@@ -124,7 +126,7 @@ describe('keymap: panels', () => {
   it('navigates the Projects tree and opens items with Enter', () => {
     const items = [{ type: 'toggle_project', id: 'p' }, { type: 'open_ws', id: 'w' }] as const;
     const c = { ...ctx, projectItems: items };
-    const p: UiState = { ...initialUi, focus: 'projects' };
+    const p: UiState = { ...initialUi, focus: 'projects' , entered: true };
     const down = key(p, { downArrow: true }, '', c).ui;
     expect(down.projectsCursor).toBe(1);
     expect(key(down, { downArrow: true }, '', c).ui.projectsCursor).toBe(1);
@@ -136,7 +138,7 @@ describe('keymap: panels', () => {
   });
 
   it('moves through review files and scrolls the diff', () => {
-    const m: UiState = { ...initialUi, focus: 'main' };
+    const m: UiState = { ...initialUi, focus: 'main' , entered: true };
     expect(key(m, { downArrow: true }).effect).toEqual({ type: 'review_move', delta: 1 });
     expect(key(m, { upArrow: true }).effect).toEqual({ type: 'review_move', delta: -1 });
     expect(key(m, { pageDown: true }).effect).toEqual({ type: 'review_scroll', delta: 18 });
@@ -151,22 +153,32 @@ describe('keymap: panels', () => {
   it('moves through the workspace action row with ← → and runs with Enter', () => {
     const items = [{ type: 'open_ws', id: 'w', tab: 'chat' }, { type: 'ws', id: 'w', action: 'merge' }] as const;
     const c = { ...ctx, headerItems: items };
-    const h: UiState = { ...initialUi, focus: 'header' };
+    const h: UiState = { ...initialUi, focus: 'header' , entered: true };
     const right = key(h, { rightArrow: true }, '', c).ui;
     expect(right.headerCursor).toBe(1);
     expect(key(right, { rightArrow: true }, '', c).ui.headerCursor).toBe(1);
     expect(key(right, { leftArrow: true }, '', c).ui.headerCursor).toBe(0);
     expect(key(right, { return: true }, '', c).effect).toEqual({ type: 'ui_action', action: { type: 'ws', id: 'w', action: 'merge' } });
     expect(key(h, {}, 'x', c).ui).toMatchObject({ focus: 'chat', buffer: 'x' });
-    // Tab from the composer lands on the first button, walks every button, then moves on
-    const first = key(initialUi, { tab: true }, '', c).ui;
-    expect(first).toMatchObject({ focus: 'header', headerCursor: 0 });
-    const second = key(first, { tab: true }, '', c).ui;
-    expect(second).toMatchObject({ focus: 'header', headerCursor: 1 });
-    expect(key(second, { tab: true }, '', c).ui.focus).toBe('projects');
-    expect(key(second, { tab: true, shift: true }, '', c).ui.headerCursor).toBe(0);
-    // Shift+Tab from the projects comes back to the last button
-    expect(key({ ...initialUi, focus: 'projects' }, { tab: true, shift: true }, '', c).ui).toMatchObject({ focus: 'header', headerCursor: 1 });
+    // Tab goes area to area: the whole top bar is one stop, then the projects
+    const bar = key(initialUi, { tab: true }, '', c).ui;
+    expect(bar).toMatchObject({ focus: 'header', entered: false });
+    expect(key(bar, { tab: true }, '', c).ui.focus).toBe('projects');
+    // Enter goes inside (at the workspace's first button); Tab then moves between buttons
+    const inside = key(bar, { return: true }, '', { ...c, headerStart: 1 }).ui;
+    expect(inside).toMatchObject({ entered: true, headerCursor: 1 });
+    expect(key({ ...inside, headerCursor: 0 }, { tab: true }, '', c).ui.headerCursor).toBe(1);
+    expect(key(inside, { tab: true, shift: true }, '', c).ui.headerCursor).toBe(0);
+    // Esc comes back out to the area, a second Esc back to typing
+    const out = key(inside, { escape: true }, '', c).ui;
+    expect(out).toMatchObject({ focus: 'header', entered: false });
+    expect(key(out, { escape: true }, '', c).ui.focus).toBe('chat');
+  });
+
+  it('Enter on a list area starts at its first item', () => {
+    expect(key({ ...initialUi, focus: 'files' }, { return: true }).effect).toEqual({ type: 'browser_move', delta: -10_000 });
+    expect(key({ ...initialUi, focus: 'projects', projectsCursor: 4 }, { return: true }).ui).toMatchObject({ entered: true, projectsCursor: 0 });
+    expect(key({ ...initialUi, focus: 'people', entered: true }, { tab: true }, '', ctx).ui.peopleCursor).toBe(1);
   });
 
   it('Esc cancels naming a new worktree', () => {
@@ -175,7 +187,7 @@ describe('keymap: panels', () => {
   });
 
   it('moves through people and opens their action menu', () => {
-    const people: UiState = { ...initialUi, focus: 'people' };
+    const people: UiState = { ...initialUi, focus: 'people' , entered: true };
     const down = key(people, { downArrow: true }).ui;
     expect(down.peopleCursor).toBe(1);
     expect(key({ ...people, peopleCursor: 2 }, { downArrow: true }).ui.peopleCursor).toBe(2);
@@ -203,7 +215,7 @@ describe('keymap: panels', () => {
   });
 
   it('navigates files and jumps back to chat when you type', () => {
-    const files: UiState = { ...initialUi, focus: 'files' };
+    const files: UiState = { ...initialUi, focus: 'files' , entered: true };
     expect(key(files, { downArrow: true }).effect).toEqual({ type: 'browser_move', delta: 1 });
     expect(key(files, { upArrow: true }).effect).toEqual({ type: 'browser_move', delta: -1 });
     expect(key(files, { pageDown: true }).effect).toEqual({ type: 'browser_move', delta: 20 });

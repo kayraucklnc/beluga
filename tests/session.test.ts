@@ -578,7 +578,8 @@ describe('Session hardening', () => {
       script: (input) =>
         input.prompt === 'slow'
           ? new Promise((_resolve, reject) => input.signal.addEventListener('abort', () => reject(new Error('aborted'))))
-          : Promise.resolve(`did ${input.prompt}`),
+          : // takes a moment, so the next urgent message has arrived before the queue moves on
+            new Promise((resolve) => setTimeout(() => resolve(`did ${input.prompt}`), 150)),
     });
     await room(kay);
     kay.session.submit('@claude slow');

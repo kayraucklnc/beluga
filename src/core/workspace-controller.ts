@@ -3,6 +3,7 @@ import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import type { ShareService } from './shares.js';
 import { type LogItem, type Store, channelOf } from './store.js';
+import type { Conversation } from '../agent/transcript.js';
 
 export interface ControllerDeps {
   readonly manager: WorkspaceManager;
@@ -12,6 +13,8 @@ export interface ControllerDeps {
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;
   /** Ask your own Claude to do something in a workspace conversation. */
   readonly askClaude: (prompt: string, channel: string) => void;
+  /** The latest Claude Code conversation in a folder (from other tools), to show and continue. */
+  readonly findConversation?: (dir: string) => Promise<Conversation | undefined>;
 }
 
 const HISTORY_SAVE_MS = 400;
@@ -80,10 +83,32 @@ export class WorkspaceController {
     const channel = `${WS_PREFIX}${id}`;
     if (!this.loaded.has(channel)) {
       this.loaded.add(channel);
-      this.deps.store.dispatch({ type: 'history', channel, items: this.deps.manager.loadHistory<LogItem>(id) });
+      const saved = this.deps.manager.loadHistory<LogItem>(id);
+      this.deps.store.dispatch({ type: 'history', channel, items: saved });
+      if (!saved.length && !ws.sessionId) void this.importConversation(ws.id, ws.path, channel);
     }
     this.deps.store.dispatch({ type: 'view', view: { kind: 'workspace', id, tab } });
     if (tab === 'review') void this.loadReview(id);
+  }
+
+  /**
+   * A workspace klaude hasn't talked in yet (a worktree from Conductor, Claude Code, or your
+   * main folder) shows the latest Claude Code conversation from that folder, and Claude
+   * continues it from there.
+   */
+  private async importConversation(id: string, dir: string, channel: string): Promise<void> {
+    try {
+      const found = await this.deps.findConversation?.(dir);
+      if (!found?.items.length) return;
+      const now = this.deps.store.getState().log.filter((l) => l.channel === channel);
+      if (now.length) return; // you started talking meanwhile
+      const when = new Date(found.lastModified).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const note: LogItem = { id: `import-${found.sessionId}`, type: 'system', channel, text: `Continuing "${found.title}" from Claude Code (last active ${when}). Claude remembers all of it.`, ts: Date.now(), level: 'info' };
+      this.deps.store.dispatch({ type: 'history', channel, items: [...found.items, note] });
+      if (!this.deps.manager.find(id)?.sessionId) this.deps.manager.rememberSession(id, found.sessionId);
+    } catch {
+      // No transcript to show: the conversation simply starts fresh.
+    }
   }
 
   /** Where Claude runs for a workspace conversation: its folder, its own resumable session. */

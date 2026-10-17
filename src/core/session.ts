@@ -4,12 +4,13 @@ import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
 import { type BodyInput, type BodyOf, CHUNK_BYTES, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
-import { parseInput, parseLocation } from './mentions.js';
+import { parseInput, parseLocation, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { type ShareService, parseShareSpec } from './shares.js';
 import { existsSync } from 'node:fs';
 import { type Location, type Prefs, type Store, channelOf, peerName } from './store.js';
 import { WorkspaceController } from './workspace-controller.js';
 import { QuestionBroker } from './questions.js';
+import type { Conversation } from '../agent/transcript.js';
 import { slugify } from '../agent/namer.js';
 import { WorkspaceSharing } from './workspace-sharing.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
@@ -48,6 +49,8 @@ export interface SessionOptions {
   readonly zoom?: (dir: ZoomDir) => Promise<{ ok: boolean; message: string }>;
   /** Only on the host: who may be in the room, and the invite link. */
   readonly room?: RoomControl;
+  /** Read Claude Code conversations from other tools (omitted in tests and the demo). */
+  readonly findConversation?: (dir: string, self: { id: string; name: string }) => Promise<Conversation | undefined>;
 }
 
 /** What the host can do with the room itself. */
@@ -118,6 +121,7 @@ export class Session {
         selfId: () => this.selfId,
         toast: (text, level) => this.toast(text, level),
         askClaude: (prompt, channel) => this.askOwnClaude(prompt, channel),
+        findConversation: opts.findConversation ? (dir) => opts.findConversation!(dir, { id: this.selfId, name: this.store.getState().self?.name ?? 'you' }) : undefined,
       });
     }
     this.questions = new QuestionBroker({
@@ -228,6 +232,14 @@ export class Session {
       this.askOwnClaude(parsed.kind === 'agent' ? parsed.prompt : parsed.text, channel, urgent);
       return;
     }
+    // "@add-auth fix the test" from the main chat goes to the Claude working in that workspace.
+    const toWorkspace = parsed.kind !== 'command' ? parseWorkspaceMention(raw, workspaceMentions(state.projects)) : undefined;
+    if (toWorkspace) {
+      this.askOwnClaude(toWorkspace.prompt, `ws:${toWorkspace.id}`, urgent);
+      this.store.dispatch({ type: 'chat', id: randomUUID(), from: this.selfId, text: raw.slice(0, MAX_TEXT), ts: Date.now(), byAgent: false });
+      this.system(`Sent to the Claude in ${toWorkspace.label.slice(1)}. Open it in the sidebar to follow along.`);
+      return;
+    }
     switch (parsed.kind) {
       case 'empty':
         return;
@@ -236,6 +248,8 @@ export class Session {
         return;
       case 'chat':
         this.sendChat(parsed.text, false);
+        // On your own, the chat is a conversation with your Claude: no @claude needed.
+        if (state.peers.length <= 1 && this.agent) this.requestAgent(this.selfId, parsed.text, false, 'room', urgent);
         return;
       case 'agent':
         this.sendChat(parsed.text, false);

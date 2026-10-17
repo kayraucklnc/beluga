@@ -39,6 +39,11 @@ export interface UiState {
   readonly overviewScroll: number;
   /** Projects folded closed in the sidebar. */
   readonly collapsed: readonly string[];
+  /**
+   * Inside the focused area (Enter goes in, Esc comes out). Outside, Tab jumps between areas
+   * (chat, top bar, projects, people…); inside, Tab and the arrows move between its items.
+   */
+  readonly entered: boolean;
   /** A name is being typed for a new worktree/chat in this project. */
   readonly pending?: { readonly kind: 'worktree' | 'chat' | 'group'; readonly projectId: string };
 }
@@ -79,7 +84,9 @@ export type Effect =
   | { readonly type: 'review_move'; readonly delta: number }
   | { readonly type: 'review_scroll'; readonly delta: number }
   | { readonly type: 'cancel_draft' }
-  | { readonly type: 'question_number'; readonly n: number };
+  | { readonly type: 'question_number'; readonly n: number }
+  /** Shift+Tab in the chat: plan first, or act right away. */
+  | { readonly type: 'toggle_plan' };
 
 export interface KeyContext {
   readonly hasApproval: boolean;
@@ -103,6 +110,8 @@ export interface KeyContext {
   readonly draft?: boolean;
   /** Options on Claude's waiting question card (number keys pick them while the composer is empty). */
   readonly questionOptions?: number;
+  /** Where the top bar's keyboard cursor starts (the workspace's own buttons, past the tabs). */
+  readonly headerStart?: number;
 }
 
 export interface KeyResult {
@@ -126,6 +135,7 @@ export const initialUi: UiState = {
   viewerRaw: false,
   projectsCursor: 0,
   headerCursor: 0,
+  entered: false,
   overviewScroll: 0,
   collapsed: [],
 };
@@ -243,6 +253,7 @@ function handleMenu(ui: UiState, state: MenuState, input: string, key: KeyInfo, 
 function handleProjects(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
   const items = ctx.projectItems ?? [];
   const max = Math.max(0, items.length - 1);
+  if (key.tab) key = { ...key, upArrow: key.shift, downArrow: !key.shift, tab: false };
   if (key.upArrow) return { ui: { ...ui, projectsCursor: Math.max(0, Math.min(max, ui.projectsCursor) - 1) } };
   if (key.downArrow) return { ui: { ...ui, projectsCursor: Math.min(max, ui.projectsCursor + 1) } };
   if (key.pageUp) return { ui: { ...ui, projectsCursor: Math.max(0, ui.projectsCursor - ctx.page) } };
@@ -255,12 +266,7 @@ function handleProjects(ui: UiState, input: string, key: KeyInfo, ctx: KeyContex
 function handleHeader(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
   const items = ctx.headerItems ?? [];
   const max = Math.max(0, items.length - 1);
-  // Tab walks through every button like a web page, then moves on to the next area.
-  if (key.tab) {
-    const next = Math.min(max, ui.headerCursor) + (key.shift ? -1 : 1);
-    if (next < 0 || next > max) return { ui: cycleFocus(ui, ctx, key.shift ? -1 : 1) };
-    return { ui: { ...ui, headerCursor: next } };
-  }
+  if (key.tab) key = { ...key, leftArrow: key.shift, rightArrow: !key.shift, tab: false };
   if (key.leftArrow || key.upArrow) return { ui: { ...ui, headerCursor: Math.max(0, Math.min(max, ui.headerCursor) - 1) } };
   if (key.rightArrow || key.downArrow) return { ui: { ...ui, headerCursor: Math.min(max, ui.headerCursor + 1) } };
   const action = items[Math.min(ui.headerCursor, max)];
@@ -269,6 +275,7 @@ function handleHeader(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext)
 }
 
 function handleMain(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  if (key.tab) key = { ...key, upArrow: key.shift, downArrow: !key.shift, tab: false };
   if (key.upArrow) return { ui, effect: { type: 'review_move', delta: -1 } };
   if (key.downArrow) return { ui, effect: { type: 'review_move', delta: 1 } };
   if (key.pageUp) return { ui, effect: { type: 'review_scroll', delta: -Math.max(1, ctx.page - 2) } };
@@ -278,6 +285,7 @@ function handleMain(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): 
 
 function handlePeople(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
   const max = Math.max(0, ctx.peopleCount - 1);
+  if (key.tab) key = { ...key, upArrow: key.shift, downArrow: !key.shift, tab: false };
   if (key.upArrow) return { ui: { ...ui, peopleCursor: Math.max(0, ui.peopleCursor - 1) } };
   if (key.downArrow) return { ui: { ...ui, peopleCursor: Math.min(max, ui.peopleCursor + 1) } };
   if (key.return || key.rightArrow) {
@@ -287,6 +295,7 @@ function handlePeople(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext)
 }
 
 function handleFiles(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  if (key.tab) key = { ...key, upArrow: key.shift, downArrow: !key.shift, tab: false };
   if (key.upArrow) return { ui, effect: { type: 'browser_move', delta: -1 } };
   if (key.downArrow) return { ui, effect: { type: 'browser_move', delta: 1 } };
   if (key.pageUp) return { ui, effect: { type: 'browser_move', delta: -ctx.page } };
@@ -314,15 +323,14 @@ function cycleFocus(ui: UiState, ctx: KeyContext, dir: 1 | -1): UiState {
   const order: Focus[] = ['chat'];
   if (ctx.headerItems?.length) order.push('header');
   order.push('projects');
-  order.push('people');
+  if (ctx.peopleCount > 1) order.push('people');
   if (ctx.filesVisible) order.push('files');
   if (ctx.mainFocusable) order.push('main');
   if (ctx.hasViewer) order.push('viewer');
   const idx = Math.max(0, order.indexOf(ui.focus));
   const focus = order[(idx + dir + order.length) % order.length] ?? 'chat';
-  // Entering the button row starts at its first button (or its last, going backwards).
-  if (focus === 'header' && ui.focus !== 'header') return { ...ui, focus, headerCursor: dir === 1 ? 0 : Math.max(0, (ctx.headerItems?.length ?? 1) - 1) };
-  return { ...ui, focus };
+  // Landing on an area highlights all of it; Enter goes inside (on its first item).
+  return { ...ui, focus, entered: false };
 }
 
 /**
@@ -361,9 +369,21 @@ export function handleKey(raw: UiState, rawInput: string, rawKey: KeyInfo, ctx: 
   const focus = ui.focus === 'viewer' && !ctx.hasViewer ? 'chat' : ui.focus;
   const current = focus === ui.focus ? ui : { ...ui, focus };
   const suggesting = current.focus === 'chat' && !current.suggestHidden && ctx.suggestions.length > 0;
-  if (key.tab && !suggesting && current.focus !== 'header') return { ui: cycleFocus(current, ctx, key.shift ? -1 : 1) };
+  // Shift+Tab in the chat switches plan mode (like Claude Code); elsewhere it goes back an area.
+  if (key.tab && key.shift && current.focus === 'chat' && !suggesting) return { ui: current, effect: { type: 'toggle_plan' } };
+  const area = current.focus !== 'chat' && current.focus !== 'viewer';
+  if (key.tab && !suggesting && !(area && current.entered)) return { ui: cycleFocus(current, ctx, key.shift ? -1 : 1) };
   if (key.escape && current.focus === 'viewer' && current.viewerFull) return { ui: { ...current, viewerFull: false } };
-  if (key.escape && current.focus !== 'chat') return { ui: { ...current, focus: 'chat' } };
+  if (key.escape && area && current.entered) return { ui: { ...current, entered: false } };
+  if (key.escape && current.focus !== 'chat') return { ui: { ...current, focus: 'chat', entered: false } };
+  // On an area (not inside yet): Enter or an arrow goes in, starting at the first item.
+  if (area && !current.entered && (key.return || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow)) {
+    const start = current.focus === 'header' ? (ctx.headerStart ?? 0) : 0;
+    const inside: UiState = { ...current, entered: true, headerCursor: current.focus === 'header' ? start : current.headerCursor, projectsCursor: current.focus === 'projects' ? 0 : current.projectsCursor, peopleCursor: current.focus === 'people' ? 0 : current.peopleCursor };
+    if (current.focus === 'files') return { ui: inside, effect: { type: 'browser_move', delta: -10_000 } };
+    if (current.focus === 'main') return { ui: inside, effect: { type: 'review_move', delta: -10_000 } };
+    return { ui: inside };
+  }
   // Fast typing or pasting can deliver "text\r" as one chunk: type the text, then press Enter.
   if (current.focus === 'chat' && !key.return && input.length > 1 && /[\r\n]$/.test(input)) {
     return submit(handleChat(current, input.replace(/[\r\n]+$/, ''), key, ctx).ui);

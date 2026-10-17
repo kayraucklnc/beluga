@@ -92,7 +92,6 @@ Everything is clickable, and the bar at the bottom always says what you can do n
   - **⋯** moves the project to a group, hides it, or opens it in Finder.
 - **Inside a workspace**, the top bar has (Tab walks through every button, Enter presses it):
   - **Chat**, **Files** and **Diff** views.
-  - **Plan**: when it's on, Claude investigates read-only and asks you to approve a plan before changing anything.
   - **Review**: a thorough check by sub-agents covering correctness, security, tests and quality, then a verdict.
   - **Commit** and **Merge**: merging into the main folder. A conflict shows a red banner and a **Solve conflict** button that asks Claude to fix it.
   - **Compact**: summarizes the conversation when the context meter fills up.
@@ -102,6 +101,12 @@ Everything is clickable, and the bar at the bottom always says what you can do n
   - **Share**: invite people from the room to work here or follow along, and remove them any time.
 - **Worktrees from other tools** stay out of the way. The ones Claude Code sub-agents create (`.claude/worktrees/agent-*`) fold into **Claude Code agents**, where **⋯** removes the finished ones (branches are kept). Other tools' worktrees fold into **Other worktrees**.
 - **Env files**: `.env*` files (and `.ssh` / `.aws` folders inside the project) are copied into new worktrees. When you archive or delete one, klaude shows which keys changed and offers to copy them back to main.
+
+### On your own
+
+klaude starts solo. The **Chat** tab is you and your Claude, so just type, no `@claude` needed. Start a message with `@add-auth` (Tab completes) to send it to the Claude working in that worktree or project.
+
+Worktrees made by other tools (Conductor, Claude Code) show their latest Claude Code conversation when you open them, and Claude continues it. The People panel appears once someone joins.
 
 ### Working with people
 
@@ -125,7 +130,7 @@ Everything is clickable, and the bar at the bottom always says what you can do n
 
 When Claude needs a decision, a card appears above the box you type in:
 - **A question**: click an option, press its number, or type your own answer and press Enter. **Skip** lets Claude decide.
-- **A plan** (with Plan on): **Approve plan** lets Claude start, or type what to change.
+- **A plan**: press **Shift+Tab** in a conversation to turn on plan mode (shown on the right of the input box). Claude then investigates read-only and proposes a plan: **Approve plan** lets it start, or type what to change.
 
 Questions go to whoever asked Claude, even when it's a friend's Claude on their computer. Unanswered questions time out after 5 minutes, so nothing waits forever.
 
@@ -165,7 +170,9 @@ Questions go to whoever asked Claude, even when it's a friend's Claude on their 
 | Key | |
 |---|---|
 | `Enter` · `Option+Enter` | send (queued while Claude works) · interrupt and send now |
-| `Tab` / `Shift+Tab` | complete a suggestion, or move through every button and area |
+| `Tab` | jump between areas: chat, the top bar, projects, people (and files or the diff when shown) |
+| `Enter` / `Esc` (on an area) | go inside it (then `Tab` or arrows move between its items) / come back out |
+| `Shift+Tab` (in the chat) | switch plan mode: Claude plans first and asks you to approve |
 | `1`–`4` | pick an option on Claude's question card |
 | `@` | `Option+Q` (Turkish), `Option+L` (German) and `Option+2` (Spanish) work even when your terminal sends Option as Meta |
 | `Esc` | back to typing, or cancel a new chat |
