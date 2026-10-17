@@ -96,6 +96,10 @@ const MAX_QUEUED_PER_PERSON = 10;
 const USAGE_REFRESH_MS = 10 * 60_000;
 const WORKSPACE_REFRESH_MS = 30_000;
 
+/** Kinds that make this computer do something; they're only accepted when sent recently. */
+const STALE_SENSITIVE = new Set(['agent_request', 'agent_answer', 'file_request', 'ws_request', 'ws_handoff', 'file_offer', 'fs_fetch', 'fs_read', 'fs_list']);
+const STALE_MS = 10 * 60_000;
+
 export const dirKey = (at: Location): string => `${at.owner}:${at.share}/${at.path}`;
 
 /** Glue between the network, local shares, the agent, and UI state. */
@@ -660,8 +664,7 @@ export class Session {
     client.on('rekey', (secret) => {
       // The host replaced the invite link; keep yours current so /invite shares one that works.
       const invite = store.getState().invite;
-      const url = invite ? /^(https?:\/\/[^#\s]+)#/.exec(invite)?.[1] : undefined;
-      if (url) store.dispatch({ type: 'invite', invite: `${url}#${secret}` });
+      if (invite && /#[\w-]+$/.test(invite)) store.dispatch({ type: 'invite', invite: invite.replace(/#[\w-]+$/, `#${secret}`) });
     });
     client.on('ended', (why) => {
       this.system(`${why}. You can keep working on your own; restart klaude to join a room again.`, 'warn');
@@ -673,7 +676,9 @@ export class Session {
     });
   }
 
-  private async handle({ id, from, ts, body }: IncomingMessage): Promise<void> {
+  private async handle({ id, from, ts, sentAt, body }: IncomingMessage): Promise<void> {
+    // Requests that act on this computer must be fresh: an old signed request replayed later is dropped.
+    if (STALE_SENSITIVE.has(body.kind) && Math.abs(Date.now() - sentAt) > STALE_MS) return;
     switch (body.kind) {
       case 'room_cleared':
         if (this.store.getState().peers.find((p) => p.peerId === from)?.host) {

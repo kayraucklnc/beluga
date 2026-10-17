@@ -191,7 +191,7 @@ export function startHub(opts: HubOptions): Promise<Hub> {
 
   const relay = (conn: Conn, frame: MsgFrame): void => {
     const from = conn.peer?.peerId as string;
-    const out: MsgFrame = { t: 'msg', from, ts: Date.now(), box: frame.box, ...(frame.to ? { to: frame.to } : {}) };
+    const out: MsgFrame = { t: 'msg', from, ts: Date.now(), box: frame.box, ...(frame.to ? { to: frame.to } : {}), ...(frame.pub && frame.sig && frame.sts !== undefined ? { pub: frame.pub, sig: frame.sig, sts: frame.sts } : {}) };
     if (frame.keep && !frame.to) remember(out);
     const targets = frame.to ? authed().filter((c) => c.peer?.peerId === frame.to) : authed();
     for (const c of targets) send(c, out);

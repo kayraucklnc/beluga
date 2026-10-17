@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** Wire protocol version. Bump on breaking changes. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export const MAX_TEXT = 64_000;
 export const MAX_FILE_BYTES = 512 * 1024;
@@ -345,6 +345,10 @@ export const MsgFrame = z.object({
   keep: z.boolean().optional(),
   ts: z.number().optional(),
   box: Box,
+  /** The sender's public key, signature over the box (+ recipient and send time), and send time. */
+  pub: z.string().max(200).optional(),
+  sig: z.string().max(200).optional(),
+  sts: z.number().optional(),
 });
 export type MsgFrame = z.infer<typeof MsgFrame>;
 export const ErrorFrame = z.object({ t: z.literal('error'), message: z.string() });

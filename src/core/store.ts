@@ -99,7 +99,7 @@ export interface Toast {
   readonly level: 'info' | 'success' | 'warn' | 'error';
 }
 
-export type Overlay = 'help' | 'settings' | 'welcome' | 'clear';
+export type Overlay = 'help' | 'settings' | 'welcome' | 'clear' | 'model' | 'inbox' | 'templates' | 'handoff';
 
 /** Preferences mirrored from ~/.klaude/settings.json (every key here is a settings key). */
 export interface Prefs {

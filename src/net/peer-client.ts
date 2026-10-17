@@ -10,11 +10,12 @@ import {
   type PeerInfo,
   PeerInfo as PeerInfoSchema,
   type Profile,
+  PROTOCOL_VERSION,
   RekeyPayload,
   WelcomePayload,
   parseFrame,
 } from '../protocol.js';
-import { type Identity, type RoomKeys, deriveKeys, generateIdentity, open, proveNonce, seal, signNonce } from './crypto.js';
+import { type Identity, type RoomKeys, deriveKeys, generateIdentity, open, proveNonce, seal, signBox, signNonce, verifyBox } from './crypto.js';
 import { P2P_SCHEME } from './invite.js';
 import { type P2POptions, createNode, dialP2P } from './p2p.js';
 import { type MessageSocket, fromWebSocket } from './transport.js';
@@ -34,6 +35,8 @@ export interface IncomingMessage {
   readonly id: string;
   readonly from: string;
   readonly ts: number;
+  /** When the sender sent it (their clock, covered by their signature). */
+  readonly sentAt: number;
   readonly body: Body;
 }
 
@@ -157,8 +160,11 @@ export class PeerClient extends EventEmitter<ClientEvents> {
   /** Send an application body. `to` targets one peer; omit to broadcast. */
   send(body: BodyInput, opts: { to?: string; keep?: boolean } = {}): boolean {
     if (!this.ready || !this.socket?.isOpen) return false;
-    // The sender id is sealed with the body so a tunnel in the middle can't re-attribute messages.
-    const frame: MsgFrame = { t: 'msg', box: seal(this.roomKeys, { f: this.peerId, b: Body.parse(body) }), ...opts };
+    // The sender id is sealed with the body so a tunnel in the middle can't re-attribute messages,
+    // and signed with your own key so nobody else in the room (not even the host) can forge it.
+    const box = seal(this.roomKeys, { f: this.peerId, b: Body.parse(body) });
+    const sts = Date.now();
+    const frame: MsgFrame = { t: 'msg', box, ...opts, pub: this.identity.publicKey, sig: signBox(this.identity, box, `${opts.to ?? ''}|${sts}`), sts };
     this.socket.send(JSON.stringify(frame));
     return true;
   }
@@ -218,6 +224,10 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     if (!frame) return;
     switch (frame.t) {
       case 'challenge':
+        if (frame.v !== PROTOCOL_VERSION) {
+          this.emit('error', frame.v > PROTOCOL_VERSION ? 'The host has a newer klaude. Run klaude update, then join again' : 'The host has an older klaude. Ask them to run klaude update');
+          return;
+        }
         this.sendHello(frame.nonce);
         return;
       case 'welcome': {
@@ -268,11 +278,13 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     if (!frame.from) return;
     const id = `${frame.from}:${frame.box.iv}`;
     if (this.seen.has(id)) return; // history is replayed on every reconnect
+    // Unsigned, or signed by someone else's key: not from who it claims to be.
+    if (!frame.pub || !frame.sig || frame.sts === undefined || !verifyBox(frame.pub, frame.from, frame.box, frame.sig, `${frame.to ?? ''}|${frame.sts}`)) return;
     const sealed = SealedMessage.safeParse(open(this.roomKeys, frame.box));
     if (!sealed.success || sealed.data.f !== frame.from) return;
     this.seen.add(id);
     if (this.seen.size > SEEN_LIMIT) this.seen.delete(this.seen.values().next().value as string);
-    this.emit('message', { id, from: frame.from, ts: frame.ts ?? Date.now(), body: sealed.data.b });
+    this.emit('message', { id, from: frame.from, ts: frame.ts ?? Date.now(), sentAt: frame.sts, body: sealed.data.b });
   }
 
   private onClose(code: number): void {
