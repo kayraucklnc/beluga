@@ -6,6 +6,7 @@ import { findProjects, isMainCheckout } from './discovery.js';
 import * as g from './git.js';
 import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
 import { WorkspaceStore } from './store.js';
+import { worktreeOrigin } from './origin.js';
 import type { Project, ProjectGroup, ProjectsConfig, Workspace, WorkspaceRecord } from './types.js';
 
 export const slug = (s: string): string =>
@@ -337,6 +338,36 @@ export class WorkspaceManager {
     this.records = this.records.filter((r) => r.id !== id);
     this.store.saveRecords(this.records);
     await this.refresh();
+  }
+
+  /**
+   * Remove the worktrees Claude Code sub-agents left behind that have no uncommitted
+   * changes. Their branches stay, so nothing committed is lost; anything with
+   * uncommitted work is kept.
+   */
+  async cleanAgentWorktrees(projectId: string): Promise<{ removed: number; kept: number }> {
+    const project = this.list.find((p) => p.id === projectId);
+    if (!project) throw new WorkspaceError('That project is gone');
+    let removed = 0;
+    let kept = 0;
+    for (const ws of project.workspaces.filter((w) => !w.archived && worktreeOrigin(w) === 'agent')) {
+      if (ws.status?.changed !== 0) {
+        kept++;
+        continue;
+      }
+      try {
+        await g.removeWorktree(project.root, ws.path, false);
+        removed++;
+      } catch {
+        kept++;
+      }
+    }
+    await this.refresh();
+    return { removed, kept };
+  }
+
+  forgetSession(id: string): void {
+    this.patchRecord(id, { sessionId: undefined, forkFromSession: undefined });
   }
 
   rename(id: string, name: string): void {

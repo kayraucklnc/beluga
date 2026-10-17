@@ -1,0 +1,128 @@
+import { describe, expect, it } from 'vitest';
+import { cleanName, slugify } from '../src/agent/namer.js';
+import { toQuestion } from '../src/agent/runner.js';
+import type { PendingQuestion } from '../src/core/collab-store.js';
+import { cleanQuestion } from '../src/core/questions.js';
+import { initialState, reduce, type AppState } from '../src/core/store.js';
+import { questionModel, sharedHeaderModel, sharedSection } from '../src/ui/collab-models.js';
+import { clearMenu, invitePersonMenu, sharedMenu, wsShareMenu } from '../src/ui/collab-menus.js';
+import { initialUi, handleKey, type KeyContext } from '../src/ui/keymap.js';
+import { personMenu } from '../src/ui/menus.js';
+import { shareFolderMenu, shareWhoMenu } from '../src/ui/share-menus.js';
+import { workspaceHeaderModel } from '../src/ui/workspace-models.js';
+import type { Project, Workspace } from '../src/workspaces/types.js';
+
+const text = (lines: readonly (readonly { text: string }[])[]) => lines.map((l) => l.map((s) => s.text).join(''));
+const ws: Workspace = { id: 'w1', projectRoot: '/p', name: 'add-auth', path: '/wt', kind: 'worktree', branch: 'klaude/add-auth', createdAt: 1, projectId: 'p1', external: false, status: { changed: 0, ahead: 1, behind: 0 } };
+const project: Project = { id: 'p1', name: 'api', root: '/p', base: 'origin/main', workspaces: [ws] };
+
+function room(host = true): AppState {
+  let s = reduce(initialState('r'), { type: 'projects', projects: [project] });
+  const me = { peerId: 'me', name: 'kay', shares: [], agent: true, ...(host ? { host: true } : {}) };
+  s = reduce(s, { type: 'welcome', self: me });
+  return reduce(s, { type: 'peers', peers: [me, { peerId: 'b', name: 'bob', shares: [], agent: true }] });
+}
+
+const question: PendingQuestion = {
+  qid: 'q1', requestId: 'r1', owner: 'me', channel: 'ws:w1', picked: {},
+  question: { kind: 'question', questions: [{ question: 'Which store?', header: 'Sessions', multiSelect: false, options: [{ label: 'Redis', description: 'fast' }, { label: 'Postgres', description: '' }] }] },
+};
+
+describe('worktree names', () => {
+  it('cleans what the model says and falls back to the task words', () => {
+    expect(cleanName('fix-login-redirect')).toBe('fix-login-redirect');
+    expect(cleanName('`Add Stripe Webhooks`\nbecause…')).toBe('add-stripe-webhooks');
+    expect(cleanName('!!')).toBeUndefined();
+    expect(slugify('Please add a dark mode toggle to the settings page')).toBe('add-dark-mode-toggle');
+    expect(slugify('???')).toMatch(/^task-/);
+  });
+});
+
+describe("Claude's question card", () => {
+  it('strips terminal control sequences from questions friends send', () => {
+    const q = cleanQuestion({ kind: 'question', questions: [{ question: 'Q\u001b]0;x\u0007?', header: '\u009bH', multiSelect: false, options: [{ label: 'A\u001b[2J', description: '' }] }] });
+    expect(JSON.stringify(q)).not.toMatch(/[\u001b\u0007\u009b]/);
+    expect(cleanQuestion({ kind: 'plan', plan: 'ok\u001bc' })).toEqual({ kind: 'plan', plan: 'okc' });
+  });
+
+  it('turns AskUserQuestion input into a question and drops junk', () => {
+    expect(toQuestion({ questions: [{ question: 'Q?', header: 'H', multiSelect: false, options: [{ label: 'A', description: '' }, { label: 'B' }] }] })?.kind).toBe('question');
+    expect(toQuestion({ questions: 'nope' })).toBeUndefined();
+  });
+
+  it('shows who asks, numbered clickable options, and Skip', () => {
+    const s = reduce(room(), { type: 'question_add', question });
+    const m = questionModel(s, question, 80);
+    const lines = text(m.lines);
+    expect(lines[0]).toContain('Your Claude in add-auth asks');
+    expect(lines.some((l) => l.includes('1 Redis  fast'))).toBe(true);
+    expect(m.zones.filter((z) => z.action.type === 'answer').map((z) => (z.action as { pick: string }).pick)).toEqual(['option', 'option', 'skip']);
+  });
+
+  it('shows a plan with Approve and Keep planning', () => {
+    const plan: PendingQuestion = { ...question, qid: 'q2', question: { kind: 'plan', plan: '1. add auth\n2. test it' } };
+    const m = questionModel(room(), plan, 80);
+    expect(text(m.lines)[0]).toContain('proposes a plan');
+    expect(m.zones.map((z) => (z.action as { pick: string }).pick)).toEqual(['approve', 'revise']);
+  });
+
+  it('number keys pick an option while the composer is empty', () => {
+    const ctx: KeyContext = { hasApproval: false, hasViewer: false, overlay: false, page: 20, maxChatScroll: 0, suggestions: [], peopleCount: 1, menuSize: 0, questionOptions: 2 };
+    expect(handleKey(initialUi, '2', {}, ctx).effect).toEqual({ type: 'question_number', n: 2 });
+    expect(handleKey(initialUi, '3', {}, ctx).effect).toBeUndefined();
+    expect(handleKey({ ...initialUi, buffer: 'x', cursor: 1 }, '2', {}, ctx).ui.buffer).toBe('x2');
+  });
+});
+
+describe('sharing and people', () => {
+  it('the workspace header has a Plan toggle and Share', () => {
+    const m = workspaceHeaderModel(room(), ws, 140);
+    expect(text(m.lines)[1]).toContain('○ Plan');
+    expect(text(m.lines)[1]).toContain('Share');
+    const on = reduce(room(), { type: 'plan_mode', channel: 'ws:w1', on: true });
+    expect(text(workspaceHeaderModel(on, ws, 140).lines)[1]).toContain('◉ Plan');
+    const shared = reduce(room(), { type: 'member_set', id: 'w1', peerId: 'b', role: 'contribute' });
+    expect(text(workspaceHeaderModel(shared, ws, 140).lines)[1]).toContain('Shared · 1');
+  });
+
+  it('the Share menu invites, changes and removes people', () => {
+    expect(wsShareMenu(room(), 'w1')!.options.map((o) => o.id)).toEqual(['ws-contribute:b', 'ws-view:b', 'invite', 'close']);
+    const inside = reduce(room(), { type: 'member_set', id: 'w1', peerId: 'b', role: 'contribute' });
+    expect(wsShareMenu(inside, 'w1')!.options.map((o) => o.id)).toEqual(['ws-view:b', 'ws-remove:b', 'invite', 'close']);
+    expect(wsShareMenu(inside, 'w1')!.intro[0]).toContain('bob (working here)');
+  });
+
+  it('shows workspaces shared with you, with a header that says how you are in it', () => {
+    const s = reduce(room(), { type: 'shared_add', ws: { owner: 'b', id: 'x9', name: 'payments', project: 'shop', role: 'view', share: 'ws-x9' } });
+    const side = text(sharedSection(s, 34).lines);
+    expect(side).toContain('SHARED WITH ME');
+    expect(side.some((l) => l.includes('◈ payments') && l.includes('bob'))).toBe(true);
+    const header = text(sharedHeaderModel({ ...s, view: { kind: 'shared', owner: 'b', id: 'x9', tab: 'chat' } }, s.shared[0]!, 120).lines);
+    expect(header[0]).toContain("you're following along");
+    expect(header[1]).not.toContain('Plan'); // viewers can't ask Claude
+    expect(sharedMenu(s, 'b', 'x9')!.options.map((o) => o.id)).toContain('sh-leave');
+  });
+
+  it('only the host can clear the group chat for everyone; workspaces can start fresh', () => {
+    expect(clearMenu(room(), 'room', true).options.map((o) => o.id)).toEqual(['clear-everyone', 'clear-mine', 'close']);
+    expect(clearMenu(room(), 'room', false).options.map((o) => o.id)).toEqual(['clear-mine', 'close']);
+    expect(clearMenu(room(), 'ws:w1', false).options.map((o) => o.id)).toEqual(['clear-mine', 'clear-fresh', 'close']);
+  });
+
+  it('the host can remove people and manage the invite; others can leave', () => {
+    const host = room(true);
+    expect(personMenu(host, 1)!.options.map((o) => o.id)).toContain('person-remove');
+    expect(personMenu(reduce(host, { type: 'invite', invite: 'https://x#abcdefghijklmnopqr' }), 0)!.options.map((o) => o.id)).toEqual(expect.arrayContaining(['room-new-link', 'room-close']));
+    const guest = room(false);
+    expect(personMenu(guest, 1)!.options.map((o) => o.id)).not.toContain('person-remove');
+    expect(personMenu(guest, 0)!.options.map((o) => o.id)).toContain('leave-room');
+    expect(invitePersonMenu(host, 'b')!.options[0]).toMatchObject({ id: 'inv:w1', label: 'api › add-auth' });
+  });
+
+  it('sharing a folder: pick a folder, then everyone or one person', () => {
+    const menu = shareFolderMenu(room(), '/home/kay/site', [{ name: 'notes', root: '/n', private: true, allowed: ['b'] }]);
+    expect(menu.options.map((o) => o.id)).toEqual(['sf-dir:/home/kay/site', 'sf-dir:/p', 'sf-type', 'sf-stop:notes', 'close']);
+    expect(menu.options.find((o) => o.id === 'sf-stop:notes')?.hint).toBe('with bob');
+    expect(shareWhoMenu(room(), '/p').options.map((o) => o.id)).toEqual(['sw-all', 'sw-peer:b', 'sw-all-rw', 'close']);
+  });
+});

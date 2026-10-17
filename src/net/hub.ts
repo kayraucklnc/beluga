@@ -8,7 +8,7 @@ import {
   PROTOCOL_VERSION,
   parseFrame,
 } from '../protocol.js';
-import { type RoomKeys, newNonce, open, seal, verifyProof } from './crypto.js';
+import { type RoomKeys, newNonce, open as openBox, seal, verifyNonce, verifyProof } from './crypto.js';
 
 export interface HubOptions {
   readonly keys: RoomKeys;
@@ -21,6 +21,8 @@ export interface HubOptions {
   readonly authTimeoutMs?: number;
   /** Shown to everyone who joins. */
   readonly roomName?: string;
+  /** The host's own peer id, marked `host` in the peer list. */
+  readonly hostId?: string;
 }
 
 interface Conn {
@@ -35,7 +37,23 @@ interface Conn {
 export interface Hub {
   readonly port: number;
   close(): Promise<void>;
+  /** Disconnect someone for good. Call `replaceInvite` too, or they can come back with the old link. */
+  kick(peerId: string): boolean;
+  /**
+   * Make a new invite secret the only way in. People already here get it (sealed with
+   * the room key) so they can reconnect; anyone holding just the old link can't.
+   */
+  replaceInvite(secret: string, keys: RoomKeys): void;
+  /** Closed rooms only let back in people who are already members. */
+  setOpen(open: boolean): void;
+  readonly isOpen: boolean;
+  /** Forget the history shown to people who join later. */
+  clearHistory(): void;
 }
+
+/** Close codes the client treats as final. */
+export const REMOVED_CODE = 4010;
+export const CLOSED_CODE = 4008;
 
 const MAX_PAYLOAD = 1024 * 1024;
 const MAX_PREAUTH_BYTES = 16 * 1024;
@@ -55,6 +73,15 @@ export function startHub(opts: HubOptions): Promise<Hub> {
   const rate = opts.rateLimit ?? 120;
   const authTimeoutMs = opts.authTimeoutMs ?? 10_000;
   const conns = new Set<Conn>();
+  const roomKeys = opts.keys;
+  let inviteKeys = opts.keys;
+  let inviteSecret: string | undefined;
+  /** Invite keys that were replaced: only people already in the room may still use them (to reconnect). */
+  let oldInviteKeys: RoomKeys[] = [];
+  let open = true;
+  /** People admitted to the room (and not removed): they may reconnect, even when it's closed or the link changed. */
+  const members = new Set<string>();
+  const removed = new Set<string>();
   let history: readonly MsgFrame[] = [];
   let historyBytes = 0;
 
@@ -78,7 +105,7 @@ export function startHub(opts: HubOptions): Promise<Hub> {
   const peerList = (): PeerInfo[] => authed().map((c) => c.peer as PeerInfo);
 
   const broadcastPeers = (): void => {
-    const box = seal(opts.keys, peerList());
+    const box = seal(roomKeys, peerList());
     for (const c of authed()) send(c, { t: 'peers', box });
   };
 
@@ -101,12 +128,31 @@ export function startHub(opts: HubOptions): Promise<Hub> {
   };
 
   const handleHello = (conn: Conn, frame: Extract<Frame, { t: 'hello' }>): void => {
-    if (!verifyProof(opts.keys, conn.nonce, frame.peerId, frame.proof)) {
-      send(conn, { t: 'error', message: 'Authentication failed: wrong invite secret' });
+    // The peer id must belong to whoever signs with its key; nobody can take someone else's.
+    if (!verifyNonce(frame.pub, conn.nonce, frame.peerId, frame.sig)) {
+      send(conn, { t: 'error', message: 'Authentication failed: bad identity' });
+      conn.ws.close(4001, 'identity');
+      return;
+    }
+    const current = verifyProof(inviteKeys, conn.nonce, frame.peerId, frame.proof);
+    const returning = !current && members.has(frame.peerId) ? oldInviteKeys.find((k) => verifyProof(k, conn.nonce, frame.peerId, frame.proof)) : undefined;
+    if (!current && !returning) {
+      send(conn, { t: 'error', message: 'Authentication failed: this invite link no longer works' });
       conn.ws.close(4001, 'auth');
       return;
     }
-    const profile = Profile.safeParse(open(opts.keys, frame.box));
+    const helloKeys = returning ?? inviteKeys;
+    if (removed.has(frame.peerId)) {
+      send(conn, { t: 'error', message: 'You were removed from this room' });
+      conn.ws.close(REMOVED_CODE, 'removed');
+      return;
+    }
+    if (!open && !members.has(frame.peerId) && frame.peerId !== opts.hostId) {
+      send(conn, { t: 'error', message: "This room isn't taking new people right now" });
+      conn.ws.close(CLOSED_CODE, 'closed');
+      return;
+    }
+    const profile = Profile.safeParse(openBox(helloKeys, frame.box));
     if (!profile.success) {
       send(conn, { t: 'error', message: 'Invalid profile' });
       conn.ws.close(4002, 'profile');
@@ -122,9 +168,13 @@ export function startHub(opts: HubOptions): Promise<Hub> {
       conn.ws.close(4004, 'full');
       return;
     }
-    const peer: PeerInfo = { ...profile.data, name: uniqueName(profile.data.name), peerId: frame.peerId };
+    const peer: PeerInfo = { ...profile.data, name: uniqueName(profile.data.name), peerId: frame.peerId, ...(frame.peerId === opts.hostId ? { host: true } : {}) };
     conn.peer = peer;
-    send(conn, { t: 'welcome', you: peer, box: seal(opts.keys, { room: opts.roomName, peers: peerList(), history }) });
+    members.add(frame.peerId);
+    // The welcome is sealed with the invite's key and carries the room key, which differs once the invite was replaced.
+    const roomKey = helloKeys === roomKeys ? {} : { roomKey: roomKeys.enc.toString('base64') };
+    const fresh = returning && inviteSecret ? { secret: inviteSecret } : {};
+    send(conn, { t: 'welcome', you: peer, box: seal(helloKeys, { room: opts.roomName, ...roomKey, ...fresh, peers: peerList(), history }) });
     broadcastPeers();
   };
 
@@ -164,11 +214,11 @@ export function startHub(opts: HubOptions): Promise<Hub> {
       if (frame.t === 'msg') relay(conn, frame);
       if (frame.t === 'hello') {
         // Profile update (e.g. shares changed) from an already-authenticated peer.
-        const profile = Profile.safeParse(open(opts.keys, frame.box));
+        const profile = Profile.safeParse(openBox(roomKeys, frame.box));
         if (profile.success && frame.peerId === conn.peer.peerId) {
           // Renames are allowed but stay unique within the room.
           const name = profile.data.name === conn.peer.name ? conn.peer.name : uniqueName(profile.data.name);
-          conn.peer = { ...profile.data, name, peerId: conn.peer.peerId };
+          conn.peer = { ...profile.data, name, peerId: conn.peer.peerId, ...(conn.peer.host ? { host: true } : {}) };
           broadcastPeers();
         }
       }
@@ -203,6 +253,33 @@ export function startHub(opts: HubOptions): Promise<Hub> {
       const { port } = wss.address() as AddressInfo;
       resolve({
         port,
+        get isOpen() {
+          return open;
+        },
+        kick: (peerId) => {
+          if (peerId === opts.hostId) return false;
+          removed.add(peerId);
+          members.delete(peerId);
+          const conn = authed().find((c) => c.peer?.peerId === peerId);
+          if (!conn) return false;
+          send(conn, { t: 'error', message: 'The host removed you from this room' });
+          conn.ws.close(REMOVED_CODE, 'removed');
+          return true;
+        },
+        replaceInvite: (secret, keys) => {
+          oldInviteKeys = [...oldInviteKeys, inviteKeys].slice(-8);
+          inviteKeys = keys;
+          inviteSecret = secret;
+          const box = seal(roomKeys, { secret });
+          for (const c of authed()) if (!removed.has(c.peer?.peerId ?? '')) send(c, { t: 'rekey', box });
+        },
+        setOpen: (next) => {
+          open = next;
+        },
+        clearHistory: () => {
+          history = [];
+          historyBytes = 0;
+        },
         close: () =>
           new Promise<void>((done) => {
             clearInterval(heartbeat);

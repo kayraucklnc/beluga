@@ -9,6 +9,9 @@ import { type ShareService, parseShareSpec } from './shares.js';
 import { existsSync } from 'node:fs';
 import { type Location, type Prefs, type Store, channelOf, peerName } from './store.js';
 import { WorkspaceController } from './workspace-controller.js';
+import { QuestionBroker } from './questions.js';
+import { slugify } from '../agent/namer.js';
+import { WorkspaceSharing } from './workspace-sharing.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Settings } from './settings.js';
 import { type ZoomDir, zoom as zoomTerminal } from './zoom.js';
@@ -43,6 +46,19 @@ export interface SessionOptions {
   readonly workspaces?: WorkspaceManager;
   /** Change the terminal's text size (injected so tests don't resize real windows). */
   readonly zoom?: (dir: ZoomDir) => Promise<{ ok: boolean; message: string }>;
+  /** Only on the host: who may be in the room, and the invite link. */
+  readonly room?: RoomControl;
+}
+
+/** What the host can do with the room itself. */
+export interface RoomControl {
+  /** Disconnect someone and replace the invite so the old link stops working. */
+  removePerson(peerId: string): void;
+  /** Replace the invite link (the old one stops working; people here stay). */
+  newInvite(): void;
+  setOpen(open: boolean): void;
+  /** Forget the history people who join later would see. */
+  clearHistory(): void;
 }
 
 /** In-flight requests remember who must answer, so other peers can't spoof responses. */
@@ -54,6 +70,8 @@ const MAX_PENDING_APPROVALS = 20;
 const SEEN_REQUESTS = 1000;
 const FS_DEBOUNCE_MS = 250;
 const DIR_CACHE_MS = 5_000;
+/** Requests one person may have waiting for your Claude at once. */
+const MAX_QUEUED_PER_PERSON = 10;
 const USAGE_REFRESH_MS = 10 * 60_000;
 const WORKSPACE_REFRESH_MS = 30_000;
 
@@ -87,6 +105,8 @@ export class Session {
   private readonly dirFetched = new Map<string, number>();
   private usageTimer?: NodeJS.Timeout;
   private usageFetched = false;
+  readonly questions: QuestionBroker;
+  readonly sharing: WorkspaceSharing;
 
   constructor(private readonly opts: SessionOptions) {
     this.bridge = this.createBridge();
@@ -100,6 +120,21 @@ export class Session {
         askClaude: (prompt, channel) => this.askOwnClaude(prompt, channel),
       });
     }
+    this.questions = new QuestionBroker({
+      store: opts.store,
+      selfId: () => this.selfId,
+      send: (body, o) => this.send(body, o),
+      timeoutMs: () => this.approvalTimeoutMs,
+      toast: (text, level) => this.toast(text, level),
+    });
+    this.sharing = new WorkspaceSharing({
+      store: opts.store,
+      selfId: () => this.selfId,
+      send: (body, o) => this.send(body, o),
+      shares: opts.shares,
+      workspaces: opts.workspaces,
+      toast: (text, level) => this.toast(text, level),
+    });
     this.agent = opts.createAgent?.(this.bridge);
     this.wire();
   }
@@ -167,8 +202,10 @@ export class Session {
       key,
       setTimeout(() => {
         this.fsTimers.delete(key);
-        // Private (workspace) files are only announced to you.
-        this.send({ kind: 'fs_changed', share, path: relPath }, this.opts.shares.isPrivate(share) ? { to: this.selfId } : {});
+        // Private files (workspaces, folders shared with a few people) are only announced to those people.
+        const body = { kind: 'fs_changed' as const, share, path: relPath };
+        if (!this.opts.shares.isPrivate(share)) this.send(body);
+        else for (const to of [this.selfId, ...(this.opts.shares.configs.find((c) => c.name === share)?.allowed ?? [])]) this.send(body, { to });
       }, FS_DEBOUNCE_MS),
     );
   }
@@ -250,8 +287,10 @@ export class Session {
 
   sendChat(text: string, byAgent: boolean, channel = 'room'): void {
     if (channel !== 'room') {
-      // Workspace conversations stay on this computer.
-      this.store.dispatch({ type: 'chat', id: randomUUID(), from: this.selfId, text: text.slice(0, MAX_TEXT), ts: Date.now(), byAgent, channel });
+      // Workspace conversations stay on this computer, plus the people you invited into them.
+      const id = randomUUID();
+      this.store.dispatch({ type: 'chat', id, from: this.selfId, text: text.slice(0, MAX_TEXT), ts: Date.now(), byAgent, channel });
+      for (const to of this.sharing.recipients(channel)) this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent, channel }, { to });
       return;
     }
     if (!this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent }, { keep: true })) {
@@ -262,14 +301,35 @@ export class Session {
   /** Ask an agent (ours or a peer's) to do something. Returns the request id. */
   requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false): string {
     const requestId = randomUUID();
-    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent }, { to: target });
+    const plan = this.store.getState().planMode[channel] === true;
+    this.questions.track(requestId, target, channel);
+    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan }, { to: target });
     return requestId;
   }
 
-  /** Send a message to your own Claude in a workspace conversation. */
+  /**
+   * Send a message to the Claude of a workspace conversation: yours, or (in a workspace
+   * someone shared with you) theirs.
+   */
   askOwnClaude(prompt: string, channel: string, urgent = false): void {
+    const shared = this.sharing.sharedFor(channel);
+    if (shared && shared.role !== 'contribute') {
+      this.toast(`You can follow ${shared.name}, but not ask its Claude. Ask the owner to let you contribute`, 'warn');
+      return;
+    }
     this.sendChat(prompt, false, channel);
-    this.requestAgent(this.selfId, prompt, false, channel, urgent);
+    this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent);
+  }
+
+  /** A worktree name for a task: from a small model when your Claude is on, else from its words. */
+  async nameTask(prompt: string): Promise<string> {
+    return this.agent?.nameTask ? this.agent.nameTask(prompt).catch(() => slugify(prompt)) : slugify(prompt);
+  }
+
+  /** Plan first in this conversation: Claude investigates read-only, then proposes a plan. */
+  setPlanMode(channel: string, on: boolean): void {
+    this.store.dispatch({ type: 'plan_mode', channel, on });
+    this.toast(on ? 'Plan mode: Claude looks first and asks you to approve a plan before changing anything' : 'Plan mode off: Claude works right away', 'success');
   }
 
   async openLocation(at: Location, opts: { by?: string; broadcast?: boolean } = {}): Promise<void> {
@@ -360,6 +420,63 @@ export class Session {
     return true;
   }
 
+  // ----------------------------------------------------------------- room
+
+  get isHost(): boolean {
+    return Boolean(this.opts.room);
+  }
+
+  /** Host only: disconnect someone and replace the invite so their link stops working. */
+  removePerson(peerId: string): void {
+    const room = this.opts.room;
+    const name = peerName(this.store.getState(), peerId);
+    if (!room || peerId === this.selfId) return;
+    for (const wsId of Object.keys(this.store.getState().members)) this.sharing.remove(wsId, peerId);
+    this.store.dispatch({ type: 'trust', peerId, trusted: false });
+    this.store.dispatch({ type: 'full_trust', peerId, trusted: false });
+    room.removePerson(peerId);
+    this.system(`You removed ${name} from the room. The invite link changed, so the old one no longer works.`);
+    this.toast(`${name} was removed. Use Copy invite for the new link`, 'success');
+  }
+
+  /** Host only: replace the invite link (people already here stay). */
+  newInviteLink(): void {
+    if (!this.opts.room) return this.toast('Only the host can change the invite link', 'warn');
+    this.opts.room.newInvite();
+    this.toast('New invite link made. The old one no longer works', 'success');
+    void this.copyInvite();
+  }
+
+  /** Host only: stop (or start again) letting new people in. */
+  setRoomOpen(open: boolean): void {
+    if (!this.opts.room) return this.toast('Only the host can close the room', 'warn');
+    this.opts.room.setOpen(open);
+    this.store.dispatch({ type: 'room_open', open });
+    this.toast(open ? 'The room takes new people again' : "Room closed: nobody new can join, even with the link. People here stay", 'success');
+  }
+
+  /**
+   * Clear a conversation. In the group chat the host may clear it for everyone (and for
+   * people who join later); otherwise it's cleared on your screen. In a workspace, `fresh`
+   * also starts a new Claude conversation there.
+   */
+  clearChat(channel: string, opts: { everyone?: boolean; fresh?: boolean } = {}): void {
+    this.store.dispatch({ type: 'clear', channel });
+    if (channel === 'room' && opts.everyone && this.opts.room) {
+      this.opts.room.clearHistory();
+      this.send({ kind: 'room_cleared' });
+      this.toast('Group chat cleared for everyone', 'success');
+      return;
+    }
+    if (opts.fresh && channel.startsWith('ws:')) {
+      this.workspaces?.forgetConversation(channel.slice(3));
+      this.store.dispatch({ type: 'context_reset', channel });
+      this.toast('Cleared. Claude starts a fresh conversation here', 'success');
+      return;
+    }
+    this.toast(channel.startsWith('ws:') ? 'Messages cleared. Claude still remembers the conversation' : 'Cleared on your screen', 'success');
+  }
+
   stopAgent(): void {
     if (!this.current && this.waiting.length === 0) {
       this.toast('Your Claude is not running anything');
@@ -368,6 +485,7 @@ export class Session {
     this.generation++;
     this.current?.abort();
     for (const id of [...this.toolApprovals]) this.answerApproval('no', id);
+    this.questions.cancelAll();
     const cancelled = this.waiting;
     this.waiting = [];
     for (const { from, body } of cancelled) this.emitAgent(body.requestId, from, 'error', 'Cancelled by owner', body.channel);
@@ -406,8 +524,28 @@ export class Session {
         void this.refreshUsage();
       }
     });
-    client.on('peers', (peers) => store.dispatch({ type: 'peers', peers }));
+    client.on('peers', (peers) => {
+      const before = store.getState().peers;
+      store.dispatch({ type: 'peers', peers });
+      const gone = before.filter((p) => !peers.some((n) => n.peerId === p.peerId)).map((p) => p.peerId);
+      if (gone.length) {
+        // A dropped connection isn't leaving: workspace seats survive, only open questions end.
+        store.dispatch({ type: 'peer_gone', peerIds: gone });
+        for (const id of gone) this.questions.cancelFor(id);
+      }
+    });
     client.on('error', (message) => this.system(message, 'error'));
+    client.on('rekey', (secret) => {
+      // The host replaced the invite link; keep yours current so /invite shares one that works.
+      const invite = store.getState().invite;
+      const url = invite ? /^(https?:\/\/[^#\s]+)#/.exec(invite)?.[1] : undefined;
+      if (url) store.dispatch({ type: 'invite', invite: `${url}#${secret}` });
+    });
+    client.on('ended', (why) => {
+      this.system(`${why}. You can keep working on your own; restart klaude to join a room again.`, 'warn');
+      this.toast(why, 'warn');
+      store.dispatch({ type: 'shared_clear' });
+    });
     client.on('message', (msg) => {
       this.handle(msg).catch((err: unknown) => this.system(`Error handling ${msg.body.kind}: ${errorText(err)}`, 'error'));
     });
@@ -415,8 +553,29 @@ export class Session {
 
   private async handle({ id, from, ts, body }: IncomingMessage): Promise<void> {
     switch (body.kind) {
+      case 'room_cleared':
+        if (this.store.getState().peers.find((p) => p.peerId === from)?.host) {
+          this.store.dispatch({ type: 'clear', channel: 'room' });
+          this.system(`${peerName(this.store.getState(), from)} cleared the group chat`);
+        }
+        return;
+      case 'share_offer':
+        this.store.dispatch({ type: 'offer', offer: { owner: from, name: body.name, writable: body.writable }, active: body.active });
+        if (body.active) this.toast(`${peerName(this.store.getState(), from)} shared ${body.name} with you. It's in Shared files`, 'success');
+        return;
+      case 'agent_question':
+        return this.questions.onQuestion(from, body);
+      case 'agent_answer':
+        return this.questions.onAnswer(from, body);
+      case 'ws_invite':
+        return this.sharing.onInvite(from, body);
+      case 'ws_roster':
+        return this.sharing.onRoster(from, body);
+      case 'ws_leave':
+        return this.sharing.onLeave(from, body);
       case 'chat':
-        if (body.channel !== 'room' && from !== this.selfId) return; // workspace chats are private for now
+        // Workspace chats only reach people in that workspace, and only contributors may post.
+        if (body.channel !== 'room' && !this.sharing.canPost(from, body.channel)) return;
         this.store.dispatch({ type: 'chat', id, from, text: body.text, ts, byAgent: body.byAgent, channel: body.channel });
         return;
       case 'focus':
@@ -572,18 +731,36 @@ export class Session {
   }
 
   /** Share a folder with the room (read-only unless `writable`). */
-  shareFolder(dir: string, writable = false): void {
+  /**
+   * Share a folder with everyone in the room, or only with `only` (they get a private
+   * offer; nobody else sees it). Sharing the same folder again changes who sees it.
+   */
+  shareFolder(dir: string, writable = false, only?: readonly string[]): void {
     const spec = parseShareSpec(`${dir}${writable ? ':rw' : ''}`, process.cwd());
     if (!existsSync(spec.root)) return this.toast(`${spec.root} doesn't exist`, 'warn');
-    this.opts.shares.upsert(spec);
+    const previous = this.opts.shares.configs.find((c) => path.resolve(c.root) === path.resolve(spec.root) && !c.name.startsWith('ws-'));
+    if (previous) this.unshareFolder(previous.name, true);
+    const config = only?.length ? { ...spec, private: true, allowed: [...only] } : spec;
+    this.opts.shares.upsert(config);
     this.updateProfile({ shares: this.opts.shares.infos });
-    this.toast(`Sharing ${spec.name} with the room${writable ? ' (your Claude may edit it)' : ' (read-only)'}`, 'success');
+    for (const to of only ?? []) this.send({ kind: 'share_offer', name: config.name, writable: config.writable, active: true }, { to });
+    const state = this.store.getState();
+    const who = only?.length ? only.map((id) => peerName(state, id)).join(', ') : 'the room';
+    this.toast(`Sharing ${spec.name} with ${who}${writable ? ' (your Claude may edit it)' : ' (read-only)'}`, 'success');
   }
 
-  unshareFolder(name: string): void {
+  unshareFolder(name: string, quiet = false): void {
+    const config = this.opts.shares.configs.find((c) => c.name === name);
+    if (!config) return quiet ? undefined : this.toast(`Nothing called ${name} is shared`, 'warn');
+    for (const to of config.private ? (config.allowed ?? []) : []) this.send({ kind: 'share_offer', name, writable: config.writable, active: false }, { to });
     this.opts.shares.remove(name);
     this.updateProfile({ shares: this.opts.shares.infos });
-    this.toast(`Stopped sharing ${name}`);
+    if (!quiet) this.toast(`Stopped sharing ${name}`);
+  }
+
+  /** Your shared folders (not workspaces), for the Share menu. */
+  get myShares(): ReadonlyArray<{ name: string; root: string; private?: boolean; allowed?: readonly string[] }> {
+    return this.opts.shares.configs.filter((c) => !c.name.startsWith('ws-'));
   }
 
   /** Give a friend access to only your shared folders, or your whole computer. */
@@ -661,9 +838,9 @@ export class Session {
   private emitAgent(requestId: string, requester: string, event: BodyOf<'agent_event'>['event'], text = '', channel = 'room'): void {
     const final = event === 'done' || event === 'error' || event === 'denied';
     const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel };
-    // Workspace conversations are private: events go only to you, never to the room.
-    const opts = channel === 'room' ? { keep: final } : { to: this.selfId };
-    if (!this.send(body, opts) && final) this.outbox = [...this.outbox, { body, opts }].slice(-50);
+    // Workspace conversations are private: events go to you and the people you invited, never to the room.
+    const targets = channel === 'room' ? [{ keep: final }] : [this.selfId, ...this.sharing.recipients(channel)].map((to) => ({ to }));
+    for (const opts of targets) if (!this.send(body, opts) && final) this.outbox = [...this.outbox, { body, opts }].slice(-50);
   }
 
   private async onAgentRequest(from: string, body: BodyOf<'agent_request'>): Promise<void> {
@@ -676,11 +853,14 @@ export class Session {
       this.emitAgent(body.requestId, from, 'denied', 'No agent is running on this machine.', body.channel);
       return;
     }
-    if (body.channel !== 'room' && from !== this.selfId) {
+    const inWorkspace = body.channel !== 'room' && from !== this.selfId;
+    if (inWorkspace && (this.sharing.sharedFor(body.channel) || !this.sharing.canPost(from, body.channel))) {
       this.emitAgent(body.requestId, from, 'denied', "That workspace isn't shared with you.", body.channel);
       return;
     }
-    const allowed = await this.authorizeRequest(from, body);
+    // Inviting someone to contribute to a workspace is your yes to their requests there
+    // (each risky step still asks you, unless you fully trust them).
+    const allowed = inWorkspace ? this.store.getState().policy !== 'deny' : await this.authorizeRequest(from, body);
     if (!allowed) {
       this.emitAgent(body.requestId, from, 'denied', 'Request declined by the machine owner.', body.channel);
       return;
@@ -703,6 +883,10 @@ export class Session {
         this.current.abort();
       }
     } else {
+      if (this.waiting.filter((w) => w.from === from).length >= MAX_QUEUED_PER_PERSON) {
+        this.emitAgent(body.requestId, from, 'denied', 'Too many requests waiting; try again when the current ones finish.', body.channel);
+        return;
+      }
       this.waiting.push({ from, body });
       if (this.current || this.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', 'Waiting for the current task to finish', body.channel);
     }
@@ -778,6 +962,8 @@ export class Session {
         onEvent: (kind, text) => this.emitAgent(body.requestId, from, kind, text, body.channel),
         onFileTouched: (abs) => this.announceAgentFocus(abs),
         canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input),
+        askUser: (question) => this.questions.ask(from, body.requestId, body.channel, question),
+        plan: body.plan,
       });
       if (controller.signal.aborted) throw new Error('aborted');
       this.emitAgent(body.requestId, from, 'done', final || '(done)', body.channel);
@@ -814,7 +1000,8 @@ export class Session {
   }
 
   private onAgentEvent(from: string, ts: number, body: BodyOf<'agent_event'>): void {
-    if (body.channel !== 'room' && from !== this.selfId) return; // nobody else can write into your workspace chats
+    // Only your own Claude writes into your workspaces; in one shared with you, only its owner's Claude.
+    if (body.channel !== 'room' && from !== this.selfId && this.sharing.sharedFor(body.channel)?.owner !== from) return;
     this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel: body.channel });
     const waiter = this.agentWaiters.get(body.requestId);
     if (!waiter || waiter.peer !== from || !['done', 'error', 'denied'].includes(body.event)) return;

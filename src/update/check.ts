@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -31,6 +31,15 @@ export type Decision =
 /** The folder klaude runs from (dist/update/check.js → repo root). */
 export function installRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+}
+
+/** The installed version, from package.json. */
+export function installedVersion(root = installRoot()): string {
+  try {
+    return (JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as { version?: string }).version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
 }
 
 export function makeRun(cwd: string): Run {

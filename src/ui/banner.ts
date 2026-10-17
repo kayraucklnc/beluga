@@ -54,6 +54,8 @@ export interface PersonRow {
   readonly you: boolean;
   readonly color: string;
   readonly agent: Line;
+  /** "host", "working here", "following here". */
+  readonly tags: string;
 }
 
 /** People list with each person's Claude status. */
@@ -67,7 +69,11 @@ export function peopleRows(state: AppState, frame: number): PersonRow[] {
     else if (run?.type === 'agent') agent = plain(`${spin} working for ${run.requesterName}`, { color: theme.claude });
     else agent = plain(`${glyph.claude} Claude ready`, { color: theme.muted });
     const meter = usageMeter(p.usage);
-    return { peerId: p.peerId, name: p.name, you: p.peerId === state.self?.peerId, color: colorFor(p.name), agent: meter ? [...agent, ...meter] : agent };
+    // Small tags: who hosts the room, and who's in the workspace you're looking at.
+    const wsId = state.view.kind === 'workspace' || state.view.kind === 'shared' ? state.view.id : undefined;
+    const role = wsId ? (state.members[wsId]?.[p.peerId] ?? state.roster[wsId]?.find((m) => m.peerId === p.peerId)?.role) : undefined;
+    const tags = [p.host ? 'host' : '', role === 'contribute' ? 'working here' : role === 'view' ? 'following here' : ''].filter(Boolean).join(' · ');
+    return { peerId: p.peerId, name: p.name, you: p.peerId === state.self?.peerId, color: colorFor(p.name), agent: meter ? [...agent, ...meter] : agent, tags };
   });
 }
 

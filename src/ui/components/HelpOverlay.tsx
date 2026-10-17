@@ -14,7 +14,10 @@ const TALK: ReadonlyArray<readonly [string, string]> = [
 ];
 
 const KEYS: ReadonlyArray<readonly [string, string]> = [
-  ['Tab / Shift+Tab', 'move between chat, files and viewer'],
+  ['Tab / Shift+Tab', 'walk through every button and area'],
+  ['Enter / Option+Enter', 'send (queued while Claude works) / interrupt and send now'],
+  ['1 – 4', "pick an option on Claude's question card"],
+  ['Option+Q / Option+L', 'type @ on Turkish / German Macs'],
   ['Esc', 'back to chat'],
   ['↑ ↓', 'history (or pick a suggestion)'],
   ['PgUp PgDn', 'scroll chat'],

@@ -24,6 +24,9 @@ export interface Geometry {
   readonly viewerWidth: number;
   readonly approvalTop: number;
   readonly approvalHeight: number;
+  /** Claude's question / plan card, right under any approval. */
+  readonly questionTop: number;
+  readonly questionHeight: number;
   readonly suggestionsTop: number;
   readonly composerTop: number;
   readonly actionBarY: number;
@@ -43,6 +46,8 @@ export interface LayoutInput {
   readonly viewerFull?: boolean;
   /** A workspace is open, so the main area shows its header. */
   readonly workspaceHeader?: boolean;
+  /** Lines in Claude's question card (0 when none). */
+  readonly questionLines?: number;
 }
 
 const TABS_HEIGHT = 2;
@@ -53,7 +58,8 @@ export function computeLayout(input: LayoutInput): Geometry {
   const full = Boolean(input.viewerFull && input.hasViewer);
   const sideWidth = full ? 0 : Math.min(36, Math.max(26, Math.floor(columns * 0.24)));
   const approvalHeight = input.approvalDetail === undefined ? 0 : 4 + approvalLines(input.approvalDetail, columns - 4).length;
-  const bottom = 4 + input.suggestionCount + approvalHeight;
+  const questionHeight = input.questionLines ? input.questionLines + 2 : 0;
+  const bottom = 4 + input.suggestionCount + approvalHeight + questionHeight;
   const bodyTop = 1;
   const bodyHeight = Math.max(10, rows - 1 - bottom);
   const peopleHeight = full ? 0 : Math.min(input.peopleCount * 2 + 3, Math.max(5, Math.floor(bodyHeight * 0.4)));
@@ -64,7 +70,8 @@ export function computeLayout(input: LayoutInput): Geometry {
   const viewerWidth = full ? columns : input.hasViewer ? Math.floor(mainWidth * 0.5) : 0;
   const chatWidth = full ? 0 : mainWidth - viewerWidth;
   const approvalTop = bodyTop + bodyHeight;
-  const suggestionsTop = approvalTop + approvalHeight;
+  const questionTop = approvalTop + approvalHeight;
+  const suggestionsTop = questionTop + questionHeight;
   const composerTop = suggestionsTop + input.suggestionCount;
   const paneTop = bodyTop + tabsHeight + headerHeight;
   return {
@@ -87,6 +94,8 @@ export function computeLayout(input: LayoutInput): Geometry {
     viewerWidth,
     approvalTop,
     approvalHeight,
+    questionTop,
+    questionHeight,
     suggestionsTop,
     composerTop,
     actionBarY: composerTop + 3,

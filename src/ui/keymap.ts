@@ -78,7 +78,8 @@ export type Effect =
   | { readonly type: 'ui_action'; readonly action: UiAction }
   | { readonly type: 'review_move'; readonly delta: number }
   | { readonly type: 'review_scroll'; readonly delta: number }
-  | { readonly type: 'cancel_draft' };
+  | { readonly type: 'cancel_draft' }
+  | { readonly type: 'question_number'; readonly n: number };
 
 export interface KeyContext {
   readonly hasApproval: boolean;
@@ -100,6 +101,8 @@ export interface KeyContext {
   readonly filesVisible?: boolean;
   /** Viewing an unsent new chat (Esc leaves it without creating anything). */
   readonly draft?: boolean;
+  /** Options on Claude's waiting question card (number keys pick them while the composer is empty). */
+  readonly questionOptions?: number;
 }
 
 export interface KeyResult {
@@ -192,6 +195,10 @@ function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): 
     return { ui };
   }
   if (key.tab && pick) return { ui: setBuffer(ui, pick.value) };
+  const n = Number(input);
+  if (!ui.buffer && ctx.questionOptions && input.length === 1 && Number.isInteger(n) && n >= 1 && n <= ctx.questionOptions) {
+    return { ui, effect: { type: 'question_number', n } };
+  }
   // Alt+Enter (or Ctrl+Enter where the terminal reports it) sends now instead of queueing.
   if (key.return && (key.meta || key.ctrl)) return submit(ui, true);
   if (key.return) {
@@ -248,6 +255,12 @@ function handleProjects(ui: UiState, input: string, key: KeyInfo, ctx: KeyContex
 function handleHeader(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
   const items = ctx.headerItems ?? [];
   const max = Math.max(0, items.length - 1);
+  // Tab walks through every button like a web page, then moves on to the next area.
+  if (key.tab) {
+    const next = Math.min(max, ui.headerCursor) + (key.shift ? -1 : 1);
+    if (next < 0 || next > max) return { ui: cycleFocus(ui, ctx, key.shift ? -1 : 1) };
+    return { ui: { ...ui, headerCursor: next } };
+  }
   if (key.leftArrow || key.upArrow) return { ui: { ...ui, headerCursor: Math.max(0, Math.min(max, ui.headerCursor) - 1) } };
   if (key.rightArrow || key.downArrow) return { ui: { ...ui, headerCursor: Math.min(max, ui.headerCursor + 1) } };
   const action = items[Math.min(ui.headerCursor, max)];
@@ -298,18 +311,32 @@ function handleViewer(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext)
 }
 
 function cycleFocus(ui: UiState, ctx: KeyContext, dir: 1 | -1): UiState {
-  const order: Focus[] = ['chat', 'projects'];
+  const order: Focus[] = ['chat'];
   if (ctx.headerItems?.length) order.push('header');
+  order.push('projects');
   order.push('people');
   if (ctx.filesVisible) order.push('files');
   if (ctx.mainFocusable) order.push('main');
   if (ctx.hasViewer) order.push('viewer');
   const idx = Math.max(0, order.indexOf(ui.focus));
-  return { ...ui, focus: order[(idx + dir + order.length) % order.length] ?? 'chat' };
+  const focus = order[(idx + dir + order.length) % order.length] ?? 'chat';
+  // Entering the button row starts at its first button (or its last, going backwards).
+  if (focus === 'header' && ui.focus !== 'header') return { ...ui, focus, headerCursor: dir === 1 ? 0 : Math.max(0, (ctx.headerItems?.length ?? 1) - 1) };
+  return { ...ui, focus };
 }
 
+/**
+ * When a terminal sends Option as Meta (iTerm "Esc+", Ghostty, kitty, Warp…), the Option
+ * chords that type "@" on Mac layouts arrive as Meta+letter instead. Translate them back.
+ * Turkish Q: Option+Q · German/Swiss: Option+L · Spanish: Option+2.
+ */
+const OPTION_CHARS: Readonly<Record<string, string>> = { q: '@', l: '@', '2': '@' };
+
 /** Modeless key handling: you're always typing, Tab moves between panels, Esc comes back. */
-export function handleKey(raw: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+export function handleKey(raw: UiState, rawInput: string, rawKey: KeyInfo, ctx: KeyContext): KeyResult {
+  const optionChar = rawKey.meta && !rawKey.ctrl ? OPTION_CHARS[rawInput] : undefined;
+  const input = optionChar ?? rawInput;
+  const key = optionChar ? { ...rawKey, meta: false } : rawKey;
   const isCtrlC = Boolean(key.ctrl) && input === 'c';
   const ui = isCtrlC || !raw.quitArmed ? raw : { ...raw, quitArmed: false };
   if (isCtrlC) {
@@ -334,7 +361,7 @@ export function handleKey(raw: UiState, input: string, key: KeyInfo, ctx: KeyCon
   const focus = ui.focus === 'viewer' && !ctx.hasViewer ? 'chat' : ui.focus;
   const current = focus === ui.focus ? ui : { ...ui, focus };
   const suggesting = current.focus === 'chat' && !current.suggestHidden && ctx.suggestions.length > 0;
-  if (key.tab && !suggesting) return { ui: cycleFocus(current, ctx, key.shift ? -1 : 1) };
+  if (key.tab && !suggesting && current.focus !== 'header') return { ui: cycleFocus(current, ctx, key.shift ? -1 : 1) };
   if (key.escape && current.focus === 'viewer' && current.viewerFull) return { ui: { ...current, viewerFull: false } };
   if (key.escape && current.focus !== 'chat') return { ui: { ...current, focus: 'chat' } };
   // Fast typing or pasting can deliver "text\r" as one chunk: type the text, then press Enter.

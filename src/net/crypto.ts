@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { type KeyObject, createCipheriv, createDecipheriv, createHash, createHmac, createPublicKey, generateKeyPairSync, hkdfSync, randomBytes, sign, timingSafeEqual, verify } from 'node:crypto';
 import type { Box } from '../protocol.js';
 
 /** Keys derived from the room secret. The secret itself never goes on the wire. */
@@ -51,4 +51,40 @@ export function verifyProof(keys: RoomKeys, nonce: string, peerId: string, proof
   const expected = Buffer.from(proveNonce(keys, nonce, peerId), 'base64');
   const actual = Buffer.from(proof, 'base64');
   return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+/**
+ * Each person's own signing key for this run. Their peer id is derived from the public
+ * key, so nobody else (not even someone holding the invite) can claim it.
+ */
+export interface Identity {
+  /** base64 SPKI DER of the Ed25519 public key. */
+  readonly publicKey: string;
+  readonly privateKey: KeyObject;
+  readonly peerId: string;
+}
+
+export function peerIdFor(publicKey: string): string {
+  return createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('base64url').slice(0, 32);
+}
+
+export function generateIdentity(): Identity {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const pub = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+  return { publicKey: pub, privateKey, peerId: peerIdFor(pub) };
+}
+
+/** Sign the hub's challenge (bound to the peer id) with your own key. */
+export function signNonce(identity: Identity, nonce: string): string {
+  return sign(null, Buffer.from(`klaude-id:${nonce}:${identity.peerId}`), identity.privateKey).toString('base64');
+}
+
+export function verifyNonce(publicKey: string, nonce: string, peerId: string, signature: string): boolean {
+  try {
+    if (peerIdFor(publicKey) !== peerId) return false;
+    const key = createPublicKey({ key: Buffer.from(publicKey, 'base64'), format: 'der', type: 'spki' });
+    return verify(null, Buffer.from(`klaude-id:${nonce}:${peerId}`), key, Buffer.from(signature, 'base64'));
+  } catch {
+    return false;
+  }
 }
