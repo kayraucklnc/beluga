@@ -6,7 +6,7 @@ import { parseConfig } from '../src/config.js';
 import { loadSettings, saveSettings, settingsPath } from '../src/core/settings.js';
 import { PALETTES, applyTheme, colorFor, theme } from '../src/ui/theme.js';
 
-const tmpFile = () => path.join(mkdtempSync(path.join(os.tmpdir(), 'klaude-settings-')), 'settings.json');
+const tmpFile = () => path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-settings-')), 'settings.json');
 
 describe('settings', () => {
   it('defaults when the file is missing or broken', () => {
@@ -28,15 +28,15 @@ describe('settings', () => {
     expect(() => saveSettings({ name: 'bad name!' }, file)).toThrow();
   });
 
-  it('respects KLAUDE_HOME', () => {
-    const before = process.env.KLAUDE_HOME;
-    process.env.KLAUDE_HOME = '/tmp/kh';
+  it('respects KLAUD_HOME', () => {
+    const before = process.env.KLAUD_HOME;
+    process.env.KLAUD_HOME = '/tmp/kh';
     expect(settingsPath()).toBe('/tmp/kh/settings.json');
-    process.env.KLAUDE_HOME = before;
+    process.env.KLAUD_HOME = before;
   });
 });
 
-describe('plain `klaude` uses saved settings', () => {
+describe('plain `klaud` uses saved settings', () => {
   const saved = { name: 'kay', theme: 'light' as const, policy: 'auto' as const, mouse: false, tunnel: 'none' as const, selfApproval: 'never' as const };
 
   it('hosts by default with the saved name and choices', () => {

@@ -15,7 +15,7 @@ describe('download helpers', () => {
   });
 
   it('never overwrites existing files', async () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaude-dl-'));
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-dl-'));
     writeFileSync(path.join(dir, 'a.txt'), '1');
     writeFileSync(path.join(dir, 'a (1).txt'), '2');
     expect(await uniquePath(dir, 'a.txt')).toBe(path.join(dir, 'a (2).txt'));
@@ -23,7 +23,7 @@ describe('download helpers', () => {
   });
 
   it('reassembles chunks and tracks progress', async () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaude-dl-'));
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-dl-'));
     const store = new Store(initialState('r'));
     const content = Buffer.from('hello world, in pieces');
     const request: Requester = async <T>(_to: string, body: object) => {

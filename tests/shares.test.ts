@@ -5,8 +5,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { ShareService, isDenied, parseShareSpec, resolveInShare } from '../src/core/shares.js';
 import { waitFor } from './helpers.js';
 
-const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaude-share-')));
-const outside = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaude-out-')));
+const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-share-')));
+const outside = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-out-')));
 mkdirSync(path.join(root, 'src'));
 writeFileSync(path.join(root, 'src', 'a.ts'), 'export const a = 1;\n');
 writeFileSync(path.join(root, 'README.md'), '# hi');

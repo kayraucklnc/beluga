@@ -88,7 +88,7 @@ function decodeFull(bytes: Uint8Array, name: string): Bitmap {
     case 'svg':
       return decodeSvg(bytes);
     default:
-      throw new Error('Not an image klaude can show (PNG, JPEG, GIF or SVG)');
+      throw new Error('Not an image klaud can show (PNG, JPEG, GIF or SVG)');
   }
 }
 

@@ -138,7 +138,7 @@ export function confirmMenu(state: AppState, action: 'archive' | 'delete', id: s
     intro: [
       ws.kind === 'worktree' && !ws.external
         ? `This deletes the worktree folder, the branch ${ws.branch ?? ''} and the conversation. This can't be undone.`
-        : "This removes it from klaude and deletes the conversation. This can't be undone.",
+        : "This removes it from klaud and deletes the conversation. This can't be undone.",
       ...envLines,
     ],
     options: [
@@ -156,7 +156,7 @@ const TUNNEL_LABELS = { auto: 'Cloudflare, automatic', cloudflared: 'Cloudflare'
 export function settingsMenu(state: AppState): MenuSpec {
   return {
     title: 'Settings',
-    intro: ['Saved to ~/.klaude/settings.json and used every time you run klaude.', ''],
+    intro: ['Saved to ~/.klaud/settings.json and used every time you run klaud.', ''],
     options: [
       { id: 'set-name', label: 'Your name', hint: `${state.self?.name ?? '–'}  ·  type a new one` },
       { id: 'set-theme', label: 'Color theme', hint: `${THEME_LABELS[state.prefs.theme]}  ·  Enter to switch` },
@@ -215,7 +215,7 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
       ]
     : [
         ...(state.invite ? [{ id: 'invite', label: 'Copy invite link', hint: 'bring more friends' }] : []),
-        { id: 'leave-room', label: 'Leave the room', hint: 'closes klaude' },
+        { id: 'leave-room', label: 'Leave the room', hint: 'closes klaud' },
       ];
   const options: MenuOption[] = isSelf
     ? [

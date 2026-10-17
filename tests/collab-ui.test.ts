@@ -13,7 +13,7 @@ import { workspaceHeaderModel } from '../src/ui/workspace-models.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
 const text = (lines: readonly (readonly { text: string }[])[]) => lines.map((l) => l.map((s) => s.text).join(''));
-const ws: Workspace = { id: 'w1', projectRoot: '/p', name: 'add-auth', path: '/wt', kind: 'worktree', branch: 'klaude/add-auth', createdAt: 1, projectId: 'p1', external: false, status: { changed: 0, ahead: 1, behind: 0 } };
+const ws: Workspace = { id: 'w1', projectRoot: '/p', name: 'add-auth', path: '/wt', kind: 'worktree', branch: 'klaud/add-auth', createdAt: 1, projectId: 'p1', external: false, status: { changed: 0, ahead: 1, behind: 0 } };
 const project: Project = { id: 'p1', name: 'api', root: '/p', base: 'origin/main', workspaces: [ws] };
 
 function room(host = true): AppState {

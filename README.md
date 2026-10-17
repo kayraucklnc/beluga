@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-    <img src="assets/banner-light.svg" alt="klaude: you, your friends, and everyone's Claude" width="720">
+    <img src="assets/banner-light.svg" alt="klaud: you, your friends, and everyone's Claude" width="720">
   </picture>
 </p>
 
@@ -14,66 +14,59 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="klaude demo: projects, a worktree, Claude reviewing with sub-agents, the overview, and an image" width="900">
-  <br><sub>Recorded with <code>klaude demo</code> (the friend and the Claude replies are simulated)</sub>
+  <img src="assets/demo.gif" alt="klaud demo: two worktrees in two projects, each with its own Claude and sub-agents, running at the same time; the overview; a group chat with two friends" width="900">
+  <br><sub>Recorded with <code>klaud demo</code> (the friends and every Claude reply are simulated)</sub>
 </p>
 
-klaude is a home for all your projects and the Claude working in them. Spin up a worktree per task, watch every Claude at a glance, and review and merge without leaving the terminal. When you want company, invite friends: everyone brings their own Claude.
+**klaud is one terminal for all your projects and the Claude working in each of them.**
+
+Give every task its own worktree: a separate folder and branch with its own Claude conversation. Claudes in different worktrees and projects work **at the same time without touching each other**, each with its own sub-agents that you can watch live. When you want company, invite friends into the same room. Everyone brings their own Claude, and you can all talk at once.
 
 ## What you can do
 
 | | |
 |---|---|
-| 🗂️ **Every project, one place** | klaude finds the git projects on your computer. Add a single project or a whole folder of them, sort them into groups, hide the rest. |
-| 🌿 **A worktree per task** | Click **+⌥**, describe the task, and Haiku names the worktree from it. It's created from the latest `origin` with its own Claude conversation, and your `.env` files come along. |
-| 🔭 **See everything at a glance** | The Overview shows each workspace in plain words: *Claude is working*, *ready to merge*, *merge conflict*. |
-| 🧩 **Sub-agents, visualized** | When Claude fans out to sub-agents or background tasks, they nest under its card with live progress. |
-| ✅ **Review, merge, fork, archive** | **Review** runs a thorough check (bugs, security, tests, quality). **Merge** explains itself, and conflicts get a *Solve conflict* button. |
-| 🗺️ **Plan first, answer with a click** | Turn on **Plan** and Claude proposes a plan to approve before it changes anything. When Claude asks a question, you get clickable options. |
-| 🤝 **Work together** | Invite a friend into one workspace: they see the conversation and files, and can ask your Claude there. Remove them any time. |
-| 💬 **Friends and their Claude** | A group chat with friends. `@claude:bob` runs on **bob's** computer with **bob's** subscription. |
-| 🖼️ **Images in the terminal** | Open PNG, JPEG, GIF and SVG files, drawn in truecolor half-blocks or as text art. |
-| 🔒 **Private by default** | Solo until you click Invite. End-to-end encrypted, and you decide who may use your Claude and where. |
+| 🌿 **A worktree per task, in every project** | Click **+⌥**, describe the task, and Haiku names a fresh worktree from the latest `origin`. Your `.env` files come along. klaud finds all your git projects, and worktrees from Conductor or Claude Code show up too, with their earlier conversations. |
+| ⚡ **Parallel, and isolated** | Each worktree has its own folder, branch and Claude conversation, so `add-auth` in one project and `new-hero` in another run side by side and never step on each other. |
+| 🧩 **Sub-agents you can watch** | When a Claude fans out to sub-agents (reviewers, explorers, test runners) or background tasks, they nest under its card with live progress. |
+| 🔭 **Everything at a glance** | The Overview shows every workspace in plain words: *Claude working · 2 sub-agents running*, *ready to merge*, *merge conflict*. |
+| 💬 **Many people, many Claudes** | Invite friends into one room and talk all at once. `@claude:mia` runs on **mia's** computer with **mia's** subscription. Bring someone into a single worktree to work on it with you. |
+| ✅ **Review, plan, merge** | **Review** runs a thorough check (bugs, security, tests, quality). **Shift+Tab** turns on plan mode, so Claude proposes a plan before changing anything. Its questions come with clickable answers. **Merge** explains itself, and conflicts get a *Solve conflict* button. |
+| 🔒 **Private by default** | klaud runs solo until you click Invite. Everything is end-to-end encrypted, and you decide who may use your Claude and where. |
 
 ## Quick start
 
 ```bash
-git clone https://github.com/kayraucklnc/klaude.git && cd klaude
-npm install && npm run build && npm link
-klaude
+npm install -g klaud
+klaud
 ```
 
 You need Node 20+ and [Claude Code](https://claude.com/claude-code) signed in (`claude`, then `/login`).
 
-- **`klaude`** opens your projects. Nothing is shared and no tunnel is opened until you click **Invite**.
-- **`klaude demo`** lets you look around with a pretend friend and simulated replies.
-- **`klaude update`** gets the latest version (or `klaude update --check` to just look).
+- **`klaud`** opens your projects. Nothing is shared and no tunnel is opened until you click **Invite**.
+- **`klaud demo`** lets you look around, with two pretend friends and simulated replies (`npx klaud demo` works without installing).
+- **`klaud update`** gets the latest version (or `klaud update --check` to just look).
 
-To bring a friend in, click **Invite** (or run `klaude --invite`) and send them the link. They run `klaude join`.
+To bring friends in, click **Invite** (or run `klaud --invite`) and send them the link. They run `klaud join`.
 
 ## A quick tour
 
 <table>
   <tr>
-    <td width="50%"><img src="assets/screenshot-projects.png" alt="Projects and a worktree"><br><b>Projects.</b> Each project lists its worktrees and chats. Hover any button to see what it does.</td>
-    <td width="50%"><img src="assets/screenshot-subagents.png" alt="Claude working with sub-agents"><br><b>Sub-agents.</b> A review fans out to three reviewers, live.</td>
+    <td width="50%"><img src="assets/screenshot-overview.png" alt="Two worktrees working at once"><br><b>Side by side.</b> Two worktrees in two projects, each Claude with its own sub-agents.</td>
+    <td width="50%"><img src="assets/screenshot-subagents.png" alt="A Claude and its sub-agents"><br><b>Sub-agents.</b> Explore and Plan agents working for the Claude in <code>new-hero</code>.</td>
   </tr>
   <tr>
-    <td><img src="assets/screenshot-workspace.png" alt="A finished review in a workspace"><br><b>Workspaces.</b> Chat, Files and Diff, plus Review, Merge, Fork, Finder and Archive. Buttons that can't act are dimmed and say why.</td>
-    <td><img src="assets/screenshot-overview.png" alt="Overview of every workspace"><br><b>Overview.</b> Every workspace, one plain-language state each.</td>
+    <td><img src="assets/screenshot-group.png" alt="Group chat with two friends"><br><b>Talk with everyone.</b> You, bob and mia in one room, each with their own Claude.</td>
+    <td><img src="assets/screenshot-workspace.png" alt="A finished review in a workspace"><br><b>Workspaces.</b> Chat, Files and Diff, plus Review, Merge, Fork, Finder, Archive and Share.</td>
   </tr>
   <tr>
     <td><img src="assets/screenshot-plan.png" alt="Claude proposes a plan"><br><b>Plan first.</b> Claude looks around, then asks you to approve its plan.</td>
     <td><img src="assets/screenshot-question.png" alt="Claude asks a question"><br><b>Claude asks, you click.</b> Pick an option, press its number, or type your own answer.</td>
   </tr>
   <tr>
-    <td><img src="assets/screenshot-share.png" alt="Sharing a workspace"><br><b>Work together.</b> Invite someone into a workspace, switch them to follow-only, or remove them.</td>
-    <td><img src="assets/screenshot-image.png" alt="An SVG drawn in the terminal"><br><b>Images.</b> A friend's SVG, drawn right in the viewer.</td>
-  </tr>
-  <tr>
-    <td><img src="assets/screenshot-chat.png" alt="Asking a friend's Claude"><br><b>Friends' Claude.</b> Ask anyone's Claude: live steps, then a clear answer.</td>
-  <tr>
-    <td><img src="assets/screenshot-settings.png" alt="Settings"><br><b>Settings.</b> Name, theme, text size, approvals, sharing, mouse and remote access.</td>
+    <td><img src="assets/screenshot-share.png" alt="Sharing a workspace"><br><b>Work together.</b> Invite someone into one worktree, switch them to follow-only, or remove them.</td>
+    <td><img src="assets/screenshot-projects.png" alt="Projects and worktrees"><br><b>Projects.</b> Each project lists its worktrees and chats; other tools' worktrees fold away.</td>
   </tr>
 </table>
 
@@ -81,13 +74,13 @@ Everything is clickable, and the bar at the bottom always says what you can do n
 
 ---
 
-## Using klaude
+## Using klaud
 
 ### Projects and workspaces
 
-- **CHATS** are conversations with Claude that aren't tied to a project. **+ new** opens an empty chat in the folder you started klaude in. Your first message creates it, and Esc cancels.
+- **CHATS** are conversations with Claude that aren't tied to a project. **+ new** opens an empty chat in the folder you started klaud in. Your first message creates it, and Esc cancels.
 - **PROJECTS** are your git repos. Each project row has three buttons:
-  - **+⌥** opens a new worktree: describe the task, and a small model (Haiku, on your own login) names it. It's created from the latest `origin` under `~/.klaude/workspaces/<project>/<name>`, and Claude starts right away.
+  - **+⌥** opens a new worktree: describe the task, and a small model (Haiku, on your own login) names it. It's created from the latest `origin` under `~/.klaud/workspaces/<project>/<name>`, and Claude starts right away.
   - **+◇** opens a new chat in the project folder.
   - **⋯** moves the project to a group, hides it, or opens it in Finder.
 - **Inside a workspace**, the top bar has (Tab walks through every button, Enter presses it):
@@ -100,17 +93,17 @@ Everything is clickable, and the bar at the bottom always says what you can do n
   - **Archive**: keeps the conversation, removes the worktree. Restore it any time from **Archived**.
   - **Share**: invite people from the room to work here or follow along, and remove them any time.
 - **Worktrees from other tools** stay out of the way. The ones Claude Code sub-agents create (`.claude/worktrees/agent-*`) fold into **Claude Code agents**, where **⋯** removes the finished ones (branches are kept). Other tools' worktrees fold into **Other worktrees**.
-- **Env files**: `.env*` files (and `.ssh` / `.aws` folders inside the project) are copied into new worktrees. When you archive or delete one, klaude shows which keys changed and offers to copy them back to main.
+- **Env files**: `.env*` files (and `.ssh` / `.aws` folders inside the project) are copied into new worktrees. When you archive or delete one, klaud shows which keys changed and offers to copy them back to main.
 
 ### On your own
 
-klaude starts solo. The **Chat** tab is you and your Claude, so just type, no `@claude` needed. Start a message with `@add-auth` (Tab completes) to send it to the Claude working in that worktree or project.
+klaud starts solo. The **Chat** tab is you and your Claude, so just type, no `@claude` needed. Start a message with `@add-auth` (Tab completes) to send it to the Claude working in that worktree or project.
 
 Worktrees made by other tools (Conductor, Claude Code) show their latest Claude Code conversation when you open them, and Claude continues it. The People panel appears once someone joins.
 
 ### Working with people
 
-- **Invite** opens a secure link and copies it. Your friend runs `klaude join`.
+- **Invite** opens a secure link and copies it. Your friend runs `klaud join`.
 - **Click a person** to:
   - ask their Claude;
   - invite them into one of your workspaces;
@@ -184,11 +177,11 @@ Questions go to whoever asked Claude, even when it's a friend's Claude on their 
 
 ### Settings
 
-Your choices are saved in `~/.klaude/settings.json`, so plain `klaude` always starts the way you like it. Open **Settings** from the bottom bar or with `/settings`:
+Your choices are saved in `~/.klaud/settings.json`, so plain `klaud` always starts the way you like it. Open **Settings** from the bottom bar or with `/settings`:
 
 - **Name**: what friends see
 - **Color theme**: Calm (dark), Light terminal, High contrast, Monochrome
-- **Text size**: bigger or smaller from inside klaude (Terminal, iTerm2, Warp and kitty)
+- **Text size**: bigger or smaller from inside klaud (Terminal, iTerm2, Warp and kitty)
 - **Approvals**: whether your own Claude asks before risky steps, and who else may use it (ask, everyone, nobody)
 - **Mouse**: turn it off to get your terminal's native text selection back
 - **Remote access**: Cloudflare (default), ngrok, or local network only
@@ -196,12 +189,12 @@ Your choices are saved in `~/.klaude/settings.json`, so plain `klaude` always st
 ### Command line
 
 ```
-klaude                           your projects, with your saved settings (solo)
-klaude --invite                  also open remote access and copy an invite
-klaude join [invite]             join a friend (reads the invite from your clipboard)
-klaude demo                      try everything with a pretend friend
-klaude view <image> [--ascii]    show a PNG, JPEG, GIF or SVG in the terminal
-klaude update [--check]          get the latest klaude, or just check
+klaud                           your projects, with your saved settings (solo)
+klaud --invite                  also open remote access and copy an invite
+klaud join [invite]             join a friend (reads the invite from your clipboard)
+klaud demo                      try everything with a pretend friend
+klaud view <image> [--ascii]    show a PNG, JPEG, GIF or SVG in the terminal
+klaud update [--check]          get the latest klaud, or just check
 
   -n, --name <name>        display name (remembered)
   -s, --share <spec>       share a folder: [name=]path[:rw], repeatable
@@ -217,7 +210,7 @@ klaude update [--check]          get the latest klaude, or just check
 ```
  your computer                                       bob's computer
 ┌──────────────────────────────┐                   ┌──────────────────────────────┐
-│ klaude                        │   encrypted       │ klaude                        │
+│ klaud                        │   encrypted       │ klaud                        │
 │  projects · chat · files      │◄─── frames ──────►│  projects · chat · files      │
 │  your Claude (your login)     │  via Cloudflare   │  bob's Claude (bob's login)   │
 │  room hub (relay)             │                   │                               │
@@ -235,7 +228,7 @@ klaude update [--check]          get the latest klaude, or just check
 
 ## Security
 
-Inviting someone exposes your Claude, with your permissions, to the internet. klaude is built around that:
+Inviting someone exposes your Claude, with your permissions, to the internet. klaud is built around that:
 
 - **Solo by default.** No tunnel and no invite exist until you click Invite.
 - **The invite is the key.** Anyone with the link can join, so share it privately. The host can **remove** someone, **replace the link** (the old one stops working; people already in stay), or **close the room** to newcomers.
@@ -250,11 +243,15 @@ Inviting someone exposes your Claude, with your permissions, to the internet. kl
 ## Development
 
 ```bash
+git clone https://github.com/kayraucklnc/klaud.git && cd klaud
 npm install
 npm run dev -- demo        # run from source
-npm test                   # 280+ unit and multi-peer integration tests
+npm test                   # 290 unit and multi-peer integration tests
 npm run typecheck
+npm run build && npm link  # use your local build as `klaud` (klaud update then follows git)
 ```
+
+klaud used to be called klaude. Your `~/.klaude` settings, projects and worktrees carry over automatically.
 
 ## Roadmap
 

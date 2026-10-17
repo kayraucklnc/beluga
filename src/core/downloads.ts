@@ -7,7 +7,7 @@ import type { Location, Store } from './store.js';
 
 export type Requester = <T>(to: string, body: BodyInput & { reqId: string }) => Promise<T>;
 
-export const DEFAULT_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads', 'klaude');
+export const DEFAULT_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads', 'klaud');
 
 /** Strip anything that could escape the download folder or confuse the OS. */
 export function safeFileName(name: string): string {
@@ -50,7 +50,7 @@ export async function fetchBytes(at: Location, request: Requester, max: number, 
 
 /**
  * Pulls a file from a friend's share in end-to-end encrypted chunks and saves it
- * under ~/Downloads/klaude/<friend>/. Progress is mirrored into the store.
+ * under ~/Downloads/klaud/<friend>/. Progress is mirrored into the store.
  */
 export async function downloadFile(
   at: Location,

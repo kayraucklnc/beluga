@@ -15,7 +15,7 @@ describe('invite', () => {
   it('still accepts legacy klaude: codes', () => {
     const legacy = `klaude:${Buffer.from(JSON.stringify({ url: 'wss://x.ngrok.app', secret, room: 'r' })).toString('base64url')}`;
     expect(decodeInvite(legacy)).toEqual({ url: 'wss://x.ngrok.app', secret, room: 'r' });
-    expect(() => decodeInvite('klaude:%%%')).toThrow(/corrupted/);
+    expect(() => decodeInvite("klaude:%%%")).toThrow(/corrupted/);
     expect(() => decodeInvite(`klaude:${Buffer.from('{"url":"http://x"}').toString('base64url')}`)).toThrow(/invalid/);
   });
 
@@ -27,8 +27,8 @@ describe('invite', () => {
   });
 
   it('finds invites inside pasted text', () => {
-    expect(findInvite(`hey join me: klaude join https://a-b.trycloudflare.com#${secret} !`)).toBe(`https://a-b.trycloudflare.com#${secret}`);
-    expect(findInvite('klaude join klaude:eyJ1cmwiOiJ3c3M6Ly94In0abc')).toBe('klaude:eyJ1cmwiOiJ3c3M6Ly94In0abc');
+    expect(findInvite(`hey join me: klaud join https://a-b.trycloudflare.com#${secret} !`)).toBe(`https://a-b.trycloudflare.com#${secret}`);
+    expect(findInvite("klaud join klaude:eyJ1cmwiOiJ3c3M6Ly94In0abc")).toBe("klaude:eyJ1cmwiOiJ3c3M6Ly94In0abc");
     expect(findInvite('nothing here')).toBeUndefined();
   });
 

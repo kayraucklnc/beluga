@@ -31,15 +31,15 @@ export interface SessionOptions {
   readonly requestTimeoutMs?: number;
   readonly agentTimeoutMs?: number;
   readonly onQuit?: () => void;
-  /** Folder klaude was started in; new stand-alone chats run here. */
+  /** Folder klaud was started in; new stand-alone chats run here. */
   readonly launchDir?: string;
   /** Clipboard writer (injected so tests don't touch the real clipboard). */
   readonly copy?: (text: string) => Promise<unknown>;
-  /** Where downloads are saved (default ~/Downloads/klaude). */
+  /** Where downloads are saved (default ~/Downloads/klaud). */
   readonly downloadDir?: string;
   /** Persist a settings change (name, policy, theme…). */
   readonly saveSettings?: (patch: Partial<Settings>) => void;
-  /** Open remote access and create an invite (klaude starts solo; this runs on first Invite). */
+  /** Open remote access and create an invite (klaud starts solo; this runs on first Invite). */
   readonly startInvite?: () => void;
   /** How long an unanswered approval waits before it's declined (default 5 minutes). */
   readonly approvalTimeoutMs?: number;
@@ -63,6 +63,17 @@ export interface RoomControl {
   /** Forget the history people who join later would see. */
   clearHistory(): void;
 }
+
+/** The queue for one conversation (the room, or a workspace). */
+interface Lane {
+  waiting: Array<{ from: string; body: BodyOf<'agent_request'>; urgent?: boolean }>;
+  pumping: boolean;
+  current?: AbortController;
+  interruptedBy?: string;
+}
+
+/** Conversations whose Claude may work at the same time (keeps your plan's limits in mind). */
+const MAX_PARALLEL_RUNS = 4;
 
 /** In-flight requests remember who must answer, so other peers can't spoof responses. */
 type Pending = { peer: string; resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout };
@@ -93,13 +104,13 @@ export class Session {
   private readonly agentWaiters = new Map<string, AgentWaiter>();
   private readonly approvals = new Map<string, (answer: 'yes' | 'no' | 'always') => void>();
   private readonly alwaysTools = new Set<string>();
-  /** Requests waiting for the agent, run one at a time (urgent ones jump the line). */
-  private waiting: Array<{ from: string; body: BodyOf<'agent_request'>; urgent?: boolean }> = [];
-  private pumping = false;
-  private interruptedBy?: string;
-  private current?: AbortController;
-  /** Bumped by :stop so queued runs are cancelled too. */
-  private generation = 0;
+  /**
+   * One queue per conversation: each workspace's Claude works on its own, at the same
+   * time as the others, while messages within one conversation run in order (urgent
+   * ones jump the line).
+   */
+  private readonly lanes = new Map<string, Lane>();
+  private running = 0;
   private readonly seenRequests: string[] = [];
   private readonly toolApprovals = new Set<string>();
   /** Final agent events that could not be sent while disconnected. */
@@ -179,7 +190,7 @@ export class Session {
   }
 
   async stop(): Promise<void> {
-    this.current?.abort();
+    for (const lane of this.lanes.values()) lane.current?.abort();
     this.opts.client.close();
     await this.opts.shares.close();
     clearInterval(this.usageTimer);
@@ -277,7 +288,7 @@ export class Session {
       this.toast('Opening a secure link for friends… it will be copied when ready');
       return;
     }
-    await this.copyOrShow(`klaude join ${invite}`, 'Invite copied. Paste it to a friend');
+    await this.copyOrShow(`klaud join ${invite}`, 'Invite copied. Paste it to a friend');
   }
 
   async copyLastAnswer(): Promise<void> {
@@ -492,18 +503,29 @@ export class Session {
   }
 
   stopAgent(): void {
-    if (!this.current && this.waiting.length === 0) {
+    const lanes = [...this.lanes.values()];
+    if (!lanes.some((l) => l.current || l.waiting.length)) {
       this.toast('Your Claude is not running anything');
       return;
     }
-    this.generation++;
-    this.current?.abort();
     for (const id of [...this.toolApprovals]) this.answerApproval('no', id);
     this.questions.cancelAll();
-    const cancelled = this.waiting;
-    this.waiting = [];
-    for (const { from, body } of cancelled) this.emitAgent(body.requestId, from, 'error', 'Cancelled by owner', body.channel);
-    this.toast('Stopping your Claude (queued requests cancelled)', 'warn');
+    for (const lane of lanes) {
+      const cancelled = lane.waiting;
+      lane.waiting = [];
+      lane.current?.abort();
+      for (const { from, body } of cancelled) this.emitAgent(body.requestId, from, 'error', 'Cancelled by owner', body.channel);
+    }
+    this.toast('Stopping your Claude everywhere (queued requests cancelled)', 'warn');
+  }
+
+  private lane(channel: string): Lane {
+    let lane = this.lanes.get(channel);
+    if (!lane) {
+      lane = { waiting: [], pumping: false };
+      this.lanes.set(channel, lane);
+    }
+    return lane;
   }
 
   findPeer(name: string): PeerInfo | undefined {
@@ -556,7 +578,7 @@ export class Session {
       if (url) store.dispatch({ type: 'invite', invite: `${url}#${secret}` });
     });
     client.on('ended', (why) => {
-      this.system(`${why}. You can keep working on your own; restart klaude to join a room again.`, 'warn');
+      this.system(`${why}. You can keep working on your own; restart klaud to join a room again.`, 'warn');
       this.toast(why, 'warn');
       store.dispatch({ type: 'shared_clear' });
     });
@@ -688,7 +710,7 @@ export class Session {
     }
   }
 
-  /** Download a file from a friend's share into ~/Downloads/klaude/<friend>/. */
+  /** Download a file from a friend's share into ~/Downloads/klaud/<friend>/. */
   async download(at: Location): Promise<string | undefined> {
     const from = peerName(this.store.getState(), at.owner);
     if (!at.path || at.path.endsWith('/')) {
@@ -887,35 +909,43 @@ export class Session {
    * interrupt the current run and go next, continuing the same conversation.
    */
   private enqueue(from: string, body: BodyOf<'agent_request'>): void {
+    const lane = this.lane(body.channel);
     const urgent = body.urgent && from === this.selfId;
     if (urgent) {
-      // After earlier urgent messages (keeping your order), ahead of everything else.
-      const at = this.waiting.findIndex((w) => !w.urgent);
-      this.waiting.splice(at === -1 ? this.waiting.length : at, 0, { from, body, urgent: true });
-      if (this.current) {
-        this.interruptedBy = body.requestId;
-        this.current.abort();
+      // After earlier urgent messages (keeping your order), ahead of everything else in this conversation.
+      const at = lane.waiting.findIndex((w) => !w.urgent);
+      lane.waiting.splice(at === -1 ? lane.waiting.length : at, 0, { from, body, urgent: true });
+      if (lane.current) {
+        lane.interruptedBy = body.requestId;
+        lane.current.abort();
       }
     } else {
-      if (this.waiting.filter((w) => w.from === from).length >= MAX_QUEUED_PER_PERSON) {
+      const queued = [...this.lanes.values()].reduce((n, l) => n + l.waiting.filter((w) => w.from === from).length, 0);
+      if (queued >= MAX_QUEUED_PER_PERSON) {
         this.emitAgent(body.requestId, from, 'denied', 'Too many requests waiting; try again when the current ones finish.', body.channel);
         return;
       }
-      this.waiting.push({ from, body });
-      if (this.current || this.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', 'Waiting for the current task to finish', body.channel);
+      lane.waiting.push({ from, body });
+      if (lane.current || lane.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', 'Waiting for the current task to finish', body.channel);
     }
-    void this.pump();
+    void this.pump(lane);
   }
 
-  private async pump(): Promise<void> {
-    if (this.pumping) return;
-    this.pumping = true;
+  private async pump(lane: Lane): Promise<void> {
+    if (lane.pumping) return;
+    lane.pumping = true;
     try {
-      for (let next = this.waiting.shift(); next; next = this.waiting.shift()) {
-        await this.runAgent(next.from, next.body).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
+      for (let next = lane.waiting.shift(); next; next = lane.waiting.shift()) {
+        while (this.running >= MAX_PARALLEL_RUNS) await new Promise((r) => setTimeout(r, 200));
+        this.running++;
+        try {
+          await this.runAgent(next.from, next.body, lane).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
+        } finally {
+          this.running--;
+        }
       }
     } finally {
-      this.pumping = false;
+      lane.pumping = false;
     }
   }
 
@@ -951,15 +981,15 @@ export class Session {
     });
   }
 
-  private async runAgent(from: string, body: BodyOf<'agent_request'>): Promise<void> {
+  private async runAgent(from: string, body: BodyOf<'agent_request'>, lane: Lane): Promise<void> {
     const agent = this.agent as AgentBackend;
     const controller = new AbortController();
-    this.current = controller;
+    lane.current = controller;
     const requesterName = peerName(this.store.getState(), from);
     const place = this.workspaces?.place(body.channel);
     if (body.channel !== 'room' && !place) {
       this.emitAgent(body.requestId, from, 'error', 'That workspace is archived or missing.', body.channel);
-      if (this.current === controller) this.current = undefined;
+      if (lane.current === controller) lane.current = undefined;
       return;
     }
     this.currentChannel = body.channel;
@@ -982,13 +1012,12 @@ export class Session {
       if (controller.signal.aborted) throw new Error('aborted');
       this.emitAgent(body.requestId, from, 'done', final || '(done)', body.channel);
     } catch (err) {
-      const reason = this.interruptedBy ? 'Interrupted by a newer message' : controller.signal.aborted ? 'Stopped by owner' : errorText(err);
-      this.interruptedBy = undefined;
+      const reason = lane.interruptedBy ? 'Interrupted by a newer message' : controller.signal.aborted ? 'Stopped by owner' : errorText(err);
+      lane.interruptedBy = undefined;
       this.emitAgent(body.requestId, from, 'error', reason, body.channel);
     } finally {
-      if (this.current === controller) this.current = undefined;
-      this.interruptedBy = undefined; // never carry an interrupt label into the next run
-      this.currentChannel = 'room';
+      if (lane.current === controller) lane.current = undefined;
+      lane.interruptedBy = undefined; // never carry an interrupt label into the next run
       void this.refreshUsage();
       if (body.channel !== 'room') void this.workspaces?.refresh();
     }
@@ -1068,7 +1097,7 @@ export class Session {
   }
 
   private async writeReport(title: string, markdown: string): Promise<string> {
-    const dir = path.join(this.opts.agentCwd, '.klaude', 'reports');
+    const dir = path.join(this.opts.agentCwd, '.klaud', 'reports');
     await fs.mkdir(dir, { recursive: true });
     const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'report';

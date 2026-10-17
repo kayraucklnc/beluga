@@ -19,7 +19,7 @@ export class ErrorBoundary extends React.Component<{ children: ReactNode }, Stat
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.error} paddingX={1}>
         <Text color={theme.error} bold>
-          klaude hit a display bug and paused the screen.
+          klaud hit a display bug and paused the screen.
         </Text>
         <Text>{this.state.error.message}</Text>
         <Text color={theme.muted}>Your room is still connected. Resize the window or press Ctrl+C twice to quit and restart.</Text>

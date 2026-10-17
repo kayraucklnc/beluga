@@ -22,7 +22,7 @@ const WRITE_TOOLS: Readonly<Record<string, string>> = {
 const ALWAYS_OK = new Set([
   'TodoWrite',
   'ToolSearch',
-  ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report'].map((n) => `mcp__klaude__${n}`),
+  ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report'].map((n) => `mcp__klaud__${n}`),
 ]);
 
 /** Shell commands that mention credential stores are refused outright. */
@@ -72,4 +72,4 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
   return 'ask';
 }
 
-export const DENY_REASON = 'klaude blocked this: credential files are off-limits, and this request may only use the shared folders.';
+export const DENY_REASON = 'klaud blocked this: credential files are off-limits, and this request may only use the shared folders.';
