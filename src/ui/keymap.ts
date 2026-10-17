@@ -1,7 +1,8 @@
 import type { MenuKind } from './menus.js';
 import type { Suggestion } from './suggest.js';
+import type { UiAction } from './workspace-models.js';
 
-export type Focus = 'chat' | 'people' | 'files' | 'viewer';
+export type Focus = 'chat' | 'projects' | 'people' | 'files' | 'main' | 'viewer';
 
 export interface MenuState {
   readonly menu: MenuKind;
@@ -30,6 +31,14 @@ export interface UiState {
   readonly viewerFull: boolean;
   /** Show Markdown as source instead of rendered. */
   readonly viewerRaw: boolean;
+  /** Keyboard cursor in the Projects tree (index into its clickable rows). */
+  readonly projectsCursor: number;
+  /** Scroll offset of the Overview cards. */
+  readonly overviewScroll: number;
+  /** Projects folded closed in the sidebar. */
+  readonly collapsed: readonly string[];
+  /** A name is being typed for a new worktree/chat in this project. */
+  readonly pending?: { readonly kind: 'worktree' | 'chat'; readonly projectId: string };
 }
 
 /** Subset of Ink's Key we rely on, so the keymap stays framework-agnostic. */
@@ -51,7 +60,7 @@ export interface KeyInfo {
 }
 
 export type Effect =
-  | { readonly type: 'submit'; readonly text: string }
+  | { readonly type: 'submit'; readonly text: string; readonly urgent?: boolean }
   | { readonly type: 'quit' }
   | { readonly type: 'toast'; readonly text: string }
   | { readonly type: 'approve'; readonly answer: 'yes' | 'no' | 'always' }
@@ -63,7 +72,10 @@ export type Effect =
   | { readonly type: 'viewer_close' }
   | { readonly type: 'download' }
   | { readonly type: 'menu_select'; readonly menu: MenuKind; readonly index: number }
-  | { readonly type: 'zoom'; readonly dir: 'in' | 'out' };
+  | { readonly type: 'zoom'; readonly dir: 'in' | 'out' }
+  | { readonly type: 'ui_action'; readonly action: UiAction }
+  | { readonly type: 'review_move'; readonly delta: number }
+  | { readonly type: 'review_scroll'; readonly delta: number };
 
 export interface KeyContext {
   readonly hasApproval: boolean;
@@ -75,6 +87,12 @@ export interface KeyContext {
   readonly peopleCount: number;
   /** Number of options in the open menu (0 when none). */
   readonly menuSize: number;
+  /** Clickable rows of the Projects tree, in order (for keyboard navigation). */
+  readonly projectItems?: readonly UiAction[];
+  /** The main area has keyboard-navigable content (review). */
+  readonly mainFocusable?: boolean;
+  /** The shared-files panel is showing. */
+  readonly filesVisible?: boolean;
 }
 
 export interface KeyResult {
@@ -96,6 +114,9 @@ export const initialUi: UiState = {
   peopleCursor: 0,
   viewerFull: false,
   viewerRaw: false,
+  projectsCursor: 0,
+  overviewScroll: 0,
+  collapsed: [],
 };
 
 const HISTORY_LIMIT = 200;
@@ -136,7 +157,7 @@ function recall(ui: UiState, dir: 1 | -1): UiState {
   return { ...setBuffer(ui, text), historyIndex: idx };
 }
 
-function submit(ui: UiState): KeyResult {
+function submit(ui: UiState, urgent = false): KeyResult {
   const raw = ui.buffer.trim();
   const next: UiState = {
     ...setBuffer(ui, ''),
@@ -144,7 +165,7 @@ function submit(ui: UiState): KeyResult {
     chatScroll: 0,
     history: raw ? [...ui.history, raw].slice(-HISTORY_LIMIT) : ui.history,
   };
-  return raw ? { ui: next, effect: { type: 'submit', text: raw } } : { ui: next };
+  return raw ? { ui: next, effect: urgent ? { type: 'submit', text: raw, urgent: true } : { type: 'submit', text: raw } } : { ui: next };
 }
 
 
@@ -156,8 +177,10 @@ const scrollChat = (ui: UiState, ctx: KeyContext, delta: number): UiState => ({
 function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
   const shown = ui.suggestHidden ? [] : ctx.suggestions;
   const pick = shown[Math.min(ui.selected, shown.length - 1)];
-  if (key.escape) return { ui: shown.length ? { ...ui, suggestHidden: true } : ui };
+  if (key.escape) return { ui: shown.length ? { ...ui, suggestHidden: true } : ui.pending ? { ...setBuffer(ui, ''), pending: undefined } : ui };
   if (key.tab && pick) return { ui: setBuffer(ui, pick.value) };
+  // Alt+Enter (or Ctrl+Enter where the terminal reports it) sends now instead of queueing.
+  if (key.return && (key.meta || key.ctrl)) return submit(ui, true);
   if (key.return) {
     // Enter accepts the highlighted suggestion: "complete" keeps you typing ("@cla" -> "@claude "),
     // "submit" sends it ("/open bob:api/REA" -> opens README.md). An exact match just runs.
@@ -197,6 +220,26 @@ function handleMenu(ui: UiState, state: MenuState, input: string, key: KeyInfo, 
   return { ui };
 }
 
+function handleProjects(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  const items = ctx.projectItems ?? [];
+  const max = Math.max(0, items.length - 1);
+  if (key.upArrow) return { ui: { ...ui, projectsCursor: Math.max(0, Math.min(max, ui.projectsCursor) - 1) } };
+  if (key.downArrow) return { ui: { ...ui, projectsCursor: Math.min(max, ui.projectsCursor + 1) } };
+  if (key.pageUp) return { ui: { ...ui, projectsCursor: Math.max(0, ui.projectsCursor - ctx.page) } };
+  if (key.pageDown) return { ui: { ...ui, projectsCursor: Math.min(max, ui.projectsCursor + ctx.page) } };
+  const action = items[Math.min(ui.projectsCursor, max)];
+  if ((key.return || key.rightArrow) && action) return { ui, effect: { type: 'ui_action', action } };
+  return typeIntoChat(ui, input, key, ctx) ?? { ui };
+}
+
+function handleMain(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  if (key.upArrow) return { ui, effect: { type: 'review_move', delta: -1 } };
+  if (key.downArrow) return { ui, effect: { type: 'review_move', delta: 1 } };
+  if (key.pageUp) return { ui, effect: { type: 'review_scroll', delta: -Math.max(1, ctx.page - 2) } };
+  if (key.pageDown) return { ui, effect: { type: 'review_scroll', delta: Math.max(1, ctx.page - 2) } };
+  return typeIntoChat(ui, input, key, ctx) ?? { ui };
+}
+
 function handlePeople(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
   const max = Math.max(0, ctx.peopleCount - 1);
   if (key.upArrow) return { ui: { ...ui, peopleCursor: Math.max(0, ui.peopleCursor - 1) } };
@@ -232,7 +275,10 @@ function handleViewer(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext)
 }
 
 function cycleFocus(ui: UiState, ctx: KeyContext, dir: 1 | -1): UiState {
-  const order: Focus[] = ctx.hasViewer ? ['chat', 'people', 'files', 'viewer'] : ['chat', 'people', 'files'];
+  const order: Focus[] = ['chat', 'projects', 'people'];
+  if (ctx.filesVisible) order.push('files');
+  if (ctx.mainFocusable) order.push('main');
+  if (ctx.hasViewer) order.push('viewer');
   const idx = Math.max(0, order.indexOf(ui.focus));
   return { ...ui, focus: order[(idx + dir + order.length) % order.length] ?? 'chat' };
 }
@@ -270,6 +316,8 @@ export function handleKey(raw: UiState, input: string, key: KeyInfo, ctx: KeyCon
   if (current.focus === 'chat' && !key.return && input.length > 1 && /[\r\n]$/.test(input)) {
     return submit(handleChat(current, input.replace(/[\r\n]+$/, ''), key, ctx).ui);
   }
+  if (current.focus === 'projects') return handleProjects(current, input, key, ctx);
+  if (current.focus === 'main') return handleMain(current, input, key, ctx);
   if (current.focus === 'people') return handlePeople(current, input, key, ctx);
   if (current.focus === 'files') return handleFiles(current, input, key, ctx);
   if (current.focus === 'viewer') return handleViewer(current, input, key, ctx);

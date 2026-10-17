@@ -1,26 +1,33 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { readdirSync, statSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { Box, useApp, useInput, useStdout } from 'ink';
 import type { Session } from '../core/session.js';
 import type { AppState, Location, Policy } from '../core/store.js';
-import { actionButtons } from './actions.js';
+import { THEMES } from '../core/settings.js';
+import { shareNameOf } from '../core/workspace-controller.js';
+import type { FsEntry } from '../protocol.js';
 import { anyActivity } from './banner.js';
 import { ApprovalCard } from './components/ApprovalCard.js';
 import { ChatView, chatLines } from './components/ChatView.js';
 import { Composer } from './components/Composer.js';
+import { FilesPanel } from './components/FilesPanel.js';
 import { Header } from './components/Header.js';
 import { HelpOverlay } from './components/HelpOverlay.js';
 import { Menu } from './components/Menu.js';
+import { ModelBlock } from './components/ModelBlock.js';
+import { Panel } from './components/Panel.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Viewer, viewerLegend, viewerLines } from './components/Viewer.js';
-import { approvalLines } from './format.js';
+import { type Derived, derive } from './derive.js';
 import { type Target, hitTest } from './hit.js';
 import { type Effect, type UiState, handleKey, initialUi } from './keymap.js';
-import { computeLayout } from './layout.js';
 import { type MenuKind, menuSpec } from './menus.js';
 import { MOUSE_OFF, MOUSE_ON, type MouseEvent } from './mouse.js';
-import { THEMES } from '../core/settings.js';
-import { applyTheme } from './theme.js';
-import { type Suggestion, openTarget, suggest } from './suggest.js';
+import { openTarget } from './suggest.js';
+import { applyTheme, theme } from './theme.js';
+import type { UiAction } from './workspace-models.js';
 
 const TOAST_MS = 3500;
 const FRAME_MS = 100;
@@ -61,30 +68,28 @@ function useFrame(active: boolean): number {
   return frame;
 }
 
-function suggestionsFor(ui: UiState, state: AppState, selfId: string): Suggestion[] {
-  if (ui.focus !== 'chat' || ui.suggestHidden || ui.menu) return [];
-  return suggest(ui.buffer, { peers: state.peers, selfId, dirCache: state.dirCache });
+/** Folders on this computer, for "/project add" completion (size 1 = git project). */
+function listLocalDirs(dir: string): FsEntry[] {
+  const abs = path.resolve(dir.replace(/^~(?=$|\/)/, os.homedir()));
+  try {
+    return readdirSync(abs, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => {
+        let git = false;
+        try {
+          git = statSync(path.join(abs, d.name, '.git')).isDirectory();
+        } catch {
+          git = false;
+        }
+        return { name: d.name, dir: true, size: git ? 1 : 0 };
+      })
+      .sort((a, b) => b.size - a.size || a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
 }
 
-/** Everything derived from state + UI that both rendering and mouse handling need. */
-function derive(state: AppState, ui: UiState, selfId: string, columns: number, rows: number) {
-  const suggestions = suggestionsFor(ui, state, selfId);
-  const focus = ui.focus === 'viewer' && !state.viewer ? 'chat' : ui.focus;
-  const approval = state.approvals[0];
-  const geometry = computeLayout({
-    columns,
-    rows,
-    peopleCount: state.peers.length,
-    hasViewer: Boolean(state.viewer),
-    suggestionCount: suggestions.length,
-    approvalDetail: approval?.detail,
-    viewerFull: ui.viewerFull && focus === 'viewer',
-  });
-  const menu = ui.menu ? menuSpec(state, ui.menu.menu) : undefined;
-  const buttons = actionButtons(focus, state, suggestions.length > 0, { full: ui.viewerFull, raw: ui.viewerRaw });
-  const approvalDetailLines = approval ? approvalLines(approval.detail, columns - 4).length : 0;
-  return { suggestions, focus, geometry, menu, buttons, approvalDetailLines };
-}
+const isWorking = (state: AppState): boolean => anyActivity(state) || state.transfers.some((t) => t.status === 'active');
 
 export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   const state = useSyncExternalStore(session.store.subscribe, session.store.getState);
@@ -102,9 +107,12 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   const { exit } = useApp();
   const { write } = useStdout();
   const { columns, rows } = useTerminalSize();
-  const frame = useFrame(anyActivity(state) || state.transfers.some((t) => t.status === 'active'));
-  const view = derive(state, ui, session.selfId, columns, rows);
-  const g = view.geometry;
+  const frame = useFrame(isWorking(state));
+  const ctl = session.workspaces;
+
+  const view = (s: AppState = state, u: UiState = ui): Derived => derive({ state: s, ui: u, selfId: session.selfId, columns, rows, frame, listLocalDirs });
+  const d = view();
+  const g = d.geometry;
 
   useEffect(() => {
     const toast = state.toast;
@@ -113,19 +121,25 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     return () => clearTimeout(t);
   }, [state.toast, session]);
 
-  // /settings opens the settings menu.
+  // /settings opens the settings menu; inviting for the first time asks who may use your Claude.
   useEffect(() => {
-    if (state.overlay !== 'settings') return;
+    if (state.overlay !== 'settings' && state.overlay !== 'welcome') return;
+    const kind = state.overlay;
     session.store.dispatch({ type: 'overlay', overlay: undefined });
-    patchUi({ menu: { menu: { kind: 'settings' }, selected: 0 } });
+    patchUi({ menu: { menu: { kind }, selected: kind === 'welcome' ? POLICY_INDEX[state.policy] : 0 } });
   }, [state.overlay]);
 
   // Opening a file (yourself) moves you into the viewer so its controls are right there.
-  // Files opened by someone you follow don't steal focus.
   const openedKey = state.viewer && !state.viewer.by ? `${state.viewer.owner}:${state.viewer.share}/${state.viewer.path}` : undefined;
   useEffect(() => {
     if (openedKey) patchUi({ focus: 'viewer' });
   }, [openedKey]);
+
+  // A workspace's Files tab browses its folder.
+  const filesFor = state.view.kind === 'workspace' && state.view.tab === 'files' ? state.view.id : undefined;
+  useEffect(() => {
+    if (filesFor) void session.browseTo({ owner: session.selfId, share: shareNameOf(filesFor), path: '' });
+  }, [filesFor]);
 
   // Fetch folder contents as you type a path after /open or /get.
   useEffect(() => {
@@ -140,16 +154,86 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     return row && row.target !== 'up' && !row.dir ? row.target : undefined;
   };
 
-  /** Scroll the viewer, bounded by what it actually renders (wrapped Markdown can be longer than the source). */
   const scrollViewer = (delta: number): void => {
     const latest = session.store.getState();
     if (!latest.viewer) return;
-    const d = derive(latest, uiRef.current, session.selfId, columns, rows);
-    const total = viewerLines(latest.viewer, d.geometry.viewerWidth, uiRef.current.viewerRaw).length;
-    session.store.dispatch({ type: 'viewer_scroll', delta, max: Math.max(0, total - (d.geometry.bodyHeight - 3)) });
+    const dd = view(latest, uiRef.current);
+    const total = viewerLines(latest.viewer, dd.geometry.viewerWidth, uiRef.current.viewerRaw).length;
+    session.store.dispatch({ type: 'viewer_scroll', delta, max: Math.max(0, total - (dd.geometry.paneHeight - 3)) });
   };
 
   const typeInto = (buffer: string): void => patchUi({ focus: 'chat', buffer, cursor: buffer.length, suggestHidden: false, selected: 0 });
+
+  const askForName = (kind: 'worktree' | 'chat', projectId: string): void => {
+    const project = session.store.getState().projects.find((p) => p.id === projectId);
+    patchUi({ focus: 'chat', buffer: '', cursor: 0, pending: { kind, projectId } });
+    session.toast(`Type a name for the new ${kind} in ${project?.name ?? 'the project'}, then Enter`);
+  };
+
+  const runUiAction = (action: UiAction): void => {
+    switch (action.type) {
+      case 'open_ws':
+        ctl?.open(action.id, action.tab);
+        if (action.tab === 'review') patchUi({ focus: 'main' });
+        return;
+      case 'toggle_project': {
+        const collapsed = uiRef.current.collapsed;
+        patchUi({ collapsed: collapsed.includes(action.id) ? collapsed.filter((c) => c !== action.id) : [...collapsed, action.id] });
+        return;
+      }
+      case 'new_worktree':
+        askForName('worktree', action.projectId);
+        return;
+      case 'new_chat':
+        askForName('chat', action.projectId);
+        return;
+      case 'add_project':
+        typeInto('/project add ~/');
+        return;
+      case 'view':
+        session.store.dispatch({ type: 'view', view: action.view });
+        return;
+      case 'close_tab':
+        session.store.dispatch({ type: 'close_tab', id: action.id });
+        return;
+      case 'review_file':
+        void ctl?.selectFile(action.index);
+        patchUi({ focus: 'main' });
+        return;
+      case 'ws': {
+        const ws = ctl?.manager.find(action.id);
+        if (!ctl || !ws) return;
+        switch (action.action) {
+          case 'merge':
+            void ctl.merge(ws.id);
+            return;
+          case 'commit':
+            void ctl.commit(ws.id);
+            return;
+          case 'fork':
+            ctl.open(ws.id);
+            typeInto(`/fork ${ws.name}-2`);
+            return;
+          case 'finder':
+            ctl.openInFinder(ws.id);
+            return;
+          case 'archive':
+          case 'delete':
+            patchUi({ menu: { menu: { kind: 'confirm', action: action.action, id: ws.id }, selected: 0 } });
+            return;
+          case 'restore':
+            void ctl.restore(ws.id);
+            return;
+          case 'review_claude':
+            ctl.askClaudeToReview(ws.id);
+            return;
+          case 'merge_claude':
+            ctl.askClaudeToMerge(ws.id);
+            return;
+        }
+      }
+    }
+  };
 
   const runMenu = (menu: MenuKind, index: number): void => {
     const latest = session.store.getState();
@@ -164,7 +248,18 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       return;
     }
     const reopen = (): void => patchUi({ menu: { menu, selected: index } });
+    const confirmId = menu.kind === 'confirm' ? menu.id : undefined;
     switch (option.id) {
+      case 'confirm-archive':
+      case 'confirm-archive-force':
+        if (confirmId) void ctl?.archive(confirmId, option.id === 'confirm-archive-force');
+        return;
+      case 'confirm-commit-archive':
+        if (confirmId) void ctl?.commit(confirmId).then(() => ctl.archive(confirmId));
+        return;
+      case 'confirm-delete':
+        if (confirmId) void ctl?.remove(confirmId);
+        return;
       case 'set-name':
         typeInto('/name ');
         return;
@@ -216,6 +311,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       case 'browse': {
         const share = peer?.shares[0];
         if (peer && share) void session.browseTo({ owner: peer.peerId, share: share.name, path: '' });
+        session.store.dispatch({ type: 'view', view: { kind: 'files' } });
         patchUi({ focus: 'files' });
         return;
       }
@@ -240,10 +336,20 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     }
   };
 
+  const submit = (text: string, urgent = false): void => {
+    const pending = uiRef.current.pending;
+    if (pending && ctl) {
+      patchUi({ pending: undefined });
+      void (pending.kind === 'worktree' ? ctl.newWorktree(pending.projectId, text) : ctl.newChat(pending.projectId, text));
+      return;
+    }
+    session.submit(text, urgent);
+  };
+
   const run = (effect: Effect): void => {
     switch (effect.type) {
       case 'submit':
-        session.submit(effect.text);
+        submit(effect.text, effect.urgent);
         return;
       case 'quit':
         exit();
@@ -285,14 +391,33 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       case 'zoom':
         void session.zoom(effect.dir);
         return;
+      case 'ui_action':
+        runUiAction(effect.action);
+        return;
+      case 'review_move': {
+        const review = session.store.getState().review;
+        const count = review?.data?.files.length ?? 0;
+        if (review && count) void ctl?.selectFile(Math.max(0, Math.min(count - 1, review.selected + effect.delta)));
+        return;
+      }
+      case 'review_scroll': {
+        if (session.store.getState().view.kind === 'overview') {
+          patchUi({ overviewScroll: Math.max(0, uiRef.current.overviewScroll + effect.delta) });
+          return;
+        }
+        const review = session.store.getState().review;
+        if (review) session.store.dispatch({ type: 'review', review: { ...review, diffScroll: Math.max(0, review.diffScroll + effect.delta) } });
+        return;
+      }
     }
   };
 
   const runAction = (id: string): void => {
     const current = uiRef.current;
+    const latest = session.store.getState();
     switch (id) {
       case 'accept': {
-        const pick = derive(session.store.getState(), current, session.selfId, columns, rows).suggestions[current.selected];
+        const pick = view(latest, current).suggestions[current.selected];
         if (pick) patchUi({ buffer: pick.value, cursor: pick.value.length, selected: 0 });
         return;
       }
@@ -305,14 +430,31 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       case 'commands':
         typeInto('/');
         return;
+      case 'projects':
+        patchUi({ focus: 'projects' });
+        return;
       case 'people':
         patchUi({ focus: 'people' });
         return;
+      case 'overview':
+        session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+        return;
+      case 'review':
+        if (latest.view.kind === 'workspace') runUiAction({ type: 'open_ws', id: latest.view.id, tab: 'review' });
+        return;
+      case 'review-claude':
+        if (latest.view.kind === 'workspace') ctl?.askClaudeToReview(latest.view.id);
+        return;
+      case 'open-project-item': {
+        const item = view(latest, current).projectItems[current.projectsCursor];
+        if (item) runUiAction(item);
+        return;
+      }
       case 'menu':
         patchUi({ menu: { menu: { kind: 'person', index: current.peopleCursor }, selected: 0 } });
         return;
       case 'chat':
-        patchUi({ focus: 'chat' });
+        patchUi({ focus: 'chat', viewerFull: false });
         return;
       case 'open':
         void session.browserEnter();
@@ -348,6 +490,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   const onClick = (target: Target): void => {
     const current = uiRef.current;
     switch (target.kind) {
+      case 'zone':
+        runUiAction(target.action);
+        return;
       case 'person':
         patchUi({ focus: 'people', peopleCursor: target.index, menu: { menu: { kind: 'person', index: target.index }, selected: 0 } });
         return;
@@ -360,6 +505,12 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       }
       case 'files':
         patchUi({ focus: 'files' });
+        return;
+      case 'projects':
+        patchUi({ focus: 'projects' });
+        return;
+      case 'main':
+        patchUi({ focus: 'main' });
         return;
       case 'chat':
       case 'composer':
@@ -376,11 +527,11 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         }
         return;
       case 'suggestion': {
-        const pick = derive(session.store.getState(), current, session.selfId, columns, rows).suggestions[target.index];
+        const pick = view(session.store.getState(), current).suggestions[target.index];
         if (!pick) return;
         if (pick.enter === 'submit') {
           patchUi({ buffer: '', cursor: 0, history: [...current.history, pick.value] });
-          session.submit(pick.value);
+          submit(pick.value);
         } else {
           typeInto(pick.value);
         }
@@ -400,35 +551,21 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
 
   const onWheel = (target: Target, dir: 1 | -1): void => {
     const current = uiRef.current;
+    const latest = session.store.getState();
     if (target.kind === 'viewer') scrollViewer(dir * WHEEL_LINES);
     else if (target.kind === 'file' || target.kind === 'files') session.store.dispatch({ type: 'browser_cursor', delta: dir });
+    else if (target.kind === 'main' && latest.review) run({ type: 'review_scroll', delta: dir * WHEEL_LINES });
+    else if (target.kind === 'main' && latest.view.kind === 'overview') {
+      const max = Math.max(0, (view(latest, current).overview?.lines.length ?? 0) - 4);
+      patchUi({ overviewScroll: Math.min(max, Math.max(0, current.overviewScroll + dir * WHEEL_LINES)) });
+    }
     else if (target.kind === 'chat') {
-      const latest = session.store.getState();
-      const d = derive(latest, current, session.selfId, columns, rows);
-      const total = chatLines(latest, d.geometry.chatWidth - 4, frame).length;
-      const max = Math.max(0, total - (d.geometry.bodyHeight - 2));
+      const dd = view(latest, current);
+      const total = chatLines(latest, dd.geometry.chatWidth - 4, frame, dd.channel).length;
+      const max = Math.max(0, total - (dd.geometry.paneHeight - 2));
       patchUi({ chatScroll: Math.min(max, Math.max(0, current.chatScroll - dir * WHEEL_LINES)) });
     }
   };
-
-  // Mouse: clicks act on what's under the pointer, the wheel scrolls it.
-  useEffect(() => {
-    if (!subscribeMouse) return;
-    return subscribeMouse((e) => safely('mouse', () => {
-      const latest = session.store.getState();
-      const d = derive(latest, uiRef.current, session.selfId, columns, rows);
-      const target = hitTest(d.geometry, e.x, e.y, {
-        state: latest,
-        menu: d.menu,
-        suggestionCount: d.suggestions.length,
-        buttons: d.buttons,
-        approvalDetailLines: d.approvalDetailLines,
-        viewerLegend: latest.viewer ? viewerLegend(latest.viewer, uiRef.current.viewerFull, uiRef.current.viewerRaw) : undefined,
-      });
-      if (e.button === 'wheelUp' || e.button === 'wheelDown') onWheel(target, e.button === 'wheelDown' ? 1 : -1);
-      else if (e.button === 'left' && e.kind === 'press') onClick(target);
-    }));
-  });
 
   /** A bug in one handler should show a notice, never take the whole room down. */
   const safely = (label: string, fn: () => void): void => {
@@ -439,29 +576,110 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     }
   };
 
-  useInput((input, key) => safely('key', () => {
-    const current = uiRef.current;
-    const latest = session.store.getState();
-    const d = derive(latest, current, session.selfId, columns, rows);
-    const total = chatLines(latest, d.geometry.chatWidth - 4, frame).length;
-    const result = handleKey(current, input, key, {
-      hasApproval: latest.approvals.length > 0,
-      hasViewer: Boolean(latest.viewer),
-      overlay: Boolean(latest.overlay),
-      page: d.geometry.bodyHeight - 2,
-      maxChatScroll: Math.max(0, total - (d.geometry.bodyHeight - 2)),
-      suggestions: d.suggestions,
-      peopleCount: latest.peers.length,
-      menuSize: d.menu?.options.length ?? 0,
-    });
-    setUi(result.ui);
-    if (result.effect) run(result.effect);
-  }));
+  // Mouse: clicks act on what's under the pointer, the wheel scrolls it.
+  useEffect(() => {
+    if (!subscribeMouse) return;
+    return subscribeMouse((e) =>
+      safely('mouse', () => {
+        const latest = session.store.getState();
+        const dd = view(latest, uiRef.current);
+        const target = hitTest(dd.geometry, e.x, e.y, {
+          state: latest,
+          menu: dd.menu,
+          suggestionCount: dd.suggestions.length,
+          buttons: dd.buttons,
+          approvalDetailLines: dd.approvalDetailLines,
+          viewerLegend: latest.viewer ? viewerLegend(latest.viewer, uiRef.current.viewerFull, uiRef.current.viewerRaw) : undefined,
+          zones: dd.zones,
+        });
+        if (e.button === 'wheelUp' || e.button === 'wheelDown') onWheel(target, e.button === 'wheelDown' ? 1 : -1);
+        else if (e.button === 'left' && e.kind === 'press') onClick(target);
+      }),
+    );
+  });
 
-  const mainWidth = columns - g.sideWidth;
-  const sideFocus = view.focus === 'people' || view.focus === 'files' ? view.focus : 'other';
+  useInput((input, key) =>
+    safely('key', () => {
+      const current = uiRef.current;
+      const latest = session.store.getState();
+      const dd = view(latest, current);
+      const total = chatLines(latest, dd.geometry.chatWidth - 4, frame, dd.channel).length;
+      const result = handleKey({ ...current, focus: dd.focus }, input, key, {
+        hasApproval: latest.approvals.length > 0,
+        hasViewer: dd.geometry.viewerWidth > 0,
+        overlay: Boolean(latest.overlay),
+        page: dd.geometry.paneHeight - 2,
+        maxChatScroll: Math.max(0, total - (dd.geometry.paneHeight - 2)),
+        suggestions: dd.suggestions,
+        peopleCount: latest.peers.length,
+        menuSize: dd.menu?.options.length ?? 0,
+        projectItems: dd.projectItems,
+        mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || latest.view.kind === 'overview',
+        filesVisible: latest.view.kind === 'files' || (latest.view.kind === 'workspace' && latest.view.tab === 'files'),
+      });
+      setUi(result.ui);
+      if (result.effect) run(result.effect);
+    }),
+  );
+
   const fullscreen = g.sideWidth === 0;
+  const sideFocus = d.focus === 'projects' || d.focus === 'people' ? d.focus : 'other';
   const activeTransfer = [...state.transfers].reverse().find((t) => t.status === 'active');
+  const paneW = g.mainWidth;
+  const mainContent = (): React.ReactNode => {
+    if (d.menu && ui.menu) return <Menu spec={d.menu} selected={ui.menu.selected} width={paneW} height={g.bodyHeight - 2} />;
+    if (state.overlay === 'help') return <HelpOverlay width={paneW} height={g.paneHeight} scroll={ui.overlayScroll} />;
+    const viewer = <Viewer state={state} width={g.viewerWidth} height={g.paneHeight} focused={d.focus === 'viewer'} raw={ui.viewerRaw} full={false} />;
+    switch (state.view.kind) {
+      case 'files':
+        return (
+          <>
+            <FilesPanel state={state} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'files'} />
+            {viewer}
+          </>
+        );
+      case 'overview':
+        return (
+          <Panel title="Overview" right="every workspace at a glance" width={paneW} height={g.paneHeight} focused={d.focus === 'main'}>
+            <ModelBlock lines={d.overview?.lines ?? []} height={g.paneHeight - 2} scroll={d.overviewScroll} />
+          </Panel>
+        );
+      case 'workspace': {
+        const ws = d.workspace;
+        if (!ws) return <Panel title="Workspace" width={paneW} height={g.paneHeight}>{null}</Panel>;
+        if (state.view.tab === 'review') {
+          return (
+            <Panel title="Review" right="Ask Claude to review · Merge in the bar above" width={paneW} height={g.paneHeight} focused={d.focus === 'main'}>
+              <ModelBlock lines={d.review?.lines ?? []} height={g.paneHeight - 2} />
+            </Panel>
+          );
+        }
+        if (state.view.tab === 'files') {
+          return (
+            <>
+              <FilesPanel state={state} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'files'} title={`${ws.name} files`} />
+              {viewer}
+            </>
+          );
+        }
+        return <ChatView state={state} channel={d.channel} title={`Claude in ${ws.name}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />;
+      }
+      default:
+        return (
+          <>
+            <ChatView state={state} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />
+            {viewer}
+          </>
+        );
+    }
+  };
+
+  const placeholder = ui.pending
+    ? `Name for the new ${ui.pending.kind} in ${state.projects.find((p) => p.id === ui.pending?.projectId)?.name ?? 'the project'} · Enter to create · Esc to cancel`
+    : d.workspace
+      ? `Tell Claude what to do in ${d.workspace.name}…`
+      : undefined;
+
   return (
     <Box flexDirection="column" width={columns} height={rows}>
       <Header state={state} width={columns} />
@@ -470,25 +688,29 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
           <Viewer state={state} width={columns} height={g.bodyHeight} focused raw={ui.viewerRaw} full />
         ) : (
           <>
-        <Sidebar
-          state={state}
-          width={g.sideWidth}
-          peopleHeight={g.peopleHeight}
-          filesHeight={g.filesHeight}
-          focus={sideFocus}
-          peopleCursor={ui.peopleCursor}
-          frame={frame}
-        />
-        {view.menu && ui.menu ? (
-          <Menu spec={view.menu} selected={ui.menu.selected} width={mainWidth} height={g.bodyHeight} />
-        ) : state.overlay === 'help' ? (
-          <HelpOverlay width={mainWidth} height={g.bodyHeight} scroll={ui.overlayScroll} />
-        ) : (
-          <>
-            <ChatView state={state} width={g.chatWidth} height={g.bodyHeight} focused={view.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />
-            <Viewer state={state} width={g.viewerWidth} height={g.bodyHeight} focused={view.focus === 'viewer'} raw={ui.viewerRaw} full={false} />
-          </>
-        )}
+            <Sidebar
+              state={state}
+              width={g.sideWidth}
+              projectsHeight={g.projectsHeight}
+              peopleHeight={g.peopleHeight}
+              projects={d.projects}
+              projectsScroll={d.projectsScroll}
+              projectsCursorRow={d.projectsCursorRow}
+              focus={sideFocus}
+              peopleCursor={ui.peopleCursor}
+              frame={frame}
+            />
+            <Box flexDirection="column" width={paneW}>
+              <Box paddingX={1} height={2} flexDirection="column">
+                <ModelBlock lines={d.tabs.lines} height={2} />
+              </Box>
+              {d.header && !(d.menu && ui.menu) ? (
+                <Box paddingX={1} height={3} flexDirection="column">
+                  <ModelBlock lines={d.header.lines} height={3} />
+                </Box>
+              ) : null}
+              <Box>{mainContent()}</Box>
+            </Box>
           </>
         )}
       </Box>
@@ -497,12 +719,14 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         width={columns}
         buffer={ui.buffer}
         cursor={ui.cursor}
-        focus={view.focus}
-        suggestions={view.suggestions}
-        selected={Math.min(ui.selected, Math.max(0, view.suggestions.length - 1))}
-        buttons={view.buttons}
+        focus={d.focus}
+        suggestions={d.suggestions}
+        selected={Math.min(ui.selected, Math.max(0, d.suggestions.length - 1))}
+        buttons={d.buttons}
         toast={state.toast}
         transfer={activeTransfer}
+        placeholder={placeholder}
+        accent={ui.pending ? theme.accent : undefined}
       />
     </Box>
   );

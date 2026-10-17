@@ -1,15 +1,28 @@
 import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Settings, ThemeName } from './settings.js';
+import type { Review } from '../workspaces/git.js';
+import type { Project } from '../workspaces/types.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
 
+export interface SubAgent {
+  readonly id: string;
+  readonly title: string;
+  readonly steps: readonly string[];
+  readonly status: 'running' | 'done' | 'failed';
+  /** Sub-agent, or background work (a background terminal or agent). */
+  readonly kind?: 'agent' | 'background';
+}
+
 export type LogItem =
-  | { readonly id: string; readonly type: 'chat'; readonly from: string; readonly name: string; readonly text: string; readonly ts: number; readonly byAgent: boolean }
-  | { readonly id: string; readonly type: 'system'; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error' }
+  | { readonly id: string; readonly type: 'chat'; readonly channel: string; readonly from: string; readonly name: string; readonly text: string; readonly ts: number; readonly byAgent: boolean }
+  | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error' }
   | {
       readonly id: string;
       readonly type: 'agent';
+      readonly channel: string;
+      readonly subagents: readonly SubAgent[];
       readonly requestId: string;
       readonly owner: string;
       readonly ownerName: string;
@@ -79,7 +92,7 @@ export interface Toast {
   readonly level: 'info' | 'success' | 'warn' | 'error';
 }
 
-export type Overlay = 'help' | 'settings';
+export type Overlay = 'help' | 'settings' | 'welcome';
 
 /** Display preferences mirrored from ~/.klaude/settings.json. */
 export interface Prefs {
@@ -99,8 +112,34 @@ export interface Transfer {
   readonly error?: string;
 }
 
+/** What the main area shows. */
+export type View =
+  | { readonly kind: 'room' }
+  | { readonly kind: 'files' }
+  | { readonly kind: 'overview' }
+  | { readonly kind: 'workspace'; readonly id: string; readonly tab: 'chat' | 'files' | 'review' };
+
+export interface ReviewState {
+  readonly workspaceId: string;
+  readonly data?: Review;
+  readonly selected: number;
+  readonly diff?: string;
+  readonly diffScroll: number;
+  readonly loading: boolean;
+  readonly error?: string;
+}
+
+export const channelOf = (view: View): string => (view.kind === 'workspace' ? `ws:${view.id}` : 'room');
+
 export interface AppState {
   readonly room: string;
+  readonly view: View;
+  readonly projects: readonly Project[];
+  /** Workspaces open as tabs, in order. */
+  readonly tabs: readonly string[];
+  readonly review?: ReviewState;
+  /** Unread message counts per channel. */
+  readonly unread: Readonly<Record<string, number>>;
   readonly hosting?: Hosting;
   readonly toast?: Toast;
   readonly overlay?: Overlay;
@@ -135,9 +174,14 @@ export type Action =
   | { type: 'overlay'; overlay?: Overlay }
   | { type: 'welcome'; self: PeerInfo }
   | { type: 'peers'; peers: readonly PeerInfo[] }
-  | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean }
-  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error' }
-  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number }
+  | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string }
+  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string }
+  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string }
+  | { type: 'projects'; projects: readonly Project[] }
+  | { type: 'view'; view: View }
+  | { type: 'close_tab'; id: string }
+  | { type: 'review'; review?: ReviewState }
+  | { type: 'history'; channel: string; items: readonly LogItem[] }
   | { type: 'approval_add'; approval: Approval }
   | { type: 'approval_remove'; id: string }
   | { type: 'browser_root' }
@@ -173,6 +217,10 @@ const DEFAULT_PREFS: Prefs = { theme: 'calm', mouse: true, tunnel: 'auto' };
 export function initialState(room: string, policy: Policy = 'ask', prefs: Prefs = DEFAULT_PREFS): AppState {
   return {
     room,
+    view: { kind: 'room' },
+    projects: [],
+    tabs: [],
+    unread: {},
     status: 'connecting',
     peers: [],
     log: [],
@@ -223,11 +271,14 @@ function reduceAgent(state: AppState, raw: Extract<Action, { type: 'agent_event'
     status: a.event,
     text: '',
     steps: [],
+    subagents: [],
+    channel: a.channel ?? 'room',
     ts: a.ts,
   };
   const updated = {
     ...base,
-    status: a.event === 'text' || a.event === 'tool' ? 'started' : a.event,
+    status: a.event === 'text' || a.event === 'tool' || a.event === 'sub' ? 'started' : a.event,
+    subagents: a.event === 'sub' ? applySub(base.subagents, a.text) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
     text:
       a.event === 'text'
         ? (base.text ? `${base.text}\n` : '') + a.text
@@ -238,7 +289,32 @@ function reduceAgent(state: AppState, raw: Extract<Action, { type: 'agent_event'
     endTs: a.event === 'done' || a.event === 'error' || a.event === 'denied' ? a.ts : base.endTs,
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
-  return { ...state, log };
+  return bumpUnread({ ...state, log }, updated.channel, !existing);
+}
+
+/** Apply one sub-agent event (JSON from the runner) to the list. */
+function applySub(list: readonly SubAgent[], json: string): readonly SubAgent[] {
+  let e: { id?: string; phase?: string; title?: string; step?: string; kind?: 'agent' | 'background'; failed?: boolean };
+  try {
+    e = JSON.parse(json) as typeof e;
+  } catch {
+    return list;
+  }
+  if (!e.id) return list;
+  const existing = list.find((s) => s.id === e.id);
+  if (e.phase === 'start' && !existing) return [...list, { id: e.id, title: e.title ?? 'sub-agent', steps: [], status: 'running', kind: e.kind ?? 'agent' }];
+  return list.map((s) => {
+    if (s.id !== e.id) return s;
+    if (e.phase === 'step' && e.step) return { ...s, steps: [...s.steps, e.step].slice(-MAX_STEPS) };
+    if (e.phase === 'done') return { ...s, status: e.failed ? 'failed' : 'done', steps: e.step ? [...s.steps, e.step].slice(-MAX_STEPS) : s.steps };
+    return s;
+  });
+}
+
+/** Count new messages in conversations you're not looking at. */
+function bumpUnread(state: AppState, channel: string, isNew: boolean): AppState {
+  if (!isNew || channel === channelOf(state.view)) return state;
+  return { ...state, unread: { ...state.unread, [channel]: (state.unread[channel] ?? 0) + 1 } };
 }
 
 export function reduce(state: AppState, action: Action): AppState {
@@ -270,20 +346,43 @@ export function reduce(state: AppState, action: Action): AppState {
       return { ...state, peers: action.peers, browser, follow, trusted, access };
     }
     case 'chat':
-      return {
+      return bumpUnread({
         ...state,
         log: appendLog(state.log, {
           id: action.id,
           type: 'chat',
+          channel: action.channel ?? 'room',
           from: action.from,
           name: peerName(state, action.from) + (action.byAgent ? "'s Claude" : ''),
           text: clean(action.text),
           ts: action.ts,
           byAgent: action.byAgent,
         }),
-      };
+      }, action.channel ?? 'room', true);
     case 'system':
-      return { ...state, log: appendLog(state.log, { id: nextId(), type: 'system', text: clean(action.text), ts: Date.now(), level: action.level ?? 'info' }) };
+      return {
+        ...state,
+        log: appendLog(state.log, { id: nextId(), type: 'system', channel: action.channel ?? 'room', text: clean(action.text), ts: Date.now(), level: action.level ?? 'info' }),
+      };
+    case 'projects':
+      return { ...state, projects: action.projects, tabs: state.tabs.filter((t) => action.projects.some((p) => p.workspaces.some((w) => w.id === t))) };
+    case 'view': {
+      const tabs = action.view.kind === 'workspace' && !state.tabs.includes(action.view.id) ? [...state.tabs, action.view.id] : state.tabs;
+      const channel = channelOf(action.view);
+      const { [channel]: _seen, ...unread } = state.unread;
+      return { ...state, view: action.view, tabs, unread };
+    }
+    case 'close_tab': {
+      const tabs = state.tabs.filter((t) => t !== action.id);
+      const view = state.view.kind === 'workspace' && state.view.id === action.id ? ({ kind: 'overview' } as const) : state.view;
+      return { ...state, tabs, view };
+    }
+    case 'review':
+      return { ...state, review: action.review };
+    case 'history': {
+      const others = state.log.filter((l) => l.channel !== action.channel);
+      return { ...state, log: [...action.items.map((i) => ({ ...i, channel: action.channel })), ...others].slice(-LOG_LIMIT * 4) };
+    }
     case 'agent_event':
       return reduceAgent(state, action);
     case 'approval_add':

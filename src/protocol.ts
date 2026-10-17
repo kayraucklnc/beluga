@@ -49,10 +49,14 @@ export type PeerInfo = z.infer<typeof PeerInfo>;
 // Application bodies (always end-to-end encrypted inside a frame "box")
 // ---------------------------------------------------------------------------
 
+/** Which conversation a message belongs to: the room, or a workspace ("ws:<id>"). */
+export const Channel = z.string().regex(/^(room|ws:[\w:.-]{1,80})$/).default('room');
+
 export const ChatBody = z.object({
   kind: z.literal('chat'),
   text: z.string().min(1).max(MAX_TEXT),
   byAgent: z.boolean().default(false),
+  channel: Channel,
 });
 
 export const FocusBody = z.object({
@@ -68,9 +72,13 @@ export const AgentRequestBody = z.object({
   requestId: shortStr,
   prompt: z.string().min(1).max(MAX_TEXT),
   viaAgent: z.boolean().default(false),
+  channel: Channel,
+  /** Interrupt whatever the agent is doing and handle this now (instead of queueing). */
+  urgent: z.boolean().default(false),
 });
 
 export const AgentEventKind = z.enum([
+  'queued',
   'awaiting_approval',
   'started',
   'text',
@@ -78,6 +86,8 @@ export const AgentEventKind = z.enum([
   'done',
   'error',
   'denied',
+  /** Sub-agent progress; text is JSON {id, phase, title?, step?}. */
+  'sub',
 ]);
 export type AgentEventKind = z.infer<typeof AgentEventKind>;
 
@@ -87,6 +97,7 @@ export const AgentEventBody = z.object({
   requester: shortStr,
   event: AgentEventKind,
   text: z.string().max(MAX_TEXT).default(''),
+  channel: Channel,
 });
 
 export const FsListBody = z.object({

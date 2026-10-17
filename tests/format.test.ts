@@ -69,15 +69,15 @@ describe('markdown', () => {
 });
 
 describe('renderLog', () => {
-  const base = { ts: Date.parse('2026-10-16T12:00:00Z') };
+  const base = { ts: Date.parse('2026-10-16T12:00:00Z'), channel: 'room' };
   const items: LogItem[] = [
     { id: '1', type: 'chat', from: 'me', name: 'kay', text: 'hello', byAgent: false, ...base },
     { id: '2', type: 'chat', from: 'me', name: 'kay', text: 'second', byAgent: false, ...base },
     { id: '3', type: 'chat', from: 'b', name: "bob's Claude", text: 'beep', byAgent: true, ...base },
     { id: '4', type: 'system', text: 'oops', level: 'error', ...base },
-    { id: '5', type: 'agent', requestId: 'r', owner: 'b', ownerName: 'bob', requesterName: 'kay', status: 'started', text: 'thinking **hard**', steps: ['Read a.ts'], ...base },
-    { id: '6', type: 'agent', requestId: 'q', owner: 'b', ownerName: 'bob', requesterName: 'bob', status: 'done', text: '', steps: ['ToolSearch x', 'a', 'b', 'c', 'd'], endTs: base.ts + 14_000, ...base },
-    { id: '7', type: 'agent', requestId: 'w', owner: 'b', ownerName: 'bob', requesterName: 'kay', status: 'awaiting_approval', text: '', steps: [], ...base },
+    { id: '5', type: 'agent', requestId: 'r', owner: 'b', ownerName: 'bob', requesterName: 'kay', status: 'started', text: 'thinking **hard**', steps: ['Read a.ts'], subagents: [{ id: 's1', title: 'Explore · find auth', steps: ['Grep auth'], status: 'running' }, { id: 's2', title: 'Plan', steps: [], status: 'done' }], ...base },
+    { id: '6', type: 'agent', requestId: 'q', owner: 'b', ownerName: 'bob', requesterName: 'bob', status: 'done', text: '', steps: ['ToolSearch x', 'a', 'b', 'c', 'd'], subagents: [], endTs: base.ts + 14_000, ...base },
+    { id: '7', type: 'agent', requestId: 'w', owner: 'b', ownerName: 'bob', requesterName: 'kay', status: 'awaiting_approval', text: '', steps: [], subagents: [], ...base },
   ];
   const lines = renderLog(items, 60, { selfId: 'me', frame: 0, now: base.ts + 3000 }).map(text);
 
@@ -98,6 +98,9 @@ describe('renderLog', () => {
     expect(lines.some((l) => l.includes('✓ done · 14s'))).toBe(true);
     expect(lines.some((l) => l.includes('ToolSearch'))).toBe(false); // plumbing is hidden
     expect(lines.some((l) => l.includes('bob needs to approve this'))).toBe(true);
+    expect(lines).toContain('│ ◇ ⠋ Explore · find auth · 1 step');
+    expect(lines).toContain('│     ↳ Grep auth');
+    expect(lines).toContain('│ ◇ ✓ Plan');
     expect(lines.every((l) => l.length <= 60)).toBe(true);
   });
 

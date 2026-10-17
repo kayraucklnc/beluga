@@ -5,10 +5,32 @@ interface Script {
   readonly steps: readonly string[];
   readonly answer: string;
   readonly report?: { title: string; markdown: string };
+  /** Sub-agents launched in parallel, each with its own steps. */
+  readonly subagents?: ReadonlyArray<{ title: string; steps: readonly string[]; kind?: 'agent' | 'background' }>;
 }
 
 /** Canned, fast replies so the demo (and README recordings) never wait on real Claude calls. */
 const SCRIPTS: readonly Script[] = [
+  {
+    match: /review|changes|check my work/i,
+    steps: ['Bash git diff origin/main --stat'],
+    subagents: [
+      { title: 'code-reviewer · correctness', steps: ['Read src/auth.ts', 'Read src/server.ts', 'Grep "session"'] },
+      { title: 'security-reviewer · auth flow', steps: ['Read src/auth.ts', 'Grep "cookie"'] },
+      { title: 'test-runner · run tests', steps: ['Bash npm test'] },
+    ],
+    answer:
+      '**Looks good to merge.** 3 reviewers checked it.\n\n- `requireUser()` correctly rejects missing sessions\n- Cookie is `httpOnly` and `sameSite=lax`\n- All **27 tests** pass\n\n**One suggestion:** add a test for expired sessions.',
+  },
+  {
+    match: /build|implement|add|create|make/i,
+    steps: ['Read src/server.ts'],
+    subagents: [
+      { title: 'Explore · find the right place', steps: ['Glob src/**/*.ts', 'Grep "app.get"'] },
+      { title: 'Plan · design the change', steps: ['Read README.md'] },
+    ],
+    answer: 'Done. Added `src/auth.ts` with a `requireUser()` middleware and wired it into `/api/payments/*`. Run `npm test` to see the new tests.',
+  },
   {
     match: /auth|login|security/i,
     steps: ['Read NOTES.md', 'Grep "auth" src/', 'Read src/server.ts'],
@@ -26,7 +48,8 @@ const SCRIPTS: readonly Script[] = [
   },
   {
     match: /test/i,
-    steps: ['Read package.json', 'Bash npm test'],
+    steps: ['Read package.json'],
+    subagents: [{ title: 'npm test --watch', steps: ['24 passed', '24 passed'], kind: 'background' }],
     answer: 'All **24 tests** pass. Coverage is 87%; `payments.ts` is the least covered file.',
   },
 ];
@@ -53,6 +76,17 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       for (const step of script.steps) {
         await sleep(450 * pace, input.signal);
         input.onEvent('tool', step);
+      }
+      const subs = (script.subagents ?? []).map((s, i) => ({ ...s, id: `sub-${Date.now()}-${i}` }));
+      for (const s of subs) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'start', title: s.title, kind: s.kind ?? 'agent' }));
+      const longest = Math.max(0, ...subs.map((s) => s.steps.length));
+      for (let i = 0; i < longest; i++) {
+        await sleep(500 * pace, input.signal);
+        for (const s of subs) {
+          const step = s.steps[i];
+          if (step) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'step', step }));
+          if (i === s.steps.length - 1) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'done' }));
+        }
       }
       if (script.report) await bridge.writeReport(script.report.title, script.report.markdown);
       await sleep(400 * pace, input.signal);

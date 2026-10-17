@@ -1,0 +1,184 @@
+import { describe, expect, it } from 'vitest';
+import { SubAgentTracker } from '../src/agent/subagents.js';
+import { initialState, reduce, channelOf, type AppState } from '../src/core/store.js';
+import { derive } from '../src/ui/derive.js';
+import { initialUi } from '../src/ui/keymap.js';
+import { activityOf, overviewModel, projectsModel, reviewModel, tabsModel, workspaceHeaderModel } from '../src/ui/workspace-models.js';
+import type { Project, Workspace } from '../src/workspaces/types.js';
+
+const text = (lines: readonly (readonly { text: string }[])[]) => lines.map((l) => l.map((s) => s.text).join(''));
+const ws = (over: Partial<Workspace>): Workspace => ({
+  id: 'w1', projectRoot: '/p', name: 'fix-auth', path: '/wt/fix-auth', kind: 'worktree', branch: 'klaude/fix-auth', base: 'origin/main',
+  createdAt: 1, projectId: 'p1', external: false, status: { changed: 2, ahead: 3, behind: 0 }, ...over,
+});
+const project: Project = {
+  id: 'p1', name: 'app', root: '/p', base: 'origin/main',
+  workspaces: [
+    ws({ id: 'main', name: 'main', kind: 'main', branch: 'main', status: { changed: 0, ahead: 0, behind: 0 } }),
+    ws({}),
+    ws({ id: 'c1', name: 'question', kind: 'chat', status: undefined }),
+    ws({ id: 'old', name: 'old', archived: true }),
+  ],
+};
+const base = (): AppState => reduce(initialState('room'), { type: 'projects', projects: [project] });
+
+describe('sub-agent tracking', () => {
+  it('follows Task tool calls through the stream', () => {
+    const t = new SubAgentTracker('/repo');
+    const launch = { type: 'tool_use', id: 't1', name: 'Task', input: { subagent_type: 'Explore', description: 'find auth' } };
+    expect(t.isLaunch(launch)).toBe(true);
+    expect(t.assistant(null, [launch, { type: 'text' }])).toEqual([{ id: 't1', phase: 'start', title: 'Explore · find auth' }]);
+    expect(t.assistant('t1', [{ type: 'tool_use', name: 'Read', input: { file_path: '/repo/src/a.ts' } }])).toEqual([{ id: 't1', phase: 'step', step: 'Read src/a.ts' }]);
+    expect(t.assistant('other', [{ type: 'tool_use', name: 'Read', input: {} }])).toEqual([]);
+    expect(t.user([{ type: 'tool_result', tool_use_id: 't1' }])).toEqual([{ id: 't1', phase: 'done' }]);
+    expect(t.user([{ type: 'tool_result', tool_use_id: 't1' }])).toEqual([]);
+    expect(t.user('plain text')).toEqual([]);
+    expect(t.assistant(null, [{ type: 'tool_use', id: 't2', name: 'Agent', input: {} }])[0]?.title).toBe('sub-agent');
+  });
+
+  it('follows background tasks (terminals and agents)', () => {
+    const t = new SubAgentTracker();
+    expect(t.task({ subtype: 'task_started', task_id: 'b1', description: 'npm run dev' })).toEqual([{ id: 'b1', phase: 'start', title: 'npm run dev', kind: 'background' }]);
+    expect(t.task({ subtype: 'task_progress', task_id: 'b1', description: 'listening on 3000' })).toEqual([{ id: 'b1', phase: 'step', step: 'listening on 3000' }]);
+    expect(t.task({ subtype: 'task_updated', task_id: 'b1', patch: { status: 'running' } })).toEqual([]);
+    expect(t.task({ subtype: 'task_notification', task_id: 'b1', status: 'failed', summary: 'exit 1' })).toEqual([{ id: 'b1', phase: 'done', failed: true, step: 'exit 1' }]);
+    expect(t.task({ subtype: 'task_progress', task_id: 'b1', description: 'late' })).toEqual([]); // finished
+    expect(t.task({ subtype: 'task_started' })).toEqual([]);
+    t.assistant(null, [{ type: 'tool_use', id: 'sub1', name: 'Task', input: {} }]);
+    expect(t.task({ subtype: 'task_started', task_id: 'x', tool_use_id: 'sub1' })).toEqual([]); // already shown as a sub-agent
+    t.task({ subtype: 'task_started', task_id: 'b2', description: 'watch' });
+    expect(t.task({ subtype: 'task_updated', task_id: 'b2', patch: { status: 'completed' } })).toEqual([{ id: 'b2', phase: 'done', failed: false }]);
+  });
+});
+
+describe('store: channels, views and sub-agents', () => {
+  it('keeps workspace conversations separate and counts unread ones', () => {
+    let s = base();
+    s = reduce(s, { type: 'chat', id: '1', from: 'me', text: 'hi room', ts: 1, byAgent: false });
+    s = reduce(s, { type: 'chat', id: '2', from: 'me', text: 'hi claude', ts: 2, byAgent: false, channel: 'ws:w1' });
+    expect(s.log.map((l) => l.channel)).toEqual(['room', 'ws:w1']);
+    expect(s.unread).toEqual({ 'ws:w1': 1 });
+    s = reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    expect(s.unread).toEqual({});
+    expect(s.tabs).toEqual(['w1']);
+    expect(channelOf(s.view)).toBe('ws:w1');
+    s = reduce(s, { type: 'close_tab', id: 'w1' });
+    expect(s).toMatchObject({ tabs: [], view: { kind: 'overview' } });
+    s = reduce(s, { type: 'history', channel: 'ws:w1', items: [{ id: 'h', type: 'system', channel: 'x', text: 'old', ts: 0, level: 'info' }] });
+    expect(s.log.filter((l) => l.channel === 'ws:w1').map((l) => l.id)).toEqual(['h']);
+    expect(reduce(s, { type: 'review', review: { workspaceId: 'w1', selected: 0, diffScroll: 0, loading: true } }).review?.loading).toBe(true);
+    // tabs for workspaces that disappear are dropped
+    const withTab = reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    expect(reduce(withTab, { type: 'projects', projects: [] }).tabs).toEqual([]);
+  });
+
+  it('tracks sub-agents inside a Claude run', () => {
+    let s = base();
+    const ev = (event: 'started' | 'sub' | 'done', t = '') => ({ type: 'agent_event' as const, owner: 'me', requestId: 'r', requester: 'me', event, text: t, ts: 1, channel: 'ws:w1' });
+    s = reduce(s, ev('started'));
+    s = reduce(s, ev('sub', JSON.stringify({ id: 'a', phase: 'start', title: 'Explore' })));
+    s = reduce(s, ev('sub', JSON.stringify({ id: 'a', phase: 'step', step: 'Grep x' })));
+    s = reduce(s, ev('sub', 'not json'));
+    s = reduce(s, ev('sub', JSON.stringify({ phase: 'start' })));
+    const item = s.log[0];
+    expect(item?.type === 'agent' && item.subagents).toEqual([{ id: 'a', title: 'Explore', steps: ['Grep x'], status: 'running', kind: 'agent' }]);
+    expect(activityOf(s.log, 'ws:w1')).toMatchObject({ running: true, subagents: 1 });
+    s = reduce(s, ev('done', 'all good'));
+    const done = s.log[0];
+    expect(done?.type === 'agent' && done.subagents[0]?.status).toBe('done');
+    expect(activityOf(s.log, 'ws:w1')).toMatchObject({ running: false, last: 'all good' });
+  });
+});
+
+describe('workspace UI models', () => {
+  it('draws the Projects tree with status chips and add buttons', () => {
+    const s = reduce(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    const m = projectsModel(s, new Set(), 0, 30);
+    const lines = text(m.lines);
+    expect(lines[0]).toMatch(/^▾ app/);
+    expect(lines.some((l) => l.includes('fix-auth') && l.includes('↑3') && l.includes('✎2'))).toBe(true);
+    expect(lines.some((l) => l.includes('question') && l.includes('chat'))).toBe(true);
+    expect(lines.some((l) => /\bold\b/.test(l))).toBe(false); // archived hidden from the tree
+    expect(lines.some((l) => l.includes('1 archived'))).toBe(true);
+    expect(m.zones.map((z) => z.action.type)).toEqual(['toggle_project', 'open_ws', 'open_ws', 'open_ws', 'new_worktree', 'new_chat', 'view', 'add_project']);
+    expect(text(projectsModel(s, new Set(['p1']), 0, 30).lines)[0]).toMatch(/^▸ app/);
+    expect(text(projectsModel(initialState('r'), new Set(), 0, 30).lines)[0]).toContain('No projects found');
+  });
+
+  it('draws tabs with close buttons', () => {
+    const s = reduce(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    const m = tabsModel(s, 100);
+    expect(text(m.lines)[0]).toContain('fix-auth ✕');
+    expect(m.zones.map((z) => z.action.type)).toEqual(['view', 'view', 'view', 'open_ws', 'close_tab']);
+  });
+
+  it('draws an Overview card per workspace with actions, plus archived ones', () => {
+    let s = base();
+    s = reduce(s, { type: 'agent_event', owner: 'me', requestId: 'r', requester: 'me', event: 'started', text: '', ts: 1000, channel: 'ws:w1' });
+    const m = overviewModel(s, 0, 100, 6000);
+    const lines = text(m.lines);
+    expect(lines[0]).toContain('1 projects · 3 workspaces');
+    expect(lines[0]).toContain('1 with Claude working');
+    expect(lines.some((l) => l.includes('app › fix-auth'))).toBe(true);
+    expect(lines.some((l) => l.includes('Claude working · 5s'))).toBe(true);
+    expect(lines.some((l) => l.includes('[Open] [Review] [Merge]'))).toBe(true);
+    expect(lines.some((l) => l.includes('Archived (1)'))).toBe(true);
+    const kinds = m.zones.map((z) => (z.action.type === 'ws' ? z.action.action : z.action.type));
+    expect(kinds).toEqual(expect.arrayContaining(['open_ws', 'merge', 'restore', 'delete']));
+    expect(text(overviewModel(initialState('r'), 0, 100).lines).join('\n')).toContain('No workspaces yet');
+  });
+
+  it('draws the workspace header with tabs and actions', () => {
+    const s = reduce(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'review' } });
+    const m = workspaceHeaderModel(s, project.workspaces[1]!, 120);
+    const [title, bar] = text(m.lines);
+    expect(title).toContain('app › fix-auth');
+    expect(title).toContain('klaude/fix-auth from origin/main');
+    expect(bar).toContain('▍Review');
+    expect(bar).toContain('Merge');
+    expect(bar).toContain('Archive');
+    const actions = m.zones.map((z) => (z.action.type === 'ws' ? z.action.action : z.action.type === 'open_ws' ? z.action.tab : ''));
+    expect(actions).toEqual(['chat', 'files', 'review', 'merge', 'commit', 'fork', 'finder', 'archive']);
+    expect(workspaceHeaderModel(s, project.workspaces[3]!, 120).zones.map((z) => (z.action.type === 'ws' ? z.action.action : ''))).toContain('restore');
+    expect(workspaceHeaderModel(s, project.workspaces[0]!, 120).zones.map((z) => (z.action.type === 'ws' ? z.action.action : ''))).not.toContain('archive');
+  });
+
+  it('draws the review screen: commits, files and a colored diff', () => {
+    const review = {
+      workspaceId: 'w1', selected: 0, diffScroll: 0, loading: false,
+      data: { base: 'abc', commits: [{ hash: 'abc1234', subject: 'Add auth' }], files: [{ path: 'src/auth.ts', added: 3, removed: 0, state: 'added' as const }, { path: 'new.md', added: 0, removed: 0, state: 'untracked' as const }] },
+      diff: 'diff --git a b\n@@ -0,0 +1 @@\n+export const x = 1;\n-old',
+    };
+    const m = reviewModel(review, 100, 10);
+    const lines = text(m.lines);
+    expect(lines[0]).toContain('1 commit · 2 files');
+    expect(lines[0]).toContain('@@ -0,0 +1 @@');
+    expect(lines.some((l) => l.includes('▸ + src/auth.ts') && l.includes('+3 −0'))).toBe(true);
+    expect(lines.some((l) => l.includes('new.md') && l.includes('new'))).toBe(true);
+    expect(m.zones.map((z) => z.action)).toEqual([{ type: 'review_file', index: 0 }, { type: 'review_file', index: 1 }]);
+    expect(text(reviewModel(undefined, 100, 10).lines)[0]).toContain('Loading');
+    expect(text(reviewModel({ ...review, error: 'boom' }, 100, 10).lines)[0]).toBe('boom');
+    expect(text(reviewModel({ ...review, data: { base: 'a', commits: [], files: [] } }, 100, 10).lines)[0]).toContain('No changes');
+  });
+});
+
+describe('derive', () => {
+  it('lays out the screen and turns model zones into screen coordinates', () => {
+    const s = reduce(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    const d = derive({ state: s, ui: initialUi, selfId: 'me', columns: 120, rows: 40, frame: 0 });
+    expect(d.channel).toBe('ws:w1');
+    expect(d.workspace?.name).toBe('fix-auth');
+    expect(d.geometry.headerHeight).toBe(3);
+    expect(d.header).toBeDefined();
+    expect(d.projectItems[0]).toEqual({ type: 'toggle_project', id: 'p1' });
+    const addProject = d.zones.find((z) => z.action.type === 'add_project')!;
+    expect(addProject.x0).toBe(2);
+    expect(d.zones.some((z) => z.action.type === 'ws' && z.y === d.geometry.headerTop + 1)).toBe(true);
+    const review = derive({ state: reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'review' } }), ui: { ...initialUi, focus: 'main' }, selfId: 'me', columns: 120, rows: 40, frame: 0 });
+    expect(review.focus).toBe('main');
+    expect(review.review).toBeDefined();
+    const overview = derive({ state: reduce(s, { type: 'view', view: { kind: 'overview' } }), ui: initialUi, selfId: 'me', columns: 120, rows: 40, frame: 0 });
+    expect(overview.overview).toBeDefined();
+    expect(overview.zones.some((z) => z.action.type === 'ws' && z.action.action === 'merge')).toBe(true);
+  });
+});

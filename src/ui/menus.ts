@@ -20,7 +20,46 @@ export interface MenuSpec {
   readonly options: readonly MenuOption[];
 }
 
-export type MenuKind = { readonly kind: 'welcome' } | { readonly kind: 'settings' } | { readonly kind: 'person'; readonly index: number };
+export type MenuKind =
+  | { readonly kind: 'welcome' }
+  | { readonly kind: 'settings' }
+  | { readonly kind: 'person'; readonly index: number }
+  | { readonly kind: 'confirm'; readonly action: 'archive' | 'delete'; readonly id: string };
+
+/** "Are you sure?" for archive and delete, explaining exactly what happens. */
+export function confirmMenu(state: AppState, action: 'archive' | 'delete', id: string): MenuSpec | undefined {
+  const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id);
+  if (!ws) return undefined;
+  const changed = ws.status?.changed ?? 0;
+  if (action === 'archive') {
+    return {
+      title: `Archive ${ws.name}?`,
+      intro: [
+        ws.kind === 'worktree'
+          ? 'The worktree folder is removed. Its branch and the Claude conversation are kept, so you can restore it later.'
+          : 'The chat is hidden from the sidebar. You can restore it from Overview.',
+        ...(changed ? [`${changed} file(s) have uncommitted changes.`] : []),
+      ],
+      options: [
+        ...(changed ? [{ id: 'confirm-commit-archive', label: 'Commit changes, then archive', hint: 'recommended' }] : []),
+        { id: changed ? 'confirm-archive-force' : 'confirm-archive', label: changed ? 'Archive and discard uncommitted changes' : 'Archive', hint: '' },
+        { id: 'close', label: 'Cancel', hint: 'Esc' },
+      ],
+    };
+  }
+  return {
+    title: `Delete ${ws.name}?`,
+    intro: [
+      ws.kind === 'worktree' && !ws.external
+        ? `This deletes the worktree folder, the branch ${ws.branch ?? ''} and the conversation. This can't be undone.`
+        : "This removes it from klaude and deletes the conversation. This can't be undone.",
+    ],
+    options: [
+      { id: 'confirm-delete', label: 'Delete permanently', hint: '' },
+      { id: 'close', label: 'Cancel', hint: 'Esc' },
+    ],
+  };
+}
 
 const POLICY_LABELS = { ask: 'Ask me each time', auto: 'Everyone, without asking', deny: 'Nobody (private)' } as const;
 const TUNNEL_LABELS = { auto: 'Cloudflare, automatic', cloudflared: 'Cloudflare', ngrok: 'ngrok', none: 'Local network only' } as const;
@@ -106,5 +145,6 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
 export function menuSpec(state: AppState, menu: MenuKind): MenuSpec | undefined {
   if (menu.kind === 'welcome') return welcomeMenu(state);
   if (menu.kind === 'settings') return settingsMenu(state);
+  if (menu.kind === 'confirm') return confirmMenu(state, menu.action, menu.id);
   return personMenu(state, menu.index);
 }

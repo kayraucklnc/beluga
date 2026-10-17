@@ -226,7 +226,7 @@ describe('Session', () => {
     await kay.session.browserEnter(); // '..' goes back to root
     expect(kay.state().browser.at).toBeUndefined();
     await kay.session.browseTo({ owner: bob.session.selfId, share: 'nope', path: '' });
-    expect(kay.state().browser.error).toMatch(/No share/);
+    expect(kay.state().browser.error).toMatch(/not shared with you/);
   });
 
   it('follows a friend and their agent like Google Docs', async () => {
@@ -507,5 +507,51 @@ describe('Session hardening', () => {
     kay.session.submit('/zoom reset');
     await waitFor(() => kay.toasts.includes('zoom reset'));
     expect(kay.toasts).toEqual(expect.arrayContaining(['zoom in', 'zoom out', 'zoom reset']));
+  });
+
+  it('queues requests while busy, and urgent ones from you interrupt', async () => {
+    hub = await startHub({ keys });
+    let release!: () => void;
+    const kay = peer('kay', {
+      script: (input) =>
+        input.prompt === 'slow'
+          ? new Promise((resolve, reject) => {
+              release = () => resolve('slow done');
+              input.signal.addEventListener('abort', () => reject(new Error('aborted')));
+            })
+          : Promise.resolve(`did ${input.prompt}`),
+    });
+    await room(kay);
+    kay.session.submit('@claude slow');
+    await waitFor(() => kay.runs.length === 1);
+    kay.session.submit('@claude next');
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'queued'));
+    kay.session.submit('@claude now', true);
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'Interrupted by a newer message'));
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did now'));
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did next'));
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'now', 'next']);
+    void release;
+  });
+
+  it('shares folders at runtime and opens invites on demand', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    let invites = 0;
+    (kay.session as unknown as { opts: { startInvite: () => void } }).opts.startInvite = () => void invites++;
+    await room(kay, bob);
+    kay.session.submit(`/share ${kay.root} rw`);
+    await waitFor(() => bob.state().peers.find((p) => p.name === 'kay')?.shares.some((s) => s.writable && s.name === path.basename(kay.root)));
+    kay.session.submit('/share /definitely/missing');
+    expect(kay.toasts.at(-1)).toContain("doesn't exist");
+    kay.session.submit(`/unshare ${path.basename(kay.root)}`);
+    await waitFor(() => !bob.state().peers.find((p) => p.name === 'kay')?.shares.some((s) => s.name === path.basename(kay.root)));
+    kay.session.submit('/share');
+    kay.session.submit('/unshare');
+    expect(kay.toasts).toEqual(expect.arrayContaining(['Usage: /share <folder> [rw]', 'Usage: /unshare <name>']));
+    await kay.session.copyInvite();
+    expect(invites).toBe(1);
+    expect(kay.toasts.at(-1)).toContain('Opening a secure link');
   });
 });

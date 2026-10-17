@@ -98,24 +98,55 @@ describe('keymap: suggestions', () => {
   it('hides suggestions with Esc until the next edit', () => {
     const hidden = key(type(initialUi, '/f', c), { escape: true }, '', c).ui;
     expect(hidden.suggestHidden).toBe(true);
-    expect(key(hidden, { tab: true }, '', c).ui.focus).toBe('people'); // Tab now moves focus
+    expect(key(hidden, { tab: true }, '', c).ui.focus).toBe('projects'); // Tab now moves focus
     expect(key(hidden, {}, 'o', c).ui.suggestHidden).toBe(false);
     expect(key(initialUi, { escape: true }).ui).toBe(initialUi);
   });
 });
 
 describe('keymap: panels', () => {
-  it('cycles focus with Tab (chat → people → files → viewer) and returns with Esc', () => {
-    const people = key(initialUi, { tab: true }).ui;
+  it('cycles focus with Tab (chat → projects → people → files/main/viewer) and returns with Esc', () => {
+    const projects = key(initialUi, { tab: true }).ui;
+    expect(projects.focus).toBe('projects');
+    const people = key(projects, { tab: true }).ui;
     expect(people.focus).toBe('people');
-    const files = key(people, { tab: true }).ui;
+    expect(key(people, { tab: true }).ui.focus).toBe('chat');
+    const all = { ...ctx, hasViewer: true, filesVisible: true, mainFocusable: true };
+    const files = key(people, { tab: true }, '', all).ui;
     expect(files.focus).toBe('files');
-    expect(key(files, { tab: true }).ui.focus).toBe('chat');
-    const viewerCtx = { ...ctx, hasViewer: true };
-    expect(key(files, { tab: true }, '', viewerCtx).ui.focus).toBe('viewer');
-    expect(key(initialUi, { tab: true, shift: true }, '', viewerCtx).ui.focus).toBe('viewer');
+    expect(key(files, { tab: true }, '', all).ui.focus).toBe('main');
+    expect(key({ ...files, focus: 'main' }, { tab: true }, '', all).ui.focus).toBe('viewer');
+    expect(key(initialUi, { tab: true, shift: true }, '', all).ui.focus).toBe('viewer');
     expect(key(files, { escape: true }).ui.focus).toBe('chat');
-    expect(key({ ...initialUi, focus: 'viewer' }, { tab: true }).ui.focus).toBe('people'); // viewer gone → chat → people
+    expect(key({ ...initialUi, focus: 'viewer' }, { tab: true }).ui.focus).toBe('projects'); // viewer gone → chat → projects
+  });
+
+  it('navigates the Projects tree and opens items with Enter', () => {
+    const items = [{ type: 'toggle_project', id: 'p' }, { type: 'open_ws', id: 'w' }] as const;
+    const c = { ...ctx, projectItems: items };
+    const p: UiState = { ...initialUi, focus: 'projects' };
+    const down = key(p, { downArrow: true }, '', c).ui;
+    expect(down.projectsCursor).toBe(1);
+    expect(key(down, { downArrow: true }, '', c).ui.projectsCursor).toBe(1);
+    expect(key(down, { upArrow: true }, '', c).ui.projectsCursor).toBe(0);
+    expect(key(down, { return: true }, '', c).effect).toEqual({ type: 'ui_action', action: { type: 'open_ws', id: 'w' } });
+    expect(key(p, { pageDown: true }, '', c).ui.projectsCursor).toBe(1);
+    expect(key(down, { pageUp: true }, '', c).ui.projectsCursor).toBe(0);
+    expect(key(p, {}, 'x', c).ui).toMatchObject({ focus: 'chat', buffer: 'x' });
+  });
+
+  it('moves through review files and scrolls the diff', () => {
+    const m: UiState = { ...initialUi, focus: 'main' };
+    expect(key(m, { downArrow: true }).effect).toEqual({ type: 'review_move', delta: 1 });
+    expect(key(m, { upArrow: true }).effect).toEqual({ type: 'review_move', delta: -1 });
+    expect(key(m, { pageDown: true }).effect).toEqual({ type: 'review_scroll', delta: 18 });
+    expect(key(m, { pageUp: true }).effect).toEqual({ type: 'review_scroll', delta: -18 });
+    expect(key(m, {}, 'q').ui).toMatchObject({ focus: 'chat', buffer: 'q' });
+  });
+
+  it('Esc cancels naming a new worktree', () => {
+    const naming: UiState = { ...initialUi, buffer: 'half', cursor: 4, pending: { kind: 'worktree', projectId: 'p' } };
+    expect(key(naming, { escape: true }).ui).toMatchObject({ buffer: '', pending: undefined });
   });
 
   it('moves through people and opens their action menu', () => {
@@ -221,5 +252,14 @@ describe('keymap: global keys', () => {
   it('answers approvals even while help is open', () => {
     const c = { ...ctx, overlay: true, hasApproval: true };
     expect(key(initialUi, { ctrl: true }, 'y', c).effect).toEqual({ type: 'approve', answer: 'yes' });
+  });
+});
+
+describe('keymap: queue or send now', () => {
+  it('Enter queues; Alt+Enter / Ctrl+Enter send right away', () => {
+    const typed = [...'fix it'].reduce((u, ch) => handleKey(u, ch, {}, ctx).ui, initialUi);
+    expect(handleKey(typed, '', { return: true }, ctx).effect).toEqual({ type: 'submit', text: 'fix it' });
+    expect(handleKey(typed, '', { return: true, meta: true }, ctx).effect).toEqual({ type: 'submit', text: 'fix it', urgent: true });
+    expect(handleKey(typed, '', { return: true, ctrl: true }, ctx).effect).toEqual({ type: 'submit', text: 'fix it', urgent: true });
   });
 });
