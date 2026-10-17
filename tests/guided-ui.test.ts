@@ -64,7 +64,7 @@ describe('action bar', () => {
     const s = room();
     expect(actionButtons('chat', s, false).map((b) => b.id)).toEqual(['ask', 'commands', 'projects', 'invite', 'settings', 'help']);
     expect(actionButtons('chat', s, false).find((b) => b.id === 'invite')?.text).toBe('Invite friends');
-    expect(actionButtons('chat', reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w', tab: 'chat' } }), false).map((b) => b.id)).toEqual(['review', 'overview', 'projects', 'settings', 'help']);
+    expect(actionButtons('chat', reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w', tab: 'chat' } }), false).map((b) => b.id)).toEqual(['actions', 'review', 'overview', 'settings', 'help']);
     expect(actionButtons('projects', s, false).map((b) => b.id)).toEqual(['open-project-item', 'overview', 'chat']);
     expect(actionButtons('main', s, false).map((b) => b.id)).toContain('review-claude');
     expect(actionButtons('main', reduce(s, { type: 'view', view: { kind: 'overview' } }), false).map((b) => b.id)).toEqual(['scroll', 'chat']);

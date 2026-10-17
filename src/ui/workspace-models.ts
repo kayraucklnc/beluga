@@ -1,5 +1,5 @@
 import type { AppState, LogItem, ReviewState } from '../core/store.js';
-import type { Project, Workspace } from '../workspaces/types.js';
+import type { Project, ProjectGroup, Workspace } from '../workspaces/types.js';
 import { isRunning } from './format.js';
 import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate } from './text.js';
 import { SPINNER, glyph, theme } from './theme.js';
@@ -10,16 +10,46 @@ export interface Zone {
   readonly x1: number;
   readonly y: number;
   readonly action: UiAction;
+  /** Shown in the bottom bar while hovering: what clicking does. */
+  readonly hint?: string;
+  /** Visible but inactive (e.g. nothing to merge); clicking explains why. */
+  readonly disabled?: boolean;
 }
 
-export type WorkspaceAction = 'merge' | 'fork' | 'commit' | 'finder' | 'archive' | 'restore' | 'delete' | 'review_claude' | 'merge_claude' | 'compact';
+export type WorkspaceAction =
+  | 'merge'
+  | 'fork'
+  | 'commit'
+  | 'finder'
+  | 'archive'
+  | 'restore'
+  | 'delete'
+  | 'review_claude'
+  | 'merge_claude'
+  | 'compact';
+
+export type UiAction =
+  | { readonly type: 'open_ws'; readonly id: string; readonly tab?: 'chat' | 'files' | 'review' }
+  | { readonly type: 'toggle_project'; readonly id: string }
+  | { readonly type: 'toggle_group'; readonly name: string }
+  | { readonly type: 'toggle_archive'; readonly projectId: string }
+  | { readonly type: 'project_menu'; readonly id: string }
+  | { readonly type: 'archived_menu'; readonly id: string }
+  | { readonly type: 'new_worktree'; readonly projectId: string }
+  | { readonly type: 'new_chat'; readonly projectId: string }
+  | { readonly type: 'add_project' }
+  | { readonly type: 'view'; readonly view: AppState['view'] }
+  | { readonly type: 'close_tab'; readonly id: string }
+  | { readonly type: 'ws'; readonly id: string; readonly action: WorkspaceAction }
+  | { readonly type: 'review_file'; readonly index: number }
+  | { readonly type: 'none' };
+
+export interface Model {
+  readonly lines: readonly Line[];
+  readonly zones: readonly Zone[];
+}
 
 const COMPACT_ANIMATION_MS = 1600;
-
-/**
- * A context meter: "context ▰▰▰▰▱▱▱▱ 48% · 96k/200k". Right after a compaction it animates
- * shrinking from the old size to the new one.
- */
 export function contextMeter(state: AppState, channel: string, width: number, now = Date.now()): Line {
   const info = state.context[channel];
   if (!info) return [];
@@ -54,21 +84,7 @@ const fmtK = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : St
 export const isCompacting = (state: AppState, now = Date.now()): boolean =>
   Object.values(state.compactions).some((c) => now - c.at < COMPACT_ANIMATION_MS + 4000);
 
-export type UiAction =
-  | { readonly type: 'open_ws'; readonly id: string; readonly tab?: 'chat' | 'files' | 'review' }
-  | { readonly type: 'toggle_project'; readonly id: string }
-  | { readonly type: 'new_worktree'; readonly projectId: string }
-  | { readonly type: 'new_chat'; readonly projectId: string }
-  | { readonly type: 'add_project' }
-  | { readonly type: 'view'; readonly view: AppState['view'] }
-  | { readonly type: 'close_tab'; readonly id: string }
-  | { readonly type: 'ws'; readonly id: string; readonly action: WorkspaceAction }
-  | { readonly type: 'review_file'; readonly index: number };
 
-export interface Model {
-  readonly lines: readonly Line[];
-  readonly zones: readonly Zone[];
-}
 
 const ago = (ts: number, now: number): string => {
   const s = Math.max(0, Math.round((now - ts) / 1000));
@@ -109,124 +125,6 @@ export function activityOf(log: readonly LogItem[], channel: string): Activity {
   };
 }
 
-/** Status chips for a workspace: ahead, changed, archived, external. */
-function chips(ws: Workspace): Seg[] {
-  const out: Seg[] = [];
-  if (ws.archived) return [{ text: 'archived', color: theme.muted }];
-  if (ws.kind === 'chat') return [{ text: 'chat', color: theme.muted }];
-  const st = ws.status;
-  if (st?.ahead) out.push({ text: `↑${st.ahead}`, color: theme.info });
-  if (st?.behind) out.push({ text: `↓${st.behind}`, color: theme.muted });
-  if (st?.changed) out.push({ text: `✎${st.changed}`, color: theme.warn });
-  if (!out.length && ws.kind !== 'main') out.push({ text: '✓', color: theme.muted });
-  return out.flatMap((c, i) => (i ? [{ text: ' ' }, c] : [c]));
-}
-
-function dotFor(ws: Workspace, act: Activity, frame: number): Seg {
-  if (act.awaiting) return { text: glyph.wait, color: theme.warn };
-  if (act.running) return { text: SPINNER[frame % SPINNER.length] ?? '•', color: theme.claude };
-  if (ws.archived) return { text: glyph.ring, color: theme.border };
-  return { text: ws.kind === 'chat' ? '◇' : ws.kind === 'main' ? glyph.dot : glyph.dot, color: ws.kind === 'main' ? theme.text : theme.muted };
-}
-
-/** Left / right columns on one line, right side kept visible. */
-function split(left: Line, right: Line, width: number): Line {
-  const rw = lineWidth(right);
-  return [...pad(left, Math.max(1, width - rw - 1)), { text: ' ' }, ...right];
-}
-
-/** The Projects tree: projects, their worktrees/chats with live status, and add buttons. */
-/**
- * Whether a project is unfolded. By default projects with worktrees/chats (or the one you're in)
- * are open and plain ones are folded when you have many; `toggled` flips that default.
- */
-export function isProjectOpen(state: AppState, p: Project, toggled: ReadonlySet<string>): boolean {
-  const current = state.view.kind === 'workspace' ? state.view.id : undefined;
-  const busy = p.workspaces.some((w) => !w.archived && w.kind !== 'main') || p.workspaces.some((w) => w.id === current);
-  const byDefault = busy || !p.root || state.projects.length <= 6;
-  return toggled.has(p.id) ? !byDefault : byDefault;
-}
-
-export function projectsModel(state: AppState, collapsed: ReadonlySet<string>, frame: number, width: number): Model {
-  const lines: Line[] = [];
-  const zones: Zone[] = [];
-  const current = state.view.kind === 'workspace' ? state.view.id : undefined;
-  const row = (line: Line, action?: UiAction): void => {
-    if (action) zones.push({ x0: 0, x1: width - 1, y: lines.length, action });
-    lines.push(line);
-  };
-  if (!state.projects.some((p) => p.root)) {
-    row(plain('No projects found yet.', { color: theme.muted }));
-    row(plain('Add one with the button below.', { color: theme.muted }));
-  }
-  for (const p of state.projects) {
-    const open = isProjectOpen(state, p, collapsed);
-    const active = p.workspaces.filter((w) => activityOf(state.log, `ws:${w.id}`).running).length;
-    row(
-      split(
-        [{ text: open ? '▾ ' : '▸ ', color: theme.muted }, { text: p.name, bold: true, color: theme.text }],
-        active ? [{ text: `${SPINNER[frame % SPINNER.length]} ${active}`, color: theme.claude }] : p.error ? [{ text: '!', color: theme.error }] : [],
-        width,
-      ),
-      { type: 'toggle_project', id: p.id },
-    );
-    if (!open) continue;
-    for (const ws of p.workspaces.filter((w) => !w.archived)) {
-      const act = activityOf(state.log, `ws:${ws.id}`);
-      const selected = ws.id === current;
-      const name: Seg = { text: ws.name, color: selected ? theme.accent : ws.external ? theme.muted : theme.text, bold: selected };
-      const unread = state.unread[`ws:${ws.id}`];
-      row(
-        split(
-          [{ text: selected ? '▌' : ' ' , color: theme.accent }, { text: ' ' }, dotFor(ws, act, frame), { text: ' ' }, name, ...(unread ? [{ text: ` ${unread}`, color: theme.claude }] : [])],
-          chips(ws),
-          width,
-        ),
-        { type: 'open_ws', id: ws.id },
-      );
-    }
-    const archived = p.workspaces.filter((w) => w.archived).length;
-    if (p.root) row([{ text: '   + ', color: theme.muted }, { text: 'New worktree', color: theme.muted }], { type: 'new_worktree', projectId: p.id });
-    row([{ text: '   + ', color: theme.muted }, { text: p.root ? 'New chat' : 'New Claude chat', color: p.root ? theme.muted : theme.text }], { type: 'new_chat', projectId: p.id });
-    if (archived) row(plain(`     ${archived} archived · /overview`, { color: theme.border }), { type: 'view', view: { kind: 'overview' } });
-  }
-  row([]);
-  row([{ text: '+ ', color: theme.accent }, { text: 'Add project or folder', color: theme.text }], { type: 'add_project' });
-  return { lines, zones };
-}
-
-/** Tabs across the top of the main area. */
-export function tabsModel(state: AppState, width: number): Model {
-  const segs: Seg[] = [];
-  const zones: Zone[] = [];
-  let x = 0;
-  const tab = (label: string, active: boolean, action: UiAction, close?: UiAction, badge?: number): void => {
-    const text = ` ${label}${badge ? ` ${badge}` : ''} `;
-    segs.push({ text, color: active ? theme.text : theme.muted, bold: active, inverse: false });
-    zones.push({ x0: x, x1: x + text.length - 1, y: 0, action });
-    x += text.length;
-    if (close) {
-      segs.push({ text: '✕ ', color: theme.border });
-      zones.push({ x0: x, x1: x + 1, y: 0, action: close });
-      x += 2;
-    }
-    segs.push({ text: '│', color: theme.border });
-    x += 1;
-  };
-  const v = state.view;
-  tab('# Room', v.kind === 'room', { type: 'view', view: { kind: 'room' } }, undefined, state.unread.room);
-  tab('▤ Shared files', v.kind === 'files', { type: 'view', view: { kind: 'files' } });
-  tab('▦ Overview', v.kind === 'overview', { type: 'view', view: { kind: 'overview' } });
-  for (const id of state.tabs) {
-    const ws = findWorkspace(state.projects, id);
-    if (!ws) continue;
-    const active = v.kind === 'workspace' && v.id === id;
-    tab(ws.name, active, { type: 'open_ws', id }, { type: 'close_tab', id }, state.unread[`ws:${id}`]);
-  }
-  const underline: Line = [{ text: '─'.repeat(Math.max(0, width)), color: theme.border }];
-  return { lines: [truncate(segs, width), underline], zones: zones.filter((z) => z.x0 < width) };
-}
-
 export function findWorkspace(projects: readonly Project[], id: string): Workspace | undefined {
   for (const p of projects) {
     const ws = p.workspaces.find((w) => w.id === id);
@@ -235,30 +133,213 @@ export function findWorkspace(projects: readonly Project[], id: string): Workspa
   return undefined;
 }
 
-const CARD_HEIGHT = 7;
+/** Left / right columns on one line, right side kept visible. */
+function split(left: Line, right: Line, width: number): Line {
+  const rw = lineWidth(right);
+  return [...pad(left, Math.max(1, width - rw - 1)), { text: ' ' }, ...right];
+}
 
-/** One card per workspace across all projects: the glance view. */
+// ---------------------------------------------------------------- state words
+
+export interface WorkspaceState {
+  readonly label: string;
+  readonly color: string;
+  readonly icon: string;
+}
+
+/** One plain-language phrase for a workspace's state, used everywhere it's shown. */
+export function stateOf(state: AppState, ws: Workspace, frame: number, now = Date.now()): WorkspaceState {
+  const act = activityOf(state.log, `ws:${ws.id}`);
+  const spin = SPINNER[frame % SPINNER.length] ?? '•';
+  if (state.conflicts[ws.id]?.length) return { label: 'Merge conflict', color: theme.error, icon: '!' };
+  if (act.awaiting) return { label: 'Needs your approval', color: theme.warn, icon: glyph.wait };
+  if (act.running) {
+    const extra = act.subagents ? ` · ${act.subagents} sub-agent${act.subagents > 1 ? 's' : ''}` : act.background ? ' · background task' : '';
+    return { label: `Claude working${act.startedAt ? ` ${formatDuration(now - act.startedAt)}` : ''}${extra}`, color: theme.claude, icon: spin };
+  }
+  if (ws.archived) return { label: 'Archived', color: theme.muted, icon: glyph.ring };
+  if (ws.kind === 'chat') return { label: act.lastTs ? `Chat · ${ago(act.lastTs, now)}` : 'New chat', color: theme.muted, icon: '◇' };
+  const st = ws.status;
+  if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.warn, icon: glyph.dot };
+  if (ws.kind === 'worktree' && st?.ahead) return { label: `Ready to merge · ${st.ahead} commit${st.ahead > 1 ? 's' : ''}`, color: theme.info, icon: glyph.dot };
+  return { label: ws.kind === 'main' ? 'Main folder' : 'Up to date', color: theme.ok, icon: glyph.dot };
+}
+
+const BRANCH = '⌥'; // in every common terminal font, and it looks like a fork
+
+// ---------------------------------------------------------------- sidebar
+
+/**
+ * Whether a project is unfolded: folded by default (only the one you're in opens itself);
+ * `toggled` flips that.
+ */
+export function isProjectOpen(state: AppState, p: Project, toggled: ReadonlySet<string>): boolean {
+  const current = state.view.kind === 'workspace' ? state.view.id : undefined;
+  const byDefault = p.workspaces.some((w) => w.id === current) || !p.root;
+  return toggled.has(p.id) ? !byDefault : byDefault;
+}
+
+const section = (title: string, color: string): Seg[] => [{ text: title, color, bold: true }];
+
+/**
+ * The sidebar: CHATS, then PROJECTS (and your groups). Each project row has compact
+ * "+⌥" (new worktree) and "+◇" (new chat) buttons and a "⋯" menu.
+ */
+export function projectsModel(state: AppState, toggled: ReadonlySet<string>, frame: number, width: number): Model {
+  const lines: Line[] = [];
+  const zones: Zone[] = [];
+  const current = state.view.kind === 'workspace' ? state.view.id : undefined;
+  const add = (line: Line, action?: UiAction, hint?: string): void => {
+    if (action) zones.push({ x0: 0, x1: width - 1, y: lines.length, action, hint });
+    lines.push(line);
+  };
+  /** A row with extra buttons on the right; each button is its own click target. */
+  const addWithButtons = (left: Line, buttons: Array<{ label: string; color: string; action: UiAction; hint: string }>, rowAction: UiAction, rowHint: string): void => {
+    const right: Seg[] = [];
+    buttons.forEach((b, i) => {
+      if (i) right.push({ text: ' ' });
+      right.push({ text: b.label, color: b.color });
+    });
+    const y = lines.length;
+    const rw = lineWidth(right);
+    let x = width - rw;
+    buttons.forEach((b) => {
+      zones.push({ x0: x, x1: x + b.label.length - 1, y, action: b.action, hint: b.hint });
+      x += b.label.length + 1;
+    });
+    zones.push({ x0: 0, x1: width - rw - 2, y, action: rowAction, hint: rowHint });
+    lines.push(split(left, right, width));
+  };
+
+  const wsRow = (ws: Workspace, indent: string): void => {
+    const st = stateOf(state, ws, frame);
+    const selected = ws.id === current;
+    const icon = ws.kind === 'chat' ? '◇' : ws.kind === 'main' ? '⌂' : BRANCH;
+    const unread = state.unread[`ws:${ws.id}`];
+    const left: Line = [
+      { text: selected ? '▌' : ' ', color: theme.accent },
+      { text: indent },
+      { text: `${icon} `, color: selected ? theme.accent : theme.muted },
+      { text: ws.name, color: selected ? theme.text : ws.external ? theme.muted : theme.text, bold: selected },
+      ...(unread ? [{ text: ` ${unread}`, color: theme.claude, bold: true }] : []),
+    ];
+    const right: Line = [{ text: st.icon, color: st.color }];
+    add(split(left, right, width), { type: 'open_ws', id: ws.id }, `Open ${ws.name}: ${st.label}`);
+  };
+
+  // CHATS
+  const chats = state.projects.find((p) => !p.root);
+  addWithButtons(section('CHATS', theme.claude), [{ label: '+ new', color: theme.claude, action: { type: 'new_chat', projectId: 'chats' }, hint: 'Start a Claude chat that is not tied to any project' }], { type: 'none' }, '');
+  const liveChats = chats?.workspaces.filter((w) => !w.archived) ?? [];
+  if (!liveChats.length) add(plain('  Talk to Claude about anything', { color: theme.border }));
+  for (const ws of liveChats) wsRow(ws, ' ');
+  lines.push([]);
+
+  // PROJECTS, grouped
+  const repos = state.projects.filter((p) => p.root);
+  const grouped = new Map<string, Project[]>();
+  const loose: Project[] = [];
+  for (const p of repos) {
+    const g = state.projectGroups.find((x) => x.projects.includes(p.root));
+    if (g) grouped.set(g.name, [...(grouped.get(g.name) ?? []), p]);
+    else loose.push(p);
+  }
+  const projectBlock = (p: Project): void => {
+    const open = isProjectOpen(state, p, toggled);
+    const busy = p.workspaces.some((w) => activityOf(state.log, `ws:${w.id}`).running);
+    const worktrees = p.workspaces.filter((w) => !w.archived && w.kind !== 'main').length;
+    addWithButtons(
+      [
+        { text: open ? '▾ ' : '▸ ', color: theme.muted },
+        { text: '▣ ', color: theme.info },
+        { text: p.name, color: theme.text, bold: true },
+        ...(busy ? [{ text: ` ${SPINNER[frame % SPINNER.length]}`, color: theme.claude }] : worktrees && !open ? [{ text: ` ${worktrees}`, color: theme.muted }] : []),
+      ],
+      [
+        { label: `+${BRANCH}`, color: theme.info, action: { type: 'new_worktree', projectId: p.id }, hint: `New worktree in ${p.name} from the latest origin` },
+        { label: '+◇', color: theme.claude, action: { type: 'new_chat', projectId: p.id }, hint: `New Claude chat in ${p.name}'s main folder` },
+        { label: '⋯', color: theme.muted, action: { type: 'project_menu', id: p.id }, hint: `More for ${p.name}: groups, hide, Finder` },
+      ],
+      { type: 'toggle_project', id: p.id },
+      open ? `Collapse ${p.name}` : `Expand ${p.name}`,
+    );
+    if (!open) return;
+    for (const ws of p.workspaces.filter((w) => !w.archived)) wsRow(ws, '  ');
+    const archived = p.workspaces.filter((w) => w.archived);
+    if (archived.length) {
+      const showing = toggled.has(`archive:${p.id}`);
+      add(plain(`    ${showing ? '▾' : '▸'} Archived (${archived.length})`, { color: theme.muted }), { type: 'toggle_archive', projectId: p.id }, showing ? 'Hide archived workspaces' : 'Show archived workspaces');
+      if (showing) {
+        for (const ws of archived) {
+          add([{ text: '      ' }, { text: `${glyph.ring} ${ws.name}`, color: theme.muted }], { type: 'archived_menu', id: ws.id }, `${ws.name}: restore, open folder, or delete`);
+        }
+      }
+    }
+  };
+
+  addWithButtons(section('PROJECTS', theme.info), [{ label: '+ add', color: theme.info, action: { type: 'add_project' }, hint: 'Add a project, or a folder of projects' }], { type: 'none' }, '');
+  if (!repos.length) add(plain('  No projects found yet', { color: theme.border }));
+  for (const p of loose) projectBlock(p);
+  for (const [name, list] of grouped) {
+    lines.push([]);
+    const open = !toggled.has(`group:${name}`);
+    add([{ text: open ? '▾ ' : '▸ ', color: theme.muted }, { text: name.toUpperCase(), color: theme.accent, bold: true }, { text: ` ${list.length}`, color: theme.muted }], { type: 'toggle_group', name }, open ? `Collapse ${name}` : `Expand ${name}`);
+    if (open) for (const p of list) projectBlock(p);
+  }
+  return { lines, zones };
+}
+
+/** Three clear tabs: the group chat with everyone, shared files, and the overview of all work. */
+export function tabsModel(state: AppState, width: number): Model {
+  const segs: Seg[] = [];
+  const zones: Zone[] = [];
+  let x = 0;
+  const v = state.view;
+  const tab = (label: string, active: boolean, action: UiAction, hint: string, badge?: number): void => {
+    const text = ` ${label}${badge ? ` (${badge})` : ''} `;
+    segs.push({ text, color: active ? theme.text : theme.muted, bold: active, inverse: active });
+    zones.push({ x0: x, x1: x + text.length - 1, y: 0, action, hint });
+    x += text.length;
+    segs.push({ text: '  ' });
+    x += 2;
+  };
+  tab('Group chat', v.kind === 'room', { type: 'view', view: { kind: 'room' } }, 'Chat with everyone in the room and their Claudes', state.unread.room);
+  tab('Shared files', v.kind === 'files', { type: 'view', view: { kind: 'files' } }, "Browse folders people in the room share");
+  tab('Overview', v.kind === 'overview', { type: 'view', view: { kind: 'overview' } }, 'Every worktree and chat at a glance');
+  if (v.kind === 'workspace') {
+    const ws = findWorkspace(state.projects, v.id);
+    if (ws) segs.push({ text: `›  ${ws.name}`, color: theme.accent, bold: true });
+  }
+  if (v.kind === 'draft') segs.push({ text: '›  New chat', color: theme.accent, bold: true });
+  return { lines: [truncate(segs, width), [{ text: '─'.repeat(Math.max(0, width)), color: theme.border }]], zones: zones.filter((z) => z.x0 < width) };
+}
+
+// ---------------------------------------------------------------- overview
+
+const CARD_HEIGHT = 5;
+
+/** One clear card per workspace: name, one state phrase, and two or three buttons. */
 export function overviewModel(state: AppState, frame: number, width: number, now = Date.now()): Model {
   const lines: Line[] = [];
   const zones: Zone[] = [];
-  const all = state.projects.flatMap((p) => p.workspaces.map((w) => ({ p, w })));
-  const live = all.filter(({ w }) => !w.archived);
-  const archived = all.filter(({ w }) => w.archived);
-  const working = live.filter(({ w }) => activityOf(state.log, `ws:${w.id}`).running).length;
+  const all = state.projects.flatMap((p) => p.workspaces.filter((w) => !w.archived && w.kind !== 'main').map((w) => ({ p, w })));
+  const working = all.filter(({ w }) => activityOf(state.log, `ws:${w.id}`).running).length;
+  const needsYou = all.filter(({ w }) => state.conflicts[w.id]?.length || activityOf(state.log, `ws:${w.id}`).awaiting).length;
   lines.push([
-    { text: `${state.projects.filter((p) => p.root).length} projects · ${live.length} workspaces`, color: theme.text, bold: true },
-    { text: working ? `  ·  ${working} with Claude working` : '', color: theme.claude },
+    { text: `${all.length} active`, color: theme.text, bold: true },
+    { text: working ? `   ${SPINNER[frame % SPINNER.length]} ${working} working` : '', color: theme.claude },
+    { text: needsYou ? `   ${glyph.wait} ${needsYou} need you` : '', color: theme.warn },
   ]);
   lines.push([]);
-  if (!live.length) {
-    lines.push(plain('No workspaces yet. Use "+ New worktree" under a project on the left.', { color: theme.muted }));
+  if (!all.length) {
+    lines.push(plain('Nothing in progress. Use +⌥ on a project to start a worktree, or + new under CHATS.', { color: theme.muted }));
     return { lines, zones };
   }
   const cols = width >= 120 ? 3 : width >= 76 ? 2 : 1;
   const gap = 2;
   const cardW = Math.floor((width - gap * (cols - 1)) / cols);
-  for (let i = 0; i < live.length; i += cols) {
-    const rowCards = live.slice(i, i + cols).map(({ p, w }) => card(state, p, w, activityOf(state.log, `ws:${w.id}`), frame, cardW, now));
+  for (let i = 0; i < all.length; i += cols) {
+    const rowCards = all.slice(i, i + cols).map(({ p, w }) => card(state, p, w, frame, cardW, now));
     const top = lines.length;
     for (let r = 0; r < CARD_HEIGHT; r++) {
       const segs: Seg[] = [];
@@ -272,118 +353,122 @@ export function overviewModel(state: AppState, frame: number, width: number, now
       const x = ci * (cardW + gap);
       for (const z of c.zones) zones.push({ ...z, x0: z.x0 + x, x1: z.x1 + x, y: z.y + top });
     });
-    lines.push([]);
-  }
-  if (archived.length) {
-    lines.push(plain(`Archived (${archived.length})`, { color: theme.muted, bold: true }));
-    for (const { p, w } of archived) {
-      const y = lines.length;
-      lines.push([
-        { text: `  ${glyph.ring} ${p.name} › ${w.name}`, color: theme.muted },
-        { text: '   Restore', color: theme.info },
-        { text: '   Delete', color: theme.error },
-      ]);
-      const base = `  ${glyph.ring} ${p.name} › ${w.name}`.length;
-      zones.push({ x0: base + 3, x1: base + 9, y, action: { type: 'ws', id: w.id, action: 'restore' } });
-      zones.push({ x0: base + 13, x1: base + 18, y, action: { type: 'ws', id: w.id, action: 'delete' } });
-    }
   }
   return { lines, zones };
 }
 
-function card(state: AppState, p: Project, w: Workspace, act: Activity, frame: number, width: number, now: number): Model {
+function card(state: AppState, p: Project, w: Workspace, frame: number, width: number, now: number): Model {
   const inner = width - 4;
-  const border = act.awaiting ? theme.warn : act.running ? theme.claude : theme.border;
+  const st = stateOf(state, w, frame, now);
+  const border = st.color === theme.ok || st.color === theme.muted ? theme.border : st.color;
   const b = (t: string): Seg => ({ text: t, color: border });
-  const title: Line = [{ text: p.name, color: theme.muted }, { text: ' › ', color: theme.border }, { text: w.name, color: theme.text, bold: true }];
-  const sub: Line = w.kind === 'chat' ? plain(p.root ? 'chat in main folder' : 'Claude chat', { color: theme.muted }) : [{ text: w.branch ?? 'detached', color: theme.muted }, { text: '  ' }, ...chips(w)];
-  const status: Line = act.awaiting
-    ? [{ text: `${glyph.wait} needs your approval`, color: theme.warn }]
-    : act.running
-      ? [
-          { text: `${SPINNER[frame % SPINNER.length]} Claude working`, color: theme.claude },
-          { text: act.startedAt ? ` · ${formatDuration(now - act.startedAt)}` : '', color: theme.muted },
-          { text: act.subagents ? ` · ${act.subagents} sub-agent${act.subagents > 1 ? 's' : ''}` : '', color: theme.claude },
-          { text: act.background ? ` · ${act.background} in background` : '', color: theme.info },
-        ]
-      : [{ text: act.lastTs ? `idle · ${ago(act.lastTs, now)}` : 'no conversation yet', color: theme.muted }];
-  const ctx = contextMeter(state, `ws:${w.id}`, 8, now);
-  const last: Line = ctx.length ? ctx : plain(act.last ? `"${act.last}"` : ' ', { color: theme.muted, italic: true });
-  const buttons: Array<{ label: string; action: UiAction }> = [
-    { label: 'Open', action: { type: 'open_ws', id: w.id } },
-    ...(w.kind !== 'chat' ? [{ label: 'Review', action: { type: 'open_ws', id: w.id, tab: 'review' } as UiAction }] : []),
-    ...(w.kind === 'worktree' ? [{ label: 'Merge', action: { type: 'ws', id: w.id, action: 'merge' } as UiAction }] : []),
+  const icon = w.kind === 'chat' ? '◇' : BRANCH;
+  const title: Line = [{ text: `${icon} `, color: theme.muted }, { text: w.name, color: theme.text, bold: true }, { text: p.root ? `  ${p.name}` : '', color: theme.muted }];
+  const status: Line = [{ text: `${st.icon} `, color: st.color }, { text: st.label, color: st.color }];
+  const buttons: Array<{ label: string; action: UiAction; hint: string }> = [
+    { label: 'Open', action: { type: 'open_ws', id: w.id }, hint: `Open ${w.name}` },
+    ...(state.conflicts[w.id]?.length ? [{ label: 'Solve conflict', action: { type: 'ws', id: w.id, action: 'merge_claude' } as UiAction, hint: 'Ask Claude to resolve the merge conflict' }] : []),
+    ...(w.kind === 'worktree' && (w.status?.ahead ?? 0) > 0 && !(w.status?.changed ?? 0) && !state.conflicts[w.id]?.length
+      ? [{ label: 'Merge', action: { type: 'ws', id: w.id, action: 'merge' } as UiAction, hint: `Merge ${w.branch} into ${p.name}'s main folder` }]
+      : []),
   ];
   const zones: Zone[] = [];
   const btnSegs: Seg[] = [];
   let x = 2;
   for (const btn of buttons) {
-    zones.push({ x0: x, x1: x + btn.label.length + 1, y: 5, action: btn.action });
-    btnSegs.push({ text: `[${btn.label}]`, color: theme.info }, { text: ' ' });
-    x += btn.label.length + 3;
+    const label = ` ${btn.label} `;
+    zones.push({ x0: x, x1: x + label.length - 1, y: 3, action: btn.action, hint: btn.hint });
+    btnSegs.push({ text: label, color: theme.text, inverse: true }, { text: ' ' });
+    x += label.length + 1;
   }
-  zones.push({ x0: 0, x1: width - 1, y: 1, action: { type: 'open_ws', id: w.id } });
-  const rows = [title, sub, status, last, btnSegs];
+  zones.push({ x0: 0, x1: width - 1, y: 1, action: { type: 'open_ws', id: w.id }, hint: `Open ${w.name}` });
+  const rows = [title, status, btnSegs];
   return {
-    lines: [
-      [b('╭'), b('─'.repeat(width - 2)), b('╮')],
-      ...rows.map((l) => [b('│ '), ...pad(l, inner), b(' │')]),
-      [b('╰'), b('─'.repeat(width - 2)), b('╯')],
-    ],
+    lines: [[b('╭'), b('─'.repeat(width - 2)), b('╮')], ...rows.map((l) => [b('│ '), ...pad(l, inner), b(' │')]), [b('╰'), b('─'.repeat(width - 2)), b('╯')]],
     zones,
   };
 }
 
-/** Workspace header: where you are, its state, and every action as a button. */
-export function workspaceHeaderModel(state: AppState, ws: Workspace, width: number): Model {
+// ---------------------------------------------------------------- workspace header
+
+/**
+ * Workspace header: where you are + state, the Chat/Files/Diff tabs, and every action as
+ * a button. Buttons that can't do anything right now are dimmed and explain why.
+ */
+export function workspaceHeaderModel(state: AppState, ws: Workspace, width: number, frame = 0): Model {
   const project = state.projects.find((p) => p.id === ws.projectId);
   const view = state.view.kind === 'workspace' ? state.view : undefined;
+  const st = stateOf(state, ws, frame);
   const zones: Zone[] = [];
   const title: Line = [
-    { text: project?.name ?? '', color: theme.muted },
-    { text: ' › ', color: theme.border },
+    { text: project?.root ? `${project.name} › ` : '', color: theme.muted },
     { text: ws.name, color: theme.text, bold: true },
-    { text: ws.kind === 'chat' ? (ws.projectRoot ? '   chat in main folder' : '   Claude chat · its own folder') : `   ${ws.branch ?? ''}${ws.base ? ` from ${ws.base}` : ''}`, color: theme.muted },
+    { text: ws.kind === 'chat' ? (ws.projectRoot ? '  chat in main folder' : '  Claude chat') : ws.branch ? `  ${BRANCH} ${ws.branch}` : '', color: theme.muted },
     { text: '   ' },
-    ...chips(ws),
-    ...(ws.external ? [{ text: '   made outside klaude', color: theme.muted }] : []),
+    { text: `${st.icon} ${st.label}`, color: st.color },
   ];
-  const tabs: Array<[string, 'chat' | 'files' | 'review']> = ws.kind === 'chat' ? [['Chat', 'chat'], ['Files', 'files']] : [['Chat', 'chat'], ['Files', 'files'], ['Review', 'review']];
-  const actions: Array<[string, WorkspaceAction]> = ws.archived
-    ? [['Restore', 'restore'], ['Delete', 'delete']]
+  const tabs: Array<[string, 'chat' | 'files' | 'review', string]> =
+    ws.kind === 'chat'
+      ? [['Chat', 'chat', 'Your conversation with Claude'], ['Files', 'files', 'Browse this folder']]
+      : [['Chat', 'chat', 'Your conversation with Claude'], ['Files', 'files', 'Browse this folder'], ['Diff', 'review', 'See exactly what changed']];
+  const changed = ws.status?.changed ?? 0;
+  const ahead = ws.status?.ahead ?? 0;
+  const conflict = Boolean(state.conflicts[ws.id]?.length);
+  type Btn = { label: string; action: WorkspaceAction; hint: string; disabled?: boolean; danger?: boolean };
+  const buttons: Btn[] = ws.archived
+    ? [
+        { label: 'Restore', action: 'restore', hint: 'Bring this workspace back' },
+        { label: 'Delete', action: 'delete', hint: 'Delete permanently', danger: true },
+      ]
     : [
-        ...(state.context[`ws:${ws.id}`] ? ([['Compact', 'compact']] as Array<[string, WorkspaceAction]>) : []),
-        ...(ws.kind === 'worktree' ? ([['Merge', 'merge'], ['Commit', 'commit']] as Array<[string, WorkspaceAction]>) : []),
-        ...(ws.kind !== 'chat' ? ([['Fork', 'fork']] as Array<[string, WorkspaceAction]>) : []),
-        ['Finder', 'finder'],
-        ...(ws.kind !== 'main' ? ([['Archive', 'archive']] as Array<[string, WorkspaceAction]>) : []),
+        { label: 'Review', action: 'review_claude', hint: 'Ask Claude to check everything: bugs, security, tests and quality' },
+        ...(ws.kind === 'worktree'
+          ? ([
+              { label: 'Commit', action: 'commit', hint: changed ? `Commit ${changed} changed file(s)` : 'Nothing to commit', disabled: !changed },
+              conflict
+                ? { label: 'Solve conflict', action: 'merge_claude', hint: 'Ask Claude to resolve the merge conflict and finish the merge' }
+                : {
+                    label: 'Merge',
+                    action: 'merge',
+                    hint: changed ? 'Commit your changes first' : ahead ? `Merge ${ahead} commit(s) into ${project?.name ?? 'the'} main folder` : 'Nothing to merge yet',
+                    disabled: !ahead || changed > 0,
+                  },
+            ] as Btn[])
+          : []),
+        ...(state.context[`ws:${ws.id}`] ? ([{ label: 'Compact', action: 'compact', hint: 'Shrink the conversation so Claude has room to keep going' }] as Btn[]) : []),
+        ...(ws.kind !== 'chat' ? ([{ label: 'Fork', action: 'fork', hint: 'Copy this workspace and its conversation into a new worktree' }] as Btn[]) : []),
+        { label: 'Finder', action: 'finder', hint: 'Open this folder in Finder' },
+        ...(ws.kind !== 'main' ? ([{ label: 'Archive', action: 'archive', hint: 'Put it away; keeps the branch and conversation' }] as Btn[]) : []),
       ];
   const segs: Seg[] = [];
   let x = 0;
-  for (const [label, tab] of tabs) {
+  for (const [label, tab, hint] of tabs) {
     const active = view?.tab === tab;
-    const text = active ? `▍${label} ` : ` ${label} `;
-    segs.push({ text, color: active ? theme.accent : theme.muted, bold: active });
-    zones.push({ x0: x, x1: x + text.length - 1, y: 1, action: { type: 'open_ws', id: ws.id, tab } });
-    x += text.length + 1;
+    const text = ` ${label} `;
+    segs.push({ text, color: active ? theme.text : theme.muted, bold: active, inverse: active });
+    zones.push({ x0: x, x1: x + text.length - 1, y: 1, action: { type: 'open_ws', id: ws.id, tab }, hint });
+    x += text.length;
     segs.push({ text: ' ' });
+    x += 1;
   }
-  segs.push({ text: '   ' });
-  x += 3;
-  for (const [label, action] of actions) {
-    const text = `${label}`;
-    segs.push({ text, color: action === 'delete' ? theme.error : theme.text });
-    zones.push({ x0: x, x1: x + text.length - 1, y: 1, action: { type: 'ws', id: ws.id, action } });
-    segs.push({ text: '  ·  ', color: theme.border });
-    x += text.length + 5;
+  segs.push({ text: '│ ', color: theme.border });
+  x += 2;
+  for (const btn of buttons) {
+    const text = ` ${btn.label} `;
+    segs.push({ text, color: btn.disabled ? theme.border : btn.danger ? theme.error : btn.label === 'Solve conflict' ? theme.error : theme.text, bold: !btn.disabled });
+    zones.push({ x0: x, x1: x + text.length - 1, y: 1, action: { type: 'ws', id: ws.id, action: btn.action }, hint: btn.hint, disabled: btn.disabled });
+    x += text.length;
   }
-  // Context meter on the right of the title line.
+  const third: Line = conflict
+    ? [{ text: `! Merge conflict in ${state.conflicts[ws.id]?.join(', ')}`, color: theme.error, bold: true }, { text: '   Click "Solve conflict" and Claude will resolve it', color: theme.muted }]
+    : [{ text: '─'.repeat(width), color: theme.border }];
   const meter = contextMeter(state, `ws:${ws.id}`, 12);
   const titleLine = meter.length ? split(title, meter, width) : truncate(title, width);
-  return { lines: [titleLine, truncate(segs.slice(0, -1), width), [{ text: '─'.repeat(width), color: theme.border }]], zones: zones.filter((z) => z.x0 < width) };
+  return { lines: [titleLine, truncate(segs, width), truncate(third, width)], zones: zones.filter((z) => z.x0 < width) };
 }
 
-/** Review screen: changed files on the left, the selected file's diff on the right. */
+// ---------------------------------------------------------------- review (diff)
+
 export function reviewModel(review: ReviewState | undefined, width: number, height: number): Model {
   const lines: Line[] = [];
   const zones: Zone[] = [];

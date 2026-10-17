@@ -32,7 +32,7 @@ export class WorkspaceStore {
 
   loadConfig(): ProjectsConfig {
     const raw = readJson<Partial<ProjectsConfig>>(path.join(this.home, 'projects.json'), {});
-    return { roots: raw.roots ?? DEFAULT_ROOTS, projects: raw.projects ?? [], hidden: raw.hidden ?? [] };
+    return { roots: raw.roots ?? DEFAULT_ROOTS, projects: raw.projects ?? [], hidden: raw.hidden ?? [], groups: raw.groups ?? [] };
   }
 
   saveConfig(config: ProjectsConfig): void {

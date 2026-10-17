@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -92,11 +92,16 @@ describe('WorkspaceController', () => {
     writeFileSync(path.join(repo, 'a.txt'), 'three\n');
     sh(repo, 'commit', '-am', 'main edit');
     await ctl.merge(ws.id);
-    expect(toasts.some((t) => t.includes('Merge conflicts'))).toBe(true);
+    expect(toasts.some((t) => t.includes('Merge conflict in 1 file'))).toBe(true);
+    expect(store.getState().conflicts[ws.id]).toEqual(['a.txt']); // shown as a banner with "Solve conflict"
+    expect(asked).toHaveLength(0); // nothing happens until you click it
+    ctl.askClaudeToMerge(ws.id);
     expect(asked[0]?.prompt).toContain(`Merge branch ${ws.branch}`);
+    expect(asked[0]?.prompt).toContain('Conflicting files: a.txt');
     expect(asked[0]?.channel).toBe(`ws:${ws.id}`);
     ctl.askClaudeToReview(ws.id);
-    expect(asked[1]?.prompt).toContain('Review all changes');
+    expect(asked[1]?.prompt).toMatch(/security/i);
+    expect(asked[1]?.prompt).toContain('ready to merge');
   });
 
   it('merges cleanly, refuses a dirty main folder, forks, archives, restores and deletes', async () => {
@@ -121,6 +126,25 @@ describe('WorkspaceController', () => {
     expect(ctl.manager.find(fork.id)).toBeUndefined();
     expect(await ctl.archive('missing')).toBe(false);
     expect(toasts.some((t) => t.startsWith("Couldn't archive"))).toBe(true);
+  });
+
+  it('turns a draft into a chat with the first message, in the folder klaude started in', async () => {
+    const launch = path.dirname(repo);
+    await ctl.startChat('chats', 'explain   this repo please', launch);
+    const chat = store.getState().projects.find((p) => p.id === 'chats')!.workspaces[0]!;
+    expect(chat).toMatchObject({ name: 'explain this repo please', path: launch, kind: 'chat' });
+    expect(asked.at(-1)).toEqual({ prompt: 'explain   this repo please', channel: `ws:${chat.id}` });
+    await ctl.remove(chat.id);
+    expect(existsSync(launch)).toBe(true); // never deletes a folder you started a chat in
+  });
+
+  it('organizes projects into groups and hides them', async () => {
+    await ctl.setGroup(projectId(), 'work');
+    expect(store.getState().projectGroups).toEqual([{ name: 'work', projects: [repo] }]);
+    await ctl.setGroup(projectId(), undefined);
+    expect(store.getState().projectGroups).toEqual([]);
+    await ctl.hideProject(projectId());
+    expect(store.getState().projects.filter((p) => p.root)).toEqual([]);
   });
 
   it('starts chats and adds projects or folders', async () => {

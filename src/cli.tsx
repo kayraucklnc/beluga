@@ -165,6 +165,7 @@ async function main(): Promise<void> {
           })
       : undefined,
     onQuit: () => void shutdown(),
+    launchDir: process.cwd(),
   });
 
   const shutdown = async (): Promise<void> => {

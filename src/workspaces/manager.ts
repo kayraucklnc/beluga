@@ -6,7 +6,7 @@ import { findProjects, isMainCheckout } from './discovery.js';
 import * as g from './git.js';
 import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
 import { WorkspaceStore } from './store.js';
-import type { Project, ProjectsConfig, Workspace, WorkspaceRecord } from './types.js';
+import type { Project, ProjectGroup, ProjectsConfig, Workspace, WorkspaceRecord } from './types.js';
 
 export const slug = (s: string): string =>
   s
@@ -111,6 +111,25 @@ export class WorkspaceManager {
     this.config = { ...this.config, roots: [...new Set([...this.config.roots, root])] };
     this.store.saveConfig(this.config);
     return findProjects([root]).length;
+  }
+
+  get groups(): readonly ProjectGroup[] {
+    return this.config.groups ?? [];
+  }
+
+  /** Put a project in a group (creating it), or take it out with `group` undefined. */
+  setGroup(projectId: string, group: string | undefined): void {
+    const project = this.projects.find((p) => p.id === projectId);
+    if (!project) throw new WorkspaceError('Project not found');
+    const name = group?.trim().slice(0, 30);
+    const others = (this.config.groups ?? []).map((g) => ({ ...g, projects: g.projects.filter((r) => r !== project.root) }));
+    const groups = name
+      ? others.some((g) => g.name === name)
+        ? others.map((g) => (g.name === name ? { ...g, projects: [...g.projects, project.root] } : g))
+        : [...others, { name, projects: [project.root] }]
+      : others;
+    this.config = { ...this.config, groups: groups.filter((g) => g.projects.length > 0) };
+    this.store.saveConfig(this.config);
   }
 
   hideProject(id: string): void {
@@ -223,8 +242,12 @@ export class WorkspaceManager {
   }
 
   /** A conversation with Claude in the project's main folder, no worktree needed. */
-  async createChat(projectIdOrRoot: string, title: string): Promise<Workspace> {
-    if (projectIdOrRoot === CHATS_PROJECT) return this.createStandaloneChat(title);
+  private get chatsDir(): string {
+    return path.join(this.store.workspacesDir, '..', 'chats');
+  }
+
+  async createChat(projectIdOrRoot: string, title: string, inDir?: string): Promise<Workspace> {
+    if (projectIdOrRoot === CHATS_PROJECT) return this.createStandaloneChat(title, inDir);
     const project = this.projects.find((p) => p.id === projectIdOrRoot || (p.root !== '' && p.root === projectIdOrRoot));
     if (!project) throw new WorkspaceError('Project not found');
     const record: WorkspaceRecord = { id: `chat-${randomUUID().slice(0, 8)}`, projectRoot: project.root, name: title.trim().slice(0, 40) || 'chat', path: project.root, kind: 'chat', createdAt: Date.now() };
@@ -234,9 +257,10 @@ export class WorkspaceManager {
   }
 
   /** A Claude chat with no project: its own scratch folder for anything Claude makes. */
-  async createStandaloneChat(title: string): Promise<Workspace> {
+  async createStandaloneChat(title: string, inDir?: string): Promise<Workspace> {
     const id = `chat-${randomUUID().slice(0, 8)}`;
-    const dir = path.join(this.store.workspacesDir, '..', 'chats', id);
+    // Runs in the folder you give it (e.g. where you started klaude), or its own scratch folder.
+    const dir = inDir ?? path.join(this.chatsDir, id);
     mkdirSync(dir, { recursive: true });
     const record: WorkspaceRecord = { id, projectRoot: '', name: title.trim().slice(0, 40) || 'chat', path: real(dir), kind: 'chat', createdAt: Date.now() };
     this.saveRecord(record);
@@ -308,7 +332,8 @@ export class WorkspaceManager {
       if (ws.branch && !ws.external) await g.deleteBranch(ws.projectRoot, ws.branch).catch(() => undefined);
     }
     rmSync(this.store.historyFile(id), { force: true });
-    if (ws.projectRoot === '' && ws.path.includes(`${path.sep}chats${path.sep}`)) rmSync(ws.path, { recursive: true, force: true });
+    // Only ever delete klaude's own scratch folders, never a folder you started a chat in.
+    if (ws.projectRoot === '' && real(ws.path).startsWith(real(this.chatsDir) + path.sep)) rmSync(ws.path, { recursive: true, force: true });
     this.records = this.records.filter((r) => r.id !== id);
     this.store.saveRecords(this.records);
     await this.refresh();

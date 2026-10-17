@@ -18,7 +18,7 @@ export type Target =
   | { readonly kind: 'action'; readonly id: string }
   | { readonly kind: 'composer' }
   | { readonly kind: 'viewer_action'; readonly id: string }
-  | { readonly kind: 'zone'; readonly action: UiAction }
+  | { readonly kind: 'zone'; readonly action: UiAction; readonly hint?: string; readonly disabled?: boolean }
   | { readonly kind: 'none' };
 
 export const APPROVAL_BUTTONS = [
@@ -65,8 +65,8 @@ export function hitTest(g: Geometry, x: number, y: number, ctx: HitContext): Tar
     const index = y - (g.headerTop + 1 + ctx.menu.intro.length + 1);
     return index >= 0 && index < ctx.menu.options.length ? { kind: 'menu', index } : { kind: 'none' };
   }
-  const zone = ctx.zones?.find((z) => z.y === y && x >= z.x0 && x <= z.x1);
-  if (zone) return { kind: 'zone', action: zone.action };
+  const zone = ctx.zones?.find((z) => z.y === y && x >= z.x0 && x <= z.x1 && z.action.type !== 'none');
+  if (zone) return { kind: 'zone', action: zone.action, hint: zone.hint, disabled: zone.disabled };
 
   if (x < g.sideWidth) {
     if (y >= g.peopleTop) {

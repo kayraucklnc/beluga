@@ -2,7 +2,7 @@ import type { MenuKind } from './menus.js';
 import type { Suggestion } from './suggest.js';
 import type { UiAction } from './workspace-models.js';
 
-export type Focus = 'chat' | 'projects' | 'people' | 'files' | 'main' | 'viewer';
+export type Focus = 'chat' | 'projects' | 'header' | 'people' | 'files' | 'main' | 'viewer';
 
 export interface MenuState {
   readonly menu: MenuKind;
@@ -33,12 +33,14 @@ export interface UiState {
   readonly viewerRaw: boolean;
   /** Keyboard cursor in the Projects tree (index into its clickable rows). */
   readonly projectsCursor: number;
+  /** Keyboard cursor over the workspace's action buttons (Chat/Files/Diff, Review, Merge…). */
+  readonly headerCursor: number;
   /** Scroll offset of the Overview cards. */
   readonly overviewScroll: number;
   /** Projects folded closed in the sidebar. */
   readonly collapsed: readonly string[];
   /** A name is being typed for a new worktree/chat in this project. */
-  readonly pending?: { readonly kind: 'worktree' | 'chat'; readonly projectId: string };
+  readonly pending?: { readonly kind: 'worktree' | 'chat' | 'group'; readonly projectId: string };
 }
 
 /** Subset of Ink's Key we rely on, so the keymap stays framework-agnostic. */
@@ -75,7 +77,8 @@ export type Effect =
   | { readonly type: 'zoom'; readonly dir: 'in' | 'out' }
   | { readonly type: 'ui_action'; readonly action: UiAction }
   | { readonly type: 'review_move'; readonly delta: number }
-  | { readonly type: 'review_scroll'; readonly delta: number };
+  | { readonly type: 'review_scroll'; readonly delta: number }
+  | { readonly type: 'cancel_draft' };
 
 export interface KeyContext {
   readonly hasApproval: boolean;
@@ -91,8 +94,12 @@ export interface KeyContext {
   readonly projectItems?: readonly UiAction[];
   /** The main area has keyboard-navigable content (review). */
   readonly mainFocusable?: boolean;
+  /** Workspace action buttons, in order (for keyboard use). */
+  readonly headerItems?: readonly UiAction[];
   /** The shared-files panel is showing. */
   readonly filesVisible?: boolean;
+  /** Viewing an unsent new chat (Esc leaves it without creating anything). */
+  readonly draft?: boolean;
 }
 
 export interface KeyResult {
@@ -115,6 +122,7 @@ export const initialUi: UiState = {
   viewerFull: false,
   viewerRaw: false,
   projectsCursor: 0,
+  headerCursor: 0,
   overviewScroll: 0,
   collapsed: [],
 };
@@ -177,7 +185,12 @@ const scrollChat = (ui: UiState, ctx: KeyContext, delta: number): UiState => ({
 function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
   const shown = ui.suggestHidden ? [] : ctx.suggestions;
   const pick = shown[Math.min(ui.selected, shown.length - 1)];
-  if (key.escape) return { ui: shown.length ? { ...ui, suggestHidden: true } : ui.pending ? { ...setBuffer(ui, ''), pending: undefined } : ui };
+  if (key.escape) {
+    if (shown.length) return { ui: { ...ui, suggestHidden: true } };
+    if (ui.pending) return { ui: { ...setBuffer(ui, ''), pending: undefined } };
+    if (ctx.draft) return { ui: setBuffer(ui, ''), effect: { type: 'cancel_draft' } };
+    return { ui };
+  }
   if (key.tab && pick) return { ui: setBuffer(ui, pick.value) };
   // Alt+Enter (or Ctrl+Enter where the terminal reports it) sends now instead of queueing.
   if (key.return && (key.meta || key.ctrl)) return submit(ui, true);
@@ -232,6 +245,16 @@ function handleProjects(ui: UiState, input: string, key: KeyInfo, ctx: KeyContex
   return typeIntoChat(ui, input, key, ctx) ?? { ui };
 }
 
+function handleHeader(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
+  const items = ctx.headerItems ?? [];
+  const max = Math.max(0, items.length - 1);
+  if (key.leftArrow || key.upArrow) return { ui: { ...ui, headerCursor: Math.max(0, Math.min(max, ui.headerCursor) - 1) } };
+  if (key.rightArrow || key.downArrow) return { ui: { ...ui, headerCursor: Math.min(max, ui.headerCursor + 1) } };
+  const action = items[Math.min(ui.headerCursor, max)];
+  if (key.return && action) return { ui, effect: { type: 'ui_action', action } };
+  return typeIntoChat(ui, input, key, ctx) ?? { ui };
+}
+
 function handleMain(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): KeyResult {
   if (key.upArrow) return { ui, effect: { type: 'review_move', delta: -1 } };
   if (key.downArrow) return { ui, effect: { type: 'review_move', delta: 1 } };
@@ -275,7 +298,9 @@ function handleViewer(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext)
 }
 
 function cycleFocus(ui: UiState, ctx: KeyContext, dir: 1 | -1): UiState {
-  const order: Focus[] = ['chat', 'projects', 'people'];
+  const order: Focus[] = ['chat', 'projects'];
+  if (ctx.headerItems?.length) order.push('header');
+  order.push('people');
   if (ctx.filesVisible) order.push('files');
   if (ctx.mainFocusable) order.push('main');
   if (ctx.hasViewer) order.push('viewer');
@@ -317,6 +342,7 @@ export function handleKey(raw: UiState, input: string, key: KeyInfo, ctx: KeyCon
     return submit(handleChat(current, input.replace(/[\r\n]+$/, ''), key, ctx).ui);
   }
   if (current.focus === 'projects') return handleProjects(current, input, key, ctx);
+  if (current.focus === 'header') return handleHeader(current, input, key, ctx);
   if (current.focus === 'main') return handleMain(current, input, key, ctx);
   if (current.focus === 'people') return handlePeople(current, input, key, ctx);
   if (current.focus === 'files') return handleFiles(current, input, key, ctx);

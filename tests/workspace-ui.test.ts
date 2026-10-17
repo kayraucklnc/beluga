@@ -3,7 +3,7 @@ import { SubAgentTracker } from '../src/agent/subagents.js';
 import { initialState, reduce, channelOf, type AppState } from '../src/core/store.js';
 import { derive } from '../src/ui/derive.js';
 import { initialUi } from '../src/ui/keymap.js';
-import { activityOf, contextMeter, isCompacting, overviewModel, projectsModel, reviewModel, tabsModel, workspaceHeaderModel } from '../src/ui/workspace-models.js';
+import { activityOf, contextMeter, isCompacting, overviewModel, projectsModel, reviewModel, stateOf, tabsModel, workspaceHeaderModel } from '../src/ui/workspace-models.js';
 import { confirmMenu } from '../src/ui/menus.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
@@ -92,56 +92,102 @@ describe('store: channels, views and sub-agents', () => {
 });
 
 describe('workspace UI models', () => {
-  it('draws the Projects tree with status chips and add buttons', () => {
-    const s = reduce(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
-    const m = projectsModel(s, new Set(), 0, 30);
-    const lines = text(m.lines);
-    expect(lines[0]).toMatch(/^▾ app/);
-    expect(lines.some((l) => l.includes('fix-auth') && l.includes('↑3') && l.includes('✎2'))).toBe(true);
-    expect(lines.some((l) => l.includes('question') && l.includes('chat'))).toBe(true);
-    expect(lines.some((l) => /\bold\b/.test(l))).toBe(false); // archived hidden from the tree
-    expect(lines.some((l) => l.includes('1 archived'))).toBe(true);
-    expect(m.zones.map((z) => z.action.type)).toEqual(['toggle_project', 'open_ws', 'open_ws', 'open_ws', 'new_worktree', 'new_chat', 'view', 'add_project']);
-    expect(text(projectsModel(s, new Set(['p1']), 0, 30).lines)[0]).toMatch(/^▸ app/);
-    expect(text(projectsModel(initialState('r'), new Set(), 0, 30).lines)[0]).toContain('No projects found');
+  const chatsProject: Project = { id: 'chats', name: 'Chats', root: '', base: '', workspaces: [ws({ id: 'free', name: 'ideas', kind: 'chat', projectId: 'chats', projectRoot: '', status: undefined })] };
+  const withChats = (s: AppState): AppState => reduce(s, { type: 'projects', projects: [chatsProject, project], groups: [] });
+
+  it('draws CHATS and PROJECTS sections; projects start folded; buttons sit on the project row', () => {
+    const s = withChats(base());
+    const folded = projectsModel(s, new Set(), 0, 34);
+    const lines = text(folded.lines);
+    expect(lines[0]).toMatch(/^CHATS +\+ new$/);
+    expect(lines.some((l) => l.includes('◇ ideas'))).toBe(true);
+    expect(lines.some((l) => /^PROJECTS +\+ add$/.test(l))).toBe(true);
+    const projectRow = lines.find((l) => l.includes('▣ app'))!;
+    expect(projectRow).toMatch(/^▸ ▣ app/); // folded by default
+    expect(projectRow).toContain('+⌥ +◇ ⋯');
+    expect(lines.some((l) => l.includes('fix-auth'))).toBe(false);
+    const actions = folded.zones.map((z) => z.action.type);
+    expect(actions).toEqual(expect.arrayContaining(['new_chat', 'open_ws', 'add_project', 'new_worktree', 'project_menu', 'toggle_project']));
+    expect(folded.zones.find((z) => z.action.type === 'new_worktree')?.hint).toContain('New worktree in app');
+
+    const open = projectsModel(s, new Set(['p1']), 0, 34);
+    const openLines = text(open.lines);
+    expect(openLines.some((l) => l.includes('⌂ main'))).toBe(true);
+    expect(openLines.some((l) => l.includes('⌥ fix-auth'))).toBe(true);
+    expect(openLines.some((l) => l.includes('◇ question'))).toBe(true);
+    expect(openLines.some((l) => l.includes('▸ Archived (1)'))).toBe(true);
+    expect(openLines.some((l) => /\bold\b/.test(l))).toBe(false); // archived list folded
+    const archiveOpen = text(projectsModel(s, new Set(['p1', 'archive:p1']), 0, 34).lines);
+    expect(archiveOpen.some((l) => l.includes('○ old'))).toBe(true);
+
+    // the project you're in opens itself
+    const inside = reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    expect(text(projectsModel(inside, new Set(), 0, 34).lines).some((l) => l.startsWith('▌') && l.includes('fix-auth'))).toBe(true);
   });
 
-  it('draws tabs with close buttons', () => {
+  it('shows your groups as collapsible sections', () => {
+    const s = reduce(withChats(base()), { type: 'projects', projects: [chatsProject, project], groups: [{ name: 'work', projects: ['/p'] }] });
+    const lines = text(projectsModel(s, new Set(), 0, 34).lines);
+    expect(lines.some((l) => l.startsWith('▾ WORK 1'))).toBe(true);
+    expect(text(projectsModel(s, new Set(['group:work']), 0, 34).lines).some((l) => l.includes('▣ app'))).toBe(false);
+  });
+
+  it('draws three clear tabs plus where you are', () => {
     const s = reduce(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
     const m = tabsModel(s, 100);
-    expect(text(m.lines)[0]).toContain('fix-auth ✕');
-    expect(m.zones.map((z) => z.action.type)).toEqual(['view', 'view', 'view', 'open_ws', 'close_tab']);
+    expect(text(m.lines)[0]).toContain('Group chat');
+    expect(text(m.lines)[0]).toContain('Overview');
+    expect(text(m.lines)[0]).toContain('›  fix-auth');
+    expect(m.zones.map((z) => z.action.type)).toEqual(['view', 'view', 'view']);
+    expect(m.zones[0]?.hint).toContain('everyone');
   });
 
-  it('draws an Overview card per workspace with actions, plus archived ones', () => {
+  it('draws a simple Overview card per workspace', () => {
     let s = base();
     s = reduce(s, { type: 'agent_event', owner: 'me', requestId: 'r', requester: 'me', event: 'started', text: '', ts: 1000, channel: 'ws:w1' });
     const m = overviewModel(s, 0, 100, 6000);
     const lines = text(m.lines);
-    expect(lines[0]).toContain('1 projects · 3 workspaces');
-    expect(lines[0]).toContain('1 with Claude working');
-    expect(lines.some((l) => l.includes('app › fix-auth'))).toBe(true);
-    expect(lines.some((l) => l.includes('Claude working · 5s'))).toBe(true);
-    expect(lines.some((l) => l.includes('[Open] [Review] [Merge]'))).toBe(true);
-    expect(lines.some((l) => l.includes('Archived (1)'))).toBe(true);
-    const kinds = m.zones.map((z) => (z.action.type === 'ws' ? z.action.action : z.action.type));
-    expect(kinds).toEqual(expect.arrayContaining(['open_ws', 'merge', 'restore', 'delete']));
-    expect(text(overviewModel(initialState('r'), 0, 100).lines).join('\n')).toContain('No workspaces yet');
+    expect(lines[0]).toContain('2 active');
+    expect(lines[0]).toContain('1 working');
+    expect(lines.some((l) => l.includes('⌥ fix-auth  app'))).toBe(true);
+    expect(lines.some((l) => l.includes('Claude working 5s'))).toBe(true);
+    expect(lines.some((l) => l.includes(' Open '))).toBe(true);
+    expect(m.zones.some((z) => z.action.type === 'open_ws')).toBe(true);
+    expect(text(overviewModel(initialState('r'), 0, 100).lines).join('\n')).toContain('Nothing in progress');
   });
 
-  it('draws the workspace header with tabs and actions', () => {
+  it('describes each workspace state in plain words', () => {
+    const s = base();
+    expect(stateOf(s, project.workspaces[1]!, 0).label).toBe('2 uncommitted changes');
+    expect(stateOf(s, ws({ status: { changed: 0, ahead: 2, behind: 0 } }), 0).label).toBe('Ready to merge · 2 commits');
+    expect(stateOf(s, project.workspaces[0]!, 0).label).toBe('Main folder');
+    expect(stateOf(reduce(s, { type: 'conflicts', id: 'w1', files: ['a.ts'] }), project.workspaces[1]!, 0).label).toBe('Merge conflict');
+    expect(stateOf(s, project.workspaces[3]!, 0).label).toBe('Archived');
+    expect(stateOf(s, project.workspaces[2]!, 0).label).toBe('New chat');
+  });
+
+  it('header: tabs, actions with descriptions, disabled buttons, and the conflict banner', () => {
     const s = reduce(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'review' } });
-    const m = workspaceHeaderModel(s, project.workspaces[1]!, 120);
+    const m = workspaceHeaderModel(s, project.workspaces[1]!, 140);
     const [title, bar] = text(m.lines);
     expect(title).toContain('app › fix-auth');
-    expect(title).toContain('klaude/fix-auth from origin/main');
-    expect(bar).toContain('▍Review');
-    expect(bar).toContain('Merge');
-    expect(bar).toContain('Archive');
-    const actions = m.zones.map((z) => (z.action.type === 'ws' ? z.action.action : z.action.type === 'open_ws' ? z.action.tab : ''));
-    expect(actions).toEqual(['chat', 'files', 'review', 'merge', 'commit', 'fork', 'finder', 'archive']);
-    expect(workspaceHeaderModel(s, project.workspaces[3]!, 120).zones.map((z) => (z.action.type === 'ws' ? z.action.action : ''))).toContain('restore');
-    expect(workspaceHeaderModel(s, project.workspaces[0]!, 120).zones.map((z) => (z.action.type === 'ws' ? z.action.action : ''))).not.toContain('archive');
+    expect(title).toContain('⌥ klaude/fix-auth');
+    expect(title).toContain('2 uncommitted changes');
+    expect(bar).toContain(' Diff ');
+    expect(bar).toContain(' Review ');
+    const byLabel = Object.fromEntries(m.zones.filter((z) => z.action.type === 'ws').map((z) => [(z.action as { action: string }).action, z]));
+    expect(byLabel.commit?.disabled).toBeFalsy();
+    expect(byLabel.merge).toMatchObject({ disabled: true, hint: 'Commit your changes first' });
+    expect(byLabel.review_claude?.hint).toContain('security');
+    const clean = workspaceHeaderModel(s, ws({ status: { changed: 0, ahead: 0, behind: 0 } }), 140);
+    const cleanBy = Object.fromEntries(clean.zones.filter((z) => z.action.type === 'ws').map((z) => [(z.action as { action: string }).action, z]));
+    expect(cleanBy.commit).toMatchObject({ disabled: true, hint: 'Nothing to commit' });
+    expect(cleanBy.merge).toMatchObject({ disabled: true, hint: 'Nothing to merge yet' });
+    const conflict = workspaceHeaderModel(reduce(s, { type: 'conflicts', id: 'w1', files: ['a.ts'] }), project.workspaces[1]!, 140);
+    expect(text(conflict.lines)[2]).toContain('Merge conflict in a.ts');
+    expect(conflict.zones.some((z) => z.action.type === 'ws' && z.action.action === 'merge_claude')).toBe(true);
+    expect(workspaceHeaderModel(s, project.workspaces[3]!, 140).zones.map((z) => (z.action.type === 'ws' ? z.action.action : ''))).toContain('restore');
+    expect(workspaceHeaderModel(s, project.workspaces[0]!, 140).zones.map((z) => (z.action.type === 'ws' ? z.action.action : ''))).not.toContain('archive');
   });
 
   it('draws the review screen: commits, files and a colored diff', () => {
@@ -155,13 +201,16 @@ describe('workspace UI models', () => {
     expect(lines[0]).toContain('1 commit · 2 files');
     expect(lines[0]).toContain('@@ -0,0 +1 @@');
     expect(lines.some((l) => l.includes('▸ + src/auth.ts') && l.includes('+3 −0'))).toBe(true);
-    expect(lines.some((l) => l.includes('new.md') && l.includes('new'))).toBe(true);
     expect(m.zones.map((z) => z.action)).toEqual([{ type: 'review_file', index: 0 }, { type: 'review_file', index: 1 }]);
     expect(text(reviewModel(undefined, 100, 10).lines)[0]).toContain('Loading');
     expect(text(reviewModel({ ...review, error: 'boom' }, 100, 10).lines)[0]).toBe('boom');
     expect(text(reviewModel({ ...review, data: { base: 'a', commits: [], files: [] } }, 100, 10).lines)[0]).toContain('No changes');
   });
 });
+
+const addZone = (s: AppState) => derive({ state: s, ui: initialUi, selfId: 'me', columns: 120, rows: 40, frame: 0 }).zones.find((z) => z.action.type === 'add_project')!;
+const addProjectX = (s: AppState) => addZone(s).x0 + 1;
+const addProjectY = (s: AppState) => addZone(s).y;
 
 describe('derive', () => {
   it('lays out the screen and turns model zones into screen coordinates', () => {
@@ -171,16 +220,19 @@ describe('derive', () => {
     expect(d.workspace?.name).toBe('fix-auth');
     expect(d.geometry.headerHeight).toBe(3);
     expect(d.header).toBeDefined();
-    expect(d.projectItems[0]).toEqual({ type: 'toggle_project', id: 'p1' });
+    expect(d.projectItems).toEqual(expect.arrayContaining([{ type: 'toggle_project', id: 'p1' }]));
+    expect(d.headerItems.length).toBeGreaterThan(3);
+    const hovered = derive({ state: s, ui: initialUi, selfId: 'me', columns: 120, rows: 40, frame: 0, hover: { x: addProjectX(s), y: addProjectY(s) } });
+    expect(hovered.hint).toBe('Add a project, or a folder of projects');
     const addProject = d.zones.find((z) => z.action.type === 'add_project')!;
-    expect(addProject.x0).toBe(2);
+    expect(addProject.x0).toBeGreaterThan(2); // the "+ add" button on the PROJECTS header
     expect(d.zones.some((z) => z.action.type === 'ws' && z.y === d.geometry.headerTop + 1)).toBe(true);
     const review = derive({ state: reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'review' } }), ui: { ...initialUi, focus: 'main' }, selfId: 'me', columns: 120, rows: 40, frame: 0 });
     expect(review.focus).toBe('main');
     expect(review.review).toBeDefined();
     const overview = derive({ state: reduce(s, { type: 'view', view: { kind: 'overview' } }), ui: initialUi, selfId: 'me', columns: 120, rows: 40, frame: 0 });
     expect(overview.overview).toBeDefined();
-    expect(overview.zones.some((z) => z.action.type === 'ws' && z.action.action === 'merge')).toBe(true);
+    expect(overview.zones.some((z) => z.action.type === 'open_ws')).toBe(true);
   });
 });
 

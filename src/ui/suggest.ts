@@ -34,7 +34,6 @@ function localPathSuggestions(sub: string, typed: string, ctx: SuggestContext): 
   return ctx
     .listLocalDirs(dir || './')
     .filter((e) => e.dir && !e.name.startsWith('.') && e.name.toLowerCase().startsWith(partial))
-    .slice(0, MAX)
     .map((e) => ({
       label: `${e.name}/`,
       hint: e.size === 1 ? 'git project · Enter adds it' : 'folder',
@@ -43,7 +42,19 @@ function localPathSuggestions(sub: string, typed: string, ctx: SuggestContext): 
     }));
 }
 
-const MAX = 6;
+const MAX = 300;
+/** How many suggestions are visible at once; the list scrolls to follow the highlight. */
+export const VISIBLE_SUGGESTIONS = 7;
+
+/** The slice of suggestions to draw so the highlighted one is always in view. */
+export function suggestionWindow(total: number, selected: number): { start: number; end: number; above: number; below: number; rows: number } {
+  const visible = Math.min(total, VISIBLE_SUGGESTIONS);
+  const start = Math.max(0, Math.min(selected - Math.floor(visible / 2), total - visible));
+  const end = start + visible;
+  const above = start;
+  const below = total - end;
+  return { start, end, above, below, rows: visible + (total > VISIBLE_SUGGESTIONS ? 1 : 0) };
+}
 const PEER_COMMANDS = new Set(['follow', 'trust', 'untrust']);
 const OPEN_SPEC = /^\/(?:open|e|get) ([\w.-]+):([\w.-]+)\/(.*)$/;
 

@@ -67,9 +67,9 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
     default:
       if (state.view.kind === 'workspace') {
         return [
-          { id: 'review', text: 'Review', key: '' },
+          { id: 'actions', text: 'Actions', key: 'Tab' },
+          { id: 'review', text: 'Diff', key: '' },
           { id: 'overview', text: 'Overview', key: '' },
-          { id: 'projects', text: 'Projects', key: 'Tab' },
           { id: 'settings', text: 'Settings', key: '' },
           { id: 'help', text: 'Help', key: '' },
         ];
