@@ -33,7 +33,7 @@ interface Peer {
   copied: string[];
 }
 
-function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: boolean; files?: Record<string, string> } = {}): Peer {
+function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: boolean; files?: Record<string, string>; approvalTimeoutMs?: number } = {}): Peer {
   const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), `klaude-${name}-`)));
   for (const [file, content] of Object.entries(opts.files ?? {})) writeFileSync(path.join(root, file), content);
   const shares = new ShareService([{ name: 'proj', root, writable: true }]);
@@ -61,6 +61,7 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
     shares,
     agentCwd: root,
     requestTimeoutMs: 2000,
+    approvalTimeoutMs: opts.approvalTimeoutMs,
     agentTimeoutMs: 2000,
     onQuit: () => (quit.called = true),
     downloadDir: path.join(root, 'downloads'),
@@ -165,6 +166,7 @@ describe('Session', () => {
       },
     });
     await room(kay);
+    kay.session.store.dispatch({ type: 'prefs', prefs: { selfApproval: 'ask' } });
     kay.session.submit('@claude list files');
     await waitFor(() => kay.state().approvals[0]?.kind === 'tool');
     expect(kay.state().approvals[0]?.detail).toBe('ls');
@@ -363,6 +365,7 @@ describe('Session hardening', () => {
       },
     });
     await room(kay);
+    kay.session.store.dispatch({ type: 'prefs', prefs: { selfApproval: 'ask' } });
     kay.session.submit('@claude first');
     kay.session.submit('@claude second');
     await waitFor(() => kay.state().approvals.length === 1);
@@ -553,5 +556,56 @@ describe('Session hardening', () => {
     await kay.session.copyInvite();
     expect(invites).toBe(1);
     expect(kay.toasts.at(-1)).toContain('Opening a secure link');
+  });
+
+  it('keeps workspace chats private: injected events and private paths never cross over', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    const bobClient = (bob.session as unknown as { opts: { client: { send: (b: object, o?: object) => boolean } } }).opts.client;
+    bobClient.send({ kind: 'agent_event', requestId: 'fake', requester: kay.session.selfId, event: 'done', text: 'injected', channel: 'ws:abc' }, { to: kay.session.selfId });
+    bobClient.send({ kind: 'chat', text: 'sneaky', channel: 'ws:abc' }, { to: kay.session.selfId });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(kay.state().log.some((l) => (l.type === 'agent' || l.type === 'chat') && l.channel === 'ws:abc')).toBe(false);
+  });
+
+  it('runs urgent messages in the order you sent them and /stop clears the queue', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: (input) =>
+        input.prompt === 'slow'
+          ? new Promise((_resolve, reject) => input.signal.addEventListener('abort', () => reject(new Error('aborted'))))
+          : Promise.resolve(`did ${input.prompt}`),
+    });
+    await room(kay);
+    kay.session.submit('@claude slow');
+    await waitFor(() => kay.runs.length === 1);
+    kay.session.submit('@claude queued');
+    kay.session.submit('@claude first', true);
+    kay.session.submit('@claude second', true);
+    await waitFor(() => kay.runs.length === 4);
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'first', 'second', 'queued']);
+  });
+
+  it("your own Claude doesn't ask; fully trusted friends skip every prompt; unanswered approvals expire", async () => {
+    hub = await startHub({ keys });
+    const bashScript: Script = async (input) => ((await input.canUseTool('Bash', { command: 'rm -rf build' })) ? 'ran' : 'blocked');
+    const bob = peer('bob', { script: bashScript, approvalTimeoutMs: 300 });
+    const kay = peer('kay');
+    await room(bob, kay);
+    bob.session.submit('@claude clean up');
+    await waitFor(() => agentItems(bob.state()).some((a) => a.type === 'agent' && a.text === 'ran'));
+    expect(bob.state().approvals).toHaveLength(0); // no prompt for your own request
+
+    kay.session.submit('@claude:bob clean up');
+    await waitFor(() => bob.state().approvals.length === 1); // request approval
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'denied'), 3000); // expired → declined
+    expect(bob.toasts.some((t) => t.includes('expired'))).toBe(true);
+
+    bob.session.store.dispatch({ type: 'full_trust', peerId: kay.session.selfId, trusted: true });
+    kay.session.submit('@claude:bob clean up again');
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'ran'));
+    expect(bob.state().approvals).toHaveLength(0);
   });
 });

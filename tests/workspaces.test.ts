@@ -141,7 +141,10 @@ describe('worktree lifecycle', () => {
     expect(mgr.find(fork.id)).toBeUndefined();
     expect(sh(repo, 'branch', '--list', 'klaude/idea-2')).toBe('');
     await expect(mgr.archive(repos()[0]!.workspaces[0]!.id)).rejects.toThrow(/main folder/);
-    await expect(mgr.createWorktree(repos()[0]!.id, 'idea')).rejects.toThrow(/already exists/);
+    const again = await mgr.createWorktree(repos()[0]!.id, 'idea'); // name taken by a live worktree → idea-2
+    expect(again.name).toBe('idea');
+    expect(path.basename(again.path)).toBe('idea-2');
+    expect(again.id).not.toBe(ws.id);
   });
 
   it('creates chats in the main folder without a worktree', async () => {
@@ -172,6 +175,46 @@ describe('worktree lifecycle', () => {
     const again = new WorkspaceManager(new WorkspaceStore(path.join(base, 'home')));
     await again.refresh();
     expect(again.find(ws.id)).toMatchObject({ name: 'keep', sessionId: 's-9', external: false });
+  });
+});
+
+describe('env files and safe merges', () => {
+  it('copies env files into new worktrees and offers to bring key changes back', async () => {
+    writeFileSync(path.join(repo, '.env'), 'API=1\nKEEP=yes\n');
+    mkdirSync(path.join(repo, '.aws'));
+    writeFileSync(path.join(repo, '.aws', 'config'), '[default]\n');
+    writeFileSync(path.join(repo, '.env.example'), 'API=\n');
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'envs');
+    expect(readFileSync(path.join(ws.path, '.env'), 'utf8')).toBe('API=1\nKEEP=yes\n');
+    expect(existsSync(path.join(ws.path, '.aws', 'config'))).toBe(true);
+    expect(Object.keys(ws.envSnapshot ?? {})).toEqual(['.aws/config', '.env']);
+    expect(mgr.envChanges(ws.id)).toEqual([]); // untouched
+
+    writeFileSync(path.join(ws.path, '.env'), 'API=2\nKEEP=yes\nNEW=x\n');
+    expect(mgr.envChanges(ws.id)).toEqual([{ file: '.env', added: ['NEW'], changed: ['API'], removed: [], binary: false }]);
+    expect(mgr.applyEnvBack(ws.id)).toBe(1);
+    expect(readFileSync(path.join(repo, '.env'), 'utf8')).toBe('API=2\nKEEP=yes\nNEW=x\n');
+    writeFileSync(path.join(ws.path, '.aws', 'config'), '[changed]\n');
+    expect(mgr.envChanges(ws.id).map((c) => [c.file, c.binary])).toEqual([['.aws/config', true]]);
+  });
+
+  it('only merges into the main folder when it is on the base branch', async () => {
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'side');
+    commitIn(ws.path, 'x.txt', 'x', 'x');
+    sh(repo, 'checkout', '-b', 'other');
+    await mgr.refresh();
+    expect(await mgr.merge(ws.id)).toEqual({ ok: false, reason: 'wrong_branch', files: [], current: 'other', expected: 'main' });
+    sh(repo, 'checkout', 'main');
+    expect(await mgr.merge(ws.id)).toEqual({ ok: true });
+  });
+
+  it('never force-removes worktrees made by other tools', async () => {
+    sh(repo, 'worktree', 'add', '-b', 'tool', path.join(base, 'tool'));
+    writeFileSync(path.join(base, 'tool', 'wip.txt'), 'unsaved');
+    await mgr.refresh();
+    const ext = repos()[0]!.workspaces.find((w) => w.external)!;
+    await expect(mgr.remove(ext.id)).rejects.toThrow();
+    expect(existsSync(path.join(base, 'tool', 'wip.txt'))).toBe(true);
   });
 });
 

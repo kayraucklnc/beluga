@@ -88,6 +88,10 @@ export const AgentEventKind = z.enum([
   'denied',
   /** Sub-agent progress; text is JSON {id, phase, title?, step?}. */
   'sub',
+  /** How full the conversation's context is; text is JSON {used, window}. */
+  'context',
+  /** The conversation was compacted; text is JSON {pre, post, trigger}. */
+  'compact',
 ]);
 export type AgentEventKind = z.infer<typeof AgentEventKind>;
 

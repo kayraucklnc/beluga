@@ -31,6 +31,19 @@ export function confirmMenu(state: AppState, action: 'archive' | 'delete', id: s
   const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id);
   if (!ws) return undefined;
   const changed = ws.status?.changed ?? 0;
+  const env = state.envChanges[id] ?? [];
+  const envLines = env.length
+    ? [
+        '',
+        'Env changes in this worktree (not in the main folder):',
+        ...env.map((c) =>
+          c.binary
+            ? `  ${c.file}  (file differs)`
+            : `  ${c.file}  ${[c.added.length ? `+${c.added.join(', +')}` : '', c.changed.length ? `~${c.changed.join(', ~')}` : '', c.removed.length ? `−${c.removed.join(', −')}` : ''].filter(Boolean).join('  ')}`,
+        ),
+      ]
+    : [];
+  const envOption = env.length ? [{ id: `confirm-${action}-env`, label: `Copy env changes to the main folder, then ${action}`, hint: 'keeps your new keys' }] : [];
   if (action === 'archive') {
     return {
       title: `Archive ${ws.name}?`,
@@ -39,8 +52,10 @@ export function confirmMenu(state: AppState, action: 'archive' | 'delete', id: s
           ? 'The worktree folder is removed. Its branch and the Claude conversation are kept, so you can restore it later.'
           : 'The chat is hidden from the sidebar. You can restore it from Overview.',
         ...(changed ? [`${changed} file(s) have uncommitted changes.`] : []),
+        ...envLines,
       ],
       options: [
+        ...envOption,
         ...(changed ? [{ id: 'confirm-commit-archive', label: 'Commit changes, then archive', hint: 'recommended' }] : []),
         { id: changed ? 'confirm-archive-force' : 'confirm-archive', label: changed ? 'Archive and discard uncommitted changes' : 'Archive', hint: '' },
         { id: 'close', label: 'Cancel', hint: 'Esc' },
@@ -53,8 +68,10 @@ export function confirmMenu(state: AppState, action: 'archive' | 'delete', id: s
       ws.kind === 'worktree' && !ws.external
         ? `This deletes the worktree folder, the branch ${ws.branch ?? ''} and the conversation. This can't be undone.`
         : "This removes it from klaude and deletes the conversation. This can't be undone.",
+      ...envLines,
     ],
     options: [
+        ...envOption,
       { id: 'confirm-delete', label: 'Delete permanently', hint: '' },
       { id: 'close', label: 'Cancel', hint: 'Esc' },
     ],
@@ -73,6 +90,11 @@ export function settingsMenu(state: AppState): MenuSpec {
       { id: 'set-name', label: 'Your name', hint: `${state.self?.name ?? '–'}  ·  type a new one` },
       { id: 'set-theme', label: 'Color theme', hint: `${THEME_LABELS[state.prefs.theme]}  ·  Enter to switch` },
       { id: 'set-policy', label: 'Who can use my Claude', hint: `${POLICY_LABELS[state.policy]}  ·  Enter to switch` },
+      {
+        id: 'set-self-approval',
+        label: 'My Claude asks before commands',
+        hint: `${state.prefs.selfApproval === 'ask' ? 'Yes (safer)' : 'No, it just works (secrets stay blocked)'}  ·  Enter to switch`,
+      },
       { id: 'set-mouse', label: 'Mouse clicks', hint: `${state.prefs.mouse ? 'On' : 'Off (keeps native text selection)'}  ·  Enter to switch` },
       { id: 'set-tunnel', label: 'Remote access', hint: `${TUNNEL_LABELS[state.prefs.tunnel]}  ·  applies next start` },
       { id: 'size-in', label: 'Make text bigger', hint: 'Option+↑ (Alt+↑) anywhere' },
@@ -127,9 +149,12 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
           ? { id: 'unfollow', label: `Stop following ${peer.name}` }
           : { id: 'follow', label: `Follow ${peer.name}`, hint: 'see the files they and their Claude open' },
         ...(share ? [{ id: 'browse', label: `Browse ${peer.name}'s files`, hint: `${share.name}${share.writable ? '' : ' (read-only)'}` }] : []),
+        state.fullTrust.includes(peer.peerId)
+          ? { id: 'unfulltrust', label: `Stop fully trusting ${peer.name}`, hint: 'now: runs everything without asking' }
+          : { id: 'fulltrust', label: `Fully trust ${peer.name}`, hint: 'requests and actions run without asking' },
         state.trusted.includes(peer.peerId)
           ? { id: 'untrust', label: `Ask before ${peer.name} uses my Claude` }
-          : { id: 'trust', label: `Let ${peer.name} use my Claude without asking`, hint: 'this session only' },
+          : { id: 'trust', label: `Let ${peer.name} use my Claude without asking`, hint: 'still asks before commands' },
       ];
   const about = isSelf ? 'What would you like to do?' : `${peer.agent ? 'Claude is on' : 'No Claude'} · shares ${peer.shares.map((s) => s.name).join(', ') || 'nothing'}`;
   const access = isSelf

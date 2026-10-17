@@ -70,9 +70,15 @@ const sleep = (ms: number, signal: AbortSignal): Promise<void> =>
   });
 
 export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
+  let contextUsed = 52_000;
   return {
     async run(input: AgentRunInput): Promise<string> {
       const script = SCRIPTS.find((s) => s.match.test(input.prompt)) ?? FALLBACK;
+      if (/^\/compact/.test(input.prompt.trim())) {
+        await sleep(900 * pace, input.signal);
+        input.onEvent('compact', JSON.stringify({ pre: 168_000, post: 21_000, trigger: 'manual' }));
+        return 'Compacted the conversation. I kept the plan, decisions so far, and open TODOs.';
+      }
       for (const step of script.steps) {
         await sleep(450 * pace, input.signal);
         input.onEvent('tool', step);
@@ -90,6 +96,8 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       }
       if (script.report) await bridge.writeReport(script.report.title, script.report.markdown);
       await sleep(400 * pace, input.signal);
+      contextUsed = Math.min(195_000, contextUsed + 34_000 + script.steps.length * 9_000);
+      input.onEvent('context', JSON.stringify({ used: contextUsed, window: 200_000 }));
       return script.answer;
     },
   };

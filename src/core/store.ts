@@ -3,6 +3,7 @@ import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Settings, ThemeName } from './settings.js';
 import type { Review } from '../workspaces/git.js';
 import type { Project } from '../workspaces/types.js';
+import type { EnvChange } from '../workspaces/env.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
 
@@ -99,6 +100,8 @@ export interface Prefs {
   readonly theme: ThemeName;
   readonly mouse: boolean;
   readonly tunnel: 'auto' | 'cloudflared' | 'ngrok' | 'none';
+  /** 'never': your own Claude just works; 'ask': it asks before risky actions. */
+  readonly selfApproval: 'never' | 'ask';
 }
 
 export interface Transfer {
@@ -129,6 +132,19 @@ export interface ReviewState {
   readonly error?: string;
 }
 
+/** How full a conversation's context window is. */
+export interface ContextInfo {
+  readonly used: number;
+  readonly window: number;
+}
+
+/** A compaction that just happened, kept briefly so the UI can animate it. */
+export interface Compaction {
+  readonly pre: number;
+  readonly post: number;
+  readonly at: number;
+}
+
 export const channelOf = (view: View): string => (view.kind === 'workspace' ? `ws:${view.id}` : 'room');
 
 export interface AppState {
@@ -140,6 +156,11 @@ export interface AppState {
   readonly review?: ReviewState;
   /** Unread message counts per channel. */
   readonly unread: Readonly<Record<string, number>>;
+  /** Context usage per conversation (channel). */
+  readonly context: Readonly<Record<string, ContextInfo>>;
+  readonly compactions: Readonly<Record<string, Compaction>>;
+  /** Env changes found in a worktree that's about to be archived or deleted. */
+  readonly envChanges: Readonly<Record<string, readonly EnvChange[]>>;
   readonly hosting?: Hosting;
   readonly toast?: Toast;
   readonly overlay?: Overlay;
@@ -155,6 +176,8 @@ export interface AppState {
   readonly focus: Readonly<Record<string, Focus>>;
   readonly policy: Policy;
   readonly trusted: readonly string[];
+  /** People whose requests AND actions run without any prompts. */
+  readonly fullTrust: readonly string[];
   /** How far each friend's requests may reach on this computer (default: shared folders only). */
   readonly access: Readonly<Record<string, 'folder' | 'full'>>;
   /** Directory listings used for /open autocomplete, keyed "owner:share/path". */
@@ -182,6 +205,7 @@ export type Action =
   | { type: 'close_tab'; id: string }
   | { type: 'review'; review?: ReviewState }
   | { type: 'history'; channel: string; items: readonly LogItem[] }
+  | { type: 'env_changes'; id: string; changes: readonly EnvChange[] }
   | { type: 'approval_add'; approval: Approval }
   | { type: 'approval_remove'; id: string }
   | { type: 'browser_root' }
@@ -198,11 +222,12 @@ export type Action =
   | { type: 'follow'; peerId?: string }
   | { type: 'policy'; policy: Policy }
   | { type: 'trust'; peerId: string; trusted: boolean }
+  | { type: 'full_trust'; peerId: string; trusted: boolean }
   | { type: 'access'; peerId: string; scope: 'folder' | 'full' }
   | { type: 'dir_cache'; key: string; entries: readonly FsEntry[] }
   | { type: 'transfer'; transfer: Transfer }
   | { type: 'prefs'; prefs: Partial<Prefs> }
-  | { type: 'clear' };
+  | { type: 'clear'; channel?: string };
 
 const LOG_LIMIT = 1000;
 const TRANSFER_LIMIT = 20;
@@ -212,7 +237,7 @@ const TRANSFER_LIMIT = 20;
 export const clean = (s: string): string => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
 const MAX_STEPS = 6;
 
-const DEFAULT_PREFS: Prefs = { theme: 'calm', mouse: true, tunnel: 'auto' };
+const DEFAULT_PREFS: Prefs = { theme: 'calm', mouse: true, tunnel: 'auto', selfApproval: 'never' };
 
 export function initialState(room: string, policy: Policy = 'ask', prefs: Prefs = DEFAULT_PREFS): AppState {
   return {
@@ -221,6 +246,9 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Prefs 
     projects: [],
     tabs: [],
     unread: {},
+    context: {},
+    compactions: {},
+    envChanges: {},
     status: 'connecting',
     peers: [],
     log: [],
@@ -229,6 +257,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Prefs 
     focus: {},
     policy,
     trusted: [],
+    fullTrust: [],
     access: {},
     dirCache: {},
     transfers: [],
@@ -245,7 +274,14 @@ export const peerName = (state: AppState, peerId: string): string =>
 const sameLoc = (a: Location | undefined, b: Location): boolean =>
   Boolean(a) && a?.owner === b.owner && a.share === b.share && a.path === b.path;
 
-const appendLog = (log: readonly LogItem[], item: LogItem): readonly LogItem[] => [...log, item].slice(-LOG_LIMIT);
+/** Append, keeping at most LOG_LIMIT items per conversation (never trimming other conversations). */
+function appendLog(log: readonly LogItem[], item: LogItem): readonly LogItem[] {
+  const next = [...log, item];
+  const inChannel = next.filter((l) => l.channel === item.channel).length;
+  if (inChannel <= LOG_LIMIT) return next;
+  const drop = next.findIndex((l) => l.channel === item.channel);
+  return next.filter((_l, i) => i !== drop);
+}
 
 function rootRows(peers: readonly PeerInfo[]): BrowserRow[] {
   return peers.flatMap((p) =>
@@ -291,6 +327,41 @@ function reduceAgent(state: AppState, raw: Extract<Action, { type: 'agent_event'
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
   return bumpUnread({ ...state, log }, updated.channel, !existing);
 }
+
+/** Context meter updates and compactions don't create chat items; they update the meter. */
+function reduceContext(state: AppState, a: Extract<Action, { type: 'agent_event' }>): AppState {
+  const channel = a.channel ?? 'room';
+  let data: { used?: number; window?: number; pre?: number; post?: number };
+  try {
+    data = JSON.parse(a.text) as typeof data;
+  } catch {
+    return state;
+  }
+  const window = data.window ?? state.context[channel]?.window ?? 200_000;
+  if (a.event === 'context' && typeof data.used === 'number') {
+    return { ...state, context: { ...state.context, [channel]: { used: data.used, window } } };
+  }
+  if (a.event === 'compact' && typeof data.pre === 'number') {
+    const post = data.post ?? 0;
+    const saved = data.pre > 0 ? Math.round((1 - post / data.pre) * 100) : 0;
+    return {
+      ...state,
+      context: { ...state.context, [channel]: { used: post, window } },
+      compactions: { ...state.compactions, [channel]: { pre: data.pre, post, at: a.ts } },
+      log: appendLog(state.log, {
+        id: nextId(),
+        type: 'system',
+        channel,
+        text: `Context compacted: ${formatTokens(data.pre)} → ${formatTokens(post)} tokens (${saved}% freed)`,
+        ts: a.ts,
+        level: 'info',
+      }),
+    };
+  }
+  return state;
+}
+
+export const formatTokens = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 
 /** Apply one sub-agent event (JSON from the runner) to the list. */
 function applySub(list: readonly SubAgent[], json: string): readonly SubAgent[] {
@@ -341,9 +412,10 @@ export function reduce(state: AppState, action: Action): AppState {
       const follow = state.follow && ids.has(state.follow) ? state.follow : undefined;
       // Peer ids are self-chosen, so trust never outlives the connection that earned it.
       const trusted = state.trusted.filter((t) => ids.has(t));
+      const fullTrust = state.fullTrust.filter((t) => ids.has(t));
       // Like trust, extra access ends when the connection that earned it does.
       const access = Object.fromEntries(Object.entries(state.access).filter(([id]) => ids.has(id)));
-      return { ...state, peers: action.peers, browser, follow, trusted, access };
+      return { ...state, peers: action.peers, browser, follow, trusted, fullTrust, access };
     }
     case 'chat':
       return bumpUnread({
@@ -379,11 +451,14 @@ export function reduce(state: AppState, action: Action): AppState {
     }
     case 'review':
       return { ...state, review: action.review };
+    case 'env_changes':
+      return { ...state, envChanges: { ...state.envChanges, [action.id]: action.changes } };
     case 'history': {
       const others = state.log.filter((l) => l.channel !== action.channel);
-      return { ...state, log: [...action.items.map((i) => ({ ...i, channel: action.channel })), ...others].slice(-LOG_LIMIT * 4) };
+      return { ...state, log: [...action.items.slice(-LOG_LIMIT).map((i) => ({ ...i, channel: action.channel })), ...others] };
     }
     case 'agent_event':
+      if (action.event === 'context' || action.event === 'compact') return reduceContext(state, action);
       return reduceAgent(state, action);
     case 'approval_add':
       return {
@@ -441,6 +516,11 @@ export function reduce(state: AppState, action: Action): AppState {
       return { ...state, focus: { ...state.focus, [action.actorKey]: action.focus } };
     case 'follow':
       return { ...state, follow: action.peerId };
+    case 'full_trust':
+      return {
+        ...state,
+        fullTrust: action.trusted ? [...new Set([...state.fullTrust, action.peerId])] : state.fullTrust.filter((t) => t !== action.peerId),
+      };
     case 'access':
       return { ...state, access: { ...state.access, [action.peerId]: action.scope } };
     case 'policy':
@@ -458,8 +538,10 @@ export function reduce(state: AppState, action: Action): AppState {
     }
     case 'dir_cache':
       return { ...state, dirCache: { ...state.dirCache, [action.key]: action.entries } };
-    case 'clear':
-      return { ...state, log: [] };
+    case 'clear': {
+      const channel = action.channel ?? channelOf(state.view);
+      return { ...state, log: state.log.filter((l) => l.channel !== channel) };
+    }
     default:
       return state;
   }

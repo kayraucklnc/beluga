@@ -4,6 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, realpathSync, rmSync } from 'node:
 import path from 'node:path';
 import { findProjects, isMainCheckout } from './discovery.js';
 import * as g from './git.js';
+import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
 import { WorkspaceStore } from './store.js';
 import type { Project, ProjectsConfig, Workspace, WorkspaceRecord } from './types.js';
 
@@ -25,6 +26,8 @@ export const real = (p: string): string => {
 
 export const projectId = (root: string): string => createHash('sha1').update(real(root)).digest('hex').slice(0, 10);
 const pathId = (p: string): string => `wt-${createHash('sha1').update(real(p)).digest('hex').slice(0, 10)}`;
+/** New workspaces get a fresh id, so a reused name never inherits an old record or history. */
+const freshId = (): string => `wt-${randomUUID().slice(0, 12)}`;
 export const mainId = (root: string): string => `${projectId(root)}:main`;
 
 /** Chats that don't belong to any project live in this pseudo-project. */
@@ -183,17 +186,26 @@ export class WorkspaceManager {
     const project = this.projects.find((p) => p.id === projectIdOrRoot || p.root === projectIdOrRoot);
     if (!project) throw new WorkspaceError('Project not found');
     const s = slug(name);
-    const parent = path.join(this.store.workspacesDir, `${slug(project.name)}-${project.id.slice(0, 4)}`);
-    mkdirSync(parent, { recursive: true });
-    const dir = path.join(real(parent), s);
-    if (existsSync(dir)) throw new WorkspaceError(`A workspace named "${s}" already exists`);
+    const dir = this.freeDir(project, s);
     const branch = await this.freeBranch(project.root, `klaude/${s}`);
     await g.addWorktree(project.root, dir, branch, project.base);
     await g.excludeKlaudeDir(dir);
-    const record: WorkspaceRecord = { id: pathId(dir), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: project.base, createdAt: Date.now() };
+    await copyEnvFiles(project.root, dir);
+    const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
     this.saveRecord(record);
     await this.refresh();
     return this.require(record.id);
+  }
+
+  /** A folder for a new worktree that no live or archived workspace uses (adds -2, -3…). */
+  private freeDir(project: Project, name: string): string {
+    const parent = path.join(this.store.workspacesDir, `${slug(project.name)}-${project.id.slice(0, 4)}`);
+    mkdirSync(parent, { recursive: true });
+    const base = real(parent);
+    for (let i = 1; ; i++) {
+      const dir = path.join(base, i === 1 ? name : `${name}-${i}`);
+      if (!existsSync(dir) && !this.records.some((r) => real(r.path) === dir)) return dir;
+    }
   }
 
   private async freeBranch(repo: string, wanted: string): Promise<string> {
@@ -234,16 +246,14 @@ export class WorkspaceManager {
     const source = this.require(id);
     const project = this.projectOf(source);
     const s = slug(name);
-    const parent = path.join(this.store.workspacesDir, `${slug(project.name)}-${project.id.slice(0, 4)}`);
-    mkdirSync(parent, { recursive: true });
-    const dir = path.join(real(parent), s);
-    if (existsSync(dir)) throw new WorkspaceError(`A workspace named "${s}" already exists`);
+    const dir = this.freeDir(project, s);
     const from = source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD');
     const branch = await this.freeBranch(project.root, `klaude/${s}`);
     await g.addWorktree(project.root, dir, branch, from);
     await g.excludeKlaudeDir(dir);
+    await copyEnvFiles(source.kind === 'chat' ? project.root : source.path, dir);
     const record: WorkspaceRecord = {
-      id: pathId(dir),
+      id: freshId(),
       projectRoot: project.root,
       name: s,
       path: dir,
@@ -253,6 +263,7 @@ export class WorkspaceManager {
       createdAt: Date.now(),
       forkedFrom: source.id,
       forkFromSession: source.sessionId,
+      envSnapshot: await envSnapshot(dir),
     };
     this.saveRecord(record);
     if (existsSync(this.store.historyFile(source.id))) copyFileSync(this.store.historyFile(source.id), this.store.historyFile(record.id));
@@ -289,9 +300,11 @@ export class WorkspaceManager {
     const ws = this.require(id);
     if (ws.kind === 'main') throw new WorkspaceError("The main folder can't be deleted from klaude");
     if (ws.kind === 'worktree') {
-      if (!ws.archived && existsSync(ws.path)) await g.removeWorktree(ws.projectRoot, ws.path, true);
+      // Never force-remove worktrees made by other tools: their uncommitted work isn't ours to discard.
+      if (!ws.archived && existsSync(ws.path)) await g.removeWorktree(ws.projectRoot, ws.path, !ws.external);
       if (ws.branch && !ws.external) await g.deleteBranch(ws.projectRoot, ws.branch).catch(() => undefined);
     }
+    rmSync(this.store.historyFile(id), { force: true });
     if (ws.projectRoot === '' && ws.path.includes(`${path.sep}chats${path.sep}`)) rmSync(ws.path, { recursive: true, force: true });
     this.records = this.records.filter((r) => r.id !== id);
     this.store.saveRecords(this.records);
@@ -329,9 +342,28 @@ export class WorkspaceManager {
     const ws = this.require(id);
     if (ws.kind !== 'worktree' || !ws.branch) throw new WorkspaceError('Only worktrees can be merged');
     if ((ws.status?.changed ?? 0) > 0) throw new WorkspaceError(`${ws.name} has uncommitted changes. Commit them first.`);
-    const result = await g.mergeInto(ws.projectRoot, ws.branch);
+    const base = ws.base ?? this.projectOf(ws).base;
+    const target = base.startsWith('origin/') ? base.slice('origin/'.length) : base === 'HEAD' ? undefined : base;
+    const result = await g.mergeInto(ws.projectRoot, ws.branch, target);
     await this.refresh();
     return result;
+  }
+
+  // --------------------------------------------------------------- env files
+
+  /** Env keys/files changed in a worktree compared with the main folder (key names only). */
+  envChanges(id: string): EnvChange[] {
+    const ws = this.require(id);
+    if (ws.kind !== 'worktree' || ws.archived || !existsSync(ws.path)) return [];
+    return envChanges(ws.path, ws.projectRoot, ws.envSnapshot);
+  }
+
+  /** Copy a worktree's env changes back into the main folder. */
+  applyEnvBack(id: string): number {
+    const ws = this.require(id);
+    const changes = this.envChanges(id);
+    applyEnvChanges(ws.path, ws.projectRoot, changes);
+    return changes.length;
   }
 
   // ------------------------------------------------------------------ misc

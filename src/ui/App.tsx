@@ -27,7 +27,7 @@ import { type MenuKind, menuSpec } from './menus.js';
 import { MOUSE_OFF, MOUSE_ON, type MouseEvent } from './mouse.js';
 import { openTarget } from './suggest.js';
 import { applyTheme, theme } from './theme.js';
-import type { UiAction } from './workspace-models.js';
+import { type UiAction, isCompacting } from './workspace-models.js';
 
 const TOAST_MS = 3500;
 const FRAME_MS = 100;
@@ -89,7 +89,7 @@ function listLocalDirs(dir: string): FsEntry[] {
   }
 }
 
-const isWorking = (state: AppState): boolean => anyActivity(state) || state.transfers.some((t) => t.status === 'active');
+const isWorking = (state: AppState): boolean => anyActivity(state) || isCompacting(state) || state.transfers.some((t) => t.status === 'active');
 
 export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   const state = useSyncExternalStore(session.store.subscribe, session.store.getState);
@@ -219,6 +219,7 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
             return;
           case 'archive':
           case 'delete':
+            ctl.prepareRemoval(ws.id);
             patchUi({ menu: { menu: { kind: 'confirm', action: action.action, id: ws.id }, selected: 0 } });
             return;
           case 'restore':
@@ -229,6 +230,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
             return;
           case 'merge_claude':
             ctl.askClaudeToMerge(ws.id);
+            return;
+          case 'compact':
+            ctl.compact(ws.id);
             return;
         }
       }
@@ -259,6 +263,13 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         return;
       case 'confirm-delete':
         if (confirmId) void ctl?.remove(confirmId);
+        return;
+      case 'confirm-archive-env':
+      case 'confirm-delete-env':
+        if (confirmId && ctl) {
+          ctl.applyEnvBack(confirmId);
+          void (option.id === 'confirm-archive-env' ? ctl.archive(confirmId, true) : ctl.remove(confirmId));
+        }
         return;
       case 'set-name':
         typeInto('/name ');
@@ -315,6 +326,15 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         patchUi({ focus: 'files' });
         return;
       }
+      case 'fulltrust':
+      case 'unfulltrust':
+        if (peer) session.store.dispatch({ type: 'full_trust', peerId: peer.peerId, trusted: option.id === 'fulltrust' });
+        session.toast(option.id === 'fulltrust' ? `${peer?.name} is fully trusted: their requests and actions run without asking` : `${peer?.name} needs approvals again`, 'success');
+        return;
+      case 'set-self-approval':
+        session.setPrefs({ selfApproval: latest.prefs.selfApproval === 'ask' ? 'never' : 'ask' });
+        reopen();
+        return;
       case 'trust':
       case 'untrust':
         if (peer) session.store.dispatch({ type: 'trust', peerId: peer.peerId, trusted: option.id === 'trust' });

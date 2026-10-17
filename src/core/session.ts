@@ -33,6 +33,8 @@ export interface SessionOptions {
   readonly saveSettings?: (patch: Partial<Settings>) => void;
   /** Open remote access and create an invite (klaude starts solo; this runs on first Invite). */
   readonly startInvite?: () => void;
+  /** How long an unanswered approval waits before it's declined (default 5 minutes). */
+  readonly approvalTimeoutMs?: number;
   /** Projects and workspaces on this computer (omit to run without them). */
   readonly workspaces?: WorkspaceManager;
   /** Change the terminal's text size (injected so tests don't resize real windows). */
@@ -66,7 +68,7 @@ export class Session {
   private readonly approvals = new Map<string, (answer: 'yes' | 'no' | 'always') => void>();
   private readonly alwaysTools = new Set<string>();
   /** Requests waiting for the agent, run one at a time (urgent ones jump the line). */
-  private waiting: Array<{ from: string; body: BodyOf<'agent_request'> }> = [];
+  private waiting: Array<{ from: string; body: BodyOf<'agent_request'>; urgent?: boolean }> = [];
   private pumping = false;
   private interruptedBy?: string;
   private current?: AbortController;
@@ -103,6 +105,10 @@ export class Session {
 
   get selfId(): string {
     return this.opts.client.peerId;
+  }
+
+  private get approvalTimeoutMs(): number {
+    return this.opts.approvalTimeoutMs ?? 5 * 60_000;
   }
 
   get hasAgent(): boolean {
@@ -152,7 +158,8 @@ export class Session {
       key,
       setTimeout(() => {
         this.fsTimers.delete(key);
-        this.send({ kind: 'fs_changed', share, path: relPath });
+        // Private (workspace) files are only announced to you.
+        this.send({ kind: 'fs_changed', share, path: relPath }, this.opts.shares.isPrivate(share) ? { to: this.selfId } : {});
       }, FS_DEBOUNCE_MS),
     );
   }
@@ -259,7 +266,8 @@ export class Session {
   async openLocation(at: Location, opts: { by?: string; broadcast?: boolean } = {}): Promise<void> {
     this.store.dispatch({ type: 'viewer_open', at, by: opts.by });
     if (opts.broadcast !== false) {
-      this.send({ kind: 'focus', owner: at.owner, share: at.share, path: at.path, actor: 'human' });
+      const hidden = at.owner === this.selfId && this.opts.shares.isPrivate(at.share);
+      this.send({ kind: 'focus', owner: at.owner, share: at.share, path: at.path, actor: 'human' }, hidden ? { to: this.selfId } : {});
     }
     await this.loadViewer(at);
   }
@@ -344,12 +352,12 @@ export class Session {
   }
 
   stopAgent(): void {
-    if (!this.current) {
+    if (!this.current && this.waiting.length === 0) {
       this.toast('Your Claude is not running anything');
       return;
     }
     this.generation++;
-    this.current.abort();
+    this.current?.abort();
     for (const id of [...this.toolApprovals]) this.answerApproval('no', id);
     const cancelled = this.waiting;
     this.waiting = [];
@@ -650,7 +658,9 @@ export class Session {
   private enqueue(from: string, body: BodyOf<'agent_request'>): void {
     const urgent = body.urgent && from === this.selfId;
     if (urgent) {
-      this.waiting.unshift({ from, body });
+      // After earlier urgent messages (keeping your order), ahead of everything else.
+      const at = this.waiting.findIndex((w) => !w.urgent);
+      this.waiting.splice(at === -1 ? this.waiting.length : at, 0, { from, body, urgent: true });
       if (this.current) {
         this.interruptedBy = body.requestId;
         this.current.abort();
@@ -678,7 +688,7 @@ export class Session {
     if (from === this.selfId) return true;
     const state = this.store.getState();
     if (state.policy === 'deny') return false;
-    if (state.policy === 'auto' || state.trusted.includes(from)) return true;
+    if (state.policy === 'auto' || state.trusted.includes(from) || state.fullTrust.includes(from)) return true;
     const name = peerName(state, from);
     this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`, body.channel);
     const reach = state.access[from] === 'full' ? 'whole computer' : 'shared folders only';
@@ -692,7 +702,13 @@ export class Session {
     const id = randomUUID();
     if (kind === 'tool') this.toolApprovals.add(id);
     return new Promise((resolve) => {
+      // Nobody should be stuck waiting forever on an approval you didn't see.
+      const expiry = setTimeout(() => {
+        if (this.answerApproval('no', id)) this.toast(`An approval expired after ${Math.round(this.approvalTimeoutMs / 60_000)} min without an answer`, 'warn');
+      }, this.approvalTimeoutMs);
+      expiry.unref();
       this.approvals.set(id, (answer) => {
+        clearTimeout(expiry);
         this.toolApprovals.delete(id);
         resolve(answer);
       });
@@ -734,6 +750,7 @@ export class Session {
       this.emitAgent(body.requestId, from, 'error', reason, body.channel);
     } finally {
       if (this.current === controller) this.current = undefined;
+      this.interruptedBy = undefined; // never carry an interrupt label into the next run
       this.currentChannel = 'room';
       void this.refreshUsage();
       if (body.channel !== 'room') void this.workspaces?.refresh();
@@ -741,6 +758,10 @@ export class Session {
   }
 
   private async authorizeTool(requester: string, requesterName: string, toolName: string, input: Record<string, unknown>): Promise<boolean> {
+    // Your own Claude doesn't nag you (unless you asked it to); fully trusted friends don't either.
+    const state = this.store.getState();
+    if (requester === this.selfId && state.prefs.selfApproval === 'never') return true;
+    if (state.fullTrust.includes(requester)) return true;
     // "Always" is scoped to one requester and one tool, never global.
     const scope = `${requester}:${toolName}`;
     if (this.alwaysTools.has(scope)) return true;
@@ -752,10 +773,11 @@ export class Session {
 
   private announceAgentFocus(absPath: string): void {
     const hit = this.opts.shares.locate(absPath);
-    if (hit) this.send({ kind: 'focus', owner: this.selfId, share: hit.share, path: hit.path, actor: 'agent' });
+    if (hit) this.send({ kind: 'focus', owner: this.selfId, share: hit.share, path: hit.path, actor: 'agent' }, this.opts.shares.isPrivate(hit.share) ? { to: this.selfId } : {});
   }
 
   private onAgentEvent(from: string, ts: number, body: BodyOf<'agent_event'>): void {
+    if (body.channel !== 'room' && from !== this.selfId) return; // nobody else can write into your workspace chats
     this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel: body.channel });
     const waiter = this.agentWaiters.get(body.requestId);
     if (!waiter || waiter.peer !== from || !['done', 'error', 'denied'].includes(body.event)) return;

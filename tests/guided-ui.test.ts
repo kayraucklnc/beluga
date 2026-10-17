@@ -42,10 +42,11 @@ describe('menus', () => {
 
   it('offers actions for a friend', () => {
     const spec = personMenu(room(), 1)!;
-    expect(spec.options.map((o) => o.id)).toEqual(['ask', 'access-full', 'follow', 'browse', 'trust']);
+    expect(spec.options.map((o) => o.id)).toEqual(['ask', 'access-full', 'follow', 'browse', 'fulltrust', 'trust']);
     const followed = reduce(reduce(room(), { type: 'follow', peerId: 'b' }), { type: 'trust', peerId: 'b', trusted: true });
-    expect(personMenu(followed, 1)!.options.map((o) => o.id)).toEqual(['ask', 'access-full', 'unfollow', 'browse', 'untrust']);
-    expect(personMenu(room(), 2)!.options.map((o) => o.id)).toEqual(['access-full', 'follow', 'trust']); // no Claude, no shares
+    expect(personMenu(followed, 1)!.options.map((o) => o.id)).toEqual(['ask', 'access-full', 'unfollow', 'browse', 'fulltrust', 'untrust']);
+    expect(personMenu(reduce(room(), { type: 'full_trust', peerId: 'b', trusted: true }), 1)!.options.map((o) => o.id)).toContain('unfulltrust');
+    expect(personMenu(room(), 2)!.options.map((o) => o.id)).toEqual(['access-full', 'follow', 'fulltrust', 'trust']); // no Claude, no shares
     expect(personMenu(room(), 9)).toBeUndefined();
   });
 
@@ -53,7 +54,7 @@ describe('menus', () => {
     expect(personMenu(room(), 0)!.options.map((o) => o.id)).toEqual(['ask-self', 'sharing', 'settings']);
     const withInvite = reduce(room(), { type: 'invite', invite: 'https://x#y' });
     expect(menuSpec(withInvite, { kind: 'person', index: 0 })!.options.map((o) => o.id)).toEqual(['ask-self', 'invite', 'sharing', 'settings']);
-    expect(menuSpec(room(), { kind: 'settings' })!.options.map((o) => o.id)).toEqual(['set-name', 'set-theme', 'set-policy', 'set-mouse', 'set-tunnel', 'size-in', 'size-out', 'size-reset', 'close']);
+    expect(menuSpec(room(), { kind: 'settings' })!.options.map((o) => o.id)).toEqual(['set-name', 'set-theme', 'set-policy', 'set-self-approval', 'set-mouse', 'set-tunnel', 'size-in', 'size-out', 'size-reset', 'close']);
     expect(menuSpec(room(), { kind: 'welcome' })?.title).toContain('Welcome');
   });
 });

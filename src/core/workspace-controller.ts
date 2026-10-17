@@ -141,6 +141,26 @@ export class WorkspaceController {
     return Boolean(done);
   }
 
+  /** Look for env changes before archiving/deleting, so the confirm dialog can offer to keep them. */
+  prepareRemoval(id: string): void {
+    let changes: ReturnType<WorkspaceManager['envChanges']> = [];
+    try {
+      changes = this.deps.manager.envChanges(id);
+    } catch {
+      changes = [];
+    }
+    this.deps.store.dispatch({ type: 'env_changes', id, changes });
+  }
+
+  applyEnvBack(id: string): void {
+    try {
+      const n = this.deps.manager.applyEnvBack(id);
+      this.deps.toast(n ? `Copied env changes from ${n} file(s) into the main folder` : 'No env changes to copy', 'success');
+    } catch (err) {
+      this.deps.toast(`Couldn't copy env changes: ${errorText(err)}`, 'error');
+    }
+  }
+
   async restore(id: string): Promise<void> {
     if (await this.act("Couldn't restore", () => this.deps.manager.restore(id).then(() => true))) this.open(id);
   }
@@ -148,6 +168,7 @@ export class WorkspaceController {
   async remove(id: string): Promise<void> {
     const done = await this.act("Couldn't delete", () => this.deps.manager.remove(id).then(() => true));
     if (done) {
+      this.loaded.delete(`${WS_PREFIX}${id}`);
       this.deps.store.dispatch({ type: 'close_tab', id });
       this.deps.toast('Deleted', 'success');
     }
@@ -166,6 +187,10 @@ export class WorkspaceController {
     if (!result) return;
     if (result.ok) {
       this.deps.toast(`Merged ${ws.branch} into the main folder`, 'success');
+      return;
+    }
+    if (result.reason === 'wrong_branch') {
+      this.deps.toast(`The main folder is on ${result.current}, not ${result.expected}. Switch it to ${result.expected} first.`, 'warn');
       return;
     }
     if (result.reason === 'dirty') {
@@ -187,6 +212,12 @@ export class WorkspaceController {
         `Resolve any conflicts carefully, keeping both sides' intent, then run the tests and commit the merge.${list}`,
       `${WS_PREFIX}${id}`,
     );
+  }
+
+  /** Shrink the conversation's context: Claude summarizes what matters and continues from there. */
+  compact(id: string, instructions = ''): void {
+    this.open(id);
+    this.deps.askClaude(`/compact${instructions ? ` ${instructions}` : ''}`, `${WS_PREFIX}${id}`);
   }
 
   askClaudeToReview(id: string): void {

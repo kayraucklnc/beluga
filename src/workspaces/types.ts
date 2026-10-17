@@ -18,6 +18,8 @@ export interface WorkspaceRecord {
   /** Set on forks until their first run, so Claude branches the parent's conversation. */
   readonly forkFromSession?: string;
   readonly forkedFrom?: string;
+  /** Hashes of env files copied into this worktree at creation, to detect changes later. */
+  readonly envSnapshot?: Readonly<Record<string, string>>;
 }
 
 /** A workspace as shown in the UI: record + live git status. */

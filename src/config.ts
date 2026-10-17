@@ -51,6 +51,7 @@ export interface Config {
   readonly policyChosen: boolean;
   readonly mouse: boolean;
   readonly theme: Settings['theme'];
+  readonly selfApproval: Settings['selfApproval'];
   /** Open the tunnel and create an invite right away (otherwise only when you click Invite). */
   readonly inviteNow: boolean;
 }
@@ -134,5 +135,6 @@ export function parseConfig(
     mouse: values['no-mouse'] ? false : saved.mouse,
     inviteNow: Boolean(values.invite),
     theme: saved.theme,
+    selfApproval: saved.selfApproval,
   };
 }
