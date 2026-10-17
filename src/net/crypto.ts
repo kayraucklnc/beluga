@@ -1,4 +1,6 @@
-import { type KeyObject, createCipheriv, createDecipheriv, createHash, createHmac, createPublicKey, generateKeyPairSync, hkdfSync, randomBytes, sign, timingSafeEqual, verify } from 'node:crypto';
+import { type KeyObject, createCipheriv, createDecipheriv, createHash, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, hkdfSync, randomBytes, sign, timingSafeEqual, verify } from 'node:crypto';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import type { Box } from '../protocol.js';
 
 /** Keys derived from the room secret. The secret itself never goes on the wire. */
@@ -72,6 +74,55 @@ export function generateIdentity(): Identity {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const pub = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
   return { publicKey: pub, privateKey, peerId: peerIdFor(pub) };
+}
+
+function identityFrom(privateKey: KeyObject): Identity {
+  const pub = createPublicKey(privateKey).export({ type: 'spki', format: 'der' }).toString('base64');
+  return { publicKey: pub, privateKey, peerId: peerIdFor(pub) };
+}
+
+/**
+ * Your long-lived identity, kept in ~/.klaud/identity.json (readable only by you). It lets
+ * friends recognize you across sessions, so the trust level they gave you comes back.
+ */
+export function loadIdentity(file: string): Identity {
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as { privateKey?: string };
+    if (raw.privateKey) return identityFrom(createPrivateKey(raw.privateKey));
+  } catch {
+    // Missing or unreadable: make a new one below.
+  }
+  const fresh = generateIdentity();
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify({ privateKey: fresh.privateKey.export({ type: 'pkcs8', format: 'pem' }) })}\n`, { mode: 0o600 });
+    renameSync(tmp, file);
+  } catch {
+    // Can't save: this run still works, with a one-off identity.
+  }
+  return fresh;
+}
+
+/**
+ * What a message signature covers: the whole sealed box (a hash of it; the GCM tag alone isn't
+ * enough, since everyone in the room holds the key) and who it's for.
+ */
+const signed = (box: Box, to: string): Buffer => Buffer.from(`klaud-msg:${createHash('sha256').update(box.iv).update(':').update(box.ct).update(':').update(box.tag).digest('base64')}:${to}`);
+
+/** Sign one sealed message so nobody (not even the room's host) can send it in your name. */
+export function signBox(identity: Identity, box: Box, to = ''): string {
+  return sign(null, signed(box, to), identity.privateKey).toString('base64');
+}
+
+export function verifyBox(publicKey: string, peerId: string, box: Box, signature: string, to = ''): boolean {
+  try {
+    if (peerIdFor(publicKey) !== peerId) return false;
+    const key = createPublicKey({ key: Buffer.from(publicKey, 'base64'), format: 'der', type: 'spki' });
+    return verify(null, signed(box, to), key, Buffer.from(signature, 'base64'));
+  } catch {
+    return false;
+  }
 }
 
 /** Sign the hub's challenge (bound to the peer id) with your own key. */

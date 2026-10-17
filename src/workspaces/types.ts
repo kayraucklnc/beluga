@@ -1,4 +1,19 @@
 import type { Status } from './git.js';
+import type { ProjectScripts, ResolvedScripts } from './scripts.js';
+
+/** Claude usage in one workspace, summed over every run. */
+export interface WorkspaceUsage {
+  readonly input: number;
+  readonly output: number;
+  readonly cacheRead: number;
+  readonly cacheWrite: number;
+  /** Estimated cost in USD (what the SDK reports; not a bill). */
+  readonly cost: number;
+  readonly runs: number;
+  /** The SDK reports running totals per conversation; remembered to add only what's new. */
+  readonly lastSession?: string;
+  readonly last?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number; readonly cost: number };
+}
 
 export type WorkspaceKind = 'main' | 'worktree' | 'chat';
 
@@ -20,6 +35,13 @@ export interface WorkspaceRecord {
   readonly forkedFrom?: string;
   /** Hashes of env files copied into this worktree at creation, to detect changes later. */
   readonly envSnapshot?: Readonly<Record<string, string>>;
+  /** Model picked for this conversation (unset: your default). */
+  readonly model?: string;
+  readonly usage?: WorkspaceUsage;
+  /** Handed off to a friend (their name), who continues it on their computer. */
+  readonly handedTo?: string;
+  /** Came from a friend's handoff (their name). */
+  readonly handedFrom?: string;
 }
 
 /** A workspace as shown in the UI: record + live git status. */
@@ -37,6 +59,8 @@ export interface Project {
   readonly base: string;
   readonly workspaces: readonly Workspace[];
   readonly error?: string;
+  /** Setup and run commands that apply to this project. */
+  readonly scripts?: ResolvedScripts;
 }
 
 export interface ProjectGroup {
@@ -54,4 +78,8 @@ export interface ProjectsConfig {
   readonly hidden: readonly string[];
   /** Your own grouping of projects in the sidebar. */
   readonly groups?: readonly ProjectGroup[];
+  /** Setup / run commands you set per project (by project root), over klaud.json and guesses. */
+  readonly scripts?: Readonly<Record<string, ProjectScripts>>;
+  /** Setup commands from a project's own klaud.json/conductor.json you allowed to run (by root → command hashes). */
+  readonly approvedScripts?: Readonly<Record<string, readonly string[]>>;
 }

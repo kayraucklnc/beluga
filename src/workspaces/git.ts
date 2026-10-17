@@ -86,7 +86,8 @@ export interface Status {
 
 /** Uncommitted file count plus commits ahead/behind `base`. */
 export async function status(dir: string, base?: string): Promise<Status> {
-  const out = await git(dir, ['status', '--porcelain=v1', '-b']);
+  // Never take the index lock just to look: a commit (yours or Claude's) may be running.
+  const out = await git(dir, ['--no-optional-locks', 'status', '--porcelain=v1', '-b']);
   const [head = '', ...files] = out.split('\n').filter(Boolean);
   const branch = /^## (?:No commits yet on )?([^.\s]+)/.exec(head)?.[1];
   let ahead = 0;
@@ -147,11 +148,23 @@ export async function fileDiff(dir: string, base: string, path: string): Promise
   return (await tryGit(dir, ['diff', '--no-index', '--', '/dev/null', path])) ?? '';
 }
 
+/** Run git, retrying briefly while another git process holds the index lock. */
+async function withLockRetry(cwd: string, args: readonly string[], tries = 6): Promise<string> {
+  for (let i = 0; ; i++) {
+    try {
+      return await git(cwd, args);
+    } catch (err) {
+      if (i >= tries - 1 || !(err instanceof GitError) || !/index\.lock/.test(err.message)) throw err;
+      await new Promise((r) => setTimeout(r, 120 * (i + 1)));
+    }
+  }
+}
+
 export async function commitAll(dir: string, message: string): Promise<boolean> {
-  await git(dir, ['add', '-A']);
+  await withLockRetry(dir, ['add', '-A']);
   const staged = (await tryGit(dir, ['diff', '--cached', '--name-only']))?.trim();
   if (!staged) return false;
-  await git(dir, ['commit', '-m', message]);
+  await withLockRetry(dir, ['commit', '-m', message]);
   return true;
 }
 

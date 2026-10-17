@@ -11,7 +11,10 @@ export interface AgentRunInput {
   /** 'folder': only the shared folders. 'full': the whole computer (secrets still blocked). */
   readonly scope: AccessScope;
   readonly signal: AbortSignal;
-  readonly onEvent: (kind: 'text' | 'tool' | 'sub' | 'context' | 'compact', text: string) => void;
+  readonly onEvent: (kind: 'text' | 'tool' | 'sub' | 'context' | 'compact' | 'usage', text: string) => void;
+  /** Model for this run (an alias like "sonnet" or a full id); unset: the default. */
+  readonly model?: string;
+  readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Where to run: a workspace folder with its own Claude conversation. Defaults to the room's folder. */
   readonly place?: AgentPlace;
   /** Called with absolute paths the agent wrote to, so the room can follow along. */
@@ -33,6 +36,8 @@ export interface AgentPlace {
   /** Branch `resume` into a new conversation (used by forks). */
   readonly forkSession?: boolean;
   readonly onSession: (sessionId: string) => void;
+  /** The model picked for this conversation. */
+  readonly model?: string;
 }
 
 export interface SubAgentEvent {
@@ -52,6 +57,8 @@ export interface AgentBackend {
   refreshUsage?(): Promise<Usage | undefined>;
   /** A short worktree name for a task (a small model names it). */
   nameTask?(prompt: string): Promise<string>;
+  /** Models this Claude Code offers, for the model picker. */
+  listModels?(): Promise<ReadonlyArray<{ value: string; label: string; description: string; efforts?: readonly string[] }> | undefined>;
 }
 
 /** What an agent may do to the room, exposed to it as MCP tools. */
@@ -65,4 +72,8 @@ export interface RoomBridge {
   writeReport(title: string, markdown: string): Promise<string>;
   /** Plan usage observed while running (rate-limit events). */
   reportUsage(usage: Partial<Usage>): void;
+  /** Get a file from anywhere on a peer's computer (they approve); returns where it was saved here. */
+  getPeerFile(peerName: string, path: string, saveTo?: string, why?: string): Promise<string>;
+  /** Send a file from this computer to a peer; it's saved on their side. */
+  sendFile(peerName: string, path: string, note?: string): Promise<string>;
 }

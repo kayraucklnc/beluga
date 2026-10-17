@@ -59,7 +59,7 @@ export function chatLines(state: AppState, cols: number, frame: number, channel 
   if (cols <= 0) return []; // hidden (e.g. the viewer is fullscreen)
   const items = state.log.filter((l) => l.channel === channel);
   const banner = channel === 'room' ? inviteBanner(state, cols, frame) : [];
-  const log = renderLog(items, cols, { selfId: state.self?.peerId, frame, now: Date.now() });
+  const log = renderLog(items, cols, { selfId: state.self?.peerId, frame, now: Date.now(), subagents: state.prefs.subagents });
   const empty = channel === 'room' ? (state.peers.length <= 1 ? SOLO_HINT : EMPTY_HINT) : channel === 'draft' ? (state.view.kind === 'draft_worktree' ? WORKTREE_DRAFT_HINT : DRAFT_HINT) : WORKSPACE_HINT;
   return [...banner, ...(items.length ? log : empty)];
 }

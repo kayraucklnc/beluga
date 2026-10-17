@@ -16,6 +16,17 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'new', args: '<name>', desc: 'new worktree from the latest origin (in the current project)' },
   { name: 'chat', args: '<title>', desc: 'new Claude chat in the current project, no worktree' },
   { name: 'review', desc: "see this workspace's changes" },
+  { name: 'pr', args: '[extra instructions]', desc: 'Claude opens a pull request with a short description (your PR instructions)' },
+  { name: 'run', desc: "start the project's run command (e.g. its dev server) in the Terminal tab" },
+  { name: 'terminal', desc: "open this workspace's terminal" },
+  { name: 'setup', desc: "run the project's setup command again in this workspace" },
+  { name: 'handoff', args: '<name>', desc: 'hand this workspace to someone; their Claude continues it' },
+  { name: 'model', args: '[name]', desc: 'pick the model for this conversation' },
+  { name: 'search', args: '<words>', desc: 'search every conversation' },
+  { name: 'usage', desc: 'disk space and Claude usage per workspace' },
+  { name: 'inbox', desc: 'what happened while you were elsewhere' },
+  { name: 'template', args: 'save <name>: <prompt>', desc: 'start from a template, or save your own' },
+  { name: 'shell', args: '<path>', desc: 'the shell for the built-in terminal' },
   { name: 'compact', args: '[focus]', desc: "shrink this conversation's context (Claude keeps what matters)" },
   { name: 'merge', desc: 'merge this worktree into the main folder' },
   { name: 'commit', args: '[message]', desc: 'commit all changes in this workspace' },
@@ -24,7 +35,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'archive', desc: 'archive this workspace (keeps branch and conversation)' },
   { name: 'restore', desc: 'bring an archived workspace back' },
   { name: 'delete', desc: 'delete this workspace, its branch and conversation' },
-  { name: 'project', args: 'add <path>', desc: 'add a project, or "folder <path>" to watch a folder of projects' },
+  { name: 'project', args: 'add <path>', desc: 'add a project, "folder <path>" to watch a folder, or "setup|run <command>"' },
   { name: 'copy', desc: "copy the last Claude answer" },
   { name: 'follow', args: '<name>', desc: "follow someone's screen and their Claude" },
   { name: 'unfollow', desc: 'stop following' },
@@ -93,7 +104,44 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'restore':
     case 'delete':
     case 'project':
+    case 'pr':
+    case 'run':
+    case 'terminal':
+    case 'setup':
+    case 'handoff':
       runWorkspaceCommand(session, name, args);
+      return;
+    case 'model': {
+      const channel = channelOf(state.view);
+      const pick = state.models.find((m) => m.value === arg || m.label.toLowerCase() === (arg ?? '').toLowerCase());
+      if (!arg || !pick) return session.store.dispatch({ type: 'overlay', overlay: 'model' });
+      if (session.workbench) session.workbench.setModel(channel === 'room' || channel === 'draft' ? undefined : channel, pick.value);
+      else session.setPrefs({ model: pick.value || undefined });
+      return;
+    }
+    case 'search':
+    case 'find':
+      session.store.dispatch({ type: 'view', view: { kind: 'search' } });
+      if (args.length) session.workbench?.search(args.join(' '));
+      return;
+    case 'usage':
+    case 'space':
+      session.store.dispatch({ type: 'view', view: { kind: 'usage' } });
+      void session.workbench?.measureDisk();
+      return;
+    case 'inbox':
+    case 'notifications':
+      session.store.dispatch({ type: 'overlay', overlay: 'inbox' });
+      return;
+    case 'template':
+    case 'templates':
+      if (arg === 'save') return session.workbench?.saveTemplate(args.slice(1).join(' '));
+      session.store.dispatch({ type: 'overlay', overlay: 'templates' });
+      return;
+    case 'shell':
+      if (!arg) return session.toast(`Terminal shell: ${state.prefs.shell ?? process.env.SHELL ?? '/bin/zsh'}. Use /shell <path> to change it`);
+      session.setPrefs({ shell: arg });
+      session.toast(`New terminals use ${arg}`, 'success');
       return;
     case 'copy':
       void session.copyLastAnswer();
@@ -209,14 +257,20 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
   const ctl = session.workspaces;
   if (!ctl) return session.toast('Projects are not available in this mode', 'warn');
   const text = args.join(' ').trim();
+  const ws = ctl.current();
   if (name === 'project') {
     const [sub, ...rest] = args;
+    if (sub === 'setup' || sub === 'run') {
+      const project = ws ? ctl.manager.list.find((p) => p.id === ws.projectId && p.root) : undefined;
+      if (!project) return session.toast('Open a workspace in the project first, or use the project ⋯ menu', 'warn');
+      session.workbench?.setScript(project.id, sub, rest.join(' '));
+      return;
+    }
     const dir = rest.join(' ').replace(/^~(?=$|\/)/, process.env.HOME ?? '~');
-    if (!dir || (sub !== 'add' && sub !== 'folder')) return session.toast('Usage: /project add <path>  or  /project folder <path>', 'warn');
+    if (!dir || (sub !== 'add' && sub !== 'folder')) return session.toast('Usage: /project add <path>, /project folder <path>, /project setup <command> or /project run <command>', 'warn');
     void (sub === 'add' ? ctl.addProject(dir) : ctl.addFolder(dir));
     return;
   }
-  const ws = ctl.current();
   const repos = ctl.manager.list.filter((p) => p.root);
   const project = ws ? ctl.manager.list.find((p) => p.id === ws.projectId) : repos.length === 1 ? repos[0] : undefined;
   if (name === 'new' || name === 'worktree' || name === 'chat') {
@@ -227,6 +281,26 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
   }
   if (!ws) return session.toast('Open a workspace first (Projects on the left)', 'warn');
   switch (name) {
+    case 'pr':
+      session.workbench?.createPr(ws.id, text);
+      return;
+    case 'run':
+      session.workbench?.run(ws.id);
+      ctl.open(ws.id, 'terminal');
+      return;
+    case 'terminal':
+      ctl.open(ws.id, 'terminal');
+      return;
+    case 'setup':
+      session.workbench?.runSetup(ws.id);
+      ctl.open(ws.id, 'terminal');
+      return;
+    case 'handoff': {
+      const peer = text ? session.findPeer(text) : undefined;
+      if (!peer) return session.store.dispatch({ type: 'overlay', overlay: 'handoff' });
+      void session.remote.handoff(ws.id, peer.peerId);
+      return;
+    }
     case 'review':
       ctl.open(ws.id, 'review');
       return;

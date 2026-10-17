@@ -11,10 +11,12 @@ const TALK: ReadonlyArray<readonly [string, string]> = [
   ['@claude fix the tests', 'your Claude, on your machine'],
   ['@claude:bob review this', "Bob's Claude, on Bob's machine (Bob approves)"],
   ['@claudes ideas?', 'every Claude at once'],
+  ["get bob's ~/Desktop/report.pdf onto my desktop", 'your Claude asks bob’s computer (bob approves, unless he fully trusts you)'],
 ];
 
 const KEYS: ReadonlyArray<readonly [string, string]> = [
   ['Tab / Shift+Tab', 'walk through every button and area'],
+  ['Ctrl+]', 'leave the built-in terminal (or click anywhere else)'],
   ['Enter / Option+Enter', 'send (queued while Claude works) / interrupt and send now'],
   ['1 – 4', "pick an option on Claude's question card"],
   ['Option+Q / Option+L', 'type @ on Turkish / German Macs'],

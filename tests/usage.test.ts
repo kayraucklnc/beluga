@@ -57,11 +57,9 @@ describe('usage', () => {
     expect(peopleRows(s, 0)[1]!.agent.map((x) => x.text).join('')).toBe('◆ Claude ready · 5h 42%');
     const menu = personMenu(s, 1)!;
     expect(menu.intro.join('\n')).toContain('Claude usage (pro):  5-hour 42%   ·   week 10%');
-    expect(menu.intro.join('\n')).toContain('can only use your shared folders');
-    expect(menu.options.map((o) => o.id)).toContain('access-full');
-    const full = reduce(s, { type: 'access', peerId: 'b', scope: 'full' });
-    expect(personMenu(full, 1)!.options.map((o) => o.id)).toContain('access-folder');
-    expect(personMenu(full, 1)!.intro.join('\n')).toContain('can read anything on this computer');
-    expect(reduce(full, { type: 'peers', peers: [peers[0]!] }).access).toEqual({}); // access ends when they leave
+    expect(menu.intro.join('\n')).toContain('How much do you trust bob? Now: Ask me each time.');
+    const full = reduce(s, { type: 'trust_level', peerId: 'b', level: 'full' });
+    expect(personMenu(full, 1)!.intro.join('\n')).toContain('Now: Full trust');
+    expect(reduce(full, { type: 'peers', peers: [peers[0]!] }).levels).toEqual({}); // re-applied from saved choices when they return
   });
 });

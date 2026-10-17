@@ -128,7 +128,7 @@ describe('hub resilience', () => {
     b.connect();
     await waitFor(() => inbox.length === 1);
     // Drop b's socket; it reconnects and receives the same history again.
-    (b as unknown as { ws: WebSocket }).ws.terminate();
+    (b as unknown as { socket: { terminate(): void } }).socket.terminate();
     await waitFor(() => !b.connected);
     await waitFor(() => b.connected, 5000);
     a.client.send({ kind: 'chat', text: 'after' });

@@ -2,7 +2,7 @@ import type { AgentPlace } from '../agent/types.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import type { ShareService } from './shares.js';
-import { type LogItem, type Store, channelOf } from './store.js';
+import { type LogItem, type Store, type WorkspaceTab, channelOf } from './store.js';
 import type { Conversation } from '../agent/transcript.js';
 
 export interface ControllerDeps {
@@ -15,6 +15,8 @@ export interface ControllerDeps {
   readonly askClaude: (prompt: string, channel: string) => void;
   /** The latest Claude Code conversation in a folder (from other tools), to show and continue. */
   readonly findConversation?: (dir: string) => Promise<Conversation | undefined>;
+  /** A new worktree exists (created, forked or handed over): e.g. run its setup. */
+  readonly onWorktreeCreated?: (ws: Workspace) => void;
 }
 
 const HISTORY_SAVE_MS = 400;
@@ -76,8 +78,8 @@ export class WorkspaceController {
     this.deps.store.dispatch({ type: 'projects', projects, groups: this.deps.manager.groups });
   }
 
-  /** Show a workspace (chat, files, or review), loading its saved conversation the first time. */
-  open(id: string, tab: 'chat' | 'files' | 'review' = 'chat'): void {
+  /** Show a workspace (chat, files, diff or terminal), loading its saved conversation the first time. */
+  open(id: string, tab: WorkspaceTab = 'chat'): void {
     const ws = this.deps.manager.find(id);
     if (!ws) return this.deps.toast('That workspace no longer exists', 'warn');
     const channel = `${WS_PREFIX}${id}`;
@@ -124,6 +126,7 @@ export class WorkspaceController {
       resume: ws.forkFromSession ?? ws.sessionId,
       forkSession: Boolean(ws.forkFromSession),
       onSession: (sessionId) => this.deps.manager.rememberSession(ws.id, sessionId),
+      ...(ws.model ? { model: ws.model } : {}),
     };
   }
 
@@ -146,6 +149,7 @@ export class WorkspaceController {
     if (ws) {
       this.deps.toast(`Worktree ${ws.name} is ready on ${ws.branch}`, 'success');
       this.open(ws.id);
+      this.deps.onWorktreeCreated?.(ws);
     }
     return ws;
   }
@@ -177,6 +181,7 @@ export class WorkspaceController {
       this.deps.toast(`Forked into ${ws.name}, with the conversation so far`, 'success');
       this.loaded.delete(`${WS_PREFIX}${ws.id}`);
       this.open(ws.id);
+      this.deps.onWorktreeCreated?.(ws);
     }
     return ws;
   }

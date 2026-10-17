@@ -17,11 +17,21 @@ describe('decideTool', () => {
     expect(decideTool('Bash', { command: 'cat NOTES.md' }, rw)).toBe('ask');
   });
 
-  it('blocks files outside the shared folders for folder-only access', () => {
-    expect(decideTool('Read', { file_path: '/etc/hosts' }, ctx)).toBe('deny');
-    expect(decideTool('Read', { file_path: '../other/x' }, ctx)).toBe('deny');
-    expect(decideTool('LS', { path: '/work/proj-evil' }, ctx)).toBe('deny');
+  it('asks the owner before reading outside the shared folders, and blocks edits there', () => {
+    expect(decideTool('Read', { file_path: '/etc/hosts' }, ctx)).toBe('ask');
+    expect(decideTool('Read', { file_path: '../other/x' }, ctx)).toBe('ask');
+    expect(decideTool('LS', { path: '/work/proj-evil' }, ctx)).toBe('ask');
     expect(decideTool('Write', { file_path: '/tmp/x' }, rw)).toBe('deny');
+  });
+
+  it('treats sending a file like reading it', () => {
+    expect(decideTool('mcp__klaud__send_file', { path: '/work/proj/NOTES.md' }, ctx)).toBe('allow');
+    // Relative paths are refused: the file checked must be the file sent.
+    expect(decideTool('mcp__klaud__send_file', { path: 'NOTES.md' }, ctx)).toBe('deny');
+    expect(decideTool('mcp__klaud__send_file', { path: '/Users/me/Desktop/a.pdf' }, ctx)).toBe('ask');
+    expect(decideTool('mcp__klaud__send_file', { path: '/Users/me/Desktop/a.pdf' }, { ...ctx, scope: 'full' })).toBe('allow');
+    expect(decideTool('mcp__klaud__send_file', { path: '/Users/me/.ssh/id_rsa' }, { ...ctx, scope: 'full' })).toBe('deny');
+    expect(decideTool('mcp__klaud__send_file', { path: '/work/proj/.env' }, ctx)).toBe('deny');
   });
 
   it('lets whole-computer access read anywhere, but still asks before edits outside :rw', () => {

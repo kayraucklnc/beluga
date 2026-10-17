@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PeerInfo } from '../src/protocol.js';
 import { openTarget, suggest } from '../src/ui/suggest.js';
+import { COMMANDS } from '../src/core/commands.js';
 
 const peers: PeerInfo[] = [
   { peerId: 'me', name: 'kay', agent: true, shares: [{ name: 'app', writable: true }] },
@@ -20,7 +21,7 @@ const values = (buffer: string) => suggest(buffer, ctx).map((s) => s.value);
 
 describe('suggest', () => {
   it('lists matching commands as soon as you type /', () => {
-    expect(values('/').length).toBe(39); // every command, shown in a scrolling list
+    expect(values('/').length).toBe(COMMANDS.length); // every command, shown in a scrolling list
     expect(values('/fo')).toEqual(['/fork ', '/follow ']);
     expect(values('/he')).toEqual(['/help']);
     expect(suggest('/fol', ctx)[0]).toMatchObject({ label: '/follow <name>', hint: expect.stringContaining('follow') });

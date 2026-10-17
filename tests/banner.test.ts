@@ -20,7 +20,9 @@ describe('inviteBanner', () => {
   });
 
   it('walks through tunnel phases', () => {
-    expect(text(inviteBanner(hosting(withPeers(1), 'tunnel', 'Downloading…'), 70, 0))).toContain('Opening a secure tunnel');
+    expect(text(inviteBanner(hosting(withPeers(1), 'tunnel', 'Downloading…'), 70, 0))).toContain('Opening a direct, end-to-end encrypted connection');
+    const relay = reduce(hosting(withPeers(1), 'tunnel', 'Downloading…'), { type: 'prefs', prefs: { tunnel: 'cloudflared' } });
+    expect(text(inviteBanner(relay, 70, 0))).toContain('Opening a secure tunnel');
     expect(text(inviteBanner(hosting(withPeers(1), 'tunnel', 'Downloading…'), 70, 0))).toContain('Downloading…');
     expect(text(inviteBanner(hosting(withPeers(1), 'reachable'), 70, 0))).toContain('Waiting for it to be reachable');
     expect(text(inviteBanner(hosting(withPeers(1), 'failed', 'no network'), 70, 0))).toContain('no network');

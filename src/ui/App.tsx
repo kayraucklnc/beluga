@@ -6,17 +6,15 @@ import path from 'node:path';
 import { Box, useApp, useInput, useStdout } from 'ink';
 import type { Session } from '../core/session.js';
 import { type AppState, type Location, channelOf } from '../core/store.js';
-import { THEMES } from '../core/settings.js';
 import { shareNameOf } from '../core/workspace-controller.js';
 import type { FsEntry } from '../protocol.js';
 import { anyActivity } from './banner.js';
 import { ApprovalCard } from './components/ApprovalCard.js';
-import { ChatView, chatLines } from './components/ChatView.js';
+import { chatLines } from './components/ChatView.js';
 import { Composer } from './components/Composer.js';
-import { FilesPanel } from './components/FilesPanel.js';
-import { Header } from './components/Header.js';
-import { HelpOverlay } from './components/HelpOverlay.js';
-import { Menu } from './components/Menu.js';
+import { MainPane } from './components/MainPane.js';
+import { isLeaveKey } from '../terminal/index.js';
+import { shellId } from '../core/workbench.js';
 import { ModelBlock } from './components/ModelBlock.js';
 import { Panel } from './components/Panel.js';
 import { Sidebar } from './components/Sidebar.js';
@@ -26,11 +24,13 @@ import { type Target, hitTest } from './hit.js';
 import { type Effect, type UiState, handleKey, initialUi } from './keymap.js';
 import { type MenuKind } from './menus.js';
 import { type MenuContext, POLICY_INDEX, runMenu as runMenuOption } from './menu-actions.js';
-import { answerByNumber, answerTyped, currentQuestion, runCollabUiAction } from './collab-actions.js';
-import { MOUSE_OFF, MOUSE_ON, type MouseEvent } from './mouse.js';
+import { answerByNumber, answerTyped, currentQuestion } from './collab-actions.js';
+import type { MouseEvent } from './mouse.js';
 import { openTarget, suggestionWindow } from './suggest.js';
-import { applyTheme, theme } from './theme.js';
-import { type UiAction, isCompacting, toggleProject } from './workspace-models.js';
+import { theme } from './theme.js';
+import { type UiAction, isCompacting } from './workspace-models.js';
+import { type UiActionContext, runUiActionWith } from './ui-actions.js';
+import { useTerminalPane } from './use-terminal.js';
 
 const TOAST_MS = 3500;
 const FRAME_MS = 100;
@@ -50,6 +50,10 @@ const BUTTON_HINTS: Record<string, string> = {
   chat: 'Back to typing',
   clear: 'Clear this conversation (you choose: just you, everyone, or a fresh start)',
   'share-folder': 'Share a folder with everyone, or just one person',
+  terminal: "A real shell in this workspace's folder",
+  templates: 'Start from a ready-made task, or save your own',
+  'open-hit': 'Open the highlighted conversation',
+  'refresh-usage': 'Measure disk space again',
 };
 
 export interface AppProps {
@@ -58,6 +62,8 @@ export interface AppProps {
   readonly onboarding?: boolean;
   /** Subscribe to mouse events (clicks and wheel). Omit to run keyboard-only. */
   readonly subscribeMouse?: (listener: (e: MouseEvent) => void) => () => void;
+  /** Send keyboard input straight to a function (the built-in terminal) instead of Ink; undefined gives it back. */
+  readonly setRawInput?: (sink: ((data: string) => void) | undefined) => void;
 }
 
 function useTerminalSize(): { columns: number; rows: number } {
@@ -108,7 +114,7 @@ function listLocalDirs(dir: string): FsEntry[] {
 
 const isWorking = (state: AppState): boolean => anyActivity(state) || isCompacting(state) || state.transfers.some((t) => t.status === 'active');
 
-export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
+export function App({ session, onboarding = false, subscribeMouse, setRawInput }: AppProps) {
   const state = useSyncExternalStore(session.store.subscribe, session.store.getState);
   const [startUi] = useState<UiState>(() =>
     onboarding ? { ...initialUi, menu: { menu: { kind: 'welcome' }, selected: POLICY_INDEX[state.policy] } } : initialUi,
@@ -148,11 +154,33 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       patchUi({ menu: { menu: { kind: 'clear', channel: view().channel, host: session.isHost }, selected: 0 } });
       return;
     }
-    if (state.overlay !== 'settings' && state.overlay !== 'welcome') return;
-    const kind = state.overlay;
+    const overlay = state.overlay;
+    if (overlay === 'model' || overlay === 'inbox' || overlay === 'templates' || overlay === 'handoff') {
+      session.store.dispatch({ type: 'overlay', overlay: undefined });
+      const channel = view().channel;
+      const wsId = state.view.kind === 'workspace' ? state.view.id : undefined;
+      if (overlay === 'model') patchUi({ menu: { menu: { kind: 'model', ...(channel === 'room' || channel === 'draft' ? {} : { channel }) }, selected: 0 } });
+      else if (overlay === 'inbox') patchUi({ menu: { menu: { kind: 'inbox' }, selected: 0 } });
+      else if (overlay === 'templates') patchUi({ menu: { menu: { kind: 'templates' }, selected: 0 } });
+      else if (wsId) patchUi({ menu: { menu: { kind: 'handoff', id: wsId }, selected: 0 } });
+      return;
+    }
+    if (overlay !== 'settings' && overlay !== 'welcome') return;
     session.store.dispatch({ type: 'overlay', overlay: undefined });
-    patchUi({ menu: { menu: { kind }, selected: kind === 'welcome' ? POLICY_INDEX[state.policy] : 0 } });
+    patchUi({ menu: { menu: { kind: overlay }, selected: overlay === 'welcome' ? POLICY_INDEX[state.policy] : 0 } });
   }, [state.overlay]);
+
+  // Search as you type, when the Search tab is open.
+  const searchQuery = state.view.kind === 'search' && !ui.buffer.startsWith('/') ? ui.buffer : undefined;
+  useEffect(() => {
+    if (searchQuery === undefined) return;
+    const t = setTimeout(() => session.workbench?.search(searchQuery), 120);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // ---- the built-in terminal
+  const bench = session.workbench;
+  const { termPane, termSession, termFocused, termBar } = useTerminalPane({ session, state, ui, uiRef, patchUi, focus: d.focus, geometry: g, setRawInput });
 
   // Opening a file (yourself) moves you into the viewer so its controls are right there.
   const openedKey = state.viewer && !state.viewer.by ? `${state.viewer.owner}:${state.viewer.share}/${state.viewer.path}` : undefined;
@@ -210,112 +238,8 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     patchUi({ collapsed: collapsed.includes(key) ? collapsed.filter((c) => c !== key) : [...collapsed, key] });
   };
 
-  const runUiAction = (action: UiAction): void => {
-    if (runCollabUiAction(menuCtx, action)) return;
-    switch (action.type) {
-      case 'open_ws':
-        ctl?.open(action.id, action.tab);
-        // Opening a view puts you inside it: the file list, the diff, or the chat.
-        patchUi(action.tab === 'review' ? { focus: 'main', entered: true } : action.tab === 'files' ? { focus: 'files', entered: true } : { focus: 'chat', entered: false });
-        return;
-      case 'toggle_project': {
-        const latest = session.store.getState();
-        const project = latest.projects.find((p) => p.id === action.id);
-        if (project) patchUi({ collapsed: toggleProject(latest, project, uiRef.current.collapsed) });
-        return;
-      }
-      case 'toggle_group':
-        toggle(`group:${action.name}`);
-        return;
-      case 'toggle_archive':
-        toggle(`archive:${action.projectId}`);
-        return;
-      case 'toggle_fold':
-        toggle(action.key);
-        return;
-      case 'agents_menu':
-        patchUi({ menu: { menu: { kind: 'agents', projectId: action.projectId }, selected: 0 } });
-        return;
-      case 'project_menu':
-        patchUi({ menu: { menu: { kind: 'project', id: action.id }, selected: 0 } });
-        return;
-      case 'archived_menu':
-        patchUi({ menu: { menu: { kind: 'archived', id: action.id }, selected: 0 } });
-        return;
-      case 'none':
-        return;
-      case 'new_worktree': {
-        // Like a new chat: describe the task, and a small model names the worktree from it.
-        const latest = session.store.getState();
-        const back = latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree' ? latest.view.back : latest.view;
-        session.store.dispatch({ type: 'view', view: { kind: 'draft_worktree', projectId: action.projectId, back } });
-        patchUi({ focus: 'chat', buffer: '', cursor: 0 });
-        return;
-      }
-      case 'new_chat': {
-        // An empty chat opens right away; it's only created when you send the first message.
-        const latest = session.store.getState();
-        const back = latest.view.kind === 'draft' ? latest.view.back : latest.view;
-        const dir = action.projectId === 'chats' ? session.launchDir : undefined;
-        session.store.dispatch({ type: 'view', view: { kind: 'draft', projectId: action.projectId, dir, back } });
-        patchUi({ focus: 'chat', buffer: '', cursor: 0 });
-        return;
-      }
-      case 'add_project':
-        typeInto('/project add ~/');
-        return;
-      case 'view':
-        session.store.dispatch({ type: 'view', view: action.view });
-        if (action.view.kind === 'files') {
-          session.store.dispatch({ type: 'browser_cursor', delta: -10_000 });
-          patchUi({ focus: 'files', entered: true });
-        } else patchUi({ focus: action.view.kind === 'overview' ? 'main' : 'chat', entered: action.view.kind === 'overview' });
-        return;
-      case 'close_tab':
-        session.store.dispatch({ type: 'close_tab', id: action.id });
-        return;
-      case 'review_file':
-        void ctl?.selectFile(action.index);
-        patchUi({ focus: 'main' });
-        return;
-      case 'ws': {
-        const ws = ctl?.manager.find(action.id);
-        if (!ctl || !ws) return;
-        switch (action.action) {
-          case 'merge':
-            void ctl.merge(ws.id);
-            return;
-          case 'commit':
-            void ctl.commit(ws.id);
-            return;
-          case 'fork':
-            ctl.open(ws.id);
-            typeInto(`/fork ${ws.name}-2`);
-            return;
-          case 'finder':
-            ctl.openInFinder(ws.id);
-            return;
-          case 'archive':
-          case 'delete':
-            ctl.prepareRemoval(ws.id);
-            patchUi({ menu: { menu: { kind: 'confirm', action: action.action, id: ws.id }, selected: 0 } });
-            return;
-          case 'restore':
-            void ctl.restore(ws.id);
-            return;
-          case 'review_claude':
-            ctl.askClaudeToReview(ws.id);
-            return;
-          case 'merge_claude':
-            ctl.askClaudeToMerge(ws.id);
-            return;
-          case 'compact':
-            ctl.compact(ws.id);
-            return;
-        }
-      }
-    }
-  };
+  const uiCtx: UiActionContext = { session, patchUi, uiRef, toggle, typeInto, menuCtx: () => menuCtx, runMenu: (m, i) => runMenu(m, i) };
+  const runUiAction = (action: UiAction): void => runUiActionWith(uiCtx, action);
 
   const menuCtx: MenuContext = { session, patchUi, typeInto: (b) => typeInto(b), askForName: (k, p) => askForName(k, p), openFolder: (dir) => openFolder(dir), runUiAction: (a) => runUiAction(a), write };
   const runMenu = (menu: MenuKind, index: number): void => runMenuOption(menuCtx, menu, index);
@@ -339,9 +263,21 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
     }
     const pending = uiRef.current.pending;
     if (pending && ctl) {
+      // Only commands may be empty (to clear them); names and tasks need words.
+      if (!text.trim() && pending.kind !== 'setup' && pending.kind !== 'run') {
+        session.toast(pending.kind === 'remote' ? 'Describe the task first, or Esc to cancel' : 'Type a name first, or Esc to cancel', 'warn');
+        return;
+      }
       patchUi({ pending: undefined });
       if (pending.kind === 'group') void ctl.setGroup(pending.projectId, text);
+      else if (pending.kind === 'setup' || pending.kind === 'run') bench?.setScript(pending.projectId, pending.kind, text);
+      else if (pending.kind === 'remote' && pending.peerId) void session.remote.requestWorktree(pending.peerId, pending.projectId, text, latest.planMode.room === true);
       else void (pending.kind === 'worktree' ? ctl.newWorktree(pending.projectId, text) : ctl.newChat(pending.projectId, text));
+      return;
+    }
+    // In Search, Enter opens the highlighted result.
+    if (latest.view.kind === 'search' && !text.startsWith('/')) {
+      if (latest.search.hits.length) runUiAction({ type: 'search_hit', index: latest.search.cursor });
       return;
     }
     session.submit(text, urgent);
@@ -399,6 +335,11 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         const review = session.store.getState().review;
         const count = review?.data?.files.length ?? 0;
         if (review && count) void ctl?.selectFile(Math.max(0, Math.min(count - 1, review.selected + effect.delta)));
+        return;
+      }
+      case 'search_move': {
+        const search = session.store.getState().search;
+        if (search.hits.length) session.store.dispatch({ type: 'search', search: { cursor: Math.max(0, Math.min(search.hits.length - 1, search.cursor + effect.delta)) } });
         return;
       }
       case 'toggle_plan': {
@@ -464,6 +405,18 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         return;
       case 'review-claude':
         if (latest.view.kind === 'workspace') ctl?.askClaudeToReview(latest.view.id);
+        return;
+      case 'terminal':
+        if (latest.view.kind === 'workspace') runUiAction({ type: 'open_ws', id: latest.view.id, tab: 'terminal' });
+        return;
+      case 'templates':
+        patchUi({ menu: { menu: { kind: 'templates' }, selected: 0 } });
+        return;
+      case 'open-hit':
+        if (latest.search.hits.length) runUiAction({ type: 'search_hit', index: latest.search.cursor });
+        return;
+      case 'refresh-usage':
+        void bench?.measureDisk().then(() => session.toast('Measured again', 'success'));
         return;
       case 'open-project-item': {
         const item = view(latest, current).projectItems[current.projectsCursor];
@@ -539,6 +492,15 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       case 'main':
         patchUi({ focus: 'main' });
         return;
+      case 'terminal': {
+        const latest = session.store.getState();
+        const wsId = latest.view.kind === 'workspace' ? latest.view.id : undefined;
+        const key = uiRef.current.termKey;
+        // An exited shell starts again when you click it.
+        if (wsId && (!key || key === shellId(wsId)) && !bench?.terminals?.get(shellId(wsId))?.running) bench?.shell(wsId, termPane);
+        patchUi({ focus: 'terminal' });
+        return;
+      }
       case 'chat':
       case 'composer':
         patchUi({ focus: 'chat' });
@@ -585,9 +547,23 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       patchUi({ selected: Math.max(0, Math.min(total - 1, current.selected + dir)) });
       return;
     }
+    if (target.kind === 'terminal') {
+      const max = termSession?.snapshot().scrollback ?? 0;
+      patchUi({ terminalScroll: Math.min(max, Math.max(0, (current.terminalScroll ?? 0) - dir * WHEEL_LINES)) });
+      return;
+    }
+    if (target.kind === 'main' && latest.view.kind === 'search') {
+      const total = latest.search.hits.length;
+      if (total) session.store.dispatch({ type: 'search', search: { cursor: Math.max(0, Math.min(total - 1, latest.search.cursor + dir)) } });
+      return;
+    }
+    if (target.kind === 'main' && latest.view.kind === 'usage') {
+      patchUi({ overviewScroll: Math.max(0, current.overviewScroll + dir * WHEEL_LINES) });
+      return;
+    }
     if (target.kind === 'viewer') scrollViewer(dir * WHEEL_LINES);
     else if (target.kind === 'file' || target.kind === 'files') session.store.dispatch({ type: 'browser_cursor', delta: dir });
-    else if (target.kind === 'main' && latest.review) run({ type: 'review_scroll', delta: dir * WHEEL_LINES });
+    else if (target.kind === 'main' && latest.review && latest.view.kind === 'workspace') run({ type: 'review_scroll', delta: dir * WHEEL_LINES });
     else if (target.kind === 'main' && latest.view.kind === 'overview') {
       const max = Math.max(0, (view(latest, current).overview?.lines.length ?? 0) - 4);
       patchUi({ overviewScroll: Math.min(max, Math.max(0, current.overviewScroll + dir * WHEEL_LINES)) });
@@ -645,6 +621,12 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
       const latest = session.store.getState();
       const dd = view(latest, current);
       const total = chatLines(latest, dd.geometry.chatWidth - 4, frame, dd.channel).length;
+      // No raw keyboard here (e.g. a test): translate Ink's keys for the terminal instead.
+      if (dd.focus === 'terminal' && termSession) {
+        if (isLeaveKey(input, key)) patchUi({ focus: 'chat' });
+        else termSession.writeKey(input, key);
+        return;
+      }
       const result = handleKey({ ...current, focus: dd.focus }, input, key, {
         hasApproval: latest.approvals.length > 0,
         hasViewer: dd.geometry.viewerWidth > 0,
@@ -656,7 +638,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         menuSize: dd.menu?.options.length ?? 0,
         projectItems: dd.projectItems,
         headerItems: dd.headerItems,
-        mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || latest.view.kind === 'overview',
+        mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || latest.view.kind === 'overview' || latest.view.kind === 'usage',
+        searching: latest.view.kind === 'search',
+        terminalVisible: latest.view.kind === 'workspace' && latest.view.tab === 'terminal',
         filesVisible: latest.view.kind === 'files' || (latest.view.kind === 'workspace' && latest.view.tab === 'files'),
         draft: latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree',
         headerStart: dd.headerStart,
@@ -682,75 +666,6 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
   const sideFocus = d.focus === 'projects' || d.focus === 'people' ? d.focus : 'other';
   const activeTransfer = [...state.transfers].reverse().find((t) => t.status === 'active');
   const paneW = g.mainWidth;
-  const mainContent = (): React.ReactNode => {
-    if (d.menu && ui.menu) return <Menu spec={d.menu} selected={ui.menu.selected} width={paneW} height={g.bodyHeight - 2} />;
-    if (state.overlay === 'help') return <HelpOverlay width={paneW} height={g.paneHeight} scroll={ui.overlayScroll} />;
-    const viewer = <Viewer state={state} width={g.viewerWidth} height={g.paneHeight} focused={d.focus === 'viewer'} raw={ui.viewerRaw} full={false} />;
-    switch (state.view.kind) {
-      case 'files':
-        return (
-          <>
-            <FilesPanel state={state} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'files'} />
-            {viewer}
-          </>
-        );
-      case 'overview':
-        return (
-          <Panel title="Overview" right="every workspace at a glance" width={paneW} height={g.paneHeight} focused={d.focus === 'main'}>
-            <ModelBlock lines={d.overview?.lines ?? []} height={g.paneHeight - 2} scroll={d.overviewScroll} />
-          </Panel>
-        );
-      case 'workspace': {
-        const ws = d.workspace;
-        if (!ws) return <Panel title="Workspace" width={paneW} height={g.paneHeight}>{null}</Panel>;
-        if (state.view.tab === 'review') {
-          return (
-            <Panel title="Review" right="Ask Claude to review · Merge in the bar above" width={paneW} height={g.paneHeight} focused={d.focus === 'main'}>
-              <ModelBlock lines={d.review?.lines ?? []} height={g.paneHeight - 2} />
-            </Panel>
-          );
-        }
-        if (state.view.tab === 'files') {
-          return (
-            <>
-              <FilesPanel state={state} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'files'} title={`${ws.name} files`} />
-              {viewer}
-            </>
-          );
-        }
-        return <ChatView state={state} channel={d.channel} title={`Claude in ${ws.name}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />;
-      }
-      case 'shared': {
-        const w = d.shared;
-        if (!w) return <Panel title="Shared workspace" width={paneW} height={g.paneHeight}>{null}</Panel>;
-        if (state.view.tab === 'files') {
-          return (
-            <>
-              <FilesPanel state={state} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'files'} title={`${w.name} files`} />
-              {viewer}
-            </>
-          );
-        }
-        return <ChatView state={state} channel={d.channel} title={`${w.name} · with ${state.peers.find((p) => p.peerId === w.owner)?.name ?? 'owner'}'s Claude`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />;
-      }
-      case 'draft_worktree': {
-        const project = state.projects.find((p) => p.id === (state.view as { projectId: string }).projectId);
-        return <ChatView state={state} channel="draft" title={`New worktree in ${project?.name ?? 'project'} · from the latest origin`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={0} frame={frame} />;
-      }
-      case 'draft': {
-        const where = state.view.dir ?? state.projects.find((p) => p.id === (state.view as { projectId: string }).projectId)?.root ?? '';
-        return <ChatView state={state} channel="draft" title={`New Claude chat · ${where.replace(os.homedir(), '~')}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={0} frame={frame} />;
-      }
-      default:
-        return (
-          <>
-            <ChatView state={state} title={state.peers.length > 1 ? 'Group chat · everyone in the room' : 'Chat · you and your Claude'} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />
-            {viewer}
-          </>
-        );
-    }
-  };
-
   const placeholder = state.questions[0] && state.questions[0].channel === d.channel
     ? state.questions[0].question.kind === 'plan'
       ? 'Approve the plan above, or type what to change and press Enter'
@@ -769,7 +684,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
 
   return (
     <Box flexDirection="column" width={columns} height={rows}>
-      <Header state={state} width={columns} />
+      <Box paddingX={1} height={1}>
+        <ModelBlock lines={d.topBar.lines} height={1} />
+      </Box>
       <Box height={g.bodyHeight}>
         {d.planFull ? (
           <Panel title="Claude's plan" right="Esc closes · Ctrl+F" width={columns} height={g.bodyHeight} focused>
@@ -800,7 +717,9 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
                   <ModelBlock lines={d.header.lines} height={3} />
                 </Box>
               ) : null}
-              <Box>{mainContent()}</Box>
+              <Box>
+                <MainPane state={state} d={d} ui={ui} frame={frame} terminal={{ session: termSession, bar: termBar, focused: termFocused }} />
+              </Box>
             </Box>
           </>
         )}
@@ -824,7 +743,8 @@ export function App({ session, onboarding = false, subscribeMouse }: AppProps) {
         hoveredButton={hoveredButton}
         transfer={activeTransfer}
         placeholder={placeholder}
-        planMode={d.channel === 'draft' ? undefined : state.planMode[d.channel] === true}
+        right={d.composerRight}
+        idleHint={d.focus === 'terminal' ? 'Click here (or Ctrl+]) to talk to Claude again' : undefined}
         accent={ui.pending ? theme.accent : undefined}
       />
     </Box>

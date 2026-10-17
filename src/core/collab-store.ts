@@ -50,6 +50,8 @@ export interface CollabState {
   readonly roster: Readonly<Record<string, readonly RosterEntry[]>>;
   /** Channels where the next request to Claude plans first. */
   readonly planMode: Readonly<Record<string, boolean>>;
+  /** New people you haven't picked a trust level for yet (shown as a one-click card). */
+  readonly trustPrompts: readonly string[];
 }
 
 export type CollabAction =
@@ -65,9 +67,10 @@ export type CollabAction =
   | { type: 'peer_gone'; peerIds: readonly string[] }
   /** You left the room: everything shared with you goes. */
   | { type: 'shared_clear' }
-  | { type: 'offer'; offer: Offer; active: boolean };
+  | { type: 'offer'; offer: Offer; active: boolean }
+  | { type: 'trust_prompt'; peerId: string; show: boolean };
 
-export const initialCollab: CollabState = { offers: [], questions: [], roomOpen: true, shared: [], members: {}, roster: {}, planMode: {} };
+export const initialCollab: CollabState = { offers: [], questions: [], roomOpen: true, shared: [], members: {}, roster: {}, planMode: {}, trustPrompts: [] };
 
 const MAX_QUESTIONS = 20;
 
@@ -109,7 +112,11 @@ export function reduceCollab(state: CollabState, action: CollabAction): CollabSt
     case 'peer_gone': {
       // Connections drop and come back (same identity), so seats and shares stay; their questions can't be answered.
       const gone = new Set(action.peerIds);
-      return { ...state, questions: state.questions.filter((q) => !gone.has(q.owner)) };
+      return { ...state, questions: state.questions.filter((q) => !gone.has(q.owner)), trustPrompts: state.trustPrompts.filter((p) => !gone.has(p)) };
+    }
+    case 'trust_prompt': {
+      const rest = state.trustPrompts.filter((p) => p !== action.peerId);
+      return { ...state, trustPrompts: action.show ? [...rest, action.peerId] : rest };
     }
   }
 }

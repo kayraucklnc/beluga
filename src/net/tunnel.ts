@@ -2,10 +2,18 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-export type TunnelKind = 'auto' | 'ngrok' | 'cloudflared' | 'none';
+/**
+ * How friends reach the host. `p2p`: direct only (hyperdht). `auto`: direct, plus a
+ * Cloudflare (then ngrok) relay as the fallback. `cloudflared` / `ngrok`: relay only.
+ * `none`: your local network only.
+ */
+export type TunnelKind = 'auto' | 'p2p' | 'ngrok' | 'cloudflared' | 'none';
+
+/** Whether this setting offers direct peer-to-peer connections. */
+export const offersDirect = (kind: TunnelKind): boolean => kind === 'auto' || kind === 'p2p';
 
 export interface Tunnel {
-  readonly kind: Exclude<TunnelKind, 'auto' | 'none'>;
+  readonly kind: Exclude<TunnelKind, 'auto' | 'p2p' | 'none'>;
   readonly publicUrl: string;
   close(): void;
 }
@@ -122,11 +130,12 @@ export async function waitUntilReachable(publicUrl: string, timeoutMs = 120_000,
 }
 
 /**
- * Expose the local hub to the internet. `auto` prefers a free Cloudflare quick
- * tunnel (no account; downloaded automatically) and falls back to ngrok.
+ * Expose the local hub to the internet through a relay. `auto` prefers a free Cloudflare
+ * quick tunnel (no account; downloaded automatically) and falls back to ngrok. `p2p` and
+ * `none` need no relay. (Direct connections are the hub's job: `hub.listenP2P()`.)
  */
 export async function openTunnel(kind: TunnelKind, port: number, opts: TunnelOptions = {}): Promise<Tunnel | undefined> {
-  if (kind === 'none') return undefined;
+  if (kind === 'none' || kind === 'p2p') return undefined;
   if (kind === 'ngrok') return startNgrok(port, opts);
   if (kind === 'cloudflared') return startCloudflared(port, opts);
   const errors: string[] = [];

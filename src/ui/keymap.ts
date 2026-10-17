@@ -2,7 +2,7 @@ import type { MenuKind } from './menus.js';
 import type { Suggestion } from './suggest.js';
 import type { UiAction } from './workspace-models.js';
 
-export type Focus = 'chat' | 'projects' | 'header' | 'people' | 'files' | 'main' | 'viewer';
+export type Focus = 'chat' | 'projects' | 'header' | 'people' | 'files' | 'main' | 'viewer' | 'terminal';
 
 export interface MenuState {
   readonly menu: MenuKind;
@@ -47,8 +47,15 @@ export interface UiState {
    * (chat, top bar, projects, people…); inside, Tab and the arrows move between its items.
    */
   readonly entered: boolean;
-  /** A name is being typed for a new worktree/chat in this project. */
-  readonly pending?: { readonly kind: 'worktree' | 'chat' | 'group'; readonly projectId: string };
+  /**
+   * The box is asking for something specific: a name for a new worktree/chat/group, a setup
+   * or run command for a project, or a task for a friend's Claude (`projectId` is then their project's name).
+   */
+  readonly pending?: { readonly kind: 'worktree' | 'chat' | 'group' | 'setup' | 'run' | 'remote'; readonly projectId: string; readonly peerId?: string };
+  /** Lines scrolled back in the built-in terminal (0 = following its output). */
+  readonly terminalScroll?: number;
+  /** Which terminal session is showing (shell, setup or run). */
+  readonly termKey?: string;
 }
 
 /** Subset of Ink's Key we rely on, so the keymap stays framework-agnostic. */
@@ -89,7 +96,9 @@ export type Effect =
   | { readonly type: 'cancel_draft' }
   | { readonly type: 'question_number'; readonly n: number }
   /** Shift+Tab in the chat: plan first, or act right away. */
-  | { readonly type: 'toggle_plan' };
+  | { readonly type: 'toggle_plan' }
+  /** ↑↓ in Search: choose a result. */
+  | { readonly type: 'search_move'; readonly delta: number };
 
 export interface KeyContext {
   readonly hasApproval: boolean;
@@ -115,6 +124,10 @@ export interface KeyContext {
   readonly questionOptions?: number;
   /** Where the top bar's keyboard cursor starts (the workspace's own buttons, past the tabs). */
   readonly headerStart?: number;
+  /** The Search tab is open: ↑↓ choose a result instead of recalling history. */
+  readonly searching?: boolean;
+  /** The Terminal tab is showing (Tab can move into it). */
+  readonly terminalVisible?: boolean;
   /** Claude is waiting on a plan (Ctrl+F opens it full screen); its id. */
   readonly planId?: string;
   /** How far the full-screen plan can scroll. */
@@ -219,6 +232,8 @@ function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): 
   }
   // Alt+Enter (or Ctrl+Enter where the terminal reports it) sends now instead of queueing.
   if (key.return && (key.meta || key.ctrl)) return submit(ui, true);
+  // Answering a prompt (e.g. a project's setup command) with nothing is a real answer: clear it.
+  if (key.return && ui.pending && !ui.buffer.trim() && !shown.length) return { ui: setBuffer(ui, ''), effect: { type: 'submit', text: '' } };
   if (key.return) {
     // Enter accepts the highlighted suggestion: "complete" keeps you typing ("@cla" -> "@claude "),
     // "submit" sends it ("/open bob:api/REA" -> opens README.md). An exact match just runs.
@@ -231,6 +246,7 @@ function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): 
     const delta = key.upArrow ? -1 : 1;
     return { ui: { ...ui, selected: (ui.selected + delta + shown.length) % shown.length } };
   }
+  if ((key.upArrow || key.downArrow) && ctx.searching) return { ui, effect: { type: 'search_move', delta: key.upArrow ? -1 : 1 } };
   if (key.upArrow) return { ui: recall(ui, 1) };
   if (key.downArrow) return { ui: recall(ui, -1) };
   const half = Math.max(1, Math.floor(ctx.page / 2));
@@ -334,6 +350,7 @@ function cycleFocus(ui: UiState, ctx: KeyContext, dir: 1 | -1): UiState {
   if (ctx.peopleCount > 1) order.push('people');
   if (ctx.filesVisible) order.push('files');
   if (ctx.mainFocusable) order.push('main');
+  if (ctx.terminalVisible) order.push('terminal');
   if (ctx.hasViewer) order.push('viewer');
   const idx = Math.max(0, order.indexOf(ui.focus));
   const focus = order[(idx + dir + order.length) % order.length] ?? 'chat';

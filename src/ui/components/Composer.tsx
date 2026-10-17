@@ -21,13 +21,15 @@ interface ComposerProps {
   readonly transfer?: Transfer;
   /** Overrides the hint text in an empty composer. */
   readonly placeholder?: string;
-  /** Plan mode for this conversation: shown on the right of the box (Shift+Tab switches it). */
-  readonly planMode?: boolean;
+  /** Right side of the box: the model picker and plan mode (clickable; positions come from derive). */
+  readonly right?: Line;
   /** Highlight the composer border (e.g. while naming something). */
   readonly accent?: string;
   /** Description of the hovered control. */
   readonly hint?: string;
   readonly hoveredButton?: string;
+  /** What the empty box says while something else has the keyboard. */
+  readonly idleHint?: string;
 }
 
 const TOAST_COLORS: Record<Toast['level'], string> = { info: theme.info, success: theme.ok, warn: theme.warn, error: theme.error };
@@ -43,7 +45,7 @@ function TransferStatus({ t }: { t: Transfer }) {
   );
 }
 
-export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent, hint, hoveredButton, planMode }: ComposerProps) {
+export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent, hint, hoveredButton, right, idleHint }: ComposerProps) {
   const active = focus === 'chat';
   const labelWidth = Math.min(34, Math.max(...suggestions.map((s) => s.label.length), 0) + 2);
   const win = suggestionWindow(suggestions.length, selected);
@@ -87,18 +89,17 @@ export function Composer({ width, buffer, cursor, focus, suggestions, selected, 
         ) : (
           <Text wrap="truncate">
             {active ? <Text inverse> </Text> : null}
-            <Text color={theme.muted}>{active ? (placeholder ?? 'Message the room…  @ to ask a Claude, / for commands') : 'Click here or press Esc to type'}</Text>
+            <Text color={theme.muted}>{active ? (placeholder ?? 'Message the room…  @ to ask a Claude, / for commands') : (idleHint ?? 'Click here or press Esc to type')}</Text>
           </Text>
         )}
-        {planMode === undefined ? null : (
+        {right ? (
           <>
             <Box flexGrow={1} />
-            <Text color={planMode ? theme.info : theme.border} bold={planMode}>
-              {planMode ? '◉ plan mode' : '○ plan mode'}
-            </Text>
-            <Text color={theme.muted}> ⇧Tab</Text>
+            <Box flexShrink={0}>
+              <LineView line={right} />
+            </Box>
           </>
-        )}
+        ) : null}
       </Box>
       {/* One line that never wraps: a wrapped bar would push the screen up and leave stray text behind. */}
       <Box paddingX={2} height={1} overflow="hidden">
