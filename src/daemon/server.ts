@@ -104,9 +104,10 @@ export class DaemonServer {
     return this.capOn(client, cap, args);
   }
 
-  /** Every screen that can (desktop notifications: each screen decides by itself whether to show it). */
-  broadcastCap(cap: Cap, args: readonly unknown[]): void {
-    for (const c of this.clients.list()) if (c.caps.includes(cap)) void this.capOn(c, cap, args).catch(() => undefined);
+  /** Show a desktop notification on one screen (the Mac app when it's there). */
+  notify(args: readonly unknown[]): void {
+    const client = this.clients.pickNotifier();
+    if (client) void this.capOn(client, 'notify', args).catch(() => undefined);
   }
 
   private capOn(client: ConnectedClient, cap: Cap, args: readonly unknown[]): Promise<unknown> {

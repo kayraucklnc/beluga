@@ -81,6 +81,8 @@ export const DaemonInfo = z.object({
   version: z.string(),
   ipc: z.number().int(),
   room: z.string(),
+  /** Which room it's in: 'host', 'demo', or a fingerprint of the invite it joined with. */
+  roomKey: z.string().default('host'),
   startedAt: z.number(),
   keepAlive: z.boolean().optional(),
 });

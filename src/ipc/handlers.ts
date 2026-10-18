@@ -150,6 +150,8 @@ export const HANDLERS = {
   'terminals.global': (s, key, dir, size) => started(bench(s)?.globalShell(key, dir, size)),
   'terminals.close': (s, key) => bench(s)?.closeTerminal(key),
 
+  'daemon.stop': (s) => s.shutdown(),
+
   'local.listDirs': (s, dir) => {
     const entries = listLocalDirs(dir);
     s.store.dispatch({ type: 'dir_cache', key: localDirKey(dir), entries });

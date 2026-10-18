@@ -181,6 +181,9 @@ export const API = {
   'terminals.global': args(id, path, opt(TermSize)),
   'terminals.close': args(id),
 
+  // ---- klaud itself
+  'daemon.stop': args(),
+
   // ---- this computer
   'local.listDirs': args(path),
   'local.openFolder': args(path),

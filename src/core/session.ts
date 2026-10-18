@@ -81,6 +81,8 @@ export interface SessionOptions {
   readonly findConversation?: (dir: string, self: { id: string; name: string }) => Promise<Conversation | undefined>;
   /** How friends' commands run on this computer (the demo injects canned output). */
   readonly runShell?: ShellRunner;
+  /** Stop klaud itself (the daemon, or the terminal UI running it). */
+  readonly shutdown?: () => void;
 }
 
 /** What the host can do with the room itself. */
@@ -257,6 +259,12 @@ export class Session {
   /** Leave: the screen that asked closes (the room stays up while other screens are attached). */
   quit(): void {
     this.intend({ type: 'quit' });
+  }
+
+  /** Stop klaud entirely (every screen closes). */
+  shutdown(): void {
+    if (this.opts.shutdown) this.opts.shutdown();
+    else this.intend({ type: 'quit' });
   }
 
   /** A screen says what it's looking at (`clientId`: which screen). */

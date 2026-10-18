@@ -56,6 +56,12 @@ export class ClientRegistry {
       .sort((a, b) => b.lastActive - a.lastActive)[0];
   }
 
+  /** Who shows desktop notifications: the Mac app if it's attached (native ones), else the most recent screen. */
+  pickNotifier(): ConnectedClient | undefined {
+    const able = this.list().filter((c) => c.caps.includes('notify'));
+    return able.find((c) => c.kind === 'mac') ?? able.sort((a, b) => b.lastActive - a.lastActive)[0];
+  }
+
   /** Send to one screen, or every screen. */
   send(frame: DaemonFrame, to?: string): void {
     if (to !== undefined) return void this.clients.get(to)?.send(frame);
