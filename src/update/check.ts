@@ -3,6 +3,9 @@ import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/** The name klaud is published under on npm (the command is still `klaud`). */
+export const NPM_PACKAGE = 'klaudcode';
+
 /** Runs a command in the install folder and resolves with its stdout. */
 export type Run = (cmd: string, args: readonly string[]) => Promise<string>;
 
@@ -74,10 +77,10 @@ export async function isGitCheckout(run: Run, root: string): Promise<boolean> {
   }
 }
 
-/** Is `root` the global npm install of klaud (npm install -g klaud)? */
+/** Is `root` the global npm install of klaud (npm install -g klaudcode)? */
 export async function isGlobalNpmInstall(run: Run, root: string): Promise<boolean> {
   try {
-    return canonical(path.join((await run('npm', ['root', '-g'])).trim(), 'klaud')) === canonical(root);
+    return canonical(path.join((await run('npm', ['root', '-g'])).trim(), NPM_PACKAGE)) === canonical(root);
   } catch {
     return false;
   }
@@ -85,7 +88,7 @@ export async function isGlobalNpmInstall(run: Run, root: string): Promise<boolea
 
 /** The newest klaud on npm. */
 export async function latestOnNpm(run: Run): Promise<string> {
-  return (await run('npm', ['view', 'klaud', 'version'])).trim();
+  return (await run('npm', ['view', NPM_PACKAGE, 'version'])).trim();
 }
 
 /** -1, 0 or 1, comparing "1.2.3" versions (pre-release tags sort before the release). */

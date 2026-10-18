@@ -1,4 +1,4 @@
-import { type Run, type Status, compareVersions, decide, fetchLatest, installRoot, installedVersion, isGitCheckout, isGlobalNpmInstall, latestOnNpm, makeRun, readStatus } from './check.js';
+import { type Run, type Status, compareVersions, decide, fetchLatest, installRoot, installedVersion, isGitCheckout, isGlobalNpmInstall, latestOnNpm, NPM_PACKAGE, makeRun, readStatus } from './check.js';
 import { type Out, bar, ink, line, step, stdout, title } from './screen.js';
 
 const MAX_LISTED = 8;
@@ -22,12 +22,12 @@ function listIncoming(out: Out, s: Status): void {
   line(out);
 }
 
-/** Installed with `npm install -g klaud`: ask npm for a newer version and install it. */
+/** Installed with `npm install -g klaudcode`: ask npm for a newer version and install it. */
 async function updateFromNpm(out: Out, run: Run, root: string, checkOnly: boolean): Promise<number> {
   const current = installedVersion(root);
   try {
     if (!(await isGlobalNpmInstall(run, root))) {
-      line(out, `${ink.warn('!')} ${ink.text(`klaud in ${root} is part of another project, so update it there (npm install klaud@latest).`)}`);
+      line(out, `${ink.warn('!')} ${ink.text(`klaud in ${root} is part of another project, so update it there (npm install ${NPM_PACKAGE}@latest).`)}`);
       line(out);
       return 1;
     }
@@ -47,7 +47,7 @@ async function updateFromNpm(out: Out, run: Run, root: string, checkOnly: boolea
       line(out);
       return 0;
     }
-    await step(out, `Installing klaud ${latest}`, () => run('npm', ['install', '-g', '--no-audit', '--no-fund', '--loglevel=error', `klaud@${latest}`]), () => `Installed klaud ${latest}`);
+    await step(out, `Installing klaud ${latest}`, () => run('npm', ['install', '-g', '--no-audit', '--no-fund', '--loglevel=error', `${NPM_PACKAGE}@${latest}`]), () => `Installed klaud ${latest}`);
     line(out);
     await bar(out, 'finishing');
     line(out, `${ink.ok('●')} ${ink.text(`klaud ${latest} is installed`)} ${ink.muted(`${current} → ${latest}`)}`);
@@ -58,7 +58,7 @@ async function updateFromNpm(out: Out, run: Run, root: string, checkOnly: boolea
     const message = err instanceof Error ? err.message : String(err);
     line(out);
     line(out, `${ink.error('✗')} ${ink.text("Couldn't update:")} ${ink.muted(message)}`);
-    line(out, `  ${ink.muted(/EACCES|permission/i.test(message) ? 'Your global npm folder needs admin rights. Try:' : 'Update by hand:')} ${ink.text(`${/EACCES|permission/i.test(message) ? 'sudo ' : ''}npm install -g klaud@latest`)}`);
+    line(out, `  ${ink.muted(/EACCES|permission/i.test(message) ? 'Your global npm folder needs admin rights. Try:' : 'Update by hand:')} ${ink.text(`${/EACCES|permission/i.test(message) ? 'sudo ' : ''}npm install -g ${NPM_PACKAGE}@latest`)}`);
     line(out);
     return 1;
   }
