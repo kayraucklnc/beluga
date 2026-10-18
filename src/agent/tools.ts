@@ -22,6 +22,7 @@ export const ROOM_TOOL_NAMES = [
   'send_chat',
   'list_peers',
   'ask_agent',
+  'run_on_peer',
   'list_peer_files',
   'read_peer_file',
   'get_peer_file',
@@ -37,10 +38,10 @@ export function createRoomToolDefs(bridge: RoomBridge) {
           return 'sent';
         }),
       ),
-      tool('list_peers', 'List people in the room, their shared folders and agent availability.', {}, () =>
+      tool('list_peers', "List people in the room: their Claude, shared folders, projects and workspaces you can name, and what their trust in you lets you do (lets_you).", {}, () =>
         guarded(() =>
           JSON.stringify(
-            bridge.listPeers().map((p) => ({ name: p.name, agent: p.agent, shares: p.shares, you: p.name === bridge.selfName() })),
+            bridge.describePeers?.() ?? bridge.listPeers().map((p) => ({ name: p.name, agent: p.agent, shares: p.shares, you: p.name === bridge.selfName() })),
             null,
             2,
           ),
@@ -48,9 +49,30 @@ export function createRoomToolDefs(bridge: RoomBridge) {
       ),
       tool(
         'ask_agent',
-        "Send a task to another peer's Claude agent (runs on their machine). Returns its final answer.",
-        { peer: z.string().describe('Peer name from list_peers'), prompt: z.string().min(1).max(16000) },
-        (a) => guarded(() => bridge.askAgent(a.peer, a.prompt)),
+        "Send a task to another peer's Claude agent (runs on their machine). Its progress shows in the chat; returns its final answer.",
+        {
+          peer: z.string().describe('Peer name from list_peers'),
+          prompt: z.string().min(1).max(16000),
+          project: z.string().min(1).max(80).optional().describe('One of their projects or shared workspaces (from list_peers) to work in'),
+        },
+        (a) => guarded(() => bridge.askAgent(a.peer, a.prompt, a.project)),
+      ),
+      tool(
+        'run_on_peer',
+        "Run a shell command on a friend's computer through their klaud (non-interactive, no input). They approve it unless they fully trust you; commands touching secrets are refused. Returns the exit code and output (its end, up to 64 KB).",
+        {
+          peer: z.string().describe('Peer name from list_peers'),
+          command: z.string().min(1).max(8000),
+          project: z.string().min(1).max(80).optional().describe('Run in one of their projects (from list_peers)'),
+          cwd: z.string().max(4096).optional().describe('Folder on their computer (~ is their home). Default: their shared folder (home with full trust)'),
+          timeout_sec: z.number().int().min(1).max(600).default(120).describe('Stop it after this long (max 600)'),
+          why: z.string().max(500).optional().describe('One line shown to them when they approve'),
+        },
+        (a) =>
+          guarded(() => {
+            if (!bridge.runOnPeer) throw new Error('Running commands on other computers is not available here');
+            return bridge.runOnPeer(a.peer, a.command, { ...(a.cwd ? { cwd: a.cwd } : {}), ...(a.project ? { project: a.project } : {}), timeoutSec: a.timeout_sec, ...(a.why ? { why: a.why } : {}) });
+          }),
       ),
       tool(
         'list_peer_files',

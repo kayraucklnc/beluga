@@ -182,6 +182,7 @@ Worktrees made by other tools (Conductor, Claude Code) show their latest Claude 
 - **Click a person** to:
   - change how much you trust them (the four levels above);
   - ask their Claude;
+  - run a command on their computer (shown once they let you at least *ask each time*; the menu says how much they trust you, e.g. "bob lets your Claude: ask each time");
   - start a worktree on their computer;
   - invite them into one of your workspaces;
   - share a folder with just them;
@@ -194,6 +195,8 @@ Worktrees made by other tools (Conductor, Claude Code) show their latest Claude 
 - **Start a worktree on a friend's computer**: click them → *Start a worktree on bob's computer…*, pick one of their projects and describe the task. Bob approves, his Claude does the work on his computer, and you're both in it.
 - **Hand off**: in a worktree, click **Hand off** and pick someone. Your Claude writes a handoff note (done, left, decisions), uncommitted work is committed, and the branch goes over encrypted. They accept, get a worktree with the branch, the chat and the note, and their Claude continues. They need the same repository cloned. You can follow along under SHARED WITH ME.
 - **Your Claude on their computer**: ask your Claude things like *"get bob's ~/Desktop/report.pdf onto my desktop"*. It asks bob's Claude, or fetches the file itself; bob approves each read unless he fully trusts you. When their Claude works for you, it can send results back to you as files.
+- **Run a command on a friend's computer**: *Run a command on bob's computer…* in the person menu, `/run @bob npm test`, or ask your Claude (*"run the tests on bob's computer"*, also from inside a project chat). It runs through bob's klaud, in his shared folder (his home folder with full trust), with no input, stopping after 2 minutes (10 at most); the exit code and the end of the output (up to 64 KB) show in your chat. Bob gets a card with the exact command, the folder and who asked (**Yes**, **No**, or **Always** for you until klaud quits), unless he fully trusts you; blocked people are declined. Your card shows *waiting for bob*, then *running*, then the result, and bob sees a quiet line like "kay's Claude ran `npm test` in ~/api". Commands that touch secrets (`.env`, keys) are refused at every level.
+- **Your Claude knows what it may ask**: it sees each friend's projects, the workspaces they shared with you and how much they trust you, and can ask their Claude to work in a specific project. If the friend isn't in the room, it tells you to **Invite** them (they run `klaud join <link>`).
 - **Share a folder** from **Shared files** (or the person menu). Pick this folder, a project or any path, then choose everyone or one person, and read-only or editable. Secrets are never shared.
 - **Clear** a conversation: just for you, for everyone (the host, in the group chat), or with a fresh Claude conversation (in a workspace).
 
@@ -237,6 +240,7 @@ Questions go to whoever asked Claude, even when it's a friend's Claude on their 
 | `/invite` | open remote access and copy an invite link |
 | `/open bob:api/README.md` · `/get bob:api/data.csv` | open or download a shared file (autocompletes) |
 | `/follow bob` · `/unfollow` | follow bob and bob's Claude |
+| `/run @bob npm test` | run a command on bob's computer (bob approves unless he fully trusts you) |
 | `/settings` · `/theme` · `/zoom in` · `/name` | settings and quick changes |
 | `/policy ask\|auto\|deny` · `/trust bob` | who can use your Claude |
 | `/share ~/notes` · `/unshare notes` | share a folder (or use **+ Share a folder**) |
@@ -327,6 +331,7 @@ Inviting someone exposes your Claude, with your permissions, to other people. kl
 - **Nobody can speak for someone else.** Everyone has their own signing key (kept in `~/.klaud/identity.json`), their id comes from it, and **every message is signed**. Not even the host relaying the room can forge a message from you, so a trust level you gave someone can't be borrowed. Requests that act on your computer must be fresh: an old one replayed later is dropped.
 - **You decide how much each person may do**: can't use your Claude, ask each time, trusted, or full trust (see *Working with people*). Unanswered approvals are declined after 5 minutes.
 - **Reaching outside your shared folders asks you.** Friends' requests use your shared folders; reading anything else, shell commands, web requests and edits outside a `:rw` folder ask you first, even ones Claude Code would normally auto-approve. Only **full trust** skips these.
+- **Commands from friends are yours to approve.** A friend (or their Claude) asking to run a command on your computer always shows you the exact command first, unless you fully trust them. It runs with no input, a time limit and capped output, and you get a notice afterwards.
 - **Secrets stay put.** `.env` files, keys, `.ssh`, `.aws` and similar are never shared, sent or readable by friends' requests, whatever the trust level.
 - **Files are sent one at a time.** When you approve sending a file, only a copy of that file is shared, with only that person, for 15 minutes.
 - **Work from friends is yours to approve.** Starting a worktree on your computer or taking over someone's work asks you first (unless you fully trust them); turn it off in Settings → Workspaces.

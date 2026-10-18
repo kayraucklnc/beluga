@@ -52,6 +52,8 @@ export interface CollabState {
   readonly planMode: Readonly<Record<string, boolean>>;
   /** New people you haven't picked a trust level for yet (shown as a one-click card). */
   readonly trustPrompts: readonly string[];
+  /** How much each friend trusts you (as they told you; their side enforces it). */
+  readonly granted: Readonly<Record<string, { level: 'blocked' | 'ask' | 'trusted' | 'full'; reach: 'folder' | 'full' }>>;
 }
 
 export type CollabAction =
@@ -68,9 +70,10 @@ export type CollabAction =
   /** You left the room: everything shared with you goes. */
   | { type: 'shared_clear' }
   | { type: 'offer'; offer: Offer; active: boolean }
-  | { type: 'trust_prompt'; peerId: string; show: boolean };
+  | { type: 'trust_prompt'; peerId: string; show: boolean }
+  | { type: 'granted'; peerId: string; grant: CollabState['granted'][string] };
 
-export const initialCollab: CollabState = { offers: [], questions: [], roomOpen: true, shared: [], members: {}, roster: {}, planMode: {}, trustPrompts: [] };
+export const initialCollab: CollabState = { offers: [], questions: [], roomOpen: true, shared: [], members: {}, roster: {}, planMode: {}, trustPrompts: [], granted: {} };
 
 const MAX_QUESTIONS = 20;
 
@@ -117,6 +120,11 @@ export function reduceCollab(state: CollabState, action: CollabAction): CollabSt
     case 'trust_prompt': {
       const rest = state.trustPrompts.filter((p) => p !== action.peerId);
       return { ...state, trustPrompts: action.show ? [...rest, action.peerId] : rest };
+    }
+    case 'granted': {
+      const old = state.granted[action.peerId];
+      if (old && old.level === action.grant.level && old.reach === action.grant.reach) return state;
+      return { ...state, granted: { ...state.granted, [action.peerId]: action.grant } };
     }
   }
 }

@@ -130,6 +130,12 @@ export function runMenu(ctx: MenuContext, menu: MenuKind, index: number): void {
     case 'ask':
       typeInto(`@claude:${peer?.name ?? ''} `);
       return;
+    case 'person-run':
+      if (peer) {
+        patchUi({ focus: 'chat', buffer: '', cursor: 0, pending: { kind: 'peer_run', projectId: '', peerId: peer.peerId } });
+        session.toast(`Type the command to run on ${peer.name}'s computer, then Enter`);
+      }
+      return;
     case 'ask-self':
       typeInto('@claude ');
       return;

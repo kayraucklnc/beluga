@@ -11,6 +11,25 @@ export const TRUST_INFO: Readonly<Record<TrustLevel, { label: string; short: str
   full: { label: 'Full trust', short: 'full trust', detail: 'Anything on this computer, without asking, like you would yourself. Secrets (.env, keys) stay blocked.' },
 };
 
+/** The same levels seen from the other side: what a friend's trust lets you (and your Claude) do there. */
+export const GRANT_INFO: Readonly<Record<TrustLevel, { short: string; detail: string }>> = {
+  blocked: { short: 'nothing', detail: 'requests to their Claude and their computer are declined' },
+  ask: { short: 'ask each time', detail: 'they approve every request and every command' },
+  trusted: { short: 'use their Claude without asking', detail: 'requests run right away; commands and files outside shared folders ask them' },
+  full: { short: 'anything, without asking', detail: 'requests and commands run right away, anywhere on their computer (secrets stay blocked)' },
+};
+
+/** May you ask this friend's computer to run commands? (they still approve unless they fully trust you) */
+export const canRunOn = (level: TrustLevel | undefined): boolean => level !== undefined && level !== 'blocked';
+
+/**
+ * A command someone asks your klaud to run on this computer: 'run' without asking (full trust),
+ * 'ask' you first (Yes / No / Always for this person), or 'decline' (blocked).
+ */
+export function shellGate(level: TrustLevel): 'run' | 'ask' | 'decline' {
+  return level === 'full' ? 'run' : level === 'blocked' ? 'decline' : 'ask';
+}
+
 /** The level someone gets when you haven't picked one: your default for new people. */
 export function defaultTrust(state: Pick<AppState, 'policy'>): TrustLevel {
   return state.policy === 'deny' ? 'blocked' : state.policy === 'auto' ? 'trusted' : 'ask';

@@ -52,7 +52,7 @@ export interface UiState {
    * The box is asking for something specific: a name for a new worktree/chat/group, a setup
    * or run command for a project, or a task for a friend's Claude (`projectId` is then their project's name).
    */
-  readonly pending?: { readonly kind: 'worktree' | 'chat' | 'group' | 'setup' | 'run' | 'remote'; readonly projectId: string; readonly peerId?: string };
+  readonly pending?: { readonly kind: 'worktree' | 'chat' | 'group' | 'setup' | 'run' | 'remote' | 'peer_run'; readonly projectId: string; readonly peerId?: string };
   /** Lines scrolled back in the built-in terminal (0 = following its output). */
   readonly terminalScroll?: number;
   /** Which terminal session is showing (shell, setup or run). */

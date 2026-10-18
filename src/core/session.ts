@@ -27,6 +27,7 @@ import { Notifier } from './notify.js';
 import { Workbench } from './workbench.js';
 import { RemoteWork } from './remote-work.js';
 import type { TerminalManager } from '../terminal/index.js';
+import { type PeerRun, type ShellRunner, describeShellResult } from './peer-run.js';
 
 export interface SessionOptions {
   readonly client: PeerClient;
@@ -71,6 +72,8 @@ export interface SessionOptions {
   readonly replayFile?: string;
   /** Read Claude Code conversations from other tools (omitted in tests and the demo). */
   readonly findConversation?: (dir: string, self: { id: string; name: string }) => Promise<Conversation | undefined>;
+  /** How friends' commands run on this computer (the demo injects canned output). */
+  readonly runShell?: ShellRunner;
 }
 
 /** What the host can do with the room itself. */
@@ -84,7 +87,8 @@ export interface RoomControl {
   clearHistory(): void;
 }
 
-type AgentWaiter = { peer: string; resolve: (text: string) => void; reject: (e: Error) => void; timer: NodeJS.Timeout };
+/** `mirror`: the conversation your Claude asked from, where the friend's progress is shown too. */
+type AgentWaiter = { peer: string; resolve: (text: string) => void; reject: (e: Error) => void; timer: NodeJS.Timeout; mirror?: string };
 
 const USAGE_REFRESH_MS = 10 * 60_000;
 const WORKSPACE_REFRESH_MS = 30_000;
@@ -110,6 +114,9 @@ const GUARDED = new Set([
   'ws_leave',
   'ws_roster',
   'share_offer',
+  'shell_request',
+  'shell_result',
+  'shell_started',
 ]);
 
 export { dirKey };
@@ -130,6 +137,8 @@ export class Session {
   readonly notifier: Notifier;
   readonly workbench?: Workbench;
   readonly remote: RemoteWork;
+  /** Commands on friends' computers (and theirs on yours), and telling friends your trust in them. */
+  readonly peerRun: PeerRun;
   /** Your Claude serving requests: queue, approvals, runs. */
   readonly host: AgentHost;
   /** Friends' shared folders and yours: browsing, viewing, downloads. */
@@ -149,6 +158,7 @@ export class Session {
     this.files = parts.files;
     this.host = parts.host;
     this.remote = parts.remote;
+    this.peerRun = parts.peerRun;
     this.agent = opts.createAgent?.(this.bridge);
     this.wire();
   }
@@ -207,6 +217,7 @@ export class Session {
     this.notifier.stop();
     this.replay.flush();
     this.remote.stop();
+    this.peerRun.stop();
     clearInterval(this.projectsTimer);
     this.files.stop();
     for (const w of this.agentWaiters.values()) {
@@ -227,6 +238,9 @@ export class Session {
   /** Handle a line from the composer. `urgent` (Alt/Ctrl+Enter) interrupts your Claude instead of queueing. */
   submit(raw: string, urgent = false): void {
     const state = this.store.getState();
+    // "/run @bob <command>": the command exactly as typed (spacing and quotes kept).
+    const peerRun = /^\/run\s+@([\w.-]+)\s+([\s\S]+)$/.exec(raw.trim());
+    if (peerRun) return this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim());
     const parsed = parseInput(raw, this.selfId, state.peers);
     const channel = channelOf(state.view);
     // In a workspace, you're talking to your Claude working in that folder.
@@ -315,11 +329,11 @@ export class Session {
   }
 
   /** Ask an agent (ours or a peer's) to do something. Returns the request id. */
-  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false): string {
+  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string): string {
     const requestId = randomUUID();
     const plan = this.store.getState().planMode[channel] === true;
     this.questions.track(requestId, target, channel);
-    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan }, { to: target });
+    this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}) }, { to: target });
     return requestId;
   }
 
@@ -362,16 +376,40 @@ export class Session {
     return this.host.ask(kind, title, detail, peer);
   }
 
-  /** Ask a friend's Claude (it runs on their computer) and wait for its final answer. */
-  askPeerAgent(peerId: string, name: string, prompt: string): Promise<string> {
+  /**
+   * Ask a friend's Claude (it runs on their computer) and wait for its final answer. `project`:
+   * one of their projects to work in. Its progress also shows in `mirror` (the conversation
+   * your Claude asked from), not only in the group chat.
+   */
+  askPeerAgent(peerId: string, name: string, prompt: string, opts: { project?: string; mirror?: string } = {}): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      const requestId = this.requestAgent(peerId, prompt, true);
+      // In a workspace shared with you, their Claude works right there (you were invited to).
+      const shared = opts.project ? this.store.getState().shared.find((w) => w.owner === peerId && w.role === 'contribute' && (w.name === opts.project || w.project === opts.project)) : undefined;
+      const requestId = shared
+        ? this.requestAgent(peerId, prompt, true, `ws:${shared.id}`)
+        : this.requestAgent(peerId, prompt, true, 'room', false, opts.project);
       const timer = setTimeout(() => {
         this.agentWaiters.delete(requestId);
         reject(new Error(`${name}'s Claude did not finish in time`));
       }, this.opts.agentTimeoutMs ?? 15 * 60_000);
-      this.agentWaiters.set(requestId, { peer: peerId, resolve, reject, timer });
+      const mirror = !shared && opts.mirror && opts.mirror !== 'room' ? opts.mirror : undefined;
+      this.agentWaiters.set(requestId, { peer: peerId, resolve, reject, timer, ...(mirror ? { mirror } : {}) });
     });
+  }
+
+  /** Run a command on a friend's computer (through their klaud) and show it with its output here. */
+  async runOnPeer(name: string, command: string, opts: { cwd?: string; project?: string; timeoutSec?: number; why?: string; viaAgent?: boolean; channel?: string } = {}): Promise<string> {
+    const peer = this.findPeer(name);
+    if (!peer || peer.peerId === this.selfId) throw new Error(`No friend named "${name}" is here. Call list_peers first.`);
+    const res = await this.peerRun.run(peer.peerId, command, { ...opts, viaAgent: opts.viaAgent ?? false, channel: opts.channel ?? channelOf(this.store.getState().view) });
+    return describeShellResult(peer.name, res);
+  }
+
+  /** "/run @bob npm test" and the person menu: you run a command on a friend's computer. */
+  runOnPeerByHand(name: string, command: string): void {
+    const state = this.store.getState();
+    const channel = channelOf(state.view);
+    this.runOnPeer(name, command, { channel: channel === 'draft' ? 'room' : channel }).catch((err: unknown) => this.toast(errorText(err), 'warn'));
   }
 
   /** Which of your shares a file on this computer is in (for announcing reports). */
@@ -642,6 +680,14 @@ export class Session {
         return this.remote.onFileRequestResult(from, body);
       case 'file_offer':
         return this.remote.onFileOffer(from, body);
+      case 'shell_request':
+        return this.peerRun.onShellRequest(from, body);
+      case 'shell_result':
+        return this.peerRun.onShellResult(from, body);
+      case 'shell_started':
+        return this.peerRun.onShellStarted(from, body);
+      case 'trust_grant':
+        return this.peerRun.onTrustGrant(from, body);
       case 'ws_roster':
         return this.sharing.onRoster(from, body);
       case 'ws_leave':
@@ -788,8 +834,10 @@ export class Session {
       if (from === this.selfId) this.workbench?.onUsage(body.channel, body.text);
       return;
     }
-    this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel: body.channel });
     const waiter = this.agentWaiters.get(body.requestId);
+    // Your Claude asked from a workspace: follow the friend's Claude there (only from the one you asked).
+    const channel = waiter?.mirror && waiter.peer === from && body.requester === this.selfId ? waiter.mirror : body.channel;
+    this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel });
     if (!waiter || waiter.peer !== from || !['done', 'error', 'denied'].includes(body.event)) return;
     clearTimeout(waiter.timer);
     this.agentWaiters.delete(body.requestId);

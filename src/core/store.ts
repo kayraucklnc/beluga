@@ -38,7 +38,33 @@ export type LogItem =
       readonly ts: number;
       /** When the run finished (done/error/denied). */
       readonly endTs?: number;
-    };
+    }
+  | ShellItem;
+
+/** A command run on someone's computer (through their klaud), with its output. */
+export interface ShellItem {
+  readonly id: string;
+  readonly type: 'shell';
+  readonly channel: string;
+  readonly ts: number;
+  /** Whose computer it runs on. */
+  readonly owner: string;
+  readonly ownerName: string;
+  /** "you" or "your Claude". */
+  readonly by: string;
+  readonly command: string;
+  readonly cwd?: string;
+  /** waiting (for them to approve) → running → done / failed / declined. */
+  readonly status: 'waiting' | 'running' | 'done' | 'failed' | 'declined';
+  readonly exitCode?: number;
+  readonly output: string;
+  readonly truncated?: boolean;
+  readonly timedOut?: boolean;
+  readonly error?: string;
+  /** When it started running (after their approval). */
+  readonly startTs?: number;
+  readonly endTs?: number;
+}
 
 export interface Approval {
   readonly id: string;
@@ -235,6 +261,7 @@ export type Action =
   | { type: 'peers'; peers: readonly PeerInfo[] }
   | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string }
   | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string }
+  | { type: 'shell'; item: ShellItem }
   | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string }
   | { type: 'projects'; projects: readonly Project[]; groups?: readonly ProjectGroup[] }
   | { type: 'conflicts'; id: string; files: readonly string[] }
@@ -544,6 +571,12 @@ export function reduce(state: AppState, action: Action): AppState {
       const others = state.log.filter((l) => l.channel !== action.channel);
       return { ...state, log: [...action.items.slice(-LOG_LIMIT).map((i) => ({ ...i, channel: action.channel })), ...others] };
     }
+    case 'shell': {
+      const item = { ...action.item, command: clean(action.item.command), output: clean(action.item.output), ...(action.item.cwd ? { cwd: clean(action.item.cwd) } : {}), ...(action.item.error ? { error: clean(action.item.error) } : {}) };
+      const idx = state.log.findIndex((l) => l.id === item.id);
+      if (idx >= 0) return { ...state, log: state.log.map((l, i) => (i === idx ? item : l)) };
+      return bumpUnread({ ...state, log: appendLog(state.log, item) }, item.channel, true);
+    }
     case 'agent_event':
       if (action.event === 'usage') return state;
       if (action.event === 'context' || action.event === 'compact') return reduceContext(state, action);
@@ -646,6 +679,7 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'peer_gone':
     case 'shared_clear':
     case 'trust_prompt':
+    case 'granted':
     case 'offer': {
       const next = { ...state, ...reduceCollab(state, action) };
       // The Shared files list updates live while you're looking at it.

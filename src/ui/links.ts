@@ -117,7 +117,8 @@ type Resolve = (c: Candidate | { kind: 'href'; value: string }) => LinkTarget | 
 
 /** How paths in one message resolve, from who wrote it and which conversation it's in. */
 export function resolverFor(state: AppState, item: LogItem, stat?: (abs: string) => { dir: boolean } | undefined): Resolve | undefined {
-  if (item.type === 'system') return undefined;
+  // Command output cards (shell) aren't scanned for links.
+  if (item.type === 'system' || item.type === 'shell') return undefined;
   const author = item.type === 'agent' ? item.owner : item.from;
   const selfId = state.self?.peerId;
   const fromHref = (href: string): LinkTarget | undefined => {

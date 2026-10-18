@@ -16,6 +16,17 @@ export interface RenderOptions {
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
 type ChatItem = Extract<LogItem, { type: 'chat' }>;
+type ShellItem = Extract<LogItem, { type: 'shell' }>;
+
+/** Output lines a finished command shows in the chat (its tail). */
+const SHELL_TAIL = 14;
+
+/** "/private/var/folders/…/klaud-demo/api" → "…/klaud-demo/api" (short paths stay as they are). */
+export const shortFolder = (p: string, max = 32): string => {
+  if (p.length <= max) return p;
+  const parts = p.split('/').filter(Boolean);
+  return `…/${parts.slice(-2).join('/')}`;
+};
 
 const GROUP_GAP_MS = 3 * 60_000;
 const DONE_STEPS = 3;
@@ -127,6 +138,41 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
   return [[...truncate(title, cols - lineWidth(status) - 2), { text: ' '.repeat(gap) }, ...status], ...body.map((l) => [rail, ...truncate(l, inner)])];
 }
 
+/** A command run on someone's computer: "$ npm test" with where, who, exit code and the output's tail. */
+export function shellLines(item: ShellItem, cols: number, opts: RenderOptions = {}): Line[] {
+  const inner = Math.max(10, cols - 2);
+  const spin = SPINNER[(opts.frame ?? 0) % SPINNER.length];
+  const took = item.endTs ? ` · ${formatDuration(item.endTs - (item.startTs ?? item.ts))}` : '';
+  const st: StatusStyle =
+    item.status === 'waiting'
+      ? { label: `${spin} waiting for ${item.ownerName}`, color: theme.muted }
+      : item.status === 'running'
+        ? { label: `${spin} running`, color: theme.muted }
+        : item.status === 'declined'
+        ? { label: `${glyph.denied} declined`, color: theme.warn }
+        : item.status === 'failed' || (item.exitCode ?? 0) !== 0
+          ? { label: `${glyph.fail} ${item.timedOut ? 'timed out' : item.exitCode !== undefined ? `exit ${item.exitCode}` : 'failed'}${took}`, color: theme.error }
+          : { label: `${glyph.ok} exit 0${took}`, color: theme.ok };
+  const title: Line = [
+    { text: '$ ', color: theme.muted },
+    { text: item.command.split('\n')[0] ?? '', color: theme.text, bold: true },
+    { text: `  on ${item.ownerName}'s computer${item.cwd ? ` · ${shortFolder(item.cwd)}` : ''} · ${item.by}`, color: theme.muted },
+  ];
+  const status = plain(st.label, { color: st.color });
+  const gap = Math.max(2, cols - lineWidth(title) - lineWidth(status));
+  const out = item.output.replace(/\s+$/, '');
+  const all = out ? out.split('\n').flatMap((l) => wrapText(l, inner)) : [];
+  const shown = all.slice(-SHELL_TAIL);
+  const body: Line[] = [
+    ...(item.error ? [plain(item.error, { color: item.status === 'declined' ? theme.warn : theme.error })] : []),
+    ...(all.length > shown.length || item.truncated ? [plain(`… ${all.length - shown.length} earlier lines`, { color: theme.muted })] : []),
+    ...shown.map((t) => plain(t, { color: theme.text })),
+    ...(item.status === 'done' && !out && !item.error ? [plain('(no output)', { dim: true })] : []),
+  ];
+  const rail: Seg = { text: `${glyph.bar} `, color: theme.border };
+  return [[...truncate(title, cols - lineWidth(status) - 2), { text: ' '.repeat(gap) }, ...status], ...body.map((l) => [rail, ...truncate(l, inner)])];
+}
+
 function chatHeader(item: ChatItem, opts: RenderOptions): Line {
   const self = item.from === opts.selfId && !item.byAgent;
   const name = item.byAgent ? `${glyph.claude} ${item.name}` : self ? 'you' : item.name;
@@ -150,6 +196,9 @@ export function renderLog(items: readonly LogItem[], rawCols: number, opts: Rend
     } else if (item.type === 'agent') {
       if (prev) out.push([]);
       out.push(...agentLines(item, cols, opts));
+    } else if (item.type === 'shell') {
+      if (prev) out.push([]);
+      out.push(...shellLines(item, cols, opts));
     } else {
       const grouped =
         prev?.type === 'chat' && prev.from === item.from && prev.byAgent === item.byAgent && item.ts - prev.ts < GROUP_GAP_MS;

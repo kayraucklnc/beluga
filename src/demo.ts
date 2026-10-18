@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createMockBackend } from './agent/mock.js';
+import { type ShellRunner, runShell } from './core/peer-run.js';
 import { Session } from './core/session.js';
 import { ShareService } from './core/shares.js';
 import { Store, initialState } from './core/store.js';
@@ -66,6 +67,29 @@ const FRIENDS = {
   mia: { lines: ['hi all, joining from the landing page side', 'my Claude is on the hero copy, yours on auth?', 'perfect, ship it'], share: 'notes', usage: 22, first: 2600 },
 } as const;
 
+/** Canned output for the commands the demo shows off; anything else really runs in the friend's (temporary) folder. */
+export const demoShell: ShellRunner = async (command, cwd, timeoutMs) => {
+  if (/\b(npm|pnpm|yarn)( run)? test\b|\bvitest\b/.test(command)) {
+    await new Promise((r) => setTimeout(r, 1400));
+    const output = [
+      '> bob-api@1.0.0 test',
+      '> vitest run',
+      '',
+      ' RUN  v2.1.4 ~/' + path.basename(cwd),
+      '',
+      ' ✓ src/health.test.ts (3 tests) 12ms',
+      ' ✓ src/payments.test.ts (14 tests) 48ms',
+      ' ✓ src/webhooks.test.ts (7 tests) 31ms',
+      '',
+      ' Test Files  3 passed (3)',
+      '      Tests  24 passed (24)',
+      '   Duration  612ms',
+    ].join('\n');
+    return { exitCode: 0, output, truncated: false, timedOut: false, ms: 1400 };
+  }
+  return runShell(command, cwd, timeoutMs);
+};
+
 /**
  * A pretend friend who joins the room, shares a folder, lets you use a (simulated)
  * Claude, and chats back. Lets you try every feature alone.
@@ -75,7 +99,16 @@ export function startDemoFriend(url: string, keys: RoomKeys, folder: string, nam
   const shares = new ShareService([{ name: friend.share, root: folder, writable: false }]);
   const store = new Store(initialState('demo', 'auto'));
   const client = new PeerClient({ url, keys, profile: { name, shares: shares.infos, agent: true } });
-  const session = new Session({ client, store, shares, agentCwd: folder, createAgent: (bridge) => createMockBackend(bridge) });
+  const session = new Session({ client, store, shares, agentCwd: folder, createAgent: (bridge) => createMockBackend(bridge), runShell: demoShell });
+  // The pretend friend "clicks Yes" on what you ask of their computer, after a moment.
+  const answered = new Set<string>();
+  store.subscribe(() => {
+    for (const a of store.getState().approvals) {
+      if (answered.has(a.id)) continue;
+      answered.add(a.id);
+      setTimeout(() => session.answerApproval('yes', a.id), 2200);
+    }
+  });
   let said = 0;
   const say = (delay: number): void => {
     const line = friend.lines[said++];

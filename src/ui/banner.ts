@@ -90,6 +90,6 @@ export function usageMeter(usage: Usage | undefined): Line | undefined {
 }
 
 export const anyActivity = (state: AppState): boolean =>
-  state.log.some((l) => l.type === 'agent' && isRunning(l.status)) ||
+  state.log.some((l) => (l.type === 'agent' && isRunning(l.status)) || (l.type === 'shell' && l.status === 'waiting')) ||
   state.hosting?.phase === 'tunnel' ||
   state.hosting?.phase === 'reachable';

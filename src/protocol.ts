@@ -80,6 +80,8 @@ export const AgentRequestBody = z.object({
   urgent: z.boolean().default(false),
   /** Plan first: Claude investigates read-only and proposes a plan for you to approve. */
   plan: z.boolean().default(false),
+  /** Run in one of the owner's projects (by name) instead of their shared folder. */
+  project: z.string().min(1).max(80).optional(),
 });
 
 export const AgentEventKind = z.enum([
@@ -281,7 +283,60 @@ export const FileOfferBody = z.object({
   note: z.string().max(1000).default(''),
 });
 
+// ---- Running a command on someone's computer (through their klaud) ----
+
+/** Most output a command sends back (its tail is kept). */
+export const MAX_SHELL_OUTPUT = 64 * 1024;
+export const MAX_SHELL_SECONDS = 600;
+
+/** "Run this command on your computer": their trust in you decides whether they're asked first. */
+export const ShellRequestBody = z.object({
+  kind: z.literal('shell_request'),
+  reqId: shortStr,
+  command: z.string().min(1).max(8000),
+  /** Folder to run in (~ is their home); default: their shared folder, or home with full trust. */
+  cwd: z.string().max(4096).optional(),
+  /** One of their projects (by name) to run in. */
+  project: z.string().min(1).max(80).optional(),
+  timeoutSec: z.number().int().min(1).max(MAX_SHELL_SECONDS).default(120),
+  /** Your Claude asked (not you). */
+  viaAgent: z.boolean().default(false),
+  why: z.string().max(500).default(''),
+});
+export const ShellResultBody = z.object({
+  kind: z.literal('shell_result'),
+  reqId: shortStr,
+  ok: z.boolean(),
+  exitCode: z.number().int().optional(),
+  /** Output (stdout and stderr together), the tail when it was longer. */
+  output: z.string().max(MAX_SHELL_OUTPUT + 1024).default(''),
+  truncated: z.boolean().default(false),
+  timedOut: z.boolean().default(false),
+  /** Where it ran, as they'd say it (~/… paths). */
+  cwd: z.string().max(4096).optional(),
+  ms: z.number().int().min(0).optional(),
+  /** Declined, blocked, or couldn't start. */
+  error: z.string().max(500).optional(),
+});
+/** "Approved, running now": sent once the command starts, so the asker stops seeing "waiting". */
+export const ShellStartedBody = z.object({
+  kind: z.literal('shell_started'),
+  reqId: shortStr,
+  /** Where it runs, as they'd say it (~/… paths). */
+  cwd: z.string().max(4096).optional(),
+});
+/** Your trust in someone, told to them so their Claude knows what it may ask for (informational only). */
+export const TrustGrantBody = z.object({
+  kind: z.literal('trust_grant'),
+  level: z.enum(['blocked', 'ask', 'trusted', 'full']),
+  reach: z.enum(['folder', 'full']),
+});
+
 export const Body = z.discriminatedUnion('kind', [
+  ShellRequestBody,
+  ShellResultBody,
+  ShellStartedBody,
+  TrustGrantBody,
   WsRequestBody,
   WsRequestResultBody,
   WsHandoffBody,

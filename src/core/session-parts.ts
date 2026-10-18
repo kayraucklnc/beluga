@@ -10,6 +10,7 @@ import { People } from './people.js';
 import { RoomFiles } from './room-files.js';
 import { AgentHost } from './agent-host.js';
 import { RemoteWork } from './remote-work.js';
+import { PeerRun } from './peer-run.js';
 
 /** Everything a session is made of, wired to each other and to the session. */
 export interface SessionParts {
@@ -23,6 +24,7 @@ export interface SessionParts {
   readonly files: RoomFiles;
   readonly host: AgentHost;
   readonly remote: RemoteWork;
+  readonly peerRun: PeerRun;
 }
 
 export function createSessionParts(session: Session, opts: SessionOptions): SessionParts {
@@ -125,5 +127,15 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       onWorktreeCreated: (ws) => workbench?.onWorktreeCreated(ws),
       downloadDir: opts.downloadDir,
     });
-  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote };
+    const peerRun = new PeerRun({
+      store: opts.store,
+      selfId: () => session.selfId,
+      send: (body, o) => session.send(body, o),
+      shares: opts.shares,
+      controller: workspaces,
+      agentCwd: opts.agentCwd,
+      approve: (title, detail, peer) => session.ask('request', title, detail, peer),
+      ...(opts.runShell ? { runShell: opts.runShell } : {}),
+    });
+  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun };
 }
