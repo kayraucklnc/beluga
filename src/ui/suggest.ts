@@ -26,15 +26,26 @@ export interface SuggestContext {
   readonly workspaces?: ReadonlyArray<{ readonly label: string; readonly hint: string }>;
 }
 
+/** The folder being typed after "/project add" (or folder): "~/Proj" → "~/". */
+function splitTyped(typed: string): { dir: string; partial: string } {
+  const raw = typed || '~/';
+  const slash = raw.lastIndexOf('/');
+  return { dir: (slash >= 0 ? raw.slice(0, slash + 1) : '') || './', partial: (slash >= 0 ? raw.slice(slash + 1) : raw).toLowerCase() };
+}
+
+/** Which folder on this computer to list for what's typed (undefined: not typing a project path). */
+export function localDirOf(buffer: string): string | undefined {
+  const m = /^\/project (add|folder) (.*)$/i.exec(buffer);
+  return m ? splitTyped(m[2] ?? '').dir : undefined;
+}
+
 /** Folder completion for adding projects: "~/Proj" → "~/Projects/". */
 function localPathSuggestions(sub: string, typed: string, ctx: SuggestContext): Suggestion[] {
   if (!ctx.listLocalDirs) return [];
-  const raw = typed || '~/';
-  const slash = raw.lastIndexOf('/');
-  const dir = slash >= 0 ? raw.slice(0, slash + 1) : '';
-  const partial = (slash >= 0 ? raw.slice(slash + 1) : raw).toLowerCase();
+  const { dir: listed, partial } = splitTyped(typed);
+  const dir = listed === './' && !typed.includes('/') ? '' : listed;
   return ctx
-    .listLocalDirs(dir || './')
+    .listLocalDirs(listed)
     .filter((e) => e.dir && !e.name.startsWith('.') && e.name.toLowerCase().startsWith(partial))
     .map((e) => ({
       label: `${e.name}/`,

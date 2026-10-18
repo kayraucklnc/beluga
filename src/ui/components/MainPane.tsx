@@ -1,7 +1,7 @@
 import React from 'react';
 import os from 'node:os';
 import type { AppState } from '../../core/store.js';
-import type { TerminalSession } from '../../terminal/index.js';
+import type { TerminalEmulator } from '../../terminal/index.js';
 import type { Derived } from '../derive.js';
 import type { UiState } from '../keymap.js';
 import type { Model } from '../workspace-models.js';
@@ -19,7 +19,7 @@ interface MainPaneProps {
   readonly d: Derived;
   readonly ui: UiState;
   readonly frame: number;
-  readonly terminal: { readonly session?: TerminalSession; readonly bar?: Model; readonly focused: boolean };
+  readonly terminal: { readonly session?: TerminalEmulator; readonly bar?: Model; readonly focused: boolean };
 }
 
 /** The big area right of the sidebar: a menu, help, or whatever the current view shows. */

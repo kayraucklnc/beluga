@@ -15,7 +15,7 @@ import { TerminalManager } from '../src/terminal/index.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
 import { runId, setupId } from '../src/core/workbench.js';
-import { waitFor } from './helpers.js';
+import { attach, waitFor } from './helpers.js';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -88,10 +88,11 @@ async function solo(dir: string, opts: { findPr?: (d: string, b: string) => Prom
       },
     }),
   });
+  const screen = attach(session);
   session.start();
   sessions.push(session);
   await waitFor(() => store.getState().self, 4000);
-  return { session, state: store.getState, runs, workspaces, desktop, opened, bench: session.workbench! };
+  return { session, state: store.getState, screen: screen.store, runs, workspaces, desktop, opened, bench: session.workbench! };
 }
 
 const projectOf = (w: WorkspaceManager) => w.list.find((p) => p.root)!;
@@ -112,10 +113,10 @@ describe('setup and run scripts', () => {
     await waitFor(() => kay.state().setup[next!.id]?.status === 'done', 8000);
     expect(kay.state().approvals).toHaveLength(0);
     const setup = terminals.get(setupId(ws!.id))!;
-    expect(setup.snapshot().lines.map((l) => l.map((s) => s.text).join('')).join('\n')).toContain('installing');
+    expect(setup.backlog()).toContain('installing');
 
     const run = kay.bench.run(ws!.id)!;
-    await waitFor(() => run.snapshot().lines.some((l) => l.map((s) => s.text).join('').includes('serving')), 8000);
+    await waitFor(() => run.backlog().includes('serving'), 8000);
     expect(kay.bench.run(ws!.id)).toBe(run); // already running: the same session
     kay.bench.stopRun(ws!.id);
     await waitFor(() => !terminals.get(runId(ws!.id))?.running, 4000);
@@ -131,8 +132,8 @@ describe('setup and run scripts', () => {
     await waitFor(() => kay.state().setup[ws!.id]?.status === 'failed', 8000);
     expect(kay.state().setup[ws!.id]?.detail).toBe('exit code 3');
     // You're looking at it, so it's a toast; from elsewhere it goes to the inbox (and the desktop).
-    expect(kay.state().toast?.text).toContain('Setup failed in broken');
-    kay.session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+    expect(kay.screen.getState().toast?.text).toContain('Setup failed in broken');
+    kay.screen.dispatch({ type: 'view', view: { kind: 'overview' } });
     kay.bench.runSetup(ws!.id); // you asked for it: no question
     await waitFor(() => kay.state().inbox.some((n) => n.title === 'Setup failed in broken'), 8000);
     await waitFor(() => kay.desktop.includes('Setup failed in broken'), 4000);
@@ -168,7 +169,7 @@ describe('pull requests', () => {
     expect(kay.runs[0]?.prompt).toContain('For this pull request, also: mention the migration');
     expect(kay.runs[0]?.prompt).toContain('## Why');
 
-    kay.session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+    kay.screen.dispatch({ type: 'view', view: { kind: 'overview' } });
     pr = { number: 7, url: 'https://github.com/x/app/pull/7', state: 'OPEN', title: 'Add auth', draft: false, checks: 'pending' };
     await kay.bench.refreshPrs(ws!.id);
     expect(kay.state().prs[ws!.id]?.number).toBe(7);
@@ -189,7 +190,7 @@ describe('pull requests', () => {
     const asked: string[] = [];
     const kay = await solo(dir, { findPr: async (d) => (asked.push(d), { number: 9, url: 'u', state: 'OPEN', title: 'T', draft: false, checks: 'pending' }) });
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'quiet');
-    kay.session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+    kay.screen.dispatch({ type: 'view', view: { kind: 'overview' } });
     await kay.bench.refreshPrs(ws!.id);
     await kay.bench.refreshPrs(ws!.id);
     expect(kay.state().prs[ws!.id]?.number).toBe(9);
@@ -209,11 +210,11 @@ describe('pull requests', () => {
     const kay = await solo(repo());
     const main = projectOf(kay.workspaces).workspaces.find((w) => w.kind === 'main')!;
     kay.bench.createPr(main.id);
-    expect(kay.state().toast?.text).toContain('Pull requests are for worktrees');
+    expect(kay.screen.getState().toast?.text).toContain('Pull requests are for worktrees');
     kay.session.store.dispatch({ type: 'gh', ok: false });
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'x');
     kay.bench.createPr(ws!.id);
-    expect(kay.state().toast?.text).toContain('Install the GitHub CLI');
+    expect(kay.screen.getState().toast?.text).toContain('Install the GitHub CLI');
   });
 });
 
@@ -284,7 +285,7 @@ describe('models, usage, space and search', () => {
     const hits = kay.state().search.hits;
     expect(hits.map((h) => h.place)).toEqual(['app › payments', 'app › docs']);
     kay.bench.openHit(1);
-    expect(kay.state().view).toMatchObject({ kind: 'workspace', id: b!.id });
+    expect(kay.screen.getState().view).toMatchObject({ kind: 'workspace', id: b!.id });
     kay.bench.search('nothing like this');
     expect(kay.state().search.hits).toEqual([]);
   });

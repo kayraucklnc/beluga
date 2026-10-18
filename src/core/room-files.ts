@@ -128,10 +128,9 @@ export class RoomFiles {
     }
   }
 
-  /** Activate the row under the cursor in the file browser. */
-  async browserEnter(): Promise<void> {
-    const { browser } = this.store.getState();
-    const row = browser.rows[browser.cursor];
+  /** Activate a row of the file browser (the one under the screen's cursor). */
+  async browserEnter(index: number): Promise<void> {
+    const row = this.store.getState().browser.rows[index];
     if (!row) return;
     if (row.target === 'up') return this.browserUp();
     if (row.dir) return this.browseTo(row.target);

@@ -1,5 +1,5 @@
 import type { NotifySettings } from './settings.js';
-import { type AppState, type LogItem, type Store, channelOf } from './store.js';
+import { type DomainState, type LogItem, type Store } from './store.js';
 
 /** The groups you can switch on or off in Settings → Notifications. */
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr';
@@ -25,14 +25,14 @@ const firstLine = (text: string, max = 140): string => {
 };
 
 /** "add-auth", "the group chat", or a shared workspace's name. */
-export function placeName(state: AppState, channel: string): string {
+export function placeName(state: DomainState, channel: string): string {
   if (channel === 'room') return state.peers.length > 1 ? 'the group chat' : 'your chat';
   const id = channel.slice(3);
   const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) ?? state.shared.find((w) => w.id === id);
   return ws?.name ?? 'a workspace';
 }
 
-function finishedRuns(prev: AppState, next: AppState): NoticeEvent[] {
+function finishedRuns(prev: DomainState, next: DomainState): NoticeEvent[] {
   if (prev.log === next.log) return [];
   const before = new Map<string, AgentItem>();
   for (const l of prev.log.slice(-RECENT_LOG)) if (l.type === 'agent') before.set(l.id, l);
@@ -58,7 +58,7 @@ function finishedRuns(prev: AppState, next: AppState): NoticeEvent[] {
  * What happened between two states that you'd want to hear about: Claude finished or
  * stopped, needs an answer or approval, a merge conflict, someone joined or invited you.
  */
-export function detectNotices(prev: AppState, next: AppState): NoticeEvent[] {
+export function detectNotices(prev: DomainState, next: DomainState): NoticeEvent[] {
   const out = finishedRuns(prev, next);
   if (prev.approvals !== next.approvals) {
     const seen = new Set(prev.approvals.map((a) => a.id));
@@ -111,10 +111,10 @@ export interface NotifierDeps {
 /**
  * Watches the room and your workspaces, keeps an inbox of what happened while you were
  * looking elsewhere, and raises desktop notifications for it. Nothing is announced
- * about the conversation you're looking at while klaud is in front.
+ * about a conversation a screen in front is showing (see Attention in store.ts).
  */
 export class Notifier {
-  private prev: AppState;
+  private prev: DomainState;
   private readonly unsubscribe: () => void;
   private queue: NoticeEvent[] = [];
   private timer?: NodeJS.Timeout;
@@ -141,24 +141,23 @@ export class Notifier {
     this.prev = next;
     if (prev === next) return;
     // Opening a conversation reads its notices.
-    if (prev.view !== next.view || prev.away !== next.away) this.markSeen(next);
+    if (prev.attention !== next.attention) this.markSeen(next);
     const events = detectNotices(prev, next);
     if (events.length) this.handle(events, next);
   }
 
-  private markSeen(state: AppState): void {
-    if (state.away) return;
-    const channel = channelOf(state.view);
-    if (state.inbox.some((n) => !n.read && n.channel === channel)) this.deps.store.dispatch({ type: 'notice_read', channel });
+  private markSeen(state: DomainState): void {
+    for (const channel of state.attention.visible) {
+      if (state.inbox.some((n) => !n.read && n.channel === channel)) this.deps.store.dispatch({ type: 'notice_read', channel });
+    }
   }
 
-  private handle(events: readonly NoticeEvent[], state: AppState, direct = false): void {
+  private handle(events: readonly NoticeEvent[], state: DomainState, direct = false): void {
     const prefs = state.prefs.notify;
-    const visible = channelOf(state.view);
     for (const e of events) {
       if (!enabled(prefs, e.kind)) continue;
-      // You're looking right at it: a direct notice (it isn't in the chat) still shows as a toast.
-      if (!state.away && e.channel !== undefined && e.channel === visible) {
+      // A screen in front shows it: a direct notice (it isn't in the chat) still shows as a toast.
+      if (e.channel !== undefined && state.attention.visible.includes(e.channel)) {
         if (direct) this.deps.toast?.(`${e.title}${e.body ? `: ${e.body}` : ''}`, e.kind === 'problems' ? 'warn' : 'info');
         continue;
       }

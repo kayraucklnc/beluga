@@ -1,5 +1,5 @@
 import type { Session } from './session.js';
-import { type Policy, channelOf } from './store.js';
+import type { Policy } from './store.js';
 import { THEMES, type ThemeName } from './settings.js';
 
 export interface CommandSpec {
@@ -64,8 +64,8 @@ export const COMMANDS: readonly CommandSpec[] = [
 
 const POLICIES: readonly Policy[] = ['ask', 'auto', 'deny'];
 
-/** Execute a `/command` (or legacy `:command`). */
-export function runCommand(session: Session, name: string, args: readonly string[]): void {
+/** Execute a `/command` (or legacy `:command`) typed in `channel` (the conversation on screen). */
+export function runCommand(session: Session, name: string, args: readonly string[], channel = 'room'): void {
   const state = session.store.getState();
   const arg = args[0];
   switch (name) {
@@ -95,10 +95,10 @@ export function runCommand(session: Session, name: string, args: readonly string
       if (arg?.startsWith('@')) {
         const command = args.slice(1).join(' ').trim();
         if (!command) return session.toast('Usage: /run @name <command>', 'warn');
-        session.runOnPeerByHand(arg.slice(1), command);
+        session.runOnPeerByHand(arg.slice(1), command, channel);
         return;
       }
-      runWorkspaceCommand(session, name, args);
+      runWorkspaceCommand(session, name, args, channel);
       return;
     case 'new':
     case 'worktree':
@@ -117,10 +117,9 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'terminal':
     case 'setup':
     case 'handoff':
-      runWorkspaceCommand(session, name, args);
+      runWorkspaceCommand(session, name, args, channel);
       return;
     case 'model': {
-      const channel = channelOf(state.view);
       const pick = state.models.find((m) => m.value === arg || m.label.toLowerCase() === (arg ?? '').toLowerCase());
       if (!arg || !pick) return session.intend({ type: 'overlay', overlay: 'model' });
       if (session.workbench) session.workbench.setModel(channel === 'room' || channel === 'draft' ? undefined : channel, pick.value);
@@ -220,7 +219,6 @@ export function runCommand(session: Session, name: string, args: readonly string
       session.intend({ type: 'overlay', overlay: 'clear' });
       return;
     case 'plan': {
-      const channel = channelOf(state.view);
       session.setPlanMode(channel, arg ? arg !== 'off' : !state.planMode[channel]);
       return;
     }
@@ -261,11 +259,11 @@ export function runCommand(session: Session, name: string, args: readonly string
 }
 
 /** Workspace commands act on the workspace you're looking at (or its project). */
-function runWorkspaceCommand(session: Session, name: string, args: readonly string[]): void {
+function runWorkspaceCommand(session: Session, name: string, args: readonly string[], channel: string): void {
   const ctl = session.workspaces;
   if (!ctl) return session.toast('Projects are not available in this mode', 'warn');
   const text = args.join(' ').trim();
-  const ws = ctl.current();
+  const ws = ctl.inChannel(channel);
   if (name === 'project') {
     const [sub, ...rest] = args;
     if (sub === 'setup' || sub === 'run') {

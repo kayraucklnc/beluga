@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Store, initialState, reduce, type Action, type AppState } from '../src/core/store.js';
+import { Store, initialState, reduce, type Action, type DomainState } from '../src/core/store.js';
+import { AttentionRegistry } from '../src/core/attention.js';
+import { ClientStore } from '../src/client/client-store.js';
 import { Notifier, detectNotices, enabled, placeName, type NoticeEvent } from '../src/core/notify.js';
 import { pickRoute, plan, type RouteEnv } from '../src/ui/tty/desktop-notify.js';
 import type { PeerInfo } from '../src/protocol.js';
@@ -18,8 +20,8 @@ const project: Project = {
   workspaces: [{ id: 'w1', projectId: 'p1', projectRoot: '/tmp/app', name: 'add-auth', path: '/tmp/app-w1', kind: 'worktree', createdAt: 0, external: false }],
 };
 
-const apply = (s: AppState, ...actions: Action[]): AppState => actions.reduce(reduce, s);
-const base = (): AppState =>
+const apply = (s: DomainState, ...actions: Action[]): DomainState => actions.reduce(reduce, s);
+const base = (): DomainState =>
   apply(initialState('room'), { type: 'peers', peers: [me, bob] }, { type: 'welcome', self: me }, { type: 'projects', projects: [project] });
 
 const ev = (owner: string, requester: string, event: 'started' | 'text' | 'done' | 'error' | 'denied', text = '', channel = 'ws:w1'): Action => ({
@@ -202,13 +204,17 @@ describe('enabled', () => {
 
 describe('Notifier', () => {
   let store: Store;
+  let screen: ClientStore;
   let desktop: ReturnType<typeof vi.fn<(n: { title: string; body: string; sound: boolean }) => void>>;
   let notifier: Notifier;
 
-  const start = (state: AppState = base(), burstMs?: number): void => {
+  /** A store with one screen attached, showing the room (the way the terminal UI starts). */
+  const start = (state: DomainState = base(), burstMs?: number): void => {
     store = new Store(state);
+    const attention = new AttentionRegistry(store);
     desktop = vi.fn<(n: { title: string; body: string; sound: boolean }) => void>();
     notifier = new Notifier({ store, desktop, burstMs });
+    screen = new ClientStore(store, (a) => attention.set('screen', a));
   };
   const finishRun = (requestId: string, channel: string, text = 'ok'): void => {
     store.dispatch({ ...(ev('me', 'me', 'started', '', channel) as Extract<Action, { type: 'agent_event' }>), requestId });
@@ -234,13 +240,14 @@ describe('Notifier', () => {
   });
 
   it('stays quiet about the conversation you are looking at, unless away', () => {
-    start(apply(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } }));
+    start();
+    screen.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
     finishRun('r1', 'ws:w1');
     vi.runAllTimers();
     expect(store.getState().inbox).toEqual([]);
     expect(desktop).not.toHaveBeenCalled();
 
-    store.dispatch({ type: 'away', away: true });
+    screen.dispatch({ type: 'away', away: true });
     finishRun('r2', 'ws:w1');
     vi.runAllTimers();
     expect(store.getState().inbox).toHaveLength(1);
@@ -293,21 +300,21 @@ describe('Notifier', () => {
     finishRun('r2', 'room');
     // r2 is about the room, which you are looking at.
     expect(store.getState().inbox).toHaveLength(1);
-    store.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    screen.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
     expect(store.getState().inbox[0]?.read).toBe(true);
 
-    store.dispatch({ type: 'away', away: true });
+    screen.dispatch({ type: 'away', away: true });
     store.dispatch({ type: 'question_add', question: question('q1', 'question') });
     expect(store.getState().inbox[0]).toMatchObject({ channel: 'ws:w1', read: false });
-    store.dispatch({ type: 'away', away: false });
+    screen.dispatch({ type: 'away', away: false });
     expect(store.getState().inbox[0]?.read).toBe(true);
   });
 
   it('does not mark notices read while away', () => {
     start();
-    store.dispatch({ type: 'away', away: true });
+    screen.dispatch({ type: 'away', away: true });
     finishRun('r1', 'ws:w1');
-    store.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    screen.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
     expect(store.getState().inbox[0]?.read).toBe(false);
   });
 

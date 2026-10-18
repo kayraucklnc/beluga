@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type Action, initialState, reduceDomain, stampAction } from '../src/core/store.js';
-import { intentAction } from '../src/core/intents.js';
+import { initialScreen, intentToScreen, reduceScreen } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
 
 const me: PeerInfo = { peerId: 'me', name: 'kay', shares: [], agent: true };
@@ -52,16 +52,21 @@ describe('reduceDomain', () => {
   });
 });
 
-describe('intents shown in the store', () => {
+describe('intents shown on a screen', () => {
+  const domain = initialState('room');
   it('navigates unless the screen already shows that kind of view', () => {
-    expect(intentAction({ type: 'navigate', view: { kind: 'overview' } }, { kind: 'room' })).toEqual({ type: 'view', view: { kind: 'overview' } });
+    expect(intentToScreen({ type: 'navigate', view: { kind: 'overview' } }, initialScreen)).toEqual({ type: 'view', view: { kind: 'overview' } });
     const shared = { kind: 'shared', owner: 'bob', id: 'w', tab: 'chat' } as const;
-    expect(intentAction({ type: 'navigate', view: shared, unless: 'shared' }, { ...shared, id: 'other' })).toBeUndefined();
+    expect(intentToScreen({ type: 'navigate', view: shared, unless: 'shared' }, { ...initialScreen, view: { ...shared, id: 'other' } })).toBeUndefined();
   });
 
   it('closing a shared workspace that is showing goes back to the room', () => {
-    const s0 = reduceDomain(initialState('room'), { type: 'view', view: { kind: 'shared', owner: 'bob', id: 'w', tab: 'chat' } });
-    const s1 = reduceDomain(s0, intentAction({ type: 'close_tab', id: 'w' }, s0.view)!);
+    const s0 = reduceScreen(initialScreen, { type: 'view', view: { kind: 'shared', owner: 'bob', id: 'w', tab: 'chat' } }, domain);
+    const s1 = reduceScreen(s0, intentToScreen({ type: 'close_tab', id: 'w' }, s0)!, domain);
     expect(s1.view.kind).toBe('room');
+  });
+
+  it('quitting is for the client, not the screen state', () => {
+    expect(intentToScreen({ type: 'quit' }, initialScreen)).toBeUndefined();
   });
 });

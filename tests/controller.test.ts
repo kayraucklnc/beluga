@@ -10,11 +10,13 @@ import { Store, initialState } from '../src/core/store.js';
 import { WorkspaceController, shareNameOf, workspaceIdOf } from '../src/core/workspace-controller.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
-import { showIntents, waitFor } from './helpers.js';
+import { screenOver, waitFor } from './helpers.js';
+import type { ClientStore } from '../src/client/client-store.js';
 
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
 
 let store: Store;
+let screen: ClientStore;
 let shares: ShareService;
 let ctl: WorkspaceController;
 let toasts: string[];
@@ -39,13 +41,15 @@ beforeEach(async () => {
   shares = new ShareService([]);
   toasts = [];
   asked = [];
+  const shown = screenOver(store);
+  screen = shown.screen;
   ctl = new WorkspaceController({
     manager: new WorkspaceManager(wsStore),
     store,
     shares,
     selfId: () => 'me',
     toast: (t) => void toasts.push(t),
-    intend: (i) => showIntents(store)(i),
+    intend: shown.intend,
     askClaude: (prompt, channel) => void asked.push({ prompt, channel }),
   });
   await ctl.refresh();
@@ -65,9 +69,9 @@ describe('WorkspaceController', () => {
 
   it('creates a worktree, opens it, runs Claude there, and saves its conversation', async () => {
     const ws = (await ctl.newWorktree(projectId(), 'feature'))!;
-    expect(store.getState().view).toEqual({ kind: 'workspace', id: ws.id, tab: 'chat' });
-    expect(ctl.current()?.id).toBe(ws.id);
-    expect(ctl.isCurrentChannel(`ws:${ws.id}`)).toBe(true);
+    expect(screen.getState().view).toEqual({ kind: 'workspace', id: ws.id, tab: 'chat' });
+    expect(ctl.inChannel(`ws:${ws.id}`)?.id).toBe(ws.id);
+    expect(ctl.inChannel('room')).toBeUndefined();
     const place = ctl.place(`ws:${ws.id}`)!;
     expect(place).toMatchObject({ cwd: ws.path, autoEdit: true, resume: undefined, forkSession: false });
     place.onSession('sess-1');
@@ -120,7 +124,7 @@ describe('WorkspaceController', () => {
     expect(fork.forkedFrom).toBe(ws.id);
     expect(ctl.place(`ws:${fork.id}`)?.forkSession).toBe(false); // parent had no Claude session yet
     expect(await ctl.archive(fork.id)).toBe(true);
-    expect(store.getState().tabs).not.toContain(fork.id);
+    expect(screen.getState().tabs).not.toContain(fork.id);
     await ctl.restore(fork.id);
     expect(ctl.manager.find(fork.id)?.archived).toBe(false);
     await ctl.remove(fork.id);
@@ -164,22 +168,23 @@ describe('WorkspaceController', () => {
   });
 
   it('runs workspace commands against the current workspace', async () => {
-    const session = { workspaces: ctl, toast: (t: string) => void toasts.push(t), intend: showIntents(store), store } as unknown as Session;
-    runCommand(session, 'merge', []);
+    const session = { workspaces: ctl, toast: (t: string) => void toasts.push(t), intend: (i: Parameters<ClientStore['applyIntent']>[0]) => screen.applyIntent(i), store } as unknown as Session;
+    const here = (): string => (screen.getState().view.kind === 'workspace' ? `ws:${(screen.getState().view as { id: string }).id}` : 'room');
+    runCommand(session, 'merge', [], here());
     expect(toasts.at(-1)).toBe('Open a workspace first (Projects on the left)');
-    runCommand(session, 'new', []);
+    runCommand(session, 'new', [], here());
     expect(toasts.at(-1)).toBe('Usage: /new <name>');
-    runCommand(session, 'new', ['cmd', 'test']);
-    await waitFor(() => store.getState().view.kind === 'workspace', 5000);
-    runCommand(session, 'fork', []);
+    runCommand(session, 'new', ['cmd', 'test'], here());
+    await waitFor(() => screen.getState().view.kind === 'workspace', 5000);
+    runCommand(session, 'fork', [], here());
     expect(toasts.at(-1)).toBe('Usage: /fork <name>');
-    runCommand(session, 'review', []);
-    expect(store.getState().view).toMatchObject({ tab: 'review' });
-    runCommand(session, 'project', ['oops']);
+    runCommand(session, 'review', [], here());
+    expect(screen.getState().view).toMatchObject({ tab: 'review' });
+    runCommand(session, 'project', ['oops'], here());
     expect(toasts.at(-1)).toContain('/project add <path>');
-    runCommand(session, 'overview', []);
-    expect(store.getState().view.kind).toBe('overview');
-    runCommand(session, 'room', []);
-    expect(store.getState().view.kind).toBe('room');
+    runCommand(session, 'overview', [], here());
+    expect(screen.getState().view.kind).toBe('overview');
+    runCommand(session, 'room', [], here());
+    expect(screen.getState().view.kind).toBe('room');
   });
 });

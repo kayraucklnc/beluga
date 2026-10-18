@@ -22,6 +22,7 @@ import { P2P_SCHEME, decodeInvite, encodeInvite, findInvite, isDirect, toWsUrl }
 import { PeerClient } from './net/peer-client.js';
 import { closeAllTunnels, offersDirect, openTunnel, waitUntilReachable } from './net/tunnel.js';
 import { App } from './ui/App.js';
+import { InProcessClient } from './ipc/in-process.js';
 import { ErrorBoundary } from './ui/components/ErrorBoundary.js';
 import { createMockBackend } from './agent/mock.js';
 import { runUpdate } from './update/update.js';
@@ -267,7 +268,7 @@ async function main(): Promise<void> {
       if (config.mode !== 'host' || demo) return;
       if (config.agent && !config.policyChosen && !saveAsked) {
         saveAsked = true;
-        store.dispatch({ type: 'overlay', overlay: 'welcome' });
+        session.intend({ type: 'overlay', overlay: 'welcome' });
       }
       void publish(config, room, session, () => shuttingDown);
     },
@@ -285,7 +286,6 @@ async function main(): Promise<void> {
             claudePath: process.env.KLAUD_CLAUDE_PATH,
           })
       : undefined,
-    onQuit: () => void shutdown(),
     launchDir: process.cwd(),
     terminals,
     savedPeople: saved.people,
@@ -295,12 +295,18 @@ async function main(): Promise<void> {
     ...(roomControl ? { room: roomControl } : {}),
   });
 
+  const screen = new InProcessClient(session, { kind: 'tui', launchDir: process.cwd() });
+  screen.onIntent((intent) => {
+    if (intent.type === 'quit') void shutdown();
+  });
+
   const shutdown = async (): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     closeAllTunnels();
     try {
       app.unmount();
+      screen.close();
       await session.stop();
       await room.hub?.close();
     } finally {
@@ -323,7 +329,7 @@ async function main(): Promise<void> {
   const stdin = process.stdin.isTTY
     ? createInput(process.stdin, {
         onMouse: (e) => mouseListeners.forEach((l) => l(e)),
-        onFocus: (focused) => store.dispatch({ type: 'away', away: !focused }),
+        onFocus: (focused) => screen.store.dispatch({ type: 'away', away: !focused }),
         rawSink: () => rawSink,
         onPaste: (text) => pasteListener?.(text) ?? false,
         onData: () => (lastInput = Date.now()),
@@ -346,7 +352,7 @@ async function main(): Promise<void> {
   const onboarding = config.agent && !config.policyChosen && (config.mode === 'join' || config.inviteNow);
   const app = render(
     <ErrorBoundary>
-      <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} setRawInput={(sink) => (rawSink = sink)} setPasteHandler={(fn) => (pasteListener = fn)} inputTime={() => lastInput} />
+      <App client={screen} onboarding={onboarding} subscribeMouse={subscribeMouse} setRawInput={(sink) => (rawSink = sink)} setPasteHandler={(fn) => (pasteListener = fn)} inputTime={() => lastInput} />
     </ErrorBoundary>,
     // Only rewrite the lines that changed, and redraw often enough that scrolling feels smooth.
     { exitOnCtrlC: false, stdin, incrementalRendering: true, maxFps: 60 },

@@ -6,7 +6,7 @@ import { type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, typ
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { type ShareService, parseShareSpec } from './shares.js';
 import { existsSync } from 'node:fs';
-import { type Location, type Prefs, type Store, channelOf, peerName } from './store.js';
+import { type Attention, type Location, type MyShare, type Prefs, type Store, peerName } from './store.js';
 import { WorkspaceController } from './workspace-controller.js';
 import { QuestionBroker } from './questions.js';
 import type { Conversation } from '../agent/transcript.js';
@@ -21,7 +21,9 @@ import { AgentHost } from './agent-host.js';
 import { RoomFiles, dirKey } from './room-files.js';
 import { createRoomBridge } from './agent-bridge.js';
 import { createSessionParts } from './session-parts.js';
-import { type Intent, IntentBus, intentAction } from './intents.js';
+import { type Intent, IntentBus } from './intents.js';
+import { AttentionRegistry } from './attention.js';
+import { currentClient } from './client-context.js';
 import { ATTACHMENT_SHARE } from './attachments.js';
 import { Notifier } from './notify.js';
 import { Workbench } from './workbench.js';
@@ -44,7 +46,6 @@ export interface SessionOptions {
   readonly agentCwd: string;
   readonly requestTimeoutMs?: number;
   readonly agentTimeoutMs?: number;
-  readonly onQuit?: () => void;
   /** Folder klaud was started in; new stand-alone chats run here. */
   readonly launchDir?: string;
   /** Clipboard writer (injected so tests don't touch the real clipboard). */
@@ -162,6 +163,8 @@ export class Session {
   private projectsTimer?: NodeJS.Timeout;
   /** What this session asks screens to do (see core/intents.ts). */
   readonly intents = new IntentBus();
+  /** What the attached screens look at (unread counts and notifications follow it). */
+  readonly attention: AttentionRegistry;
 
   constructor(private readonly opts: SessionOptions) {
     this.bridge = createRoomBridge(this, () => opts.agentCwd);
@@ -181,11 +184,9 @@ export class Session {
     this.shell = parts.shell;
     this.diff = parts.diff;
     this.agent = opts.createAgent?.(this.bridge);
-    // Until screens have their own state, intents show in the shared store.
-    this.intents.subscribe((intent) => {
-      const action = intentAction(intent, opts.store.getState().view);
-      if (action) opts.store.dispatch(action);
-    });
+    this.attention = new AttentionRegistry(opts.store);
+    opts.store.dispatch({ type: 'identity', selfId: opts.client.peerId, isHost: Boolean(opts.room) });
+    this.publishShares();
     this.wire();
   }
 
@@ -253,22 +254,35 @@ export class Session {
     this.agentWaiters.clear();
   }
 
+  /** Leave: the screen that asked closes (the room stays up while other screens are attached). */
   quit(): void {
-    this.opts.onQuit?.();
+    this.intend({ type: 'quit' });
+  }
+
+  /** A screen says what it's looking at (`clientId`: which screen). */
+  attend(clientId: string, attention: Attention): void {
+    this.attention.set(clientId, attention);
+  }
+
+  /** A screen closed. */
+  detach(clientId: string): void {
+    this.attention.remove(clientId);
   }
 
   // -------------------------------------------------------------------------
   // User actions
   // -------------------------------------------------------------------------
 
-  /** Handle a line from the composer. `urgent` (Alt/Ctrl+Enter) interrupts your Claude instead of queueing. */
-  submit(raw: string, urgent = false): void {
+  /**
+   * Handle a line from the composer, typed in `channel` (the conversation on screen). `urgent`
+   * (Alt/Ctrl+Enter) interrupts your Claude instead of queueing.
+   */
+  submit(raw: string, { channel = 'room', urgent = false }: { channel?: string; urgent?: boolean } = {}): void {
     const state = this.store.getState();
     // "/run @bob <command>": the command exactly as typed (spacing and quotes kept).
     const peerRun = /^\/run\s+@([\w.-]+)\s+([\s\S]+)$/.exec(raw.trim());
-    if (peerRun) return this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim());
+    if (peerRun) return this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim(), channel);
     const parsed = parseInput(raw, this.selfId, state.peers);
-    const channel = channelOf(state.view);
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
       this.askOwnClaude(parsed.kind === 'agent' ? parsed.prompt : parsed.text, channel, urgent);
@@ -286,7 +300,7 @@ export class Session {
       case 'empty':
         return;
       case 'command':
-        runCommand(this, parsed.name, parsed.args);
+        runCommand(this, parsed.name, parsed.args, channel);
         return;
       case 'chat':
         this.sendChat(parsed.text, false);
@@ -312,7 +326,7 @@ export class Session {
 
   /** Ask the screen(s) to go somewhere, open a dialog, show a message or close a tab. */
   intend(intent: Intent): void {
-    this.intents.emit(intent);
+    this.intents.emit(intent, currentClient());
   }
 
   async copyInvite(): Promise<void> {
@@ -441,14 +455,12 @@ export class Session {
   async runOnPeer(name: string, command: string, opts: { cwd?: string; project?: string; timeoutSec?: number; why?: string; viaAgent?: boolean; channel?: string } = {}): Promise<string> {
     const peer = this.findPeer(name);
     if (!peer || peer.peerId === this.selfId) throw new Error(`No friend named "${name}" is here. Call list_peers first.`);
-    const res = await this.peerRun.run(peer.peerId, command, { ...opts, viaAgent: opts.viaAgent ?? false, channel: opts.channel ?? channelOf(this.store.getState().view) });
+    const res = await this.peerRun.run(peer.peerId, command, { ...opts, viaAgent: opts.viaAgent ?? false, channel: opts.channel ?? 'room' });
     return describeShellResult(peer.name, res);
   }
 
-  /** "/run @bob npm test" and the person menu: you run a command on a friend's computer. */
-  runOnPeerByHand(name: string, command: string): void {
-    const state = this.store.getState();
-    const channel = channelOf(state.view);
+  /** "/run @bob npm test" and the person menu: you run a command on a friend's computer (shown in `channel`). */
+  runOnPeerByHand(name: string, command: string, channel = 'room'): void {
     this.runOnPeer(name, command, { channel: channel === 'draft' ? 'room' : channel }).catch((err: unknown) => this.toast(errorText(err), 'warn'));
   }
 
@@ -467,6 +479,7 @@ export class Session {
     const root = dir ? absPath : path.dirname(absPath);
     const name = `local-${createHash('sha1').update(root).digest('hex').slice(0, 10)}`;
     if (!this.opts.shares.configs.some((c) => c.name === name)) this.opts.shares.upsert({ name, root, writable: false, private: true, allowed: [] });
+    this.publishShares();
     return { owner: this.selfId, share: name, path: dir ? '' : path.basename(absPath) };
   }
 
@@ -474,6 +487,7 @@ export class Session {
   serveFolder(name: string, root: string, allowed: readonly string[]): void {
     const current = this.opts.shares.configs.find((c) => c.name === name)?.allowed ?? [];
     this.opts.shares.upsert({ name, root, writable: false, private: true, allowed: [...new Set([...current, ...allowed])] });
+    this.publishShares();
   }
 
   /** Ask your own Claude in a conversation (shown there) and wait for its final answer. */
@@ -532,8 +546,8 @@ export class Session {
     return this.files.browseTo(at);
   }
 
-  browserEnter(): Promise<void> {
-    return this.files.browserEnter();
+  browserEnter(index: number): Promise<void> {
+    return this.files.browserEnter(index);
   }
 
   browserUp(): Promise<void> {
@@ -843,6 +857,7 @@ export class Session {
     const config = only?.length ? { ...spec, private: true, allowed: [...only] } : spec;
     this.opts.shares.upsert(config);
     this.updateProfile({ shares: this.opts.shares.infos });
+    this.publishShares();
     for (const to of only ?? []) this.send({ kind: 'share_offer', name: config.name, writable: config.writable, active: true }, { to });
     const state = this.store.getState();
     const who = only?.length ? only.map((id) => peerName(state, id)).join(', ') : 'the room';
@@ -855,12 +870,23 @@ export class Session {
     for (const to of config.private ? (config.allowed ?? []) : []) this.send({ kind: 'share_offer', name, writable: config.writable, active: false }, { to });
     this.opts.shares.remove(name);
     this.updateProfile({ shares: this.opts.shares.infos });
+    this.publishShares();
     if (!quiet) this.toast(`Stopped sharing ${name}`);
   }
 
   /** Your shared folders (not workspaces), for the Share menu. */
-  get myShares(): ReadonlyArray<{ name: string; root: string; private?: boolean; allowed?: readonly string[] }> {
-    return this.opts.shares.configs.filter((c) => !c.name.startsWith('ws-') && !c.name.startsWith('local-') && c.name !== ATTACHMENT_SHARE);
+  get myShares(): readonly MyShare[] {
+    return this.opts.shares.configs
+      .filter((c) => !c.name.startsWith('ws-') && !c.name.startsWith('local-') && c.name !== ATTACHMENT_SHARE)
+      .map((c) => ({ name: c.name, root: c.root, ...(c.private ? { private: true } : {}), ...(c.allowed ? { allowed: c.allowed } : {}) }));
+  }
+
+  /** Keep the list of your shared folders in the state (screens show it in the Share menu). */
+  private publishShares(): void {
+    const shares = this.myShares;
+    const now = this.store.getState().myShares;
+    if (shares.length === now.length && shares.every((x, i) => JSON.stringify(x) === JSON.stringify(now[i]))) return;
+    this.store.dispatch({ type: 'my_shares', shares });
   }
 
   /** Give a friend access to only your shared folders, or your whole computer. */

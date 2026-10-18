@@ -1,13 +1,13 @@
 import type { AgentEventKind, FsEntry, PeerInfo } from '../protocol.js';
 import type { ConnectionStatus } from '../net/peer-client.js';
 import type { Effort, NotifySettings, Settings, ThemeName, TrustLevel } from './settings.js';
-import { NotifySettings as NotifySchema } from './settings.js';
+import { NotifySettings as NotifySchema } from '../shared/settings-schema.js';
 import type { Review } from '../workspaces/git.js';
 import type { Project, ProjectGroup } from '../workspaces/types.js';
 import type { EnvChange } from '../workspaces/env.js';
 import type { Bitmap } from '../image/bitmap.js';
 import { type CollabAction, type CollabState, initialCollab, reduceCollab } from './collab-store.js';
-import { type WorkAction, type WorkState, initialWork, reduceWork } from './work-store.js';
+import { type SearchState, type WorkAction, type WorkState, initialWork, reduceWork } from './work-store.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
 
@@ -86,23 +86,31 @@ export interface BrowserRow {
   readonly size?: number;
 }
 
-export interface BrowserState {
+/** The Shared files browser: the folder open and what's in it (each screen keeps its own cursor). */
+export interface BrowserDomain {
   readonly at?: Location;
   readonly rows: readonly BrowserRow[];
-  readonly cursor: number;
   readonly loading: boolean;
   readonly error?: string;
 }
 
-export interface ViewerState extends Location {
+export interface BrowserState extends BrowserDomain {
+  readonly cursor: number;
+}
+
+/** The file open in the viewer (each screen keeps its own scroll position). */
+export interface ViewerDomain extends Location {
   readonly content: string;
   /** Decoded pixels when the file is an image. */
   readonly image?: Bitmap;
   readonly truncated: boolean;
   readonly loading: boolean;
   readonly error?: string;
-  readonly scroll: number;
   readonly by?: string;
+}
+
+export interface ViewerState extends ViewerDomain {
+  readonly scroll: number;
 }
 
 export interface Focus extends Location {
@@ -181,14 +189,18 @@ export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';
 
 export type WorkspaceTab = 'chat' | 'files' | 'review' | 'terminal';
 
-export interface ReviewState {
+/** A workspace's changes: the files, and the diff of the one selected (its scroll is per screen). */
+export interface ReviewDomain {
   readonly workspaceId: string;
   readonly data?: Review;
   readonly selected: number;
   readonly diff?: string;
-  readonly diffScroll: number;
   readonly loading: boolean;
   readonly error?: string;
+}
+
+export interface ReviewState extends ReviewDomain {
+  readonly diffScroll: number;
 }
 
 /** How full a conversation's context window is. */
@@ -207,16 +219,40 @@ export interface Compaction {
 export const channelOf = (view: View): string =>
   view.kind === 'workspace' || view.kind === 'shared' ? `ws:${view.id}` : view.kind === 'draft' || view.kind === 'draft_worktree' ? 'draft' : 'room';
 
-export interface AppState extends CollabState, WorkState {
+/** The conversation a view shows, if any (Overview, Search, Terminal… show none, so the chat's unread count stays). */
+export const shownChannel = (view: View): string | undefined => (view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' ? channelOf(view) : undefined);
+
+/** What the screens attached to this computer's klaud are looking at (all of them together). */
+export interface Attention {
+  /** Conversations some screen shows: new messages there aren't unread. */
+  readonly shown: readonly string[];
+  /** Conversations a screen in front shows: nothing is announced about them. */
+  readonly visible: readonly string[];
+  /** Some screen shows Shared files (every folder there counts as seen). */
+  readonly files: boolean;
+}
+
+export const NO_ATTENTION: Attention = { shown: [], visible: [], files: false };
+
+/** A folder you share (not a workspace), for the Share menu. */
+export interface MyShare {
+  readonly name: string;
+  readonly root: string;
+  readonly private?: boolean;
+  readonly allowed?: readonly string[];
+}
+
+/**
+ * Everything klaud knows that isn't about a screen: the room, people, projects, conversations,
+ * approvals… The core (the daemon) owns it and every client sees the same.
+ */
+export interface DomainState extends CollabState, WorkState {
   readonly room: string;
-  readonly view: View;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
   /** Files with merge conflicts from the last merge attempt, per workspace. */
   readonly conflicts: Readonly<Record<string, readonly string[]>>;
-  /** Workspaces open as tabs, in order. */
-  readonly tabs: readonly string[];
-  readonly review?: ReviewState;
+  readonly review?: ReviewDomain;
   /** Unread message counts per channel. */
   readonly unread: Readonly<Record<string, number>>;
   /** Shared folders you've already seen in Shared files (see shareKeys); others count as new. */
@@ -227,16 +263,21 @@ export interface AppState extends CollabState, WorkState {
   /** Env changes found in a worktree that's about to be archived or deleted. */
   readonly envChanges: Readonly<Record<string, readonly EnvChange[]>>;
   readonly hosting?: Hosting;
-  readonly toast?: Toast;
-  readonly overlay?: Overlay;
   readonly invite?: string;
+  /** Your peer id on this computer (known before the room answers). */
+  readonly selfId: string;
+  /** You host the room (you can remove people, change the link, close it). */
+  readonly isHost: boolean;
+  /** The folders you share (not workspaces). */
+  readonly myShares: readonly MyShare[];
+  readonly attention: Attention;
   readonly status: ConnectionStatus;
   readonly self?: PeerInfo;
   readonly peers: readonly PeerInfo[];
   readonly log: readonly LogItem[];
   readonly approvals: readonly Approval[];
-  readonly browser: BrowserState;
-  readonly viewer?: ViewerState;
+  readonly browser: BrowserDomain;
+  readonly viewer?: ViewerDomain;
   readonly follow?: string;
   readonly focus: Readonly<Record<string, Focus>>;
   /** Your default for people you haven't picked a trust level for. */
@@ -252,14 +293,39 @@ export interface AppState extends CollabState, WorkState {
   readonly prefs: Prefs;
 }
 
+/** What one screen shows: where it is, its tabs and dialogs, and its own cursors and scroll positions. */
+export interface ScreenState {
+  readonly view: View;
+  /** Workspaces open as tabs, in order. */
+  readonly tabs: readonly string[];
+  readonly toast?: Toast;
+  readonly overlay?: Overlay;
+  /** The window is in the background. */
+  readonly away: boolean;
+  readonly browserCursor: number;
+  readonly viewerScroll: number;
+  readonly diffScroll: number;
+  readonly searchCursor: number;
+}
+
+/** What a client draws: the shared state seen through its own screen (see client/screen.ts). */
+export interface AppState extends Omit<DomainState, 'browser' | 'viewer' | 'review' | 'search'> {
+  readonly view: View;
+  readonly tabs: readonly string[];
+  readonly toast?: Toast;
+  readonly overlay?: Overlay;
+  readonly away: boolean;
+  readonly browser: BrowserState;
+  readonly viewer?: ViewerState;
+  readonly review?: ReviewState;
+  readonly search: SearchState & { readonly cursor: number };
+}
+
 export type Action =
   | { type: 'status'; status: ConnectionStatus }
   | { type: 'invite'; invite: string }
   | { type: 'room'; room: string }
   | { type: 'hosting'; hosting: Hosting }
-  | { type: 'toast'; text: string; level?: Toast['level'] }
-  | { type: 'toast_clear'; id: number }
-  | { type: 'overlay'; overlay?: Overlay }
   | { type: 'welcome'; self: PeerInfo }
   | { type: 'peers'; peers: readonly PeerInfo[] }
   | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string }
@@ -270,9 +336,7 @@ export type Action =
   | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string }
   | { type: 'projects'; projects: readonly Project[]; groups?: readonly ProjectGroup[] }
   | { type: 'conflicts'; id: string; files: readonly string[] }
-  | { type: 'view'; view: View }
-  | { type: 'close_tab'; id: string }
-  | { type: 'review'; review?: ReviewState }
+  | { type: 'review'; review?: ReviewDomain }
   | { type: 'history'; channel: string; items: readonly LogItem[] }
   | { type: 'env_changes'; id: string; changes: readonly EnvChange[] }
   | { type: 'approval_add'; approval: Approval }
@@ -281,12 +345,10 @@ export type Action =
   | { type: 'browser_loading'; at: Location }
   | { type: 'browser_entries'; at: Location; entries: readonly FsEntry[] }
   | { type: 'browser_error'; error: string }
-  | { type: 'browser_cursor'; delta: number }
   | { type: 'viewer_open'; at: Location; by?: string }
   | { type: 'viewer_content'; at: Location; content: string; truncated: boolean }
   | { type: 'viewer_image'; at: Location; image: Bitmap }
   | { type: 'viewer_error'; at: Location; error: string }
-  | { type: 'viewer_scroll'; delta: number; max?: number }
   | { type: 'viewer_close' }
   | { type: 'focus'; actorKey: string; focus: Focus }
   | { type: 'follow'; peerId?: string }
@@ -298,8 +360,12 @@ export type Action =
   | { type: 'dir_cache'; key: string; entries: readonly FsEntry[] }
   | { type: 'transfer'; transfer: Transfer }
   | { type: 'prefs'; prefs: Partial<Prefs> }
-  | { type: 'clear'; channel?: string }
+  | { type: 'clear'; channel: string }
   | { type: 'context_reset'; channel: string }
+  /** What the attached screens look at changed (see core/attention.ts). */
+  | { type: 'attention'; attention: Attention }
+  | { type: 'my_shares'; shares: readonly MyShare[] }
+  | { type: 'identity'; selfId: string; isHost: boolean }
   | CollabAction
   | WorkAction;
 
@@ -330,14 +396,12 @@ export function prefsFrom(settings: Partial<Settings>): Prefs {
   return { ...DEFAULT_PREFS, ...picked };
 }
 
-export function initialState(room: string, policy: Policy = 'ask', prefs: Partial<Prefs> = DEFAULT_PREFS): AppState {
+export function initialState(room: string, policy: Policy = 'ask', prefs: Partial<Prefs> = DEFAULT_PREFS): DomainState {
   return {
     room,
-    view: { kind: 'room' },
     projects: [],
     projectGroups: [],
     conflicts: {},
-    tabs: [],
     unread: {},
     seenShares: [],
     context: {},
@@ -347,7 +411,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     peers: [],
     log: [],
     approvals: [],
-    browser: { rows: [], cursor: 0, loading: false },
+    browser: { rows: [], loading: false },
     focus: {},
     policy,
     levels: {},
@@ -355,6 +419,10 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     dirCache: {},
     transfers: [],
     prefs: { ...DEFAULT_PREFS, ...prefs },
+    selfId: '',
+    isHost: false,
+    myShares: [],
+    attention: NO_ATTENTION,
     ...initialCollab,
     ...initialWork,
   };
@@ -381,7 +449,7 @@ export function stampAction<A extends Action>(action: A): A {
   }
 }
 
-export const peerName = (state: AppState, peerId: string): string =>
+export const peerName = (state: Pick<DomainState, 'peers' | 'self'>, peerId: string): string =>
   state.peers.find((p) => p.peerId === peerId)?.name ?? (state.self?.peerId === peerId ? state.self.name : peerId.slice(0, 6));
 
 const sameLoc = (a: Location | undefined, b: Location): boolean =>
@@ -397,7 +465,7 @@ function appendLog(log: readonly LogItem[], item: LogItem): readonly LogItem[] {
 }
 
 /** Every folder you can open: shared with the room, shared with just you, and workspaces you were invited into. */
-function rootRows(state: AppState): BrowserRow[] {
+function rootRows(state: DomainState): BrowserRow[] {
   const name = (id: string) => state.peers.find((p) => p.peerId === id)?.name ?? 'someone';
   const room = state.peers.flatMap((p) =>
     p.shares.map((s) => ({ label: `${p.name} · ${s.name}${s.writable ? '' : ' (read-only)'}`, dir: true, target: { owner: p.peerId, share: s.name, path: '' } })),
@@ -408,7 +476,7 @@ function rootRows(state: AppState): BrowserRow[] {
 }
 
 /** One key per folder listed at the top of Shared files (to tell which ones are new). */
-export function shareKeys(state: Pick<AppState, 'peers' | 'offers' | 'shared' | 'self'>): string[] {
+export function shareKeys(state: Pick<DomainState, 'peers' | 'offers' | 'shared' | 'self'>): string[] {
   return [
     ...state.peers.filter((p) => p.peerId !== state.self?.peerId).flatMap((p) => p.shares.map((s) => `${p.peerId}/${s.name}`)),
     ...state.offers.map((o) => `${o.owner}/${o.name}`),
@@ -423,7 +491,7 @@ export function newShares(state: AppState): number {
   return new Set(shareKeys(state).filter((k) => !seen.has(k))).size;
 }
 
-function reduceAgent(state: AppState, raw: Extract<Action, { type: 'agent_event' }>): AppState {
+function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_event' }>): DomainState {
   const a = { ...raw, text: clean(raw.text) };
   const idx = state.log.findIndex((l) => l.type === 'agent' && l.requestId === a.requestId && l.owner === a.owner);
   const existing = idx >= 0 ? (state.log[idx] as Extract<LogItem, { type: 'agent' }>) : undefined;
@@ -459,7 +527,7 @@ function reduceAgent(state: AppState, raw: Extract<Action, { type: 'agent_event'
 }
 
 /** Context meter updates and compactions don't create chat items; they update the meter. */
-function reduceContext(state: AppState, a: Extract<Action, { type: 'agent_event' }>): AppState {
+function reduceContext(state: DomainState, a: Extract<Action, { type: 'agent_event' }>): DomainState {
   const channel = a.channel ?? 'room';
   let data: { used?: number; window?: number; pre?: number; post?: number };
   try {
@@ -512,22 +580,29 @@ function applySub(list: readonly SubAgent[], json: string): readonly SubAgent[] 
   });
 }
 
-/** The conversation a view shows, if any (Overview, Search, Terminal… show none, so the chat's unread count stays). */
-const shownChannel = (view: View): string | undefined => (view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' ? channelOf(view) : undefined);
-
-/** Count new messages in conversations you're not looking at. */
-function bumpUnread(state: AppState, channel: string, isNew: boolean): AppState {
-  if (!isNew || channel === shownChannel(state.view)) return state;
+/** Count new messages in conversations no screen is showing. */
+function bumpUnread(state: DomainState, channel: string, isNew: boolean): DomainState {
+  if (!isNew || state.attention.shown.includes(channel)) return state;
   return { ...state, unread: { ...state.unread, [channel]: (state.unread[channel] ?? 0) + 1 } };
 }
 
 /** Apply an action: stamps it first (see stampAction), then reduces it purely. */
-export function reduce(state: AppState, action: Action): AppState {
+export function reduce(state: DomainState, action: Action): DomainState {
   return reduceDomain(state, stampAction(action));
 }
 
+/** Screens just started showing these: what's there is no longer unread or new. */
+function attend(state: DomainState, attention: Attention): DomainState {
+  const fresh = attention.shown.filter((c) => !state.attention.shown.includes(c));
+  const unread = Object.fromEntries(Object.entries(state.unread).filter(([c]) => !fresh.includes(c)));
+  // Opening (or leaving) Shared files counts every folder there as seen.
+  const seenShares = attention.files !== state.attention.files ? shareKeys(state) : state.seenShares;
+  return { ...state, attention, unread, seenShares };
+}
+
 /** The reducer itself: pure for stamped actions (no clock, no counters). */
-export function reduceDomain(state: AppState, action: Action): AppState {
+export function reduceDomain<S extends DomainState>(state: S, action: Action): S;
+export function reduceDomain(state: DomainState, action: Action): DomainState {
   switch (action.type) {
     case 'status':
       return { ...state, status: action.status };
@@ -537,16 +612,10 @@ export function reduceDomain(state: AppState, action: Action): AppState {
       return { ...state, room: clean(action.room) };
     case 'hosting':
       return { ...state, hosting: action.hosting };
-    case 'toast':
-      return { ...state, toast: { id: (state.toast?.id ?? 0) + 1, text: clean(action.text), level: action.level ?? 'info' } };
-    case 'toast_clear':
-      return state.toast?.id === action.id ? { ...state, toast: undefined } : state;
-    case 'overlay':
-      return { ...state, overlay: action.overlay };
     case 'welcome':
       return { ...state, self: action.self };
     case 'peers': {
-      const browser = state.browser.at ? state.browser : { ...state.browser, rows: rootRows({ ...state, peers: action.peers }), cursor: 0 };
+      const browser = state.browser.at ? state.browser : { ...state.browser, rows: rootRows({ ...state, peers: action.peers }) };
       const ids = new Set(action.peers.map((p) => p.peerId));
       const follow = state.follow && ids.has(state.follow) ? state.follow : undefined;
       // Trust is re-applied from your saved choices when someone comes back (see Session).
@@ -578,20 +647,13 @@ export function reduceDomain(state: AppState, action: Action): AppState {
       return { ...state, conflicts: action.files.length ? { ...rest, [action.id]: action.files } : rest };
     }
     case 'projects':
-      return { ...state, projects: action.projects, projectGroups: action.groups ?? state.projectGroups, tabs: state.tabs.filter((t) => action.projects.some((p) => p.workspaces.some((w) => w.id === t))) };
-    case 'view': {
-      const tabs = action.view.kind === 'workspace' && !state.tabs.includes(action.view.id) ? [...state.tabs, action.view.id] : state.tabs;
-      const channel = shownChannel(action.view) ?? '';
-      const { [channel]: _seen, ...unread } = state.unread;
-      // Opening (or leaving) Shared files counts every folder there as seen.
-      const seenShares = action.view.kind === 'files' || state.view.kind === 'files' ? shareKeys(state) : state.seenShares;
-      return { ...state, view: action.view, tabs, unread, seenShares };
-    }
-    case 'close_tab': {
-      const tabs = state.tabs.filter((t) => t !== action.id);
-      const view = state.view.kind === 'workspace' && state.view.id === action.id ? ({ kind: 'overview' } as const) : state.view.kind === 'shared' && state.view.id === action.id ? ({ kind: 'room' } as const) : state.view;
-      return { ...state, tabs, view };
-    }
+      return { ...state, projects: action.projects, projectGroups: action.groups ?? state.projectGroups };
+    case 'attention':
+      return attend(state, action.attention);
+    case 'my_shares':
+      return { ...state, myShares: action.shares };
+    case 'identity':
+      return state.selfId === action.selfId && state.isHost === action.isHost ? state : { ...state, selfId: action.selfId, isHost: action.isHost };
     case 'review':
       return { ...state, review: action.review };
     case 'env_changes':
@@ -618,7 +680,7 @@ export function reduceDomain(state: AppState, action: Action): AppState {
     case 'approval_remove':
       return { ...state, approvals: state.approvals.filter((a) => a.id !== action.id) };
     case 'browser_root':
-      return { ...state, browser: { rows: rootRows(state), cursor: 0, loading: false } };
+      return { ...state, browser: { rows: rootRows(state), loading: false } };
     case 'browser_loading':
       return { ...state, browser: { ...state.browser, at: action.at, loading: true, error: undefined } };
     case 'browser_entries': {
@@ -632,20 +694,15 @@ export function reduceDomain(state: AppState, action: Action): AppState {
           target: { ...action.at, path: action.at.path ? `${action.at.path}/${e.name}` : e.name },
         })),
       ];
-      return { ...state, browser: { at: action.at, rows, cursor: 0, loading: false } };
+      return { ...state, browser: { at: action.at, rows, loading: false } };
     }
     case 'browser_error':
       return { ...state, browser: { ...state.browser, loading: false, error: action.error } };
-    case 'browser_cursor': {
-      const max = Math.max(0, state.browser.rows.length - 1);
-      const cursor = Math.min(max, Math.max(0, state.browser.cursor + action.delta));
-      return { ...state, browser: { ...state.browser, cursor } };
-    }
     case 'viewer_open': {
       const keep = sameLoc(state.viewer, action.at) ? state.viewer : undefined;
       return {
         ...state,
-        viewer: { ...action.at, content: keep?.content ?? '', truncated: keep?.truncated ?? false, loading: true, scroll: keep?.scroll ?? 0, by: action.by },
+        viewer: { ...action.at, content: keep?.content ?? '', truncated: keep?.truncated ?? false, loading: true, by: action.by },
       };
     }
     case 'viewer_image':
@@ -657,12 +714,6 @@ export function reduceDomain(state: AppState, action: Action): AppState {
     case 'viewer_error':
       if (!state.viewer || !sameLoc(state.viewer, action.at)) return state;
       return { ...state, viewer: { ...state.viewer, loading: false, error: action.error } };
-    case 'viewer_scroll': {
-      if (!state.viewer) return state;
-      const max = action.max ?? state.viewer.content.split('\n').length - 1;
-      const scroll = Math.min(Math.max(0, max), Math.max(0, state.viewer.scroll + action.delta));
-      return { ...state, viewer: { ...state.viewer, scroll } };
-    }
     case 'viewer_close':
       return { ...state, viewer: undefined };
     case 'focus':
@@ -672,7 +723,7 @@ export function reduceDomain(state: AppState, action: Action): AppState {
     case 'full_trust':
       // Taking back full trust only changes someone who had it.
       if (!action.trusted && state.levels[action.peerId] !== 'full') return state;
-      return reduce(state, { type: 'trust_level', peerId: action.peerId, level: action.trusted ? 'full' : 'ask' });
+      return reduceDomain(state, { type: 'trust_level', peerId: action.peerId, level: action.trusted ? 'full' : 'ask' });
     case 'trust_level': {
       const { [action.peerId]: _old, ...rest } = state.levels;
       return { ...state, levels: action.level ? { ...rest, [action.peerId]: action.level } : rest };
@@ -683,7 +734,7 @@ export function reduceDomain(state: AppState, action: Action): AppState {
       return { ...state, policy: action.policy };
     case 'trust':
       if (!action.trusted && state.levels[action.peerId] !== 'trusted') return state;
-      return reduce(state, { type: 'trust_level', peerId: action.peerId, level: action.trusted ? (state.levels[action.peerId] === 'full' ? 'full' : 'trusted') : 'ask' });
+      return reduceDomain(state, { type: 'trust_level', peerId: action.peerId, level: action.trusted ? (state.levels[action.peerId] === 'full' ? 'full' : 'trusted') : 'ask' });
     case 'prefs':
       return { ...state, prefs: { ...state.prefs, ...action.prefs } };
     case 'transfer': {
@@ -692,10 +743,8 @@ export function reduceDomain(state: AppState, action: Action): AppState {
     }
     case 'dir_cache':
       return { ...state, dirCache: { ...state.dirCache, [action.key]: action.entries } };
-    case 'clear': {
-      const channel = action.channel ?? channelOf(state.view);
-      return { ...state, log: state.log.filter((l) => l.channel !== channel) };
-    }
+    case 'clear':
+      return { ...state, log: state.log.filter((l) => l.channel !== action.channel) };
     case 'question_add':
     case 'question_pick':
     case 'question_remove':
@@ -722,7 +771,6 @@ export function reduceDomain(state: AppState, action: Action): AppState {
     case 'notice_add':
     case 'notice_read':
     case 'notice_clear':
-    case 'away':
     case 'models':
     case 'disk':
     case 'pr':
@@ -730,6 +778,7 @@ export function reduceDomain(state: AppState, action: Action): AppState {
     case 'search':
     case 'templates':
     case 'terminal':
+    case 'terminal_exit':
     case 'pr_custom':
     case 'gh':
     case 'remembered':
@@ -743,22 +792,31 @@ export function reduceDomain(state: AppState, action: Action): AppState {
   }
 }
 
-/** Minimal observable store; the UI subscribes via useSyncExternalStore. */
+/** Minimal observable store of the domain state. `onAction` sees every (stamped) action that changed it. */
 export class Store {
-  private state: AppState;
+  private state: DomainState;
   private readonly listeners = new Set<() => void>();
+  private readonly actionListeners = new Set<(action: Action) => void>();
 
-  constructor(initial: AppState) {
+  constructor(initial: DomainState) {
     this.state = initial;
   }
 
-  getState = (): AppState => this.state;
+  getState = (): DomainState => this.state;
 
-  dispatch = (action: Action): void => {
-    const next = reduceDomain(this.state, stampAction(action));
+  dispatch = (input: Action): void => {
+    const action = stampAction(input);
+    const next = reduceDomain(this.state, action);
     if (next === this.state) return;
     this.state = next;
+    for (const l of this.actionListeners) l(action);
     for (const l of this.listeners) l();
+  };
+
+  /** Every action that changed the state, stamped, in order (the daemon streams these to clients). */
+  onAction = (listener: (action: Action) => void): (() => void) => {
+    this.actionListeners.add(listener);
+    return () => void this.actionListeners.delete(listener);
   };
 
   subscribe = (listener: () => void): (() => void) => {

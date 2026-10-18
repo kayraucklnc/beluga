@@ -1,4 +1,4 @@
-import type { Action, Overlay, Toast, View } from './store.js';
+import type { Overlay, Toast, View } from './store.js';
 
 /**
  * What the core asks a screen to do: go somewhere, open a dialog, say something briefly, or
@@ -12,34 +12,23 @@ export type Intent =
   | { readonly type: 'overlay'; readonly overlay: Overlay }
   | { readonly type: 'toast'; readonly text: string; readonly level: Toast['level'] }
   /** A workspace (yours, or one shared with you) is gone: close its tab, and leave it if it's showing. */
-  | { readonly type: 'close_tab'; readonly id: string };
+  | { readonly type: 'close_tab'; readonly id: string }
+  /** You asked to leave (/quit): the client closes. */
+  | { readonly type: 'quit' };
 
-export type IntentListener = (intent: Intent) => void;
+/** `target`: the client whose request caused it (undefined: every client). */
+export type IntentListener = (intent: Intent, target: string | undefined) => void;
 
 /** Delivers intents to whoever shows them (the terminal UI, or the daemon's connected clients). */
 export class IntentBus {
   private readonly listeners = new Set<IntentListener>();
 
-  emit = (intent: Intent): void => {
-    for (const l of [...this.listeners]) l(intent);
+  emit = (intent: Intent, target: string | undefined): void => {
+    for (const l of [...this.listeners]) l(intent, target);
   };
 
   subscribe = (listener: IntentListener): (() => void) => {
     this.listeners.add(listener);
     return () => void this.listeners.delete(listener);
   };
-}
-
-/** The store action that shows an intent on a screen kept in the same store (the terminal UI). */
-export function intentAction(intent: Intent, current: View): Action | undefined {
-  switch (intent.type) {
-    case 'navigate':
-      return intent.unless === current.kind ? undefined : { type: 'view', view: intent.view };
-    case 'overlay':
-      return { type: 'overlay', overlay: intent.overlay };
-    case 'toast':
-      return { type: 'toast', text: intent.text, level: intent.level };
-    case 'close_tab':
-      return { type: 'close_tab', id: intent.id };
-  }
 }

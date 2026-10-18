@@ -54,7 +54,6 @@ export interface SearchState {
   readonly query: string;
   readonly hits: readonly SearchHit[];
   readonly searched: number;
-  readonly cursor: number;
 }
 
 /** A saved way to start a task. */
@@ -69,8 +68,6 @@ export interface Template {
 
 export interface WorkState {
   readonly inbox: readonly Notice[];
-  /** The terminal window klaud runs in is in the background (from focus reports). */
-  readonly away: boolean;
   readonly models: readonly ModelChoice[];
   /** Folder size in bytes per workspace (worktrees and chats). */
   readonly disk: Readonly<Record<string, number>>;
@@ -78,8 +75,10 @@ export interface WorkState {
   readonly setup: Readonly<Record<string, SetupRun>>;
   readonly search: SearchState;
   readonly templates: readonly Template[];
-  /** Workspaces with a terminal session open (id → its title). */
+  /** Terminal programs running or kept after they ended (id → its title). */
   readonly terminals: Readonly<Record<string, string>>;
+  /** Terminal programs that ended (id → exit code; null: killed or couldn't start). */
+  readonly termExits: Readonly<Record<string, number | null>>;
   /** You customized the pull request instructions. */
   readonly prCustom: boolean;
   /** The GitHub CLI is installed and signed in (undefined: not checked yet). */
@@ -93,7 +92,6 @@ export type WorkAction =
   | { type: 'notice_add'; notice: Omit<Notice, 'id' | 'ts' | 'read'>; ts?: number }
   | { type: 'notice_read'; channel?: string; id?: number }
   | { type: 'notice_clear' }
-  | { type: 'away'; away: boolean }
   | { type: 'models'; models: readonly ModelChoice[] }
   | { type: 'disk'; sizes: Readonly<Record<string, number>> }
   | { type: 'pr'; id: string; pr?: PullRequest }
@@ -101,6 +99,7 @@ export type WorkAction =
   | { type: 'search'; search: Partial<SearchState> }
   | { type: 'templates'; templates: readonly Template[] }
   | { type: 'terminal'; id: string; title?: string }
+  | { type: 'terminal_exit'; id: string; code: number | null }
   | { type: 'pr_custom'; custom: boolean }
   | { type: 'gh'; ok: boolean }
   | { type: 'remembered'; people: Settings['people'] };
@@ -114,14 +113,14 @@ export const FALLBACK_MODELS: readonly ModelChoice[] = [
 
 export const initialWork: WorkState = {
   inbox: [],
-  away: false,
   models: FALLBACK_MODELS,
   disk: {},
   prs: {},
   setup: {},
-  search: { query: '', hits: [], searched: 0, cursor: 0 },
+  search: { query: '', hits: [], searched: 0 },
   templates: [],
   terminals: {},
+  termExits: {},
   prCustom: false,
   remembered: {},
 };
@@ -146,8 +145,6 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
       };
     case 'notice_clear':
       return { ...state, inbox: [] };
-    case 'away':
-      return state.away === action.away ? state : { ...state, away: action.away };
     case 'models':
       return { ...state, models: action.models.length ? action.models : FALLBACK_MODELS };
     case 'disk':
@@ -166,9 +163,13 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
       return { ...state, gh: action.ok };
     case 'remembered':
       return { ...state, remembered: action.people };
-    case 'terminal':
-      if (action.title !== undefined && state.terminals[action.id] === action.title) return state;
-      return { ...state, terminals: action.title === undefined ? without(state.terminals, action.id) : { ...state.terminals, [action.id]: action.title } };
+    case 'terminal': {
+      if (action.title !== undefined && state.terminals[action.id] === action.title && !(action.id in state.termExits)) return state;
+      const termExits = without(state.termExits, action.id);
+      return { ...state, termExits, terminals: action.title === undefined ? without(state.terminals, action.id) : { ...state.terminals, [action.id]: action.title } };
+    }
+    case 'terminal_exit':
+      return action.id in state.terminals ? { ...state, termExits: { ...state.termExits, [action.id]: action.code } } : state;
   }
 }
 

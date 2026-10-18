@@ -6,7 +6,7 @@ import { computeLayout } from '../src/ui/layout.js';
 import { hitTest } from '../src/ui/hit.js';
 import { actionButtons } from '../src/ui/actions.js';
 import { splitPaste } from '../src/ui/mouse.js';
-import { initialState } from '../src/core/store.js';
+import { initialAppState as initialState } from '../src/client/screen.js';
 
 const ctx: KeyContext = { hasApproval: false, hasViewer: false, overlay: false, page: 20, maxChatScroll: 0, suggestions: [], peopleCount: 1, menuSize: 0 };
 const at = (buffer: string, cursor = buffer.length): UiState => ({ ...initialUi, buffer, cursor });

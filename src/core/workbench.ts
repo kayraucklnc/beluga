@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import type { TerminalManager, TerminalSession } from '../terminal/index.js';
+import type { PtyProcess, TerminalManager } from '../terminal/index.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
@@ -8,7 +8,7 @@ import { buildPrPrompt, customPrPrompt, ensurePrPromptFile, findPr, fixChecksPro
 import { scriptEnv } from '../workspaces/scripts.js';
 import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
-import { type LogItem, type Prefs, type Store, channelOf } from './store.js';
+import { type LogItem, type Prefs, type Store } from './store.js';
 import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
 import type { ModelChoice, PullRequest } from './work-store.js';
 import type { WorkspaceController } from './workspace-controller.js';
@@ -229,7 +229,7 @@ export class Workbench {
 
   // ------------------------------------------------------- terminal & scripts
 
-  private openSession(key: string, ws: Workspace | { path: string }, command?: string, size = START_SIZE): TerminalSession | undefined {
+  private openSession(key: string, ws: Workspace | { path: string }, command?: string, size = START_SIZE): PtyProcess | undefined {
     const terminals = this.deps.terminals;
     if (!terminals) return undefined;
     const shell = this.deps.store.getState().prefs.shell;
@@ -242,11 +242,17 @@ export class Workbench {
       ...(command ? { args: ['-lc', command], title: command } : {}),
     });
     this.deps.store.dispatch({ type: 'terminal', id: key, title: session.title });
+    // Every screen sees when it ends (the tab shows its exit code; clicking starts it again).
+    const report = (code: number | null): void => {
+      if (this.deps.terminals?.get(key) === session) this.deps.store.dispatch({ type: 'terminal_exit', id: key, code });
+    };
+    if (session.exited) report(session.exited.code);
+    else session.onExit((exit) => report(exit.code));
     return session;
   }
 
   /** The workspace's shell (started on first use). */
-  shell(wsId: string, size?: { cols: number; rows: number }): TerminalSession | undefined {
+  shell(wsId: string, size?: { cols: number; rows: number }): PtyProcess | undefined {
     const ws = this.manager.find(wsId);
     if (!ws || ws.archived) return undefined;
     const existing = this.deps.terminals?.get(shellId(wsId));
@@ -259,7 +265,7 @@ export class Workbench {
    * A shell of the global Terminal tab (`key` from globalShellId), started in `dir`.
    * A running one is kept; an exited one starts again.
    */
-  globalShell(key: string, dir: string, size?: { cols: number; rows: number }): TerminalSession | undefined {
+  globalShell(key: string, dir: string, size?: { cols: number; rows: number }): PtyProcess | undefined {
     const existing = this.deps.terminals?.get(key);
     if (existing?.running) return existing;
     if (existing) this.deps.terminals?.close(key);
@@ -287,11 +293,10 @@ export class Workbench {
     for (const key of [shellId(wsId), setupId(wsId), runId(wsId)]) if (this.deps.terminals?.get(key)) this.closeTerminal(key);
   }
 
-  private watchExit(key: string, session: TerminalSession, onExit: (code: number | null) => void): void {
+  private watchExit(key: string, session: PtyProcess, onExit: (code: number | null) => void): void {
     this.watchers.get(key)?.();
-    const off = session.onChange(() => {
-      const exited = session.snapshot().exited;
-      if (!exited) return;
+    if (session.exited) return onExit(session.exited.code);
+    const off = session.onExit((exited) => {
       off();
       this.watchers.delete(key);
       onExit(exited.code);
@@ -351,7 +356,7 @@ export class Workbench {
   }
 
   /** Start (or restart) the project's run command, e.g. its dev server. */
-  run(wsId: string): TerminalSession | undefined {
+  run(wsId: string): PtyProcess | undefined {
     const ws = this.manager.find(wsId);
     const project = ws ? this.manager.list.find((p) => p.id === ws.projectId) : undefined;
     const command = project?.scripts?.run?.command;
@@ -447,7 +452,7 @@ export class Workbench {
       if (items.length) sources.push({ channel, place: placeOf(ws), items, archived: ws.archived });
     }
     const hits = searchConversations(query, sources);
-    this.deps.store.dispatch({ type: 'search', search: { query, hits, searched: sources.length, cursor: 0 } });
+    this.deps.store.dispatch({ type: 'search', search: { query, hits, searched: sources.length } });
   }
 
   /** Open a search hit's conversation. */
@@ -485,8 +490,4 @@ export class Workbench {
     this.deps.toast('Template removed', 'success');
   }
 
-  /** The conversation a view belongs to, for the model picker. */
-  channelFor(): string {
-    return channelOf(this.deps.store.getState().view);
-  }
 }

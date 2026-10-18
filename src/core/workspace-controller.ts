@@ -3,7 +3,7 @@ import type { AgentPlace } from '../agent/types.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import type { ShareService } from './shares.js';
-import { type LogItem, type Store, type WorkspaceTab, channelOf } from './store.js';
+import { type LogItem, type Store, type WorkspaceTab } from './store.js';
 import type { Conversation } from '../agent/transcript.js';
 import type { Intent } from './intents.js';
 
@@ -368,15 +368,15 @@ export class WorkspaceController {
 
   async loadReview(id: string): Promise<void> {
     const token = ++this.reviewToken;
-    this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, selected: 0, diffScroll: 0, loading: true } });
+    this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, selected: 0, loading: true } });
     try {
       const data = await this.deps.manager.review(id);
       if (token !== this.reviewToken) return; // you've opened another review since
-      this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, data, selected: 0, diffScroll: 0, loading: false } });
+      this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, data, selected: 0, loading: false } });
       if (data.files.length) await this.selectFile(0);
     } catch (err) {
       if (token !== this.reviewToken) return;
-      this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, selected: 0, diffScroll: 0, loading: false, error: errorText(err) } });
+      this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, selected: 0, loading: false, error: errorText(err) } });
     }
   }
 
@@ -384,7 +384,7 @@ export class WorkspaceController {
     const review = this.deps.store.getState().review;
     const file = review?.data?.files[index];
     if (!review || !file) return;
-    this.deps.store.dispatch({ type: 'review', review: { ...review, selected: index, diffScroll: 0, diff: undefined } });
+    this.deps.store.dispatch({ type: 'review', review: { ...review, selected: index, diff: undefined } });
     const diff = await this.deps.manager.fileDiff(review.workspaceId, file.path).catch((err: unknown) => `Couldn't load diff: ${errorText(err)}`);
     const latest = this.deps.store.getState().review;
     if (latest?.workspaceId === review.workspaceId && latest.selected === index) {
@@ -413,13 +413,9 @@ export class WorkspaceController {
     }
   }
 
-  /** The workspace for the current view, if any. */
-  current(): Workspace | undefined {
-    const view = this.deps.store.getState().view;
-    return view.kind === 'workspace' ? this.deps.manager.find(view.id) : undefined;
-  }
-
-  isCurrentChannel(channel: string): boolean {
-    return channelOf(this.deps.store.getState().view) === channel;
+  /** Your workspace a conversation belongs to, if any. */
+  inChannel(channel: string): Workspace | undefined {
+    const id = workspaceIdOf(channel);
+    return id ? this.deps.manager.find(id) : undefined;
   }
 }

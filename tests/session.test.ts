@@ -5,11 +5,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentBackend, AgentRunInput, RoomBridge } from '../src/agent/types.js';
 import { Session } from '../src/core/session.js';
 import { ShareService } from '../src/core/shares.js';
-import { Store, initialState, type AppState, type Policy } from '../src/core/store.js';
+import { Store, initialState, type DomainState, type Policy } from '../src/core/store.js';
 import { deriveKeys, generateSecret } from '../src/net/crypto.js';
 import { startHub, type Hub } from '../src/net/hub.js';
 import { PeerClient } from '../src/net/peer-client.js';
-import { waitFor } from './helpers.js';
+import { attach, waitFor } from './helpers.js';
+import type { InProcessClient } from '../src/ipc/in-process.js';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -24,7 +25,9 @@ type Script = (input: AgentRunInput, bridge: RoomBridge) => Promise<string>;
 
 interface Peer {
   session: Session;
-  state: () => AppState;
+  state: () => DomainState;
+  /** A screen attached to it (view, tabs, toasts). */
+  screen: InProcessClient;
   runs: AgentRunInput[];
   bridge: RoomBridge;
   root: string;
@@ -44,12 +47,6 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
   const quit = { called: false };
   const toasts: string[] = [];
   const copied: string[] = [];
-  let lastToast: unknown;
-  store.subscribe(() => {
-    const t = store.getState().toast;
-    if (t && t !== lastToast) toasts.push(t.text);
-    lastToast = t;
-  });
   const session = new Session({
     zoom: async (dir) => ({ ok: true, message: `zoom ${dir}` }),
     copy: async (text) => {
@@ -63,7 +60,6 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
     requestTimeoutMs: 2000,
     approvalTimeoutMs: opts.approvalTimeoutMs,
     agentTimeoutMs: 2000,
-    onQuit: () => (quit.called = true),
     downloadDir: path.join(root, 'downloads'),
     createAgent:
       opts.agent === false
@@ -78,13 +74,23 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
             };
           },
   });
+  const screen = attach(session);
+  let lastToast: unknown;
+  screen.store.subscribe(() => {
+    const t = screen.store.getState().toast;
+    if (t && t !== lastToast) toasts.push(t.text);
+    lastToast = t;
+  });
+  screen.onIntent((intent) => {
+    if (intent.type === 'quit') quit.called = true;
+  });
   session.start();
   sessions.push(session);
-  return { session, state: store.getState, runs, get bridge() { return bridge; }, root, quit, toasts, copied };
+  return { session, state: store.getState, screen, runs, get bridge() { return bridge; }, root, quit, toasts, copied };
 }
 
-const agentItems = (s: AppState) => s.log.filter((l) => l.type === 'agent');
-const systemText = (s: AppState) => s.log.filter((l) => l.type === 'system').map((l) => (l.type === 'system' ? l.text : ''));
+const agentItems = (s: DomainState) => s.log.filter((l) => l.type === 'agent');
+const systemText = (s: DomainState) => s.log.filter((l) => l.type === 'system').map((l) => (l.type === 'system' ? l.text : ''));
 
 async function room(...peers: Peer[]): Promise<void> {
   await waitFor(() => peers.every((p) => p.state().peers.length === peers.length && p.state().self));
@@ -201,11 +207,9 @@ describe('Session', () => {
     await room(kay, bob);
 
     const bobRow = kay.state().browser.rows.findIndex((r) => r.label === 'bob · proj');
-    kay.session.store.dispatch({ type: 'browser_cursor', delta: bobRow });
-    await kay.session.browserEnter();
+    await kay.session.browserEnter(bobRow);
     expect(kay.state().browser.rows.map((r) => r.label)).toEqual(['..', 'README.md']);
-    kay.session.store.dispatch({ type: 'browser_cursor', delta: 1 });
-    await kay.session.browserEnter();
+    await kay.session.browserEnter(1);
     expect(kay.state().viewer).toMatchObject({ content: 'v1', path: 'README.md' });
     await waitFor(() => bob.state().focus[kay.session.selfId]?.path === 'README.md');
 
@@ -224,8 +228,7 @@ describe('Session', () => {
     expect(kay.state().dirCache[`${bob.session.selfId}:proj/`]?.map((e) => e.name)).toEqual(['README.md']);
     await kay.session.loadDir({ owner: bob.session.selfId, share: 'proj', path: 'nope' }); // errors are ignored
 
-    kay.session.store.dispatch({ type: 'browser_cursor', delta: -10 });
-    await kay.session.browserEnter(); // '..' goes back to root
+    await kay.session.browserEnter(0); // '..' goes back to root
     expect(kay.state().browser.at).toBeUndefined();
     await kay.session.browseTo({ owner: bob.session.selfId, share: 'nope', path: '' });
     expect(kay.state().browser.error).toMatch(/not shared with you/);
@@ -318,11 +321,11 @@ describe('Session', () => {
     }
     expect(kay.state().policy).toBe('auto');
     kay.session.submit('/help');
-    expect(kay.state().overlay).toBe('help');
+    expect(kay.screen.store.getState().overlay).toBe('help');
     kay.session.submit('//not a command');
     await waitFor(() => bob.state().log.some((l) => l.type === 'chat' && l.text === '/not a command'));
     kay.session.submit('/clear'); // asks how to clear (just me / everyone)
-    expect(kay.state().overlay).toBe('clear');
+    expect(kay.screen.store.getState().overlay).toBe('clear');
     kay.session.clearChat('room');
     expect(kay.state().log).toHaveLength(0);
     kay.session.submit('/quit');
@@ -500,7 +503,7 @@ describe('Session hardening', () => {
     kay.session.setClaudeSharing('auto');
     expect(saved).toEqual([{ name: 'kayra' }, { theme: 'mono' }, { policy: 'auto' }]);
     kay.session.submit('/settings');
-    expect(kay.state().overlay).toBe('settings');
+    expect(kay.screen.store.getState().overlay).toBe('settings');
   });
 
   it('changes text size via /zoom', async () => {
@@ -531,7 +534,7 @@ describe('Session hardening', () => {
     await waitFor(() => kay.runs.length === 1);
     kay.session.submit('@claude next');
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'queued'));
-    kay.session.submit('@claude now', true);
+    kay.session.submit('@claude now', { urgent: true });
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'Interrupted by a newer message'));
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did now'));
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did next'));
@@ -587,7 +590,7 @@ describe('Session hardening', () => {
     await room(kay, bob);
     kay.session.submit('@claude start jobs');
     await waitFor(() => kay.runs.length === 1);
-    kay.session.submit('@claude how is it going', true);
+    kay.session.submit('@claude how is it going', { urgent: true });
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'got how is it going'));
     bob.session.submit('@claude:kay hi');
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'queued'));
@@ -643,8 +646,8 @@ describe('Session hardening', () => {
     kay.session.submit('@claude slow');
     await waitFor(() => kay.runs.length === 1);
     kay.session.submit('@claude queued');
-    kay.session.submit('@claude first', true);
-    kay.session.submit('@claude second', true);
+    kay.session.submit('@claude first', { urgent: true });
+    kay.session.submit('@claude second', { urgent: true });
     await waitFor(() => kay.runs.length === 4);
     expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'first', 'second', 'queued']);
   });

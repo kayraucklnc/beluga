@@ -81,16 +81,16 @@ export class SharedDiff {
     const w = this.deps.store.getState().shared.find((x) => x.id === id);
     if (!w) return;
     const token = ++this.token;
-    this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, selected: 0, diffScroll: 0, loading: true } });
+    this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, selected: 0, loading: true } });
     try {
       const res = await this.deps.request<BodyOf<'ws_diff_result'>>(w.owner, { kind: 'ws_diff', reqId: randomUUID(), id });
       if (token !== this.token) return;
       const data = res.review ?? { base: '', commits: [], files: [] };
-      this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, data, selected: 0, diffScroll: 0, loading: false } });
+      this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, data, selected: 0, loading: false } });
       if (data.files.length) await this.select(0);
     } catch (err) {
       if (token !== this.token) return;
-      this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, selected: 0, diffScroll: 0, loading: false, error: errorText(err) } });
+      this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, selected: 0, loading: false, error: errorText(err) } });
     }
   }
 
@@ -99,7 +99,7 @@ export class SharedDiff {
     const file = review?.data?.files[index];
     const w = this.deps.store.getState().shared.find((x) => x.id === review?.workspaceId);
     if (!review || !file || !w) return;
-    this.deps.store.dispatch({ type: 'review', review: { ...review, selected: index, diffScroll: 0, diff: undefined } });
+    this.deps.store.dispatch({ type: 'review', review: { ...review, selected: index, diff: undefined } });
     const diff = await this.deps
       .request<BodyOf<'ws_diff_result'>>(w.owner, { kind: 'ws_diff', reqId: randomUUID(), id: w.id, file: file.path })
       .then((r) => r.patch ?? '', (err: unknown) => `Couldn't load diff: ${errorText(err)}`);

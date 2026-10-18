@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Store, initialState, peerName, reduce, type AppState } from '../src/core/store.js';
+import { Store, initialState as domainState, peerName, type AppState } from '../src/core/store.js';
+import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
 
 const peers: PeerInfo[] = [
@@ -23,7 +24,7 @@ describe('store reducer', () => {
     expect(s1.log[0]).toMatchObject({ type: 'chat', name: "bob's Claude", text: 'yo' });
     const s2 = reduce(s1, { type: 'system', text: 'hi', level: 'warn' });
     expect(s2.log[1]).toMatchObject({ type: 'system', level: 'warn' });
-    expect(reduce(s2, { type: 'clear' }).log).toHaveLength(0);
+    expect(reduce(s2, { type: 'clear', channel: 'room' }).log).toHaveLength(0);
   });
 
   it('accumulates agent events into one log item', () => {
@@ -108,11 +109,11 @@ describe('sanitizing', () => {
 
 describe('Store', () => {
   it('notifies subscribers only on change', () => {
-    const store = new Store(initialState('r'));
+    const store = new Store(domainState('r'));
     let calls = 0;
     const off = store.subscribe(() => calls++);
     store.dispatch({ type: 'policy', policy: 'auto' });
-    store.dispatch({ type: 'viewer_scroll', delta: 1 }); // no-op returns same state
+    store.dispatch({ type: 'trust', peerId: 'nobody', trusted: false }); // no-op returns same state
     off();
     store.dispatch({ type: 'policy', policy: 'ask' });
     expect(calls).toBe(1);

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { initialState, reduce, type AppState } from '../src/core/store.js';
+import { type AppState } from '../src/core/store.js';
+import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PullRequest, SearchHit, Template } from '../src/core/work-store.js';
 import type { PeerInfo } from '../src/protocol.js';
 import { buttons, draftModel, formatTokens, searchCursorRow, searchModel, terminalBarModel, topBarModel, trustCardModel, usageModel } from '../src/ui/work-models.js';
@@ -135,7 +136,7 @@ describe('searchModel', () => {
 
   it('draws two rows per hit with zones for both, marks the cursor and archived places', () => {
     const hits = [hit(), hit({ place: 'old-chat', archived: true, who: '' })];
-    const s = reduce(initialState('r'), { type: 'search', search: { query: 'token', hits, searched: 5, cursor: 1 } });
+    const s = reduce(reduce(initialState('r'), { type: 'search', search: { query: 'token', hits, searched: 5 } }), { type: 'search_cursor', cursor: 1 });
     const m = searchModel(s, 80);
     const lines = text(m.lines);
     expect(lines[0]).toBe('2 results for "token" in 5 conversations');

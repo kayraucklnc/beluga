@@ -5,7 +5,7 @@ import type { GuestCan, PeerInfo, WsRole } from '../protocol.js';
 import type { Guest, Knock, ProjectLink } from './collab-store.js';
 import type { People } from './people.js';
 import type { TrustLevel } from './settings.js';
-import { type AppState, type Store, peerName } from './store.js';
+import { type DomainState, type Store, peerName } from './store.js';
 import type { WorkspaceSharing } from './workspace-sharing.js';
 
 /** How the host's room lets guests in (implemented by the hub). */
@@ -65,14 +65,14 @@ export function expiresIn(expiresAt: number | undefined, now: number): string {
 }
 
 /** Everyone a guest shares a workspace with (they may see and message each other). */
-export function contactsFor(peerId: string, members: AppState['members']): string[] {
+export function contactsFor(peerId: string, members: DomainState['members']): string[] {
   const out = new Set<string>();
   for (const people of Object.values(members)) if (people[peerId]) for (const id of Object.keys(people)) if (id !== peerId) out.add(id);
   return [...out];
 }
 
 /** Workspaces in a project a guest should be in (not archived, not someone else's checkout). */
-export function projectWorkspaces(state: Pick<AppState, 'projects'>, projectId: string): string[] {
+export function projectWorkspaces(state: Pick<DomainState, 'projects'>, projectId: string): string[] {
   return state.projects.find((p) => p.id === projectId)?.workspaces.filter((w) => !w.archived).map((w) => w.id) ?? [];
 }
 
@@ -100,7 +100,7 @@ export class ProjectInvites {
   /** Who came to the door with which link (until you decide). */
   private readonly arrivals = new Map<string, string>();
   private pendingCopy?: string;
-  private lastProjects: AppState['projects'] = [];
+  private lastProjects: DomainState['projects'] = [];
 
   constructor(private readonly deps: ProjectInvitesDeps) {
     deps.room?.setGate({ keys: () => this.liveKeys(), admit: (id, peerId, closed) => this.admit(id, peerId, closed) });
@@ -112,7 +112,7 @@ export class ProjectInvites {
     return Boolean(this.deps.room);
   }
 
-  private get state(): AppState {
+  private get state(): DomainState {
     return this.deps.store.getState();
   }
 

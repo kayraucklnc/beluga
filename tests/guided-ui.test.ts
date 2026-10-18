@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { initialState, reduce, type AppState } from '../src/core/store.js';
+import { type AppState } from '../src/core/store.js';
+import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
 import { actionButtons, buttonLabel } from '../src/ui/actions.js';
 import { APPROVAL_BUTTONS, hitTest, type HitContext } from '../src/ui/hit.js';

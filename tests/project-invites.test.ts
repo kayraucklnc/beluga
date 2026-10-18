@@ -16,7 +16,7 @@ import { deriveKeys, generateIdentity, generateSecret } from '../src/net/crypto.
 import { startHub, type Hub } from '../src/net/hub.js';
 import { PeerClient } from '../src/net/peer-client.js';
 import type { WorkspaceManager } from '../src/workspaces/manager.js';
-import { waitFor } from './helpers.js';
+import { waitFor, attach } from './helpers.js';
 
 describe('project links (pure parts)', () => {
   it('single-use and expiring links stop working', () => {
@@ -148,7 +148,8 @@ function person(name: string, opts: { host?: boolean; workspaces?: WorkspaceMana
   });
   session.start();
   sessions.push(session);
-  return { session, state: store.getState, store };
+  const screen = attach(session);
+  return { session, state: store.getState, store, screen };
 }
 
 describe('inviting someone into one project by link', () => {
@@ -180,7 +181,7 @@ describe('inviting someone into one project by link', () => {
     kay.session.invites.letIn(mia.session.selfId);
     const count = project!.workspaces.filter((w) => !w.archived).length;
     await waitFor(() => mia.state().shared.length === count);
-    expect(mia.state().view.kind).toBe('shared');
+    expect(mia.screen.store.getState().view.kind).toBe('shared');
     expect(mia.state().log.some((l) => l.type === 'chat' && l.text === 'secret room plans')).toBe(false);
     expect(kay.state().log.some((l) => l.type === 'chat' && l.text === 'hello room')).toBe(false);
     expect(kay.state().guests[mia.session.selfId]).toMatchObject({ can: 'prompt', room: false });

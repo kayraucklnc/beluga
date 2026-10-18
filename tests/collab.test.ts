@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentBackend, AgentRunInput } from '../src/agent/types.js';
 import { Session, type RoomControl, type SessionOptions as SessionOpts } from '../src/core/session.js';
 import { ShareService } from '../src/core/shares.js';
-import { Store, initialState, type AppState } from '../src/core/store.js';
+import { Store, initialState, type DomainState } from '../src/core/store.js';
 import { createDemoWorkspaces } from '../src/demo.js';
 import { deriveKeys, generateIdentity, generateSecret } from '../src/net/crypto.js';
 import { startHub, type Hub } from '../src/net/hub.js';
@@ -70,7 +70,7 @@ function peer(name: string, opts: { script?: Script; workspaces?: WorkspaceManag
 }
 
 type P = ReturnType<typeof peer>;
-const agentDone = (s: AppState, text?: string) => s.log.some((l) => l.type === 'agent' && l.status === 'done' && (!text || l.text.includes(text)));
+const agentDone = (s: DomainState, text?: string) => s.log.some((l) => l.type === 'agent' && l.status === 'done' && (!text || l.text.includes(text)));
 async function room(...peers: P[]): Promise<void> {
   await waitFor(() => peers.every((p) => p.state().peers.length === peers.length && p.state().self));
 }
