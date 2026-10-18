@@ -6,157 +6,111 @@
 </p>
 
 <p align="center">
-  <b>Every project and the Claude working in each, side by side.<br>Bring your friends: everyone brings their own Claude, and you all work together.</b>
+  <b>A Mac app for every project and the Claude working in each, side by side.<br>Bring your friends: everyone brings their own Claude, and you all work together.</b>
 </p>
 
 <p align="center">
   <a href="https://github.com/kayraucklnc/klaud/releases/latest"><img src="https://img.shields.io/github/v/release/kayraucklnc/klaud?label=Download%20for%20Mac&logo=apple&color=0a84ff&style=for-the-badge" alt="Download Klaud for Mac"></a>
-  &nbsp;
-  <a href="#klaud-in-the-terminal"><img src="https://img.shields.io/npm/v/klaudcode?label=npm%20i%20-g%20klaudcode&logo=npm&color=444&style=for-the-badge" alt="Install the terminal app: npm i -g klaudcode"></a>
+</p>
+<p align="center">
+  <sub>Apple Silicon · macOS 13+ · updates itself &nbsp;·&nbsp; Prefer the terminal? <a href="#klaud-lite-in-your-terminal">Klaud Lite</a></sub>
 </p>
 
 <p align="center">
-  <a href="#two-ways-to-use-it">Two ways to use it</a> ·
-  <a href="#klaud-for-mac">Mac app</a> ·
-  <a href="#klaud-in-the-terminal">Terminal app</a> ·
-  <a href="#what-you-can-do">Features</a> ·
-  <a href="docs/how-it-works.md">How it works</a> ·
-  <a href="docs/security.md">Security</a>
+  <img src="assets/mac/hero.png" alt="Klaud for Mac: a worktree with Claude's finished run in the middle, its changes and diff in the right panel, projects and friends in the sidebar" width="940">
 </p>
 
-<p align="center">
-  <img src="assets/mac/workspace.png" alt="Klaud for Mac: a worktree with Claude's live run, the sidebar of projects and the inspector" width="920">
-</p>
-
-## Two ways to use it
-
-The same Klaud, with the same projects, worktrees, Claudes and friends, in two places. Use either one, or both at once: they attach to the same Klaud underneath.
-
-<table>
-  <tr>
-    <th width="50%">🖥️ Klaud for Mac</th>
-    <th width="50%">⌨️ Klaud in the terminal</th>
-  </tr>
-  <tr>
-    <td><a href="#klaud-for-mac"><img src="assets/mac/terminal-dark.png" alt="Klaud for Mac in dark mode with a terminal beside the chat"></a></td>
-    <td><a href="#klaud-in-the-terminal"><img src="assets/terminal/overview.png" alt="Klaud in the terminal: two worktrees working at once"></a></td>
-  </tr>
-  <tr>
-    <td>A native Mac app: a translucent sidebar, Claude's runs as live cards, a right panel with what changed, your files and real terminals beside the chat, images in the chat, a notification centre, friends and groups with no server. Light, dark or system.</td>
-    <td>The lightweight one. Everything in your terminal, every button clickable, nothing to memorize. Perfect over SSH or when you live in the terminal.</td>
-  </tr>
-  <tr>
-    <td><b><a href="https://github.com/kayraucklnc/klaud/releases/latest">Download the .dmg</a></b> from Releases (Apple Silicon, macOS 13+). It brings everything it needs; only <a href="https://claude.com/claude-code">Claude Code</a> must be signed in.</td>
-    <td><code>npm install -g klaudcode</code> then <code>klaud</code>.<br>Needs Node 20+ and <a href="https://claude.com/claude-code">Claude Code</a> signed in.</td>
-  </tr>
-</table>
-
-## What you can do
+## What Klaud does
 
 | | |
 |---|---|
-| 🌿 **A worktree per task, in every project** | Describe the task; a fresh worktree (its own folder, branch and Claude conversation) is made from the latest `origin`, named for you. Your `.env` files come along. |
-| ⚡ **Many Claudes at once, never in each other's way** | `add-auth` in one project and `new-hero` in another work side by side, each with sub-agents you can watch live. |
-| 🔭 **Everything at a glance** | Which Claude is working, which worktree is ready to merge, which has a conflict, in plain words. |
-| ✅ **Review, plan, merge, pull request** | A thorough review by sub-agents; plan mode so Claude proposes before it changes anything; Merge explains itself; Claude writes the pull request. |
-| 🖥️ **Real terminals** | Your own shell (zsh, bash, fish…) in every project, renamable, with your environment variables. |
-| 💬 **Friends, each with their own Claude** | Invite people into a room or a single worktree. `@claude:mia` runs on mia's computer with mia's subscription. You decide how much each person may do. |
-| 🔒 **End-to-end encrypted, peer to peer** | Friends connect straight to you; every message is encrypted and signed. Nothing is shared until you invite someone. |
+| 🌿 **A worktree per task** | Say what you want done; Klaud makes a fresh worktree (its own folder, branch and Claude), named for the task. Your main folder is only for questions: Claude never changes it, and asking for a change moves you to a new worktree. |
+| ⚡ **Many Claudes at once** | Every worktree in every project works in parallel, each with sub-agents you can watch. The sidebar shows who's working, what's ready to merge, what needs you. |
+| 🧩 **Everything beside the chat** | The conversation stays in the middle; the right panel has the changes and diffs, the files, your terminals and the details. Commit, open a pull request or merge in one click. |
+| 👀 **See every Claude on your Mac** | Activity shows Claude Code sessions running anywhere, Conductor included, and every background agent they started, live. |
+| 💬 **Friends, with no server** | Add a friend with a code; talk directly, Mac to Mac, end-to-end encrypted. Groups live on everyone's Mac, so nobody hosts them. |
+| 🤝 **Claudes that work for each other** | Your Claude can ask a friend's Claude to do something on their Mac, or run a command there, and continue with the result. Trusted friends skip the approval. |
+| 📊 **Usage, disk and earnings** | Plan limits, tokens per day, disk per project with one-click clean up, and each project's all-time Stripe earnings. |
+| 🎨 **A real Mac app** | Light and dark, your accent colour, right-click everywhere, drag and drop, ⌘K for anything, a menu-bar icon, notifications with your own sounds, and it updates itself. |
 
-## Klaud for Mac
-
-**[Download it from Releases](https://github.com/kayraucklnc/klaud/releases/latest)**, open the `.dmg` and drag Klaud to Applications. The first time, right-click Klaud › **Open** (this preview isn't notarized by Apple yet). After that it keeps itself up to date: new versions download in the background and install when you say, when you're idle, or when you quit ([how](docs/updates.md)).
-
-<table>
-  <tr>
-    <td width="50%"><img src="assets/mac/workspace.png" alt="A worktree with Claude's run"><br><b>Worktrees.</b> Claude's run as a live card with its steps and sub-agents; the next step (Commit, Merge, PR) one click away.</td>
-    <td width="50%"><img src="assets/mac/terminal-dark.png" alt="A terminal docked beside the chat"><br><b>A terminal beside the chat.</b> ⌘J shows your shell in the right panel (or in a drawer under the chat), next to the conversation.</td>
-  </tr>
-  <tr>
-    <td><img src="assets/mac/images.png" alt="A friend's screenshot in the chat"><br><b>Images in the chat.</b> Paste or drop a screenshot; it shows for everyone, full size on click.</td>
-    <td><img src="assets/mac/queue.png" alt="Messages queued while Claude works"><br><b>Queue or send now.</b> Keep typing while Claude works; reorder, edit or send one right away.</td>
-  </tr>
-  <tr>
-    <td><img src="assets/mac/notifications.png" alt="The notification centre"><br><b>Notifications.</b> What finished or needs you, with filters, Do Not Disturb, and a click that takes you there.</td>
-    <td><img src="assets/mac/person.png" alt="A person's card"><br><b>People.</b> Message someone, ask their Claude, set how much you trust them, all from their card.</td>
-  </tr>
-  <tr>
-    <td><img src="assets/mac/add-projects.png" alt="Adding projects"><br><b>Add projects.</b> Drop folders, choose them, or pick from the git projects already on your Mac, each with its own icon.</td>
-    <td><img src="assets/mac/model.png" alt="Model and thinking picker"><br><b>Model and thinking.</b> Pick the model for a conversation and how hard Claude thinks, in plain words.</td>
-  </tr>
-</table>
-
-⌘K finds anything. Right-click works everywhere. The menu bar has every action with its shortcut, and the menu-bar icon shows what waits for you.
-
-## Klaud in the terminal
-
-```bash
-npm install -g klaudcode   # the command it installs is `klaud`
-klaud                      # your projects (nothing is shared until you click Invite)
-klaud demo                 # look around with two pretend friends (npx klaudcode demo works without installing)
-```
-
-<p align="center">
-  <img src="assets/terminal/demo.gif" alt="Klaud in the terminal: two worktrees in two projects, each with its own Claude and sub-agents; the overview; a group chat with two friends" width="900">
-  <br><sub>Recorded with <code>klaud demo</code> (the friends and every Claude reply are simulated)</sub>
-</p>
+## A tour
 
 <table>
   <tr>
-    <td width="50%"><img src="assets/terminal/subagents.png" alt="A Claude and its sub-agents"><br><b>Sub-agents.</b> Explore and Plan agents working for the Claude in <code>new-hero</code>.</td>
-    <td width="50%"><img src="assets/terminal/group.png" alt="Group chat with two friends"><br><b>Talk with everyone.</b> You, bob and mia in one room, each with their own Claude.</td>
+    <td width="50%"><img src="assets/mac/project-home.png" alt="A project's home page"><br><b>Start from the project.</b> Describe a task and Klaud makes the worktree; or just ask a question about the code.</td>
+    <td width="50%"><img src="assets/mac/activity.png" alt="Activity: Claude Code agents running"><br><b>Activity.</b> Every Claude Code session and background agent on your Mac, with what each is doing right now.</td>
   </tr>
   <tr>
-    <td><img src="assets/terminal/plan.png" alt="Claude proposes a plan"><br><b>Plan first.</b> Claude looks around, then asks you to approve its plan.</td>
-    <td><img src="assets/terminal/terminal.png" alt="A real terminal in a workspace"><br><b>Terminal.</b> A real shell in every workspace, next to its setup and run commands.</td>
+    <td><img src="assets/mac/terminal-dark.png" alt="A terminal in the right panel"><br><b>Terminals beside the chat.</b> The worktree's shell, setup and run in the right panel, or a drawer under the chat with ⌘J.</td>
+    <td><img src="assets/mac/friends.png" alt="A conversation with a friend"><br><b>Friends.</b> Direct, end-to-end encrypted, no server. Set how much each friend's Claude may do.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/mac/usage.png" alt="Usage"><br><b>Usage.</b> Your plan's limits, tokens and cost per day, disk per project, and space you can free.</td>
+    <td><img src="assets/mac/overview.png" alt="Overview"><br><b>Overview.</b> Every worktree and chat, archived ones too, filtered by what needs you.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/mac/earnings.png" alt="Stripe earnings for a project"><br><b>Earnings.</b> Connect a project's Stripe and see what it has earned, refreshed once a day.</td>
+    <td><img src="assets/mac/model.png" alt="Model and thinking picker"><br><b>Model and thinking.</b> Pick the model per conversation and how hard Claude thinks, in plain words.</td>
   </tr>
 </table>
 
-Everything is clickable, and the bar at the bottom always says what you can do next. The full guide: **[docs/terminal.md](docs/terminal.md)**.
+## Install
+
+1. **[Download Klaud](https://github.com/kayraucklnc/klaud/releases/latest)**, open the `.dmg` and drag Klaud into Applications.
+2. The first time, right-click Klaud in Applications and choose **Open** (it isn't notarized by Apple yet).
+3. Sign in to [Claude Code](https://claude.com/claude-code) if you haven't (`claude`, then `/login`). Klaud brings everything else.
+
+Klaud checks for updates once a day and installs them when you say so, or by itself when you're away.
 
 ## Working with friends
 
-Click **Invite** and send the link. Your friends open it in Klaud for Mac, or run `klaud join <link>` in the terminal. Everyone keeps their own Claude, subscription and permissions:
+- **Add a friend** with a short code or a link. From then on your Macs talk directly whenever you're both online, end-to-end encrypted, with nothing in between.
+- **Groups** live on every member's Mac: anyone can be offline, and you catch up when you're back.
+- **Everyone keeps their own Claude**, subscription and permissions. Ask a friend's Claude to do something on their Mac and get the result back; decide per friend what their Claude may do on yours.
+- **Share a worktree** to build it together, or hand it off so their Claude continues.
 
-- `@claude:mia` asks mia's Claude; it runs on mia's computer.
-- Share one worktree to build it together, or hand it off so their Claude continues it.
-- When someone joins, pick how much you trust them: *Can't use my Claude*, *Ask me each time*, *Trusted*, or *Full trust*.
+More: [the friends network](docs/network.md) · [security](docs/security.md).
 
-Friends connect straight to you, peer to peer, end-to-end encrypted ([how](docs/how-it-works.md), [security](docs/security.md)).
+## Klaud Lite, in your terminal
+
+The same Klaud as a lightweight terminal app: projects, worktrees, every Claude and your friends, everything clickable. Great over SSH or if you live in the terminal.
+
+```bash
+npm install -g klaudcode   # the command is `klaud`
+klaud                      # your projects
+klaud demo                 # look around with two pretend friends
+```
+
+<p align="center">
+  <img src="assets/terminal/overview.png" alt="Klaud Lite in the terminal: two worktrees working at once" width="760">
+</p>
+
+Klaud Lite and the Mac app can run at the same time on the same projects. The full guide: [docs/terminal.md](docs/terminal.md).
 
 ## How it works
 
-Klaud is one engine with two faces. The engine (projects, Claude, terminals, rooms) runs in the background on your Mac; the Mac app and the terminal app are both windows onto it, so approving something in one clears it in the other. Each Claude runs on its owner's computer through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview).
+Klaud is one engine with two faces. The engine (projects, Claude, terminals, friends) runs in the background on your Mac; the Mac app and Klaud Lite are windows onto it. Each Claude runs on its owner's computer through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview), with their own subscription.
 
-More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [peer-to-peer connections](docs/p2p.md) · [the friends network](docs/network.md) · [what each app offers](docs/parity.md).
+More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [peer-to-peer connections](docs/p2p.md) · [the friends network](docs/network.md) · [updates](docs/updates.md) · [what each app offers](docs/parity.md).
 
 ## Development
 
 ```bash
 git clone https://github.com/kayraucklnc/klaud.git && cd klaud
-npm install
-npm run dev -- demo        # the terminal app, from source
-npm test                   # unit, multi-peer and two-screen tests
-npm run typecheck
-```
+npm install && npm test
 
-The Mac app lives in [packages/mac](packages/mac) (Tauri 2, React):
-
-```bash
 cd packages/mac && npm install
-npm run app:dev            # the app, running Klaud from this repo
-npm run dev                # just the web UI in a browser (start a daemon first: klaud daemon --keep-alive demo)
+npm run app:dev            # the Mac app, running Klaud from this repo
 npm run e2e                # Playwright tests against the demo
-npm run app:build          # bundles Node + Klaud, then the .app and .dmg
+npm run app:build          # the .app and the designed .dmg
+npm run release            # build, sign and publish a release (see docs/updates.md)
 ```
 
 ```
-src/            the engine (core, network, Claude, terminals) and the terminal app (src/ui)
 packages/mac/   the Mac app (React UI in src/, the native shell in src-tauri/)
+src/            the engine (core, friends network, Claude, terminals) and Klaud Lite (src/ui)
 docs/           guides and design notes
 ```
-
-Every merge to `main` publishes the terminal app to npm and the Mac app to Releases ([publish.yml](.github/workflows/publish.yml)).
 
 Klaud used to be called klaude. Your `~/.klaude` settings, projects and worktrees carry over automatically.
 
