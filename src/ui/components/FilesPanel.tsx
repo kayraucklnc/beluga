@@ -20,9 +20,9 @@ export function FilesPanel({ state, width, height, focused, title }: FilesPanelP
   const { browser } = state;
   const win = fileWindow(browser, height);
   const rows = browser.rows.slice(win.start, win.start + win.count);
-  const where = title ?? (browser.at ? `${peerName(state, browser.at.owner)}/${browser.at.share}${browser.at.path ? `/${browser.at.path}` : ''}` : 'Shared files');
+  const where = title ?? (browser.at ? `${peerName(state, browser.at.owner)}/${browser.at.share}${browser.at.path ? `/${browser.at.path}` : ''}` : '');
   return (
-    <Panel title={where} width={width} height={height} focused={focused} right={focused ? '↵ open  ← back  d download' : 'click a file'}>
+    <Panel title={where} width={width} height={height} focused={focused} right={focused ? '↵ open  ← back  d download' : ''}>
       {browser.loading ? <Text color={theme.muted}>loading…</Text> : null}
       {browser.error ? (
         <Text color={theme.error} wrap="truncate">

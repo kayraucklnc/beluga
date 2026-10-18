@@ -243,10 +243,8 @@ export interface TerminalTabInfo {
   readonly exitCode?: number | null;
 }
 
-/** The row above the terminal: its sessions (Shell, Setup, Run) and what you can do. */
-export function terminalBarModel(wsId: string, tabs: readonly TerminalTabInfo[], active: string, width: number, opts: { hasRun: boolean; hasSetup: boolean; focused: boolean }): Model {
-  const zones: Zone[] = [];
-  const segs: Seg[] = [];
+/** The session tabs at the start of a terminal bar; returns where the next item goes. */
+function sessionTabs(tabs: readonly TerminalTabInfo[], active: string, segs: Seg[], zones: Zone[]): number {
   let x = 0;
   for (const t of tabs) {
     const mark = t.running ? '● ' : t.exitCode === 0 ? '✓ ' : t.exitCode !== undefined ? '✗ ' : '';
@@ -257,6 +255,35 @@ export function terminalBarModel(wsId: string, tabs: readonly TerminalTabInfo[],
     segs.push({ text: ' ' });
     x += text.length + 1;
   }
+  return x;
+}
+
+/** How to leave the terminal, quietly on the right of its bar. */
+const leaveHint = (focused: boolean): Seg => (focused ? { text: 'typing goes to the terminal · Ctrl+] or click outside to leave', color: theme.info } : { text: 'click the terminal to type in it', color: theme.muted });
+
+/**
+ * The row above the global Terminal tab: its shells (Shell 1, Shell 2…), "+" for another
+ * one, and the folder they start in.
+ */
+export function globalTerminalBarModel(tabs: readonly TerminalTabInfo[], active: string, width: number, opts: { focused: boolean; dir: string }): Model {
+  const zones: Zone[] = [];
+  const segs: Seg[] = [];
+  let x = sessionTabs(tabs, active, segs, zones);
+  const plus = ' + ';
+  segs.push({ text: plus, color: theme.info, bold: true });
+  zones.push({ x0: x, x1: x + plus.length - 1, y: 0, action: { type: 'term_new' }, hint: `Open another shell in ${opts.dir}` });
+  x += plus.length;
+  const right: Line = [leaveHint(opts.focused)];
+  const left: Line = [...segs, { text: `  ${opts.dir}`, color: theme.border }];
+  // The folder is the first thing to go when space runs out; the leave hint stays.
+  return { lines: [lineWidth(left) + lineWidth(right) + 1 <= width ? split(left, right, width) : split(segs, right, width)], zones: zones.filter((z) => z.x1 < width) };
+}
+
+/** The row above the terminal: its sessions (Shell, Setup, Run) and what you can do. */
+export function terminalBarModel(wsId: string, tabs: readonly TerminalTabInfo[], active: string, width: number, opts: { hasRun: boolean; hasSetup: boolean; focused: boolean }): Model {
+  const zones: Zone[] = [];
+  const segs: Seg[] = [];
+  let x = sessionTabs(tabs, active, segs, zones);
   segs.push({ text: '│ ', color: theme.border });
   x += 2;
   const runTab = tabs.find((t) => t.key.endsWith(':run'));
@@ -270,6 +297,5 @@ export function terminalBarModel(wsId: string, tabs: readonly TerminalTabInfo[],
     zones.push({ x0: x, x1: x + text.length - 1, y: 0, action: a.action, hint: a.hint });
     x += text.length;
   }
-  const hint = opts.focused ? 'typing goes to the terminal · Ctrl+] or click outside to leave' : 'click the terminal to type in it';
-  return { lines: [split(segs, [{ text: hint, color: opts.focused ? theme.info : theme.muted }], width)], zones };
+  return { lines: [split(segs, [leaveHint(opts.focused)], width)], zones };
 }

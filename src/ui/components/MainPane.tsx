@@ -42,19 +42,21 @@ export function MainPane({ state, d, ui, frame, terminal }: MainPaneProps) {
       );
     case 'overview':
       return (
-        <Panel title="Overview" right="every workspace at a glance" width={paneW} height={g.paneHeight} focused={d.focus === 'main'}>
+        <Panel title="" width={paneW} height={g.paneHeight} focused={d.focus === 'main'}>
           <ModelBlock lines={d.overview?.lines ?? []} height={g.paneHeight - 2} scroll={d.overviewScroll} />
         </Panel>
       );
     case 'search':
       return (
-        <Panel title="Search" right="type below · ↑↓ choose · Enter opens" width={paneW} height={g.paneHeight} focused={d.focus === 'main' || d.focus === 'chat'}>
+        <Panel title="" width={paneW} height={g.paneHeight} focused={d.focus === 'main' || d.focus === 'chat'}>
           <ModelBlock lines={d.pane?.lines ?? []} height={g.paneHeight - 2} scroll={d.paneScroll} />
         </Panel>
       );
+    case 'terminal':
+      return terminal.bar ? <TerminalView session={termSession} bar={terminal.bar} width={paneW} height={g.paneHeight} focused={termFocused} scroll={ui.terminalScroll ?? 0} title="" /> : null;
     case 'usage':
       return (
-        <Panel title="Usage" right="disk space and Claude tokens per workspace" width={paneW} height={g.paneHeight} focused={d.focus === 'main'}>
+        <Panel title="" width={paneW} height={g.paneHeight} focused={d.focus === 'main'}>
           <ModelBlock lines={d.pane?.lines ?? []} height={g.paneHeight - 2} scroll={d.paneScroll} />
         </Panel>
       );
@@ -113,7 +115,7 @@ export function MainPane({ state, d, ui, frame, terminal }: MainPaneProps) {
     default:
       return (
         <>
-          <ChatView state={state} title={state.peers.length > 1 ? 'Group chat · everyone in the room' : 'Chat · you and your Claude'} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />
+          <ChatView state={state} title="" width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} />
           {viewer}
         </>
       );

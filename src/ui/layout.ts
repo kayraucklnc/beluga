@@ -50,7 +50,8 @@ export interface LayoutInput {
   readonly questionLines?: number;
 }
 
-const TABS_HEIGHT = 2;
+/** The top tabs: one line (the pane's border right below separates them). */
+const TABS_HEIGHT = 1;
 const HEADER_HEIGHT = 3;
 
 export function computeLayout(input: LayoutInput): Geometry {

@@ -1,6 +1,6 @@
 import type { MutableRefObject } from 'react';
 import type { Session } from '../core/session.js';
-import { runId, setupId } from '../core/workbench.js';
+import { globalShellId, globalShellNumber, runId, setupId } from '../core/workbench.js';
 import { runCollabUiAction } from './collab-actions.js';
 import type { UiState } from './keymap.js';
 import type { MenuContext } from './menu-actions.js';
@@ -61,6 +61,12 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
     case 'term_tab':
       patchUi({ termKey: action.key, terminalScroll: 0, focus: 'terminal' });
       return;
+    case 'term_new': {
+      // The Terminal tab starts it (in the current project's folder) once it's selected.
+      const next = Math.max(0, ...(bench?.globalShells() ?? []).map(globalShellNumber)) + 1;
+      patchUi({ termKey: globalShellId(next), terminalScroll: 0, focus: 'terminal' });
+      return;
+    }
     case 'toggle_project': {
       const latest = session.store.getState();
       const project = latest.projects.find((p) => p.id === action.id);
@@ -112,7 +118,8 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
       if (action.view.kind === 'files') {
         session.store.dispatch({ type: 'browser_cursor', delta: -10_000 });
         patchUi({ focus: 'files', entered: true });
-      } else patchUi({ focus: action.view.kind === 'overview' ? 'main' : 'chat', entered: action.view.kind === 'overview' });
+      } else if (action.view.kind === 'terminal') patchUi({ focus: 'terminal', terminalScroll: 0 });
+      else patchUi({ focus: action.view.kind === 'overview' ? 'main' : 'chat', entered: action.view.kind === 'overview' });
       return;
     case 'close_tab':
       session.store.dispatch({ type: 'close_tab', id: action.id });

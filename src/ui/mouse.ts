@@ -93,6 +93,16 @@ export function parseFocus(chunk: string): { events: boolean[]; rest: string } {
   return { events, rest };
 }
 
+/**
+ * Rewrite a few keys into forms Ink understands: Ctrl+Tab in xterm's modifyOtherKeys form
+ * becomes the kitty form, and a lone "Esc [" (Option+[ with Option as Meta, which looks like
+ * the start of a sequence) becomes kitty's Alt+[.
+ */
+export function normalizeKeys(data: string): string {
+  if (data === '\x1b[') return '\x1b[91;3u';
+  return data.replace(/\x1b\[27;([56]);9~/g, '\x1b[9;$1u');
+}
+
 export interface InputHooks {
   readonly onMouse?: (e: MouseEvent) => void;
   readonly onFocus?: (focused: boolean) => void;
@@ -138,7 +148,7 @@ export function createInput(source: NodeJS.ReadStream, hooks: InputHooks): NodeJ
     if (!rest) return;
     const sink = hooks.rawSink?.();
     if (sink) sink(rest);
-    else proxy.write(rest);
+    else proxy.write(normalizeKeys(rest));
   };
   const join = createChunkJoiner(deliver);
   source.on('data', (data: string | Buffer) => {
