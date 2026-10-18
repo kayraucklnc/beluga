@@ -21,7 +21,7 @@
   <path d="M318 386 L452 512 L318 638" fill="none" stroke="#F2F2F4" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
   <rect x="512" y="586" width="196" height="54" rx="27" fill="url(#bdcursor)"/>
   </g>
-  <text x="480" y="210" text-anchor="middle" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'JetBrains Mono', Consolas, monospace" font-size="64" font-weight="600" letter-spacing="-1" fill="#F5F5F7">klaud</text>
+  <text x="480" y="210" text-anchor="middle" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'JetBrains Mono', Consolas, monospace" font-size="64" font-weight="600" letter-spacing="-1" fill="#F5F5F7">Klaud</text>
   <text x="480" y="262" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="24" font-weight="500" letter-spacing="-0.3" fill="#F5F5F7">You, your friends, and everyone's Claude.</text>
-  <text x="480" y="298" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#8E8E93">One terminal · end-to-end encrypted · works from anywhere</text>
+  <text x="480" y="298" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#8E8E93">A Mac app and a terminal app · end-to-end encrypted · peer to peer</text>
 </svg>
