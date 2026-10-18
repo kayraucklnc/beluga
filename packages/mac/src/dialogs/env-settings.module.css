@@ -1,0 +1,146 @@
+.intro {
+  margin: 0 4px 14px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.head,
+.row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.2fr) 24px 22px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 14px;
+}
+.head {
+  height: 30px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+  font-weight: 600;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.row {
+  min-height: 36px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.row + .row {
+  border-top: 0.5px solid var(--hairline);
+}
+.key,
+.value {
+  min-width: 0;
+  height: 25px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  user-select: text;
+}
+.key {
+  font-weight: 550;
+}
+.key:focus,
+.value:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 3.5px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.key::placeholder,
+.value::placeholder {
+  color: var(--text-3);
+  font-weight: 400;
+}
+/* Masked like a password, without the browser treating it as one (no autofill, no keychain). */
+.masked {
+  -webkit-text-security: disc;
+  letter-spacing: 0.06em;
+}
+.bad .key {
+  box-shadow: 0 0 0 1px var(--error);
+}
+.problem {
+  grid-column: 1 / -1;
+  padding: 0 2px;
+  color: var(--error);
+  font-size: 0.84rem;
+}
+.eye,
+.remove {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--text-3);
+}
+.eye:hover:not(:disabled),
+.remove:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.eye:disabled {
+  opacity: 0.35;
+}
+.eyeOn {
+  color: var(--accent);
+}
+.empty {
+  padding: 14px;
+  color: var(--text-3);
+}
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 38px;
+  padding: 0 10px;
+  border-top: 0.5px solid var(--hairline);
+}
+.flex {
+  flex: 1;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 4px;
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
+.statusError {
+  color: var(--error);
+}
+.importBox {
+  padding: 10px 14px;
+  border-top: 0.5px solid var(--hairline);
+}
+.importText {
+  display: block;
+  width: 100%;
+  min-height: 92px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  resize: vertical;
+  user-select: text;
+}
+.importText:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.importBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.muted {
+  color: var(--text-3);
+  font-size: 0.86rem;
+}

@@ -10,6 +10,7 @@
     "notification:default",
     "deep-link:default",
     "opener:default",
+    "dialog:allow-open",
     "opener:allow-open-url",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",

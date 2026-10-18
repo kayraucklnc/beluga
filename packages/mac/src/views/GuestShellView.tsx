@@ -12,7 +12,9 @@ export function GuestShellView() {
   const [line, setLine] = useState('');
   const end = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [shell?.entries.length]);
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end' });
+  }, [shell?.entries.length]);
   // The box is off while a command runs; you keep typing in it after.
   useEffect(() => {
     if (!shell?.busy) input.current?.focus();

@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
-import type { PtyProcess, TerminalManager } from '../terminal/index.js';
+import { type PtyProcess, type TerminalManager, listShells, scriptShell } from '../terminal/index.js';
+import { type ShellChoice, shellArgs } from '../shared/shells.js';
+import type { EnvPlace } from './env-vars.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
@@ -36,6 +38,10 @@ export interface WorkbenchDeps {
   readonly findPr?: (dir: string, branch: string) => Promise<PullRequest | undefined>;
   readonly hasGh?: () => Promise<boolean>;
   readonly measure?: (dir: string) => Promise<number | undefined>;
+  /** Your environment variables for something starting there (see env-vars.ts). */
+  readonly envFor?: (where: EnvPlace) => Record<string, string>;
+  /** The shells you can pick (injected in tests). */
+  readonly listShells?: () => ShellChoice[];
 }
 
 const DISK_EVERY_MS = 5 * 60_000;
@@ -44,7 +50,7 @@ const PR_EVERY_MS = 90_000;
 const START_SIZE = { cols: 120, rows: 30 };
 
 export { shellId, setupId, runId, globalShellId, isGlobalShell, globalShellNumber, globalShellDir } from '../shared/terminal-keys.js';
-import { runId, setupId, shellId, isGlobalShell, globalShellNumber } from '../shared/terminal-keys.js';
+import { runId, setupId, shellId, isGlobalShell, globalShellNumber, cleanTerminalName } from '../shared/terminal-keys.js';
 
 /**
  * What changed about a pull request that's worth telling you. A PR showing up is only news
@@ -90,6 +96,7 @@ export class Workbench {
   start(): void {
     this.deps.store.dispatch({ type: 'templates', templates: loadTemplates() });
     this.deps.store.dispatch({ type: 'pr_custom', custom: Boolean(customPrPrompt()) });
+    this.deps.store.dispatch({ type: 'shell_choices', shells: (this.deps.listShells ?? listShells)() });
     void (this.deps.hasGh ?? hasGh)().then((ok) => {
       this.deps.store.dispatch({ type: 'gh', ok });
       if (ok) void this.refreshPrs();
@@ -213,14 +220,17 @@ export class Workbench {
   private openSession(key: string, ws: Workspace | { path: string }, command?: string, size = START_SIZE): PtyProcess | undefined {
     const terminals = this.deps.terminals;
     if (!terminals) return undefined;
-    const shell = this.deps.store.getState().prefs.shell;
+    const prefs = this.deps.store.getState().prefs;
+    // Commands are written for sh, so they run in an sh-like shell even if yours is fish or nu.
+    const shell = command ? scriptShell(prefs.shell) : prefs.shell;
+    const env = { ...this.deps.envFor?.('id' in ws ? { workspaceId: ws.id } : { dir: ws.path }), ...('projectRoot' in ws ? scriptEnv(ws) : {}) };
     const session = terminals.open(key, {
       cwd: ws.path,
       cols: size.cols,
       rows: size.rows,
-      ...('projectRoot' in ws ? { env: scriptEnv(ws) } : {}),
+      env,
       ...(shell ? { shell } : {}),
-      ...(command ? { args: ['-lc', command], title: command } : {}),
+      ...(command ? { args: ['-l', '-c', command], title: command } : { args: shellArgs({ login: prefs.shellLogin, extra: prefs.shellArgs }) }),
     });
     this.deps.store.dispatch({ type: 'terminal', id: key, title: session.title });
     // Every screen sees when it ends (the tab shows its exit code; clicking starts it again).
@@ -256,6 +266,13 @@ export class Workbench {
   /** The global Terminal tab's shells, in the order they were opened. */
   globalShells(): string[] {
     return (this.deps.terminals?.list() ?? []).map((s) => s.id).filter(isGlobalShell).sort((a, b) => globalShellNumber(a) - globalShellNumber(b));
+  }
+
+  /** Name a terminal for every screen (an empty name goes back to Shell N). Kept until it's closed. */
+  renameTerminal(key: string, name: string): void {
+    if (!(key in this.deps.store.getState().terminals)) return;
+    const clean = cleanTerminalName(name);
+    this.deps.store.dispatch({ type: 'terminal_name', id: key, ...(clean ? { name: clean } : {}) });
   }
 
   /** Close a terminal session (shell, setup or run). */

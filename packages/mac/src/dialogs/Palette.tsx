@@ -54,7 +54,7 @@ export function Palette() {
         ...(['chat', 'files', 'review', 'terminal'] as const).map((tab) => ({ id: `tab:${tab}`, label: `Show ${tab === 'review' ? 'Diff' : tab[0]!.toUpperCase() + tab.slice(1)}`, icon: (tab === 'chat' ? 'chat' : tab === 'files' ? 'folder' : tab === 'review' ? 'diff' : 'terminal') as IconName, run: () => actions.run({ type: 'open_ws', id: ws.id, tab }) })),
         ...workspaceButtons(state, ws)
           .filter((b) => !b.disabled)
-          .map((b) => ({ id: `ws-action:${b.action}`, label: b.label, hint: b.hint, icon: (b.action === 'merge' ? 'merge' : b.action === 'pr' ? 'pr' : b.action === 'run' ? 'play' : b.action === 'archive' ? 'archive' : b.action === 'share' ? 'share' : b.action === 'handoff' ? 'hand' : 'spark') as IconName, run: () => actions.run({ type: 'ws', id: ws.id, action: b.action }) })),
+          .map((b) => ({ id: `ws-action:${b.action}`, label: b.label, hint: b.hint, icon: (b.action === 'merge' ? 'merge' : b.action === 'pr' ? 'pr' : b.action === 'run' ? 'play' : b.action === 'archive' ? 'archive' : b.action === 'share' ? 'share' : b.action === 'handoff' ? 'hand' : 'claude') as IconName, run: () => actions.run({ type: 'ws', id: ws.id, action: b.action }) })),
       ]
     : [];
   const create: Item[] = [
@@ -82,7 +82,7 @@ export function Palette() {
   }));
   const window: Item[] = [
     { id: 'settings', label: 'Settings…', keys: `${mod()},`, icon: 'gear', run: () => ui.patch({ settings: 'general' }) },
-    { id: 'inbox', label: 'Inbox', hint: 'What happened while you were elsewhere', icon: 'inbox', run: () => ui.openMenu({ kind: 'inbox' }) },
+    { id: 'inbox', label: 'Notifications', hint: 'What happened while you were elsewhere', icon: 'bell', run: () => ui.patch({ notices: true }) },
     { id: 'appearance', label: `Appearance: ${prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark'}`, icon: 'eye', run: () => setPrefs({ appearance: prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark' }) },
     { id: 'sidebar', label: prefs.sidebar ? 'Hide the sidebar' : 'Show the sidebar', keys: '⌃⌘S', icon: 'sidebar', run: () => setPrefs({ sidebar: !prefs.sidebar }) },
     { id: 'inspector', label: prefs.inspector ? 'Hide the inspector' : 'Show the inspector', keys: `${mod()}⌥I`, icon: 'inspector', run: () => setPrefs({ inspector: !prefs.inspector }) },

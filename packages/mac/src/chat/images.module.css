@@ -1,0 +1,253 @@
+/* Images in messages: thumbnails, their grid, and the full-size lightbox. */
+
+.grid {
+  display: flex;
+  margin: 6px 0 2px;
+}
+.gridMany {
+  display: grid;
+  grid-template-columns: repeat(3, 148px);
+  gap: 6px;
+}
+.gridTwo {
+  grid-template-columns: repeat(2, 177px);
+}
+
+.thumb {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  max-width: min(360px, 100%);
+  padding: 0;
+  border-radius: 9px;
+  background: var(--bg-sunken);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  cursor: zoom-in;
+  transition: box-shadow var(--dur-fast), transform var(--dur-fast) var(--ease-out);
+}
+.thumb:hover {
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+.thumb:active {
+  transform: scale(0.985);
+}
+.thumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.thumb img {
+  display: block;
+  max-width: 360px;
+  max-height: 280px;
+  width: auto;
+  height: auto;
+}
+
+/* In a grid every image gets the same square, cropped to fill. */
+.tile {
+  width: 100%;
+  aspect-ratio: 1;
+}
+.tile img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
+}
+
+.loading {
+  width: 240px;
+  height: 150px;
+  cursor: progress;
+  background: linear-gradient(100deg, var(--bg-sunken) 30%, var(--bg-hover) 50%, var(--bg-sunken) 70%) 0 0 / 300% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+.tile.loading {
+  width: 100%;
+  height: auto;
+}
+@keyframes shimmer {
+  to {
+    background-position: -150% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading {
+    animation: none;
+  }
+}
+
+.failed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 240px;
+  height: 64px;
+  color: var(--text-3);
+  font-size: 0.9rem;
+  cursor: default;
+}
+.tile.failed {
+  width: 100%;
+  height: auto;
+  flex-direction: column;
+}
+
+/* ---- full size */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(12, 12, 14, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: fade var(--dur) var(--ease-out);
+}
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+  animation: fade var(--dur) var(--ease-out);
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  align-self: center;
+  margin-top: 14px;
+  padding: 4px 6px 4px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
+  box-shadow: var(--shadow-pop);
+  color: var(--text);
+}
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 8px 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.detail {
+  color: var(--text-3);
+  font-weight: 400;
+  font-size: 0.88rem;
+}
+.close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border-radius: 11px;
+  color: var(--text-2);
+}
+.close:hover {
+  background: var(--bg-hover);
+}
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px 40px 8px;
+  cursor: zoom-out;
+}
+.full {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.45);
+  cursor: default;
+  object-fit: contain;
+}
+.fullPending {
+  width: 280px;
+  height: 180px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.fullPending.failed {
+  width: auto;
+  height: auto;
+  padding: 14px 18px;
+  background: var(--bg-raised);
+  color: var(--text-2);
+}
+.hint {
+  align-self: center;
+  margin-bottom: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+}
+.hint kbd {
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+/* ---- in the box you type in, before sending */
+
+.pending {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+.pendingItem {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-sunken);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+}
+.pendingItem img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.pendingLabel {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 14px;
+}
+.pendingRemove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.pendingItem:hover .pendingRemove,
+.pendingRemove:focus-visible {
+  opacity: 1;
+}

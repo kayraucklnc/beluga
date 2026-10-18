@@ -119,8 +119,22 @@
   font-weight: 600;
 }
 .projectRow .rowIcon {
-  width: 12px;
+  width: auto;
   color: var(--text-3);
+}
+/* The disclosure triangle, then the project's icon (like Finder's sidebar and Xcode's navigator). */
+.projectIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: -4px;
+}
+.disclosure {
+  opacity: 0.5;
+  transition: opacity var(--dur-fast);
+}
+.projectRow:hover .disclosure {
+  opacity: 1;
 }
 .hoverTools {
   display: inline-flex;
@@ -189,4 +203,9 @@
 }
 .invite:hover {
   background: var(--bg-hover);
+}
+/* A folder dragged from Finder over the sidebar: dropping it adds it as a project. */
+.dropping {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }

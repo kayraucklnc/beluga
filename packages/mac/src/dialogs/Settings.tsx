@@ -8,7 +8,11 @@ import { Avatar, Button, cx } from '../components/ui.js';
 import { APP_VERSION } from '../lib/boot.js';
 import { type SettingsPane, useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { ACCENTS, type Accent, setPrefs, usePrefs } from '../lib/prefs.js';
+import { EnvironmentSettings } from './EnvironmentSettings.js';
+import { NotificationSettings } from './NotificationSettings.js';
+import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
+import { TerminalSettings } from './TerminalSettings.js';
 
 const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> = [
   { id: 'general', label: 'General', icon: 'gear' },
@@ -16,46 +20,11 @@ const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> 
   { id: 'claude', label: 'Claude', icon: 'spark' },
   { id: 'notifications', label: 'Notifications', icon: 'bell' },
   { id: 'workspaces', label: 'Workspaces', icon: 'branch' },
+  { id: 'terminal', label: 'Terminal', icon: 'terminal' },
+  { id: 'environment', label: 'Environment', icon: 'lock' },
   { id: 'people', label: 'People & access', icon: 'people' },
   { id: 'about', label: 'About', icon: 'globe' },
 ];
-
-function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
-  return <button type="button" role="switch" aria-checked={on} aria-label={label} className={cx(s.switch, on && s.switchOn)} onClick={() => onChange(!on)} />;
-}
-
-function Select<T extends string>({ value, options, onChange, label }: { value: T; options: ReadonlyArray<{ value: T; label: string }>; onChange: (v: T) => void; label: string }) {
-  return (
-    <select className={s.select} value={value} aria-label={label} onChange={(e) => onChange(e.target.value as T)}>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function Row({ label, detail, children }: { label: string; detail?: ReactNode; children: ReactNode }) {
-  return (
-    <div className={s.row}>
-      <div className={s.rowText}>
-        <div className={s.rowLabel}>{label}</div>
-        {detail ? <div className={s.rowDetail}>{detail}</div> : null}
-      </div>
-      <div className={s.control}>{children}</div>
-    </div>
-  );
-}
-
-function Group({ title, children }: { title?: string; children: ReactNode }) {
-  return (
-    <section className={s.group}>
-      {title ? <h3 className={s.groupTitle}>{title}</h3> : null}
-      <div className={s.groupBox}>{children}</div>
-    </section>
-  );
-}
 
 function General() {
   const api = useApi();
@@ -234,45 +203,9 @@ function ClaudePane() {
   );
 }
 
-function Notifications() {
-  const api = useApi();
-  const n = useApp((st) => st.prefs.notify);
-  const set = (key: keyof typeof n, v: boolean): void => void api.session.setPrefs({ notify: { ...n, [key]: v } });
-  const kinds: ReadonlyArray<[keyof typeof n, string, string]> = [
-    ['done', 'Claude finished', 'In a conversation you’re not looking at'],
-    ['needsYou', 'Claude needs you', 'A question, a plan, or an approval'],
-    ['problems', 'Problems', 'Errors, merge conflicts, failed setups'],
-    ['people', 'People', 'Someone joins, invites you, or hands work to you'],
-    ['pr', 'Pull requests', 'Opened, checks finished, reviewed'],
-  ];
-  return (
-    <>
-      <Group>
-        <Row label="Desktop notifications" detail="The inbox fills either way.">
-          <Switch label="Desktop" on={n.desktop} onChange={(v) => set('desktop', v)} />
-        </Row>
-        <Row label="Sound">
-          <Switch label="Sound" on={n.sound} onChange={(v) => set('sound', v)} />
-        </Row>
-        <Row label="Try it">
-          <Button onClick={() => void api.session.testNotification()}>Send a test</Button>
-        </Row>
-      </Group>
-      <Group title="Tell me when">
-        {kinds.map(([key, label, detail]) => (
-          <Row key={key} label={label} detail={detail}>
-            <Switch label={label} on={n[key]} onChange={(v) => set(key, v)} />
-          </Row>
-        ))}
-      </Group>
-    </>
-  );
-}
-
 function Workspaces() {
   const api = useApi();
   const p = useApp((st) => st.prefs);
-  const [shell, setShell] = useState(p.shell ?? '');
   return (
     <>
       <Group>
@@ -281,9 +214,6 @@ function Workspaces() {
         </Row>
         <Row label="Friends may start work here" detail="They ask to start a worktree or hand work to you; you approve each one.">
           <Switch label="Friend worktrees" on={p.friendWorktrees === 'ask'} onChange={(v) => void api.session.setFriendWorktrees(v ? 'ask' : 'off')} />
-        </Row>
-        <Row label="Terminal shell" detail="Empty: your login shell.">
-          <input className={s.text} value={shell} placeholder="/bin/zsh" onChange={(e) => setShell(e.target.value)} onBlur={() => void api.session.setPrefs({ shell: shell || undefined })} />
         </Row>
       </Group>
       <Group title="Toolbar buttons">
@@ -365,7 +295,7 @@ function About() {
   );
 }
 
-const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: Notifications, workspaces: Workspaces, people: People, about: About };
+const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, environment: EnvironmentSettings, people: People, about: About };
 
 /** klaud's settings: this window's look on the left panes, klaud's shared settings on the rest. */
 export function Settings() {

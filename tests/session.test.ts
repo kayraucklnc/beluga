@@ -566,6 +566,53 @@ describe('Session hardening', () => {
     expect(kay.session.host.promote('nope')).toBe(false);
   });
 
+  it('says what waits in the queue, and moves your waiting messages around', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: (input) =>
+        input.prompt === 'slow'
+          ? new Promise((_resolve, reject) => input.signal.addEventListener('abort', () => reject(new Error('aborted'))))
+          : Promise.resolve(`did ${input.prompt}`),
+    });
+    await room(kay);
+    kay.session.submit('@claude slow');
+    await waitFor(() => kay.runs.length === 1);
+    for (const p of ['one', 'two', 'three']) kay.session.submit(`@claude ${p}`);
+    const queued = () => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.status === 'queued') as Array<{ requestId: string; prompt?: string; requester?: string }>;
+    await waitFor(() => queued().length === 3);
+    expect(queued().map((q) => q.prompt)).toEqual(['one', 'two', 'three']);
+    expect(queued()[0]!.requester).toBe(kay.session.selfId);
+    const [one, , three] = queued();
+    expect(kay.session.host.reorderQueued(three!.requestId, 0)).toBe(true);
+    expect(queued().map((q) => q.prompt)).toEqual(['three', 'one', 'two']);
+    expect(kay.session.host.reorderQueued(one!.requestId, 99)).toBe(true);
+    expect(queued().map((q) => q.prompt)).toEqual(['three', 'two', 'one']);
+    expect(kay.session.host.reorderQueued('nope', 0)).toBe(false);
+    // The queue runs in the new order once the slow task stops.
+    kay.session.host.promote(three!.requestId);
+    await waitFor(() => kay.runs.length === 4);
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'three', 'two', 'one']);
+  });
+
+  it("shows a friend the images you send to the room, and only them", async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    const zoe = peer('zoe');
+    await room(kay, bob, zoe);
+    const { publishForRoom, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes, ATTACHMENT_SHARE } = await import('../src/core/attachments.js');
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+    const a = registerAttachment(await saveImageBytes(png, 'png'), png.byteLength);
+    const file = publishForRoom(a);
+    kay.session.serveFolder(ATTACHMENT_SHARE, roomAttachmentsDir(), [bob.session.selfId]);
+    const fetchVia = (p: Peer) => (at: { owner: string; share: string; path: string }, max: number) =>
+      import('../src/core/downloads.js').then((d) => d.fetchBytes(at, p.session.files.request.bind(p.session.files), max));
+    expect(await readAttachment(kay.session.selfId, file, kay.session.selfId, fetchVia(kay))).toEqual(png);
+    expect(await readAttachment(kay.session.selfId, file, bob.session.selfId, fetchVia(bob))).toEqual(png);
+    await expect(readAttachment(kay.session.selfId, file, zoe.session.selfId, fetchVia(zoe))).rejects.toThrow();
+    await expect(readAttachment(kay.session.selfId, '../secret.png', bob.session.selfId, fetchVia(bob))).rejects.toThrow("isn't an image link");
+  });
+
   it("sends your messages into a run that waits on background agents instead of queueing; others still queue", async () => {
     hub = await startHub({ keys });
     let finishAgents!: () => void;

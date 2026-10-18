@@ -83,3 +83,16 @@
 .tabOn .closeTab {
   opacity: 1;
 }
+.rename {
+  height: 18px;
+  margin: 0 -4px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+  user-select: text;
+}

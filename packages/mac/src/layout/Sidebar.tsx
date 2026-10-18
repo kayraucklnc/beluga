@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type HTMLAttributes, type ReactNode, forwardRef, useEffect, useRef, useState } from 'react';
 import type { AppState } from '@klaud/core/store.js';
 import type { Project, Workspace } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
@@ -7,9 +7,12 @@ import { activityOf, isProjectOpen, overviewNews, stateOf, topTabs, workspaceBut
 import { newShares } from '@klaud/core/store.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { ActionsContext, SpecContext, SpecDropdown, type ActionItem } from '../components/SpecMenu.js';
+import { ProjectIcon } from '../components/ProjectIcon.js';
 import { Avatar, Badge, Dot, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { inApp } from '../lib/boot.js';
+import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { pickImage, reloadProjectIcon } from '../lib/projects.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import s from './Sidebar.module.css';
 
@@ -47,7 +50,7 @@ function Section({ id, title, children, action }: { id: string; title: string; c
   );
 }
 
-function Row({ icon, label, selected, onClick, trailing, detail, tone, indent = 0, className, onDoubleClick }: {
+type RowProps = Omit<HTMLAttributes<HTMLDivElement>, 'onClick'> & {
   icon?: ReactNode;
   label: ReactNode;
   selected?: boolean;
@@ -58,16 +61,25 @@ function Row({ icon, label, selected, onClick, trailing, detail, tone, indent = 
   tone?: string;
   indent?: number;
   className?: string;
-}) {
+};
+
+/**
+ * A sidebar row. It passes its ref and other props through, so a right-click menu (or a
+ * tooltip) wrapped around it can attach.
+ */
+const Row = forwardRef<HTMLDivElement, RowProps>(function Row({ icon, label, selected, onClick, trailing, detail, tone, indent = 0, className, onDoubleClick, style, onKeyDown, ...rest }, ref) {
   return (
     <div
+      ref={ref}
       role="button"
       tabIndex={0}
+      {...rest}
       className={cx(s.row, selected && s.selected, className)}
-      style={{ paddingLeft: 8 + indent * 14 }}
+      style={{ paddingLeft: 8 + indent * 14, ...style }}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onKeyDown={(e) => {
+        onKeyDown?.(e);
         // Only the row itself: Enter on a button inside it presses that button.
         if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
@@ -81,7 +93,7 @@ function Row({ icon, label, selected, onClick, trailing, detail, tone, indent = 
       {trailing ? <span className={s.trailing}>{trailing}</span> : null}
     </div>
   );
-}
+});
 
 function WorkspaceRow({ ws, indent }: { ws: Workspace; indent: number }) {
   const actions = useActions();
@@ -123,12 +135,18 @@ function ProjectBlock({ p }: { p: Project }) {
   const archived = p.workspaces.filter((w) => w.archived);
   const showExternal = collapsed.includes(`external:${p.id}`) || external.some((w) => state.view.kind === 'workspace' && state.view.id === w.id);
   const showArchived = collapsed.includes(`archive:${p.id}`);
+  const iconItems = useIconItems(p);
   return (
     <div className={s.project}>
-      <SpecContext menu={{ kind: 'project', id: p.id }}>
+      <SpecContext menu={{ kind: 'project', id: p.id }} extra={iconItems}>
         <Row
           className={s.projectRow}
-          icon={<Icon name={open ? 'chevronDown' : 'chevronRight'} size={10} />}
+          icon={
+            <span className={s.projectIcon}>
+              <Icon name={open ? 'chevronDown' : 'chevronRight'} size={9} className={s.disclosure} />
+              <ProjectIcon id={p.id} name={p.name} size={16} />
+            </span>
+          }
           label={p.name}
           detail={p.root}
           onClick={() => actions.run({ type: 'toggle_project', id: p.id })}
@@ -137,7 +155,7 @@ function ProjectBlock({ p }: { p: Project }) {
               {busy ? <Dot tone="claude" live /> : null}
               <IconButton icon="branch" label={`New worktree in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_worktree', projectId: p.id }))} />
               <IconButton icon="plus" label={`New chat in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_chat', projectId: p.id }))} />
-              <SpecDropdown menu={{ kind: 'project', id: p.id }} align="end">
+              <SpecDropdown menu={{ kind: 'project', id: p.id }} align="end" extra={iconItems}>
                 <IconButton icon="more" label={`More for ${p.name}`} onClick={(e) => e.stopPropagation()} />
               </SpecDropdown>
             </span>
@@ -167,6 +185,30 @@ function ProjectBlock({ p }: { p: Project }) {
       ) : null}
     </div>
   );
+}
+
+/** "Change Icon…" for a project, and going back to the one it ships. */
+function useIconItems(p: Project): readonly ActionItem[] {
+  const api = useApi();
+  const { client } = useKlaud();
+  const change = async (image: string | undefined): Promise<void> => {
+    try {
+      await api.projects.setIcon(p.id, image);
+      reloadProjectIcon(p.id);
+    } catch (err) {
+      client.store.dispatch({ type: 'toast', text: err instanceof Error ? err.message : String(err), level: 'error' });
+    }
+  };
+  return [
+    {
+      label: 'Change Icon…',
+      onSelect: () => {
+        void pickImage(`An icon for ${p.name}`).then((image) => (image ? change(image) : undefined));
+      },
+      disabled: !inApp(),
+    },
+    { label: 'Use the Project’s Own Icon', onSelect: () => void change(undefined) },
+  ];
 }
 
 function Groups() {
@@ -232,7 +274,7 @@ function People() {
               trailing={
                 <>
                   {following ? <Tip label="Following their screen"><Icon name="eye" size={12} /></Tip> : null}
-                  {p.agent ? <Tip label={`${me ? 'Your' : `${p.name}'s`} Claude is on`}><Icon name="spark" size={12} className={s.claudeMark} /></Tip> : null}
+                  {p.agent ? <Tip label={`${me ? 'Your' : `${p.name}'s`} Claude is on`}><Icon name="claude" size={12} className={s.claudeMark} /></Tip> : null}
                   {trust === 'full' ? <Tip label="Full trust"><Icon name="lock" size={11} /></Tip> : null}
                 </>
               }
@@ -244,8 +286,49 @@ function People() {
   );
 }
 
+/**
+ * Folders dragged from Finder onto the sidebar become projects (a git project, or a folder of
+ * them). The Add Projects sheet takes drops itself while it's open.
+ */
+function useFolderDrop(): { ref: React.RefObject<HTMLElement | null>; over: boolean } {
+  const api = useApi();
+  const { ui } = useKlaud();
+  const ref = useRef<HTMLElement>(null);
+  const [over, setOver] = useState(false);
+  useEffect(() => {
+    if (!inApp()) return;
+    let off: (() => void) | undefined;
+    let alive = true;
+    const inside = (x: number, y: number): boolean => {
+      const r = ref.current?.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      return !!r && x / scale >= r.left && x / scale <= r.right && y / scale >= r.top && y / scale <= r.bottom;
+    };
+    void import('@tauri-apps/api/webview').then(async ({ getCurrentWebview }) => {
+      const un = await getCurrentWebview().onDragDropEvent((e) => {
+        if (ui.get().addProject) return setOver(false);
+        const p = e.payload;
+        if (p.type === 'leave') return setOver(false);
+        const here = inside(p.position.x, p.position.y);
+        if (p.type === 'drop') {
+          setOver(false);
+          if (here) for (const path of p.paths) void api.projects.add(path);
+        } else setOver(here);
+      });
+      if (alive) off = un;
+      else un();
+    });
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, []);
+  return { ref, over };
+}
+
 export function Sidebar() {
   const actions = useActions();
+  const drop = useFolderDrop();
   const state = useApp((st) => st);
   const tabs = topTabs(state);
   const chats = state.projects.find((p) => !p.root);
@@ -257,7 +340,7 @@ export function Sidebar() {
     overview: { count: state.view.kind === 'overview' ? 0 : news.count, urgent: news.urgent },
   };
   return (
-    <nav className={s.sidebar} aria-label="Sidebar">
+    <nav ref={drop.ref} className={cx(s.sidebar, drop.over && s.dropping)} aria-label="Sidebar">
       <div className={s.titlebar} data-tauri-drag-region>
         <span className={s.trafficSpace} data-tauri-drag-region />
         <IconButton icon="sidebar" label="Hide sidebar" keys="⌃⌘S" onClick={() => setPrefs({ sidebar: false })} />

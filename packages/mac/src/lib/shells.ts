@@ -1,4 +1,4 @@
-import { globalShellDir, globalShellId, globalShellNumber, isGlobalShell } from '@klaud/shared/terminal-keys.js';
+import { globalShellDir, globalShellId, globalShellNumber, isGlobalShell, terminalLabel } from '@klaud/shared/terminal-keys.js';
 import { useApi, useApp, useKlaud, useUi } from './klaud.js';
 
 /** Picked after the last shell is closed: show "no shells" instead of starting a new one. */
@@ -25,6 +25,7 @@ export function useGlobalShells(): GlobalShells {
   const { ui } = useKlaud();
   const terminals = useApp((st) => st.terminals);
   const termExits = useApp((st) => st.termExits);
+  const names = useApp((st) => st.termNames);
   const projects = useApp((st) => st.projects);
   const openTabs = useApp((st) => st.tabs);
   const home = useApp((st) => st.home);
@@ -36,7 +37,7 @@ export function useGlobalShells(): GlobalShells {
   // With none open, the first one starts by itself, unless you (or another screen) closed them all.
   const key = pickable(picked) ? picked : (globals[0] ?? (picked === NONE || seen.size ? undefined : globalShellId(1)));
   const shown = key && !globals.includes(key) ? [...globals, key] : globals;
-  const tabs = shown.map((k) => ({ key: k, label: `Shell ${globalShellNumber(k)}`, running: k in terminals && !(k in termExits) }));
+  const tabs = shown.map((k) => ({ key: k, label: terminalLabel(k, names), running: k in terminals && !(k in termExits) }));
   return {
     key,
     tabs,

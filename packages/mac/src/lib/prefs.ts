@@ -27,6 +27,14 @@ export interface UiPrefs {
   readonly dock: 'off' | 'right' | 'bottom';
   /** How much of the space the docked terminal takes (0.2–0.75). */
   readonly dockSize: number;
+  /** The terminal's font family ('' : the system's monospace, SF Mono). */
+  readonly termFont: string;
+  readonly termFontSize: number;
+  readonly termLineHeight: number;
+  readonly termCursor: 'block' | 'bar' | 'underline';
+  readonly termCursorBlink: boolean;
+  /** Lines each terminal keeps to scroll back through. */
+  readonly termScrollback: number;
 }
 
 export const ACCENTS = {
@@ -58,6 +66,12 @@ export const DEFAULT_PREFS: UiPrefs = {
   reduceMotion: false,
   dock: 'off',
   dockSize: 0.42,
+  termFont: '',
+  termFontSize: 12.5,
+  termLineHeight: 1.18,
+  termCursor: 'block',
+  termCursorBlink: true,
+  termScrollback: 5000,
 };
 
 const KEY = 'klaud.prefs.v1';

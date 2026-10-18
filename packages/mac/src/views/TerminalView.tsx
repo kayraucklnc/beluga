@@ -1,11 +1,11 @@
-import { runId, setupId, shellId } from '@klaud/shared/terminal-keys.js';
+import { runId, setupId, shellId, terminalLabel } from '@klaud/shared/terminal-keys.js';
 import { findWorkspace } from '@klaud/ui/workspace-models.js';
-import { Icon } from '../components/Icon.js';
-import { Button, Dot, Empty, IconButton, Tip, cx } from '../components/ui.js';
+import { Button, Dot, Empty, IconButton, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { type GlobalShells, useGlobalShells } from '../lib/shells.js';
 import s from './terminal.module.css';
+import { TerminalTab } from './TerminalTab.js';
 import { Xterm } from './Xterm.js';
 
 /** A workspace's Terminal tab (its shell, setup and run), or the global Terminal (your own shells). */
@@ -17,7 +17,7 @@ export function TerminalView() {
   const picked = useUi((u) => u.termKey);
   const shells = useGlobalShells();
   const view = state.view;
-  const { terminals, termExits } = state;
+  const { terminals, termExits, termNames } = state;
   const running = (k: string): boolean => k in terminals && !(k in termExits);
 
   if (view.kind === 'workspace') {
@@ -27,16 +27,22 @@ export function TerminalView() {
     const keys = [shellId(ws.id), setupId(ws.id), runId(ws.id)];
     const key = picked && keys.includes(picked) && picked in terminals ? picked : shellId(ws.id);
     const tabs = keys.filter((k) => k in terminals || k === shellId(ws.id));
-    const label = (k: string): string => (k === shellId(ws.id) ? 'Shell' : k.endsWith(':setup') ? 'Setup' : 'Run');
     return (
       <div className={s.wrap}>
         <div className={s.bar}>
           {tabs.map((k) => (
-            <button key={k} type="button" className={cx(s.tab, k === key && s.tabOn)} onClick={() => ui.patch({ termKey: k })}>
-              {running(k) ? <Dot tone="ok" /> : k in termExits ? <Dot tone={termExits[k] === 0 ? 'muted' : 'error'} /> : <Dot tone="muted" />}
-              {label(k)}
-              {k in termExits ? <span className={s.exit}>{termExits[k] === 0 ? 'done' : `exit ${termExits[k] ?? '?'}`}</span> : null}
-            </button>
+            <TerminalTab
+              key={k}
+              termKey={k}
+              label={terminalLabel(k, termNames)}
+              on={k === key}
+              className={s.tab}
+              onClassName={s.tabOn}
+              renamable={k === shellId(ws.id)}
+              onPick={() => ui.patch({ termKey: k })}
+              before={running(k) ? <Dot tone="ok" /> : k in termExits ? <Dot tone={termExits[k] === 0 ? 'muted' : 'error'} /> : <Dot tone="muted" />}
+              after={k in termExits ? <span className={s.exit}>{termExits[k] === 0 ? 'done' : `exit ${termExits[k] ?? '?'}`}</span> : null}
+            />
           ))}
           <span className={s.flex} />
           {project?.scripts?.run ? (
@@ -107,13 +113,7 @@ export function ShellTabs({ shells }: { shells: GlobalShells }) {
   return (
     <>
       {shells.tabs.map((t) => (
-        <span key={t.key} className={cx(s.tab, t.key === shells.key && s.tabOn)} role="tab" aria-selected={t.key === shells.key} tabIndex={0} onClick={() => shells.pick(t.key)} onKeyDown={(e) => e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), shells.pick(t.key))}>
-          <Dot tone={t.running ? 'ok' : 'muted'} />
-          {t.label}
-          <button type="button" className={s.closeTab} aria-label={`Close ${t.label}`} onClick={(e) => (e.stopPropagation(), shells.close(t.key))}>
-            <Icon name="x" size={9} />
-          </button>
-        </span>
+        <TerminalTab key={t.key} termKey={t.key} label={t.label} on={t.key === shells.key} className={s.tab} onClassName={s.tabOn} onPick={() => shells.pick(t.key)} onClose={() => shells.close(t.key)} before={<Dot tone={t.running ? 'ok' : 'muted'} />} />
       ))}
       <IconButton icon="plus" label="New shell" onClick={shells.open} />
     </>

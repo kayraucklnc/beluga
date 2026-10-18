@@ -158,7 +158,7 @@ export class SocketClient implements KlaudClient {
   ) {
     this.kind = opts.kind;
     this.launchDir = opts.launchDir ?? '';
-    this.store = new ClientStore(replica, (a) => this.send({ t: 'attention', attention: { shown: [...a.shown], visible: [...a.visible], files: a.files } }));
+    this.store = new ClientStore(replica, (a) => this.send({ t: 'attention', attention: { shown: [...a.shown], visible: [...a.visible], files: a.files, front: a.front } }));
     this.api = apiProxy((method, args) => this.invoke(method, args));
   }
 

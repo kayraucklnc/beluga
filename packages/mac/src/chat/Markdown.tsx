@@ -3,6 +3,9 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ATTACHMENT_SCHEME } from '@klaud/core/attachment-share.js';
 import type { LinkTarget } from '@klaud/shared/link-target.js';
+import { parseAttachmentHref } from '@klaud/shared/attachment-links.js';
+import { Icon } from '../components/Icon.js';
+import { openLightbox } from './images.js';
 import { useActions } from '../lib/actions.js';
 import s from './chat.module.css';
 
@@ -74,7 +77,19 @@ function linkifyPaths(text: string): string {
 export const Markdown = memo(function Markdown({ text, paths = false }: { text: string; paths?: boolean }) {
   const actions = useActions();
   const components: Components = {
-    a: ({ href = '', children }) => (
+    a: ({ href = '', children }) => {
+      // An image mentioned mid-sentence: a small link that opens it full size.
+      const image = parseAttachmentHref(href);
+      if (image) {
+        const label = /image \d+/.exec(String(children))?.[0] ?? 'image';
+        return (
+          <a href={href} className={s.imageRef} onClick={(e) => (e.preventDefault(), openLightbox([{ href, ...image, label }]))}>
+            <Icon name="image" size={11} />
+            {label}
+          </a>
+        );
+      }
+      return (
       <a
         href={href}
         onClick={(e) => {
@@ -90,7 +105,8 @@ export const Markdown = memo(function Markdown({ text, paths = false }: { text: 
       >
         {children}
       </a>
-    ),
+      );
+    },
     code: ({ className, children }) => {
       const lang = /language-(\w+)/.exec(className ?? '')?.[1];
       const code = String(children).replace(/\n$/, '');

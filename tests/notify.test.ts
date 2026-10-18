@@ -116,8 +116,8 @@ describe('detectNotices: runs', () => {
     expect(detectNotices(running, apply(running, ev('me', 'me', 'text', 'thinking')))).toEqual([]);
   });
 
-  it('ignores chat-only log changes', () => {
-    const s = base();
+  it('ignores chat-only log changes when it is not about you', () => {
+    const s = apply(base(), { type: 'peers', peers: [me, bob, cat] });
     expect(detectNotices(s, apply(s, { type: 'chat', id: 'c1', from: 'b', text: 'hi', ts: 1, byAgent: false }))).toEqual([]);
   });
 });
@@ -126,19 +126,19 @@ describe('detectNotices: needs you', () => {
   it('announces new approvals only', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'approval_add', approval: { id: 'a1', kind: 'tool', title: 'Run npm test?', detail: '`npm test`\nin /app' } });
-    expect(detectNotices(s0, s1)).toEqual([{ kind: 'needsYou', title: 'Run npm test?', body: 'npm test' }]);
+    expect(detectNotices(s0, s1)).toEqual([{ kind: 'needsYou', tag: 'approval', ref: 'a1', title: 'Run npm test?', body: 'npm test' }]);
     const s2 = apply(s1, { type: 'approval_add', approval: { id: 'a2', kind: 'request', title: 'bob asks', detail: '' } });
-    expect(detectNotices(s1, s2)).toEqual([{ kind: 'needsYou', title: 'bob asks', body: '' }]);
+    expect(detectNotices(s1, s2)).toEqual([{ kind: 'needsYou', tag: 'approval', ref: 'a2', title: 'bob asks', body: '' }]);
     expect(detectNotices(s2, apply(s2, { type: 'approval_remove', id: 'a1' }))).toEqual([]);
   });
 
   it('tells questions and plans apart', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'question_add', question: question('q1', 'question') });
-    expect(detectNotices(s0, s1)).toEqual([{ kind: 'needsYou', title: 'Claude asks in add-auth', body: 'Which db?', channel: 'ws:w1' }]);
+    expect(detectNotices(s0, s1)).toEqual([{ kind: 'needsYou', tag: 'question', ref: 'q1', title: 'Claude asks in add-auth', body: 'Which db?', channel: 'ws:w1' }]);
     const s2 = apply(s1, { type: 'question_add', question: question('q2', 'plan', 'room') });
     expect(detectNotices(s1, s2)).toEqual([
-      { kind: 'needsYou', title: 'Claude has a plan for the group chat', body: 'Approve it, or say what to change', channel: 'room' },
+      { kind: 'needsYou', tag: 'plan', ref: 'q2', title: 'Claude has a plan for the group chat', body: 'Approve it, or say what to change', channel: 'room' },
     ]);
     expect(detectNotices(s2, apply(s2, { type: 'question_remove', qid: 'q1' }))).toEqual([]);
   });
@@ -149,7 +149,7 @@ describe('detectNotices: conflicts', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'conflicts', id: 'w1', files: ['a.ts', 'b.ts', 'c.ts', 'd.ts'] });
     expect(detectNotices(s0, s1)).toEqual([
-      { kind: 'problems', title: 'Merge conflict in add-auth', body: '4 file(s): a.ts, b.ts, c.ts', channel: 'ws:w1' },
+      { kind: 'problems', tag: 'conflict', title: 'Merge conflict in add-auth', body: '4 file(s): a.ts, b.ts, c.ts', channel: 'ws:w1' },
     ]);
     // Still conflicted (different files): not announced again.
     expect(detectNotices(s1, apply(s1, { type: 'conflicts', id: 'w1', files: ['a.ts'] }))).toEqual([]);
@@ -169,11 +169,20 @@ describe('detectNotices: people', () => {
   it('announces people joining afterwards, with or without their Claude', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'peers', peers: [me, bob, cat] });
-    expect(detectNotices(s0, s1)).toEqual([{ kind: 'people', title: 'cat joined', body: 'Say hi in the group chat', channel: 'room' }]);
+    expect(detectNotices(s0, s1)).toEqual([{ kind: 'people', tag: 'joined', title: 'cat joined', body: 'Say hi in the group chat', channel: 'room' }]);
     const dan: PeerInfo = { peerId: 'd', name: 'dan', agent: true, shares: [] };
     expect(detectNotices(s1, apply(s1, { type: 'peers', peers: [me, bob, cat, dan] }))[0]?.body).toBe('They brought their Claude');
-    // Someone leaving is not news.
-    expect(detectNotices(s1, apply(s1, { type: 'peers', peers: [me] }))).toEqual([]);
+  });
+
+  it('announces people leaving while you are still in the room', () => {
+    const s1 = apply(base(), { type: 'status', status: 'connected' }, { type: 'peers', peers: [me, bob, cat] });
+    expect(detectNotices(s1, apply(s1, { type: 'peers', peers: [me, cat] }))).toEqual([
+      { kind: 'people', tag: 'left', title: 'bob left', body: 'Their Claude left with them', channel: 'room' },
+    ]);
+    expect(detectNotices(s1, apply(s1, { type: 'peers', peers: [me] })).map((e) => e.title)).toEqual(['bob left', 'cat left']);
+    // Losing the room yourself (or not connected) is not news about each person.
+    expect(detectNotices(s1, apply(s1, { type: 'peers', peers: [] }))).toEqual([]);
+    expect(detectNotices(s1, apply(s1, { type: 'status', status: 'disconnected' }, { type: 'peers', peers: [me] }))).toEqual([]);
   });
 
   it('never announces yourself joining', () => {
@@ -185,12 +194,12 @@ describe('detectNotices: people', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'shared_add', ws: sharedWs('contribute') });
     expect(detectNotices(s0, s1)).toEqual([
-      { kind: 'people', title: 'bob invited you to api-fix', body: 'You can work there with their Claude', channel: 'ws:sw1' },
+      { kind: 'people', tag: 'invited', title: 'bob invited you to api-fix', body: 'You can work there with their Claude', channel: 'ws:sw1' },
     ]);
     // Re-sent invite (role change) for the same workspace: not new.
     expect(detectNotices(s1, apply(s1, { type: 'shared_add', ws: sharedWs('view') }))).toEqual([]);
     const s2 = apply(s0, { type: 'shared_add', ws: sharedWs('view', 'zz') });
-    expect(detectNotices(s0, s2)).toEqual([{ kind: 'people', title: 'Someone invited you to api-fix', body: 'You can follow along', channel: 'ws:sw1' }]);
+    expect(detectNotices(s0, s2)).toEqual([{ kind: 'people', tag: 'invited', title: 'Someone invited you to api-fix', body: 'You can follow along', channel: 'ws:sw1' }]);
   });
 });
 
@@ -236,7 +245,7 @@ describe('Notifier', () => {
     expect(desktop).not.toHaveBeenCalled();
     vi.advanceTimersByTime(0);
     expect(desktop).toHaveBeenCalledTimes(1);
-    expect(desktop).toHaveBeenCalledWith({ title: 'Claude finished in add-auth', body: 'shipped', sound: true });
+    expect(desktop).toHaveBeenCalledWith({ title: 'Claude finished in add-auth', body: 'shipped', sound: true, channel: 'ws:w1' });
   });
 
   it('stays quiet about the conversation you are looking at, unless away', () => {

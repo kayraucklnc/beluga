@@ -22,9 +22,10 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `/model` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Composer model picker |
 | `/search` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Sidebar › Search · ⌘⇧F |
 | `/usage` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Sidebar › Usage (⌥5) |
-| `/inbox` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Inspector › Inbox · Go › Inbox |
+| `/inbox` | `session.submit` → `runCommand` | typed in the composer · top bar “● N new” | typed in the composer · toolbar bell (notification centre) · Inspector › Notifications · Go › Inbox · ⌘K › Notifications |
 | `/template` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Palette › Start from a template… |
-| `/shell` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Settings › Workspaces › Terminal shell |
+| `/shell` | `session.submit` → `runCommand` (`/shell fish`, `default`, `login on\|off`, `args …`) | typed in the composer · Settings › Workspaces › Terminal | typed in the composer · Settings › Terminal › Shell |
+| `/env` | `session.submit` → `runCommand` (`/env KEY=value`, `KEY=` removes, `project KEY=value`) | typed in the composer · Settings › Workspaces › Environment variables | typed in the composer · Settings › Environment |
 | `/compact` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar ⋯ › Compact |
 | `/merge` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar Merge |
 | `/commit` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar Commit |
@@ -107,7 +108,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `welcome` | menu overlay | sheet |
 | `settings` | menu overlay | Settings window |
 | `model` | menu overlay | model picker / sheet |
-| `inbox` | menu overlay | sheet |
+| `inbox` | menu overlay: notices (Today, then Earlier), Showing: All / Unread / Needs you / Mentions, Mark all as read, Clear one by one…, Clear all | notification centre under the toolbar bell: the same filters and groups, click to go there, hover for read/unread and ×, Mark all read, Clear all |
 | `person` | menu overlay | sheet and right-click menu |
 | `confirm` | menu overlay | sheet |
 | `project` | menu overlay | sheet and right-click menu |
@@ -159,8 +160,10 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `host.answerApproval` | ✓ | ✓ |
 | `host.promote` | ✓ | ✓ |
 | `host.cancelQueued` | ✓ | ✓ |
+| `host.reorderQueued` | — (no reordering; see below) | ✓ queue tray ↑ ↓ |
 | `inbox.read` | ✓ | ✓ |
-| `inbox.clear` | ✓ | ✓ |
+| `inbox.unread` | – (see below) | ✓ |
+| `inbox.clear` | ✓ (all, or one by one) | ✓ (all, or × on one) |
 | `questions.answer` | ✓ | ✓ |
 | `questions.pick` | ✓ | ✓ |
 | `people.setTrust` | ✓ | ✓ |
@@ -236,18 +239,48 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `terminals.shell` | ✓ | ✓ |
 | `terminals.global` | ✓ | ✓ |
 | `terminals.close` | ✓ | ✓ |
+| `terminals.rename` | shows the names in the terminal tabs (renaming is Mac-only for now) | ✓ double-click a shell tab, or right-click › Rename… (Return saves, Escape cancels, empty resets) |
+| `env.get` | — (`/env` lists the names from `envKeys`) | ✓ Settings › Environment (values only go to the screen that asks) |
+| `env.set` | via `/env` | ✓ Settings › Environment |
 | `attachments.add` | ✓ | ✓ |
 | `attachments.expand` | ✓ | ✓ |
+| `attachments.read` | — (images open in the viewer, drawn as text) | ✓ images shown in messages |
+| `attachments.open` | — | ✓ image full size › Open (in Preview) |
 | `daemon.stop` | ✓ | ✓ |
 | `local.listDirs` | ✓ | ✓ |
 | `local.openFolder` | ✓ | ✓ |
+| `projects.add` | `/project add <path>` (adds a folder of projects too) | ✓ Add projects sheet, Choose Folders…, drop folders on the sidebar |
+| `projects.addFolder` | `/project folder <path>` | ✓ (a dropped folder of projects is watched) |
+| `projects.suggest` | — | ✓ "On this Mac" in the Add projects sheet |
+| `projects.icon` | — (a terminal can't draw images) | ✓ project icons in the sidebar |
+| `projects.iconAt` | — | ✓ icons of suggested folders |
+| `projects.setIcon` | — | ✓ right-click a project › Change Icon… |
+## Sending while Claude works, and images
+
+| What | Core | Terminal | Mac |
+|---|---|---|---|
+| Queue a message (the default while your Claude works) | `session.submit` | Return | Return · the split button's **Queue** |
+| Send now: stop the current task, run this next | `session.submit` with `urgent` | Option+Return | Option+Return · the split button's **Send now** |
+| What waits, in run order (text, who asked) | `queueIn` (`src/ui/compose.ts`), the prompt comes with the `queued` event | the queued cards in the chat | the queue above the box |
+| Run a waiting message now | `host.promote` | action bar › Run queued now | queue › Send now |
+| Drop a waiting message | `host.cancelQueued` | action bar › Cancel queued | queue › ✕ |
+| Edit a waiting message (back into the box) | `host.cancelQueued`, then the box | — | queue › ✎ |
+| Change the order | `host.reorderQueued` (yours only; friends' keep their places) | — | queue › ↑ ↓ |
+| Paste or drop an image | `attachments.add` (Mac) · the clipboard (terminal) | ⌘V / drag a file: an `[image N]` chip | ⌘V / drop: a chip plus its picture above the text |
+| An image in a message | `attachments.read` (yours from disk, a friend's through their share) | a link that opens it in the viewer | the picture (several in a grid); click for full size, ⌘C copies, Open shows it in Preview |
+
 ## Only in one client, on purpose
 
 | What | Where | Why |
 |---|---|---|
 | Mouse escape codes, OSC 52 copy, terminal zoom, focus reports | Terminal | they are the terminal's own features (`src/ui/tty`) |
 | Window vibrancy, menu bar, menu-bar icon, `klaud://` links, Settings window, ⌘K palette, docked terminal (⌘J), drag-and-drop images | Mac | native window features; the actions they run are the shared ones above |
+| Dock badge, clicking a desktop notification to go where it's about | Mac | the app shell's (`set_tray_status`, the notification plugin's taps); the count is the shared `badgeCount` |
+| Marking one notification unread again | Mac (hover a notification) | the terminal's inbox is a menu: opening a notice reads it, and it has Mark all as read |
+| Desktop notifications through the terminal (OSC 9/99, terminal-notifier, notify-send) | Terminal | `src/ui/tty/desktop-notify.ts`; which events notify, Do Not Disturb and “only when klaud isn’t in front” are shared settings the core applies for both |
 | Local UI preferences (appearance, accent, text size, density, widths) | Mac (`lib/prefs.ts`) | per window; klaud's own settings (model, notifications, trust…) are shared through `session.setPrefs` |
+| Terminal look (font, size, line height, cursor style and blink, scrollback) | Mac (`lib/prefs.ts`, Settings › Terminal) | the terminal app draws in your terminal emulator, which has its own font and cursor settings. The shell itself (which one, login, arguments) is shared: `session.setPrefs` |
+| Environment variable editor (masked values, paste KEY=value lines, per-project scope, load the project's .env) | Mac (Settings › Environment) | the terminal app sets them one at a time with `/env`; both use the same core (`src/core/env-vars.ts`), and values never enter the shared state or anything sent to the room |
 
 ## Adding a feature
 

@@ -14,6 +14,7 @@ const PATHS = {
   more: 'M4 8h.01 M8 8h.01 M12 8h.01',
   chevronRight: 'M6 4l4 4-4 4',
   chevronDown: 'M4 6l4 4 4-4',
+  chevronUp: 'M4 10l4-4 4 4',
   sidebar: 'M2.5 3.5h11v9h-11z M6 3.5v9',
   inspector: 'M2.5 3.5h11v9h-11z M10 3.5v9',
   search: 'M7 11.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z M10.5 10.5l3 3',
@@ -22,7 +23,10 @@ const PATHS = {
   people: 'M6 7.5a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5z M2 13c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5 M10.5 7a2 2 0 1 0 0-4 M12 9.6c1.3.4 2 1.6 2 3.1',
   person: 'M8 7.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5z M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4',
   branch: 'M5 3v10 M5 10c0-3 6-2 6-5 M11 2.5v2.5 M5 13a1.25 1.25 0 1 0 0-.01 M5 3a1.25 1.25 0 1 0 0-.01 M11 5a1.25 1.25 0 1 0 0-.01',
-  spark: 'M8 2l1.3 3.7L13 7l-3.7 1.3L8 12l-1.3-3.7L3 7l3.7-1.3z',
+  /** Claude in klaud: the logo's prompt and cursor, at the logo's proportions. */
+  claude: 'M3 4.5L6.7 8 3 11.5 M9.15 10.8h3.9',
+  /** The old name for Claude's mark (kept so every use shows the same one). */
+  spark: 'M3 4.5L6.7 8 3 11.5 M9.15 10.8h3.9',
   check: 'M3.5 8.5l3 3 6-7',
   x: 'M4 4l8 8 M12 4l-8 8',
   alert: 'M8 2.5l6 10.5H2z M8 6.5v3 M8 11.3v.01',
@@ -33,6 +37,8 @@ const PATHS = {
   link: 'M6.5 9.5l3-3 M7 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1 M9 11.5l-1 1A2.5 2.5 0 0 1 4.5 9l1-1',
   copy: 'M5.5 5.5h7v7h-7z M3.5 10.5v-7h7',
   send: 'M8 13V3.5 M4 7.5l4-4 4 4',
+  pencil: 'M10.5 2.75l2.75 2.75-7.5 7.5H3v-2.75z M9 4.25l2.75 2.75',
+  image: 'M2.5 3.5h11v9h-11z M2.5 10.5l3-2.75 3 2.5 2-1.5 3 2.25 M10.25 6.25h.01',
   clip: 'M10.5 5.5l-4.3 4.3a1.4 1.4 0 0 0 2 2l4.8-4.8a2.8 2.8 0 0 0-4-4L4.2 7.8a4.2 4.2 0 0 0 6 6l4-4',
   clock: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M8 5v3l2 1.5',
   lock: 'M4.5 7.5h7v6h-7z M6 7.5V5.5a2 2 0 0 1 4 0v2',

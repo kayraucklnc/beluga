@@ -189,7 +189,8 @@ export class DaemonServer {
         case 'resync':
           return send({ t: 'snapshot', snapshot: this.session.store.getState(), seq: this.seq });
         case 'attention':
-          return this.session.attend(me.id, frame.attention);
+          // Screens from before `front` existed: one showing something is in front.
+          return this.session.attend(me.id, { ...frame.attention, front: frame.attention.front ?? frame.attention.visible.length > 0 });
         case 'call':
           this.clients.touch(me.id);
           return void this.call(me, frame.id, frame.method, frame.args).then(send);

@@ -1,4 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
+import type { ComponentType } from 'react';
+import { NATIVE_MENUS, type NativeMenuProps } from './native/index.js';
 import { useEffect, useRef, useState } from 'react';
 import { menuSpec } from '@klaud/ui/menus.js';
 import { Icon } from '../components/Icon.js';
@@ -21,12 +23,18 @@ export function MenuSheet() {
   const options = (spec?.options ?? []).map((o, index) => ({ ...o, index })).filter((o) => o.id !== 'close');
   const [selected, setSelected] = useState(0);
   const list = useRef<HTMLDivElement>(null);
-  useEffect(() => setSelected(Math.min(open?.selected ?? 0, Math.max(0, options.length - 1))), [open, options.length]);
+  useEffect(() => {
+    setSelected(Math.min(open?.selected ?? 0, Math.max(0, options.length - 1)));
+  }, [open, options.length]);
   useEffect(() => {
     list.current?.querySelector<HTMLElement>(`[data-i="${selected}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
-  if (!open || !spec) return null;
+  if (!open) return null;
   const close = (): void => ui.patch({ menu: undefined });
+  // Drawn the Mac way when there is one (an alert, a form, a popover).
+  const Native = NATIVE_MENUS[open.menu.kind] as ComponentType<NativeMenuProps> | undefined;
+  if (Native) return <Native menu={open.menu} close={close} />;
+  if (!spec) return null;
   const pick = (i: number): void => {
     const o = options[i];
     if (o) actions.pick(open.menu, o.index);

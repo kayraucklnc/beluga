@@ -164,3 +164,50 @@
 .dropping {
   box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
 }
+
+/* While Claude works: one control, two ways to send. Queue is the default (Return). */
+.split {
+  display: inline-flex;
+  align-items: stretch;
+  height: 26px;
+  border-radius: 13px;
+  background: var(--bg-press);
+  color: var(--text-3);
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.split button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: inherit;
+}
+.splitMain {
+  border-radius: 13px 0 0 13px;
+}
+.splitAlt {
+  position: relative;
+  border-radius: 0 13px 13px 0;
+}
+.splitAlt::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: currentColor;
+  opacity: 0.3;
+}
+.splitReady {
+  background: var(--accent);
+  color: white;
+}
+.splitReady button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.splitReady button:active {
+  background: rgba(0, 0, 0, 0.08);
+}

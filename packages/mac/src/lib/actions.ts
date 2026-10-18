@@ -102,7 +102,11 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
     pasteImage: () => toast('Paste an image with ⌘V in the message box'),
   };
   const actions: Actions = {
-    run: (action) => runUiActionWith(uiCtx, action),
+    run: (action) => {
+      // Things a window does its own way (the terminal UI types a command for them).
+      if (action.type === 'add_project') return ui.patch({ addProject: true });
+      runUiActionWith(uiCtx, action);
+    },
     pick: (menu, index) => {
       ui.patch({ menu: undefined });
       runSharedMenu(menuCtx, menu, index);

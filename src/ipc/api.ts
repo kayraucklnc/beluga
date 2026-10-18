@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EFFORTS, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
+import { ENV_KEY, MAX_ENV_VALUE, MAX_ENV_VARS } from '../shared/env-vars.js';
 
 /**
  * Everything a client can ask klaud to do, in one list. The daemon validates every call
@@ -40,8 +41,13 @@ export const PrefsPatch = z
     hiddenButtons: z.array(z.string().max(40)).max(40),
     friendWorktrees: z.enum(['ask', 'off']),
     shell: z.string().max(200).optional(),
+    shellLogin: bool,
+    shellArgs: z.array(z.string().max(200)).max(20),
   })
   .partial();
+
+/** Environment variables for one place (names checked; empty rows are skipped). */
+const EnvRows = z.array(z.object({ key: z.union([z.literal(''), z.string().regex(ENV_KEY, 'Use letters, digits and _ only').max(200)]), value: z.string().max(MAX_ENV_VALUE) })).max(MAX_ENV_VARS + 50);
 
 const WorkspaceTab = z.enum(['chat', 'files', 'review', 'terminal']);
 const Policy = z.enum(['ask', 'auto', 'deny']);
@@ -81,10 +87,12 @@ export const API = {
   'host.answerApproval': args(Answer, id),
   'host.promote': args(id),
   'host.cancelQueued': args(id),
+  'host.reorderQueued': args(id, z.number().int().min(0).max(100)),
 
   // ---- the inbox
   'inbox.read': args(opt(z.object({ channel: opt(channel), id: opt(z.number().int()) }))),
-  'inbox.clear': args(),
+  'inbox.unread': args(z.number().int()),
+  'inbox.clear': args(opt(z.object({ id: opt(z.number().int()) }))),
 
   // ---- Claude's questions and plans
   'questions.answer': args(id, ClaudeAnswer),
@@ -180,13 +188,30 @@ export const API = {
   'terminals.shell': args(id, opt(TermSize)),
   'terminals.global': args(id, path, opt(TermSize)),
   'terminals.close': args(id),
+  'terminals.rename': args(id, z.string().max(200)),
+
+  // ---- your environment variables (no project: yours everywhere; else that project's)
+  'env.get': args(opt(id)),
+  'env.set': args(opt(id), EnvRows, opt(bool)),
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),
   'attachments.expand': args(str, channel),
+  // An image linked in a message (owner peer id, file name): its bytes to show, or opened in Preview.
+  'attachments.read': args(id, z.string().min(1).max(255)),
+  'attachments.open': args(id, z.string().min(1).max(255)),
 
   // ---- klaud itself
   'daemon.stop': args(),
+
+  // ---- projects on this computer: their icons, adding them
+  'projects.icon': args(id),
+  'projects.setIcon': args(id, opt(path)),
+  'projects.add': args(path),
+  'projects.addFolder': args(path),
+  'projects.suggest': args(),
+  // The icon of a folder that isn't a project yet (one of the suggestions).
+  'projects.iconAt': args(path),
 
   // ---- this computer
   'local.listDirs': args(path),

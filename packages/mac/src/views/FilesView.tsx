@@ -107,6 +107,10 @@ export function FilesView() {
   const selfId = useApp((st) => st.selfId);
   const shared = useApp((st) => st.shared);
   const list = useRef<HTMLDivElement>(null);
+  // Arrow keys move the selection; keep it in view.
+  useEffect(() => {
+    list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [browser.cursor]);
 
   // A workspace's Files tab starts at its folder.
   const wsId = view.kind === 'workspace' ? view.id : undefined;

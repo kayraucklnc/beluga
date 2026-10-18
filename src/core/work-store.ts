@@ -1,10 +1,16 @@
-import type { NoticeKind } from './notify.js';
+import type { NoticeKind, NoticeTag } from './notify.js';
 import type { Settings } from './settings.js';
+import { type EnvKeys, NO_ENV_KEYS } from '../shared/env-vars.js';
+import type { ShellChoice } from '../shared/shells.js';
 
 /** Something that happened while you were looking elsewhere (the inbox). */
 export interface Notice {
   readonly id: number;
   readonly kind: NoticeKind;
+  /** What exactly happened, when the kind alone doesn't say (an approval, a plan, someone leaving…). */
+  readonly tag?: NoticeTag;
+  /** The approval or question it's about (answered: no longer unread). */
+  readonly ref?: string;
   readonly title: string;
   readonly body: string;
   readonly channel?: string;
@@ -79,6 +85,12 @@ export interface WorkState {
   readonly terminals: Readonly<Record<string, string>>;
   /** Terminal programs that ended (id → exit code; null: killed or couldn't start). */
   readonly termExits: Readonly<Record<string, number | null>>;
+  /** Names you gave terminals (id → name), kept while the terminal is. */
+  readonly termNames: Readonly<Record<string, string>>;
+  /** Shells installed on this computer, for picking the terminal's shell. */
+  readonly shellChoices: readonly ShellChoice[];
+  /** Names of the environment variables you set (never their values). */
+  readonly envKeys: EnvKeys;
   /** You customized the pull request instructions. */
   readonly prCustom: boolean;
   /** The GitHub CLI is installed and signed in (undefined: not checked yet). */
@@ -91,7 +103,10 @@ export type WorkAction =
   /** `ts` is stamped before reducing (see stampAction in store.ts). */
   | { type: 'notice_add'; notice: Omit<Notice, 'id' | 'ts' | 'read'>; ts?: number }
   | { type: 'notice_read'; channel?: string; id?: number }
-  | { type: 'notice_clear' }
+  /** Mark one notice unread again. */
+  | { type: 'notice_unread'; id: number }
+  /** Clear one notice, or all of them. */
+  | { type: 'notice_clear'; id?: number }
   | { type: 'models'; models: readonly ModelChoice[] }
   | { type: 'disk'; sizes: Readonly<Record<string, number>> }
   | { type: 'pr'; id: string; pr?: PullRequest }
@@ -100,6 +115,10 @@ export type WorkAction =
   | { type: 'templates'; templates: readonly Template[] }
   | { type: 'terminal'; id: string; title?: string }
   | { type: 'terminal_exit'; id: string; code: number | null }
+  /** Name a terminal (no name: back to Shell N). */
+  | { type: 'terminal_name'; id: string; name?: string }
+  | { type: 'shell_choices'; shells: readonly ShellChoice[] }
+  | { type: 'env_keys'; keys: EnvKeys }
   | { type: 'pr_custom'; custom: boolean }
   | { type: 'gh'; ok: boolean }
   | { type: 'remembered'; people: Settings['people'] };
@@ -121,6 +140,9 @@ export const initialWork: WorkState = {
   templates: [],
   terminals: {},
   termExits: {},
+  termNames: {},
+  shellChoices: [],
+  envKeys: NO_ENV_KEYS,
   prCustom: false,
   remembered: {},
 };
@@ -143,8 +165,11 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
         ...state,
         inbox: state.inbox.map((n) => (n.read || (action.id !== undefined ? n.id !== action.id : action.channel !== undefined && n.channel !== action.channel) ? n : { ...n, read: true })),
       };
+    case 'notice_unread':
+      return state.inbox.some((n) => n.id === action.id && n.read) ? { ...state, inbox: state.inbox.map((n) => (n.id === action.id ? { ...n, read: false } : n)) } : state;
     case 'notice_clear':
-      return { ...state, inbox: [] };
+      if (action.id === undefined) return state.inbox.length ? { ...state, inbox: [] } : state;
+      return state.inbox.some((n) => n.id === action.id) ? { ...state, inbox: state.inbox.filter((n) => n.id !== action.id) } : state;
     case 'models':
       return { ...state, models: action.models.length ? action.models : FALLBACK_MODELS };
     case 'disk':
@@ -166,10 +191,19 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
     case 'terminal': {
       if (action.title !== undefined && state.terminals[action.id] === action.title && !(action.id in state.termExits)) return state;
       const termExits = without(state.termExits, action.id);
-      return { ...state, termExits, terminals: action.title === undefined ? without(state.terminals, action.id) : { ...state.terminals, [action.id]: action.title } };
+      // A closed terminal forgets its name; one that starts again keeps it.
+      if (action.title === undefined) return { ...state, termExits, terminals: without(state.terminals, action.id), termNames: without(state.termNames, action.id) };
+      return { ...state, termExits, terminals: { ...state.terminals, [action.id]: action.title } };
     }
     case 'terminal_exit':
       return action.id in state.terminals ? { ...state, termExits: { ...state.termExits, [action.id]: action.code } } : state;
+    case 'terminal_name':
+      if (!(action.id in state.terminals)) return state;
+      return { ...state, termNames: action.name ? { ...state.termNames, [action.id]: action.name } : without(state.termNames, action.id) };
+    case 'shell_choices':
+      return { ...state, shellChoices: action.shells };
+    case 'env_keys':
+      return { ...state, envKeys: action.keys };
   }
 }
 

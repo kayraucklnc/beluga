@@ -15,6 +15,8 @@ export interface AgentRunInput {
   /** Model for this run (an alias like "sonnet" or a full id); unset: the default. */
   readonly model?: string;
   readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** Your environment variables for this run, over klaud's own (only for runs you asked for). */
+  readonly env?: Readonly<Record<string, string>>;
   /** Where to run: a workspace folder with its own Claude conversation. Defaults to the room's folder. */
   readonly place?: AgentPlace;
   /** Called with absolute paths the agent wrote to, so the room can follow along. */

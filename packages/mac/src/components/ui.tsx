@@ -87,11 +87,11 @@ export const personColor = (id: string): string => {
   return PEOPLE[h % PEOPLE.length]!;
 };
 
-/** A person's initial in their color; Claude gets its spark. */
+/** A person's initial in their color; Claude gets its mark (the klaud prompt). */
 export function Avatar({ name, id, claude, size = 22 }: { name: string; id: string; claude?: boolean; size?: number }) {
   return (
     <span className={cx(s.avatar, claude && s.avatarClaude)} style={{ width: size, height: size, fontSize: size * 0.46, ...(claude ? {} : { background: personColor(id) }) }} aria-hidden="true">
-      {claude ? <Icon name="spark" size={size * 0.6} /> : (name[0] ?? '?').toUpperCase()}
+      {claude ? <Icon name="claude" size={size * 0.6} /> : (name[0] ?? '?').toUpperCase()}
     </span>
   );
 }

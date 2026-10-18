@@ -5,10 +5,13 @@ import { MOUSE_OFF, MOUSE_ON } from './tty/codes.js';
 import type { MenuContext } from './menu-actions.js';
 import type { MenuKind } from './menus.js';
 import { TUNNEL_ORDER, type SettingsSection } from './settings-menus.js';
+import { joinArgs } from '../shared/shells.js';
 import type { WorkspaceAction } from './workspace-models.js';
+import { NOTICE_FILTERS } from './notice-models.js';
+import { nextDnd } from '../shared/quiet.js';
 
-const SECTIONS: readonly SettingsSection[] = ['claude', 'notify', 'workspaces', 'people', 'display', 'buttons'];
-type NotifyKey = 'desktop' | 'sound' | 'done' | 'needsYou' | 'problems' | 'people' | 'pr';
+const SECTIONS: readonly SettingsSection[] = ['claude', 'notify', 'workspaces', 'people', 'display', 'buttons', 'terminal', 'env'];
+type NotifyKey = 'desktop' | 'sound' | 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background' | 'onlyAway';
 
 /**
  * Options in the settings sections, the inbox, the model picker and the workspace menus
@@ -38,10 +41,38 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
     section('workspaces');
     return true;
   }
+  if (id === 'n-dnd') {
+    setPrefs({ notify: { ...prefs.notify, dnd: nextDnd(prefs.notify) } });
+    reopen();
+    return true;
+  }
+  if (id.startsWith('notice-x:') && menu.kind === 'inbox') {
+    void api.inbox.clear({ id: Number(id.slice('notice-x:'.length)) });
+    // The row below moves up into this place (the last one: the one above).
+    patchUi({ menu: { menu, selected: Math.max(0, Math.min(index, latest.inbox.length - 2)) } });
+    return true;
+  }
+  if (menu.kind === 'inbox' && (id === 'inbox-filter' || id === 'inbox-manage' || id === 'inbox-back')) {
+    const at = NOTICE_FILTERS.findIndex((f) => f.value === (menu.filter ?? 'all'));
+    if (id === 'inbox-filter') patchUi({ menu: { menu: { ...menu, filter: NOTICE_FILTERS[(at + 1) % NOTICE_FILTERS.length]!.value }, selected: index } });
+    else patchUi({ menu: { menu: { kind: 'inbox', ...(menu.filter ? { filter: menu.filter } : {}), ...(id === 'inbox-manage' ? { manage: true } : {}) }, selected: 0 } });
+    return true;
+  }
   if (id.startsWith('n-') && id !== 'n-test') {
     const key = id.slice(2) as NotifyKey;
     if (key in prefs.notify) setPrefs({ notify: { ...prefs.notify, [key]: !prefs.notify[key] } });
     reopen();
+    return true;
+  }
+  if (id.startsWith('sh:')) {
+    setPrefs({ shell: id.slice(3) });
+    toast(`New shells use ${id.slice(3)}`);
+    reopen();
+    return true;
+  }
+  if (id.startsWith('env:')) {
+    typeInto(`/env ${id.slice(4)}=`);
+    toast('Type the new value, or leave it empty to remove it, then Enter');
     return true;
   }
   if (id.startsWith('btn:')) {
@@ -162,8 +193,18 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
       void api.session.setFriendWorktrees(prefs.friendWorktrees === 'ask' ? 'off' : 'ask');
       reopen();
       return true;
-    case 'w-shell':
+    case 'sh-other':
       typeInto('/shell ');
+      return true;
+    case 'sh-login':
+      setPrefs({ shellLogin: !prefs.shellLogin });
+      reopen();
+      return true;
+    case 'sh-args':
+      typeInto(`/shell args ${joinArgs(prefs.shellArgs)}`);
+      return true;
+    case 'env-add':
+      typeInto('/env ');
       return true;
     case 'w-buttons':
       section('buttons');
@@ -180,6 +221,7 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
     }
     case 'inbox-read':
       void api.inbox.read();
+      reopen();
       return true;
     case 'inbox-clear':
       void api.inbox.clear();

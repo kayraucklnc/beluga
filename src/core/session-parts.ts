@@ -14,6 +14,7 @@ import { PeerRun } from './peer-run.js';
 import { ProjectInvites } from './project-invites.js';
 import { GuestShell } from './guest-shell.js';
 import { SharedDiff } from './shared-diff.js';
+import { EnvVars } from './env-vars.js';
 
 /** Everything a session is made of, wired to each other and to the session. */
 export interface SessionParts {
@@ -31,11 +32,14 @@ export interface SessionParts {
   readonly invites: ProjectInvites;
   readonly shell: GuestShell;
   readonly diff: SharedDiff;
+  /** Your environment variables (kept on this computer). */
+  readonly env: EnvVars;
 }
 
 export function createSessionParts(session: Session, opts: SessionOptions): SessionParts {
   let workspaces: WorkspaceController | undefined;
   let workbench: Workbench | undefined;
+  const env = new EnvVars({ store: opts.store });
     if (opts.workspaces) {
       workspaces = new WorkspaceController({
         manager: opts.workspaces,
@@ -66,6 +70,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         listModels: async () => (await session.backend?.listModels?.()) as readonly ModelChoice[] | undefined,
         findPr: opts.findPr,
         hasGh: opts.hasGh,
+        envFor: (where) => env.envFor(where),
       });
     }
     const questions = new QuestionBroker({
@@ -117,6 +122,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       approvalTimeoutMs: () => session.approvalTimeoutMs,
       refreshUsage: () => session.refreshUsage(),
       canEditIn: (peerId, channel) => invites.canEditIn(peerId, channel),
+      envFor: (channel, dir) => env.envFor(channel.startsWith('ws:') ? { workspaceId: channel.slice(3), dir } : { dir }),
     });
     const remote = new RemoteWork({
       store: opts.store,
@@ -166,5 +172,5 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       openLocation: (at) => files.openLocation(at),
       search: (at, mode, query) => diff.search(at, mode, query),
     });
-  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff };
+  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff, env };
 }

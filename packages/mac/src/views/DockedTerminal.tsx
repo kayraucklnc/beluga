@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { runId, setupId, shellId } from '@klaud/shared/terminal-keys.js';
+import { runId, setupId, shellId, terminalLabel } from '@klaud/shared/terminal-keys.js';
 import { Dot, IconButton, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
@@ -7,6 +7,7 @@ import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { useGlobalShells } from '../lib/shells.js';
 import { mod } from '../lib/system.js';
 import { NoShells, ShellTabs } from './TerminalView.js';
+import { TerminalTab } from './TerminalTab.js';
 import { Xterm } from './Xterm.js';
 import s from './dock.module.css';
 
@@ -14,10 +15,11 @@ import s from './dock.module.css';
 function useWorkspaceTerminal(wsId: string): { key: string; tabs: Array<{ key: string; label: string }>; start: (size: { cols: number; rows: number }) => void } {
   const api = useApi();
   const terminals = useApp((st) => st.terminals);
+  const names = useApp((st) => st.termNames);
   const picked = useUi((u) => u.termKey);
   const keys = [shellId(wsId), setupId(wsId), runId(wsId)];
   const key = picked && keys.includes(picked) && picked in terminals ? picked : shellId(wsId);
-  const tabs = keys.filter((k) => k in terminals || k === shellId(wsId)).map((k) => ({ key: k, label: k === shellId(wsId) ? 'Shell' : k.endsWith(':setup') ? 'Setup' : 'Run' }));
+  const tabs = keys.filter((k) => k in terminals || k === shellId(wsId)).map((k) => ({ key: k, label: terminalLabel(k, names) }));
   return { key, tabs, start: (size) => (key === shellId(wsId) ? void api.terminals.shell(wsId, size) : undefined) };
 }
 
@@ -41,10 +43,7 @@ export function DockedTerminal() {
       <div className={s.bar}>
         {inWorkspace ? (
           ws.tabs.map((t) => (
-            <button key={t.key} type="button" className={cx(s.tab, t.key === key && s.tabOn)} onClick={() => ui.patch({ termKey: t.key })}>
-              <Dot tone={running(t.key) ? 'ok' : 'muted'} />
-              {t.label}
-            </button>
+            <TerminalTab key={t.key} termKey={t.key} label={t.label} on={t.key === key} className={s.tab} onClassName={s.tabOn} renamable={t.key === shellId(view.id)} onPick={() => ui.patch({ termKey: t.key })} before={<Dot tone={running(t.key) ? 'ok' : 'muted'} />} />
           ))
         ) : (
           <ShellTabs shells={shells} />

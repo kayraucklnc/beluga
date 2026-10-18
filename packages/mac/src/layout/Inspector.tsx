@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { findWorkspace, stateOf } from '@klaud/ui/workspace-models.js';
 import { formatTokens } from '@klaud/ui/work-models.js';
 import { formatBytes } from '@klaud/shared/format.js';
+import { unreadCount } from '@klaud/core/work-store.js';
+import { noticeAgo, noticeLook } from '@klaud/ui/notice-models.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -29,11 +31,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </div>
   );
 }
-
-const ago = (ts: number): string => {
-  const m = Math.round((Date.now() - ts) / 60_000);
-  return m < 1 ? 'now' : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
-};
 
 /** Everything waiting on you, in one place, wherever you are. */
 function NeedsYou() {
@@ -196,40 +193,31 @@ function Room() {
   );
 }
 
+/** The newest unread notification; the rest are under the bell in the toolbar. */
 function Inbox() {
-  const api = useApi();
-  const actions = useActions();
-  const inbox = useApp((st) => st.inbox);
-  const shared = useApp((st) => st.shared);
-  const recent = inbox.slice(0, 6);
-  if (!recent.length) return null;
+  const { ui } = useKlaud();
+  const unread = useApp((st) => unreadCount(st));
+  const latest = useApp((st) => st.inbox.find((n) => !n.read));
+  if (!unread || !latest) return null;
+  const { tone } = noticeLook(latest);
+  const show = (): void => ui.patch({ notices: true });
   return (
-    <Panel title="Inbox" action={inbox.some((n) => !n.read) ? <Button size="small" variant="quiet" onClick={() => void api.inbox.read()}>Mark read</Button> : undefined}>
-      {recent.map((n) => (
-        <button
-          key={n.id}
-          type="button"
-          className={s.notice}
-          onClick={() => {
-            void api.inbox.read({ id: n.id });
-            const ch = n.channel;
-            if (!ch) return;
-            if (ch === 'room') actions.run({ type: 'view', view: { kind: 'room' } });
-            else {
-              const id = ch.slice(3);
-              const w = shared.find((x) => x.id === id);
-              actions.run(w ? { type: 'open_shared', owner: w.owner, id, tab: 'chat' } : { type: 'open_ws', id });
-            }
-          }}
-        >
-          {n.read ? <span className={s.readDot} /> : <Dot tone={n.kind === 'problems' ? 'error' : n.kind === 'needsYou' ? 'warn' : 'info'} />}
-          <span className={s.noticeText}>
-            <span className={s.noticeTitle}>{n.title}</span>
-            {n.body ? <span className={s.dim}>{n.body}</span> : null}
-          </span>
-          <span className={s.dim}>{ago(n.ts)}</span>
-        </button>
-      ))}
+    <Panel
+      title="Notifications"
+      action={
+        <Button size="small" variant="quiet" onClick={show}>
+          Show all
+        </Button>
+      }
+    >
+      <button type="button" className={s.notice} onClick={show}>
+        <Dot tone={tone === 'claude' ? 'claude' : tone === 'muted' ? 'info' : tone} />
+        <span className={s.noticeText}>
+          <span className={s.noticeTitle}>{latest.title}</span>
+          <span className={s.dim}>{unread > 1 ? `and ${unread - 1} more` : (latest.body || 'New')}</span>
+        </span>
+        <span className={s.dim}>{noticeAgo(latest.ts)}</span>
+      </button>
     </Panel>
   );
 }

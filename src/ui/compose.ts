@@ -13,3 +13,26 @@ export function composeState(state: AppState, ui: UiState, selfId: string, chann
   const toClaude = channel !== 'room' || state.peers.length <= 1 || draft.startsWith('@');
   return { typing: Boolean(draft) && !draft.startsWith('/') && !ui.pending && toClaude, busy, queued: ids.length, ids };
 }
+
+/** A message waiting its turn with a Claude in this conversation (the queue above the box). */
+export interface QueuedMessage {
+  readonly requestId: string;
+  /** What was asked ('' when its Claude didn't say). */
+  readonly prompt: string;
+  /** Who asked. */
+  readonly by: string;
+  /** Whose Claude it waits for. */
+  readonly claude: string;
+  /** You asked your own Claude: you can run it now, edit it, drop it or move it. */
+  readonly yours: boolean;
+}
+
+/** What waits in this conversation for your Claude, and what you asked others' Claudes, in run order. */
+export function queueIn(state: Pick<AppState, 'log'>, channel: string, selfId: string): QueuedMessage[] {
+  return state.log.flatMap((l) => {
+    if (l.type !== 'agent' || l.channel !== channel || l.status !== 'queued') return [];
+    const askedBySelf = l.requester !== undefined ? l.requester === selfId : l.owner === selfId && l.requesterName === l.ownerName;
+    if (l.owner !== selfId && !askedBySelf) return [];
+    return [{ requestId: l.requestId, prompt: l.prompt ?? '', by: l.requesterName, claude: l.ownerName, yours: l.owner === selfId && askedBySelf }];
+  });
+}

@@ -4,6 +4,8 @@ import type { Actions } from './actions.js';
 import type { UiStore } from './klaud.js';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { setPrefs, getPrefs, zoom } from './prefs.js';
+import { badgeCount, noticeTarget } from '@klaud/ui/notice-models.js';
+import { NOTIFICATION_TAP, openNoticeTarget } from './notices.js';
 
 const GO: Record<string, 'room' | 'files' | 'overview' | 'search' | 'usage' | 'terminal'> = {
   'go-room': 'room',
@@ -40,7 +42,7 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'invite':
       return void document.dispatchEvent(new CustomEvent('klaud:invite'));
     case 'inbox':
-      return ui.openMenu({ kind: 'inbox' });
+      return ui.patch({ notices: true });
     case 'toggle-sidebar':
       return setPrefs({ sidebar: !getPrefs().sidebar });
     case 'toggle-dock':
@@ -103,7 +105,10 @@ export async function joinRoom(invite: string): Promise<void> {
   await invoke('restart_daemon', { args: ['join', invite] });
 }
 
-/** Keep the menu-bar icon's count of what waits for you (approvals, questions) up to date. */
+/**
+ * Keep the Dock icon's badge and the menu-bar icon in step with what's new for you: unread
+ * notifications plus anything still waiting on you (see badgeCount).
+ */
 export function useTrayStatus(client: SocketClient): void {
   useEffect(() => {
     if (!inApp()) return;
@@ -112,12 +117,83 @@ export function useTrayStatus(client: SocketClient): void {
       const st = client.store.getState();
       const waiting = st.approvals.length + st.questions.length + st.knocks.length;
       const working = new Set(st.log.filter((l) => l.type === 'agent' && l.owner === st.selfId && ['started', 'text', 'tool', 'sub'].includes(l.status)).map((l) => l.channel)).size;
-      const key = `${waiting}:${working}`;
+      const unread = badgeCount(st);
+      const key = `${waiting}:${working}:${unread}`;
       if (key === last) return;
       last = key;
-      void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_tray_status', { waiting, working })).catch(() => undefined);
+      void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_tray_status', { waiting, working, unread })).catch(() => undefined);
     };
     update();
     return client.store.subscribe(update);
+  }, [client]);
+}
+
+/**
+ * Tell klaud whether this window is in front: what it shows isn't announced while it is, and
+ * "Only when klaud isn't in front" waits until it isn't.
+ */
+export function useWindowFocus(client: SocketClient): void {
+  useEffect(() => {
+    const set = (focused: boolean): void => client.store.dispatch({ type: 'away', away: !focused });
+    if (inApp()) {
+      let alive = true;
+      let off: (() => void) | undefined;
+      void import('@tauri-apps/api/window')
+        .then(async ({ getCurrentWindow }) => {
+          const w = getCurrentWindow();
+          const un = await w.onFocusChanged(({ payload }) => set(payload));
+          if (!alive) return un();
+          off = un;
+          set(await w.isFocused());
+        })
+        .catch(() => undefined);
+      return () => {
+        alive = false;
+        off?.();
+      };
+    }
+    const update = (): void => set(document.visibilityState === 'visible' && document.hasFocus());
+    update();
+    window.addEventListener('focus', update);
+    window.addEventListener('blur', update);
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      window.removeEventListener('focus', update);
+      window.removeEventListener('blur', update);
+      document.removeEventListener('visibilitychange', update);
+    };
+  }, [client]);
+}
+
+/**
+ * Clicking a desktop notification brings the window forward (the app shell does that) and goes
+ * where it's about; one about several places opens the notification centre instead.
+ */
+export function useNotificationTaps(client: SocketClient, ui: UiStore, actions: Actions): void {
+  useEffect(() => {
+    const go = (channel: string | undefined): void => {
+      const target = noticeTarget(client.store.getState(), channel);
+      if (!target || channel === undefined) return ui.patch({ notices: true });
+      void client.api.inbox.read({ channel });
+      openNoticeTarget(actions, target);
+    };
+    const onTap = (e: Event): void => go((e as CustomEvent<{ channel?: string } | undefined>).detail?.channel);
+    document.addEventListener(NOTIFICATION_TAP, onTap);
+    let alive = true;
+    let off: (() => void) | undefined;
+    if (inApp()) {
+      void import('@tauri-apps/api/event')
+        .then(async ({ listen }) => {
+          const un = await listen<string | null>('notification-tap', (e) => go(e.payload ?? undefined));
+          if (alive) off = un;
+          else un();
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      alive = false;
+      off?.();
+      document.removeEventListener(NOTIFICATION_TAP, onTap);
+    };
   }, [client]);
 }

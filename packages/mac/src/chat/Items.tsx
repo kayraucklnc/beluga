@@ -1,11 +1,13 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import type { LogItem, ShellItem } from '@klaud/core/store.js';
 import { DONE_STEPS, HIDDEN_STEPS, isRunning } from '@klaud/ui/format.js';
 import { formatDuration } from '@klaud/shared/text.js';
+import { splitImages } from '@klaud/shared/attachment-links.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, Working, cx } from '../components/ui.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
+import { ImageGrid } from './ChatImages.js';
 import { Markdown } from './Markdown.js';
 import s from './chat.module.css';
 
@@ -29,6 +31,8 @@ const time = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour:
 /** A message from a person (or a Claude speaking in the chat). `continued`: same author, shortly after. */
 export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: ChatItem; continued: boolean; mine: boolean }) {
   const prefs = usePrefs();
+  // Screenshots and other images sent with the message show as pictures, under its words.
+  const { text, images } = useMemo(() => splitImages(item.text), [item.text]);
   return (
     <div className={cx(s.message, continued && s.continued)}>
       <div className={s.gutter}>{continued ? null : <Avatar name={item.name} id={item.from} claude={item.byAgent} size={26} />}</div>
@@ -39,7 +43,8 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
             {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
           </div>
         )}
-        <Markdown text={item.text} paths={mine} />
+        {text ? <Markdown text={text} paths={mine} /> : null}
+        <ImageGrid images={images} />
       </div>
     </div>
   );
@@ -72,11 +77,10 @@ function statusOf(item: AgentItem, now: number): { label: string; tone: 'claude'
 
 /** What Claude is doing (or did): its steps, sub-agents and background work, then its answer. */
 export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) {
-  const api = useApi();
   const prefs = usePrefs();
   const selfId = useApp((st) => st.selfId);
   const detail = useApp((st) => st.prefs.subagents);
-  const running = isRunning(item.status);
+  const running = isRunning(item.status) && item.status !== 'queued';
   const now = useNow(running);
   const st = statusOf(item, now);
   const [expanded, setExpanded] = useState(false);
@@ -122,7 +126,7 @@ export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) 
             ))}
             {detail === 'hidden' && item.subagents.length ? (
               <div className={s.step}>
-                <Icon name="spark" size={11} />
+                <Icon name="claude" size={11} />
                 {item.subagents.length} sub-agent{item.subagents.length === 1 ? '' : 's'}
               </div>
             ) : (
@@ -156,17 +160,8 @@ export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) 
             <Working />
           </div>
         ) : item.status === 'queued' ? (
+          // Sending it now, editing or moving it: the queue above the box.
           <div className={s.idle}>Starts when the current task finishes.</div>
-        ) : null}
-        {item.status === 'queued' && item.owner === selfId && item.requesterName === item.ownerName ? (
-          <div className={s.cardActions}>
-            <Button size="small" onClick={() => void api.host.promote(item.requestId)}>
-              Run now
-            </Button>
-            <Button size="small" variant="quiet" onClick={() => void api.host.cancelQueued(item.requestId)}>
-              Cancel
-            </Button>
-          </div>
         ) : null}
       </div>
     </div>

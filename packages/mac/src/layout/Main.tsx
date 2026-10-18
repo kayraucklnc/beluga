@@ -1,4 +1,5 @@
-import { lazy, Suspense } from 'react';
+import { Component, type ReactNode, lazy, Suspense } from 'react';
+import { Button, Empty } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
 import { ChatView } from '../views/ChatView.js';
 import { Toolbar } from './Toolbar.js';
@@ -36,13 +37,43 @@ function Route() {
   }
 }
 
+/** A view that breaks shows what happened and a way back, instead of blanking the window. */
+class ViewBoundary extends Component<{ children: ReactNode; at: string }, { error?: Error }> {
+  override state: { error?: Error } = {};
+  static getDerivedStateFromError(error: Error): { error: Error } {
+    return { error };
+  }
+  override componentDidUpdate(prev: { at: string }): void {
+    // Going somewhere else tries again.
+    if (prev.at !== this.props.at && this.state.error) this.setState({ error: undefined });
+  }
+  override render(): ReactNode {
+    if (!this.state.error) return this.props.children;
+    return (
+      <Empty
+        icon="alert"
+        title="This view ran into a problem"
+        detail={this.state.error.message}
+        action={
+          <Button size="small" onClick={() => this.setState({ error: undefined })}>
+            Try Again
+          </Button>
+        }
+      />
+    );
+  }
+}
+
 export function Main() {
+  const at = useApp((st) => JSON.stringify(st.view));
   return (
     <main className={s.main}>
       <Toolbar />
-      <Suspense fallback={<div className={s.loading} />}>
-        <Route />
-      </Suspense>
+      <ViewBoundary at={at}>
+        <Suspense fallback={<div className={s.loading} />}>
+          <Route />
+        </Suspense>
+      </ViewBoundary>
     </main>
   );
 }

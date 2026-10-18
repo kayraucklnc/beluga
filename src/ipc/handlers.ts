@@ -2,8 +2,12 @@ import type { Session } from '../core/session.js';
 import type { WorkspaceController } from '../core/workspace-controller.js';
 import type { Workbench } from '../core/workbench.js';
 import { listLocalDirs, localDirKey, openWithSystem } from '../core/local.js';
-import { ATTACHMENT_SHARE, chipText, expandChips, publishForRoom, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
+import { ATTACHMENT_SHARE, type FetchShared, attachmentOnDisk, chipText, expandChips, mediaTypeOf, publishForRoom, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
+import { fetchBytes } from '../core/downloads.js';
+import os from 'node:os';
 import path from 'node:path';
+import { findProjects, isMainCheckout } from '../workspaces/discovery.js';
+import { chooseProjectIcon, readProjectIcon, suggestProjects } from '../core/project-icons.js';
 import type { Args, Method } from './api.js';
 
 /**
@@ -16,7 +20,12 @@ export type Handlers = { readonly [M in Method]: Handler<M> };
 
 // Without projects (some tests, the guest-only mode) these do nothing, as before.
 const ctl = (s: Session): WorkspaceController | undefined => s.workspaces;
+const rootOf = (s: Session, projectId: string): string | undefined => s.store.getState().projects.find((p) => p.id === projectId)?.root || undefined;
+const expandHome = (p: string): string => p.replace(/^~(?=$|\/)/, os.homedir());
 const bench = (s: Session): Workbench | undefined => s.workbench;
+
+/** Pull a file from a friend's share through this session's connection. */
+const fetchShared = (s: Session): FetchShared => (at, max) => fetchBytes(at, s.files.request.bind(s.files), max);
 
 /** A terminal program started (or already running), by key; undefined when it couldn't start. */
 const started = (pty: { id: string } | undefined): string | undefined => pty?.id;
@@ -46,16 +55,18 @@ export const HANDLERS = {
   'session.serveFolder': (s, name, root, allowed) => s.serveFolder(name, root, allowed),
   'session.localLocation': (s, abs, dir) => s.localLocation(abs, dir),
   'session.testNotification': (s) => {
-    s.notifier.notify({ kind: 'done', title: 'Notifications work', body: 'This is how klaud tells you Claude finished or needs you' });
+    s.notifier.test();
     s.toast('Sent a test notification', 'success');
   },
 
   'host.answerApproval': (s, answer, id) => s.answerApproval(answer, id),
   'host.promote': (s, requestId) => s.host.promote(requestId),
   'host.cancelQueued': (s, requestId) => s.host.cancelQueued(requestId),
+  'host.reorderQueued': (s, requestId, index) => s.host.reorderQueued(requestId, index),
 
   'inbox.read': (s, which) => s.store.dispatch({ type: 'notice_read', ...(which?.channel !== undefined ? { channel: which.channel } : {}), ...(which?.id !== undefined ? { id: which.id } : {}) }),
-  'inbox.clear': (s) => s.store.dispatch({ type: 'notice_clear' }),
+  'inbox.unread': (s, id) => s.store.dispatch({ type: 'notice_unread', id }),
+  'inbox.clear': (s, which) => s.store.dispatch({ type: 'notice_clear', ...(which?.id !== undefined ? { id: which.id } : {}) }),
 
   'questions.answer': (s, qid, answer) => s.questions.answer(qid, answer),
   'questions.pick': (s, qid, question, answer) => s.store.dispatch({ type: 'question_pick', qid, question, answer }),
@@ -151,6 +162,11 @@ export const HANDLERS = {
   'terminals.shell': (s, wsId, size) => started(bench(s)?.shell(wsId, size)),
   'terminals.global': (s, key, dir, size) => started(bench(s)?.globalShell(key, dir, size)),
   'terminals.close': (s, key) => bench(s)?.closeTerminal(key),
+  'terminals.rename': (s, key, name) => bench(s)?.renameTerminal(key, name),
+
+  // The values go back only to the screen that asked (Settings), never into the shared state.
+  'env.get': (s, projectId) => s.env.get(projectId),
+  'env.set': (s, projectId, rows, dotenv) => s.env.set(projectId, rows, dotenv),
 
   'attachments.add': async (_s, ext, base64) => {
     const bytes = Buffer.from(base64, 'base64');
@@ -169,8 +185,34 @@ export const HANDLERS = {
     return out.text;
   },
 
+  'attachments.read': async (s, owner, file) => {
+    const bytes = await readAttachment(owner, file, s.selfId, fetchShared(s));
+    return { mime: mediaTypeOf(file), size: bytes.byteLength, data: bytes.toString('base64') };
+  },
+  'attachments.open': async (s, owner, file) => openWithSystem(await attachmentOnDisk(owner, file, s.selfId, fetchShared(s))),
+
   'daemon.stop': (s) => s.shutdown(),
 
+  'projects.icon': (s, projectId) => {
+    const root = rootOf(s, projectId);
+    return root ? readProjectIcon(root) : undefined;
+  },
+  'projects.setIcon': (s, projectId, image) => {
+    const root = rootOf(s, projectId);
+    if (!root) throw new Error('No such project');
+    chooseProjectIcon(root, image ? expandHome(image) : undefined);
+  },
+  // A git project is added; a folder of them is watched (new ones in it show up too).
+  'projects.add': (s, dir) => {
+    const abs = expandHome(dir);
+    if (isMainCheckout(abs)) return ctl(s)?.addProject(abs);
+    if (findProjects([abs]).length) return ctl(s)?.addFolder(abs);
+    s.toast(`${path.basename(abs)} isn't a git project, and has none inside`, 'warn');
+    return undefined;
+  },
+  'projects.addFolder': (s, dir) => ctl(s)?.addFolder(expandHome(dir)),
+  'projects.iconAt': (_s, dir) => readProjectIcon(expandHome(dir)),
+  'projects.suggest': (s) => suggestProjects(s.store.getState().projects.map((p) => p.root).filter(Boolean)),
   'local.listDirs': (s, dir) => {
     const entries = listLocalDirs(dir);
     s.store.dispatch({ type: 'dir_cache', key: localDirKey(dir), entries });

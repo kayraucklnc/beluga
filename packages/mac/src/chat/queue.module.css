@@ -1,0 +1,122 @@
+/* The queue above the box you type in: what waits for Claude, in run order. */
+
+.tray {
+  margin: 0 6px -1px;
+  padding: 6px 6px 4px;
+  border-radius: var(--radius-l) var(--radius-l) 0 0;
+  background: var(--bg-sunken);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+  animation: rise var(--dur) var(--ease-out);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 4px;
+  color: var(--text-3);
+  font-size: 0.82rem;
+}
+.title {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--bg-press);
+  color: var(--text-2);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+}
+.note {
+  margin-left: auto;
+}
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 4px 0 6px;
+  border-radius: 7px;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.n {
+  flex: none;
+  width: 16px;
+  color: var(--text-3);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.theirs .text {
+  color: var(--text-2);
+}
+.who {
+  flex: none;
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+.acts {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.row:hover .acts,
+.row:focus-within .acts {
+  opacity: 1;
+}
+.act {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--text-2);
+}
+.act:hover:not(:disabled) {
+  background: var(--bg-press);
+  color: var(--text);
+}
+.act:disabled {
+  opacity: 0.35;
+}
+.now {
+  height: 22px;
+  margin-left: 4px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.now:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}

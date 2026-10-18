@@ -6,6 +6,9 @@ const same = (a: readonly string[], b: readonly string[]): boolean => a.length =
 /**
  * What each attached screen looks at, combined: a conversation is shown when any screen shows
  * it, and visible when a screen in front shows it. Unread counts and notifications follow this.
+ * A screen is in front while its window has focus; a terminal that can't report focus counts
+ * as in front only while it's being used (see ui/tty/front.ts), so a forgotten one doesn't
+ * silence notifications everywhere.
  */
 export class AttentionRegistry {
   private readonly byClient = new Map<string, Attention>();
@@ -29,10 +32,10 @@ export class AttentionRegistry {
   private publish(): void {
     const all = [...this.byClient.values()];
     const next: Attention = all.length
-      ? { shown: union(all.map((a) => a.shown)), visible: union(all.map((a) => a.visible)), files: all.some((a) => a.files) }
+      ? { shown: union(all.map((a) => a.shown)), visible: union(all.map((a) => a.visible)), files: all.some((a) => a.files), front: all.some((a) => a.front) }
       : NO_ATTENTION;
     const now = this.store.getState().attention;
-    if (same(now.shown, next.shown) && same(now.visible, next.visible) && now.files === next.files) return;
+    if (same(now.shown, next.shown) && same(now.visible, next.visible) && now.files === next.files && now.front === next.front) return;
     this.store.dispatch({ type: 'attention', attention: next });
   }
 }

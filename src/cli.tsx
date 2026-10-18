@@ -6,6 +6,7 @@ import { openWithSystem } from './core/local.js';
 import { copyText } from './ui/tty/clipboard.js';
 import { zoom } from './ui/tty/zoom.js';
 import { createDesktopNotifier } from './ui/tty/desktop-notify.js';
+import { FrontTracker } from './ui/tty/front.js';
 import { applyTheme } from './ui/theme.js';
 import { App } from './ui/App.js';
 import { ErrorBoundary } from './ui/components/ErrorBoundary.js';
@@ -50,13 +51,19 @@ function runTui(client: KlaudClient, config: Config, leave: () => Promise<void>,
   // The built-in terminal takes the keyboard while it's focused (raw keys go to its shell).
   let rawSink: ((data: string) => void) | undefined;
   let lastInput = 0;
+  // In front or away, for notifications (terminals without focus reports: by when you last used it).
+  const front = new FrontTracker((away) => client.store.dispatch({ type: 'away', away }));
+  setInterval(() => front.tick(), 30_000).unref();
   const stdin = process.stdin.isTTY
     ? createInput(process.stdin, {
         onMouse: (e) => mouseListeners.forEach((l) => l(e)),
-        onFocus: (focused) => client.store.dispatch({ type: 'away', away: !focused }),
+        onFocus: (focused) => front.focus(focused),
         rawSink: () => rawSink,
         onPaste: (text) => pasteListener?.(text) ?? false,
-        onData: () => (lastInput = Date.now()),
+        onData: () => {
+          lastInput = Date.now();
+          front.input();
+        },
       })
     : process.stdin;
   const subscribeMouse = config.mouse
@@ -130,7 +137,8 @@ async function attached(config: Config, args: readonly string[]): Promise<void> 
     caps: {
       copyText: async (text: string) => void (await copyText(text)),
       zoom: (dir: 'in' | 'out' | 'reset') => zoom(dir),
-      notify: (n: { title: string; body: string; sound: boolean }) => desktop?.(n),
+      // Only offered when this computer can show them, so the daemon asks a screen that can.
+      ...(desktop ? { notify: (n: { title: string; body: string; sound: boolean }) => desktop(n) } : {}),
       openExternal: (target: string) => openWithSystem(target),
     },
   });

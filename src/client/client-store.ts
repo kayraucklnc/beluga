@@ -9,7 +9,7 @@ export interface DomainSource {
 }
 
 const sameAttention = (a: Attention, b: Attention): boolean =>
-  a.files === b.files && a.shown.join('\n') === b.shown.join('\n') && a.visible.join('\n') === b.visible.join('\n');
+  a.files === b.files && a.front === b.front && a.shown.join('\n') === b.shown.join('\n') && a.visible.join('\n') === b.visible.join('\n');
 
 /**
  * One client's view of klaud: the shared state plus this client's own screen, composed into

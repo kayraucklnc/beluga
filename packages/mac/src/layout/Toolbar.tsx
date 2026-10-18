@@ -9,6 +9,7 @@ import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/klaud.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
+import { NotificationBell } from './NotificationCenter.js';
 import s from './Toolbar.module.css';
 
 /** Buttons that stay on the toolbar; the rest go under ⋯ (in the same order). */
@@ -53,6 +54,7 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
         {dockable ? (
           <IconButton icon="terminal" label={prefs.dock === 'off' ? 'Terminal beside the chat' : 'Hide the terminal'} keys={`${mod()}J`} active={prefs.dock !== 'off'} onClick={() => setPrefs({ dock: prefs.dock === 'off' ? 'right' : 'off' })} />
         ) : null}
+        <NotificationBell />
         <IconButton icon="command" label="Everything you can do" keys={`${mod()}K`} onClick={() => document.dispatchEvent(new CustomEvent('klaud:palette'))} />
         <IconButton icon="inspector" label={prefs.inspector ? 'Hide the inspector' : 'Show the inspector'} keys={`${mod()}⌥I`} active={prefs.inspector} onClick={() => setPrefs({ inspector: !prefs.inspector })} />
       </div>

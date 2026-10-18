@@ -91,7 +91,7 @@ export function DiffView() {
         </div>
         {mine ? (
           <div className={s.filesFoot}>
-            <Button icon="spark" onClick={() => actions.run({ type: 'ws', id: view.id, action: 'review_claude' })}>
+            <Button icon="claude" onClick={() => actions.run({ type: 'ws', id: view.id, action: 'review_claude' })}>
               Ask Claude to review
             </Button>
           </div>

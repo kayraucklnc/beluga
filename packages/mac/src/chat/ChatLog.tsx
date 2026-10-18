@@ -4,6 +4,7 @@ import type { LogItem } from '@klaud/core/store.js';
 import { Icon } from '../components/Icon.js';
 import { Empty } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
+import { Lightbox } from './ChatImages.js';
 import { AgentCard, ChatRow, ShellCard, SystemRow } from './Items.js';
 import s from './chat.module.css';
 
@@ -89,6 +90,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
           Latest
         </button>
       )}
+      <Lightbox />
     </div>
   );
 }

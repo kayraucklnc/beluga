@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type MutableRefObject } from 'react';
 import type { KlaudClient } from '../ipc/client.js';
 import type { AppState } from '../core/store.js';
 import { globalShellDir, globalShellId, globalShellNumber, isGlobalShell, runId, setupId, shellId } from '../core/workbench.js';
+import { terminalLabel } from '../shared/terminal-keys.js';
 import { isLeaveChord, type TerminalEmulator } from '../terminal/index.js';
 import { TerminalScreens } from './terminal-screens.js';
 import { terminalSize } from './components/TerminalView.js';
@@ -123,16 +124,16 @@ export function useTerminalPane({ client, state, ui, uiRef, patchUi, focus, geom
   const termTabs: TerminalTabInfo[] = termWs
     ? termKeys
         .filter((key) => key in terminals || key === shellId(termWs))
-        .map((key) => ({ key, label: key === shellId(termWs) ? 'Shell' : key.endsWith(':setup') ? 'Setup' : 'Run', running: isRunning(key), ...exitOf(key) }))
+        .map((key) => ({ key, label: terminalLabel(key, state.termNames), running: isRunning(key), ...exitOf(key) }))
     : [];
   const termProject = termWs ? state.projects.find((p) => p.workspaces.some((w) => w.id === termWs)) : undefined;
-  const globalTabs: TerminalTabInfo[] = global
-    ? [...new Set([...globals, ...(termKey ? [termKey] : [])])].map((key, i) => ({ key, label: `Shell ${i + 1}`, running: isRunning(key), ...exitOf(key) }))
-    : [];
+  const globalKeys = global ? [...new Set([...globals, ...(termKey ? [termKey] : [])])] : [];
+  // Shell 1, Shell 2… (just "Shell" when it's the only one), or the name you gave it.
+  const globalTabs: TerminalTabInfo[] = globalKeys.map((key, i) => ({ key, label: state.termNames[key] ?? (globalKeys.length > 1 ? `Shell ${i + 1}` : 'Shell'), running: isRunning(key), ...exitOf(key) }));
   const home = os.homedir();
   const shownDir = globalDir.startsWith(home) ? `~${globalDir.slice(home.length)}` : globalDir;
   const termBar = global && termKey
-    ? globalTerminalBarModel(globalTabs.length > 1 ? globalTabs : globalTabs.map((t) => ({ ...t, label: 'Shell' })), termKey, Math.max(1, g.mainWidth - 2), { focused: termFocused, dir: shownDir })
+    ? globalTerminalBarModel(globalTabs, termKey, Math.max(1, g.mainWidth - 2), { focused: termFocused, dir: shownDir })
     : termWs && termKey ? terminalBarModel(termWs, termTabs, termKey, Math.max(1, g.mainWidth - 2), { hasRun: Boolean(termProject?.scripts?.run), hasSetup: Boolean(termProject?.scripts?.setup), focused: termFocused }) : undefined;
 
 

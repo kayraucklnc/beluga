@@ -1,3 +1,4 @@
+import type { SettingsSection } from '@klaud/ui/settings-menus.js';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { useEffect } from 'react';
 import { channelOf } from '@klaud/core/store.js';
@@ -14,7 +15,8 @@ import { Sidebar } from './layout/Sidebar.js';
 import { useActions } from './lib/actions.js';
 import { useApp, useKlaud } from './lib/klaud.js';
 import { setPrefs, usePrefs, zoom } from './lib/prefs.js';
-import { joinRoom, useNative, useTrayStatus } from './lib/native.js';
+import { joinRoom, useNative, useNotificationTaps, useTrayStatus, useWindowFocus } from './lib/native.js';
+import { AddProjectSheet } from './dialogs/AddProjectSheet.js';
 import { JoinSheet } from './dialogs/JoinSheet.js';
 import { useState } from 'react';
 import s from './layout/Shell.module.css';
@@ -59,7 +61,7 @@ function useOverlays() {
       case 'model':
         return ui.openMenu({ kind: 'model', ...(channel === 'room' || channel === 'draft' ? {} : { channel }) });
       case 'inbox':
-        return ui.openMenu({ kind: 'inbox' });
+        return ui.patch({ notices: true });
       case 'templates':
         return ui.openMenu({ kind: 'templates' });
       case 'handoff':
@@ -147,7 +149,7 @@ function useShortcuts() {
   }, []);
 }
 
-const PANE_OF: Record<string, SettingsPane> = { claude: 'claude', notify: 'notifications', workspaces: 'workspaces', buttons: 'workspaces', people: 'people', display: 'appearance' };
+const PANE_OF: Record<SettingsSection, SettingsPane> = { claude: 'claude', notify: 'notifications', workspaces: 'workspaces', buttons: 'workspaces', people: 'people', display: 'appearance', terminal: 'terminal', env: 'environment' };
 
 /** The shared code opens the settings menu (from a person's menu, onboarding…): here it's the Settings window. */
 function useSettingsWindow() {
@@ -156,7 +158,7 @@ function useSettingsWindow() {
     () =>
       ui.subscribe(() => {
         const m = ui.get().menu?.menu;
-        if (m?.kind === 'settings') ui.patch({ menu: undefined, settings: PANE_OF[m.section ?? ''] ?? 'general' });
+        if (m?.kind === 'settings') ui.patch({ menu: undefined, settings: m.section ? PANE_OF[m.section] : 'general' });
       }),
     [],
   );
@@ -183,6 +185,8 @@ export function App() {
   useSettingsWindow();
   useNative(client, ui, actions, setJoining);
   useTrayStatus(client);
+  useWindowFocus(client);
+  useNotificationTaps(client, ui, actions);
   return (
     <Tooltip.Provider delayDuration={450} skipDelayDuration={200}>
       <div className={s.app}>
@@ -191,6 +195,7 @@ export function App() {
         {prefs.inspector ? <Inspector /> : null}
       </div>
       <MenuSheet />
+      <AddProjectSheet />
       <Palette />
       <Settings />
       <PlanSheet />

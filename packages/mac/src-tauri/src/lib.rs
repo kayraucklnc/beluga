@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_notification::NotificationExt;
 
 /// What the app keeps track of while it runs.
 pub struct AppState {
@@ -48,26 +49,41 @@ fn take_pending_links(state: tauri::State<'_, AppState>) -> Vec<String> {
     std::mem::take(&mut *daemon::locked(&state.pending_links))
 }
 
-/// What the menu-bar icon says: how many things wait for you, and how many Claudes are working.
+/// What the menu-bar icon and the Dock icon say: how many things are new for you (unread
+/// notifications and what waits on you), and how many Claudes are working.
 #[tauri::command]
-fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32) {
+fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32, unread: Option<u32>) {
+    let unread = unread.unwrap_or(waiting);
     if let Some(tray) = app.tray_by_id("klaud") {
-        let _ = tray.set_title(if waiting > 0 {
-            Some(waiting.to_string())
+        let _ = tray.set_title(if unread > 0 {
+            Some(unread.to_string())
         } else {
             None
         });
-        let tip = match (waiting, working) {
-            (0, 0) => "klaud".to_string(),
-            (0, w) => format!(
-                "klaud · {w} Claude{} working",
-                if w == 1 { "" } else { "s" }
-            ),
-            (n, 0) => format!("klaud · {n} waiting for you"),
-            (n, w) => format!("klaud · {n} waiting for you · {w} working"),
-        };
-        let _ = tray.set_tooltip(Some(tip));
+        let _ = tray.set_tooltip(Some(tray_tip(waiting, working, unread)));
     }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_badge_count((unread > 0).then_some(i64::from(unread)));
+    }
+}
+
+/// "klaud · 2 waiting for you · 3 new · 1 Claude working", leaving out what's zero.
+fn tray_tip(waiting: u32, working: u32, unread: u32) -> String {
+    let mut parts = vec!["klaud".to_string()];
+    if waiting > 0 {
+        parts.push(format!("{waiting} waiting for you"));
+    }
+    let news = unread.saturating_sub(waiting);
+    if news > 0 {
+        parts.push(format!("{news} new"));
+    }
+    if working > 0 {
+        parts.push(format!(
+            "{working} Claude{} working",
+            if working == 1 { "" } else { "s" }
+        ));
+    }
+    parts.join(" · ")
 }
 
 fn focus_main(app: &tauri::AppHandle) {
@@ -88,6 +104,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(AppState {
@@ -121,6 +138,20 @@ pub fn run() {
                 }
             }
             menu::tray(&handle)?;
+            // Clicking a notification brings the window back and tells it where to go.
+            let taps = handle.clone();
+            app.notification().on_action(move |performed| {
+                if performed.action_id() != "tap" {
+                    return;
+                }
+                focus_main(&taps);
+                let channel = performed
+                    .notification()
+                    .and_then(|n| n.extra().get("channel"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned);
+                let _ = taps.emit("notification-tap", channel);
+            })?;
             // klaud:// links: join a friend's room.
             let links = handle.clone();
             app.deep_link().on_open_url(move |event| {
@@ -160,4 +191,20 @@ pub fn run() {
         RunEvent::Exit => daemon::stop(app),
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tray_tip;
+
+    #[test]
+    fn the_tray_tip_says_only_what_is_there() {
+        assert_eq!(tray_tip(0, 0, 0), "klaud");
+        assert_eq!(tray_tip(2, 0, 2), "klaud · 2 waiting for you");
+        assert_eq!(
+            tray_tip(1, 2, 4),
+            "klaud · 1 waiting for you · 3 new · 2 Claudes working"
+        );
+        assert_eq!(tray_tip(0, 1, 0), "klaud · 1 Claude working");
+    }
 }

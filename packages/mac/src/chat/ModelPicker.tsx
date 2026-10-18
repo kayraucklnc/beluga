@@ -42,7 +42,7 @@ export function ModelPicker({ channel }: { channel: string }) {
     <Popover.Root>
       <Popover.Trigger asChild>
         <button type="button" className={s.chip} aria-label="Model and effort">
-          <Icon name="spark" size={12} />
+          <Icon name="claude" size={12} />
           {chip}
           <Icon name="chevronDown" size={9} />
         </button>

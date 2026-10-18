@@ -18,11 +18,18 @@ function useItems(menu: MenuKind) {
 
 const isDanger = (id: string): boolean => /delete|remove|leave|revoke|stop|hide/.test(id);
 
-function Items({ menu, Item, Separator }: { menu: MenuKind; Item: typeof Dropdown.Item; Separator: typeof Dropdown.Separator }) {
+function Items({ menu, Item, Separator, extra = [] }: { menu: MenuKind; Item: typeof Dropdown.Item; Separator: typeof Dropdown.Separator; extra?: readonly ActionItem[] }) {
   const actions = useActions();
   const items = useItems(menu);
   return (
     <>
+      {extra.map((it) => (
+        <Item key={it.label} className={s.item} disabled={it.disabled} onSelect={it.onSelect}>
+          <span className={s.label}>{it.label}</span>
+          {it.hint ? <span className={s.hint}>{it.hint}</span> : null}
+        </Item>
+      ))}
+      {extra.length && items.length ? <Separator className={s.separator} /> : null}
       {items.map((o, i) => {
         const separate = i > 0 && isDanger(o.id) && !isDanger(items[i - 1]!.id);
         return (
@@ -40,13 +47,13 @@ function Items({ menu, Item, Separator }: { menu: MenuKind; Item: typeof Dropdow
 }
 
 /** A dropdown from a button (the ⋯ on a project). Built when opened, so it's always current. */
-export function SpecDropdown({ menu, children, align = 'start' }: { menu: MenuKind; children: ReactNode; align?: 'start' | 'end' }) {
+export function SpecDropdown({ menu, children, align = 'start', extra }: { menu: MenuKind; children: ReactNode; align?: 'start' | 'end'; extra?: readonly ActionItem[] }) {
   return (
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>{children}</Dropdown.Trigger>
       <Dropdown.Portal>
         <Dropdown.Content className={s.menu} align={align} sideOffset={4} collisionPadding={8}>
-          <Items menu={menu} Item={Dropdown.Item} Separator={Dropdown.Separator} />
+          <Items menu={menu} Item={Dropdown.Item} Separator={Dropdown.Separator} {...(extra ? { extra } : {})} />
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>
@@ -54,14 +61,14 @@ export function SpecDropdown({ menu, children, align = 'start' }: { menu: MenuKi
 }
 
 /** A right-click menu on anything (a project row, a person). */
-export function SpecContext({ menu, children }: { menu: MenuKind | undefined; children: ReactNode }) {
+export function SpecContext({ menu, children, extra }: { menu: MenuKind | undefined; children: ReactNode; extra?: readonly ActionItem[] }) {
   if (!menu) return <>{children}</>;
   return (
     <Context.Root modal={false}>
       <Context.Trigger asChild>{children}</Context.Trigger>
       <Context.Portal>
         <Context.Content className={s.menu} collisionPadding={8}>
-          <Items menu={menu} Item={Context.Item as unknown as typeof Dropdown.Item} Separator={Context.Separator as unknown as typeof Dropdown.Separator} />
+          <Items menu={menu} Item={Context.Item as unknown as typeof Dropdown.Item} Separator={Context.Separator as unknown as typeof Dropdown.Separator} {...(extra ? { extra } : {})} />
         </Context.Content>
       </Context.Portal>
     </Context.Root>

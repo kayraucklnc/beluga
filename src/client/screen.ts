@@ -9,7 +9,6 @@ import {
   type ScreenState,
   type Toast,
   type View,
-  channelOf,
   clean,
   initialState,
   reduceDomain,
@@ -128,7 +127,8 @@ export function screenOf(state: AppState): ScreenState {
 /** What this screen is looking at, for unread counts and notifications. */
 export function attentionOf(screen: ScreenState): Attention {
   const shown = shownChannel(screen.view);
-  return { shown: shown ? [shown] : [], visible: screen.away ? [] : [channelOf(screen.view)], files: screen.view.kind === 'files' };
+  // Overview, Search, Terminal… show no conversation: nothing is visible there, but the window is in front.
+  return { shown: shown ? [shown] : [], visible: screen.away || !shown ? [] : [shown], files: screen.view.kind === 'files', front: !screen.away };
 }
 
 /** The screen action that shows an intent from the core. */

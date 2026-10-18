@@ -26,10 +26,18 @@ export const NotifySettings = z.object({
   needsYou: z.boolean().default(true),
   /** Errors, merge conflicts, failed setup scripts. */
   problems: z.boolean().default(true),
-  /** Someone joins, invites you, or hands work to you. */
+  /** Someone joins, leaves, invites you, or hands work to you. */
   people: z.boolean().default(true),
   /** A pull request was opened or its checks finished. */
   pr: z.boolean().default(true),
+  /** Someone mentions you (@name), or writes to you when it's just the two of you. */
+  mentions: z.boolean().default(true),
+  /** Background work finishes: a task Claude runs in the background, a new worktree's setup. */
+  background: z.boolean().default(true),
+  /** Desktop notifications only while no klaud window is in front. */
+  onlyAway: z.boolean().default(false),
+  /** Do Not Disturb: no desktop notifications (the inbox still fills). Ends at `until` (ms), or when you turn it off. */
+  dnd: z.object({ until: z.number().int().positive().optional() }).nullable().default(null),
 });
 export type NotifySettings = z.infer<typeof NotifySettings>;
 
@@ -63,5 +71,9 @@ export const Settings = z.object({
   people: z.record(peerKey, z.object({ name: z.string().max(32), trust: z.enum(TRUST_LEVELS) })).default({}),
   /** Shell for the built-in terminal (default: $SHELL). */
   shell: z.string().max(200).optional(),
+  /** Start it as a login shell (reads your profile, e.g. ~/.zprofile). */
+  shellLogin: z.boolean().default(true),
+  /** Extra arguments for the shell, after -l. */
+  shellArgs: z.array(z.string().max(200)).max(20).default([]),
 });
 export type Settings = z.infer<typeof Settings>;

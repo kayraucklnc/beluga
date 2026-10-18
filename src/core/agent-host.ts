@@ -26,6 +26,8 @@ export interface AgentHostDeps {
   readonly refreshUsage: () => Promise<void>;
   /** People invited by link to edit: their requests edit and run commands in that folder without asking. */
   readonly canEditIn?: (peerId: string, channel: string) => boolean;
+  /** Your environment variables for a run there (see env-vars.ts). */
+  readonly envFor?: (channel: string, dir?: string) => Record<string, string>;
 }
 
 /**
@@ -213,6 +215,27 @@ export class AgentHost {
     return false;
   }
 
+  /**
+   * Move one of your waiting requests to `index` among your others in its conversation (friends'
+   * requests keep their places). The log follows, so every screen shows the new order.
+   */
+  reorderQueued(requestId: string, index: number): boolean {
+    for (const lane of this.lanes.values()) {
+      const isMine = (w: Lane['waiting'][number]): boolean => w.from === this.selfId && !w.urgent;
+      const mine = lane.waiting.filter(isMine);
+      const from = mine.findIndex((w) => w.body.requestId === requestId);
+      if (from < 0) continue;
+      const to = Math.max(0, Math.min(index, mine.length - 1));
+      const moved = mine.filter((_, i) => i !== from);
+      const order = [...moved.slice(0, to), mine[from]!, ...moved.slice(to)];
+      let k = 0;
+      lane.waiting = lane.waiting.map((w) => (isMine(w) ? order[k++]! : w));
+      this.store.dispatch({ type: 'queue_order', owner: this.selfId, ids: order.map((w) => w.body.requestId) });
+      return true;
+    }
+    return false;
+  }
+
   /** Drop one of your waiting requests before it starts. */
   cancelQueued(requestId: string): boolean {
     for (const lane of this.lanes.values()) {
@@ -285,7 +308,8 @@ export class AgentHost {
         return;
       }
       lane.waiting.push({ from, body, ...(askTo ? { askTo } : {}) });
-      if (lane.current || lane.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', 'Waiting for the current task to finish', body.channel);
+      // The prompt goes with it, so the queue can show (and you can edit) what's waiting.
+      if (lane.current || lane.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', body.prompt, body.channel);
     }
     void this.pump(lane);
   }
@@ -417,6 +441,8 @@ export class AgentHost {
           if (send) lane.waiting = lane.waiting.filter((w) => !this.sendFollowUp(lane, w.from, w.body));
         },
         ...this.modelFor(place?.model),
+        // Your variables can hold secrets: only runs you asked for get them, never a friend's.
+        ...(from === this.selfId && this.deps.envFor ? { env: this.deps.envFor(body.channel, place?.cwd) } : {}),
       });
       if (controller.signal.aborted) throw new Error('aborted');
       this.emitAgent(body.requestId, from, 'done', final || '(done)', body.channel);

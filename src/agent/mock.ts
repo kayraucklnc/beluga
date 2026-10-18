@@ -5,6 +5,8 @@ interface Script {
   readonly match: RegExp;
   readonly steps: readonly string[];
   readonly answer: string;
+  /** How long each step takes (at pace 1); the default is quick. */
+  readonly stepMs?: number;
   readonly report?: { title: string; markdown: string };
   /** Sub-agents launched in parallel, each with its own steps. */
   readonly subagents?: ReadonlyArray<{ title: string; steps: readonly string[]; kind?: 'agent' | 'background' }>;
@@ -12,6 +14,13 @@ interface Script {
 
 /** Canned, fast replies so the demo (and README recordings) never wait on real Claude calls. */
 const SCRIPTS: readonly Script[] = [
+  {
+    // A long task, so you can try queueing messages (and sending one now) while Claude works.
+    match: /deep dive|take your time/i,
+    stepMs: 2500,
+    steps: ['Glob **/*.ts', 'Read src/server.ts', 'Read src/payments.ts', 'Grep "TODO"', 'Read NOTES.md', 'Grep "session"', 'Read src/webhooks.ts', 'Bash npm test', 'Read package.json', 'Grep "retry"', 'Read README.md', 'Bash git log --oneline -20'],
+    answer: 'Deep dive done. The riskiest parts are **webhook retries** (not idempotent) and **auth** (not started). Everything else is small and well tested.',
+  },
   {
     match: /review|changes|check my work/i,
     steps: ['Bash git diff origin/main --stat'],
@@ -154,7 +163,7 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
         return picked ? `Going with **${picked}**. I'll wire \`requireUser()\` to it next.` : "No preference, so I'll start with **signed cookies**: the simplest option.";
       }
       for (const step of script.steps) {
-        await sleep(450 * pace, input.signal);
+        await sleep((script.stepMs ?? 450) * pace, input.signal);
         input.onEvent('tool', step);
       }
       const subs = (script.subagents ?? []).map((s, i) => ({ ...s, id: `sub-${Date.now()}-${i}` }));

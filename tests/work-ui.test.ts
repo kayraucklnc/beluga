@@ -365,15 +365,15 @@ describe('settingsMenu', () => {
   });
 
   it('notify, workspaces, buttons and display sections', () => {
-    expect(ids(settingsMenu(s(), 'notify'))).toEqual(['n-desktop', 'n-sound', 'n-done', 'n-needsYou', 'n-problems', 'n-people', 'n-pr', 'n-test', 'set-back']);
+    expect(ids(settingsMenu(s(), 'notify'))).toEqual(['n-desktop', 'n-sound', 'n-onlyAway', 'n-dnd', 'n-needsYou', 'n-done', 'n-mentions', 'n-people', 'n-background', 'n-problems', 'n-pr', 'n-test', 'set-back']);
     const wsMenu = settingsMenu(s(), 'workspaces');
-    expect(ids(wsMenu)).toEqual(['w-setup', 'w-friend', 'w-shell', 'w-buttons', 'set-back']);
-    expect(wsMenu.options[3]!.hint).toBe('all shown');
+    expect(ids(wsMenu)).toEqual(['w-setup', 'w-friend', 'sec:terminal', 'sec:env', 'w-buttons', 'set-back']);
+    expect(wsMenu.options[4]!.hint).toBe('all shown');
     const hidden = reduce(s(), { type: 'prefs', prefs: { hiddenButtons: ['run', 'pr'], friendWorktrees: 'never' as never, shell: '/bin/fish' } });
     const wsHidden = settingsMenu(hidden, 'workspaces');
-    expect(wsHidden.options[3]!.hint).toBe('2 hidden');
+    expect(wsHidden.options[4]!.hint).toBe('2 hidden');
     expect(wsHidden.options[1]!.hint).toMatch(/^No/);
-    expect(wsHidden.options[2]!.hint).toMatch(/^\/bin\/fish/);
+    expect(wsHidden.options[2]!.hint).toMatch(/^fish/);
     const btns = settingsMenu(hidden, 'buttons');
     expect(ids(btns)).toEqual([...HIDEABLE_BUTTONS.map(([id]) => `btn:${id}`), 'set-back-workspaces']);
     expect(btns.options[0]!.hint).toMatch(/^○ hidden/);
@@ -425,24 +425,42 @@ describe('inboxMenu', () => {
     expect(m.intro[0]).toMatch(/^Nothing yet/);
   });
 
-  it('lists notices newest first with unread marks and ages', () => {
+  it('lists notices newest first with unread marks and ages, Today then Earlier', () => {
     vi.useFakeTimers();
-    const t0 = new Date('2026-01-01T00:00:00Z').getTime();
-    vi.setSystemTime(t0);
+    // Local times, so Today and Earlier split the same way in every time zone.
+    const at = (day: number, h: number, m = 0, sec = 0): number => new Date(2026, 0, day, h, m, sec).getTime();
+    vi.setSystemTime(at(1, 9));
     let s = reduce(initialState('r'), { type: 'notice_add', notice: { kind: 'done', title: 'old one', body: 'body' } });
-    vi.setSystemTime(t0 + 2 * 86_400_000);
+    vi.setSystemTime(at(3, 9));
     s = reduce(s, { type: 'notice_add', notice: { kind: 'done', title: 'hours', body: '' } });
-    vi.setSystemTime(t0 + 2 * 86_400_000 + 3 * 3_600_000);
+    vi.setSystemTime(at(3, 12));
     s = reduce(s, { type: 'notice_add', notice: { kind: 'done', title: 'minutes', body: '' } });
-    vi.setSystemTime(t0 + 2 * 86_400_000 + 3 * 3_600_000 + 5 * 60_000);
+    vi.setSystemTime(at(3, 12, 5));
     s = reduce(s, { type: 'notice_add', notice: { kind: 'done', title: 'fresh', body: '' } });
     s = reduce(s, { type: 'notice_read', id: 2 });
-    const now = t0 + 2 * 86_400_000 + 3 * 3_600_000 + 5 * 60_000 + 10_000;
-    const m = inboxMenu(s, now);
+    const m = inboxMenu(s, {}, at(3, 12, 5, 10));
     expect(m.intro[0]).toBe('3 new · click one to open it');
-    expect(ids(m)).toEqual(['notice:4', 'notice:3', 'notice:2', 'notice:1', 'inbox-read', 'inbox-clear', 'sec:notify', 'close']);
+    expect(ids(m)).toEqual(['notice:4', 'notice:3', 'notice:2', 'notice:1', 'inbox-filter', 'inbox-read', 'inbox-manage', 'inbox-clear', 'sec:notify', 'close']);
     expect(m.options.slice(0, 4).map((o) => o.label)).toEqual(['● fresh', '● minutes', '  hours', '● old one']);
-    expect(m.options.slice(0, 4).map((o) => o.hint)).toEqual(['just now', '5m ago', '3h ago', '2d ago  ·  body']);
+    expect(m.options.slice(0, 4).map((o) => o.hint)).toEqual(['now', '5m', '3h', 'Earlier · Thu  ·  body']);
+  });
+
+  it('filters, and clears one by one', () => {
+    let s = reduce(initialState('r'), { type: 'notice_add', notice: { kind: 'needsYou', tag: 'approval', title: 'Run tests?', body: '' } });
+    s = reduce(s, { type: 'notice_add', notice: { kind: 'mentions', tag: 'mention', title: 'bob mentioned you', body: '@kay look' } });
+    s = reduce(s, { type: 'notice_read', id: 2 });
+    const titles = (spec: { options: readonly { id: string; label: string }[] }): string[] => spec.options.filter((o) => o.id.startsWith('notice')).map((o) => o.label.trim());
+    expect(titles(inboxMenu(s, { filter: 'unread' }))).toEqual(['● Run tests?']);
+    expect(titles(inboxMenu(s, { filter: 'mentions' }))).toEqual(['bob mentioned you']);
+    expect(inboxMenu(s, { filter: 'needsYou' }).options.find((o) => o.id === 'inbox-filter')).toMatchObject({ label: 'Showing: Needs you', hint: 'Enter for Mentions' });
+    const read = reduce(s, { type: 'notice_read' });
+    expect(inboxMenu(read, { filter: 'unread' }).intro[0]).toBe('Nothing unread.');
+    expect(ids(inboxMenu(read))).not.toContain('inbox-read');
+    const manage = inboxMenu(s, { manage: true });
+    expect(manage.title).toBe('Inbox › Clear');
+    expect(ids(manage)).toEqual(['notice-x:2', 'notice-x:1', 'inbox-clear', 'inbox-back']);
+    expect(manage.options[0]!.label).toBe('× bob mentioned you');
+    expect(ids(inboxMenu(initialState('r'), { manage: true }))).toEqual(['inbox-back']);
   });
 
   it('shows at most 30 notices', () => {

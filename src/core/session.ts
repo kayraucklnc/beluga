@@ -34,6 +34,7 @@ import { type PeerRun, type ShellRunner, describeShellResult } from './peer-run.
 import type { GuestControl, ProjectInvites } from './project-invites.js';
 import type { GuestShell } from './guest-shell.js';
 import { type SharedDiff, guestMayDo } from './shared-diff.js';
+import type { EnvVars } from './env-vars.js';
 
 /** Bigger, smaller, or back to normal text. */
 export type ZoomDir = 'in' | 'out' | 'reset';
@@ -163,6 +164,8 @@ export class Session {
   readonly shell: GuestShell;
   /** What changed in a workspace shared with you (and serving yours). */
   readonly diff: SharedDiff;
+  /** Your environment variables for shells, scripts and your Claude (never sent to the room). */
+  readonly env: EnvVars;
   private projectsTimer?: NodeJS.Timeout;
   /** What this session asks screens to do (see core/intents.ts). */
   readonly intents = new IntentBus();
@@ -186,6 +189,7 @@ export class Session {
     this.invites = parts.invites;
     this.shell = parts.shell;
     this.diff = parts.diff;
+    this.env = parts.env;
     this.agent = opts.createAgent?.(this.bridge);
     this.attention = new AttentionRegistry(opts.store);
     opts.store.dispatch({ type: 'identity', selfId: opts.client.peerId, isHost: Boolean(opts.room), home: os.homedir() });

@@ -21,7 +21,7 @@ export function ChatView() {
     ) : view.kind === 'draft_worktree' ? (
       <Empty icon="branch" title="A new worktree" detail="Describe the task. klaud names a branch from it, makes the worktree from the latest origin, and Claude starts right away." />
     ) : view.kind === 'room' ? (
-      <Empty icon="spark" title={solo ? 'Talk to your Claude' : 'Say hi to the room'} detail={solo ? 'Ask anything. Mention @a-workspace to reach the Claude working there, or press / for commands.' : 'Everyone here sees this chat. @claude:name asks someone’s Claude.'} />
+      <Empty icon="claude" title={solo ? 'Talk to your Claude' : 'Say hi to the room'} detail={solo ? 'Ask anything. Mention @a-workspace to reach the Claude working there, or press / for commands.' : 'Everyone here sees this chat. @claude:name asks someone’s Claude.'} />
     ) : (
       <Empty icon="chat" title="Tell Claude what to do here" detail="It works in this folder, and remembers the conversation." />
     );

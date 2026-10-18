@@ -299,3 +299,35 @@ describe('models, usage, space and search', () => {
     expect(kay.state().templates.some((t) => t.name === 'Write docs')).toBe(false);
   });
 });
+
+describe('your shell, its names and your variables', () => {
+  it('starts shells the way you set them up, with your variables, and names them for every screen', async () => {
+    hub = await startHub({ keys });
+    const dir = repo();
+    const kay = await solo(dir);
+    const project = projectOf(kay.workspaces);
+    await waitFor(() => kay.state().projects.some((p) => p.id === project.id), 4000);
+    kay.session.setPrefs({ shell: '/bin/bash', shellLogin: false, shellArgs: ['--norc', '--noprofile'] });
+    kay.session.env.set(undefined, [{ key: 'KLAUD_T_MINE', value: 'mine' }, { key: 'KLAUD_T_BOTH', value: 'mine' }]);
+    kay.session.env.set(project.id, [{ key: 'KLAUD_T_BOTH', value: 'project' }]);
+    const shell = kay.bench.globalShell('shell:1', dir)!;
+    shell.run('echo "got:$KLAUD_T_MINE:$KLAUD_T_BOTH:$0"');
+    await waitFor(() => shell.backlog().includes('got:mine:project:'), 8000);
+    expect(shell.shell).toBe('/bin/bash');
+
+    // Setup and run commands get them too (alongside klaud's own).
+    const ws = await kay.session.workspaces!.newWorktree(project.id, 'envy');
+    kay.bench.setScript(project.id, 'run', 'echo "run:$KLAUD_T_BOTH:$KLAUD_WORKSPACE_NAME"; sleep 5');
+    await waitFor(() => kay.workspaces.list.find((p) => p.id === project.id)?.scripts?.run?.source === 'yours', 4000);
+    const run = kay.bench.run(ws!.id)!;
+    await waitFor(() => run.backlog().includes('run:project:envy'), 8000);
+
+    kay.bench.renameTerminal('shell:1', '  logs\n');
+    expect(kay.state().termNames['shell:1']).toBe('logs');
+    kay.bench.renameTerminal('shell:1', '');
+    expect(kay.state().termNames['shell:1']).toBeUndefined();
+    kay.bench.renameTerminal('shell:1', 'tail');
+    kay.bench.closeTerminal('shell:1');
+    expect(kay.state().termNames).toEqual({});
+  });
+});

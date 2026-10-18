@@ -1,0 +1,200 @@
+import * as Popover from '@radix-ui/react-popover';
+import { useEffect, useState } from 'react';
+import type { Notice } from '@klaud/core/work-store.js';
+import { unreadCount } from '@klaud/core/work-store.js';
+import { dndActive, dndLabel } from '@klaud/shared/quiet.js';
+import { type NoticeFilter, type NoticeLook, NOTICE_FILTERS, filterNotices, groupNotices, noticeAgo, noticeLook, noticeTarget } from '@klaud/ui/notice-models.js';
+import { Icon, type IconName } from '../components/Icon.js';
+import { IconButton, Tip, cx } from '../components/ui.js';
+import { useActions } from '../lib/actions.js';
+import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { openNoticeTarget } from '../lib/notices.js';
+import s from './notifications.module.css';
+
+/** A few marks the shared icon set doesn't have, drawn the same way (16 grid, 1.5 strokes). */
+const OWN: Partial<Record<NoticeLook | 'moon', string>> = {
+  question: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M6.3 6.4a1.8 1.8 0 1 1 2.4 1.7c-.5.2-.7.6-.7 1.1v.3 M8 11.2v.01',
+  mention: 'M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z M10.5 8v1.2a1.6 1.6 0 0 0 3.2 0V8a5.7 5.7 0 1 0-2.3 4.6',
+  left: 'M6.5 7.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z M2 13.5c0-2.4 2-4 4.5-4 1 0 1.9.2 2.6.7 M10.5 11.5h4',
+  moon: 'M13 9.6A5.5 5.5 0 0 1 6.4 3a5.5 5.5 0 1 0 6.6 6.6z',
+};
+
+const ICON: Record<NoticeLook, IconName> = {
+  approval: 'hand',
+  question: 'chat',
+  plan: 'wand',
+  done: 'check',
+  problem: 'alert',
+  joined: 'person',
+  left: 'person',
+  invited: 'share',
+  people: 'people',
+  mention: 'chat',
+  message: 'chat',
+  pr: 'pr',
+  task: 'terminal',
+  test: 'bell',
+};
+
+function Mark({ look, size = 14 }: { look: NoticeLook | 'moon'; size?: number }) {
+  const own = OWN[look];
+  if (!own) return <Icon name={ICON[look as NoticeLook]} size={size} />;
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={own} />
+    </svg>
+  );
+}
+
+/** The time now, ticking every half minute while shown (for "4m"). */
+function useNow(): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+function Row({ n, now, onOpen }: { n: Notice; now: number; onOpen: (n: Notice) => void }) {
+  const api = useApi();
+  const { look, tone } = noticeLook(n);
+  return (
+    <li className={cx(s.row, !n.read && s.unread)}>
+      <button type="button" className={s.rowMain} onClick={() => onOpen(n)}>
+        <span className={cx(s.tile, s[`tone_${tone}`])}>
+          <Mark look={look} />
+        </span>
+        <span className={s.text}>
+          <span className={s.title}>{n.title}</span>
+          {n.body ? <span className={s.body}>{n.body}</span> : null}
+        </span>
+        <span className={s.time}>{noticeAgo(n.ts, now)}</span>
+      </button>
+      <span className={s.rowActions}>
+        <Tip label={n.read ? 'Mark as unread' : 'Mark as read'}>
+          <button type="button" className={s.rowAction} aria-label={n.read ? 'Mark as unread' : 'Mark as read'} onClick={() => void (n.read ? api.inbox.unread(n.id) : api.inbox.read({ id: n.id }))}>
+            <span className={cx(s.readDot, !n.read && s.readDotOn)} />
+          </button>
+        </Tip>
+        <Tip label="Clear">
+          <button type="button" className={s.rowAction} aria-label="Clear" onClick={() => void api.inbox.clear({ id: n.id })}>
+            <Icon name="x" size={11} />
+          </button>
+        </Tip>
+      </span>
+      {!n.read ? <span className={s.unreadDot} aria-label="Unread" /> : null}
+    </li>
+  );
+}
+
+function Empty({ filter, any }: { filter: NoticeFilter; any: boolean }) {
+  const title = !any ? 'You’re all caught up' : filter === 'unread' ? 'Nothing unread' : filter === 'needsYou' ? 'Nothing waiting for you' : 'No mentions';
+  const detail = !any ? 'klaud lists here when Claude finishes or needs you, and when friends come and go.' : 'The rest are under All.';
+  return (
+    <div className={s.empty}>
+      <Icon name="bell" size={20} />
+      <div className={s.emptyTitle}>{title}</div>
+      <div className={s.emptyDetail}>{detail}</div>
+    </div>
+  );
+}
+
+/** What happened while you were elsewhere: Today and Earlier, filters, read, clear. */
+function Center({ close }: { close: () => void }) {
+  const api = useApi();
+  const actions = useActions();
+  const { ui } = useKlaud();
+  const inbox = useApp((st) => st.inbox);
+  const notify = useApp((st) => st.prefs.notify);
+  const places = useApp((st) => st);
+  const [filter, setFilter] = useState<NoticeFilter>('all');
+  const now = useNow();
+  const unread = inbox.filter((n) => !n.read).length;
+  const groups = groupNotices(filterNotices(inbox, filter), now);
+  const quiet = dndActive(notify, now);
+
+  const open = (n: Notice): void => {
+    const target = noticeTarget(places, n.channel);
+    if (!n.read) void api.inbox.read({ id: n.id });
+    if (!target) return;
+    openNoticeTarget(actions, target);
+    close();
+  };
+
+  return (
+    <>
+      <header className={s.head}>
+        <h2 className={s.heading}>Notifications</h2>
+        <button type="button" className={s.link} disabled={!unread} onClick={() => void api.inbox.read()}>
+          Mark all read
+        </button>
+        <button type="button" className={s.link} disabled={!inbox.length} onClick={() => void api.inbox.clear()}>
+          Clear all
+        </button>
+        <IconButton
+          icon="gear"
+          label="Notification settings"
+          onClick={() => {
+            close();
+            ui.patch({ settings: 'notifications' });
+          }}
+        />
+      </header>
+      {quiet ? (
+        <div className={s.quiet}>
+          <Mark look="moon" size={13} />
+          <span>Do Not Disturb {dndLabel(notify, now)}</span>
+          <button type="button" className={s.link} onClick={() => void api.session.setPrefs({ notify: { ...notify, dnd: null } })}>
+            Turn off
+          </button>
+        </div>
+      ) : null}
+      <div className={s.filters} role="tablist" aria-label="Show">
+        {NOTICE_FILTERS.map((f) => (
+          <button key={f.value} type="button" role="tab" aria-selected={filter === f.value} className={cx(s.filter, filter === f.value && s.filterOn)} onClick={() => setFilter(f.value)}>
+            {f.label}
+            {f.value === 'unread' && unread ? <span className={s.count}>{unread}</span> : null}
+          </button>
+        ))}
+      </div>
+      <div className={s.scroll}>
+        {groups.length ? (
+          groups.map((g) => (
+            <section key={g.label} className={s.group} aria-label={g.label}>
+              <h3 className={s.groupTitle}>{g.label}</h3>
+              <ul className={s.list}>
+                {g.notices.map((n) => (
+                  <Row key={n.id} n={n} now={now} onOpen={open} />
+                ))}
+              </ul>
+            </section>
+          ))
+        ) : (
+          <Empty filter={filter} any={inbox.length > 0} />
+        )}
+      </div>
+    </>
+  );
+}
+
+/** The bell in the toolbar: how many things are new, and the notification centre under it. */
+export function NotificationBell() {
+  const { ui } = useKlaud();
+  const open = useUi((u) => u.notices);
+  const unread = useApp((st) => unreadCount(st));
+  const quiet = useApp((st) => dndActive(st.prefs.notify));
+  const label = `Notifications${unread ? ` · ${unread} new` : ''}${quiet ? ' · Do Not Disturb' : ''}`;
+  return (
+    <Popover.Root open={open} onOpenChange={(o) => ui.patch({ notices: o })}>
+      <Popover.Trigger asChild>
+        <IconButton icon="bell" label={label} active={open} badge={unread} className={cx(quiet && s.bellQuiet)} />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className={s.popover} align="end" sideOffset={6} collisionPadding={12} aria-label="Notifications">
+          <Center close={() => ui.patch({ notices: false })} />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}

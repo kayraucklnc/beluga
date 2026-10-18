@@ -2,16 +2,23 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type AppState, channelOf, peerName } from '@klaud/core/store.js';
 import { localDirKey } from '@klaud/core/local-key.js';
 import { workspaceMentions } from '@klaud/core/mentions.js';
-import { composeState } from '@klaud/ui/compose.js';
+import { composeState, queueIn } from '@klaud/ui/compose.js';
 import { localDirOf, openTarget, suggest, type Suggestion } from '@klaud/ui/suggest.js';
 import { Icon } from '../components/Icon.js';
-import { Button, Kbd, Tip, cx } from '../components/ui.js';
+import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { ModelPicker } from './ModelPicker.js';
+import { QueueTray } from './QueueTray.js';
+import { keepPreview, previewOf } from './images.js';
 import s from './composer.module.css';
+import img from './images.module.css';
+
+const CHIP = /\[image (\d+)\]/g;
+/** The "[image N]" chips in the text, in order, once each. */
+const chipsIn = (text: string): number[] => [...new Set([...text.matchAll(CHIP)].map((m) => Number(m[1])))];
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -54,6 +61,11 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const channel = channelOf(state.view);
   const shared = state.view.kind === 'shared';
   const compose = composeState(state, ui.get(), state.selfId, channel, shared);
+  const queue = useMemo(() => queueIn(state, channel, state.selfId), [state.log, channel, state.selfId]);
+  // Pictures of the images pasted or dropped here, until they're sent.
+  const pendingImages = chipsIn(buffer).filter((n) => previewOf(n));
+  // While Claude works, sending queues the message; "Send now" interrupts it.
+  const queueing = compose.busy && (compose.typing || !buffer.trim());
   const plan = state.planMode[channel] === true;
   const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view';
 
@@ -132,7 +144,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       let chip: string;
       try {
-        ({ chip } = await api.attachments.add(ext, btoa(bin)));
+        const added = await api.attachments.add(ext, btoa(bin));
+        chip = added.chip;
+        keepPreview(added.n, file);
       } catch (err) {
         toast(client, `Couldn't add ${file.name || 'the image'}: ${errorText(err)}`, 'error');
         continue;
@@ -150,6 +164,20 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const imagesOf = (items: DataTransferItemList | undefined): File[] =>
     [...(items ?? [])].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => Boolean(f));
   const [dropping, setDropping] = useState(false);
+  /** Take an image out of the message (its chip, and the space after it). */
+  const removeImage = (n: number): void => {
+    const next = buffer.replace(new RegExp(`\\[image ${n}\\] ?`, 'g'), '');
+    ui.patch({ buffer: next, cursor: Math.min(ui.get().cursor, next.length) });
+    ref.current?.focus();
+  };
+  /** A queued message pulled back to edit: into the box, ahead of anything already there. */
+  const editQueued = (prompt: string): void => {
+    const toClaude = channel === 'room' && state.peers.length > 1 && !prompt.startsWith('@') ? `@claude ${prompt}` : prompt;
+    const current = ui.get().buffer.trim();
+    set(current ? `${toClaude}\n${current}` : toClaude);
+    ref.current?.focus();
+  };
+  const sendKeys = prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`;
   const accept = (sug: Suggestion): void => {
     if (sug.enter === 'submit') {
       ui.patch({ buffer: '', cursor: 0 });
@@ -229,6 +257,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           ))}
         </div>
       ) : null}
+      <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={editQueued} />
       <div
         className={cx(s.box, pending && s.asking, readOnly && s.readOnly, dropping && s.dropping)}
         onDragOver={(e) => {
@@ -252,6 +281,19 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             <button type="button" aria-label="Cancel" onClick={() => ui.patch({ pending: undefined, buffer: '' })}>
               <Icon name="x" size={10} />
             </button>
+          </div>
+        ) : null}
+        {pendingImages.length ? (
+          <div className={img.pending} role="group" aria-label="Images to send">
+            {pendingImages.map((n) => (
+              <div key={n} className={img.pendingItem}>
+                <img src={previewOf(n)} alt={`image ${n}`} />
+                <span className={img.pendingLabel}>{n}</span>
+                <button type="button" className={img.pendingRemove} aria-label={`Remove image ${n}`} onClick={() => removeImage(n)}>
+                  <Icon name="x" size={9} />
+                </button>
+              </div>
+            ))}
           </div>
         ) : null}
         <textarea
@@ -282,29 +324,20 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           ) : null}
           {!shared ? <ModelPicker channel={channel} /> : null}
           <span className={s.flex} />
-          {compose.queued ? (
-            <>
-              <Button size="small" variant="quiet" onClick={() => void api.host.promote(compose.ids[0]!)}>
-                Run waiting now
-              </Button>
-              <Button size="small" variant="quiet" onClick={() => void api.host.cancelQueued(compose.ids[0]!)}>
-                Cancel waiting
-              </Button>
-            </>
-          ) : null}
-          {compose.busy && compose.typing ? (
-            <>
-              <Tip label="Your Claude is busy: this waits its turn" keys="↩">
-                <Button size="small" onClick={() => send(false)}>
+          {queueing ? (
+            <div className={cx(s.split, buffer.trim() && s.splitReady)} role="group" aria-label="Claude is working">
+              <Tip label="Claude is working: this waits its turn in the queue" keys={sendKeys}>
+                <button type="button" className={s.splitMain} onClick={() => send(false)} disabled={!buffer.trim()}>
+                  <Icon name="clock" size={12} />
                   Queue
-                </Button>
+                </button>
               </Tip>
-              <Tip label="Interrupt your Claude and send this now" keys="⌥↩">
-                <Button size="small" variant="primary" onClick={() => send(true)}>
+              <Tip label="Stop Claude's current task and send this now" keys="⌥↩">
+                <button type="button" className={s.splitAlt} onClick={() => send(true)} disabled={!buffer.trim()}>
                   Send now
-                </Button>
+                </button>
               </Tip>
-            </>
+            </div>
           ) : (
             <Tip label={prefs.sendWith === 'enter' ? 'Send · Shift+Return for a new line' : `Send · ${mod()}Return`} keys={prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`}>
               <button type="button" className={cx(s.send, buffer.trim() && s.sendReady)} onClick={() => send(false)} aria-label="Send" disabled={!buffer.trim()}>
@@ -315,7 +348,11 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
         </div>
       </div>
       <div className={s.legend}>
-        {prefs.sendWith === 'enter' ? (
+        {queueing ? (
+          <>
+            <Kbd>{sendKeys}</Kbd> queue · <Kbd>⌥↩</Kbd> send now, interrupting Claude
+          </>
+        ) : prefs.sendWith === 'enter' ? (
           <>
             <Kbd>↩</Kbd> send · <Kbd>⇧↩</Kbd> new line
           </>

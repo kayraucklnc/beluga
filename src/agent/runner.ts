@@ -130,6 +130,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
         ...(input.effort ? { effort: input.effort } : {}),
+        // Set, this replaces Claude Code's whole environment, so it starts from ours.
+        ...(input.env && Object.keys(input.env).length ? { env: { ...process.env, ...input.env } } : {}),
         ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
         canUseTool: async (toolName, toolInput) => {
           if (toolName === 'AskUserQuestion') return answerQuestion(toolInput);

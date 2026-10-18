@@ -32,6 +32,10 @@ export type LogItem =
       readonly owner: string;
       readonly ownerName: string;
       readonly requesterName: string;
+      /** Who asked (a peer id; missing on items saved before it was kept). */
+      readonly requester?: string;
+      /** What was asked, once known (sent with the "queued" event, for the queue). */
+      readonly prompt?: string;
       readonly status: AgentEventKind;
       readonly text: string;
       readonly steps: readonly string[];
@@ -155,6 +159,10 @@ export interface Prefs {
   readonly hiddenButtons: readonly string[];
   readonly friendWorktrees: Settings['friendWorktrees'];
   readonly shell?: string;
+  /** Start the terminal's shell as a login shell. */
+  readonly shellLogin: boolean;
+  /** Extra arguments for the terminal's shell. */
+  readonly shellArgs: readonly string[];
 }
 
 export interface Transfer {
@@ -233,9 +241,11 @@ export interface Attention {
   readonly visible: readonly string[];
   /** Some screen shows Shared files (every folder there counts as seen). */
   readonly files: boolean;
+  /** Some klaud window is in front (focused, or a terminal that was used lately). */
+  readonly front: boolean;
 }
 
-export const NO_ATTENTION: Attention = { shown: [], visible: [], files: false };
+export const NO_ATTENTION: Attention = { shown: [], visible: [], files: false, front: false };
 
 /** A folder you share (not a workspace), for the Share menu. */
 export interface MyShare {
@@ -339,6 +349,8 @@ export type Action =
   | { type: 'shell'; item: ShellItem }
   /** `itemId` (stamped before reducing) names the chat item a new run creates. */
   | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string }
+  /** One owner's waiting requests in a conversation, in their new order (see orderQueued). */
+  | { type: 'queue_order'; owner: string; ids: readonly string[] }
   | { type: 'projects'; projects: readonly Project[]; groups?: readonly ProjectGroup[] }
   | { type: 'conflicts'; id: string; files: readonly string[] }
   | { type: 'review'; review?: ReviewDomain }
@@ -393,6 +405,8 @@ export const DEFAULT_PREFS: Prefs = {
   subagents: 'full',
   hiddenButtons: [],
   friendWorktrees: 'ask',
+  shellLogin: true,
+  shellArgs: [],
 };
 
 /** The preference fields out of saved settings. */
@@ -497,6 +511,19 @@ export function newShares(state: AppState): number {
   return new Set(shareKeys(state).filter((k) => !seen.has(k))).size;
 }
 
+/**
+ * Put one owner's waiting requests in the order given, each in a place one of them already
+ * takes in the log (so the chat reads in the order Claude will run them). Unchanged if any is missing.
+ */
+export function orderQueued(log: readonly LogItem[], owner: string, ids: readonly string[]): readonly LogItem[] {
+  const wanted = new Set(ids);
+  const slots = log.flatMap((l, i) => (l.type === 'agent' && l.owner === owner && wanted.has(l.requestId) ? [i] : []));
+  if (slots.length !== ids.length) return log;
+  const byId = new Map(slots.map((i) => [(log[i] as Extract<LogItem, { type: 'agent' }>).requestId, log[i]!]));
+  const placed = new Map(slots.map((slot, k) => [slot, byId.get(ids[k]!)!]));
+  return slots.every((slot) => placed.get(slot) === log[slot]) ? log : log.map((l, i) => placed.get(i) ?? l);
+}
+
 function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_event' }>): DomainState {
   const a = { ...raw, text: clean(raw.text) };
   const idx = state.log.findIndex((l) => l.type === 'agent' && l.requestId === a.requestId && l.owner === a.owner);
@@ -508,6 +535,7 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     owner: a.owner,
     ownerName: peerName(state, a.owner),
     requesterName: peerName(state, a.requester),
+    requester: a.requester,
     status: a.event,
     text: '',
     steps: [],
@@ -527,6 +555,7 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
           : base.text,
     steps: a.event === 'tool' ? [...base.steps, a.text].slice(-MAX_STEPS) : base.steps,
     endTs: a.event === 'done' || a.event === 'error' || a.event === 'denied' ? a.ts : base.endTs,
+    ...(a.event === 'queued' && a.text ? { prompt: a.text } : {}),
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
   return bumpUnread({ ...state, log }, updated.channel, !existing);
@@ -776,6 +805,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     }
     case 'notice_add':
     case 'notice_read':
+    case 'notice_unread':
     case 'notice_clear':
     case 'models':
     case 'disk':
@@ -785,6 +815,9 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'templates':
     case 'terminal':
     case 'terminal_exit':
+    case 'terminal_name':
+    case 'shell_choices':
+    case 'env_keys':
     case 'pr_custom':
     case 'gh':
     case 'remembered':
@@ -792,6 +825,10 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'context_reset': {
       const { [action.channel]: _gone, ...context } = state.context;
       return { ...state, context };
+    }
+    case 'queue_order': {
+      const log = orderQueued(state.log, action.owner, action.ids);
+      return log === state.log ? state : { ...state, log };
     }
     default:
       return state;

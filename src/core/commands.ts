@@ -1,6 +1,7 @@
 import type { Session } from './session.js';
 import type { Policy } from './store.js';
 import { THEMES, type ThemeName } from '../shared/settings-schema.js';
+import { runEnvCommand, runShellCommand } from './terminal-commands.js';
 
 export interface CommandSpec {
   readonly name: string;
@@ -26,7 +27,8 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'usage', desc: 'disk space and Claude usage per workspace' },
   { name: 'inbox', desc: 'what happened while you were elsewhere' },
   { name: 'template', args: 'save <name>: <prompt>', desc: 'start from a template, or save your own' },
-  { name: 'shell', args: '<path>', desc: 'the shell for the built-in terminal' },
+  { name: 'shell', args: '<path>|default|login on|off|args …', desc: 'the shell for the built-in terminal, and how it starts' },
+  { name: 'env', args: '[project] KEY=value', desc: 'set an environment variable for your shells, scripts and Claude (KEY= removes it)' },
   { name: 'compact', args: '[focus]', desc: "shrink this conversation's context (Claude keeps what matters)" },
   { name: 'merge', desc: 'merge this worktree into the main folder' },
   { name: 'commit', args: '[message]', desc: 'commit all changes in this workspace' },
@@ -146,9 +148,10 @@ export function runCommand(session: Session, name: string, args: readonly string
       session.intend({ type: 'overlay', overlay: 'templates' });
       return;
     case 'shell':
-      if (!arg) return session.toast(`Terminal shell: ${state.prefs.shell ?? process.env.SHELL ?? '/bin/zsh'}. Use /shell <path> to change it`);
-      session.setPrefs({ shell: arg });
-      session.toast(`New terminals use ${arg}`, 'success');
+      runShellCommand(session, args);
+      return;
+    case 'env':
+      runEnvCommand(session, args, channel);
       return;
     case 'copy':
       void session.copyLastAnswer();

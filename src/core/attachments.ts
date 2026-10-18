@@ -235,3 +235,48 @@ export function publishForRoom(a: Attachment, dir = roomAttachmentsDir()): strin
   copyFileSync(a.path, path.join(dir, name));
   return name;
 }
+
+/** Biggest image shown in a chat (bigger ones still open in the viewer). */
+export const MAX_PREVIEW_BYTES = 8 * 1024 * 1024;
+
+/** A file name an image link may name: no folders, not hidden, an image. */
+export const isAttachmentName = (name: string): boolean => !/[/\\]/.test(name) && !name.startsWith('.') && name.length <= 255 && IMAGE_EXT.test(name);
+
+/** Your own copy of an image you linked: in the attachments folder, or among the room's copies. */
+export function ownAttachment(file: string, dir = attachmentsDir()): string | undefined {
+  if (!isAttachmentName(file)) return undefined;
+  return [path.join(dir, file), path.join(dir, 'room', file)].find(isFile);
+}
+
+/** Fetches a file from a friend's share (end-to-end encrypted, refusing anything over `max` bytes). */
+export type FetchShared = (at: { owner: string; share: string; path: string }, max: number) => Promise<Buffer>;
+
+/**
+ * The bytes of an image linked in a chat message: yours from disk, a friend's through their
+ * share of room images (only people they sent it to may fetch it).
+ */
+export async function readAttachment(owner: string, file: string, selfId: string, fetchShared: FetchShared, dir = attachmentsDir()): Promise<Buffer> {
+  if (!isAttachmentName(file)) throw new Error("That isn't an image link");
+  if (owner === selfId) {
+    const own = ownAttachment(file, dir);
+    if (!own) throw new Error('That image is gone from this computer');
+    if (statSync(own).size > MAX_PREVIEW_BYTES) throw new Error('That image is too big to show here');
+    return fs.readFile(own);
+  }
+  return fetchShared({ owner, share: ATTACHMENT_SHARE, path: file }, MAX_PREVIEW_BYTES);
+}
+
+/** An image from a chat message as a file on this computer (a friend's is saved under attachments/received). */
+export async function attachmentOnDisk(owner: string, file: string, selfId: string, fetchShared: FetchShared, dir = attachmentsDir()): Promise<string> {
+  if (owner === selfId) {
+    const own = ownAttachment(file, dir);
+    if (!own) throw new Error('That image is gone from this computer');
+    return own;
+  }
+  const bytes = await readAttachment(owner, file, selfId, fetchShared, dir);
+  const received = path.join(dir, 'received');
+  await fs.mkdir(received, { recursive: true });
+  const saved = path.join(received, `${owner.replace(/[^\w-]/g, '').slice(0, 12)}-${file}`);
+  await fs.writeFile(saved, bytes);
+  return saved;
+}

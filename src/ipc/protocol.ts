@@ -31,7 +31,7 @@ export const ClientFrame = z.discriminatedUnion('t', [
   z.object({ t: z.literal('call'), id, method: z.string().max(100), args: z.array(z.unknown()).max(20) }),
   z.object({
     t: z.literal('attention'),
-    attention: z.object({ shown: z.array(z.string().max(200)).max(50), visible: z.array(z.string().max(200)).max(50), files: z.boolean() }),
+    attention: z.object({ shown: z.array(z.string().max(200)).max(50), visible: z.array(z.string().max(200)).max(50), files: z.boolean(), front: z.boolean().optional() }),
   }),
   z.object({ t: z.literal('cap_result'), id, ok: z.boolean(), value: z.unknown().optional(), error: z.string().max(2000).optional() }),
   z.object({ t: z.literal('term_attach'), term }),

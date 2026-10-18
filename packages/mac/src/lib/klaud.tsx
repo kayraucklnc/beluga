@@ -11,17 +11,21 @@ import type { MenuKind } from '@klaud/ui/menus.js';
  */
 export interface MacUi extends UiState {
   readonly palette: boolean;
+  /** The Add Project sheet is open. */
+  readonly addProject?: boolean;
+  /** The notification centre (the bell in the toolbar) is open. */
+  readonly notices: boolean;
   readonly settings?: SettingsPane;
   /** A sheet asking for one line of text (a name for a new group…). */
   readonly ask?: { readonly title: string; readonly placeholder: string; readonly onSubmit: (text: string) => void };
 }
 
-export type SettingsPane = 'general' | 'appearance' | 'claude' | 'notifications' | 'workspaces' | 'people' | 'about';
+export type SettingsPane = 'general' | 'appearance' | 'claude' | 'notifications' | 'workspaces' | 'terminal' | 'environment' | 'people' | 'about';
 
 type Listener = () => void;
 
 export class UiStore {
-  private state: MacUi = { ...initialUi, palette: false };
+  private state: MacUi = { ...initialUi, palette: false, notices: false };
   private readonly listeners = new Set<Listener>();
 
   get = (): MacUi => this.state;

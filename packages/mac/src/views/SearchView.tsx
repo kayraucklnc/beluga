@@ -13,7 +13,14 @@ export function SearchView() {
   const search = useApp((st) => st.search);
   const [query, setQuery] = useState(search.query);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => input.current?.focus(), []);
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    input.current?.focus();
+  }, []);
+  // Arrow keys move the selection; keep it in view.
+  useEffect(() => {
+    list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [search.cursor]);
   useEffect(() => {
     const t = setTimeout(() => void api.workbench.search(query), 120);
     return () => clearTimeout(t);
@@ -46,7 +53,7 @@ export function SearchView() {
       ) : !search.hits.length ? (
         <Empty icon="search" title="No matches" detail={`Nothing says “${query}”.`} />
       ) : (
-        <div className={s.list} role="listbox">
+        <div ref={list} className={s.list} role="listbox">
           {search.hits.map((h, i) => (
             <div key={`${h.channel}:${h.ts}:${i}`} role="option" aria-selected={i === search.cursor} className={cx(s.hit, i === search.cursor && s.hitOn)} onClick={() => open(i)}>
               <div className={s.hitHead}>

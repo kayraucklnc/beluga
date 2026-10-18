@@ -92,7 +92,7 @@ function Question() {
   return (
     <div className={s.card}>
       <div className={s.head}>
-        <Icon name="spark" size={13} className={s.claude} />
+        <Icon name="claude" size={13} className={s.claude} />
         <span className={s.title}>{current.header || 'Claude asks'}</span>
         {total > 1 ? <span className={s.more}>{index + 1} of {total}</span> : null}
         <Button size="small" variant="quiet" onClick={() => actions.run({ type: 'answer', qid: q.qid, pick: 'skip' })}>

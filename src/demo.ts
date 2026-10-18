@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createMockBackend } from './agent/mock.js';
+import { ATTACHMENT_SCHEME, ATTACHMENT_SHARE, formatBytes } from './core/attachments.js';
+import { demoScreenshot } from './demo-image.js';
 import { type ShellRunner, runShell } from './core/peer-run.js';
 import { Session } from './core/session.js';
 import { ShareService } from './core/shares.js';
@@ -118,6 +120,7 @@ export function startDemoFriend(url: string, keys: RoomKeys, folder: string, nam
     session.updateUsage({ plan: 'pro', fiveHour: { pct: friend.usage }, week: { pct: 41 } });
     say(friend.first);
     if (name === 'bob') setTimeout(() => shareDemoWorkspace(session, shares, folder), 1800);
+    if (name === 'bob') setTimeout(() => sendDemoScreenshot(session), 4200);
   });
   client.on('message', (msg) => {
     // Answer you (not each other), one line per message you send.
@@ -166,6 +169,17 @@ function shareDemoWorkspace(session: Session, shares: ShareService, folder: stri
     { from: "bob's Claude", text: 'The handler is not idempotent: it charges again on every retry. I added an idempotency key check.', ts: Date.now() - 60_000, byAgent: true },
   ];
   session.send({ kind: 'ws_invite', ws: { id: DEMO_WS, name: 'payments', project: 'bob-api', branch: 'fix-webhooks' }, role: 'view', can: 'watch', share, history }, { to: host.peerId });
+}
+
+/** bob sends the room a screenshot (the way a pasted image goes out), so the demo shows images in the chat. */
+function sendDemoScreenshot(session: Session): void {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-images-'));
+  const file = 'checkout-error.png';
+  const png = demoScreenshot();
+  writeFileSync(path.join(dir, file), png);
+  const others = session.store.getState().peers.filter((p) => p.peerId !== session.selfId).map((p) => p.peerId);
+  session.serveFolder(ATTACHMENT_SHARE, dir, others);
+  session.sendChat(`this is the checkout error on staging [📎 image 1 (png, ${formatBytes(png.byteLength)})](${ATTACHMENT_SCHEME}${session.selfId}/${file})`, false);
 }
 
 /** Someone who got your link to one project and knocks (the demo's Invite flow, from the other side). */
