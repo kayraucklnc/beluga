@@ -90,7 +90,7 @@ fn spawn(app: &AppHandle, args: &[String]) -> Result<u32, String> {
 /// The Node binary and klaud's bundled entry inside the app, when they're there.
 fn bundled(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     let resources = app.path().resource_dir().ok()?;
-    let script = resources.join("daemon").join("cli.mjs");
+    let script = resources.join("daemon").join("dist").join("cli.js");
     let node = std::env::current_exe().ok()?.parent()?.join("node");
     (script.exists() && node.exists()).then_some((node, script))
 }
