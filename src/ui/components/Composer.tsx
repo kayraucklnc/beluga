@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Box, Text } from 'ink';
 import type { Toast, Transfer } from '../../core/store.js';
 import { type ActionButton, buttonLabel } from '../actions.js';
@@ -7,6 +7,7 @@ import type { Focus } from '../keymap.js';
 import { type Suggestion, suggestionWindow } from '../suggest.js';
 import { type Line, type Seg, formatSize, lineWidth, truncate, width } from '../text.js';
 import { LineView } from './LineView.js';
+import { type Row, charAfter, rowOf, wrapBuffer } from '../composer-text.js';
 import { glyph, theme } from '../theme.js';
 
 interface ComposerProps {
@@ -30,6 +31,30 @@ interface ComposerProps {
   readonly hoveredButton?: string;
   /** What the empty box says while something else has the keyboard. */
   readonly idleHint?: string;
+  /** Rows of text to show (from the layout) and the columns the draft wraps at. */
+  readonly lines?: number;
+  readonly wrapWidth?: number;
+}
+
+/** First row to show so the cursor's row stays in view, moving as little as possible. */
+export function composerScroll(prev: number, cursorRow: number, total: number, lines: number): number {
+  let top = Math.min(prev, Math.max(0, total - lines));
+  if (cursorRow < top) top = cursorRow;
+  if (cursorRow >= top + lines) top = cursorRow - lines + 1;
+  return Math.max(0, top);
+}
+
+/** One row of the draft, with the cursor drawn on it if it's there. */
+function DraftRow({ buffer, row, cursor, active }: { buffer: string; row: Row; cursor?: number; active: boolean }) {
+  if (cursor === undefined) return <Text wrap="truncate">{buffer.slice(row.start, row.end) || ' '}</Text>;
+  const at = cursor < row.end ? buffer.slice(cursor, cursor + charAfter(buffer, cursor)) : ' ';
+  return (
+    <Text wrap="truncate">
+      {buffer.slice(row.start, cursor)}
+      {active ? <Text inverse>{at}</Text> : at}
+      {buffer.slice(cursor + (cursor < row.end ? at.length : 0), row.end)}
+    </Text>
+  );
 }
 
 const TOAST_COLORS: Record<Toast['level'], string> = { info: theme.info, success: theme.ok, warn: theme.warn, error: theme.error };
@@ -45,8 +70,15 @@ function TransferStatus({ t }: { t: Transfer }) {
   );
 }
 
-export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent, hint, hoveredButton, right, idleHint }: ComposerProps) {
+export function Composer({ width, buffer, cursor, focus, suggestions, selected, buttons, toast, transfer, placeholder, accent, hint, hoveredButton, right, idleHint, lines = 1, wrapWidth = Math.max(4, width - 7) }: ComposerProps) {
   const active = focus === 'chat';
+  const rows = buffer ? wrapBuffer(buffer, wrapWidth) : [];
+  const cursorRow = rowOf(rows, cursor);
+  const scrollRef = useRef(0);
+  const top = composerScroll(scrollRef.current, cursorRow, rows.length, lines);
+  scrollRef.current = top;
+  const shown = rows.slice(top, top + lines);
+  const below = Math.max(0, rows.length - top - lines);
   const labelWidth = Math.min(34, Math.max(...suggestions.map((s) => s.label.length), 0) + 2);
   const win = suggestionWindow(suggestions.length, selected);
   const fit = (label: string): string => (label.length > labelWidth - 1 ? `${label.slice(0, labelWidth - 2)}…` : label).padEnd(labelWidth);
@@ -79,24 +111,32 @@ export function Composer({ width, buffer, cursor, focus, suggestions, selected, 
         </Box>
       ) : null}
       <Box borderStyle="round" borderColor={accent ?? (active ? theme.focus : theme.border)} paddingX={1} width={width}>
-        <Text color={active ? theme.accent : theme.muted}>{glyph.prompt} </Text>
-        {buffer ? (
-          <Text wrap="truncate-start">
-            {buffer.slice(0, cursor)}
-            {active ? <Text inverse>{buffer[cursor] ?? ' '}</Text> : buffer[cursor] ?? ''}
-            {buffer.slice(cursor + 1)}
-          </Text>
-        ) : (
-          <Text wrap="truncate">
-            {active ? <Text inverse> </Text> : null}
-            <Text color={theme.muted}>{active ? (placeholder ?? 'Message the room…  @ to ask a Claude, / for commands') : (idleHint ?? 'Click here or press Esc to type')}</Text>
-          </Text>
-        )}
+        <Box width={2} flexShrink={0}>
+          <Text color={active ? theme.accent : theme.muted}>{glyph.prompt} </Text>
+        </Box>
+        <Box flexDirection="column" width={wrapWidth + 1} flexShrink={0}>
+          {buffer ? (
+            shown.map((row, i) => <DraftRow key={top + i} buffer={buffer} row={row} cursor={top + i === cursorRow ? cursor : undefined} active={active} />)
+          ) : (
+            <Text wrap="truncate">
+              {active ? <Text inverse> </Text> : null}
+              <Text color={theme.muted}>{active ? (placeholder ?? 'Message the room…  @ to ask a Claude, / for commands') : (idleHint ?? 'Click here or press Esc to type')}</Text>
+            </Text>
+          )}
+        </Box>
         {right ? (
           <>
             <Box flexGrow={1} />
-            <Box flexShrink={0}>
+            <Box flexShrink={0} flexDirection="column" alignItems="flex-end">
               <LineView line={right} />
+              {/* A draft taller than the box scrolls inside it; say how much is out of view. */}
+              {shown.length > 1 ? (
+                <>
+                  <Text color={theme.muted}>{top ? `↑ ${top} more line${top === 1 ? '' : 's'}` : shown.length === 2 && below ? `↓ ${below} more` : ' '}</Text>
+                  {shown.length > 3 ? <Box height={shown.length - 3} /> : null}
+                  {shown.length > 2 ? <Text color={theme.muted}>{below ? `↓ ${below} more line${below === 1 ? '' : 's'}` : ' '}</Text> : null}
+                </>
+              ) : null}
             </Box>
           </>
         ) : null}

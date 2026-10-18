@@ -539,6 +539,30 @@ describe('Session hardening', () => {
     void release;
   });
 
+  it('runs a queued message now, or cancels it before it starts', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: (input) =>
+        input.prompt === 'slow'
+          ? new Promise((_resolve, reject) => input.signal.addEventListener('abort', () => reject(new Error('aborted'))))
+          : Promise.resolve(`did ${input.prompt}`),
+    });
+    await room(kay);
+    kay.session.submit('@claude slow');
+    await waitFor(() => kay.runs.length === 1);
+    kay.session.submit('@claude later');
+    kay.session.submit('@claude drop');
+    const queued = () => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.status === 'queued') as Array<{ requestId: string }>;
+    await waitFor(() => queued().length === 2);
+    const [later, drop] = queued();
+    expect(kay.session.host.cancelQueued(drop!.requestId)).toBe(true);
+    expect(kay.session.host.promote(later!.requestId)).toBe(true);
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did later'));
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'later']);
+    expect(agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'Cancelled before it started')).toBe(true);
+    expect(kay.session.host.promote('nope')).toBe(false);
+  });
+
   it('shares folders at runtime and opens invites on demand', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');

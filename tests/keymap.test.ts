@@ -35,7 +35,7 @@ describe('keymap: typing', () => {
     ui = key(ui, { ctrl: true }, 'u').ui;
     expect(ui.buffer).toBe('ello ');
     expect(key({ ...ui, cursor: 0 }, { backspace: true }).ui.buffer).toBe('ello ');
-    expect(key(ui, {}, 'a\nb').ui.buffer).toBe('a bello ');
+    expect(key(ui, {}, 'a\nb').ui.buffer).toBe('a\nbello ');
     expect(key(ui, { ctrl: true }, 'z').ui).toBe(ui);
   });
 

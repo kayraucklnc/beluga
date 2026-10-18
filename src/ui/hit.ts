@@ -54,7 +54,7 @@ export function hitTest(g: Geometry, x: number, y: number, ctx: HitContext): Tar
     const hit = placeButtons(ctx.buttons.map((b) => ({ ...b, label: buttonLabel(b) })), 2, ACTION_GAP).find((b) => x >= b.x0 && x <= b.x1);
     return hit ? { kind: 'action', id: hit.id } : { kind: 'none' };
   }
-  if (inside(y, g.composerTop, 3)) {
+  if (inside(y, g.composerTop, g.composerHeight)) {
     // The model picker and plan mode live inside the box.
     const chip = ctx.zones?.find((z) => z.y === y && x >= z.x0 && x <= z.x1 && z.action.type !== 'none');
     return chip ? { kind: 'zone', action: chip.action, hint: chip.hint, disabled: chip.disabled } : { kind: 'composer' };

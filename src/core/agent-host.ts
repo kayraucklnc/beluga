@@ -166,6 +166,35 @@ export class AgentHost {
   }
 
 
+  /** Run one of your waiting requests now: it goes next and interrupts the current run. */
+  promote(requestId: string): boolean {
+    for (const lane of this.lanes.values()) {
+      const i = lane.waiting.findIndex((w) => w.body.requestId === requestId && w.from === this.selfId);
+      if (i < 0) continue;
+      const [item] = lane.waiting.splice(i, 1);
+      const at = lane.waiting.findIndex((w) => !w.urgent);
+      lane.waiting.splice(at === -1 ? lane.waiting.length : at, 0, { ...item!, urgent: true });
+      if (lane.current) {
+        lane.interruptedBy = requestId;
+        lane.current.abort();
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** Drop one of your waiting requests before it starts. */
+  cancelQueued(requestId: string): boolean {
+    for (const lane of this.lanes.values()) {
+      const i = lane.waiting.findIndex((w) => w.body.requestId === requestId && w.from === this.selfId);
+      if (i < 0) continue;
+      const [item] = lane.waiting.splice(i, 1);
+      this.emitAgent(requestId, item!.from, 'error', 'Cancelled before it started', item!.body.channel);
+      return true;
+    }
+    return false;
+  }
+
   private emitAgent(requestId: string, requester: string, event: BodyOf<'agent_event'>['event'], text = '', channel = 'room'): void {
     const final = event === 'done' || event === 'error' || event === 'denied';
     const body: BodyInput = { kind: 'agent_event', requestId, requester, event, text: text.slice(0, 60_000), channel };

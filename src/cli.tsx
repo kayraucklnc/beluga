@@ -309,11 +309,13 @@ async function main(): Promise<void> {
   const mouseListeners = new Set<(e: MouseEvent) => void>();
   // The built-in terminal takes the keyboard while it's focused (raw keys go to its shell).
   let rawSink: ((data: string) => void) | undefined;
+  let lastInput = 0;
   const stdin = process.stdin.isTTY
     ? createInput(process.stdin, {
         onMouse: (e) => mouseListeners.forEach((l) => l(e)),
         onFocus: (focused) => store.dispatch({ type: 'away', away: !focused }),
         rawSink: () => rawSink,
+        onData: () => (lastInput = Date.now()),
       })
     : process.stdin;
   const subscribeMouse = config.mouse
@@ -331,7 +333,7 @@ async function main(): Promise<void> {
   const onboarding = config.agent && !config.policyChosen && (config.mode === 'join' || config.inviteNow);
   const app = render(
     <ErrorBoundary>
-      <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} setRawInput={(sink) => (rawSink = sink)} />
+      <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} setRawInput={(sink) => (rawSink = sink)} inputTime={() => lastInput} />
     </ErrorBoundary>,
     // Only rewrite the lines that changed, and redraw often enough that scrolling feels smooth.
     { exitOnCtrlC: false, stdin, incrementalRendering: true, maxFps: 60 },
@@ -343,7 +345,7 @@ async function main(): Promise<void> {
   process.on('unhandledRejection', (err) => session.toast(`Something went wrong: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200), 'error'));
   // Whatever happens, leave the terminal as we found it (no stray mouse codes, normal screen).
   process.on('exit', () => {
-    if (!shuttingDown) process.stdout.write(MOUSE_OFF + FOCUS_OFF + '\x1b[?1049l');
+    if (!shuttingDown) process.stdout.write(MOUSE_OFF + FOCUS_OFF + '\x1b[?2004l\x1b[?1049l');
   });
   session.start();
   if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => shuttingDown);

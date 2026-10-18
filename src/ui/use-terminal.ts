@@ -8,6 +8,7 @@ import type { UiState } from './keymap.js';
 import type { Geometry } from './layout.js';
 import { type TerminalTabInfo, terminalBarModel } from './work-models.js';
 import type { Model } from './workspace-models.js';
+import { splitPaste } from './mouse.js';
 
 export interface TerminalPaneInput {
   readonly session: Session;
@@ -68,16 +69,27 @@ export function useTerminalPane({ session, state, ui, uiRef, patchUi, focus, geo
       setRawInput(undefined);
       return;
     }
-    setRawInput((data) => {
+    let inPaste = false;
+    const typed = (data: string): boolean => {
       // Ctrl+] gives the keyboard back, even inside a burst of typed keys.
       const leave = data.indexOf('\x1d');
       if (isLeaveChord(data) || leave >= 0) {
         if (leave > 0) termSession.write(data.slice(0, leave));
         patchUi({ focus: 'chat' });
-        return;
+        return false;
       }
-      if (uiRef.current.terminalScroll) patchUi({ terminalScroll: 0 });
       termSession.write(data);
+      return true;
+    };
+    setRawInput((data) => {
+      if (uiRef.current.terminalScroll) patchUi({ terminalScroll: 0 });
+      // Pastes arrive bracketed (klaud asks for it); hand them on bracketed only if the program wants that.
+      const split = splitPaste(data, inPaste);
+      inPaste = split.inPaste;
+      for (const part of split.parts) {
+        if (part.paste) termSession.paste(part.text);
+        else if (!typed(part.text)) return;
+      }
     });
     return () => setRawInput(undefined);
   }, [termFocused, termSession, setRawInput]);
