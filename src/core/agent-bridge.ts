@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { RoomBridge } from '../agent/types.js';
+import type { PeerSummary, RoomBridge } from '../agent/types.js';
+import { GRANT_INFO } from './trust.js';
 import type { PeerInfo } from '../protocol.js';
 import type { Session } from './session.js';
 
@@ -31,13 +32,15 @@ export function createRoomBridge(session: Session, cwd: () => string): RoomBridg
     selfName: () => session.store.getState().self?.name ?? 'me',
     sendChat: (text) => session.sendChat(text, true, session.host.currentChannel),
     listPeers: () => session.store.getState().peers,
-    askAgent: (name, prompt) => {
+    askAgent: (name, prompt, project) => {
       const peer = requirePeer(name);
       if (!peer.agent) return Promise.reject(new Error(`${peer.name} has no agent online`));
       // Their Claude may send files back for you: accept them without asking.
       session.remote.expectFrom(peer.peerId);
-      return session.askPeerAgent(peer.peerId, peer.name, prompt);
+      return session.askPeerAgent(peer.peerId, peer.name, prompt, { ...(project ? { project } : {}), mirror: session.host.currentChannel });
     },
+    runOnPeer: (name, command, opts = {}) => session.runOnPeer(name, command, { ...opts, viaAgent: true, channel: session.host.currentChannel }),
+    describePeers: () => describePeers(session),
     listPeerFiles: (name, share, p) => session.files.listFiles({ owner: requirePeer(name).peerId, share, path: p }),
     readPeerFile: async (name, share, p) => (await session.files.readFile({ owner: requirePeer(name).peerId, share, path: p })).content,
     writeReport: (title, markdown) => writeReport(session, cwd(), title, markdown),
@@ -45,4 +48,22 @@ export function createRoomBridge(session: Session, cwd: () => string): RoomBridg
     getPeerFile: (name, file, saveTo, why) => session.remote.getFile(requirePeer(name).peerId, file, saveTo, why),
     sendFile: (name, file, note) => session.remote.sendFile(requirePeer(name).peerId, file, note),
   };
+}
+
+/** Everyone in the room as your Claude sees them: what they offer and what they let you do. */
+export function describePeers(session: Session): PeerSummary[] {
+  const state = session.store.getState();
+  return state.peers.map((p) => {
+    const you = p.peerId === session.selfId;
+    const grant = state.granted[p.peerId];
+    return {
+      name: p.name,
+      you,
+      agent: p.agent,
+      shares: p.shares.map((s) => s.name),
+      projects: p.projects ?? [],
+      workspaces: state.shared.filter((w) => w.owner === p.peerId).map((w) => ({ name: w.name, project: w.project, role: w.role === 'contribute' ? 'can ask their Claude there' : 'follow only' })),
+      ...(!you && grant ? { lets_you: { trust: grant.level, means: GRANT_INFO[grant.level].detail } } : {}),
+    };
+  });
 }

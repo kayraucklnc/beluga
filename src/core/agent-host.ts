@@ -55,6 +55,8 @@ export class AgentHost {
   currentChannel = 'room';
   private readonly approvals = new Map<string, (answer: 'yes' | 'no' | 'always') => void>();
   private readonly alwaysTools = new Set<string>();
+  /** "person:project" pairs you said Always to (this session). */
+  private readonly alwaysProjects = new Set<string>();
   /**
    * One queue per conversation: each workspace's Claude works on its own, at the same time as
    * the others, while messages within one conversation run in order (urgent ones jump the line).
@@ -184,6 +186,10 @@ export class AgentHost {
       this.emitAgent(body.requestId, from, 'denied', 'No agent is running on this machine.', body.channel);
       return;
     }
+    if (body.project && body.channel === 'room' && !this.projectRoot(body.project)) {
+      this.emitAgent(body.requestId, from, 'denied', `There is no project called ${body.project} on this computer.`, body.channel);
+      return;
+    }
     const inWorkspace = body.channel !== 'room' && from !== this.selfId;
     if (inWorkspace && (this.deps.sharing.sharedFor(body.channel) || !this.deps.sharing.canPost(from, body.channel))) {
       this.emitAgent(body.requestId, from, 'denied', "That workspace isn't shared with you.", body.channel);
@@ -244,13 +250,27 @@ export class AgentHost {
     }
   }
 
+  /** The main folder of one of your projects, by name. */
+  private projectRoot(name: string): string | undefined {
+    return this.deps.workspaces?.manager.list.find((p) => p.root && p.name === name)?.root;
+  }
+
   private async authorizeRequest(from: string, body: BodyOf<'agent_request'>): Promise<boolean> {
     if (from === this.selfId) return true;
     const state = this.store.getState();
     const level = trustOf(state, from);
     if (level === 'blocked') return false;
-    if (level === 'trusted' || level === 'full') return true;
     const name = peerName(state, from);
+    // A project isn't a shared folder: working in one asks you unless you fully trust them.
+    if (body.project && body.channel === 'room') {
+      const scope = `${from}:${body.project}`;
+      if (level === 'full' || this.alwaysProjects.has(scope)) return true;
+      this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`, body.channel);
+      const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to work in ${body.project} (Always: for ${body.project}, until klaud quits)`, body.prompt, from);
+      if (answer === 'always') this.alwaysProjects.add(scope);
+      return answer !== 'no';
+    }
+    if (level === 'trusted' || level === 'full') return true;
     this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`, body.channel);
     const reach = reachOf(state, from) === 'full' ? 'whole computer' : 'shared folders; anything else asks you';
     const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to run this (${reach})`, body.prompt, from);
@@ -286,7 +306,9 @@ export class AgentHost {
     const controller = new AbortController();
     lane.current = controller;
     const requesterName = peerName(this.store.getState(), from);
-    const place = this.deps.workspaces?.place(body.channel);
+    const root = body.project && body.channel === 'room' ? this.projectRoot(body.project) : undefined;
+    // A friend's request in your project gets a fresh conversation in its main folder.
+    const place = root ? { cwd: root, additionalDirectories: [], autoEdit: false, onSession: () => undefined } : this.deps.workspaces?.place(body.channel);
     if (body.channel !== 'room' && !place) {
       this.emitAgent(body.requestId, from, 'error', 'That workspace is archived or missing.', body.channel);
       if (lane.current === controller) lane.current = undefined;

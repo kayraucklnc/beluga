@@ -3,7 +3,7 @@ import { worktreeOrigin } from '../workspaces/origin.js';
 import { clearMenu, invitePersonMenu, sharedMenu, wsShareMenu } from './collab-menus.js';
 import { shareFolderMenu, shareWhoMenu } from './share-menus.js';
 import { type SettingsSection, inboxMenu, modelMenu, modelLabel, settingsMenu } from './settings-menus.js';
-import { TRUST_INFO, trustOf } from '../core/trust.js';
+import { GRANT_INFO, TRUST_INFO, canRunOn, trustOf } from '../core/trust.js';
 import { TRUST_LEVELS } from '../core/settings.js';
 import { workMenuSpec, type WorkMenuKind } from './work-menus.js';
 import { describeWindow } from '../agent/usage.js';
@@ -211,6 +211,9 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
     : [
         ...TRUST_LEVELS.map((level) => ({ id: `trust:${level}`, label: `${trustOf(state, peer.peerId) === level ? '◉' : '○'} ${TRUST_INFO[level].label}`, hint: TRUST_INFO[level].detail })),
         ...(peer.agent ? [{ id: 'ask', label: `Ask ${peer.name}'s Claude`, hint: `runs on ${peer.name}'s computer` }] : []),
+        ...(canRunOn(state.granted[peer.peerId]?.level)
+          ? [{ id: 'person-run', label: `Run a command on ${peer.name}'s computer…`, hint: state.granted[peer.peerId]?.level === 'full' ? 'runs right away; the output shows in this chat' : `${peer.name} approves it; the output shows in this chat` }]
+          : []),
         ...(peer.projects?.length ? [{ id: 'person-remote-ws', label: `Start a worktree on ${peer.name}'s computer…`, hint: `${peer.name} approves; you work there together` }] : []),
         { id: 'person-invite-ws', label: `Invite ${peer.name} into a workspace…`, hint: 'work together on a worktree or chat' },
         { id: 'person-share', label: `Share a folder with ${peer.name}…`, hint: 'pick the folder, then "Only ' + peer.name + '"' },
@@ -221,8 +224,10 @@ export function personMenu(state: AppState, index: number): MenuSpec | undefined
         ...(host ? [{ id: 'person-remove', label: `Remove ${peer.name} from the room`, hint: 'they are disconnected; the invite link changes' }] : []),
       ];
   const about = isSelf ? 'What would you like to do?' : `${peer.agent ? 'Claude is on' : 'No Claude'} · shares ${peer.shares.map((s) => s.name).join(', ') || 'nothing'}`;
+  const grant = isSelf ? undefined : state.granted[peer.peerId];
+  const lets = grant ? [`${peer.name} lets your Claude: ${GRANT_INFO[grant.level].short}`] : [];
   const access = isSelf ? [] : ['', `How much do you trust ${peer.name}? Now: ${TRUST_INFO[trustOf(state, peer.peerId)].label}.`];
-  return { title: isSelf ? `${peer.name} (you)` : peer.name, intro: [about, ...usageLines(peer.usage), ...access], options };
+  return { title: isSelf ? `${peer.name} (you)` : peer.name, intro: [about, ...lets, ...usageLines(peer.usage), ...access], options };
 }
 
 /** The model a conversation uses: its own pick, else your default. */

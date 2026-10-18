@@ -93,6 +93,27 @@ async function mockPlan(input: AgentRunInput, pace: number): Promise<string> {
   return 'Done. `requireUser()` protects `/api/payments/*` and all **27 tests** pass.';
 }
 
+/** "run the tests on bob's computer" / "check my machine": whose computer, and which command. */
+export function peerRunTarget(prompt: string, requester: string): { peer: string; command: string } | undefined {
+  const named = /\bon (\w[\w.-]*)'s (computer|machine|laptop)\b/i.exec(prompt);
+  const mine = /\b(on|check) my (computer|machine|laptop)\b/i.test(prompt);
+  if (!named && !mine) return undefined;
+  const quoted = /`([^`]+)`/.exec(prompt)?.[1];
+  const command = quoted ?? (/\btests?\b/i.test(prompt) ? 'npm test' : 'ls');
+  return { peer: named ? named[1]! : requester, command };
+}
+
+async function mockPeerRun(input: AgentRunInput, bridge: RoomBridge, target: { peer: string; command: string }, pace: number): Promise<string> {
+  await sleep(450 * pace, input.signal);
+  input.onEvent('tool', 'list_peers');
+  input.onEvent('tool', `run_on_peer ${target.command}`);
+  const result = await bridge.runOnPeer!(target.peer, target.command, { why: 'to check before I change anything' }).catch((err: unknown) => `failed: ${err instanceof Error ? err.message : String(err)}`);
+  const head = result.split('\n')[0] ?? '';
+  if (/did not run|failed:/.test(head)) return `I couldn't run \`${target.command}\` on ${target.peer}'s computer: ${head.replace(/^.*?: /, '')}`;
+  const passed = /(\d+) passed \(/.exec(result.split('\n').filter((l) => /Tests/.test(l)).join('\n'))?.[1];
+  return `Ran \`${target.command}\` on ${target.peer}'s computer. ${head}.${passed ? ` **${passed} tests pass.**` : ''}`;
+}
+
 export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   let contextUsed = 52_000;
   return {
@@ -109,6 +130,8 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       }
       // Plan mode, and questions back to you, work in the demo too.
       if (input.plan) return mockPlan(input, pace);
+      const remote = peerRunTarget(input.prompt, input.requesterName);
+      if (remote && bridge.runOnPeer) return mockPeerRun(input, bridge, remote, pace);
       if (/\b(which|choose|pick)\b/i.test(input.prompt) && input.askUser) {
         await sleep(450 * pace, input.signal);
         input.onEvent('tool', 'Read src/server.ts');

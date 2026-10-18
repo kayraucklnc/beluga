@@ -61,12 +61,31 @@ export interface AgentBackend {
   listModels?(): Promise<ReadonlyArray<{ value: string; label: string; description: string; efforts?: readonly string[] }> | undefined>;
 }
 
+/** One person as the agent sees them in list_peers. */
+export interface PeerSummary {
+  readonly name: string;
+  readonly you: boolean;
+  readonly agent: boolean;
+  readonly shares: readonly string[];
+  /** Their projects you may name in ask_agent / run_on_peer. */
+  readonly projects: readonly string[];
+  /** Their workspaces shared with you (ask_agent with project=<name> works there). */
+  readonly workspaces: ReadonlyArray<{ name: string; project: string; role: string }>;
+  /** What they let you do on their computer (as they told you; unknown for older klaud). */
+  readonly lets_you?: { trust: string; means: string };
+}
+
 /** What an agent may do to the room, exposed to it as MCP tools. */
 export interface RoomBridge {
   selfName(): string;
   sendChat(text: string): void;
   listPeers(): readonly PeerInfo[];
-  askAgent(peerName: string, prompt: string): Promise<string>;
+  /** `project`: one of their projects (from list_peers) to work in. */
+  askAgent(peerName: string, prompt: string, project?: string): Promise<string>;
+  /** Run a shell command on a peer's computer through their klaud; returns exit code and output. */
+  runOnPeer?(peerName: string, command: string, opts?: { cwd?: string; project?: string; timeoutSec?: number; why?: string }): Promise<string>;
+  /** People with what they offer you and what their trust in you lets you do (for list_peers). */
+  describePeers?(): readonly PeerSummary[];
   listPeerFiles(peerName: string, share: string, path: string): Promise<readonly FsEntry[]>;
   readPeerFile(peerName: string, share: string, path: string): Promise<string>;
   writeReport(title: string, markdown: string): Promise<string>;

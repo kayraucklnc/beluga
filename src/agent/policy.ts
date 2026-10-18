@@ -26,7 +26,7 @@ const ALWAYS_OK = new Set([
 ]);
 
 /** Shell commands that mention credential stores are refused outright. */
-const SECRET_IN_COMMAND = /(^|[\s'"/=])(\.env(\.[\w-]+)?|id_(rsa|ed25519|ecdsa|dsa)|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.npmrc|\.netrc|\.git-credentials|credentials(\.json)?)([\s'"/]|$)/;
+export const SECRET_IN_COMMAND = /(^|[\s'"/=])(\.env(\.[\w-]+)?|id_(rsa|ed25519|ecdsa|dsa)|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.npmrc|\.netrc|\.git-credentials|credentials(\.json)?)([\s'"/]|$)/;
 
 export type Decision = 'allow' | 'deny' | 'ask';
 
@@ -63,6 +63,8 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
     if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
     return ctx.scope === 'full' ? 'allow' : 'ask';
   }
+  // Commands on a friend's computer: their klaud decides; secrets are refused on both ends.
+  if (toolName === 'mcp__klaud__run_on_peer') return typeof input.command === 'string' && SECRET_IN_COMMAND.test(input.command) ? 'deny' : 'ask';
   if (toolName === 'Bash') return typeof input.command === 'string' && SECRET_IN_COMMAND.test(input.command) ? 'deny' : 'ask';
   const readField = READ_TOOLS[toolName];
   if (readField) {

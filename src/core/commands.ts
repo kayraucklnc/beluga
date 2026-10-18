@@ -17,7 +17,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'chat', args: '<title>', desc: 'new Claude chat in the current project, no worktree' },
   { name: 'review', desc: "see this workspace's changes" },
   { name: 'pr', args: '[extra instructions]', desc: 'Claude opens a pull request with a short description (your PR instructions)' },
-  { name: 'run', desc: "start the project's run command (e.g. its dev server) in the Terminal tab" },
+  { name: 'run', args: '[@name <command>]', desc: "start the project's run command, or run a command on a friend's computer (/run @bob npm test)" },
   { name: 'terminal', desc: "open this workspace's terminal" },
   { name: 'setup', desc: "run the project's setup command again in this workspace" },
   { name: 'handoff', args: '<name>', desc: 'hand this workspace to someone; their Claude continues it' },
@@ -91,6 +91,15 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'lobby':
       session.store.dispatch({ type: 'view', view: { kind: 'room' } });
       return;
+    case 'run':
+      if (arg?.startsWith('@')) {
+        const command = args.slice(1).join(' ').trim();
+        if (!command) return session.toast('Usage: /run @name <command>', 'warn');
+        session.runOnPeerByHand(arg.slice(1), command);
+        return;
+      }
+      runWorkspaceCommand(session, name, args);
+      return;
     case 'new':
     case 'worktree':
     case 'chat':
@@ -105,7 +114,6 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'delete':
     case 'project':
     case 'pr':
-    case 'run':
     case 'terminal':
     case 'setup':
     case 'handoff':

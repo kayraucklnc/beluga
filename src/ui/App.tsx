@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Box, useApp, useInput, useStdout } from 'ink';
 import type { Session } from '../core/session.js';
-import { type AppState, type Location, channelOf } from '../core/store.js';
+import { type AppState, type Location, channelOf, peerName } from '../core/store.js';
 import { shareNameOf } from '../core/workspace-controller.js';
 import type { FsEntry } from '../protocol.js';
 import { anyActivity } from './banner.js';
@@ -264,6 +264,12 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
       return;
     }
     const pending = uiRef.current.pending;
+    if (pending?.kind === 'peer_run' && pending.peerId) {
+      if (!text.trim()) return session.toast('Type a command first, or Esc to cancel', 'warn');
+      patchUi({ pending: undefined });
+      session.runOnPeerByHand(peerName(latest, pending.peerId), text.trim());
+      return;
+    }
     if (pending && ctl) {
       // Only commands may be empty (to clear them); names and tasks need words.
       if (!text.trim() && pending.kind !== 'setup' && pending.kind !== 'run') {
@@ -710,6 +716,8 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
     ? 'Ask Claude anything… your first message starts the chat · Esc to cancel'
     : state.view.kind === 'draft_worktree'
     ? 'Describe the task… Enter creates the worktree and starts Claude · Esc to cancel'
+    : ui.pending?.kind === 'peer_run'
+    ? `Command to run on ${peerName(state, ui.pending.peerId ?? '')}'s computer (no input; output shows here) · Enter to run · Esc to cancel`
     : ui.pending
     ? `Name for the new ${ui.pending.kind} in ${state.projects.find((p) => p.id === ui.pending?.projectId)?.name ?? 'the project'} · Enter to create · Esc to cancel`
     : d.workspace
