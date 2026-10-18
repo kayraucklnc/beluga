@@ -8,6 +8,7 @@ import type { EnvChange } from '../workspaces/env.js';
 import type { Bitmap } from '../image/bitmap.js';
 import { type CollabAction, type CollabState, initialCollab, reduceCollab } from './collab-store.js';
 import { type SearchState, type WorkAction, type WorkState, initialWork, reduceWork } from './work-store.js';
+import { type NetworkAction, type NetworkSlice, initialNetwork, reduceNetwork } from './network-store.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
 
@@ -276,7 +277,7 @@ export interface MyShare {
  * Everything klaud knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
-export interface DomainState extends CollabState, WorkState {
+export interface DomainState extends CollabState, WorkState, NetworkSlice {
   readonly room: string;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
@@ -401,7 +402,8 @@ export type Action =
   | { type: 'my_shares'; shares: readonly MyShare[] }
   | { type: 'identity'; selfId: string; isHost: boolean; home?: string }
   | CollabAction
-  | WorkAction;
+  | WorkAction
+  | NetworkAction;
 
 const LOG_LIMIT = 1000;
 const TRANSFER_LIMIT = 20;
@@ -462,6 +464,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     attention: NO_ATTENTION,
     ...initialCollab,
     ...initialWork,
+    ...initialNetwork,
   };
 }
 
@@ -839,6 +842,11 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'gh':
     case 'remembered':
       return { ...state, ...reduceWork(state, action) };
+    case 'net_summary':
+    case 'net_message':
+    case 'net_messages':
+    case 'net_off':
+      return { ...state, ...reduceNetwork(state, action) };
     case 'context_reset': {
       const { [action.channel]: _gone, ...context } = state.context;
       return { ...state, context };

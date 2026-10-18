@@ -81,7 +81,7 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
     zoom: async (dir) => (await server.callCap('zoom', [dir], currentClient())) as { ok: boolean; message: string },
     open: (target) => openWithSystem(target),
     shutdown: () => void stop('Quit from a screen'),
-  });
+  }, { network: true });
   server = new DaemonServer({ session: core.session, token, version: opts.version, terminals: core.terminals, log, ...(opts.port ? { port: opts.port } : {}), ...(opts.allowedOrigins ? { allowedOrigins: opts.allowedOrigins } : {}) });
   const port = await server.listen();
   writeDaemonInfo({ pid: process.pid, port, token, version: opts.version, ipc: IPC_VERSION, room: core.room, roomKey: roomKeyOf(config), startedAt: Date.now(), keepAlive: opts.keepAlive });

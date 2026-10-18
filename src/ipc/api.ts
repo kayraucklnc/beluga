@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EFFORTS, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { ENV_KEY, MAX_ENV_VALUE, MAX_ENV_VARS } from '../shared/env-vars.js';
+import { NETWORK_API } from './network-api.js';
 
 /**
  * Everything a client can ask klaud to do, in one list. The daemon validates every call
@@ -223,6 +224,9 @@ export const API = {
   // ---- this computer
   'local.listDirs': args(path),
   'local.openFolder': args(path),
+
+  // ---- the klaud network: friends, direct messages, groups, your status (network-api.ts)
+  ...NETWORK_API,
 } as const;
 
 export type Api = typeof API;

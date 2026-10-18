@@ -259,6 +259,30 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `projects.icon` | — (a terminal can't draw images) | ✓ project icons in the sidebar |
 | `projects.iconAt` | — | ✓ icons of suggested folders |
 | `projects.setIcon` | — | ✓ right-click a project › Change Icon… |
+| `network.status` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.friends.list` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.friends.invite` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.friends.accept` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.friends.cancelInvite` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.friends.remove` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.dm.send` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.dm.history` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.list` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.create` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.send` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.history` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.addMember` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.removeMember` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.setAdmin` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.leave` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.rename` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.invite` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.join` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.approve` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.groups.decline` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.presence.set` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.presence.get` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.read` | — (Mac only, see below) | core ready; People, groups and status UI come next |
 ## Sending while Claude works, and images
 
 | What | Core | Terminal | Mac |
@@ -305,6 +329,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | A new worktree's form: Based on (`workspaces.branches`), Name, Create Worktree (`workspaces.startWorktree` with `base` / `name`) | Mac | the terminal names it from the task and starts from the default branch |
 | Empty states with one-click starters (New Worktree, New Chat, Add Projects…, first tasks for Claude) | Mac | the terminal's empty views say what to type |
 | The palette's commands as named actions (“Create Pull Request…”, “Fork This Workspace…”), never `/cmd <arg>` | Mac (`dialogs/palette-commands.ts`) | the terminal has the commands themselves |
+| The klaud network: friends added once by a one-time link or a short code, direct messages that wait for offline friends, groups that live on their members' Macs (no host, end-to-end encrypted, admins add and remove people, join by link), and your status (online, away, do not disturb, appear offline) — the `network.*` API and the shared state's `network` | Mac (the daemon runs it when `network: true` is in settings or `KLAUD_NETWORK=1`; `src/net/mesh/`, `src/core/network.ts`) | a home for people and conversations beyond one room is the Mac app's job; the terminal app keeps its rooms (`klaud host` / `klaud join`), which work as before |
 
 ## Adding a feature
 

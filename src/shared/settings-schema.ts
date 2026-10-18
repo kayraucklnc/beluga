@@ -75,5 +75,7 @@ export const Settings = z.object({
   shellLogin: z.boolean().default(true),
   /** Extra arguments for the shell, after -l. */
   shellArgs: z.array(z.string().max(200)).max(20).default([]),
+  /** Be on the klaud network (friends, groups, presence) while the Mac app's daemon runs. Off by default for now. */
+  network: z.boolean().optional(),
 });
 export type Settings = z.infer<typeof Settings>;

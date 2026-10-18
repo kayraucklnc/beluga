@@ -1,0 +1,71 @@
+import { z } from 'zod';
+import { NameSchema, PeerIdSchema, PresenceSchema, ProfileSchema } from './schemas.js';
+
+/**
+ * The messages two klaud Macs send each other over a link (JSON, one per frame). `hello` says
+ * which protocol version each side speaks; a different major version closes the link. Kinds a
+ * side doesn't know are ignored, so new ones can be added without breaking older Macs.
+ */
+export const PROTO = 1;
+
+const hex64 = z.string().regex(/^[0-9a-f]{64}$/);
+const groupId = z.string().regex(/^[0-9a-f]{32}$/);
+const msgId = z.string().regex(/^[\w-]{8,64}$/);
+const tid = z.number().int().min(0).max(2 ** 31);
+
+export const LinkMessage = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('hello'), proto: z.number().int(), name: NameSchema, presence: PresenceSchema }),
+  z.object({ t: z.literal('presence'), presence: PresenceSchema }),
+  /** A direct message (end-to-end: the link is a Noise channel between the two of you). */
+  z.object({ t: z.literal('dm'), id: msgId, text: z.string().min(1).max(8_000), ts: z.number().int().min(0) }),
+  z.object({ t: z.literal('dm_ack'), id: msgId }),
+  /** The newest entries I have of a group we're both in. */
+  z.object({ t: z.literal('g_heads'), group: groupId, heads: z.array(hex64).max(64) }),
+  /** Send me what I'm missing (these are my newest entries). */
+  z.object({ t: z.literal('g_sync'), group: groupId, heads: z.array(hex64).max(64) }),
+  z.object({ t: z.literal('g_entries'), group: groupId, entries: z.array(z.unknown()).max(500), more: z.boolean().optional() }),
+  /** Relaying: open a tunnel to someone through you; bytes inside are Noise-encrypted end to end. */
+  z.object({ t: z.literal('tun_open'), tid, to: PeerIdSchema }),
+  z.object({ t: z.literal('tun_in'), tid, from: PeerIdSchema }),
+  /** `o`: the sender picked this tunnel id (each side of a hop numbers its own tunnels). */
+  z.object({ t: z.literal('tun_data'), tid, o: z.boolean(), d: z.string().max(90_000) }),
+  z.object({ t: z.literal('tun_close'), tid, o: z.boolean(), reason: z.string().max(200).optional() }),
+]);
+export type LinkMessage = z.infer<typeof LinkMessage>;
+
+/** Parse one frame; undefined for anything malformed or of a kind this version doesn't know. */
+export function parseLink(text: string): LinkMessage | undefined {
+  try {
+    const parsed = LinkMessage.safeParse(JSON.parse(text));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Pairing: what's said over the short-lived connection an invitation opens. Both sides prove
+ * they know the invitation's secret with an HMAC over the Noise handshake hash, so nobody
+ * without it can pose as either side, and a proof can't be replayed on another connection.
+ */
+export const PairMessage = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('pair_hello'), proto: z.number().int(), mac: z.string().max(100), profile: ProfileSchema }),
+  z.object({
+    t: z.literal('pair_ok'),
+    mac: z.string().max(100),
+    profile: ProfileSchema,
+    kind: z.enum(['friend', 'group']),
+    group: z.object({ id: groupId, name: NameSchema, status: z.enum(['joined', 'waiting']) }).optional(),
+  }),
+  z.object({ t: z.literal('pair_refused'), reason: z.string().max(200) }),
+]);
+export type PairMessage = z.infer<typeof PairMessage>;
+
+export function parsePair(text: string): PairMessage | undefined {
+  try {
+    const parsed = PairMessage.safeParse(JSON.parse(text));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}

@@ -9,6 +9,7 @@ import { DEFAULT_LINK } from '../core/project-invites.js';
 import { type SessionOptions, Session } from '../core/session.js';
 import { loadSettings, saveSettings } from '../core/settings.js';
 import { ShareService } from '../core/shares.js';
+import { launchNetwork } from '../core/network.js';
 import { Store, initialState, prefsFrom } from '../core/store.js';
 import { createDemoFolders, createDemoWorkspaces, startDemoFriend, startDemoGuest } from '../demo.js';
 import { type Identity, deriveKeys, generateSecret, loadIdentity } from '../net/crypto.js';
@@ -192,7 +193,7 @@ export interface Core {
 }
 
 /** Build klaud's core for this config (hosting a room, or joining one). */
-export async function buildCore(input: Config, hooks: CoreHooks): Promise<Core> {
+export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonly network?: boolean } = {}): Promise<Core> {
   let config = input;
   const demo = config.mode === 'demo' ? createDemoFolders() : undefined;
   if (demo) config = { ...config, tunnel: 'none', policyChosen: true, shares: [{ name: 'landing', root: demo.mine, writable: true }] };
@@ -285,8 +286,11 @@ export async function buildCore(input: Config, hooks: CoreHooks): Promise<Core> 
   for (const note of config.notes) session.system(note, 'warn');
   if (config.mode === 'join') session.system(`Joining ${room.room}…`);
 
+  let stopNetwork = async (): Promise<void> => undefined;
   const start = (): void => {
     session.start();
+    // The klaud network (friends, groups, presence): only the daemon runs it, and only when it's turned on.
+    if (opts.network) stopNetwork = launchNetwork({ session, store, identity, name: config.name, dir: klaudHome(), demo: Boolean(demo), warn: (text) => session.system(text, 'warn') }, saved);
     if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => closing);
     if (!demo) return;
     // A pretend friend and a fake invite so every part of the UI has something to show.
@@ -312,6 +316,7 @@ export async function buildCore(input: Config, hooks: CoreHooks): Promise<Core> 
     if (closing) return;
     closing = true;
     closeAllTunnels();
+    await stopNetwork();
     await session.stop();
     terminals.closeAll();
     await room.hub?.close();

@@ -1,0 +1,96 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import DHT from 'hyperdht';
+import { fromStream } from '../../src/net/transport.js';
+import { pairingSecrets, parseTicket } from '../../src/net/mesh/invitations.js';
+import { type Crowd, befriend, crowd, settle } from './helpers.js';
+
+let net: Crowd;
+beforeAll(async () => {
+  net = await crowd();
+}, 30_000);
+afterAll(async () => {
+  await net?.close();
+});
+
+describe('adding friends without a server', () => {
+  it('pairs with a one-time link: names both ways, then linked', async () => {
+    const ann = await net.add('ann');
+    const bob = await net.add('bob');
+    const invite = await ann.mesh.createInvite();
+    expect(invite.link).toMatch(/^klaud:\/\/add#[\w-]{22}$/);
+    expect(invite.code).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+    expect(ann.mesh.summary().invitations).toHaveLength(1);
+    const got = await bob.mesh.accept(`here you go: ${invite.link}`);
+    expect(got).toEqual({ kind: 'friend', peerId: ann.identity.peerId, name: 'ann' });
+    await settle(() => ann.friend(bob.identity.peerId)?.online && bob.friend(ann.identity.peerId)?.online);
+    expect(ann.friend(bob.identity.peerId)?.name).toBe('bob');
+    expect(ann.friend(bob.identity.peerId)?.via).toBe('direct');
+    // Used up: gone from the list, and it doesn't work again.
+    await settle(() => ann.mesh.summary().invitations.length === 0);
+    const eve = await net.add('eve');
+    await expect(eve.mesh.accept(invite.link)).rejects.toThrow(/Nobody is waiting/);
+    expect(ann.friend(eve.identity.peerId)).toBeUndefined();
+  }, 40_000);
+
+  it('pairs with the short code, typed loosely', async () => {
+    const cat = await net.add('cat');
+    const dan = await net.add('dan');
+    const invite = await cat.mesh.createInvite();
+    const typed = invite.code.toLowerCase().replace('-', ' ');
+    expect(await dan.mesh.accept(typed)).toMatchObject({ kind: 'friend', name: 'cat' });
+    await settle(() => cat.friend(dan.identity.peerId)?.online);
+    // The code is single-use too.
+    const eve = await net.add('eve2');
+    await expect(eve.mesh.accept(invite.code)).rejects.toThrow(/Nobody is waiting/);
+  }, 40_000);
+
+  it('refuses a wrong code and an expired invitation', async () => {
+    const fay = await net.add('fay');
+    const gus = await net.add('gus');
+    await fay.mesh.createInvite();
+    await expect(gus.mesh.accept('ZZZZ-ZZZZ')).rejects.toThrow(/Nobody is waiting/);
+    await expect(gus.mesh.accept('not an invitation')).rejects.toThrow(/isn’t a klaud invitation/);
+    const short = await fay.mesh.createInvite({ ttlMs: 200 });
+    await settle(() => !fay.mesh.summary().invitations.some((i) => i.id === short.id));
+    await expect(gus.mesh.accept(short.link)).rejects.toThrow(/Nobody is waiting|expired/);
+    expect(gus.mesh.summary().friends).toEqual([]);
+  }, 40_000);
+
+  it('pauses an invitation after a burst of wrong proofs (without throwing it away)', async () => {
+    const hal = await net.add('hal');
+    const invite = await hal.mesh.createInvite();
+    // Someone who found the listening key but doesn't hold the secret behind the proofs.
+    const secrets = await pairingSecrets(parseTicket(invite.link)!);
+    const node = new DHT({ bootstrap: net.testnet.bootstrap, host: '127.0.0.1' });
+    try {
+      for (let i = 0; i < 5; i++) {
+        const stream = node.connect(DHT.keyPair(secrets.seed).publicKey);
+        const socket = fromStream(stream, { maxBytes: 65_536 });
+        socket.on('error', () => undefined);
+        const answer = await new Promise<string>((resolve) => {
+          socket.once('open', () => socket.send(JSON.stringify({ t: 'pair_hello', proto: 1, mac: 'AAAA', profile: hal.mesh.profile })));
+          socket.once('message', resolve);
+          socket.once('close', () => resolve('closed'));
+        });
+        expect(answer).toMatch(/pair_refused|closed/);
+      }
+      // Even the real invitee is turned away for now; the invitation itself stays.
+      const ivo = await net.add('ivo');
+      await expect(ivo.mesh.accept(invite.link)).rejects.toThrow(/Too many tries/);
+      expect(hal.mesh.summary().invitations).toHaveLength(1);
+    } finally {
+      await node.destroy({ force: true });
+    }
+  }, 40_000);
+
+  it('removes a friend: the link closes and they can no longer reach you', async () => {
+    const ivy = await net.add('ivy');
+    const jon = await net.add('jon');
+    await befriend(ivy, jon);
+    ivy.mesh.removeFriend(jon.identity.peerId);
+    expect(ivy.friend(jon.identity.peerId)).toBeUndefined();
+    await settle(() => jon.friend(ivy.identity.peerId)?.online === false);
+    expect(() => jon.mesh.sendDm(ivy.identity.peerId, 'still there?')).not.toThrow();
+    expect(jon.mesh.dmHistory(ivy.identity.peerId).at(-1)?.status).toBe('waiting');
+  }, 40_000);
+});

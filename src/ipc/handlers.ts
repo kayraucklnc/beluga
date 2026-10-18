@@ -9,6 +9,7 @@ import path from 'node:path';
 import { findProjects, isMainCheckout } from '../workspaces/discovery.js';
 import { chooseProjectIcon, readProjectIcon, suggestProjects } from '../core/project-icons.js';
 import type { Args, Method } from './api.js';
+import { NETWORK_HANDLERS } from './network-handlers.js';
 
 /**
  * What each API method does (see api.ts for the list and its arguments). Runs in the core:
@@ -223,6 +224,7 @@ export const HANDLERS = {
     return entries;
   },
   'local.openFolder': (_s, dir) => openWithSystem(dir),
+  ...NETWORK_HANDLERS,
 } satisfies Handlers;
 
 export type Result<M extends Method> = Awaited<ReturnType<(typeof HANDLERS)[M]>>;
