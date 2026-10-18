@@ -89,7 +89,8 @@ export interface WorkState {
 }
 
 export type WorkAction =
-  | { type: 'notice_add'; notice: Omit<Notice, 'id' | 'ts' | 'read'> }
+  /** `ts` is stamped before reducing (see stampAction in store.ts). */
+  | { type: 'notice_add'; notice: Omit<Notice, 'id' | 'ts' | 'read'>; ts?: number }
   | { type: 'notice_read'; channel?: string; id?: number }
   | { type: 'notice_clear' }
   | { type: 'away'; away: boolean }
@@ -136,7 +137,7 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
   switch (action.type) {
     case 'notice_add': {
       const id = (state.inbox[0]?.id ?? 0) + 1;
-      return { ...state, inbox: [{ ...action.notice, id, ts: Date.now(), read: false }, ...state.inbox].slice(0, INBOX_LIMIT) };
+      return { ...state, inbox: [{ ...action.notice, id, ts: action.ts ?? 0, read: false }, ...state.inbox].slice(0, INBOX_LIMIT) };
     }
     case 'notice_read':
       return {

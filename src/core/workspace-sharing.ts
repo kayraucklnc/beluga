@@ -3,6 +3,7 @@ import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { ShareService } from './shares.js';
 import { type LogItem, type Store, clean, peerName } from './store.js';
 import { shareNameOf } from './workspace-controller.js';
+import type { Intent } from './intents.js';
 
 export interface SharingDeps {
   readonly store: Store;
@@ -11,6 +12,8 @@ export interface SharingDeps {
   readonly shares: ShareService;
   readonly workspaces?: WorkspaceManager;
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;
+  /** Ask the screen to go somewhere, open a dialog or close a tab (see core/intents.ts). */
+  readonly intend: (intent: Intent) => void;
 }
 
 const HISTORY_ITEMS = 60;
@@ -142,8 +145,7 @@ export class WorkspaceSharing {
       if (i > HISTORY_ITEMS) break;
     }
     // Came in with a link: go straight to the first workspace you were let into.
-    const latest = this.deps.store.getState();
-    if (latest.self?.guest && latest.view.kind !== 'shared') this.deps.store.dispatch({ type: 'view', view: { kind: 'shared', owner: from, id: body.ws.id, tab: 'chat' } });
+    if (this.deps.store.getState().self?.guest) this.deps.intend({ type: 'navigate', view: { kind: 'shared', owner: from, id: body.ws.id, tab: 'chat' }, unless: 'shared' });
     this.deps.toast(`${peerName(state, from)} invited you to ${clean(body.ws.name)}${body.role === 'view' ? ' (to follow along)' : ''}. It's under SHARED WITH ME`, 'success');
   }
 
@@ -160,7 +162,7 @@ export class WorkspaceSharing {
     const shared = state.shared.find((w) => w.id === body.id && w.owner === from);
     if (shared) {
       this.deps.store.dispatch({ type: 'shared_remove', owner: from, id: body.id });
-      if (state.view.kind === 'shared' && state.view.id === body.id) this.deps.store.dispatch({ type: 'view', view: { kind: 'room' } });
+      this.deps.intend({ type: 'close_tab', id: body.id });
       this.deps.toast(`You're no longer in ${shared.name}`, 'warn');
       return;
     }
@@ -177,7 +179,6 @@ export class WorkspaceSharing {
   leave(owner: string, id: string): void {
     this.deps.send({ kind: 'ws_leave', id }, { to: owner });
     this.deps.store.dispatch({ type: 'shared_remove', owner, id });
-    const view = this.deps.store.getState().view;
-    if (view.kind === 'shared' && view.id === id) this.deps.store.dispatch({ type: 'view', view: { kind: 'room' } });
+    this.deps.intend({ type: 'close_tab', id });
   }
 }

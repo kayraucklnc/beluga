@@ -263,9 +263,11 @@ export type Action =
   | { type: 'welcome'; self: PeerInfo }
   | { type: 'peers'; peers: readonly PeerInfo[] }
   | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string }
-  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string }
+  /** `id`/`ts` are stamped before reducing (see stampAction). */
+  | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string; id?: string; ts?: number }
   | { type: 'shell'; item: ShellItem }
-  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string }
+  /** `itemId` (stamped before reducing) names the chat item a new run creates. */
+  | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string }
   | { type: 'projects'; projects: readonly Project[]; groups?: readonly ProjectGroup[] }
   | { type: 'conflicts'; id: string; files: readonly string[] }
   | { type: 'view'; view: View }
@@ -361,6 +363,24 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
 let seq = 0;
 const nextId = (): string => `l${Date.now().toString(36)}${(seq++).toString(36)}`;
 
+/**
+ * Fill in what an action needs from the clock or a counter (ids, timestamps), so reducing it
+ * is pure: the same state and stamped action always give the same result. The daemon stamps
+ * once and every client replays the same stamped action. Already stamped actions come back as is.
+ */
+export function stampAction<A extends Action>(action: A): A {
+  switch (action.type) {
+    case 'system':
+      return action.id !== undefined && action.ts !== undefined ? action : { ...action, id: action.id ?? nextId(), ts: action.ts ?? Date.now() };
+    case 'agent_event':
+      return action.itemId !== undefined ? action : { ...action, itemId: nextId() };
+    case 'notice_add':
+      return action.ts !== undefined ? action : { ...action, ts: Date.now() };
+    default:
+      return action;
+  }
+}
+
 export const peerName = (state: AppState, peerId: string): string =>
   state.peers.find((p) => p.peerId === peerId)?.name ?? (state.self?.peerId === peerId ? state.self.name : peerId.slice(0, 6));
 
@@ -408,7 +428,7 @@ function reduceAgent(state: AppState, raw: Extract<Action, { type: 'agent_event'
   const idx = state.log.findIndex((l) => l.type === 'agent' && l.requestId === a.requestId && l.owner === a.owner);
   const existing = idx >= 0 ? (state.log[idx] as Extract<LogItem, { type: 'agent' }>) : undefined;
   const base = existing ?? {
-    id: nextId(),
+    id: a.itemId ?? `${a.owner}:${a.requestId}`,
     type: 'agent' as const,
     requestId: a.requestId,
     owner: a.owner,
@@ -459,7 +479,7 @@ function reduceContext(state: AppState, a: Extract<Action, { type: 'agent_event'
       context: { ...state.context, [channel]: { used: post, window } },
       compactions: { ...state.compactions, [channel]: { pre: data.pre, post, at: a.ts } },
       log: appendLog(state.log, {
-        id: nextId(),
+        id: `${a.itemId ?? a.requestId}:compact`,
         type: 'system',
         channel,
         text: `Context compacted: ${formatTokens(data.pre)} → ${formatTokens(post)} tokens (${saved}% freed)`,
@@ -501,7 +521,13 @@ function bumpUnread(state: AppState, channel: string, isNew: boolean): AppState 
   return { ...state, unread: { ...state.unread, [channel]: (state.unread[channel] ?? 0) + 1 } };
 }
 
+/** Apply an action: stamps it first (see stampAction), then reduces it purely. */
 export function reduce(state: AppState, action: Action): AppState {
+  return reduceDomain(state, stampAction(action));
+}
+
+/** The reducer itself: pure for stamped actions (no clock, no counters). */
+export function reduceDomain(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'status':
       return { ...state, status: action.status };
@@ -545,7 +571,7 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'system':
       return {
         ...state,
-        log: appendLog(state.log, { id: nextId(), type: 'system', channel: action.channel ?? 'room', text: clean(action.text), ts: Date.now(), level: action.level ?? 'info' }),
+        log: appendLog(state.log, { id: action.id ?? '', type: 'system', channel: action.channel ?? 'room', text: clean(action.text), ts: action.ts ?? 0, level: action.level ?? 'info' }),
       };
     case 'conflicts': {
       const { [action.id]: _old, ...rest } = state.conflicts;
@@ -563,7 +589,7 @@ export function reduce(state: AppState, action: Action): AppState {
     }
     case 'close_tab': {
       const tabs = state.tabs.filter((t) => t !== action.id);
-      const view = state.view.kind === 'workspace' && state.view.id === action.id ? ({ kind: 'overview' } as const) : state.view;
+      const view = state.view.kind === 'workspace' && state.view.id === action.id ? ({ kind: 'overview' } as const) : state.view.kind === 'shared' && state.view.id === action.id ? ({ kind: 'room' } as const) : state.view;
       return { ...state, tabs, view };
     }
     case 'review':
@@ -729,7 +755,7 @@ export class Store {
   getState = (): AppState => this.state;
 
   dispatch = (action: Action): void => {
-    const next = reduce(this.state, action);
+    const next = reduceDomain(this.state, stampAction(action));
     if (next === this.state) return;
     this.state = next;
     for (const l of this.listeners) l();

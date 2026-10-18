@@ -77,7 +77,7 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'h':
     case 'help':
     case '?':
-      session.store.dispatch({ type: 'overlay', overlay: 'help' });
+      session.intend({ type: 'overlay', overlay: 'help' });
       return;
     case 'invite':
       void session.copyInvite();
@@ -85,11 +85,11 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'overview':
     case 'projects':
     case 'workspaces':
-      session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+      session.intend({ type: 'navigate', view: { kind: 'overview' } });
       return;
     case 'room':
     case 'lobby':
-      session.store.dispatch({ type: 'view', view: { kind: 'room' } });
+      session.intend({ type: 'navigate', view: { kind: 'room' } });
       return;
     case 'run':
       if (arg?.startsWith('@')) {
@@ -122,29 +122,29 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'model': {
       const channel = channelOf(state.view);
       const pick = state.models.find((m) => m.value === arg || m.label.toLowerCase() === (arg ?? '').toLowerCase());
-      if (!arg || !pick) return session.store.dispatch({ type: 'overlay', overlay: 'model' });
+      if (!arg || !pick) return session.intend({ type: 'overlay', overlay: 'model' });
       if (session.workbench) session.workbench.setModel(channel === 'room' || channel === 'draft' ? undefined : channel, pick.value);
       else session.setPrefs({ model: pick.value || undefined });
       return;
     }
     case 'search':
     case 'find':
-      session.store.dispatch({ type: 'view', view: { kind: 'search' } });
+      session.intend({ type: 'navigate', view: { kind: 'search' } });
       if (args.length) session.workbench?.search(args.join(' '));
       return;
     case 'usage':
     case 'space':
-      session.store.dispatch({ type: 'view', view: { kind: 'usage' } });
+      session.intend({ type: 'navigate', view: { kind: 'usage' } });
       void session.workbench?.measureDisk();
       return;
     case 'inbox':
     case 'notifications':
-      session.store.dispatch({ type: 'overlay', overlay: 'inbox' });
+      session.intend({ type: 'overlay', overlay: 'inbox' });
       return;
     case 'template':
     case 'templates':
       if (arg === 'save') return session.workbench?.saveTemplate(args.slice(1).join(' '));
-      session.store.dispatch({ type: 'overlay', overlay: 'templates' });
+      session.intend({ type: 'overlay', overlay: 'templates' });
       return;
     case 'shell':
       if (!arg) return session.toast(`Terminal shell: ${state.prefs.shell ?? process.env.SHELL ?? '/bin/zsh'}. Use /shell <path> to change it`);
@@ -217,7 +217,7 @@ export function runCommand(session: Session, name: string, args: readonly string
       return;
     }
     case 'clear':
-      session.store.dispatch({ type: 'overlay', overlay: 'clear' });
+      session.intend({ type: 'overlay', overlay: 'clear' });
       return;
     case 'plan': {
       const channel = channelOf(state.view);
@@ -239,7 +239,7 @@ export function runCommand(session: Session, name: string, args: readonly string
       return;
     case 'settings':
     case 'prefs':
-      session.store.dispatch({ type: 'overlay', overlay: 'settings' });
+      session.intend({ type: 'overlay', overlay: 'settings' });
       return;
     case 'name':
       session.rename(args.join(''));
@@ -288,7 +288,7 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
     return;
   }
   // Outside a workspace, /terminal opens your own shell (the Terminal tab).
-  if (!ws && name === 'terminal') return session.store.dispatch({ type: 'view', view: { kind: 'terminal' } });
+  if (!ws && name === 'terminal') return session.intend({ type: 'navigate', view: { kind: 'terminal' } });
   if (!ws) return session.toast('Open a workspace first (Projects on the left)', 'warn');
   switch (name) {
     case 'pr':
@@ -307,7 +307,7 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
       return;
     case 'handoff': {
       const peer = text ? session.findPeer(text) : undefined;
-      if (!peer) return session.store.dispatch({ type: 'overlay', overlay: 'handoff' });
+      if (!peer) return session.intend({ type: 'overlay', overlay: 'handoff' });
       void session.remote.handoff(ws.id, peer.peerId);
       return;
     }

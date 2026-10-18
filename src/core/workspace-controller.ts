@@ -5,6 +5,7 @@ import type { Workspace } from '../workspaces/types.js';
 import type { ShareService } from './shares.js';
 import { type LogItem, type Store, type WorkspaceTab, channelOf } from './store.js';
 import type { Conversation } from '../agent/transcript.js';
+import type { Intent } from './intents.js';
 
 export interface ControllerDeps {
   readonly manager: WorkspaceManager;
@@ -12,6 +13,8 @@ export interface ControllerDeps {
   readonly shares: ShareService;
   readonly selfId: () => string;
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;
+  /** Ask the screen to go somewhere, open a dialog or close a tab (see core/intents.ts). */
+  readonly intend: (intent: Intent) => void;
   /** Ask your own Claude to do something in a workspace conversation. */
   readonly askClaude: (prompt: string, channel: string) => void;
   /** The latest Claude Code conversation in a folder (from other tools), to show and continue. */
@@ -88,7 +91,7 @@ export class WorkspaceController {
     if (!ws) return this.deps.toast('That workspace no longer exists', 'warn');
     const fresh = this.ensureLoaded(id);
     if (fresh && !fresh.saved && !ws.sessionId) void this.importConversation(ws.id, ws.path, `${WS_PREFIX}${id}`);
-    this.deps.store.dispatch({ type: 'view', view: { kind: 'workspace', id, tab } });
+    this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab } });
     if (tab === 'review') void this.loadReview(id);
   }
 
@@ -210,7 +213,7 @@ export class WorkspaceController {
       return true;
     });
     if (done) {
-      this.deps.store.dispatch({ type: 'close_tab', id });
+      this.deps.intend({ type: 'close_tab', id });
       this.deps.toast('Archived. The branch and conversation are kept; restore it any time.', 'success');
     }
     return Boolean(done);
@@ -248,7 +251,7 @@ export class WorkspaceController {
     });
     if (done) {
       this.loaded.delete(`${WS_PREFIX}${id}`);
-      this.deps.store.dispatch({ type: 'close_tab', id });
+      this.deps.intend({ type: 'close_tab', id });
       this.deps.toast('Deleted', 'success');
     }
   }

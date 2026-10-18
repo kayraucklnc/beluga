@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FALLBACK_MODELS, initialWork, reduceWork, unreadCount, type Notice, type PullRequest, type WorkState } from '../src/core/work-store.js';
-import { DEFAULT_PREFS, initialState, prefsFrom, reduce, type AppState } from '../src/core/store.js';
+import { DEFAULT_PREFS, initialState, prefsFrom, reduce, stampAction, type AppState } from '../src/core/store.js';
 import type { PeerInfo } from '../src/protocol.js';
 
 const note = (title: string, channel?: string): Omit<Notice, 'id' | 'ts' | 'read'> => ({ kind: 'done', title, body: `${title} body`, ...(channel ? { channel } : {}) });
-const add = (s: WorkState, title: string, channel?: string): WorkState => reduceWork(s, { type: 'notice_add', notice: note(title, channel) });
+const add = (s: WorkState, title: string, channel?: string): WorkState => reduceWork(s, stampAction({ type: 'notice_add', notice: note(title, channel) }) as Parameters<typeof reduceWork>[1]);
 const pr: PullRequest = { number: 7, url: 'https://x/pr/7', state: 'OPEN', title: 'Fix', draft: false, checks: 'passing' };
 
 describe('reduceWork: inbox', () => {

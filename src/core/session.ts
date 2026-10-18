@@ -21,6 +21,7 @@ import { AgentHost } from './agent-host.js';
 import { RoomFiles, dirKey } from './room-files.js';
 import { createRoomBridge } from './agent-bridge.js';
 import { createSessionParts } from './session-parts.js';
+import { type Intent, IntentBus, intentAction } from './intents.js';
 import { ATTACHMENT_SHARE } from './attachments.js';
 import { Notifier } from './notify.js';
 import { Workbench } from './workbench.js';
@@ -159,6 +160,8 @@ export class Session {
   /** What changed in a workspace shared with you (and serving yours). */
   readonly diff: SharedDiff;
   private projectsTimer?: NodeJS.Timeout;
+  /** What this session asks screens to do (see core/intents.ts). */
+  readonly intents = new IntentBus();
 
   constructor(private readonly opts: SessionOptions) {
     this.bridge = createRoomBridge(this, () => opts.agentCwd);
@@ -178,6 +181,11 @@ export class Session {
     this.shell = parts.shell;
     this.diff = parts.diff;
     this.agent = opts.createAgent?.(this.bridge);
+    // Until screens have their own state, intents show in the shared store.
+    this.intents.subscribe((intent) => {
+      const action = intentAction(intent, opts.store.getState().view);
+      if (action) opts.store.dispatch(action);
+    });
     this.wire();
   }
 
@@ -299,7 +307,12 @@ export class Session {
   }
 
   toast(text: string, level: 'info' | 'success' | 'warn' | 'error' = 'info'): void {
-    this.store.dispatch({ type: 'toast', text, level });
+    this.intend({ type: 'toast', text, level });
+  }
+
+  /** Ask the screen(s) to go somewhere, open a dialog, show a message or close a tab. */
+  intend(intent: Intent): void {
+    this.intents.emit(intent);
   }
 
   async copyInvite(): Promise<void> {

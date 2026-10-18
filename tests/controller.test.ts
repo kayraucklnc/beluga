@@ -10,7 +10,7 @@ import { Store, initialState } from '../src/core/store.js';
 import { WorkspaceController, shareNameOf, workspaceIdOf } from '../src/core/workspace-controller.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
-import { waitFor } from './helpers.js';
+import { showIntents, waitFor } from './helpers.js';
 
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
 
@@ -45,6 +45,7 @@ beforeEach(async () => {
     shares,
     selfId: () => 'me',
     toast: (t) => void toasts.push(t),
+    intend: (i) => showIntents(store)(i),
     askClaude: (prompt, channel) => void asked.push({ prompt, channel }),
   });
   await ctl.refresh();
@@ -163,7 +164,7 @@ describe('WorkspaceController', () => {
   });
 
   it('runs workspace commands against the current workspace', async () => {
-    const session = { workspaces: ctl, toast: (t: string) => void toasts.push(t), store } as unknown as Session;
+    const session = { workspaces: ctl, toast: (t: string) => void toasts.push(t), intend: showIntents(store), store } as unknown as Session;
     runCommand(session, 'merge', []);
     expect(toasts.at(-1)).toBe('Open a workspace first (Projects on the left)');
     runCommand(session, 'new', []);

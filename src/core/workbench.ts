@@ -12,6 +12,7 @@ import { type LogItem, type Prefs, type Store, channelOf } from './store.js';
 import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
 import type { ModelChoice, PullRequest } from './work-store.js';
 import type { WorkspaceController } from './workspace-controller.js';
+import type { Intent } from './intents.js';
 
 export interface WorkbenchDeps {
   readonly store: Store;
@@ -20,6 +21,8 @@ export interface WorkbenchDeps {
   readonly terminals?: TerminalManager;
   readonly notify: (event: NoticeEvent) => void;
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;
+  /** Ask the screen to go somewhere, open a dialog or close a tab (see core/intents.ts). */
+  readonly intend: (intent: Intent) => void;
   /** Ask your Claude in a workspace conversation. */
   readonly askClaude: (prompt: string, channel: string) => void;
   readonly setPrefs: (prefs: Partial<Prefs>) => void;
@@ -453,12 +456,12 @@ export class Workbench {
     const hit = state.search.hits[index];
     if (!hit) return;
     if (hit.channel === 'room') {
-      this.deps.store.dispatch({ type: 'view', view: { kind: 'room' } });
+      this.deps.intend({ type: 'navigate', view: { kind: 'room' } });
       return;
     }
     const id = hit.channel.slice(3);
     const shared = state.shared.find((w) => w.id === id);
-    if (shared) this.deps.store.dispatch({ type: 'view', view: { kind: 'shared', owner: shared.owner, id, tab: 'chat' } });
+    if (shared) this.deps.intend({ type: 'navigate', view: { kind: 'shared', owner: shared.owner, id, tab: 'chat' } });
     else this.deps.controller.open(id);
   }
 

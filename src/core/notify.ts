@@ -102,6 +102,8 @@ export interface NotifierDeps {
   readonly store: Store;
   /** Show a desktop notification. */
   readonly desktop: (n: { title: string; body: string; sound: boolean }) => void;
+  /** A short message on screen (for notices about what you're looking at). */
+  readonly toast?: (text: string, level: 'info' | 'warn') => void;
   /** Coalesce bursts: at most one desktop notification per this many ms (default 1500). */
   readonly burstMs?: number;
 }
@@ -157,7 +159,7 @@ export class Notifier {
       if (!enabled(prefs, e.kind)) continue;
       // You're looking right at it: a direct notice (it isn't in the chat) still shows as a toast.
       if (!state.away && e.channel !== undefined && e.channel === visible) {
-        if (direct) this.deps.store.dispatch({ type: 'toast', text: `${e.title}${e.body ? `: ${e.body}` : ''}`, level: e.kind === 'problems' ? 'warn' : 'info' });
+        if (direct) this.deps.toast?.(`${e.title}${e.body ? `: ${e.body}` : ''}`, e.kind === 'problems' ? 'warn' : 'info');
         continue;
       }
       this.deps.store.dispatch({ type: 'notice_add', notice: { kind: e.kind, title: e.title, body: e.body, channel: e.channel } });

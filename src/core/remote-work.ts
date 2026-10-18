@@ -14,6 +14,7 @@ import { trustOf } from './trust.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { WorkspaceSharing } from './workspace-sharing.js';
 import type { Workspace } from '../workspaces/types.js';
+import type { Intent } from './intents.js';
 
 export interface RemoteWorkDeps {
   readonly store: Store;
@@ -36,6 +37,8 @@ export interface RemoteWorkDeps {
   readonly nameTask: (prompt: string) => Promise<string>;
   readonly notify: (event: NoticeEvent) => void;
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;
+  /** Ask the screen to go somewhere, open a dialog or close a tab (see core/intents.ts). */
+  readonly intend: (intent: Intent) => void;
   readonly onWorktreeCreated?: (ws: Workspace) => void;
   /** Where downloads land (default ~/Downloads/klaud). */
   readonly downloadDir?: string;
@@ -338,7 +341,7 @@ export class RemoteWork {
     for (const w of this.state.shared) {
       if (!this.opening.has(w.id)) continue;
       this.opening.delete(w.id);
-      this.deps.store.dispatch({ type: 'view', view: { kind: 'shared', owner: w.owner, id: w.id, tab: 'chat' } });
+      this.deps.intend({ type: 'navigate', view: { kind: 'shared', owner: w.owner, id: w.id, tab: 'chat' } });
       this.deps.toast(`${w.name} is running on ${this.name(w.owner)}'s computer. You're in it together`, 'success');
     }
   }

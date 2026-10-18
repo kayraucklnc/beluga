@@ -43,13 +43,14 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         shares: opts.shares,
         selfId: () => session.selfId,
         toast: (text, level) => session.toast(text, level),
+        intend: (intent) => session.intend(intent),
         askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
         findConversation: opts.findConversation ? (dir) => opts.findConversation!(dir, { id: session.selfId, name: session.store.getState().self?.name ?? 'you' }) : undefined,
         onWorktreeCreated: (ws) => workbench?.onWorktreeCreated(ws),
         onWorkspaceGoing: (id) => workbench?.closeTerminals(id),
       });
     }
-    const notifier = new Notifier({ store: opts.store, desktop: (n) => opts.desktopNotify?.(n) });
+    const notifier = new Notifier({ store: opts.store, desktop: (n) => opts.desktopNotify?.(n), toast: (text, level) => session.toast(text, level) });
     if (workspaces) {
       workbench = new Workbench({
         store: opts.store,
@@ -57,6 +58,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         terminals: opts.terminals,
         notify: (e) => notifier.notify(e),
         toast: (text, level) => session.toast(text, level),
+        intend: (intent) => session.intend(intent),
         askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
         setPrefs: (prefs) => session.setPrefs(prefs),
         confirm: (title, detail) => session.ask('request', title, detail),
@@ -80,6 +82,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       shares: opts.shares,
       workspaces: opts.workspaces,
       toast: (text, level) => session.toast(text, level),
+      intend: (intent) => session.intend(intent),
     });
     const replay = new ReplayGuard(opts.replayFile);
     const people = new People({
@@ -131,6 +134,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       nameTask: (prompt) => session.nameTask(prompt),
       notify: (e) => notifier.notify(e),
       toast: (text, level) => session.toast(text, level),
+      intend: (intent) => session.intend(intent),
       onWorktreeCreated: (ws) => workbench?.onWorktreeCreated(ws),
       downloadDir: opts.downloadDir,
     });
