@@ -43,6 +43,8 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
       return ui.openMenu({ kind: 'inbox' });
     case 'toggle-sidebar':
       return setPrefs({ sidebar: !getPrefs().sidebar });
+    case 'toggle-dock':
+      return setPrefs({ dock: getPrefs().dock === 'off' ? 'right' : 'off' });
     case 'toggle-inspector':
       return setPrefs({ inspector: !getPrefs().inspector });
     case 'appearance-system':

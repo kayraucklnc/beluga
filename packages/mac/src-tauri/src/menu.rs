@@ -75,6 +75,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::separator(app)?,
             &item(app, "toggle-sidebar", "Toggle Sidebar", Some("Ctrl+CmdOrCtrl+S"))?,
             &item(app, "toggle-inspector", "Toggle Inspector", Some("Alt+CmdOrCtrl+I"))?,
+            &item(app, "toggle-dock", "Terminal Beside Chat", Some("CmdOrCtrl+J"))?,
             &PredefinedMenuItem::separator(app)?,
             &appearance,
             &item(app, "zoom-in", "Bigger Text", Some("CmdOrCtrl+="))?,

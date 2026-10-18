@@ -3,7 +3,11 @@ import { Attention } from '../chat/Attention.js';
 import { ChatLog } from '../chat/ChatLog.js';
 import { Composer } from '../chat/Composer.js';
 import { Empty } from '../components/ui.js';
+import { useRef } from 'react';
 import { useApp } from '../lib/klaud.js';
+import { usePrefs } from '../lib/prefs.js';
+import { DockDivider, DockedTerminal } from './DockedTerminal.js';
+import d from './dock.module.css';
 import s from './views.module.css';
 
 /** A conversation and the box to add to it: the room, a workspace, a shared workspace, a draft. */
@@ -21,11 +25,25 @@ export function ChatView() {
     ) : (
       <Empty icon="chat" title="Tell Claude what to do here" detail="It works in this folder, and remembers the conversation." />
     );
-  return (
+  const prefs = usePrefs();
+  const split = useRef<HTMLDivElement>(null);
+  const chat = (
     <div className={s.chat}>
       <ChatLog key={channel} channel={channel === 'draft' ? '__draft__' : channel} empty={empty} />
       <Attention />
       <Composer />
+    </div>
+  );
+  // A shared workspace's terminal is its owner's; the dock is for your own.
+  if (prefs.dock === 'off' || view.kind === 'shared') return chat;
+  const size = `${Math.round(prefs.dockSize * 100)}%`;
+  return (
+    <div ref={split} className={`${d.split} ${prefs.dock === 'right' ? d.right : d.bottom}`}>
+      <div className={d.main}>{chat}</div>
+      <DockDivider container={split} />
+      <div style={prefs.dock === 'right' ? { width: size, display: 'flex' } : { height: size, display: 'flex' }}>
+        <DockedTerminal />
+      </div>
     </div>
   );
 }

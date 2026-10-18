@@ -23,6 +23,10 @@ export interface UiPrefs {
   /** Show Claude's tool steps in the chat, or just its answers. */
   readonly steps: 'all' | 'summary';
   readonly reduceMotion: boolean;
+  /** A terminal next to the chat: off, on the right, or underneath. */
+  readonly dock: 'off' | 'right' | 'bottom';
+  /** How much of the space the docked terminal takes (0.2–0.75). */
+  readonly dockSize: number;
 }
 
 export const ACCENTS = {
@@ -52,6 +56,8 @@ export const DEFAULT_PREFS: UiPrefs = {
   timestamps: true,
   steps: 'all',
   reduceMotion: false,
+  dock: 'off',
+  dockSize: 0.42,
 };
 
 const KEY = 'klaud.prefs.v1';

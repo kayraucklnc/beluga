@@ -3,7 +3,6 @@ import { type AppState, channelOf, peerName } from '@klaud/core/store.js';
 import { localDirKey } from '@klaud/core/local-key.js';
 import { workspaceMentions } from '@klaud/core/mentions.js';
 import { composeState } from '@klaud/ui/compose.js';
-import { modelLabel, modelOf } from '@klaud/ui/menus.js';
 import { localDirOf, openTarget, suggest, type Suggestion } from '@klaud/ui/suggest.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Kbd, Tip, cx } from '../components/ui.js';
@@ -11,6 +10,7 @@ import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
+import { ModelPicker } from './ModelPicker.js';
 import s from './composer.module.css';
 
 /** The words in the box, before you start typing: what it does here. */
@@ -53,7 +53,6 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const shared = state.view.kind === 'shared';
   const compose = composeState(state, ui.get(), state.selfId, channel, shared);
   const plan = state.planMode[channel] === true;
-  const model = channel === 'draft' ? undefined : modelOf(state, channel);
   const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view';
 
   // Suggestions as you type: commands, people and Claudes, workspaces, folders.
@@ -216,14 +215,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
               </button>
             </Tip>
           ) : null}
-          {!shared ? (
-            <Tip label="Model for this conversation">
-              <button type="button" className={s.chip} onClick={() => ui.openMenu({ kind: 'model', ...(channel === 'room' || channel === 'draft' ? {} : { channel }) })}>
-                <Icon name="spark" size={12} />
-                {modelLabel(state, model)}
-              </button>
-            </Tip>
-          ) : null}
+          {!shared ? <ModelPicker channel={channel} /> : null}
           <span className={s.flex} />
           {compose.queued ? (
             <>

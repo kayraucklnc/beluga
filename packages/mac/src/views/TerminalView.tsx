@@ -1,74 +1,11 @@
-import { FitAddon } from '@xterm/addon-fit';
-import { SearchAddon } from '@xterm/addon-search';
-import { Unicode11Addon } from '@xterm/addon-unicode11';
-import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Terminal } from '@xterm/xterm';
-import '@xterm/xterm/css/xterm.css';
-import { useEffect, useRef } from 'react';
 import { globalShellDir, globalShellId, globalShellNumber, isGlobalShell, runId, setupId, shellId } from '@klaud/shared/terminal-keys.js';
 import { findWorkspace } from '@klaud/ui/workspace-models.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Dot, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
-import { openExternal } from '../lib/system.js';
 import s from './terminal.module.css';
-
-const css = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-
-/** One terminal program, drawn by xterm.js from its raw bytes (the program runs in klaud). */
-function Xterm({ termKey, start }: { termKey: string; start: (size: { cols: number; rows: number }) => void }) {
-  const { client } = useKlaud();
-  const known = useApp((st) => termKey in st.terminals);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const term = new Terminal({
-      fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-      fontSize: 12.5,
-      lineHeight: 1.18,
-      cursorBlink: true,
-      allowProposedApi: true,
-      scrollback: 5000,
-      macOptionIsMeta: true,
-      theme: { background: css('--term-bg') || css('--bg'), foreground: css('--text'), cursor: css('--accent') === 'AccentColor' ? css('--text') : css('--accent'), selectionBackground: 'rgba(120,140,190,0.35)' },
-    });
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.loadAddon(new Unicode11Addon());
-    term.unicode.activeVersion = '11';
-    term.loadAddon(new SearchAddon());
-    term.loadAddon(new WebLinksAddon((_e, uri) => void openExternal(uri)));
-    term.open(el);
-    fit.fit();
-    if (!known) start({ cols: term.cols, rows: term.rows });
-    const link = client.attachTerminal(termKey);
-    const offData = link.onData((d) => term.write(d));
-    const offExit = link.onExit((e) => term.write(`\r\n\x1b[2m[exited${e.code !== null ? ` with ${e.code}` : ''}]\x1b[0m\r\n`));
-    const input = term.onData((d) => link.write(d));
-    link.resize(term.cols, term.rows);
-    const resize = new ResizeObserver(() => {
-      try {
-        fit.fit();
-        link.resize(term.cols, term.rows);
-      } catch {
-        // detached
-      }
-    });
-    resize.observe(el);
-    term.focus();
-    return () => {
-      resize.disconnect();
-      input.dispose();
-      offData();
-      offExit();
-      link.close?.();
-      term.dispose();
-    };
-  }, [termKey, known]);
-  return <div ref={box} className={s.xterm} />;
-}
+import { Xterm } from './Xterm.js';
 
 /** A workspace's Terminal tab (its shell, setup and run), or the global Terminal (your own shells). */
 export function TerminalView() {

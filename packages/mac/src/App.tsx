@@ -86,6 +86,9 @@ function useShortcuts() {
       if (cmd && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         ui.patch({ palette: !ui.get().palette });
+      } else if (cmd && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        setPrefs({ dock: prefs.dock === 'off' ? 'right' : 'off' });
       } else if (cmd && e.key === ',') {
         e.preventDefault();
         ui.patch({ settings: 'general' });
@@ -126,7 +129,7 @@ function useShortcuts() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [prefs.inspector, prefs.sidebar]);
+  }, [prefs.inspector, prefs.sidebar, prefs.dock]);
   useEffect(() => {
     const invite = (): void => {
       const state = client.store.getState();

@@ -32,6 +32,8 @@ function useToolbarWidth(): [React.RefObject<HTMLElement | null>, number] {
 
 function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode; subtitle?: ReactNode; center?: ReactNode; right?: ReactNode; headerRef: React.RefObject<HTMLElement | null> }) {
   const prefs = usePrefs();
+  const view = useApp((st) => st.view);
+  const dockable = view.kind === 'room' || view.kind === 'draft' || view.kind === 'draft_worktree' || (view.kind === 'workspace' && view.tab === 'chat');
   return (
     <header ref={headerRef} className={cx(s.toolbar, !prefs.sidebar && s.noSidebar)} data-tauri-drag-region>
       {prefs.sidebar ? null : (
@@ -48,6 +50,9 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
       </div>
       <div className={s.right}>
         {right}
+        {dockable ? (
+          <IconButton icon="terminal" label={prefs.dock === 'off' ? 'Terminal beside the chat' : 'Hide the terminal'} keys={`${mod()}J`} active={prefs.dock !== 'off'} onClick={() => setPrefs({ dock: prefs.dock === 'off' ? 'right' : 'off' })} />
+        ) : null}
         <IconButton icon="command" label="Everything you can do" keys={`${mod()}K`} onClick={() => document.dispatchEvent(new CustomEvent('klaud:palette'))} />
         <IconButton icon="inspector" label={prefs.inspector ? 'Hide the inspector' : 'Show the inspector'} keys={`${mod()}⌥I`} active={prefs.inspector} onClick={() => setPrefs({ inspector: !prefs.inspector })} />
       </div>

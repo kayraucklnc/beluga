@@ -32,7 +32,7 @@ const STEPS = {
   workspace: async () => openWs(),
   chatrun: async () => {
     await openWs();
-    await page.locator('textarea').fill('Add rate limiting to the login endpoint and write tests');
+    await page.locator('textarea:not(.xterm-helper-textarea)').fill('Add rate limiting to the login endpoint and write tests');
     await page.keyboard.press('Enter');
     await wait(5000);
   },
@@ -65,6 +65,19 @@ const STEPS = {
   palette: async () => page.keyboard.press('Meta+K'),
   settings: async () => page.keyboard.press('Meta+,'),
   person: async () => side('bob').click(),
+  dock: async () => {
+    await openWs();
+    await page.keyboard.press('Meta+J');
+    await wait(2500);
+    await page.locator('textarea:not(.xterm-helper-textarea)').fill('Run the tests and fix whatever fails');
+    await page.keyboard.press('Enter');
+    await wait(3500);
+  },
+  picker: async () => {
+    await openWs();
+    await page.getByRole('button', { name: 'Model and effort' }).click();
+    await wait(500);
+  },
 };
 
 for (const scene of scenes.length ? scenes : ['room']) {
