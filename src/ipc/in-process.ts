@@ -5,7 +5,7 @@ import type { Intent } from '../core/intents.js';
 import type { Session } from '../core/session.js';
 import type { ScreenState } from '../core/store.js';
 import { type PtyLink, localLink } from '../terminal/emulator.js';
-import { type Args, type Method, parseArgs } from './api.js';
+import { type Args, type Method, isMethod, parseArgs } from './api.js';
 import { type ApiProxy, type ClientKind, type KlaudClient, apiProxy } from './client.js';
 import { HANDLERS, type Handlers, type Result } from './handlers.js';
 
@@ -61,6 +61,7 @@ export class InProcessClient implements KlaudClient {
   private invoke(method: Method, raw: readonly unknown[]): Promise<unknown> {
     let promise: Promise<unknown>;
     try {
+      if (!isMethod(method)) throw new Error(`Unknown method ${method}`);
       const args = parseArgs(method, raw);
       const handler = HANDLERS[method] as (s: Session, ...a: unknown[]) => unknown;
       promise = Promise.resolve(runAsClient(this.id, () => handler(this.session, ...(args as unknown[]))));

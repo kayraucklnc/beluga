@@ -1,0 +1,249 @@
+import { randomUUID, timingSafeEqual } from 'node:crypto';
+import type { AddressInfo } from 'node:net';
+import { WebSocketServer, type WebSocket } from 'ws';
+import { runAsClient } from '../core/client-context.js';
+import type { Session } from '../core/session.js';
+import { isMethod, parseArgs } from '../ipc/api.js';
+import { HANDLERS } from '../ipc/handlers.js';
+import { type Cap, type DaemonFrame, IPC_VERSION, encodeFrame, parseClientFrame } from '../ipc/protocol.js';
+import type { PtyProcess, TerminalManager } from '../terminal/index.js';
+import { ClientRegistry, type ConnectedClient } from './clients.js';
+
+export interface DaemonServerOptions {
+  readonly session: Session;
+  /** Shared secret every screen must present (from daemon.json). */
+  readonly token: string;
+  readonly version: string;
+  /** 0: any free port. */
+  readonly port?: number;
+  /** Browser origins allowed to connect (the Mac app's webview); screens in Node send none. */
+  readonly allowedOrigins?: readonly string[];
+  /** Terminal programs (to stream their bytes). */
+  readonly terminals?: TerminalManager;
+  /** How long a screen has to say hello. */
+  readonly helloTimeoutMs?: number;
+  /** How long a capability call may take before it's given up. */
+  readonly capTimeoutMs?: number;
+}
+
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** The default origins of the Mac app's webview. */
+export const APP_ORIGINS = ['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost'] as const;
+
+/**
+ * The daemon's door: screens connect over a loopback WebSocket, prove they hold the token, get
+ * the shared state and every action after it, and call the API. What the core asks screens to
+ * do (intents) goes to the screen that caused it, else to all of them.
+ */
+export class DaemonServer {
+  readonly clients = new ClientRegistry();
+  private wss?: WebSocketServer;
+  private seq = 0;
+  private readonly offs: Array<() => void> = [];
+  private readonly capCalls = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+  /** Per terminal: who may answer the program's queries (the screen that typed or resized last). */
+  private readonly termOwner = new Map<string, string>();
+
+  constructor(private readonly opts: DaemonServerOptions) {}
+
+  private get session(): Session {
+    return this.opts.session;
+  }
+
+  async listen(): Promise<number> {
+    const allowed = new Set(this.opts.allowedOrigins ?? APP_ORIGINS);
+    const wss = new WebSocketServer({
+      host: '127.0.0.1',
+      port: this.opts.port ?? 0,
+      maxPayload: 4 * 1024 * 1024,
+      verifyClient: ({ origin }: { origin?: string }) => !origin || allowed.has(origin),
+    });
+    this.wss = wss;
+    await new Promise<void>((resolve, reject) => {
+      wss.once('listening', resolve);
+      wss.once('error', reject);
+    });
+    wss.on('connection', (ws) => this.accept(ws));
+    this.offs.push(
+      this.session.store.onAction((action) => {
+        this.seq++;
+        this.clients.send({ t: 'action', seq: this.seq, action });
+      }),
+      this.session.intents.subscribe((intent, target) => {
+        // Caused by one screen: only it hears. Otherwise everyone does.
+        if (target !== undefined && this.clients.get(target)) this.clients.send({ t: 'intent', intent }, target);
+        else if (target === undefined) this.clients.send({ t: 'intent', intent });
+      }),
+      this.clients.onChange((count) => this.clients.send({ t: 'clients', count })),
+    );
+    return (wss.address() as AddressInfo).port;
+  }
+
+  async close(reason = 'klaud is shutting down'): Promise<void> {
+    for (const off of this.offs.splice(0)) off();
+    for (const c of this.capCalls.values()) {
+      clearTimeout(c.timer);
+      c.reject(new Error('Closed'));
+    }
+    this.capCalls.clear();
+    this.clients.send({ t: 'bye', reason });
+    const wss = this.wss;
+    if (!wss) return;
+    for (const ws of wss.clients) ws.close(1001, reason);
+    await new Promise<void>((resolve) => wss.close(() => resolve()));
+  }
+
+  /**
+   * Ask a screen to do what only it can (copy text, open a link…): the one whose request this is,
+   * else the most recently active one that can.
+   */
+  callCap(cap: Cap, args: readonly unknown[], caller?: string): Promise<unknown> {
+    const client = this.clients.pick(cap, caller);
+    if (!client) return Promise.reject(new Error(`No screen can ${cap} right now`));
+    return this.capOn(client, cap, args);
+  }
+
+  /** Every screen that can (desktop notifications: each screen decides by itself whether to show it). */
+  broadcastCap(cap: Cap, args: readonly unknown[]): void {
+    for (const c of this.clients.list()) if (c.caps.includes(cap)) void this.capOn(c, cap, args).catch(() => undefined);
+  }
+
+  private capOn(client: ConnectedClient, cap: Cap, args: readonly unknown[]): Promise<unknown> {
+    const id = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.capCalls.delete(id);
+        reject(new Error(`The screen didn't ${cap} in time`));
+      }, this.opts.capTimeoutMs ?? 10_000);
+      timer.unref?.();
+      this.capCalls.set(id, { resolve, reject, timer });
+      client.send({ t: 'cap_call', id, cap, args });
+    });
+  }
+
+  private accept(ws: WebSocket): void {
+    let client: ConnectedClient | undefined;
+    const attached = new Map<string, () => void>();
+    const send = (frame: DaemonFrame): void => {
+      if (ws.readyState === ws.OPEN) ws.send(encodeFrame(frame));
+    };
+    const helloTimer = setTimeout(() => ws.close(4001, 'No hello'), this.opts.helloTimeoutMs ?? 5000);
+    helloTimer.unref?.();
+    const detachAll = (): void => {
+      for (const off of attached.values()) off();
+      attached.clear();
+    };
+
+    ws.on('message', (raw) => {
+      const frame = parseClientFrame(raw.toString());
+      if (!frame) return;
+      if (!client) {
+        if (frame.t !== 'hello') return;
+        clearTimeout(helloTimer);
+        if (!this.tokenOk(frame.token)) return ws.close(4003, 'Wrong token');
+        if (frame.ipc !== IPC_VERSION) {
+          send({ t: 'bye', reason: `This klaud speaks version ${IPC_VERSION} of the protocol, the screen ${frame.ipc}. Update both to the same version.` });
+          return ws.close(4004, 'IPC version mismatch');
+        }
+        client = this.clients.add({ kind: frame.kind, version: frame.version, ...(frame.launchDir ? { launchDir: frame.launchDir } : {}), caps: frame.caps, send });
+        send({ t: 'welcome', clientId: client.id, version: this.opts.version, ipc: IPC_VERSION, snapshot: this.session.store.getState(), seq: this.seq, clients: this.clients.size });
+        return;
+      }
+      const me = client;
+      switch (frame.t) {
+        case 'hello':
+          return;
+        case 'ping':
+          return send({ t: 'pong' });
+        case 'resync':
+          return send({ t: 'snapshot', snapshot: this.session.store.getState(), seq: this.seq });
+        case 'attention':
+          return this.session.attend(me.id, frame.attention);
+        case 'call':
+          this.clients.touch(me.id);
+          return void this.call(me, frame.id, frame.method, frame.args).then(send);
+        case 'cap_result': {
+          const pending = this.capCalls.get(frame.id);
+          if (!pending) return;
+          this.capCalls.delete(frame.id);
+          clearTimeout(pending.timer);
+          if (frame.ok) pending.resolve(frame.value);
+          else pending.reject(new Error(frame.error ?? 'failed'));
+          return;
+        }
+        case 'term_attach': {
+          attached.get(frame.term)?.();
+          const pty = this.opts.terminals?.get(frame.term);
+          if (!pty) return send({ t: 'term_status', term: frame.term, running: false, exited: { code: null } });
+          if (!this.termOwner.has(frame.term)) this.termOwner.set(frame.term, me.id);
+          attached.set(frame.term, this.stream(pty, frame.term, send));
+          return;
+        }
+        case 'term_detach':
+          attached.get(frame.term)?.();
+          attached.delete(frame.term);
+          return;
+        case 'term_input': {
+          const pty = this.opts.terminals?.get(frame.term);
+          if (!pty) return;
+          // Answers to the program's own queries come from one screen only, or it would get several.
+          if (frame.reply) {
+            if (this.termOwner.get(frame.term) === me.id) pty.write(frame.data);
+            return;
+          }
+          this.termOwner.set(frame.term, me.id);
+          pty.write(frame.data);
+          return;
+        }
+        case 'term_resize': {
+          // The last screen to resize wins (two screens of different sizes share one program).
+          this.termOwner.set(frame.term, me.id);
+          this.opts.terminals?.get(frame.term)?.resize(frame.cols, frame.rows);
+          return;
+        }
+      }
+    });
+
+    ws.on('close', () => {
+      clearTimeout(helloTimer);
+      detachAll();
+      if (!client) return;
+      this.session.detach(client.id);
+      this.clients.remove(client.id);
+      for (const [term, owner] of this.termOwner) if (owner === client.id) this.termOwner.delete(term);
+    });
+    ws.on('error', () => undefined);
+  }
+
+  /** A program's output to one screen: what it wrote lately, then as it comes, then how it ended. */
+  private stream(pty: PtyProcess, term: string, send: (frame: DaemonFrame) => void): () => void {
+    const backlog = pty.backlog();
+    if (backlog) send({ t: 'term_data', term, data: backlog });
+    send({ t: 'term_status', term, running: pty.running, ...(pty.exited ? { exited: pty.exited } : {}) });
+    const offData = pty.onData((data) => send({ t: 'term_data', term, data }));
+    const offExit = pty.onExit((exited) => send({ t: 'term_status', term, running: false, exited }));
+    return () => {
+      offData();
+      offExit();
+    };
+  }
+
+  private async call(client: ConnectedClient, id: string, method: string, raw: readonly unknown[]): Promise<DaemonFrame> {
+    if (!isMethod(method)) return { t: 'result', id, ok: false, error: `Unknown method ${method}` };
+    try {
+      const args = parseArgs(method, raw);
+      const handler = HANDLERS[method] as (s: Session, ...a: unknown[]) => unknown;
+      const value = await runAsClient(client.id, () => handler(this.session, ...(args as unknown[])));
+      return { t: 'result', id, ok: true, ...(value === undefined ? {} : { value }) };
+    } catch (err) {
+      return { t: 'result', id, ok: false, error: errorText(err) };
+    }
+  }
+
+  private tokenOk(token: string): boolean {
+    const a = Buffer.from(token);
+    const b = Buffer.from(this.opts.token);
+    return a.length === b.length && timingSafeEqual(a, b);
+  }
+}
