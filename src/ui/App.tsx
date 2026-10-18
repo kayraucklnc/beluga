@@ -33,6 +33,7 @@ import { type UiActionContext, runUiActionWith } from './ui-actions.js';
 import { useTerminalPane } from './use-terminal.js';
 import { expandOutgoing, pasteClipboardImage, pasteDroppedImages } from './attach-actions.js';
 import { setLinkEnv } from './links.js';
+import { openInvite, projectInView } from './invite-actions.js';
 
 const TOAST_MS = 3500;
 const FRAME_MS = 100;
@@ -45,7 +46,7 @@ const BUTTON_HINTS: Record<string, string> = {
   ask: 'Mention a Claude: yours, a friend’s, or everyone’s',
   commands: 'See every command',
   projects: 'Jump to your projects and chats on the left',
-  invite: 'Open a secure link for friends and copy it',
+  invite: 'Invite someone to one project or the whole room (as host: they knock first)',
   settings: 'Name, theme, text size, mouse and sharing',
   help: 'Keys and commands',
   review: 'See exactly what changed in this workspace',
@@ -282,6 +283,12 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
       patchUi({ planFull: undefined, planScroll: 0 });
       return;
     }
+    // A shared workspace's Terminal tab: what you type is a command for its read-only shell.
+    if (latest.view.kind === 'shared' && latest.view.tab === 'terminal' && !text.startsWith('/')) {
+      void session.shell.run(latest.view.id, text);
+      patchUi({ chatScroll: 0 });
+      return;
+    }
     if (latest.view.kind === 'draft' && ctl && !text.startsWith('/')) {
       void ctl.startChat(latest.view.projectId, text, latest.view.dir);
       return;
@@ -367,9 +374,11 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
         runUiAction(effect.action);
         return;
       case 'review_move': {
-        const review = session.store.getState().review;
+        const latest = session.store.getState();
+        const review = latest.review;
         const count = review?.data?.files.length ?? 0;
-        if (review && count) void ctl?.selectFile(Math.max(0, Math.min(count - 1, review.selected + effect.delta)));
+        const index = Math.max(0, Math.min(count - 1, (review?.selected ?? 0) + effect.delta));
+        if (review && count) void (latest.view.kind === 'shared' ? session.diff.select(index) : ctl?.selectFile(index));
         return;
       }
       case 'tab_jump': {
@@ -493,7 +502,9 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
         run({ type: 'download' });
         return;
       case 'invite':
-        void session.copyInvite();
+        // Hosting: the Invite flow (one project or everything). In someone else's room: pass on its link.
+        if (latest.self?.host) openInvite(menuCtx, projectInView(session));
+        else void session.copyInvite();
         return;
       case 'clear':
         patchUi({ menu: { menu: { kind: 'clear', channel: view(latest, current).channel, host: session.isHost }, selected: 0 } });
@@ -624,7 +635,11 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
     }
     if (target.kind === 'viewer') scrollViewer(dir * WHEEL_LINES);
     else if (target.kind === 'file' || target.kind === 'files') session.store.dispatch({ type: 'browser_cursor', delta: dir });
-    else if (target.kind === 'main' && latest.review && latest.view.kind === 'workspace') run({ type: 'review_scroll', delta: dir * WHEEL_LINES });
+    else if (target.kind === 'chat' && latest.view.kind === 'shared' && latest.view.tab === 'terminal') {
+      const max = view(latest, current).shellMaxScroll;
+      patchUi({ chatScroll: Math.min(max, Math.max(0, current.chatScroll - dir * WHEEL_LINES)) });
+    }
+    else if (target.kind === 'main' && latest.review && (latest.view.kind === 'workspace' || latest.view.kind === 'shared')) run({ type: 'review_scroll', delta: dir * WHEEL_LINES });
     else if (target.kind === 'main' && latest.view.kind === 'overview') {
       const max = Math.max(0, (view(latest, current).overview?.lines.length ?? 0) - 4);
       patchUi({ overviewScroll: Math.min(max, Math.max(0, current.overviewScroll + dir * WHEEL_LINES)) });
@@ -738,10 +753,10 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
         menuSize: dd.menu?.options.length ?? 0,
         projectItems: dd.projectItems,
         headerItems: dd.headerItems,
-        mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || latest.view.kind === 'overview' || latest.view.kind === 'usage',
+        mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || (latest.view.kind === 'shared' && latest.view.tab === 'diff') || latest.view.kind === 'overview' || latest.view.kind === 'usage',
         searching: latest.view.kind === 'search',
         terminalVisible: latest.view.kind === 'terminal' || (latest.view.kind === 'workspace' && latest.view.tab === 'terminal'),
-        filesVisible: latest.view.kind === 'files' || (latest.view.kind === 'workspace' && latest.view.tab === 'files'),
+        filesVisible: latest.view.kind === 'files' || ((latest.view.kind === 'workspace' || latest.view.kind === 'shared') && latest.view.tab === 'files'),
         draft: latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree',
         headerStart: dd.headerStart,
         planId: dd.planId,
@@ -793,6 +808,10 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
     ? `Name for the new ${ui.pending.kind} in ${state.projects.find((p) => p.id === ui.pending?.projectId)?.name ?? 'the project'} · Enter to create · Esc to cancel`
     : d.workspace
       ? `Tell Claude what to do in ${d.workspace.name}…`
+      : d.shared && state.view.kind === 'shared' && state.view.tab === 'terminal'
+      ? 'Type a command: ls, cd <folder>, cat <file>, tree, find <name>, grep <text>, help · Tab completes'
+      : d.shared && state.view.kind === 'shared' && state.view.tab === 'chat' && d.shared.role === 'view'
+      ? `You're watching ${d.shared.name} (read-only). Browse it in Files or Terminal above`
       : state.view.kind === 'room' && state.peers.length <= 1
         ? 'Talk to your Claude…  @workspace reaches the Claude working there, / for commands'
         : undefined;

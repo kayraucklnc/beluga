@@ -84,9 +84,9 @@ describe('sharing and people', () => {
   });
 
   it('the Share menu invites, changes and removes people', () => {
-    expect(wsShareMenu(room(), 'w1')!.options.map((o) => o.id)).toEqual(['ws-contribute:b', 'ws-view:b', 'invite', 'close']);
+    expect(wsShareMenu(room(), 'w1')!.options.map((o) => o.id)).toEqual(['ws-contribute:b', 'ws-view:b', 'ws-link', 'invite', 'close']);
     const inside = reduce(room(), { type: 'member_set', id: 'w1', peerId: 'b', role: 'contribute' });
-    expect(wsShareMenu(inside, 'w1')!.options.map((o) => o.id)).toEqual(['ws-view:b', 'ws-remove:b', 'invite', 'close']);
+    expect(wsShareMenu(inside, 'w1')!.options.map((o) => o.id)).toEqual(['ws-view:b', 'ws-remove:b', 'ws-link', 'invite', 'close']);
     expect(wsShareMenu(inside, 'w1')!.intro[0]).toContain('bob (working here)');
   });
 

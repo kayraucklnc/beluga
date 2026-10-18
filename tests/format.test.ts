@@ -90,7 +90,7 @@ describe('renderLog', () => {
 
   it('renders agent work as a rail with live status', () => {
     const top = lines.find((l) => l.includes('working · 3s'));
-    expect(top).toMatch(/^◆ bob's Claude {2}for kay +◐ working · 3s$/);
+    expect(top).toMatch(/^◆ kay \(via bob's Claude\) +◐ working · 3s$/);
     expect(top).toHaveLength(60);
     expect(lines).toContain('│ ↳ Read a.ts');
     expect(lines.some((l) => l.includes('thinking hard'))).toBe(true);

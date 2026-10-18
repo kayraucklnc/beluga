@@ -180,7 +180,7 @@ export class RoomFiles {
     });
   }
 
-  settle(from: string, reqId: string, body: BodyOf<'fs_list_result'> | BodyOf<'fs_read_result'> | BodyOf<'fs_chunk'>): void {
+  settle(from: string, reqId: string, body: { readonly ok: boolean; readonly error?: string }): void {
     const p = this.pending.get(reqId);
     if (!p || p.peer !== from) return;
     clearTimeout(p.timer);

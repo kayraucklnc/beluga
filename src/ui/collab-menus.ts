@@ -24,6 +24,7 @@ export function wsShareMenu(state: AppState, wsId: string): MenuSpec | undefined
       options.push({ id: `ws-view:${p.peerId}`, label: `Let ${p.name} follow along`, hint: 'read-only: chat history and files' });
     }
   }
+  options.push({ id: 'ws-link', label: 'Invite someone by link…', hint: 'to this project (all its worktrees and chats); they knock first' });
   options.push({ id: 'invite', label: state.invite ? 'Copy the room invite for someone new' : 'Invite someone new to the room', hint: 'then share this workspace with them here' });
   options.push({ id: 'close', label: 'Done', hint: 'Esc' });
   const inside = Object.entries(members).map(([id, role]) => `${peerName(state, id)} (${role === 'contribute' ? 'working here' : 'following'})`);

@@ -94,6 +94,23 @@ export function MainPane({ state, d, ui, frame, terminal }: MainPaneProps) {
           </>
         );
       }
+      if (state.view.tab === 'terminal') {
+        return (
+          <>
+            <Panel title={`${w.name} terminal`} right={g.viewerWidth ? 'click a name to open it' : 'type a command below · click a name to open it'} width={g.chatWidth} height={g.paneHeight} focused={d.focus === 'chat'}>
+              <ModelBlock lines={d.pane?.lines ?? []} height={g.paneHeight - 2} />
+            </Panel>
+            {viewer}
+          </>
+        );
+      }
+      if (state.view.tab === 'diff') {
+        return (
+          <Panel title={`What changed in ${w.name}`} right="read-only · ↑↓ files · PgUp PgDn scroll" width={paneW} height={g.paneHeight} focused={d.focus === 'main'}>
+            <ModelBlock lines={d.review?.lines ?? []} height={g.paneHeight - 2} />
+          </Panel>
+        );
+      }
       return <ChatView state={state} channel={d.channel} title={`${w.name} · with ${state.peers.find((p) => p.peerId === w.owner)?.name ?? 'owner'}'s Claude`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'} scroll={ui.chatScroll} frame={frame} hoverLink={d.chatHover} />;
     }
     case 'draft_worktree': {

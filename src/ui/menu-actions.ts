@@ -7,6 +7,7 @@ import { applyTheme } from './theme.js';
 import type { UiAction } from './workspace-models.js';
 import { runCollabOption } from './collab-actions.js';
 import { runWorkOption } from './work-actions.js';
+import { runInviteOption } from './invite-actions.js';
 
 export const POLICY_BY_OPTION: Record<string, Policy> = { 'share-ask': 'ask', 'share-auto': 'auto', 'share-deny': 'deny' };
 export const POLICY_INDEX: Record<Policy, number> = { ask: 0, auto: 1, deny: 2 };
@@ -29,6 +30,7 @@ export function runMenu(ctx: MenuContext, menu: MenuKind, index: number): void {
   const latest = session.store.getState();
   const option = menuSpec(latest, menu)?.options[index];
   if (!option) return;
+  if (runInviteOption(ctx, menu, option.id, index)) return;
   if (runCollabOption(ctx, menu, option.id)) return;
   if (runWorkOption(ctx, menu, option.id, index)) return;
   const peer = menu.kind === 'person' ? latest.peers[menu.index] : undefined;

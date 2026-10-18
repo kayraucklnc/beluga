@@ -1,5 +1,7 @@
 import type { PendingQuestion } from '../core/collab-store.js';
 import type { Session } from '../core/session.js';
+import type { SharedTab } from '../core/store.js';
+import { runInviteUiAction } from './invite-actions.js';
 import type { MenuContext } from './menu-actions.js';
 import type { MenuKind } from './menus.js';
 import type { UiAction } from './workspace-models.js';
@@ -68,12 +70,16 @@ export function answerByNumber(session: Session, q: PendingQuestion, n: number):
   return true;
 }
 
-/** Open a workspace someone shared with you. */
-export function openShared(session: Session, owner: string, id: string, tab: 'chat' | 'files' = 'chat'): void {
-  const w = session.store.getState().shared.find((x) => x.owner === owner && x.id === id);
+/** Open a workspace someone shared with you: its chat, files, read-only shell, or what changed. */
+export function openShared(session: Session, owner: string, id: string, tab: SharedTab = 'chat'): void {
+  const latest = session.store.getState();
+  const w = latest.shared.find((x) => x.owner === owner && x.id === id);
   if (!w) return;
   session.store.dispatch({ type: 'view', view: { kind: 'shared', owner, id, tab } });
   if (tab === 'files') void session.browseTo({ owner, share: w.share, path: '' });
+  // The shell starts by listing the top folder, so there's something to click right away.
+  if (tab === 'terminal' && !latest.shells[id]?.entries.length) void session.shell.run(id, 'ls');
+  if (tab === 'diff') void session.diff.load(id);
 }
 
 function runWorkspaceShare(ctx: MenuContext, wsId: string, id: string): boolean {
@@ -163,6 +169,7 @@ export function runCollabOption(ctx: MenuContext, menu: MenuKind, id: string): b
 /** UI actions for collaboration (question cards, shared workspaces, plan mode, sharing). */
 export function runCollabUiAction(ctx: MenuContext, action: UiAction): boolean {
   const { session, patchUi } = ctx;
+  if (runInviteUiAction(session, action)) return true;
   switch (action.type) {
     case 'answer':
       answerQuestion(session, action);
@@ -176,7 +183,7 @@ export function runCollabUiAction(ctx: MenuContext, action: UiAction): boolean {
       return true;
     case 'open_shared':
       openShared(session, action.owner, action.id, action.tab);
-      patchUi({ focus: action.tab === 'files' ? 'files' : 'chat' });
+      patchUi({ focus: action.tab === 'files' ? 'files' : action.tab === 'diff' ? 'main' : 'chat', chatScroll: 0, ...(action.tab === 'diff' || action.tab === 'files' ? { entered: true } : {}) });
       return true;
     case 'shared_menu':
       patchUi({ menu: { menu: { kind: 'shared', owner: action.owner, id: action.id }, selected: 0 } });

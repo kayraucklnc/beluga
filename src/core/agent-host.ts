@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import type { AgentBackend, FollowUp } from '../agent/types.js';
 import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
@@ -23,6 +24,29 @@ export interface AgentHostDeps {
   readonly system: (text: string, level?: 'info' | 'warn' | 'error') => void;
   readonly approvalTimeoutMs: () => number;
   readonly refreshUsage: () => Promise<void>;
+  /** People invited by link to edit: their requests edit and run commands in that folder without asking. */
+  readonly canEditIn?: (peerId: string, channel: string) => boolean;
+}
+
+/**
+ * The tool stays inside `cwd`: its file is there, or (Bash, which runs there) its command names
+ * no path outside it (no `~`, `..` or `$`, absolute paths only under `cwd`). Anything else asks you.
+ */
+export function toolInside(toolName: string, input: Record<string, unknown>, cwd: string): boolean {
+  const root = path.resolve(cwd);
+  const within = (target: string): boolean => target === root || target.startsWith(root + path.sep);
+  if (toolName === 'Bash') {
+    const command = typeof input.command === 'string' ? input.command : '';
+    // Variables and subshells ($HOME, $(…), `…`) could point anywhere: those ask.
+    if (/[$`]/.test(command)) return false;
+    const paths = command.match(/(?:^|[\s'"=:(<>])(?:~|\/|\.\.)[^\s'";|&)]*/g) ?? [];
+    return paths.every((m) => {
+      const raw = m.replace(/^[\s'"=:(<>]/, '');
+      return !raw.startsWith('~') && !raw.startsWith('..') && within(path.resolve(raw));
+    });
+  }
+  const raw = [input.file_path, input.notebook_path, input.path].find((v) => typeof v === 'string' && v);
+  return within(path.resolve(cwd, typeof raw === 'string' ? raw : '.'));
 }
 
 const MAX_PENDING_APPROVALS = 20;
@@ -384,7 +408,7 @@ export class AgentHost {
         signal: controller.signal,
         onEvent: (kind, text) => this.emitAgent(body.requestId, from, kind, text, body.channel),
         onFileTouched: (abs) => this.announceAgentFocus(abs),
-        canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input),
+        canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input, body.channel, place?.cwd),
         askUser: (question) => this.deps.questions.ask(askTo, body.requestId, body.channel, question),
         plan: body.plan,
         onFollowUps: (send) => {
@@ -419,11 +443,13 @@ export class AgentHost {
     return { ...(model ? { model } : {}), ...(prefs.effort ? { effort: prefs.effort } : {}) };
   }
 
-  private async authorizeTool(requester: string, requesterName: string, toolName: string, input: Record<string, unknown>): Promise<boolean> {
+  private async authorizeTool(requester: string, requesterName: string, toolName: string, input: Record<string, unknown>, channel = 'room', cwd?: string): Promise<boolean> {
     // Your own Claude doesn't nag you (unless you asked it to); fully trusted friends don't either.
     const state = this.store.getState();
     if (requester === this.selfId && state.prefs.selfApproval === 'never') return true;
     if (requester !== this.selfId && trustOf(state, requester) === 'full') return true;
+    // Invited by link to edit this project: as if you prompted, inside its folder (secrets were already refused).
+    if (cwd && requester !== this.selfId && this.deps.canEditIn?.(requester, channel) && toolInside(toolName, input, cwd)) return true;
     // "Always" is scoped to one requester and one tool, never global.
     const scope = `${requester}:${toolName}`;
     if (this.alwaysTools.has(scope)) return true;

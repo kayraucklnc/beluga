@@ -45,6 +45,9 @@ function composeButtons(c: ComposeState | undefined): ActionButton[] {
   ];
 }
 
+/** Hosting: the Invite flow (one project or everything). In someone else's room: pass on its link. */
+const inviteLabel = (state: AppState): string => (state.self?.host ? 'Invite…' : state.invite ? 'Copy invite' : 'Invite friends');
+
 export function actionButtons(focus: Focus, state: AppState, suggesting: boolean, viewer: ViewerMode = { full: false, raw: false }, compose?: ComposeState): ActionButton[] {
   if (suggesting) {
     return [
@@ -80,7 +83,8 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
       return [
         { id: 'scroll', text: 'Choose file', key: '↑↓' },
         { id: 'scroll', text: 'Scroll diff', key: 'PgUp PgDn' },
-        { id: 'review-claude', text: 'Ask Claude to review', key: '' },
+        // Someone else's workspace: their diff is read-only.
+        ...(state.view.kind === 'shared' ? [] : [{ id: 'review-claude', text: 'Ask Claude to review', key: '' }]),
         { id: 'chat', text: 'Back', key: 'Esc' },
       ];
     case 'people':
@@ -138,7 +142,7 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
         return [
           { id: 'share-folder', text: '+ Share a folder', key: '' },
           { id: 'projects', text: 'Projects', key: 'Tab' },
-          { id: 'invite', text: state.invite ? 'Copy invite' : 'Invite friends', key: '' },
+          { id: 'invite', text: inviteLabel(state), key: '' },
           { id: 'settings', text: 'Settings', key: '' },
           { id: 'help', text: 'Help', key: '' },
         ];
@@ -149,7 +153,7 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
         { id: 'commands', text: 'Commands', key: '/' },
         ...(state.view.kind === 'draft' || state.view.kind === 'draft_worktree' ? [{ id: 'templates', text: 'Templates', key: '' }] : []),
         { id: 'projects', text: 'Projects', key: 'Tab' },
-        { id: 'invite', text: state.invite ? 'Copy invite' : 'Invite friends', key: '' },
+        { id: 'invite', text: inviteLabel(state), key: '' },
         { id: 'share-folder', text: 'Share', key: '' },
         { id: 'clear', text: 'Clear', key: '' },
         { id: 'settings', text: 'Settings', key: '' },

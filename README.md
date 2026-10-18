@@ -173,7 +173,12 @@ Worktrees made by other tools (Conductor, Claude Code) show their latest Claude 
 
 ### Working with people
 
-- **Invite** opens a secure link and copies it. Your friend runs `klaud join`.
+- **Invite** (bottom bar, a project's ⋯ menu, or a workspace's **Share**) asks two things: **Invite to** *This project* (all its worktrees and chats) or *Everything* (the whole room), and **They can** *Watch* (chat history and files), *Prompt* (talk to your Claude there; edits and commands follow your approval rules) or *Edit* (your Claude edits and runs commands in that project's folder without asking; secrets stay blocked). **Copy invite link**, and your friend runs `klaud join <link>`.
+  - Links **knock** by default: a card says *mia wants to join bob-api* with **Let in**, **Watch only** and **Decline**. They're for one person and expire after 24 hours, unless you untick those; turn any link off from the same menu. They work in rooms you host, while klaud runs.
+  - Project guests see **only** what they were invited to: no group chat, no other projects or shared folders. Files stream as they open them (no full download), in **Files**, a read-only **Terminal** (`ls`, `cd`, `cat`, `tree`, `find`, `grep`; click any name to open it; Tab completes) and **Diff** (what changed). Nothing runs on your computer for that.
+  - Their prompts run on your computer, with your Claude, in that project's folder, and show up as *mia (via kay's Claude)*.
+  - **Click a guest** in People to change what they can do, add them to another project, invite them to everything, or remove them. No new link needed.
+  - Prefer the old way? *Copy the room's open link* lets anyone with it into everything, without knocking.
 - **Someone joins**: a card asks *how much do you trust them?* Pick one, and klaud remembers it next time (by their own key, which nobody else can use):
   - **Can't use my Claude**: they can chat, but their requests are declined.
   - **Ask me each time** (the default): you approve each request. Their requests only reach your shared folders; reading anything else asks you.
@@ -353,11 +358,6 @@ npm run build && npm link  # use your local build as `klaud` (klaud update then 
 Every merge to `main` is released to npm by [publish.yml](.github/workflows/publish.yml): if the version in `package.json` is already published, CI bumps the patch number, publishes, and commits the bump back. For a minor or major release, set the version in your PR.
 
 klaud used to be called klaude. Your `~/.klaude` settings, projects and worktrees carry over automatically.
-
-## Roadmap
-
-- Show a shared workspace's diff to the people in it
-- Per-friend invite links and knock-to-join
 
 ## License
 

@@ -174,7 +174,10 @@ export type View =
   /** A new worktree: your first message names it (via a small model) and starts the work. */
   | { readonly kind: 'draft_worktree'; readonly projectId: string; readonly back: View }
   /** Someone else's workspace that they shared with you. */
-  | { readonly kind: 'shared'; readonly owner: string; readonly id: string; readonly tab: 'chat' | 'files' };
+  | { readonly kind: 'shared'; readonly owner: string; readonly id: string; readonly tab: SharedTab };
+
+/** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */
+export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';
 
 export type WorkspaceTab = 'chat' | 'files' | 'review' | 'terminal';
 
@@ -680,6 +683,11 @@ export function reduce(state: AppState, action: Action): AppState {
     case 'shared_clear':
     case 'trust_prompt':
     case 'granted':
+    case 'link_set':
+    case 'link_remove':
+    case 'guest_set':
+    case 'knock':
+    case 'guest_shell':
     case 'offer': {
       const next = { ...state, ...reduceCollab(state, action) };
       // The Shared files list updates live while you're looking at it.

@@ -133,7 +133,8 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
       session.store.dispatch({ type: 'close_tab', id: action.id });
       return;
     case 'review_file':
-      void ctl?.selectFile(action.index);
+      if (session.store.getState().view.kind === 'shared') void session.diff.select(action.index);
+      else void ctl?.selectFile(action.index);
       patchUi({ focus: 'main' });
       return;
     case 'ws': {

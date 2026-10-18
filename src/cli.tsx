@@ -15,7 +15,7 @@ import { TerminalManager } from './terminal/index.js';
 import { klaudHome } from './workspaces/store.js';
 import { applyTheme } from './ui/theme.js';
 import { type Identity, deriveKeys, generateSecret, loadIdentity } from './net/crypto.js';
-import { startHub, type Hub } from './net/hub.js';
+import { startHub, type GuestAccess, type GuestGate, type Hub } from './net/hub.js';
 import { P2P_SCHEME, decodeInvite, encodeInvite, findInvite, isDirect, toWsUrl } from './net/invite.js';
 import { PeerClient } from './net/peer-client.js';
 import { closeAllTunnels, offersDirect, openTunnel, waitUntilReachable } from './net/tunnel.js';
@@ -26,7 +26,8 @@ import { runUpdate } from './update/update.js';
 import { findConversation } from './agent/transcript.js';
 import { installedVersion } from './update/check.js';
 import { runView } from './image/view-cli.js';
-import { createDemoFolders, createDemoWorkspaces, startDemoFriend } from './demo.js';
+import { createDemoFolders, createDemoWorkspaces, startDemoFriend, startDemoGuest } from './demo.js';
+import { DEFAULT_LINK } from './core/project-invites.js';
 import { WorkspaceManager } from './workspaces/manager.js';
 import { FOCUS_OFF, FOCUS_ON, MOUSE_OFF, MOUSE_ON, type MouseEvent, PASTE_OFF, PASTE_ON, createInput } from './ui/mouse.js';
 
@@ -236,6 +237,11 @@ async function main(): Promise<void> {
         newInvite: replaceInvite,
         setOpen: (open: boolean) => hub.setOpen(open),
         clearHistory: () => hub.clearHistory(),
+        guests: {
+          setGate: (gate: GuestGate) => hub.setGuestGate(gate),
+          setAccess: (peerId: string, access: GuestAccess) => hub.setGuestAccess(peerId, access),
+          turnAway: (peerId: string) => void hub.dismiss(peerId, `${config.name} didn't let you in this time`),
+        },
       }
     : undefined;
 
@@ -362,6 +368,15 @@ async function main(): Promise<void> {
     // bob "arrives" a moment later so you first see how inviting works.
     setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob, 'bob'), 2500);
     setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.mine, 'mia'), 3500);
+    // zoe got a link to bob-api and knocks, so you see the card for letting someone in.
+    setTimeout(() => {
+      const project = store.getState().projects.find((p) => p.name === 'bob-api');
+      if (!project) return;
+      void session.invites.create({ scope: project.id, ...DEFAULT_LINK }, { copy: false }).then((link) => {
+        const secret = link && session.invites.urlOf(link.id)?.match(/#([\w-]+)$/)?.[1];
+        if (secret) startDemoGuest(room.url, deriveKeys(secret));
+      });
+    }, 5500);
   }
 }
 
