@@ -333,7 +333,8 @@ async function main(): Promise<void> {
     <ErrorBoundary>
       <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} setRawInput={(sink) => (rawSink = sink)} />
     </ErrorBoundary>,
-    { exitOnCtrlC: false, stdin },
+    // Only rewrite the lines that changed, and redraw often enough that scrolling feels smooth.
+    { exitOnCtrlC: false, stdin, incrementalRendering: true, maxFps: 60 },
   );
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());

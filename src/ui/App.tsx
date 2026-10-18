@@ -35,6 +35,8 @@ import { useTerminalPane } from './use-terminal.js';
 const TOAST_MS = 3500;
 const FRAME_MS = 100;
 const WHEEL_LINES = 3;
+/** Wheel and pointer moves are batched into one update per this many ms (~60fps). */
+const MOUSE_FRAME_MS = 16;
 
 /** What each bottom-bar button does, shown while hovering it. */
 const BUTTON_HINTS: Record<string, string> = {
@@ -539,7 +541,8 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
     }
   };
 
-  const onWheel = (target: Target, dir: 1 | -1): void => {
+  /** `dir` is how many wheel notches, signed (positive scrolls down); fast scrolling batches several. */
+  const onWheel = (target: Target, dir: number): void => {
     const current = uiRef.current;
     const latest = session.store.getState();
     if (target.kind === 'suggestion') {
@@ -586,31 +589,64 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
   };
 
   // Mouse: clicks act on what's under the pointer, the wheel scrolls it.
+  // Wheel and pointer moves arrive far faster than the screen can redraw, so they're
+  // batched and applied once per frame, hit-tested against what's currently drawn.
+  const drawn = useRef(d);
+  drawn.current = d;
+  const pendingMouse = useRef<{ wheel?: { target: Target; key: string; steps: number }; move?: MouseEvent; timer?: NodeJS.Timeout }>({});
+  const targetAt = (e: MouseEvent, dd: Derived = drawn.current): Target => {
+    const latest = session.store.getState();
+    return hitTest(dd.geometry, e.x, e.y, {
+      state: latest,
+      menu: dd.menu,
+      suggestionCount: suggestionWindow(dd.suggestions.length, uiRef.current.selected).rows,
+      buttons: dd.buttons,
+      approvalDetailLines: dd.approvalDetailLines,
+      viewerLegend: latest.viewer ? viewerLegend(latest.viewer, uiRef.current.viewerFull, uiRef.current.viewerRaw) : undefined,
+      zones: dd.zones,
+    });
+  };
+  const flushMouse = (): void => {
+    const pending = pendingMouse.current;
+    const { wheel, move } = pending;
+    if (pending.timer) clearTimeout(pending.timer);
+    pendingMouse.current = {};
+    if (wheel && wheel.steps !== 0) onWheel(wheel.target, wheel.steps);
+    if (move) {
+      const key = JSON.stringify(targetAt(move));
+      if (key !== hoverKey.current) {
+        hoverKey.current = key;
+        setHover({ x: move.x, y: move.y });
+      }
+    }
+  };
+  const queueMouse = (e: MouseEvent): void => {
+    const pending = pendingMouse.current;
+    if (e.button === 'move') pendingMouse.current = { ...pending, move: e };
+    else {
+      const target = targetAt(e);
+      const key = JSON.stringify(target);
+      // Scrolling something else: finish the earlier scroll first.
+      if (pending.wheel && pending.wheel.key !== key) flushMouse();
+      const current = pendingMouse.current;
+      const steps = (current.wheel?.steps ?? 0) + (e.button === 'wheelDown' ? 1 : -1);
+      pendingMouse.current = { ...current, wheel: { target, key, steps } };
+    }
+    if (!pendingMouse.current.timer) pendingMouse.current = { ...pendingMouse.current, timer: setTimeout(() => safely('mouse', flushMouse), MOUSE_FRAME_MS) };
+  };
+  useEffect(() => () => clearTimeout(pendingMouse.current.timer), []);
   useEffect(() => {
     if (!subscribeMouse) return;
     return subscribeMouse((e) =>
       safely('mouse', () => {
-        const latest = session.store.getState();
-        const dd = view(latest, uiRef.current);
-        const target = hitTest(dd.geometry, e.x, e.y, {
-          state: latest,
-          menu: dd.menu,
-          suggestionCount: suggestionWindow(dd.suggestions.length, uiRef.current.selected).rows,
-          buttons: dd.buttons,
-          approvalDetailLines: dd.approvalDetailLines,
-          viewerLegend: latest.viewer ? viewerLegend(latest.viewer, uiRef.current.viewerFull, uiRef.current.viewerRaw) : undefined,
-          zones: dd.zones,
-        });
-        if (e.button === 'move') {
-          const key = JSON.stringify(target);
-          if (key !== hoverKey.current) {
-            hoverKey.current = key;
-            setHover({ x: e.x, y: e.y });
-          }
+        if (e.button === 'move' || e.button === 'wheelUp' || e.button === 'wheelDown') {
+          queueMouse(e);
           return;
         }
-        if (e.button === 'wheelUp' || e.button === 'wheelDown') onWheel(target, e.button === 'wheelDown' ? 1 : -1);
-        else if (e.button === 'left' && e.kind === 'press') onClick(target);
+        // Clicks act right away, on up-to-date layout (after any scroll still waiting).
+        if (e.button !== 'left' || e.kind !== 'press') return;
+        flushMouse();
+        onClick(targetAt(e, view(session.store.getState(), uiRef.current)));
       }),
     );
   });
