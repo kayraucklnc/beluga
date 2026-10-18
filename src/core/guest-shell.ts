@@ -2,7 +2,7 @@ import type { FsEntry } from '../protocol.js';
 import type { SharedWorkspace, ShellLine, ShellState } from './collab-store.js';
 import type { SearchHit } from './guest-search.js';
 import { dirKey } from './room-files.js';
-import { type Location, type Store, peerName } from './store.js';
+import { type Location, type Store, clean, peerName } from './store.js';
 
 /**
  * A pretend shell over a workspace someone shared with you. Nothing runs on their computer:
@@ -107,7 +107,9 @@ export class GuestShell {
   }
 
   private set(id: string, patch: Partial<ShellState>): void {
-    this.deps.store.dispatch({ type: 'guest_shell', id, shell: { ...this.state(id), ...patch } });
+    // Names and grep hits come from the owner's files: never let them carry terminal escapes.
+    const entries = patch.entries?.map((e) => ({ ...e, out: e.out.map((l) => ({ ...l, text: clean(l.text) })) }));
+    this.deps.store.dispatch({ type: 'guest_shell', id, shell: { ...this.state(id), ...patch, ...(entries ? { entries } : {}) } });
   }
 
   private async list(w: SharedWorkspace, dir: string): Promise<readonly FsEntry[]> {

@@ -24,6 +24,8 @@ export function knockCardModel(state: AppState, knock: Knock, width: number): Mo
       [
         { text: `${glyph.dot} `, color: theme.info },
         { text: `${name} wants to join ${where}`, color: theme.text, bold: true },
+        // The name is whatever they typed: the id is what tells two "alice"s apart.
+        { text: ` #${knock.peerId.slice(0, 6)}`, color: theme.muted },
         { text: `  with your link (${CAN_INFO[can].short})`, color: theme.muted },
         { text: more > 0 ? `   +${more} more waiting` : '', color: theme.muted },
       ],

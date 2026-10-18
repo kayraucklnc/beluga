@@ -3,7 +3,7 @@ import { type Body, type BodyInput, type BodyOf, MAX_FILE_BYTES } from '../proto
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import { type SearchHit, searchShare } from './guest-search.js';
 import { type ShareService, isDenied } from './shares.js';
-import type { Location, Store } from './store.js';
+import { type Location, type Store, clean } from './store.js';
 import type { WorkspaceSharing } from './workspace-sharing.js';
 
 /** What someone invited by link to one project may send you; everything else is dropped. */
@@ -46,7 +46,10 @@ export class SharedDiff {
     if (!this.deps.sharing.members(body.id)[from] || !this.deps.manager?.find(body.id)) return reply({ error: "That workspace isn't shared with you" });
     try {
       if (body.file !== undefined) {
+        // Only files from the (filtered) list, matched literally: no globs like "*" reaching private files.
         if (isDenied(body.file)) return reply({ error: 'That file is private' });
+        const listed = (await this.deps.manager.review(body.id)).files.some((f) => f.path === body.file && !isDenied(f.path));
+        if (!listed) return reply({ error: "That file isn't part of this workspace's changes" });
         const patch = await this.deps.manager.fileDiff(body.id, body.file);
         return reply({ ok: true, patch: patch.slice(0, MAX_FILE_BYTES - 64) });
       }
@@ -85,7 +88,9 @@ export class SharedDiff {
     try {
       const res = await this.deps.request<BodyOf<'ws_diff_result'>>(w.owner, { kind: 'ws_diff', reqId: randomUUID(), id });
       if (token !== this.token) return;
-      const data = res.review ?? { base: '', commits: [], files: [] };
+      const raw = res.review ?? { base: '', commits: [], files: [] };
+      // Paths and commit subjects come from the owner's repo: never let them carry terminal escapes.
+      const data = { base: clean(raw.base), commits: raw.commits.map((c) => ({ ...c, subject: clean(c.subject) })), files: raw.files.map((f) => ({ ...f, path: clean(f.path) })) };
       this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, data, selected: 0, diffScroll: 0, loading: false } });
       if (data.files.length) await this.select(0);
     } catch (err) {
@@ -102,7 +107,7 @@ export class SharedDiff {
     this.deps.store.dispatch({ type: 'review', review: { ...review, selected: index, diffScroll: 0, diff: undefined } });
     const diff = await this.deps
       .request<BodyOf<'ws_diff_result'>>(w.owner, { kind: 'ws_diff', reqId: randomUUID(), id: w.id, file: file.path })
-      .then((r) => r.patch ?? '', (err: unknown) => `Couldn't load diff: ${errorText(err)}`);
+      .then((r) => clean(r.patch ?? ''), (err: unknown) => `Couldn't load diff: ${errorText(err)}`);
     const latest = this.deps.store.getState().review;
     if (latest?.workspaceId === review.workspaceId && latest.selected === index) this.deps.store.dispatch({ type: 'review', review: { ...latest, diff } });
   }

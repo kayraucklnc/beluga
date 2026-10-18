@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SECRET_IN_COMMAND, decideTool } from '../src/agent/policy.js';
 import { toolInside } from '../src/core/agent-host.js';
@@ -126,7 +127,7 @@ describe('project link lifecycle (host side)', () => {
     const store = new Store({ ...base, self, projects, invite: 'https://x.trycloudflare.com#roomsecret' });
     const room = { setGate: vi.fn(), setAccess: vi.fn(), turnAway: vi.fn() } satisfies GuestControl;
     const sharing = { onChange: undefined, invite: vi.fn(), remove: vi.fn() } as unknown as WorkspaceSharing;
-    const people = { setTrust: vi.fn() } as unknown as People;
+    const people = { setTrust: vi.fn(), forget: vi.fn() } as unknown as People;
     const toasts: string[] = [];
     const invites = new ProjectInvites({ store, selfId: () => 'host', sharing, people, room, toast: (t) => void toasts.push(t), system: () => undefined, copy: async () => undefined, now: () => now });
     const peers = (...ps: PeerInfo[]) => store.dispatch({ type: 'peers', peers: [self, ...ps] });
@@ -248,5 +249,34 @@ describe('link detection edge cases', () => {
     expect(resolve({ kind: 'href', value: 'klaud-attachment:bob/a.png' })).toMatchObject({ kind: 'attachment', owner: 'bob', file: 'a.png' });
     expect(resolve({ kind: 'href', value: 'klaud-attachment:bob/..' })).toBeUndefined();
     expect(resolve({ kind: 'href', value: 'javascript:alert(1)' })).toBeUndefined();
+  });
+});
+
+describe('guest runs', () => {
+  it('never reach the room tools, even the always-allowed ones', () => {
+    const ctx = { cwd: '/p', roots: ['/p'], autoEdit: true, guest: true };
+    for (const tool of ['send_chat', 'list_peers', 'read_peer_file', 'list_peer_files', 'run_on_peer', 'ask_agent']) expect(decideTool(`mcp__klaud__${tool}`, {}, ctx), tool).toBe('deny');
+    expect(decideTool('mcp__klaud__list_peers', {}, { ...ctx, guest: false })).toBe('allow');
+  });
+
+  it('an edit guest cannot follow a symlink out of the project', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'klaud-guest-'));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'klaud-out-'));
+    fs.symlinkSync(outside, path.join(root, 'link'));
+    expect(toolInside('Write', { file_path: 'link/x.txt' }, root)).toBe(false);
+    expect(toolInside('Write', { file_path: 'new/dir/x.txt' }, root)).toBe(true);
+  });
+});
+
+describe("a friend's command", () => {
+  it('gets only basic environment variables, never tokens', async () => {
+    const { baseEnv } = await import('../src/core/peer-run.js');
+    process.env.KLAUD_TEST_TOKEN = 'sekret';
+    const env = baseEnv();
+    delete process.env.KLAUD_TEST_TOKEN;
+    expect(env.PATH).toBeTruthy();
+    expect(Object.values(env)).not.toContain('sekret');
   });
 });

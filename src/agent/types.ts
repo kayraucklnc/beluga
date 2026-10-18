@@ -10,6 +10,8 @@ export interface AgentRunInput {
   readonly context: readonly string[];
   /** 'folder': only the shared folders. 'full': the whole computer (secrets still blocked). */
   readonly scope: AccessScope;
+  /** Asked by a guest invited into one project: the room tools (other people, their files, the room chat) are off. */
+  readonly guest?: boolean;
   readonly signal: AbortSignal;
   readonly onEvent: (kind: 'text' | 'tool' | 'sub' | 'context' | 'compact' | 'usage', text: string) => void;
   /** Model for this run (an alias like "sonnet" or a full id); unset: the default. */

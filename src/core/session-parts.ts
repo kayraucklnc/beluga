@@ -114,6 +114,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       approvalTimeoutMs: () => session.approvalTimeoutMs,
       refreshUsage: () => session.refreshUsage(),
       canEditIn: (peerId, channel) => invites.canEditIn(peerId, channel),
+      isGuest: (peerId) => invites.isRestricted(peerId),
     });
     const remote = new RemoteWork({
       store: opts.store,

@@ -43,6 +43,8 @@ export interface PolicyContext {
   readonly autoEdit: boolean;
   /** 'folder': reading outside the shared folders asks the owner; 'full': it just runs. */
   readonly scope?: 'folder' | 'full';
+  /** A guest invited into one project asked: they never reach the room through your Claude. */
+  readonly guest?: boolean;
 }
 
 const inside = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
@@ -58,6 +60,7 @@ const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, t
  *  - everything else (Bash, web, other edits, reads outside shares, ask_agent) asks the owner
  */
 export function decideTool(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): Decision {
+  if (ctx.guest && toolName.startsWith('mcp__klaud__')) return 'deny';
   if (ALWAYS_OK.has(toolName)) return 'allow';
   // Sending a file reads it: same rules as Read (secrets never leave; outside shared folders asks).
   if (toolName === 'mcp__klaud__send_file') {

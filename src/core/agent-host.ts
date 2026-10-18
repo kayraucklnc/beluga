@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mentionsSecret } from '../agent/policy.js';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { AgentBackend, FollowUp } from '../agent/types.js';
 import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
@@ -25,29 +25,51 @@ export interface AgentHostDeps {
   readonly system: (text: string, level?: 'info' | 'warn' | 'error') => void;
   readonly approvalTimeoutMs: () => number;
   readonly refreshUsage: () => Promise<void>;
-  /** People invited by link to edit: their requests edit and run commands in that folder without asking. */
+  /** People invited by link to edit: their Claude edits files in that folder without asking (commands still ask). */
   readonly canEditIn?: (peerId: string, channel: string) => boolean;
+  /** Guests invited into one project only (not the whole room). */
+  readonly isGuest?: (peerId: string) => boolean;
+}
+
+/** File tools an Edit guest may use without asking, and the input naming their file. */
+const GUEST_FILE_TOOLS: Readonly<Record<string, readonly string[]>> = {
+  Read: ['file_path'],
+  Write: ['file_path'],
+  Edit: ['file_path'],
+  MultiEdit: ['file_path'],
+  NotebookEdit: ['notebook_path'],
+  Glob: ['path'],
+  Grep: ['path'],
+  LS: ['path'],
+};
+
+/** The real location of `target`, or of its nearest existing parent (a file about to be written). */
+function realOrParent(target: string): string {
+  let dir = target;
+  for (;;) {
+    try {
+      return path.join(realpathSync(dir), path.relative(dir, target));
+    } catch {
+      const up = path.dirname(dir);
+      if (up === dir) return target;
+      dir = up;
+    }
+  }
 }
 
 /**
- * The tool stays inside `cwd`: its file is there, or (Bash, which runs there) its command names
- * no path outside it (no `~`, `..` or `$`, absolute paths only under `cwd`). Anything else asks you.
+ * An Edit guest's tool call that may run without asking: a file tool whose file (after following
+ * symlinks) is inside `cwd`. Shell commands, the web, room tools and everything else ask you:
+ * a command can reach anywhere, whatever its arguments look like.
  */
 export function toolInside(toolName: string, input: Record<string, unknown>, cwd: string): boolean {
-  const root = path.resolve(cwd);
-  const within = (target: string): boolean => target === root || target.startsWith(root + path.sep);
-  if (toolName === 'Bash') {
-    const command = typeof input.command === 'string' ? input.command : '';
-    // Variables and subshells ($HOME, $(…), `…`) could point anywhere: those ask.
-    if (/[$`]/.test(command) || mentionsSecret(command)) return false;
-    const paths = command.match(/(?:^|[\s'"=:(<>])(?:~|\/|\.\.)[^\s'";|&)]*/g) ?? [];
-    return paths.every((m) => {
-      const raw = m.replace(/^[\s'"=:(<>]/, '');
-      return !raw.startsWith('~') && !raw.startsWith('..') && within(path.resolve(raw));
-    });
-  }
-  const raw = [input.file_path, input.notebook_path, input.path].find((v) => typeof v === 'string' && v);
-  return within(path.resolve(cwd, typeof raw === 'string' ? raw : '.'));
+  const fields = GUEST_FILE_TOOLS[toolName];
+  if (!fields) return false;
+  const root = realOrParent(path.resolve(cwd));
+  const raw = fields.map((f) => input[f]).find((v) => typeof v === 'string' && v);
+  if (typeof input.pattern === 'string' && /(^|\/)\.\.(\/|$)/.test(input.pattern)) return false;
+  const target = realOrParent(path.resolve(cwd, typeof raw === 'string' ? raw : '.'));
+  return target === root || target.startsWith(root + path.sep);
 }
 
 const MAX_PENDING_APPROVALS = 20;
@@ -406,6 +428,7 @@ export class AgentHost {
         context: this.recentChat(body.channel),
         ...(place ? { place } : {}),
         scope: from === this.selfId ? 'full' : reachOf(this.store.getState(), from),
+        ...(from !== this.selfId && this.deps.isGuest?.(from) ? { guest: true } : {}),
         signal: controller.signal,
         onEvent: (kind, text) => this.emitAgent(body.requestId, from, kind, text, body.channel),
         onFileTouched: (abs) => this.announceAgentFocus(abs),

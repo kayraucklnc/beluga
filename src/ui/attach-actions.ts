@@ -72,7 +72,8 @@ export function pasteDroppedImages(c: AttachContext, text: string): boolean {
 export function expandOutgoing(session: Session, text: string): string {
   if (!text.includes('[image ') || text.startsWith('/')) return text;
   const state = session.store.getState();
-  const friends = state.peers.filter((p) => p.peerId !== session.selfId).map((p) => p.peerId);
+  // People in the room only: guests invited into one project (or still knocking) never get room images.
+  const friends = state.peers.filter((p) => p.peerId !== session.selfId && !p.guest && !session.invites.isRestricted(p.peerId)).map((p) => p.peerId);
   const toRoom = channelOf(state.view) === 'room' && friends.length > 0;
   const { text: out, attachments } = expandChips(text, session.selfId, toRoom ? (a) => publishForRoom(a) : (a) => path.basename(a.path));
   if (toRoom && attachments.length) session.serveFolder(ATTACHMENT_SHARE, roomAttachmentsDir(), friends);

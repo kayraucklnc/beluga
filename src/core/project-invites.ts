@@ -256,6 +256,8 @@ export class ProjectInvites {
     if (!guest) return;
     for (const wsId of Object.keys(this.state.members)) this.deps.sharing.remove(wsId, peerId, true);
     this.deps.store.dispatch({ type: 'guest_set', peerId });
+    // The trust that came with the link goes too: coming back by another link starts from your default.
+    this.deps.people.forget(peerId);
     this.deps.room?.turnAway(peerId);
     this.deps.toast(`${guest.name} was removed`, 'success');
   }

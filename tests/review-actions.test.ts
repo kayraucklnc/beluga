@@ -39,7 +39,7 @@ describe('sending pasted images', () => {
     store.dispatch({ type: 'peers', peers: friends ? [me, { peerId: 'bob', name: 'bob', shares: [], agent: true }] : [me] });
     if (view === 'ws') store.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } } as never);
     const served: Array<[string, string, string[]]> = [];
-    const session = { store, selfId: 'me', serveFolder: (share: string, dir: string, to: string[]) => void served.push([share, dir, to]) } as unknown as Session;
+    const session = { store, selfId: 'me', invites: { isRestricted: () => false }, serveFolder: (share: string, dir: string, to: string[]) => void served.push([share, dir, to]) } as unknown as Session;
     return { session, served };
   }
   const image = () => {

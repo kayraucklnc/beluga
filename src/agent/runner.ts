@@ -92,7 +92,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const autoEdit = place?.autoEdit ?? opts.autoEdit;
       const remember = (id: string): void => (place ? place.onSession(id) : void (sessionId = id));
       const subagents = new SubAgentTracker(cwd);
-      const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope };
+      const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, guest: input.guest };
       const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
         hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: reason },
       });
