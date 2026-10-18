@@ -47,14 +47,14 @@ Give every task its own worktree: a separate folder and branch with its own Clau
 ## Quick start
 
 ```bash
-npm install -g klaud
+npm install -g klaudcode
 klaud
 ```
 
 You need Node 20+ and [Claude Code](https://claude.com/claude-code) signed in (`claude`, then `/login`).
 
 - **`klaud`** opens your projects. Nothing is shared and no tunnel is opened until you click **Invite**.
-- **`klaud demo`** lets you look around, with two pretend friends and simulated replies (`npx klaud demo` works without installing).
+- **`klaud demo`** lets you look around, with two pretend friends and simulated replies (`npx klaudcode demo` works without installing).
 - **`klaud update`** gets the latest version (or `klaud update --check` to just look).
 
 To bring friends in, click **Invite** (or run `klaud --invite`) and send them the link. They run `klaud join`.

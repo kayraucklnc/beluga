@@ -102,15 +102,15 @@ describe('klaud update', () => {
       calls.push(key);
       if (key.includes('--show-toplevel')) throw new Error('not a repo');
       if (key === 'npm root -g') return `${globalRoot}\n`;
-      if (key === 'npm view klaud version') return `${latest}\n`;
+      if (key === 'npm view klaudcode version') return `${latest}\n`;
       return '';
     };
     let text = '';
     const out = { write: (s: string) => void (text += s), tty: false };
-    const root = '/usr/lib/node_modules/klaud';
+    const root = '/usr/lib/node_modules/klaudcode';
     // installedVersion reads root/package.json, which doesn't exist here → "unknown" (0.0.0)
     expect(await runUpdate({ run: npm('9.9.9'), out, root })).toBe(0);
-    expect(calls).toContain('npm install -g --no-audit --no-fund --loglevel=error klaud@9.9.9');
+    expect(calls).toContain('npm install -g --no-audit --no-fund --loglevel=error klaudcode@9.9.9');
     expect(text).toContain('klaud 9.9.9 is installed');
 
     text = '';
@@ -131,7 +131,7 @@ describe('klaud update', () => {
 
   it('never updates a project that merely contains klaud (e.g. in node_modules)', async () => {
     const g = fakeGit({ behind: 2, toplevel: '/my-app\n' });
-    expect(await runUpdate({ run: g.run, out: g.out, root: '/my-app/node_modules/klaud' })).toBe(1);
+    expect(await runUpdate({ run: g.run, out: g.out, root: '/my-app/node_modules/klaudcode' })).toBe(1);
     expect(g.calls.some((c) => c.includes('fetch') || c.includes('merge'))).toBe(false);
   });
 });
