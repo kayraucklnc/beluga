@@ -19,7 +19,7 @@ import { runningDaemon } from './daemon/files.js';
 import { APP_ORIGINS } from './daemon/server.js';
 import type { KlaudClient } from './ipc/client.js';
 import { InProcessClient } from './ipc/in-process.js';
-import { connectOrSpawn } from './ipc/launch.js';
+import { connectOrSpawn, listening } from './ipc/launch.js';
 import type { SocketClient } from './ipc/socket-client.js';
 
 const RESTORE = MOUSE_OFF + FOCUS_OFF + PASTE_OFF + '\x1b[?1049l';
@@ -158,8 +158,9 @@ async function main(): Promise<void> {
   }
   if (args[0] === 'update') {
     // The running daemon has the old code; it stops first so the next klaud starts the new one.
+    // Only if it really is klaud: a crash can leave the file, and its process id reused.
     const daemon = runningDaemon();
-    if (daemon) process.kill(daemon.pid, 'SIGTERM');
+    if (daemon && (await listening(daemon.port))) process.kill(daemon.pid, 'SIGTERM');
     process.exitCode = await runUpdate({ checkOnly: args.includes('--check') });
     return;
   }

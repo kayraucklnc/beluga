@@ -64,8 +64,17 @@ export class ClientRegistry {
 
   /** Send to one screen, or every screen. */
   send(frame: DaemonFrame, to?: string): void {
-    if (to !== undefined) return void this.clients.get(to)?.send(frame);
-    for (const c of this.clients.values()) c.send(frame);
+    if (to !== undefined) return void this.deliver(this.clients.get(to), frame);
+    for (const c of this.clients.values()) this.deliver(c, frame);
+  }
+
+  /** One screen failing (a socket closing mid-send) mustn't stop the others getting it. */
+  private deliver(client: ConnectedClient | undefined, frame: DaemonFrame): void {
+    try {
+      client?.send(frame);
+    } catch {
+      // that screen is going away; its close handler cleans up
+    }
   }
 
   onChange(listener: (count: number) => void): () => void {

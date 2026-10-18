@@ -82,7 +82,7 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
     open: (target) => openWithSystem(target),
     shutdown: () => void stop('Quit from a screen'),
   });
-  server = new DaemonServer({ session: core.session, token, version: opts.version, terminals: core.terminals, ...(opts.port ? { port: opts.port } : {}), ...(opts.allowedOrigins ? { allowedOrigins: opts.allowedOrigins } : {}) });
+  server = new DaemonServer({ session: core.session, token, version: opts.version, terminals: core.terminals, log, ...(opts.port ? { port: opts.port } : {}), ...(opts.allowedOrigins ? { allowedOrigins: opts.allowedOrigins } : {}) });
   const port = await server.listen();
   writeDaemonInfo({ pid: process.pid, port, token, version: opts.version, ipc: IPC_VERSION, room: core.room, roomKey: roomKeyOf(config), startedAt: Date.now(), keepAlive: opts.keepAlive });
   log(`listening on 127.0.0.1:${port} for ${core.room}${opts.keepAlive ? ' (kept alive)' : ''}`);
@@ -122,6 +122,10 @@ export async function runDaemon(config: Config, opts: DaemonOptions): Promise<vo
   process.on('unhandledRejection', (err) => {
     log(`unhandled: ${errorText(err)}`);
     daemon.core.session.toast(`Something went wrong: ${errorText(err)}`.slice(0, 200), 'error');
+  });
+  // Everyone's screens and the room hang off this process: log a stray throw rather than die.
+  process.on('uncaughtException', (err) => {
+    log(`uncaught: ${err.stack ?? errorText(err)}`);
   });
   process.once('exit', () => clearDaemonInfo());
   await daemon.done;

@@ -146,6 +146,8 @@ export class SocketClient implements KlaudClient {
   private readonly closeListeners = new Set<(reason: string) => void>();
   private readonly terms = new Map<string, SocketTerm>();
   private closed = false;
+  // A snapshot was asked for and hasn't come yet.
+  private resyncing = false;
 
   private constructor(
     private readonly socket: SocketLike,
@@ -252,10 +254,15 @@ export class SocketClient implements KlaudClient {
     const frame = parseDaemonFrame(text);
     switch (frame.t) {
       case 'action':
-        if (!this.replica.apply(frame.seq, frame.action)) this.send({ t: 'resync' });
+        // Ask once: actions keep coming until the snapshot arrives, each also out of step.
+        if (!this.replica.apply(frame.seq, frame.action) && !this.resyncing) {
+          this.resyncing = true;
+          this.send({ t: 'resync' });
+        }
         return;
       case 'snapshot':
         this.replica.reset(frame.snapshot, frame.seq);
+        this.resyncing = false;
         return;
       case 'result': {
         const p = this.pending.get(frame.id);

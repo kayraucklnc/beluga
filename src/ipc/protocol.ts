@@ -75,7 +75,7 @@ export const parseDaemonFrame = (text: string): DaemonFrame => decode(text) as D
 
 /** What $KLAUD_HOME/daemon.json says about the running daemon. */
 export const DaemonInfo = z.object({
-  pid: z.number().int(),
+  pid: z.number().int().min(2),
   port: z.number().int().min(1).max(65535),
   token: z.string().min(16),
   version: z.string(),

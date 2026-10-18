@@ -1,36 +1,11 @@
 import { useMemo, useState } from 'react';
+import { type DiffLine as Line, parseDiff } from '@klaud/shared/diff-lines.js';
 import type { ChangedFile } from '@klaud/workspaces/git.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Empty, Segmented, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/klaud.js';
 import s from './diff.module.css';
-
-type Line = { kind: 'ctx' | 'add' | 'del' | 'hunk' | 'meta'; text: string; old?: number; new?: number };
-
-/** A unified diff, line by line, with old and new line numbers. */
-export function parseDiff(diff: string): Line[] {
-  const out: Line[] = [];
-  let o = 0;
-  let n = 0;
-  const rows = diff.split('\n');
-  if (rows[rows.length - 1] === '') rows.pop();
-  for (const raw of rows) {
-    const h = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/.exec(raw);
-    if (h) {
-      o = Number(h[1]);
-      n = Number(h[3]);
-      const where = h[5]?.trim();
-      out.push({ kind: 'hunk', text: `Lines ${n}–${n + Math.max(0, Number(h[4] ?? 1) - 1)}${where ? ` · ${where}` : ''}` });
-    } else if (/^(diff --git|index |--- |\+\+\+ |new file|deleted file|similarity|rename |old mode|new mode)/.test(raw)) {
-      if (raw.startsWith('new file') || raw.startsWith('deleted file') || raw.startsWith('rename ')) out.push({ kind: 'meta', text: raw });
-    } else if (raw.startsWith('+')) out.push({ kind: 'add', text: raw.slice(1), new: n++ });
-    else if (raw.startsWith('-')) out.push({ kind: 'del', text: raw.slice(1), old: o++ });
-    else if (raw.startsWith('\\')) out.push({ kind: 'meta', text: raw.slice(2) });
-    else if (o || n) out.push({ kind: 'ctx', text: raw.slice(1), old: o++, new: n++ });
-  }
-  return out;
-}
 
 /** Side by side: deletions on the left, additions on the right, aligned within each change. */
 function splitRows(lines: Line[]): Array<{ left?: Line; right?: Line; full?: Line }> {

@@ -145,16 +145,35 @@ export interface Activity {
   readonly lastTs?: number;
 }
 
+const IDLE: Activity = { running: false, awaiting: false, subagents: 0, background: 0 };
+// The log is replaced, never changed, so one pass per log serves every channel (the sidebar
+// asks for each workspace on every update).
+const activityIndex = new WeakMap<readonly LogItem[], ReadonlyMap<string, Activity>>();
+
 /** What Claude is doing in a workspace, derived from its conversation. */
 export function activityOf(log: readonly LogItem[], channel: string): Activity {
-  let last: LogItem | undefined;
-  let run: Extract<LogItem, { type: 'agent' }> | undefined;
-  for (const item of log) {
-    if (item.channel !== channel) continue;
-    last = item;
-    if (item.type === 'agent' && isRunning(item.status)) run = item;
+  let index = activityIndex.get(log);
+  if (!index) {
+    index = indexActivity(log);
+    activityIndex.set(log, index);
   }
-  const lastText = last?.type === 'agent' ? last.text || last.steps.at(-1) : last?.type === 'chat' ? last.text : undefined;
+  return index.get(channel) ?? IDLE;
+}
+
+function indexActivity(log: readonly LogItem[]): ReadonlyMap<string, Activity> {
+  const last = new Map<string, LogItem>();
+  const run = new Map<string, Extract<LogItem, { type: 'agent' }>>();
+  for (const item of log) {
+    last.set(item.channel, item);
+    if (item.type === 'agent' && isRunning(item.status)) run.set(item.channel, item);
+  }
+  const out = new Map<string, Activity>();
+  for (const [channel, latest] of last) out.set(channel, activity(latest, run.get(channel)));
+  return out;
+}
+
+function activity(last: LogItem, run: Extract<LogItem, { type: 'agent' }> | undefined): Activity {
+  const lastText = last.type === 'agent' ? last.text || last.steps.at(-1) : last.type === 'chat' ? last.text : undefined;
   return {
     running: Boolean(run),
     awaiting: run?.status === 'awaiting_approval',
@@ -162,7 +181,7 @@ export function activityOf(log: readonly LogItem[], channel: string): Activity {
     background: run?.subagents.filter((s) => s.status === 'running' && s.kind === 'background').length ?? 0,
     startedAt: run?.ts,
     last: lastText?.split('\n').find((l) => l.trim())?.replace(/[*_`#>]/g, '').trim(),
-    lastTs: last?.ts,
+    lastTs: last.ts,
   };
 }
 

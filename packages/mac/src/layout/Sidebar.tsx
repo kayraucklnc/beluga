@@ -68,7 +68,8 @@ function Row({ icon, label, selected, onClick, trailing, detail, tone, indent = 
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        // Only the row itself: Enter on a button inside it presses that button.
+        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
           onClick?.();
         }

@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { App } from './App.js';
@@ -18,22 +18,30 @@ function Root() {
   const [client, setClient] = useState<SocketClient>();
   const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
+  const failures = useRef(0);
   useEffect(() => {
     let alive = true;
-    connect(capabilities(zoom))
+    // Waits longer each time in a row it fails (up to 10 s), so a broken klaud isn't hammered.
+    const retry = (): void => void setTimeout(() => alive && setAttempt((n) => n + 1), Math.min(10_000, 500 * 2 ** Math.min(failures.current++, 5)));
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("klaud didn't answer")), 15_000));
+    Promise.race([connect(capabilities(zoom)), timeout])
       .then((c) => {
         if (!alive) return c.close();
         setError(undefined);
         setClient(c);
+        const since = Date.now();
         c.onClose(() => {
           setClient(undefined);
+          // Dropped right away (klaud turned the screen away): wait before trying again.
+          if (Date.now() - since < 5000) return retry();
+          failures.current = 0;
           setAttempt((n) => n + 1);
         });
       })
       .catch((err: unknown) => {
         if (!alive) return;
         setError(err instanceof Error ? err.message : String(err));
-        setTimeout(() => alive && setAttempt((n) => n + 1), 1500);
+        retry();
       });
     return () => {
       alive = false;

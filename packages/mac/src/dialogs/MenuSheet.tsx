@@ -21,7 +21,7 @@ export function MenuSheet() {
   const options = (spec?.options ?? []).map((o, index) => ({ ...o, index })).filter((o) => o.id !== 'close');
   const [selected, setSelected] = useState(0);
   const list = useRef<HTMLDivElement>(null);
-  useEffect(() => setSelected(Math.min(open?.selected ?? 0, Math.max(0, options.length - 1))), [open]);
+  useEffect(() => setSelected(Math.min(open?.selected ?? 0, Math.max(0, options.length - 1))), [open, options.length]);
   useEffect(() => {
     list.current?.querySelector<HTMLElement>(`[data-i="${selected}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
@@ -39,7 +39,7 @@ export function MenuSheet() {
           className={s.sheet}
           aria-describedby={undefined}
           onKeyDown={(e) => {
-            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && options.length) {
               e.preventDefault();
               setSelected((n) => (n + (e.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length);
             } else if (e.key === 'Enter') {

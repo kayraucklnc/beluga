@@ -11,7 +11,12 @@ export function GuestShellView() {
   const shell = useApp((st) => st.shells[id]);
   const [line, setLine] = useState('');
   const end = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
   useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [shell?.entries.length]);
+  // The box is off while a command runs; you keep typing in it after.
+  useEffect(() => {
+    if (!shell?.busy) input.current?.focus();
+  }, [shell?.busy]);
   if (!id) return null;
   return (
     <div className={s.shell}>
@@ -41,7 +46,7 @@ export function GuestShellView() {
         }}
       >
         <span className={s.dim}>{shell?.cwd || '/'} $</span>
-        <input className="selectable" value={line} onChange={(e) => setLine(e.target.value)} placeholder="ls" autoFocus disabled={shell?.busy} />
+        <input ref={input} className="selectable" value={line} onChange={(e) => setLine(e.target.value)} placeholder="ls" autoFocus disabled={shell?.busy} />
       </form>
     </div>
   );

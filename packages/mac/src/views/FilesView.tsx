@@ -67,13 +67,20 @@ function Viewer({ viewer }: { viewer: ViewerState }) {
           </div>
         ) : (
           <div className={s.codeWrap}>
-            <Markdown text={`\`\`\`${lang ?? ''}\n${viewer.content}\n\`\`\``} />
+            <Markdown text={fenced(viewer.content, lang)} />
           </div>
         )}
         {viewer.truncated ? <div className={s.truncated}>Only the beginning is shown. Download it for the rest.</div> : null}
       </div>
     </section>
   );
+}
+
+/** A file as one code block: the fence is longer than any run of backticks in it, so it can't end early. */
+function fenced(content: string, lang: string | undefined): string {
+  const longest = Math.max(0, ...[...content.matchAll(/`+/g)].map((m) => m[0].length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${fence}${lang ?? 'text'}\n${content}\n${fence}`;
 }
 
 function Row({ row, selected, onOpen }: { row: BrowserRow; selected: boolean; onOpen: () => void }) {

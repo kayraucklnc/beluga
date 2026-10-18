@@ -25,7 +25,7 @@ afterEach(async () => {
   hub = undefined;
 });
 
-async function setup() {
+async function setup(terminals?: ConstructorParameters<typeof DaemonServer>[0]['terminals']) {
   const keys = deriveKeys(generateSecret());
   hub = await startHub({ keys });
   const store = new Store(initialState('test', 'ask'));
@@ -44,7 +44,7 @@ async function setup() {
   });
   session.start();
   closers.push(() => session.stop());
-  srv = new DaemonServer({ session, token, version: 'test' });
+  srv = new DaemonServer({ session, token, version: 'test', ...(terminals ? { terminals } : {}) });
   server = srv;
   const port = await srv.listen();
   await waitFor(() => store.getState().self, 4000);
@@ -57,6 +57,28 @@ async function setup() {
 }
 
 describe('two screens at once', () => {
+  it("a terminal's answers come from one screen, and from another once that one leaves", async () => {
+    const written: string[] = [];
+    const pty = { backlog: () => '', running: true, exited: undefined, onData: () => () => undefined, onExit: () => () => undefined, write: (d: string) => void written.push(d), resize: () => undefined };
+    const { screen } = await setup({ get: (key: string) => (key === 'shell:1' ? pty : undefined) } as never);
+    const tui = await screen('tui');
+    const mac = await screen('mac');
+    const a = tui.attachTerminal('shell:1');
+    await new Promise((r) => setTimeout(r, 50));
+    const b = mac.attachTerminal('shell:1');
+    await new Promise((r) => setTimeout(r, 50));
+    // Both emulators answer the program's query; only the first screen's answer goes through.
+    a.write('A', true);
+    b.write('B', true);
+    await waitFor(() => written.includes('A'));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(written).toEqual(['A']);
+    tui.close();
+    await waitFor(() => mac.clients === 1);
+    b.write('B2', true);
+    await waitFor(() => written.includes('B2'));
+  });
+
   it('the first answer to an approval wins; the other gets false', async () => {
     const { session, screen } = await setup();
     const tui = await screen('tui');

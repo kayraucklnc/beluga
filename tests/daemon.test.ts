@@ -89,6 +89,42 @@ describe('the daemon', () => {
   });
 });
 
+describe('the daemon, under stress', () => {
+  it('takes a frame as big as the largest image, and refuses big frames before hello', async () => {
+    const d = await start();
+    const a = await SocketClient.connect({ url: `ws://127.0.0.1:${d.port}`, token: d.token, kind: 'test', version: '1.0.0' });
+    // 3.7 MB of image is about 5 MB of base64: the call is answered, the screen stays connected.
+    const big = Buffer.alloc(Math.floor(3.7 * 1024 * 1024), 1).toString('base64');
+    await a.api.attachments.add('png', big);
+    expect(a.clients).toBe(1);
+    const raw = new WebSocket(`ws://127.0.0.1:${d.port}`);
+    await new Promise((r) => raw.addEventListener('open', r));
+    const code = new Promise<number>((r) => raw.addEventListener('close', (e) => r(e.code)));
+    raw.send('x'.repeat(100 * 1024));
+    expect(await code).toBe(1009);
+    a.close();
+  });
+
+  it('starts afresh when daemon.json points at a klaud that is gone', async () => {
+    // A live process id (this one) but nothing listening: klaud crashed and the id lives on.
+    writeDaemonInfo({ pid: process.pid, port: 1, token: 'x'.repeat(32), version: '1', ipc: IPC_VERSION, room: "kay's room", roomKey: 'host', startedAt: 1 });
+    let spawned = 0;
+    const spawnDaemon = (): void => {
+      spawned++;
+      void start({ lingerMs: 50 });
+    };
+    const a = await connectOrSpawn({ args: [], roomKey: 'host', anyRoom: true, version: '1.0.0', kind: 'test', launchDir: '/tmp', spawnDaemon });
+    expect(spawned).toBe(1);
+    a.close();
+  });
+
+  it('refuses a daemon.json with an impossible process id', () => {
+    writeDaemonInfo({ pid: 0, port: 4000, token: 'x'.repeat(32), version: '1', ipc: IPC_VERSION, room: "kay's room", roomKey: 'host', startedAt: 1 });
+    expect(readDaemonInfo()).toBeUndefined();
+    rmSync(daemonInfoPath());
+  });
+});
+
 describe('connectOrSpawn', () => {
   it('starts one daemon for screens opening at once, then attaches to it', async () => {
     let spawned = 0;

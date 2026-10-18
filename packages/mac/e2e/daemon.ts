@@ -8,7 +8,7 @@ export default async function setup(): Promise<() => void> {
   const repo = path.resolve(import.meta.dirname, '../../..');
   const child = spawn('npx', ['tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'], {
     cwd: repo,
-    env: { ...process.env, KLAUD_HOME: home, KLAUD_DEMO_PACE: '0.3', KLAUD_ALLOW_ORIGINS: 'http://localhost:1421' },
+    env: { ...process.env, KLAUD_HOME: home, KLAUD_DEMO_PACE: '0.3', KLAUD_ALLOW_ORIGINS: `http://localhost:${process.env.E2E_PORT ?? 1421}` },
     stdio: 'ignore',
   });
   const info = path.join(home, 'daemon.json');

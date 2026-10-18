@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { closeSync } from 'node:fs';
-import { openDaemonLog, releaseLock, runningDaemon, takeLock } from '../daemon/files.js';
+import net from 'node:net';
+import { clearDaemonInfo, openDaemonLog, releaseLock, runningDaemon, takeLock } from '../daemon/files.js';
 import type { ClientKind } from './client.js';
 import type { DaemonInfo } from './protocol.js';
 import { type Capabilities, SocketClient } from './socket-client.js';
@@ -23,6 +24,20 @@ export interface LaunchOptions {
 }
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Whether anything listens on this local port (a daemon that crashed left its file but not its server). */
+export function listening(port: number, timeoutMs = 500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: '127.0.0.1', port });
+    const done = (ok: boolean): void => {
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs, () => done(false));
+    socket.once('connect', () => done(true));
+    socket.once('error', () => done(false));
+  });
+}
 
 /** Start `klaud daemon` in the background: this program, same Node, same loader (tsx in development). */
 export function spawnDaemonProcess(args: readonly string[]): void {
@@ -63,7 +78,9 @@ export async function connectOrSpawn(opts: LaunchOptions): Promise<SocketClient>
   const running = runningDaemon();
   if (running) {
     checkRoom(running, opts);
-    return connect(running, opts);
+    // Its process id may belong to something else now (klaud crashed, the id was reused).
+    if (await listening(running.port)) return connect(running, opts);
+    clearDaemonInfo(running.pid);
   }
   const deadline = Date.now() + (opts.timeoutMs ?? 10_000);
   const mine = takeLock();

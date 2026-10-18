@@ -24,9 +24,19 @@ export interface DaemonServerOptions {
   readonly helloTimeoutMs?: number;
   /** How long a capability call may take before it's given up. */
   readonly capTimeoutMs?: number;
+  /** Where problems go (the daemon's log). */
+  readonly log?: (line: string) => void;
 }
 
+/** Biggest frame: a pasted image (up to 3.7 MB, a third bigger in base64) plus room to spare. */
+export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
+/** Biggest frame before a screen has said who it is. */
+const MAX_HELLO_BYTES = 64 * 1024;
+/** Unsent bytes a screen may fall behind by before it's dropped (it reconnects and catches up). */
+const MAX_BUFFERED_BYTES = 64 * 1024 * 1024;
+
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+const byteLength = (raw: Buffer | ArrayBuffer | Buffer[]): number => (Array.isArray(raw) ? raw.reduce((n, b) => n + b.length, 0) : raw.byteLength);
 
 /** The default origins of the Mac app's webview. */
 export const APP_ORIGINS = ['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost'] as const;
@@ -44,6 +54,8 @@ export class DaemonServer {
   private readonly capCalls = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   /** Per terminal: who may answer the program's queries (the screen that typed or resized last). */
   private readonly termOwner = new Map<string, string>();
+  // Which screens show each terminal (an owner who leaves hands over to one of them).
+  private readonly termViewers = new Map<string, Set<string>>();
 
   constructor(private readonly opts: DaemonServerOptions) {}
 
@@ -56,7 +68,7 @@ export class DaemonServer {
     const wss = new WebSocketServer({
       host: '127.0.0.1',
       port: this.opts.port ?? 0,
-      maxPayload: 4 * 1024 * 1024,
+      maxPayload: MAX_FRAME_BYTES,
       verifyClient: ({ origin }: { origin?: string }) => !origin || allowed.has(origin),
     });
     this.wss = wss;
@@ -72,8 +84,9 @@ export class DaemonServer {
       }),
       this.session.intents.subscribe((intent, target) => {
         // Caused by one screen: only it hears. Otherwise everyone does.
+        // A message for a screen that has since closed still reaches the others; a move doesn't.
         if (target !== undefined && this.clients.get(target)) this.clients.send({ t: 'intent', intent }, target);
-        else if (target === undefined) this.clients.send({ t: 'intent', intent });
+        else if (target === undefined || intent.type === 'toast') this.clients.send({ t: 'intent', intent });
       }),
       this.clients.onChange((count) => this.clients.send({ t: 'clients', count })),
     );
@@ -127,7 +140,13 @@ export class DaemonServer {
     let client: ConnectedClient | undefined;
     const attached = new Map<string, () => void>();
     const send = (frame: DaemonFrame): void => {
-      if (ws.readyState === ws.OPEN) ws.send(encodeFrame(frame));
+      if (ws.readyState !== ws.OPEN) return;
+      // A screen that stopped reading (asleep, hung) would make klaud hold everything for it.
+      if (ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+        this.opts.log?.(`${client?.id ?? 'a screen'} fell too far behind; letting it go`);
+        return ws.terminate();
+      }
+      ws.send(encodeFrame(frame));
     };
     const helloTimer = setTimeout(() => ws.close(4001, 'No hello'), this.opts.helloTimeoutMs ?? 5000);
     helloTimer.unref?.();
@@ -136,8 +155,18 @@ export class DaemonServer {
       attached.clear();
     };
 
-    ws.on('message', (raw) => {
-      const frame = parseClientFrame(raw.toString());
+    ws.on('message', (raw, isBinary) => {
+      if (!client && (isBinary || byteLength(raw) > MAX_HELLO_BYTES)) return ws.close(1009, 'Say hello first');
+      try {
+        handle(raw.toString());
+      } catch (err) {
+        // One bad frame must not take klaud (and everyone's screens) down.
+        this.opts.log?.(`frame from ${client?.id ?? 'a new screen'} failed: ${errorText(err)}`);
+      }
+    });
+
+    const handle = (text: string): void => {
+      const frame = parseClientFrame(text);
       if (!frame) return;
       if (!client) {
         if (frame.t !== 'hello') return;
@@ -178,12 +207,14 @@ export class DaemonServer {
           const pty = this.opts.terminals?.get(frame.term);
           if (!pty) return send({ t: 'term_status', term: frame.term, running: false, exited: { code: null } });
           if (!this.termOwner.has(frame.term)) this.termOwner.set(frame.term, me.id);
+          this.termViewers.set(frame.term, new Set([...(this.termViewers.get(frame.term) ?? []), me.id]));
           attached.set(frame.term, this.stream(pty, frame.term, send));
           return;
         }
         case 'term_detach':
           attached.get(frame.term)?.();
           attached.delete(frame.term);
+          this.leaveTerm(frame.term, me.id);
           return;
         case 'term_input': {
           const pty = this.opts.terminals?.get(frame.term);
@@ -199,12 +230,14 @@ export class DaemonServer {
         }
         case 'term_resize': {
           // The last screen to resize wins (two screens of different sizes share one program).
+          const pty = this.opts.terminals?.get(frame.term);
+          if (!pty) return;
           this.termOwner.set(frame.term, me.id);
-          this.opts.terminals?.get(frame.term)?.resize(frame.cols, frame.rows);
+          pty.resize(frame.cols, frame.rows);
           return;
         }
       }
-    });
+    };
 
     ws.on('close', () => {
       clearTimeout(helloTimer);
@@ -212,12 +245,26 @@ export class DaemonServer {
       if (!client) return;
       this.session.detach(client.id);
       this.clients.remove(client.id);
+      for (const term of [...this.termViewers.keys()]) this.leaveTerm(term, client.id);
       for (const [term, owner] of this.termOwner) if (owner === client.id) this.termOwner.delete(term);
     });
     ws.on('error', () => undefined);
   }
 
   /** A program's output to one screen: what it wrote lately, then as it comes, then how it ended. */
+  /** A screen stops showing a terminal: if it answered the program's queries, another screen does now. */
+  private leaveTerm(term: string, clientId: string): void {
+    const viewers = this.termViewers.get(term);
+    if (!viewers?.has(clientId)) return;
+    const rest = new Set([...viewers].filter((id) => id !== clientId));
+    if (rest.size) this.termViewers.set(term, rest);
+    else this.termViewers.delete(term);
+    if (this.termOwner.get(term) !== clientId) return;
+    const next = [...rest].at(-1);
+    if (next) this.termOwner.set(term, next);
+    else this.termOwner.delete(term);
+  }
+
   private stream(pty: PtyProcess, term: string, send: (frame: DaemonFrame) => void): () => void {
     const backlog = pty.backlog();
     if (backlog) send({ t: 'term_data', term, data: backlog });
