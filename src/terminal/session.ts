@@ -5,7 +5,7 @@
 import path from 'node:path';
 import xtermHeadless, { type IBufferCell, type IDisposable, type Terminal as XTerminal } from '@xterm/headless';
 import unicode11 from '@xterm/addon-unicode11';
-import type { Line } from '../ui/text.js';
+import type { Line } from '../shared/text.js';
 import { encodeKey, type InkKeyLike } from './keys.js';
 import { buildColorTable } from './palette.js';
 import { childEnv, defaultShell, spawnPty, type IPty } from './pty.js';

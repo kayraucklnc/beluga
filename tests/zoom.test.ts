@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectTerminal, zoom, zoomCommand, zoomHelp } from '../src/core/zoom.js';
+import { detectTerminal, zoom, zoomCommand, zoomHelp } from '../src/ui/tty/zoom.js';
 import { handleKey, initialUi } from '../src/ui/keymap.js';
 
 describe('text size', () => {

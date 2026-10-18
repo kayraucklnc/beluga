@@ -14,7 +14,6 @@ import { slugify } from '../agent/namer.js';
 import { WorkspaceSharing } from './workspace-sharing.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Settings } from './settings.js';
-import { type ZoomDir, zoom as zoomTerminal } from './zoom.js';
 import { runCommand } from './commands.js';
 import { People } from './people.js';
 import { ReplayGuard } from './replay.js';
@@ -31,6 +30,9 @@ import { type PeerRun, type ShellRunner, describeShellResult } from './peer-run.
 import type { GuestControl, ProjectInvites } from './project-invites.js';
 import type { GuestShell } from './guest-shell.js';
 import { type SharedDiff, guestMayDo } from './shared-diff.js';
+
+/** Bigger, smaller, or back to normal text. */
+export type ZoomDir = 'in' | 'out' | 'reset';
 
 export interface SessionOptions {
   readonly client: PeerClient;
@@ -804,7 +806,8 @@ export class Session {
 
   /** Make the terminal's text bigger or smaller, without needing a keyboard shortcut. */
   async zoom(dir: ZoomDir): Promise<void> {
-    const result = await (this.opts.zoom ?? zoomTerminal)(dir);
+    if (!this.opts.zoom) return this.toast('Text size can only be changed from a terminal', 'warn');
+    const result = await this.opts.zoom(dir);
     this.toast(result.message, result.ok ? 'success' : 'warn');
   }
 

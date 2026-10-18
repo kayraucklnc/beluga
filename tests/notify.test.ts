@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Store, initialState, reduce, type Action, type AppState } from '../src/core/store.js';
 import { Notifier, detectNotices, enabled, placeName, type NoticeEvent } from '../src/core/notify.js';
-import { pickRoute, plan, type RouteEnv } from '../src/core/desktop-notify.js';
+import { pickRoute, plan, type RouteEnv } from '../src/ui/tty/desktop-notify.js';
 import type { PeerInfo } from '../src/protocol.js';
 import type { Project } from '../src/workspaces/types.js';
 import type { PendingQuestion, SharedWorkspace } from '../src/core/collab-store.js';

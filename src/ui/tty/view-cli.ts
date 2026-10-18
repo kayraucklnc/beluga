@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs';
 import chalk from 'chalk';
-import { decodeImage } from './decode.js';
-import { imageToLines } from './render.js';
-import type { Line } from '../ui/text.js';
+import { decodeImage } from '../../image/decode.js';
+import { imageToLines } from '../../image/render.js';
+import type { Line } from '../../shared/text.js';
 
 function toAnsi(line: Line): string {
   return line

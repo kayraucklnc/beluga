@@ -7,7 +7,7 @@
  * wide (the UI pads; `overlayCursor` pads when the cursor sits past the end).
  */
 import type { IBufferCell, IBufferLine } from '@xterm/headless';
-import { width, type Line, type Seg } from '../ui/text.js';
+import { width, type Line, type Seg } from '../shared/text.js';
 import { rgbToHex } from './palette.js';
 
 const BOLD = 1;

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { deriveKeys, generateSecret } from '../src/net/crypto.js';
 import { startHub, type Hub } from '../src/net/hub.js';
 import { CLOUDFLARE_URL, NGROK_URL, closeAllTunnels, openTunnel, waitUntilReachable } from '../src/net/tunnel.js';
-import { osc52 } from '../src/core/clipboard.js';
+import { osc52 } from '../src/ui/tty/clipboard.js';
 
 let hub: Hub | undefined;
 afterEach(async () => {

@@ -5,12 +5,14 @@ import React from 'react';
 import { render } from 'ink';
 import { USAGE, type Config, parseConfig } from './config.js';
 import { createClaudeBackend } from './agent/runner.js';
-import { copyNative, copyText, pasteText } from './core/clipboard.js';
+import { copyNative, pasteText } from './core/clipboard.js';
+import { copyText } from './ui/tty/clipboard.js';
+import { zoom } from './ui/tty/zoom.js';
 import { Session } from './core/session.js';
 import { ShareService } from './core/shares.js';
 import { Store, initialState, prefsFrom } from './core/store.js';
 import { loadSettings, saveSettings } from './core/settings.js';
-import { createDesktopNotifier } from './core/desktop-notify.js';
+import { createDesktopNotifier } from './ui/tty/desktop-notify.js';
 import { TerminalManager } from './terminal/index.js';
 import { klaudHome } from './workspaces/store.js';
 import { applyTheme } from './ui/theme.js';
@@ -25,7 +27,7 @@ import { createMockBackend } from './agent/mock.js';
 import { runUpdate } from './update/update.js';
 import { findConversation } from './agent/transcript.js';
 import { installedVersion } from './update/check.js';
-import { runView } from './image/view-cli.js';
+import { runView } from './ui/tty/view-cli.js';
 import { createDemoFolders, createDemoWorkspaces, startDemoFriend, startDemoGuest } from './demo.js';
 import { DEFAULT_LINK } from './core/project-invites.js';
 import { WorkspaceManager } from './workspaces/manager.js';
@@ -259,6 +261,7 @@ async function main(): Promise<void> {
     shares,
     agentCwd,
     copy: (text) => copyText(text),
+    zoom: (dir) => zoom(dir),
     // Remote access only opens when you ask for an invite.
     startInvite: () => {
       if (config.mode !== 'host' || demo) return;

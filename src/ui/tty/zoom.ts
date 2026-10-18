@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 
-export type ZoomDir = 'in' | 'out' | 'reset';
+import type { ZoomDir } from '../../core/session.js';
+
+export type { ZoomDir };
 
 export type TerminalId = 'apple' | 'iterm' | 'warp' | 'kitty' | 'wezterm' | 'ghostty' | 'alacritty' | 'vscode' | 'unknown';
 
