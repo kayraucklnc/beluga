@@ -94,3 +94,22 @@ export async function joinRoom(invite: string): Promise<void> {
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('restart_daemon', { args: ['join', invite] });
 }
+
+/** Keep the menu-bar icon's count of what waits for you (approvals, questions) up to date. */
+export function useTrayStatus(client: SocketClient): void {
+  useEffect(() => {
+    if (!inApp()) return;
+    let last = '';
+    const update = (): void => {
+      const st = client.store.getState();
+      const waiting = st.approvals.length + st.questions.length + st.knocks.length;
+      const working = new Set(st.log.filter((l) => l.type === 'agent' && l.owner === st.selfId && ['started', 'text', 'tool', 'sub'].includes(l.status)).map((l) => l.channel)).size;
+      const key = `${waiting}:${working}`;
+      if (key === last) return;
+      last = key;
+      void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_tray_status', { waiting, working })).catch(() => undefined);
+    };
+    update();
+    return client.store.subscribe(update);
+  }, [client]);
+}

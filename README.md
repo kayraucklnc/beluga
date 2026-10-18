@@ -66,6 +66,15 @@ You need Node 20+ and [Claude Code](https://claude.com/claude-code) signed in (`
 
 To bring friends in, click **Invite** (or run `klaud --invite`) and send them the link. They run `klaud join`.
 
+### klaud for Mac
+
+The same klaud as a native Mac app: a translucent sidebar with your chats, projects and worktrees; Claude's runs as live cards; diffs side by side; real terminals (dock one next to the chat with **⌘J**); **⌘K** for everything; a menu-bar icon that shows what waits for you; light, dark or system appearance, your accent color, text size and density. Download the `.dmg` from the [latest release](https://github.com/kayraucklnc/klaud/releases/latest) — it brings its own Node and klaud, so nothing else needs installing except Claude Code.
+
+<p align="center"><img src="assets/mac-workspace.png" alt="klaud for Mac: a workspace with Claude's run, the inspector and the sidebar" width="860"></p>
+<p align="center"><img src="assets/mac-terminal-dark.png" alt="klaud for Mac in dark mode with a terminal docked beside the chat" width="860"></p>
+
+The terminal app and the Mac app are two windows onto the same klaud: run `KLAUD_DAEMON=1 klaud` and it attaches to the room the Mac app has open (or starts it), and the other way round. Approve a tool in one and it's gone from the other.
+
 ## A quick tour
 
 <table>
@@ -295,6 +304,7 @@ klaud join [invite]             join a friend (reads the invite from your clipbo
 klaud demo                      try everything with a pretend friend
 klaud view <image> [--ascii]    show a PNG, JPEG, GIF or SVG in the terminal
 klaud update [--check]          get the latest klaud, or just check
+klaud daemon [--keep-alive]     run klaud in the background for other windows (the Mac app uses this)
 
   -n, --name <name>        display name (remembered)
   -s, --share <spec>       share a folder: [name=]path[:rw], repeatable
@@ -306,6 +316,8 @@ klaud update [--check]          get the latest klaud, or just check
 ```
 
 ## How it works
+
+klaud is one core with two screens. The core (rooms, projects, Claude, terminals) runs in your terminal app's process, or as a background daemon that several screens attach to over a local WebSocket (`127.0.0.1`, a token in `~/.klaud/daemon.json` that only you can read). Every screen gets the same state and the same stream of changes and calls the same list of actions ([src/ipc/api.ts](src/ipc/api.ts)); what each screen shows is its own. [docs/parity.md](docs/parity.md) lists every action and where each screen offers it.
 
 ```
  your computer                                       bob's computer
@@ -350,10 +362,22 @@ Inviting someone exposes your Claude, with your permissions, to other people. kl
 git clone https://github.com/kayraucklnc/klaud.git && cd klaud
 npm install
 npm run dev -- demo        # run from source
-npm test                   # 670+ unit and multi-peer integration tests
+npm test                   # 830+ unit, multi-peer and two-screen tests
 npm run typecheck
 npm run build && npm link  # use your local build as `klaud` (klaud update then follows git)
 ```
+
+The Mac app lives in [packages/mac](packages/mac) (Tauri 2, React):
+
+```bash
+cd packages/mac && npm install
+npm run app:dev            # the app, running klaud from this repo
+npm run dev                # just the web UI in a browser (start a daemon first: klaud daemon --keep-alive demo)
+npm run e2e                # Playwright tests against the demo
+npm run app:build          # bundles Node + klaud (scripts/build-sidecar.mjs), then the .app
+```
+
+Adding a feature? Both screens should get it: see the checklist in [docs/parity.md](docs/parity.md).
 
 Every merge to `main` is released to npm by [publish.yml](.github/workflows/publish.yml): if the version in `package.json` is already published, CI bumps the patch number, publishes, and commits the bump back. For a minor or major release, set the version in your PR.
 

@@ -14,7 +14,7 @@ import { Sidebar } from './layout/Sidebar.js';
 import { useActions } from './lib/actions.js';
 import { useApp, useKlaud } from './lib/klaud.js';
 import { setPrefs, usePrefs, zoom } from './lib/prefs.js';
-import { joinRoom, useNative } from './lib/native.js';
+import { joinRoom, useNative, useTrayStatus } from './lib/native.js';
 import { JoinSheet } from './dialogs/JoinSheet.js';
 import { useState } from 'react';
 import s from './layout/Shell.module.css';
@@ -171,6 +171,7 @@ export function App() {
   useShortcuts();
   useSettingsWindow();
   useNative(client, ui, actions, setJoining);
+  useTrayStatus(client);
   return (
     <Tooltip.Provider delayDuration={450} skipDelayDuration={200}>
       <div className={s.app}>

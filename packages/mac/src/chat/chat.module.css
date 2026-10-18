@@ -189,14 +189,19 @@
   gap: 6px;
   margin-top: 6px;
 }
+/* Sits in the header row, just left of the status, so the two never overlap. */
 .hoverActions {
-  position: absolute;
-  top: -2px;
-  right: 0;
+  display: inline-flex;
+  align-self: center;
+  margin: -3px 0 -3px auto;
   opacity: 0;
   transition: opacity var(--dur-fast);
 }
-.message:hover .hoverActions {
+.hoverActions + .status {
+  margin-left: 0;
+}
+.message:hover .hoverActions,
+.hoverActions:focus-within {
   opacity: 1;
 }
 

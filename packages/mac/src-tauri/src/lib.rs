@@ -32,6 +32,21 @@ async fn restart_daemon(
     daemon::ensure(&app, &args).await
 }
 
+/// What the menu-bar icon says: how many things wait for you, and how many Claudes are working.
+#[tauri::command]
+fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32) {
+    if let Some(tray) = app.tray_by_id("klaud") {
+        let _ = tray.set_title(if waiting > 0 { Some(waiting.to_string()) } else { None });
+        let tip = match (waiting, working) {
+            (0, 0) => "klaud".to_string(),
+            (0, w) => format!("klaud · {w} Claude{} working", if w == 1 { "" } else { "s" }),
+            (n, 0) => format!("klaud · {n} waiting for you"),
+            (n, w) => format!("klaud · {n} waiting for you · {w} working"),
+        };
+        let _ = tray.set_tooltip(Some(tip));
+    }
+}
+
 fn focus_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
@@ -59,7 +74,7 @@ pub fn run() {
         .manage(AppState {
             started: Mutex::new(None),
         })
-        .invoke_handler(tauri::generate_handler![daemon_endpoint, restart_daemon])
+        .invoke_handler(tauri::generate_handler![daemon_endpoint, restart_daemon, set_tray_status])
         .menu(menu::build)
         .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()))
         .setup(|app| {

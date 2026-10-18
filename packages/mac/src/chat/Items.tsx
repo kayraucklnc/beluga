@@ -95,6 +95,13 @@ export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) 
         <div className={s.meta}>
           <span className={cx(s.author, s.claudeName)}>{mine ? 'Claude' : `${item.ownerName}'s Claude`}</span>
           {forSomeoneElse ? <span className={s.time}>for {item.requesterName}</span> : null}
+          {!running && item.text && item.status === 'done' ? (
+            <span className={s.hoverActions}>
+              <Button size="small" variant="quiet" icon="copy" onClick={() => void navigator.clipboard?.writeText(item.text)}>
+                Copy
+              </Button>
+            </span>
+          ) : null}
           <span className={cx(s.status, s[`tone_${st.tone}`])}>
             {running ? <Dot tone="claude" live /> : null}
             {st.label}
@@ -158,13 +165,6 @@ export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) 
             </Button>
             <Button size="small" variant="quiet" onClick={() => void api.host.cancelQueued(item.requestId)}>
               Cancel
-            </Button>
-          </div>
-        ) : null}
-        {!running && item.text && item.status === 'done' ? (
-          <div className={s.hoverActions}>
-            <Button size="small" variant="quiet" icon="copy" onClick={() => void navigator.clipboard?.writeText(item.text)}>
-              Copy
             </Button>
           </div>
         ) : null}

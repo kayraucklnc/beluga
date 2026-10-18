@@ -69,6 +69,10 @@ const STEPS = {
     await openWs();
     await page.keyboard.press('Meta+J');
     await wait(2500);
+    // A neutral prompt (no user or machine name in screenshots).
+    await page.locator('[aria-label="Terminal"] .xterm').click();
+    await page.keyboard.type("PROMPT='%1~ %# '; PS1='$ '; clear; git log --oneline -3\n");
+    await wait(1200);
     await page.locator('textarea:not(.xterm-helper-textarea)').fill('Run the tests and fix whatever fails');
     await page.keyboard.press('Enter');
     await wait(3500);
