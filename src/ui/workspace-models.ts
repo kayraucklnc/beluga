@@ -1,5 +1,5 @@
 import type { LinkTarget } from './links.js';
-import { type AppState, type LogItem, type ReviewState, type WorkspaceTab, newShares } from '../core/store.js';
+import { type AppState, type LogItem, type ReviewState, type SharedTab, type WorkspaceTab, newShares } from '../core/store.js';
 import type { TrustLevel } from '../core/settings.js';
 import { describePr } from '../workspaces/pr.js';
 import { formatBytes } from '../workspaces/disk.js';
@@ -58,7 +58,12 @@ export type UiAction =
   | { readonly type: 'plan_toggle'; readonly channel: string }
   /** Open (or close) Claude's proposed plan full screen. */
   | { readonly type: 'plan_full'; readonly qid?: string }
-  | { readonly type: 'open_shared'; readonly owner: string; readonly id: string; readonly tab?: 'chat' | 'files' }
+  | { readonly type: 'open_shared'; readonly owner: string; readonly id: string; readonly tab?: SharedTab }
+  /** The card for someone at the door with your link: let them in (as offered, or watch only), or not. */
+  | { readonly type: 'knock'; readonly peerId: string; readonly pick: 'in' | 'watch' | 'decline' }
+  /** A name clicked in a shared workspace's read-only shell (folders list, files open). */
+  | { readonly type: 'shell_open'; readonly id: string; readonly rel: string; readonly dir: boolean }
+  | { readonly type: 'shell_run'; readonly id: string; readonly cmd: string }
   | { readonly type: 'shared_menu'; readonly owner: string; readonly id: string }
   /** Answer a question card: pick an option, skip, approve or revise a plan, or finish a multi-select. */
   | { readonly type: 'answer'; readonly qid: string; readonly pick: 'option' | 'skip' | 'approve' | 'revise' | 'done'; readonly label?: string; readonly question?: string }

@@ -1,5 +1,6 @@
 import type { PendingQuestion, SharedWorkspace } from '../core/collab-store.js';
-import { type AppState, peerName } from '../core/store.js';
+import { type AppState, type SharedTab, peerName } from '../core/store.js';
+import { CAN_INFO } from '../core/project-invites.js';
 import { ansiToLine } from './ansi.js';
 import { renderMarkdownAnsi } from './markdown-render.js';
 import { type Line, type Seg, plain, truncate, wrapText } from './text.js';
@@ -166,11 +167,12 @@ export function sharedHeaderModel(state: AppState, w: SharedWorkspace, width: nu
   const zones: Zone[] = [];
   const view = state.view.kind === 'shared' ? state.view : undefined;
   const owner = peerName(state, w.owner);
+  const role = w.can ? `you ${CAN_INFO[w.can].short} here` : w.role === 'contribute' ? `you're working here with ${owner}` : `you're following along`;
   const title: Line = [
     { text: `${owner}'s ${w.project ? `${w.project} › ` : ''}`, color: theme.muted },
     { text: w.name, color: theme.text, bold: true },
     { text: w.branch ? `  ⌥ ${w.branch}` : '', color: theme.muted },
-    { text: `   ◈ ${w.role === 'contribute' ? `you're working here with ${owner}` : `you're following along`}`, color: theme.ok },
+    { text: `   ◈ ${role}`, color: theme.ok },
   ];
   const segs: Seg[] = [];
   let x = 0;
@@ -180,8 +182,13 @@ export function sharedHeaderModel(state: AppState, w: SharedWorkspace, width: nu
     segs.push({ text: ' ' });
     x += text.length + 1;
   };
-  add(' Chat ', { type: 'open_shared', owner: w.owner, id: w.id, tab: 'chat' }, `The conversation with ${owner}'s Claude`, view?.tab === 'chat' ? theme.text : theme.muted, view?.tab === 'chat');
-  add(' Files ', { type: 'open_shared', owner: w.owner, id: w.id, tab: 'files' }, `Browse ${owner}'s worktree`, view?.tab === 'files' ? theme.text : theme.muted, view?.tab === 'files');
+  const tabs: ReadonlyArray<[SharedTab, string, string]> = [
+    ['chat', ' Chat ', w.role === 'contribute' ? `Talk to ${owner}'s Claude in ${w.name}` : `The conversation in ${w.name} (you're watching)`],
+    ['files', ' Files ', `Browse ${owner}'s files; they stream as you open them`],
+    ['terminal', ' Terminal ', `A read-only shell over ${owner}'s files: ls, cd, cat, tree, find, grep`],
+    ['diff', ' Diff ', `What changed in ${w.name} (read-only)`],
+  ];
+  for (const [tab, label, hint] of tabs) add(label, { type: 'open_shared', owner: w.owner, id: w.id, tab }, hint, view?.tab === tab ? theme.text : theme.muted, view?.tab === tab);
   segs.push({ text: '│ ', color: theme.border });
   x += 2;
   add(' Leave ', { type: 'shared_menu', owner: w.owner, id: w.id }, `Leave ${w.name}`, theme.error);

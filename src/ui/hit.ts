@@ -85,7 +85,8 @@ export function hitTest(g: Geometry, x: number, y: number, ctx: HitContext): Tar
   const view = ctx.state.view;
   if (view.kind === 'terminal' || (view.kind === 'workspace' && view.tab === 'terminal')) return y > g.paneTop ? { kind: 'terminal' } : { kind: 'main' };
   const inViewer = x >= g.mainX + g.chatWidth && g.viewerWidth > 0;
-  if (!inViewer && view.kind === 'files') {
+  const filesTab = view.kind === 'files' || ((view.kind === 'workspace' || view.kind === 'shared') && view.tab === 'files');
+  if (!inViewer && filesTab) {
     const win = fileWindow(ctx.state.browser, g.paneHeight);
     const row = y - g.paneTop - 1 - win.firstRowOffset;
     const index = win.start + row;
@@ -98,6 +99,6 @@ export function hitTest(g: Geometry, x: number, y: number, ctx: HitContext): Tar
     }
     return { kind: 'viewer' };
   }
-  if (view.kind === 'overview' || view.kind === 'search' || view.kind === 'usage' || (view.kind === 'workspace' && view.tab === 'review')) return { kind: 'main' };
+  if (view.kind === 'overview' || view.kind === 'search' || view.kind === 'usage' || (view.kind === 'workspace' && view.tab === 'review') || (view.kind === 'shared' && view.tab === 'diff')) return { kind: 'main' };
   return { kind: 'chat' };
 }

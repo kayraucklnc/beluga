@@ -39,7 +39,8 @@ export class People {
     const self = this.deps.selfId();
     const known = new Set(before.map((p) => p.peerId));
     for (const p of after) {
-      if (p.peerId === self || known.has(p.peerId)) continue;
+      // Guests came with a link: what they may do was decided when you let them in.
+      if (p.peerId === self || known.has(p.peerId) || p.guest) continue;
       const saved = this.saved[p.peerId];
       if (saved) {
         this.deps.store.dispatch({ type: 'trust_level', peerId: p.peerId, level: saved.trust });

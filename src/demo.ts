@@ -117,12 +117,63 @@ export function startDemoFriend(url: string, keys: RoomKeys, folder: string, nam
   client.once('welcome', () => {
     session.updateUsage({ plan: 'pro', fiveHour: { pct: friend.usage }, week: { pct: 41 } });
     say(friend.first);
+    if (name === 'bob') setTimeout(() => shareDemoWorkspace(session, shares, folder), 1800);
   });
   client.on('message', (msg) => {
     // Answer you (not each other), one line per message you send.
     const fromYou = msg.from !== client.peerId && !store.getState().peers.find((p) => p.peerId === msg.from && (p.name === 'bob' || p.name === 'mia'));
     if (fromYou && msg.body.kind === 'chat' && !msg.body.byAgent && said < friend.lines.length) say(name === 'bob' ? 1500 : 2400);
   });
+  if (name === 'bob') answerDemoDiff(session, client);
+  session.start();
+  return session;
+}
+
+const DEMO_WS = 'bob-payments';
+const DEMO_PATCH = `@@ -1,4 +1,9 @@
+-export async function onWebhook(event: Event) {
++const seen = new Set<string>();
++
++export async function onWebhook(event: Event) {
++  // Stripe retries: charge once per event id.
++  if (seen.has(event.id)) return;
++  seen.add(event.id);
+   await charge(event.customer, event.amount);
+ }
+`;
+
+/**
+ * bob's demo klaud has no real worktree, so it answers the Diff tab with a small, fixed change.
+ * It listens ahead of the session, so this answer arrives first.
+ */
+function answerDemoDiff(session: Session, client: PeerClient): void {
+  client.prependListener('message', (msg) => {
+    if (msg.body.kind !== 'ws_diff' || msg.body.id !== DEMO_WS) return;
+    const { reqId, file } = msg.body;
+    const review = { base: 'main', commits: [{ hash: 'c41e9a2', subject: 'Make webhook retries idempotent' }], files: [{ path: 'src/webhooks.ts', added: 6, removed: 1, state: 'modified' as const }] };
+    session.send(file ? { kind: 'ws_diff_result', reqId, ok: true, patch: DEMO_PATCH } : { kind: 'ws_diff_result', reqId, ok: true, review }, { to: msg.from });
+  });
+}
+
+/** bob lets you watch one of his workspaces, so you can try a guest's Files, Terminal and Diff tabs. */
+function shareDemoWorkspace(session: Session, shares: ShareService, folder: string): void {
+  const host = session.store.getState().peers.find((p) => p.host);
+  if (!host) return;
+  const share = 'ws-bob-payments';
+  shares.upsert({ name: share, root: folder, writable: false, private: true, allowed: [host.peerId] });
+  const history = [
+    { from: 'bob', text: 'retries keep double-charging, can you look at the webhook handler?', ts: Date.now() - 120_000, byAgent: false },
+    { from: "bob's Claude", text: 'The handler is not idempotent: it charges again on every retry. I added an idempotency key check.', ts: Date.now() - 60_000, byAgent: true },
+  ];
+  session.send({ kind: 'ws_invite', ws: { id: DEMO_WS, name: 'payments', project: 'bob-api', branch: 'fix-webhooks' }, role: 'view', can: 'watch', share, history }, { to: host.peerId });
+}
+
+/** Someone who got your link to one project and knocks (the demo's Invite flow, from the other side). */
+export function startDemoGuest(url: string, keys: RoomKeys, name = 'zoe'): Session {
+  const store = new Store(initialState('demo', 'deny'));
+  const shares = new ShareService([]);
+  const client = new PeerClient({ url, keys, profile: { name, shares: [], agent: false } });
+  const session = new Session({ client, store, shares, agentCwd: os.tmpdir() });
   session.start();
   return session;
 }

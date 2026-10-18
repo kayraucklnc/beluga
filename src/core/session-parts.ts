@@ -11,6 +11,9 @@ import { RoomFiles } from './room-files.js';
 import { AgentHost } from './agent-host.js';
 import { RemoteWork } from './remote-work.js';
 import { PeerRun } from './peer-run.js';
+import { ProjectInvites } from './project-invites.js';
+import { GuestShell } from './guest-shell.js';
+import { SharedDiff } from './shared-diff.js';
 
 /** Everything a session is made of, wired to each other and to the session. */
 export interface SessionParts {
@@ -25,6 +28,9 @@ export interface SessionParts {
   readonly host: AgentHost;
   readonly remote: RemoteWork;
   readonly peerRun: PeerRun;
+  readonly invites: ProjectInvites;
+  readonly shell: GuestShell;
+  readonly diff: SharedDiff;
 }
 
 export function createSessionParts(session: Session, opts: SessionOptions): SessionParts {
@@ -107,6 +113,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       system: (text, level) => session.system(text, level),
       approvalTimeoutMs: () => session.approvalTimeoutMs,
       refreshUsage: () => session.refreshUsage(),
+      canEditIn: (peerId, channel) => invites.canEditIn(peerId, channel),
     });
     const remote = new RemoteWork({
       store: opts.store,
@@ -137,5 +144,23 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       approve: (title, detail, peer) => session.ask('request', title, detail, peer),
       ...(opts.runShell ? { runShell: opts.runShell } : {}),
     });
-  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun };
+    const invites: ProjectInvites = new ProjectInvites({
+      store: opts.store,
+      selfId: () => session.selfId,
+      sharing,
+      people,
+      room: opts.room?.guests,
+      toast: (text, level) => session.toast(text, level),
+      system: (text, level) => session.system(text, level),
+      copy: (text, success) => session.copyText(text, success),
+      startInvite: opts.startInvite,
+    });
+    const diff = new SharedDiff({ store: opts.store, shares: opts.shares, sharing, manager: opts.workspaces, send: (body, o) => session.send(body, o), request: (to, b) => files.request(to, b) });
+    const shell = new GuestShell({
+      store: opts.store,
+      listFiles: (at) => files.listFiles(at),
+      openLocation: (at) => files.openLocation(at),
+      search: (at, mode, query) => diff.search(at, mode, query),
+    });
+  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff };
 }

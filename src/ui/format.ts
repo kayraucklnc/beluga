@@ -128,10 +128,14 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
             : '';
     body.push(plain(idle, { dim: true }));
   }
-  const title: Line = [
-    { text: `${glyph.claude} ${item.ownerName}'s Claude`, color: theme.claude, bold: true },
-    { text: item.requesterName === item.ownerName ? '' : `  for ${item.requesterName}`, color: theme.muted },
-  ];
+  // Someone else's request: "mia (via kay's Claude)", since it ran on kay's computer with kay's Claude.
+  const title: Line =
+    item.requesterName === item.ownerName
+      ? [{ text: `${glyph.claude} ${item.ownerName}'s Claude`, color: theme.claude, bold: true }]
+      : [
+          { text: `${glyph.claude} ${item.requesterName}`, color: theme.claude, bold: true },
+          { text: ` (via ${item.ownerName}'s Claude)`, color: theme.muted },
+        ];
   const status = plain(st.label, { color: st.color });
   const gap = Math.max(2, cols - lineWidth(title) - lineWidth(status));
   const rail: Seg = { text: `${glyph.bar} `, color: running ? theme.claude : theme.border };

@@ -1,4 +1,4 @@
-import type { BodyInput, BodyOf, WsRole } from '../protocol.js';
+import type { BodyInput, BodyOf, GuestCan, WsRole } from '../protocol.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { ShareService } from './shares.js';
 import { type LogItem, type Store, clean, peerName } from './store.js';
@@ -78,7 +78,8 @@ export class WorkspaceSharing {
 
   // -------------------------------------------------------------- owner side
 
-  invite(wsId: string, peerId: string, role: WsRole): boolean {
+  /** `quiet` skips the toast (e.g. a whole project at once); `can` tells people invited by link what they may do. */
+  invite(wsId: string, peerId: string, role: WsRole, opts: { quiet?: boolean; can?: GuestCan } = {}): boolean {
     const state = this.deps.store.getState();
     const ws = this.deps.workspaces?.find(wsId);
     const peer = state.peers.find((p) => p.peerId === peerId);
@@ -87,20 +88,25 @@ export class WorkspaceSharing {
     this.syncShare(wsId);
     const project = state.projects.find((p) => p.id === ws.projectId)?.name ?? '';
     const history = historyFor(state.log, `ws:${wsId}`, (id) => peerName(state, id));
-    this.deps.send({ kind: 'ws_invite', ws: { id: wsId, name: ws.name, project, ...(ws.branch ? { branch: ws.branch } : {}) }, role, share: shareNameOf(wsId), history }, { to: peerId });
+    this.deps.send({ kind: 'ws_invite', ws: { id: wsId, name: ws.name, project, ...(ws.branch ? { branch: ws.branch } : {}) }, role, ...(opts.can ? { can: opts.can } : {}), share: shareNameOf(wsId), history }, { to: peerId });
     this.broadcastRoster(wsId);
-    this.deps.toast(`${peer.name} ${role === 'contribute' ? 'can now work with you' : 'can now follow along'} in ${ws.name}`, 'success');
+    this.onChange?.();
+    if (!opts.quiet) this.deps.toast(`${peer.name} ${role === 'contribute' ? 'can now work with you' : 'can now follow along'} in ${ws.name}`, 'success');
     return true;
   }
 
-  remove(wsId: string, peerId: string): void {
+  remove(wsId: string, peerId: string, quiet = false): void {
     if (!this.members(wsId)[peerId]) return;
     this.deps.store.dispatch({ type: 'member_set', id: wsId, peerId });
     this.syncShare(wsId);
     this.deps.send({ kind: 'ws_leave', id: wsId }, { to: peerId });
     this.broadcastRoster(wsId);
-    this.deps.toast(`${peerName(this.deps.store.getState(), peerId)} was removed from the workspace`, 'success');
+    this.onChange?.();
+    if (!quiet) this.deps.toast(`${peerName(this.deps.store.getState(), peerId)} was removed from the workspace`, 'success');
   }
+
+  /** Called when who's in your workspaces changes (guests' contacts follow it). */
+  onChange?: () => void;
 
   /** Everyone leaves (e.g. the workspace was archived). */
   removeAll(wsId: string): void {
@@ -127,7 +133,7 @@ export class WorkspaceSharing {
     if (state.shared.some((w) => w.id === body.ws.id && w.owner !== from)) return;
     this.deps.store.dispatch({
       type: 'shared_add',
-      ws: { owner: from, id: body.ws.id, name: clean(body.ws.name), project: clean(body.ws.project), branch: body.ws.branch ? clean(body.ws.branch) : undefined, role: body.role, share: body.share },
+      ws: { owner: from, id: body.ws.id, name: clean(body.ws.name), project: clean(body.ws.project), branch: body.ws.branch ? clean(body.ws.branch) : undefined, role: body.role, ...(body.can ? { can: body.can } : {}), share: body.share },
     });
     const channel = `ws:${body.ws.id}`;
     this.deps.store.dispatch({ type: 'clear', channel });
@@ -135,6 +141,9 @@ export class WorkspaceSharing {
       this.deps.store.dispatch({ type: 'system', text: `${clean(h.from)}: ${clean(h.text)}`, channel });
       if (i > HISTORY_ITEMS) break;
     }
+    // Came in with a link: go straight to the first workspace you were let into.
+    const latest = this.deps.store.getState();
+    if (latest.self?.guest && latest.view.kind !== 'shared') this.deps.store.dispatch({ type: 'view', view: { kind: 'shared', owner: from, id: body.ws.id, tab: 'chat' } });
     this.deps.toast(`${peerName(state, from)} invited you to ${clean(body.ws.name)}${body.role === 'view' ? ' (to follow along)' : ''}. It's under SHARED WITH ME`, 'success');
   }
 
@@ -160,6 +169,7 @@ export class WorkspaceSharing {
       this.deps.store.dispatch({ type: 'member_set', id: body.id, peerId: from });
       this.syncShare(body.id);
       this.broadcastRoster(body.id);
+      this.onChange?.();
     }
   }
 

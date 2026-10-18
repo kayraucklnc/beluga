@@ -27,11 +27,29 @@ export interface HubOptions {
   readonly hostId?: string;
 }
 
+/** What a guest (someone who came in with a project link) may reach. */
+export interface GuestAccess {
+  /** Everything a member sees (the room chat, history, everyone's shares). */
+  readonly full: boolean;
+  /** Besides the host: people they may exchange messages with and see (e.g. others in their workspace). */
+  readonly contacts: readonly string[];
+}
+
+/** Decides who may come in with a project link (the host's klaud keeps the links). */
+export interface GuestGate {
+  /** Keys of the links that work right now (each derived from its own secret). */
+  keys(): ReadonlyArray<{ readonly id: string; readonly keys: RoomKeys }>;
+  /** Someone proved they hold link `id`. Undefined turns them away; `closed`: the room takes no new people. */
+  admit(id: string, peerId: string, closed: boolean): (GuestAccess & { readonly room?: string }) | undefined;
+}
+
 interface Conn {
   alive: boolean;
   readonly ws: MessageSocket;
   readonly nonce: string;
   peer?: PeerInfo;
+  /** Came in with a project link: only reaches the host and `contacts`, unless `full`. */
+  guest?: { full: boolean; contacts: Set<string> };
   tokens: number;
   lastRefill: number;
 }
@@ -60,6 +78,12 @@ export interface Hub {
   listenP2P(opts?: P2POptions): Promise<string>;
   /** The direct-connection key, once listening. */
   readonly p2pKey: string | undefined;
+  /** Accept project links (guests only see what they were invited to). */
+  setGuestGate(gate: GuestGate | undefined): void;
+  /** Change what a connected guest reaches (invited to more, or to the whole room). */
+  setGuestAccess(peerId: string, access: GuestAccess): void;
+  /** Close someone's connection with a reason (not a ban: a new link still works). */
+  dismiss(peerId: string, message: string): boolean;
 }
 
 /** Close codes the client treats as final. */
@@ -114,10 +138,23 @@ export function startHub(opts: HubOptions): Promise<Hub> {
 
   const authed = (): Conn[] => [...conns].filter((c) => c.peer);
   const peerList = (): PeerInfo[] => authed().map((c) => c.peer as PeerInfo);
+  let gate: GuestGate | undefined;
+  const restricted = (c: Conn): boolean => Boolean(c.guest && !c.guest.full);
+
+  /** Who a connection sees: everyone, or (for a guest) themselves, the host and their contacts, without anyone's shares. */
+  const peersFor = (c: Conn): PeerInfo[] => {
+    const all = peerList();
+    const g = c.guest;
+    if (!g || g.full) return all;
+    const self = c.peer?.peerId;
+    return all
+      .filter((p) => p.peerId === self || p.host || g.contacts.has(p.peerId))
+      .map((p) => (p.peerId === self ? p : { peerId: p.peerId, name: p.name, agent: p.agent, shares: [], ...(p.host ? { host: true } : {}), ...(p.guest ? { guest: true } : {}) }));
+  };
 
   const broadcastPeers = (): void => {
     const box = seal(roomKeys, peerList());
-    for (const c of authed()) send(c, { t: 'peers', box });
+    for (const c of authed()) send(c, { t: 'peers', box: restricted(c) ? seal(roomKeys, peersFor(c)) : box });
   };
 
   const uniqueName = (name: string): string => {
@@ -147,18 +184,26 @@ export function startHub(opts: HubOptions): Promise<Hub> {
     }
     const current = verifyProof(inviteKeys, conn.nonce, frame.peerId, frame.proof);
     const returning = !current && members.has(frame.peerId) ? oldInviteKeys.find((k) => verifyProof(k, conn.nonce, frame.peerId, frame.proof)) : undefined;
-    if (!current && !returning) {
+    // Not the room link: maybe a project link (its own secret, so it never reveals the room's).
+    const link = !current && !returning ? gate?.keys().find((k) => verifyProof(k.keys, conn.nonce, frame.peerId, frame.proof)) : undefined;
+    if (!current && !returning && !link) {
       send(conn, { t: 'error', message: 'Authentication failed: this invite link no longer works' });
       conn.ws.close(4001, 'auth');
       return;
     }
-    const helloKeys = returning ?? inviteKeys;
+    const helloKeys = returning ?? link?.keys ?? inviteKeys;
     if (removed.has(frame.peerId)) {
       send(conn, { t: 'error', message: 'You were removed from this room' });
       conn.ws.close(REMOVED_CODE, 'removed');
       return;
     }
-    if (!open && !members.has(frame.peerId) && frame.peerId !== opts.hostId) {
+    const admission = link && !removed.has(frame.peerId) ? gate?.admit(link.id, frame.peerId, !open) : undefined;
+    if (link && !admission) {
+      send(conn, { t: 'error', message: 'This link has expired, was already used, or was turned off. Ask for a new one' });
+      conn.ws.close(4001, 'link');
+      return;
+    }
+    if (!link && !open && !members.has(frame.peerId) && frame.peerId !== opts.hostId) {
       send(conn, { t: 'error', message: "This room isn't taking new people right now" });
       conn.ws.close(CLOSED_CODE, 'closed');
       return;
@@ -179,21 +224,29 @@ export function startHub(opts: HubOptions): Promise<Hub> {
       conn.ws.close(4004, 'full');
       return;
     }
-    const peer: PeerInfo = { ...profile.data, name: uniqueName(profile.data.name), peerId: frame.peerId, ...(frame.peerId === opts.hostId ? { host: true } : {}) };
+    const peer: PeerInfo = { ...profile.data, name: uniqueName(profile.data.name), peerId: frame.peerId, ...(frame.peerId === opts.hostId ? { host: true } : {}), ...(admission && !admission.full ? { guest: true } : {}) };
     conn.peer = peer;
-    members.add(frame.peerId);
+    if (admission) conn.guest = { full: admission.full, contacts: new Set(admission.contacts) };
+    // Guests reconnect with their link (the host's klaud decides); members may come back with an older room link.
+    else members.add(frame.peerId);
     // The welcome is sealed with the invite's key and carries the room key, which differs once the invite was replaced.
     const roomKey = helloKeys === roomKeys ? {} : { roomKey: roomKeys.enc.toString('base64') };
     const fresh = returning && inviteSecret ? { secret: inviteSecret } : {};
-    send(conn, { t: 'welcome', you: peer, box: seal(helloKeys, { room: opts.roomName, ...roomKey, ...fresh, peers: peerList(), history }) });
+    const room = admission?.room ?? opts.roomName;
+    send(conn, { t: 'welcome', you: peer, box: seal(helloKeys, { room, ...roomKey, ...fresh, peers: peersFor(conn), history: restricted(conn) ? [] : history }) });
     broadcastPeers();
   };
 
   const relay = (conn: Conn, frame: MsgFrame): void => {
     const from = conn.peer?.peerId as string;
     const out: MsgFrame = { t: 'msg', from, ts: Date.now(), box: frame.box, ...(frame.to ? { to: frame.to } : {}), ...(frame.pub && frame.sig && frame.sts !== undefined ? { pub: frame.pub, sig: frame.sig, sts: frame.sts } : {}) };
-    if (frame.keep && !frame.to) remember(out);
-    const targets = frame.to ? authed().filter((c) => c.peer?.peerId === frame.to) : authed();
+    // A guest only talks to the host and their contacts, one person at a time.
+    const g = conn.guest;
+    if (g && !g.full && (!frame.to || !(frame.to === from || frame.to === opts.hostId || g.contacts.has(frame.to)))) return;
+    // …and only hears what's addressed to them by those people (never broadcasts or history).
+    const reaches = (c: Conn): boolean => !c.guest || c.guest.full || (Boolean(frame.to) && (from === c.peer?.peerId || from === opts.hostId || c.guest.contacts.has(from)));
+    if (frame.keep && !frame.to && !restricted(conn)) remember(out);
+    const targets = (frame.to ? authed().filter((c) => c.peer?.peerId === frame.to) : authed()).filter(reaches);
     for (const c of targets) send(c, out);
   };
 
@@ -228,7 +281,7 @@ export function startHub(opts: HubOptions): Promise<Hub> {
         if (profile.success && frame.peerId === conn.peer.peerId) {
           // Renames are allowed but stay unique within the room.
           const name = profile.data.name === conn.peer.name ? conn.peer.name : uniqueName(profile.data.name);
-          conn.peer = { ...profile.data, name, peerId: conn.peer.peerId, ...(conn.peer.host ? { host: true } : {}) };
+          conn.peer = { ...profile.data, name, peerId: conn.peer.peerId, ...(conn.peer.host ? { host: true } : {}), ...(restricted(conn) ? { guest: true } : {}) };
           broadcastPeers();
         }
       }
@@ -293,7 +346,8 @@ export function startHub(opts: HubOptions): Promise<Hub> {
           inviteKeys = keys;
           inviteSecret = secret;
           const box = seal(roomKeys, { secret });
-          for (const c of authed()) if (!removed.has(c.peer?.peerId ?? '')) send(c, { t: 'rekey', box });
+          // Guests never get the room's link: theirs is their own.
+          for (const c of authed()) if (!removed.has(c.peer?.peerId ?? '') && !c.guest) send(c, { t: 'rekey', box });
         },
         setOpen: (next) => {
           open = next;
@@ -303,6 +357,24 @@ export function startHub(opts: HubOptions): Promise<Hub> {
           historyBytes = 0;
         },
         attach,
+        dismiss: (peerId, message) => {
+          const conn = authed().find((c) => c.peer?.peerId === peerId);
+          if (!conn || peerId === opts.hostId) return false;
+          send(conn, { t: 'error', message });
+          conn.ws.close(CLOSED_CODE, 'dismissed');
+          return true;
+        },
+        setGuestGate: (next) => {
+          gate = next;
+        },
+        setGuestAccess: (peerId, access) => {
+          const conn = authed().find((c) => c.peer?.peerId === peerId && c.guest);
+          if (!conn) return;
+          conn.guest = { full: access.full, contacts: new Set(access.contacts) };
+          // Invited to everything: they're a member like anyone else (no longer marked as a guest).
+          if (conn.peer) conn.peer = access.full ? { ...conn.peer, guest: undefined } : { ...conn.peer, guest: true };
+          broadcastPeers();
+        },
         listenP2P: startP2P,
         get p2pKey() {
           return p2pKey;

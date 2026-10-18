@@ -1,3 +1,4 @@
+import { CAN_INFO } from '../core/project-invites.js';
 import type { AppState } from '../core/store.js';
 import type { Usage } from '../protocol.js';
 import { card, isRunning } from './format.js';
@@ -72,7 +73,9 @@ export function peopleRows(state: AppState, frame: number): PersonRow[] {
     // Small tags: who hosts the room, and who's in the workspace you're looking at.
     const wsId = state.view.kind === 'workspace' || state.view.kind === 'shared' ? state.view.id : undefined;
     const role = wsId ? (state.members[wsId]?.[p.peerId] ?? state.roster[wsId]?.find((m) => m.peerId === p.peerId)?.role) : undefined;
-    const tags = [p.host ? 'host' : '', role === 'contribute' ? 'working here' : role === 'view' ? 'following here' : ''].filter(Boolean).join(' · ');
+    // People who came in with your link: what they can do, at a glance.
+    const guest = state.guests[p.peerId];
+    const tags = [p.host ? 'host' : '', guest ? `${guest.room ? 'guest' : 'project guest'} · ${CAN_INFO[guest.can].short}` : state.knocks.some((k) => k.peerId === p.peerId) ? 'at the door' : '', role === 'contribute' ? 'working here' : role === 'view' ? 'following here' : ''].filter(Boolean).join(' · ');
     return { peerId: p.peerId, name: p.name, you: p.peerId === state.self?.peerId, color: colorFor(p.name), agent: meter ? [...agent, ...meter] : agent, tags };
   });
 }

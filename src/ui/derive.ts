@@ -18,6 +18,8 @@ import type { SharedWorkspace } from '../core/collab-store.js';
 import type { Workspace } from '../workspaces/types.js';
 import { draftModel, searchCursorRow, searchModel, topBarModel, trustCardModel, usageModel } from './work-models.js';
 import { modelLabel, modelOf } from './menus.js';
+import { firstKnock, guestShellModel, knockCardModel, shellSuggestions } from './invite-models.js';
+import { dirKey } from '../core/room-files.js';
 import type { Line } from './text.js';
 import { type ChatLinkHover, chatLines } from './components/ChatView.js';
 import { chatLinkModel } from './link-zones.js';
@@ -68,6 +70,8 @@ export interface Derived {
   readonly queuedIds: readonly string[];
   /** The card above the box is a trust question for this person. */
   readonly trustCard?: string;
+  /** Lines in a shared workspace's Terminal tab above the newest (for wheel scrolling). */
+  readonly shellMaxScroll: number;
   /** All clickable zones in screen coordinates. */
   readonly zones: readonly Zone[];
   /** The chat link under the pointer, underlined. */
@@ -119,26 +123,39 @@ function composeState(state: AppState, ui: UiState, selfId: string, channel: str
 /** Everything the screen shows and where, so rendering and clicks always agree. */
 export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs, hover }: DeriveInput): Derived {
   const searching = state.view.kind === 'search';
-  const suggestions = ui.focus === 'chat' && !ui.suggestHidden && !ui.menu && !(searching && !ui.buffer.startsWith('/')) ? suggest(ui.buffer, { peers: state.peers, selfId, dirCache: state.dirCache, listLocalDirs, workspaces: state.view.kind === 'room' ? workspaceMentions(state.projects) : [] }) : [];
   const workspace = state.view.kind === 'workspace' ? findWorkspace(state.projects, state.view.id) : undefined;
   const shared = state.view.kind === 'shared' ? state.shared.find((w) => w.id === (state.view as { id: string }).id) : undefined;
+  // A shared workspace's Terminal tab: the box you type in is its (read-only) shell.
+  const shellTab = shared && state.view.kind === 'shared' && state.view.tab === 'terminal' ? shared : undefined;
+  const sharedDiff = Boolean(shared) && state.view.kind === 'shared' && state.view.tab === 'diff';
+  const shellCwd = shellTab ? (state.shells[shellTab.id]?.cwd ?? '') : '';
+  const suggestions =
+    ui.focus !== 'chat' || ui.suggestHidden || ui.menu || (searching && !ui.buffer.startsWith('/'))
+      ? []
+      : shellTab && !ui.buffer.startsWith('/')
+        ? shellSuggestions(ui.buffer, shellCwd, (dir) => state.dirCache[dirKey({ owner: shellTab.owner, share: shellTab.share, path: dir })])
+        : suggest(ui.buffer, { peers: state.peers, selfId, dirCache: state.dirCache, listLocalDirs, workspaces: state.view.kind === 'room' ? workspaceMentions(state.projects) : [] });
   const pendingQuestion = state.questions[0];
   const planOpen = Boolean(ui.planFull && pendingQuestion?.qid === ui.planFull && pendingQuestion.question.kind === 'plan');
   const reviewing = state.view.kind === 'workspace' && state.view.tab === 'review';
   const filesVisible = state.view.kind === 'files' || ((state.view.kind === 'workspace' || state.view.kind === 'shared') && state.view.tab === 'files');
-  const viewerOk = state.view.kind === 'room' || filesVisible;
+  // Files opened from a shared workspace's Terminal show beside it.
+  const viewerOk = state.view.kind === 'room' || filesVisible || Boolean(shellTab);
   let focus = ui.focus;
   if (focus === 'viewer' && !(state.viewer && viewerOk)) focus = 'chat';
   if (focus === 'files' && !filesVisible) focus = 'chat';
-  if (focus === 'main' && !reviewing && state.view.kind !== 'overview' && state.view.kind !== 'usage' && state.view.kind !== 'search') focus = 'chat';
+  if (focus === 'main' && !reviewing && !sharedDiff && state.view.kind !== 'overview' && state.view.kind !== 'usage' && state.view.kind !== 'search') focus = 'chat';
   // The terminal gives the keyboard back while a menu, help or an approval needs it.
   if (focus === 'terminal' && (!(state.view.kind === 'terminal' || (state.view.kind === 'workspace' && state.view.tab === 'terminal')) || ui.menu || state.overlay || state.approvals.length)) focus = 'chat';
-  // Claude's questions come first; then "how much do you trust this new person?".
-  const trustPeer = !pendingQuestion && !ui.menu ? state.trustPrompts.find((id) => state.peers.some((p) => p.peerId === id)) : undefined;
+  // Claude's questions come first; then someone at the door; then "how much do you trust this new person?".
+  const knock = !pendingQuestion && !ui.menu ? firstKnock(state) : undefined;
+  const trustPeer = !pendingQuestion && !knock && !ui.menu ? state.trustPrompts.find((id) => state.peers.some((p) => p.peerId === id)) : undefined;
+  const cardWidth = Math.max(10, columns - 4);
+  const cardRaw = (): Model | undefined => (knock ? knockCardModel(state, knock, cardWidth) : trustPeer ? trustCardModel(state, trustPeer, cardWidth) : undefined);
   const approval = state.approvals[0];
   // The composer's right side (model picker, plan mode) takes a fixed column; the draft wraps beside it.
   const channel = channelOf(state.view);
-  const chatty = channel !== 'draft' && state.view.kind !== 'search' && state.view.kind !== 'usage' && state.view.kind !== 'overview' && state.view.kind !== 'files' && state.view.kind !== 'terminal';
+  const chatty = channel !== 'draft' && !shellTab && !sharedDiff && state.view.kind !== 'search' && state.view.kind !== 'usage' && state.view.kind !== 'overview' && state.view.kind !== 'files' && state.view.kind !== 'terminal';
   const modelText = ` ◆ ${modelLabel(state, channel === 'room' ? state.prefs.model : modelOf(state, channel))} ▾ `;
   const plan = state.planMode[channel] === true;
   const planText = plan ? ' ◉ plan mode ' : ' ○ plan mode ';
@@ -153,7 +170,7 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
     approvalDetail: approval?.detail,
     viewerFull: ui.viewerFull && focus === 'viewer',
     workspaceHeader: Boolean(workspace || shared) && !ui.menu,
-    questionLines: pendingQuestion && !ui.menu && !planOpen ? questionModel(state, pendingQuestion, Math.max(10, columns - 4)).lines.length : trustPeer ? trustCardModel(state, trustPeer, Math.max(10, columns - 4)).lines.length : 0,
+    questionLines: pendingQuestion && !ui.menu && !planOpen ? questionModel(state, pendingQuestion, cardWidth).lines.length : (cardRaw()?.lines.length ?? 0),
     composerLines: ui.buffer ? wrapBuffer(ui.buffer, composerWidth).length : 1,
   });
   const g = geometry;
@@ -178,7 +195,7 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
       : shared
         ? sharedHeaderModel(state, shared, Math.max(1, g.mainWidth - 2))
         : undefined;
-  const questionRaw = pendingQuestion && g.questionHeight ? questionModel(state, pendingQuestion, Math.max(10, columns - 4)) : trustPeer && g.questionHeight ? trustCardModel(state, trustPeer, Math.max(10, columns - 4)) : undefined;
+  const questionRaw = pendingQuestion && g.questionHeight ? questionModel(state, pendingQuestion, cardWidth) : g.questionHeight ? cardRaw() : undefined;
   // Keyboard order across the top: the tabs, then the workspace's buttons (Chat, Files, Diff, Review…).
   const tabZones = g.sideWidth > 0 ? tabsRaw.zones : [];
   const headerZones = headerRaw?.zones.filter((z) => z.y === 1 && z.action.type !== 'none') ?? [];
@@ -190,10 +207,13 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
     focus === 'header' && !ui.entered ? { ...m, lines: m.lines.map((l, i) => rowZones.filter((z) => z.y === i).reduce((acc, z) => highlightRange(acc, z.x0, z.x1, { underline: true, color: theme.accent }), l)) } : m;
   const paneInner = Math.max(1, g.mainWidth - 4);
   const overviewRaw = state.view.kind === 'overview' && !menu ? overviewModel(state, frame, paneInner) : undefined;
-  const reviewRaw = reviewing && !menu ? reviewModel(state.review, paneInner, Math.max(1, g.paneHeight - 2)) : undefined;
+  const reviewRaw = (reviewing || (sharedDiff && state.review?.workspaceId === shared?.id)) && !menu ? reviewModel(state.review, paneInner, Math.max(1, g.paneHeight - 2)) : sharedDiff && !menu ? reviewModel(undefined, paneInner, 1) : undefined;
+  const shellRaw = shellTab && !menu ? guestShellModel(state, shellTab, Math.max(1, g.chatWidth - 4), Math.max(1, g.paneHeight - 2), ui.chatScroll, frame) : undefined;
   const paneRaw = menu
     ? undefined
-    : state.view.kind === 'search'
+    : shellRaw
+      ? shellRaw
+      : state.view.kind === 'search'
       ? searchModel(state, paneInner, frame)
       : state.view.kind === 'usage'
         ? usageModel(state, paneInner)
@@ -201,7 +221,7 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
           ? draftModel(state, paneInner, state.view.kind === 'draft_worktree' ? 'worktree' : 'chat')
           : undefined;
   const paneRows = Math.max(1, g.paneHeight - 2);
-  const paneScroll = !paneRaw
+  const paneScroll = !paneRaw || shellRaw
     ? 0
     : state.view.kind === 'search'
       ? Math.max(0, Math.min(searchCursorRow(state) - Math.floor(paneRows / 2), paneRaw.lines.length - paneRows))
@@ -318,5 +338,6 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
     composerWidth,
     trustCard: questionRaw && !pendingQuestion ? trustPeer : undefined,
     chatHover: chatLinks?.hover,
+    shellMaxScroll: shellRaw?.maxScroll ?? 0,
   };
 }

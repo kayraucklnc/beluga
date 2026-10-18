@@ -28,6 +28,9 @@ import { Workbench } from './workbench.js';
 import { RemoteWork } from './remote-work.js';
 import type { TerminalManager } from '../terminal/index.js';
 import { type PeerRun, type ShellRunner, describeShellResult } from './peer-run.js';
+import type { GuestControl, ProjectInvites } from './project-invites.js';
+import type { GuestShell } from './guest-shell.js';
+import { type SharedDiff, guestMayDo } from './shared-diff.js';
 
 export interface SessionOptions {
   readonly client: PeerClient;
@@ -85,6 +88,8 @@ export interface RoomControl {
   setOpen(open: boolean): void;
   /** Forget the history people who join later would see. */
   clearHistory(): void;
+  /** Project links: who may come in with one, and what they reach. */
+  readonly guests?: GuestControl;
 }
 
 /** `mirror`: the conversation your Claude asked from, where the friend's progress is shown too. */
@@ -117,6 +122,8 @@ const GUARDED = new Set([
   'shell_request',
   'shell_result',
   'shell_started',
+  'fs_search',
+  'ws_diff',
 ]);
 
 export { dirKey };
@@ -143,6 +150,12 @@ export class Session {
   readonly host: AgentHost;
   /** Friends' shared folders and yours: browsing, viewing, downloads. */
   readonly files: RoomFiles;
+  /** Links that let someone into one project (or everything), knocking first. */
+  readonly invites: ProjectInvites;
+  /** The read-only shell over a workspace shared with you. */
+  readonly shell: GuestShell;
+  /** What changed in a workspace shared with you (and serving yours). */
+  readonly diff: SharedDiff;
   private projectsTimer?: NodeJS.Timeout;
 
   constructor(private readonly opts: SessionOptions) {
@@ -159,6 +172,9 @@ export class Session {
     this.host = parts.host;
     this.remote = parts.remote;
     this.peerRun = parts.peerRun;
+    this.invites = parts.invites;
+    this.shell = parts.shell;
+    this.diff = parts.diff;
     this.agent = opts.createAgent?.(this.bridge);
     this.wire();
   }
@@ -305,6 +321,11 @@ export class Session {
     await this.copyOrShow(last.text, `Copied ${last.ownerName}'s Claude answer`);
   }
 
+  /** Copy text for you to paste (shown in the chat when there's no clipboard). */
+  copyText(text: string, success: string): Promise<void> {
+    return this.copyOrShow(text, success);
+  }
+
   private async copyOrShow(text: string, success: string): Promise<void> {
     try {
       await (this.opts.copy ?? (async () => { throw new Error('no clipboard'); }))(text);
@@ -321,6 +342,10 @@ export class Session {
       const id = randomUUID();
       this.store.dispatch({ type: 'chat', id, from: this.selfId, text: text.slice(0, MAX_TEXT), ts: Date.now(), byAgent, channel });
       for (const to of this.sharing.recipients(channel)) this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent, channel }, { to });
+      return;
+    }
+    if (this.store.getState().self?.guest && !this.store.getState().peers.find((p) => p.peerId === this.selfId && !p.guest)) {
+      this.toast("You came in with a link to a project, so there's no group chat here. Open it under SHARED WITH ME", 'warn');
       return;
     }
     if (!this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent }, { keep: true })) {
@@ -613,6 +638,7 @@ export class Session {
     client.on('welcome', (self, room) => {
       store.dispatch({ type: 'welcome', self });
       if (room) store.dispatch({ type: 'room', room });
+      if (self.guest && !store.getState().shared.length) this.system(`You came in with a link to ${room ?? 'a project'}. Waiting for them to let you in…`);
       this.host.flushOutbox();
       if (!this.usageFetched) {
         this.usageFetched = true;
@@ -623,6 +649,7 @@ export class Session {
       const before = store.getState().peers;
       store.dispatch({ type: 'peers', peers });
       this.people.onPeers(before, peers);
+      this.invites.onPeers(peers);
       const gone = before.filter((p) => !peers.some((n) => n.peerId === p.peerId)).map((p) => p.peerId);
       if (gone.length) {
         // A dropped connection isn't leaving: workspace seats survive, only open questions end.
@@ -649,7 +676,21 @@ export class Session {
   private async handle({ id, from, ts, sentAt, body }: IncomingMessage): Promise<void> {
     // Requests that act on this computer must be fresh and new: an old signed request replayed later is dropped.
     if (GUARDED.has(body.kind) && !this.replay.admit(id, sentAt)) return;
+    // Someone invited by link to a project only reaches that project.
+    if (from !== this.selfId && this.invites.isRestricted(from) && !guestMayDo(body, this.opts.shares)) return;
     switch (body.kind) {
+      case 'fs_search':
+        if (!this.opts.shares.canAccess(body.share, from, this.selfId) || !this.opts.shares.isPrivate(body.share)) {
+          this.send({ kind: 'fs_search_result', reqId: body.reqId, ok: false, error: 'That folder is not shared with you' }, { to: from });
+          return;
+        }
+        return this.diff.serveSearch(from, body);
+      case 'ws_diff':
+        return this.diff.serve(from, body);
+      case 'fs_search_result':
+      case 'ws_diff_result':
+        this.files.settle(from, body.reqId, body);
+        return;
       case 'room_cleared':
         if (this.store.getState().peers.find((p) => p.peerId === from)?.host) {
           this.store.dispatch({ type: 'clear', channel: 'room' });

@@ -45,7 +45,8 @@ export const Profile = z.object({
 export type Profile = z.infer<typeof Profile>;
 
 /** `host` is set by the hub (never by the peer) for the person whose computer runs the room. */
-export const PeerInfo = Profile.extend({ peerId: shortStr, host: z.boolean().optional() });
+/** `guest` is set by the hub for someone who came in with a project link and only sees what they were invited to. */
+export const PeerInfo = Profile.extend({ peerId: shortStr, host: z.boolean().optional(), guest: z.boolean().optional() });
 export type PeerInfo = z.infer<typeof PeerInfo>;
 
 // ---------------------------------------------------------------------------
@@ -217,12 +218,17 @@ export const AgentAnswerBody = z.object({ kind: z.literal('agent_answer'), qid: 
 
 export const WsRole = z.enum(['view', 'contribute']);
 export type WsRole = z.infer<typeof WsRole>;
+/** What someone invited by link may do: watch, prompt your Claude, or let it edit without asking. */
+export const GuestCan = z.enum(['watch', 'prompt', 'edit']);
+export type GuestCan = z.infer<typeof GuestCan>;
 
 /** Owner → invitee: you're in. Carries what the workspace is, recent history, and its folder share. */
 export const WsInviteBody = z.object({
   kind: z.literal('ws_invite'),
   ws: z.object({ id: z.string().regex(/^[\w:.-]{1,80}$/), name: z.string().max(80), project: z.string().max(80), branch: z.string().max(200).optional() }),
   role: WsRole,
+  /** Set for people invited by link: watch, prompt or edit (for showing what they can do). */
+  can: GuestCan.optional(),
   share: z.string().regex(/^[\w.-]{1,64}$/),
   history: z.array(z.object({ from: shortStr, text: z.string().max(8000), ts: z.number(), byAgent: z.boolean() })).max(80),
 });
@@ -332,11 +338,52 @@ export const TrustGrantBody = z.object({
   reach: z.enum(['folder', 'full']),
 });
 
+// ---- Guests browsing a shared workspace (a read-only virtual shell and the diff) ----
+
+/** Find files by name, or grep for text, inside a shared folder (the owner bounds the search). */
+export const FsSearchBody = z.object({
+  kind: z.literal('fs_search'),
+  reqId: shortStr,
+  share: z.string().regex(/^[\w.-]{1,64}$/),
+  path: relPath,
+  mode: z.enum(['find', 'grep']),
+  query: z.string().min(1).max(200),
+});
+export const FsSearchResultBody = z.object({
+  kind: z.literal('fs_search_result'),
+  reqId: shortStr,
+  ok: z.boolean(),
+  hits: z.array(z.object({ path: relPath, line: z.number().int().min(0).optional(), text: z.string().max(400).optional() })).max(500).optional(),
+  truncated: z.boolean().optional(),
+  error: z.string().max(500).optional(),
+});
+
+/** What changed in a shared workspace: the summary, or one file's patch. */
+export const WsDiffBody = z.object({ kind: z.literal('ws_diff'), reqId: shortStr, id: wsIdStr, file: relPath.optional() });
+export const WsDiffResultBody = z.object({
+  kind: z.literal('ws_diff_result'),
+  reqId: shortStr,
+  ok: z.boolean(),
+  review: z
+    .object({
+      base: z.string().max(200),
+      commits: z.array(z.object({ hash: z.string().max(40), subject: z.string().max(300) })).max(200),
+      files: z.array(z.object({ path: relPath, added: z.number().int().min(0), removed: z.number().int().min(0), state: z.enum(['modified', 'added', 'deleted', 'untracked', 'renamed']) })).max(2000),
+    })
+    .optional(),
+  patch: z.string().max(MAX_FILE_BYTES).optional(),
+  error: z.string().max(500).optional(),
+});
+
 export const Body = z.discriminatedUnion('kind', [
   ShellRequestBody,
   ShellResultBody,
   ShellStartedBody,
   TrustGrantBody,
+  FsSearchBody,
+  FsSearchResultBody,
+  WsDiffBody,
+  WsDiffResultBody,
   WsRequestBody,
   WsRequestResultBody,
   WsHandoffBody,

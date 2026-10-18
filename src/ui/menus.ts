@@ -2,6 +2,7 @@ import type { AppState } from '../core/store.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { clearMenu, invitePersonMenu, sharedMenu, wsShareMenu } from './collab-menus.js';
 import { shareFolderMenu, shareWhoMenu } from './share-menus.js';
+import { type InviteMenuKind, guestAddMenu, guestPersonMenu, inviteMenu } from './invite-menus.js';
 import { type SettingsSection, inboxMenu, modelMenu, modelLabel, settingsMenu } from './settings-menus.js';
 import { GRANT_INFO, TRUST_INFO, canRunOn, trustOf } from '../core/trust.js';
 import { TRUST_LEVELS } from '../core/settings.js';
@@ -33,6 +34,7 @@ export type MenuKind =
   | { readonly kind: 'model'; readonly channel?: string }
   | { readonly kind: 'inbox' }
   | WorkMenuKind
+  | InviteMenuKind
   | { readonly kind: 'person'; readonly index: number }
   | { readonly kind: 'confirm'; readonly action: 'archive' | 'delete'; readonly id: string }
   | { readonly kind: 'project'; readonly id: string }
@@ -59,6 +61,7 @@ export function projectMenu(state: AppState, id: string): MenuSpec | undefined {
       { id: 'p-worktree', label: 'New worktree', hint: 'from the latest origin' },
       { id: 'p-chat', label: 'New Claude chat here', hint: "in the project's main folder" },
       { id: 'p-main', label: 'Open the main folder', hint: 'chat with Claude in the original checkout' },
+      ...(p.root ? [{ id: 'p-invite', label: 'Invite someone to this project…', hint: 'a link: they watch, prompt or edit here' }] : []),
       { id: 'p-scripts', label: 'Setup and run commands…', hint: p.scripts?.setup ? `setup: ${p.scripts.setup.command}` : 'none yet' },
       { id: 'p-finder', label: 'Open in Finder', hint: '' },
       ...otherGroups.map((g) => ({ id: `p-group:${g.name}`, label: `Move to "${g.name}"`, hint: 'group' })),
@@ -185,12 +188,15 @@ export function welcomeMenu(state: AppState): MenuSpec {
 export function personMenu(state: AppState, index: number): MenuSpec | undefined {
   const peer = state.peers[index];
   if (!peer) return undefined;
+  const guest = state.guests[peer.peerId];
+  if (guest) return guestPersonMenu(state, guest);
   const isSelf = peer.peerId === state.self?.peerId;
   const share = peer.shares[0];
   const host = state.self?.host === true;
   const roomOptions: MenuOption[] = host
     ? [
-        { id: 'invite', label: state.invite ? 'Copy invite link' : 'Invite friends', hint: 'bring more people' },
+        { id: 'invite-menu', label: 'Invite someone…', hint: 'to one project or everything; they knock first' },
+        ...(state.invite ? [{ id: 'invite', label: 'Copy the room invite link', hint: 'anyone with it joins everything' }] : [{ id: 'invite', label: 'Invite friends', hint: 'open a link for the whole room' }]),
         ...(state.invite ? [{ id: 'room-new-link', label: 'Make a new invite link', hint: 'the old one stops working; people here stay' }] : []),
         state.roomOpen
           ? { id: 'room-close', label: 'Close the room to new people', hint: 'nobody new can join, even with the link' }
@@ -257,5 +263,7 @@ export function menuSpec(state: AppState, menu: MenuKind): MenuSpec | undefined 
   if (menu.kind === 'share_folder') return shareFolderMenu(state, menu.launchDir, menu.mine);
   if (menu.kind === 'share_who') return shareWhoMenu(state, menu.dir);
   if (menu.kind === 'person') return personMenu(state, menu.index);
+  if (menu.kind === 'invite_link') return inviteMenu(state, menu, state.self?.host === true);
+  if (menu.kind === 'guest_add') return guestAddMenu(state, menu.peerId);
   return undefined;
 }

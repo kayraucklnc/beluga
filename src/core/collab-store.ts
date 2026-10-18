@@ -1,4 +1,4 @@
-import type { ClaudeQuestion, WsRole } from '../protocol.js';
+import type { ClaudeQuestion, GuestCan, WsRole } from '../protocol.js';
 
 /** Claude (yours or a friend's) is waiting for an answer from you. */
 export interface PendingQuestion {
@@ -20,6 +20,8 @@ export interface SharedWorkspace {
   readonly project: string;
   readonly branch?: string;
   readonly role: WsRole;
+  /** Invited by link: what you may do there. */
+  readonly can?: GuestCan;
   /** The owner's share for its folder. */
   readonly share: string;
 }
@@ -36,7 +38,72 @@ export interface Offer {
   readonly writable: boolean;
 }
 
+/** A link you made that lets someone into one project (or the whole room). Its secret stays in ProjectInvites. */
+export interface ProjectLink {
+  readonly id: string;
+  /** A project id, or 'room' for everything. */
+  readonly scope: string;
+  /** "bob-api", or "everything". */
+  readonly label: string;
+  readonly can: GuestCan;
+  /** People wait at the door until you let them in. */
+  readonly knock: boolean;
+  readonly singleUse: boolean;
+  readonly expiresAt?: number;
+  readonly createdAt: number;
+  /** How many people came to the door with it. */
+  readonly used: number;
+}
+
+/** Someone who came in with a link: what they were invited to and what they can do. */
+export interface Guest {
+  readonly peerId: string;
+  readonly name: string;
+  /** Project ids they're in. */
+  readonly projects: readonly string[];
+  /** Invited to everything: the room chat and what you share, like any member. */
+  readonly room: boolean;
+  readonly can: GuestCan;
+}
+
+/** Someone at the door with one of your links. */
+export interface Knock {
+  readonly peerId: string;
+  readonly linkId: string;
+  readonly ts: number;
+}
+
+/** One line of the virtual shell's output; `open` makes it clickable (a folder or file path in the share). */
+export interface ShellLine {
+  readonly text: string;
+  readonly tone?: 'dir' | 'file' | 'error' | 'muted' | 'match';
+  readonly open?: string;
+  readonly dir?: boolean;
+}
+
+export interface ShellEntry {
+  readonly id: number;
+  readonly cwd: string;
+  readonly cmd: string;
+  readonly out: readonly ShellLine[];
+}
+
+/** A guest's read-only shell over a shared workspace's files. */
+export interface ShellState {
+  readonly cwd: string;
+  readonly entries: readonly ShellEntry[];
+  readonly busy: boolean;
+}
+
 export interface CollabState {
+  /** Links you made for projects (owner side). */
+  readonly links: readonly ProjectLink[];
+  /** People who came in with a link (owner side). */
+  readonly guests: Readonly<Record<string, Guest>>;
+  /** People waiting at the door (owner side). */
+  readonly knocks: readonly Knock[];
+  /** Virtual shells per shared workspace (guest side). */
+  readonly shells: Readonly<Record<string, ShellState>>;
   /** Folders shared only with you. */
   readonly offers: readonly Offer[];
   readonly questions: readonly PendingQuestion[];
@@ -71,9 +138,14 @@ export type CollabAction =
   | { type: 'shared_clear' }
   | { type: 'offer'; offer: Offer; active: boolean }
   | { type: 'trust_prompt'; peerId: string; show: boolean }
-  | { type: 'granted'; peerId: string; grant: CollabState['granted'][string] };
+  | { type: 'granted'; peerId: string; grant: CollabState['granted'][string] }
+  | { type: 'link_set'; link: ProjectLink }
+  | { type: 'link_remove'; id: string }
+  | { type: 'guest_set'; peerId: string; guest?: Guest }
+  | { type: 'knock'; knock: Knock; show: boolean }
+  | { type: 'guest_shell'; id: string; shell?: ShellState };
 
-export const initialCollab: CollabState = { offers: [], questions: [], roomOpen: true, shared: [], members: {}, roster: {}, planMode: {}, trustPrompts: [], granted: {} };
+export const initialCollab: CollabState = { links: [], guests: {}, knocks: [], shells: {}, offers: [], questions: [], roomOpen: true, shared: [], members: {}, roster: {}, planMode: {}, trustPrompts: [], granted: {} };
 
 const MAX_QUESTIONS = 20;
 
@@ -107,7 +179,7 @@ export function reduceCollab(state: CollabState, action: CollabAction): CollabSt
     case 'plan_mode':
       return { ...state, planMode: action.on ? { ...state.planMode, [action.channel]: true } : without(state.planMode, action.channel) };
     case 'shared_clear':
-      return { ...state, shared: [], roster: {}, questions: [], offers: [] };
+      return { ...state, shared: [], roster: {}, questions: [], offers: [], shells: {} };
     case 'offer': {
       const rest = state.offers.filter((o) => !(o.owner === action.offer.owner && o.name === action.offer.name));
       return { ...state, offers: action.active ? [...rest, action.offer] : rest };
@@ -115,8 +187,20 @@ export function reduceCollab(state: CollabState, action: CollabAction): CollabSt
     case 'peer_gone': {
       // Connections drop and come back (same identity), so seats and shares stay; their questions can't be answered.
       const gone = new Set(action.peerIds);
-      return { ...state, questions: state.questions.filter((q) => !gone.has(q.owner)), trustPrompts: state.trustPrompts.filter((p) => !gone.has(p)) };
+      return { ...state, questions: state.questions.filter((q) => !gone.has(q.owner)), trustPrompts: state.trustPrompts.filter((p) => !gone.has(p)), knocks: state.knocks.filter((k) => !gone.has(k.peerId)) };
     }
+    case 'link_set':
+      return { ...state, links: [...state.links.filter((l) => l.id !== action.link.id), action.link] };
+    case 'link_remove':
+      return { ...state, links: state.links.filter((l) => l.id !== action.id) };
+    case 'guest_set':
+      return { ...state, guests: action.guest ? { ...state.guests, [action.peerId]: action.guest } : without(state.guests, action.peerId) };
+    case 'knock': {
+      const rest = state.knocks.filter((k) => k.peerId !== action.knock.peerId);
+      return { ...state, knocks: action.show ? [...rest, action.knock] : rest };
+    }
+    case 'guest_shell':
+      return { ...state, shells: action.shell ? { ...state.shells, [action.id]: action.shell } : without(state.shells, action.id) };
     case 'trust_prompt': {
       const rest = state.trustPrompts.filter((p) => p !== action.peerId);
       return { ...state, trustPrompts: action.show ? [...rest, action.peerId] : rest };
