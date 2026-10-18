@@ -215,8 +215,10 @@ Questions go to whoever asked Claude, even when it's a friend's Claude on their 
 | `@claude:bob how does auth work?` | bob's Claude, on bob's computer, after bob approves |
 | `@claudes review this plan` | every Claude in the room at once |
 
-- **Enter** sends. If Claude is busy, the message waits in line.
+- **Enter** sends. If Claude is busy, the message waits in line: the bar below the box shows **Queue ↵** and **Send now ⌥↵** while you type, and **Run queued now** / **Cancel queued** once something is waiting.
 - **Option+Enter** (or **Ctrl+Enter**) interrupts and sends right away.
+- Long messages wrap and the box grows (up to about half the screen, then scrolls). **Ctrl+J** or **Shift+Enter** starts a new line; pasted text keeps its lines.
+- **Option+Backspace** deletes a word, and holding **Backspace** speeds up the longer you hold it.
 - Type `@` or `/` to get suggestions, and scroll through all of them with ↑ ↓.
 
 ### Commands
@@ -252,7 +254,10 @@ Questions go to whoever asked Claude, even when it's a friend's Claude on their 
 | `1`–`4` | pick an option on Claude's question card |
 | `@` | `Option+Q` (Turkish), `Option+L` (German) and `Option+2` (Spanish, while you're typing) work even when your terminal sends Option as Meta |
 | `Esc` | back to typing, or cancel a new chat |
-| `↑ ↓` · `PgUp PgDn` | history or suggestions · scroll |
+| `↑ ↓` · `PgUp PgDn` | move between lines of a long message, history or suggestions · scroll |
+| `Ctrl+J` / `Shift+Enter` | new line in the message |
+| `Option+Backspace` · `Option+Delete` · `Ctrl+W` | delete the word before / after the cursor |
+| `Option+← →` · `Cmd+← →` · `Cmd+Backspace` | move by word · to the start / end of the line · delete to the line start |
 | `Option+↑` / `Option+↓` | bigger or smaller text (works on every keyboard layout) |
 | `f` · `r` · `d` (in the viewer) | fullscreen · source/formatted (or color/text art) · download |
 | `Ctrl+Y` · `Ctrl+N` · `Ctrl+T` | allow · deny · always allow this person |

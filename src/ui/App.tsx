@@ -3,7 +3,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { Box, useApp, useInput, useStdout } from 'ink';
+import { Box, useApp, useInput, usePaste, useStdout } from 'ink';
 import type { Session } from '../core/session.js';
 import { type AppState, type Location, channelOf } from '../core/store.js';
 import { shareNameOf } from '../core/workspace-controller.js';
@@ -21,7 +21,7 @@ import { Sidebar } from './components/Sidebar.js';
 import { Viewer, viewerInner, viewerLegend, viewerLines } from './components/Viewer.js';
 import { type Derived, derive } from './derive.js';
 import { type Target, hitTest, offsetZones } from './hit.js';
-import { type Effect, type UiState, handleKey, initialUi } from './keymap.js';
+import { type Effect, type UiState, handleKey, initialUi, insertText } from './keymap.js';
 import { type MenuKind } from './menus.js';
 import { type MenuContext, POLICY_INDEX, runMenu as runMenuOption } from './menu-actions.js';
 import { answerByNumber, answerTyped, currentQuestion } from './collab-actions.js';
@@ -56,7 +56,14 @@ const BUTTON_HINTS: Record<string, string> = {
   templates: 'Start from a ready-made task, or save your own',
   'open-hit': 'Open the highlighted conversation',
   'refresh-usage': 'Measure disk space again',
+  queue: 'Your Claude is busy: this waits its turn, then runs',
+  'send-now': 'Interrupt your Claude and send this right away (Option+Enter)',
+  'queued-now': 'Stop the current task and run your waiting message now',
+  'queued-cancel': 'Drop your waiting message before it starts',
 };
+
+/** Shown while hovering the box you type in. */
+const COMPOSER_HINT = 'Enter sends · Ctrl+J new line · ⌥⌫ deletes a word (hold ⌫ to speed up) · ⌥←→ moves by word';
 
 export interface AppProps {
   readonly session: Session;
@@ -66,6 +73,8 @@ export interface AppProps {
   readonly subscribeMouse?: (listener: (e: MouseEvent) => void) => () => void;
   /** Send keyboard input straight to a function (the built-in terminal) instead of Ink; undefined gives it back. */
   readonly setRawInput?: (sink: ((data: string) => void) | undefined) => void;
+  /** When the latest keyboard chunk arrived (keys from one chunk share it); defaults to the clock. */
+  readonly inputTime?: () => number;
 }
 
 function useTerminalSize(): { columns: number; rows: number } {
@@ -116,7 +125,7 @@ function listLocalDirs(dir: string): FsEntry[] {
 
 const isWorking = (state: AppState): boolean => anyActivity(state) || isCompacting(state) || state.transfers.some((t) => t.status === 'active');
 
-export function App({ session, onboarding = false, subscribeMouse, setRawInput }: AppProps) {
+export function App({ session, onboarding = false, subscribeMouse, setRawInput, inputTime }: AppProps) {
   const state = useSyncExternalStore(session.store.subscribe, session.store.getState);
   const [startUi] = useState<UiState>(() =>
     onboarding ? { ...initialUi, menu: { menu: { kind: 'welcome' }, selected: POLICY_INDEX[state.policy] } } : initialUi,
@@ -474,6 +483,21 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
       case 'settings':
         patchUi({ menu: { menu: { kind: 'settings' }, selected: 0 } });
         return;
+      case 'queue':
+      case 'send-now': {
+        const text = current.buffer.trim();
+        if (!text) return;
+        patchUi({ buffer: '', cursor: 0, historyIndex: -1, chatScroll: 0, history: [...current.history, text].slice(-200) });
+        submit(text, id === 'send-now');
+        return;
+      }
+      case 'queued-now':
+      case 'queued-cancel': {
+        const next = view(latest, current).queuedIds[0];
+        const ok = next !== undefined && (id === 'queued-now' ? session.host.promote(next) : session.host.cancelQueued(next));
+        if (!ok) session.toast('Nothing of yours is waiting here');
+        return;
+      }
     }
   };
 
@@ -694,9 +718,20 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
         planId: dd.planId,
         planMaxScroll: dd.planMaxScroll,
         questionOptions: latest.questions[0]?.channel === dd.channel ? (currentQuestion(latest.questions[0])?.options.length ?? 0) : 0,
+        composerWidth: dd.composerWidth,
+        now: inputTime?.() || Date.now(),
       });
       setUi(result.ui);
       if (result.effect) run(result.effect);
+    }),
+  );
+
+  // Pasted text (bracketed paste) keeps its line breaks and is never sent by itself.
+  usePaste((text) =>
+    safely('paste', () => {
+      const current = uiRef.current;
+      if (current.menu) return;
+      setUi(insertText({ ...current, focus: 'chat' }, text));
     }),
   );
 
@@ -709,7 +744,8 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
           return t.kind === 'action' ? t.id : undefined;
         })()
       : undefined;
-  const hoveredButtonHint = hoveredButton ? BUTTON_HINTS[hoveredButton] : undefined;
+  const hoverComposer = hover && hover.y >= g.composerTop && hover.y < g.composerTop + g.composerHeight;
+  const hoveredButtonHint = hoveredButton ? BUTTON_HINTS[hoveredButton] : hoverComposer ? COMPOSER_HINT : undefined;
   const barHint = hover && termBar && hover.y === g.paneTop ? termBar.zones.find((z) => hover.x >= z.x0 + g.mainX + 1 && hover.x <= z.x1 + g.mainX + 1)?.hint : undefined;
   const sideFocus = d.focus === 'projects' || d.focus === 'people' ? d.focus : 'other';
   const activeTransfer = [...state.transfers].reverse().find((t) => t.status === 'active');
@@ -794,6 +830,8 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
         right={d.composerRight}
         idleHint={d.focus === 'terminal' ? 'Click here (or Ctrl+]) to talk to Claude again' : undefined}
         accent={ui.pending ? theme.accent : undefined}
+        lines={g.composerLines}
+        wrapWidth={d.composerWidth}
       />
     </Box>
   );
