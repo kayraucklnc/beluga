@@ -220,7 +220,7 @@ fn dev_command() -> Result<Command, String> {
 
 #[cfg(not(debug_assertions))]
 fn dev_command() -> Result<Command, String> {
-    Err("klaud's engine is missing from this app. Please reinstall klaud.".into())
+    Err("Klaud's engine is missing from this app. Please reinstall Klaud.".into())
 }
 
 /// The Node binary and klaud's bundled entry inside the app, when they're there.

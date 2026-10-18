@@ -20,16 +20,16 @@ fn item<R: Runtime>(
 
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let about = AboutMetadata {
-        name: Some("klaud".into()),
+        name: Some("Klaud".into()),
         version: Some(app.package_info().version.to_string()),
         ..Default::default()
     };
     let app_menu = Submenu::with_items(
         app,
-        "klaud",
+        "Klaud",
         true,
         &[
-            &PredefinedMenuItem::about(app, Some("About klaud"), Some(about))?,
+            &PredefinedMenuItem::about(app, Some("About Klaud"), Some(about))?,
             &PredefinedMenuItem::separator(app)?,
             &item(app, "settings", "Settings…", Some("CmdOrCtrl+,"))?,
             &PredefinedMenuItem::separator(app)?,
@@ -39,7 +39,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::hide_others(app, None)?,
             &PredefinedMenuItem::show_all(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            &item(app, "quit", "Quit klaud", Some("CmdOrCtrl+Q"))?,
+            &item(app, "quit", "Quit Klaud", Some("CmdOrCtrl+Q"))?,
         ],
     )?;
     let file = Submenu::with_items(
@@ -166,7 +166,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::minimize(app, None)?,
             &PredefinedMenuItem::maximize(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            &item(app, "show", "klaud", None)?,
+            &item(app, "show", "Klaud", None)?,
         ],
     )?;
     let help = Submenu::with_items(
@@ -323,17 +323,17 @@ pub fn tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let menu = Menu::with_items(
         app,
         &[
-            &item(app, "show", "Open klaud", None)?,
+            &item(app, "show", "Open Klaud", None)?,
             &item(app, "new-chat", "New Chat", None)?,
             &PredefinedMenuItem::separator(app)?,
-            &item(app, "quit", "Quit klaud", None)?,
+            &item(app, "quit", "Quit Klaud", None)?,
         ],
     )?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
     TrayIconBuilder::with_id("klaud")
         .icon(icon)
         .icon_as_template(true)
-        .tooltip("klaud")
+        .tooltip("Klaud")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| on_event(app, event.id().as_ref()))

@@ -88,9 +88,9 @@ fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32, unread: Op
     }
 }
 
-/// "klaud · 2 waiting for you · 3 new · 1 Claude working", leaving out what's zero.
+/// "Klaud · 2 waiting for you · 3 new · 1 Claude working", leaving out what's zero.
 fn tray_tip(waiting: u32, working: u32, unread: u32) -> String {
-    let mut parts = vec!["klaud".to_string()];
+    let mut parts = vec!["Klaud".to_string()];
     if waiting > 0 {
         parts.push(format!("{waiting} waiting for you"));
     }
@@ -204,7 +204,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("klaud couldn't start");
+        .expect("Klaud couldn't start");
 
     app.run(|app, event| match event {
         // Clicking the Dock icon brings the window back.
@@ -221,12 +221,12 @@ mod tests {
 
     #[test]
     fn the_tray_tip_says_only_what_is_there() {
-        assert_eq!(tray_tip(0, 0, 0), "klaud");
-        assert_eq!(tray_tip(2, 0, 2), "klaud · 2 waiting for you");
+        assert_eq!(tray_tip(0, 0, 0), "Klaud");
+        assert_eq!(tray_tip(2, 0, 2), "Klaud · 2 waiting for you");
         assert_eq!(
             tray_tip(1, 2, 4),
-            "klaud · 1 waiting for you · 3 new · 2 Claudes working"
+            "Klaud · 1 waiting for you · 3 new · 2 Claudes working"
         );
-        assert_eq!(tray_tip(0, 1, 0), "klaud · 1 Claude working");
+        assert_eq!(tray_tip(0, 1, 0), "Klaud · 1 Claude working");
     }
 }
