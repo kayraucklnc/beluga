@@ -2,6 +2,8 @@ import type { Session } from '../core/session.js';
 import type { WorkspaceController } from '../core/workspace-controller.js';
 import type { Workbench } from '../core/workbench.js';
 import { listLocalDirs, localDirKey, openWithSystem } from '../core/local.js';
+import { ATTACHMENT_SHARE, chipText, expandChips, publishForRoom, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
+import path from 'node:path';
 import type { Args, Method } from './api.js';
 
 /**
@@ -149,6 +151,23 @@ export const HANDLERS = {
   'terminals.shell': (s, wsId, size) => started(bench(s)?.shell(wsId, size)),
   'terminals.global': (s, key, dir, size) => started(bench(s)?.globalShell(key, dir, size)),
   'terminals.close': (s, key) => bench(s)?.closeTerminal(key),
+
+  'attachments.add': async (_s, ext, base64) => {
+    const bytes = Buffer.from(base64, 'base64');
+    const file = await saveImageBytes(bytes, ext);
+    const a = registerAttachment(file, bytes.byteLength);
+    return { n: a.n, chip: chipText(a.n) };
+  },
+  'attachments.expand': (s, text, channel) => {
+    if (!text.includes('[image ') || text.startsWith('/')) return text;
+    const state = s.store.getState();
+    const friends = state.peers.filter((p) => p.peerId !== s.selfId).map((p) => p.peerId);
+    const toRoom = channel === 'room' && friends.length > 0;
+    // Sent to the room with friends there, a copy goes where they (and only they) can fetch it.
+    const out = expandChips(text, s.selfId, toRoom ? (a) => publishForRoom(a) : (a) => path.basename(a.path));
+    if (toRoom && out.attachments.length) s.serveFolder(ATTACHMENT_SHARE, roomAttachmentsDir(), friends);
+    return out.text;
+  },
 
   'daemon.stop': (s) => s.shutdown(),
 

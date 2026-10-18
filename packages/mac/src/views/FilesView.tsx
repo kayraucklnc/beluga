@@ -82,7 +82,7 @@ function Row({ row, selected, onOpen }: { row: BrowserRow; selected: boolean; on
     <div role="option" aria-selected={selected} tabIndex={-1} className={cx(s.row, selected && s.rowOn)} onClick={onOpen} title={row.label}>
       <Icon name={up ? 'up' : row.dir ? 'folder' : 'file'} size={14} className={row.dir ? s.dirIcon : s.fileIcon} />
       <span className={s.rowName}>{up ? 'Back' : row.label}</span>
-      {!row.dir && row.size !== undefined ? <span className={s.size}>{formatBytes(row.size)}</span> : null}
+      {!row.dir && row.size !== undefined ? <span className={s.size}>{row.size < 1024 ? `${row.size} B` : formatBytes(row.size)}</span> : null}
       {row.dir && !up ? <Icon name="chevronRight" size={10} className={s.chev} /> : null}
     </div>
   );

@@ -160,6 +160,17 @@ describe.each(Object.keys(MODES) as Array<keyof typeof MODES>)('a screen attache
     await expect(untyped('session.shareFolder', '/definitely/not/here', undefined, ['x'])).resolves.toBeUndefined();
   });
 
+  it('takes pasted images and turns their chips into links', async () => {
+    const c = await core();
+    const client = await attach(c);
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201ffa65f8c0000000049454e44ae426082', 'hex').toString('base64');
+    const added = await client.api.attachments.add('png', png);
+    expect(added.chip).toMatch(/^\[image \d+\]$/);
+    const text = await client.api.attachments.expand(`look ${added.chip}`, 'ws:x');
+    expect(text).toMatch(/look \[📎 image \d+ \(png, .*\)\]\(klaud-attachment:.*\.png\)/);
+    expect(await client.api.attachments.expand('/help [image 1]', 'room')).toBe('/help [image 1]');
+  });
+
   it('reports failures to the caller', async () => {
     const c = await core();
     const client = await attach(c);

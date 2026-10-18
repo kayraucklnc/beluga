@@ -6,6 +6,7 @@ import { Icon } from './components/Icon.js';
 import { MenuSheet } from './dialogs/MenuSheet.js';
 import { Palette } from './dialogs/Palette.js';
 import { Settings } from './dialogs/Settings.js';
+import { PlanSheet } from './dialogs/PlanSheet.js';
 import type { SettingsPane } from './lib/klaud.js';
 import { Inspector } from './layout/Inspector.js';
 import { Main } from './layout/Main.js';
@@ -180,6 +181,7 @@ export function App() {
       <MenuSheet />
       <Palette />
       <Settings />
+      <PlanSheet />
       {joining ? <JoinSheet invite={joining} onCancel={() => setJoining(undefined)} onJoin={() => void joinRoom(joining)} /> : null}
       <Toasts />
     </Tooltip.Provider>

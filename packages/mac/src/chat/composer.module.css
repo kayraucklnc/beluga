@@ -160,3 +160,7 @@
 .legend {
   opacity: 0.85;
 }
+
+.dropping {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
+}

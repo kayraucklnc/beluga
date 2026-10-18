@@ -43,7 +43,7 @@ const STEPS = {
   files: async () => {
     await openWs();
     await tab('Files');
-    const readme = page.locator('[role="option"]').filter({ hasText: /\.md$/ }).first();
+    const readme = page.locator('[role="option"]').filter({ hasText: 'README.md' }).first();
     if (await readme.count()) await readme.click();
     await wait(800);
   },
@@ -64,7 +64,7 @@ const STEPS = {
   shared: async () => side('Shared files').click(),
   palette: async () => page.keyboard.press('Meta+K'),
   settings: async () => page.keyboard.press('Meta+,'),
-  person: async () => side('bob').click(),
+  person: async () => page.getByRole('button', { name: 'bob', exact: true }).click(),
   dock: async () => {
     await openWs();
     await page.keyboard.press('Meta+J');

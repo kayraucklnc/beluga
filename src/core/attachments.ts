@@ -219,6 +219,15 @@ export async function importImage(src: string, dir = attachmentsDir()): Promise<
   return file;
 }
 
+/** Save image bytes a screen sent (a paste or a drop in the Mac app) into the attachments folder. */
+export async function saveImageBytes(bytes: Uint8Array, ext: string, dir = attachmentsDir()): Promise<string> {
+  if (bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error(`That image is too big (${formatBytes(bytes.byteLength)}; up to ${formatBytes(MAX_ATTACHMENT_BYTES)})`);
+  await fs.mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${stamp()}.${ext.toLowerCase().replace(/^\./, '')}`);
+  await fs.writeFile(file, bytes);
+  return file;
+}
+
 /** Put a copy where friends can fetch it; returns the file name to link to. */
 export function publishForRoom(a: Attachment, dir = roomAttachmentsDir()): string {
   const name = path.basename(a.path);

@@ -181,6 +181,10 @@ export const API = {
   'terminals.global': args(id, path, opt(TermSize)),
   'terminals.close': args(id),
 
+  // ---- images in a message (screens without their own disk access: the Mac app)
+  'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),
+  'attachments.expand': args(str, channel),
+
   // ---- klaud itself
   'daemon.stop': args(),
 

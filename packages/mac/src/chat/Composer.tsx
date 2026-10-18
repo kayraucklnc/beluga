@@ -107,8 +107,34 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     const text = buffer.trim();
     if (!text) return;
     ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, text].slice(-200), historyIndex: -1 });
+    // Image chips become links to the images (klaud keeps them) before the message goes.
+    if (text.includes('[image ') && !text.startsWith('/')) {
+      void api.attachments.expand(text, channel).then((expanded) => actions.submit(expanded, urgent));
+      return;
+    }
     actions.submit(text, urgent);
   };
+  /** Images pasted or dropped become "[image N]" chips where the cursor is. */
+  const attach = async (files: readonly File[]): Promise<void> => {
+    for (const file of files) {
+      const ext = (/image\/(png|jpe?g|gif|webp)/.exec(file.type)?.[1] ?? 'png') as 'png' | 'jpg' | 'jpeg' | 'gif' | 'webp';
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      const { chip } = await api.attachments.add(ext, btoa(bin));
+      const el = ref.current;
+      const at = el?.selectionStart ?? ui.get().buffer.length;
+      const current = ui.get().buffer;
+      const before = current.slice(0, at);
+      const gap = before && !before.endsWith(' ') ? ' ' : '';
+      const next = `${before}${gap}${chip} ${current.slice(at)}`;
+      ui.patch({ buffer: next, cursor: before.length + gap.length + chip.length + 1 });
+      requestAnimationFrame(() => el?.setSelectionRange(before.length + gap.length + chip.length + 1, before.length + gap.length + chip.length + 1));
+    }
+  };
+  const imagesOf = (items: DataTransferItemList | undefined): File[] =>
+    [...(items ?? [])].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => Boolean(f));
+  const [dropping, setDropping] = useState(false);
   const accept = (sug: Suggestion): void => {
     if (sug.enter === 'submit') {
       ui.patch({ buffer: '', cursor: 0 });
@@ -186,7 +212,23 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           ))}
         </div>
       ) : null}
-      <div className={cx(s.box, pending && s.asking, readOnly && s.readOnly)}>
+      <div
+        className={cx(s.box, pending && s.asking, readOnly && s.readOnly, dropping && s.dropping)}
+        onDragOver={(e) => {
+          if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) {
+            e.preventDefault();
+            setDropping(true);
+          }
+        }}
+        onDragLeave={() => setDropping(false)}
+        onDrop={(e) => {
+          const files = imagesOf(e.dataTransfer.items);
+          setDropping(false);
+          if (!files.length) return;
+          e.preventDefault();
+          void attach(files);
+        }}
+      >
         {askingFor ? (
           <div className={s.askChip}>
             {askingFor}
@@ -204,6 +246,12 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           placeholder={placeholderOf(state, pending ? { pending } : {})}
           onChange={(e) => set(e.target.value)}
           onKeyDown={onKey}
+          onPaste={(e) => {
+            const files = imagesOf(e.clipboardData.items);
+            if (!files.length) return;
+            e.preventDefault();
+            void attach(files);
+          }}
           spellCheck
         />
         <div className={s.bar}>
