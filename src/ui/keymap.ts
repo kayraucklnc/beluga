@@ -1,3 +1,4 @@
+import { type RepeatState, charAfter, charBefore, cleanText, offsetAt, repeatStep, rowOf, columnOf, wordLeft, wordRight, wrapBuffer } from './composer-text.js';
 import type { MenuKind } from './menus.js';
 import type { Suggestion } from './suggest.js';
 import type { UiAction } from './workspace-models.js';
@@ -56,6 +57,8 @@ export interface UiState {
   readonly terminalScroll?: number;
   /** Which terminal session is showing (shell, setup or run). */
   readonly termKey?: string;
+  /** A run of held-down Backspace repeats (deletes speed up the longer it's held). */
+  readonly deleteRepeat?: RepeatState;
 }
 
 /** Subset of Ink's Key we rely on, so the keymap stays framework-agnostic. */
@@ -71,6 +74,8 @@ export interface KeyInfo {
   readonly downArrow?: boolean;
   readonly pageUp?: boolean;
   readonly pageDown?: boolean;
+  readonly home?: boolean;
+  readonly end?: boolean;
   readonly ctrl?: boolean;
   readonly shift?: boolean;
   readonly meta?: boolean;
@@ -98,7 +103,11 @@ export type Effect =
   /** Shift+Tab in the chat: plan first, or act right away. */
   | { readonly type: 'toggle_plan' }
   /** ↑↓ in Search: choose a result. */
-  | { readonly type: 'search_move'; readonly delta: number };
+  | { readonly type: 'search_move'; readonly delta: number }
+  /** Option+1…6: open that top tab (0-based). */
+  | { readonly type: 'tab_jump'; readonly index: number }
+  /** Ctrl+Tab / Option+]: the next top tab (-1: the previous one). */
+  | { readonly type: 'tab_step'; readonly delta: 1 | -1 };
 
 export interface KeyContext {
   readonly hasApproval: boolean;
@@ -132,6 +141,10 @@ export interface KeyContext {
   readonly planId?: string;
   /** How far the full-screen plan can scroll. */
   readonly planMaxScroll?: number;
+  /** Columns the draft wraps at (for ↑↓ between its rows and line start/end); unbounded when omitted. */
+  readonly composerWidth?: number;
+  /** When this key arrived (ms; keys from one stdin chunk share it), for accelerating Backspace. */
+  readonly now?: number;
 }
 
 export interface KeyResult {
@@ -169,31 +182,79 @@ const setBuffer = (ui: UiState, buffer: string, cursor = buffer.length): UiState
   cursor,
   selected: 0,
   suggestHidden: false,
+  deleteRepeat: undefined,
 });
 
-/** UTF-16 length of the whole character before / after the cursor, so emoji move and delete as one. */
-const charBefore = (s: string, at: number): number => [...s.slice(0, at)].at(-1)?.length ?? 1;
-const charAfter = (s: string, at: number): number => [...s.slice(at, at + 2)][0]?.length ?? 1;
+/** The draft's visual rows, wrapped like the composer draws them. */
+const rowsOf = (buffer: string, ctx: KeyContext) => wrapBuffer(buffer, ctx.composerWidth ?? Number.MAX_SAFE_INTEGER);
 
-function edit(ui: UiState, input: string, key: KeyInfo): UiState | undefined {
+/** Where the cursor's row starts and ends (the end stays on this row at a soft wrap). */
+function rowBounds(buffer: string, cursor: number, ctx: KeyContext): { start: number; end: number } {
+  const rows = rowsOf(buffer, ctx);
+  const r = rowOf(rows, cursor);
+  const row = rows[r]!;
+  const soft = rows[r + 1]?.start === row.end;
+  return { start: row.start, end: soft ? Math.max(row.start, row.end - charBefore(buffer, row.end)) : row.end };
+}
+
+const cut = (ui: UiState, from: number, to: number): UiState => (from === to ? ui : setBuffer(ui, ui.buffer.slice(0, from) + ui.buffer.slice(to), from));
+
+/** Insert text at the cursor (typing, pasting, a newline). */
+export function insertText(ui: UiState, text: string): UiState {
+  const clean = cleanText(text);
+  if (!clean) return ui;
+  return setBuffer(ui, ui.buffer.slice(0, ui.cursor) + clean + ui.buffer.slice(ui.cursor), ui.cursor + clean.length);
+}
+
+/** Backspace: one character, speeding up to whole words while it's held down. */
+function backspace(ui: UiState, ctx: KeyContext): UiState {
   const { buffer, cursor } = ui;
-  if (key.backspace || key.delete) {
-    if (cursor === 0) return ui;
-    const n = charBefore(buffer, cursor);
-    return setBuffer(ui, buffer.slice(0, cursor - n) + buffer.slice(cursor), cursor - n);
-  }
+  if (cursor === 0) return ui.deleteRepeat ? { ...ui, deleteRepeat: undefined } : ui;
+  const { state, step } = repeatStep(ui.deleteRepeat, ctx.now ?? Date.now());
+  let from = cursor;
+  if (step.kind === 'word') from = wordLeft(buffer, cursor);
+  else for (let k = 0; k < step.n && from > 0; k++) from -= charBefore(buffer, from);
+  return { ...cut(ui, from, cursor), deleteRepeat: state };
+}
+
+function edit(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): UiState | undefined {
+  const { buffer, cursor } = ui;
+  // Option+Backspace (ESC DEL) and Ctrl+W delete the word before the cursor.
+  if ((key.backspace && (key.meta || key.ctrl)) || (key.ctrl && input === 'w')) return cut(ui, wordLeft(buffer, cursor), cursor);
+  if (key.backspace) return backspace(ui, ctx);
+  // Forward delete (fn+Delete); with Option, the next word (also ESC d).
+  if ((key.delete && key.meta) || (key.meta && input === 'd')) return cut(ui, cursor, wordRight(buffer, cursor));
+  if (key.delete) return cursor >= buffer.length ? ui : cut(ui, cursor, cursor + charAfter(buffer, cursor));
+  // Option+← → (ESC b / ESC f, or CSI 1;3 D/C) move by word.
+  if ((key.leftArrow && (key.meta || key.ctrl)) || (key.meta && input === 'b')) return { ...ui, cursor: wordLeft(buffer, cursor) };
+  if ((key.rightArrow && (key.meta || key.ctrl)) || (key.meta && input === 'f')) return { ...ui, cursor: wordRight(buffer, cursor) };
   if (key.leftArrow) return { ...ui, cursor: Math.max(0, cursor - charBefore(buffer, cursor)) };
   if (key.rightArrow) return { ...ui, cursor: Math.min(buffer.length, cursor + charAfter(buffer, cursor)) };
-  if (key.ctrl && input === 'a') return { ...ui, cursor: 0 };
-  if (key.ctrl && input === 'e') return { ...ui, cursor: buffer.length };
-  if (key.ctrl && input === 'u') return setBuffer(ui, buffer.slice(cursor), 0);
-  if (key.ctrl && input === 'w') {
-    const before = buffer.slice(0, cursor).replace(/\S+\s*$/, '');
-    return setBuffer(ui, before + buffer.slice(cursor), before.length);
+  // ⌘← ⌘→ arrive as Home/End or Ctrl+A/E; ⌘Backspace as Ctrl+U. All work on the cursor's row.
+  if (key.home || (key.ctrl && input === 'a')) return { ...ui, cursor: rowBounds(buffer, cursor, ctx).start };
+  if (key.end || (key.ctrl && input === 'e')) return { ...ui, cursor: rowBounds(buffer, cursor, ctx).end };
+  if (key.ctrl && input === 'u') {
+    const { start } = rowBounds(buffer, cursor, ctx);
+    return cut(ui, start === cursor ? Math.max(0, cursor - charBefore(buffer, cursor)) : start, cursor);
+  }
+  if (key.ctrl && input === 'k') {
+    const { end } = rowBounds(buffer, cursor, ctx);
+    return cut(ui, cursor, end === cursor ? Math.min(buffer.length, cursor + 1) : end);
   }
   if (key.ctrl || !input) return undefined;
-  const clean = input.replace(/\r?\n/g, ' ');
-  return setBuffer(ui, buffer.slice(0, cursor) + clean + buffer.slice(cursor), cursor + clean.length);
+  return insertText(ui, input);
+}
+
+/** ↑↓ inside a draft of several rows; undefined on the first/last row (history recall instead). */
+function moveRow(ui: UiState, dir: 1 | -1, ctx: KeyContext): UiState | undefined {
+  const rows = rowsOf(ui.buffer, ctx);
+  if (rows.length < 2) return undefined;
+  const r = rowOf(rows, ui.cursor);
+  const target = rows[r + dir];
+  if (!target) return undefined;
+  let at = offsetAt(ui.buffer, target, columnOf(ui.buffer, rows[r]!, ui.cursor));
+  if (at === target.end && rows[r + dir + 1]?.start === target.end) at = Math.max(target.start, at - charBefore(ui.buffer, at));
+  return { ...ui, cursor: at };
 }
 
 function recall(ui: UiState, dir: 1 | -1): UiState {
@@ -237,6 +298,8 @@ function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): 
   }
   // Alt+Enter (or Ctrl+Enter where the terminal reports it) sends now instead of queueing.
   if (key.return && (key.meta || key.ctrl)) return submit(ui, true);
+  // Shift+Enter (where the terminal tells it apart) and Ctrl+J start a new line.
+  if (((key.return && key.shift) || input === '\n') && !ui.pending) return { ui: insertText(ui, '\n') };
   // Answering a prompt (e.g. a project's setup command) with nothing is a real answer: clear it.
   if (key.return && ui.pending && !ui.buffer.trim() && !shown.length) return { ui: setBuffer(ui, ''), effect: { type: 'submit', text: '' } };
   if (key.return) {
@@ -252,12 +315,12 @@ function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): 
     return { ui: { ...ui, selected: (ui.selected + delta + shown.length) % shown.length } };
   }
   if ((key.upArrow || key.downArrow) && ctx.searching) return { ui, effect: { type: 'search_move', delta: key.upArrow ? -1 : 1 } };
-  if (key.upArrow) return { ui: recall(ui, 1) };
-  if (key.downArrow) return { ui: recall(ui, -1) };
+  if (key.upArrow) return { ui: moveRow(ui, -1, ctx) ?? recall(ui, 1) };
+  if (key.downArrow) return { ui: moveRow(ui, 1, ctx) ?? recall(ui, -1) };
   const half = Math.max(1, Math.floor(ctx.page / 2));
   if (key.pageUp) return { ui: scrollChat(ui, ctx, -half) };
   if (key.pageDown) return { ui: scrollChat(ui, ctx, half) };
-  return { ui: edit(ui, input, key) ?? ui };
+  return { ui: edit(ui, input, key, ctx) ?? ui };
 }
 
 /** Printable keys in side panels jump back to the composer and start typing. */
@@ -370,6 +433,40 @@ function cycleFocus(ui: UiState, ctx: KeyContext, dir: 1 | -1): UiState {
  */
 const OPTION_CHARS: Readonly<Record<string, string>> = { q: '@', l: '@', '2': '@' };
 
+/** What Option+1…6 type on a Mac whose terminal doesn't send Option as Meta (US layout). */
+const MAC_OPTION_DIGITS = '¡™£¢∞§';
+/** …and Option+[ / Option+] there. */
+const MAC_OPTION_BRACKETS: Readonly<Record<string, 1 | -1>> = { '“': -1, '‘': 1 };
+
+/**
+ * Quick tab keys: Option/Alt+1…6 jump to a top tab, Ctrl+Tab and Option+] / Option+[ go to
+ * the next / previous one. The characters a Mac types for these without Option-as-Meta
+ * (¡™£¢∞§ “ ‘) only count while the box is empty, so they can still be typed in a message;
+ * so does Option+2 while you're typing (it's "@" on a Spanish keyboard).
+ */
+export function tabChord(input: string, key: KeyInfo, boxEmpty: boolean): { index: number } | { delta: 1 | -1 } | undefined {
+  if (key.tab && key.ctrl) return { delta: key.shift ? -1 : 1 };
+  if (key.ctrl) return undefined;
+  if (key.meta) {
+    if (/^[1-6]$/.test(input) && (input !== '2' || boxEmpty)) return { index: Number(input) - 1 };
+    if (input === ']') return { delta: 1 };
+    if (input === '[') return { delta: -1 };
+    return undefined;
+  }
+  if (!boxEmpty || input.length !== 1) return undefined;
+  const digit = MAC_OPTION_DIGITS.indexOf(input);
+  if (digit >= 0) return { index: digit };
+  const step = MAC_OPTION_BRACKETS[input];
+  return step ? { delta: step } : undefined;
+}
+
+/** Ctrl+Tab / Ctrl+Shift+Tab as raw bytes (kitty and xterm's modifyOtherKeys forms), for the built-in terminal. */
+export function rawTabStep(data: string): 1 | -1 | undefined {
+  if (data === '\x1b[9;5u' || data === '\x1b[27;5;9~') return 1;
+  if (data === '\x1b[9;6u' || data === '\x1b[27;6;9~') return -1;
+  return undefined;
+}
+
 /** Modeless key handling: you're always typing, Tab moves between panels, Esc comes back. */
 export function handleKey(raw: UiState, rawInput: string, rawKey: KeyInfo, ctx: KeyContext): KeyResult {
   const optionChar = rawKey.meta && !rawKey.ctrl ? OPTION_CHARS[rawInput] : undefined;
@@ -404,6 +501,8 @@ export function handleKey(raw: UiState, rawInput: string, rawKey: KeyInfo, ctx: 
     const delta = key.upArrow ? -1 : key.downArrow ? 1 : key.pageUp ? -ctx.page : key.pageDown ? ctx.page : 0;
     return { ui: { ...ui, overlayScroll: Math.max(0, ui.overlayScroll + delta) } };
   }
+  const chord = tabChord(rawInput, rawKey, !ui.buffer);
+  if (chord) return { ui: { ...ui, entered: false }, effect: 'index' in chord ? { type: 'tab_jump', index: chord.index } : { type: 'tab_step', delta: chord.delta } };
   const focus = ui.focus === 'viewer' && !ctx.hasViewer ? 'chat' : ui.focus;
   const current = focus === ui.focus ? ui : { ...ui, focus };
   const suggesting = current.focus === 'chat' && !current.suggestHidden && ctx.suggestions.length > 0;
@@ -422,9 +521,10 @@ export function handleKey(raw: UiState, rawInput: string, rawKey: KeyInfo, ctx: 
     if (current.focus === 'main') return { ui: inside, effect: { type: 'review_move', delta: -10_000 } };
     return { ui: inside };
   }
-  // Fast typing or pasting can deliver "text\r" as one chunk: type the text, then press Enter.
-  if (current.focus === 'chat' && !key.return && input.length > 1 && /[\r\n]$/.test(input)) {
-    return submit(handleChat(current, input.replace(/[\r\n]+$/, ''), key, ctx).ui);
+  // Fast typing can deliver "text\r" as one chunk: type the text, then press Enter. Text with
+  // line breaks inside is a paste from a terminal without bracketed paste: keep it as lines.
+  if (current.focus === 'chat' && !key.return && input.length > 1 && input.endsWith('\r') && !/[\r\n]/.test(input.slice(0, -1))) {
+    return submit(handleChat(current, input.slice(0, -1), key, ctx).ui);
   }
   if (current.focus === 'projects') return handleProjects(current, input, key, ctx);
   if (current.focus === 'header') return handleHeader(current, input, key, ctx);

@@ -29,6 +29,10 @@ export interface Geometry {
   readonly questionHeight: number;
   readonly suggestionsTop: number;
   readonly composerTop: number;
+  /** Rows of text the composer shows (it grows with the draft, then scrolls inside). */
+  readonly composerLines: number;
+  /** The composer box, borders included. */
+  readonly composerHeight: number;
   readonly actionBarY: number;
   // Kept for the files panel and older call sites.
   readonly filesTop: number;
@@ -48,10 +52,19 @@ export interface LayoutInput {
   readonly workspaceHeader?: boolean;
   /** Lines in Claude's question card (0 when none). */
   readonly questionLines?: number;
+  /** Rows the draft wraps to (the composer grows up to COMPOSER_SHARE of the screen). */
+  readonly composerLines?: number;
 }
 
-const TABS_HEIGHT = 2;
+/** The top tabs: one line (the pane's border right below separates them). */
+const TABS_HEIGHT = 1;
 const HEADER_HEIGHT = 3;
+const MIN_BODY = 10;
+/** A long draft may take up to this share of the screen before it scrolls inside the box. */
+export const COMPOSER_SHARE = 0.45;
+
+/** How many draft rows fit: up to COMPOSER_SHARE of the screen, never squeezing the body below MIN_BODY. */
+export const composerRoom = (rows: number, otherBottom: number): number => Math.max(1, Math.min(Math.floor(rows * COMPOSER_SHARE), rows - 1 - otherBottom - MIN_BODY));
 
 export function computeLayout(input: LayoutInput): Geometry {
   const { columns, rows } = input;
@@ -59,9 +72,11 @@ export function computeLayout(input: LayoutInput): Geometry {
   const sideWidth = full ? 0 : Math.min(36, Math.max(26, Math.floor(columns * 0.24)));
   const approvalHeight = input.approvalDetail === undefined ? 0 : 4 + approvalLines(input.approvalDetail, columns - 4).length;
   const questionHeight = input.questionLines ? input.questionLines + 2 : 0;
-  const bottom = 4 + input.suggestionCount + approvalHeight + questionHeight;
+  const others = 4 + input.suggestionCount + approvalHeight + questionHeight;
+  const composerLines = Math.max(1, Math.min(input.composerLines ?? 1, composerRoom(rows, others)));
+  const bottom = others + composerLines - 1;
   const bodyTop = 1;
-  const bodyHeight = Math.max(10, rows - 1 - bottom);
+  const bodyHeight = Math.max(MIN_BODY, rows - 1 - bottom);
   // On your own there's nobody to list: People appears once someone joins.
   const peopleHeight = full || input.peopleCount <= 1 ? 0 : Math.min(input.peopleCount * 2 + 3, Math.max(5, Math.floor(bodyHeight * 0.4)));
   const projectsHeight = full ? 0 : bodyHeight - peopleHeight;
@@ -99,7 +114,9 @@ export function computeLayout(input: LayoutInput): Geometry {
     questionHeight,
     suggestionsTop,
     composerTop,
-    actionBarY: composerTop + 3,
+    composerLines,
+    composerHeight: composerLines + 2,
+    actionBarY: composerTop + composerLines + 2,
     filesTop: paneTop,
     filesHeight: bodyHeight - tabsHeight - headerHeight,
   };

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
@@ -22,6 +22,7 @@ import { AgentHost } from './agent-host.js';
 import { RoomFiles, dirKey } from './room-files.js';
 import { createRoomBridge } from './agent-bridge.js';
 import { createSessionParts } from './session-parts.js';
+import { ATTACHMENT_SHARE } from './attachments.js';
 import { Notifier } from './notify.js';
 import { Workbench } from './workbench.js';
 import { RemoteWork } from './remote-work.js';
@@ -416,6 +417,25 @@ export class Session {
     return this.opts.shares.locate(absPath) ?? undefined;
   }
 
+  /**
+   * A file or folder on this computer as something the viewer and Files browser can open: inside
+   * one of your shares if it is, else in a private, unannounced share of its folder (only you can open it).
+   */
+  localLocation(absPath: string, dir: boolean): Location {
+    const found = this.opts.shares.locate(absPath);
+    if (found) return { owner: this.selfId, ...found };
+    const root = dir ? absPath : path.dirname(absPath);
+    const name = `local-${createHash('sha1').update(root).digest('hex').slice(0, 10)}`;
+    if (!this.opts.shares.configs.some((c) => c.name === name)) this.opts.shares.upsert({ name, root, writable: false, private: true, allowed: [] });
+    return { owner: this.selfId, share: name, path: dir ? '' : path.basename(absPath) };
+  }
+
+  /** Let these people open the files in `root` (images you pasted into the room), under `name`. */
+  serveFolder(name: string, root: string, allowed: readonly string[]): void {
+    const current = this.opts.shares.configs.find((c) => c.name === name)?.allowed ?? [];
+    this.opts.shares.upsert({ name, root, writable: false, private: true, allowed: [...new Set([...current, ...allowed])] });
+  }
+
   /** Ask your own Claude in a conversation (shown there) and wait for its final answer. */
   askAndWait(prompt: string, channel: string, timeoutMs = 5 * 60_000): Promise<string> {
     this.sendChat(prompt, false, channel);
@@ -761,7 +781,7 @@ export class Session {
   shareFolder(dir: string, writable = false, only?: readonly string[]): void {
     const spec = parseShareSpec(`${dir}${writable ? ':rw' : ''}`, process.cwd());
     if (!existsSync(spec.root)) return this.toast(`${spec.root} doesn't exist`, 'warn');
-    const previous = this.opts.shares.configs.find((c) => path.resolve(c.root) === path.resolve(spec.root) && !c.name.startsWith('ws-'));
+    const previous = this.opts.shares.configs.find((c) => path.resolve(c.root) === path.resolve(spec.root) && !c.name.startsWith('ws-') && !c.name.startsWith('local-') && c.name !== ATTACHMENT_SHARE);
     if (previous) this.unshareFolder(previous.name, true);
     const config = only?.length ? { ...spec, private: true, allowed: [...only] } : spec;
     this.opts.shares.upsert(config);
@@ -783,7 +803,7 @@ export class Session {
 
   /** Your shared folders (not workspaces), for the Share menu. */
   get myShares(): ReadonlyArray<{ name: string; root: string; private?: boolean; allowed?: readonly string[] }> {
-    return this.opts.shares.configs.filter((c) => !c.name.startsWith('ws-'));
+    return this.opts.shares.configs.filter((c) => !c.name.startsWith('ws-') && !c.name.startsWith('local-') && c.name !== ATTACHMENT_SHARE);
   }
 
   /** Give a friend access to only your shared folders, or your whole computer. */

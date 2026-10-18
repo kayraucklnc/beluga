@@ -9,6 +9,15 @@ export interface MouseEvent {
   readonly y: number;
   readonly button: MouseButton;
   readonly kind: 'press' | 'release';
+  /** Modifier keys held (SGR reports carry them: 4 = Shift, 8 = Option/Alt/Meta, 16 = Ctrl). */
+  readonly shift?: boolean;
+  readonly alt?: boolean;
+  readonly ctrl?: boolean;
+}
+
+/** The modifier keys held in an SGR button code (only the ones that are down). */
+export function modifiersOf(code: number): { shift?: true; alt?: true; ctrl?: true } {
+  return { ...(code & 4 ? { shift: true as const } : {}), ...(code & 8 ? { alt: true as const } : {}), ...(code & 16 ? { ctrl: true as const } : {}) };
 }
 
 // SGR extended mouse reports: ESC [ < button ; col ; row (M = press, m = release)
@@ -40,15 +49,16 @@ const ORPHAN = /\[<\d+;\d+;\d+[Mm]/g;
 export function parseMouse(chunk: string): { events: MouseEvent[]; rest: string } {
   const events: MouseEvent[] = [];
   const rest = chunk.replace(SGR, (_m, b: string, col: string, row: string, kind: string) => {
-    const button = buttonOf(Number(b));
-    if (button) events.push({ x: Number(col) - 1, y: Number(row) - 1, button, kind: kind === 'M' ? 'press' : 'release' });
+    const code = Number(b);
+    const button = buttonOf(code);
+    if (button) events.push({ x: Number(col) - 1, y: Number(row) - 1, button, kind: kind === 'M' ? 'press' : 'release', ...modifiersOf(code) });
     return '';
   });
   return { events, rest: rest.replace(ORPHAN, '') };
 }
 
 // The start of an escape sequence cut off at the end of a chunk (fast scrolling splits reports across reads).
-const PARTIAL = /\x1b(?:\[(?:<[\d;]*)?)?$/;
+const PARTIAL = /\x1b(?:\[(?:<[\d;]*|[\d;]+)?)?$/;
 /** How long to wait for the rest of a cut-off sequence before treating it as typed (a lone Esc key). */
 export const PARTIAL_WAIT_MS = 25;
 
@@ -93,6 +103,56 @@ export function parseFocus(chunk: string): { events: boolean[]; rest: string } {
   return { events, rest };
 }
 
+// Bracketed paste: pasted text arrives between these markers, so an empty paste can be seen too.
+export const PASTE_ON = '\x1b[?2004h';
+export const PASTE_OFF = '\x1b[?2004l';
+const PASTE = /\x1b\[200~([\s\S]*?)\x1b\[201~/g;
+
+/**
+ * Offer each complete paste in a chunk to `take`; pastes it takes are removed, the rest stay
+ * as they were (Ink reads the markers itself). `plain` drops the markers instead (raw keyboard).
+ */
+export function takePastes(chunk: string, take: (text: string) => boolean, plain = false): string {
+  if (!chunk.includes('\x1b[200~')) return chunk;
+  return chunk.replace(PASTE, (whole, text: string) => (take(text) ? '' : plain ? text : whole));
+}
+
+const PASTE_START = '\x1b[200~';
+const PASTE_END = '\x1b[201~';
+
+/**
+ * Split raw input into typed text and bracketed-paste content (markers removed). `inPaste`
+ * carries a paste that continues into the next chunk.
+ */
+export function splitPaste(data: string, inPaste: boolean): { parts: Array<{ text: string; paste: boolean }>; inPaste: boolean } {
+  const parts: Array<{ text: string; paste: boolean }> = [];
+  let rest = data;
+  let pasting = inPaste;
+  while (rest) {
+    const marker = pasting ? PASTE_END : PASTE_START;
+    const at = rest.indexOf(marker);
+    const text = at === -1 ? rest : rest.slice(0, at);
+    if (text) parts.push({ text, paste: pasting });
+    if (at === -1) break;
+    rest = rest.slice(at + marker.length);
+    pasting = !pasting;
+  }
+  return { parts, inPaste: pasting };
+}
+
+/** Shift+Enter as terminals report it with CSI u / modifyOtherKeys; Ink can't tell it from Enter, so it becomes Ctrl+J (new line). */
+const SHIFT_ENTER = /\x1b\[13;2u|\x1b\[27;2;13~/g;
+
+/**
+ * Rewrite a few keys into forms Ink understands: Ctrl+Tab in xterm's modifyOtherKeys form
+ * becomes the kitty form, and a lone "Esc [" (Option+[ with Option as Meta, which looks like
+ * the start of a sequence) becomes kitty's Alt+[.
+ */
+export function normalizeKeys(data: string): string {
+  if (data === '\x1b[') return '\x1b[91;3u';
+  return data.replace(/\x1b\[27;([56]);9~/g, '\x1b[9;$1u');
+}
+
 export interface InputHooks {
   readonly onMouse?: (e: MouseEvent) => void;
   readonly onFocus?: (focused: boolean) => void;
@@ -101,6 +161,10 @@ export interface InputHooks {
    * (the built-in terminal has the keyboard). Mouse and focus reports are still handled.
    */
   readonly rawSink?: () => ((data: string) => void) | undefined;
+  /** A paste arrived (maybe empty: an image on the clipboard); return true to swallow it. */
+  readonly onPaste?: (text: string) => boolean;
+  /** Called as each chunk arrives (keys from one chunk share its time; accelerating Backspace uses it). */
+  readonly onData?: () => void;
 }
 
 /**
@@ -137,11 +201,17 @@ export function createInput(source: NodeJS.ReadStream, hooks: InputHooks): NodeJ
     for (const f of focus) hooks.onFocus?.(f);
     if (!rest) return;
     const sink = hooks.rawSink?.();
-    if (sink) sink(rest);
-    else proxy.write(rest);
+    // The built-in terminal splits bracketed pastes itself; for the composer, image pastes are taken first.
+    if (sink) {
+      sink(rest);
+      return;
+    }
+    const keys = takePastes(rest, (t) => hooks.onPaste?.(t) ?? false);
+    if (keys) proxy.write(normalizeKeys(keys.replace(SHIFT_ENTER, '\n')));
   };
   const join = createChunkJoiner(deliver);
   source.on('data', (data: string | Buffer) => {
+    hooks.onData?.();
     const text = join(data.toString());
     if (text) deliver(text);
   });

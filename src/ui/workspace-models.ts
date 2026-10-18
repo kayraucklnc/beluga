@@ -1,4 +1,5 @@
-import type { AppState, LogItem, ReviewState, WorkspaceTab } from '../core/store.js';
+import type { LinkTarget } from './links.js';
+import { type AppState, type LogItem, type ReviewState, type WorkspaceTab, newShares } from '../core/store.js';
 import type { TrustLevel } from '../core/settings.js';
 import { describePr } from '../workspaces/pr.js';
 import { formatBytes } from '../workspaces/disk.js';
@@ -69,8 +70,14 @@ export type UiAction =
   | { readonly type: 'trust_later'; readonly peerId: string }
   | { readonly type: 'search_hit'; readonly index: number }
   | { readonly type: 'term_tab'; readonly key: string }
+  /** Another shell in the global Terminal tab. */
+  | { readonly type: 'term_new' }
   /** The workspace buttons that didn't fit in the top bar. */
   | { readonly type: 'ws_more'; readonly id: string; readonly actions: ReadonlyArray<{ readonly action: WorkspaceAction; readonly label: string; readonly hint: string }> }
+  /** A file, folder, URL or image mentioned in the chat. */
+  | { readonly type: 'open_link'; readonly link: LinkTarget }
+  /** Attach the image on the clipboard to the message being typed. */
+  | { readonly type: 'paste_image' }
   | { readonly type: 'none' };
 
 export interface Model {
@@ -341,37 +348,114 @@ export function projectsModel(state: AppState, toggled: ReadonlySet<string>, fra
   return { lines, zones };
 }
 
-/** Three clear tabs: the group chat with everyone, shared files, and the overview of all work. */
+/** A top tab: the view it opens, its label (and a shorter one for narrow screens), and what's new there. */
+export interface TopTab {
+  readonly kind: 'room' | 'files' | 'overview' | 'search' | 'usage' | 'terminal';
+  readonly label: string;
+  readonly short: string;
+  readonly hint: string;
+  /** Something new there since you looked (0 = nothing). */
+  readonly badge: number;
+  /** The badge asks for you (a workspace waiting on an approval or a conflict). */
+  readonly urgent?: boolean;
+}
+
+/** Workspaces worth a look in the Overview: Claude finished or wrote there, or one needs you. */
+export function overviewNews(state: AppState): { count: number; urgent: boolean } {
+  let count = 0;
+  let urgent = false;
+  for (const p of state.projects) {
+    for (const w of p.workspaces) {
+      if (w.archived) continue;
+      const needs = Boolean(state.conflicts[w.id]?.length) || activityOf(state.log, `ws:${w.id}`).awaiting;
+      if (needs) urgent = true;
+      if (needs || state.unread[`ws:${w.id}`]) count++;
+    }
+  }
+  return { count, urgent };
+}
+
+/** Option+N on a Mac, Alt+N elsewhere: the quick key for tab N, shown only in hover hints. */
+export const tabKey = (n: number, platform = process.platform): string => (platform === 'darwin' ? `⌥${n}` : `Alt+${n}`);
+
+/** The six top tabs, in order (Option/Alt+1…6 jump to them). */
+export function topTabs(state: AppState): TopTab[] {
+  const solo = state.peers.length <= 1;
+  const files = newShares(state);
+  const news = state.view.kind === 'overview' ? { count: 0, urgent: false } : overviewNews(state);
+  const tabs: TopTab[] = [
+    { kind: 'room', label: solo ? 'Chat' : 'Group chat', short: 'Chat', hint: solo ? 'Talk with your Claude, or @a-workspace to reach the Claude working there' : 'Chat with everyone in the room and their Claudes', badge: state.unread.room ?? 0 },
+    { kind: 'files', label: 'Shared files', short: 'Files', hint: files ? `${files} new shared folder${files === 1 ? '' : 's'}: browse what people in the room share` : 'Browse folders people in the room share', badge: files },
+    { kind: 'overview', label: 'Overview', short: 'Overview', hint: news.count ? `${news.count} workspace${news.count === 1 ? '' : 's'} to look at${news.urgent ? ' (one needs you)' : ''}: every worktree and chat at a glance` : 'Every worktree and chat at a glance', badge: news.count, urgent: news.urgent },
+    { kind: 'search', label: 'Search', short: 'Search', hint: 'Search every conversation: type below, ↑↓ choose, Enter opens', badge: 0 },
+    { kind: 'usage', label: 'Usage', short: 'Usage', hint: 'Disk space and Claude tokens per workspace', badge: 0 },
+    { kind: 'terminal', label: 'Terminal', short: 'Terminal', hint: 'Your own shell in the current project (or home) folder; click it to type', badge: 0 },
+  ];
+  return tabs.map((t, i) => ({ ...t, hint: `${t.hint} · ${tabKey(i + 1)}` }));
+}
+
+/** The tab Ctrl+Tab (+1) or Ctrl+Shift+Tab (-1) goes to; from a workspace, the first or last one. */
+export function stepTab(state: AppState, delta: 1 | -1): TopTab['kind'] {
+  const kinds = topTabs(state).map((t) => t.kind);
+  const at = kinds.indexOf(state.view.kind as TopTab['kind']);
+  if (at < 0) return delta > 0 ? kinds[0]! : kinds[kinds.length - 1]!;
+  return kinds[(at + delta + kinds.length) % kinds.length]!;
+}
+
+/** Where you are past the tabs, when it isn't one of them (a workspace, a draft…). */
+function breadcrumb(state: AppState): { text: string; color: string } | undefined {
+  const v = state.view;
+  if (v.kind === 'workspace') {
+    const ws = findWorkspace(state.projects, v.id);
+    return ws ? { text: ws.name, color: theme.accent } : undefined;
+  }
+  if (v.kind === 'draft') return { text: 'New chat', color: theme.accent };
+  if (v.kind === 'draft_worktree') return { text: 'New worktree', color: theme.accent };
+  if (v.kind === 'shared') {
+    const w = state.shared.find((x) => x.id === v.id);
+    return w ? { text: w.name, color: theme.ok } : undefined;
+  }
+  return undefined;
+}
+
+const CRUMB = '  › ';
+
+/**
+ * The top tabs on one line that never wraps: full labels when they fit, shorter ones when
+ * they don't, and the `› workspace` breadcrumb shortened (or left out) to fit what's left.
+ */
 export function tabsModel(state: AppState, width: number): Model {
+  const tabs = topTabs(state);
+  const crumb = breadcrumb(state);
+  const badgeText = (t: TopTab): string => (t.badge ? ` ${t.badge > 99 ? '99+' : t.badge}` : '');
+  const tabsWidth = (short: boolean): number => tabs.reduce((n, t, i) => n + (short ? t.short : t.label).length + 2 + badgeText(t).length + (i ? 1 : 0), 0);
+  // Room for at least a few letters of the breadcrumb, if there is one.
+  const crumbMin = crumb ? CRUMB.length + Math.min(crumb.text.length, 4) : 0;
+  const short = tabsWidth(false) + crumbMin > width;
   const segs: Seg[] = [];
   const zones: Zone[] = [];
   let x = 0;
-  const v = state.view;
-  const tab = (label: string, active: boolean, action: UiAction, hint: string, badge?: number): void => {
-    const text = ` ${label}${badge ? ` (${badge})` : ''} `;
-    segs.push({ text, color: active ? theme.text : theme.muted, bold: active, inverse: active });
-    zones.push({ x0: x, x1: x + text.length - 1, y: 0, action, hint });
-    x += text.length;
-    segs.push({ text: '  ' });
-    x += 2;
-  };
-  const solo = state.peers.length <= 1;
-  tab(solo ? 'Chat' : 'Group chat', v.kind === 'room', { type: 'view', view: { kind: 'room' } }, solo ? 'Talk with your Claude, or @a-workspace to reach the Claude working there' : 'Chat with everyone in the room and their Claudes', state.unread.room);
-  tab('Shared files', v.kind === 'files', { type: 'view', view: { kind: 'files' } }, "Browse folders people in the room share");
-  tab('Overview', v.kind === 'overview', { type: 'view', view: { kind: 'overview' } }, 'Every worktree and chat at a glance');
-  tab('Search', v.kind === 'search', { type: 'view', view: { kind: 'search' } }, 'Search every conversation');
-  tab('Usage', v.kind === 'usage', { type: 'view', view: { kind: 'usage' } }, 'Disk space and Claude usage per workspace');
-  if (v.kind === 'workspace') {
-    const ws = findWorkspace(state.projects, v.id);
-    if (ws) segs.push({ text: `›  ${ws.name}`, color: theme.accent, bold: true });
+  tabs.forEach((t, i) => {
+    if (i) {
+      segs.push({ text: ' ' });
+      x += 1;
+    }
+    const active = state.view.kind === t.kind;
+    const label = ` ${short ? t.short : t.label}`;
+    const badge = badgeText(t);
+    segs.push({ text: label, color: active ? theme.text : theme.muted, bold: active, inverse: active });
+    if (badge) segs.push({ text: badge, color: t.urgent ? theme.warn : t.kind === 'files' ? theme.info : theme.claude, bold: true, inverse: active });
+    segs.push({ text: ' ', inverse: active });
+    const w = label.length + badge.length + 1;
+    zones.push({ x0: x, x1: x + w - 1, y: 0, action: { type: 'view', view: { kind: t.kind } }, hint: t.hint });
+    x += w;
+  });
+  const room = width - x - CRUMB.length;
+  if (crumb && room >= Math.min(crumb.text.length, 2)) {
+    const text = crumb.text.length > room ? `${crumb.text.slice(0, Math.max(1, room - 1))}…` : crumb.text;
+    segs.push({ text: CRUMB, color: theme.border }, { text, color: crumb.color, bold: true });
   }
-  if (v.kind === 'draft') segs.push({ text: '›  New chat', color: theme.accent, bold: true });
-  if (v.kind === 'draft_worktree') segs.push({ text: '›  New worktree', color: theme.accent, bold: true });
-  if (v.kind === 'shared') {
-    const w = state.shared.find((x) => x.id === (v as { id: string }).id);
-    if (w) segs.push({ text: `›  ${w.name}`, color: theme.ok, bold: true });
-  }
-  return { lines: [truncate(segs, width), [{ text: '─'.repeat(Math.max(0, width)), color: theme.border }]], zones: zones.filter((z) => z.x0 < width) };
+  return { lines: [truncate(segs, width)], zones: zones.filter((z) => z.x1 < width) };
 }
 
 // ---------------------------------------------------------------- overview

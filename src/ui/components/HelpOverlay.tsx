@@ -16,12 +16,17 @@ const TALK: ReadonlyArray<readonly [string, string]> = [
 
 const KEYS: ReadonlyArray<readonly [string, string]> = [
   ['Tab / Shift+Tab', 'walk through every button and area'],
+  ['Option+1 – 6', 'jump to a top tab: Chat, Shared files, Overview, Search, Usage, Terminal'],
+  ['Ctrl+Tab / Option+[ ]', 'next / previous top tab'],
   ['Ctrl+]', 'leave the built-in terminal (or click anywhere else)'],
   ['Enter / Option+Enter', 'send (queued while Claude works) / interrupt and send now'],
+  ['Ctrl+J / Shift+Enter', 'new line (pasted text keeps its lines)'],
+  ['Option+Backspace / Option+Delete', 'delete the word before / after (hold Backspace and it speeds up)'],
+  ['Option+← → / Cmd+← →', 'move by word / to the start or end of the line'],
   ['1 – 4', "pick an option on Claude's question card"],
   ['Option+Q / Option+L', 'type @ on Turkish / German Macs'],
   ['Esc', 'back to chat'],
-  ['↑ ↓', 'history (or pick a suggestion)'],
+  ['↑ ↓', 'move between lines; history from the first / last line (or pick a suggestion)'],
   ['PgUp PgDn', 'scroll chat'],
   ['Ctrl+Y / Ctrl+N / Ctrl+T', 'allow / deny / always allow'],
   ['Option+↑ / Option+↓', 'make text bigger / smaller'],

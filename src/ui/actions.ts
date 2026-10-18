@@ -16,7 +16,36 @@ export interface ViewerMode {
   readonly raw: boolean;
 }
 
-export function actionButtons(focus: Focus, state: AppState, suggesting: boolean, viewer: ViewerMode = { full: false, raw: false }): ActionButton[] {
+/** What the composer is up to, for the queue / send-now buttons. */
+export interface ComposeState {
+  /** There's a draft that would go to your Claude. */
+  readonly typing: boolean;
+  /** Your Claude is working in this conversation (Enter would queue). */
+  readonly busy: boolean;
+  /** Your messages waiting their turn in this conversation. */
+  readonly queued: number;
+}
+
+/** While your Claude works: queue the draft or send it now; and run or drop what's waiting. */
+function composeButtons(c: ComposeState | undefined): ActionButton[] {
+  if (!c) return [];
+  return [
+    ...(c.typing && c.busy
+      ? [
+          { id: 'queue', text: 'Queue', key: '↵' },
+          { id: 'send-now', text: 'Send now', key: '⌥↵' },
+        ]
+      : []),
+    ...(c.queued
+      ? [
+          { id: 'queued-now', text: c.queued > 1 ? `Run next queued now (${c.queued})` : 'Run queued now', key: '' },
+          { id: 'queued-cancel', text: 'Cancel queued', key: '' },
+        ]
+      : []),
+  ];
+}
+
+export function actionButtons(focus: Focus, state: AppState, suggesting: boolean, viewer: ViewerMode = { full: false, raw: false }, compose?: ComposeState): ActionButton[] {
   if (suggesting) {
     return [
       { id: 'accept', text: 'Accept', key: 'Tab' },
@@ -94,6 +123,7 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
       }
       if (state.view.kind === 'workspace') {
         return [
+          ...composeButtons(compose),
           { id: 'actions', text: 'Actions', key: 'Tab' },
           { id: 'review', text: 'Diff', key: '' },
           { id: 'terminal', text: 'Terminal', key: '' },
@@ -114,6 +144,7 @@ export function actionButtons(focus: Focus, state: AppState, suggesting: boolean
         ];
       }
       return [
+        ...composeButtons(compose),
         { id: 'ask', text: 'Ask Claude', key: '@' },
         { id: 'commands', text: 'Commands', key: '/' },
         ...(state.view.kind === 'draft' || state.view.kind === 'draft_worktree' ? [{ id: 'templates', text: 'Templates', key: '' }] : []),

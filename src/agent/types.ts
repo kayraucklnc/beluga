@@ -25,6 +25,17 @@ export interface AgentRunInput {
   readonly askUser?: (question: ClaudeQuestion) => Promise<ClaudeAnswer>;
   /** Plan first (read-only investigation, then a plan to approve) instead of acting right away. */
   readonly plan?: boolean;
+  /**
+   * Called with a way to send more messages into this run once Claude has answered but its
+   * background agents are still working (so they aren't cut off), and with undefined when that ends.
+   */
+  readonly onFollowUps?: (send: ((followUp: FollowUp) => boolean) | undefined) => void;
+}
+
+/** A message sent into a run that is still waiting on its background agents. */
+export interface FollowUp extends Pick<AgentRunInput, 'prompt' | 'requesterName' | 'viaAgent' | 'context' | 'onEvent'> {
+  readonly onDone: (final: string) => void;
+  readonly onError: (reason: string) => void;
 }
 
 export interface AgentPlace {

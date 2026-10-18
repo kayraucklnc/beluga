@@ -34,10 +34,10 @@ Give every task its own worktree: a separate folder and branch with its own Clau
 | 🌿 **A worktree per task, in every project** | Click **+⌥**, describe the task, and Haiku names a fresh worktree from the latest `origin`. Your `.env` files come along. klaud finds all your git projects, and worktrees from Conductor or Claude Code show up too, with their earlier conversations. |
 | ⚡ **Parallel, and isolated** | Each worktree has its own folder, branch and Claude conversation, so `add-auth` in one project and `new-hero` in another run side by side and never step on each other. |
 | 🧩 **Sub-agents you can watch** | When a Claude fans out to sub-agents (reviewers, explorers, test runners) or background tasks, they nest under its card with live progress. |
-| 🔭 **Everything at a glance** | The Overview shows every workspace in plain words: *Claude working · 2 sub-agents running*, *ready to merge*, *merge conflict*. |
+| 🔭 **Everything at a glance** | The Overview shows every workspace in plain words: *Claude working · 2 sub-agents running*, *ready to merge*, *merge conflict*. The tabs at the top show a quiet count when something new happened there. |
 | 💬 **Many people, many Claudes** | Invite friends into one room and talk all at once. `@claude:mia` runs on **mia's** computer with **mia's** subscription. Bring someone into a single worktree to work on it with you. |
 | ✅ **Review, plan, merge** | **Review** runs a thorough check (bugs, security, tests, quality). **Shift+Tab** turns on plan mode, so Claude proposes a plan before changing anything. Its questions come with clickable answers. **Merge** explains itself, and conflicts get a *Solve conflict* button. |
-| 🖥️ **A real terminal inside** | Every workspace has a **Terminal** tab: a full shell (vim, htop, colors). **Run** starts your dev server there. |
+| 🖥️ **A real terminal inside** | A **Terminal** tab at the top: your own full shell (vim, htop, colors) in the current project. Every workspace has one too, where **Run** starts your dev server. |
 | 🔔 **Notifications that matter** | Claude finished, has a question, wants a plan approved, hit a conflict, a PR's checks failed: a desktop notification and the **Inbox**, never for what you're already looking at. |
 | 🚀 **Pull requests by Claude** | Click **PR**: Claude commits, pushes and writes a short description (what, why, how to test). Your own PR instructions, per project too. Status and checks show on the cards. |
 | 🧠 **Pick the model per chat** | Click the model in the box to switch between Opus, Sonnet, Haiku… for one conversation, or set the default. |
@@ -129,7 +129,8 @@ Everything is clickable, and the bar at the bottom always says what you can do n
 
 ### Terminal, setup and run
 
-- **Terminal** is a real shell in the workspace's folder: colors, `vim`, `htop`, `git`, anything. Click it to type; **Ctrl+]** or a click anywhere else gives the keyboard back.
+- **Terminal** (the last tab at the top, next to Usage) is your own shell, always one click away: it starts in the project you're working in (or your home folder). Click it to type; **Ctrl+]** or a click anywhere else gives the keyboard back. **+** opens another shell.
+- Each workspace also has its own **Terminal** view: a real shell in the workspace's folder: colors, `vim`, `htop`, `git`, anything.
 - **Setup** runs in every new worktree (and forks and handoffs), in the Terminal tab where you can watch it: `npm install`, `uv sync`, whatever the project needs. klaud guesses it from the lockfile; set your own in the project's **⋯ → Setup and run commands**, or commit a `klaud.json` so the whole team gets it (`conductor.json` works too):
 
   ```json
@@ -217,9 +218,13 @@ Questions go to whoever asked Claude, even when it's a friend's Claude on their 
 | `@claude:bob how does auth work?` | bob's Claude, on bob's computer, after bob approves |
 | `@claudes review this plan` | every Claude in the room at once |
 
-- **Enter** sends. If Claude is busy, the message waits in line.
+- **Enter** sends. If Claude is busy, the message waits in line: the bar below the box shows **Queue ↵** and **Send now ⌥↵** while you type, and **Run queued now** / **Cancel queued** once something is waiting.
 - **Option+Enter** (or **Ctrl+Enter**) interrupts and sends right away.
+- Long messages wrap and the box grows (up to about half the screen, then scrolls). **Ctrl+J** or **Shift+Enter** starts a new line; pasted text keeps its lines.
+- **Option+Backspace** deletes a word, and holding **Backspace** speeds up the longer you hold it.
 - Type `@` or `/` to get suggestions, and scroll through all of them with ↑ ↓.
+- **Images:** click **+ image** next to the model (or press **Ctrl+V**) to attach the image on your clipboard, such as a screenshot or an image file copied in Finder. You can also drag an image file into the terminal. It shows up as `[image 1]` while you type. Your Claude sees the image itself, and friends in the room can click it to view it.
+- **Links:** files, folders and URLs mentioned in the chat, like `src/ui/App.tsx:42`, `src/` or `https://…`, are clickable when they exist. Click (or ⌥-click) one to open the file at that line, browse the folder, or open the page in your browser. Hovering shows where a link goes.
 
 ### Commands
 
@@ -249,13 +254,18 @@ Questions go to whoever asked Claude, even when it's a friend's Claude on their 
 | `Enter` · `Option+Enter` | send (queued while Claude works) · interrupt and send now |
 | `Tab` | jump between areas: chat, the top bar, projects, people (and files, the diff or the terminal when shown) |
 | `Ctrl+]` | leave the built-in terminal (all other keys go to its shell) |
+| `Option+1`…`6` · `Ctrl+Tab` · `Option+[` `]` | jump to a top tab (Chat, Shared files, Overview, Search, Usage, Terminal) · next / previous tab |
 | `Enter` / `Esc` (on an area) | go inside it (then `Tab` or arrows move between its items) / come back out |
 | `Shift+Tab` (in the chat) | switch plan mode: Claude plans first and asks you to approve |
 | `1`–`4` | pick an option on Claude's question card |
-| `@` | `Option+Q` (Turkish), `Option+L` (German) and `Option+2` (Spanish) work even when your terminal sends Option as Meta |
+| `@` | `Option+Q` (Turkish), `Option+L` (German) and `Option+2` (Spanish, while you're typing) work even when your terminal sends Option as Meta |
 | `Esc` | back to typing, or cancel a new chat |
-| `↑ ↓` · `PgUp PgDn` | history or suggestions · scroll |
+| `↑ ↓` · `PgUp PgDn` | move between lines of a long message, history or suggestions · scroll |
+| `Ctrl+J` / `Shift+Enter` | new line in the message |
+| `Option+Backspace` · `Option+Delete` · `Ctrl+W` | delete the word before / after the cursor |
+| `Option+← →` · `Cmd+← →` · `Cmd+Backspace` | move by word · to the start / end of the line · delete to the line start |
 | `Option+↑` / `Option+↓` | bigger or smaller text (works on every keyboard layout) |
+| `Ctrl+V` | attach the image on your clipboard |
 | `f` · `r` · `d` (in the viewer) | fullscreen · source/formatted (or color/text art) · download |
 | `Ctrl+Y` · `Ctrl+N` · `Ctrl+T` | allow · deny · always allow this person |
 | `Ctrl+C` twice | quit |

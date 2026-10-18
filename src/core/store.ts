@@ -167,6 +167,8 @@ export type View =
   | { readonly kind: 'search' }
   /** Disk space and Claude usage per workspace. */
   | { readonly kind: 'usage' }
+  /** Shells of your own, in the current project's folder (or your home folder). */
+  | { readonly kind: 'terminal' }
   /** A new chat that doesn't exist until you send the first message. */
   | { readonly kind: 'draft'; readonly projectId: string; readonly dir?: string; readonly back: View }
   /** A new worktree: your first message names it (via a small model) and starts the work. */
@@ -214,6 +216,8 @@ export interface AppState extends CollabState, WorkState {
   readonly review?: ReviewState;
   /** Unread message counts per channel. */
   readonly unread: Readonly<Record<string, number>>;
+  /** Shared folders you've already seen in Shared files (see shareKeys); others count as new. */
+  readonly seenShares: readonly string[];
   /** Context usage per conversation (channel). */
   readonly context: Readonly<Record<string, ContextInfo>>;
   readonly compactions: Readonly<Record<string, Compaction>>;
@@ -330,6 +334,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     conflicts: {},
     tabs: [],
     unread: {},
+    seenShares: [],
     context: {},
     compactions: {},
     envChanges: {},
@@ -377,6 +382,22 @@ function rootRows(state: AppState): BrowserRow[] {
   const offers = state.offers.map((o) => ({ label: `${name(o.owner)} · ${o.name} (shared with you)`, dir: true, target: { owner: o.owner, share: o.name, path: '' } }));
   const workspaces = state.shared.map((w) => ({ label: `${name(w.owner)} · ${w.name} (workspace)`, dir: true, target: { owner: w.owner, share: w.share, path: '' } }));
   return [...room, ...offers, ...workspaces];
+}
+
+/** One key per folder listed at the top of Shared files (to tell which ones are new). */
+export function shareKeys(state: Pick<AppState, 'peers' | 'offers' | 'shared' | 'self'>): string[] {
+  return [
+    ...state.peers.filter((p) => p.peerId !== state.self?.peerId).flatMap((p) => p.shares.map((s) => `${p.peerId}/${s.name}`)),
+    ...state.offers.map((o) => `${o.owner}/${o.name}`),
+    ...state.shared.map((w) => `${w.owner}/${w.share}`),
+  ];
+}
+
+/** Folders shared since you last looked at Shared files (0 while you're there). */
+export function newShares(state: AppState): number {
+  if (state.view.kind === 'files') return 0;
+  const seen = new Set(state.seenShares);
+  return new Set(shareKeys(state).filter((k) => !seen.has(k))).size;
 }
 
 function reduceAgent(state: AppState, raw: Extract<Action, { type: 'agent_event' }>): AppState {
@@ -468,9 +489,12 @@ function applySub(list: readonly SubAgent[], json: string): readonly SubAgent[] 
   });
 }
 
+/** The conversation a view shows, if any (Overview, Search, Terminal… show none, so the chat's unread count stays). */
+const shownChannel = (view: View): string | undefined => (view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' ? channelOf(view) : undefined);
+
 /** Count new messages in conversations you're not looking at. */
 function bumpUnread(state: AppState, channel: string, isNew: boolean): AppState {
-  if (!isNew || channel === channelOf(state.view)) return state;
+  if (!isNew || channel === shownChannel(state.view)) return state;
   return { ...state, unread: { ...state.unread, [channel]: (state.unread[channel] ?? 0) + 1 } };
 }
 
@@ -528,9 +552,11 @@ export function reduce(state: AppState, action: Action): AppState {
       return { ...state, projects: action.projects, projectGroups: action.groups ?? state.projectGroups, tabs: state.tabs.filter((t) => action.projects.some((p) => p.workspaces.some((w) => w.id === t))) };
     case 'view': {
       const tabs = action.view.kind === 'workspace' && !state.tabs.includes(action.view.id) ? [...state.tabs, action.view.id] : state.tabs;
-      const channel = channelOf(action.view);
+      const channel = shownChannel(action.view) ?? '';
       const { [channel]: _seen, ...unread } = state.unread;
-      return { ...state, view: action.view, tabs, unread };
+      // Opening (or leaving) Shared files counts every folder there as seen.
+      const seenShares = action.view.kind === 'files' || state.view.kind === 'files' ? shareKeys(state) : state.seenShares;
+      return { ...state, view: action.view, tabs, unread, seenShares };
     }
     case 'close_tab': {
       const tabs = state.tabs.filter((t) => t !== action.id);

@@ -2,7 +2,7 @@ import { theme } from './theme.js';
 import { type Line, type Seg, wrapText } from './text.js';
 
 /** Inline markdown: `code`, **bold**, *italic*, and [links](url). */
-export function inline(text: string, base: Omit<Seg, 'text'> = {}): Seg[] {
+export function inlineSegs(text: string, base: Omit<Seg, 'text'> = {}, hrefs?: ReadonlyMap<string, string>): Seg[] {
   const segs: Seg[] = [];
   const re = /(`[^`]+`|\*\*[^*]+\*\*|⟦[^⟧]+⟧|\[[^\]]+\]\([^)]+\)|(?<![*\w])\*[^*\s][^*]*\*(?![*\w]))/g;
   let last = 0;
@@ -12,10 +12,13 @@ export function inline(text: string, base: Omit<Seg, 'text'> = {}): Seg[] {
     const tok = m[0];
     if (tok.startsWith('`')) segs.push({ ...base, text: tok.slice(1, -1), color: theme.info });
     else if (tok.startsWith('**')) segs.push({ ...base, text: tok.slice(2, -2), bold: true });
-    else if (tok.startsWith('⟦')) segs.push({ ...base, text: tok.slice(1, -1), color: theme.info });
+    else if (tok.startsWith('⟦')) {
+      const href = hrefs?.get(tok.slice(1, -1));
+      segs.push({ ...base, text: tok.slice(1, -1), color: theme.info, ...(href ? { link: { kind: 'href' as const, href } } : {}) });
+    }
     else if (tok.startsWith('[')) {
       const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tok);
-      segs.push({ ...base, text: link?.[1] ?? tok, color: theme.info });
+      segs.push({ ...base, text: link?.[1] ?? tok, color: theme.info, ...(link?.[2] ? { link: { kind: 'href' as const, href: link[2] } } : {}) });
     } else segs.push({ ...base, text: tok.slice(1, -1), italic: true });
     last = idx + tok.length;
   }
@@ -30,9 +33,17 @@ export function inline(text: string, base: Omit<Seg, 'text'> = {}): Seg[] {
 export function renderMarkdown(text: string, width: number): Line[] {
   const out: Line[] = [];
   let inCode = false;
+  // Link targets, by link text (kept so the chat can make them clickable).
+  const hrefs = new Map<string, string>();
+  const inline = (t: string, base: Omit<Seg, 'text'> = {}): Seg[] => inlineSegs(t, base, hrefs);
   for (const source of text.split('\n')) {
     // Collapse links to their text before wrapping so URLs don't eat line width.
-    const raw = inCode ? source : source.replace(/\[([^\]]+)\]\([^)]+\)/g, '⟦$1⟧');
+    const raw = inCode
+      ? source
+      : source.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label: string, href: string) => {
+          hrefs.set(label, href);
+          return `⟦${label}⟧`;
+        });
     if (/^\s*```/.test(raw)) {
       inCode = !inCode;
       continue;
@@ -73,3 +84,6 @@ export function renderMarkdown(text: string, width: number): Line[] {
 }
 
 export const isMarkdownPath = (p: string): boolean => /\.(md|markdown|mdx)$/i.test(p);
+
+/** Inline markdown (see inlineSegs). */
+export const inline = (text: string, base: Omit<Seg, 'text'> = {}): Seg[] => inlineSegs(text, base);

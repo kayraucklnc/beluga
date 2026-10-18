@@ -144,8 +144,10 @@ describe('workspace UI models', () => {
     expect(text(m.lines)[0]).toContain(' Chat '); // on your own it's just "Chat"
     expect(text(tabsModel(reduce(s, { type: 'peers', peers: [{ peerId: 'a', name: 'a', shares: [], agent: true }, { peerId: 'b', name: 'b', shares: [], agent: true }] }), 100).lines)[0]).toContain('Group chat');
     expect(text(m.lines)[0]).toContain('Overview');
-    expect(text(m.lines)[0]).toContain('›  fix-auth');
-    expect(m.zones.map((z) => z.action.type)).toEqual(['view', 'view', 'view', 'view', 'view']);
+    expect(text(m.lines)[0]).toContain('› fix-auth');
+    expect(m.lines).toHaveLength(1); // one line, no rule under it
+    expect(m.zones.map((z) => z.action.type)).toEqual(['view', 'view', 'view', 'view', 'view', 'view']);
+    expect(text(m.lines)[0]).toContain('Terminal');
     expect(text(m.lines)[0]).toContain('Search');
     expect(text(m.lines)[0]).toContain('Usage');
     expect(m.zones[0]?.hint).toContain('Talk with your Claude');

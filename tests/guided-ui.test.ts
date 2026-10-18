@@ -107,11 +107,11 @@ describe('layout and hit testing', () => {
   });
 
   it('computes consistent regions', () => {
-    expect(g).toMatchObject({ sideWidth: 28, mainX: 28, mainWidth: 92, bodyTop: 1, tabsY: 1, headerHeight: 0, paneTop: 3, peopleHeight: 9, actionBarY: 39 });
+    expect(g).toMatchObject({ sideWidth: 28, mainX: 28, mainWidth: 92, bodyTop: 1, tabsY: 1, headerHeight: 0, paneTop: 2, peopleHeight: 9, actionBarY: 39 });
     expect(g.projectsHeight + g.peopleHeight).toBe(g.bodyHeight);
     expect(g.composerTop + 3).toBe(g.actionBarY);
     const ws = computeLayout({ columns: 120, rows: 40, peopleCount: 3, hasViewer: true, suggestionCount: 2, approvalDetail: 'ls', workspaceHeader: true });
-    expect(ws).toMatchObject({ headerHeight: 3, paneTop: 6, viewerWidth: 46, chatWidth: 46, approvalHeight: 5 });
+    expect(ws).toMatchObject({ headerHeight: 3, paneTop: 5, viewerWidth: 46, chatWidth: 46, approvalHeight: 5 });
     expect(ws.suggestionsTop).toBe(ws.approvalTop + 5);
     expect(computeLayout({ columns: 40, rows: 10, peopleCount: 9, hasViewer: false, suggestionCount: 6 }).bodyHeight).toBe(10);
     const full = computeLayout({ columns: 120, rows: 40, peopleCount: 3, hasViewer: true, suggestionCount: 0, viewerFull: true });
@@ -126,7 +126,8 @@ describe('layout and hit testing', () => {
     expect(hitTest(g, 3, g.peopleTop + 8, ctx(s))).toEqual({ kind: 'none' });
     expect(hitTest(g, 3, 5, ctx(s))).toEqual({ kind: 'projects' });
     expect(hitTest(g, 60, 10, ctx(s))).toEqual({ kind: 'chat' });
-    expect(hitTest(g, 60, 2, ctx(s))).toEqual({ kind: 'main' });
+    expect(hitTest(g, 60, 1, ctx(s))).toEqual({ kind: 'main' }); // the tabs row (one line, no rule under it)
+    expect(hitTest(g, 60, g.paneTop + 1, ctx(reduce(s, { type: 'view', view: { kind: 'terminal' } })))).toEqual({ kind: 'terminal' });
     expect(hitTest(g, 60, g.composerTop + 1, ctx(s))).toEqual({ kind: 'composer' });
     expect(hitTest(g, 2, g.actionBarY, ctx(s))).toEqual({ kind: 'action', id: 'ask' });
     expect(hitTest(g, 100, g.actionBarY, ctx(s))).toEqual({ kind: 'none' });

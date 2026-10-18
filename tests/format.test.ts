@@ -59,7 +59,7 @@ describe('markdown', () => {
   it('renders links and italics inline', () => {
     expect(inline('see [docs](https://x.dev) and *this*')).toEqual([
       { text: 'see ' },
-      { text: 'docs', color: theme.info },
+      { text: 'docs', color: theme.info, link: { kind: 'href', href: 'https://x.dev' } },
       { text: ' and ' },
       { text: 'this', italic: true },
     ]);
