@@ -27,7 +27,7 @@ export function TerminalView({ session, bar, width, height, focused, scroll, tit
   const snap = session?.snapshot(scroll);
   const lines = snap?.lines ?? [];
   const cursor = focused && scroll === 0 ? snap?.cursor : undefined;
-  const right = snap?.exited ? `exited${snap.exited.code !== null ? ` (${snap.exited.code})` : ''}` : scroll > 0 ? `↑ ${scroll} lines back · scroll down to follow` : focused ? 'typing here' : 'click to type';
+  const right = snap?.exited ? `exited${snap.exited.code !== null ? ` (${snap.exited.code})` : ''}` : scroll > 0 ? `↑ ${scroll} lines back · scroll down to follow` : '';
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Box paddingX={1} height={1}>
