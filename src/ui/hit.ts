@@ -54,7 +54,7 @@ export function hitTest(g: Geometry, x: number, y: number, ctx: HitContext): Tar
     const hit = placeButtons(ctx.buttons.map((b) => ({ ...b, label: buttonLabel(b) })), 2, ACTION_GAP).find((b) => x >= b.x0 && x <= b.x1);
     return hit ? { kind: 'action', id: hit.id } : { kind: 'none' };
   }
-  if (inside(y, g.composerTop, 3)) {
+  if (inside(y, g.composerTop, g.composerHeight)) {
     // The model picker and plan mode live inside the box.
     const chip = ctx.zones?.find((z) => z.y === y && x >= z.x0 && x <= z.x1 && z.action.type !== 'none');
     return chip ? { kind: 'zone', action: chip.action, hint: chip.hint, disabled: chip.disabled } : { kind: 'composer' };
@@ -83,7 +83,7 @@ export function hitTest(g: Geometry, x: number, y: number, ctx: HitContext): Tar
   }
   if (y < g.paneTop) return { kind: 'main' };
   const view = ctx.state.view;
-  if (view.kind === 'workspace' && view.tab === 'terminal') return y > g.paneTop ? { kind: 'terminal' } : { kind: 'main' };
+  if (view.kind === 'terminal' || (view.kind === 'workspace' && view.tab === 'terminal')) return y > g.paneTop ? { kind: 'terminal' } : { kind: 'main' };
   const inViewer = x >= g.mainX + g.chatWidth && g.viewerWidth > 0;
   if (!inViewer && view.kind === 'files') {
     const win = fileWindow(ctx.state.browser, g.paneHeight);

@@ -18,7 +18,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'review', desc: "see this workspace's changes" },
   { name: 'pr', args: '[extra instructions]', desc: 'Claude opens a pull request with a short description (your PR instructions)' },
   { name: 'run', desc: "start the project's run command (e.g. its dev server) in the Terminal tab" },
-  { name: 'terminal', desc: "open this workspace's terminal" },
+  { name: 'terminal', desc: "open this workspace's terminal (elsewhere: your own shell, the Terminal tab)" },
   { name: 'setup', desc: "run the project's setup command again in this workspace" },
   { name: 'handoff', args: '<name>', desc: 'hand this workspace to someone; their Claude continues it' },
   { name: 'model', args: '[name]', desc: 'pick the model for this conversation' },
@@ -279,6 +279,8 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
     void (name === 'chat' ? ctl.newChat(project.id, text) : ctl.newWorktree(project.id, text));
     return;
   }
+  // Outside a workspace, /terminal opens your own shell (the Terminal tab).
+  if (!ws && name === 'terminal') return session.store.dispatch({ type: 'view', view: { kind: 'terminal' } });
   if (!ws) return session.toast('Open a workspace first (Projects on the left)', 'warn');
   switch (name) {
     case 'pr':

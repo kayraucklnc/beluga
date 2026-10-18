@@ -3,7 +3,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { Box, useApp, useInput, useStdout } from 'ink';
+import { Box, useApp, useInput, usePaste, useStdout } from 'ink';
 import type { Session } from '../core/session.js';
 import { type AppState, type Location, channelOf } from '../core/store.js';
 import { shareNameOf } from '../core/workspace-controller.js';
@@ -20,15 +20,15 @@ import { Panel } from './components/Panel.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Viewer, viewerInner, viewerLegend, viewerLines } from './components/Viewer.js';
 import { type Derived, derive } from './derive.js';
-import { type Target, hitTest } from './hit.js';
-import { type Effect, type UiState, handleKey, initialUi } from './keymap.js';
+import { type Target, hitTest, offsetZones } from './hit.js';
+import { type Effect, type UiState, handleKey, initialUi, insertText } from './keymap.js';
 import { type MenuKind } from './menus.js';
 import { type MenuContext, POLICY_INDEX, runMenu as runMenuOption } from './menu-actions.js';
 import { answerByNumber, answerTyped, currentQuestion } from './collab-actions.js';
 import type { MouseEvent } from './mouse.js';
 import { openTarget, suggestionWindow } from './suggest.js';
 import { theme } from './theme.js';
-import { type UiAction, isCompacting } from './workspace-models.js';
+import { type UiAction, isCompacting, stepTab, topTabs } from './workspace-models.js';
 import { type UiActionContext, runUiActionWith } from './ui-actions.js';
 import { useTerminalPane } from './use-terminal.js';
 import { expandOutgoing, pasteClipboardImage, pasteDroppedImages } from './attach-actions.js';
@@ -58,7 +58,14 @@ const BUTTON_HINTS: Record<string, string> = {
   templates: 'Start from a ready-made task, or save your own',
   'open-hit': 'Open the highlighted conversation',
   'refresh-usage': 'Measure disk space again',
+  queue: 'Your Claude is busy: this waits its turn, then runs',
+  'send-now': 'Interrupt your Claude and send this right away (Option+Enter)',
+  'queued-now': 'Stop the current task and run your waiting message now',
+  'queued-cancel': 'Drop your waiting message before it starts',
 };
+
+/** Shown while hovering the box you type in. */
+const COMPOSER_HINT = 'Enter sends · Ctrl+J new line · ⌥⌫ deletes a word (hold ⌫ to speed up) · ⌥←→ moves by word';
 
 export interface AppProps {
   readonly session: Session;
@@ -70,6 +77,8 @@ export interface AppProps {
   readonly setRawInput?: (sink: ((data: string) => void) | undefined) => void;
   /** Receive pastes before they're typed (image paths and empty pastes become image chips). */
   readonly setPasteHandler?: (fn: ((text: string) => boolean) | undefined) => void;
+  /** When the latest keyboard chunk arrived (keys from one chunk share it); defaults to the clock. */
+  readonly inputTime?: () => number;
 }
 
 function useTerminalSize(): { columns: number; rows: number } {
@@ -120,7 +129,7 @@ function listLocalDirs(dir: string): FsEntry[] {
 
 const isWorking = (state: AppState): boolean => anyActivity(state) || isCompacting(state) || state.transfers.some((t) => t.status === 'active');
 
-export function App({ session, onboarding = false, subscribeMouse, setRawInput, setPasteHandler }: AppProps) {
+export function App({ session, onboarding = false, subscribeMouse, setRawInput, setPasteHandler, inputTime }: AppProps) {
   const state = useSyncExternalStore(session.store.subscribe, session.store.getState);
   const [startUi] = useState<UiState>(() =>
     onboarding ? { ...initialUi, menu: { menu: { kind: 'welcome' }, selected: POLICY_INDEX[state.policy] } } : initialUi,
@@ -199,7 +208,7 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
 
   // ---- the built-in terminal
   const bench = session.workbench;
-  const { termPane, termSession, termFocused, termBar } = useTerminalPane({ session, state, ui, uiRef, patchUi, focus: d.focus, geometry: g, setRawInput });
+  const { termPane, termSession, termFocused, termBar, termKey, termDir } = useTerminalPane({ session, state, ui, uiRef, patchUi, focus: d.focus, geometry: g, setRawInput, onTabStep: (delta) => runUiAction({ type: 'view', view: { kind: stepTab(session.store.getState(), delta) } }) });
 
   // Opening a file (yourself) moves you into the viewer so its controls are right there.
   const openedKey = state.viewer && !state.viewer.by ? `${state.viewer.owner}:${state.viewer.share}/${state.viewer.path}` : undefined;
@@ -357,6 +366,14 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
         if (review && count) void ctl?.selectFile(Math.max(0, Math.min(count - 1, review.selected + effect.delta)));
         return;
       }
+      case 'tab_jump': {
+        const tab = topTabs(session.store.getState())[effect.index];
+        if (tab) runUiAction({ type: 'view', view: { kind: tab.kind } });
+        return;
+      }
+      case 'tab_step':
+        runUiAction({ type: 'view', view: { kind: stepTab(session.store.getState(), effect.delta) } });
+        return;
       case 'search_move': {
         const search = session.store.getState().search;
         if (search.hits.length) session.store.dispatch({ type: 'search', search: { cursor: Math.max(0, Math.min(search.hits.length - 1, search.cursor + effect.delta)) } });
@@ -428,6 +445,7 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
         return;
       case 'terminal':
         if (latest.view.kind === 'workspace') runUiAction({ type: 'open_ws', id: latest.view.id, tab: 'terminal' });
+        else runUiAction({ type: 'view', view: { kind: 'terminal' } });
         return;
       case 'templates':
         patchUi({ menu: { menu: { kind: 'templates' }, selected: 0 } });
@@ -483,6 +501,21 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
       case 'settings':
         patchUi({ menu: { menu: { kind: 'settings' }, selected: 0 } });
         return;
+      case 'queue':
+      case 'send-now': {
+        const text = current.buffer.trim();
+        if (!text) return;
+        patchUi({ buffer: '', cursor: 0, historyIndex: -1, chatScroll: 0, history: [...current.history, text].slice(-200) });
+        submit(text, id === 'send-now');
+        return;
+      }
+      case 'queued-now':
+      case 'queued-cancel': {
+        const next = view(latest, current).queuedIds[0];
+        const ok = next !== undefined && (id === 'queued-now' ? session.host.promote(next) : session.host.cancelQueued(next));
+        if (!ok) session.toast('Nothing of yours is waiting here');
+        return;
+      }
     }
   };
 
@@ -518,6 +551,7 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
         const key = uiRef.current.termKey;
         // An exited shell starts again when you click it.
         if (wsId && (!key || key === shellId(wsId)) && !bench?.terminals?.get(shellId(wsId))?.running) bench?.shell(wsId, termPane);
+        if (latest.view.kind === 'terminal' && termKey && !termSession?.running) bench?.globalShell(termKey, termDir, termPane);
         patchUi({ focus: 'terminal' });
         return;
       }
@@ -621,7 +655,8 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
       buttons: dd.buttons,
       approvalDetailLines: dd.approvalDetailLines,
       viewerLegend: latest.viewer ? viewerLegend(latest.viewer, uiRef.current.viewerFull, uiRef.current.viewerRaw) : undefined,
-      zones: dd.zones,
+      // The terminal's bar (its shells, Run, +) is drawn by the pane itself, right at its top.
+      zones: termBar && !dd.menu ? [...dd.zones, ...offsetZones(termBar.zones, dd.geometry.mainX + 1, dd.geometry.paneTop)] : dd.zones,
     });
   };
   const flushMouse = (): void => {
@@ -699,16 +734,27 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
         headerItems: dd.headerItems,
         mainFocusable: (latest.view.kind === 'workspace' && latest.view.tab === 'review') || latest.view.kind === 'overview' || latest.view.kind === 'usage',
         searching: latest.view.kind === 'search',
-        terminalVisible: latest.view.kind === 'workspace' && latest.view.tab === 'terminal',
+        terminalVisible: latest.view.kind === 'terminal' || (latest.view.kind === 'workspace' && latest.view.tab === 'terminal'),
         filesVisible: latest.view.kind === 'files' || (latest.view.kind === 'workspace' && latest.view.tab === 'files'),
         draft: latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree',
         headerStart: dd.headerStart,
         planId: dd.planId,
         planMaxScroll: dd.planMaxScroll,
         questionOptions: latest.questions[0]?.channel === dd.channel ? (currentQuestion(latest.questions[0])?.options.length ?? 0) : 0,
+        composerWidth: dd.composerWidth,
+        now: inputTime?.() || Date.now(),
       });
       setUi(result.ui);
       if (result.effect) run(result.effect);
+    }),
+  );
+
+  // Pasted text (bracketed paste) keeps its line breaks and is never sent by itself.
+  usePaste((text) =>
+    safely('paste', () => {
+      const current = uiRef.current;
+      if (current.menu) return;
+      setUi(insertText({ ...current, focus: 'chat' }, text));
     }),
   );
 
@@ -721,7 +767,9 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
           return t.kind === 'action' ? t.id : undefined;
         })()
       : undefined;
-  const hoveredButtonHint = hoveredButton ? BUTTON_HINTS[hoveredButton] : undefined;
+  const hoverComposer = hover && hover.y >= g.composerTop && hover.y < g.composerTop + g.composerHeight;
+  const hoveredButtonHint = hoveredButton ? BUTTON_HINTS[hoveredButton] : hoverComposer ? COMPOSER_HINT : undefined;
+  const barHint = hover && termBar && hover.y === g.paneTop ? termBar.zones.find((z) => hover.x >= z.x0 + g.mainX + 1 && hover.x <= z.x1 + g.mainX + 1)?.hint : undefined;
   const sideFocus = d.focus === 'projects' || d.focus === 'people' ? d.focus : 'other';
   const activeTransfer = [...state.transfers].reverse().find((t) => t.status === 'active');
   const paneW = g.mainWidth;
@@ -768,8 +816,8 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
               frame={frame}
             />
             <Box flexDirection="column" width={paneW}>
-              <Box paddingX={1} height={2} flexDirection="column">
-                <ModelBlock lines={d.tabs.lines} height={2} />
+              <Box paddingX={1} height={1} flexDirection="column">
+                <ModelBlock lines={d.tabs.lines} height={1} />
               </Box>
               {d.header && !(d.menu && ui.menu) ? (
                 <Box paddingX={1} height={3} flexDirection="column">
@@ -798,13 +846,15 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
         selected={Math.min(ui.selected, Math.max(0, d.suggestions.length - 1))}
         buttons={d.buttons}
         toast={state.toast}
-        hint={d.hint ?? hoveredButtonHint}
+        hint={d.hint ?? barHint ?? hoveredButtonHint}
         hoveredButton={hoveredButton}
         transfer={activeTransfer}
         placeholder={placeholder}
         right={d.composerRight}
         idleHint={d.focus === 'terminal' ? 'Click here (or Ctrl+]) to talk to Claude again' : undefined}
         accent={ui.pending ? theme.accent : undefined}
+        lines={g.composerLines}
+        wrapWidth={d.composerWidth}
       />
     </Box>
   );

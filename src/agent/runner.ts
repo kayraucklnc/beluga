@@ -1,17 +1,26 @@
 import { readFileSync } from 'node:fs';
-import { query, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../core/attachments.js';
 import { buildPrompt, buildSystemAppend, summarizeTool } from './prompt.js';
 import { DENY_REASON, decideTool } from './policy.js';
 import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
 import { SubAgentTracker } from './subagents.js';
+import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from './live-run.js';
 import { nameTask } from './namer.js';
 import { createRoomTools } from './tools.js';
-import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
+import type { AgentBackend, AgentRunInput, FollowUp, RoomBridge } from './types.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
 const DEFAULT_CONTEXT_WINDOW = 200_000;
+/** How long a run may stay open after answering while its background agents work. */
+const BACKGROUND_LIMIT_MS = 3 * 60 * 60_000;
+/**
+ * Agents all done and Claude between turns for this long: end the run. Claude normally reports
+ * on finished agents (and the run ends after that answer); this covers it not doing so. Not
+ * instant, because an agent can resume right after its shell finishes.
+ */
+const QUIET_MS = 15_000;
 
 export interface ClaudeBackendOptions {
   readonly cwd: string;
@@ -46,10 +55,10 @@ export function toModelChoices(models: ReadonlyArray<{ value: string; displayNam
 }
 
 /**
- * A prompt with images pasted into it: one user message with the text and each image as a
- * content block, so Claude actually sees them. Without images, the plain text.
+ * A prompt with images pasted into it: the text and each image as content blocks, so Claude
+ * actually sees them. Without images, the plain text.
  */
-export function withImages(text: string, files: readonly string[]): string | AsyncIterable<SDKUserMessage> {
+export function imageContent(text: string, files: readonly string[]): PromptContent {
   const images = files.flatMap((file) => {
     try {
       const data = readFileSync(file);
@@ -60,10 +69,7 @@ export function withImages(text: string, files: readonly string[]): string | Asy
   });
   if (!images.length) return text;
   const note = `\n\n(${images.length === 1 ? 'The image linked above is' : 'The images linked above are'} attached to this message, in order.)`;
-  const message: SDKUserMessage = { type: 'user', session_id: '', parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'text', text: text + note }, ...images] } };
-  return (async function* () {
-    yield message;
-  })();
+  return [{ type: 'text', text: text + note }, ...images];
 }
 
 /**
@@ -155,58 +161,104 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         return { behavior: 'deny' as const, message: feedback };
       };
 
-      let final = '';
       let contextUsed = 0;
-      const q = query({ prompt: withImages(buildPrompt(input), linkedImages(input.prompt)), options });
-      for await (const msg of q) {
-        if (msg.type === 'system' && msg.subtype === 'init') remember(msg.session_id);
-        if (msg.type === 'rate_limit_event') {
-          const update = fromRateLimitEvent(msg.rate_limit_info);
-          if (update) opts.bridge.reportUsage(update);
-        }
-        if (msg.type === 'assistant') {
-          for (const e of subagents.assistant(msg.parent_tool_use_id, msg.message.content)) input.onEvent('sub', JSON.stringify(e));
-        }
-        if (msg.type === 'system' && msg.subtype === 'compact_boundary') {
-          const meta = msg.compact_metadata;
-          input.onEvent('compact', JSON.stringify({ pre: meta.pre_tokens, post: meta.post_tokens ?? 0, trigger: meta.trigger }));
-          contextUsed = meta.post_tokens ?? 0;
-        }
-        if (msg.type === 'assistant' && msg.parent_tool_use_id === null && msg.message.usage) {
-          const u = msg.message.usage;
-          contextUsed = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
-        }
-        if (msg.type === 'system' && 'task_id' in msg) {
-          for (const e of subagents.task(msg as Parameters<SubAgentTracker['task']>[0])) input.onEvent('sub', JSON.stringify(e));
-        }
-        if (msg.type === 'user' && msg.parent_tool_use_id === null) {
-          for (const e of subagents.user(msg.message.content as never)) input.onEvent('sub', JSON.stringify(e));
-        }
-        if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {
-          for (const block of msg.message.content) {
-            if (block.type === 'text' && block.text.trim()) {
-              lastText = block.text.trim();
-              input.onEvent('text', lastText);
-            }
-            if (block.type === 'tool_use' && !subagents.isLaunch(block)) {
-              const toolInput = (block.input ?? {}) as Record<string, unknown>;
-              input.onEvent('tool', summarizeTool(block.name, toolInput, cwd));
-              if (WRITE_TOOLS.has(block.name) && typeof toolInput.file_path === 'string') {
-                input.onFileTouched(toolInput.file_path);
+      // Streaming input keeps Claude Code alive after it answers while background agents still
+      // work: a one-shot prompt would cut them off 10 minutes later, rejecting their next step.
+      const prompts = new PromptQueue();
+      prompts.push(imageContent(buildPrompt(input), linkedImages(input.prompt)));
+      const background = new BackgroundAgents();
+      const turns = new TurnRouter({ onEvent: input.onEvent });
+      let limit: NodeJS.Timeout | undefined;
+      let quiet: NodeJS.Timeout | undefined;
+      const finish = (): void => {
+        if (prompts.closed) return;
+        clearTimeout(limit);
+        clearTimeout(quiet);
+        if (limit) input.onFollowUps?.(undefined); // only if follow-ups were offered
+        turns.failPending('Claude finished before getting to this message');
+        prompts.close();
+      };
+      const send = (followUp: FollowUp): boolean => {
+        if (prompts.closed) return false;
+        turns.queue(followUp);
+        return prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)));
+      };
+      /** After an answer: end the run, or keep it open (taking follow-ups) while agents work. */
+      const settle = (): void => {
+        if (!background.busy && !turns.waiting) return finish();
+        if (limit) return;
+        limit = setTimeout(finish, BACKGROUND_LIMIT_MS);
+        limit.unref();
+        input.onFollowUps?.(send);
+      };
+      const done = (): boolean => turns.between && !background.busy && !turns.waiting;
+      const watchQuiet = (): void => {
+        clearTimeout(quiet);
+        if (!limit || !done()) return;
+        quiet = setTimeout(() => done() && finish(), QUIET_MS);
+        quiet.unref();
+      };
+      abortController.signal.addEventListener('abort', finish, { once: true });
+
+      const q = query({ prompt: prompts, options });
+      try {
+        for await (const msg of q) {
+          background.observe(msg as Parameters<BackgroundAgents['observe']>[0]);
+          watchQuiet();
+          if (msg.type === 'system' && msg.subtype === 'init') remember(msg.session_id);
+          if (msg.type === 'rate_limit_event') {
+            const update = fromRateLimitEvent(msg.rate_limit_info);
+            if (update) opts.bridge.reportUsage(update);
+          }
+          if (msg.type === 'assistant') {
+            for (const e of subagents.assistant(msg.parent_tool_use_id, msg.message.content)) input.onEvent('sub', JSON.stringify(e));
+          }
+          if (msg.type === 'system' && msg.subtype === 'compact_boundary') {
+            const meta = msg.compact_metadata;
+            input.onEvent('compact', JSON.stringify({ pre: meta.pre_tokens, post: meta.post_tokens ?? 0, trigger: meta.trigger }));
+            contextUsed = meta.post_tokens ?? 0;
+          }
+          if (msg.type === 'assistant' && msg.parent_tool_use_id === null && msg.message.usage) {
+            const u = msg.message.usage;
+            contextUsed = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
+          }
+          if (msg.type === 'system' && 'task_id' in msg) {
+            for (const e of subagents.task(msg as Parameters<SubAgentTracker['task']>[0])) input.onEvent('sub', JSON.stringify(e));
+          }
+          const route = msg.type === 'assistant' && msg.parent_tool_use_id === null ? turns.current() : undefined;
+          if (msg.type === 'user' && msg.parent_tool_use_id === null) {
+            for (const e of subagents.user(msg.message.content as never)) input.onEvent('sub', JSON.stringify(e));
+          }
+          if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {
+            for (const block of msg.message.content) {
+              if (block.type === 'text' && block.text.trim()) {
+                lastText = block.text.trim();
+                route?.onEvent('text', lastText);
+              }
+              if (block.type === 'tool_use' && !subagents.isLaunch(block)) {
+                const toolInput = (block.input ?? {}) as Record<string, unknown>;
+                route?.onEvent('tool', summarizeTool(block.name, toolInput, cwd));
+                if (WRITE_TOOLS.has(block.name) && typeof toolInput.file_path === 'string') {
+                  input.onFileTouched(toolInput.file_path);
+                }
               }
             }
           }
+          if (msg.type === 'result') {
+            remember(msg.session_id);
+            const window = Object.values(msg.modelUsage ?? {})[0]?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+            const turn = turns.current();
+            if (contextUsed) turn.onEvent('context', JSON.stringify({ used: contextUsed, window }));
+            turn.onEvent('usage', JSON.stringify(usageOf(msg.modelUsage ?? {}, msg.total_cost_usd ?? 0, msg.session_id)));
+            const stopped = `Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`;
+            if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped)) throw new Error(stopped);
+            settle();
+          }
         }
-        if (msg.type === 'result') {
-          remember(msg.session_id);
-          const window = Object.values(msg.modelUsage ?? {})[0]?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
-          if (contextUsed) input.onEvent('context', JSON.stringify({ used: contextUsed, window }));
-          input.onEvent('usage', JSON.stringify(usageOf(msg.modelUsage ?? {}, msg.total_cost_usd ?? 0, msg.session_id)));
-          if (msg.subtype === 'success') final = msg.result;
-          else throw new Error(`Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`);
-        }
+      } finally {
+        finish();
       }
-      return final;
+      return turns.answers.join('\n\n');
     },
 
     nameTask: (prompt: string) => nameTask(prompt, { cwd: opts.cwd, claudePath: opts.claudePath }),

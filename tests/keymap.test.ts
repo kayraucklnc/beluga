@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { handleKey, initialUi, type KeyContext, type KeyInfo, type UiState } from '../src/ui/keymap.js';
+import { handleKey, initialUi, rawTabStep, type KeyContext, type KeyInfo, type UiState } from '../src/ui/keymap.js';
 import type { Suggestion } from '../src/ui/suggest.js';
 
 const ctx: KeyContext = { hasApproval: false, hasViewer: false, overlay: false, page: 20, maxChatScroll: 50, suggestions: [], peopleCount: 3, menuSize: 0 };
@@ -35,7 +35,7 @@ describe('keymap: typing', () => {
     ui = key(ui, { ctrl: true }, 'u').ui;
     expect(ui.buffer).toBe('ello ');
     expect(key({ ...ui, cursor: 0 }, { backspace: true }).ui.buffer).toBe('ello ');
-    expect(key(ui, {}, 'a\nb').ui.buffer).toBe('a bello ');
+    expect(key(ui, {}, 'a\nb').ui.buffer).toBe('a\nbello ');
     expect(key(ui, { ctrl: true }, 'z').ui).toBe(ui);
   });
 
@@ -313,7 +313,47 @@ describe('keymap: queue or send now', () => {
   it('types @ from Option chords when the terminal sends Option as Meta (Turkish, German, Spanish Macs)', () => {
     expect(key(initialUi, { meta: true }, 'q').ui.buffer).toBe('@');
     expect(key(initialUi, { meta: true }, 'l').ui.buffer).toBe('@');
-    expect(key(initialUi, { meta: true }, '2').ui.buffer).toBe('@');
+    // Option+2 is "@" while you're typing; in an empty box it opens tab 2.
+    expect(key({ ...initialUi, buffer: 'hi ', cursor: 3 }, { meta: true }, '2').ui.buffer).toBe('hi @');
     expect(key(initialUi, {}, 'q').ui.buffer).toBe('q');
+  });
+});
+
+describe('keymap: quick tab keys', () => {
+  it('Option/Alt+1…6 jump to a tab, from anywhere', () => {
+    expect(key(initialUi, { meta: true }, '1').effect).toEqual({ type: 'tab_jump', index: 0 });
+    expect(key(initialUi, { meta: true }, '2').effect).toEqual({ type: 'tab_jump', index: 1 });
+    expect(key({ ...initialUi, focus: 'projects' }, { meta: true }, '6').effect).toEqual({ type: 'tab_jump', index: 5 });
+    expect(key({ ...initialUi, buffer: 'abc', cursor: 3 }, { meta: true }, '3').effect).toEqual({ type: 'tab_jump', index: 2 });
+    expect(key(initialUi, { meta: true }, '7').effect).toBeUndefined();
+  });
+
+  it("reads the characters a Mac types for Option+digit, but only in an empty box", () => {
+    [...'¡™£¢∞§'].forEach((ch, i) => expect(key(initialUi, {}, ch).effect).toEqual({ type: 'tab_jump', index: i }));
+    const typing = { ...initialUi, buffer: 'costs ', cursor: 6 };
+    expect(key(typing, {}, '£').ui.buffer).toBe('costs £');
+    expect(key(typing, {}, '£').effect).toBeUndefined();
+  });
+
+  it('Ctrl+Tab, Option+] and Option+[ step through the tabs', () => {
+    expect(key(initialUi, { tab: true, ctrl: true }).effect).toEqual({ type: 'tab_step', delta: 1 });
+    expect(key(initialUi, { tab: true, ctrl: true, shift: true }).effect).toEqual({ type: 'tab_step', delta: -1 });
+    expect(key(initialUi, { meta: true }, ']').effect).toEqual({ type: 'tab_step', delta: 1 });
+    expect(key(initialUi, { meta: true }, '[').effect).toEqual({ type: 'tab_step', delta: -1 });
+    expect(key(initialUi, {}, '‘').effect).toEqual({ type: 'tab_step', delta: 1 });
+    expect(key(initialUi, {}, '“').effect).toEqual({ type: 'tab_step', delta: -1 });
+    // plain Tab still moves between areas
+    expect(key(initialUi, { tab: true }).effect).toBeUndefined();
+  });
+
+  it('leaves open menus and help alone', () => {
+    const menu = { ...initialUi, menu: { menu: { kind: 'settings' } as const, selected: 0 } };
+    expect(key(menu, { meta: true }, '1').effect?.type).not.toBe('tab_jump');
+  });
+
+  it('recognises Ctrl+Tab from the built-in terminal (kitty and xterm forms)', () => {
+    expect(rawTabStep('\x1b[9;5u')).toBe(1);
+    expect(rawTabStep('\x1b[27;6;9~')).toBe(-1);
+    expect(rawTabStep('\t')).toBeUndefined();
   });
 });

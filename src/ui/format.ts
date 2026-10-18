@@ -109,7 +109,9 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
       item.status === 'awaiting_approval'
         ? `${item.ownerName} needs to approve this before their Claude starts.`
         : item.status === 'queued'
-          ? 'Starts when the current task finishes. (Alt+Enter sends right away.)'
+          ? item.owner === opts.selfId
+            ? 'Starts when the current task finishes. Run it now or cancel it with the buttons below the box.'
+            : 'Starts when the current task finishes.'
           : running
             ? 'thinking…'
             : '';

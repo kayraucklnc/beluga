@@ -15,7 +15,7 @@ import {
   publishForRoom,
   registerAttachment,
 } from '../src/core/attachments.js';
-import { withImages } from '../src/agent/runner.js';
+import { imageContent } from '../src/agent/runner.js';
 
 describe('image chips', () => {
   it('inserts a chip at the cursor with spacing', () => {
@@ -61,13 +61,8 @@ describe('images for Claude', () => {
   });
 
   it('sends images as content blocks next to the text', async () => {
-    expect(withImages('hi', [])).toBe('hi');
-    const stream = withImages('hi', [path.join(dir, 'a.png')]);
-    expect(typeof stream).not.toBe('string');
-    const messages = [];
-    for await (const m of stream as AsyncIterable<{ message: { content: unknown[] } }>) messages.push(m);
-    expect(messages).toHaveLength(1);
-    const content = messages[0]!.message.content as Array<{ type: string; source?: { data: string; media_type: string } }>;
+    expect(imageContent('hi', [])).toBe('hi');
+    const content = imageContent('hi', [path.join(dir, 'a.png')]) as Array<{ type: string; source?: { data: string; media_type: string } }>;
     expect(content.map((c) => c.type)).toEqual(['text', 'image']);
     expect(content[1]?.source).toEqual({ type: 'base64', media_type: 'image/png', data: png.toString('base64') });
   });

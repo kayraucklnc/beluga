@@ -43,6 +43,24 @@ const START_SIZE = { cols: 120, rows: 30 };
 export const shellId = (wsId: string): string => wsId;
 export const setupId = (wsId: string): string => `${wsId}:setup`;
 export const runId = (wsId: string): string => `${wsId}:run`;
+/** Shells of the global Terminal tab (not tied to a workspace): `shell:1`, `shell:2`… */
+export const globalShellId = (n: number): string => `shell:${n}`;
+export const isGlobalShell = (key: string): boolean => /^shell:\d+$/.test(key);
+export const globalShellNumber = (key: string): number => Number(key.slice('shell:'.length)) || 0;
+
+/**
+ * Where a new global shell starts: the project you last opened a workspace in, else the
+ * project klaud was started in, else your home folder.
+ */
+export function globalShellDir(projects: readonly { root: string; workspaces: readonly { id: string }[] }[], openTabs: readonly string[], launchDir: string, home: string): string {
+  for (const id of [...openTabs].reverse()) {
+    const p = projects.find((x) => x.root && x.workspaces.some((w) => w.id === id));
+    if (p) return p.root;
+  }
+  const sep = launchDir.includes('\\') ? '\\' : '/';
+  const launched = projects.find((p) => p.root && (launchDir === p.root || launchDir.startsWith(p.root + sep)));
+  return launched?.root ?? home;
+}
 
 /**
  * What changed about a pull request that's worth telling you. A PR showing up is only news
@@ -208,7 +226,7 @@ export class Workbench {
 
   // ------------------------------------------------------- terminal & scripts
 
-  private openSession(key: string, ws: Workspace, command?: string, size = START_SIZE): TerminalSession | undefined {
+  private openSession(key: string, ws: Workspace | { path: string }, command?: string, size = START_SIZE): TerminalSession | undefined {
     const terminals = this.deps.terminals;
     if (!terminals) return undefined;
     const shell = this.deps.store.getState().prefs.shell;
@@ -216,7 +234,7 @@ export class Workbench {
       cwd: ws.path,
       cols: size.cols,
       rows: size.rows,
-      env: scriptEnv(ws),
+      ...('projectRoot' in ws ? { env: scriptEnv(ws) } : {}),
       ...(shell ? { shell } : {}),
       ...(command ? { args: ['-lc', command], title: command } : {}),
     });
@@ -232,6 +250,22 @@ export class Workbench {
     if (existing?.running) return existing;
     if (existing) this.deps.terminals?.close(shellId(wsId));
     return this.openSession(shellId(wsId), ws, undefined, size);
+  }
+
+  /**
+   * A shell of the global Terminal tab (`key` from globalShellId), started in `dir`.
+   * A running one is kept; an exited one starts again.
+   */
+  globalShell(key: string, dir: string, size?: { cols: number; rows: number }): TerminalSession | undefined {
+    const existing = this.deps.terminals?.get(key);
+    if (existing?.running) return existing;
+    if (existing) this.deps.terminals?.close(key);
+    return this.openSession(key, { path: dir }, undefined, size);
+  }
+
+  /** The global Terminal tab's shells, in the order they were opened. */
+  globalShells(): string[] {
+    return (this.deps.terminals?.list() ?? []).map((s) => s.id).filter(isGlobalShell).sort((a, b) => globalShellNumber(a) - globalShellNumber(b));
   }
 
   /** Close a terminal session (shell, setup or run). */

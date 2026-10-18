@@ -310,12 +310,14 @@ async function main(): Promise<void> {
   let pasteListener: ((text: string) => boolean) | undefined;
   // The built-in terminal takes the keyboard while it's focused (raw keys go to its shell).
   let rawSink: ((data: string) => void) | undefined;
+  let lastInput = 0;
   const stdin = process.stdin.isTTY
     ? createInput(process.stdin, {
         onMouse: (e) => mouseListeners.forEach((l) => l(e)),
         onFocus: (focused) => store.dispatch({ type: 'away', away: !focused }),
         rawSink: () => rawSink,
         onPaste: (text) => pasteListener?.(text) ?? false,
+        onData: () => (lastInput = Date.now()),
       })
     : process.stdin;
   const subscribeMouse = config.mouse
@@ -335,7 +337,7 @@ async function main(): Promise<void> {
   const onboarding = config.agent && !config.policyChosen && (config.mode === 'join' || config.inviteNow);
   const app = render(
     <ErrorBoundary>
-      <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} setRawInput={(sink) => (rawSink = sink)} setPasteHandler={(fn) => (pasteListener = fn)} />
+      <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} setRawInput={(sink) => (rawSink = sink)} setPasteHandler={(fn) => (pasteListener = fn)} inputTime={() => lastInput} />
     </ErrorBoundary>,
     // Only rewrite the lines that changed, and redraw often enough that scrolling feels smooth.
     { exitOnCtrlC: false, stdin, incrementalRendering: true, maxFps: 60 },

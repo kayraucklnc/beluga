@@ -58,7 +58,7 @@ export function parseMouse(chunk: string): { events: MouseEvent[]; rest: string 
 }
 
 // The start of an escape sequence cut off at the end of a chunk (fast scrolling splits reports across reads).
-const PARTIAL = /\x1b(?:\[(?:<[\d;]*)?)?$/;
+const PARTIAL = /\x1b(?:\[(?:<[\d;]*|[\d;]+)?)?$/;
 /** How long to wait for the rest of a cut-off sequence before treating it as typed (a lone Esc key). */
 export const PARTIAL_WAIT_MS = 25;
 
@@ -117,6 +117,42 @@ export function takePastes(chunk: string, take: (text: string) => boolean, plain
   return chunk.replace(PASTE, (whole, text: string) => (take(text) ? '' : plain ? text : whole));
 }
 
+const PASTE_START = '\x1b[200~';
+const PASTE_END = '\x1b[201~';
+
+/**
+ * Split raw input into typed text and bracketed-paste content (markers removed). `inPaste`
+ * carries a paste that continues into the next chunk.
+ */
+export function splitPaste(data: string, inPaste: boolean): { parts: Array<{ text: string; paste: boolean }>; inPaste: boolean } {
+  const parts: Array<{ text: string; paste: boolean }> = [];
+  let rest = data;
+  let pasting = inPaste;
+  while (rest) {
+    const marker = pasting ? PASTE_END : PASTE_START;
+    const at = rest.indexOf(marker);
+    const text = at === -1 ? rest : rest.slice(0, at);
+    if (text) parts.push({ text, paste: pasting });
+    if (at === -1) break;
+    rest = rest.slice(at + marker.length);
+    pasting = !pasting;
+  }
+  return { parts, inPaste: pasting };
+}
+
+/** Shift+Enter as terminals report it with CSI u / modifyOtherKeys; Ink can't tell it from Enter, so it becomes Ctrl+J (new line). */
+const SHIFT_ENTER = /\x1b\[13;2u|\x1b\[27;2;13~/g;
+
+/**
+ * Rewrite a few keys into forms Ink understands: Ctrl+Tab in xterm's modifyOtherKeys form
+ * becomes the kitty form, and a lone "Esc [" (Option+[ with Option as Meta, which looks like
+ * the start of a sequence) becomes kitty's Alt+[.
+ */
+export function normalizeKeys(data: string): string {
+  if (data === '\x1b[') return '\x1b[91;3u';
+  return data.replace(/\x1b\[27;([56]);9~/g, '\x1b[9;$1u');
+}
+
 export interface InputHooks {
   readonly onMouse?: (e: MouseEvent) => void;
   readonly onFocus?: (focused: boolean) => void;
@@ -127,6 +163,8 @@ export interface InputHooks {
   readonly rawSink?: () => ((data: string) => void) | undefined;
   /** A paste arrived (maybe empty: an image on the clipboard); return true to swallow it. */
   readonly onPaste?: (text: string) => boolean;
+  /** Called as each chunk arrives (keys from one chunk share its time; accelerating Backspace uses it). */
+  readonly onData?: () => void;
 }
 
 /**
@@ -163,13 +201,17 @@ export function createInput(source: NodeJS.ReadStream, hooks: InputHooks): NodeJ
     for (const f of focus) hooks.onFocus?.(f);
     if (!rest) return;
     const sink = hooks.rawSink?.();
-    const keys = takePastes(rest, (t) => (sink ? false : (hooks.onPaste?.(t) ?? false)), Boolean(sink));
-    if (!keys) return;
-    if (sink) sink(keys);
-    else proxy.write(keys);
+    // The built-in terminal splits bracketed pastes itself; for the composer, image pastes are taken first.
+    if (sink) {
+      sink(rest);
+      return;
+    }
+    const keys = takePastes(rest, (t) => hooks.onPaste?.(t) ?? false);
+    if (keys) proxy.write(normalizeKeys(keys.replace(SHIFT_ENTER, '\n')));
   };
   const join = createChunkJoiner(deliver);
   source.on('data', (data: string | Buffer) => {
+    hooks.onData?.();
     const text = join(data.toString());
     if (text) deliver(text);
   });
