@@ -48,6 +48,8 @@ export class WorkspaceManager {
   private records: WorkspaceRecord[];
   private config: ProjectsConfig;
   private projects: Project[] = [];
+  private refreshGen = 0;
+  private appliedGen = 0;
 
   constructor(readonly store: WorkspaceStore = new WorkspaceStore()) {
     this.records = store.loadRecords();
@@ -150,7 +152,11 @@ export class WorkspaceManager {
     const roots = [...new Set([...findProjects(this.config.roots), ...this.config.projects].map(real))].filter(
       (r) => !this.config.hidden.includes(r) && existsSync(r),
     );
+    const gen = ++this.refreshGen;
     const loaded = await Promise.all(roots.map((root) => this.loadProject(root)));
+    // A refresh that started later already finished: its answer is more current than ours.
+    if (gen < this.appliedGen) return this.projects;
+    this.appliedGen = gen;
     // Same-named projects (e.g. two clones) get their parent folder added so you can tell them apart.
     const counts = new Map<string, number>();
     for (const p of loaded) counts.set(p.name, (counts.get(p.name) ?? 0) + 1);
@@ -331,6 +337,8 @@ export class WorkspaceManager {
     if (ws.kind === 'worktree') {
       // Never force-remove worktrees made by other tools: their uncommitted work isn't ours to discard.
       if (!ws.archived && existsSync(ws.path)) await g.removeWorktree(ws.projectRoot, ws.path, !ws.external);
+      // Folder deleted by hand: forget it in git too, or the branch stays "checked out" and the worktree comes back.
+      else if (!ws.archived) await g.git(ws.projectRoot, ['worktree', 'prune']).catch(() => undefined);
       if (ws.branch && !ws.external) await g.deleteBranch(ws.projectRoot, ws.branch).catch(() => undefined);
     }
     rmSync(this.store.historyFile(id), { force: true });

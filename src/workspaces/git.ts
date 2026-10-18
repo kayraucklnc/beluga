@@ -2,10 +2,13 @@ import { execFile } from 'node:child_process';
 
 export class GitError extends Error {}
 
+/** Git must never ask for a password on klaud's screen: fail instead, and say why. */
+const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' };
+
 /** Run git in a directory; resolves stdout, rejects with git's own message. */
 export function git(cwd: string, args: readonly string[], timeoutMs = 60_000): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', [...args], { cwd, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('git', [...args], { cwd, timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, env: GIT_ENV }, (err, stdout, stderr) => {
       if (err) reject(new GitError((stderr || err.message).trim()));
       else resolve(stdout);
     });
@@ -184,9 +187,11 @@ export async function mergeInto(mainDir: string, branch: string, target?: string
   try {
     await git(mainDir, ['merge', '--no-ff', '--no-edit', branch]);
     return { ok: true };
-  } catch {
+  } catch (err) {
     const conflicts = ((await tryGit(mainDir, ['diff', '--name-only', '--diff-filter=U'])) ?? '').split('\n').filter(Boolean);
     await tryGit(mainDir, ['merge', '--abort']);
+    // Not a conflict (missing branch, no git identity, a hook said no): show git's own reason.
+    if (!conflicts.length) throw err;
     return { ok: false, reason: 'conflict', files: conflicts };
   }
 }

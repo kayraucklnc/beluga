@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import type { TerminalManager, TerminalSession } from '../terminal/index.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
+import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { buildPrPrompt, customPrPrompt, ensurePrPromptFile, findPr, fixChecksPrompt, hasGh, resetPrPrompt } from '../workspaces/pr.js';
 import { scriptEnv } from '../workspaces/scripts.js';
@@ -43,9 +44,12 @@ export const shellId = (wsId: string): string => wsId;
 export const setupId = (wsId: string): string => `${wsId}:setup`;
 export const runId = (wsId: string): string => `${wsId}:run`;
 
-/** What changed about a pull request that's worth telling you. */
-export function prNews(name: string, channel: string, before: PullRequest | undefined, pr: PullRequest): NoticeEvent[] {
-  if (!before) return [{ kind: 'pr', title: `Pull request #${pr.number} is open for ${name}`, body: pr.title, channel }];
+/**
+ * What changed about a pull request that's worth telling you. A PR showing up is only news
+ * when you asked Claude for it (`asked`); otherwise it already existed and isn't.
+ */
+export function prNews(name: string, channel: string, before: PullRequest | undefined, pr: PullRequest, asked = false): NoticeEvent[] {
+  if (!before) return asked && pr.state === 'OPEN' ? [{ kind: 'pr', title: `Pull request #${pr.number} is open for ${name}`, body: pr.title, channel }] : [];
   const out: NoticeEvent[] = [];
   if (before.checks !== pr.checks && (pr.checks === 'passing' || pr.checks === 'failing')) out.push({ kind: pr.checks === 'failing' ? 'problems' : 'pr', title: `Checks ${pr.checks} on PR #${pr.number}`, body: `${name} · ${pr.title}`, channel });
   if (before.state !== 'MERGED' && pr.state === 'MERGED') out.push({ kind: 'pr', title: `PR #${pr.number} was merged`, body: name, channel });
@@ -68,6 +72,8 @@ export class Workbench {
   private prTimer?: NodeJS.Timeout;
   private readonly watchers = new Map<string, () => void>();
   private prsSeeded = false;
+  /** Worktrees you asked Claude to open a PR for: their PR appearing is worth a notification. */
+  private readonly prAsked = new Set<string>();
 
   constructor(private readonly deps: WorkbenchDeps) {}
 
@@ -138,6 +144,7 @@ export class Workbench {
     }
     const project = this.manager.list.find((p) => p.id === ws.projectId);
     const prompt = buildPrPrompt({ branch: ws.branch, base: ws.base ?? project?.base ?? 'origin/main', project: project?.name ?? '', projectPrompt: project?.scripts?.prPrompt, extra });
+    if (!this.deps.store.getState().prs[ws.id]) this.prAsked.add(ws.id);
     this.deps.controller.open(ws.id);
     this.deps.askClaude(prompt, `ws:${ws.id}`);
     this.deps.toast('Claude is preparing the pull request…');
@@ -155,12 +162,15 @@ export class Workbench {
     if (pr) (this.deps.open ?? systemOpen)(pr.url);
   }
 
-  /** Look up PRs for every worktree with commits (and notice when one opens or its checks finish). */
+  /**
+   * Look up PRs for your worktrees with commits (and notice when one you asked for opens, or
+   * checks finish). Worktrees other tools made (Claude Code sub-agents, Conductor…) are theirs to watch.
+   */
   async refreshPrs(only?: string): Promise<void> {
     if (this.deps.store.getState().gh === false) return;
     const find = this.deps.findPr ?? findPr;
     const state = this.deps.store.getState();
-    const list = this.manager.list.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && w.branch && !w.archived && (only ? w.id === only : (w.status?.ahead ?? 0) > 0 || state.prs[w.id]));
+    const list = this.manager.list.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && w.branch && !w.archived && worktreeOrigin(w) === 'klaud' && (only ? w.id === only : (w.status?.ahead ?? 0) > 0 || state.prs[w.id]));
     // The first look after starting only learns what exists; news is what changes after that.
     const quiet = !this.prsSeeded && !only;
     for (const ws of list) {
@@ -172,7 +182,9 @@ export class Workbench {
       }
       const before = this.deps.store.getState().prs[ws.id];
       this.deps.store.dispatch({ type: 'pr', id: ws.id, pr });
-      if (pr && !quiet) for (const e of prNews(ws.name, `ws:${ws.id}`, before, pr)) this.deps.notify(e);
+      if (!pr || quiet) continue;
+      const asked = this.prAsked.delete(ws.id);
+      for (const e of prNews(ws.name, `ws:${ws.id}`, before, pr, asked)) this.deps.notify(e);
     }
     if (!only) this.prsSeeded = true;
   }
@@ -231,6 +243,11 @@ export class Workbench {
     // A setup that was closed before it finished isn't "setting up" anymore.
     const wsId = key.endsWith(':setup') ? key.slice(0, -':setup'.length) : undefined;
     if (wsId && this.deps.store.getState().setup[wsId]?.status === 'running') this.deps.store.dispatch({ type: 'setup', id: wsId });
+  }
+
+  /** Stop a workspace's shell, setup and run terminals (it's being archived or deleted). */
+  closeTerminals(wsId: string): void {
+    for (const key of [shellId(wsId), setupId(wsId), runId(wsId)]) if (this.deps.terminals?.get(key)) this.closeTerminal(key);
   }
 
   private watchExit(key: string, session: TerminalSession, onExit: (code: number | null) => void): void {

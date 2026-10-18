@@ -332,6 +332,8 @@ export class Session {
       this.toast(`You can follow ${shared.name}, but not ask its Claude. Ask the owner to let you contribute`, 'warn');
       return;
     }
+    // Load the saved conversation first, so what's said now is kept with it.
+    if (!shared && channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
     this.sendChat(prompt, false, channel);
     this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent);
   }
@@ -627,6 +629,7 @@ export class Session {
       case 'chat':
         // Workspace chats only reach people in that workspace, and only contributors may post.
         if (body.channel !== 'room' && !this.sharing.canPost(from, body.channel)) return;
+        if (body.channel?.startsWith('ws:')) this.workspaces?.ensureLoaded(body.channel.slice(3));
         this.store.dispatch({ type: 'chat', id, from, text: body.text, ts, byAgent: body.byAgent, channel: body.channel });
         return;
       case 'focus':

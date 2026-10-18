@@ -39,6 +39,16 @@ describe('keymap: typing', () => {
     expect(key(ui, { ctrl: true }, 'z').ui).toBe(ui);
   });
 
+  it('moves over and deletes emoji as one character', () => {
+    let ui = type(initialUi, 'hi 😀!');
+    ui = key(ui, { leftArrow: true }).ui;
+    ui = key(ui, { leftArrow: true }).ui;
+    expect(ui.cursor).toBe(3);
+    ui = key(ui, { rightArrow: true }).ui;
+    ui = key(ui, { backspace: true }).ui;
+    expect(ui.buffer).toBe('hi !');
+  });
+
   it('recalls history with arrows', () => {
     let ui = key(type(initialUi, 'one'), { return: true }).ui;
     ui = key(type(ui, 'two'), { return: true }).ui;

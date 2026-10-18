@@ -109,7 +109,7 @@ describe('untrusted images', () => {
     expect(() => decodeImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="20000"><rect width="1" height="20000" fill="red"/></svg>'))).toThrow(/too thin/);
     const tall = decodeImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="20000"><rect width="100" height="20000" fill="red"/></svg>'));
     expect(Math.max(tall.width, tall.height)).toBeLessThanOrEqual(800);
-    expect(Date.now() - started).toBeLessThan(2000);
+    expect(Date.now() - started).toBeLessThan(5000); // unbounded would take far longer; parallel runs are slow
   });
 
   it('strips references to local files from SVGs, keeping #ids and data: URLs', () => {

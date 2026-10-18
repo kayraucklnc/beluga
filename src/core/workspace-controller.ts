@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import type { AgentPlace } from '../agent/types.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
@@ -17,6 +18,8 @@ export interface ControllerDeps {
   readonly findConversation?: (dir: string) => Promise<Conversation | undefined>;
   /** A new worktree exists (created, forked or handed over): e.g. run its setup. */
   readonly onWorktreeCreated?: (ws: Workspace) => void;
+  /** Before a workspace is archived or deleted: stop what runs in its folder (shell, dev server). */
+  readonly onWorkspaceGoing?: (id: string) => void;
 }
 
 const HISTORY_SAVE_MS = 400;
@@ -42,6 +45,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
  */
 export class WorkspaceController {
   private readonly loaded = new Set<string>();
+  private reviewToken = 0;
   private saveTimer?: NodeJS.Timeout;
   private lastLog: readonly LogItem[] = [];
   private readonly unsubscribe: () => void;
@@ -82,15 +86,27 @@ export class WorkspaceController {
   open(id: string, tab: WorkspaceTab = 'chat'): void {
     const ws = this.deps.manager.find(id);
     if (!ws) return this.deps.toast('That workspace no longer exists', 'warn');
-    const channel = `${WS_PREFIX}${id}`;
-    if (!this.loaded.has(channel)) {
-      this.loaded.add(channel);
-      const saved = this.deps.manager.loadHistory<LogItem>(id);
-      this.deps.store.dispatch({ type: 'history', channel, items: saved });
-      if (!saved.length && !ws.sessionId) void this.importConversation(ws.id, ws.path, channel);
-    }
+    const fresh = this.ensureLoaded(id);
+    if (fresh && !fresh.saved && !ws.sessionId) void this.importConversation(ws.id, ws.path, `${WS_PREFIX}${id}`);
     this.deps.store.dispatch({ type: 'view', view: { kind: 'workspace', id, tab } });
     if (tab === 'review') void this.loadReview(id);
+  }
+
+  /**
+   * Load a workspace's saved conversation (once), keeping anything already said there this
+   * session (e.g. "@add-auth …" from the main chat), so it's saved from then on.
+   * Returns undefined when it was already loaded.
+   */
+  ensureLoaded(id: string): { saved: number } | undefined {
+    const channel = `${WS_PREFIX}${id}`;
+    if (this.loaded.has(channel) || !this.deps.manager.find(id)) return undefined;
+    this.loaded.add(channel);
+    const saved = this.deps.manager.loadHistory<LogItem>(id);
+    const live = this.deps.store.getState().log.filter((l) => l.channel === channel);
+    const known = new Set(saved.map((l) => l.id));
+    this.deps.store.dispatch({ type: 'history', channel, items: [...saved, ...live.filter((l) => !known.has(l.id))] });
+    if (live.length) this.scheduleSave();
+    return { saved: saved.length + live.length };
   }
 
   /**
@@ -117,7 +133,8 @@ export class WorkspaceController {
   place(channel: string): AgentPlace | undefined {
     const id = workspaceIdOf(channel);
     const ws = id ? this.deps.manager.find(id) : undefined;
-    if (!ws || ws.archived) return undefined;
+    // A folder deleted behind klaud's back: say so instead of Claude failing to start.
+    if (!ws || ws.archived || !existsSync(ws.path)) return undefined;
     return {
       cwd: ws.path,
       additionalDirectories: [],
@@ -188,6 +205,7 @@ export class WorkspaceController {
 
   async archive(id: string, force = false): Promise<boolean> {
     const done = await this.act("Couldn't archive", async () => {
+      this.deps.onWorkspaceGoing?.(id);
       await this.deps.manager.archive(id, force);
       return true;
     });
@@ -223,7 +241,11 @@ export class WorkspaceController {
   }
 
   async remove(id: string): Promise<void> {
-    const done = await this.act("Couldn't delete", () => this.deps.manager.remove(id).then(() => true));
+    const done = await this.act("Couldn't delete", async () => {
+      this.deps.onWorkspaceGoing?.(id);
+      await this.deps.manager.remove(id);
+      return true;
+    });
     if (done) {
       this.loaded.delete(`${WS_PREFIX}${id}`);
       this.deps.store.dispatch({ type: 'close_tab', id });
@@ -342,12 +364,15 @@ export class WorkspaceController {
   // -------------------------------------------------------------- review
 
   async loadReview(id: string): Promise<void> {
+    const token = ++this.reviewToken;
     this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, selected: 0, diffScroll: 0, loading: true } });
     try {
       const data = await this.deps.manager.review(id);
+      if (token !== this.reviewToken) return; // you've opened another review since
       this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, data, selected: 0, diffScroll: 0, loading: false } });
       if (data.files.length) await this.selectFile(0);
     } catch (err) {
+      if (token !== this.reviewToken) return;
       this.deps.store.dispatch({ type: 'review', review: { workspaceId: id, selected: 0, diffScroll: 0, loading: false, error: errorText(err) } });
     }
   }

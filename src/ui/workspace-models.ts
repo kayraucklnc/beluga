@@ -289,7 +289,7 @@ export function projectsModel(state: AppState, toggled: ReadonlySet<string>, fra
   const projectBlock = (p: Project): void => {
     const open = isProjectOpen(state, p, toggled);
     const busy = p.workspaces.some((w) => activityOf(state.log, `ws:${w.id}`).running);
-    const worktrees = p.workspaces.filter((w) => !w.archived && w.kind !== 'main').length;
+    const worktrees = p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && worktreeOrigin(w) !== 'agent').length;
     addWithButtons(
       [
         { text: open ? '▾ ' : '▸ ', color: theme.muted },
@@ -308,18 +308,14 @@ export function projectsModel(state: AppState, toggled: ReadonlySet<string>, fra
     if (!open) return;
     const live = p.workspaces.filter((w) => !w.archived);
     for (const ws of live.filter((w) => worktreeOrigin(w) === 'klaud')) wsRow(ws, '  ');
-    // Worktrees other tools made (Claude Code sub-agents, other apps) stay folded so they don't drown yours.
-    const foldable: Array<{ key: string; label: string; list: Workspace[]; hint: string; action?: UiAction }> = [
-      { key: `agents:${p.id}`, label: 'Claude Code agents', list: live.filter((w) => worktreeOrigin(w) === 'agent'), hint: 'Worktrees Claude Code sub-agents created', action: { type: 'agents_menu', projectId: p.id } },
-      { key: `external:${p.id}`, label: 'Other worktrees', list: live.filter((w) => worktreeOrigin(w) === 'external'), hint: 'Worktrees made outside klaud' },
-    ];
-    for (const f of foldable) {
-      if (!f.list.length) continue;
-      const showing = toggled.has(f.key) || f.list.some((w) => w.id === current);
-      const left: Line = [{ text: `    ${showing ? '▾' : '▸'} ${f.label} `, color: theme.muted }, { text: String(f.list.length), color: theme.muted, bold: true }];
-      if (f.action) addWithButtons(left, [{ label: '⋯', color: theme.muted, action: f.action, hint: 'Clean up finished agent worktrees' }], { type: 'toggle_fold', key: f.key }, `${showing ? 'Hide' : 'Show'} ${f.hint.toLowerCase()}`);
-      else add(left, { type: 'toggle_fold', key: f.key }, `${showing ? 'Hide' : 'Show'} ${f.hint.toLowerCase()}`);
-      if (showing) for (const ws of f.list) wsRow(ws, '    ');
+    // Worktrees other apps made stay folded so they don't drown yours. Claude Code's own
+    // sub-agent worktrees aren't shown at all: they have no conversation here (tidy them up in ⋯).
+    const external = live.filter((w) => worktreeOrigin(w) === 'external');
+    if (external.length) {
+      const key = `external:${p.id}`;
+      const showing = toggled.has(key) || external.some((w) => w.id === current);
+      add([{ text: `    ${showing ? '▾' : '▸'} Other worktrees `, color: theme.muted }, { text: String(external.length), color: theme.muted, bold: true }], { type: 'toggle_fold', key }, `${showing ? 'Hide' : 'Show'} worktrees made outside klaud`);
+      if (showing) for (const ws of external) wsRow(ws, '    ');
     }
     const archived = p.workspaces.filter((w) => w.archived);
     if (archived.length) {
@@ -380,88 +376,71 @@ export function tabsModel(state: AppState, width: number): Model {
 
 // ---------------------------------------------------------------- overview
 
-const CARD_HEIGHT = 5;
+/** The buttons a workspace row offers besides opening it: only what makes sense right now. */
+function rowActions(state: AppState, p: Project, w: Workspace): Array<{ label: string; action: UiAction; hint: string }> {
+  const pr = state.prs[w.id];
+  const conflict = Boolean(state.conflicts[w.id]?.length);
+  const ahead = w.kind === 'worktree' ? (w.status?.ahead ?? 0) : 0;
+  return [
+    ...(conflict ? [{ label: 'Solve conflict', action: { type: 'ws', id: w.id, action: 'merge_claude' } as UiAction, hint: 'Ask Claude to resolve the merge conflict' }] : []),
+    ...(ahead > 0 && !(w.status?.changed ?? 0) && !conflict ? [{ label: 'Merge', action: { type: 'ws', id: w.id, action: 'merge' } as UiAction, hint: `Merge ${w.branch} into ${p.name}'s main folder` }] : []),
+    ...(w.kind === 'worktree' && (ahead > 0 || pr) ? [{ label: pr ? 'View PR' : 'Open PR', action: { type: 'ws', id: w.id, action: 'pr' } as UiAction, hint: pr ? describePr(pr) : 'Claude opens a pull request with a short description' }] : []),
+  ];
+}
 
-/** One clear card per workspace: name, one state phrase, and two or three buttons. */
+/**
+ * Everything in progress as one quiet list, grouped by project: name, one state phrase,
+ * and only the buttons that apply. Click a row to open it.
+ */
 export function overviewModel(state: AppState, frame: number, width: number, now = Date.now()): Model {
   const lines: Line[] = [];
   const zones: Zone[] = [];
-  const all = state.projects.flatMap((p) => p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && worktreeOrigin(w) !== 'agent').map((w) => ({ p, w })));
-  const working = all.filter(({ w }) => activityOf(state.log, `ws:${w.id}`).running).length;
-  const needsYou = all.filter(({ w }) => state.conflicts[w.id]?.length || activityOf(state.log, `ws:${w.id}`).awaiting).length;
+  const groups = state.projects
+    .map((p) => ({ p, list: p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && worktreeOrigin(w) !== 'agent') }))
+    .filter((g) => g.list.length);
+  const all = groups.flatMap((g) => g.list);
+  const working = all.filter((w) => activityOf(state.log, `ws:${w.id}`).running).length;
+  const needsYou = all.filter((w) => state.conflicts[w.id]?.length || activityOf(state.log, `ws:${w.id}`).awaiting).length;
   lines.push([
-    { text: `${all.length} active`, color: theme.text, bold: true },
-    { text: working ? `   ${SPINNER[frame % SPINNER.length]} ${working} working` : '', color: theme.claude },
-    { text: needsYou ? `   ${glyph.wait} ${needsYou} need you` : '', color: theme.warn },
+    { text: `${all.length} in progress`, color: theme.text, bold: true },
+    ...(working ? [{ text: '  ·  ', color: theme.border }, { text: `${SPINNER[frame % SPINNER.length]} ${working} working`, color: theme.claude }] : []),
+    ...(needsYou ? [{ text: '  ·  ', color: theme.border }, { text: `${glyph.wait} ${needsYou} need${needsYou === 1 ? 's' : ''} you`, color: theme.warn }] : []),
   ]);
-  lines.push([]);
   if (!all.length) {
-    lines.push(plain('Nothing in progress. Use +⌥ on a project to start a worktree, or + new under CHATS.', { color: theme.muted }));
+    lines.push([]);
+    lines.push(plain(`Nothing in progress. Use +${BRANCH} on a project to start a worktree, or + new under CHATS.`, { color: theme.muted }));
     return { lines, zones };
   }
-  const cols = width >= 120 ? 3 : width >= 76 ? 2 : 1;
-  const gap = 2;
-  const cardW = Math.floor((width - gap * (cols - 1)) / cols);
-  for (let i = 0; i < all.length; i += cols) {
-    const rowCards = all.slice(i, i + cols).map(({ p, w }) => card(state, p, w, frame, cardW, now));
-    const top = lines.length;
-    for (let r = 0; r < CARD_HEIGHT; r++) {
-      const segs: Seg[] = [];
-      rowCards.forEach((c, ci) => {
-        if (ci) segs.push({ text: ' '.repeat(gap) });
-        segs.push(...(c.lines[r] ?? pad([], cardW)));
+  const nameW = Math.min(Math.max(...all.map((w) => w.name.length)) + 2, 30, Math.floor(width * 0.4));
+  for (const { p, list } of groups) {
+    lines.push([]);
+    lines.push([{ text: p.root ? p.name : 'Chats', color: theme.muted, bold: true }, { text: ` ${list.length}`, color: theme.border }]);
+    for (const w of list) {
+      const st = stateOf(state, w, frame, now);
+      const pr = state.prs[w.id];
+      const actions = rowActions(state, p, w);
+      const right: Seg[] = [];
+      const y = lines.length;
+      let rx = width - actions.reduce((n, a, i) => n + a.label.length + (i ? 2 : 0), 0);
+      actions.forEach((a, i) => {
+        if (i) right.push({ text: '  ' });
+        right.push({ text: a.label, color: theme.info });
+        zones.push({ x0: rx, x1: rx + a.label.length - 1, y, action: a.action, hint: a.hint });
+        rx += a.label.length + 2;
       });
-      lines.push(segs);
+      const left: Line = [
+        { text: `  ${w.kind === 'chat' ? '◇' : BRANCH} `, color: theme.muted },
+        ...pad(truncate([{ text: w.name, color: theme.text }], nameW - 1), nameW),
+        { text: `${st.icon} `, color: st.color },
+        { text: st.label, color: st.color === theme.ok ? theme.muted : st.color },
+        ...(pr ? [{ text: `  ·  ${describePr(pr)}`, color: pr.checks === 'failing' ? theme.error : theme.muted }] : []),
+      ];
+      const rw = lineWidth(right);
+      zones.push({ x0: 0, x1: Math.max(0, width - rw - 2), y, action: { type: 'open_ws', id: w.id }, hint: `Open ${w.name}: ${st.label}` });
+      lines.push(rw ? split(truncate(left, width - rw - 2), right, width) : truncate(left, width));
     }
-    rowCards.forEach((c, ci) => {
-      const x = ci * (cardW + gap);
-      for (const z of c.zones) zones.push({ ...z, x0: z.x0 + x, x1: z.x1 + x, y: z.y + top });
-    });
   }
   return { lines, zones };
-}
-
-function card(state: AppState, p: Project, w: Workspace, frame: number, width: number, now: number): Model {
-  const inner = width - 4;
-  const st = stateOf(state, w, frame, now);
-  const border = st.color === theme.ok || st.color === theme.muted ? theme.border : st.color;
-  const b = (t: string): Seg => ({ text: t, color: border });
-  const icon = w.kind === 'chat' ? '◇' : BRANCH;
-  const disk = state.disk[w.id];
-  const title: Line = split([{ text: `${icon} `, color: theme.muted }, { text: w.name, color: theme.text, bold: true }, { text: p.root ? `  ${p.name}` : '', color: theme.muted }], disk ? [{ text: formatBytes(disk), color: theme.muted }] : [], inner);
-  const pr = state.prs[w.id];
-  const setup = state.setup[w.id];
-  const extra: Seg[] = pr
-    ? [{ text: `  ·  ${describePr(pr)}`, color: pr.checks === 'failing' ? theme.error : pr.state === 'MERGED' ? theme.ok : theme.info }]
-    : setup?.status === 'running'
-      ? [{ text: '  ·  setting up…', color: theme.info }]
-      : setup?.status === 'failed'
-        ? [{ text: '  ·  setup failed', color: theme.error }]
-        : [];
-  const status: Line = [{ text: `${st.icon} `, color: st.color }, { text: st.label, color: st.color }, ...extra];
-  const buttons: Array<{ label: string; action: UiAction; hint: string }> = [
-    { label: 'Open', action: { type: 'open_ws', id: w.id }, hint: `Open ${w.name}` },
-    ...(state.conflicts[w.id]?.length ? [{ label: 'Solve conflict', action: { type: 'ws', id: w.id, action: 'merge_claude' } as UiAction, hint: 'Ask Claude to resolve the merge conflict' }] : []),
-    ...(w.kind === 'worktree' && (w.status?.ahead ?? 0) > 0 && !(w.status?.changed ?? 0) && !state.conflicts[w.id]?.length
-      ? [{ label: 'Merge', action: { type: 'ws', id: w.id, action: 'merge' } as UiAction, hint: `Merge ${w.branch} into ${p.name}'s main folder` }]
-      : []),
-    ...(w.kind === 'worktree' && ((w.status?.ahead ?? 0) > 0 || pr) ? [{ label: pr ? `PR #${pr.number}` : 'PR', action: { type: 'ws', id: w.id, action: 'pr' } as UiAction, hint: pr ? describePr(pr) : 'Claude opens a pull request with a short description' }] : []),
-  ];
-  const zones: Zone[] = [];
-  const btnSegs: Seg[] = [];
-  let x = 2;
-  for (const btn of buttons) {
-    const label = ` ${btn.label} `;
-    zones.push({ x0: x, x1: x + label.length - 1, y: 3, action: btn.action, hint: btn.hint });
-    btnSegs.push({ text: label, color: theme.text, inverse: true }, { text: ' ' });
-    x += label.length + 1;
-  }
-  zones.push({ x0: 0, x1: width - 1, y: 1, action: { type: 'open_ws', id: w.id }, hint: `Open ${w.name}` });
-  const rows = [title, status, btnSegs];
-  return {
-    lines: [[b('╭'), b('─'.repeat(width - 2)), b('╮')], ...rows.map((l) => [b('│ '), ...pad(l, inner), b(' │')]), [b('╰'), b('─'.repeat(width - 2)), b('╯')]],
-    zones,
-  };
 }
 
 // ---------------------------------------------------------------- workspace header

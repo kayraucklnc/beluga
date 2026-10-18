@@ -71,6 +71,9 @@ export function runMenu(ctx: MenuContext, menu: MenuKind, index: number): void {
     case 'p-hide':
       if (project) void ctl?.hideProject(project.id);
       return;
+    case 'p-agents':
+      if (project) patchUi({ menu: { menu: { kind: 'agents', projectId: project.id }, selected: 0 } });
+      return;
     case 'agents-clean':
       if (menu.kind === 'agents') void ctl?.cleanAgentWorktrees(menu.projectId);
       return;

@@ -38,6 +38,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
         findConversation: opts.findConversation ? (dir) => opts.findConversation!(dir, { id: session.selfId, name: session.store.getState().self?.name ?? 'you' }) : undefined,
         onWorktreeCreated: (ws) => workbench?.onWorktreeCreated(ws),
+        onWorkspaceGoing: (id) => workbench?.closeTerminals(id),
       });
     }
     const notifier = new Notifier({ store: opts.store, desktop: (n) => opts.desktopNotify?.(n) });
