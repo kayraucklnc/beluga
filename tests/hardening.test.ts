@@ -61,13 +61,18 @@ describe('branch names from someone else', () => {
 describe('pull request news', () => {
   const pr: PullRequest = { number: 3, url: 'u', state: 'OPEN', title: 'T', draft: false, checks: 'pending' };
   it('reports what changed, including several things at once', () => {
-    expect(prNews('w', 'ws:w', undefined, pr).map((e) => e.title)).toEqual(['Pull request #3 is open for w']);
+    expect(prNews('w', 'ws:w', undefined, pr, true).map((e) => e.title)).toEqual(['Pull request #3 is open for w']);
     expect(prNews('w', 'ws:w', pr, pr)).toEqual([]);
     const both = prNews('w', 'ws:w', pr, { ...pr, checks: 'passing', state: 'MERGED' });
     expect(both.map((e) => e.title)).toEqual(['Checks passing on PR #3', 'PR #3 was merged']);
     expect(prNews('w', 'ws:w', pr, { ...pr, checks: 'failing' })[0]?.kind).toBe('problems');
     expect(prNews('w', 'ws:w', pr, { ...pr, review: 'CHANGES_REQUESTED' })[0]?.title).toBe('Changes requested on PR #3');
     expect(prNews('w', 'ws:w', pr, { ...pr, review: 'APPROVED' })[0]?.title).toBe('PR #3 was approved');
+  });
+
+  it("doesn't announce PRs you didn't ask klaud for (they already existed)", () => {
+    expect(prNews('w', 'ws:w', undefined, pr)).toEqual([]);
+    expect(prNews('w', 'ws:w', undefined, { ...pr, state: 'MERGED' }, true)).toEqual([]);
   });
 });
 

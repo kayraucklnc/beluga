@@ -183,6 +183,27 @@ describe('pull requests', () => {
     expect(kay.opened).toEqual(['https://github.com/x/app/pull/7']);
   });
 
+  it("stays quiet about PRs you didn't ask for, and ignores worktrees other tools made", async () => {
+    hub = await startHub({ keys });
+    const dir = repo();
+    const asked: string[] = [];
+    const kay = await solo(dir, { findPr: async (d) => (asked.push(d), { number: 9, url: 'u', state: 'OPEN', title: 'T', draft: false, checks: 'pending' }) });
+    const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'quiet');
+    kay.session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+    await kay.bench.refreshPrs(ws!.id);
+    await kay.bench.refreshPrs(ws!.id);
+    expect(kay.state().prs[ws!.id]?.number).toBe(9);
+    expect(kay.state().inbox.filter((n) => n.kind === 'pr')).toEqual([]);
+
+    execFileSync('git', ['worktree', 'add', '-q', '-b', 'agent-x', path.join(dir, '.claude', 'worktrees', 'agent-x')], { cwd: dir });
+    await kay.session.workspaces!.refresh();
+    const agent = projectOf(kay.workspaces).workspaces.find((w) => w.name === 'agent-x');
+    expect(agent).toBeDefined();
+    asked.length = 0;
+    await kay.bench.refreshPrs(agent!.id);
+    expect(asked).toEqual([]);
+  });
+
   it('only offers PRs for worktrees, and explains a missing GitHub CLI', async () => {
     hub = await startHub({ keys });
     const kay = await solo(repo());

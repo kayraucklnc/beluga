@@ -4,7 +4,7 @@ import { initialState, reduce, channelOf, type AppState } from '../src/core/stor
 import { derive } from '../src/ui/derive.js';
 import { initialUi } from '../src/ui/keymap.js';
 import { activityOf, contextMeter, isCompacting, isProjectOpen, overviewModel, projectsModel, reviewModel, stateOf, tabsModel, toggleProject, workspaceHeaderModel } from '../src/ui/workspace-models.js';
-import { agentsMenu, confirmMenu } from '../src/ui/menus.js';
+import { agentsMenu, confirmMenu, projectMenu } from '../src/ui/menus.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
 const text = (lines: readonly (readonly { text: string }[])[]) => lines.map((l) => l.map((s) => s.text).join(''));
@@ -156,12 +156,11 @@ describe('workspace UI models', () => {
     s = reduce(s, { type: 'agent_event', owner: 'me', requestId: 'r', requester: 'me', event: 'started', text: '', ts: 1000, channel: 'ws:w1' });
     const m = overviewModel(s, 0, 100, 6000);
     const lines = text(m.lines);
-    expect(lines[0]).toContain('2 active');
+    expect(lines[0]).toContain('2 in progress');
     expect(lines[0]).toContain('1 working');
-    expect(lines.some((l) => l.includes('⌥ fix-auth  app'))).toBe(true);
-    expect(lines.some((l) => l.includes('Claude working 5s'))).toBe(true);
-    expect(lines.some((l) => l.includes(' Open '))).toBe(true);
-    expect(m.zones.some((z) => z.action.type === 'open_ws')).toBe(true);
+    expect(lines.some((l) => l.startsWith('app 2'))).toBe(true);
+    expect(lines.some((l) => l.includes('⌥ fix-auth') && l.includes('Claude working 5s'))).toBe(true);
+    expect(m.zones.filter((z) => z.action.type === 'open_ws')).toHaveLength(2);
     expect(text(overviewModel(initialState('r'), 0, 100).lines).join('\n')).toContain('Nothing in progress');
   });
 
@@ -316,13 +315,14 @@ describe('worktrees made by other tools', () => {
   };
   const s = reduce(initialState('room'), { type: 'projects', projects: [crowded] });
 
-  it('folds Claude Code agent worktrees and other tools\' worktrees into their own groups', () => {
+  it("hides Claude Code agent worktrees and folds other tools' worktrees", () => {
     const lines = text(projectsModel(s, new Set(['open:p1']), 0, 40).lines);
-    expect(lines.some((l) => l.includes('▸ Claude Code agents 5'))).toBe(true);
+    expect(lines.some((l) => l.includes('Claude Code agents'))).toBe(false);
+    expect(lines.some((l) => l.includes('agent-a'))).toBe(false);
     expect(lines.some((l) => l.includes('▸ Other worktrees 1'))).toBe(true);
-    expect(lines.some((l) => l.includes('agent-a0'))).toBe(false);
-    const open = text(projectsModel(s, new Set(['open:p1', 'agents:p1']), 0, 40).lines);
-    expect(open.filter((l) => l.includes('agent-a')).length).toBe(5);
+    const folded = text(projectsModel(s, new Set(), 0, 40).lines);
+    expect(folded.some((l) => l.includes('app 3'))).toBe(true); // fix-auth, question, berlin: no agents
+    expect(projectMenu(s, 'p1')?.options.some((o) => o.id === 'p-agents' && o.label.includes('(5)'))).toBe(true);
   });
 
   it('keeps agent worktrees out of the overview and offers to clean up finished ones', () => {

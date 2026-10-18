@@ -51,6 +51,7 @@ export function projectMenu(state: AppState, id: string): MenuSpec | undefined {
   if (!p) return undefined;
   const group = state.projectGroups.find((g) => g.projects.includes(p.root));
   const otherGroups = state.projectGroups.filter((g) => g.name !== group?.name);
+  const agents = p.workspaces.filter((w) => !w.archived && worktreeOrigin(w) === 'agent').length;
   return {
     title: p.name,
     intro: [p.root, group ? `In group: ${group.name}` : 'Not in a group'],
@@ -63,13 +64,14 @@ export function projectMenu(state: AppState, id: string): MenuSpec | undefined {
       ...otherGroups.map((g) => ({ id: `p-group:${g.name}`, label: `Move to "${g.name}"`, hint: 'group' })),
       { id: 'p-newgroup', label: 'Move to a new group…', hint: 'type a name' },
       ...(group ? [{ id: 'p-ungroup', label: `Remove from "${group.name}"`, hint: '' }] : []),
+      ...(agents ? [{ id: 'p-agents', label: `Claude Code agent worktrees (${agents})…`, hint: 'left behind by sub-agents; clean up' }] : []),
       { id: 'p-hide', label: 'Hide this project', hint: 'add it back with /project add' },
       { id: 'close', label: 'Close', hint: 'Esc' },
     ],
   };
 }
 
-/** The ⋯ on a project's "Claude Code agents" group: tidy up what sub-agents left behind. */
+/** From a project's ⋯ menu: tidy up the worktrees Claude Code sub-agents left behind. */
 export function agentsMenu(state: AppState, projectId: string): MenuSpec | undefined {
   const p = state.projects.find((x) => x.id === projectId);
   if (!p) return undefined;
