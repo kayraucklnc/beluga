@@ -1,4 +1,6 @@
-import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { readFileSync } from 'node:fs';
+import { query, type Options, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../core/attachments.js';
 import { buildPrompt, buildSystemAppend, summarizeTool } from './prompt.js';
 import { DENY_REASON, decideTool } from './policy.js';
 import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
@@ -41,6 +43,27 @@ export function usageOf(modelUsage: Record<string, { inputTokens: number; output
 /** Friendly rows for the model picker from Claude Code's own list. */
 export function toModelChoices(models: ReadonlyArray<{ value: string; displayName: string; description: string; supportedEffortLevels?: readonly string[] }>) {
   return models.map((m) => ({ value: m.value === 'default' ? '' : m.value, label: m.displayName, description: m.description, ...(m.supportedEffortLevels ? { efforts: m.supportedEffortLevels } : {}) }));
+}
+
+/**
+ * A prompt with images pasted into it: one user message with the text and each image as a
+ * content block, so Claude actually sees them. Without images, the plain text.
+ */
+export function withImages(text: string, files: readonly string[]): string | AsyncIterable<SDKUserMessage> {
+  const images = files.flatMap((file) => {
+    try {
+      const data = readFileSync(file);
+      return data.length <= MAX_ATTACHMENT_BYTES ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: mediaTypeOf(file), data: data.toString('base64') } }] : [];
+    } catch {
+      return [];
+    }
+  });
+  if (!images.length) return text;
+  const note = `\n\n(${images.length === 1 ? 'The image linked above is' : 'The images linked above are'} attached to this message, in order.)`;
+  const message: SDKUserMessage = { type: 'user', session_id: '', parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'text', text: text + note }, ...images] } };
+  return (async function* () {
+    yield message;
+  })();
 }
 
 /**
@@ -134,7 +157,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
 
       let final = '';
       let contextUsed = 0;
-      const q = query({ prompt: buildPrompt(input), options });
+      const q = query({ prompt: withImages(buildPrompt(input), linkedImages(input.prompt)), options });
       for await (const msg of q) {
         if (msg.type === 'system' && msg.subtype === 'init') remember(msg.session_id);
         if (msg.type === 'rate_limit_event') {

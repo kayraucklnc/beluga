@@ -10,6 +10,8 @@ export interface RenderOptions {
   readonly now?: number;
   /** How much sub-agent work to show: every step, one line each, or just a count. */
   readonly subagents?: 'full' | 'compact' | 'hidden';
+  /** Turns paths and URLs in a message into links (how depends on who wrote it, and where). */
+  readonly linkify?: (item: LogItem) => ((line: Line) => Line) | undefined;
 }
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
@@ -98,7 +100,9 @@ function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] 
   }
   if (item.text) {
     if (body.length) body.push([]);
-    body.push(...renderMarkdown(item.text, inner));
+    const link = opts.linkify?.(item);
+    const text = renderMarkdown(item.text, inner);
+    body.push(...(link ? text.map(link) : text));
   }
   if (body.length === 0) {
     const idle =
@@ -151,7 +155,8 @@ export function renderLog(items: readonly LogItem[], rawCols: number, opts: Rend
         if (prev) out.push([]);
         out.push(chatHeader(item, opts));
       }
-      for (const l of renderMarkdown(item.text, cols - 2)) out.push([{ text: '  ' }, ...l]);
+      const link = opts.linkify?.(item);
+      for (const l of renderMarkdown(item.text, cols - 2)) out.push([{ text: '  ' }, ...(link ? link(l) : l)]);
     }
     prev = item;
   }

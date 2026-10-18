@@ -3,7 +3,8 @@ import { Box, Text } from 'ink';
 import type { AppState } from '../../core/store.js';
 import { inviteBanner } from '../banner.js';
 import { renderLog } from '../format.js';
-import { type Line, windowLines } from '../text.js';
+import { chatLinkify } from '../links.js';
+import { type Line, highlightRange, windowLines } from '../text.js';
 import { theme } from '../theme.js';
 import { LineView } from './LineView.js';
 import { Panel } from './Panel.js';
@@ -17,6 +18,15 @@ interface ChatViewProps {
   readonly focused: boolean;
   readonly scroll: number;
   readonly frame: number;
+  /** The link under the pointer (index into all chat lines), underlined; bolder while ⌥ is held. */
+  readonly hoverLink?: ChatLinkHover;
+}
+
+export interface ChatLinkHover {
+  readonly line: number;
+  readonly x0: number;
+  readonly x1: number;
+  readonly alt?: boolean;
 }
 
 const EMPTY_HINT: Line[] = [
@@ -61,6 +71,9 @@ interface LogCache {
   readonly frame: number;
   readonly selfId?: string;
   readonly subagents: AppState['prefs']['subagents'];
+  /** Links resolve against these (who shares what, where workspaces are). */
+  readonly peers: AppState['peers'];
+  readonly projects: AppState['projects'];
   readonly lines: Line[];
 }
 
@@ -72,10 +85,10 @@ let logCache: readonly LogCache[] = [];
 function cachedLog(state: AppState, items: AppState['log'], cols: number, frame: number, channel: string): Line[] {
   const selfId = state.self?.peerId;
   const subagents = state.prefs.subagents;
-  const hit = logCache.find((c) => c.log === state.log && c.channel === channel && c.cols === cols && c.frame === frame && c.selfId === selfId && c.subagents === subagents);
+  const hit = logCache.find((c) => c.log === state.log && c.channel === channel && c.cols === cols && c.frame === frame && c.selfId === selfId && c.subagents === subagents && c.peers === state.peers && c.projects === state.projects);
   if (hit) return hit.lines;
-  const lines = renderLog(items, cols, { selfId, frame, now: Date.now(), subagents });
-  logCache = [{ log: state.log, channel, cols, frame, selfId, subagents, lines }, ...logCache].slice(0, LOG_CACHE_SIZE);
+  const lines = renderLog(items, cols, { selfId, frame, now: Date.now(), subagents, linkify: chatLinkify(state) });
+  logCache = [{ log: state.log, channel, cols, frame, selfId, subagents, peers: state.peers, projects: state.projects, lines }, ...logCache].slice(0, LOG_CACHE_SIZE);
   return lines;
 }
 
@@ -89,9 +102,12 @@ export function chatLines(state: AppState, cols: number, frame: number, channel 
   return [...banner, ...(items.length ? log : empty)];
 }
 
-export function ChatView({ state, channel = 'room', title = 'Chat', width, height, focused, scroll, frame }: ChatViewProps) {
+export function ChatView({ state, channel = 'room', title = 'Chat', width, height, focused, scroll, frame, hoverLink }: ChatViewProps) {
   const cols = width - 4;
-  const lines = chatLines(state, cols, frame, channel);
+  const all = chatLines(state, cols, frame, channel);
+  const lines = hoverLink && all[hoverLink.line]
+    ? all.map((l, i) => (i === hoverLink.line ? highlightRange(l, hoverLink.x0, hoverLink.x1, hoverLink.alt ? { underline: true, bold: true, color: theme.accent } : { underline: true }) : l))
+    : all;
   const visible = windowLines(lines, height - 2, scroll);
   return (
     <Panel title={title} width={width} height={height} focused={focused} right={scroll > 0 ? `↓ ${scroll} newer · PgDn` : ''} rightColor={theme.warn}>

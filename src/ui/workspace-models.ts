@@ -1,3 +1,4 @@
+import type { LinkTarget } from './links.js';
 import type { AppState, LogItem, ReviewState, WorkspaceTab } from '../core/store.js';
 import type { TrustLevel } from '../core/settings.js';
 import { describePr } from '../workspaces/pr.js';
@@ -71,6 +72,10 @@ export type UiAction =
   | { readonly type: 'term_tab'; readonly key: string }
   /** The workspace buttons that didn't fit in the top bar. */
   | { readonly type: 'ws_more'; readonly id: string; readonly actions: ReadonlyArray<{ readonly action: WorkspaceAction; readonly label: string; readonly hint: string }> }
+  /** A file, folder, URL or image mentioned in the chat. */
+  | { readonly type: 'open_link'; readonly link: LinkTarget }
+  /** Attach the image on the clipboard to the message being typed. */
+  | { readonly type: 'paste_image' }
   | { readonly type: 'none' };
 
 export interface Model {

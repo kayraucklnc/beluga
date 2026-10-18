@@ -31,6 +31,8 @@ import { theme } from './theme.js';
 import { type UiAction, isCompacting } from './workspace-models.js';
 import { type UiActionContext, runUiActionWith } from './ui-actions.js';
 import { useTerminalPane } from './use-terminal.js';
+import { expandOutgoing, pasteClipboardImage, pasteDroppedImages } from './attach-actions.js';
+import { setLinkEnv } from './links.js';
 
 const TOAST_MS = 3500;
 const FRAME_MS = 100;
@@ -66,6 +68,8 @@ export interface AppProps {
   readonly subscribeMouse?: (listener: (e: MouseEvent) => void) => () => void;
   /** Send keyboard input straight to a function (the built-in terminal) instead of Ink; undefined gives it back. */
   readonly setRawInput?: (sink: ((data: string) => void) | undefined) => void;
+  /** Receive pastes before they're typed (image paths and empty pastes become image chips). */
+  readonly setPasteHandler?: (fn: ((text: string) => boolean) | undefined) => void;
 }
 
 function useTerminalSize(): { columns: number; rows: number } {
@@ -116,7 +120,7 @@ function listLocalDirs(dir: string): FsEntry[] {
 
 const isWorking = (state: AppState): boolean => anyActivity(state) || isCompacting(state) || state.transfers.some((t) => t.status === 'active');
 
-export function App({ session, onboarding = false, subscribeMouse, setRawInput }: AppProps) {
+export function App({ session, onboarding = false, subscribeMouse, setRawInput, setPasteHandler }: AppProps) {
   const state = useSyncExternalStore(session.store.subscribe, session.store.getState);
   const [startUi] = useState<UiState>(() =>
     onboarding ? { ...initialUi, menu: { menu: { kind: 'welcome' }, selected: POLICY_INDEX[state.policy] } } : initialUi,
@@ -134,9 +138,22 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
   const { columns, rows } = useTerminalSize();
   const frame = useFrame(isWorking(state));
   const ctl = session.workspaces;
+  // Paths in your messages (and your Claude's) in the room are relative to this project and your shares.
+  setLinkEnv({ roots: () => [session.launchDir, ...session.myShares.map((s) => s.root)] });
+  const attachCtx = { session, uiRef, patchUi };
+  useEffect(() => {
+    setPasteHandler?.((text) => {
+      if (!text.trim()) {
+        if (uiRef.current.focus === 'chat') void pasteClipboardImage(attachCtx, true);
+        return true;
+      }
+      return pasteDroppedImages(attachCtx, text);
+    });
+    return () => setPasteHandler?.(undefined);
+  }, []);
 
   // Mouse position for hover feedback; only re-render when what's under the pointer changes.
-  const [hover, setHover] = useState<{ x: number; y: number } | undefined>(undefined);
+  const [hover, setHover] = useState<{ x: number; y: number; alt?: boolean } | undefined>(undefined);
   const hoverKey = useRef('');
   const view = (s: AppState = state, u: UiState = ui): Derived => derive({ state: s, ui: u, selfId: session.selfId, columns, rows, frame, listLocalDirs, hover });
   const d = view();
@@ -246,8 +263,9 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
   const menuCtx: MenuContext = { session, patchUi, typeInto: (b) => typeInto(b), askForName: (k, p) => askForName(k, p), openFolder: (dir) => openFolder(dir), runUiAction: (a) => runUiAction(a), write };
   const runMenu = (menu: MenuKind, index: number): void => runMenuOption(menuCtx, menu, index);
 
-  const submit = (text: string, urgent = false): void => {
+  const submit = (typed: string, urgent = false): void => {
     const latest = session.store.getState();
+    const text = expandOutgoing(session, typed);
     // While Claude waits on a question in this conversation, what you type here is your answer.
     const question = latest.questions[0];
     if (question && (question.channel === channelOf(latest.view) || uiRef.current.planFull === question.qid) && !text.startsWith('/')) {
@@ -613,10 +631,10 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
     pendingMouse.current = {};
     if (wheel && wheel.steps !== 0) onWheel(wheel.target, wheel.steps);
     if (move) {
-      const key = JSON.stringify(targetAt(move));
+      const key = JSON.stringify(targetAt(move)) + (move.alt ? '⌥' : '');
       if (key !== hoverKey.current) {
         hoverKey.current = key;
-        setHover({ x: move.x, y: move.y });
+        setHover({ x: move.x, y: move.y, ...(move.alt ? { alt: true } : {}) });
       }
     }
   };
@@ -661,6 +679,11 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput }
       if (dd.focus === 'terminal' && termSession) {
         if (isLeaveKey(input, key)) patchUi({ focus: 'chat' });
         else termSession.writeKey(input, key);
+        return;
+      }
+      // Ctrl+V attaches the image on the clipboard.
+      if (dd.focus === 'chat' && key.ctrl && input === 'v') {
+        void pasteClipboardImage(attachCtx);
         return;
       }
       const result = handleKey({ ...current, focus: dd.focus }, input, key, {

@@ -2,6 +2,8 @@ import type { MutableRefObject } from 'react';
 import type { Session } from '../core/session.js';
 import { runId, setupId } from '../core/workbench.js';
 import { runCollabUiAction } from './collab-actions.js';
+import { openLink } from './link-actions.js';
+import { pasteClipboardImage } from './attach-actions.js';
 import type { UiState } from './keymap.js';
 import type { MenuContext } from './menu-actions.js';
 import type { MenuKind } from './menus.js';
@@ -29,6 +31,12 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
       ctl?.open(action.id, action.tab);
       // Opening a view puts you inside it: the file list, the diff, the terminal, or the chat.
       patchUi(action.tab === 'review' ? { focus: 'main', entered: true } : action.tab === 'files' ? { focus: 'files', entered: true } : action.tab === 'terminal' ? { focus: 'terminal', terminalScroll: 0 } : { focus: 'chat', entered: false });
+      return;
+    case 'open_link':
+      openLink({ session, patchUi, run: (a) => runUiActionWith(c, a) }, action.link);
+      return;
+    case 'paste_image':
+      void pasteClipboardImage({ session, uiRef, patchUi });
       return;
     case 'inbox':
       patchUi({ menu: { menu: { kind: 'inbox' }, selected: 0 } });

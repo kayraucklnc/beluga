@@ -1,4 +1,5 @@
 import stringWidth from 'string-width';
+import type { LinkTarget } from './links.js';
 
 /** A styled run of text. A line is a list of segments rendered side by side. */
 export interface Seg {
@@ -11,6 +12,8 @@ export interface Seg {
   readonly italic?: boolean;
   readonly inverse?: boolean;
   readonly underline?: boolean;
+  /** Clickable: a file, folder, URL or image mentioned in the chat. */
+  readonly link?: LinkTarget;
 }
 export type Line = readonly Seg[];
 

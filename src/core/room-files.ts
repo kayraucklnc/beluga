@@ -193,7 +193,7 @@ export class RoomFiles {
   private async serveChunk(from: string, body: BodyOf<'fs_fetch'>): Promise<void> {
     try {
       const { data, total } = await this.deps.shares.readChunk(body.share, body.path, body.offset, CHUNK_BYTES);
-      if (body.offset === 0) this.system(`${peerName(this.store.getState(), from)} is downloading ${body.share}/${body.path}`);
+      if (body.offset === 0 && from !== this.selfId) this.system(`${peerName(this.store.getState(), from)} is downloading ${body.share}/${body.path}`);
       this.send({ kind: 'fs_chunk', reqId: body.reqId, ok: true, data: data.toString('base64'), offset: body.offset, total }, { to: from });
     } catch (err) {
       this.send({ kind: 'fs_chunk', reqId: body.reqId, ok: false, error: errorText(err) }, { to: from });
