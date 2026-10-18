@@ -6,7 +6,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 
 /**
  * Arranging the sidebar's projects Finder-style: drag to reorder (it stays after a reload), drop
- * into a group at a place, reorder groups, fold groups (projects don't fold), hide and show.
+ * into a group at a place, reorder groups, fold projects and groups, hide and show.
  */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
@@ -64,14 +64,28 @@ test.beforeEach(async ({ page }) => {
   await expect(sidebar(page)).toBeVisible();
 });
 
-test('projects don’t fold: no disclosure, their worktrees always show', async ({ page }) => {
+test('a project folds; folded, it keeps only the item you are in, until you go elsewhere', async ({ page }) => {
   const row = project(page, 'bob-api');
-  await expect(row).not.toHaveAttribute('aria-expanded');
-  await expect(sidebar(page).getByRole('button', { name: 'add-auth', exact: true })).toBeVisible();
-  await row.click({ position: { x: 60, y: 10 } });
-  await expect(sidebar(page).getByRole('button', { name: 'add-auth', exact: true })).toBeVisible();
+  const addAuth = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
+  const webhook = sidebar(page).getByRole('button', { name: 'webhook-retries', exact: true });
+  await expect(row).toHaveAttribute('aria-expanded', 'true');
+  await expect(addAuth).toBeVisible();
   // The main checkout isn't a place to work: it isn't listed.
   await expect(sidebar(page).getByRole('button', { name: 'main', exact: true })).toHaveCount(0);
+  // In add-auth, fold the project: only add-auth stays.
+  await addAuth.click();
+  await row.getByRole('button', { name: 'Fold bob-api' }).click();
+  await expect(row).toHaveAttribute('aria-expanded', 'false');
+  await expect(addAuth).toBeVisible();
+  await expect(webhook).toHaveCount(0);
+  // Somewhere else: the folded project shows nothing under it.
+  await sidebar(page).getByRole('button', { name: /^Overview/ }).click();
+  await expect(addAuth).toHaveCount(0);
+  // → unfolds it again (the row has the keyboard focus).
+  await row.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(addAuth).toBeVisible();
+  await expect(webhook).toBeVisible();
 });
 
 test('dragging a project reorders it, and the order stays after a reload', async ({ page }) => {

@@ -27,7 +27,7 @@ import s from './project-groups.module.css';
 /**
  * The sidebar's Projects, arranged the way you like: drag projects and groups to reorder them,
  * drop a project on a group (or between its projects) to put it there, or out to the top level.
- * Projects always show their worktrees and chats; the groups you make fold.
+ * Projects and the groups you make fold; a folded project still shows the item you are in.
  */
 
 type Arrange = (item: Target, place: Place) => void;
@@ -80,11 +80,32 @@ function useIconItems(p: Project): readonly ActionItem[] {
   ];
 }
 
-/** A project and, always under it, its worktrees and chats. `depth` 1: inside a group. */
+/** Folding a project: its key in the window's folded list (folded when present). */
+const foldKey = (projectId: string): string => `folded:${projectId}`;
+
+/**
+ * Fold or unfold a project; with Option, every project (as Finder's Option-click does).
+ * Folding keeps the item you're in visible under it until you go somewhere else.
+ */
+function useProjectFold(projectId: string): { folded: boolean; toggle: (all: boolean) => void } {
+  const { ui } = useKlaud();
+  const folded = useUi((u) => u.collapsed.includes(foldKey(projectId)));
+  const projects = useApp((st) => st.projects);
+  const toggle = (all: boolean): void => {
+    const keys = all ? projects.filter((x) => x.root).map((x) => foldKey(x.id)) : [foldKey(projectId)];
+    const rest = ui.get().collapsed.filter((k) => !keys.includes(k));
+    ui.patch({ collapsed: folded ? rest : [...rest, ...keys] });
+  };
+  return { folded, toggle };
+}
+
+/** A project and its worktrees and chats (folded: only the one you're in). `depth` 1: inside a group. */
 function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1; entries: readonly Entry[]; arrange: Arrange }) {
   const actions = useActions();
   const state = useApp((st) => st);
   const collapsed = useUi((u) => u.collapsed);
+  const fold = useProjectFold(p.id);
+  const here = state.view.kind === 'workspace' ? state.view.id : undefined;
   const hide = useHide();
   const iconItems = useIconItems(p);
   const busy = p.workspaces.some((w) => activityOf(state.log, `ws:${w.id}`).running);
@@ -103,8 +124,18 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           data-drag={`project:${p.id}`}
           indent={depth}
           className={side.projectRow}
+          aria-expanded={!fold.folded}
           icon={
             <span className={s.projectIcon}>
+              <button
+                type="button"
+                className={s.foldButton}
+                aria-label={fold.folded ? `Show what's in ${p.name}` : `Fold ${p.name}`}
+                title={fold.folded ? 'Show (Option-click: every project)' : 'Fold (Option-click: every project)'}
+                onClick={(e) => (e.stopPropagation(), fold.toggle(e.altKey))}
+              >
+                <Icon name="chevronRight" size={9} className={cx(s.disclosure, !fold.folded && s.disclosureOpen)} />
+              </button>
               <ProjectIcon id={p.id} name={p.name} size={16} />
             </span>
           }
@@ -112,6 +143,12 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           detail={p.root}
           onClick={() => openProjectHome(actions.run, state, p.id)}
           onKeyDown={(e) => {
+            // ← folds, → unfolds (as in Finder's lists).
+            if (e.target === e.currentTarget && !e.metaKey && !e.ctrlKey && ((e.key === 'ArrowLeft' && !fold.folded) || (e.key === 'ArrowRight' && fold.folded))) {
+              e.preventDefault();
+              fold.toggle(e.altKey);
+              return;
+            }
             const dir = moveKey(e);
             if (!dir || e.target !== e.currentTarget) return;
             e.preventDefault();
@@ -137,15 +174,22 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           }
         />
       </SpecContext>
-      {mine.map((w) => (
-        <WorkspaceRow key={w.id} ws={w} indent={kids} />
-      ))}
-      {/* Worktrees made outside Klaud, folded by what made them (Conductor, Claude Code, other). */}
-      <OtherWorktreeFolds p={p} indent={kids} row={(w) => <WorkspaceRow key={w.id} ws={w} indent={kids + 1} />} />
-      {archived.length ? (
+      {fold.folded ? (
+        // Folded: only the item you're in stays, until you go elsewhere.
+        live.filter((w) => w.id === here && w.kind !== 'main').map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)
+      ) : (
+        <>
+          {mine.map((w) => (
+            <WorkspaceRow key={w.id} ws={w} indent={kids} />
+          ))}
+          {/* Worktrees made outside Klaud, folded by what made them (Conductor, Claude Code, other). */}
+          <OtherWorktreeFolds p={p} indent={kids} row={(w) => <WorkspaceRow key={w.id} ws={w} indent={kids + 1} />} />
+        </>
+      )}
+      {!fold.folded && archived.length ? (
         <Row indent={kids} className={side.fold} label="Archived" trailing={<Badge count={archived.length} />} icon={<Icon name={showArchived ? 'chevronDown' : 'chevronRight'} size={10} />} onClick={() => actions.run({ type: 'toggle_archive', projectId: p.id })} />
       ) : null}
-      {showArchived
+      {!fold.folded && showArchived
         ? archived.map((w) => (
             <SpecContext key={w.id} menu={{ kind: 'archived', id: w.id }}>
               <Row indent={kids + 1} className={side.fold} icon={<Icon name="archive" size={13} />} label={w.name} onClick={() => actions.run({ type: 'archived_menu', id: w.id })} />

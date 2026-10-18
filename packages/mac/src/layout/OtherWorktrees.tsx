@@ -97,7 +97,8 @@ function Fold({ p, source, list, row, indent }: { p: Project; source: WorktreeSo
   const viewId = useApp((st) => (st.view.kind === 'workspace' ? st.view.id : undefined));
   const [cleaning, setCleaning] = useState(false);
   const key = `others:${source}:${p.id}`;
-  const open = collapsed.includes(key) || list.some((w) => w.id === viewId);
+  // Folded, it still shows the worktree you're in (only that one), until you go elsewhere.
+  const open = collapsed.includes(key);
   const { title, explainer } = SOURCE_FOLDS[source];
   return (
     <>
@@ -121,7 +122,7 @@ function Fold({ p, source, list, row, indent }: { p: Project; source: WorktreeSo
           }
         />
       </ActionsContext>
-      {open ? list.map((w) => row(w)) : null}
+      {open ? list.map((w) => row(w)) : list.filter((w) => w.id === viewId).map((w) => row(w))}
       {cleaning ? <CleanUpAlert project={p} source={source} onClose={() => setCleaning(false)} /> : null}
     </>
   );

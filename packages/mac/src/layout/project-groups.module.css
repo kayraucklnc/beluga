@@ -184,3 +184,18 @@
 .show:hover {
   background: var(--bg-hover);
 }
+/* A project's fold button: the disclosure triangle, its own click target. */
+.foldButton {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 18px;
+  margin-left: -4px;
+  border-radius: 4px;
+}
+.foldButton:hover {
+  background: var(--bg-hover);
+}
+.foldButton:hover .disclosure {
+  color: var(--text);
+}
