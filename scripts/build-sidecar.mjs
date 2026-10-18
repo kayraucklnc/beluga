@@ -4,7 +4,7 @@
 //   packages/mac/src-tauri/binaries/node-<target>   an official Node binary (pinned below)
 // Usage: node scripts/build-sidecar.mjs [--arch arm64|x64]
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -56,4 +56,15 @@ copyFileSync(path.join(tmp, name, 'bin/node'), bin);
 chmodSync(bin, 0o755);
 rmSync(tmp, { recursive: true, force: true });
 writeFileSync(path.join(out, 'NODE_VERSION'), NODE_VERSION);
+
+// The daemon reports its package.json version, and the app restarts a kept-alive daemon whose
+// version isn't the one it bundles (after an update). klaud's own version doesn't change with
+// every Mac release, so the bundled copy carries the app's too: 0.4.0+mac.0.5.1.
+{
+  const appVersion = JSON.parse(readFileSync(path.join(tauri, 'tauri.conf.json'), 'utf8')).version;
+  const pkgFile = path.join(out, 'package.json');
+  const pkg = JSON.parse(readFileSync(pkgFile, 'utf8'));
+  pkg.version = `${String(pkg.version).split('+')[0]}+mac.${appVersion}`;
+  writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + '\n');
+}
 console.log(`\nklaud sidecar ready for ${triple} (Node ${NODE_VERSION})`);

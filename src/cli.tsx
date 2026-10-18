@@ -142,7 +142,8 @@ async function attached(config: Config, args: readonly string[]): Promise<void> 
       openExternal: (target: string) => openWithSystem(target),
     },
   });
-  if (client.daemonVersion !== version) {
+  // A daemon from the Mac app carries its build too (0.4.0+mac.0.5.1): only klaud's own version counts.
+  if (client.daemonVersion.split('+')[0] !== version) {
     const others = client.clients - 1;
     const text =
       others > 0
