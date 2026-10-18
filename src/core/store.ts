@@ -71,6 +71,9 @@ export interface Approval {
   readonly kind: 'request' | 'tool';
   readonly title: string;
   readonly detail: string;
+  /** When it was asked, and how long it waits before it's declined (screens show a countdown). */
+  readonly askedAt?: number;
+  readonly timeoutMs?: number;
 }
 
 export interface Location {
