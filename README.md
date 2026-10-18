@@ -14,6 +14,11 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/klaudcode"><img src="https://img.shields.io/npm/v/klaudcode?label=npm%20i%20-g%20klaudcode&color=555" alt="npm: klaudcode"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/npm/l/klaudcode?color=555" alt="MIT license"></a>
+</p>
+
+<p align="center">
   <img src="assets/demo.gif" alt="klaud demo: two worktrees in two projects, each with its own Claude and sub-agents, running at the same time; the overview; a group chat with two friends" width="900">
   <br><sub>Recorded with <code>klaud demo</code> (the friends and every Claude reply are simulated)</sub>
 </p>
@@ -50,6 +55,8 @@ Give every task its own worktree: a separate folder and branch with its own Clau
 npm install -g klaudcode
 klaud
 ```
+
+The npm package is called **klaudcode** (npm reserves short names like `klaud`); the command it installs is `klaud`.
 
 You need Node 20+ and [Claude Code](https://claude.com/claude-code) signed in (`claude`, then `/login`).
 
@@ -327,6 +334,8 @@ npm test                   # 670+ unit and multi-peer integration tests
 npm run typecheck
 npm run build && npm link  # use your local build as `klaud` (klaud update then follows git)
 ```
+
+To release: bump `version` in `package.json`, merge, then `npm publish` from `main` (it type-checks and builds first, and npm asks for your 2FA code).
 
 klaud used to be called klaude. Your `~/.klaude` settings, projects and worktrees carry over automatically.
 
