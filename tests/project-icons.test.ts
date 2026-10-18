@@ -48,6 +48,35 @@ describe('project icons', () => {
   });
 });
 
+describe('logos kept elsewhere', () => {
+  it('finds a logo in brand and asset folders, never a banner', () => {
+    const root = path.join(tmp(), 'acme');
+    put(root, 'docs/assets/acme-hero.png');
+    put(root, 'packages/brand/assets/acme-og.png');
+    expect(findProjectIcon(root)).toBeUndefined();
+    put(root, 'packages/brand/assets/logo-vector.svg', '<svg/>');
+    expect(findProjectIcon(root)).toBe(path.join(root, 'packages/brand/assets/logo-vector.svg'));
+    put(root, 'packages/brand/assets/acme-mark.png');
+    expect(findProjectIcon(root)).toBe(path.join(root, 'packages/brand/assets/acme-mark.png'));
+    put(root, 'apps/web/public/icon.png');
+    expect(findProjectIcon(root)).toBe(path.join(root, 'apps/web/public/icon.png'));
+  });
+
+  it('borrows its logo from a sibling repo of the same family', () => {
+    const family = path.join(tmp(), 'ratel');
+    const ratel = path.join(family, 'ratel');
+    mkdirSync(ratel, { recursive: true });
+    put(family, 'ratel-cloud/packages/brand/assets/ratel-mark.png', 'mark');
+    put(family, 'ratel-cloud/packages/brand/assets/other-logo.png', 'other');
+    expect(readProjectIcon(ratel, tmp())?.data).toBe(Buffer.from('mark').toString('base64'));
+    // An unrelated neighbour in a general code folder isn't searched.
+    const code = tmp();
+    mkdirSync(path.join(code, 'app'), { recursive: true });
+    put(code, 'website/brand/app-logo.png');
+    expect(readProjectIcon(path.join(code, 'app'), tmp())).toBeUndefined();
+  });
+});
+
 describe('suggestProjects', () => {
   it('lists git repos in code folders that are not projects yet, newest first', () => {
     const home = tmp();

@@ -76,7 +76,7 @@ const CANDIDATES: readonly string[] = [
 
 /** Monorepos keep the app in a subfolder: apps/web/public/favicon.ico and the like. */
 const NESTED_PARENTS = ['apps', 'packages'];
-const NESTED: readonly string[] = ['public/apple-touch-icon.png', 'public/favicon.svg', 'public/favicon.png', 'app/icon.png', 'src/app/icon.png', 'src-tauri/icons/128x128@2x.png', 'public/favicon.ico', 'app/favicon.ico'];
+const NESTED: readonly string[] = ['public/apple-touch-icon.png', 'public/icon.png', 'public/icon.svg', 'public/favicon.svg', 'public/favicon.png', 'app/icon.png', 'src/app/icon.png', 'src-tauri/icons/128x128@2x.png', 'public/favicon.ico', 'app/favicon.ico'];
 
 const isFile = (p: string): boolean => {
   try {
@@ -141,6 +141,75 @@ export function findProjectIcon(root: string): string | undefined {
       }
     }
   }
+  return brandIcon(root, path.basename(root));
+}
+
+/** Folders where logos live, and folders never worth opening. */
+const ART_DIRS = /^(brand|branding|logo|logos|icons?|assets|images?|img|static|public|resources|art|media|design|docs|apps|packages|web|site|www)$/i;
+const SKIP_DIRS = new Set(['node_modules', '.git', 'target', 'dist', 'build', 'out', '.next', '.venv', 'venv', 'vendor', 'Pods', 'DerivedData', 'coverage', '.turbo', '.cache']);
+const IMAGE = /\.(png|svg|ico|jpe?g|webp)$/i;
+
+/**
+ * The best logo-looking image in a project's art folders (brand/, assets/, public/… a few levels
+ * down): named after the project, a mark, a logo or an icon; never a banner, hero or screenshot.
+ * `only`: just files named after the project (used for a sibling project's folders).
+ */
+function brandIcon(root: string, name: string, only = false): string | undefined {
+  const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  let best: { file: string; score: number } | undefined;
+  const visit = (dir: string, depth: number): void => {
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (depth > 0 && !SKIP_DIRS.has(e.name) && !e.name.startsWith('.') && ART_DIRS.test(e.name)) visit(abs, depth - 1);
+        continue;
+      }
+      if (!IMAGE.test(e.name) || !isFile(abs)) continue;
+      const base = e.name.toLowerCase().replace(/\.[a-z]+$/, '');
+      const flat = base.replace(/[^a-z0-9]/g, '');
+      // Whole words only ("og" image, not the "og" in "logo").
+      const words = base.split(/[^a-z0-9]+/);
+      if (words.some((w) => /^(banner|hero|og|social|screenshot|screenshots|preview|cover|background|bg|splash|demo)$/.test(w))) continue;
+      const named = key.length > 1 && flat.includes(key);
+      if (only && !named) continue;
+      let score = 0;
+      if (named) score += 3;
+      if (/(^|[^a-z])(mark|logomark|symbol)([^a-z]|$)/.test(base)) score += 3;
+      if (/logo/.test(base)) score += 2;
+      if (/(app-?icon|favicon|^icon)/.test(base)) score += 2;
+      if (score === 0) continue;
+      if (/\.svg$/i.test(e.name)) score += 1;
+      if (/(-|_)(16|32)(x|$)/.test(base)) score -= 1; // a tiny favicon size, when bigger ones exist
+      if (!best || score > best.score) best = { file: abs, score };
+    }
+  };
+  visit(root, 4);
+  return best?.file;
+}
+
+/**
+ * A project with no logo of its own often keeps it in a sibling repo (a "brand" or web app next to
+ * it, like ratel/ and ratel-cloud/): an image named after the project in the folders beside it.
+ */
+function siblingIcon(root: string): string | undefined {
+  const parent = path.dirname(root);
+  const name = path.basename(root);
+  const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const related = (s: string): boolean => s.toLowerCase().replace(/[^a-z0-9]/g, '').includes(key);
+  // Only a family of repos (ratel/ next to ratel-cloud/, or all inside a ratel/ folder), never
+  // every project in ~/Projects.
+  const family = related(path.basename(parent));
+  for (const sib of subdirs(parent)) {
+    if (sib === name || !(family || related(sib))) continue;
+    const found = brandIcon(path.join(parent, sib), name, true);
+    if (found) return found;
+  }
   return undefined;
 }
 
@@ -159,7 +228,7 @@ function chosenIcon(root: string, dir = iconsDir()): string | undefined {
 
 /** The project's icon to show: yours, else its own, else none (screens draw its initial). */
 export function readProjectIcon(root: string, dir = iconsDir()): ProjectIcon | undefined {
-  const file = chosenIcon(root, dir) ?? findProjectIcon(root);
+  const file = chosenIcon(root, dir) ?? findProjectIcon(root) ?? siblingIcon(root);
   const mime = file ? MIME[path.extname(file).toLowerCase()] : undefined;
   if (!file || !mime) return undefined;
   try {
