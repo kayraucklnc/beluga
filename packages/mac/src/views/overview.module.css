@@ -9,11 +9,20 @@
 }
 .groupTitle {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   margin: 0 0 6px 8px;
   font-size: 1rem;
   font-weight: 650;
+}
+.groupActions {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.group:hover .groupActions,
+.groupActions:focus-within {
+  opacity: 1;
 }
 .count {
   color: var(--text-3);

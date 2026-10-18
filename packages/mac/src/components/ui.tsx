@@ -52,18 +52,24 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
   },
 );
 
-/** A row of mutually exclusive choices (like NSSegmentedControl). */
-export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: ReadonlyArray<{ value: T; label: string; hint?: string; icon?: IconName }>; onChange: (v: T) => void; label: string }) {
+/**
+ * A row of mutually exclusive choices (like NSSegmentedControl). `iconOnly` (a narrow window):
+ * just the icons, each named in its tooltip.
+ */
+export function Segmented<T extends string>({ value, options, onChange, label, iconOnly }: { value: T; options: ReadonlyArray<{ value: T; label: string; hint?: string; icon?: IconName; keys?: string }>; onChange: (v: T) => void; label: string; iconOnly?: boolean }) {
   return (
     <div className={s.segmented} role="tablist" aria-label={label}>
-      {options.map((o) => (
-        <Tip key={o.value} label={o.hint ?? o.label}>
-          <button type="button" role="tab" aria-selected={o.value === value} className={cx(s.segment, o.value === value && s.segmentOn)} onClick={() => onChange(o.value)}>
-            {o.icon ? <Icon name={o.icon} size={13} /> : null}
-            {o.label}
-          </button>
-        </Tip>
-      ))}
+      {options.map((o) => {
+        const bare = iconOnly && o.icon;
+        return (
+          <Tip key={o.value} label={bare ? `${o.label}${o.hint ? ` · ${o.hint}` : ''}` : (o.hint ?? o.label)} {...(o.keys ? { keys: o.keys } : {})}>
+            <button type="button" role="tab" aria-label={bare ? o.label : undefined} aria-selected={o.value === value} className={cx(s.segment, o.value === value && s.segmentOn, bare && s.segmentIcon)} onClick={() => onChange(o.value)}>
+              {o.icon ? <Icon name={o.icon} size={13} /> : null}
+              {bare ? null : o.label}
+            </button>
+          </Tip>
+        );
+      })}
     </div>
   );
 }
@@ -110,6 +116,11 @@ export function Empty({ icon, title, detail, action }: { icon: IconName; title: 
       {action}
     </div>
   );
+}
+
+/** The one to three buttons under an empty state (the first is the default). */
+export function EmptyActions({ children }: { children: ReactNode }) {
+  return <div className={s.emptyActions}>{children}</div>;
 }
 
 /** Claude is thinking: three soft dots. */

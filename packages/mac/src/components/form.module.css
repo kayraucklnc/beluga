@@ -1,0 +1,292 @@
+.overlay {
+  composes: overlay from '../dialogs/sheet.module.css';
+}
+.sheet {
+  composes: sheet from '../dialogs/sheet.module.css';
+  max-height: 80vh;
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 4px;
+}
+.icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.headText {
+  flex: 1;
+  min-width: 0;
+}
+.title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.intro {
+  margin-top: 3px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.intro p {
+  margin: 0 0 4px;
+}
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 20px 4px;
+}
+.field {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: start;
+  gap: 12px;
+}
+.label {
+  padding-top: 4px;
+  color: var(--text-2);
+  text-align: right;
+}
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.controlRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.hint {
+  color: var(--text-3);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.fieldError {
+  color: var(--error);
+  font-size: 0.88rem;
+}
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), inset 0 1px 1.5px rgba(0, 0, 0, 0.04);
+  user-select: text;
+  -webkit-user-select: text;
+  transition: box-shadow var(--dur-fast);
+}
+:global([data-theme='dark']) .input {
+  background: color-mix(in srgb, var(--bg-raised) 70%, black);
+}
+.input::placeholder {
+  color: var(--text-3);
+}
+.input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.invalid,
+.invalid:focus {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--error) 70%, transparent), 0 0 0 3px color-mix(in srgb, var(--error) 18%, transparent);
+}
+.area {
+  height: auto;
+  min-height: 72px;
+  padding: 6px 8px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+}
+.popup {
+  min-width: 160px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 26px 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg-raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2.5 3.8L5 1.5l2.5 2.3M2.5 6.2L5 8.5l2.5-2.3' fill='none' stroke='%23888' stroke-width='1.3'/%3E%3C/svg%3E") no-repeat right 8px center;
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.07);
+  appearance: none;
+}
+:global([data-theme='dark']) .popup {
+  background-color: color-mix(in srgb, var(--bg-raised) 80%, white);
+}
+.folder {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+}
+.tag {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.tag_team {
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+}
+.tag_mine {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.tag_guess {
+  color: var(--text-3);
+}
+.commandLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 7px;
+  background: var(--code-bg);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+.commandLine code {
+  flex: 1;
+  font-size: 0.92rem;
+}
+.copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+.copy:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 20px 0;
+  color: var(--error);
+}
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 20px 16px;
+}
+.footer {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.flex {
+  flex: 1;
+}
+.button {
+  composes: button from './alert.module.css';
+}
+.default {
+  composes: default from './alert.module.css';
+}
+.destructive {
+  composes: destructive from './alert.module.css';
+}
+
+/* A list to pick one thing from (people, templates), inside a form. */
+.list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 3px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  background: var(--bg);
+}
+:global([data-theme='dark']) .list {
+  background: color-mix(in srgb, var(--bg-raised) 70%, black);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  text-align: left;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.rowOn,
+.rowOn:hover {
+  background: var(--accent);
+  color: white;
+}
+.rowOn .rowDetail {
+  color: rgba(255, 255, 255, 0.8);
+}
+.rowText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.rowName {
+  font-weight: 550;
+}
+.rowDetail {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.linkButton {
+  color: var(--accent);
+  font-weight: 500;
+}
+.linkButton:hover {
+  text-decoration: underline;
+}
+.linkDanger {
+  composes: linkButton;
+  color: var(--error);
+}
+.list:focus-visible {
+  outline: none;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}

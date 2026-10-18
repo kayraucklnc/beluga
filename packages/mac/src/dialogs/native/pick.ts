@@ -1,0 +1,25 @@
+import { useCallback } from 'react';
+import { type MenuKind, menuSpec } from '@klaud/ui/menus.js';
+import { useActions } from '../../lib/actions.js';
+import { useKlaud } from '../../lib/klaud.js';
+
+/**
+ * Pick a menu option by its id, the way the terminal UI does when you choose it from the list:
+ * the same option, the same action. Native sheets draw the menu their own way but act through this.
+ */
+export function usePick(menu: MenuKind): (id: string, confirmed?: boolean) => boolean {
+  const actions = useActions();
+  const { client } = useKlaud();
+  return useCallback(
+    (id, confirmed = true) => {
+      const index = menuSpec(client.store.getState(), menu)?.options.findIndex((o) => o.id === id) ?? -1;
+      if (index < 0) return false;
+      actions.pick(menu, index, confirmed);
+      return true;
+    },
+    [actions, client, menu],
+  );
+}
+
+/** "3 files", "1 file". */
+export const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;

@@ -164,9 +164,10 @@ export class WorkspaceController {
     }
   }
 
-  async newWorktree(projectId: string, name: string): Promise<Workspace | undefined> {
-    this.deps.toast(`Creating worktree "${name}" from the latest origin…`);
-    const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.createWorktree(projectId, name));
+  /** New worktree from the latest origin default branch, or from `opts.base` (one of `branches`). */
+  async newWorktree(projectId: string, name: string, opts: { base?: string } = {}): Promise<Workspace | undefined> {
+    this.deps.toast(`Creating worktree "${name}" from ${opts.base ?? 'the latest origin'}…`);
+    const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.createWorktree(projectId, name, opts.base));
     if (ws) {
       this.deps.toast(`Worktree ${ws.name} is ready on ${ws.branch}`, 'success');
       this.open(ws.id);
@@ -188,12 +189,25 @@ export class WorkspaceController {
     if (ws) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
   }
 
-  /** Turn a draft into a worktree: a small model names it after your first message, then Claude starts on it. */
-  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>): Promise<void> {
+  /** The branches a new worktree can start from, the project's default base first. */
+  branches(projectId: string): Promise<{ base: string; branches: string[] }> {
+    return this.deps.manager.branches(projectId);
+  }
+
+  /**
+   * Turn a draft into a worktree: a small model names it after your first message (unless you
+   * named it), then Claude starts on it. With no message it just creates the worktree.
+   */
+  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>, opts: { base?: string; name?: string } = {}): Promise<void> {
+    const text = firstMessage.trim();
+    const name = opts.name?.trim() || (text ? await this.nameFor(firstMessage, nameTask) : 'worktree');
+    const ws = await this.newWorktree(projectId, name, opts.base ? { base: opts.base } : {});
+    if (ws && text) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
+  }
+
+  private nameFor(firstMessage: string, nameTask: (prompt: string) => Promise<string>): Promise<string> {
     this.deps.toast('Naming the worktree…');
-    const name = await nameTask(firstMessage);
-    const ws = await this.newWorktree(projectId, name);
-    if (ws) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
+    return nameTask(firstMessage);
   }
 
   async fork(id: string, name: string): Promise<Workspace | undefined> {
@@ -303,6 +317,21 @@ export class WorkspaceController {
     } catch (err) {
       this.deps.toast(errorText(err), 'error');
     }
+  }
+
+  async renameGroup(from: string, to: string): Promise<void> {
+    try {
+      this.deps.manager.renameGroup(from, to);
+      await this.refresh();
+    } catch (err) {
+      this.deps.toast(errorText(err), 'error');
+    }
+  }
+
+  async ungroup(name: string): Promise<void> {
+    this.deps.manager.ungroup(name);
+    await this.refresh();
+    this.deps.toast(`Group "${name}" removed; its projects stay`, 'success');
   }
 
   async hideProject(projectId: string): Promise<void> {

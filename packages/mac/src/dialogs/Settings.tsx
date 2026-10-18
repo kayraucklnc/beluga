@@ -6,6 +6,7 @@ import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@klaud/ui/setting
 import { Icon, type IconName } from '../components/Icon.js';
 import { Avatar, Button, cx } from '../components/ui.js';
 import { APP_VERSION } from '../lib/boot.js';
+import { revealInFinder } from '../lib/files.js';
 import { type SettingsPane, useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { ACCENTS, type Accent, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EnvironmentSettings } from './EnvironmentSettings.js';
@@ -41,7 +42,7 @@ function General() {
               void api.session.rename(name);
             }}
           >
-            <input className={s.text} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name !== state.self?.name && void api.session.rename(name)} />
+            <input id="settings-name" aria-label="Your name" className={s.text} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name !== state.self?.name && void api.session.rename(name)} />
           </form>
         </Row>
         <Row label="Friends' requests for your Claude" detail="For people you haven't picked a trust level for.">
@@ -281,6 +282,8 @@ function People() {
 
 function About() {
   const { client } = useKlaud();
+  const home = useApp((st) => st.home);
+  const logPath = `${home}/.klaud/logs/daemon.log`;
   return (
     <Group>
       <Row label="klaud for Mac">{APP_VERSION}</Row>
@@ -289,7 +292,12 @@ function About() {
         {client.clients}
       </Row>
       <Row label="Log" detail="~/.klaud/logs/daemon.log">
-        <Icon name="file" size={14} />
+        <Button size="small" onClick={() => void client.api.local.openFolder(logPath)}>
+          Open in Console
+        </Button>
+        <Button size="small" variant="quiet" onClick={() => void revealInFinder(client, logPath)}>
+          Show in Finder
+        </Button>
       </Row>
     </Group>
   );

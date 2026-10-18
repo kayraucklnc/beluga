@@ -2,7 +2,9 @@ import type { SettingsSection } from '@klaud/ui/settings-menus.js';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { useEffect } from 'react';
 import { channelOf } from '@klaud/core/store.js';
-import { stepTab, topTabs } from '@klaud/ui/workspace-models.js';
+import { macTabs, stepPlace } from './lib/go.js';
+import { inviteChoice } from '@klaud/ui/invite-menus.js';
+import { projectInView } from '@klaud/ui/invite-actions.js';
 import { Icon } from './components/Icon.js';
 import { MenuSheet } from './dialogs/MenuSheet.js';
 import { Palette } from './dialogs/Palette.js';
@@ -13,10 +15,12 @@ import { Inspector } from './layout/Inspector.js';
 import { Main } from './layout/Main.js';
 import { Sidebar } from './layout/Sidebar.js';
 import { useActions } from './lib/actions.js';
+import { commandForKey, runCommand } from './lib/commands.js';
 import { useApp, useKlaud } from './lib/klaud.js';
 import { setPrefs, usePrefs, zoom } from './lib/prefs.js';
-import { joinRoom, useNative, useNotificationTaps, useTrayStatus, useWindowFocus } from './lib/native.js';
+import { joinRoom, useMenuState, useNative, useNotificationTaps, useTrayStatus, useWindowFocus } from './lib/native.js';
 import { AddProjectSheet } from './dialogs/AddProjectSheet.js';
+import { NativeSheets } from './dialogs/native/WorkSheets.js';
 import { JoinSheet } from './dialogs/JoinSheet.js';
 import { useState } from 'react';
 import s from './layout/Shell.module.css';
@@ -86,6 +90,13 @@ function useShortcuts() {
     const onKey = (e: KeyboardEvent): void => {
       const cmd = e.metaKey || e.ctrlKey;
       const state = client.store.getState();
+      // The Workspace and Conversation menus' keys (Stop ⌘., Commit ⇧⌘C, Find ⌘F…).
+      const command = e.defaultPrevented ? undefined : commandForKey(e);
+      if (command) {
+        e.preventDefault();
+        runCommand({ client, ui, actions }, command);
+        return;
+      }
       if (cmd && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         ui.patch({ palette: !ui.get().palette });
@@ -111,14 +122,14 @@ function useShortcuts() {
         e.preventDefault();
         setPrefs({ sidebar: !prefs.sidebar });
       } else if (e.altKey && !cmd && /^Digit[1-6]$/.test(e.code)) {
-        const tab = topTabs(state)[Number(e.code.slice(5)) - 1];
+        const tab = macTabs(state)[Number(e.code.slice(5)) - 1];
         if (tab) {
           e.preventDefault();
           actions.run({ type: 'view', view: { kind: tab.kind } });
         }
       } else if (e.ctrlKey && e.key === 'Tab') {
         e.preventDefault();
-        actions.run({ type: 'view', view: { kind: stepTab(state, e.shiftKey ? -1 : 1) } });
+        actions.run({ type: 'view', view: { kind: stepPlace(state, e.shiftKey ? -1 : 1) } });
       } else if (cmd && e.key === 'n' && !e.shiftKey) {
         e.preventDefault();
         actions.run({ type: 'new_chat', projectId: 'chats' });
@@ -134,11 +145,8 @@ function useShortcuts() {
     return () => window.removeEventListener('keydown', onKey);
   }, [prefs.inspector, prefs.sidebar, prefs.dock]);
   useEffect(() => {
-    const invite = (): void => {
-      const state = client.store.getState();
-      if (state.self?.host) ui.openMenu({ kind: 'invite_link', scope: 'room', can: 'prompt', knock: true, singleUse: true, expires: true });
-      else void client.api.session.copyInvite();
-    };
+    // The Invite sheet, set to the project you're looking at (as the terminal UI's Invite is).
+    const invite = (): void => ui.openMenu({ kind: 'invite_link', ...inviteChoice(projectInView(client)) });
     document.addEventListener('klaud:invite', invite);
     const palette = (): void => ui.patch({ palette: true });
     document.addEventListener('klaud:palette', palette);
@@ -185,6 +193,7 @@ export function App() {
   useSettingsWindow();
   useNative(client, ui, actions, setJoining);
   useTrayStatus(client);
+  useMenuState(client);
   useWindowFocus(client);
   useNotificationTaps(client, ui, actions);
   return (
@@ -196,6 +205,7 @@ export function App() {
       </div>
       <MenuSheet />
       <AddProjectSheet />
+      <NativeSheets />
       <Palette />
       <Settings />
       <PlanSheet />

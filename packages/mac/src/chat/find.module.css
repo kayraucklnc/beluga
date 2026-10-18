@@ -1,0 +1,67 @@
+/* Find in this conversation (⌘F): a small bar at the top right, like Safari's. */
+.bar {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(440px, calc(100% - 28px));
+  height: 34px;
+  padding: 0 6px 0 10px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: var(--shadow-pop);
+  animation: drop var(--dur) var(--ease-out);
+}
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+  }
+}
+.glass {
+  flex: none;
+  color: var(--text-3);
+}
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 0.98rem;
+}
+.input::placeholder {
+  color: var(--text-3);
+}
+.count {
+  flex: none;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+.steps {
+  display: inline-flex;
+}
+.done {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.done:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}

@@ -211,3 +211,28 @@
 .splitReady button:active {
   background: rgba(0, 0, 0, 0.08);
 }
+
+/* ■ Stop: beside the send control while your Claude works here. */
+.stop {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 6px;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--text) 88%, transparent);
+  color: var(--bg);
+  transition: background var(--dur-fast), transform var(--dur-fast);
+}
+.stop:hover {
+  background: var(--text);
+}
+.stop:active {
+  transform: scale(0.94);
+}
+.stopMark {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: currentColor;
+}

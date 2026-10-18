@@ -76,12 +76,12 @@ test('picks a model and how hard Claude thinks', async ({ page }) => {
   await page.getByRole('radio', { name: 'Auto' }).click();
 });
 
-test("opens a person's menu and the same choices as the terminal app", async ({ page }) => {
+test("opens a person's card beside their row", async ({ page }) => {
   await sidebar(page).getByRole('button', { name: 'bob', exact: true }).click();
-  const sheet = page.getByRole('dialog', { name: 'bob' });
-  await expect(sheet.getByRole('option', { name: /Ask me each time/ })).toBeVisible();
+  const card = page.getByRole('dialog', { name: 'bob' });
+  await expect(card.getByRole('radiogroup', { name: 'Trust bob' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(sheet).toBeHidden();
+  await expect(card).toBeHidden();
 });
 
 test('opens and closes shells without them coming back', async ({ page }) => {

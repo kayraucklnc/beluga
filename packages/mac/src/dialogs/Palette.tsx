@@ -1,13 +1,14 @@
 import { Command } from 'cmdk';
 import * as Dialog from '@radix-ui/react-dialog';
-import { COMMANDS } from '@klaud/core/commands.js';
-import { findWorkspace, topTabs, workspaceButtons } from '@klaud/ui/workspace-models.js';
+import { findWorkspace, workspaceButtons } from '@klaud/ui/workspace-models.js';
+import { macTabs } from '../lib/go.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { setPrefs, usePrefs, zoom } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
+import { paletteCommands } from './palette-commands.js';
 import s from './palette.module.css';
 
 interface Item {
@@ -39,7 +40,7 @@ export function Palette() {
     fn();
   };
 
-  const nav: Item[] = topTabs(state).map((t, i) => ({ id: `view:${t.kind}`, label: t.label, hint: t.hint.split(' · ')[0], keys: `⌥${i + 1}`, icon: VIEW_ICONS[t.kind] ?? 'grid', run: () => actions.run({ type: 'view', view: { kind: t.kind } }) }));
+  const nav: Item[] = macTabs(state).map((t, i) => ({ id: `view:${t.kind}`, label: t.label, hint: t.hint.split(' · ')[0], keys: `⌥${i + 1}`, icon: VIEW_ICONS[t.kind] ?? 'grid', run: () => actions.run({ type: 'view', view: { kind: t.kind } }) }));
   const places: Item[] = [
     ...state.projects.flatMap((p) =>
       p.workspaces
@@ -72,14 +73,8 @@ export function Palette() {
     .map((p, index) => ({ p, index }))
     .filter(({ p }) => p.peerId !== state.selfId)
     .map(({ p, index }) => ({ id: `person:${p.peerId}`, label: p.name, hint: 'trust, follow, run a command, share…', icon: 'person' as IconName, run: () => ui.openMenu({ kind: 'person', index }) }));
-  const commands: Item[] = COMMANDS.map((c) => ({
-    id: `cmd:${c.name}`,
-    label: `/${c.name}${c.args ? ` ${c.args}` : ''}`,
-    hint: c.desc,
-    icon: 'command' as IconName,
-    keywords: [c.desc],
-    run: () => (c.args ? actions.typeInto(`/${c.name} `) : actions.submit(`/${c.name}`)),
-  }));
+  // The /commands as things to do (no `<arg>` syntax); the ones that need more open their sheet.
+  const commands: Item[] = paletteCommands({ client, ui, actions, state });
   const window: Item[] = [
     { id: 'settings', label: 'Settings…', keys: `${mod()},`, icon: 'gear', run: () => ui.patch({ settings: 'general' }) },
     { id: 'inbox', label: 'Notifications', hint: 'What happened while you were elsewhere', icon: 'bell', run: () => ui.patch({ notices: true }) },
@@ -112,7 +107,7 @@ export function Palette() {
               <Command.Input className={s.input} placeholder="Go to, do, or start anything…" autoFocus />
             </div>
             <Command.List className={s.list}>
-              <Command.Empty className={s.empty}>Nothing matches. Try a /command.</Command.Empty>
+              <Command.Empty className={s.empty}>Nothing matches.</Command.Empty>
               {groups.map(([heading, items]) =>
                 items.length ? (
                   <Command.Group key={heading} heading={heading} className={s.group}>

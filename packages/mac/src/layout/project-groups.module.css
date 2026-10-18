@@ -1,0 +1,41 @@
+.editing {
+  background: var(--bg-hover);
+}
+.field {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  margin-right: 2px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--text);
+  font-weight: 600;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.field:focus {
+  outline: none;
+}
+.dropOn,
+.dropOn:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.loose {
+  border-radius: 7px;
+  transition: background var(--dur-fast);
+}
+.looseOffer {
+  padding-bottom: 2px;
+  outline: 1.5px dashed var(--hairline-strong);
+  outline-offset: -1px;
+}
+.dropHint {
+  padding: 6px 10px;
+  color: var(--text-3);
+  font-size: 0.88rem;
+  text-align: center;
+}

@@ -4,15 +4,17 @@ import { NATIVE_MENUS, type NativeMenuProps } from './native/index.js';
 import { useEffect, useRef, useState } from 'react';
 import { menuSpec } from '@klaud/ui/menus.js';
 import { Icon } from '../components/Icon.js';
-import { cx } from '../components/ui.js';
+import { Button, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { guiHint, paragraphs } from '../lib/gui-copy.js';
 import s from './sheet.module.css';
 
 /**
  * Every choice the terminal UI asks with a menu (settings sections, a person, a pull request,
  * invites, confirming an archive…), as a sheet: the same title, words and options, and picking
- * one does exactly what it does there. ↑↓ and Return work, and so do the numbers.
+ * one does exactly what it does there. ↑↓ and Return work. Most menus have their own Mac way
+ * instead (dialogs/native); this is for the rest.
  */
 export function MenuSheet() {
   const { ui } = useKlaud();
@@ -53,9 +55,6 @@ export function MenuSheet() {
             } else if (e.key === 'Enter') {
               e.preventDefault();
               pick(selected);
-            } else if (/^[1-9]$/.test(e.key) && !e.metaKey) {
-              const i = Number(e.key) - 1;
-              if (i < options.length) pick(i);
             }
           }}
         >
@@ -67,7 +66,17 @@ export function MenuSheet() {
           </div>
           {spec.intro.filter(Boolean).length ? (
             <div className={`${s.intro} selectable`}>
-              {spec.intro.map((line, i) => (line ? <p key={i}>{line}</p> : <br key={i} />))}
+              {paragraphs(spec.intro).map((b, i) =>
+                b.kind === 'p' ? (
+                  <p key={i}>{b.text}</p>
+                ) : (
+                  <ol key={i}>
+                    {b.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ol>
+                ),
+              )}
             </div>
           ) : null}
           <div className={s.options} ref={list} role="listbox" aria-label={spec.title}>
@@ -83,10 +92,12 @@ export function MenuSheet() {
                 onClick={() => pick(i)}
               >
                 <span className={s.optionLabel}>{o.label}</span>
-                {o.hint && o.hint !== 'Esc' ? <span className={s.optionHint}>{o.hint}</span> : null}
-                {i < 9 ? <span className={s.num}>{i + 1}</span> : null}
+                {guiHint(o.hint) ? <span className={s.optionHint}>{guiHint(o.hint)}</span> : null}
               </button>
             ))}
+          </div>
+          <div className={s.footer}>
+            <Button onClick={close}>Cancel</Button>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

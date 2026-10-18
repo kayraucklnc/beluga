@@ -1,7 +1,11 @@
 //! The menu bar and the menu-bar (tray) icon. Every item sends its id to the window, which
 //! does what the same command does in the app (and in the terminal app).
 
-use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use std::collections::HashMap;
+
+use tauri::menu::{
+    AboutMetadata, CheckMenuItem, Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu,
+};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
@@ -133,16 +137,27 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "Go",
         true,
         &[
+            // The sidebar's order (⌥1…6 in the window too).
             &item(app, "go-room", "Chat", Some("Alt+1"))?,
-            &item(app, "go-files", "Shared Files", Some("Alt+2"))?,
-            &item(app, "go-overview", "Overview", Some("Alt+3"))?,
+            &item(app, "go-overview", "Overview", Some("Alt+2"))?,
+            &item(app, "go-files", "Shared Files", Some("Alt+3"))?,
             &item(app, "go-search", "Search", Some("Alt+4"))?,
             &item(app, "go-usage", "Usage", Some("Alt+5"))?,
             &item(app, "go-terminal", "Terminal", Some("Alt+6"))?,
             &PredefinedMenuItem::separator(app)?,
+            &item(
+                app,
+                "ws-prev",
+                "Previous Workspace",
+                Some("Alt+CmdOrCtrl+Up"),
+            )?,
+            &item(app, "ws-next", "Next Workspace", Some("Alt+CmdOrCtrl+Down"))?,
+            &PredefinedMenuItem::separator(app)?,
             &item(app, "inbox", "Inbox", Some("CmdOrCtrl+Shift+B"))?,
         ],
     )?;
+    let conversation = conversation_menu(app)?;
+    let workspace = workspace_menu(app)?;
     let window = Submenu::with_items(
         app,
         "Window",
@@ -163,7 +178,129 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item(app, "help-log", "Open the Log", None)?,
         ],
     )?;
-    Menu::with_items(app, &[&app_menu, &file, &edit, &view, &go, &window, &help])
+    Menu::with_items(
+        app,
+        &[
+            &app_menu,
+            &file,
+            &edit,
+            &view,
+            &conversation,
+            &workspace,
+            &go,
+            &window,
+            &help,
+        ],
+    )
+}
+
+/// Your Claude in the conversation on screen: stop it, plan first, find, copy, clear.
+fn conversation_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
+    let plan = CheckMenuItem::with_id(
+        app,
+        "conv-plan",
+        "Plan First",
+        true,
+        false,
+        Some("Alt+CmdOrCtrl+P"),
+    )?;
+    Submenu::with_items(
+        app,
+        "Conversation",
+        true,
+        &[
+            &item(app, "conv-stop", "Stop Claude", Some("CmdOrCtrl+."))?,
+            &plan,
+            &PredefinedMenuItem::separator(app)?,
+            &item(app, "conv-find", "Find…", Some("CmdOrCtrl+F"))?,
+            &item(app, "conv-find-next", "Find Next", Some("CmdOrCtrl+G"))?,
+            &item(
+                app,
+                "conv-find-prev",
+                "Find Previous",
+                Some("Shift+CmdOrCtrl+G"),
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &item(app, "conv-copy", "Copy Last Answer", None)?,
+            &item(
+                app,
+                "conv-clear",
+                "Clear Conversation…",
+                Some("Shift+CmdOrCtrl+K"),
+            )?,
+        ],
+    )
+}
+
+/// The workspace on screen: its toolbar's actions, with their keys.
+fn workspace_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
+    Submenu::with_items(
+        app,
+        "Workspace",
+        true,
+        &[
+            &item(app, "ws-commit", "Commit", Some("Shift+CmdOrCtrl+C"))?,
+            &item(app, "ws-pr", "Pull Request…", Some("Shift+CmdOrCtrl+P"))?,
+            &item(app, "ws-merge", "Merge", Some("Shift+CmdOrCtrl+M"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &item(app, "ws-run", "Run", Some("CmdOrCtrl+R"))?,
+            &item(
+                app,
+                "ws-review",
+                "Ask Claude to Review",
+                Some("Shift+CmdOrCtrl+R"),
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &item(app, "ws-finder", "Show in Finder", None)?,
+            &item(app, "ws-fork", "Fork…", None)?,
+            &item(app, "ws-archive", "Archive…", Some("Ctrl+CmdOrCtrl+A"))?,
+        ],
+    )
+}
+
+/// What the window says about its commands right now (see `useMenuState` in lib/native.ts).
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct MenuState {
+    #[serde(default)]
+    pub enabled: HashMap<String, bool>,
+    #[serde(default)]
+    pub checked: HashMap<String, bool>,
+    #[serde(default)]
+    pub labels: HashMap<String, String>,
+}
+
+/// Grey out, check and rename menu-bar items by id (only ids the menu has; others are ignored).
+pub fn apply_state<R: Runtime>(menu: &Menu<R>, state: &MenuState) {
+    let Ok(top) = menu.items() else { return };
+    let submenus: Vec<Submenu<R>> = top
+        .into_iter()
+        .filter_map(|k| match k {
+            MenuItemKind::Submenu(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    let find = |id: &str| submenus.iter().find_map(|s| s.get(id));
+    for (id, on) in &state.enabled {
+        match find(id) {
+            Some(MenuItemKind::MenuItem(i)) => {
+                let _ = i.set_enabled(*on);
+            }
+            Some(MenuItemKind::Check(i)) => {
+                let _ = i.set_enabled(*on);
+            }
+            _ => {}
+        }
+    }
+    for (id, on) in &state.checked {
+        if let Some(MenuItemKind::Check(i)) = find(id) {
+            let _ = i.set_checked(*on);
+        }
+    }
+    for (id, text) in &state.labels {
+        if let Some(MenuItemKind::MenuItem(i)) = find(id) {
+            let _ = i.set_text(text);
+        }
+    }
 }
 
 pub fn on_event<R: Runtime>(app: &AppHandle<R>, id: &str) {

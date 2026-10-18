@@ -6,6 +6,9 @@ import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { setPrefs, getPrefs, zoom } from './prefs.js';
 import { badgeCount, noticeTarget } from '@klaud/ui/notice-models.js';
 import { NOTIFICATION_TAP, openNoticeTarget } from './notices.js';
+import { COMMAND_IDS, type CommandId, commandState, runCommand } from './commands.js';
+
+const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
 const GO: Record<string, 'room' | 'files' | 'overview' | 'search' | 'usage' | 'terminal'> = {
   'go-room': 'room',
@@ -22,6 +25,7 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
   const state = client.store.getState();
   const project = state.view.kind === 'workspace' ? state.projects.find((p) => p.workspaces.some((w) => w.id === (state.view as { id: string }).id)) : state.projects.find((p) => p.root);
   if (GO[id]) return actions.run({ type: 'view', view: { kind: GO[id]! } });
+  if (isCommand(id)) return runCommand({ client, ui, actions }, id);
   switch (id) {
     case 'settings':
       return ui.patch({ settings: 'general' });
@@ -63,10 +67,14 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
   }
 }
 
-/** A klaud:// link: "klaud://join/<invite>" joins a friend's room. */
+/**
+ * A klaud:// link that joins a friend's room: "klaud://join/<invite>", or an invite itself
+ * ("klaud://<host key>…#secret", what Invite copies), so clicking the link a friend sent works.
+ */
 export function inviteOf(url: string): string | undefined {
   const m = /^klaud:\/\/join\/(.+)$/.exec(url);
-  return m ? decodeURIComponent(m[1]!) : undefined;
+  if (m) return decodeURIComponent(m[1]!);
+  return /^klaud:\/\/[ybndrfg8ejkmcpqxot1uwisza345h769]{52}\/?(\?relay=[^\s#]+)?#[\w-]{16,256}$/.test(url) ? url : undefined;
 }
 
 /** Listen to the menu bar and to klaud:// links (only in the app). */
@@ -194,6 +202,46 @@ export function useNotificationTaps(client: SocketClient, ui: UiStore, actions: 
       alive = false;
       off?.();
       document.removeEventListener(NOTIFICATION_TAP, onTap);
+    };
+  }, [client]);
+}
+
+/**
+ * Keep the menu bar's Workspace and Conversation menus in step with the window: items that
+ * can't run right now are greyed out (Merge with nothing to merge, Stop while Claude is idle),
+ * Plan First shows its check, and Run reads Stop Running while the run script runs.
+ */
+export function useMenuState(client: SocketClient): void {
+  useEffect(() => {
+    if (!inApp()) return;
+    let last = '';
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const send = (): void => {
+      timer = undefined;
+      const state = client.store.getState();
+      const enabled: Record<string, boolean> = {};
+      const checked: Record<string, boolean> = {};
+      const labels: Record<string, string> = {};
+      for (const id of COMMAND_IDS) {
+        const st = commandState(state, id);
+        enabled[id] = st.enabled;
+        if (st.checked !== undefined) checked[id] = st.checked;
+        if (st.label) labels[id] = st.label;
+      }
+      const key = JSON.stringify([enabled, checked, labels]);
+      if (key === last) return;
+      last = key;
+      void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_menu_state', { enabled, checked, labels })).catch(() => undefined);
+    };
+    // The store changes many times a second while Claude streams; the menu needn't.
+    const update = (): void => {
+      timer ??= setTimeout(send, 150);
+    };
+    send();
+    const off = client.store.subscribe(update);
+    return () => {
+      off();
+      if (timer) clearTimeout(timer);
     };
   }, [client]);
 }

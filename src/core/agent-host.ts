@@ -64,6 +64,8 @@ interface Lane {
   pumping: boolean;
   current?: AbortController;
   interruptedBy?: string;
+  /** Set while you stop the current run here (see stopRun), so it says who stopped it. */
+  stopping?: boolean;
   /** Who started the current run. */
   runFrom?: string;
   /** Set while the run has answered but waits on background agents: messages go straight in. */
@@ -96,7 +98,8 @@ export class AgentHost {
   /** Approvals waiting per person, so one person can't crowd out everyone else's. */
   private readonly approvalsBy = new Map<string, number>();
   private readonly seenRequests: string[] = [];
-  private readonly toolApprovals = new Set<string>();
+  /** Tool approvals waiting → the conversation whose run asked for them. */
+  private readonly toolApprovals = new Map<string, string>();
   /** Final agent events that could not be sent while disconnected. */
   private outbox: Array<{ body: BodyInput; opts: { to?: string; keep?: boolean } }> = [];
 
@@ -186,7 +189,7 @@ export class AgentHost {
       this.toast('Your Claude is not running anything');
       return;
     }
-    for (const id of [...this.toolApprovals]) this.answerApproval('no', id);
+    for (const id of [...this.toolApprovals.keys()]) this.answerApproval('no', id);
     this.deps.questions.cancelAll();
     for (const lane of lanes) {
       const cancelled = lane.waiting;
@@ -197,6 +200,34 @@ export class AgentHost {
     this.toast('Stopping your Claude everywhere (queued requests cancelled)', 'warn');
   }
 
+  /**
+   * Stop your Claude in one conversation only. Its current run there stops (whoever asked for
+   * it), and that run's waiting tool approvals are denied and its questions skipped. Your own
+   * messages still waiting there come out of the queue: their prompts are returned in queue order
+   * so the screen can put them back in the message box (Claude goes quiet, nothing typed is lost).
+   * Other people's requests there keep their places and run next; other conversations carry on.
+   */
+  stopRun(channel: string): { stopped: boolean; returned: string[] } {
+    const lane = this.lanes.get(channel);
+    const mine = lane?.waiting.filter((w) => w.from === this.selfId) ?? [];
+    if (!lane || (!lane.current && !mine.length)) {
+      const busy = [...this.lanes.values()].some((l) => l.current || l.waiting.length);
+      this.toast(busy ? "Your Claude isn't working here" : 'Your Claude is not running anything');
+      return { stopped: false, returned: [] };
+    }
+    for (const [id, at] of [...this.toolApprovals]) if (at === channel) this.answerApproval('no', id);
+    this.deps.questions.cancelChannel(channel);
+    lane.waiting = lane.waiting.filter((w) => w.from !== this.selfId);
+    for (const { from, body } of mine) this.emitAgent(body.requestId, from, 'error', 'Taken out of the queue when you stopped Claude', body.channel);
+    if (lane.current) {
+      lane.stopping = true;
+      lane.current.abort();
+    }
+    const n = mine.length;
+    const back = n ? ` · ${n} queued message${n === 1 ? '' : 's'} back in the box` : '';
+    this.toast(`Stopped your Claude here${back}`, 'success');
+    return { stopped: true, returned: mine.map((w) => w.body.prompt) };
+  }
 
   /** Run one of your waiting requests now: it goes next and interrupts the current run. */
   promote(requestId: string): boolean {
@@ -383,12 +414,12 @@ export class AgentHost {
   }
 
   /** Ask you to approve something; `peer` is who it's for (each person can have a few waiting at most). */
-  ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string): Promise<'yes' | 'no' | 'always'> {
+  ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string, channel = 'room'): Promise<'yes' | 'no' | 'always'> {
     if (this.approvals.size >= MAX_PENDING_APPROVALS) return Promise.resolve('no');
     if (peer && peer !== this.selfId && (this.approvalsBy.get(peer) ?? 0) >= MAX_APPROVALS_PER_PERSON) return Promise.resolve('no');
     if (peer) this.approvalsBy.set(peer, (this.approvalsBy.get(peer) ?? 0) + 1);
     const id = randomUUID();
-    if (kind === 'tool') this.toolApprovals.add(id);
+    if (kind === 'tool') this.toolApprovals.set(id, channel);
     return new Promise((resolve) => {
       // Nobody should be stuck waiting forever on an approval you didn't see.
       const expiry = setTimeout(() => {
@@ -447,8 +478,10 @@ export class AgentHost {
       if (controller.signal.aborted) throw new Error('aborted');
       this.emitAgent(body.requestId, from, 'done', final || '(done)', body.channel);
     } catch (err) {
-      const reason = lane.interruptedBy ? 'Interrupted by a newer message' : controller.signal.aborted ? 'Stopped by owner' : errorText(err);
+      const stopped = lane.stopping ? (from === this.selfId ? 'Stopped by you' : 'Stopped by owner') : undefined;
+      const reason = stopped ?? (lane.interruptedBy ? 'Interrupted by a newer message' : controller.signal.aborted ? 'Stopped by owner' : errorText(err));
       lane.interruptedBy = undefined;
+      lane.stopping = undefined;
       this.emitAgent(body.requestId, from, 'error', reason, body.channel);
     } finally {
       if (lane.current === controller) {
@@ -457,6 +490,7 @@ export class AgentHost {
         lane.runFrom = undefined;
       }
       lane.interruptedBy = undefined; // never carry an interrupt label into the next run
+      lane.stopping = undefined;
       void this.deps.refreshUsage();
       if (body.channel !== 'room') void this.deps.workspaces?.refresh();
     }
@@ -480,7 +514,7 @@ export class AgentHost {
     const scope = `${requester}:${toolName}`;
     if (this.alwaysTools.has(scope)) return true;
     const detail = typeof input.command === 'string' ? input.command : JSON.stringify(input);
-    const answer = await this.ask('tool', `Your Claude (working for ${requesterName}) wants to use ${toolName}`, detail, requester);
+    const answer = await this.ask('tool', `Your Claude (working for ${requesterName}) wants to use ${toolName}`, detail, requester, channel);
     if (answer === 'always') this.alwaysTools.add(scope);
     return answer !== 'no';
   }

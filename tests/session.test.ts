@@ -381,6 +381,44 @@ describe('Session hardening', () => {
     expect(agentItems(kay.state()).map((a) => (a.type === 'agent' ? a.text : ''))).toContain('Cancelled by owner');
   });
 
+  it('stops your Claude in one conversation; your queued messages come back, others keep going', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      policy: 'auto',
+      script: async (input) => {
+        if (input.prompt !== 'first') return `done: ${input.prompt}`;
+        await input.canUseTool('Bash', { command: 'sleep 100' });
+        return 'should not matter';
+      },
+    });
+    const bob = peer('bob');
+    await room(kay, bob);
+    kay.session.store.dispatch({ type: 'prefs', prefs: { selfApproval: 'ask' } });
+    kay.session.submit('@claude first');
+    await waitFor(() => kay.state().approvals.length === 1);
+    kay.session.submit('@claude second');
+    bob.session.submit('@claude:kay from bob');
+    kay.session.submit('@claude third');
+    const queued = () => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.status === 'queued');
+    await waitFor(() => queued().length === 3);
+
+    // Nothing of yours in another conversation: nothing there (or here) stops.
+    expect(kay.session.host.stopRun('ws:elsewhere')).toEqual({ stopped: false, returned: [] });
+    await waitFor(() => kay.toasts.includes("Your Claude isn't working here"));
+    expect(kay.state().approvals).toHaveLength(1);
+
+    expect(kay.session.host.stopRun('room')).toEqual({ stopped: true, returned: ['second', 'third'] });
+    await waitFor(() => kay.toasts.includes('Stopped your Claude here · 2 queued messages back in the box'));
+    expect(kay.state().approvals).toHaveLength(0);
+    const text = (prompt: string) => agentItems(kay.state()).find((a) => a.type === 'agent' && a.prompt === prompt);
+    // The run that was going (it never queued, so its log line has no prompt) is the first one.
+    await waitFor(() => agentItems(kay.state())[0]?.type === 'agent' && agentItems(kay.state())[0]?.text === 'Stopped by you');
+    for (const prompt of ['second', 'third']) expect(text(prompt)).toMatchObject({ status: 'error', text: 'Taken out of the queue when you stopped Claude' });
+    // Bob's request kept its place and runs next.
+    await waitFor(() => agentItems(bob.state()).some((a) => a.type === 'agent' && a.status === 'done' && a.text === 'done: from bob'));
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['first', 'from bob']);
+  });
+
   it('scopes "always" tool approval to one requester', async () => {
     hub = await startHub({ keys });
     const bob = peer('bob', {
@@ -435,6 +473,14 @@ describe('Session hardening', () => {
     kay.session.submit('/get nope');
     kay.session.submit('/get');
     expect(kay.toasts).toContain('Usage: /get <name>:<folder>/<file>');
+
+    // Saved exactly where you picked (a Save dialog), replacing what's there; never a relative path.
+    const picked = path.join(kay.root, 'Desktop copy.md');
+    writeFileSync(picked, 'old');
+    expect(await kay.session.download({ owner: bob.session.selfId, share: 'proj', path: 'notes.md' }, { to: picked })).toBe(picked);
+    expect(readFileSync(picked, 'utf8')).toBe('hi from bob');
+    expect(await kay.session.download({ owner: bob.session.selfId, share: 'proj', path: 'notes.md' }, { to: 'relative.md' })).toBeUndefined();
+    expect(kay.toasts.at(-1)).toBe('Pick where to save it');
   });
 
   it('lets you keep your Claude private', async () => {

@@ -39,9 +39,15 @@
   content: '›';
   margin-left: 6px;
 }
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .subtitle {
   display: flex;
   gap: 12px;
+  min-width: 0;
   color: var(--text-3);
   font-size: 0.86rem;
   white-space: nowrap;
@@ -51,6 +57,22 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+}
+/* What the workspace needs is never cut; the branch and PR give way (full text on hover). */
+.metaState {
+  flex: none;
+}
+.metaBranch {
+  flex: 0 1 auto;
+}
+.metaPr {
+  flex: 0 3 auto;
+}
+.ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tone_claude {
   color: var(--claude);
@@ -76,6 +98,38 @@
   gap: 2px;
   flex: 0 1 auto;
   min-width: 0;
+}
+.primaryWrap {
+  display: inline-flex;
+  margin-right: 6px;
+}
+.primary {
+  height: 26px;
+  padding: 0 11px 0 9px;
+  font-weight: 600;
+}
+.primary[aria-disabled='true'] {
+  opacity: 0.45;
+}
+.primaryError {
+  background: var(--error);
+}
+.primaryError:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 88%, black);
+}
+.tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+.off {
+  opacity: 0.38;
+}
+.off:hover {
+  background: transparent;
+}
+.toolError {
+  color: var(--error);
 }
 .divider {
   width: 0.5px;

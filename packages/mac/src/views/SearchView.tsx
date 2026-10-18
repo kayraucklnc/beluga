@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { Empty, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
+import { ActionsContext } from '../components/SpecMenu.js';
+import { copyText } from '../lib/copy.js';
 import { useApi, useApp, useKlaud } from '../lib/klaud.js';
 import s from './lists.module.css';
 
@@ -55,7 +57,14 @@ export function SearchView() {
       ) : (
         <div ref={list} className={s.list} role="listbox">
           {search.hits.map((h, i) => (
-            <div key={`${h.channel}:${h.ts}:${i}`} role="option" aria-selected={i === search.cursor} className={cx(s.hit, i === search.cursor && s.hitOn)} onClick={() => open(i)}>
+            <ActionsContext
+              key={`${h.channel}:${h.ts}:${i}`}
+              items={[
+                { label: 'Open Conversation', icon: 'chat', onSelect: () => open(i) },
+                { label: 'Copy Message', icon: 'copy', separate: true, onSelect: () => void copyText(h.text).then(() => client.store.dispatch({ type: 'toast', text: 'Copied the message', level: 'success' })) },
+              ]}
+            >
+            <div role="option" aria-selected={i === search.cursor} className={cx(s.hit, i === search.cursor && s.hitOn)} onClick={() => open(i)}>
               <div className={s.hitHead}>
                 <span className={s.place}>{h.place}</span>
                 {h.archived ? <span className={s.dim}>archived</span> : null}
@@ -68,6 +77,7 @@ export function SearchView() {
                 {h.text.slice(h.at + search.query.length, h.at + search.query.length + 140)}
               </div>
             </div>
+            </ActionsContext>
           ))}
         </div>
       )}

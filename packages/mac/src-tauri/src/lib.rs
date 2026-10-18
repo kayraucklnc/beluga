@@ -7,6 +7,7 @@
 mod daemon;
 mod menu;
 
+use std::collections::HashMap;
 use std::process::Child;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -47,6 +48,26 @@ async fn restart_daemon(
 fn take_pending_links(state: tauri::State<'_, AppState>) -> Vec<String> {
     state.links_taken.store(true, Ordering::SeqCst);
     std::mem::take(&mut *daemon::locked(&state.pending_links))
+}
+
+/// Grey out menu-bar items that can't run right now, check toggles, rename Run/Stop Running.
+#[tauri::command]
+fn set_menu_state(
+    app: tauri::AppHandle,
+    enabled: HashMap<String, bool>,
+    checked: HashMap<String, bool>,
+    labels: HashMap<String, String>,
+) {
+    if let Some(m) = app.menu() {
+        menu::apply_state(
+            &m,
+            &menu::MenuState {
+                enabled,
+                checked,
+                labels,
+            },
+        );
+    }
 }
 
 /// What the menu-bar icon and the Dock icon say: how many things are new for you (unread
@@ -116,6 +137,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             daemon_endpoint,
             restart_daemon,
+            set_menu_state,
             set_tray_status,
             take_pending_links
         ])

@@ -7,6 +7,10 @@ import { parseAttachmentHref } from '@klaud/shared/attachment-links.js';
 import { Icon } from '../components/Icon.js';
 import { openLightbox } from './images.js';
 import { useActions } from '../lib/actions.js';
+import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
+import { copyText } from '../lib/copy.js';
+import { useKlaud } from '../lib/klaud.js';
+import { quoteInBox } from './message-menu.js';
 import s from './chat.module.css';
 
 /** Syntax colors load on demand (shiki is big), then stay. */
@@ -34,15 +38,25 @@ function Code({ code, lang }: { code: string; lang?: string }) {
       alive = false;
     };
   }, [code, lang]);
-  const copy = (): void => void navigator.clipboard?.writeText(code);
+  const { client, ui } = useKlaud();
+  const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
+  const copy = (text: string, what: string): void => void copyText(text).then(() => say(`Copied ${what}`));
+  const fence = `\`\`\`${lang ?? ''}\n${code}\n\`\`\``;
+  const items: ActionItem[] = [
+    { label: 'Copy Code', icon: 'copy', onSelect: () => copy(code, 'the code') },
+    { label: 'Copy as Markdown', onSelect: () => copy(fence, 'as Markdown') },
+    { label: 'Quote in Reply', icon: 'chat', separate: true, onSelect: () => quoteInBox(ui, fence) },
+  ];
   return (
-    <div className={s.codeBlock}>
-      <button type="button" className={s.copyCode} onClick={copy} aria-label="Copy code">
-        Copy
-      </button>
-      {/* eslint-disable-next-line react/no-danger */}
-      {html ? <div className={s.shiki} dangerouslySetInnerHTML={{ __html: html }} /> : <pre><code>{code}</code></pre>}
-    </div>
+    <ActionsContext items={items}>
+      <div className={s.codeBlock}>
+        <button type="button" className={s.copyCode} onClick={() => copy(code, 'the code')} aria-label="Copy code">
+          Copy
+        </button>
+        {/* eslint-disable-next-line react/no-danger */}
+        {html ? <div className={s.shiki} dangerouslySetInnerHTML={{ __html: html }} /> : <pre><code>{code}</code></pre>}
+      </div>
+    </ActionsContext>
   );
 }
 

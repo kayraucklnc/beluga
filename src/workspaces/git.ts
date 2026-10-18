@@ -66,6 +66,28 @@ export async function hasRemote(repo: string): Promise<boolean> {
   return Boolean((await tryGit(repo, ['remote']))?.trim());
 }
 
+const MAX_BRANCHES = 200;
+
+/**
+ * Local and remote-tracking branches ("main", "origin/main", "origin/feature-x"), most recently
+ * committed first, without symbolic refs like origin/HEAD. Capped at 200.
+ */
+export async function listBranches(repo: string): Promise<string[]> {
+  const out = await git(repo, ['for-each-ref', '--sort=-committerdate', '--format=%(refname:short)%09%(symref)', 'refs/heads', 'refs/remotes']);
+  return out
+    .split('\n')
+    .map((l) => l.split('\t'))
+    .filter(([name, symref]) => name && !symref && !name.endsWith('/HEAD'))
+    .map(([name]) => name!)
+    .slice(0, MAX_BRANCHES);
+}
+
+/** Whether `ref` names a commit in `repo` (a branch, tag or hash). Never reads it as an option. */
+export async function isCommit(repo: string, ref: string): Promise<boolean> {
+  if (!ref || ref.startsWith('-')) return false;
+  return Boolean((await tryGit(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]))?.trim());
+}
+
 /** Create a worktree on a new branch from `base` (fetching origin first so it's the latest). */
 export async function addWorktree(repo: string, path: string, branch: string, base: string): Promise<void> {
   if (base.startsWith('origin/') && (await hasRemote(repo))) await tryGit(repo, ['fetch', 'origin', '--prune']);

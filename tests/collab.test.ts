@@ -147,8 +147,10 @@ describe('sharing a workspace', () => {
     expect(kay.session.sharing.invite(ws.id, bob.session.selfId, 'contribute')).toBe(true);
     const shared = await waitFor(() => bob.state().shared[0]);
     expect(shared).toMatchObject({ name: 'add-auth', role: 'contribute', owner: kay.session.selfId });
-    // recent history came along
+    // recent history came along (as lines, saying who wrote each one, for screens that draw it as their message)
     await waitFor(() => bob.state().log.some((l) => l.channel === channel && l.type === 'system' && l.text.includes('first thing')));
+    expect(bob.state().log.some((l) => l.type === 'system' && l.said?.from === kay.session.selfId && l.said.text === 'first thing' && !l.said.byAgent)).toBe(true);
+    expect(bob.state().log.some((l) => l.type === 'system' && l.said?.byAgent && l.said.name === "kay's Claude")).toBe(true);
 
     // bob asks kay's Claude in that workspace: runs on kay's computer, in the worktree, no request approval
     bob.session.askOwnClaude('add a test', channel);

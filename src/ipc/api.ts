@@ -86,6 +86,8 @@ export const API = {
   // ---- your Claude's queue and approvals
   'host.answerApproval': args(Answer, id),
   'host.promote': args(id),
+  // Stop your Claude in one conversation: → { stopped, returned: your queued prompts, in order }.
+  'host.stopRun': args(channel),
   'host.cancelQueued': args(id),
   'host.reorderQueued': args(id, z.number().int().min(0).max(100)),
 
@@ -134,7 +136,8 @@ export const API = {
   'files.loadDir': args(Location),
   'files.open': args(Location, opt(z.object({ by: opt(z.string().max(80)), broadcast: opt(bool) }))),
   'files.openSpec': args(z.string().max(4096)),
-  'files.download': args(Location),
+  // `to`: save exactly there (an absolute path from a Save dialog) instead of ~/Downloads/klaud.
+  'files.download': args(Location, opt(z.object({ to: opt(path) }))),
   'files.downloadSpec': args(z.string().max(4096)),
   'files.closeViewer': args(),
   'files.readImage': args(),
@@ -142,10 +145,12 @@ export const API = {
   // ---- projects and workspaces
   'workspaces.open': args(id, opt(WorkspaceTab)),
   'workspaces.refresh': args(),
-  'workspaces.newWorktree': args(id, z.string().max(200)),
+  'workspaces.newWorktree': args(id, z.string().max(200), opt(z.object({ base: opt(z.string().min(1).max(250)) }))),
   'workspaces.newChat': args(id, z.string().max(200), opt(path)),
   'workspaces.startChat': args(id, str, opt(path)),
-  'workspaces.startWorktree': args(id, str),
+  'workspaces.startWorktree': args(id, str, opt(z.object({ base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)) }))),
+  // What a new worktree can start from: → { base: the default, branches: default first, then newest }.
+  'workspaces.branches': args(id),
   'workspaces.fork': args(id, z.string().max(200)),
   'workspaces.archive': args(id, opt(bool)),
   'workspaces.restore': args(id),
@@ -159,6 +164,8 @@ export const API = {
   'workspaces.compact': args(id, opt(z.string().max(2000))),
   'workspaces.openInFinder': args(id),
   'workspaces.setGroup': args(id, opt(z.string().max(80))),
+  'workspaces.renameGroup': args(z.string().min(1).max(80), z.string().max(80)),
+  'workspaces.ungroup': args(z.string().min(1).max(80)),
   'workspaces.hideProject': args(id),
   'workspaces.cleanAgentWorktrees': args(id),
   'workspaces.addProject': args(path),
@@ -169,19 +176,19 @@ export const API = {
   'workbench.run': args(id),
   'workbench.stopRun': args(id),
   'workbench.runSetup': args(id),
-  'workbench.setScript': args(id, z.enum(['setup', 'run']), z.string().max(2000)),
+  'workbench.setScript': args(id, z.enum(['setup', 'run']), z.string().max(2000), opt(bool)),
   'workbench.shareScripts': args(id),
   'workbench.setModel': args(opt(channel), z.string().max(80)),
   'workbench.createPr': args(id, opt(str)),
   'workbench.fixChecks': args(id),
   'workbench.openPr': args(id),
-  'workbench.refreshPrs': args(opt(id)),
+  'workbench.refreshPrs': args(opt(id), opt(bool)),
   'workbench.editPrPrompt': args(),
   'workbench.resetPrPrompt': args(),
   'workbench.measureDisk': args(),
   'workbench.search': args(z.string().max(500)),
   'workbench.openHit': args(z.number().int().min(0)),
-  'workbench.saveTemplate': args(str),
+  'workbench.saveTemplate': args(str, opt(bool)),
   'workbench.removeTemplate': args(id),
 
   // ---- terminals (the bytes themselves stream separately; see protocol.ts)

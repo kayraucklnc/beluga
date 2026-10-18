@@ -50,7 +50,8 @@ export async function fetchBytes(at: Location, request: Requester, max: number, 
 
 /**
  * Pulls a file from a friend's share in end-to-end encrypted chunks and saves it
- * under ~/Downloads/klaud/<friend>/. Progress is mirrored into the store.
+ * under ~/Downloads/klaud/<friend>/, or exactly at `opts.to` (an absolute path you picked in a
+ * Save dialog, which already asked about replacing a file there). Progress is mirrored into the store.
  */
 export async function downloadFile(
   at: Location,
@@ -58,9 +59,10 @@ export async function downloadFile(
   request: Requester,
   store: Store,
   baseDir: string = DEFAULT_DOWNLOAD_DIR,
+  opts: { to?: string } = {},
 ): Promise<string> {
   const id = randomUUID();
-  const name = safeFileName(at.path);
+  const name = opts.to ? path.basename(opts.to) : safeFileName(at.path);
   store.dispatch({ type: 'transfer', transfer: { id, name, from, received: 0, total: 0, status: 'active' } });
   let offset = 0;
   let total = 0;
@@ -70,9 +72,7 @@ export async function downloadFile(
       total = size;
       store.dispatch({ type: 'transfer', transfer: { id, name, from, received, total, status: 'active' } });
     });
-    const dir = path.join(baseDir, safeFileName(from));
-    await fs.mkdir(dir, { recursive: true });
-    const target = await uniquePath(dir, name);
+    const target = opts.to ?? (await freshTarget(baseDir, from, name));
     await fs.writeFile(target, bytes);
     store.dispatch({ type: 'transfer', transfer: { id, name, from, received: total, total, status: 'done', savedTo: target } });
     return target;
@@ -81,6 +81,13 @@ export async function downloadFile(
     store.dispatch({ type: 'transfer', transfer: { id, name, from, received: offset, total, status: 'failed', error } });
     throw err;
   }
+}
+
+/** A new file under `baseDir/<friend>/` that doesn't replace anything. */
+async function freshTarget(baseDir: string, from: string, name: string): Promise<string> {
+  const dir = path.join(baseDir, safeFileName(from));
+  await fs.mkdir(dir, { recursive: true });
+  return uniquePath(dir, name);
 }
 
 export const chunkSize = CHUNK_BYTES;

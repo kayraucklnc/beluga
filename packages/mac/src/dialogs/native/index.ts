@@ -1,5 +1,21 @@
 import type { ComponentType } from 'react';
 import type { MenuKind } from '@klaud/ui/menus.js';
+// Inviting, people and sharing.
+import { InviteSheet } from './InviteSheet.js';
+import { PersonPopover } from './PersonPopover.js';
+import { ShareFolderSheet } from './ShareFolderSheet.js';
+import { SharedSheet } from './SharedSheet.js';
+import { InvitePersonSheet, WorkspaceShareSheet } from './WorkspaceShare.js';
+// Confirmations and workspace forms.
+import { AgentsAlert } from './AgentsAlert.js';
+import { ArchivedSheet, InboxRedirect, ModelSheet, WelcomeSheet } from './ChoiceSheets.js';
+import { ClearAlert } from './ClearAlert.js';
+import { ConfirmAlert } from './ConfirmAlert.js';
+import { HandoffSheet } from './HandoffSheet.js';
+import { ProjectSettingsSheet } from './ProjectSettingsSheet.js';
+import { PullRequestSheet } from './PullRequestSheet.js';
+import { RemoteWorktreeSheet } from './RemoteWorktreeSheet.js';
+import { TemplatesSheet } from './TemplatesSheet.js';
 
 /**
  * Menus the Mac app shows its own way. The terminal UI draws every menu as a numbered list;
@@ -15,4 +31,26 @@ export interface NativeMenuProps<K extends MenuKind['kind'] = MenuKind['kind']> 
 
 export type NativeMenus = { readonly [K in MenuKind['kind']]?: ComponentType<NativeMenuProps<K>> };
 
-export const NATIVE_MENUS: NativeMenus = {};
+export const NATIVE_MENUS: NativeMenus = {
+  // Inviting, people and sharing.
+  invite_link: InviteSheet,
+  person: PersonPopover,
+  ws_share: WorkspaceShareSheet,
+  invite_person: InvitePersonSheet,
+  share_folder: ShareFolderSheet,
+  share_who: ShareFolderSheet,
+  shared: SharedSheet,
+  // Confirmations and workspace forms.
+  confirm: ConfirmAlert,
+  clear: ClearAlert,
+  agents: AgentsAlert,
+  scripts: ProjectSettingsSheet,
+  pr: PullRequestSheet,
+  templates: TemplatesSheet,
+  handoff: HandoffSheet,
+  remote_ws: RemoteWorktreeSheet,
+  model: ModelSheet,
+  welcome: WelcomeSheet,
+  inbox: InboxRedirect,
+  archived: ArchivedSheet,
+};

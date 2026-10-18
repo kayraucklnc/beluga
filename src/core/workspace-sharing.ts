@@ -1,7 +1,7 @@
 import type { BodyInput, BodyOf, GuestCan, WsRole } from '../protocol.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { ShareService } from './shares.js';
-import { type LogItem, type Store, clean, peerName } from './store.js';
+import { type DomainState, type LogItem, type SaidBy, type Store, clean, peerName } from './store.js';
 import { shareNameOf } from './workspace-controller.js';
 import type { Intent } from './intents.js';
 
@@ -29,6 +29,17 @@ function historyFor(log: readonly LogItem[], channel: string, nameOf: (id: strin
         ? { from: nameOf(l.from), text: l.text.slice(0, 8000), ts: l.ts, byAgent: l.byAgent }
         : { from: l.type === 'agent' ? `${l.ownerName}'s Claude` : '', text: l.type === 'agent' ? l.text.slice(0, 8000) : '', ts: l.ts, byAgent: true },
     );
+}
+
+/**
+ * Who wrote a line of the conversation someone shared with you, matched to who's in the room by
+ * name (screens that draw it as their message use this; the line itself stays "bob: …").
+ */
+function saidBy(state: DomainState, owner: string, h: BodyOf<'ws_invite'>['history'][number]): SaidBy {
+  const name = clean(h.from).slice(0, 80);
+  const person = h.byAgent ? name.replace(/'s Claude$/, '') : name;
+  const from = state.peers.find((p) => p.name === person)?.peerId ?? (person === peerName(state, owner) ? owner : `history:${person}`);
+  return { from, name, text: clean(h.text), byAgent: h.byAgent, ts: h.ts };
 }
 
 /**
@@ -141,7 +152,7 @@ export class WorkspaceSharing {
     const channel = `ws:${body.ws.id}`;
     this.deps.store.dispatch({ type: 'clear', channel });
     for (const [i, h] of body.history.entries()) {
-      this.deps.store.dispatch({ type: 'system', text: `${clean(h.from)}: ${clean(h.text)}`, channel });
+      this.deps.store.dispatch({ type: 'system', text: `${clean(h.from)}: ${clean(h.text)}`, channel, said: saidBy(state, from, h) });
       if (i > HISTORY_ITEMS) break;
     }
     // Came in with a link: go straight to the first workspace you were let into.

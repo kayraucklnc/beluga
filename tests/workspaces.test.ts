@@ -235,6 +235,50 @@ describe('env files and safe merges', () => {
   });
 });
 
+describe('choosing the base branch', () => {
+  const pushFeature = (): string => {
+    sh(repo, 'checkout', '-b', 'feature');
+    commitIn(repo, 'feature.txt', 'f', 'feature work');
+    sh(repo, 'push', '-u', 'origin', 'feature');
+    sh(repo, 'checkout', 'main');
+    return sh(repo, 'rev-parse', 'origin/feature').trim();
+  };
+
+  it('creates a worktree on the chosen branch and compares against it', async () => {
+    const tip = pushFeature();
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'on feature', 'origin/feature');
+    expect(ws).toMatchObject({ branch: 'klaud/on-feature', base: 'origin/feature' });
+    expect(sh(ws.path, 'rev-parse', 'HEAD').trim()).toBe(tip);
+    expect(existsSync(path.join(ws.path, 'feature.txt'))).toBe(true);
+    commitIn(ws.path, 'more.txt', 'm', 'more');
+    await mgr.refresh();
+    // Ahead of what it branched from, not of main (which is behind feature).
+    expect(mgr.find(ws.id)?.status).toMatchObject({ ahead: 1, behind: 0 });
+    // Restarting keeps the base it was made from.
+    const again = new WorkspaceManager(new WorkspaceStore(path.join(base, 'home')));
+    await again.refresh();
+    expect(again.find(ws.id)?.base).toBe('origin/feature');
+  });
+
+  it('refuses a branch that does not exist or looks like an option', async () => {
+    const id = repos()[0]!.id;
+    await expect(mgr.createWorktree(id, 'x', 'no-such-branch')).rejects.toThrow("There's no branch called no-such-branch");
+    await expect(mgr.createWorktree(id, 'y', '--upload-pack=touch /tmp/pwned')).rejects.toThrow(/There's no branch called --upload-pack/);
+    expect(repos()[0]!.workspaces.filter((w) => w.kind === 'worktree')).toHaveLength(0);
+  });
+
+  it('lists the branches, the default base first', async () => {
+    pushFeature();
+    const { base: def, branches } = await mgr.branches(repos()[0]!.id);
+    expect(def).toBe('origin/main');
+    expect(branches[0]).toBe('origin/main');
+    expect(branches).toEqual(expect.arrayContaining(['main', 'feature', 'origin/feature']));
+    expect(branches).not.toContain('origin/HEAD');
+    expect(new Set(branches).size).toBe(branches.length);
+    await expect(mgr.branches('nope')).rejects.toThrow('Project not found');
+  });
+});
+
 describe('helpers', () => {
   it('slugs names and parses worktree lists', () => {
     expect(slug('  Fix: Auth / Login!! ')).toBe('fix-auth-login');

@@ -1,10 +1,12 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { asChatRow } from '../lib/said.js';
 import type { LogItem } from '@klaud/core/store.js';
 import { Icon } from '../components/Icon.js';
 import { Empty } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
 import { Lightbox } from './ChatImages.js';
+import { FindBar } from './FindBar.js';
 import { AgentCard, ChatRow, ShellCard, SystemRow } from './Items.js';
 import s from './chat.module.css';
 
@@ -17,7 +19,8 @@ const GROUP_GAP_MS = 3 * 60_000;
 export function ChatLog({ channel, empty }: { channel: string; empty?: React.ReactNode }) {
   const log = useApp((st) => st.log);
   const selfId = useApp((st) => st.selfId);
-  const items = useMemo(() => log.filter((l) => l.channel === channel), [log, channel]);
+  // A shared workspace's earlier messages arrive as system lines; drawn here as normal messages.
+  const items = useMemo(() => log.filter((l) => l.channel === channel).map(asChatRow), [log, channel]);
   const parent = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
   const stick = useRef(true);
@@ -46,7 +49,14 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
     if (bottom !== atBottom) setAtBottom(bottom);
   };
 
-  if (!items.length) return <div className={s.logEmpty}>{empty ?? <Empty icon="chat" title="Nothing here yet" detail="Say something below." />}</div>;
+  if (!items.length) {
+    return (
+      <div className={s.logWrap}>
+        <FindBar items={items} logRef={parent} onGo={() => undefined} />
+        <div className={s.logEmpty}>{empty ?? <Empty icon="chat" title="Nothing here yet" detail="Say something below." />}</div>
+      </div>
+    );
+  }
 
   const continued = (i: number): boolean => {
     const a = items[i - 1];
@@ -54,8 +64,14 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
     return Boolean(a && b && a.type === 'chat' && b.type === 'chat' && a.from === b.from && a.byAgent === b.byAgent && b.ts - a.ts < GROUP_GAP_MS);
   };
 
+  const go = (index: number): void => {
+    stick.current = false;
+    virtualizer.scrollToIndex(index, { align: 'center' });
+  };
+
   return (
     <div className={s.logWrap}>
+      <FindBar items={items} logRef={parent} onGo={go} />
       <div ref={parent} className={s.log} onScroll={onScroll}>
         <div className={s.logInner} style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((v) => {

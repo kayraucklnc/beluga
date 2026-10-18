@@ -7,6 +7,8 @@ import { type NoticeFilter, type NoticeLook, NOTICE_FILTERS, filterNotices, grou
 import { Icon, type IconName } from '../components/Icon.js';
 import { IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
+import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
+import { copyText } from '../lib/copy.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { openNoticeTarget } from '../lib/notices.js';
 import s from './notifications.module.css';
@@ -59,7 +61,14 @@ function useNow(): number {
 function Row({ n, now, onOpen }: { n: Notice; now: number; onOpen: (n: Notice) => void }) {
   const api = useApi();
   const { look, tone } = noticeLook(n);
+  const items: ActionItem[] = [
+    { label: 'Open', onSelect: () => onOpen(n) },
+    { label: n.read ? 'Mark as Unread' : 'Mark as Read', onSelect: () => void (n.read ? api.inbox.unread(n.id) : api.inbox.read({ id: n.id })) },
+    { label: 'Copy', icon: 'copy', separate: true, onSelect: () => void copyText(n.body ? `${n.title}\n${n.body}` : n.title) },
+    { label: 'Clear', danger: true, onSelect: () => void api.inbox.clear({ id: n.id }) },
+  ];
   return (
+    <ActionsContext items={items}>
     <li className={cx(s.row, !n.read && s.unread)}>
       <button type="button" className={s.rowMain} onClick={() => onOpen(n)}>
         <span className={cx(s.tile, s[`tone_${tone}`])}>
@@ -85,6 +94,7 @@ function Row({ n, now, onOpen }: { n: Notice; now: number; onOpen: (n: Notice) =
       </span>
       {!n.read ? <span className={s.unreadDot} aria-label="Unread" /> : null}
     </li>
+    </ActionsContext>
   );
 }
 

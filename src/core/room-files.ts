@@ -199,16 +199,20 @@ export class RoomFiles {
     }
   }
 
-  /** Download a file from a friend's share into ~/Downloads/klaud/<friend>/. */
-  async download(at: Location): Promise<string | undefined> {
+  /** Download a file from a friend's share into ~/Downloads/klaud/<friend>/, or to `opts.to` (an absolute path). */
+  async download(at: Location, opts: { to?: string } = {}): Promise<string | undefined> {
     const from = peerName(this.store.getState(), at.owner);
     if (!at.path || at.path.endsWith('/')) {
       this.toast('Pick a file to download, not a folder', 'warn');
       return undefined;
     }
+    if (opts.to !== undefined && !path.isAbsolute(opts.to)) {
+      this.toast('Pick where to save it', 'warn');
+      return undefined;
+    }
     this.toast(`Downloading ${at.path} from ${from}…`);
     try {
-      const saved = await downloadFile(at, from, (to, b) => this.request(to, b), this.store, this.deps.downloadDir ?? DEFAULT_DOWNLOAD_DIR);
+      const saved = await downloadFile(at, from, (to, b) => this.request(to, b), this.store, this.deps.downloadDir ?? DEFAULT_DOWNLOAD_DIR, opts);
       this.system(`Saved ${at.path} from ${from} → ${saved}`);
       this.toast(`Downloaded ${path.basename(saved)}`, 'success');
       return saved;

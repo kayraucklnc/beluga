@@ -4,7 +4,7 @@ import type { Workspace } from '@klaud/workspaces/types.js';
 import { describePr, formatBytes } from '@klaud/shared/format.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext } from '../components/SpecMenu.js';
-import { Dot, Empty, cx } from '../components/ui.js';
+import { Button, Dot, Empty, EmptyActions, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/klaud.js';
 import { workspaceItems } from '../layout/Sidebar.js';
@@ -26,7 +26,32 @@ export function OverviewView() {
   const groups = state.projects
     .map((p) => ({ p, list: p.workspaces.filter((w) => !w.archived && worktreeOrigin(w) !== 'agent') }))
     .filter((g) => g.list.length);
-  if (!groups.length) return <Empty icon="grid" title="No workspaces yet" detail="Add a project, then start a worktree or a chat in it." />;
+  if (!groups.length) {
+    const project = state.projects.find((p) => p.root);
+    return (
+      <Empty
+        icon="grid"
+        title="No workspaces yet"
+        detail={project ? `Start a worktree in ${project.name}: its own branch, with Claude on your task.` : 'Add your projects, then give Claude a task in a worktree of its own.'}
+        action={
+          <EmptyActions>
+            {project ? (
+              <Button variant="primary" icon="branch" onClick={() => actions.run({ type: 'new_worktree', projectId: project.id })}>
+                New Worktree
+              </Button>
+            ) : (
+              <Button variant="primary" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
+                Add Projects…
+              </Button>
+            )}
+            <Button icon="chat" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })}>
+              New Chat
+            </Button>
+          </EmptyActions>
+        }
+      />
+    );
+  }
   const rank = (w: Workspace): number => {
     const st = stateOf(state, w, 0);
     return st.tone === 'error' ? 0 : st.tone === 'warn' && activityOf(state.log, `ws:${w.id}`).awaiting ? 1 : st.tone === 'claude' ? 2 : state.unread[`ws:${w.id}`] ? 3 : 4;
@@ -38,6 +63,11 @@ export function OverviewView() {
           <h2 className={s.groupTitle}>
             {p.root ? p.name : 'Chats'}
             <span className={s.count}>{list.length}</span>
+            <span className={s.groupActions}>
+              <Button size="small" variant="quiet" icon={p.root ? 'branch' : 'plus'} onClick={() => actions.run(p.root ? { type: 'new_worktree', projectId: p.id } : { type: 'new_chat', projectId: 'chats' })}>
+                {p.root ? 'New Worktree' : 'New Chat'}
+              </Button>
+            </span>
           </h2>
           <div className={s.table} role="list">
             {[...list].sort((a, b) => rank(a) - rank(b)).map((w) => {

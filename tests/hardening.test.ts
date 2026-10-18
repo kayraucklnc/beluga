@@ -7,6 +7,8 @@ import { normalizeRemote } from '../src/workspaces/manager.js';
 import { prNews } from '../src/core/workbench.js';
 import { outboxDir, safeRef, sweepOutbox, continuePrompt } from '../src/core/remote-work.js';
 import type { PullRequest } from '../src/core/work-store.js';
+import { QuestionBroker } from '../src/core/questions.js';
+import { Store, initialState } from '../src/core/store.js';
 
 const home = process.env.KLAUD_HOME;
 let base: string;
@@ -88,5 +90,24 @@ describe('outbox', () => {
     expect(await sweepOutbox()).toBe(1);
     expect(existsSync(old)).toBe(false);
     expect(existsSync(fresh)).toBe(true);
+  });
+});
+
+describe('Claude questions per conversation', () => {
+  it('skips only the questions of the conversation where you stopped Claude', async () => {
+    const store = new Store(initialState('r'));
+    const broker = new QuestionBroker({ store, selfId: () => 'me', send: () => true, timeoutMs: () => 60_000, toast: () => undefined });
+    const question = { kind: 'plan', plan: 'do it' } as const;
+    let here: unknown;
+    let there: unknown;
+    void broker.ask('me', 'r1', 'room', question).then((a) => (here = a));
+    void broker.ask('me', 'r2', 'ws:x', question).then((a) => (there = a));
+    expect(store.getState().questions).toHaveLength(2);
+    broker.cancelChannel('room');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(here).toEqual({ kind: 'skip' });
+    expect(there).toBeUndefined();
+    expect(store.getState().questions.map((q) => q.channel)).toEqual(['ws:x']);
+    broker.cancelAll();
   });
 });

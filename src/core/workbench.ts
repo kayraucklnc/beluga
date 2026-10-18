@@ -175,8 +175,12 @@ export class Workbench {
    * Look up PRs for your worktrees with commits (and notice when one you asked for opens, or
    * checks finish). Worktrees other tools made (Claude Code sub-agents, Conductor…) are theirs to watch.
    */
-  async refreshPrs(only?: string): Promise<void> {
-    if (this.deps.store.getState().gh === false) return;
+  async refreshPrs(only?: string, recheckGh = false): Promise<void> {
+    if (this.deps.store.getState().gh === false) {
+      // "Check Again" (the Mac's Connect GitHub sheet): maybe gh was installed or signed in to since.
+      if (!recheckGh || !(await (this.deps.hasGh ?? hasGh)())) return;
+      this.deps.store.dispatch({ type: 'gh', ok: true });
+    }
     const find = this.deps.findPr ?? findPr;
     const state = this.deps.store.getState();
     const list = this.manager.list.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && w.branch && !w.archived && worktreeOrigin(w) === 'klaud' && (only ? w.id === only : (w.status?.ahead ?? 0) > 0 || state.prs[w.id]));
@@ -372,11 +376,20 @@ export class Workbench {
     this.deps.terminals?.get(runId(wsId))?.kill();
   }
 
-  setScript(projectId: string, kind: 'setup' | 'run', command: string): void {
+  /**
+   * Set a project's setup or run command for you, or (`team`) in its klaud.json so everyone on
+   * the project gets it; then your own one for it is dropped, so the shared one applies.
+   */
+  setScript(projectId: string, kind: 'setup' | 'run', command: string, team = false): void {
     try {
-      this.manager.setScripts(projectId, { [kind]: command.trim() || undefined });
+      const value = command.trim() || undefined;
+      if (team) {
+        this.manager.setScripts(projectId, { [kind]: value }, { inRepo: true });
+        this.manager.setScripts(projectId, { [kind]: undefined });
+      } else this.manager.setScripts(projectId, { [kind]: value });
       void this.deps.controller.refresh();
-      this.deps.toast(command.trim() ? `${kind === 'setup' ? 'Setup' : 'Run'}: ${command.trim()}` : `${kind === 'setup' ? 'Setup' : 'Run'} command cleared`, 'success');
+      const label = kind === 'setup' ? 'Setup' : 'Run';
+      this.deps.toast(value ? `${label}: ${value}${team ? ' (saved to klaud.json)' : ''}` : `${label} command cleared`, 'success');
     } catch (err) {
       this.deps.toast(err instanceof Error ? err.message : String(err), 'error');
     }
@@ -471,7 +484,7 @@ export class Workbench {
   // --------------------------------------------------------------- templates
 
   /** "/template save Fix CI: find out why CI fails…" */
-  saveTemplate(text: string): void {
+  saveTemplate(text: string, plan = false): void {
     const at = text.indexOf(':');
     const name = at > 0 ? text.slice(0, at).trim() : text.trim().split(/\s+/).slice(0, 4).join(' ');
     const prompt = at > 0 ? text.slice(at + 1).trim() : text.trim();
@@ -479,7 +492,7 @@ export class Workbench {
       this.deps.toast('Usage: /template save <name>: <what Claude should do>', 'warn');
       return;
     }
-    this.deps.store.dispatch({ type: 'templates', templates: addTemplate(name, prompt) });
+    this.deps.store.dispatch({ type: 'templates', templates: addTemplate(name, prompt, plan) });
     this.deps.toast(`Template "${name}" saved. It shows up when you start a worktree or chat`, 'success');
   }
 

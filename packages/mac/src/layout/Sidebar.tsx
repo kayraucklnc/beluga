@@ -3,7 +3,8 @@ import type { AppState } from '@klaud/core/store.js';
 import type { Project, Workspace } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
 import { trustOf } from '@klaud/core/trust.js';
-import { activityOf, isProjectOpen, overviewNews, stateOf, topTabs, workspaceButtons } from '@klaud/ui/workspace-models.js';
+import { activityOf, isProjectOpen, overviewNews, stateOf, workspaceButtons } from '@klaud/ui/workspace-models.js';
+import { macTabs } from '../lib/go.js';
 import { newShares } from '@klaud/core/store.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { ActionsContext, SpecContext, SpecDropdown, type ActionItem } from '../components/SpecMenu.js';
@@ -14,6 +15,11 @@ import { inApp } from '../lib/boot.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { pickImage, reloadProjectIcon } from '../lib/projects.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { openPerson } from '../dialogs/native/PersonPopover.js';
+import { PersonContextMenu } from '../dialogs/native/PersonMenu.js';
+import { RoomStatus } from '../dialogs/native/RoomPopover.js';
+import { toolbarActions } from './toolbar-actions.js';
+import { GroupHeader, LooseProjects, NewGroupRow, isGroupOption, projectDrag, useGroupItems } from './ProjectGroups.js';
 import s from './Sidebar.module.css';
 
 const NAV: ReadonlyArray<{ kind: 'room' | 'files' | 'overview' | 'search' | 'usage' | 'terminal'; icon: IconName }> = [
@@ -25,11 +31,28 @@ const NAV: ReadonlyArray<{ kind: 'room' | 'files' | 'overview' | 'search' | 'usa
   { kind: 'terminal', icon: 'terminal' },
 ];
 
-/** What a workspace's right-click menu offers: its toolbar, in the same order. */
+/**
+ * What a workspace's right-click menu offers: its toolbar's actions, named and drawn the same
+ * (the shortcuts show for the workspace you're in, where they work).
+ */
 export function workspaceItems(state: AppState, ws: Workspace, run: ReturnType<typeof useActions>['run']): ActionItem[] {
+  const { primary, icons, more } = toolbarActions(state, ws);
+  const here = state.view.kind === 'workspace' && state.view.id === ws.id;
+  const list = [...(primary && primary.action !== 'fix_checks' ? [primary] : []), ...icons, ...more];
+  const order = workspaceButtons(state, ws).map((b) => b.action as string);
   return [
-    { label: 'Open', onSelect: () => run({ type: 'open_ws', id: ws.id }) },
-    ...workspaceButtons(state, ws).map((b) => ({ label: b.label, hint: b.hint, disabled: b.disabled, danger: b.action === 'archive' || b.action === 'delete', onSelect: () => run({ type: 'ws', id: ws.id, action: b.action }) })),
+    { label: 'Open', icon: 'chevronRight', onSelect: () => run({ type: 'open_ws', id: ws.id }) },
+    ...[...list]
+      .sort((a, b) => order.indexOf(a.action === 'stop_run' ? 'run' : a.action) - order.indexOf(b.action === 'stop_run' ? 'run' : b.action))
+      .map((a, i) => ({
+        label: a.label,
+        icon: a.icon,
+        ...(a.disabled ? { hint: a.hint, disabled: true } : {}),
+        ...(here && a.keys ? { keys: a.keys } : {}),
+        ...(a.danger ? { danger: true } : {}),
+        ...(i === 0 ? { separate: true } : {}),
+        onSelect: () => (a.action === 'fix_checks' ? undefined : run({ type: 'ws', id: ws.id, action: a.action })),
+      })),
   ];
 }
 
@@ -136,10 +159,13 @@ function ProjectBlock({ p }: { p: Project }) {
   const showExternal = collapsed.includes(`external:${p.id}`) || external.some((w) => state.view.kind === 'workspace' && state.view.id === w.id);
   const showArchived = collapsed.includes(`archive:${p.id}`);
   const iconItems = useIconItems(p);
+  const groupItems = useGroupItems(p);
+  const extra = [...groupItems, ...iconItems];
   return (
     <div className={s.project}>
-      <SpecContext menu={{ kind: 'project', id: p.id }} extra={iconItems}>
+      <SpecContext menu={{ kind: 'project', id: p.id }} extra={extra} hide={isGroupOption}>
         <Row
+          {...projectDrag(p)}
           className={s.projectRow}
           icon={
             <span className={s.projectIcon}>
@@ -155,7 +181,7 @@ function ProjectBlock({ p }: { p: Project }) {
               {busy ? <Dot tone="claude" live /> : null}
               <IconButton icon="branch" label={`New worktree in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_worktree', projectId: p.id }))} />
               <IconButton icon="plus" label={`New chat in ${p.name}`} onClick={(e) => (e.stopPropagation(), actions.run({ type: 'new_chat', projectId: p.id }))} />
-              <SpecDropdown menu={{ kind: 'project', id: p.id }} align="end" extra={iconItems}>
+              <SpecDropdown menu={{ kind: 'project', id: p.id }} align="end" extra={extra} hide={isGroupOption}>
                 <IconButton icon="more" label={`More for ${p.name}`} onClick={(e) => e.stopPropagation()} />
               </SpecDropdown>
             </span>
@@ -167,6 +193,9 @@ function ProjectBlock({ p }: { p: Project }) {
           {mine.map((w) => (
             <WorkspaceRow key={w.id} ws={w} indent={1} />
           ))}
+          {mine.some((w) => w.kind === 'worktree') ? null : (
+            <Row indent={1} className={s.hintRow} icon={<Icon name="plus" size={13} />} label="New worktree…" detail={`A branch and folder of its own in ${p.name}, with Claude on your task`} onClick={() => actions.run({ type: 'new_worktree', projectId: p.id })} />
+          )}
           {external.length ? (
             <Row indent={1} className={s.fold} label={`Other worktrees`} trailing={<Badge count={external.length} />} icon={<Icon name={showExternal ? 'chevronDown' : 'chevronRight'} size={10} />} onClick={() => actions.run({ type: 'toggle_fold', key: `external:${p.id}` })} detail="Worktrees made outside klaud" />
           ) : null}
@@ -226,14 +255,17 @@ function Groups() {
   }
   return (
     <>
-      {loose.map((p) => (
-        <ProjectBlock key={p.id} p={p} />
-      ))}
+      <LooseProjects>
+        {loose.map((p) => (
+          <ProjectBlock key={p.id} p={p} />
+        ))}
+      </LooseProjects>
+      <NewGroupRow />
       {[...grouped].map(([name, list]) => {
         const open = !collapsed.includes(`group:${name}`);
         return (
           <div key={name} className={s.group}>
-            <Row className={s.groupRow} icon={<Icon name={open ? 'chevronDown' : 'chevronRight'} size={10} />} label={name} trailing={<Badge count={list.length} />} onClick={() => actions.run({ type: 'toggle_group', name })} />
+            <GroupHeader name={name} count={list.length} open={open} onToggle={() => actions.run({ type: 'toggle_group', name })} />
             {open ? list.map((p) => <ProjectBlock key={p.id} p={p} />) : null}
           </div>
         );
@@ -259,8 +291,9 @@ function People() {
         const trust = me ? undefined : trustOf(state, p.peerId);
         const following = state.follow === p.peerId;
         return (
-          <SpecContext key={p.peerId} menu={{ kind: 'person', index }}>
+          <PersonContextMenu key={p.peerId} index={index}>
             <Row
+              data-person-row={p.peerId}
               icon={<Avatar name={p.name} id={p.peerId} size={18} />}
               label={
                 <span>
@@ -270,7 +303,7 @@ function People() {
                 </span>
               }
               detail={me ? 'You' : `${p.name}${p.agent ? ' · Claude on' : ''}${trust ? ` · trust: ${trust}` : ''}`}
-              onClick={() => ui.openMenu({ kind: 'person', index })}
+              onClick={() => openPerson(ui, index, document.querySelector<HTMLElement>(`[data-person-row="${CSS.escape(p.peerId)}"]`))}
               trailing={
                 <>
                   {following ? <Tip label="Following their screen"><Icon name="eye" size={12} /></Tip> : null}
@@ -279,7 +312,7 @@ function People() {
                 </>
               }
             />
-          </SpecContext>
+          </PersonContextMenu>
         );
       })}
     </>
@@ -330,7 +363,7 @@ export function Sidebar() {
   const actions = useActions();
   const drop = useFolderDrop();
   const state = useApp((st) => st);
-  const tabs = topTabs(state);
+  const tabs = macTabs(state);
   const chats = state.projects.find((p) => !p.root);
   const liveChats = chats?.workspaces.filter((w) => !w.archived) ?? [];
   const news = overviewNews(state);
@@ -421,10 +454,7 @@ function SidebarFooter() {
         : 'Offline';
   return (
     <div className={s.footer}>
-      <Dot tone={status === 'connected' ? 'ok' : status === 'connecting' ? 'warn' : 'error'} />
-      <span className={s.footerLabel} title={state.room}>
-        {label}
-      </span>
+      <RoomStatus label={label} tone={status === 'connected' ? 'ok' : status === 'connecting' ? 'warn' : 'error'} />
       <button type="button" className={s.invite} onClick={() => document.dispatchEvent(new CustomEvent('klaud:invite'))}>
         Invite
       </button>

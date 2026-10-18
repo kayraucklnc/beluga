@@ -5,10 +5,13 @@ import { formatBytes } from '@klaud/shared/format.js';
 import { unreadCount } from '@klaud/core/work-store.js';
 import { noticeAgo, noticeLook } from '@klaud/ui/notice-models.js';
 import { Icon } from '../components/Icon.js';
-import { Avatar, Button, Dot } from '../components/ui.js';
+import { Avatar, Button, Dot, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useKlaud } from '../lib/klaud.js';
 import { openExternal } from '../lib/system.js';
+import { Switch } from '../dialogs/settings-controls.js';
+import { openPerson } from '../dialogs/native/PersonPopover.js';
+import r from '../dialogs/native/room.module.css';
 import s from './Inspector.module.css';
 
 function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
@@ -161,11 +164,11 @@ function WorkspaceDetails({ id }: { id: string }) {
           members.map(([peerId, role]) => {
             const name = state.peers.find((p) => p.peerId === peerId)?.name ?? 'someone';
             return (
-              <div key={peerId} className={s.person}>
+              <button key={peerId} type="button" className={`${s.person} ${r.personRow}`} onClick={(e) => openPerson(ui, state.peers.findIndex((p) => p.peerId === peerId), e.currentTarget)}>
                 <Avatar name={name} id={peerId} size={18} />
                 <span className={s.personName}>{name}</span>
                 <span className={s.dim}>{role === 'contribute' ? 'works here' : 'follows'}</span>
-              </div>
+              </button>
             );
           })
         ) : (
@@ -177,18 +180,53 @@ function WorkspaceDetails({ id }: { id: string }) {
 }
 
 function Room() {
+  const api = useApi();
+  const { ui } = useKlaud();
   const state = useApp((st) => st);
   const hosting = state.hosting;
+  const invite = (): void => void document.dispatchEvent(new CustomEvent('klaud:invite'));
+  const inviteState = hosting?.phase === 'ready' || state.invite ? 'Ready to share' : hosting?.phase === 'local' ? 'Local network only' : hosting?.phase === 'failed' ? (hosting.detail ?? 'Couldn’t open remote access') : hosting ? 'Opening…' : 'Not open yet';
   return (
-    <Panel title="Room">
+    <Panel
+      title="Room"
+      action={
+        <Button size="small" variant="quiet" icon="link" onClick={invite}>
+          Invite
+        </Button>
+      }
+    >
       <Field label="Name">{state.room}</Field>
-      <Field label="Status">{state.status === 'connected' ? 'Connected' : state.status === 'connecting' ? 'Connecting…' : 'Offline'}</Field>
+      <Field label="Status">
+        <Dot tone={state.status === 'connected' ? 'ok' : state.status === 'connecting' ? 'warn' : 'error'} />
+        {state.status === 'connected' ? 'Connected' : state.status === 'connecting' ? 'Connecting…' : 'Offline'}
+      </Field>
+      <Field label="People">
+        <span className={r.avatars}>
+          {state.peers.map((p, index) => (
+            <Tip key={p.peerId} label={p.peerId === state.selfId ? `${p.name} (you)` : p.name}>
+              <button type="button" className={r.avatarButton} aria-label={p.name} onClick={(e) => openPerson(ui, index, e.currentTarget)}>
+                <Avatar name={p.name} id={p.peerId} size={20} />
+              </button>
+            </Tip>
+          ))}
+        </span>
+      </Field>
       {state.isHost ? (
         <Field label="Invite">
-          {hosting?.phase === 'ready' ? 'Ready to share' : hosting?.phase === 'local' ? 'Local network only' : hosting?.phase === 'failed' ? (hosting.detail ?? 'Couldn’t open remote access') : hosting ? 'Opening…' : 'Click Invite to open'}
+          <Tip label="Invite someone: copy a link">
+            <button type="button" className={r.link} onClick={invite}>
+              {inviteState}
+              <Icon name="chevronRight" size={9} />
+            </button>
+          </Tip>
         </Field>
       ) : null}
-      {state.isHost ? <Field label="New people">{state.roomOpen ? 'Can join' : 'Closed'}</Field> : null}
+      {state.isHost ? (
+        <Field label="New people">
+          <Switch label="New people can join" on={state.roomOpen} onChange={(v) => void api.session.setRoomOpen(v)} />
+          {state.roomOpen ? 'Can join' : 'Closed'}
+        </Field>
+      ) : null}
     </Panel>
   );
 }

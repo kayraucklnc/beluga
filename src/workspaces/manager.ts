@@ -136,6 +136,28 @@ export class WorkspaceManager {
     this.store.saveConfig(this.config);
   }
 
+  /** Rename a group (into another one's name: the two become one). */
+  renameGroup(from: string, to: string): void {
+    const name = to.trim().slice(0, 30);
+    const list = this.config.groups ?? [];
+    const group = list.find((g) => g.name === from);
+    if (!group) throw new WorkspaceError(`No group called "${from}"`);
+    if (!name) throw new WorkspaceError('A group needs a name');
+    if (name === from) return;
+    const into = list.find((g) => g.name === name);
+    const groups = into
+      ? list.filter((g) => g.name !== from).map((g) => (g.name === name ? { ...g, projects: [...new Set([...g.projects, ...group.projects])] } : g))
+      : list.map((g) => (g.name === from ? { ...g, name } : g));
+    this.config = { ...this.config, groups };
+    this.store.saveConfig(this.config);
+  }
+
+  /** Remove a group: its projects stay, back in the plain project list. */
+  ungroup(name: string): void {
+    this.config = { ...this.config, groups: (this.config.groups ?? []).filter((g) => g.name !== name) };
+    this.store.saveConfig(this.config);
+  }
+
   hideProject(id: string): void {
     const project = this.projects.find((p) => p.id === id);
     if (!project) return;
@@ -211,20 +233,34 @@ export class WorkspaceManager {
 
   // -------------------------------------------------------------- workspaces
 
-  /** New worktree on a fresh branch from the latest origin default branch. */
-  async createWorktree(projectIdOrRoot: string, name: string): Promise<Workspace> {
+  /**
+   * New worktree on a fresh branch from the latest origin default branch, or from `base` (any
+   * branch of the project). The worktree remembers what it branched from, so what it's ahead by,
+   * its review and its merge compare against that.
+   */
+  async createWorktree(projectIdOrRoot: string, name: string, base?: string): Promise<Workspace> {
     const project = this.projects.find((p) => p.id === projectIdOrRoot || p.root === projectIdOrRoot);
     if (!project) throw new WorkspaceError('Project not found');
+    if (base !== undefined && !(await g.isCommit(project.root, base))) throw new WorkspaceError(`There's no branch called ${base}`);
+    const from = base ?? project.base;
     const s = slug(name);
     const dir = this.freeDir(project, s);
     const branch = await this.freeBranch(project.root, `klaud/${s}`);
-    await g.addWorktree(project.root, dir, branch, project.base);
+    await g.addWorktree(project.root, dir, branch, from);
     await g.excludeKlaudDir(dir);
     await copyEnvFiles(project.root, dir);
-    const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
+    const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
     this.saveRecord(record);
     await this.refresh();
     return this.require(record.id);
+  }
+
+  /** The branches a new worktree can start from, the project's default base first. */
+  async branches(projectId: string): Promise<{ base: string; branches: string[] }> {
+    const project = this.projects.find((p) => p.id === projectId);
+    if (!project?.root) throw new WorkspaceError('Project not found');
+    const all = await g.listBranches(project.root);
+    return { base: project.base, branches: [project.base, ...all.filter((b) => b !== project.base)] };
   }
 
   /** A folder for a new worktree that no live or archived workspace uses (adds -2, -3…). */

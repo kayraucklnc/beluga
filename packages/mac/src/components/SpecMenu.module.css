@@ -37,8 +37,34 @@
 .item[data-disabled] {
   opacity: 0.4;
 }
+.line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .label {
+  flex: 1;
   line-height: 1.35;
+}
+.icon {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  color: var(--text-2);
+}
+.item[data-highlighted] .icon,
+.item[data-highlighted] .keys {
+  color: rgba(255, 255, 255, 0.85);
+}
+.keys {
+  flex: none;
+  color: var(--text-3);
+  font-family: var(--font);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+}
+.hintIndent {
+  padding-left: 22px;
 }
 .hint {
   color: var(--text-3);
@@ -58,4 +84,16 @@
   height: 1px;
   margin: 4px 6px;
   background: var(--hairline);
+}
+.subArrow {
+  flex: none;
+  margin-left: 12px;
+  color: var(--text-3);
+}
+.item[data-highlighted] .subArrow,
+.item[data-state='open'] .subArrow {
+  color: rgba(255, 255, 255, 0.85);
+}
+.item[data-state='open']:not([data-highlighted]) {
+  background: var(--bg-hover);
 }

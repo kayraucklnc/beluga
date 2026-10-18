@@ -1,0 +1,180 @@
+import { useState } from 'react';
+import { channelOf } from '@klaud/core/store.js';
+import { canRunOn } from '@klaud/core/trust.js';
+import { menuSpec } from '@klaud/ui/menus.js';
+import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { Alert } from '../../components/Alert.js';
+import { Field, FormSheet, Popup, TextInput } from '../../components/FormSheet.js';
+import { useActions } from '../../lib/actions.js';
+import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { type NativeSheet, closeSheet, useSheet } from '../../lib/sheets.js';
+import { RemoteWorktreeForm } from './RemoteWorktreeSheet.js';
+import { TemplateEditorSheet } from './TemplatesSheet.js';
+
+/** The folder and branch name klaud makes from a name (as the core's `slug` does). */
+const slug = (name: string): string =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+
+/** Fork a workspace: a copy with its committed work and its conversation, under a new name. */
+function ForkSheet({ wsId, close }: { wsId: string; close: () => void }) {
+  const api = useApi();
+  const ws = useApp((st) => findWorkspace(st.projects, wsId));
+  const siblings = useApp((st) => st.projects.find((p) => p.workspaces.some((w) => w.id === wsId))?.workspaces);
+  const [name, setName] = useState(ws ? `${ws.name}-2` : '');
+  if (!ws) return null;
+  const taken = siblings?.some((w) => w.name === slug(name));
+  return (
+    <FormSheet
+      title={`Fork “${ws.name}”`}
+      icon="branch"
+      intro="A new worktree that starts from this one’s commits, with a copy of its conversation, so you can try another direction. Uncommitted changes stay here."
+      submitLabel="Fork"
+      canSubmit={Boolean(slug(name)) && !taken}
+      onSubmit={() => {
+        void api.workspaces.fork(ws.id, name.trim());
+        close();
+      }}
+      onCancel={close}
+      width={500}
+    >
+      <Field label="Name" htmlFor="fork-name" error={taken ? 'A workspace in this project has this name.' : undefined} hint={slug(name) ? <>Branch <code>klaud/{slug(name)}</code></> : undefined}>
+        <TextInput id="fork-name" value={name} onChange={setName} maxLength={120} invalid={taken} />
+      </Field>
+    </FormSheet>
+  );
+}
+
+/** Run one command on a friend's computer; the output shows in this chat. */
+function PeerRunSheet({ peerId, close }: { peerId?: string; close: () => void }) {
+  const api = useApi();
+  const peers = useApp((st) => st.peers);
+  const granted = useApp((st) => st.granted);
+  const view = useApp((st) => st.view);
+  const able = peers.filter((p) => canRunOn(granted[p.peerId]?.level));
+  const [who, setWho] = useState(peerId ?? able[0]?.peerId ?? '');
+  const [command, setCommand] = useState('');
+  const peer = peers.find((p) => p.peerId === who);
+  const full = granted[who]?.level === 'full';
+  if (!able.length && !peer) {
+    return (
+      <Alert
+        icon="terminal"
+        tone="info"
+        title="Nobody lets you run commands yet"
+        message="When a friend lets your Claude run commands on their computer, you can run one there yourself too. They choose that in their People settings."
+        cancel={false}
+        confirm={{ label: 'OK', onClick: close }}
+        onCancel={close}
+      />
+    );
+  }
+  return (
+    <FormSheet
+      title={peer ? `Run a Command on ${peer.name}’s Computer` : 'Run a Command on a Friend’s Computer'}
+      icon="terminal"
+      intro={peer ? (full ? 'It runs right away. The output shows in this chat.' : `${peer.name} approves it first. The output shows in this chat.`) : 'The output shows in this chat.'}
+      submitLabel="Run"
+      canSubmit={Boolean(peer && command.trim())}
+      onSubmit={() => {
+        if (!peer) return;
+        void api.session.runOnPeerByHand(peer.name, command.trim(), channelOf(view));
+        close();
+      }}
+      onCancel={close}
+      width={520}
+    >
+      {peerId ? null : (
+        <Field label="On" htmlFor="run-peer">
+          <Popup id="run-peer" label="Whose computer" value={who} onChange={setWho} options={able.map((p) => ({ value: p.peerId, label: `${p.name}’s computer` }))} />
+        </Field>
+      )}
+      <Field label="Command" htmlFor="run-command">
+        <TextInput id="run-command" value={command} onChange={setCommand} mono placeholder="npm test" data-autofocus />
+      </Field>
+    </FormSheet>
+  );
+}
+
+/** What removing or leaving does, asked before the menu option runs. */
+function OptionAlert({ sheet, close }: { sheet: Extract<NativeSheet, { kind: 'confirm_option' }>; close: () => void }) {
+  const actions = useActions();
+  const { client } = useKlaud();
+  const state = client.store.getState();
+  const go = (): void => {
+    close();
+    actions.pick(sheet.menu, sheet.index, true);
+  };
+  const { menu } = sheet;
+  const project = menu.kind === 'project' ? state.projects.find((p) => p.id === menu.id) : undefined;
+  const shared = menu.kind === 'shared' ? state.shared.find((w) => w.owner === menu.owner && w.id === menu.id) : undefined;
+  const owner = shared ? (state.peers.find((p) => p.peerId === shared.owner)?.name ?? 'The owner') : '';
+  switch (sheet.id) {
+    case 'p-hide':
+      return (
+        <Alert
+          icon="eye"
+          tone="info"
+          title={`Hide “${project?.name ?? 'this project'}”?`}
+          message="It leaves the sidebar. Nothing is deleted: its folder and worktrees stay on disk, and you can add it back any time with Add Project."
+          confirm={{ label: 'Hide Project', onClick: go }}
+          onCancel={close}
+        />
+      );
+    case 'sh-leave':
+      return (
+        <Alert
+          icon="share"
+          tone="caution"
+          title={`Leave “${shared?.name ?? 'this workspace'}”?`}
+          message={`You stop seeing its chat and files. ${owner} can invite you again.`}
+          confirm={{ label: 'Leave', destructive: true, onClick: go }}
+          onCancel={close}
+        />
+      );
+    default: {
+      // Anything else that asks first: its own words from the menu.
+      const option = menuSpec(state, menu)?.options[sheet.index];
+      return <Alert title={`${option?.label ?? 'Continue'}?`} message={option?.hint} confirm={{ label: option?.label ?? 'OK', destructive: true, onClick: go }} onCancel={close} />;
+    }
+  }
+}
+
+/** Sheets this window opens instead of typing into the message box (see lib/sheets.ts). */
+export function NativeSheets() {
+  const sheet = useSheet();
+  if (!sheet) return null;
+  const close = closeSheet;
+  switch (sheet.kind) {
+    case 'fork':
+      return <ForkSheet key={sheet.wsId} wsId={sheet.wsId} close={close} />;
+    case 'peer_run':
+      return <PeerRunSheet key={sheet.peerId ?? ''} {...(sheet.peerId ? { peerId: sheet.peerId } : {})} close={close} />;
+    case 'template':
+      return <TemplateEditorSheet close={close} />;
+    case 'remote':
+      return <RemoteWorktreeForm key={sheet.peerId} peerId={sheet.peerId} {...(sheet.project ? { project: sheet.project } : {})} close={close} />;
+    case 'confirm_option':
+      return <OptionAlert sheet={sheet} close={close} />;
+    case 'confirm':
+      return (
+        <Alert
+          title={sheet.title}
+          message={sheet.message}
+          tone={sheet.destructive ? 'danger' : 'caution'}
+          confirm={{
+            label: sheet.confirm,
+            destructive: sheet.destructive ?? false,
+            onClick: () => {
+              close();
+              sheet.run();
+            },
+          }}
+          onCancel={close}
+        />
+      );
+  }
+}

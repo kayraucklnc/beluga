@@ -567,8 +567,9 @@ export class Session {
     return this.files.browserUp();
   }
 
-  download(at: Location): Promise<string | undefined> {
-    return this.files.download(at);
+  /** Download a shared file to ~/Downloads/klaud/<friend>/, or to `opts.to` (an absolute path). */
+  download(at: Location, opts: { to?: string } = {}): Promise<string | undefined> {
+    return this.files.download(at, opts);
   }
 
   downloadSpec(spec: string): void {
@@ -891,7 +892,7 @@ export class Session {
   get myShares(): readonly MyShare[] {
     return this.opts.shares.configs
       .filter((c) => !c.name.startsWith('ws-') && !c.name.startsWith('local-') && c.name !== ATTACHMENT_SHARE)
-      .map((c) => ({ name: c.name, root: c.root, ...(c.private ? { private: true } : {}), ...(c.allowed ? { allowed: c.allowed } : {}) }));
+      .map((c) => ({ name: c.name, root: c.root, ...(c.private ? { private: true } : {}), ...(c.allowed ? { allowed: c.allowed } : {}), ...(c.writable ? { writable: true } : {}) }));
   }
 
   /** Keep the list of your shared folders in the state (screens show it in the Share menu). */

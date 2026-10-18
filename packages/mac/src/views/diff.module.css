@@ -24,10 +24,32 @@
   color: var(--text-2);
   font-size: 0.88rem;
 }
+.commitWrap {
+  display: block;
+}
 .commit {
+  display: block;
+  width: calc(100% + 12px);
+  margin: 0 -6px;
+  padding: 1px 6px;
+  border-radius: 5px;
   overflow: hidden;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: inherit;
+}
+.commit:hover,
+.commit[data-state='open'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.moreCommits {
+  padding: 1px 0;
+  color: var(--text-3);
+}
+.note td {
+  font-style: italic;
 }
 .hash {
   color: var(--text-3);

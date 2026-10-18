@@ -67,6 +67,25 @@ describe('WorkspaceController', () => {
     expect(shares.infos).toEqual([]); // never advertised to the room
   });
 
+  it('starts a worktree from a chosen branch with your own name, or with no message at all', async () => {
+    sh(repo, 'checkout', '-b', 'feature');
+    sh(repo, 'push', '-u', 'origin', 'feature');
+    sh(repo, 'checkout', 'main');
+    const namer = (): Promise<string> => Promise.reject(new Error('should not be asked'));
+    await ctl.startWorktree(projectId(), 'do the thing', namer, { base: 'origin/feature', name: 'mine' });
+    const mine = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.name === 'mine')!;
+    expect(mine).toMatchObject({ base: 'origin/feature' });
+    expect(toasts).toContain('Creating worktree "mine" from origin/feature…');
+    expect(toasts).not.toContain('Naming the worktree…');
+    expect(asked).toEqual([{ prompt: 'do the thing', channel: `ws:${mine.id}` }]);
+
+    await ctl.startWorktree(projectId(), '   ', namer, { name: 'quiet' });
+    const quiet = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.name === 'quiet')!;
+    expect(quiet).toMatchObject({ base: 'origin/main' });
+    expect(asked).toHaveLength(1);
+    expect(await ctl.branches(projectId())).toMatchObject({ base: 'origin/main', branches: expect.arrayContaining(['origin/main', 'feature']) });
+  });
+
   it('creates a worktree, opens it, runs Claude there, and saves its conversation', async () => {
     const ws = (await ctl.newWorktree(projectId(), 'feature'))!;
     expect(screen.getState().view).toEqual({ kind: 'workspace', id: ws.id, tab: 'chat' });
@@ -146,6 +165,13 @@ describe('WorkspaceController', () => {
   it('organizes projects into groups and hides them', async () => {
     await ctl.setGroup(projectId(), 'work');
     expect(store.getState().projectGroups).toEqual([{ name: 'work', projects: [repo] }]);
+    await ctl.renameGroup('work', 'Client work');
+    expect(store.getState().projectGroups).toEqual([{ name: 'Client work', projects: [repo] }]);
+    await ctl.renameGroup('nope', 'x');
+    expect(toasts.at(-1)).toMatch(/No group called "nope"/);
+    await ctl.ungroup('Client work');
+    expect(store.getState().projectGroups).toEqual([]);
+    await ctl.setGroup(projectId(), 'work');
     await ctl.setGroup(projectId(), undefined);
     expect(store.getState().projectGroups).toEqual([]);
     await ctl.hideProject(projectId());

@@ -63,6 +63,14 @@
   color: var(--text-2);
 }
 .intro p {
+  margin: 0 0 6px;
+  line-height: 1.45;
+}
+.intro ol {
+  margin: 0 0 6px;
+  padding-left: 20px;
+}
+.intro li {
   margin: 0 0 2px;
 }
 .options {
@@ -102,4 +110,9 @@
 }
 .optionOn.danger {
   background: color-mix(in srgb, var(--error) 14%, transparent);
+}
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 16px 14px;
 }

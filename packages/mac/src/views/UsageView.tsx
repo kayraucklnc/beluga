@@ -5,12 +5,15 @@ import { formatTokens } from '@klaud/ui/work-models.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Empty } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { ActionsContext } from '../components/SpecMenu.js';
+import { workspaceItems } from '../layout/Sidebar.js';
 import s from './lists.module.css';
 
 /** Disk space and Claude usage per workspace, biggest first; archive a worktree to free its space. */
 export function UsageView() {
   const api = useApi();
+  const { client } = useKlaud();
   const actions = useActions();
   const projects = useApp((st) => st.projects);
   const disk = useApp((st) => st.disk);
@@ -52,7 +55,8 @@ export function UsageView() {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.w.id} onClick={() => actions.run({ type: 'open_ws', id: r.w.id })}>
+            <ActionsContext key={r.w.id} items={() => workspaceItems(client.store.getState(), r.w, actions.run)}>
+            <tr onClick={() => actions.run({ type: 'open_ws', id: r.w.id })}>
               <td>
                 <span className={s.wsName}>
                   <Icon name={r.w.kind === 'chat' ? 'chat' : r.w.kind === 'main' ? 'folder' : 'branch'} size={13} />
@@ -81,6 +85,7 @@ export function UsageView() {
                 ) : null}
               </td>
             </tr>
+            </ActionsContext>
           ))}
         </tbody>
       </table>

@@ -154,6 +154,22 @@ describe('setup and run scripts', () => {
     await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.command === 'npm ci', 4000);
     expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaud.json')]).toString())).toEqual({ scripts: { setup: 'npm ci', run: 'npm run dev' } });
   });
+
+  it('saves one command straight to klaud.json, dropping your own one for it', async () => {
+    hub = await startHub({ keys });
+    const dir = repo({ 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    const kay = await solo(dir);
+    const id = projectOf(kay.workspaces).id;
+    kay.bench.setScript(id, 'run', 'npm start');
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source === 'yours', 4000);
+    kay.bench.setScript(id, 'run', 'npm run serve', true);
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source === 'klaud.json', 4000);
+    expect(projectOf(kay.workspaces).scripts?.run?.command).toBe('npm run serve');
+    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaud.json')]).toString())).toEqual({ scripts: { run: 'npm run serve' } });
+    kay.bench.setScript(id, 'run', '', true);
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source !== 'klaud.json', 4000);
+    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaud.json')]).toString())).toEqual({ scripts: {} });
+  });
 });
 
 describe('pull requests', () => {
@@ -215,6 +231,11 @@ describe('pull requests', () => {
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'x');
     kay.bench.createPr(ws!.id);
     expect(kay.screen.getState().toast?.text).toContain('Install the GitHub CLI');
+    // Installed and signed in since: the Mac's Check Again looks again (a plain refresh doesn't).
+    await kay.bench.refreshPrs(ws!.id);
+    expect(kay.state().gh).toBe(false);
+    await kay.bench.refreshPrs(ws!.id, true);
+    expect(kay.state().gh).toBe(true);
   });
 });
 
@@ -297,6 +318,9 @@ describe('models, usage, space and search', () => {
     expect(kay.state().templates.at(-1)).toMatchObject({ name: 'Write docs', prompt: 'document the public API in README.md' });
     kay.bench.removeTemplate(kay.state().templates.at(-1)!.id);
     expect(kay.state().templates.some((t) => t.name === 'Write docs')).toBe(false);
+    kay.bench.saveTemplate('Big change: plan it, then build it', true);
+    expect(kay.state().templates.at(-1)).toMatchObject({ name: 'Big change', plan: true });
+    kay.bench.removeTemplate(kay.state().templates.at(-1)!.id);
   });
 });
 

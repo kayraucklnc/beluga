@@ -113,3 +113,13 @@ html[data-app='tauri'],
 html[data-app='tauri'] body {
   background: transparent;
 }
+
+/* Find in this conversation (⌘F): every match, and the one you're on. */
+::highlight(klaud-find) {
+  background-color: color-mix(in srgb, #ffd60a 45%, transparent);
+  color: inherit;
+}
+::highlight(klaud-find-current) {
+  background-color: #ffd60a;
+  color: #1d1d1f;
+}

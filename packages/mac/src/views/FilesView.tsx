@@ -6,6 +6,11 @@ import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
+import { useActions } from '../lib/actions.js';
+import { copyText } from '../lib/copy.js';
+import { localPathOf, mentionOf, revealInFinder, saveFile } from '../lib/files.js';
+import { SearchField, SearchResults } from './SharedSearch.js';
 import s from './files.module.css';
 
 const ext = (p: string): string => /\.([\w-]+)$/.exec(p)?.[1]?.toLowerCase() ?? '';
@@ -27,6 +32,7 @@ function Bitmap({ image }: { image: NonNullable<ViewerState['image']> }) {
 
 function Viewer({ viewer }: { viewer: ViewerState }) {
   const api = useApi();
+  const { client } = useKlaud();
   const [raw, setRaw] = useState(false);
   const name = viewer.path.split('/').pop() || viewer.path;
   const markdown = ext(viewer.path) === 'md' || ext(viewer.path) === 'markdown';
@@ -49,7 +55,7 @@ function Viewer({ viewer }: { viewer: ViewerState }) {
             ]}
           />
         ) : null}
-        <IconButton icon="download" label="Download to ~/Downloads/klaud" onClick={() => void api.files.download(viewer)} />
+        <IconButton icon="download" label="Save a copy…" onClick={() => void saveFile(client, viewer)} />
         <IconButton icon="x" label="Close" onClick={() => void api.files.closeViewer()} />
       </div>
       <div className={s.viewerBody}>
@@ -83,15 +89,51 @@ function fenced(content: string, lang: string | undefined): string {
   return `${fence}${lang ?? 'text'}\n${content}\n${fence}`;
 }
 
+/** Right-click on a file or folder: open it, find it in Finder, copy its path, mention it, save it. */
+function useRowItems(): (row: BrowserRow, onOpen: () => void) => ActionItem[] {
+  const { client, ui } = useKlaud();
+  const actions = useActions();
+  return (row, onOpen) => {
+    if (row.target === 'up') return [{ label: 'Back', icon: 'back', onSelect: onOpen }];
+    const at = row.target;
+    const state = client.store.getState();
+    const local = localPathOf(state, at);
+    const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
+    const mention = (): void => {
+      const v = state.view;
+      // The conversation this folder belongs to (a workspace's own chat, else the room).
+      if (v.kind === 'workspace') actions.run({ type: 'open_ws', id: v.id, tab: 'chat' });
+      else if (v.kind === 'shared') actions.run({ type: 'open_shared', owner: v.owner, id: v.id, tab: 'chat' });
+      else actions.run({ type: 'view', view: { kind: 'room' } });
+      const current = ui.get().buffer;
+      const buffer = `${current}${current && !current.endsWith(' ') ? ' ' : ''}${mentionOf(state, at)} `;
+      setTimeout(() => {
+        ui.patch({ buffer, cursor: buffer.length });
+        document.dispatchEvent(new CustomEvent('klaud:focus-composer'));
+      }, 60);
+    };
+    return [
+      { label: row.dir ? 'Open Folder' : 'Open', icon: row.dir ? 'folder' : 'file', onSelect: onOpen },
+      ...(local ? [{ label: 'Show in Finder', icon: 'folder' as const, onSelect: () => void revealInFinder(client, local) }] : []),
+      { label: 'Copy Path', icon: 'copy', separate: true, onSelect: () => void copyText(local ?? mentionOf(state, at)).then(() => say('Copied the path')) },
+      { label: 'Mention in Chat', icon: 'chat', onSelect: mention },
+      ...(row.dir ? [] : [{ label: 'Save a Copy…', icon: 'download' as const, separate: true, onSelect: () => void saveFile(client, at) }]),
+    ];
+  };
+}
+
 function Row({ row, selected, onOpen }: { row: BrowserRow; selected: boolean; onOpen: () => void }) {
   const up = row.target === 'up';
+  const items = useRowItems();
   return (
+    <ActionsContext items={() => items(row, onOpen)}>
     <div role="option" aria-selected={selected} tabIndex={-1} className={cx(s.row, selected && s.rowOn)} onClick={onOpen} title={row.label}>
       <Icon name={up ? 'up' : row.dir ? 'folder' : 'file'} size={14} className={row.dir ? s.dirIcon : s.fileIcon} />
       <span className={s.rowName}>{up ? 'Back' : row.label}</span>
       {!row.dir && row.size !== undefined ? <span className={s.size}>{row.size < 1024 ? `${row.size} B` : formatBytes(row.size)}</span> : null}
       {row.dir && !up ? <Icon name="chevronRight" size={10} className={s.chev} /> : null}
     </div>
+    </ActionsContext>
   );
 }
 
@@ -118,6 +160,16 @@ export function FilesView() {
     if (wsId) void api.files.browseTo({ owner: selfId, share: shareNameOf(wsId), path: '' });
   }, [wsId]);
 
+  // A workspace shared with you: its files, and a search over them (names and contents).
+  const sharedWs = view.kind === 'shared' ? shared.find((w) => w.id === view.id && w.owner === view.owner) : undefined;
+  const [typed, setTyped] = useState('');
+  const [search, setSearch] = useState<string>();
+  useEffect(() => {
+    setTyped('');
+    setSearch(undefined);
+    if (sharedWs && browser.at?.share !== sharedWs.share) void api.files.browseTo({ owner: sharedWs.owner, share: sharedWs.share, path: '' });
+  }, [sharedWs?.id]);
+
   const open = (i: number): void => {
     client.store.dispatch({ type: 'browser_cursor', delta: i - browser.cursor });
     void api.files.enter(i);
@@ -127,15 +179,26 @@ export function FilesView() {
   return (
     <div className={s.files}>
       <section className={s.browser} aria-label="Files">
+        {sharedWs ? <SearchField value={typed} onChange={setTyped} onSearch={setSearch} /> : null}
         <div className={s.crumbs}>
-          {crumbs.map((c, i) => (
+          {(sharedWs && search ? [`Results for “${search}”`] : crumbs).map((c, i) => (
             <span key={i} className={s.crumb}>
               {i ? <Icon name="chevronRight" size={9} /> : null}
-              {c}
+              {/* Every folder above this one is a click away. */}
+              {browser.at && !search && i < crumbs.length - 1 ? (
+                <button type="button" className={s.crumbLink} onClick={() => void api.files.browseTo({ ...browser.at!, path: crumbs.slice(1, i + 1).join('/') })}>
+                  {c}
+                </button>
+              ) : (
+                c
+              )}
             </span>
           ))}
           {browser.loading ? <span className={s.dim}>…</span> : null}
         </div>
+        {sharedWs && search ? (
+          <SearchResults id={sharedWs.id} owner={sharedWs.owner} share={sharedWs.share} query={search} />
+        ) : (
         <div
           ref={list}
           className={s.list}
@@ -162,6 +225,7 @@ export function FilesView() {
             <Empty icon="folder" title={browser.at ? 'This folder is empty' : 'Nothing shared yet'} detail={browser.at ? undefined : 'When people in the room share folders, they show up here.'} action={browser.at ? undefined : <Button onClick={() => ui.openMenu({ kind: 'share_folder', launchDir: home, mine: myShares })}>Share a folder…</Button>} />
           )}
         </div>
+        )}
       </section>
       {viewer ? <Viewer viewer={viewer} /> : <div className={s.noViewer}><Empty icon="file" title="Pick a file to open it" detail="Markdown shows formatted, code with colors, images as they are. Files update live when they change." /></div>}
     </div>

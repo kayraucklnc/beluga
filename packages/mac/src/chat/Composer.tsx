@@ -7,14 +7,17 @@ import { localDirOf, openTarget, suggest, type Suggestion } from '@klaud/ui/sugg
 import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { recipientLabel, recipientPrefix, toast, useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { ModelPicker } from './ModelPicker.js';
 import { QueueTray } from './QueueTray.js';
+import { type WorktreeChoice, WorktreeDraft } from './WorktreeDraft.js';
+import { stopClaude } from '../lib/commands.js';
 import { keepPreview, previewOf } from './images.js';
 import s from './composer.module.css';
 import img from './images.module.css';
+import d from './draft.module.css';
 
 const CHIP = /\[image (\d+)\]/g;
 /** The "[image N]" chips in the text, in order, once each. */
@@ -33,7 +36,7 @@ function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectI
   if (p) return `Name for the new ${p.kind}${state.projects.find((x) => x.id === p.projectId)?.root ? ` in ${state.projects.find((x) => x.id === p.projectId)?.name}` : ''}`;
   const v = state.view;
   if (v.kind === 'draft') return 'Ask Claude anything. Your first message starts the chat';
-  if (v.kind === 'draft_worktree') return 'Describe the task. Return creates the worktree and starts Claude';
+  if (v.kind === 'draft_worktree') return 'What should Claude work on in the new worktree?';
   if (v.kind === 'search') return 'Search every conversation';
   if (v.kind === 'workspace') {
     const ws = state.projects.flatMap((x) => x.workspaces).find((w) => w.id === v.id);
@@ -55,6 +58,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const state = useApp((st) => st);
   const buffer = useUi((u) => u.buffer);
   const pending = useUi((u) => u.pending);
+  // Addressed to someone (a person's card › Message / Ask Claude): the chip says who; sending says it to them.
+  const to = useUi((u) => u.to);
   const [selected, setSelected] = useState(0);
   const [hidden, setHidden] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -68,6 +73,11 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const queueing = compose.busy && (compose.typing || !buffer.trim());
   const plan = state.planMode[channel] === true;
   const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view';
+  // A new worktree: the branch it starts from and its name (empty: named from the task).
+  const draftProject = state.view.kind === 'draft_worktree' ? state.view.projectId : undefined;
+  const [worktree, setWorktree] = useState<WorktreeChoice>({ name: '' });
+  useEffect(() => setWorktree({ name: '' }), [draftProject]);
+  const canCreate = Boolean(buffer.trim() && !buffer.trim().startsWith('/')) || Boolean(worktree.name.trim());
 
   // Suggestions as you type: commands, people and Claudes, workspaces, folders.
   const suggestions: Suggestion[] = useMemo(
@@ -117,14 +127,31 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     setHidden(false);
     setSelected(0);
   };
+  /** The first message of a new worktree starts it (on the chosen branch, with the chosen name). */
+  const createWorktree = (projectId: string, text: string): void => {
+    const name = worktree.name.trim();
+    void api.workspaces.startWorktree(projectId, text, { ...(worktree.base ? { base: worktree.base } : {}), ...(name ? { name } : {}) }).catch((err: unknown) => toast(client, `Couldn't create the worktree: ${errorText(err)}`, 'error'));
+  };
+  const deliver = (text: string, urgent: boolean): void => {
+    if (draftProject && !text.startsWith('/')) return createWorktree(draftProject, text);
+    if (to && !text.startsWith('/')) {
+      ui.patch({ to: undefined });
+      return actions.submit(`${recipientPrefix(to)}${text}`, urgent);
+    }
+    actions.submit(text, urgent);
+  };
   const send = (urgent = false): void => {
     const text = buffer.trim();
-    if (!text) return;
+    if (!text && !(draftProject && worktree.name.trim())) {
+      if (draftProject) toast(client, 'Describe the task, or give the worktree a name', 'info');
+      return;
+    }
+    if (!text && draftProject) return createWorktree(draftProject, '');
     ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, text].slice(-200), historyIndex: -1 });
     // Image chips become links to the images (klaud keeps them) before the message goes.
     if (text.includes('[image ') && !text.startsWith('/')) {
       api.attachments.expand(text, channel).then(
-        (expanded) => actions.submit(expanded, urgent),
+        (expanded) => deliver(expanded, urgent),
         (err: unknown) => {
           // Put the message back so nothing typed is lost.
           if (!ui.get().buffer) ui.patch({ buffer: text, cursor: text.length });
@@ -133,7 +160,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       );
       return;
     }
-    actions.submit(text, urgent);
+    deliver(text, urgent);
   };
   /** Images pasted or dropped become "[image N]" chips where the cursor is. */
   const attach = async (files: readonly File[]): Promise<void> => {
@@ -210,6 +237,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     }
     if (e.key === 'Escape') {
       if (pending) ui.patch({ pending: undefined, buffer: '' });
+      else if (to) ui.patch({ to: undefined });
       else if (state.view.kind === 'draft' || state.view.kind === 'draft_worktree') client.store.dispatch({ type: 'view', view: state.view.back });
       return;
     }
@@ -275,6 +303,15 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           void attach(files);
         }}
       >
+        {draftProject ? <WorktreeDraft projectId={draftProject} choice={worktree} onChange={setWorktree} /> : null}
+        {to ? (
+          <div className={s.askChip} aria-label={`To ${recipientLabel(to)}`}>
+            To {recipientLabel(to)}
+            <button type="button" aria-label="Don’t address it" onClick={() => ui.patch({ to: undefined })}>
+              <Icon name="x" size={10} />
+            </button>
+          </div>
+        ) : null}
         {askingFor ? (
           <div className={s.askChip}>
             {askingFor}
@@ -302,7 +339,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           rows={1}
           value={buffer}
           disabled={readOnly}
-          placeholder={placeholderOf(state, pending ? { pending } : {})}
+          placeholder={to ? `Message ${recipientLabel(to)}` : placeholderOf(state, pending ? { pending } : {})}
           onChange={(e) => set(e.target.value)}
           onKeyDown={onKey}
           onPaste={(e) => {
@@ -324,7 +361,22 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           ) : null}
           {!shared ? <ModelPicker channel={channel} /> : null}
           <span className={s.flex} />
-          {queueing ? (
+          {compose.busy ? (
+            <Tip label="Stop Claude here · your queued messages come back to the box" keys={`${mod()}.`}>
+              <button type="button" className={s.stop} aria-label="Stop Claude" onClick={() => stopClaude({ client, ui, actions }, channel)}>
+                <span className={s.stopMark} />
+              </button>
+            </Tip>
+          ) : null}
+          {draftProject ? (
+            <Tip label={worktree.name.trim() && !buffer.trim() ? `Create ${worktree.name.trim()} without a task` : 'Make the branch and folder, then Claude starts on the task'} keys={sendKeys}>
+              <button type="button" className={cx(d.create, canCreate && d.createReady)} onClick={() => send(false)} aria-disabled={!canCreate}>
+                <Icon name="branch" size={12} />
+                Create Worktree
+                <span className={d.createKey}>{sendKeys}</span>
+              </button>
+            </Tip>
+          ) : queueing ? (
             <div className={cx(s.split, buffer.trim() && s.splitReady)} role="group" aria-label="Claude is working">
               <Tip label="Claude is working: this waits its turn in the queue" keys={sendKeys}>
                 <button type="button" className={s.splitMain} onClick={() => send(false)} disabled={!buffer.trim()}>
@@ -350,7 +402,11 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       <div className={s.legend}>
         {queueing ? (
           <>
-            <Kbd>{sendKeys}</Kbd> queue · <Kbd>⌥↩</Kbd> send now, interrupting Claude
+            <Kbd>{sendKeys}</Kbd> queue · <Kbd>⌥↩</Kbd> send now · <Kbd>{mod()}.</Kbd> stop
+          </>
+        ) : draftProject ? (
+          <>
+            <Kbd>{sendKeys}</Kbd> create the worktree · <Kbd>esc</Kbd> cancel
           </>
         ) : prefs.sendWith === 'enter' ? (
           <>

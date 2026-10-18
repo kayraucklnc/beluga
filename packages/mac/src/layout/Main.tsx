@@ -11,7 +11,6 @@ const UsageView = lazy(() => import('../views/UsageView.js').then((m) => ({ defa
 const FilesView = lazy(() => import('../views/FilesView.js').then((m) => ({ default: m.FilesView })));
 const DiffView = lazy(() => import('../views/DiffView.js').then((m) => ({ default: m.DiffView })));
 const TerminalView = lazy(() => import('../views/TerminalView.js').then((m) => ({ default: m.TerminalView })));
-const GuestShellView = lazy(() => import('../views/GuestShellView.js').then((m) => ({ default: m.GuestShellView })));
 
 function Route() {
   const view = useApp((st) => st.view);
@@ -23,7 +22,8 @@ function Route() {
     case 'workspace':
       return view.tab === 'chat' ? <ChatView /> : view.tab === 'files' ? <FilesView /> : view.tab === 'review' ? <DiffView /> : <TerminalView />;
     case 'shared':
-      return view.tab === 'chat' ? <ChatView /> : view.tab === 'files' ? <FilesView /> : view.tab === 'diff' ? <DiffView /> : <GuestShellView />;
+      // Its Files tab browses and searches (the terminal UI's read-only shell lives there too).
+      return view.tab === 'chat' ? <ChatView /> : view.tab === 'diff' ? <DiffView /> : <FilesView />;
     case 'overview':
       return <OverviewView />;
     case 'search':

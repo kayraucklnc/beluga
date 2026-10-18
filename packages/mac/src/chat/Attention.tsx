@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { channelOf } from '@klaud/core/store.js';
 import { currentQuestion } from '@klaud/ui/collab-actions.js';
 import { TRUST_INFO } from '@klaud/core/trust.js';
@@ -31,14 +32,21 @@ function Approvals() {
   const approvals = useApp((st) => st.approvals);
   const first = approvals[0];
   const now = useNow(Boolean(first?.askedAt));
+  const [showAll, setShowAll] = useState(false);
   if (!first) return null;
+  const others = approvals.slice(1);
   const left = first.askedAt && first.timeoutMs ? Math.max(0, first.askedAt + first.timeoutMs - now) : undefined;
   return (
     <div className={`${s.card} ${s.urgent}`} role="alertdialog" aria-label="Approval needed">
       <div className={s.head}>
         <Dot tone="warn" />
         <span className={s.title}>{first.title}</span>
-        {approvals.length > 1 ? <span className={s.more}>+{approvals.length - 1} more</span> : null}
+        {others.length ? (
+          <button type="button" className={s.moreButton} aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+            {showAll ? 'Show less' : `+${others.length} more`}
+            <Icon name={showAll ? 'chevronUp' : 'chevronDown'} size={10} />
+          </button>
+        ) : null}
         {left !== undefined ? <span className={s.countdown}>{Math.ceil(left / 60_000)} min left</span> : null}
       </div>
       {first.detail ? <pre className={`${s.detail} selectable`}>{first.detail}</pre> : null}
@@ -51,6 +59,24 @@ function Approvals() {
           Deny
         </Button>
       </div>
+      {showAll && others.length ? (
+        <ul className={s.others} aria-label="Also waiting for you">
+          {others.map((a) => (
+            <li key={a.id} className={s.other}>
+              <span className={s.otherText}>
+                <span className={s.otherTitle}>{a.title}</span>
+                {a.detail ? <code className={s.otherDetail}>{a.detail}</code> : null}
+              </span>
+              <Button size="small" onClick={() => void api.host.answerApproval('yes', a.id)}>
+                Allow
+              </Button>
+              <Button size="small" variant="quiet" onClick={() => void api.host.answerApproval('no', a.id)}>
+                Deny
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

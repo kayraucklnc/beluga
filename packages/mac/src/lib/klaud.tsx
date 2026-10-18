@@ -18,7 +18,24 @@ export interface MacUi extends UiState {
   readonly settings?: SettingsPane;
   /** A sheet asking for one line of text (a name for a new group…). */
   readonly ask?: { readonly title: string; readonly placeholder: string; readonly onSubmit: (text: string) => void };
+  /** Who the next message is for (a chip in the composer): a person, their Claude, or yours. */
+  readonly to?: Recipient;
 }
+
+/** "To bob", "To bob's Claude", "To your Claude": the message goes to them (see recipientPrefix). */
+export interface Recipient {
+  readonly peerId: string;
+  readonly name: string;
+  readonly claude: boolean;
+  /** Yourself (your own Claude). */
+  readonly self?: boolean;
+}
+
+/** What a message addressed to `to` starts with when it's sent (how klaud reads who it's for). */
+export const recipientPrefix = (to: Recipient): string => (to.claude ? (to.self ? '@claude ' : `@claude:${to.name} `) : `@${to.name} `);
+
+/** "bob's Claude", "your Claude", "bob". */
+export const recipientLabel = (to: Recipient): string => (to.claude ? (to.self ? 'your Claude' : `${to.name}’s Claude`) : to.name);
 
 export type SettingsPane = 'general' | 'appearance' | 'claude' | 'notifications' | 'workspaces' | 'terminal' | 'environment' | 'people' | 'about';
 
