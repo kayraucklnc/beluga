@@ -33,6 +33,9 @@ function buttonOf(code: number): MouseButton | undefined {
   }
 }
 
+// A report whose ESC was already eaten (e.g. it arrived in an earlier chunk): never let it show up as typed text.
+const ORPHAN = /\[<\d+;\d+;\d+[Mm]/g;
+
 /** Pull mouse reports out of a stdin chunk, returning the events and the remaining keyboard input. */
 export function parseMouse(chunk: string): { events: MouseEvent[]; rest: string } {
   const events: MouseEvent[] = [];
@@ -41,7 +44,38 @@ export function parseMouse(chunk: string): { events: MouseEvent[]; rest: string 
     if (button) events.push({ x: Number(col) - 1, y: Number(row) - 1, button, kind: kind === 'M' ? 'press' : 'release' });
     return '';
   });
-  return { events, rest };
+  return { events, rest: rest.replace(ORPHAN, '') };
+}
+
+// The start of an escape sequence cut off at the end of a chunk (fast scrolling splits reports across reads).
+const PARTIAL = /\x1b(?:\[(?:<[\d;]*)?)?$/;
+/** How long to wait for the rest of a cut-off sequence before treating it as typed (a lone Esc key). */
+export const PARTIAL_WAIT_MS = 25;
+
+/**
+ * Joins stdin chunks so escape sequences split across reads are parsed whole.
+ * `push` returns the text that's safe to parse now; a cut-off tail is held until
+ * the next chunk, or handed to `onFlush` if nothing follows (a real Esc press).
+ */
+export function createChunkJoiner(onFlush: (data: string) => void, waitMs = PARTIAL_WAIT_MS): (chunk: string) => string {
+  let held = '';
+  let timer: NodeJS.Timeout | undefined;
+  return (chunk) => {
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+    const data = held + chunk;
+    const tail = PARTIAL.exec(data);
+    held = tail ? tail[0] : '';
+    if (held) {
+      timer = setTimeout(() => {
+        const pending = held;
+        held = '';
+        timer = undefined;
+        onFlush(pending);
+      }, waitMs);
+    }
+    return tail ? data.slice(0, tail.index) : data;
+  };
 }
 
 // Focus reports (after FOCUS_ON): the terminal window came to the front, or went to the back.
@@ -96,8 +130,8 @@ export function createInput(source: NodeJS.ReadStream, hooks: InputHooks): NodeJ
     },
   });
   source.setEncoding('utf8');
-  source.on('data', (data: string | Buffer) => {
-    const { events, rest: afterMouse } = parseMouse(data.toString());
+  const deliver = (text: string): void => {
+    const { events, rest: afterMouse } = parseMouse(text);
     for (const e of events) hooks.onMouse?.(e);
     const { events: focus, rest } = parseFocus(afterMouse);
     for (const f of focus) hooks.onFocus?.(f);
@@ -105,6 +139,11 @@ export function createInput(source: NodeJS.ReadStream, hooks: InputHooks): NodeJ
     const sink = hooks.rawSink?.();
     if (sink) sink(rest);
     else proxy.write(rest);
+  };
+  const join = createChunkJoiner(deliver);
+  source.on('data', (data: string | Buffer) => {
+    const text = join(data.toString());
+    if (text) deliver(text);
   });
   return proxy;
 }

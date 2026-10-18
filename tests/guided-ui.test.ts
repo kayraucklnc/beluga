@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { initialState, reduce, type AppState } from '../src/core/store.js';
 import type { PeerInfo } from '../src/protocol.js';
 import { actionButtons, buttonLabel } from '../src/ui/actions.js';
@@ -27,6 +27,7 @@ describe('mouse parsing', () => {
       { x: 0, y: 0, button: 'right', kind: 'press' },
     ]);
     expect(parseMouse('\x1b[<3;1;1M').events).toEqual([]); // "no button" motion reports are ignored
+    expect(parseMouse('a[<65;107;41M[<65;107;41Mb').rest).toBe('ab'); // reports that lost their ESC never show as text
   });
 });
 
@@ -193,5 +194,32 @@ describe('mouse input proxy', () => {
     expect(proxy.read()).toBe('hi');
     source.emit('data', '\x1b[<64;1;1M');
     expect(proxy.read()).toBeNull(); // pure mouse chunk produces no keyboard input
+  });
+
+  it('reassembles wheel reports split across reads instead of typing them', async () => {
+    const { EventEmitter } = await import('node:events');
+    const { createMouseInput } = await import('../src/ui/mouse.js');
+    const source = Object.assign(new EventEmitter(), { setEncoding: () => undefined }) as unknown as NodeJS.ReadStream;
+    const wheel: string[] = [];
+    const proxy = createMouseInput(source, (e) => wheel.push(`${e.button}@${e.x},${e.y}`));
+    for (const part of ['\x1b[<65;107;41M\x1b', '[<65;10', '7;41M\x1b[<', '64;1;1Mx']) source.emit('data', part);
+    expect(wheel).toEqual(['wheelDown@106,40', 'wheelDown@106,40', 'wheelUp@0,0']);
+    expect(proxy.read()).toBe('x');
+  });
+
+  it('still delivers a lone Esc press after a short wait', async () => {
+    vi.useFakeTimers();
+    try {
+      const { EventEmitter } = await import('node:events');
+      const { createMouseInput, PARTIAL_WAIT_MS } = await import('../src/ui/mouse.js');
+      const source = Object.assign(new EventEmitter(), { setEncoding: () => undefined }) as unknown as NodeJS.ReadStream;
+      const proxy = createMouseInput(source, () => undefined);
+      source.emit('data', '\x1b');
+      expect(proxy.read()).toBeNull();
+      vi.advanceTimersByTime(PARTIAL_WAIT_MS);
+      expect(proxy.read()).toBe('\x1b');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -54,12 +54,37 @@ const WORKSPACE_HINT: Line[] = [
   [{ text: '  Review, Merge, Fork and Archive', color: theme.text }, { text: ' are in the bar above.', color: theme.muted }],
 ];
 
+interface LogCache {
+  readonly log: AppState['log'];
+  readonly channel: string;
+  readonly cols: number;
+  readonly frame: number;
+  readonly selfId?: string;
+  readonly subagents: AppState['prefs']['subagents'];
+  readonly lines: Line[];
+}
+
+// Rendering the log (markdown, wrapping) is the costly part of a frame. Scrolling or
+// hovering doesn't change it, so keep the last few results (one per pane size/channel).
+const LOG_CACHE_SIZE = 4;
+let logCache: readonly LogCache[] = [];
+
+function cachedLog(state: AppState, items: AppState['log'], cols: number, frame: number, channel: string): Line[] {
+  const selfId = state.self?.peerId;
+  const subagents = state.prefs.subagents;
+  const hit = logCache.find((c) => c.log === state.log && c.channel === channel && c.cols === cols && c.frame === frame && c.selfId === selfId && c.subagents === subagents);
+  if (hit) return hit.lines;
+  const lines = renderLog(items, cols, { selfId, frame, now: Date.now(), subagents });
+  logCache = [{ log: state.log, channel, cols, frame, selfId, subagents, lines }, ...logCache].slice(0, LOG_CACHE_SIZE);
+  return lines;
+}
+
 /** Chat lines for a pane of this size (exported so App can bound scrolling). */
 export function chatLines(state: AppState, cols: number, frame: number, channel = 'room'): Line[] {
   if (cols <= 0) return []; // hidden (e.g. the viewer is fullscreen)
   const items = state.log.filter((l) => l.channel === channel);
   const banner = channel === 'room' ? inviteBanner(state, cols, frame) : [];
-  const log = renderLog(items, cols, { selfId: state.self?.peerId, frame, now: Date.now(), subagents: state.prefs.subagents });
+  const log = cachedLog(state, items, cols, frame, channel);
   const empty = channel === 'room' ? (state.peers.length <= 1 ? SOLO_HINT : EMPTY_HINT) : channel === 'draft' ? (state.view.kind === 'draft_worktree' ? WORKTREE_DRAFT_HINT : DRAFT_HINT) : WORKSPACE_HINT;
   return [...banner, ...(items.length ? log : empty)];
 }
