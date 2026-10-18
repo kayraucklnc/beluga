@@ -171,14 +171,19 @@ const setBuffer = (ui: UiState, buffer: string, cursor = buffer.length): UiState
   suggestHidden: false,
 });
 
+/** UTF-16 length of the whole character before / after the cursor, so emoji move and delete as one. */
+const charBefore = (s: string, at: number): number => [...s.slice(0, at)].at(-1)?.length ?? 1;
+const charAfter = (s: string, at: number): number => [...s.slice(at, at + 2)][0]?.length ?? 1;
+
 function edit(ui: UiState, input: string, key: KeyInfo): UiState | undefined {
   const { buffer, cursor } = ui;
   if (key.backspace || key.delete) {
     if (cursor === 0) return ui;
-    return setBuffer(ui, buffer.slice(0, cursor - 1) + buffer.slice(cursor), cursor - 1);
+    const n = charBefore(buffer, cursor);
+    return setBuffer(ui, buffer.slice(0, cursor - n) + buffer.slice(cursor), cursor - n);
   }
-  if (key.leftArrow) return { ...ui, cursor: Math.max(0, cursor - 1) };
-  if (key.rightArrow) return { ...ui, cursor: Math.min(buffer.length, cursor + 1) };
+  if (key.leftArrow) return { ...ui, cursor: Math.max(0, cursor - charBefore(buffer, cursor)) };
+  if (key.rightArrow) return { ...ui, cursor: Math.min(buffer.length, cursor + charAfter(buffer, cursor)) };
   if (key.ctrl && input === 'a') return { ...ui, cursor: 0 };
   if (key.ctrl && input === 'e') return { ...ui, cursor: buffer.length };
   if (key.ctrl && input === 'u') return setBuffer(ui, buffer.slice(cursor), 0);

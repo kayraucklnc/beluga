@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -215,6 +215,23 @@ describe('env files and safe merges', () => {
     const ext = repos()[0]!.workspaces.find((w) => w.external)!;
     await expect(mgr.remove(ext.id)).rejects.toThrow();
     expect(existsSync(path.join(base, 'tool', 'wip.txt'))).toBe(true);
+  });
+
+  it('deletes a worktree whose folder was removed by hand, branch and all', async () => {
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'gone');
+    rmSync(ws.path, { recursive: true, force: true });
+    await mgr.remove(ws.id);
+    await mgr.refresh();
+    expect(repos()[0]!.workspaces.some((w) => w.name === 'gone')).toBe(false);
+    expect(sh(repo, 'branch', '--list', 'klaud/gone').trim()).toBe('');
+  });
+
+  it("reports why a merge failed when it isn't a conflict", async () => {
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'nobranch');
+    commitIn(ws.path, 'x.txt', 'x', 'x');
+    await mgr.refresh();
+    const { mergeInto } = await import('../src/workspaces/git.js');
+    await expect(mergeInto(repo, 'no-such-branch', 'main')).rejects.toThrow(/no-such-branch/);
   });
 });
 

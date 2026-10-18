@@ -217,6 +217,28 @@ describe('pull requests', () => {
   });
 });
 
+describe('workspace conversations', () => {
+  it("keeps what you sent a workspace before opening it", async () => {
+    hub = await startHub({ keys });
+    const kay = await solo(repo());
+    const ws = await kay.workspaces.createWorktree(projectOf(kay.workspaces).id, 'later');
+    await kay.session.workspaces!.refresh();
+    kay.session.askOwnClaude('fix the flaky test', `ws:${ws.id}`);
+    await waitFor(() => kay.runs.length === 1, 4000);
+    kay.session.workspaces!.open(ws.id);
+    expect(kay.state().log.some((l) => l.channel === `ws:${ws.id}` && l.type === 'chat' && l.text === 'fix the flaky test')).toBe(true);
+  });
+
+  it('stops its terminals when a workspace is archived', async () => {
+    hub = await startHub({ keys });
+    const kay = await solo(repo());
+    const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'shelly');
+    expect(kay.bench.shell(ws!.id)?.running).toBe(true);
+    expect(await kay.session.workspaces!.archive(ws!.id, true)).toBe(true);
+    expect(kay.bench.terminals?.get(ws!.id)).toBeUndefined();
+  });
+});
+
 describe('models, usage, space and search', () => {
   it('uses the model picked for a conversation, else your default', async () => {
     hub = await startHub({ keys });

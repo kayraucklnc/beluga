@@ -245,6 +245,11 @@ export class Workbench {
     if (wsId && this.deps.store.getState().setup[wsId]?.status === 'running') this.deps.store.dispatch({ type: 'setup', id: wsId });
   }
 
+  /** Stop a workspace's shell, setup and run terminals (it's being archived or deleted). */
+  closeTerminals(wsId: string): void {
+    for (const key of [shellId(wsId), setupId(wsId), runId(wsId)]) if (this.deps.terminals?.get(key)) this.closeTerminal(key);
+  }
+
   private watchExit(key: string, session: TerminalSession, onExit: (code: number | null) => void): void {
     this.watchers.get(key)?.();
     const off = session.onChange(() => {

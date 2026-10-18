@@ -339,6 +339,12 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGHUP', () => void shutdown()); // terminal window closed
+  // A background task failing (a git call, a config write…) shouldn't kill klaud: say so and carry on.
+  process.on('unhandledRejection', (err) => session.toast(`Something went wrong: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200), 'error'));
+  // Whatever happens, leave the terminal as we found it (no stray mouse codes, normal screen).
+  process.on('exit', () => {
+    if (!shuttingDown) process.stdout.write(MOUSE_OFF + FOCUS_OFF + '\x1b[?1049l');
+  });
   session.start();
   if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => shuttingDown);
   if (demo) {
