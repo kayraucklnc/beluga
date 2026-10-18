@@ -24,7 +24,10 @@ async fn daemon_endpoint(app: tauri::AppHandle) -> Result<daemon::Endpoint, Stri
 /// Start klaud again with these arguments (joining a friend's room from a link): the current
 /// room is left first.
 #[tauri::command]
-async fn restart_daemon(app: tauri::AppHandle, args: Vec<String>) -> Result<daemon::Endpoint, String> {
+async fn restart_daemon(
+    app: tauri::AppHandle,
+    args: Vec<String>,
+) -> Result<daemon::Endpoint, String> {
     daemon::stop(&app);
     daemon::ensure(&app, &args).await
 }
@@ -53,7 +56,9 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
-        .manage(AppState { started: Mutex::new(None) })
+        .manage(AppState {
+            started: Mutex::new(None),
+        })
         .invoke_handler(tauri::generate_handler![daemon_endpoint, restart_daemon])
         .menu(menu::build)
         .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()))
@@ -62,8 +67,15 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(target_os = "macos")]
                 {
-                    use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
-                    let _ = apply_vibrancy(&window, NSVisualEffectMaterial::Sidebar, Some(NSVisualEffectState::FollowsWindowActiveState), None);
+                    use window_vibrancy::{
+                        apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState,
+                    };
+                    let _ = apply_vibrancy(
+                        &window,
+                        NSVisualEffectMaterial::Sidebar,
+                        Some(NSVisualEffectState::FollowsWindowActiveState),
+                        None,
+                    );
                 }
             }
             menu::tray(&handle)?;

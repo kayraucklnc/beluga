@@ -25,6 +25,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -68,3 +70,46 @@ jobs:
           fi
           git tag "v$VERSION"
           git push origin HEAD:main "v$VERSION"
+
+  # The Mac app, the same version, on the GitHub Release (signed and notarized when the Apple
+  # secrets are set: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+  # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID).
+  mac:
+    needs: publish
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.publish.outputs.version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm ci
+        working-directory: packages/mac
+      - name: Use the release's version in the app
+        working-directory: packages/mac
+        run: |
+          VERSION=${{ needs.publish.outputs.version }}
+          node -e "const f='src-tauri/tauri.conf.json';const c=require('./'+f);c.version='$VERSION';require('fs').writeFileSync(f,JSON.stringify(c,null,2))"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+      - name: Bundle klaud's daemon and Node
+        run: node scripts/build-sidecar.mjs --arch arm64
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: packages/mac
+          tagName: v${{ needs.publish.outputs.version }}
+          releaseName: klaud ${{ needs.publish.outputs.version }}
+          releaseBody: 'klaud for macOS (Apple silicon). The terminal app: npm i -g klaudcode'
+          args: --bundles dmg

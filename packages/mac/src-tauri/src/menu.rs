@@ -5,12 +5,21 @@ use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-fn item<R: Runtime>(app: &AppHandle<R>, id: &str, label: &str, keys: Option<&str>) -> tauri::Result<MenuItem<R>> {
+fn item<R: Runtime>(
+    app: &AppHandle<R>,
+    id: &str,
+    label: &str,
+    keys: Option<&str>,
+) -> tauri::Result<MenuItem<R>> {
     MenuItem::with_id(app, id, label, true, keys)
 }
 
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    let about = AboutMetadata { name: Some("klaud".into()), version: Some(app.package_info().version.to_string()), ..Default::default() };
+    let about = AboutMetadata {
+        name: Some("klaud".into()),
+        version: Some(app.package_info().version.to_string()),
+        ..Default::default()
+    };
     let app_menu = Submenu::with_items(
         app,
         "klaud",
@@ -35,7 +44,12 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         true,
         &[
             &item(app, "new-chat", "New Chat", Some("CmdOrCtrl+N"))?,
-            &item(app, "new-worktree", "New Worktree…", Some("CmdOrCtrl+Shift+N"))?,
+            &item(
+                app,
+                "new-worktree",
+                "New Worktree…",
+                Some("CmdOrCtrl+Shift+N"),
+            )?,
             &item(app, "add-project", "Add Project…", Some("CmdOrCtrl+O"))?,
             &PredefinedMenuItem::separator(app)?,
             &item(app, "share-folder", "Share a Folder…", None)?,
@@ -57,25 +71,54 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::paste(app, None)?,
             &PredefinedMenuItem::select_all(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            &item(app, "find", "Search Conversations", Some("CmdOrCtrl+Shift+F"))?,
+            &item(
+                app,
+                "find",
+                "Search Conversations",
+                Some("CmdOrCtrl+Shift+F"),
+            )?,
         ],
     )?;
     let appearance = Submenu::with_items(
         app,
         "Appearance",
         true,
-        &[&item(app, "appearance-system", "Match the System", None)?, &item(app, "appearance-light", "Light", None)?, &item(app, "appearance-dark", "Dark", None)?],
+        &[
+            &item(app, "appearance-system", "Match the System", None)?,
+            &item(app, "appearance-light", "Light", None)?,
+            &item(app, "appearance-dark", "Dark", None)?,
+        ],
     )?;
     let view = Submenu::with_items(
         app,
         "View",
         true,
         &[
-            &item(app, "palette", "Everything You Can Do…", Some("CmdOrCtrl+K"))?,
+            &item(
+                app,
+                "palette",
+                "Everything You Can Do…",
+                Some("CmdOrCtrl+K"),
+            )?,
             &PredefinedMenuItem::separator(app)?,
-            &item(app, "toggle-sidebar", "Toggle Sidebar", Some("Ctrl+CmdOrCtrl+S"))?,
-            &item(app, "toggle-inspector", "Toggle Inspector", Some("Alt+CmdOrCtrl+I"))?,
-            &item(app, "toggle-dock", "Terminal Beside Chat", Some("CmdOrCtrl+J"))?,
+            &item(
+                app,
+                "toggle-sidebar",
+                "Toggle Sidebar",
+                Some("Ctrl+CmdOrCtrl+S"),
+            )?,
+            &item(
+                app,
+                "toggle-inspector",
+                "Toggle Inspector",
+                Some("Alt+CmdOrCtrl+I"),
+            )?,
+            &item(
+                app,
+                "toggle-dock",
+                "Terminal Beside Chat",
+                Some("CmdOrCtrl+J"),
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &appearance,
             &item(app, "zoom-in", "Bigger Text", Some("CmdOrCtrl+="))?,
@@ -104,9 +147,22 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         app,
         "Window",
         true,
-        &[&PredefinedMenuItem::minimize(app, None)?, &PredefinedMenuItem::maximize(app, None)?, &PredefinedMenuItem::separator(app)?, &item(app, "show", "klaud", None)?],
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &item(app, "show", "klaud", None)?,
+        ],
     )?;
-    let help = Submenu::with_items(app, "Help", true, &[&item(app, "help-keys", "Keys and Commands", Some("CmdOrCtrl+/"))?, &item(app, "help-log", "Open the Log", None)?])?;
+    let help = Submenu::with_items(
+        app,
+        "Help",
+        true,
+        &[
+            &item(app, "help-keys", "Keys and Commands", Some("CmdOrCtrl+/"))?,
+            &item(app, "help-log", "Open the Log", None)?,
+        ],
+    )?;
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &go, &window, &help])
 }
 
@@ -127,7 +183,15 @@ pub fn on_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
 
 /// The icon in the menu bar: open klaud, or quit it (leaving the room).
 pub fn tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let menu = Menu::with_items(app, &[&item(app, "show", "Open klaud", None)?, &item(app, "new-chat", "New Chat", None)?, &PredefinedMenuItem::separator(app)?, &item(app, "quit", "Quit klaud", None)?])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &item(app, "show", "Open klaud", None)?,
+            &item(app, "new-chat", "New Chat", None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &item(app, "quit", "Quit klaud", None)?,
+        ],
+    )?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
     TrayIconBuilder::with_id("klaud")
         .icon(icon)
@@ -137,7 +201,11 @@ pub fn tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| on_event(app, event.id().as_ref()))
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } = event {
+            if let TrayIconEvent::DoubleClick {
+                button: MouseButton::Left,
+                ..
+            } = event
+            {
                 if let Some(w) = tray.app_handle().get_webview_window("main") {
                     let _ = w.show();
                     let _ = w.set_focus();

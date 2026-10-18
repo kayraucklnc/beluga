@@ -4,7 +4,7 @@ import path from 'node:path';
 import react from '@vitejs/plugin-react';
 import { type Plugin, defineConfig } from 'vite';
 
-const repo = path.resolve(__dirname, '../..');
+const repo = path.resolve(import.meta.dirname, '../..');
 
 /**
  * In the browser (development, screenshots) there's no Tauri to ask where the daemon is:

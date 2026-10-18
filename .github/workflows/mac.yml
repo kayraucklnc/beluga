@@ -1,0 +1,44 @@
+name: Mac app
+
+# Every pull request: the Mac app's types, its build, its end-to-end tests against the demo, and
+# the native shell compiling.
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: mac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: packages/mac/src-tauri
+      - run: npm ci
+      - run: npm ci
+        working-directory: packages/mac
+      - run: npm run typecheck
+        working-directory: packages/mac
+      - run: npx vite build
+        working-directory: packages/mac
+      - run: npx playwright install --with-deps chromium
+        working-directory: packages/mac
+      - run: npm run e2e
+        working-directory: packages/mac
+        env:
+          CI: '1'
+      - name: The native shell compiles (with placeholders for the bundled daemon)
+        working-directory: packages/mac/src-tauri
+        run: |
+          mkdir -p binaries resources/daemon
+          ln -sf "$(which node)" binaries/node-aarch64-apple-darwin
+          touch resources/daemon/.keep
+          cargo clippy -- -D warnings
