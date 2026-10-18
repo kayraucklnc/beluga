@@ -18,7 +18,11 @@ describe('adding friends without a server', () => {
     const bob = await net.add('bob');
     const invite = await ann.mesh.createInvite();
     expect(invite.link).toMatch(/^klaud:\/\/add#[\w-]{22}$/);
-    expect(invite.code).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+    expect(invite.code).toMatch(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+    expect(invite.codeLink).toBe(`klaud://add?code=${invite.code}`);
+    // The code works for an hour, the link for a day.
+    expect(invite.codeExpiresAt - Date.now()).toBeLessThanOrEqual(60 * 60 * 1000);
+    expect(invite.expiresAt - invite.codeExpiresAt).toBeGreaterThan(22 * 60 * 60 * 1000);
     expect(ann.mesh.summary().invitations).toHaveLength(1);
     const got = await bob.mesh.accept(`here you go: ${invite.link}`);
     expect(got).toEqual({ kind: 'friend', peerId: ann.identity.peerId, name: 'ann' });
@@ -48,12 +52,29 @@ describe('adding friends without a server', () => {
     const fay = await net.add('fay');
     const gus = await net.add('gus');
     await fay.mesh.createInvite();
-    await expect(gus.mesh.accept('ZZZZ-ZZZZ')).rejects.toThrow(/Nobody is waiting/);
+    await expect(gus.mesh.accept('ZZZZ-ZZZZ-ZZZZ')).rejects.toThrow(/Nobody is waiting/);
     await expect(gus.mesh.accept('not an invitation')).rejects.toThrow(/isn’t a klaud invitation/);
     const short = await fay.mesh.createInvite({ ttlMs: 200 });
     await settle(() => !fay.mesh.summary().invitations.some((i) => i.id === short.id));
     await expect(gus.mesh.accept(short.link)).rejects.toThrow(/Nobody is waiting|expired/);
     expect(gus.mesh.summary().friends).toEqual([]);
+  }, 40_000);
+
+  it('stops taking the code after its hour while the link still works', async () => {
+    const kim = await net.add('kim');
+    const lou = await net.add('lou');
+    const invite = await kim.mesh.createInvite({ codeTtlMs: 200 });
+    await new Promise((r) => setTimeout(r, 400));
+    await expect(lou.mesh.accept(invite.code)).rejects.toThrow(/Nobody is waiting|expired/);
+    await expect(lou.mesh.accept(invite.codeLink)).rejects.toThrow(/Nobody is waiting|expired/);
+    expect(await lou.mesh.accept(invite.link)).toMatchObject({ kind: 'friend', name: 'kim' });
+  }, 40_000);
+
+  it('pairs by the code as a link (klaud://add?code=…)', async () => {
+    const mo = await net.add('mo');
+    const ned = await net.add('ned');
+    const invite = await mo.mesh.createInvite();
+    expect(await ned.mesh.accept(invite.codeLink)).toMatchObject({ kind: 'friend', name: 'mo' });
   }, 40_000);
 
   it('pauses an invitation after a burst of wrong proofs (without throwing it away)', async () => {

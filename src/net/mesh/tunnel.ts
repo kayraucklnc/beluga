@@ -15,6 +15,8 @@ import type { LinkMessage } from './wire.js';
 /** Tunnels one Mac relays at once, in total and per link. */
 const MAX_ROUTES = 64;
 const MAX_ROUTES_PER_PEER = 16;
+/** A relayed tunnel nothing went through for this long is dropped (links inside send heartbeats). */
+const ROUTE_IDLE_MS = 5 * 60 * 1000;
 /** Tunnels ending here through one relay at once. */
 const MAX_ENDS_PER_PEER = 16;
 /** Bytes per tunnel frame before base64 (frames stay well under the link's size limit). */
@@ -53,9 +55,15 @@ const keyOf = (peer: string, tid: number, mine: boolean): string => `${peer}:${t
 export class Tunnels {
   private readonly routes = new Map<string, Route>();
   private readonly ends = new Map<string, End>();
+  /** When something last went through each relayed route (by route key). */
+  private readonly used = new Map<string, number>();
+  private readonly sweeper: NodeJS.Timeout;
   private next = 1;
 
-  constructor(private readonly opts: TunnelOptions) {}
+  constructor(private readonly opts: TunnelOptions) {
+    this.sweeper = setInterval(() => this.sweep(), Math.min(ROUTE_IDLE_MS, 60_000));
+    this.sweeper.unref();
+  }
 
   /** Handle a tunnel message from a link; false when it isn't one. */
   handle(from: MeshLink, msg: LinkMessage): boolean {
@@ -77,6 +85,7 @@ export class Tunnels {
         }
         const route = this.routes.get(key);
         if (!route) return true;
+        this.used.set(key, Date.now());
         const onward = this.opts.linkOf(route.peer);
         if (msg.t === 'tun_close' || !onward) this.dropRoute(from.peerId, msg.tid, !msg.o);
         onward?.send(msg.t === 'tun_data' ? { t: 'tun_data', tid: route.tid, o: route.mine, d: msg.d } : { t: 'tun_close', tid: route.tid, o: route.mine });
@@ -112,6 +121,7 @@ export class Tunnels {
   }
 
   close(): void {
+    clearInterval(this.sweeper);
     for (const end of this.ends.values()) end.stream.destroy();
     this.ends.clear();
     this.routes.clear();
@@ -185,6 +195,7 @@ export class Tunnels {
     const rid = this.next++;
     this.routes.set(keyOf(from.peerId, tid, false), { peer: to, tid: rid, mine: true });
     this.routes.set(keyOf(to, rid, true), { peer: from.peerId, tid, mine: false });
+    this.used.set(keyOf(from.peerId, tid, false), Date.now());
     onward.send({ t: 'tun_in', tid: rid, from: from.peerId });
   }
 
@@ -192,6 +203,23 @@ export class Tunnels {
     const key = keyOf(peer, tid, mine);
     const route = this.routes.get(key);
     this.routes.delete(key);
-    if (route) this.routes.delete(keyOf(route.peer, route.tid, route.mine));
+    this.used.delete(key);
+    if (route) {
+      this.routes.delete(keyOf(route.peer, route.tid, route.mine));
+      this.used.delete(keyOf(route.peer, route.tid, route.mine));
+    }
+  }
+
+  /** Drop relayed routes nothing went through lately (both ends are told). */
+  private sweep(): void {
+    const now = Date.now();
+    for (const [key, route] of [...this.routes]) {
+      const back = keyOf(route.peer, route.tid, route.mine);
+      if (now - Math.max(this.used.get(key) ?? 0, this.used.get(back) ?? 0) < ROUTE_IDLE_MS) continue;
+      const [peer = '', tid = '0', mine = '0'] = key.split(':');
+      this.dropRoute(peer, Number(tid), mine === '1');
+      this.opts.linkOf(peer)?.send({ t: 'tun_close', tid: Number(tid), o: mine === '1', reason: 'idle' });
+      this.opts.linkOf(route.peer)?.send({ t: 'tun_close', tid: route.tid, o: route.mine, reason: 'idle' });
+    }
   }
 }

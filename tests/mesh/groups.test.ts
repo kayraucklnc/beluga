@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { groupConversation } from '../../src/net/mesh/views.js';
+import type { MeshLink } from '../../src/net/mesh/link.js';
 import { type Crowd, FAST, type Person, befriend, crowd, settle, texts } from './helpers.js';
 
 let net: Crowd;
@@ -147,4 +148,19 @@ describe('groups without a host', () => {
     await settle(() => nia.group(groupId)?.active === false);
     expect(await nia.mesh.accept(auto.link)).toMatchObject({ kind: 'group', status: 'waiting' });
   }, 90_000);
+
+  it('drops the link of someone who keeps sending forged entries', async () => {
+    const { people, groupId } = await team(['pam', 'quin']);
+    const [pam, quin] = people as [Person, Person];
+    const linkTo = (p: Person, peerId: string): MeshLink => (p.mesh as unknown as { links: { get(id: string): MeshLink } }).links.get(peerId);
+    const link = linkTo(quin, id(pam));
+    const closed = new Promise<number>((resolve) => link.on('close', resolve));
+    const forged = { id: 'ab'.repeat(32), group: groupId, author: id(quin), lamport: 1, parents: ['cd'.repeat(32)], type: 'rename', ts: 1, body: { name: 'x' }, sig: 'AA==' };
+    for (let i = 0; i < 3; i++) link.send({ t: 'g_entries', group: groupId, entries: Array.from({ length: 100 }, () => forged) });
+    expect(await closed).toBe(4029);
+    // They link again (it isn't a ban), and the group still works.
+    await settle(() => pam.group(groupId)?.members.every((m) => m.online));
+    quin.mesh.sendGroup(groupId, 'still here');
+    await settle(() => texts(pam, groupId).includes('still here'));
+  }, 60_000);
 });

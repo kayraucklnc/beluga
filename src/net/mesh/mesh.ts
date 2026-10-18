@@ -197,9 +197,9 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
   // ---- friends
 
-  /** A one-time invitation to be friends (a link and a code; `ttlMs` defaults to a day). */
-  async createInvite(opts: { ttlMs?: number } = {}): Promise<InvitationView> {
-    const record = newInvitation('friend', opts.ttlMs ? { ttlMs: opts.ttlMs } : {});
+  /** A one-time invitation to be friends: a link (a day, or `ttlMs`) and a code (an hour, or less). */
+  async createInvite(opts: { ttlMs?: number; codeTtlMs?: number } = {}): Promise<InvitationView> {
+    const record = newInvitation('friend', { ...(opts.ttlMs ? { ttlMs: opts.ttlMs } : {}), ...(opts.codeTtlMs ? { codeTtlMs: opts.codeTtlMs } : {}) });
     await this.openInvitation(record);
     this.emit('change');
     return invitationView(record);
@@ -212,7 +212,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
   /** Use a friend or group invitation (a klaud:// link or a code). */
   async accept(text: string): Promise<Accepted> {
     const ticket = parseTicket(text);
-    if (!ticket) throw new Error('That isn’t a klaud invitation: paste the klaud:// link or type the code (like K7QM-4XPA)');
+    if (!ticket) throw new Error('That isn’t a klaud invitation: paste the klaud:// link or type the code (like K7QM-4XPA-R2TD)');
     const result = await pairWith(this.node, this.keys.keyPair, this.profile, ticket, this.timing.pairTimeoutMs);
     if (result.profile.card.peerId === this.peerId) throw new Error("That's your own invitation");
     if (result.kind === 'friend') {

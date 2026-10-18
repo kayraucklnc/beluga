@@ -2,7 +2,7 @@ import type { Dm, DmStatus } from './dms.js';
 import type { FriendRecord } from './friends.js';
 import type { GroupEngine, ReadMessage } from './groups/engine.js';
 import type { JoinRequest } from './groups/joins.js';
-import { type InvitationRecord, formatCode, linkOf } from './invitations.js';
+import { type InvitationRecord, codeLinkOf, formatCode, linkOf } from './invitations.js';
 import type { MeshLink } from './link.js';
 import { ONLINE } from './presence.js';
 import { type FriendView, type GroupView, type InvitationView, type MessageView, type PersonView, type Presence, dmConversation, groupConversation } from './views.js';
@@ -77,4 +77,6 @@ export const invitationView = (r: InvitationRecord): InvitationView => ({
   link: linkOf(r),
   expiresAt: r.expiresAt,
   uses: r.uses,
+  codeExpiresAt: r.codeExpiresAt,
+  codeLink: codeLinkOf(r),
 });

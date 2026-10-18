@@ -12,10 +12,16 @@ describe('invitations', () => {
     expect(parseTicket(`klaud://add#${inv.secret}`)).toEqual({ via: 'link', secret: inv.secret });
     expect(parseTicket(`join me: klaud://join#${inv.secret} thanks`)).toEqual({ via: 'link', secret: inv.secret });
     expect(parseTicket(formatCode(inv.code))).toEqual({ via: 'code', code: inv.code });
-    expect(parseTicket(' k7qm 4xpa ')).toEqual({ via: 'code', code: 'K7QM4XPA' });
+    expect(parseTicket(' k7qm 4xpa r2td ')).toEqual({ via: 'code', code: 'K7QM4XPAR2TD' });
+    expect(parseTicket('K7QM4XPA-R2TD')).toEqual({ via: 'code', code: 'K7QM4XPAR2TD' });
+    // The code as a link, as the app writes it or as someone types it.
+    expect(parseTicket('klaud://add?code=K7QM-4XPA-R2TD')).toEqual({ via: 'code', code: 'K7QM4XPAR2TD' });
+    expect(parseTicket('open klaud://join?code=k7qm%204xpa%20r2td please')).toEqual({ via: 'code', code: 'K7QM4XPAR2TD' });
+    expect(parseTicket('klaud://add?code=K7QM-4XPA')).toBeUndefined();
+    expect(parseTicket('K7QM-4XPA')).toBeUndefined(); // the old 8-character codes are gone
     // Letters people confuse with digits are read as the digits.
-    expect(parseTicket('OIL0-0000')).toEqual({ via: 'code', code: '01100000' });
-    expect(parseTicket('K7QM-4XP')).toBeUndefined();
+    expect(parseTicket('OIL0-0000-0000')).toEqual({ via: 'code', code: '011000000000' });
+    expect(parseTicket('K7QM-4XPA-R2T')).toBeUndefined();
     expect(parseTicket('klaud://add#short')).toBeUndefined();
     expect(parseTicket('hello world')).toBeUndefined();
   });

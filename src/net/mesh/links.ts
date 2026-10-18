@@ -27,6 +27,9 @@ export interface Timing {
   readonly pairTimeoutMs: number;
 }
 
+/** Two connections opened within this long of each other count as a simultaneous dial. */
+const SIMULTANEOUS_MS = 3_000;
+
 export const DEFAULT_TIMING: Timing = { dialTimeoutMs: 15_000, backoffMinMs: 1_000, backoffMaxMs: 60_000, pingMs: 10_000, syncMs: 30_000, pairTimeoutMs: 20_000 };
 
 /** Who your Mac knows on the network (friends, people in your groups, groups you're joining). */
@@ -228,9 +231,12 @@ export class LinkManager {
     if (!peerId || this.closed || !this.adopt(socket, peerId, false, 'direct')) socket.terminate();
   }
 
-  /** Which of two links to the same person both sides keep: direct over relayed, then the one dialed by the lower address. */
+  /** Which of two links to the same person both sides keep: direct over relayed, a reconnection over a stale link, then the one dialed by the lower address. */
   private preferred(a: MeshLink, b: MeshLink): MeshLink {
     if (a.via !== b.via) return a.via === 'direct' ? a : b;
+    // Not a simultaneous dial: the other side came back (restarted, or its old link died), so the
+    // newer one wins on both sides instead of the stale one blocking it until its heartbeat fails.
+    if (Math.abs(a.openedAt - b.openedAt) > SIMULTANEOUS_MS) return a.openedAt > b.openedAt ? a : b;
     const dialer = (l: MeshLink): string => (l.outgoing ? this.myAddress : (this.opts.contacts.addressOf(l.peerId) ?? ''));
     if (dialer(a) !== dialer(b)) return dialer(a) < dialer(b) ? a : b;
     return a.openedAt >= b.openedAt ? a : b;

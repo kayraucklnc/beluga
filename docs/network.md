@@ -21,10 +21,12 @@ observers can tell when that address is online.
 
 ## Adding a friend
 
-An invitation is a one-time link (`klaud://add#<22 chars>`, 128 bits) and a short code
-(`K7QM-4XPA`, 40 bits, Crockford base32). Neither contains your address: the inviter listens on a
-temporary key pair made from the secret (HKDF for the link, scrypt N=2^15 for the code), so only
-someone holding it can find you. On that connection:
+An invitation is a one-time link (`klaud://add#<22 chars>`, 128 bits, works for 24 h) and a
+short code (`K7QM-4XPA-R2TD`, 60 bits, works for 1 h). The code can also be sent as a link,
+`klaud://add?code=K7QM-4XPA-R2TD`. Codes are typed loosely: any case, dashes or spaces anywhere,
+O for 0, I or L for 1. Neither form contains your address: the inviter listens on a temporary key
+pair made from the secret (HKDF for the link; scrypt for the code, see below), so only someone
+holding it can find you. On that connection:
 
 ```
 invitee → pair_hello { profile, proof }   proof = HMAC(auth, "invitee" ‖ Noise handshake hash ‖ profile)
@@ -34,15 +36,26 @@ inviter → pair_ok    { profile, proof }   (or pair_refused)
 The proofs bind both cards to that one connection (no replay, no one in the middle without the
 secret), and the invitee must dial with the address on its card. Friend invitations are
 single-use and last 24 h; five bad proofs in a minute pause an invitation for the rest of it.
-Group invitations (`klaud://join#…`) work the same, are multi-use for 7 days, and either let
-people in at once (`auto`) or leave a request for an admin (`network.groups.approve`).
+Group invitations (`klaud://join#…`, `klaud://join?code=…`) work the same, are multi-use (the
+link for 7 days, the code for an hour), and either let people in at once (`auto`) or leave a
+request for an admin (`network.groups.approve`). Someone who was removed always needs an admin.
+
+**Why guessing a code is infeasible.** The code's listening key is visible to DHT nodes, so an
+attacker could guess codes offline until one produces that key, then pair first. Each guess costs
+one scrypt with N=2^16, r=8, p=1: 64 MiB of memory and about 0.1 s on a Mac. There are 2^60
+(≈1.2·10^18) codes; finding one takes 2^59 guesses on average. Even granting a large GPU
+10^5 such guesses per second (memory-bound: about a thousand 64 MiB instances at once), that is
+≈5.8·10^12 GPU-seconds, about 1.6 billion GPU-hours, and the code dies after one hour: it would
+take over a billion GPUs. Precomputing a table isn't possible either (2^60 entries of 32 bytes,
+about 37 exabytes). The link (128 bits, no scrypt needed) is out of reach entirely.
 
 ## Links
 
 The daemon keeps one Noise link to every friend and group member who is online: it dials them
 (backing off from 1 s to 60 s while they're away) and its firewall accepts only addresses it
 knows. Two Macs dialing each other at once keep the same connection (direct over relayed, then
-the one dialed by the lower address). Each link has a heartbeat (dropped after 3 missed),
+the one dialed by the lower address); a reconnection after a restart replaces the stale link
+at once. A relayed link is retried directly now and then and replaced once that works. Each link has a heartbeat (dropped after 3 missed),
 2 MB frames and token-bucket limits on messages and bytes. Messages are versioned JSON (`hello` carries
 `proto: 1`; unknown kinds are ignored): `hello`, `presence`, `dm`/`dm_ack`,
 `g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`.
@@ -53,7 +66,8 @@ forwards bytes; inside, the two ends run their own Noise handshake with their ad
 (`@hyperswarm/secret-stream`), so the relay sees ciphertext and can't pose as either side. It
 does learn that the two of you talk, and how much. HyperDHT's own blind relays (`relayThrough`)
 were not used: they can't be exercised on a local test network, while these tunnels are tested.
-Limits: 16 tunnels per link, 64 per relay.
+Limits: 16 tunnels per link, 64 per relay, 16 ending at you through one relay; relayed tunnels
+nothing went through for 5 minutes are dropped.
 
 ## Groups
 
@@ -75,7 +89,9 @@ A group is a signed, append-only log kept on every member's Mac (`~/.klaud/group
 - sync: on link up and every 30 s each side sends its heads; whoever lacks something sends its
   own heads and gets what it's missing oldest first, in batches of 200 entries / 512 KB. New
   entries are passed on to every linked member (gossip), so they reach people you can't link to.
-  Someone removed is only sent entries up to their removal.
+  Someone removed is only sent entries up to their removal. Each person gets at most 10 catch-up
+  answers a second (bursts of 60), and a link that delivers more than 200 forged or malformed
+  entries is dropped (they may link again).
 
 **Encryption: sender keys.** Each member sends with a chain key sealed for each current member
 (ephemeral X25519 + HKDF + AES-256-GCM) in a `sender_key` entry. Every message gets its own key
@@ -105,9 +121,6 @@ screen's job (`network.presence.set`).
   don't count (even a message written offline at the same moment). Someone removed while
   offline learns of it from any member who still accepts them (removed people may call in for
   7 days).
-- The 8-character code is a short secret: someone watching the DHT for the code's key could try
-  to brute-force it (scrypt makes each guess slow) during its 24 hours. The link is 128 bits;
-  share it when you can.
 - A burst of wrong proofs pauses an invitation for a minute rather than burning it, so nobody
   can kill your invitation, but they can delay it.
 - Open invitations (their link and code) are in the shared state, so any screen attached to

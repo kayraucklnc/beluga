@@ -20,7 +20,7 @@ import { PROTO, type PairMessage, parsePair } from './wire.js';
 
 const MAX_PAIR_BYTES = 64 * 1024;
 
-const NOT_FOUND = "Nobody is waiting for that invitation. Check the code, or ask for a new one (they expire after a day).";
+const NOT_FOUND = 'Nobody is waiting for that invitation. Check the code, or ask for a new one (codes work for an hour, links for a day).';
 
 export type PairingDecision =
   | { readonly ok: true; readonly kind: 'friend' }
@@ -39,8 +39,9 @@ export interface PairingHostOptions {
 }
 
 interface Listening {
-  readonly servers: readonly Server[];
-  readonly expiry: NodeJS.Timeout;
+  /** The link's server, then the code's while it lasts (it's closed after an hour). */
+  readonly servers: Server[];
+  readonly timers: readonly NodeJS.Timeout[];
 }
 
 const send = (socket: MessageSocket, msg: PairMessage): void => socket.send(JSON.stringify(msg));
@@ -55,15 +56,13 @@ export class PairingHost {
 
   async listen(record: InvitationRecord): Promise<void> {
     const DHTClass = (await import('hyperdht')).default;
-    const tickets: Ticket[] = [
-      { via: 'link', secret: record.secret },
-      { via: 'code', code: record.code },
-    ];
+    const codeLive = record.codeExpiresAt > Date.now();
+    const tickets: Ticket[] = [{ via: 'link', secret: record.secret }, ...(codeLive ? [{ via: 'code' as const, code: record.code }] : [])];
     const servers: Server[] = [];
     try {
       for (const ticket of tickets) {
         const secrets = await pairingSecrets(ticket);
-        const server = this.opts.node.createServer({}, (stream: NoiseSocket) => this.serve(record.id, secrets.auth, stream));
+        const server = this.opts.node.createServer({}, (stream: NoiseSocket) => this.serve(record.id, ticket.via, secrets.auth, stream));
         servers.push(server);
         await server.listen(DHTClass.keyPair(secrets.seed));
       }
@@ -73,7 +72,20 @@ export class PairingHost {
     }
     const expiry = setTimeout(() => void this.stop(record.id), Math.max(0, record.expiresAt - Date.now()));
     expiry.unref();
-    this.open.set(record.id, { servers, expiry });
+    const timers = [expiry];
+    const codeServer = codeLive ? servers[1] : undefined;
+    if (codeServer) {
+      // The code stops working after its hour; the link carries on.
+      const codeExpiry = setTimeout(() => {
+        const l = this.open.get(record.id);
+        if (l) l.servers.splice(l.servers.indexOf(codeServer), 1);
+        void codeServer.close().catch(() => undefined);
+        this.opts.onChange();
+      }, Math.max(0, record.codeExpiresAt - Date.now()));
+      codeExpiry.unref();
+      timers.push(codeExpiry);
+    }
+    this.open.set(record.id, { servers, timers });
   }
 
   async stop(id: string): Promise<void> {
@@ -84,7 +96,7 @@ export class PairingHost {
     }
     this.open.delete(id);
     this.failures.delete(id);
-    clearTimeout(l.expiry);
+    for (const t of l.timers) clearTimeout(t);
     this.opts.book.remove(id);
     this.opts.onChange();
     await Promise.all(l.servers.map((s) => s.close().catch(() => undefined)));
@@ -93,11 +105,11 @@ export class PairingHost {
   async close(): Promise<void> {
     const all = [...this.open.values()];
     this.open.clear();
-    for (const l of all) clearTimeout(l.expiry);
+    for (const l of all) for (const t of l.timers) clearTimeout(t);
     await Promise.all(all.flatMap((l) => l.servers.map((s) => s.close().catch(() => undefined))));
   }
 
-  private serve(id: string, auth: Buffer, stream: NoiseSocket): void {
+  private serve(id: string, via: Ticket['via'], auth: Buffer, stream: NoiseSocket): void {
     const socket = fromStream(stream, { maxBytes: MAX_PAIR_BYTES, open: true });
     socket.on('error', () => undefined);
     const timer = setTimeout(() => socket.terminate(), this.opts.timeoutMs);
@@ -117,7 +129,7 @@ export class PairingHost {
         verifyCard(msg.profile.card) &&
         msg.profile.card.address === stream.remotePublicKey.toString('hex');
       const record = this.opts.book.get(id);
-      if (!record) return refuse('That invitation has expired');
+      if (!record || (via === 'code' && record.codeExpiresAt <= Date.now())) return refuse('That invitation has expired');
       const recent = (this.failures.get(id) ?? []).filter((t) => Date.now() - t < FAILURE_WINDOW_MS);
       if (recent.length >= MAX_FAILURES) return refuse('Too many tries with that invitation; wait a minute and try again');
       if (!proven || msg?.t !== 'pair_hello' || !hh) {

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { canonical } from '../files.js';
 import type { InvitationRecord } from '../invitations.js';
 import type { MeshKeys } from '../keys.js';
-import type { MeshLink } from '../link.js';
+import { Bucket, CLOSE, type MeshLink } from '../link.js';
 import type { PairResult, PairingDecision } from '../pairing.js';
 import type { Entry, Profile } from '../schemas.js';
 import type { LinkMessage } from '../wire.js';
@@ -29,6 +29,11 @@ const MAX_PROBES_PER_PEER = 4;
 const PROBE_TTL_MS = 2 * 60 * 1000;
 /** The most groups one Mac keeps. */
 const MAX_GROUPS = 500;
+/** Catch-up requests one person may make (each one can mean a 512 KB answer): per second, and in a burst. */
+const SYNC_RATE = 10;
+const SYNC_BURST = 60;
+/** Bad entries someone may send before their link is dropped. */
+const MAX_REJECTED = 200;
 
 interface Probe {
   readonly engine: GroupEngine;
@@ -55,6 +60,8 @@ export class GroupHub {
   /** Groups someone says you're in, being fetched before they're kept. */
   private readonly probes = new Map<string, Probe>();
   readonly joins: Joins;
+  private readonly syncBudget = new Map<string, Bucket>();
+  private readonly rejectedBy = new Map<string, number>();
 
   constructor(private readonly opts: GroupHubOptions) {
     this.joins = new Joins(path.join(opts.dir, 'joins.json'));
@@ -220,6 +227,13 @@ export class GroupHub {
   private serveSync(link: MeshLink, groupId: string, heads: readonly string[]): void {
     const engine = this.engines.get(groupId);
     if (!engine || !this.mayHear(engine, link.peerId)) return;
+    let budget = this.syncBudget.get(link.peerId);
+    if (!budget) {
+      budget = new Bucket(SYNC_RATE, SYNC_BURST);
+      this.syncBudget.set(link.peerId, budget);
+    }
+    // Over budget: skip this one (they ask again on the next round).
+    if (!budget.take()) return;
     const removal = engine.isMember(link.peerId) ? undefined : engine.model?.removed.get(link.peerId)?.id;
     const { entries, more } = engine.log.missingFor(heads, BATCH, removal);
     let bytes = 0;
@@ -231,7 +245,16 @@ export class GroupHub {
     // A group you don't have yet may be one you were just added to: fetch it (kept only if you're in it).
     const engine = this.engines.get(groupId) ?? this.probe(groupId, link.peerId);
     if (!engine) return;
-    const { added } = engine.ingest(raws);
+    const { added, rejected } = engine.ingest(raws);
+    if (rejected) {
+      const bad = (this.rejectedBy.get(link.peerId) ?? 0) + rejected;
+      this.rejectedBy.set(link.peerId, bad);
+      if (bad > MAX_REJECTED) {
+        this.rejectedBy.delete(link.peerId);
+        link.close(CLOSE.flooding, 'too many bad entries');
+        return;
+      }
+    }
     if (more || engine.log.missing().length) link.send({ t: 'g_sync', group: groupId, heads: engine.log.heads().slice(0, 64) });
     if (!added.length) return;
     if (this.probes.get(groupId)?.engine === engine) {
