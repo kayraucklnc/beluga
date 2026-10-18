@@ -123,7 +123,7 @@ function useShortcuts() {
       } else if (cmd && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         actions.run({ type: 'view', view: { kind: 'search' } });
-      } else if (state.approvals[0] && e.ctrlKey && !e.metaKey && ['y', 'n', 'a'].includes(e.key)) {
+      } else if (state.approvals[0] && e.ctrlKey && !e.metaKey && ['y', 'n', 'a'].includes(e.key) && !typingIn(e.target)) {
         e.preventDefault();
         void client.api.host.answerApproval(e.key === 'y' ? 'yes' : e.key === 'n' ? 'no' : 'always', state.approvals[0].id);
       }
@@ -160,6 +160,17 @@ function useSettingsWindow() {
       }),
     [],
   );
+}
+
+
+/**
+ * Typing where ^A, ^N and ^Y mean line editing (a terminal, a field, a box with text in it), so
+ * they don't answer an approval. An empty message box still lets them through.
+ */
+function typingIn(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLTextAreaElement && !target.closest('.xterm')) return target.value !== '';
+  return target.isContentEditable || target.closest('input, select, .xterm') !== null;
 }
 
 export function App() {

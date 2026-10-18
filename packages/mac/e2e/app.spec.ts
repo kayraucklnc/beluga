@@ -83,3 +83,25 @@ test("opens a person's menu and the same choices as the terminal app", async ({ 
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();
 });
+
+test('opens and closes shells without them coming back', async ({ page }) => {
+  await sidebar(page).getByRole('button', { name: 'Terminal', exact: true }).click();
+  const shells = page.getByRole('tab', { name: /^Shell \d+/ });
+  await expect(shells.first()).toBeVisible();
+  await page.getByRole('button', { name: 'New shell' }).click();
+  await expect(shells).toHaveCount(2);
+  await page.locator('.xterm').click();
+  await page.keyboard.type('echo second-$((6*7))\n');
+  await expect(page.getByText('second-42')).toBeVisible({ timeout: 15_000 });
+  // Closing the one shown moves to the other, and it stays closed.
+  await shells.nth(1).getByRole('button', { name: /^Close/ }).click();
+  await expect(shells).toHaveCount(1);
+  await page.waitForTimeout(1500);
+  await expect(shells).toHaveCount(1);
+  await shells.first().getByRole('button', { name: /^Close/ }).click();
+  await expect(page.getByText('No shells open')).toBeVisible();
+  await page.waitForTimeout(1500);
+  await expect(shells).toHaveCount(0);
+  await page.getByRole('button', { name: 'New shell' }).last().click();
+  await expect(shells).toHaveCount(1);
+});

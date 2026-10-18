@@ -74,3 +74,12 @@
   right: 16px;
   bottom: 16px;
 }
+.none {
+  flex: 1;
+  display: grid;
+  place-items: center;
+}
+.closeTab:focus-visible,
+.tabOn .closeTab {
+  opacity: 1;
+}

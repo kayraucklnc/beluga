@@ -1,50 +1,54 @@
 import { useRef } from 'react';
-import { globalShellDir, globalShellId, globalShellNumber, isGlobalShell, runId, setupId, shellId } from '@klaud/shared/terminal-keys.js';
+import { runId, setupId, shellId } from '@klaud/shared/terminal-keys.js';
 import { Dot, IconButton, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { useGlobalShells } from '../lib/shells.js';
 import { mod } from '../lib/system.js';
+import { NoShells, ShellTabs } from './TerminalView.js';
 import { Xterm } from './Xterm.js';
 import s from './dock.module.css';
 
-/** The terminal this conversation goes with: the workspace's own shell (or its setup/run), else one of your shells. */
-function useDockTerminal(): { key: string; tabs: Array<{ key: string; label: string }>; start: (size: { cols: number; rows: number }) => void } {
+/** A workspace's own terminals: its shell, and its setup and run while they exist. */
+function useWorkspaceTerminal(wsId: string): { key: string; tabs: Array<{ key: string; label: string }>; start: (size: { cols: number; rows: number }) => void } {
   const api = useApi();
-  const state = useApp((st) => st);
+  const terminals = useApp((st) => st.terminals);
   const picked = useUi((u) => u.termKey);
-  const view = state.view;
-  if (view.kind === 'workspace') {
-    const keys = [shellId(view.id), setupId(view.id), runId(view.id)];
-    const key = picked && keys.includes(picked) && picked in state.terminals ? picked : shellId(view.id);
-    const tabs = keys.filter((k) => k in state.terminals || k === shellId(view.id)).map((k) => ({ key: k, label: k === shellId(view.id) ? 'Shell' : k.endsWith(':setup') ? 'Setup' : 'Run' }));
-    return { key, tabs, start: (size) => (key === shellId(view.id) ? void api.terminals.shell(view.id, size) : undefined) };
-  }
-  const globals = Object.keys(state.terminals).filter(isGlobalShell).sort((a, b) => globalShellNumber(a) - globalShellNumber(b));
-  const key = picked && isGlobalShell(picked) ? picked : (globals[0] ?? globalShellId(1));
-  const dir = globalShellDir(state.projects, state.tabs, state.home, state.home);
-  const tabs = [...new Set([...globals, key])].map((k, i) => ({ key: k, label: `Shell ${i + 1}` }));
-  return { key, tabs, start: (size) => void api.terminals.global(key, dir, size) };
+  const keys = [shellId(wsId), setupId(wsId), runId(wsId)];
+  const key = picked && keys.includes(picked) && picked in terminals ? picked : shellId(wsId);
+  const tabs = keys.filter((k) => k in terminals || k === shellId(wsId)).map((k) => ({ key: k, label: k === shellId(wsId) ? 'Shell' : k.endsWith(':setup') ? 'Setup' : 'Run' }));
+  return { key, tabs, start: (size) => (key === shellId(wsId) ? void api.terminals.shell(wsId, size) : undefined) };
 }
 
 /** A terminal docked next to (or under) the chat, so you can watch it and type in it while you talk to Claude. */
 export function DockedTerminal() {
-  const { ui } = useKlaud();
+  const api = useApi();
   const actions = useActions();
   const prefs = usePrefs();
-  const state = useApp((st) => st);
-  const { key, tabs, start } = useDockTerminal();
-  const running = (k: string): boolean => k in state.terminals && !(k in state.termExits);
-  const view = state.view;
+  const { ui } = useKlaud();
+  const view = useApp((st) => st.view);
+  const terminals = useApp((st) => st.terminals);
+  const termExits = useApp((st) => st.termExits);
+  const shells = useGlobalShells();
+  const ws = useWorkspaceTerminal(view.kind === 'workspace' ? view.id : '');
+  const inWorkspace = view.kind === 'workspace';
+  const key = inWorkspace ? ws.key : shells.key;
+  const start = inWorkspace ? ws.start : (size: { cols: number; rows: number }) => key && void api.terminals.global(key, shells.dir, size);
+  const running = (k: string): boolean => k in terminals && !(k in termExits);
   return (
     <section className={s.dock} aria-label="Terminal">
       <div className={s.bar}>
-        {tabs.map((t) => (
-          <button key={t.key} type="button" className={cx(s.tab, t.key === key && s.tabOn)} onClick={() => ui.patch({ termKey: t.key })}>
-            <Dot tone={running(t.key) ? 'ok' : 'muted'} />
-            {t.label}
-          </button>
-        ))}
+        {inWorkspace ? (
+          ws.tabs.map((t) => (
+            <button key={t.key} type="button" className={cx(s.tab, t.key === key && s.tabOn)} onClick={() => ui.patch({ termKey: t.key })}>
+              <Dot tone={running(t.key) ? 'ok' : 'muted'} />
+              {t.label}
+            </button>
+          ))
+        ) : (
+          <ShellTabs shells={shells} />
+        )}
         <span className={s.flex} />
         <IconButton icon={prefs.dock === 'right' ? 'chevronDown' : 'chevronRight'} label={prefs.dock === 'right' ? 'Move it under the chat' : 'Move it beside the chat'} onClick={() => setPrefs({ dock: prefs.dock === 'right' ? 'bottom' : 'right' })} />
         <IconButton
@@ -57,7 +61,7 @@ export function DockedTerminal() {
         />
         <IconButton icon="x" label="Hide the terminal" keys={`${mod()}J`} onClick={() => setPrefs({ dock: 'off' })} />
       </div>
-      <Xterm key={`${key}:${key in state.termExits ? 'x' : 'live'}`} termKey={key} start={start} focus={false} />
+      {key ? <Xterm key={`${key}:${key in termExits ? 'x' : 'live'}`} termKey={key} start={start} focus={false} /> : <NoShells open={shells.open} />}
     </section>
   );
 }

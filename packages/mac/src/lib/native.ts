@@ -75,12 +75,20 @@ export function useNative(client: SocketClient, ui: UiStore, actions: Actions, o
     let alive = true;
     void import('@tauri-apps/api/event').then(async ({ listen }) => {
       const a = await listen<string>('menu', (e) => runMenuItem(e.payload, client, ui, actions));
-      const b = await listen<string>('deep-link', (e) => {
-        const invite = inviteOf(e.payload);
-        if (invite) onInvite(invite);
-      });
+      // The same link can come both ways (live and from the launch buffer): handle it once.
+      const handled = new Set<string>();
+      const open = (url: string): void => {
+        const invite = inviteOf(url);
+        if (!invite || handled.has(url)) return;
+        handled.add(url);
+        onInvite(invite);
+      };
+      const b = await listen<string>('deep-link', (e) => open(e.payload));
       if (alive) off = [a, b];
       else [a, b].forEach((f) => f());
+      // A link that launched the app arrived before anyone was listening.
+      const { invoke } = await import('@tauri-apps/api/core');
+      if (alive) for (const url of await invoke<string[]>('take_pending_links')) open(url);
     });
     return () => {
       alive = false;

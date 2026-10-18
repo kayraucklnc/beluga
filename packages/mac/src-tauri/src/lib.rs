@@ -7,13 +7,22 @@
 mod daemon;
 mod menu;
 
+use std::process::Child;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
 
-/// The daemon this app started (it stops it on quit), if any.
+/// What the app keeps track of while it runs.
 pub struct AppState {
-    pub started: Mutex<Option<u32>>,
+    /// Held while klaud is started or restarted, so two requests never start two daemons.
+    pub lock: tokio::sync::Mutex<()>,
+    /// The daemon this app started (it stops it on quit), if any.
+    pub child: Mutex<Option<Child>>,
+    /// Links that arrived before the window was listening.
+    pub pending_links: Mutex<Vec<String>>,
+    /// Whether the window has asked for those links yet.
+    pub links_taken: AtomicBool,
 }
 
 #[tauri::command]
@@ -22,24 +31,38 @@ async fn daemon_endpoint(app: tauri::AppHandle) -> Result<daemon::Endpoint, Stri
 }
 
 /// Start klaud again with these arguments (joining a friend's room from a link): the current
-/// room is left first.
+/// room is left first. Only `["join", "<invite link>"]` is accepted.
 #[tauri::command]
 async fn restart_daemon(
     app: tauri::AppHandle,
     args: Vec<String>,
 ) -> Result<daemon::Endpoint, String> {
-    daemon::stop(&app);
-    daemon::ensure(&app, &args).await
+    daemon::restart(&app, &args).await
+}
+
+/// The klaud:// links that opened the app before the window was ready to hear about them
+/// (handed over once).
+#[tauri::command]
+fn take_pending_links(state: tauri::State<'_, AppState>) -> Vec<String> {
+    state.links_taken.store(true, Ordering::SeqCst);
+    std::mem::take(&mut *daemon::locked(&state.pending_links))
 }
 
 /// What the menu-bar icon says: how many things wait for you, and how many Claudes are working.
 #[tauri::command]
 fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32) {
     if let Some(tray) = app.tray_by_id("klaud") {
-        let _ = tray.set_title(if waiting > 0 { Some(waiting.to_string()) } else { None });
+        let _ = tray.set_title(if waiting > 0 {
+            Some(waiting.to_string())
+        } else {
+            None
+        });
         let tip = match (waiting, working) {
             (0, 0) => "klaud".to_string(),
-            (0, w) => format!("klaud · {w} Claude{} working", if w == 1 { "" } else { "s" }),
+            (0, w) => format!(
+                "klaud · {w} Claude{} working",
+                if w == 1 { "" } else { "s" }
+            ),
             (n, 0) => format!("klaud · {n} waiting for you"),
             (n, w) => format!("klaud · {n} waiting for you · {w} working"),
         };
@@ -58,23 +81,27 @@ fn focus_main(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        // A klaud:// link opened while klaud runs is passed on to the link handler below.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             focus_main(app);
-            // A klaud:// link opened while klaud was running arrives here.
-            if let Some(url) = args.iter().find(|a| a.starts_with("klaud://")) {
-                let _ = app.emit("deep-link", url.clone());
-            }
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(AppState {
-            started: Mutex::new(None),
+            lock: tokio::sync::Mutex::new(()),
+            child: Mutex::new(None),
+            pending_links: Mutex::new(Vec::new()),
+            links_taken: AtomicBool::new(false),
         })
-        .invoke_handler(tauri::generate_handler![daemon_endpoint, restart_daemon, set_tray_status])
+        .invoke_handler(tauri::generate_handler![
+            daemon_endpoint,
+            restart_daemon,
+            set_tray_status,
+            take_pending_links
+        ])
         .menu(menu::build)
         .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()))
         .setup(|app| {
@@ -99,6 +126,12 @@ pub fn run() {
             app.deep_link().on_open_url(move |event| {
                 for url in event.urls() {
                     focus_main(&links);
+                    // Until the window has asked, keep the link for it: it can't hear us yet.
+                    if let Some(state) = links.try_state::<AppState>() {
+                        if !state.links_taken.load(Ordering::SeqCst) {
+                            daemon::locked(&state.pending_links).push(url.to_string());
+                        }
+                    }
                     let _ = links.emit("deep-link", url.to_string());
                 }
             });

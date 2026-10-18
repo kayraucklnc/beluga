@@ -1,9 +1,10 @@
-import { globalShellDir, globalShellId, globalShellNumber, isGlobalShell, runId, setupId, shellId } from '@klaud/shared/terminal-keys.js';
+import { runId, setupId, shellId } from '@klaud/shared/terminal-keys.js';
 import { findWorkspace } from '@klaud/ui/workspace-models.js';
 import { Icon } from '../components/Icon.js';
-import { Button, Dot, IconButton, Tip, cx } from '../components/ui.js';
+import { Button, Dot, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { type GlobalShells, useGlobalShells } from '../lib/shells.js';
 import s from './terminal.module.css';
 import { Xterm } from './Xterm.js';
 
@@ -14,6 +15,7 @@ export function TerminalView() {
   const { ui } = useKlaud();
   const state = useApp((st) => st);
   const picked = useUi((u) => u.termKey);
+  const shells = useGlobalShells();
   const view = state.view;
   const { terminals, termExits } = state;
   const running = (k: string): boolean => k in terminals && !(k in termExits);
@@ -73,37 +75,56 @@ export function TerminalView() {
     );
   }
 
-  const globals = Object.keys(terminals).filter(isGlobalShell).sort((a, b) => globalShellNumber(a) - globalShellNumber(b));
-  const key = picked && isGlobalShell(picked) ? picked : (globals[0] ?? globalShellId(1));
-  const tabs = [...new Set([...globals, key])];
-  const dir = globalShellDir(state.projects, state.tabs, state.home, state.home);
+  const { key, dir } = shells;
   const shown = state.home && dir.startsWith(state.home) ? `~${dir.slice(state.home.length)}` : dir;
   return (
     <div className={s.wrap}>
       <div className={s.bar}>
-        {tabs.map((k, i) => (
-          <span key={k} className={cx(s.tab, k === key && s.tabOn)} role="button" tabIndex={0} onClick={() => ui.patch({ termKey: k })}>
-            {running(k) ? <Dot tone="ok" /> : <Dot tone="muted" />}
-            Shell {i + 1}
-            {k in terminals ? (
-              <button type="button" className={s.closeTab} aria-label="Close this shell" onClick={(e) => (e.stopPropagation(), void api.terminals.close(k))}>
-                <Icon name="x" size={9} />
-              </button>
-            ) : null}
-          </span>
-        ))}
-        <IconButton icon="plus" label="New shell" onClick={() => ui.patch({ termKey: globalShellId(Math.max(0, ...globals.map(globalShellNumber)) + 1) })} />
+        <ShellTabs shells={shells} />
         <span className={s.flex} />
         <span className={s.dir}>{shown}</span>
       </div>
-      <Xterm key={`${key}:${key in termExits ? 'x' : 'live'}`} termKey={key} start={(size) => void api.terminals.global(key, dir, size)} />
-      {key in termExits ? (
-        <div className={s.restart}>
-          <Button size="small" onClick={() => void api.terminals.global(key, dir)}>
-            Start it again
-          </Button>
-        </div>
-      ) : null}
+      {key ? (
+        <>
+          <Xterm key={`${key}:${key in termExits ? 'x' : 'live'}`} termKey={key} start={(size) => void api.terminals.global(key, dir, size)} />
+          {key in termExits ? (
+            <div className={s.restart}>
+              <Button size="small" onClick={() => void api.terminals.global(key, dir)}>
+                Start it again
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <NoShells open={shells.open} />
+      )}
+    </div>
+  );
+}
+
+/** Your shells as tabs, each with a close button, and + for another one. */
+export function ShellTabs({ shells }: { shells: GlobalShells }) {
+  return (
+    <>
+      {shells.tabs.map((t) => (
+        <span key={t.key} className={cx(s.tab, t.key === shells.key && s.tabOn)} role="tab" aria-selected={t.key === shells.key} tabIndex={0} onClick={() => shells.pick(t.key)} onKeyDown={(e) => e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), shells.pick(t.key))}>
+          <Dot tone={t.running ? 'ok' : 'muted'} />
+          {t.label}
+          <button type="button" className={s.closeTab} aria-label={`Close ${t.label}`} onClick={(e) => (e.stopPropagation(), shells.close(t.key))}>
+            <Icon name="x" size={9} />
+          </button>
+        </span>
+      ))}
+      <IconButton icon="plus" label="New shell" onClick={shells.open} />
+    </>
+  );
+}
+
+/** Every shell is closed. */
+export function NoShells({ open }: { open: () => void }) {
+  return (
+    <div className={s.none}>
+      <Empty icon="terminal" title="No shells open" action={<Button size="small" icon="plus" onClick={open}>New shell</Button>} />
     </div>
   );
 }

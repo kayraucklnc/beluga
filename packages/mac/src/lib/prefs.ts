@@ -77,7 +77,11 @@ export const getPrefs = (): UiPrefs => current;
 
 export function setPrefs(patch: Partial<UiPrefs>): void {
   current = { ...current, ...patch };
-  localStorage.setItem(KEY, JSON.stringify(current));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(current));
+  } catch {
+    // storage full or unavailable: the change still applies until the app quits
+  }
   apply(current);
   for (const l of [...listeners]) l();
 }

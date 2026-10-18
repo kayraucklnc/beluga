@@ -7,11 +7,13 @@ import { localDirOf, openTarget, suggest, type Suggestion } from '@klaud/ui/sugg
 import { Icon } from '../components/Icon.js';
 import { Button, Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { toast, useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { ModelPicker } from './ModelPicker.js';
 import s from './composer.module.css';
+
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /** The words in the box, before you start typing: what it does here. */
 function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectId: string; peerId?: string } }): string {
@@ -109,7 +111,14 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, text].slice(-200), historyIndex: -1 });
     // Image chips become links to the images (klaud keeps them) before the message goes.
     if (text.includes('[image ') && !text.startsWith('/')) {
-      void api.attachments.expand(text, channel).then((expanded) => actions.submit(expanded, urgent));
+      api.attachments.expand(text, channel).then(
+        (expanded) => actions.submit(expanded, urgent),
+        (err: unknown) => {
+          // Put the message back so nothing typed is lost.
+          if (!ui.get().buffer) ui.patch({ buffer: text, cursor: text.length });
+          toast(client, `Couldn't send the images: ${errorText(err)}`, 'error');
+        },
+      );
       return;
     }
     actions.submit(text, urgent);
@@ -121,7 +130,13 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       const bytes = new Uint8Array(await file.arrayBuffer());
       let bin = '';
       for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      const { chip } = await api.attachments.add(ext, btoa(bin));
+      let chip: string;
+      try {
+        ({ chip } = await api.attachments.add(ext, btoa(bin)));
+      } catch (err) {
+        toast(client, `Couldn't add ${file.name || 'the image'}: ${errorText(err)}`, 'error');
+        continue;
+      }
       const el = ref.current;
       const at = el?.selectionStart ?? ui.get().buffer.length;
       const current = ui.get().buffer;
@@ -145,6 +160,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   };
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    // Enter while an input method is composing (Japanese, Chinese…) picks the characters.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     const modKey = e.metaKey || e.ctrlKey;
     if (suggestions.length) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
