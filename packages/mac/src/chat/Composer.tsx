@@ -19,9 +19,8 @@ import s from './composer.module.css';
 import img from './images.module.css';
 import d from './draft.module.css';
 
-const CHIP = /\[image (\d+)\]/g;
-/** The "[image N]" chips in the text, in order, once each. */
-const chipsIn = (text: string): number[] => [...new Set([...text.matchAll(CHIP)].map((m) => Number(m[1])))];
+/** Images waiting to be sent, per conversation (so switching away and back keeps them). */
+const waitingImages = new Map<string, readonly number[]>();
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -66,8 +65,15 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const shared = state.view.kind === 'shared';
   const compose = composeState(state, ui.get(), state.selfId, channel, shared);
   const queue = useMemo(() => queueIn(state, channel, state.selfId), [state.log, channel, state.selfId]);
-  // Pictures of the images pasted or dropped here, until they're sent.
-  const pendingImages = chipsIn(buffer).filter((n) => previewOf(n));
+  // Images pasted or dropped here wait as thumbnails above the text (never as text you could
+  // half-delete), and go with the message when it's sent. Kept per conversation.
+  const [images, setImagesState] = useState<readonly number[]>(() => waitingImages.get(channel) ?? []);
+  useEffect(() => setImagesState(waitingImages.get(channel) ?? []), [channel]);
+  const setImages = (next: readonly number[]): void => {
+    waitingImages.set(channel, next);
+    setImagesState(next);
+  };
+  const pendingImages = images.filter((n) => previewOf(n));
   // While Claude works, sending queues the message; "Send now" interrupts it.
   const queueing = compose.busy && (compose.typing || !buffer.trim());
   const plan = state.planMode[channel] === true;
@@ -140,20 +146,25 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     actions.submit(text, urgent);
   };
   const send = (urgent = false): void => {
-    const text = buffer.trim();
+    const typed = buffer.trim();
+    const pictures = pendingImages;
+    // The images go after the words, as links Klaud keeps (expanded from their chips below).
+    const text = pictures.length && !typed.startsWith('/') ? [typed, pictures.map((n) => `[image ${n}]`).join(' ')].filter(Boolean).join('\n\n') : typed;
+    if (pictures.length && text !== typed) setImages([]);
     if (!text && !(draftProject && worktree.name.trim())) {
       if (draftProject) toast(client, 'Describe the task, or give the worktree a name', 'info');
       return;
     }
     if (!text && draftProject) return createWorktree(draftProject, '');
-    ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, text].slice(-200), historyIndex: -1 });
+    ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, typed].slice(-200), historyIndex: -1 });
     // Image chips become links to the images (klaud keeps them) before the message goes.
     if (text.includes('[image ') && !text.startsWith('/')) {
       api.attachments.expand(text, channel).then(
         (expanded) => deliver(expanded, urgent),
         (err: unknown) => {
-          // Put the message back so nothing typed is lost.
-          if (!ui.get().buffer) ui.patch({ buffer: text, cursor: text.length });
+          // Put the message and its images back so nothing is lost.
+          if (!ui.get().buffer) ui.patch({ buffer: typed, cursor: typed.length });
+          if (pictures.length) setImages(pictures);
           toast(client, `Couldn't send the images: ${errorText(err)}`, 'error');
         },
       );
@@ -161,49 +172,29 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     }
     deliver(text, urgent);
   };
-  /** Images pasted or dropped become "[image N]" chips where the cursor is. */
-  const caretAfterUpdate = useRef<number | undefined>(undefined);
-  useLayoutEffect(() => {
-    const at = caretAfterUpdate.current;
-    if (at === undefined) return;
-    caretAfterUpdate.current = undefined;
-    ref.current?.setSelectionRange(at, at);
-  }, [buffer]);
   const attach = async (files: readonly File[]): Promise<void> => {
     for (const file of files) {
       const ext = (/image\/(png|jpe?g|gif|webp)/.exec(file.type)?.[1] ?? 'png') as 'png' | 'jpg' | 'jpeg' | 'gif' | 'webp';
       const bytes = new Uint8Array(await file.arrayBuffer());
       let bin = '';
       for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      let chip: string;
+      let added: { n: number; chip: string };
       try {
-        const added = await api.attachments.add(ext, btoa(bin));
-        chip = added.chip;
+        added = await api.attachments.add(ext, btoa(bin));
         keepPreview(added.n, file);
       } catch (err) {
         toast(client, `Couldn't add ${file.name || 'the image'}: ${errorText(err)}`, 'error');
         continue;
       }
-      const el = ref.current;
-      const at = el?.selectionStart ?? ui.get().buffer.length;
-      const current = ui.get().buffer;
-      const before = current.slice(0, at);
-      const gap = before && !before.endsWith(' ') ? ' ' : '';
-      const next = `${before}${gap}${chip} ${current.slice(at)}`;
-      const end = before.length + gap.length + chip.length + 1;
-      // The caret goes after the chip as the text changes (not a frame later, when you may
-      // already be typing and it would jump back).
-      caretAfterUpdate.current = end;
-      ui.patch({ buffer: next, cursor: end });
+      setImages([...(waitingImages.get(channel) ?? []), added.n]);
     }
   };
   const imagesOf = (items: DataTransferItemList | undefined): File[] =>
     [...(items ?? [])].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => Boolean(f));
   const [dropping, setDropping] = useState(false);
-  /** Take an image out of the message (its chip, and the space after it). */
+  /** Take an image out of the message. */
   const removeImage = (n: number): void => {
-    const next = buffer.replace(new RegExp(`\\[image ${n}\\] ?`, 'g'), '');
-    ui.patch({ buffer: next, cursor: Math.min(ui.get().cursor, next.length) });
+    setImages(images.filter((x) => x !== n));
     ref.current?.focus();
   };
   /** A queued message pulled back to edit: into the box, ahead of anything already there. */

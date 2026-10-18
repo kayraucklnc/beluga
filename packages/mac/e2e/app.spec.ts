@@ -195,6 +195,7 @@ test('adds a project from the Add Projects sheet, with its own icon', async ({ p
   writeFileSync(path.join(repo, 'public/favicon.svg'), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect width="1" height="1" fill="red"/></svg>');
   execFileSync('git', ['init', '-q', repo]);
   await sidebar(page).getByRole('button', { name: /Add a project/ }).first().click();
+  await page.getByRole('menuitem', { name: 'Add Projects…' }).click();
   const sheet = page.getByRole('dialog', { name: 'Add projects' });
   await expect(sheet).toBeVisible();
   await sheet.getByRole('textbox', { name: 'Folder path' }).fill(repo);
@@ -237,13 +238,13 @@ test('shows pasted images before sending, and in the message after', async ({ pa
   await pasteImage(page);
   const pending = page.getByLabel('Images to send');
   await expect(pending.getByRole('img')).toHaveCount(1);
-  await expect(composer(page)).toHaveValue(/\[image \d+\]/);
-  // Removing the picture takes its chip out of the text.
+  // The image waits above the box as a thumbnail; the text stays yours (no "[image 1]" in it).
+  await expect(composer(page)).toHaveValue('');
   await pending.getByRole('button', { name: /^Remove image/ }).click();
   await expect(pending).toBeHidden();
-  await expect(composer(page)).not.toHaveValue(/\[image/);
   await pasteImage(page);
-  await expect(composer(page)).toHaveValue(/^\[image \d+\] $/);
+  await expect(pending.getByRole('img')).toHaveCount(1);
+  await expect(composer(page)).toHaveValue('');
   const words = `pixel check ${Date.now()}`;
   await composer(page).pressSequentially(words);
   await composer(page).press('Enter');
