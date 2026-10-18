@@ -1,6 +1,6 @@
 import type { KlaudClient } from '../ipc/client.js';
 import type { Policy } from '../core/store.js';
-import { THEMES } from '../core/settings.js';
+import { THEMES } from '../shared/settings-schema.js';
 import type { UiState } from './keymap.js';
 import { type MenuKind, menuSpec } from './menus.js';
 import { applyTheme } from './theme.js';

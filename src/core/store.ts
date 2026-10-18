@@ -269,6 +269,8 @@ export interface DomainState extends CollabState, WorkState {
   readonly invite?: string;
   /** Your peer id on this computer (known before the room answers). */
   readonly selfId: string;
+  /** Your home folder on this computer (screens show paths under it as ~/…). */
+  readonly home: string;
   /** You host the room (you can remove people, change the link, close it). */
   readonly isHost: boolean;
   /** The folders you share (not workspaces). */
@@ -368,7 +370,7 @@ export type Action =
   /** What the attached screens look at changed (see core/attention.ts). */
   | { type: 'attention'; attention: Attention }
   | { type: 'my_shares'; shares: readonly MyShare[] }
-  | { type: 'identity'; selfId: string; isHost: boolean }
+  | { type: 'identity'; selfId: string; isHost: boolean; home?: string }
   | CollabAction
   | WorkAction;
 
@@ -423,6 +425,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     transfers: [],
     prefs: { ...DEFAULT_PREFS, ...prefs },
     selfId: '',
+    home: '',
     isHost: false,
     myShares: [],
     attention: NO_ATTENTION,
@@ -656,7 +659,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'my_shares':
       return { ...state, myShares: action.shares };
     case 'identity':
-      return state.selfId === action.selfId && state.isHost === action.isHost ? state : { ...state, selfId: action.selfId, isHost: action.isHost };
+      return state.selfId === action.selfId && state.isHost === action.isHost && state.home === (action.home ?? state.home) ? state : { ...state, selfId: action.selfId, isHost: action.isHost, home: action.home ?? state.home };
     case 'review':
       return { ...state, review: action.review };
     case 'env_changes':

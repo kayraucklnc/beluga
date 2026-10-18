@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
@@ -187,7 +188,7 @@ export class Session {
     this.diff = parts.diff;
     this.agent = opts.createAgent?.(this.bridge);
     this.attention = new AttentionRegistry(opts.store);
-    opts.store.dispatch({ type: 'identity', selfId: opts.client.peerId, isHost: Boolean(opts.room) });
+    opts.store.dispatch({ type: 'identity', selfId: opts.client.peerId, isHost: Boolean(opts.room), home: os.homedir() });
     this.publishShares();
     this.wire();
   }

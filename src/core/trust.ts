@@ -1,7 +1,7 @@
-import type { TrustLevel } from './settings.js';
+import type { TrustLevel } from '../shared/settings-schema.js';
 import type { DomainState } from './store.js';
 
-export type { TrustLevel } from './settings.js';
+export type { TrustLevel } from '../shared/settings-schema.js';
 
 /** Plain-language names and what each level means, used everywhere it's shown. */
 export const TRUST_INFO: Readonly<Record<TrustLevel, { label: string; short: string; detail: string }>> = {

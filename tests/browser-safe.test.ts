@@ -8,8 +8,25 @@ import { describe, expect, it } from 'vitest';
  * the API list and the socket client. None of it may need Node at runtime (type-only imports
  * are fine: they disappear when compiled).
  */
-const ENTRIES = ['src/client/client-store.ts', 'src/client/screen.ts', 'src/ipc/api.ts', 'src/ipc/client.ts', 'src/ipc/protocol.ts', 'src/ipc/socket-client.ts', 'src/shared/codec.ts'];
-const ALLOWED_PACKAGES = new Set(['zod']);
+const ENTRIES = [
+  'src/client/client-store.ts',
+  'src/client/screen.ts',
+  'src/ipc/api.ts',
+  'src/ipc/client.ts',
+  'src/ipc/protocol.ts',
+  'src/ipc/socket-client.ts',
+  'src/shared/codec.ts',
+  // The same dialogs, menus and actions as the terminal UI.
+  'src/ui/menus.ts',
+  'src/ui/menu-actions.ts',
+  'src/ui/ui-actions.ts',
+  'src/ui/suggest.ts',
+  'src/ui/workspace-models.ts',
+  'src/ui/work-models.ts',
+  'src/ui/format.ts',
+];
+// Pure packages that run anywhere (string-width measures text the same way in both clients).
+const ALLOWED_PACKAGES = new Set(['zod', 'string-width']);
 const NODE = new Set([...builtinModules, ...builtinModules.map((m) => `node:${m}`)]);
 
 /** Runtime imports of a file (skips `import type` and type-only specifier lists). */
@@ -49,7 +66,7 @@ describe('browser-safe client code', () => {
     expect(files).toEqual(expect.arrayContaining(['src/core/store.ts', 'src/core/collab-store.ts', 'src/core/work-store.ts', 'src/protocol.ts', 'src/shared/settings-schema.ts']));
   });
 
-  it('needs nothing from Node and no packages but zod', () => {
+  it('needs nothing from Node, and only pure packages', () => {
     const offenders = [...graph.entries()].flatMap(([file, imports]) =>
       imports.filter((spec) => !spec.startsWith('.') && (NODE.has(spec) || !ALLOWED_PACKAGES.has(spec))).map((spec) => `${path.relative(process.cwd(), file)} → ${spec}`),
     );

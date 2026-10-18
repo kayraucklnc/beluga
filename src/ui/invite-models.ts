@@ -1,6 +1,6 @@
 import type { Knock, SharedWorkspace, ShellLine } from '../core/collab-store.js';
 import { SHELL_COMMANDS, completions, parseCommand, shownPath } from '../core/guest-shell.js';
-import { CAN_INFO } from '../core/project-invites.js';
+import { CAN_INFO } from '../shared/invites.js';
 import { type AppState, peerName } from '../core/store.js';
 import type { FsEntry } from '../protocol.js';
 import type { Suggestion } from './suggest.js';

@@ -1,9 +1,7 @@
 import type { MutableRefObject } from 'react';
 import type { KlaudClient } from '../ipc/client.js';
-import { globalShellId, globalShellNumber, isGlobalShell, runId, setupId } from '../core/workbench.js';
+import { globalShellId, globalShellNumber, isGlobalShell, runId, setupId } from '../shared/terminal-keys.js';
 import { runCollabUiAction } from './collab-actions.js';
-import { openLink } from './link-actions.js';
-import { pasteClipboardImage } from './attach-actions.js';
 import type { UiState } from './keymap.js';
 import type { MenuContext } from './menu-actions.js';
 import type { MenuKind } from './menus.js';
@@ -18,6 +16,10 @@ export interface UiActionContext {
   readonly typeInto: (buffer: string) => void;
   readonly menuCtx: () => MenuContext;
   readonly runMenu: (menu: MenuKind, index: number) => void;
+  /** Open a link from the chat (each screen opens files, folders and URLs its own way). */
+  readonly openLink: (link: Extract<UiAction, { type: 'open_link' }>['link']) => void;
+  /** Attach the image on the clipboard to the message being written. */
+  readonly pasteImage: () => void;
 }
 
 /** Do what a clicked button, row or card means. */
@@ -32,10 +34,10 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
       patchUi(action.tab === 'review' ? { focus: 'main', entered: true } : action.tab === 'files' ? { focus: 'files', entered: true } : action.tab === 'terminal' ? { focus: 'terminal', terminalScroll: 0 } : { focus: 'chat', entered: false });
       return;
     case 'open_link':
-      openLink({ client, patchUi, run: (a) => runUiActionWith(c, a) }, action.link);
+      c.openLink(action.link);
       return;
     case 'paste_image':
-      void pasteClipboardImage({ client, uiRef, patchUi });
+      c.pasteImage();
       return;
     case 'inbox':
       patchUi({ menu: { menu: { kind: 'inbox' }, selected: 0 } });

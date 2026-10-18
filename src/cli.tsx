@@ -16,6 +16,7 @@ import { FOCUS_OFF, FOCUS_ON, MOUSE_OFF, MOUSE_ON, type MouseEvent, PASTE_OFF, P
 import { buildCore } from './daemon/core.js';
 import { roomKeyOf, runDaemon } from './daemon/main.js';
 import { runningDaemon } from './daemon/files.js';
+import { APP_ORIGINS } from './daemon/server.js';
 import type { KlaudClient } from './ipc/client.js';
 import { InProcessClient } from './ipc/in-process.js';
 import { connectOrSpawn } from './ipc/launch.js';
@@ -164,7 +165,9 @@ async function main(): Promise<void> {
   }
   if (args[0] === 'daemon') {
     const rest = args.slice(1).filter((a) => a !== '--keep-alive');
-    await runDaemon(parseConfig(rest), { version: installedVersion(), keepAlive: args.includes('--keep-alive') || process.env.KLAUD_KEEP_ALIVE === '1' });
+    // The Mac app's web view; KLAUD_ALLOW_ORIGINS adds more (its dev server while developing).
+    const extra = (process.env.KLAUD_ALLOW_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean);
+    await runDaemon(parseConfig(rest), { version: installedVersion(), keepAlive: args.includes('--keep-alive') || process.env.KLAUD_KEEP_ALIVE === '1', allowedOrigins: [...APP_ORIGINS, ...extra] });
     return;
   }
   const config = parseConfig(args);

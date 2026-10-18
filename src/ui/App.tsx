@@ -28,6 +28,7 @@ import { type UiAction, isCompacting, stepTab, topTabs } from './workspace-model
 import { type UiActionContext, runUiActionWith } from './ui-actions.js';
 import { useTerminalPane } from './use-terminal.js';
 import { expandOutgoing, pasteClipboardImage, pasteDroppedImages } from './attach-actions.js';
+import { openLink } from './link-actions.js';
 import { setLinkEnv } from './links.js';
 import { openInvite, projectInView } from './invite-actions.js';
 
@@ -247,7 +248,17 @@ export function App({ client, onboarding = false, subscribeMouse, setRawInput, s
     patchUi({ collapsed: collapsed.includes(key) ? collapsed.filter((c) => c !== key) : [...collapsed, key] });
   };
 
-  const uiCtx: UiActionContext = { client, patchUi, uiRef, toggle, typeInto, menuCtx: () => menuCtx, runMenu: (m, i) => runMenu(m, i) };
+  const uiCtx: UiActionContext = {
+    openLink: (link) => openLink({ client, patchUi, run: (a) => runUiAction(a) }, link),
+    pasteImage: () => void pasteClipboardImage(attachCtx),
+    client,
+    patchUi,
+    uiRef,
+    toggle,
+    typeInto,
+    menuCtx: () => menuCtx,
+    runMenu: (m, i) => runMenu(m, i),
+  };
   const runUiAction = (action: UiAction): void => runUiActionWith(uiCtx, action);
 
   const menuCtx: MenuContext = { client, patchUi, typeInto: (b) => typeInto(b), askForName: (k, p) => askForName(k, p), openFolder: (dir) => openFolder(dir), runUiAction: (a) => runUiAction(a), write };

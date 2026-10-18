@@ -1,6 +1,6 @@
 import type { PendingQuestion, SharedWorkspace } from '../core/collab-store.js';
 import { type AppState, type SharedTab, peerName } from '../core/store.js';
-import { CAN_INFO } from '../core/project-invites.js';
+import { CAN_INFO } from '../shared/invites.js';
 import { ansiToLine } from './ansi.js';
 import { renderMarkdownAnsi } from './markdown-render.js';
 import { type Line, type Seg, plain, truncate, wrapText } from './text.js';

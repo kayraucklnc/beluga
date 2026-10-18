@@ -5,7 +5,7 @@ import { shareFolderMenu, shareWhoMenu } from './share-menus.js';
 import { type InviteMenuKind, guestAddMenu, guestPersonMenu, inviteMenu } from './invite-menus.js';
 import { type SettingsSection, inboxMenu, modelMenu, modelLabel, settingsMenu } from './settings-menus.js';
 import { GRANT_INFO, TRUST_INFO, canRunOn, trustOf } from '../core/trust.js';
-import { TRUST_LEVELS } from '../core/settings.js';
+import { TRUST_LEVELS } from '../shared/settings-schema.js';
 import { workMenuSpec, type WorkMenuKind } from './work-menus.js';
 import { describeWindow } from '../agent/usage.js';
 import type { Usage } from '../protocol.js';

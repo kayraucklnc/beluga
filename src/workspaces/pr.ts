@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import path from 'node:path';
 import type { PullRequest } from '../core/work-store.js';
 import { klaudHome } from './store.js';
+export { describePr } from '../shared/format.js';
 
 /**
  * What Claude does when you click PR. Edit it in Settings → Claude → Pull request
@@ -130,13 +131,4 @@ export async function findPr(dir: string, branch: string): Promise<PullRequest |
     if (err instanceof Error && /no pull requests? found/i.test(err.message)) return undefined;
     throw err;
   }
-}
-
-/** "PR #12 · checks passing" */
-export function describePr(pr: PullRequest): string {
-  if (pr.state === 'MERGED') return `PR #${pr.number} merged`;
-  if (pr.state === 'CLOSED') return `PR #${pr.number} closed`;
-  const checks = pr.checks === 'none' ? '' : ` · checks ${pr.checks}`;
-  const review = pr.review === 'APPROVED' ? ' · approved' : pr.review === 'CHANGES_REQUESTED' ? ' · changes requested' : '';
-  return `PR #${pr.number}${pr.draft ? ' (draft)' : ''}${checks}${review}`;
 }

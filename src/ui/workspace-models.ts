@@ -1,8 +1,8 @@
 import type { LinkTarget } from './links.js';
 import { type AppState, type LogItem, type ReviewState, type SharedTab, type WorkspaceTab, newShares } from '../core/store.js';
 import type { TrustLevel } from '../core/settings.js';
-import { describePr } from '../workspaces/pr.js';
-import { formatBytes } from '../workspaces/disk.js';
+import { describePr } from '../shared/format.js';
+import { formatBytes } from '../shared/format.js';
 import type { Project, Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { isRunning } from './format.js';

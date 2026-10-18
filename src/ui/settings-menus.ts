@@ -1,5 +1,5 @@
 import type { AppState } from '../core/store.js';
-import type { Settings } from '../core/settings.js';
+import type { Settings } from '../shared/settings-schema.js';
 import { TRUST_INFO, defaultTrust, trustOf } from '../core/trust.js';
 import { THEME_LABELS } from './theme.js';
 import type { MenuOption, MenuSpec } from './menus.js';

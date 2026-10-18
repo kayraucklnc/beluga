@@ -1,7 +1,7 @@
-import { EFFORTS, TRUST_LEVELS, type TrustLevel } from '../core/settings.js';
+import { EFFORTS, TRUST_LEVELS, type TrustLevel } from '../shared/settings-schema.js';
 import { channelOf } from '../core/store.js';
-import { cursorFor } from '../core/templates.js';
-import { MOUSE_OFF, MOUSE_ON } from './mouse.js';
+import { cursorFor } from '../shared/templates-text.js';
+import { MOUSE_OFF, MOUSE_ON } from './tty/codes.js';
 import type { MenuContext } from './menu-actions.js';
 import type { MenuKind } from './menus.js';
 import { TUNNEL_ORDER, type SettingsSection } from './settings-menus.js';

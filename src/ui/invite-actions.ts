@@ -1,4 +1,4 @@
-import { DAY_MS } from '../core/project-invites.js';
+import { DAY_MS } from '../shared/invites.js';
 import type { KlaudClient } from '../ipc/client.js';
 import type { GuestCan } from '../protocol.js';
 import { type InviteChoice, copyIndex, inviteChoice, inviteMenu } from './invite-menus.js';

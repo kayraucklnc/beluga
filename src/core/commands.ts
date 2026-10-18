@@ -1,6 +1,6 @@
 import type { Session } from './session.js';
 import type { Policy } from './store.js';
-import { THEMES, type ThemeName } from './settings.js';
+import { THEMES, type ThemeName } from '../shared/settings-schema.js';
 
 export interface CommandSpec {
   readonly name: string;

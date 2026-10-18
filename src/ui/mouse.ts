@@ -23,9 +23,7 @@ export function modifiersOf(code: number): { shift?: true; alt?: true; ctrl?: tr
 // SGR extended mouse reports: ESC [ < button ; col ; row (M = press, m = release)
 const SGR = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
 
-// 1003 = report pointer movement too (for hover feedback), 1006 = SGR coordinates.
-export const MOUSE_ON = '\x1b[?1000h\x1b[?1003h\x1b[?1006h';
-export const MOUSE_OFF = '\x1b[?1003l\x1b[?1000l\x1b[?1006l';
+export { MOUSE_ON, MOUSE_OFF } from './tty/codes.js';
 
 function buttonOf(code: number): MouseButton | undefined {
   if (code & 64) return code & 1 ? 'wheelDown' : 'wheelUp';
