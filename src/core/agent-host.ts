@@ -431,6 +431,8 @@ export class AgentHost {
         ...(from !== this.selfId && this.deps.isGuest?.(from) ? { guest: true } : {}),
         signal: controller.signal,
         onEvent: (kind, text) => this.emitAgent(body.requestId, from, kind, text, body.channel),
+        // Another Claude asked: give it the answer now rather than after every background agent.
+        ...(body.viaAgent && from !== this.selfId ? { onAnswered: (text: string) => this.emitAgent(body.requestId, from, 'answered', text, body.channel) } : {}),
         onFileTouched: (abs) => this.announceAgentFocus(abs),
         canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input, body.channel, place?.cwd),
         askUser: (question) => this.deps.questions.ask(askTo, body.requestId, body.channel, question),

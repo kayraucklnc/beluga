@@ -170,7 +170,8 @@ describe('project link lifecycle (host side)', () => {
     f.invites.onPeers([mia]);
     expect(f.state().knocks.map((k) => k.peerId)).toEqual(['mia']);
     f.invites.revoke(link.id);
-    expect(gate.keys()).toEqual([]);
+    // The key stays only so guests already let in can reconnect; nobody new gets in with it.
+    expect(gate.keys().map((k) => k.id)).toEqual([link.id]);
     expect(f.state().links).toEqual([]);
     expect(f.state().knocks).toEqual([]);
     expect(f.room.turnAway).toHaveBeenCalledWith('mia');
@@ -278,5 +279,20 @@ describe("a friend's command", () => {
     delete process.env.KLAUD_TEST_TOKEN;
     expect(env.PATH).toBeTruthy();
     expect(Object.values(env)).not.toContain('sekret');
+  });
+});
+
+describe('a run that stays open for background agents', () => {
+  it("hands the original request's first answer over right away, once", async () => {
+    const { TurnRouter } = await import('../src/agent/live-run.js');
+    const answered: string[] = [];
+    const turns = new TurnRouter({ onEvent: () => undefined, onDone: (t) => answered.push(t) });
+    turns.current();
+    expect(turns.end(true, 'first')).toBe(true);
+    turns.current();
+    // Claude's own later turn (reporting an agent) fails: the first answer still stands.
+    expect(turns.end(false, 'Agent stopped: error max turns')).toBe(false);
+    expect(turns.answers).toEqual(['first']);
+    expect(answered).toEqual(['first']);
   });
 });

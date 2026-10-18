@@ -167,7 +167,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const prompts = new PromptQueue();
       prompts.push(imageContent(buildPrompt(input), linkedImages(input.prompt)));
       const background = new BackgroundAgents();
-      const turns = new TurnRouter({ onEvent: input.onEvent });
+      const turns = new TurnRouter({ onEvent: input.onEvent, ...(input.onAnswered ? { onDone: input.onAnswered } : {}) });
       let limit: NodeJS.Timeout | undefined;
       let quiet: NodeJS.Timeout | undefined;
       const finish = (): void => {
@@ -251,7 +251,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             if (contextUsed) turn.onEvent('context', JSON.stringify({ used: contextUsed, window }));
             turn.onEvent('usage', JSON.stringify(usageOf(msg.modelUsage ?? {}, msg.total_cost_usd ?? 0, msg.session_id)));
             const stopped = `Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`;
-            if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped)) throw new Error(stopped);
+            // A later turn failing (e.g. reporting a finished agent) doesn't throw away answers already given.
+            if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped) && !turns.answers.length) throw new Error(stopped);
             settle();
           }
         }

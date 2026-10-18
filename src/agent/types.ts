@@ -10,6 +10,8 @@ export interface AgentRunInput {
   readonly context: readonly string[];
   /** 'folder': only the shared folders. 'full': the whole computer (secrets still blocked). */
   readonly scope: AccessScope;
+  /** The request's first answer, as soon as it's there (the run may stay open for background agents). */
+  readonly onAnswered?: (text: string) => void;
   /** Asked by a guest invited into one project: the room tools (other people, their files, the room chat) are off. */
   readonly guest?: boolean;
   readonly signal: AbortSignal;

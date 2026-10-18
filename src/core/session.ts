@@ -876,6 +876,15 @@ export class Session {
       return;
     }
     const waiter = this.agentWaiters.get(body.requestId);
+    if (body.event === 'answered') {
+      // Only for the Claude waiting on it; the chat shows the run as it goes on.
+      if (waiter && waiter.peer === from) {
+        clearTimeout(waiter.timer);
+        this.agentWaiters.delete(body.requestId);
+        waiter.resolve(body.text);
+      }
+      return;
+    }
     // Your Claude asked from a workspace: follow the friend's Claude there (only from the one you asked).
     const channel = waiter?.mirror && waiter.peer === from && body.requester === this.selfId ? waiter.mirror : body.channel;
     this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel });

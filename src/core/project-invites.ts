@@ -32,7 +32,7 @@ export const DEFAULT_LINK: Omit<LinkOptions, 'scope'> = { can: 'prompt', knock: 
 export const CAN_INFO: Readonly<Record<GuestCan, { label: string; short: string; detail: string }>> = {
   watch: { label: 'Watch', short: 'can watch', detail: 'see the chat history and browse the files' },
   prompt: { label: 'Prompt', short: 'can prompt', detail: 'talk to your Claude there; edits and commands follow your approval rules' },
-  edit: { label: 'Edit', short: 'can edit', detail: 'your Claude edits and runs commands in that folder without asking; secrets stay blocked' },
+  edit: { label: 'Edit', short: 'can edit', detail: 'your Claude edits files in that folder without asking; commands still ask you' },
 };
 
 /** Watching is following along; prompting and editing are working there. */
@@ -97,6 +97,8 @@ export interface ProjectInvitesDeps {
  */
 export class ProjectInvites {
   private readonly secrets = new Map<string, { secret: string; keys: RoomKeys }>();
+  /** Keys of revoked links: only guests already let in may still reconnect with them. */
+  private readonly revoked = new Map<string, RoomKeys>();
   /** Who came to the door with which link (until you decide). */
   private readonly arrivals = new Map<string, string>();
   private pendingCopy?: string;
@@ -171,6 +173,8 @@ export class ProjectInvites {
   /** The link stops working; people already in keep their place until you remove them. */
   revoke(id: string): void {
     const link = this.state.links.find((l) => l.id === id);
+    const old = this.secrets.get(id);
+    if (old) this.revoked.set(id, old.keys);
     this.secrets.delete(id);
     this.deps.store.dispatch({ type: 'link_remove', id });
     for (const k of this.state.knocks.filter((x) => x.linkId === id)) this.decline(k.peerId, true);
@@ -178,7 +182,7 @@ export class ProjectInvites {
   }
 
   private liveKeys(): Array<{ id: string; keys: RoomKeys }> {
-    return [...this.secrets.entries()].map(([id, s]) => ({ id, keys: s.keys }));
+    return [...[...this.secrets.entries()].map(([id, s]) => ({ id, keys: s.keys })), ...[...this.revoked.entries()].map(([id, keys]) => ({ id, keys }))];
   }
 
   /** The hub asks: may this person come in with link `id`? (Synchronous: single-use links are consumed here.) */
