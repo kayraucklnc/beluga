@@ -335,7 +335,7 @@ npm run typecheck
 npm run build && npm link  # use your local build as `klaud` (klaud update then follows git)
 ```
 
-To release: bump `version` in `package.json`, merge, then `npm publish` from `main` (it type-checks and builds first, and npm asks for your 2FA code).
+Every merge to `main` is released to npm by [publish.yml](.github/workflows/publish.yml): if the version in `package.json` is already published, CI bumps the patch number, publishes, and commits the bump back. For a minor or major release, set the version in your PR.
 
 klaud used to be called klaude. Your `~/.klaude` settings, projects and worktrees carry over automatically.
 
