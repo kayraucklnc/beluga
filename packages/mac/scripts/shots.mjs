@@ -1,5 +1,5 @@
 // Screenshots of the Mac app's web view (run against `vite` + a demo daemon).
-//   node scripts/shots.mjs [scene…]   → .context/shots/<scene>.png
+//   THEME=dark node scripts/shots.mjs [scene…]   → .context/shots/<scene>-<theme>.png
 import { chromium } from 'playwright';
 import path from 'node:path';
 
@@ -13,37 +13,67 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, dev
 const errors = [];
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 page.on('pageerror', (e) => errors.push(String(e)));
-await page.goto(url);
-await page.waitForSelector('nav[aria-label="Sidebar"]', { timeout: 20000 });
-await page.waitForTimeout(1500);
+const wait = (ms) => page.waitForTimeout(ms);
+const side = (name) => page.locator('nav [role="button"]').filter({ hasText: name }).first();
+
+const openWs = async (name = 'add-auth') => {
+  if (!(await side(name).isVisible().catch(() => false))) await side('bob-api').click();
+  await wait(300);
+  await side(name).click();
+  await wait(700);
+};
+const tab = async (name) => {
+  await page.getByRole('tab', { name }).click();
+  await wait(1200);
+};
 
 const STEPS = {
   room: async () => {},
-  workspace: async () => {
-    await page.getByRole('button', { name: /bob-api|landing|api/ }).first().click();
-    await page.waitForTimeout(300);
-    const ws = page.locator('nav [role="button"]').filter({ hasText: /auth|hero|fix/i }).first();
-    if (await ws.count()) await ws.click();
-    await page.waitForTimeout(800);
+  workspace: async () => openWs(),
+  chatrun: async () => {
+    await openWs();
+    await page.locator('textarea').fill('Add rate limiting to the login endpoint and write tests');
+    await page.keyboard.press('Enter');
+    await wait(5000);
   },
-  overview: async () => {
-    await page.getByRole('button', { name: 'Overview' }).first().click();
-    await page.waitForTimeout(600);
+  diff: async () => {
+    await openWs();
+    await tab('Diff');
   },
-  palette: async () => {
-    await page.keyboard.press('Meta+K');
-    await page.waitForTimeout(500);
+  files: async () => {
+    await openWs();
+    await tab('Files');
+    const readme = page.locator('[role="option"]').filter({ hasText: /\.md$/ }).first();
+    if (await readme.count()) await readme.click();
+    await wait(800);
   },
-  settings: async () => {
-    await page.keyboard.press('Meta+,');
-    await page.waitForTimeout(500);
+  terminal: async () => {
+    await openWs();
+    await tab('Terminal');
+    await wait(1500);
+    await page.keyboard.type('ls -la && git log --oneline -3\n');
+    await wait(1500);
   },
+  overview: async () => side('Overview').click(),
+  usage: async () => side('Usage').click(),
+  search: async () => {
+    await side('Search').click();
+    await wait(200);
+    await page.keyboard.type('auth');
+  },
+  shared: async () => side('Shared files').click(),
+  palette: async () => page.keyboard.press('Meta+K'),
+  settings: async () => page.keyboard.press('Meta+,'),
+  person: async () => side('bob').click(),
 };
 
 for (const scene of scenes.length ? scenes : ['room']) {
-  const [name, ...rest] = scene.split(':');
-  await (STEPS[name] ?? (async () => {}))(rest);
-  const file = path.join(out, `${scene.replace(/[^\w-]/g, '_')}-${theme}.png`);
+  await page.goto(url);
+  await page.waitForSelector('nav[aria-label="Sidebar"]', { timeout: 20000 });
+  await wait(1200);
+  await (STEPS[scene] ?? (async () => {}))();
+  await wait(700);
+  const file = path.join(out, `${scene}-${theme}.png`);
   await page.screenshot({ path: file });
   console.log(file);
 }

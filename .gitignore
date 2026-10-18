@@ -9,3 +9,4 @@ packages/mac/dist
 packages/mac/src-tauri/target
 packages/mac/src-tauri/binaries
 packages/mac/src-tauri/resources/daemon
+packages/mac/src-tauri/gen

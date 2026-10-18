@@ -107,3 +107,9 @@ kbd {
 [data-tauri-drag-region] {
   -webkit-app-region: drag;
 }
+
+/* In the app the window behind is translucent (vibrancy): only the sidebar lets it through. */
+html[data-app='tauri'],
+html[data-app='tauri'] body {
+  background: transparent;
+}

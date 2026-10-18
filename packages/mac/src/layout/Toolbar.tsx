@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { WorkspaceTab } from '@klaud/core/store.js';
 import { findWorkspace, stateOf, workspaceButtons, workspaceTabs } from '@klaud/ui/workspace-models.js';
 import { describePr } from '@klaud/shared/format.js';
@@ -16,10 +16,24 @@ const PRIMARY = new Set(['run', 'review_claude', 'commit', 'pr', 'merge', 'merge
 
 const TITLES: Partial<Record<string, string>> = { overview: 'Overview', search: 'Search', usage: 'Usage', terminal: 'Terminal', files: 'Shared files', draft: 'New chat', draft_worktree: 'New worktree' };
 
-function Shell({ title, subtitle, center, right }: { title: ReactNode; subtitle?: ReactNode; center?: ReactNode; right?: ReactNode }) {
+/** How wide the toolbar is (buttons that don't fit move under ⋯). */
+function useToolbarWidth(): [React.RefObject<HTMLElement | null>, number] {
+  const ref = useRef<HTMLElement | null>(null);
+  const [width, setWidth] = useState(1000);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setWidth(e?.contentRect.width ?? 1000));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width];
+}
+
+function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode; subtitle?: ReactNode; center?: ReactNode; right?: ReactNode; headerRef: React.RefObject<HTMLElement | null> }) {
   const prefs = usePrefs();
   return (
-    <header className={cx(s.toolbar, !prefs.sidebar && s.noSidebar)} data-tauri-drag-region>
+    <header ref={headerRef} className={cx(s.toolbar, !prefs.sidebar && s.noSidebar)} data-tauri-drag-region>
       {prefs.sidebar ? null : (
         <span className={s.lead}>
           <IconButton icon="sidebar" label="Show sidebar" keys="⌃⌘S" onClick={() => setPrefs({ sidebar: true })} />
@@ -42,21 +56,31 @@ function Shell({ title, subtitle, center, right }: { title: ReactNode; subtitle?
 }
 
 export function Toolbar() {
+  const [headerRef, width] = useToolbarWidth();
   const actions = useActions();
   const state = useApp((st) => st);
   const view = state.view;
 
   if (view.kind === 'workspace') {
     const ws = findWorkspace(state.projects, view.id);
-    if (!ws) return <Shell title="Workspace" />;
+    if (!ws) return <Shell headerRef={headerRef} title="Workspace" />;
     const project = state.projects.find((p) => p.id === ws.projectId);
     const st = stateOf(state, ws, 0);
     const buttons = workspaceButtons(state, ws);
-    const primary = buttons.filter((b) => PRIMARY.has(b.action));
-    const rest = buttons.filter((b) => !PRIMARY.has(b.action));
+    // Room for the title (~240), the view switcher (~380) and the window buttons (~90); the rest is for actions.
+    let room = width - 240 - 380 - 90;
+    const primary = buttons.filter((b) => {
+      if (!PRIMARY.has(b.action) && b.action !== 'merge_claude') return false;
+      const w = b.label.length * 7.5 + 24;
+      if (room < w && b.action !== 'merge_claude') return false;
+      room -= w;
+      return true;
+    });
+    const rest = buttons.filter((b) => !primary.includes(b));
     const pr = state.prs[ws.id];
     return (
       <Shell
+        headerRef={headerRef}
         title={
           <>
             {project?.root ? <span className={s.crumb}>{project.name}</span> : null}
@@ -116,6 +140,7 @@ export function Toolbar() {
     const owner = state.peers.find((p) => p.peerId === view.owner)?.name ?? 'Someone';
     return (
       <Shell
+        headerRef={headerRef}
         title={w?.name ?? 'Shared workspace'}
         subtitle={<span className={s.meta}>{`${owner}'s ${w?.project ?? 'project'} · ${w?.role === 'contribute' ? 'you can work here' : 'you’re following along'}`}</span>}
         center={
@@ -137,8 +162,8 @@ export function Toolbar() {
 
   if (view.kind === 'room') {
     const solo = state.peers.length <= 1;
-    return <Shell title={solo ? 'Chat' : state.room} subtitle={<span className={s.meta}>{solo ? 'You and your Claude' : `${state.peers.length} people · everyone’s Claude can join in`}</span>} />;
+    return <Shell headerRef={headerRef} title={solo ? 'Chat' : state.room} subtitle={<span className={s.meta}>{solo ? 'You and your Claude' : `${state.peers.length} people · everyone’s Claude can join in`}</span>} />;
   }
 
-  return <Shell title={TITLES[view.kind] ?? 'klaud'} />;
+  return <Shell headerRef={headerRef} title={TITLES[view.kind] ?? 'klaud'} />;
 }

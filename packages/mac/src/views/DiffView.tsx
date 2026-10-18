@@ -13,12 +13,15 @@ export function parseDiff(diff: string): Line[] {
   const out: Line[] = [];
   let o = 0;
   let n = 0;
-  for (const raw of diff.split('\n')) {
-    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(raw);
+  const rows = diff.split('\n');
+  if (rows[rows.length - 1] === '') rows.pop();
+  for (const raw of rows) {
+    const h = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/.exec(raw);
     if (h) {
       o = Number(h[1]);
-      n = Number(h[2]);
-      out.push({ kind: 'hunk', text: h[3]?.trim() ?? '' });
+      n = Number(h[3]);
+      const where = h[5]?.trim();
+      out.push({ kind: 'hunk', text: `Lines ${n}–${n + Math.max(0, Number(h[4] ?? 1) - 1)}${where ? ` · ${where}` : ''}` });
     } else if (/^(diff --git|index |--- |\+\+\+ |new file|deleted file|similarity|rename |old mode|new mode)/.test(raw)) {
       if (raw.startsWith('new file') || raw.startsWith('deleted file') || raw.startsWith('rename ')) out.push({ kind: 'meta', text: raw });
     } else if (raw.startsWith('+')) out.push({ kind: 'add', text: raw.slice(1), new: n++ });
@@ -143,7 +146,7 @@ export function DiffView() {
                 {lines.map((l, i) =>
                   l.kind === 'hunk' || l.kind === 'meta' ? (
                     <tr key={i} className={s.hunk}>
-                      <td colSpan={3}>{l.kind === 'hunk' ? `@@ ${l.text}` : l.text}</td>
+                      <td colSpan={3}>{l.text}</td>
                     </tr>
                   ) : (
                     <tr key={i} className={s[`l_${l.kind}`]}>
@@ -164,7 +167,7 @@ export function DiffView() {
                 {splitRows(lines).map((r, i) =>
                   r.full ? (
                     <tr key={i} className={s.hunk}>
-                      <td colSpan={4}>{r.full.kind === 'hunk' ? `@@ ${r.full.text}` : r.full.text}</td>
+                      <td colSpan={4}>{r.full.text}</td>
                     </tr>
                   ) : (
                     <tr key={i}>

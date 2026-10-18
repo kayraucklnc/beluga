@@ -1,0 +1,113 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.12);
+  animation: fade var(--dur-fast) var(--ease-out);
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.palette {
+  position: fixed;
+  z-index: 51;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, calc(100vw - 48px));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
+  backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(30px) saturate(1.7);
+  box-shadow: var(--shadow-pop), 0 30px 80px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+  animation: pop var(--dur) var(--ease-out);
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px) scale(0.985);
+  }
+}
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 50px;
+  padding: 0 16px;
+  border-bottom: 0.5px solid var(--hairline);
+  color: var(--text-3);
+}
+.input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 1.15rem;
+  user-select: text;
+}
+.input::placeholder {
+  color: var(--text-3);
+}
+.list {
+  max-height: min(56vh, 460px);
+  overflow-y: auto;
+  padding: 6px;
+}
+.empty {
+  padding: 22px;
+  color: var(--text-3);
+  text-align: center;
+}
+.group :global([cmdk-group-heading]) {
+  padding: 8px 10px 4px;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+}
+.item[data-selected='true'] {
+  background: var(--accent);
+  color: white;
+}
+.item[data-selected='true'] .hint,
+.item[data-selected='true'] .keys,
+.item[data-selected='true'] .itemIcon {
+  color: rgba(255, 255, 255, 0.8);
+}
+.itemIcon {
+  flex: none;
+  color: var(--text-3);
+}
+.label {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: 0.9rem;
+}
+.keys {
+  margin-left: auto;
+  color: var(--text-3);
+  font-family: var(--font);
+  font-size: 0.86rem;
+}

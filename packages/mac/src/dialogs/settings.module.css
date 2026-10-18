@@ -1,0 +1,215 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  background: rgba(0, 0, 0, 0.2);
+  animation: fade var(--dur) var(--ease-out);
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.window {
+  position: fixed;
+  z-index: 45;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  width: min(820px, calc(100vw - 48px));
+  height: min(600px, calc(100vh - 80px));
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: var(--shadow-pop), 0 30px 80px rgba(0, 0, 0, 0.25);
+  animation: pop var(--dur) var(--ease-out);
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -49%) scale(0.985);
+  }
+}
+.nav {
+  width: 200px;
+  flex: none;
+  padding: 16px 10px;
+  background: var(--bg-sidebar-solid);
+  border-right: 0.5px solid var(--hairline);
+}
+.title {
+  margin: 4px 10px 14px;
+  font-size: 1.1rem;
+  font-weight: 650;
+}
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--text);
+  text-align: left;
+}
+.navItem svg {
+  color: var(--text-2);
+}
+.navItem:hover {
+  background: var(--bg-hover);
+}
+.navOn,
+.navOn:hover {
+  background: var(--accent);
+  color: white;
+}
+.navOn svg {
+  color: white;
+}
+.body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bodyHead {
+  display: flex;
+  align-items: center;
+  height: 52px;
+  padding: 0 14px 0 24px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.paneTitle {
+  flex: 1;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+.close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  color: var(--text-2);
+}
+.close:hover {
+  background: var(--bg-hover);
+}
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px 28px;
+}
+.group {
+  margin-bottom: 18px;
+}
+.groupTitle {
+  margin: 0 0 6px 4px;
+  color: var(--text-2);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.groupBox {
+  border-radius: 9px;
+  background: var(--bg-sunken);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 42px;
+  padding: 8px 14px;
+}
+.row + .row {
+  border-top: 0.5px solid var(--hairline);
+}
+.rowText {
+  flex: 1;
+  min-width: 0;
+}
+.rowLabel {
+  font-weight: 500;
+}
+.rowDetail {
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+.control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  color: var(--text-2);
+}
+.note {
+  padding: 12px 14px;
+  color: var(--text-3);
+}
+.switch {
+  position: relative;
+  width: 32px;
+  height: 19px;
+  border-radius: 10px;
+  background: var(--bg-press);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  transition: background var(--dur-fast);
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform var(--dur) var(--ease-out);
+}
+.switchOn {
+  background: var(--accent);
+}
+.switchOn::after {
+  transform: translateX(13px);
+}
+.select {
+  height: 24px;
+  padding: 0 24px 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg-raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 4l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 7px center;
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.06);
+  appearance: none;
+  font-size: 0.95rem;
+}
+.text {
+  width: 200px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  user-select: text;
+}
+.slider {
+  width: 180px;
+  accent-color: var(--accent);
+}
+.swatches {
+  display: flex;
+  gap: 7px;
+}
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+}
+.swatchOn {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--text-2);
+}

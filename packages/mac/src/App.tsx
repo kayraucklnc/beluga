@@ -4,12 +4,18 @@ import { channelOf } from '@klaud/core/store.js';
 import { stepTab, topTabs } from '@klaud/ui/workspace-models.js';
 import { Icon } from './components/Icon.js';
 import { MenuSheet } from './dialogs/MenuSheet.js';
+import { Palette } from './dialogs/Palette.js';
+import { Settings } from './dialogs/Settings.js';
+import type { SettingsPane } from './lib/klaud.js';
 import { Inspector } from './layout/Inspector.js';
 import { Main } from './layout/Main.js';
 import { Sidebar } from './layout/Sidebar.js';
 import { useActions } from './lib/actions.js';
 import { useApp, useKlaud } from './lib/klaud.js';
 import { setPrefs, usePrefs, zoom } from './lib/prefs.js';
+import { joinRoom, useNative } from './lib/native.js';
+import { JoinSheet } from './dialogs/JoinSheet.js';
+import { useState } from 'react';
 import s from './layout/Shell.module.css';
 
 const TOAST_MS = 3500;
@@ -61,7 +67,7 @@ function useOverlays() {
       case 'welcome':
         return ui.openMenu({ kind: 'welcome' });
       case 'settings':
-        return ui.openMenu({ kind: 'settings' });
+        return ui.patch({ settings: 'general' });
       case 'help':
         return ui.patch({ palette: true });
     }
@@ -82,7 +88,7 @@ function useShortcuts() {
         ui.patch({ palette: !ui.get().palette });
       } else if (cmd && e.key === ',') {
         e.preventDefault();
-        ui.openMenu({ kind: 'settings' });
+        ui.patch({ settings: 'general' });
       } else if (cmd && (e.key === '=' || e.key === '+')) {
         e.preventDefault();
         zoom('in');
@@ -137,10 +143,30 @@ function useShortcuts() {
   }, []);
 }
 
+const PANE_OF: Record<string, SettingsPane> = { claude: 'claude', notify: 'notifications', workspaces: 'workspaces', buttons: 'workspaces', people: 'people', display: 'appearance' };
+
+/** The shared code opens the settings menu (from a person's menu, onboarding…): here it's the Settings window. */
+function useSettingsWindow() {
+  const { ui } = useKlaud();
+  useEffect(
+    () =>
+      ui.subscribe(() => {
+        const m = ui.get().menu?.menu;
+        if (m?.kind === 'settings') ui.patch({ menu: undefined, settings: PANE_OF[m.section ?? ''] ?? 'general' });
+      }),
+    [],
+  );
+}
+
 export function App() {
   const prefs = usePrefs();
+  const { client, ui } = useKlaud();
+  const actions = useActions();
+  const [joining, setJoining] = useState<string>();
   useOverlays();
   useShortcuts();
+  useSettingsWindow();
+  useNative(client, ui, actions, setJoining);
   return (
     <Tooltip.Provider delayDuration={450} skipDelayDuration={200}>
       <div className={s.app}>
@@ -149,6 +175,9 @@ export function App() {
         {prefs.inspector ? <Inspector /> : null}
       </div>
       <MenuSheet />
+      <Palette />
+      <Settings />
+      {joining ? <JoinSheet invite={joining} onCancel={() => setJoining(undefined)} onJoin={() => void joinRoom(joining)} /> : null}
       <Toasts />
     </Tooltip.Provider>
   );
