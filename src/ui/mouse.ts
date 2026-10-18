@@ -119,6 +119,16 @@ export function splitPaste(data: string, inPaste: boolean): { parts: Array<{ tex
 /** Shift+Enter as terminals report it with CSI u / modifyOtherKeys; Ink can't tell it from Enter, so it becomes Ctrl+J (new line). */
 const SHIFT_ENTER = /\x1b\[13;2u|\x1b\[27;2;13~/g;
 
+/**
+ * Rewrite a few keys into forms Ink understands: Ctrl+Tab in xterm's modifyOtherKeys form
+ * becomes the kitty form, and a lone "Esc [" (Option+[ with Option as Meta, which looks like
+ * the start of a sequence) becomes kitty's Alt+[.
+ */
+export function normalizeKeys(data: string): string {
+  if (data === '\x1b[') return '\x1b[91;3u';
+  return data.replace(/\x1b\[27;([56]);9~/g, '\x1b[9;$1u');
+}
+
 export interface InputHooks {
   readonly onMouse?: (e: MouseEvent) => void;
   readonly onFocus?: (focused: boolean) => void;
@@ -166,7 +176,7 @@ export function createInput(source: NodeJS.ReadStream, hooks: InputHooks): NodeJ
     if (!rest) return;
     const sink = hooks.rawSink?.();
     if (sink) sink(rest);
-    else proxy.write(rest.replace(SHIFT_ENTER, '\n'));
+    else proxy.write(normalizeKeys(rest.replace(SHIFT_ENTER, '\n')));
   };
   const join = createChunkJoiner(deliver);
   source.on('data', (data: string | Buffer) => {

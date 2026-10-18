@@ -83,7 +83,7 @@ export function hitTest(g: Geometry, x: number, y: number, ctx: HitContext): Tar
   }
   if (y < g.paneTop) return { kind: 'main' };
   const view = ctx.state.view;
-  if (view.kind === 'workspace' && view.tab === 'terminal') return y > g.paneTop ? { kind: 'terminal' } : { kind: 'main' };
+  if (view.kind === 'terminal' || (view.kind === 'workspace' && view.tab === 'terminal')) return y > g.paneTop ? { kind: 'terminal' } : { kind: 'main' };
   const inViewer = x >= g.mainX + g.chatWidth && g.viewerWidth > 0;
   if (!inViewer && view.kind === 'files') {
     const win = fileWindow(ctx.state.browser, g.paneHeight);

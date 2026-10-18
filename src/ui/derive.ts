@@ -128,13 +128,13 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   if (focus === 'files' && !filesVisible) focus = 'chat';
   if (focus === 'main' && !reviewing && state.view.kind !== 'overview' && state.view.kind !== 'usage' && state.view.kind !== 'search') focus = 'chat';
   // The terminal gives the keyboard back while a menu, help or an approval needs it.
-  if (focus === 'terminal' && (!(state.view.kind === 'workspace' && state.view.tab === 'terminal') || ui.menu || state.overlay || state.approvals.length)) focus = 'chat';
+  if (focus === 'terminal' && (!(state.view.kind === 'terminal' || (state.view.kind === 'workspace' && state.view.tab === 'terminal')) || ui.menu || state.overlay || state.approvals.length)) focus = 'chat';
   // Claude's questions come first; then "how much do you trust this new person?".
   const trustPeer = !pendingQuestion && !ui.menu ? state.trustPrompts.find((id) => state.peers.some((p) => p.peerId === id)) : undefined;
   const approval = state.approvals[0];
   // The composer's right side (model picker, plan mode) takes a fixed column; the draft wraps beside it.
   const channel = channelOf(state.view);
-  const chatty = channel !== 'draft' && state.view.kind !== 'search' && state.view.kind !== 'usage' && state.view.kind !== 'overview' && state.view.kind !== 'files';
+  const chatty = channel !== 'draft' && state.view.kind !== 'search' && state.view.kind !== 'usage' && state.view.kind !== 'overview' && state.view.kind !== 'files' && state.view.kind !== 'terminal';
   const modelText = ` ◆ ${modelLabel(state, channel === 'room' ? state.prefs.model : modelOf(state, channel))} ▾ `;
   const plan = state.planMode[channel] === true;
   const planText = plan ? ' ◉ plan mode ' : ' ○ plan mode ';

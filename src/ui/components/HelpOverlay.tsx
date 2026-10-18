@@ -16,6 +16,8 @@ const TALK: ReadonlyArray<readonly [string, string]> = [
 
 const KEYS: ReadonlyArray<readonly [string, string]> = [
   ['Tab / Shift+Tab', 'walk through every button and area'],
+  ['Option+1 – 6', 'jump to a top tab: Chat, Shared files, Overview, Search, Usage, Terminal'],
+  ['Ctrl+Tab / Option+[ ]', 'next / previous top tab'],
   ['Ctrl+]', 'leave the built-in terminal (or click anywhere else)'],
   ['Enter / Option+Enter', 'send (queued while Claude works) / interrupt and send now'],
   ['Ctrl+J / Shift+Enter', 'new line (pasted text keeps its lines)'],

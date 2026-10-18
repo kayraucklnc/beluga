@@ -563,6 +563,40 @@ describe('Session hardening', () => {
     expect(kay.session.host.promote('nope')).toBe(false);
   });
 
+  it("sends your messages into a run that waits on background agents instead of queueing; others still queue", async () => {
+    hub = await startHub({ keys });
+    let finishAgents!: () => void;
+    const kay = peer('kay', {
+      policy: 'auto',
+      script: (input) =>
+        input.prompt === 'start jobs'
+          ? new Promise((resolve) => {
+              // Answered, but background agents keep the run open and it takes follow-ups.
+              input.onFollowUps?.((f) => {
+                setTimeout(() => f.onDone(`got ${f.prompt}`), 10);
+                return true;
+              });
+              finishAgents = () => {
+                input.onFollowUps?.(undefined);
+                resolve('jobs done');
+              };
+            })
+          : Promise.resolve(`did ${input.prompt}`),
+    });
+    const bob = peer('bob');
+    await room(kay, bob);
+    kay.session.submit('@claude start jobs');
+    await waitFor(() => kay.runs.length === 1);
+    kay.session.submit('@claude how is it going', true);
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'got how is it going'));
+    bob.session.submit('@claude:kay hi');
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'queued'));
+    expect(agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'Interrupted by a newer message')).toBe(false);
+    finishAgents();
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did hi'));
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['start jobs', 'hi']);
+  });
+
   it('shares folders at runtime and opens invites on demand', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');

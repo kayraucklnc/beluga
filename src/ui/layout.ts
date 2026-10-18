@@ -56,7 +56,8 @@ export interface LayoutInput {
   readonly composerLines?: number;
 }
 
-const TABS_HEIGHT = 2;
+/** The top tabs: one line (the pane's border right below separates them). */
+const TABS_HEIGHT = 1;
 const HEADER_HEIGHT = 3;
 const MIN_BODY = 10;
 /** A long draft may take up to this share of the screen before it scrolls inside the box. */

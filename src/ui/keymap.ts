@@ -103,7 +103,11 @@ export type Effect =
   /** Shift+Tab in the chat: plan first, or act right away. */
   | { readonly type: 'toggle_plan' }
   /** ↑↓ in Search: choose a result. */
-  | { readonly type: 'search_move'; readonly delta: number };
+  | { readonly type: 'search_move'; readonly delta: number }
+  /** Option+1…6: open that top tab (0-based). */
+  | { readonly type: 'tab_jump'; readonly index: number }
+  /** Ctrl+Tab / Option+]: the next top tab (-1: the previous one). */
+  | { readonly type: 'tab_step'; readonly delta: 1 | -1 };
 
 export interface KeyContext {
   readonly hasApproval: boolean;
@@ -429,6 +433,40 @@ function cycleFocus(ui: UiState, ctx: KeyContext, dir: 1 | -1): UiState {
  */
 const OPTION_CHARS: Readonly<Record<string, string>> = { q: '@', l: '@', '2': '@' };
 
+/** What Option+1…6 type on a Mac whose terminal doesn't send Option as Meta (US layout). */
+const MAC_OPTION_DIGITS = '¡™£¢∞§';
+/** …and Option+[ / Option+] there. */
+const MAC_OPTION_BRACKETS: Readonly<Record<string, 1 | -1>> = { '“': -1, '‘': 1 };
+
+/**
+ * Quick tab keys: Option/Alt+1…6 jump to a top tab, Ctrl+Tab and Option+] / Option+[ go to
+ * the next / previous one. The characters a Mac types for these without Option-as-Meta
+ * (¡™£¢∞§ “ ‘) only count while the box is empty, so they can still be typed in a message;
+ * so does Option+2 while you're typing (it's "@" on a Spanish keyboard).
+ */
+export function tabChord(input: string, key: KeyInfo, boxEmpty: boolean): { index: number } | { delta: 1 | -1 } | undefined {
+  if (key.tab && key.ctrl) return { delta: key.shift ? -1 : 1 };
+  if (key.ctrl) return undefined;
+  if (key.meta) {
+    if (/^[1-6]$/.test(input) && (input !== '2' || boxEmpty)) return { index: Number(input) - 1 };
+    if (input === ']') return { delta: 1 };
+    if (input === '[') return { delta: -1 };
+    return undefined;
+  }
+  if (!boxEmpty || input.length !== 1) return undefined;
+  const digit = MAC_OPTION_DIGITS.indexOf(input);
+  if (digit >= 0) return { index: digit };
+  const step = MAC_OPTION_BRACKETS[input];
+  return step ? { delta: step } : undefined;
+}
+
+/** Ctrl+Tab / Ctrl+Shift+Tab as raw bytes (kitty and xterm's modifyOtherKeys forms), for the built-in terminal. */
+export function rawTabStep(data: string): 1 | -1 | undefined {
+  if (data === '\x1b[9;5u' || data === '\x1b[27;5;9~') return 1;
+  if (data === '\x1b[9;6u' || data === '\x1b[27;6;9~') return -1;
+  return undefined;
+}
+
 /** Modeless key handling: you're always typing, Tab moves between panels, Esc comes back. */
 export function handleKey(raw: UiState, rawInput: string, rawKey: KeyInfo, ctx: KeyContext): KeyResult {
   const optionChar = rawKey.meta && !rawKey.ctrl ? OPTION_CHARS[rawInput] : undefined;
@@ -463,6 +501,8 @@ export function handleKey(raw: UiState, rawInput: string, rawKey: KeyInfo, ctx: 
     const delta = key.upArrow ? -1 : key.downArrow ? 1 : key.pageUp ? -ctx.page : key.pageDown ? ctx.page : 0;
     return { ui: { ...ui, overlayScroll: Math.max(0, ui.overlayScroll + delta) } };
   }
+  const chord = tabChord(rawInput, rawKey, !ui.buffer);
+  if (chord) return { ui: { ...ui, entered: false }, effect: 'index' in chord ? { type: 'tab_jump', index: chord.index } : { type: 'tab_step', delta: chord.delta } };
   const focus = ui.focus === 'viewer' && !ctx.hasViewer ? 'chat' : ui.focus;
   const current = focus === ui.focus ? ui : { ...ui, focus };
   const suggesting = current.focus === 'chat' && !current.suggestHidden && ctx.suggestions.length > 0;

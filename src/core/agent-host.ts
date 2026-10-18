@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { AgentBackend } from '../agent/types.js';
+import type { AgentBackend, FollowUp } from '../agent/types.js';
 import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
@@ -38,6 +38,10 @@ interface Lane {
   pumping: boolean;
   current?: AbortController;
   interruptedBy?: string;
+  /** Who started the current run. */
+  runFrom?: string;
+  /** Set while the run has answered but waits on background agents: messages go straight in. */
+  followUps?: (followUp: FollowUp) => boolean;
 }
 
 /** Conversations whose Claude may work at the same time (keeps your plan's limits in mind). */
@@ -234,6 +238,7 @@ export class AgentHost {
    */
   private enqueue(from: string, body: BodyOf<'agent_request'>, askTo?: string): void {
     const lane = this.lane(body.channel);
+    if (this.sendFollowUp(lane, from, body)) return;
     const urgent = body.urgent && from === this.selfId;
     if (urgent) {
       // After earlier urgent messages (keeping your order), ahead of everything else in this conversation.
@@ -253,6 +258,27 @@ export class AgentHost {
       if (lane.current || lane.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', 'Waiting for the current task to finish', body.channel);
     }
     void this.pump(lane);
+  }
+
+  /**
+   * While the current run only waits on its background agents, send a message from the same
+   * person straight into it instead of queueing behind it (or interrupting and killing them).
+   * Someone else's message still queues: approvals in that run are judged for its requester.
+   */
+  private sendFollowUp(lane: Lane, from: string, body: BodyOf<'agent_request'>): boolean {
+    if (!lane.followUps || lane.runFrom !== from || body.plan) return false;
+    const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
+    const sent = lane.followUps({
+      prompt: body.prompt,
+      requesterName: peerName(this.store.getState(), from),
+      viaAgent: body.viaAgent,
+      context: this.recentChat(body.channel),
+      onEvent: (kind, text) => emit(kind, text),
+      onDone: (final) => emit('done', final || '(done)'),
+      onError: (reason) => emit('error', reason),
+    });
+    if (sent) emit('started');
+    return sent;
   }
 
   private async pump(lane: Lane): Promise<void> {
@@ -314,6 +340,7 @@ export class AgentHost {
     const agent = this.agent as AgentBackend;
     const controller = new AbortController();
     lane.current = controller;
+    lane.runFrom = from;
     const requesterName = peerName(this.store.getState(), from);
     const place = this.deps.workspaces?.place(body.channel);
     if (body.channel !== 'room' && !place) {
@@ -337,6 +364,11 @@ export class AgentHost {
         canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input),
         askUser: (question) => this.deps.questions.ask(askTo, body.requestId, body.channel, question),
         plan: body.plan,
+        onFollowUps: (send) => {
+          lane.followUps = send;
+          // Anything that queued up behind this run from the same person can go in now.
+          if (send) lane.waiting = lane.waiting.filter((w) => !this.sendFollowUp(lane, w.from, w.body));
+        },
         ...this.modelFor(place?.model),
       });
       if (controller.signal.aborted) throw new Error('aborted');
@@ -346,7 +378,11 @@ export class AgentHost {
       lane.interruptedBy = undefined;
       this.emitAgent(body.requestId, from, 'error', reason, body.channel);
     } finally {
-      if (lane.current === controller) lane.current = undefined;
+      if (lane.current === controller) {
+        lane.current = undefined;
+        lane.followUps = undefined;
+        lane.runFrom = undefined;
+      }
       lane.interruptedBy = undefined; // never carry an interrupt label into the next run
       void this.deps.refreshUsage();
       if (body.channel !== 'room') void this.deps.workspaces?.refresh();
