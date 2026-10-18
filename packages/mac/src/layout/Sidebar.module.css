@@ -1,0 +1,192 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-w);
+  flex: none;
+  height: 100%;
+  background: var(--bg-sidebar);
+  border-right: 0.5px solid var(--hairline);
+}
+:global(html:not([data-app])) .sidebar {
+  background: var(--bg-sidebar-solid);
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--titlebar-h);
+  padding: 0 10px 0 0;
+  flex: none;
+}
+.trafficSpace {
+  width: 78px;
+  height: 100%;
+}
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.section {
+  margin-top: 10px;
+}
+.section:first-child {
+  margin-top: 0;
+}
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 26px;
+  padding: 0 4px 0 8px;
+}
+.sectionTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.sectionChevron {
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.sectionHead:hover .sectionChevron {
+  opacity: 1;
+}
+.sectionAction {
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.sectionHead:hover .sectionAction,
+.sectionAction:focus-within {
+  opacity: 1;
+}
+.sectionAction button {
+  width: 22px;
+  height: 20px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--row);
+  padding-right: 6px;
+  border-radius: 6px;
+  color: var(--text);
+  outline: none;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.row:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.selected,
+.selected:hover {
+  background: var(--bg-selected);
+}
+.rowIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  flex: none;
+  color: var(--text-2);
+}
+.selected .rowIcon {
+  color: var(--accent);
+}
+.rowLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+}
+
+.projectRow {
+  font-weight: 600;
+}
+.projectRow .rowIcon {
+  width: 12px;
+  color: var(--text-3);
+}
+.hoverTools {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+.hoverTools button {
+  width: 22px;
+  height: 20px;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.row:hover .hoverTools button,
+.hoverTools button:focus-visible,
+.hoverTools button[data-state='open'] {
+  opacity: 1;
+}
+
+.fold {
+  color: var(--text-2);
+  font-size: 0.94rem;
+}
+.groupRow {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.external {
+  color: var(--text-2);
+}
+.hintRow {
+  color: var(--text-3);
+}
+.hintRow .rowIcon {
+  color: var(--text-3);
+}
+.dim {
+  color: var(--text-3);
+}
+.claudeMark {
+  color: var(--claude);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px 0 16px;
+  border-top: 0.5px solid var(--hairline);
+  flex: none;
+  color: var(--text-2);
+  font-size: 0.92rem;
+}
+.footerLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.invite {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.invite:hover {
+  background: var(--bg-hover);
+}

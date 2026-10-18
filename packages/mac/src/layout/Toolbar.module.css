@@ -1,0 +1,85 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--titlebar-h);
+  flex: none;
+  padding: 0 10px 0 18px;
+  border-bottom: 0.5px solid var(--hairline);
+  background: var(--bg);
+}
+.noSidebar {
+  padding-left: 82px;
+}
+.lead {
+  margin-left: -6px;
+}
+.titles {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 1.05rem;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crumb {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.crumb::after {
+  content: '›';
+  margin-left: 6px;
+}
+.subtitle {
+  display: flex;
+  gap: 12px;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.tone_claude {
+  color: var(--claude);
+}
+.tone_warn {
+  color: var(--warn);
+}
+.tone_error {
+  color: var(--error);
+}
+.tone_info {
+  color: var(--info);
+}
+.tone_ok {
+  color: var(--text-3);
+}
+.center {
+  flex: none;
+}
+.right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.divider {
+  width: 0.5px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--hairline-strong);
+}

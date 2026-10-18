@@ -38,7 +38,8 @@ export const REVIEW_PROMPT = [
 const WS_PREFIX = 'ws:';
 
 export const workspaceIdOf = (channel: string): string | undefined => (channel.startsWith(WS_PREFIX) ? channel.slice(WS_PREFIX.length) : undefined);
-export const shareNameOf = (id: string): string => `ws-${id.replace(/[^\w.-]/g, '_')}`;
+export { shareNameOf } from '../shared/share-names.js';
+import { shareNameOf } from '../shared/share-names.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 

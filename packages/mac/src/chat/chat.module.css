@@ -1,0 +1,356 @@
+.logWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.log {
+  flex: 1;
+  overflow-y: auto;
+  overflow-anchor: none;
+  padding: 12px 0 18px;
+}
+.logInner {
+  position: relative;
+  width: 100%;
+}
+.logRow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+.logEmpty {
+  flex: 1;
+  display: flex;
+}
+
+.message {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
+  max-width: var(--chat-max);
+  margin: 0 auto;
+  padding: 7px 24px 3px;
+}
+.continued {
+  padding-top: 0;
+}
+.gutter {
+  padding-top: 2px;
+  display: flex;
+  justify-content: center;
+}
+.body {
+  position: relative;
+  min-width: 0;
+}
+.meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 18px;
+  margin-bottom: 1px;
+}
+.author {
+  font-weight: 600;
+}
+.claudeName {
+  color: var(--claude);
+}
+.time {
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 0.86rem;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.tone_claude {
+  color: var(--claude);
+}
+.tone_ok {
+  color: var(--ok);
+}
+.tone_error {
+  color: var(--error);
+}
+.tone_warn {
+  color: var(--warn);
+}
+.tone_muted {
+  color: var(--text-3);
+}
+
+.system {
+  max-width: var(--chat-max);
+  margin: 4px auto;
+  padding: 0 24px 0 68px;
+  color: var(--text-3);
+  font-size: 0.92rem;
+}
+.system p {
+  margin: 0;
+}
+.systemWarn {
+  color: var(--warn);
+}
+.systemError {
+  color: var(--error);
+}
+
+/* Claude's runs: a soft rail while it works. */
+.agent .body {
+  padding-left: 0;
+}
+.agentLive .body::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 30px;
+  bottom: 4px;
+  width: 1.5px;
+  border-radius: 1px;
+  background: linear-gradient(var(--claude), transparent);
+  opacity: 0.5;
+}
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 3px 0 6px;
+  color: var(--text-2);
+  font-size: 0.92rem;
+}
+.step {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.step svg {
+  flex: none;
+  color: var(--text-3);
+  transform: translateY(1px);
+}
+.more {
+  align-self: flex-start;
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+.more:hover {
+  color: var(--text);
+}
+.sub {
+  margin: 3px 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+}
+.subHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.subTitle {
+  color: var(--text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subDone {
+  color: var(--ok);
+}
+.subFailed {
+  color: var(--error);
+}
+.subStep {
+  padding-left: 14px;
+}
+.thinking {
+  height: 22px;
+  display: flex;
+  align-items: center;
+}
+.idle {
+  color: var(--text-3);
+}
+.cardActions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.hoverActions {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.message:hover .hoverActions {
+  opacity: 1;
+}
+
+.shellIcon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+.shellOut {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  max-height: 22rem;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.prompt {
+  color: var(--text-3);
+}
+
+/* Markdown */
+.markdown {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p {
+  margin: 0 0 0.6em;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 0.9em 0 0.35em;
+  font-size: 1.05em;
+  font-weight: 650;
+}
+.markdown h1 {
+  font-size: 1.22em;
+}
+.markdown h2 {
+  font-size: 1.12em;
+}
+.markdown ul,
+.markdown ol {
+  margin: 0.2em 0 0.6em;
+  padding-left: 1.4em;
+}
+.markdown li {
+  margin: 0.12em 0;
+}
+.markdown blockquote {
+  margin: 0.4em 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--hairline-strong);
+  color: var(--text-2);
+}
+.markdown hr {
+  border: 0;
+  border-top: 0.5px solid var(--hairline-strong);
+  margin: 0.8em 0;
+}
+.markdown a {
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.markdown a:hover {
+  border-bottom-color: var(--accent);
+}
+.inlineCode {
+  padding: 0.05em 0.35em;
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-size: 0.9em;
+}
+.codeBlock {
+  position: relative;
+  margin: 0.4em 0 0.7em;
+}
+.codeBlock pre,
+.shiki :global(pre) {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: var(--radius);
+  background: var(--code-bg) !important;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+:global([data-theme='dark']) .shiki :global(.shiki),
+:global([data-theme='dark']) .shiki :global(.shiki span) {
+  color: var(--shiki-dark) !important;
+}
+.copyCode {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  color: var(--text-2);
+  font-size: 0.82rem;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.codeBlock:hover .copyCode {
+  opacity: 1;
+}
+.tableWrap {
+  overflow-x: auto;
+  margin: 0.4em 0 0.7em;
+}
+.tableWrap table {
+  border-collapse: collapse;
+  font-size: 0.94em;
+}
+.tableWrap th,
+.tableWrap td {
+  padding: 4px 10px;
+  border-bottom: 0.5px solid var(--hairline-strong);
+  text-align: left;
+}
+
+.jump {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 13px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop);
+  color: var(--text-2);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.jump:hover {
+  color: var(--text);
+}

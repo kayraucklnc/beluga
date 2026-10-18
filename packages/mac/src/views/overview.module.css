@@ -1,0 +1,93 @@
+.pane {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 24px 32px;
+}
+.group {
+  max-width: 72rem;
+  margin: 0 auto 22px;
+}
+.groupTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 6px 8px;
+  font-size: 1rem;
+  font-weight: 650;
+}
+.count {
+  color: var(--text-3);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+.table {
+  display: flex;
+  flex-direction: column;
+}
+.row {
+  display: grid;
+  grid-template-columns: 22px minmax(10rem, 1.3fr) minmax(6rem, 1fr) minmax(12rem, 1.4fr) minmax(6rem, 1fr) 6rem;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  outline: none;
+}
+.row:nth-child(odd) {
+  background: color-mix(in srgb, var(--bg-hover) 55%, transparent);
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.row:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.kind {
+  color: var(--text-3);
+  display: grid;
+}
+.name {
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.unread {
+  margin-left: 8px;
+  color: var(--accent);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.branch,
+.extra,
+.when {
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92rem;
+}
+.when {
+  text-align: right;
+}
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.tone_claude {
+  color: var(--claude);
+}
+.tone_warn {
+  color: var(--warn);
+}
+.tone_error {
+  color: var(--error);
+}
+.tone_info {
+  color: var(--info);
+}

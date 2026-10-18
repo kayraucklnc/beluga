@@ -208,7 +208,10 @@ export class SocketClient implements KlaudClient {
     const id = String(++this.nextId);
     const promise = new Promise<unknown>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      this.send({ t: 'call', id, method, args: [...args] });
+      // Left-out trailing arguments stay left out (JSON would turn them into null).
+      const list = [...args];
+      while (list.length && list[list.length - 1] === undefined) list.pop();
+      this.send({ t: 'call', id, method, args: list });
     });
     promise.catch((err: unknown) => this.store.dispatch({ type: 'toast', text: `Something went wrong: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200), level: 'error' }));
     return promise;

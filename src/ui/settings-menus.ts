@@ -83,7 +83,7 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
         options: [
           { id: 'w-setup', label: 'Run setup in new worktrees', hint: `${onOff(p.autoSetup)}  ·  e.g. npm install (set per project in its ⋯ menu)` },
           { id: 'w-friend', label: 'Friends may start work here', hint: `${p.friendWorktrees === 'ask' ? 'Yes, I approve each one' : 'No'}  ·  worktrees and handoffs from friends` },
-          { id: 'w-shell', label: 'Terminal shell', hint: `${p.shell ?? process.env.SHELL ?? '/bin/zsh'}  ·  type a new one` },
+          { id: 'w-shell', label: 'Terminal shell', hint: `${p.shell ?? (typeof process === 'undefined' ? undefined : process.env.SHELL) ?? 'your login shell'}  ·  type a new one` },
           { id: 'w-buttons', label: 'Top bar buttons…', hint: p.hiddenButtons.length ? `${p.hiddenButtons.length} hidden` : 'all shown' },
           back,
         ],

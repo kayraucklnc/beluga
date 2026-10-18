@@ -3,6 +3,8 @@ import { copyFileSync, mkdirSync, promises as fs, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { klaudHome } from './home.js';
+export { ATTACHMENT_SHARE, ATTACHMENT_SCHEME } from './attachment-share.js';
+import { ATTACHMENT_SHARE, ATTACHMENT_SCHEME } from './attachment-share.js';
 
 /**
  * Images pasted into the box you type in. Each becomes a chip like "[image 1]" in the
@@ -10,10 +12,6 @@ import { klaudHome } from './home.js';
  * ("📎 image 1 (png, 120K)") that open the image, and your own Claude gets the pixels.
  */
 
-/** The private share friends fetch room images from (only copies of images sent to the room). */
-export const ATTACHMENT_SHARE = 'klaud-attachments';
-/** Link scheme for an image in a chat message: klaud-attachment:<owner peer id>/<file name>. */
-export const ATTACHMENT_SCHEME = 'klaud-attachment:';
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
 /** Biggest image accepted (the Claude API takes up to 5 MB per image once base64-encoded, a third bigger). */
 export const MAX_ATTACHMENT_BYTES = Math.floor(3.7 * 1024 * 1024);

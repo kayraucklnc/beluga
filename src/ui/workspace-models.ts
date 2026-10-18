@@ -186,24 +186,26 @@ export interface WorkspaceState {
   readonly label: string;
   readonly color: string;
   readonly icon: string;
+  /** What the color means (for screens with their own palette). */
+  readonly tone: 'error' | 'warn' | 'claude' | 'muted' | 'info' | 'ok';
 }
 
 /** One plain-language phrase for a workspace's state, used everywhere it's shown. */
 export function stateOf(state: AppState, ws: Workspace, frame: number, now = Date.now()): WorkspaceState {
   const act = activityOf(state.log, `ws:${ws.id}`);
   const spin = SPINNER[frame % SPINNER.length] ?? '•';
-  if (state.conflicts[ws.id]?.length) return { label: 'Merge conflict', color: theme.error, icon: '!' };
-  if (act.awaiting) return { label: 'Needs your approval', color: theme.warn, icon: glyph.wait };
+  if (state.conflicts[ws.id]?.length) return { label: 'Merge conflict', color: theme.error, icon: '!', tone: 'error' };
+  if (act.awaiting) return { label: 'Needs your approval', color: theme.warn, icon: glyph.wait, tone: 'warn' };
   if (act.running) {
     const extra = act.subagents ? ` · ${act.subagents} sub-agent${act.subagents > 1 ? 's' : ''} running` : act.background ? ' · background task' : '';
-    return { label: `Claude working${act.startedAt ? ` ${formatDuration(now - act.startedAt)}` : ''}${extra}`, color: theme.claude, icon: spin };
+    return { label: `Claude working${act.startedAt ? ` ${formatDuration(now - act.startedAt)}` : ''}${extra}`, color: theme.claude, icon: spin, tone: 'claude' };
   }
-  if (ws.archived) return { label: 'Archived', color: theme.muted, icon: glyph.ring };
-  if (ws.kind === 'chat') return { label: act.lastTs ? `Chat · ${ago(act.lastTs, now)}` : 'New chat', color: theme.muted, icon: '◇' };
+  if (ws.archived) return { label: 'Archived', color: theme.muted, icon: glyph.ring, tone: 'muted' };
+  if (ws.kind === 'chat') return { label: act.lastTs ? `Chat · ${ago(act.lastTs, now)}` : 'New chat', color: theme.muted, icon: '◇', tone: 'muted' };
   const st = ws.status;
-  if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.warn, icon: glyph.dot };
-  if (ws.kind === 'worktree' && st?.ahead) return { label: `Ready to merge · ${st.ahead} commit${st.ahead > 1 ? 's' : ''}`, color: theme.info, icon: glyph.dot };
-  return { label: ws.kind === 'main' ? 'Main folder' : 'Up to date', color: theme.ok, icon: glyph.dot };
+  if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.warn, icon: glyph.dot, tone: 'warn' };
+  if (ws.kind === 'worktree' && st?.ahead) return { label: `Ready to merge · ${st.ahead} commit${st.ahead > 1 ? 's' : ''}`, color: theme.info, icon: glyph.dot, tone: 'info' };
+  return { label: ws.kind === 'main' ? 'Main folder' : 'Up to date', color: theme.ok, icon: glyph.dot, tone: 'ok' };
 }
 
 const BRANCH = '⌥'; // in every common terminal font, and it looks like a fork
@@ -381,7 +383,7 @@ export function overviewNews(state: AppState): { count: number; urgent: boolean 
 }
 
 /** Option+N on a Mac, Alt+N elsewhere: the quick key for tab N, shown only in hover hints. */
-export const tabKey = (n: number, platform = process.platform): string => (platform === 'darwin' ? `⌥${n}` : `Alt+${n}`);
+export const tabKey = (n: number, platform: string = typeof process === 'undefined' ? 'darwin' : process.platform): string => (platform === 'darwin' ? `⌥${n}` : `Alt+${n}`);
 
 /** The six top tabs, in order (Option/Alt+1…6 jump to them). */
 export function topTabs(state: AppState): TopTab[] {

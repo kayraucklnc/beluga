@@ -29,7 +29,8 @@ export const shortFolder = (p: string, max = 32): string => {
 };
 
 const GROUP_GAP_MS = 3 * 60_000;
-const DONE_STEPS = 3;
+/** Steps a finished run still shows (the last few). */
+export const DONE_STEPS = 3;
 
 const time = (ts: number): string => new Date(ts).toTimeString().slice(0, 5);
 
@@ -77,7 +78,7 @@ export function card(title: Line, right: Line, body: readonly Line[], rawCols: n
 }
 
 /** Tool calls that are plumbing, not progress worth showing to the room. */
-const HIDDEN_STEPS = /^(ToolSearch|TodoWrite)\b/;
+export const HIDDEN_STEPS = /^(ToolSearch|TodoWrite)\b/;
 
 function agentLines(item: AgentItem, cols: number, opts: RenderOptions): Line[] {
   const st = statusOf(item, opts);

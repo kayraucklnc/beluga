@@ -4,8 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { FsEntry } from '../protocol.js';
 
-/** Where folders listed for "/project add <path>" completion are kept in the dir cache. */
-export const localDirKey = (dir: string): string => `local:${dir}`;
+export { localDirKey } from './local-key.js';
 
 /** Folders on this computer, for "/project add" completion (size 1 = git project). */
 export function listLocalDirs(dir: string): FsEntry[] {

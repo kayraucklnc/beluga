@@ -1,0 +1,102 @@
+/*
+ * klaud for macOS — design tokens.
+ * Neutral system greys carry the layout; color only means something: your accent for focus and
+ * selection, copper for Claude, and the four states (done, needs you, problem, info).
+ */
+
+:root {
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --text-size: 13px;
+  --accent: AccentColor;
+  --sidebar-w: 248px;
+  --inspector-w: 296px;
+  --titlebar-h: 52px;
+  --chat-max: 60rem;
+
+  --radius-s: 5px;
+  --radius: 7px;
+  --radius-l: 11px;
+
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+  --row: 28px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 120ms;
+  --dur: 180ms;
+}
+
+:root[data-density='compact'] {
+  --row: 24px;
+  --space-4: 10px;
+  --space-5: 13px;
+}
+
+/* Light: macOS window chrome. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-sunken: #f6f6f7;
+  --bg-sidebar: rgba(236, 236, 239, 0.78);
+  --bg-sidebar-solid: #ececef;
+  --bg-raised: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.045);
+  --bg-press: rgba(0, 0, 0, 0.08);
+  --bg-selected: color-mix(in srgb, var(--accent) 16%, transparent);
+  --text: #1d1d1f;
+  --text-2: #5d5d63;
+  --text-3: #8e8e93;
+  --hairline: rgba(0, 0, 0, 0.09);
+  --hairline-strong: rgba(0, 0, 0, 0.16);
+  --shadow-pop: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 8px 28px rgba(0, 0, 0, 0.14);
+  --claude: #b4693f;
+  --ok: #2f8a4c;
+  --warn: #b36b00;
+  --error: #c4352e;
+  --info: #2f6cb3;
+  --code-bg: #f4f4f6;
+  --term-bg: #fbfbfc;
+}
+
+/* Dark: graphite, not black. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1e1e21;
+  --bg-sunken: #19191b;
+  --bg-sidebar: rgba(38, 38, 42, 0.72);
+  --bg-sidebar-solid: #26262a;
+  --bg-raised: #2a2a2e;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-press: rgba(255, 255, 255, 0.1);
+  --bg-selected: color-mix(in srgb, var(--accent) 26%, transparent);
+  --text: #ececee;
+  --text-2: #a8a8ae;
+  --text-3: #75757c;
+  --hairline: rgba(255, 255, 255, 0.075);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+  --shadow-pop: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 10px 32px rgba(0, 0, 0, 0.5);
+  --claude: #df946a;
+  --ok: #6cc187;
+  --warn: #e3a64a;
+  --error: #ef7a72;
+  --info: #79aef0;
+  --code-bg: #242427;
+  --term-bg: #17171a;
+}
+
+:root[data-motion='reduce'] {
+  --dur-fast: 0ms;
+  --dur: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+  }
+}

@@ -74,4 +74,16 @@ describe('browser-safe client code', () => {
     );
     expect(offenders).toEqual([]);
   });
+
+  it("doesn't reach for Node's process without checking it's there", () => {
+    const offenders = [...graph.keys()].flatMap((file) =>
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .map((line, i) => ({ line, i }))
+        .filter(({ line }) => /\bprocess\.(env|platform|cwd|argv|stdout|stdin)/.test(line) && !line.includes("typeof process") && !line.trim().startsWith('//') && !line.trim().startsWith('*'))
+        .map(({ i }) => `${path.relative(process.cwd(), file)}:${i + 1}`),
+    );
+    // The core's command handlers run in the daemon, never in a web view.
+    expect(offenders.filter((o) => !o.startsWith('src/core/commands.ts'))).toEqual([]);
+  });
 });

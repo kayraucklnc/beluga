@@ -1,0 +1,69 @@
+import { useEffect, useRef, useState } from 'react';
+import { Icon } from '../components/Icon.js';
+import { Empty, cx } from '../components/ui.js';
+import { useActions } from '../lib/actions.js';
+import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import s from './lists.module.css';
+
+/** Search every conversation (yours and the ones shared with you), and jump to a result. */
+export function SearchView() {
+  const api = useApi();
+  const actions = useActions();
+  const { client } = useKlaud();
+  const search = useApp((st) => st.search);
+  const [query, setQuery] = useState(search.query);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => input.current?.focus(), []);
+  useEffect(() => {
+    const t = setTimeout(() => void api.workbench.search(query), 120);
+    return () => clearTimeout(t);
+  }, [query]);
+  const open = (i: number): void => {
+    client.store.dispatch({ type: 'search_cursor', cursor: i });
+    actions.run({ type: 'search_hit', index: i });
+  };
+  return (
+    <div className={s.page}>
+      <div className={s.searchBox}>
+        <Icon name="search" size={15} />
+        <input
+          ref={input}
+          className="selectable"
+          value={query}
+          placeholder="Search every conversation"
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              client.store.dispatch({ type: 'search_cursor', cursor: search.cursor + (e.key === 'ArrowDown' ? 1 : -1) });
+            } else if (e.key === 'Enter' && search.hits.length) open(search.cursor);
+          }}
+        />
+        {search.query ? <span className={s.dim}>{search.hits.length} in {search.searched} conversations</span> : null}
+      </div>
+      {!query.trim() ? (
+        <Empty icon="search" title="Find anything anyone said" detail="Every conversation: the room, your workspaces (archived ones too), and workspaces shared with you." />
+      ) : !search.hits.length ? (
+        <Empty icon="search" title="No matches" detail={`Nothing says “${query}”.`} />
+      ) : (
+        <div className={s.list} role="listbox">
+          {search.hits.map((h, i) => (
+            <div key={`${h.channel}:${h.ts}:${i}`} role="option" aria-selected={i === search.cursor} className={cx(s.hit, i === search.cursor && s.hitOn)} onClick={() => open(i)}>
+              <div className={s.hitHead}>
+                <span className={s.place}>{h.place}</span>
+                {h.archived ? <span className={s.dim}>archived</span> : null}
+                <span className={s.dim}>{h.who}</span>
+                <span className={s.when}>{new Date(h.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              <div className={`${s.snippet} selectable`}>
+                {h.text.slice(Math.max(0, h.at - 60), h.at)}
+                <mark>{h.text.slice(h.at, h.at + search.query.length)}</mark>
+                {h.text.slice(h.at + search.query.length, h.at + search.query.length + 140)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

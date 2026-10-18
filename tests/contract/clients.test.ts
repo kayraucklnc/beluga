@@ -152,6 +152,14 @@ describe.each(Object.keys(MODES) as Array<keyof typeof MODES>)('a screen attache
     await waitFor(() => !(key in client.store.getState().terminals));
   });
 
+  it('takes left-out optional arguments, also in the middle', async () => {
+    const c = await core();
+    const client = await attach(c);
+    const untyped = client.call.bind(client) as unknown as (method: string, ...args: unknown[]) => Promise<unknown>;
+    await expect(untyped('workspaces.setGroup', 'nope', undefined)).resolves.toBeUndefined();
+    await expect(untyped('session.shareFolder', '/definitely/not/here', undefined, ['x'])).resolves.toBeUndefined();
+  });
+
   it('reports failures to the caller', async () => {
     const c = await core();
     const client = await attach(c);
