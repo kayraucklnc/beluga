@@ -220,6 +220,8 @@ Questions go to whoever asked Claude, even when it's a friend's Claude on their 
 - Long messages wrap and the box grows (up to about half the screen, then scrolls). **Ctrl+J** or **Shift+Enter** starts a new line; pasted text keeps its lines.
 - **Option+Backspace** deletes a word, and holding **Backspace** speeds up the longer you hold it.
 - Type `@` or `/` to get suggestions, and scroll through all of them with ↑ ↓.
+- **Images:** click **+ image** next to the model (or press **Ctrl+V**) to attach the image on your clipboard, such as a screenshot or an image file copied in Finder. You can also drag an image file into the terminal. It shows up as `[image 1]` while you type. Your Claude sees the image itself, and friends in the room can click it to view it.
+- **Links:** files, folders and URLs mentioned in the chat, like `src/ui/App.tsx:42`, `src/` or `https://…`, are clickable when they exist. Click (or ⌥-click) one to open the file at that line, browse the folder, or open the page in your browser. Hovering shows where a link goes.
 
 ### Commands
 
@@ -259,6 +261,7 @@ Questions go to whoever asked Claude, even when it's a friend's Claude on their 
 | `Option+Backspace` · `Option+Delete` · `Ctrl+W` | delete the word before / after the cursor |
 | `Option+← →` · `Cmd+← →` · `Cmd+Backspace` | move by word · to the start / end of the line · delete to the line start |
 | `Option+↑` / `Option+↓` | bigger or smaller text (works on every keyboard layout) |
+| `Ctrl+V` | attach the image on your clipboard |
 | `f` · `r` · `d` (in the viewer) | fullscreen · source/formatted (or color/text art) · download |
 | `Ctrl+Y` · `Ctrl+N` · `Ctrl+T` | allow · deny · always allow this person |
 | `Ctrl+C` twice | quit |

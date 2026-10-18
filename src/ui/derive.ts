@@ -19,6 +19,8 @@ import type { Workspace } from '../workspaces/types.js';
 import { draftModel, searchCursorRow, searchModel, topBarModel, trustCardModel, usageModel } from './work-models.js';
 import { modelLabel, modelOf } from './menus.js';
 import type { Line } from './text.js';
+import { type ChatLinkHover, chatLines } from './components/ChatView.js';
+import { chatLinkModel } from './link-zones.js';
 
 export interface Derived {
   /** Description of the hovered (or keyboard-selected) control, shown in the bottom bar. */
@@ -68,6 +70,8 @@ export interface Derived {
   readonly trustCard?: string;
   /** All clickable zones in screen coordinates. */
   readonly zones: readonly Zone[];
+  /** The chat link under the pointer, underlined. */
+  readonly chatHover?: ChatLinkHover;
 }
 
 export interface DeriveInput {
@@ -79,7 +83,7 @@ export interface DeriveInput {
   readonly frame: number;
   readonly listLocalDirs?: (dir: string) => readonly FsEntry[];
   /** Mouse position for hover feedback. */
-  readonly hover?: { readonly x: number; readonly y: number };
+  readonly hover?: { readonly x: number; readonly y: number; readonly alt?: boolean };
 }
 
 const HOVER = { inverse: true } as const;
@@ -138,7 +142,8 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   const modelText = ` ◆ ${modelLabel(state, channel === 'room' ? state.prefs.model : modelOf(state, channel))} ▾ `;
   const plan = state.planMode[channel] === true;
   const planText = plan ? ' ◉ plan mode ' : ' ○ plan mode ';
-  const composerWidth = composerWrapWidth(columns, chatty ? width(modelText) + 3 + width(planText) + width(' ⇧Tab') : 0);
+  const imageText = ' + image ';
+  const composerWidth = composerWrapWidth(columns, chatty ? width(imageText) + 3 + width(modelText) + 3 + width(planText) + width(' ⇧Tab') : 0);
   const geometry = computeLayout({
     columns,
     rows,
@@ -232,8 +237,11 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   const planX0 = planX1 - planText.length - ' ⇧Tab'.length + 1;
   const modelX1 = planX0 - 4;
   const modelX0 = modelX1 - modelText.length + 1;
+  const imageX1 = modelX0 - 4;
+  const imageX0 = imageX1 - imageText.length + 1;
   const composerZones: Zone[] = chatty
     ? [
+        { x0: imageX0, x1: imageX1, y: composerY, action: { type: 'paste_image' }, hint: 'Paste the image on your clipboard (Ctrl+V) or drag one in' },
         { x0: modelX0, x1: modelX1, y: composerY, action: { type: 'model_menu', channel }, hint: 'Pick the model for this conversation' },
         { x0: planX0, x1: planX1, y: composerY, action: { type: 'plan_toggle', channel }, hint: plan ? 'Plan mode is on: Claude plans first. Click to turn it off' : 'Turn on plan mode: Claude looks first and asks you to approve a plan' },
       ]
@@ -241,6 +249,8 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   const hoverModel = hover && composerZones.find((z) => z.y === hover.y && hover.x >= z.x0 && hover.x <= z.x1);
   const composerRight: Line | undefined = chatty
     ? [
+        { text: imageText, color: theme.muted, inverse: hoverModel?.action.type === 'paste_image' },
+        { text: '   ' },
         { text: modelText, color: theme.muted, inverse: hoverModel?.action.type === 'model_menu' },
         { text: '   ' },
         { text: planText, color: plan ? theme.info : theme.border, bold: plan, inverse: hoverModel?.action.type === 'plan_toggle' },
@@ -249,7 +259,10 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
     : undefined;
   const planRaw = planOpen && pendingQuestion ? planFullModel(state, pendingQuestion, Math.max(10, columns - 4), Math.max(4, g.bodyHeight - 2), ui.planScroll) : undefined;
   const planV = planRaw ? emphasize(planRaw, 2, g.bodyTop + 1, hover) : undefined;
-  const hint = (planV?.zone ?? headerHover ?? tab.zone ?? proj.zone ?? ov?.zone ?? rv?.zone ?? qv?.zone ?? pv?.zone ?? top.zone ?? hoverModel)?.hint;
+  // Files, folders and URLs mentioned in the visible chat are clickable.
+  const chatShown = !menu && !planOpen && state.overlay !== 'help' && g.sideWidth > 0 && (state.view.kind === 'room' || (state.view.kind === 'workspace' && Boolean(workspace) && state.view.tab === 'chat') || (state.view.kind === 'shared' && Boolean(shared) && state.view.tab === 'chat'));
+  const chatLinks = chatShown ? chatLinkModel(chatLines(state, g.chatWidth - 4, frame, channel), { x: g.mainX + 2, top: g.paneTop + 1, rows: g.paneHeight - 2, scroll: ui.chatScroll }, hover, workspace?.path) : undefined;
+  const hint = (chatLinks?.zone ?? planV?.zone ?? headerHover ?? tab.zone ?? proj.zone ?? ov?.zone ?? rv?.zone ?? qv?.zone ?? pv?.zone ?? top.zone ?? hoverModel)?.hint;
 
   const compose = composeState(state, ui, selfId, channel, Boolean(shared));
 
@@ -267,7 +280,7 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
   if (review) zones.push(...offsetZones(review.zones, g.mainX + 2, g.paneTop + 1));
   if (question) zones.push(...offsetZones(question.zones, 2, g.questionTop + 1));
   if (pv) zones.push(...offsetZones(pv.model.zones, g.mainX + 2, g.paneTop + 1 - paneScroll).filter((z) => z.y > g.paneTop && z.y < g.paneTop + g.paneHeight - 1));
-  zones.push(...offsetZones(top.model.zones, 1, 0), ...composerZones);
+  zones.push(...offsetZones(top.model.zones, 1, 0), ...composerZones, ...(chatLinks?.zones ?? []));
 
   return {
     geometry,
@@ -304,5 +317,6 @@ export function derive({ state, ui, selfId, columns, rows, frame, listLocalDirs,
     composerRight,
     composerWidth,
     trustCard: questionRaw && !pendingQuestion ? trustPeer : undefined,
+    chatHover: chatLinks?.hover,
   };
 }

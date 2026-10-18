@@ -28,7 +28,7 @@ import { installedVersion } from './update/check.js';
 import { runView } from './image/view-cli.js';
 import { createDemoFolders, createDemoWorkspaces, startDemoFriend } from './demo.js';
 import { WorkspaceManager } from './workspaces/manager.js';
-import { FOCUS_OFF, FOCUS_ON, MOUSE_OFF, MOUSE_ON, type MouseEvent, createInput } from './ui/mouse.js';
+import { FOCUS_OFF, FOCUS_ON, MOUSE_OFF, MOUSE_ON, type MouseEvent, PASTE_OFF, PASTE_ON, createInput } from './ui/mouse.js';
 
 interface Room {
   readonly url: string;
@@ -296,7 +296,7 @@ async function main(): Promise<void> {
       await room.hub?.close();
     } finally {
       if (config.mouse) process.stdout.write(MOUSE_OFF);
-      process.stdout.write(FOCUS_OFF);
+      process.stdout.write(FOCUS_OFF + PASTE_OFF);
       process.stdout.write('\x1b[?1049l');
       process.stdout.write('klaud: left the room. See you soon!\n');
       process.exit(0);
@@ -307,6 +307,7 @@ async function main(): Promise<void> {
   if (config.mode === 'join') session.system(`Joining ${room.room}…`);
 
   const mouseListeners = new Set<(e: MouseEvent) => void>();
+  let pasteListener: ((text: string) => boolean) | undefined;
   // The built-in terminal takes the keyboard while it's focused (raw keys go to its shell).
   let rawSink: ((data: string) => void) | undefined;
   let lastInput = 0;
@@ -315,6 +316,7 @@ async function main(): Promise<void> {
         onMouse: (e) => mouseListeners.forEach((l) => l(e)),
         onFocus: (focused) => store.dispatch({ type: 'away', away: !focused }),
         rawSink: () => rawSink,
+        onPaste: (text) => pasteListener?.(text) ?? false,
         onData: () => (lastInput = Date.now()),
       })
     : process.stdin;
@@ -329,11 +331,13 @@ async function main(): Promise<void> {
   if (config.mouse) process.stdout.write(MOUSE_ON);
   // Know when klaud is in the background, so notifications only fire when they help.
   process.stdout.write(FOCUS_ON);
+  // Pastes arrive marked, so an image paste (which sends no text) can attach the clipboard's image.
+  if (process.stdin.isTTY) process.stdout.write(PASTE_ON);
   // Who may use your Claude only matters once you invite someone (or join a room).
   const onboarding = config.agent && !config.policyChosen && (config.mode === 'join' || config.inviteNow);
   const app = render(
     <ErrorBoundary>
-      <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} setRawInput={(sink) => (rawSink = sink)} inputTime={() => lastInput} />
+      <App session={session} onboarding={onboarding} subscribeMouse={subscribeMouse} setRawInput={(sink) => (rawSink = sink)} setPasteHandler={(fn) => (pasteListener = fn)} inputTime={() => lastInput} />
     </ErrorBoundary>,
     // Only rewrite the lines that changed, and redraw often enough that scrolling feels smooth.
     { exitOnCtrlC: false, stdin, incrementalRendering: true, maxFps: 60 },
@@ -345,7 +349,7 @@ async function main(): Promise<void> {
   process.on('unhandledRejection', (err) => session.toast(`Something went wrong: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200), 'error'));
   // Whatever happens, leave the terminal as we found it (no stray mouse codes, normal screen).
   process.on('exit', () => {
-    if (!shuttingDown) process.stdout.write(MOUSE_OFF + FOCUS_OFF + '\x1b[?2004l\x1b[?1049l');
+    if (!shuttingDown) process.stdout.write(MOUSE_OFF + FOCUS_OFF + PASTE_OFF + '\x1b[?1049l');
   });
   session.start();
   if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => shuttingDown);
@@ -362,7 +366,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  process.stdout.write(MOUSE_OFF + FOCUS_OFF + '\x1b[?1049l');
+  process.stdout.write(MOUSE_OFF + FOCUS_OFF + PASTE_OFF + '\x1b[?1049l');
   process.stderr.write(`klaud: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });

@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../core/attachments.js';
 import { buildPrompt, buildSystemAppend, summarizeTool } from './prompt.js';
 import { DENY_REASON, decideTool } from './policy.js';
 import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
 import { SubAgentTracker } from './subagents.js';
-import { BackgroundAgents, PromptQueue, TurnRouter } from './live-run.js';
+import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from './live-run.js';
 import { nameTask } from './namer.js';
 import { createRoomTools } from './tools.js';
 import type { AgentBackend, AgentRunInput, FollowUp, RoomBridge } from './types.js';
@@ -50,6 +52,24 @@ export function usageOf(modelUsage: Record<string, { inputTokens: number; output
 /** Friendly rows for the model picker from Claude Code's own list. */
 export function toModelChoices(models: ReadonlyArray<{ value: string; displayName: string; description: string; supportedEffortLevels?: readonly string[] }>) {
   return models.map((m) => ({ value: m.value === 'default' ? '' : m.value, label: m.displayName, description: m.description, ...(m.supportedEffortLevels ? { efforts: m.supportedEffortLevels } : {}) }));
+}
+
+/**
+ * A prompt with images pasted into it: the text and each image as content blocks, so Claude
+ * actually sees them. Without images, the plain text.
+ */
+export function imageContent(text: string, files: readonly string[]): PromptContent {
+  const images = files.flatMap((file) => {
+    try {
+      const data = readFileSync(file);
+      return data.length <= MAX_ATTACHMENT_BYTES ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: mediaTypeOf(file), data: data.toString('base64') } }] : [];
+    } catch {
+      return [];
+    }
+  });
+  if (!images.length) return text;
+  const note = `\n\n(${images.length === 1 ? 'The image linked above is' : 'The images linked above are'} attached to this message, in order.)`;
+  return [{ type: 'text', text: text + note }, ...images];
 }
 
 /**
@@ -145,7 +165,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       // Streaming input keeps Claude Code alive after it answers while background agents still
       // work: a one-shot prompt would cut them off 10 minutes later, rejecting their next step.
       const prompts = new PromptQueue();
-      prompts.push(buildPrompt(input));
+      prompts.push(imageContent(buildPrompt(input), linkedImages(input.prompt)));
       const background = new BackgroundAgents();
       const turns = new TurnRouter({ onEvent: input.onEvent });
       let limit: NodeJS.Timeout | undefined;
@@ -161,7 +181,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const send = (followUp: FollowUp): boolean => {
         if (prompts.closed) return false;
         turns.queue(followUp);
-        return prompts.push(buildPrompt(followUp));
+        return prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)));
       };
       /** After an answer: end the run, or keep it open (taking follow-ups) while agents work. */
       const settle = (): void => {

@@ -8,8 +8,11 @@ const FINISHED = new Set(['completed', 'failed', 'killed', 'stopped']);
  * The prompts of one live Claude Code session: the first request, then follow-ups sent while
  * its background agents are still working. Ending it lets Claude Code exit.
  */
+/** What one prompt carries: plain text, or text plus content blocks (pasted images). */
+export type PromptContent = SDKUserMessage['message']['content'];
+
 export class PromptQueue implements AsyncIterable<SDKUserMessage> {
-  private readonly items: string[] = [];
+  private readonly items: PromptContent[] = [];
   private wake?: () => void;
   private ended = false;
 
@@ -17,9 +20,9 @@ export class PromptQueue implements AsyncIterable<SDKUserMessage> {
     return this.ended;
   }
 
-  push(text: string): boolean {
+  push(content: PromptContent): boolean {
     if (this.ended) return false;
-    this.items.push(text);
+    this.items.push(content);
     this.wake?.();
     return true;
   }
@@ -31,9 +34,9 @@ export class PromptQueue implements AsyncIterable<SDKUserMessage> {
 
   async *[Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
     for (;;) {
-      const text = this.items.shift();
-      if (text !== undefined) {
-        yield { type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null };
+      const content = this.items.shift();
+      if (content !== undefined) {
+        yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null };
         continue;
       }
       if (this.ended) return;
