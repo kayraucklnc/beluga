@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { mentionsSecret } from '../agent/policy.js';
 import path from 'node:path';
 import type { AgentBackend, FollowUp } from '../agent/types.js';
 import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
@@ -38,7 +39,7 @@ export function toolInside(toolName: string, input: Record<string, unknown>, cwd
   if (toolName === 'Bash') {
     const command = typeof input.command === 'string' ? input.command : '';
     // Variables and subshells ($HOME, $(…), `…`) could point anywhere: those ask.
-    if (/[$`]/.test(command)) return false;
+    if (/[$`]/.test(command) || mentionsSecret(command)) return false;
     const paths = command.match(/(?:^|[\s'"=:(<>])(?:~|\/|\.\.)[^\s'";|&)]*/g) ?? [];
     return paths.every((m) => {
       const raw = m.replace(/^[\s'"=:(<>]/, '');

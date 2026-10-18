@@ -1,5 +1,5 @@
 import React from 'react';
-import os from 'node:os';
+import { tilde } from '../../core/paths.js';
 import type { AppState } from '../../core/store.js';
 import type { TerminalSession } from '../../terminal/index.js';
 import type { Derived } from '../derive.js';
@@ -124,7 +124,7 @@ export function MainPane({ state, d, ui, frame, terminal }: MainPaneProps) {
     case 'draft': {
       const where = state.view.dir ?? state.projects.find((p) => p.id === (state.view as { projectId: string }).projectId)?.root ?? '';
       return (
-        <Panel title={`New Claude chat · ${where.replace(os.homedir(), '~')}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'}>
+        <Panel title={`New Claude chat · ${tilde(where)}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'}>
           <ModelBlock lines={d.pane?.lines ?? []} height={g.paneHeight - 2} scroll={d.paneScroll} />
         </Panel>
       );

@@ -239,7 +239,7 @@ function edit(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): UiStat
   }
   if (key.ctrl && input === 'k') {
     const { end } = rowBounds(buffer, cursor, ctx);
-    return cut(ui, cursor, end === cursor ? Math.min(buffer.length, cursor + 1) : end);
+    return cut(ui, cursor, end === cursor ? Math.min(buffer.length, cursor + charAfter(buffer, cursor)) : end);
   }
   if (key.ctrl || !input) return undefined;
   return insertText(ui, input);

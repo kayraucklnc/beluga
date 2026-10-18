@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { readdirSync, statSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { systemOpen } from '../core/os-open.js';
 import os from 'node:os';
 import path from 'node:path';
 import { Box, useApp, useInput, usePaste, useStdout } from 'ink';
@@ -257,10 +257,7 @@ export function App({ session, onboarding = false, subscribeMouse, setRawInput, 
     session.toast(kind === 'group' ? `Type a name for the new group, then Enter` : `Type a name for the new ${kind}${where}, then Enter`);
   };
 
-  const openFolder = (dir: string): void => {
-    const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
-    spawn(opener, [dir], { stdio: 'ignore', detached: true }).unref();
-  };
+  const openFolder = (dir: string): void => systemOpen(dir);
 
   const toggle = (key: string): void => {
     const collapsed = uiRef.current.collapsed;

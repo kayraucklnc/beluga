@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import os from 'node:os';
+import { tilde } from '../core/paths.js';
 import path from 'node:path';
 import { ATTACHMENT_SCHEME } from '../core/attachments.js';
 import type { AppState, LogItem } from '../core/store.js';
@@ -218,7 +219,7 @@ export function linkSpans(line: Line): LinkSpan[] {
 
 export const sameLink = (a: LinkTarget, b: LinkTarget): boolean => JSON.stringify(a) === JSON.stringify(b);
 
-const shortPath = (p: string): string => p.replace(os.homedir(), '~');
+const shortPath = (p: string): string => tilde(p);
 
 /** What hovering a link says in the bottom bar. */
 export function linkHint(link: LinkTarget, cwd?: string): string {

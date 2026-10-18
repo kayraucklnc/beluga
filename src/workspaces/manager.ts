@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { systemOpen } from '../core/os-open.js';
 import { copyFileSync, existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { findProjects, isMainCheckout } from './discovery.js';
@@ -552,8 +552,7 @@ export class WorkspaceManager {
 
   openInFinder(id: string): void {
     const ws = this.require(id);
-    const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
-    spawn(opener, [ws.path], { stdio: 'ignore', detached: true }).unref();
+    systemOpen(ws.path);
   }
 
   loadHistory<T>(id: string): T[] {

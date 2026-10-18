@@ -1,9 +1,8 @@
-import os from 'node:os';
+import { tilde } from '../core/paths.js';
 import path from 'node:path';
 import type { AppState } from '../core/store.js';
 import type { MenuOption, MenuSpec } from './menus.js';
 
-const tilde = (p: string): string => p.replace(os.homedir(), '~');
 
 /** "Share a folder": this folder, one of your projects, or any path, then who sees it. */
 export function shareFolderMenu(state: AppState, launchDir: string, mine: ReadonlyArray<{ name: string; root?: string; private?: boolean; allowed?: readonly string[] }>): MenuSpec {

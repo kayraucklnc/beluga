@@ -2,8 +2,10 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
-import { SECRET_IN_COMMAND } from '../agent/policy.js';
+import { mentionsSecret } from '../agent/policy.js';
 import { type BodyInput, type BodyOf, MAX_SHELL_OUTPUT, MAX_SHELL_SECONDS } from '../protocol.js';
+import { ATTACHMENT_SHARE } from './attachments.js';
+import { tilde } from './paths.js';
 import { expandPath } from './remote-work.js';
 import { type ShareService, isSecretPath } from './shares.js';
 import { type ShellItem, type Store, clean, peerName } from './store.js';
@@ -36,8 +38,7 @@ export function keepTail(text: string, max = MAX_SHELL_OUTPUT): { text: string; 
   return text.length <= max ? { text, truncated: false } : { text: text.slice(text.length - max), truncated: true };
 }
 
-/** "/Users/bob/api" → "~/api". */
-export const tilde = (p: string, home = os.homedir()): string => (p === home ? '~' : p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p);
+export { tilde };
 
 /**
  * Run a command in a non-interactive shell: no input (stdin is closed), output capped (tail
@@ -286,7 +287,7 @@ export class PeerRun {
     } else if (body.cwd) {
       dir = expandPath(body.cwd, this.home);
     } else {
-      const shared = this.deps.shares.configs.find((c) => !c.name.startsWith('out-') && !c.name.startsWith('handoff-') && this.deps.shares.canAccess(c.name, from, this.deps.selfId()));
+      const shared = this.deps.shares.configs.find((c) => !c.name.startsWith('out-') && !c.name.startsWith('handoff-') && c.name !== ATTACHMENT_SHARE && this.deps.shares.canAccess(c.name, from, this.deps.selfId()));
       dir = full ? this.home : (shared?.root ?? this.deps.agentCwd);
     }
     const real = await fs.realpath(dir).catch(() => dir);
@@ -303,7 +304,7 @@ export class PeerRun {
     const gate = shellGate(level);
     if (gate === 'decline' || from === this.deps.selfId()) return reply({ ok: false, error: `${owner} declined (blocked)` });
     // Secrets stay off-limits at every trust level, like for Claude's own commands.
-    if (SECRET_IN_COMMAND.test(body.command)) return reply({ ok: false, error: 'klaud never runs commands that touch secrets (.env files, keys, credentials)' });
+    if (mentionsSecret(body.command)) return reply({ ok: false, error: 'klaud never runs commands that touch secrets (.env files, keys, credentials)' });
     if ((this.running.get(from) ?? 0) >= MAX_RUNNING_PER_PERSON) return reply({ ok: false, error: 'too many of your commands are already running there; wait for them to finish' });
     const cwd = await this.where(from, body, gate === 'run');
     const name = peerName(state, from);

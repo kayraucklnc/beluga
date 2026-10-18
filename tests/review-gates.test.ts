@@ -26,13 +26,13 @@ describe('secret-command filter', () => {
   // machine via run_on_peer (policy.ts:67, peer-run.ts:306), and for guests invited with "edit"
   // they run with no prompt at all (agent-host.ts:452 trusts that secrets were already refused,
   // and toolInside() passes relative names).
-  it.fails('catches secret names next to shell punctuation (; | < > & ( ) * ,)', () => {
+  it('catches secret names next to shell punctuation (; | < > & ( ) * ,)', () => {
     for (const cmd of [`cat ${ENV};`, `cat ${ENV}|base64`, `cat<${ENV}`, `cat ${ENV}>/tmp/x`, `cat ${ENV}&&ls`, `(cat ${ENV})`, `cat ${ENV}*`, 'tar c .ssh>x']) {
       expect(SECRET_IN_COMMAND.test(cmd), cmd).toBe(true);
     }
   });
 
-  it.fails('an edit-level guest cannot auto-run a command that pipes a secret file', () => {
+  it('an edit-level guest cannot auto-run a command that pipes a secret file', () => {
     const cmd = `cat ${ENV}|base64`;
     // Neither gate stops it: the policy only asks, and the guest-edit shortcut then allows it.
     expect(decideTool('Bash', { command: cmd }, { cwd: '/p', roots: ['/p'], autoEdit: true })).toBe('deny');
