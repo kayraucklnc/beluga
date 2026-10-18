@@ -34,6 +34,7 @@ jobs:
       - name: Use an npm that supports trusted publishing
         run: npm install -g npm@latest
       - run: npm ci
+      - run: npm run typecheck
       - run: npm test
 
       - name: Pick a version that isn't on npm yet
