@@ -12,6 +12,9 @@ import { openExternal } from '../lib/system.js';
 import { Switch } from '../dialogs/settings-controls.js';
 import { openPerson } from '../dialogs/native/PersonPopover.js';
 import r from '../dialogs/native/room.module.css';
+import { ConversationDetails } from '../network/ConversationInspector.js';
+import { EarningsPanel } from './EarningsPanel.js';
+import { ClaudeCodeInspector } from '../claude-code/Live.js';
 import s from './Inspector.module.css';
 
 function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
@@ -138,6 +141,7 @@ function WorkspaceDetails({ id }: { id: string }) {
           ) : null}
         </div>
       </Panel>
+      {project?.root ? <EarningsPanel projectId={project.id} /> : null}
       {pr ? (
         <Panel title={`Pull request #${pr.number}`} action={<Button size="small" variant="quiet" icon="refresh" onClick={() => void api.workbench.refreshPrs(ws.id)} />}>
           <div className={s.prTitle}>{pr.title}</div>
@@ -267,7 +271,8 @@ export function Inspector() {
       <div className={s.titlebar} data-tauri-drag-region />
       <div className={s.scroll}>
         <NeedsYou />
-        {view.kind === 'workspace' ? <WorkspaceDetails id={view.id} /> : <Room />}
+        <ClaudeCodeInspector />
+        {view.kind === 'workspace' ? <WorkspaceDetails id={view.id} /> : view.kind === 'conversation' ? <ConversationDetails id={view.id} /> : <Room />}
         <Inbox />
       </div>
     </aside>

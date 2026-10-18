@@ -13,11 +13,11 @@ import { localPathOf, mentionOf, revealInFinder, saveFile } from '../lib/files.j
 import { SearchField, SearchResults } from './SharedSearch.js';
 import s from './files.module.css';
 
-const ext = (p: string): string => /\.([\w-]+)$/.exec(p)?.[1]?.toLowerCase() ?? '';
-const LANG: Record<string, string> = { ts: 'ts', tsx: 'tsx', js: 'js', jsx: 'jsx', mjs: 'js', json: 'json', sh: 'bash', py: 'python', go: 'go', rs: 'rust', css: 'css', html: 'html', yml: 'yaml', yaml: 'yaml', sql: 'sql', swift: 'swift', java: 'java', kt: 'kotlin', c: 'c', h: 'c', cpp: 'cpp', rb: 'ruby', toml: 'toml' };
+export const ext = (p: string): string => /\.([\w-]+)$/.exec(p)?.[1]?.toLowerCase() ?? '';
+export const LANG: Record<string, string> = { ts: 'ts', tsx: 'tsx', js: 'js', jsx: 'jsx', mjs: 'js', json: 'json', sh: 'bash', py: 'python', go: 'go', rs: 'rust', css: 'css', html: 'html', yml: 'yaml', yaml: 'yaml', sql: 'sql', swift: 'swift', java: 'java', kt: 'kotlin', c: 'c', h: 'c', cpp: 'cpp', rb: 'ruby', toml: 'toml' };
 
 /** A decoded image (RGBA pixels) drawn at its size, scaled down to fit. */
-function Bitmap({ image }: { image: NonNullable<ViewerState['image']> }) {
+export function Bitmap({ image }: { image: NonNullable<ViewerState['image']> }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
@@ -30,7 +30,7 @@ function Bitmap({ image }: { image: NonNullable<ViewerState['image']> }) {
   return <canvas ref={ref} className={s.image} />;
 }
 
-function Viewer({ viewer }: { viewer: ViewerState }) {
+export function Viewer({ viewer }: { viewer: ViewerState }) {
   const api = useApi();
   const { client } = useKlaud();
   const [raw, setRaw] = useState(false);
@@ -83,14 +83,14 @@ function Viewer({ viewer }: { viewer: ViewerState }) {
 }
 
 /** A file as one code block: the fence is longer than any run of backticks in it, so it can't end early. */
-function fenced(content: string, lang: string | undefined): string {
+export function fenced(content: string, lang: string | undefined): string {
   const longest = Math.max(0, ...[...content.matchAll(/`+/g)].map((m) => m[0].length));
   const fence = '`'.repeat(Math.max(3, longest + 1));
   return `${fence}${lang ?? 'text'}\n${content}\n${fence}`;
 }
 
 /** Right-click on a file or folder: open it, find it in Finder, copy its path, mention it, save it. */
-function useRowItems(): (row: BrowserRow, onOpen: () => void) => ActionItem[] {
+export function useRowItems(): (row: BrowserRow, onOpen: () => void) => ActionItem[] {
   const { client, ui } = useKlaud();
   const actions = useActions();
   return (row, onOpen) => {

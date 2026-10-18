@@ -42,7 +42,7 @@ The same Klaud, with the same projects, worktrees, Claudes and friends, in two p
     <td><a href="#klaud-in-the-terminal"><img src="assets/terminal/overview.png" alt="Klaud in the terminal: two worktrees working at once"></a></td>
   </tr>
   <tr>
-    <td>A native Mac app: a translucent sidebar, Claude's runs as live cards, side-by-side diffs, real terminals you can dock beside the chat, images in the chat, a notification centre, friends and groups with no server. Light, dark or system.</td>
+    <td>A native Mac app: a translucent sidebar, Claude's runs as live cards, a right panel with what changed, your files and real terminals beside the chat, images in the chat, a notification centre, friends and groups with no server. Light, dark or system.</td>
     <td>The lightweight one. Everything in your terminal, every button clickable, nothing to memorize. Perfect over SSH or when you live in the terminal.</td>
   </tr>
   <tr>
@@ -65,12 +65,12 @@ The same Klaud, with the same projects, worktrees, Claudes and friends, in two p
 
 ## Klaud for Mac
 
-**[Download it from Releases](https://github.com/kayraucklnc/klaud/releases/latest)**, open the `.dmg` and drag Klaud to Applications. The first time, right-click Klaud › **Open** (this preview isn't notarized by Apple yet).
+**[Download it from Releases](https://github.com/kayraucklnc/klaud/releases/latest)**, open the `.dmg` and drag Klaud to Applications. The first time, right-click Klaud › **Open** (this preview isn't notarized by Apple yet). After that it keeps itself up to date: new versions download in the background and install when you say, when you're idle, or when you quit ([how](docs/updates.md)).
 
 <table>
   <tr>
     <td width="50%"><img src="assets/mac/workspace.png" alt="A worktree with Claude's run"><br><b>Worktrees.</b> Claude's run as a live card with its steps and sub-agents; the next step (Commit, Merge, PR) one click away.</td>
-    <td width="50%"><img src="assets/mac/terminal-dark.png" alt="A terminal docked beside the chat"><br><b>A terminal beside the chat.</b> ⌘J docks your shell next to the conversation.</td>
+    <td width="50%"><img src="assets/mac/terminal-dark.png" alt="A terminal docked beside the chat"><br><b>A terminal beside the chat.</b> ⌘J shows your shell in the right panel (or in a drawer under the chat), next to the conversation.</td>
   </tr>
   <tr>
     <td><img src="assets/mac/images.png" alt="A friend's screenshot in the chat"><br><b>Images in the chat.</b> Paste or drop a screenshot; it shows for everyone, full size on click.</td>

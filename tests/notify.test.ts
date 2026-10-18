@@ -426,3 +426,54 @@ describe('plan', () => {
     expect(plan('bell', { ...n, sound: false })).toEqual({ write: '' });
   });
 });
+
+describe('the klaud network: messages from friends and groups', () => {
+  type Net = DomainState['network'];
+  const selfNet = { peerId: 'me'.padEnd(32, 'x'), name: 'kay', presence: { state: 'online' as const }, appearOffline: false };
+  const msg = (id: string, conversation: string, text: string, extra: Partial<Net['messages'][string][number]> = {}) => ({ id, conversation, from: 'b'.padEnd(32, 'x'), name: 'bob', text, ts: 1_000_000, mine: false, ...extra });
+  const on = (messages: Net['messages'] = {}, self = selfNet): DomainState => ({
+    ...base(),
+    network: { enabled: true, self, friends: [], groups: [{ id: 'g1', name: 'launch', members: [], admin: false, active: true, unread: 0, requests: [], createdAt: 0 }], invitations: [], pendingJoins: [], messages },
+  });
+  const withMessages = (s: DomainState, messages: Net['messages']): DomainState => ({ ...s, network: { ...s.network, messages } });
+
+  it('announces a direct message by who sent it, and a group message by where', () => {
+    const prev = on();
+    const next = withMessages(prev, { 'dm:b': [msg('1', 'dm:b', 'lunch?')], 'group:g1': [msg('2', 'group:g1', 'ship it @kay')] });
+    expect(detectNotices(prev, next, 1_000_000)).toEqual([
+      { kind: 'mentions', tag: 'message', title: 'bob', body: 'lunch?', channel: 'dm:b' },
+      { kind: 'mentions', tag: 'mention', title: 'bob mentioned you in launch', body: 'ship it @kay', channel: 'group:g1' },
+    ]);
+  });
+
+  it('leaves out your own, unreadable, old and first-load messages', () => {
+    const prev = on();
+    const next = withMessages(prev, { 'dm:b': [msg('1', 'dm:b', 'mine', { mine: true }), msg('2', 'dm:b', '', { status: 'locked' }), msg('3', 'dm:b', 'old', { ts: 1_000_000 - 13 * 3_600_000 })] });
+    expect(detectNotices(prev, next, 1_000_000)).toEqual([]);
+    const off = { ...prev, network: { ...prev.network, enabled: false } };
+    expect(detectNotices(off, withMessages(off, { 'dm:b': [msg('4', 'dm:b', 'hi')] }), 1_000_000)).toEqual([]);
+  });
+
+  it('is quiet (inbox only) on Do Not Disturb or while appearing offline', () => {
+    const dnd = on({}, { ...selfNet, presence: { state: 'dnd' } as never });
+    expect(detectNotices(dnd, withMessages(dnd, { 'dm:b': [msg('1', 'dm:b', 'hi')] }), 1_000_000)[0]).toMatchObject({ quiet: true });
+    const hidden = on({}, { ...selfNet, appearOffline: true });
+    expect(detectNotices(hidden, withMessages(hidden, { 'dm:b': [msg('1', 'dm:b', 'hi')] }), 1_000_000)[0]).toMatchObject({ quiet: true });
+  });
+
+  it('a quiet notice goes to the inbox without a desktop notification', () => {
+    vi.useFakeTimers({ now: 1_000_000 });
+    try {
+      const store = new Store(on({}, { ...selfNet, presence: { state: 'dnd' } as never }));
+      const desktop = vi.fn();
+      const notifier = new Notifier({ store, desktop });
+      store.dispatch({ type: 'net_message', message: msg('1', 'dm:b', 'hi') });
+      vi.runAllTimers();
+      expect(store.getState().inbox).toMatchObject([{ title: 'bob', channel: 'dm:b' }]);
+      expect(desktop).not.toHaveBeenCalled();
+      notifier.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

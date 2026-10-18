@@ -3,13 +3,17 @@ import path from 'node:path';
 import type { Config } from '../config.js';
 import { createClaudeBackend } from '../agent/runner.js';
 import { createMockBackend } from '../agent/mock.js';
-import { findConversation } from '../agent/transcript.js';
+import { findConversation } from '../agent/claude-sessions.js';
+import { otherTools } from '../agent/other-tools.js';
 import { copyNative, pasteText } from '../core/clipboard.js';
 import { DEFAULT_LINK } from '../core/project-invites.js';
 import { type SessionOptions, Session } from '../core/session.js';
 import { loadSettings, saveSettings } from '../core/settings.js';
 import { ShareService } from '../core/shares.js';
-import { launchNetwork } from '../core/network.js';
+import { networkSwitch } from '../core/network.js';
+import { launchGateway } from '../core/gateway/launch.js';
+import { launchEarnings } from '../core/stripe-launch.js';
+import { launchClaudeCode } from '../core/claude-code/launch.js';
 import { Store, initialState, prefsFrom } from '../core/store.js';
 import { createDemoFolders, createDemoWorkspaces, startDemoFriend, startDemoGuest } from '../demo.js';
 import { type Identity, deriveKeys, generateSecret, loadIdentity } from '../net/crypto.js';
@@ -279,7 +283,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     terminals,
     savedPeople: saved.people,
     replayFile: path.join(klaudHome(), 'seen.json'),
-    ...(demo ? {} : { findConversation }),
+    ...(demo ? {} : { findConversation, otherTools }),
     ...(roomControl ? { room: roomControl } : {}),
   });
 
@@ -287,10 +291,20 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   if (config.mode === 'join') session.system(`Joining ${room.room}…`);
 
   let stopNetwork = async (): Promise<void> => undefined;
+  let stopEarnings = (): void => undefined;
+  let stopClaudeCode = (): void => undefined;
+  let stopGateway = (): void => undefined;
   const start = (): void => {
     session.start();
     // The klaud network (friends, groups, presence): only the daemon runs it, and only when it's turned on.
-    if (opts.network) stopNetwork = launchNetwork({ session, store, identity, name: config.name, dir: klaudHome(), demo: Boolean(demo), warn: (text) => session.system(text, 'warn') }, saved);
+    // It can be turned on and off later too (`network.setEnabled`).
+    if (opts.network) stopNetwork = networkSwitch({ session, store, identity, name: config.name, dir: klaudHome(), demo: Boolean(demo), warn: (text) => session.system(text, 'warn') }, saved).stop;
+    // Earnings from Stripe per project (the Mac app shows them): the daemon counts them in the background.
+    if (opts.network) stopEarnings = launchEarnings({ session, store, demo: Boolean(demo) });
+    // Claude Code sessions running outside klaud (Conductor, a terminal): the Mac app shows them live, read-only.
+    // Tasks between Claudes (the gateway): over this room now, and over the network whenever it's on.
+    if (opts.network) stopGateway = launchGateway({ session, store, demo: Boolean(demo) });
+    if (opts.network) stopClaudeCode = launchClaudeCode({ session, store, demo: Boolean(demo), notify: (e) => session.notifier.notify(e) });
     if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => closing);
     if (!demo) return;
     // A pretend friend and a fake invite so every part of the UI has something to show.
@@ -316,7 +330,10 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (closing) return;
     closing = true;
     closeAllTunnels();
+    stopGateway();
     await stopNetwork();
+    stopEarnings();
+    stopClaudeCode();
     await session.stop();
     terminals.closeAll();
     await room.hub?.close();

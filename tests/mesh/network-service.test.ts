@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import createTestnet, { type Testnet } from 'hyperdht/testnet.js';
 import { generateIdentity } from '../../src/net/crypto.js';
 import { KEEP_MESSAGES, NO_NETWORK, initialNetwork, reduceNetwork } from '../../src/core/network-store.js';
-import { type NetworkService, attachNetwork, launchNetwork, networkEnabled, networkOf, startNetwork } from '../../src/core/network.js';
+import { type NetworkService, attachNetwork, launchNetwork, networkEnabled, networkOf, networkSwitch, networkSwitchOf, startNetwork } from '../../src/core/network.js';
 import { Store, initialState } from '../../src/core/store.js';
 import type { Session } from '../../src/core/session.js';
 import { HANDLERS } from '../../src/ipc/handlers.js';
@@ -128,6 +128,39 @@ describe('the network as a core service', () => {
       await stop();
       expect(store.getState().network).toEqual(NO_NETWORK);
       expect(warnings).toEqual([]);
+    } finally {
+      if (before === undefined) delete process.env.KLAUD_NETWORK;
+      else process.env.KLAUD_NETWORK = before;
+    }
+  }, 60_000);
+});
+
+describe('turning the network on and off while klaud runs', () => {
+  it('starts it live, stops it, and says why when it can’t start', async () => {
+    const before = process.env.KLAUD_NETWORK;
+    delete process.env.KLAUD_NETWORK;
+    try {
+      const store = new Store(initialState('room'));
+      const session = {} as Session;
+      const sw = networkSwitch({ session, store, identity: generateIdentity(), name: 'you', dir: '/nonexistent', demo: true, warn: () => undefined }, {});
+      expect(networkSwitchOf(session)).toBe(sw);
+      await expect(call({} as Session, 'network.setEnabled', true)).rejects.toThrow(/Only the klaud app/);
+      expect(() => networkOf(session)).toThrow(/off/);
+      await sw.set(true);
+      await settle(() => store.getState().network.friends.length === 2);
+      expect(networkOf(session).peerId).toBe(store.getState().network.self?.peerId);
+      // Asking again while it's on changes nothing.
+      await sw.set(true);
+      await sw.set(false);
+      expect(store.getState().network).toEqual(NO_NETWORK);
+      expect(() => networkOf(session)).toThrow(/off/);
+      await sw.stop();
+      expect(networkSwitchOf(session)).toBeUndefined();
+
+      // A real network with nowhere to keep its files: the error comes back to whoever turned it on.
+      const broken = networkSwitch({ session: {}, store, identity: generateIdentity(), name: 'x', dir: '/dev/null/klaud', demo: false, warn: () => undefined }, {});
+      await expect(broken.set(true)).rejects.toThrow();
+      await broken.stop();
     } finally {
       if (before === undefined) delete process.env.KLAUD_NETWORK;
       else process.env.KLAUD_NETWORK = before;

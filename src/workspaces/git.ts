@@ -107,6 +107,8 @@ export interface Status {
   readonly changed: number;
   readonly ahead: number;
   readonly behind: number;
+  /** Without a base (the main checkout): the branch it tracks and how it compares, as of the last fetch. */
+  readonly upstream?: { readonly name: string; readonly ahead: number; readonly behind: number };
 }
 
 /** Uncommitted file count plus commits ahead/behind `base`. */
@@ -121,8 +123,12 @@ export async function status(dir: string, base?: string): Promise<Status> {
     const counts = (await tryGit(dir, ['rev-list', '--left-right', '--count', `${base}...HEAD`]))?.trim().split(/\s+/);
     behind = Number(counts?.[0] ?? 0) || 0;
     ahead = Number(counts?.[1] ?? 0) || 0;
+    return { branch, changed: files.length, ahead, behind };
   }
-  return { branch, changed: files.length, ahead, behind };
+  // "## main...origin/main [ahead 1, behind 2]": how the checkout compares to what it tracks.
+  const name = /^## [^.\s]+\.\.\.(\S+)/.exec(head)?.[1];
+  const upstream = name ? { name, ahead: Number(/ahead (\d+)/.exec(head)?.[1] ?? 0), behind: Number(/behind (\d+)/.exec(head)?.[1] ?? 0) } : undefined;
+  return { branch, changed: files.length, ahead, behind, ...(upstream ? { upstream } : {}) };
 }
 
 export interface ChangedFile {

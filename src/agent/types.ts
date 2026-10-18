@@ -32,6 +32,11 @@ export interface AgentRunInput {
    * background agents are still working (so they aren't cut off), and with undefined when that ends.
    */
   readonly onFollowUps?: (send: ((followUp: FollowUp) => boolean) | undefined) => void;
+  /**
+   * In a project's main folder (ask-only): carry this conversation into a new worktree and do
+   * `task` there (Claude's continue_in_worktree tool). Resolves with what to tell Claude.
+   */
+  readonly continueInWorktree?: (task: string) => Promise<string>;
 }
 
 /** A message sent into a run that is still waiting on its background agents. */
@@ -51,6 +56,8 @@ export interface AgentPlace {
   readonly onSession: (sessionId: string) => void;
   /** The model picked for this conversation. */
   readonly model?: string;
+  /** A project's main folder: questions only, nothing may change (see policy.ts). */
+  readonly askOnly?: { readonly project: string };
 }
 
 export interface SubAgentEvent {
@@ -108,4 +115,6 @@ export interface RoomBridge {
   getPeerFile(peerName: string, path: string, saveTo?: string, why?: string): Promise<string>;
   /** Send a file from this computer to a peer; it's saved on their side. */
   sendFile(peerName: string, path: string, note?: string): Promise<string>;
+  /** Tasks between Claudes (the klaud app only; see agent/gateway-tools.ts). */
+  readonly gateway?: import('./gateway-tools.js').GatewayBridge;
 }

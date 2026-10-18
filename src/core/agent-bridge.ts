@@ -1,6 +1,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { PeerSummary, RoomBridge } from '../agent/types.js';
+import type { GatewayBridge } from '../agent/gateway-tools.js';
+import type { TaskView } from './gateway/model.js';
+import { gatewayOf, needGateway } from './gateway/registry.js';
 import { GRANT_INFO } from './trust.js';
 import type { PeerInfo } from '../protocol.js';
 import type { Session } from './session.js';
@@ -47,6 +50,48 @@ export function createRoomBridge(session: Session, cwd: () => string): RoomBridg
     reportUsage: (usage) => session.updateUsage(usage),
     getPeerFile: (name, file, saveTo, why) => session.remote.getFile(requirePeer(name).peerId, file, saveTo, why),
     sendFile: (name, file, note) => session.remote.sendFile(requirePeer(name).peerId, file, note),
+    gateway: gatewayBridge(session),
+  };
+}
+
+/** Tasks between Claudes for your Claude's tools (agent/gateway-tools.ts), through the session's gateway. */
+export function gatewayBridge(session: Session): GatewayBridge {
+  const gw = () => needGateway(session);
+  const told = (t: TaskView): string => {
+    const target = t.kind === 'run' ? `${t.peerName}'s Mac` : `${t.peerName}'s Claude`;
+    const next = `Call wait_for with task "${t.id}" to wait for the answer, or end your turn saying you asked: the answer comes back into this conversation when it arrives.`;
+    if (t.state === 'confirm') return `Task ${t.id}: your user is asked first ("Ask ${target}?"), because they haven't marked ${t.peerName} as trusted. ${next} (wait_for waits through their answer too.)`;
+    const offline = t.steps.some((s) => s.includes('offline')) ? ` ${t.peerName} is offline right now; it goes out when they're back.` : '';
+    return `Task ${t.id} sent to ${target}.${offline} ${next}`;
+  };
+  return {
+    available: () => Boolean(gatewayOf(session)),
+    whoCan: (need) => gw().whoCan(need),
+    askPerson: (input) => told(gw().ask({ ...input, by: 'agent', conversation: session.host.currentChannel })),
+    runOn: (input) =>
+      told(
+        gw().ask({
+          person: input.person,
+          kind: 'run',
+          ask: input.why ?? input.command,
+          command: input.command,
+          needs: ['shell'],
+          by: 'agent',
+          conversation: session.host.currentChannel,
+          ...(input.cwd ? { cwd: input.cwd } : {}),
+          ...(input.project ? { project: input.project } : {}),
+          ...(input.timeoutSec ? { timeoutSec: input.timeoutSec } : {}),
+        }),
+      ),
+    waitFor: async (task, timeoutSec) => {
+      await gw().wait(task, timeoutSec * 1000);
+      return gw().describe(task);
+    },
+    check: (task) => gw().describe(task),
+    cancel: (task) => {
+      const t = gw().cancel(task);
+      return `Task ${t.id} is ${t.state === 'cancelled' ? 'cancelled' : `already ${t.state}`}.`;
+    },
   };
 }
 

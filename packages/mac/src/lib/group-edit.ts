@@ -3,15 +3,13 @@ import { getPrefs, setPrefs } from './prefs.js';
 
 /**
  * Editing project groups in the sidebar, Finder-style: a new group row with its name field
- * (and the project that moves into it), a group being renamed in place, a project being dragged.
+ * (and the project that moves into it, if any), a group being renamed in place.
  */
 export interface GroupEdit {
-  /** A new group's row is showing, with its name field; Return makes it and moves this project in. */
-  readonly creating?: { readonly projectId: string };
+  /** A new group's row is showing, with its name field; Return makes it (moving this project in, if any). */
+  readonly creating?: { readonly projectId?: string };
   /** This group's name is a field. */
   readonly renaming?: string;
-  /** The project being dragged (to a group, or out of one). */
-  readonly dragging?: string;
 }
 
 type Listener = () => void;
@@ -23,12 +21,22 @@ export function editGroups(patch: Partial<GroupEdit>): void {
   for (const l of [...listeners]) l();
 }
 
-/** Start a new group for a project: the sidebar shows its row with the name field focused. */
-export function newGroupFor(projectId: string): void {
-  // The row shows in the sidebar's Projects: make sure you can see it.
+/** Make sure the sidebar's Projects show (where the name field is). */
+function revealProjects(): void {
   const prefs = getPrefs();
   if (!prefs.sidebar || prefs.folded.includes('projects')) setPrefs({ sidebar: true, folded: prefs.folded.filter((f) => f !== 'projects') });
+}
+
+/** Start a new group for a project: its row shows where the project is, with the name field focused. */
+export function newGroupFor(projectId: string): void {
+  revealProjects();
   editGroups({ creating: { projectId }, renaming: undefined });
+}
+
+/** Start a new, empty group: its row shows at the end of the projects, with the name field focused. */
+export function newEmptyGroup(): void {
+  revealProjects();
+  editGroups({ creating: {}, renaming: undefined });
 }
 
 export function useGroupEdit(): GroupEdit {
@@ -40,6 +48,3 @@ export function useGroupEdit(): GroupEdit {
     () => current,
   );
 }
-
-/** What a dragged project row carries. */
-export const PROJECT_DRAG = 'application/x-klaud-project';

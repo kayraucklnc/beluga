@@ -3,14 +3,14 @@ import { useEffect, useState } from 'react';
 import type { Notice } from '@klaud/core/work-store.js';
 import { unreadCount } from '@klaud/core/work-store.js';
 import { dndActive, dndLabel } from '@klaud/shared/quiet.js';
-import { type NoticeFilter, type NoticeLook, NOTICE_FILTERS, filterNotices, groupNotices, noticeAgo, noticeLook, noticeTarget } from '@klaud/ui/notice-models.js';
+import { type NoticeFilter, type NoticeLook, NOTICE_FILTERS, filterNotices, groupNotices, noticeAgo, noticeLook } from '@klaud/ui/notice-models.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
-import { openNoticeTarget } from '../lib/notices.js';
+import { macNoticeTarget, openNoticeTarget } from '../lib/notices.js';
 import s from './notifications.module.css';
 
 /** A few marks the shared icon set doesn't have, drawn the same way (16 grid, 1.5 strokes). */
@@ -114,7 +114,7 @@ function Empty({ filter, any }: { filter: NoticeFilter; any: boolean }) {
 function Center({ close }: { close: () => void }) {
   const api = useApi();
   const actions = useActions();
-  const { ui } = useKlaud();
+  const { ui, client } = useKlaud();
   const inbox = useApp((st) => st.inbox);
   const notify = useApp((st) => st.prefs.notify);
   const places = useApp((st) => st);
@@ -125,10 +125,10 @@ function Center({ close }: { close: () => void }) {
   const quiet = dndActive(notify, now);
 
   const open = (n: Notice): void => {
-    const target = noticeTarget(places, n.channel);
+    const target = macNoticeTarget(places, n.channel);
     if (!n.read) void api.inbox.read({ id: n.id });
     if (!target) return;
-    openNoticeTarget(actions, target);
+    openNoticeTarget(actions, target, (id) => client.store.dispatch({ type: 'view', view: { kind: 'conversation', id } }));
     close();
   };
 

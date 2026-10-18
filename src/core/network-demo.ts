@@ -23,6 +23,7 @@ async function until(ok: () => boolean): Promise<boolean> {
  */
 export async function startDemoNetwork(store: Store, name: string): Promise<NetworkService> {
   const createTestnet = (await import('hyperdht/testnet.js')).default;
+  const { demoResponder } = await import('./gateway/demo.js');
   const testnet = await createTestnet(3, { host: '127.0.0.1' });
   const base = mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-network-'));
   const where = { bootstrap: testnet.bootstrap, host: '127.0.0.1' };
@@ -43,10 +44,18 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
     if (ok && !stopped) mia.sendGroup(group.id, 'Copy for the landing page is in. Can someone review?');
   });
 
-  // They answer you.
+  // Their Claudes answer your Claude's tasks (core/gateway/demo.ts). You trust bob; mia asks you each time.
+  const responders = { bob: demoResponder(bob, 'bob', meId, base), mia: demoResponder(mia, 'mia', meId, base) };
+  store.dispatch({ type: 'remembered', people: { ...store.getState().remembered, [bob.peerId]: { name: 'bob', trust: 'trusted' } } });
+
+  // They answer you (mention Claude and their Claude asks yours something).
   bob.on('message', (m) => {
     if (m.mine) return;
     if (m.conversation === dmConversation(meId)) setTimeout(() => !stopped && bob.sendDm(meId, `On it: “${m.text.slice(0, 60)}”`), 1200).unref();
+    if (m.conversation === dmConversation(meId) && /claude/i.test(m.text)) setTimeout(() => !stopped && responders.bob.askBack(), 2000).unref();
+  });
+  mia.on('message', (m) => {
+    if (!m.mine && m.conversation === dmConversation(meId) && /claude/i.test(m.text)) setTimeout(() => !stopped && responders.mia.askBack(), 1500).unref();
   });
   mia.on('message', (m) => {
     if (m.mine || m.from !== meId || m.conversation !== groupConversation(group.id)) return;
@@ -57,6 +66,8 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
     mesh: me.mesh,
     stop: async () => {
       stopped = true;
+      responders.bob.stop();
+      responders.mia.stop();
       await me.stop();
       await Promise.all([bob.close(), mia.close()]);
       await testnet.destroy();

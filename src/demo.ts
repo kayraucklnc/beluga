@@ -246,5 +246,23 @@ export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
     writeTree(hero.path, { 'content/hero.md': '# Build together\n\nYou, your friends, and everyone\'s Claude.\n' });
   }
   await mgr.refresh();
+  seedDemoUsage(mgr);
   return mgr;
+}
+
+/** Two weeks of (made-up) Claude runs, so the Usage screen has days, totals and costs to show. */
+function seedDemoUsage(mgr: WorkspaceManager): void {
+  const weight: Record<string, number> = { 'add-auth': 1, 'webhook-retries': 0.55, 'new-hero': 0.35, 'How do deploys work?': 0.12 };
+  const all = mgr.list.flatMap((p) => p.workspaces).filter((w) => weight[w.name] !== undefined);
+  const day = 86_400_000;
+  for (let ago = 13; ago >= 0; ago--) {
+    // A steady, repeatable rhythm: busier mid-week, quiet weekends.
+    const pace = 0.35 + 0.65 * Math.abs(Math.sin((ago + 2) * 0.9));
+    for (const w of all) {
+      const share = weight[w.name]! * pace;
+      if (share < 0.12) continue;
+      const input = Math.round(42_000 * share);
+      mgr.addUsage(w.id, { input, output: Math.round(input * 0.18), cacheRead: input * 6, cacheWrite: Math.round(input * 0.3), cost: Math.round(input * 0.0000165 * 100) / 100 }, Date.now() - ago * day);
+    }
+  }
 }

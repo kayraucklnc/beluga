@@ -131,8 +131,27 @@ export async function startNetwork(opts: NetworkOptions): Promise<NetworkService
 const services = new WeakMap<object, NetworkService>();
 
 /** Make the network reachable from the API handlers of this session. */
-export const attachNetwork = (session: object, service: NetworkService): void => void services.set(session, service);
-export const detachNetwork = (session: object): void => void services.delete(session);
+type NetworkWatcher = (service: NetworkService | undefined) => void;
+const watchers = new WeakMap<object, Set<NetworkWatcher>>();
+
+export function attachNetwork(session: object, service: NetworkService): void {
+  services.set(session, service);
+  for (const fn of watchers.get(session) ?? []) fn(service);
+}
+
+export function detachNetwork(session: object): void {
+  if (!services.delete(session)) return;
+  for (const fn of watchers.get(session) ?? []) fn(undefined);
+}
+
+/** Hear this session's network come up and go down (now, and on every change). The gateway sends tasks over it. */
+export function watchNetwork(session: object, fn: NetworkWatcher): () => void {
+  const set = watchers.get(session) ?? new Set<NetworkWatcher>();
+  watchers.set(session, set);
+  set.add(fn);
+  fn(services.get(session));
+  return () => void set.delete(fn);
+}
 
 /** The network of this session, or a clear error when it's off. */
 export function networkOf(session: object): Mesh {
@@ -158,15 +177,19 @@ export interface NetworkHost {
   readonly warn: (text: string) => void;
 }
 
-/**
- * Bring the network up for a core when it's turned on (in the background: rooms and screens
- * don't wait for it). Returns how to stop it.
- */
-export function launchNetwork(host: NetworkHost, settings: { readonly network?: boolean }): () => Promise<void> {
-  if (!networkEnabled(settings)) return async () => undefined;
+/** A started (or starting) network: whether it came up, and how to stop it. */
+interface Launch {
+  /** The service once it's up; undefined if it didn't start (the error says why). */
+  readonly ready: Promise<NetworkService | undefined>;
+  readonly error: () => string | undefined;
+  readonly stop: () => Promise<void>;
+}
+
+function launch(host: NetworkHost): Launch {
   let stopped = false;
+  let error: string | undefined;
   const name = host.name.trim().slice(0, 64) || 'klaud';
-  const starting = (host.demo ? import('./network-demo.js').then((m) => m.startDemoNetwork(host.store, name)) : startNetwork({ store: host.store, identity: host.identity, name, dir: host.dir }))
+  const ready = (host.demo ? import('./network-demo.js').then((m) => m.startDemoNetwork(host.store, name)) : startNetwork({ store: host.store, identity: host.identity, name, dir: host.dir }))
     .then((service) => {
       if (stopped) {
         void service.stop();
@@ -176,14 +199,77 @@ export function launchNetwork(host: NetworkHost, settings: { readonly network?: 
       return service;
     })
     .catch((err: unknown) => {
-      host.warn(`The klaud network didn't start: ${err instanceof Error ? err.message : String(err)}`);
+      error = err instanceof Error ? err.message : String(err);
+      host.warn(`The klaud network didn't start: ${error}`);
       return undefined;
     });
-  return async () => {
-    stopped = true;
-    const service = await starting;
-    if (!service) return;
-    detachNetwork(host.session);
-    await service.stop();
+  return {
+    ready,
+    error: () => error,
+    stop: async () => {
+      stopped = true;
+      const service = await ready;
+      if (!service) return;
+      detachNetwork(host.session);
+      await service.stop();
+    },
   };
 }
+
+/**
+ * Bring the network up for a core when it's turned on (in the background: rooms and screens
+ * don't wait for it). Returns how to stop it.
+ */
+export function launchNetwork(host: NetworkHost, settings: { readonly network?: boolean }): () => Promise<void> {
+  if (!networkEnabled(settings)) return async () => undefined;
+  return launch(host).stop;
+}
+
+/** Turning the network on and off while klaud runs (Settings, the Mac app's "Turn On"). */
+export interface NetworkSwitch {
+  /** Start or stop it now; starting resolves once it's up (or fails with why it didn't). */
+  set(on: boolean): Promise<void>;
+  stop(): Promise<void>;
+}
+
+const switches = new WeakMap<object, NetworkSwitch>();
+
+/** Like launchNetwork, and the network can be turned on and off later (see `network.setEnabled`). */
+export function networkSwitch(host: NetworkHost, settings: { readonly network?: boolean }): NetworkSwitch {
+  let current: Launch | undefined = networkEnabled(settings) ? launch(host) : undefined;
+  let turning: Promise<void> = Promise.resolve();
+  const set = async (on: boolean): Promise<void> => {
+    if (on && !current) {
+      const started = launch(host);
+      current = started;
+      if (await started.ready) return;
+      if (current === started) current = undefined;
+      throw new Error(started.error() ?? "The klaud network didn't start");
+    }
+    if (!on && current) {
+      const running = current;
+      current = undefined;
+      await running.stop();
+    }
+  };
+  const sw: NetworkSwitch = {
+    // One change at a time: a quick on/off/on settles in order.
+    set: (on) => {
+      const next = turning.then(() => set(on));
+      turning = next.catch(() => undefined);
+      return next;
+    },
+    stop: async () => {
+      switches.delete(host.session);
+      await turning;
+      const running = current;
+      current = undefined;
+      await running?.stop();
+    },
+  };
+  switches.set(host.session, sw);
+  return sw;
+}
+
+/** How to turn this session's network on and off, when its core can (only the daemon's). */
+export const networkSwitchOf = (session: object): NetworkSwitch | undefined => switches.get(session);

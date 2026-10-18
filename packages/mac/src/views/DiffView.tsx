@@ -36,7 +36,8 @@ function splitRows(lines: Line[]): Array<{ left?: Line; right?: Line; full?: Lin
   return rows;
 }
 
-const STATE: Record<ChangedFile['state'], { letter: string; tone: string }> = {
+/** A changed file's letter and color (M, A, U, D, R). */
+export const STATE: Record<ChangedFile['state'], { letter: string; tone: string }> = {
   modified: { letter: 'M', tone: s.modified! },
   added: { letter: 'A', tone: s.added! },
   untracked: { letter: 'U', tone: s.added! },
@@ -45,7 +46,7 @@ const STATE: Record<ChangedFile['state'], { letter: string; tone: string }> = {
 };
 
 /** Git's notes about a file, in words ("new file mode 100644" says it's a new file). */
-function noteOf(text: string): string {
+export function noteOf(text: string): string {
   if (text.startsWith('new file')) return 'New file';
   if (text.startsWith('deleted file')) return 'File deleted';
   if (text.startsWith('rename from ')) return `Renamed from ${text.slice('rename from '.length)}`;
@@ -54,10 +55,10 @@ function noteOf(text: string): string {
   return text;
 }
 
-type Commit = { readonly hash: string; readonly subject: string };
+export type Commit = { readonly hash: string; readonly subject: string };
 
 /** A commit's menu (click or right-click): copy it, or ask Claude about it. */
-function useCommitItems(): (c: Commit) => ActionItem[] {
+export function useCommitItems(): (c: Commit) => ActionItem[] {
   const { client, ui } = useKlaud();
   const actions = useActions();
   const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
@@ -77,7 +78,7 @@ function useCommitItems(): (c: Commit) => ActionItem[] {
 }
 
 /** A changed file's right-click menu: open it, find it in Finder, copy its path, ask Claude. */
-function useFileItems(): (f: ChangedFile, index: number) => ActionItem[] {
+export function useFileItems(): (f: ChangedFile, index: number) => ActionItem[] {
   const { client, ui } = useKlaud();
   const actions = useActions();
   const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
@@ -114,6 +115,49 @@ function useFileItems(): (f: ChangedFile, index: number) => ActionItem[] {
       { label: 'Mention in Chat', icon: 'chat', onSelect: ask },
     ];
   };
+}
+
+/**
+ * A diff, one column: the old and new line numbers, then the line. `compact` (the right panel):
+ * one line number (the new one, or the old one for a removed line) and long lines wrap.
+ */
+export function UnifiedDiff({ lines, compact }: { lines: readonly Line[]; compact?: boolean }) {
+  const cols = compact ? 2 : 3;
+  return (
+    <table className={cx(s.table, compact && s.compact)}>
+      {/* Fixed layout takes its widths from here (the first row may be a hunk across both). */}
+      {compact ? (
+        <colgroup>
+          <col className={s.numCol} />
+          <col />
+        </colgroup>
+      ) : null}
+      <tbody>
+        {lines.map((l, i) =>
+          l.kind === 'hunk' || l.kind === 'meta' ? (
+            <tr key={i} className={cx(s.hunk, l.kind === 'meta' && s.note)}>
+              <td colSpan={cols}>{l.kind === 'meta' ? noteOf(l.text) : l.text}</td>
+            </tr>
+          ) : (
+            <tr key={i} className={s[`l_${l.kind}`]}>
+              {compact ? (
+                <td className={s.num}>{l.new ?? l.old ?? ''}</td>
+              ) : (
+                <>
+                  <td className={s.num}>{l.old ?? ''}</td>
+                  <td className={s.num}>{l.new ?? ''}</td>
+                </>
+              )}
+              <td className={s.text}>
+                <span className={s.sign}>{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
+                {l.text || ' '}
+              </td>
+            </tr>
+          ),
+        )}
+      </tbody>
+    </table>
+  );
 }
 
 /** What changed in a workspace (or one shared with you): the files, then the selected file's diff. */
@@ -205,26 +249,7 @@ export function DiffView() {
           {!review.diff ? (
             <div className={s.loadingDiff}>Loading the diff…</div>
           ) : mode === 'unified' ? (
-            <table className={s.table}>
-              <tbody>
-                {lines.map((l, i) =>
-                  l.kind === 'hunk' || l.kind === 'meta' ? (
-                    <tr key={i} className={cx(s.hunk, l.kind === 'meta' && s.note)}>
-                      <td colSpan={3}>{l.kind === 'meta' ? noteOf(l.text) : l.text}</td>
-                    </tr>
-                  ) : (
-                    <tr key={i} className={s[`l_${l.kind}`]}>
-                      <td className={s.num}>{l.old ?? ''}</td>
-                      <td className={s.num}>{l.new ?? ''}</td>
-                      <td className={s.text}>
-                        <span className={s.sign}>{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
-                        {l.text || ' '}
-                      </td>
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
+            <UnifiedDiff lines={lines} />
           ) : (
             <table className={cx(s.table, s.split)}>
               <tbody>

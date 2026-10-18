@@ -168,3 +168,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The Earnings row's problem (EarningsPanel.tsx): a link to the Stripe sheet. */
+.earningsProblem {
+  align-items: baseline;
+  text-align: left;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.panelActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}

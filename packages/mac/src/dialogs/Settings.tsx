@@ -14,6 +14,8 @@ import { NotificationSettings } from './NotificationSettings.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 import { TerminalSettings } from './TerminalSettings.js';
+import { NetworkSettings } from '../network/NetworkSettings.js';
+import { UpdateAboutRow, UpdateSettingsGroup } from './UpdateSettings.js';
 
 const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> = [
   { id: 'general', label: 'General', icon: 'gear' },
@@ -58,6 +60,7 @@ function General() {
           />
         </Row>
       </Group>
+      <UpdateSettingsGroup />
       <Group title="Writing">
         <Row label="Send with" detail={prefs.sendWith === 'enter' ? 'Shift+Return makes a new line.' : 'Return makes a new line.'}>
           <Select
@@ -204,6 +207,29 @@ function ClaudePane() {
   );
 }
 
+/** Projects you hid from the sidebar, each with Show (it comes back where it was). */
+function HiddenProjectsGroup() {
+  const api = useApi();
+  const hidden = useApp((st) => st.hiddenProjects);
+  return (
+    <Group title="Hidden projects">
+      {hidden.length ? (
+        hidden.map((root) => (
+          <Row key={root} label={root.split('/').filter(Boolean).pop() ?? root} detail={root}>
+            <Button onClick={() => void api.workspaces.showProject(root)} aria-label={`Show ${root.split('/').filter(Boolean).pop() ?? root}`}>
+              Show
+            </Button>
+          </Row>
+        ))
+      ) : (
+        <Row label="None" detail="Hide a project from its menu in the sidebar; it waits here (and under Hidden Projects) until you show it again.">
+          {null}
+        </Row>
+      )}
+    </Group>
+  );
+}
+
 function Workspaces() {
   const api = useApi();
   const p = useApp((st) => st.prefs);
@@ -217,6 +243,7 @@ function Workspaces() {
           <Switch label="Friend worktrees" on={p.friendWorktrees === 'ask'} onChange={(v) => void api.session.setFriendWorktrees(v ? 'ask' : 'off')} />
         </Row>
       </Group>
+      <HiddenProjectsGroup />
       <Group title="Toolbar buttons">
         {HIDEABLE_BUTTONS.map(([id, label]) => (
           <Row key={id} label={label}>
@@ -235,6 +262,7 @@ function People() {
   const remembered = Object.entries(state.remembered).filter(([id]) => !others.some((p) => p.peerId === id));
   return (
     <>
+      <NetworkSettings />
       <Group title="In the room">
         {others.length ? (
           others.map((p) => (
@@ -287,6 +315,7 @@ function About() {
   return (
     <Group>
       <Row label="klaud for Mac">{APP_VERSION}</Row>
+      <UpdateAboutRow />
       <Row label="klaud (the part that runs your room)">{client.daemonVersion}</Row>
       <Row label="Windows attached" detail="The terminal app and this one share the same room.">
         {client.clients}

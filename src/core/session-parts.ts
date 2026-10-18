@@ -49,7 +49,8 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         toast: (text, level) => session.toast(text, level),
         intend: (intent) => session.intend(intent),
         askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
-        findConversation: opts.findConversation ? (dir) => opts.findConversation!(dir, { id: session.selfId, name: session.store.getState().self?.name ?? 'you' }) : undefined,
+        findConversation: opts.findConversation ? (dir, o) => opts.findConversation!(dir, { id: session.selfId, name: session.store.getState().self?.name ?? 'you' }, o) : undefined,
+        ...(opts.otherTools ? { otherTools: opts.otherTools } : {}),
         onWorktreeCreated: (ws) => workbench?.onWorktreeCreated(ws),
         onWorkspaceGoing: (id) => workbench?.closeTerminals(id),
       });
@@ -123,6 +124,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       refreshUsage: () => session.refreshUsage(),
       canEditIn: (peerId, channel) => invites.canEditIn(peerId, channel),
       envFor: (channel, dir) => env.envFor(channel.startsWith('ws:') ? { workspaceId: channel.slice(3), dir } : { dir }),
+      nameTask: (prompt) => session.nameTask(prompt),
     });
     const remote = new RemoteWork({
       store: opts.store,

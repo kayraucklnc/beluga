@@ -18,6 +18,8 @@ const Presence = z.object({ state: z.enum(['online', 'away', 'dnd', 'offline']),
 export const NETWORK_API = {
   // Whether the network is on, and your peer id and address on it.
   'network.status': { args: z.tuple([]) },
+  // Turn the network on or off now (and remember it in settings): → the new status.
+  'network.setEnabled': { args: z.tuple([z.boolean()]) },
   'network.friends.list': { args: z.tuple([]) },
   // A one-time invitation: → { id, code, link, expiresAt }.
   'network.friends.invite': { args: z.tuple([]) },

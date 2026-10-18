@@ -1,0 +1,182 @@
+/* The Overview's filter bar: it stays at the top while the list scrolls under it. */
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 72rem;
+  margin: 0 auto 14px;
+  padding: 10px 0 10px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+}
+.flex {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.segmented {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  gap: 1px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+}
+.segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 5px;
+  color: var(--text-2);
+  font-size: 0.93rem;
+  font-weight: 500;
+  white-space: nowrap;
+  outline: none;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.segment:hover {
+  color: var(--text);
+}
+.segment:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.segmentOn {
+  background: var(--bg-raised);
+  color: var(--text);
+  box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.count {
+  min-width: 14px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.segmentOn .count {
+  color: var(--text-2);
+}
+/* Something is waiting on you: the count says so, quietly. */
+.segmentUrgent .count {
+  color: var(--warn);
+  font-weight: 650;
+}
+
+.popup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 24px;
+  max-width: 14rem;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.93rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--dur-fast);
+}
+.popup:hover,
+.popup[data-state='open'] {
+  background: var(--bg-hover);
+}
+.popup:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.popupDim {
+  color: var(--text-3);
+}
+.popupText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chevron {
+  flex: none;
+  color: var(--text-3);
+}
+.menuIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 7.5rem;
+  min-width: 7.5rem;
+  max-width: 13.5rem;
+  height: 24px;
+  padding: 0 4px 0 8px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  color: var(--text-3);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  transition: max-width var(--dur) var(--ease-out);
+}
+.field:focus-within {
+  max-width: 17rem;
+  background: var(--bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 0 0.5px var(--accent);
+}
+.input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.93rem;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.input:focus {
+  outline: none;
+}
+.input::placeholder {
+  color: var(--text-3);
+}
+.clear {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--text-3);
+  color: var(--bg);
+}
+.clear:hover {
+  background: var(--text-2);
+}
+
+/* Narrower: "Sort:" goes, then the project's name (its icon stays), then the segments tighten. */
+@container overview (max-width: 900px) {
+  .popupDim {
+    display: none;
+  }
+  .field:focus-within {
+    max-width: 13.5rem;
+  }
+}
+@container overview (max-width: 820px) {
+  .popupText {
+    display: none;
+  }
+  .segment {
+    padding: 0 7px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .field {
+    transition: none;
+  }
+}

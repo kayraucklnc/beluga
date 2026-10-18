@@ -178,6 +178,26 @@ describe('WorkspaceController', () => {
     expect(store.getState().projects.filter((p) => p.root)).toEqual([]);
   });
 
+  it('arranges the sidebar at once, refuses what isn’t there, and shows hidden projects again', async () => {
+    expect(store.getState().projectOrder).toEqual([repo]);
+    expect(ctl.newGroup('Work', { before: { project: projectId() } })).toBe('Work');
+    expect(store.getState().projectOrder).toEqual(['group:Work', repo]);
+    expect(store.getState().projectGroups).toEqual([{ name: 'Work', projects: [] }]);
+    expect(ctl.arrange({ project: projectId() }, { into: 'Work' })).toBe(true);
+    expect(store.getState().projectOrder).toEqual(['group:Work']);
+    expect(store.getState().projectGroups).toEqual([{ name: 'Work', projects: [repo] }]);
+    expect(ctl.arrange({ project: 'nope' }, {})).toBe(false);
+    expect(toasts.at(-1)).toMatch(/Project not found/);
+    expect(ctl.newGroup('Work')).toBeUndefined();
+    expect(toasts.at(-1)).toMatch(/already a group/);
+    await ctl.hideProject(projectId());
+    expect(store.getState().hiddenProjects).toEqual([repo]);
+    expect(await ctl.showProject(repo)).toBe(true);
+    expect(store.getState().hiddenProjects).toEqual([]);
+    expect(store.getState().projectGroups).toEqual([{ name: 'Work', projects: [repo] }]);
+    expect(await ctl.showProject('/not/hidden')).toBe(false);
+  });
+
   it('starts chats and adds projects or folders', async () => {
     const chat = (await ctl.newChat(projectId(), 'Question'))!;
     expect(chat.kind).toBe('chat');

@@ -41,4 +41,5 @@ jobs:
           mkdir -p binaries resources/daemon
           ln -sf "$(which node)" binaries/node-aarch64-apple-darwin
           touch resources/daemon/.keep
-          cargo clippy -- -D warnings
+          cargo clippy --all-targets -- -D warnings
+          cargo test

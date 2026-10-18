@@ -34,11 +34,16 @@ function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectI
   if (p?.kind === 'setup' || p?.kind === 'run') return `The project's ${p.kind} command (empty to clear it)`;
   if (p) return `Name for the new ${p.kind}${state.projects.find((x) => x.id === p.projectId)?.root ? ` in ${state.projects.find((x) => x.id === p.projectId)?.name}` : ''}`;
   const v = state.view;
-  if (v.kind === 'draft') return 'Ask Claude anything. Your first message starts the chat';
+  if (v.kind === 'draft') {
+    // A chat in a project runs in its main folder: questions only.
+    const project = state.projects.find((x) => x.id === v.projectId && x.root);
+    return project ? `Ask about ${project.name}…` : 'Ask Claude anything. Your first message starts the chat';
+  }
   if (v.kind === 'draft_worktree') return 'What should Claude work on in the new worktree?';
   if (v.kind === 'search') return 'Search every conversation';
   if (v.kind === 'workspace') {
     const ws = state.projects.flatMap((x) => x.workspaces).find((w) => w.id === v.id);
+    if (ws?.askOnly) return `Ask about ${state.projects.find((x) => x.root && x.workspaces.includes(ws))?.name ?? 'this project'}…`;
     return `Tell Claude what to do in ${ws?.name ?? 'this workspace'}`;
   }
   if (v.kind === 'shared') {

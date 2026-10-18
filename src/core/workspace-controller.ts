@@ -1,11 +1,14 @@
 import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { carrySession } from '../agent/session-carry.js';
 import type { AgentPlace } from '../agent/types.js';
-import type { WorkspaceManager } from '../workspaces/manager.js';
+import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import type { ShareService } from './shares.js';
 import { type LogItem, type Store, type WorkspaceTab } from './store.js';
-import type { Conversation } from '../agent/transcript.js';
+import { type Conversation, isImportedItem } from '../agent/transcript.js';
 import type { Intent } from './intents.js';
+import { type OtherTools, OtherWorktrees } from './other-worktrees.js';
 
 export interface ControllerDeps {
   readonly manager: WorkspaceManager;
@@ -17,8 +20,10 @@ export interface ControllerDeps {
   readonly intend: (intent: Intent) => void;
   /** Ask your own Claude to do something in a workspace conversation. */
   readonly askClaude: (prompt: string, channel: string) => void;
-  /** The latest Claude Code conversation in a folder (from other tools), to show and continue. */
-  readonly findConversation?: (dir: string) => Promise<Conversation | undefined>;
+  /** A Claude Code conversation in a folder (from other tools), to show and continue: the newest, or the one asked for. */
+  readonly findConversation?: (dir: string, opts?: { sessionId?: string; prefer?: string }) => Promise<Conversation | undefined>;
+  /** Reads Conductor's and Claude Code's data about worktrees klaud didn't make (omitted in the demo and tests). */
+  readonly otherTools?: OtherTools;
   /** A new worktree exists (created, forked or handed over): e.g. run its setup. */
   readonly onWorktreeCreated?: (ws: Workspace) => void;
   /** Before a workspace is archived or deleted: stop what runs in its folder (shell, dev server). */
@@ -36,6 +41,9 @@ export const REVIEW_PROMPT = [
   'Then summarize: what changed, issues found ranked by severity with file:line, and what you fixed. Say clearly whether it is ready to merge.',
 ].join('\n');
 const WS_PREFIX = 'ws:';
+/** What Claude starts with in a worktree you continued into without saying what to do. */
+export const CONTINUE_PROMPT = 'We moved here from the main folder so you can make changes. Go ahead with what we discussed.';
+const CONTINUE_WAIT_MS = 60_000;
 
 export const workspaceIdOf = (channel: string): string | undefined => (channel.startsWith(WS_PREFIX) ? channel.slice(WS_PREFIX.length) : undefined);
 export { shareNameOf } from '../shared/share-names.js';
@@ -53,9 +61,14 @@ export class WorkspaceController {
   private saveTimer?: NodeJS.Timeout;
   private lastLog: readonly LogItem[] = [];
   private readonly unsubscribe: () => void;
+  /** Conversations shown in worktrees from other tools, resumed when you first talk there (by workspace id). */
+  private readonly pendingResume = new Map<string, string>();
+  /** Worktrees klaud didn't make: who made them, their info page, tidying them away. */
+  readonly others: OtherWorktrees;
 
   constructor(private readonly deps: ControllerDeps) {
     this.unsubscribe = deps.store.subscribe(() => this.scheduleSave());
+    this.others = new OtherWorktrees({ manager: deps.manager, refresh: () => this.refresh(), toast: deps.toast, ...(deps.otherTools ? { tools: deps.otherTools } : {}) });
   }
 
   get manager(): WorkspaceManager {
@@ -83,7 +96,13 @@ export class WorkspaceController {
         else this.deps.shares.upsert({ name, root: w.path, writable: false, private: true, allowed });
       }
     }
-    this.deps.store.dispatch({ type: 'projects', projects, groups: this.deps.manager.groups });
+    this.publish();
+  }
+
+  /** Publish the projects as they're arranged (no re-scan: arranging is instant). */
+  private publish(): void {
+    const { projects, groups, order } = this.deps.manager.arrangement();
+    this.deps.store.dispatch({ type: 'projects', projects, groups, order, hidden: this.deps.manager.hiddenProjects });
   }
 
   /** Show a workspace (chat, files, diff or terminal), loading its saved conversation the first time. */
@@ -91,7 +110,8 @@ export class WorkspaceController {
     const ws = this.deps.manager.find(id);
     if (!ws) return this.deps.toast('That workspace no longer exists', 'warn');
     const fresh = this.ensureLoaded(id);
-    if (fresh && !fresh.saved && !ws.sessionId) void this.importConversation(ws.id, ws.path, `${WS_PREFIX}${id}`);
+    // A worktree from another tool re-reads its conversation each time (it may have gone on there) until you talk in it here.
+    if (fresh && !ws.sessionId && (!fresh.saved || (ws.external && this.onlyImported(`${WS_PREFIX}${id}`)))) void this.importConversation(ws.id, ws.path, `${WS_PREFIX}${id}`);
     this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab } });
     if (tab === 'review') void this.loadReview(id);
   }
@@ -118,19 +138,49 @@ export class WorkspaceController {
    * main folder) shows the latest Claude Code conversation from that folder, and Claude
    * continues it from there.
    */
-  private async importConversation(id: string, dir: string, channel: string): Promise<void> {
+  private async importConversation(id: string, dir: string, channel: string, sessionId?: string): Promise<boolean> {
     try {
-      const found = await this.deps.findConversation?.(dir);
-      if (!found?.items.length) return;
-      const now = this.deps.store.getState().log.filter((l) => l.channel === channel);
-      if (now.length) return; // you started talking meanwhile
+      const external = this.deps.manager.find(id)?.external ?? false;
+      // Conductor's worktrees: the conversation Conductor has open comes first.
+      const prefer = !sessionId && external ? await this.others.preferredSession(dir) : undefined;
+      const found = await this.deps.findConversation?.(dir, sessionId ? { sessionId } : prefer ? { prefer } : {});
+      if (!found?.items.length) return false;
+      if (!this.onlyImported(channel)) return false; // you started talking meanwhile
       const when = new Date(found.lastModified).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       const note: LogItem = { id: `import-${found.sessionId}`, type: 'system', channel, text: `Continuing "${found.title}" from Claude Code (last active ${when}). Claude remembers all of it.`, ts: Date.now(), level: 'info' };
       this.deps.store.dispatch({ type: 'history', channel, items: [...found.items, note] });
-      if (!this.deps.manager.find(id)?.sessionId) this.deps.manager.rememberSession(id, found.sessionId);
+      // Another tool's worktree becomes yours only once you talk in it (so opening it doesn't move it in the sidebar).
+      if (external) this.pendingResume.set(id, found.sessionId);
+      else if (!this.deps.manager.find(id)?.sessionId) this.deps.manager.rememberSession(id, found.sessionId);
+      return true;
     } catch {
       // No transcript to show: the conversation simply starts fresh.
+      return false;
     }
+  }
+
+  /** Nothing said in this conversation yet except what came from Claude Code's transcript. */
+  private onlyImported(channel: string): boolean {
+    return this.deps.store.getState().log.every((l) => l.channel !== channel || isImportedItem(l.id));
+  }
+
+  /**
+   * Show another of the Claude Code conversations that ran in a worktree from another tool
+   * (Claude continues that one). Only before you've talked in it here.
+   */
+  async showConversation(id: string, sessionId: string): Promise<boolean> {
+    const ws = this.deps.manager.find(id);
+    if (!ws) return false;
+    const channel = `${WS_PREFIX}${id}`;
+    this.ensureLoaded(id);
+    if (ws.sessionId || !this.onlyImported(channel)) {
+      this.deps.toast('You’ve already talked in this worktree here, so it keeps that conversation', 'warn');
+      return false;
+    }
+    const shown = await this.importConversation(id, ws.path, channel, sessionId);
+    if (!shown) this.deps.toast('That conversation has nothing to show', 'warn');
+    this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab: 'chat' } });
+    return shown;
   }
 
   /** Where Claude runs for a workspace conversation: its folder, its own resumable session. */
@@ -144,7 +194,9 @@ export class WorkspaceController {
       additionalDirectories: [],
       // Worktrees are disposable sandboxes, so edits there don't need approval.
       autoEdit: ws.kind === 'worktree',
-      resume: ws.forkFromSession ?? ws.sessionId,
+      // A project's main folder is questions only: work happens in worktrees.
+      ...(ws.askOnly ? { askOnly: { project: this.deps.manager.list.find((p) => p.root && real(p.root) === real(ws.path))?.name ?? path.basename(ws.path) } } : {}),
+      resume: ws.forkFromSession ?? ws.sessionId ?? this.pendingResume.get(ws.id),
       forkSession: Boolean(ws.forkFromSession),
       onSession: (sessionId) => this.deps.manager.rememberSession(ws.id, sessionId),
       ...(ws.model ? { model: ws.model } : {}),
@@ -208,6 +260,48 @@ export class WorkspaceController {
   private nameFor(firstMessage: string, nameTask: (prompt: string) => Promise<string>): Promise<string> {
     this.deps.toast('Naming the worktree…');
     return nameTask(firstMessage);
+  }
+
+  /**
+   * Carry a conversation into a new worktree and go on there: an ask chat in a main folder (where
+   * nothing may change), or any chat. The worktree starts from the latest origin (or `base`), is
+   * named by a small model after the task (or what you asked last), gets a copy of the chat and
+   * a branch of Claude's conversation, and opens; Claude starts on the task there once `after`
+   * resolves (the run that asked for the move has finished, so its conversation is complete).
+   */
+  async continueInWorktree(id: string, nameTask: (prompt: string) => Promise<string>, opts: { task?: string; base?: string; name?: string; after?: Promise<void> } = {}): Promise<Workspace | undefined> {
+    const source = this.deps.manager.find(id);
+    const project = source && this.deps.manager.list.find((p) => p.id === source.projectId && p.root);
+    if (!source || !project) {
+      this.deps.toast(source ? 'Only conversations in a project can continue in a worktree' : 'That conversation no longer exists', 'warn');
+      return undefined;
+    }
+    const from = `${WS_PREFIX}${id}`;
+    const task = opts.task?.trim();
+    const asked = [...this.deps.store.getState().log].reverse().find((l) => l.channel === from && l.type === 'chat' && l.from === this.deps.selfId());
+    const name = opts.name?.trim() || (await this.nameFor(task || (asked?.type === 'chat' ? asked.text : '') || source.name, nameTask));
+    this.deps.store.dispatch({ type: 'system', channel: from, text: `Moving to a new worktree: ${name}…` });
+    this.saveNow(); // the copy gets everything said so far
+    const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.fork(id, name, { base: opts.base ?? project.base }));
+    if (!ws) return undefined;
+    // Claude Code looks for a conversation under the folder it runs in: bring it along.
+    if (source.sessionId) carrySession(source.sessionId, source.path, ws.path);
+    const to = `${WS_PREFIX}${ws.id}`;
+    this.loaded.delete(to);
+    this.open(ws.id);
+    const where = source.askOnly ? `${project.name}'s main folder` : source.name;
+    this.deps.store.dispatch({ type: 'system', channel: to, text: `Continued from “${source.name}” in ${where}, on a new branch from ${ws.base ?? project.base}. Claude remembers the conversation.` });
+    this.deps.store.dispatch({ type: 'system', channel: from, text: `Continued in the worktree ${ws.name} (${ws.branch}).${source.askOnly ? ' This chat stays here for questions.' : ''}` });
+    this.deps.toast(`Continuing in ${ws.name}, with the conversation so far`, 'success');
+    this.deps.onWorktreeCreated?.(ws);
+    void this.startWhen(opts.after, task || CONTINUE_PROMPT, to);
+    return ws;
+  }
+
+  /** Ask Claude in `channel` once `after` resolves (or a minute passed: never stuck behind a run that hangs). */
+  private async startWhen(after: Promise<void> | undefined, prompt: string, channel: string): Promise<void> {
+    if (after) await Promise.race([after, new Promise<void>((r) => setTimeout(r, CONTINUE_WAIT_MS).unref())]);
+    if (this.inChannel(channel)) this.deps.askClaude(prompt, channel);
   }
 
   async fork(id: string, name: string): Promise<Workspace | undefined> {
@@ -332,6 +426,42 @@ export class WorkspaceController {
     this.deps.manager.ungroup(name);
     await this.refresh();
     this.deps.toast(`Group "${name}" removed; its projects stay`, 'success');
+  }
+
+  /** Move a project or group in the sidebar (see WorkspaceManager.arrange). False: it couldn't. */
+  arrange(item: ArrangeTarget, place: { into?: string | null; before?: ArrangeTarget | null } = {}): boolean {
+    try {
+      this.deps.manager.arrange(item, place);
+      this.publish();
+      return true;
+    } catch (err) {
+      this.deps.toast(errorText(err), 'error');
+      return false;
+    }
+  }
+
+  /** A new empty group in the sidebar (with a project moved in, if given). Its name, or undefined. */
+  newGroup(name: string, opts: { before?: ArrangeTarget | null; project?: string } = {}): string | undefined {
+    try {
+      const made = this.deps.manager.newGroup(name, opts);
+      this.publish();
+      return made;
+    } catch (err) {
+      this.deps.toast(errorText(err), 'error');
+      return undefined;
+    }
+  }
+
+  /** Show a hidden project again, back where it was. */
+  async showProject(root: string): Promise<boolean> {
+    try {
+      this.deps.manager.showProject(root);
+      await this.refresh();
+      return true;
+    } catch (err) {
+      this.deps.toast(errorText(err), 'error');
+      return false;
+    }
   }
 
   async hideProject(projectId: string): Promise<void> {

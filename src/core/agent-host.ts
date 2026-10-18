@@ -28,6 +28,8 @@ export interface AgentHostDeps {
   readonly canEditIn?: (peerId: string, channel: string) => boolean;
   /** Your environment variables for a run there (see env-vars.ts). */
   readonly envFor?: (channel: string, dir?: string) => Record<string, string>;
+  /** A short worktree name for a task (a small model names it). */
+  readonly nameTask?: (prompt: string) => Promise<string>;
 }
 
 /**
@@ -100,6 +102,8 @@ export class AgentHost {
   private readonly seenRequests: string[] = [];
   /** Tool approvals waiting → the conversation whose run asked for them. */
   private readonly toolApprovals = new Map<string, string>();
+  /** Waiting for a conversation's current run to end (see idle). */
+  private readonly idleWaiters = new Map<string, Array<() => void>>();
   /** Final agent events that could not be sent while disconnected. */
   private outbox: Array<{ body: BodyInput; opts: { to?: string; keep?: boolean } }> = [];
 
@@ -131,6 +135,30 @@ export class AgentHost {
 
   private system(text: string, level?: 'info' | 'warn' | 'error'): void {
     this.deps.system(text, level);
+  }
+
+  /** Resolves once nothing runs in this conversation (right away when nothing does). */
+  idle(channel: string): Promise<void> {
+    if (!this.lanes.get(channel)?.current) return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.set(channel, [...(this.idleWaiters.get(channel) ?? []), resolve]));
+  }
+
+  /**
+   * Claude in a main folder (questions only) was asked for a change: carry the conversation into
+   * a new worktree and go on there. Your own requests move right away (you asked for the change);
+   * anyone else's ask you first. Returns what Claude is told.
+   */
+  private async moveToWorktree(from: string, requesterName: string, channel: string, task: string, finished: Promise<void>): Promise<string> {
+    const ctl = this.deps.workspaces;
+    const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+    if (!ctl || !id) return "Couldn't continue in a worktree from here. Tell the user to click Continue in a New Worktree.";
+    if (from !== this.selfId) {
+      const answer = await this.ask('request', `${requesterName}'s request wants to continue in a new worktree`, task, from, channel);
+      if (answer === 'no') return 'The owner of this computer declined moving to a new worktree. Stay read-only here and say so.';
+    }
+    const ws = await ctl.continueInWorktree(id, (p) => this.deps.nameTask?.(p) ?? Promise.resolve('worktree'), { task, after: finished });
+    if (!ws) return "Couldn't create the worktree (klaud showed the user why). Don't change anything here; tell the user briefly.";
+    return `Done: the new worktree "${ws.name}" (branch ${ws.branch}, from ${ws.base}) has this conversation and the task continues there automatically. Do not do the work here; end your turn now with one short line.`;
   }
 
   /** Stop whatever is running (when klaud quits). */
@@ -443,8 +471,12 @@ export class AgentHost {
     lane.runFrom = from;
     const requesterName = peerName(this.store.getState(), from);
     const root = body.project && body.channel === 'room' ? this.projectRoot(body.project) : undefined;
-    // A friend's request in your project gets a fresh conversation in its main folder.
-    const place = root ? { cwd: root, additionalDirectories: [], autoEdit: false, onSession: () => undefined } : this.deps.workspaces?.place(body.channel);
+    // A friend's request in your project gets a fresh conversation in its main folder: questions only.
+    const place = root ? { cwd: root, additionalDirectories: [], autoEdit: false, onSession: () => undefined, askOnly: { project: body.project ?? '' } } : this.deps.workspaces?.place(body.channel);
+    let markFinished: () => void = () => undefined;
+    const finished = new Promise<void>((resolve) => (markFinished = resolve));
+    // In a main folder, a change request carries the conversation into a new worktree.
+    const move = place?.askOnly && body.channel !== 'room' ? (task: string) => this.moveToWorktree(from, requesterName, body.channel, task, finished) : undefined;
     if (body.channel !== 'room' && !place) {
       this.emitAgent(body.requestId, from, 'error', 'That workspace is archived or missing.', body.channel);
       if (lane.current === controller) lane.current = undefined;
@@ -466,6 +498,7 @@ export class AgentHost {
         canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input, body.channel, place?.cwd),
         askUser: (question) => this.deps.questions.ask(askTo, body.requestId, body.channel, question),
         plan: body.plan,
+        ...(move ? { continueInWorktree: move } : {}),
         onFollowUps: (send) => {
           lane.followUps = send;
           // Anything that queued up behind this run from the same person can go in now.
@@ -491,6 +524,12 @@ export class AgentHost {
       }
       lane.interruptedBy = undefined; // never carry an interrupt label into the next run
       lane.stopping = undefined;
+      markFinished();
+      if (!lane.current) {
+        const waiters = this.idleWaiters.get(body.channel) ?? [];
+        this.idleWaiters.delete(body.channel);
+        for (const resolve of waiters) resolve();
+      }
       void this.deps.refreshUsage();
       if (body.channel !== 'room') void this.deps.workspaces?.refresh();
     }

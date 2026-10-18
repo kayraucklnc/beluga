@@ -269,11 +269,40 @@ export class PeerRun {
 
   async onShellRequest(from: string, body: BodyOf<'shell_request'>): Promise<void> {
     const reply: Reply = (r) => void this.deps.send({ kind: 'shell_result', reqId: body.reqId, ...r }, { to: from });
+    const started = (cwd: string): void => void this.deps.send({ kind: 'shell_started', reqId: body.reqId, cwd }, { to: from });
     try {
-      await this.serve(from, body, reply);
+      await this.serve(from, body, reply, { started });
     } catch (err) {
       reply({ ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 400) });
     }
+  }
+
+  /**
+   * A command a friend's task asks to run here (the gateway's `run_on`, over the network or a
+   * room): the same gates as run_on_peer (full trust runs, others ask you, blocked is declined,
+   * secrets never). Resolves with what came of it; `onAsking` / `onStarted` say where it is.
+   */
+  async serveTask(from: string, ask: { command: string; cwd?: string; project?: string; timeoutSec: number; why: string }, hooks: { onAsking: () => void; onStarted: (cwd: string) => void }): Promise<Omit<BodyOf<'shell_result'>, 'kind' | 'reqId'>> {
+    const body: BodyOf<'shell_request'> = {
+      kind: 'shell_request',
+      reqId: randomUUID(),
+      command: ask.command.slice(0, 8000),
+      timeoutSec: Math.min(MAX_SHELL_SECONDS, Math.max(1, Math.round(ask.timeoutSec))),
+      viaAgent: true,
+      why: ask.why.slice(0, 500),
+      ...(ask.cwd ? { cwd: ask.cwd.slice(0, 4096) } : {}),
+      ...(ask.project ? { project: ask.project.slice(0, 80) } : {}),
+    };
+    let result: Omit<BodyOf<'shell_result'>, 'kind' | 'reqId'> = { ok: false, error: 'It did not run', output: '', truncated: false, timedOut: false };
+    const reply: Reply = (r) => {
+      result = { output: '', truncated: false, timedOut: false, ...r };
+    };
+    try {
+      await this.serve(from, body, reply, { started: hooks.onStarted, asking: hooks.onAsking });
+    } catch (err) {
+      reply({ ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 400) });
+    }
+    return result;
   }
 
   /** Where a request runs: the project or folder it names, else your shared folder (home with full trust). */
@@ -296,7 +325,7 @@ export class PeerRun {
     return real;
   }
 
-  private async serve(from: string, body: BodyOf<'shell_request'>, reply: Reply): Promise<void> {
+  private async serve(from: string, body: BodyOf<'shell_request'>, reply: Reply, hooks: { started: (cwd: string) => void; asking?: () => void }): Promise<void> {
     const state = this.state;
     const owner = state.self?.name ?? 'The owner';
     const level = trustOf(state, from);
@@ -309,6 +338,7 @@ export class PeerRun {
     const name = peerName(state, from);
     const who = `${name}${body.viaAgent ? "'s Claude" : ''}`;
     if (gate === 'ask' && !this.always.has(from)) {
+      hooks.asking?.();
       const answer = await this.deps.approve(
         `${name} (#${from.slice(0, 6)})${body.viaAgent ? "'s Claude" : ''} wants to run a command on your computer`,
         `$ ${clean(body.command)}\nin ${tilde(cwd, this.home)} · stops after ${formatDuration(body.timeoutSec * 1000)} · no input${body.why ? `\nwhy: ${clean(body.why)}` : ''}\nAlways = run ${name}'s commands without asking until klaud quits`,
@@ -318,7 +348,7 @@ export class PeerRun {
       if (answer === 'always') this.always.add(from);
     }
     const place = tilde(cwd, this.home);
-    this.deps.send({ kind: 'shell_started', reqId: body.reqId, cwd: place }, { to: from });
+    hooks.started(place);
     this.running.set(from, (this.running.get(from) ?? 0) + 1);
     let res: ShellOutcome;
     try {

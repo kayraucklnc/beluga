@@ -3,6 +3,8 @@
 Friends, direct messages, groups and presence with **no server and no host**: every Mac is its
 own infrastructure. It runs in the daemon only when turned on (`"network": true` in
 `~/.klaud/settings.json`, or `KLAUD_NETWORK=1`), next to today's rooms, which are unchanged.
+The Mac app turns it on and off while klaud runs (`network.setEnabled`: saved in settings, started
+or stopped at once, no restart).
 Code: `src/net/mesh/` (the node), `src/core/network.ts` (the core service and the `network.*`
 API), `src/core/network-store.ts` (the shared state's `network`).
 
@@ -112,7 +114,10 @@ held by every member, so you catch up from whoever is online.
 `{ state: online | away | dnd | offline, note?, until? }`, sent on link up and on change.
 Choosing `offline` means appear offline: links stay up and messages arrive, but others see a
 plain `offline`. A status with `until` reverts to online by itself. Idle detection is the
-screen's job (`network.presence.set`).
+screen's job (`network.presence.set`): the Mac app sets Away after 10 minutes without input (the
+system's idle time) when you chose Online, and Online again when you're back. New messages notify
+through the shared Notifier (the `mentions` kind), silently on Do Not Disturb or while you appear
+offline.
 
 ## Known limits (phase 1)
 
@@ -132,3 +137,33 @@ screen's job (`network.presence.set`).
 - Groups you didn't ask for are only fetched from friends (an admin adding you directly) and
   from the admin whose invite you used; at most 500 groups and 100 people per group.
 - One Mac per identity: a second klaud process with the same `~/.klaud` doesn't start the network.
+
+## Tasks between Claudes (the gateway)
+
+Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `src/agent/gateway-tools.ts`
+(your Claude's tools), the Mac app's `src/gateway/` (task cards, Requests). The daemon runs it
+(`launchGateway`), over today's room at once and over friends' links whenever the network is on.
+
+- **Messages** (`protocol.ts`): `task_request {id, from, to, kind: ask|run, ask, needs, project?,
+  expects?: JSON schema | "files", deadline?, command?/cwd?/timeoutSec?, by}`, `task_update {id,
+  state: queued|awaiting_approval|working, step?}`, `task_result {id, status: done|declined|failed|
+  cancelled, summary, data?, files[], log}`, `task_cancel`, and `card` (your trust in them, what
+  your klaud offers, your projects, your "Ask me for…" note). Each rides in a frame `{f, m}` that
+  the other side acknowledges (`{ack}`): over a mesh link as `gw`, in a room as a `gateway` body
+  sent to one person. Requests, results and cancels wait in `~/.klaud/tasks/outbox.json` until
+  acknowledged (resent every 20 s while reachable, 7 days at most); updates and cards are only
+  sent to someone reachable now. Over the network only friends are heard; a result is only taken
+  from the person the task went to, and only once.
+- **Receiving**: blocked → declined; Trusted / Full trust → it runs; Ask me each time → today's
+  approval card "Kayra's Claude wants to: …" (Always = trusted). It runs in the project it names
+  (if there is one) or a scratch folder (`~/.klaud/tasks/work/<task>`), with the usual tool
+  approvals (none with full trust). `run` tasks go through PeerRun's gates (`serveTask`). Screen
+  and device needs are declined for now. Claude ends its answer with a fenced `klaud-result`
+  block for data and files; data is checked against `expects` on both sides; files only from the
+  folder it ran in (anywhere with full trust), never secrets, 512 KB in all, inline.
+- **Asking**: `ask_person` / `run_on` for someone you don't trust (Trusted / Full) first put an
+  "Ask Alice's Claude?" card in the conversation (Ask / Edit / Not now, 10 minutes). Results reach
+  your Claude as data in a `<task_result>` block, marked untrusted. If its turn ended before the
+  result came (or it didn't wait for it), a new turn starts in that conversation with it.
+- **Files**: `~/.klaud/tasks/tasks.json` (the last 200 tasks and friends' cards), `outbox.json`,
+  `files/<task>/` (what results brought), `work/<task>/`.

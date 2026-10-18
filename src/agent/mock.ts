@@ -64,6 +64,9 @@ const SCRIPTS: readonly Script[] = [
   },
 ];
 
+/** A request to change something (the main folder can't, so it moves to a worktree). */
+const WANTS_CHANGE = /\b(build|implement|add|create|make|fix|change|edit|refactor|rename|update|remove|delete|write(?! up)|commit)\b/i;
+
 const FALLBACK: Script = {
   match: /.*/,
   steps: ['Read README.md', 'Glob src/**'],
@@ -123,6 +126,59 @@ async function mockPeerRun(input: AgentRunInput, bridge: RoomBridge, target: { p
   return `Ran \`${target.command}\` on ${target.peer}'s computer. ${head}.${passed ? ` **${passed} tests pass.**` : ''}`;
 }
 
+/** "ask bob to run the tests" / "ask mia's Claude whether …": whom to ask, and what. */
+export function gatewayTarget(prompt: string): { person: string; ask: string } | undefined {
+  const m = /\bask (\w[\w.-]*?)(?:['’]s claude)?(?: to)?\s+([\s\S]+)/i.exec(prompt.trim());
+  if (!m || /^(me|you|claude|it|them|him|her)$/i.test(m[1]!)) return undefined;
+  return { person: m[1]!, ask: m[2]!.trim().replace(/[.?!]+$/, '') };
+}
+
+const TEST_SCHEMA = { type: 'object', required: ['passed', 'failed'], properties: { passed: { type: 'integer' }, failed: { type: 'integer' }, skipped: { type: 'integer' } } };
+
+/** What a result says, pulled out of the delimited block (the demo only shows it back). */
+function readResult(text: string): { summary: string; data?: unknown } | undefined {
+  const block = /<task_result[^>]*>\n([\s\S]*?)\n<\/task_result>/.exec(text)?.[1];
+  if (!block) return undefined;
+  const summary = /summary:\n([\s\S]*?)(?:\n\ndata \(JSON\):|\n\nfiles|$)/.exec(block)?.[1]?.trim() ?? '';
+  const raw = /data \(JSON\):\n([\s\S]*?)(?:\n\n|$)/.exec(block)?.[1];
+  let data: unknown;
+  try {
+    data = raw ? JSON.parse(raw) : undefined;
+  } catch {
+    data = undefined;
+  }
+  return { summary, ...(data !== undefined ? { data } : {}) };
+}
+
+function tableOf(data: unknown): string {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return '';
+  const rows = Object.entries(data as Record<string, unknown>);
+  return rows.length ? `\n\n| | |\n|---|---|\n${rows.map(([k, v]) => `| ${k} | ${String(v)} |`).join('\n')}` : '';
+}
+
+/** The demo's Claude asks a friend's Claude (the gateway tools) and waits for the answer. */
+async function mockAsk(input: AgentRunInput, bridge: RoomBridge, target: { person: string; ask: string }, pace: number): Promise<string> {
+  const gw = bridge.gateway!;
+  await sleep(400 * pace, input.signal);
+  input.onEvent('tool', 'who_can');
+  await sleep(300 * pace, input.signal);
+  input.onEvent('tool', `ask_person ${target.person}`);
+  let sent: string;
+  try {
+    sent = gw.askPerson({ person: target.person, ask: target.ask, ...(/\btests?\b/i.test(target.ask) ? { expects: TEST_SCHEMA } : {}) });
+  } catch (err) {
+    return `I couldn't ask ${target.person}: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  const id = /Task (t_[\w-]+)/.exec(sent)?.[1];
+  if (!id) return `I couldn't ask ${target.person}: ${sent}`;
+  input.onEvent('tool', `wait_for ${id}`);
+  const answer = await gw.waitFor(id, 120);
+  const result = readResult(answer);
+  if (!result) return `I asked ${target.person}; no answer yet. I'll pick it up here when it arrives.`;
+  if (/^status: (declined|cancelled|failed)/m.test(answer)) return `${target.person} didn't do it: ${result.summary}`;
+  return `${target.person}'s Claude says: ${result.summary}${tableOf(result.data)}`;
+}
+
 export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   let contextUsed = 52_000;
   return {
@@ -137,8 +193,24 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
         input.onEvent('compact', JSON.stringify({ pre: 168_000, post: 21_000, trigger: 'manual' }));
         return 'Compacted the conversation. I kept the plan, decisions so far, and open TODOs.';
       }
+      // A main folder is questions only: a change request moves to a new worktree, as real Claude is told to.
+      if (input.place?.askOnly && WANTS_CHANGE.test(input.prompt)) {
+        if (!input.continueInWorktree) return "This is the project's main folder, which is read-only. Ask the owner to continue in a new worktree.";
+        await sleep(300 * pace, input.signal);
+        input.onEvent('tool', 'continue_in_worktree');
+        await input.continueInWorktree(input.prompt.trim());
+        return 'Moving this to a new worktree; I’ll continue there.';
+      }
       // Plan mode, and questions back to you, work in the demo too.
       if (input.plan) return mockPlan(input, pace);
+      // A friend's Claude answered after this conversation's turn ended: carry on with it.
+      if (/^\[klaud\] /.test(input.prompt)) {
+        await sleep(500 * pace, input.signal);
+        const result = readResult(input.prompt);
+        return `Picking this back up: ${result?.summary ?? 'they answered.'}${tableOf(result?.data)}`;
+      }
+      const gwTarget = bridge.gateway?.available() ? gatewayTarget(input.prompt) : undefined;
+      if (gwTarget) return mockAsk(input, bridge, gwTarget, pace);
       const remote = peerRunTarget(input.prompt, input.requesterName);
       if (remote && bridge.runOnPeer) return mockPeerRun(input, bridge, remote, pace);
       if (/\b(which|choose|pick)\b/i.test(input.prompt) && input.askUser) {

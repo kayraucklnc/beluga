@@ -7,7 +7,7 @@ const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textar
 
 async function openWorkspace(page: Page, name = 'add-auth'): Promise<void> {
   const row = sidebar(page).getByRole('button', { name, exact: true });
-  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click();
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
   await sidebar(page).getByRole('button', { name, exact: true }).click();
 }
 
@@ -24,19 +24,25 @@ test('shows the room, its people and projects', async ({ page }) => {
 
 test("talks to Claude in a workspace and shows its run", async ({ page }) => {
   await openWorkspace(page);
-  await expect(page.getByRole('tab', { name: /Chat/ })).toHaveAttribute('aria-selected', 'true');
+  // The center is always the conversation (its changes, files and terminal are in the right panel).
+  await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
   await composer(page).fill('Add a health check endpoint');
   await composer(page).press('Enter');
   await expect(page.getByText('Add a health check endpoint').last()).toBeVisible();
   await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 20_000 });
 });
 
-test('shows what changed, file by file', async ({ page }) => {
+test('shows what changed, file by file: in the panel, then in full', async ({ page }) => {
   await openWorkspace(page);
-  await page.getByRole('tab', { name: /Diff/ }).click();
-  await expect(page.getByRole('option', { name: /auth\.ts/ })).toBeVisible();
-  await page.getByRole('tab', { name: 'Split' }).click();
-  await expect(page.getByText('requireUser').first()).toBeVisible();
+  const panel = page.getByRole('complementary', { name: 'Panel' });
+  await panel.getByRole('tab', { name: 'Changes' }).click();
+  await panel.getByRole('option', { name: /auth\.ts/ }).click();
+  await expect(panel.getByRole('region', { name: 'Changes in auth.ts' }).getByText('requireUser').first()).toBeVisible();
+  await panel.getByRole('button', { name: 'Open in full' }).click();
+  await page.getByRole('main').getByRole('tab', { name: 'Split' }).click();
+  await expect(page.getByRole('main').getByText('requireUser').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Back to Chat' }).click();
+  await expect(composer(page)).toBeVisible();
 });
 
 test('the palette goes anywhere', async ({ page }) => {
@@ -55,14 +61,16 @@ test('switches to dark from Settings', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
 
-test('docks a terminal beside the chat and runs a command in it', async ({ page }) => {
+test('⌘J shows the terminal in the right panel and runs a command in it', async ({ page }) => {
   await openWorkspace(page);
+  // Each place has its own panel tab: wait until the workspace is the one showing.
+  await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
   await page.keyboard.press('Meta+J');
-  const term = page.getByRole('region', { name: 'Terminal' });
+  const term = page.getByRole('complementary', { name: 'Panel' }).getByRole('region', { name: 'Terminal' });
   await expect(term).toBeVisible();
   await term.locator('.xterm').click();
   await page.keyboard.type('echo dock-$((6*7))\n');
-  await expect(term.getByText('dock-42')).toBeVisible({ timeout: 15_000 });
+  await expect(term.getByText('dock-42').last()).toBeVisible({ timeout: 15_000 });
   await page.keyboard.press('Meta+J');
   await expect(term).toBeHidden();
 });
@@ -347,7 +355,7 @@ test('marks everything read, one unread again, and clears', async ({ page }) => 
 test('clicking a notification goes where it happened', async ({ page }) => {
   await emptyCentre(page);
   await openWorkspace(page);
-  await expect(page.getByRole('tab', { name: /Chat/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
   await composer(page).fill('Add a readiness probe');
   await composer(page).press('Enter');
   await expect(page.getByText('Add a readiness probe').last()).toBeVisible();
@@ -358,6 +366,6 @@ test('clicking a notification goes where it happened', async ({ page }) => {
   await expect(finished).toBeVisible({ timeout: 30_000 });
   await finished.click();
   await expect(centre(page)).toBeHidden();
-  await expect(page.getByRole('tab', { name: /Chat/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
   await expect(page.getByText('Add a readiness probe').last()).toBeVisible();
 });

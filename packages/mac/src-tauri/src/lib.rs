@@ -6,6 +6,8 @@
 
 mod daemon;
 mod menu;
+mod update_rules;
+mod updater;
 
 use std::collections::HashMap;
 use std::process::Child;
@@ -88,6 +90,40 @@ fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32, unread: Op
     }
 }
 
+/// Your klaud network status in the menu-bar menu (`None`: the network is off, no status items).
+#[tauri::command]
+fn set_tray_presence(app: tauri::AppHandle, presence: Option<menu::TrayPresence>) {
+    let Some(tray) = app.tray_by_id("klaud") else {
+        return;
+    };
+    if let Ok(m) = menu::tray_menu(&app, presence.as_ref()) {
+        let _ = tray.set_menu(Some(m));
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGEventSourceSecondsSinceLastEventType(state_id: i32, event_type: u32) -> f64;
+}
+
+/// Seconds since you last used the keyboard, mouse or trackpad anywhere on the Mac (for Away
+/// when idle); `None` where the system can't say.
+#[tauri::command]
+fn system_idle_seconds() -> Option<f64> {
+    #[cfg(target_os = "macos")]
+    {
+        // The combined session state (0) and any input event (all bits set): what macOS itself
+        // uses for idle time. SAFETY: a pure query with plain-number arguments.
+        let secs = unsafe { CGEventSourceSecondsSinceLastEventType(0, u32::MAX) };
+        secs.is_finite().then_some(secs)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 /// "Klaud · 2 waiting for you · 3 new · 1 Claude working", leaving out what's zero.
 fn tray_tip(waiting: u32, working: u32, unread: u32) -> String {
     let mut parts = vec!["Klaud".to_string()];
@@ -117,7 +153,22 @@ fn focus_main(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The quiet relaunch after an update installed while you were away: no window, no focus.
+    let background = updater::launched_in_background();
+    let mut context = tauri::generate_context!();
+    if background {
+        for w in &mut context.config_mut().app.windows {
+            w.visible = false;
+        }
+    }
+    let window_state = if background {
+        tauri_plugin_window_state::StateFlags::all()
+            - tauri_plugin_window_state::StateFlags::VISIBLE
+    } else {
+        tauri_plugin_window_state::StateFlags::all()
+    };
     let app = tauri::Builder::default()
+        .activate_ignoring_other_apps(!background)
         // A klaud:// link opened while klaud runs is passed on to the link handler below.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             focus_main(app);
@@ -127,7 +178,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(window_state)
+                .build(),
+        )
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::Updates::default())
         .manage(AppState {
             lock: tokio::sync::Mutex::new(()),
             child: Mutex::new(None),
@@ -139,10 +196,21 @@ pub fn run() {
             restart_daemon,
             set_menu_state,
             set_tray_status,
-            take_pending_links
+            set_tray_presence,
+            system_idle_seconds,
+            take_pending_links,
+            updater::update_state,
+            updater::update_check,
+            updater::update_set_mode,
+            updater::update_choose,
+            updater::update_activity,
+            updater::update_dismiss_news
         ])
         .menu(menu::build)
-        .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()))
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "check-updates" => updater::check_from_menu(app),
+            id => menu::on_event(app, id),
+        })
         .setup(|app| {
             let handle = app.handle().clone();
             if let Some(window) = app.get_webview_window("main") {
@@ -192,6 +260,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let _ = daemon::ensure(&handle, &[]).await;
             });
+            updater::start(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -203,14 +272,18 @@ pub fn run() {
                 }
             }
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("Klaud couldn't start");
 
     app.run(|app, event| match event {
         // Clicking the Dock icon brings the window back.
         RunEvent::Reopen { .. } => focus_main(app),
-        // Quitting leaves the room (unless the terminal app started klaud; it decides then).
-        RunEvent::Exit => daemon::stop(app),
+        // Quitting leaves the room (unless the terminal app started klaud; it decides then),
+        // then puts a downloaded update in place.
+        RunEvent::Exit => {
+            daemon::stop(app);
+            updater::on_exit(app);
+        }
         _ => {}
     });
 }

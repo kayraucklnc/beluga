@@ -7,6 +7,7 @@ import type { UiStore } from '../lib/klaud.js';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { openSettings } from '../lib/native-routes.js';
 import { openSheet } from '../lib/sheets.js';
+import { openStripe } from '../lib/earnings.js';
 
 export interface PaletteCommand {
   readonly id: string;
@@ -81,6 +82,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
     ...(state.myShares.length ? [cmd('unshare', 'unshare', 'Stop Sharing a Folder…', 'share', () => ui.openMenu({ kind: 'share_folder', launchDir: client.launchDir, mine: state.myShares }))] : []),
     cmd('name', 'name', 'Change Your Name…', 'person', () => openSettings(ui, 'general', 'settings-name'), state.self?.name ? `Now: ${state.self.name}` : undefined),
     cmd('people', 'people', 'People & Access…', 'people', () => openSettings(ui, 'people'), 'Who can use your Claude, and how'),
+    stripeCommand(state),
     cmd('env', 'env', 'Environment Variables…', 'lock', () => openSettings(ui, 'environment'), 'For your shells, scripts and Claude'),
     cmd('shell', 'shell', 'Terminal Settings…', 'terminal', () => openSettings(ui, 'terminal'), 'Which shell, and how it starts'),
     ...(state.isHost
@@ -92,4 +94,19 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
         ]
       : [cmd('quit', 'quit', 'Leave the Room…', 'x', () => openSheet({ kind: 'confirm', title: 'Leave the room?', message: 'klaud disconnects and closes. You can come back with the invite link.', confirm: 'Leave', destructive: true, run: () => void api.session.quit() }))]),
   ];
+}
+
+/** Connect Stripe (or see the earnings) for the project on screen, or pick one in the sheet. */
+function stripeCommand(state: AppState): PaletteCommand {
+  const ws = state.view.kind === 'workspace' ? findWorkspace(state.projects, state.view.id) : undefined;
+  const project = state.projects.find((p) => p.root && p.id === ws?.projectId);
+  const connected = project ? Boolean(state.earnings[project.root]) : false;
+  return {
+    id: 'cmd:stripe',
+    label: project ? (connected ? `${project.name} Earnings…` : `Connect Stripe to ${project.name}…`) : 'Connect Stripe…',
+    hint: 'All-time earnings beside a project in the sidebar',
+    icon: 'coin',
+    keywords: ['stripe', 'earnings', 'revenue', 'money', 'sales'],
+    run: () => openStripe(project?.id),
+  };
 }

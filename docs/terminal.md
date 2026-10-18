@@ -67,7 +67,7 @@ klaud tells you when something needs you: Claude finished, asks a question or pr
 
 klaud starts solo. The **Chat** tab is you and your Claude, so just type, no `@claude` needed. Start a message with `@add-auth` (Tab completes) to send it to the Claude working in that worktree or project.
 
-Worktrees made by other tools (Conductor, Claude Code) show their latest Claude Code conversation when you open them, and Claude continues it. The People panel appears once someone joins.
+Worktrees made by other tools (Conductor, Claude Code) show their Claude Code conversation when you open them (for Conductor's, the one Conductor has open; else the latest), and Claude continues it once you write there; until then they stay in their own fold. The People panel appears once someone joins.
 
 ## Working with people
 

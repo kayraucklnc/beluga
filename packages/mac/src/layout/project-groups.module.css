@@ -1,3 +1,126 @@
+/* The Projects tree: group > project > worktrees, each level 14px in, icons in columns. */
+.tree {
+  position: relative;
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tree img {
+  -webkit-user-drag: none;
+}
+.block {
+  transition: opacity var(--dur-fast);
+}
+/* What you picked up stays in place, faded, until it lands. */
+.lifted {
+  opacity: 0.35;
+}
+/* While dragging, rows don't light up under the pointer: only the drop place does. */
+.dragging :global(*) {
+  cursor: default;
+}
+.dragging [role='button']:hover {
+  background: transparent;
+}
+.dragging [role='button'] button:not([data-earnings-pill]) {
+  opacity: 0 !important;
+}
+/* On hover the row's tools open up: an earnings pill drops its “+1” rather than squeeze the name. */
+.tree [data-drag]:hover [data-earnings-pill] > span + span,
+.tree [data-drag]:focus-within [data-earnings-pill] > span + span {
+  display: none;
+}
+
+/* Where it will land: a line with a ring at its start (as in Finder and Xcode). */
+.insertion {
+  position: absolute;
+  right: 4px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 2;
+}
+.insertion::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: -3px;
+  width: 4px;
+  height: 4px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg-sidebar-solid, var(--bg));
+}
+
+/* The row following the pointer: just its icon and name, see-through (like Finder's drag image). */
+.ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  width: max-content !important;
+  max-width: 260px;
+  margin: 0;
+  padding-right: 12px;
+  pointer-events: none;
+  opacity: 0.72;
+  background: color-mix(in srgb, var(--bg-raised) 80%, transparent);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.16), 0 0 0 0.5px var(--hairline);
+  border-radius: 6px;
+  will-change: transform;
+}
+.ghost button {
+  display: none;
+}
+:global(html[data-arranging]),
+:global(html[data-arranging]) * {
+  cursor: default !important;
+}
+
+/* A project's icon sits in the column a group's folder uses (the triangle's space is kept). */
+.projectIcon {
+  display: inline-flex;
+  align-items: center;
+  padding-left: 14px;
+}
+/* A group's row reads as the parent it is. */
+.groupHead {
+  color: var(--text);
+}
+/* A group: its disclosure triangle (it turns), then its folder. */
+.groupIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.disclosure {
+  width: 10px;
+  color: var(--text-3);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.disclosureOpen {
+  transform: rotate(90deg);
+}
+.folder {
+  color: var(--accent);
+  opacity: 0.85;
+}
+.count {
+  min-width: 14px;
+  color: var(--text-3);
+  font-size: 0.88rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.empty {
+  color: var(--text-3);
+  font-size: 0.88rem;
+  font-weight: 400;
+}
+
 .editing {
   background: var(--bg-hover);
 }
@@ -19,23 +142,45 @@
 .field:focus {
   outline: none;
 }
+/* A project held over a group: the folder lights up. */
 .dropOn,
-.dropOn:hover {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  box-shadow: inset 0 0 0 1.5px var(--accent);
+.dropOn:hover,
+.dragging .dropOn:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--text);
 }
-.loose {
-  border-radius: 7px;
-  transition: background var(--dur-fast);
+.dropOn .folder {
+  opacity: 1;
 }
-.looseOffer {
-  padding-bottom: 2px;
-  outline: 1.5px dashed var(--hairline-strong);
-  outline-offset: -1px;
+
+/* Hidden projects: folded at the bottom, dimmed, Show on hover. */
+.hidden {
+  margin-top: 2px;
 }
-.dropHint {
-  padding: 6px 10px;
+.hiddenRow {
   color: var(--text-3);
+}
+.hiddenRow img,
+.hiddenRow [aria-hidden='true'] {
+  opacity: 0.55;
+  filter: grayscale(0.6);
+}
+.show {
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  color: var(--accent);
   font-size: 0.88rem;
-  text-align: center;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.hiddenRow:hover .show,
+.hiddenRow:focus-within .show,
+.show:focus-visible {
+  opacity: 1;
+}
+.show:hover {
+  background: var(--bg-hover);
 }

@@ -77,5 +77,7 @@ export const Settings = z.object({
   shellArgs: z.array(z.string().max(200)).max(20).default([]),
   /** Be on the klaud network (friends, groups, presence) while the Mac app's daemon runs. Off by default for now. */
   network: z.boolean().optional(),
+  /** "Ask me for…": a short note friends' Claudes see on your card (the gateway, Mac app). */
+  askMeFor: z.string().max(280).optional(),
 });
 export type Settings = z.infer<typeof Settings>;

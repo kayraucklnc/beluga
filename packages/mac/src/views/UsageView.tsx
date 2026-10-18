@@ -1,94 +1,97 @@
-import { useEffect } from 'react';
-import { worktreeOrigin } from '@klaud/workspaces/origin.js';
-import { formatBytes } from '@klaud/shared/format.js';
-import { formatTokens } from '@klaud/ui/work-models.js';
-import { Icon } from '../components/Icon.js';
-import { Button, Empty } from '../components/ui.js';
+import { useCallback, useEffect, useState } from 'react';
+import { Button, Empty, EmptyActions } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
-import { ActionsContext } from '../components/SpecMenu.js';
-import { workspaceItems } from '../layout/Sidebar.js';
-import s from './lists.module.css';
+import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { ActivityCard } from './usage/ActivityCard.js';
+import { Breakdown } from './usage/Breakdown.js';
+import { CleanupCard } from './usage/CleanupCard.js';
+import { PlanCard } from './usage/PlanCard.js';
+import { StorageCard } from './usage/StorageCard.js';
+import { type SortKey, cleanups, projectRows } from './usage/usage-model.js';
+import s from './usage/usage.module.css';
 
-/** Disk space and Claude usage per workspace, biggest first; archive a worktree to free its space. */
-export function UsageView() {
+const SORT_KEY = 'klaud.usage.sort';
+const isSort = (v: unknown): v is SortKey => v === 'size' || v === 'tokens' || v === 'recent';
+
+/** The breakdown's order, remembered in this window between visits. */
+function useSort(): [SortKey, (s: SortKey) => void] {
+  const [sort, setSort] = useState<SortKey>(() => {
+    try {
+      const saved = localStorage.getItem(SORT_KEY);
+      return isSort(saved) ? saved : 'size';
+    } catch {
+      return 'size';
+    }
+  });
+  const choose = useCallback((next: SortKey) => {
+    setSort(next);
+    try {
+      localStorage.setItem(SORT_KEY, next);
+    } catch {
+      // Private mode: it's only remembered until the window closes.
+    }
+  }, []);
+  return [sort, choose];
+}
+
+/** Measures every folder when the view opens (and on request); `measuring` while it runs. */
+function useMeasure(): { measuring: boolean; measure: () => void } {
   const api = useApi();
   const { client } = useKlaud();
+  const [measuring, setMeasuring] = useState(true);
+  const measure = useCallback(() => {
+    setMeasuring(true);
+    api.workbench
+      .measureDisk()
+      .catch((err: unknown) => toast(client, `Couldn’t measure disk space: ${err instanceof Error ? err.message : String(err)}`, 'warn'))
+      .finally(() => setMeasuring(false));
+  }, [api, client]);
+  useEffect(measure, [measure]);
+  return { measuring, measure };
+}
+
+/**
+ * Usage: your Claude plan's limits (and friends'), what Claude used this week, and the disk
+ * your worktrees take, by project; then every project and worktree side by side, with what
+ * can be put away to free space.
+ */
+export function UsageView() {
   const actions = useActions();
-  const projects = useApp((st) => st.projects);
-  const disk = useApp((st) => st.disk);
-  useEffect(() => void api.workbench.measureDisk(), []);
-  const rows = projects
-    .flatMap((p) => p.workspaces.filter((w) => !w.archived && worktreeOrigin(w) !== 'agent').map((w) => ({ p, w, disk: disk[w.id] ?? 0, tokens: w.usage ? w.usage.input + w.usage.output + w.usage.cacheWrite : 0, cost: w.usage?.cost ?? 0, runs: w.usage?.runs ?? 0 })))
-    .sort((a, b) => b.disk - a.disk || b.tokens - a.tokens);
-  const maxDisk = Math.max(1, ...rows.map((r) => r.disk));
-  const maxTokens = Math.max(1, ...rows.map((r) => r.tokens));
-  const totalDisk = rows.filter((r) => r.w.kind !== 'main').reduce((n, r) => n + r.disk, 0);
-  const totalTokens = rows.reduce((n, r) => n + r.tokens, 0);
-  const totalCost = rows.reduce((n, r) => n + r.cost, 0);
-  if (!rows.length) return <Empty icon="gauge" title="Nothing to measure yet" />;
+  const state = useApp((st) => st);
+  const [sort, setSort] = useSort();
+  const { measuring, measure } = useMeasure();
+  const now = Date.now();
+  const rows = projectRows(state, sort);
+  // Sizes known: the first measurement came back (or there was one from before).
+  const measured = !measuring || rows.some((p) => p.rows.some((r) => r.disk !== undefined));
+  if (!state.projects.some((p) => p.root) && !rows.length) {
+    return (
+      <Empty
+        icon="gauge"
+        title="Nothing to measure yet"
+        detail="Add your projects: the disk their worktrees take and what Claude uses in them show up here."
+        action={
+          <EmptyActions>
+            <Button variant="primary" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
+              Add Projects…
+            </Button>
+          </EmptyActions>
+        }
+      />
+    );
+  }
   return (
     <div className={s.page}>
-      <div className={s.summary}>
-        <div>
-          <div className={s.big}>{formatBytes(totalDisk)}</div>
-          <div className={s.dim}>in worktrees</div>
+      <div className={s.inner}>
+        <div className={s.summary}>
+          <PlanCard state={state} now={now} />
+          <ActivityCard state={state} now={now} />
+          {/* Earnings: <EarningsCard /> (views/EarningsCard.tsx, useEarnings()) goes here as a third card; the grid makes room. */}
         </div>
-        <div>
-          <div className={s.big}>{totalTokens ? formatTokens(totalTokens) : '–'}</div>
-          <div className={s.dim}>Claude tokens{totalCost ? ` · about $${totalCost.toFixed(2)}` : ''}</div>
-        </div>
-        <span className={s.flexSpacer} />
-        <Button icon="refresh" onClick={() => void api.workbench.measureDisk()}>
-          Measure again
-        </Button>
+        <StorageCard rows={rows} measuring={measuring} measured={measured} onMeasure={measure} />
+        {measured ? <CleanupCard items={cleanups(state, rows, now)} state={state} onDone={measure} /> : null}
+        <Breakdown state={state} rows={rows} sort={sort} onSort={setSort} measured={measured} now={now} />
       </div>
-      <table className={s.usage}>
-        <thead>
-          <tr>
-            <th>Workspace</th>
-            <th>Disk</th>
-            <th>Claude</th>
-            <th className={s.num}>Cost</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <ActionsContext key={r.w.id} items={() => workspaceItems(client.store.getState(), r.w, actions.run)}>
-            <tr onClick={() => actions.run({ type: 'open_ws', id: r.w.id })}>
-              <td>
-                <span className={s.wsName}>
-                  <Icon name={r.w.kind === 'chat' ? 'chat' : r.w.kind === 'main' ? 'folder' : 'branch'} size={13} />
-                  {r.p.root ? <span className={s.dim}>{r.p.name} ›</span> : null}
-                  {r.w.name}
-                </span>
-              </td>
-              <td>
-                <span className={s.barCell}>
-                  <span className={s.bar} style={{ width: `${(r.disk / maxDisk) * 100}%` }} />
-                  <span className={s.barValue}>{r.disk ? formatBytes(r.disk) : '–'}</span>
-                </span>
-              </td>
-              <td>
-                <span className={s.barCell}>
-                  <span className={`${s.bar} ${s.barClaude}`} style={{ width: `${(r.tokens / maxTokens) * 100}%` }} />
-                  <span className={s.barValue}>{r.tokens ? `${formatTokens(r.tokens)} · ${r.runs} run${r.runs === 1 ? '' : 's'}` : '–'}</span>
-                </span>
-              </td>
-              <td className={s.num}>{r.cost ? `$${r.cost.toFixed(2)}` : ''}</td>
-              <td className={s.num}>
-                {r.w.kind === 'worktree' && !r.w.external ? (
-                  <Button size="small" variant="quiet" onClick={(e) => (e.stopPropagation(), actions.run({ type: 'ws', id: r.w.id, action: 'archive' }))}>
-                    Archive
-                  </Button>
-                ) : null}
-              </td>
-            </tr>
-            </ActionsContext>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

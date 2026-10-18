@@ -1,6 +1,7 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { RoomBridge } from './types.js';
+import { createGatewayToolDefs } from './gateway-tools.js';
 
 type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean };
 
@@ -121,6 +122,19 @@ export function createRoomToolDefs(bridge: RoomBridge) {
   ];
 }
 
-export function createRoomTools(bridge: RoomBridge) {
-  return createSdkMcpServer({ name: 'klaud', version: '0.1.0', tools: createRoomToolDefs(bridge) });
+export const CONTINUE_TOOL = 'mcp__klaud__continue_in_worktree';
+
+/** For runs in a project's main folder: move the conversation into a new worktree and work there. */
+export function continueInWorktreeToolDef(move: (task: string) => Promise<string>) {
+  return tool(
+    'continue_in_worktree',
+    "You're in the project's read-only main folder. Call this as soon as the request needs any change: klaud makes a new worktree from the latest origin, carries this conversation over and you continue the task there. Then end your turn with one short line.",
+    { task: z.string().min(1).max(8000).describe('The change to make, as a complete instruction (it starts the work in the new worktree)') },
+    (a) => guarded(() => move(a.task)),
+  );
+}
+
+/** The klaud tools for one run: the room's, plus continue_in_worktree in a main folder. */
+export function createRoomTools(bridge: RoomBridge, move?: (task: string) => Promise<string>) {
+  return createSdkMcpServer({ name: 'klaud', version: '0.1.0', tools: [...createRoomToolDefs(bridge), ...createGatewayToolDefs(bridge), ...(move ? [continueInWorktreeToolDef(move)] : [])] });
 }

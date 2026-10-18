@@ -30,6 +30,8 @@ export const LinkMessage = z.discriminatedUnion('t', [
   /** `o`: the sender picked this tunnel id (each side of a hop numbers its own tunnels). */
   z.object({ t: z.literal('tun_data'), tid, o: z.boolean(), d: z.string().max(90_000) }),
   z.object({ t: z.literal('tun_close'), tid, o: z.boolean(), reason: z.string().max(200).optional() }),
+  /** The gateway (tasks between Claudes, core/gateway): a frame it checks itself, between friends only. */
+  z.object({ t: z.literal('gw'), p: z.unknown() }),
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

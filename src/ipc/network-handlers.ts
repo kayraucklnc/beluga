@@ -1,4 +1,5 @@
-import { networkOf, networkStatus } from '../core/network.js';
+import { networkEnabled, networkOf, networkStatus, networkSwitchOf } from '../core/network.js';
+import { saveSettings } from '../core/settings.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
 
@@ -9,8 +10,20 @@ type NetworkHandlers = { readonly [M in NetworkMethod]: (s: Session, ...args: Ar
 
 const net = networkOf;
 
+/** Turn the network on or off for this klaud now, and next time. */
+async function setEnabled(s: Session, on: boolean): Promise<ReturnType<typeof networkStatus>> {
+  const sw = networkSwitchOf(s);
+  if (!sw) throw new Error('Only the klaud app (its daemon) can be on the network');
+  saveSettings({ network: on });
+  const effective = networkEnabled({ network: on });
+  await sw.set(effective);
+  if (effective !== on) throw new Error(on ? 'KLAUD_NETWORK=0 keeps the network off for this klaud' : 'KLAUD_NETWORK=1 keeps the network on for this klaud');
+  return networkStatus(s);
+}
+
 export const NETWORK_HANDLERS = {
   'network.status': (s) => networkStatus(s),
+  'network.setEnabled': (s, on) => setEnabled(s, on),
   'network.friends.list': (s) => net(s).summary().friends,
   'network.friends.invite': (s) => net(s).createInvite(),
   'network.friends.accept': (s, text) => net(s).accept(text),

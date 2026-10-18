@@ -141,16 +141,27 @@
   align-items: center;
   gap: 0;
 }
+/* At rest the buttons take no room, so a status dot after them sits at the row's right edge;
+   on hover (or keyboard focus) they open up to its left. */
 .hoverTools button {
-  width: 22px;
+  width: 0;
   height: 20px;
+  overflow: hidden;
   opacity: 0;
   transition: opacity var(--dur-fast);
 }
 .row:hover .hoverTools button,
-.hoverTools button:focus-visible,
-.hoverTools button[data-state='open'] {
+.row:focus-within .hoverTools button,
+.hoverTools:has(button[data-state='open']) button {
+  width: 22px;
   opacity: 1;
+}
+/* A status dot in a row's trailing tools: always the last thing, at the right edge. */
+.status {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  margin-left: 2px;
 }
 
 .fold {

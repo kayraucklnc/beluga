@@ -1,0 +1,91 @@
+/* Reading an archived conversation: a tall sheet, like Quick Look, with no message box. */
+.overlay {
+  composes: overlay from '../../dialogs/sheet.module.css';
+}
+.peek {
+  composes: sheet from '../../dialogs/sheet.module.css';
+  top: 8vh;
+  width: min(760px, calc(100vw - 48px));
+  height: min(80vh, 820px);
+  max-height: none;
+  overflow: hidden;
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 12px 18px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  color: var(--text-2);
+}
+.headText {
+  flex: 1;
+  min-width: 0;
+}
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 650;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.badge {
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.subtitle {
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subtitle code {
+  color: var(--text-2);
+}
+.close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+.close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+/* The conversation scrolls here; ChatLog fills it. */
+.body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg);
+}
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 0.5px solid var(--hairline);
+}
+.flex {
+  flex: 1;
+}

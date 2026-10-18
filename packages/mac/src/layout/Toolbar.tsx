@@ -1,6 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import type { WorkspaceTab } from '@klaud/core/store.js';
-import { findWorkspace, stateOf, workspaceTabs } from '@klaud/ui/workspace-models.js';
+import { findWorkspace, stateOf } from '@klaud/ui/workspace-models.js';
 import { describePr } from '@klaud/shared/format.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
@@ -9,15 +8,19 @@ import { useActions } from '../lib/actions.js';
 import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
 import { type ToolAction, toolbarActions } from './toolbar-actions.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { terminalShowing, togglePanel, toggleTerminal } from '../lib/panel.js';
+import { drawerFits } from '../lib/panel-model.js';
 import { mod } from '../lib/system.js';
 import { NotificationBell } from './NotificationCenter.js';
+import { ContinueButton } from '../chat/AskBanner.js';
+import { useConversationHeader } from '../network/ConversationHeader.js';
 import s from './Toolbar.module.css';
 
-/** Room the title keeps, and the window buttons on the right (dock, bell, palette, inspector). */
+/** Room the title keeps, and the window buttons on the right (terminal, bell, palette, panel). */
 const TITLE_MIN = 210;
 const RIGHT_FIXED = 4 * 30 + 16;
 
-const TITLES: Partial<Record<string, string>> = { overview: 'Overview', search: 'Search', usage: 'Usage', terminal: 'Terminal', files: 'Shared files', draft: 'New chat', draft_worktree: 'New worktree' };
+const TITLES: Partial<Record<string, string>> = { overview: 'Overview', search: 'Search', usage: 'Usage', terminal: 'Terminal', files: 'Shared files', draft: 'New chat', draft_worktree: 'New worktree', claude_code: 'Activity', requests: 'Requests' };
 
 /** How wide the toolbar is (buttons that don't fit move under ⋯). */
 function useToolbarWidth(): [React.RefObject<HTMLElement | null>, number] {
@@ -35,8 +38,12 @@ function useToolbarWidth(): [React.RefObject<HTMLElement | null>, number] {
 
 function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode; subtitle?: ReactNode; center?: ReactNode; right?: ReactNode; headerRef: React.RefObject<HTMLElement | null> }) {
   const prefs = usePrefs();
-  const view = useApp((st) => st.view);
-  const dockable = view.kind === 'room' || view.kind === 'draft' || view.kind === 'draft_worktree' || (view.kind === 'workspace' && view.tab === 'chat');
+  const { client } = useKlaud();
+  const state = useApp((st) => st);
+  const view = state.view;
+  // The terminal goes where you keep it (the drawer or the panel); not over the Terminal view or a friend's workspace.
+  const terminal = drawerFits(view);
+  const termOn = terminal && terminalShowing(state, prefs);
   return (
     <header ref={headerRef} className={cx(s.toolbar, !prefs.sidebar && s.noSidebar)} data-tauri-drag-region>
       {prefs.sidebar ? null : (
@@ -53,12 +60,18 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
       </div>
       <div className={s.right}>
         {right}
-        {dockable ? (
-          <IconButton icon="terminal" label={prefs.dock === 'off' ? 'Terminal beside the chat' : 'Hide the terminal'} keys={`${mod()}J`} active={prefs.dock !== 'off'} onClick={() => setPrefs({ dock: prefs.dock === 'off' ? 'right' : 'off' })} />
+        {terminal ? (
+          <IconButton
+            icon={prefs.termIn === 'drawer' ? 'panelBottom' : 'terminal'}
+            label={termOn ? 'Hide the terminal' : prefs.termIn === 'drawer' ? 'Show the terminal under the chat' : 'Show the terminal in the panel'}
+            keys={`${mod()}J`}
+            active={termOn}
+            onClick={() => void toggleTerminal(client.store.getState())}
+          />
         ) : null}
         <NotificationBell />
         <IconButton icon="command" label="Everything you can do" keys={`${mod()}K`} onClick={() => document.dispatchEvent(new CustomEvent('klaud:palette'))} />
-        <IconButton icon="inspector" label={prefs.inspector ? 'Hide the inspector' : 'Show the inspector'} keys={`⌥${mod()}I`} active={prefs.inspector} onClick={() => setPrefs({ inspector: !prefs.inspector })} />
+        <IconButton icon="panelRight" label={prefs.inspector ? 'Hide the panel' : 'Show the panel: changes, files, terminal, info'} keys={`⌥${mod()}0`} active={prefs.inspector} onClick={togglePanel} />
       </div>
     </header>
   );
@@ -79,13 +92,9 @@ export function Toolbar() {
     const project = state.projects.find((p) => p.id === ws.projectId);
     const st = stateOf(state, ws, 0);
     const { primary, icons, more } = toolbarActions(state, ws);
-    const tabs = workspaceTabs(ws);
-    // A narrow window: the view switcher shows icons only (so the everyday actions keep their
-    // place), then icons move under ⋯.
+    // A narrow window: the icons that don't fit move under ⋯ (the everyday action keeps its place).
     const fixed = TITLE_MIN + RIGHT_FIXED + (primary ? primary.label.length * 7.4 + 48 : 0) + 34;
-    const roomWith = (segment: number): number => Math.floor((width - fixed - segment) / 30);
-    const compact = roomWith(tabs.length * 84 + 6) < Math.min(icons.length, 4);
-    const fit = Math.max(0, Math.min(icons.length, roomWith(compact ? tabs.length * 34 + 6 : tabs.length * 84 + 6)));
+    const fit = Math.max(0, Math.min(icons.length, Math.floor((width - fixed) / 30)));
     const overflow = [...icons.slice(fit), ...more];
     const run = (a: ToolAction): void => {
       if (a.disabled) return toast(client, a.hint, 'info');
@@ -114,7 +123,7 @@ export function Toolbar() {
                 <span className={s.ellipsis}>{ws.branch}</span>
               </span>
             ) : ws.kind === 'chat' ? (
-              <span className={s.meta}>Claude chat</span>
+              <span className={s.meta}>{ws.askOnly ? 'Questions only · main folder' : 'Claude chat'}</span>
             ) : null}
             {pr ? (
               <span className={cx(s.meta, s.metaPr)} title={describePr(pr)}>
@@ -124,18 +133,14 @@ export function Toolbar() {
             ) : null}
           </>
         }
-        center={
-          <Segmented<WorkspaceTab>
-            label="Workspace views"
-            value={view.tab}
-            iconOnly={compact}
-            onChange={(tab) => actions.run({ type: 'open_ws', id: ws.id, tab })}
-            options={tabs.map((t) => ({ value: t.tab, label: t.label, hint: t.hint, icon: t.tab === 'chat' ? 'chat' : t.tab === 'files' ? 'folder' : t.tab === 'review' ? 'diff' : 'terminal' }))}
-          />
-        }
         right={
           <>
-            {primary ? (
+            {/* A main folder is questions only: what it needs next is a worktree to work in. */}
+            {ws.askOnly ? (
+              <span className={s.primaryWrap}>
+                <ContinueButton wsId={ws.id} className={s.primary} />
+              </span>
+            ) : primary ? (
               <Tip label={primary.hint} keys={primary.keys}>
                 <span className={s.primaryWrap}>
                   <Button variant="primary" icon={primary.icon} className={cx(s.primary, primary.tone === 'error' && s.primaryError)} aria-disabled={primary.disabled} onClick={() => run(primary)}>
@@ -187,6 +192,8 @@ export function Toolbar() {
     );
   }
 
+  if (view.kind === 'conversation') return <ConversationBar id={view.id} headerRef={headerRef} />;
+
   if (view.kind === 'room') {
     const solo = state.peers.length <= 1;
     return <Shell headerRef={headerRef} title={solo ? 'Chat' : state.room} subtitle={<span className={s.meta}>{solo ? 'You and your Claude' : `${state.peers.length} people · everyone’s Claude can join in`}</span>} />;
@@ -209,5 +216,16 @@ export function Toolbar() {
     );
   }
 
+  if (view.kind === 'project') {
+    const project = state.projects.find((p) => p.id === view.id);
+    return <Shell headerRef={headerRef} title={project?.name ?? 'Project'} subtitle={<span className={s.meta}>Work happens in worktrees · the main folder is for questions</span>} />;
+  }
+
   return <Shell headerRef={headerRef} title={TITLES[view.kind] ?? 'klaud'} />;
+}
+
+/** A conversation with friends or a group: who it's with, their status, the group's people. */
+function ConversationBar({ id, headerRef }: { id: string; headerRef: React.RefObject<HTMLElement | null> }) {
+  const parts = useConversationHeader(id);
+  return <Shell headerRef={headerRef} title={parts.title} subtitle={parts.subtitle} right={parts.right} />;
 }

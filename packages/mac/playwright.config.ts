@@ -5,6 +5,8 @@ import { defineConfig } from '@playwright/test';
 
 // One klaud home for the run: the demo daemon (global setup) and the dev server's bridge share it.
 process.env.KLAUD_HOME ??= mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-'));
+// A pretend ~/.claude the demo daemon watches for Claude Code sessions (e2e/claude-code.spec.ts writes there).
+process.env.KLAUD_CLAUDE_HOME ??= mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-claude-'));
 // E2E_PORT lets several runs go at once (each with its own dev server and daemon).
 const port = Number(process.env.E2E_PORT ?? 1421);
 process.env.E2E_PORT = String(port);

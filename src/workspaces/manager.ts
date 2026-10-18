@@ -7,7 +7,12 @@ import * as g from './git.js';
 import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
 import { WorkspaceStore } from './store.js';
 import { worktreeOrigin } from './origin.js';
+import { addDay, dayKey } from './usage-days.js';
 import type { Project, ProjectGroup, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
+import { ArrangeError, type Item, type Layout, MAX_GROUP_NAME, arrangedOrder, groupKey, groupOfKey, isGroupKey, keyOf, move, settle } from './arrange.js';
+
+/** A project (by id) or a group (by name), for arranging the sidebar. */
+export type ArrangeTarget = { readonly project: string } | { readonly group: string };
 import { type ProjectScripts, type ResolvedScripts, resolveScripts, saveProjectFile } from './scripts.js';
 
 export const slug = (s: string): string =>
@@ -121,24 +126,111 @@ export class WorkspaceManager {
     return this.config.groups ?? [];
   }
 
+  /** Projects that show, alphabetically (the arrangement's starting point). */
+  private shownRoots(): string[] {
+    return this.projects.filter((p) => p.root).map((p) => p.root);
+  }
+
+  private layout(): Layout {
+    return { groups: this.config.groups ?? [], ...(this.config.order ? { order: this.config.order } : {}) };
+  }
+
+  private saveLayout(layout: Required<Layout>): void {
+    this.config = { ...this.config, order: layout.order, groups: layout.groups };
+    this.store.saveConfig(this.config);
+  }
+
+  /** Projects (Chats first) and groups in the order you arranged them, and the top level's keys. */
+  arrangement(): { projects: readonly Project[]; groups: readonly ProjectGroup[]; order: readonly string[] } {
+    const repos = this.projects.filter((p) => p.root);
+    const { projects, groups, order } = arrangedOrder(this.layout(), repos);
+    return { projects: [...this.projects.filter((p) => !p.root), ...projects], groups, order };
+  }
+
+  private rootOf(id: string): string {
+    const project = this.projects.find((p) => p.id === id && p.root);
+    if (!project) throw new WorkspaceError('Project not found');
+    return project.root;
+  }
+
+  /** A project (by id) or a group, as the arrangement knows it (by root or name). */
+  private itemOf(item: ArrangeTarget): Item {
+    return 'project' in item ? { project: this.rootOf(item.project) } : { group: item.group };
+  }
+
+  /**
+   * Move a project into a group or to the top level, or a group among the top level, before
+   * another item (or at the end). Unknown projects, groups or places are refused.
+   */
+  arrange(item: ArrangeTarget, place: { into?: string | null; before?: ArrangeTarget | null } = {}): void {
+    try {
+      const before = place.before ? this.itemOf(place.before) : null;
+      this.saveLayout(move(this.layout(), this.shownRoots(), this.itemOf(item), { into: place.into ?? null, before }, new Set(this.config.hidden)));
+    } catch (err) {
+      throw err instanceof ArrangeError ? new WorkspaceError(err.message) : err;
+    }
+  }
+
+  /**
+   * A new, empty group (it stays until you delete it), before an item or at the end. With a
+   * project, that project moves in, and the group takes its place.
+   */
+  newGroup(name: string, opts: { before?: ArrangeTarget | null; project?: string } = {}): string {
+    const clean = name.trim().slice(0, MAX_GROUP_NAME);
+    if (!clean) throw new WorkspaceError('A group needs a name');
+    if (this.groups.some((g) => g.name === clean)) throw new WorkspaceError(`There’s already a group called "${clean}"`);
+    const roots = this.shownRoots();
+    const start = settle(this.layout(), roots, new Set(this.config.hidden));
+    const root = opts.project ? this.rootOf(opts.project) : undefined;
+    const home = root ? start.groups.find((g) => g.projects.includes(root)) : undefined;
+    // Where it goes: before what you said; else where its project is (after that project's group); else last.
+    const before = opts.before ? keyOf(this.itemOf(opts.before)) : root && !home ? root : undefined;
+    const after = !opts.before && home ? groupKey(home.name) : undefined;
+    const at = before !== undefined ? start.order.indexOf(before) : after !== undefined ? start.order.indexOf(after) + 1 : start.order.length;
+    if (at < 0) throw new WorkspaceError('It can’t go there');
+    const key = groupKey(clean);
+    let layout: Required<Layout> = { order: [...start.order.slice(0, at), key, ...start.order.slice(at)], groups: [...start.groups, { name: clean, projects: [] }] };
+    if (root) layout = move(layout, roots, { project: root }, { into: clean }, new Set(this.config.hidden));
+    this.saveLayout(layout);
+    return clean;
+  }
+
   /** Put a project in a group (creating it), or take it out with `group` undefined. */
   setGroup(projectId: string, group: string | undefined): void {
     const project = this.projects.find((p) => p.id === projectId);
     if (!project) throw new WorkspaceError('Project not found');
-    const name = group?.trim().slice(0, 30);
+    const name = group?.trim().slice(0, MAX_GROUP_NAME);
+    const left = (this.config.groups ?? []).find((g) => g.projects.includes(project.root));
     const others = (this.config.groups ?? []).map((g) => ({ ...g, projects: g.projects.filter((r) => r !== project.root) }));
     const groups = name
       ? others.some((g) => g.name === name)
         ? others.map((g) => (g.name === name ? { ...g, projects: [...g.projects, project.root] } : g))
         : [...others, { name, projects: [project.root] }]
       : others;
-    this.config = { ...this.config, groups: groups.filter((g) => g.projects.length > 0) };
+    // The group it left goes when that leaves it empty (empty groups you made yourself stay).
+    const kept = groups.filter((g) => !(g.name === left?.name && g.name !== name && g.projects.length === 0));
+    const order = this.config.order ? this.orderAfterSetGroup(this.config.order, project.root, left?.name, name, kept) : undefined;
+    this.config = { ...this.config, groups: kept, ...(order ? { order } : {}) };
     this.store.saveConfig(this.config);
   }
 
-  /** Rename a group (into another one's name: the two become one). */
+  /** Once arranged: a project taken out of its group lands right after it; a group that went, goes. */
+  private orderAfterSetGroup(order: readonly string[], root: string, left: string | undefined, into: string | undefined, groups: readonly ProjectGroup[]): string[] {
+    const names = new Set(groups.map((g) => g.name));
+    const live = (k: string): boolean => k !== root && (!isGroupKey(k) || names.has(groupOfKey(k)));
+    if (into) {
+      const base = order.filter(live);
+      return names.has(into) && !base.includes(groupKey(into)) ? [...base, groupKey(into)] : base;
+    }
+    // Right after the group it left (in the group's place, if that went).
+    const at = left ? order.indexOf(groupKey(left)) : -1;
+    if (at < 0) return [...order.filter(live), root];
+    return [...order.slice(0, at + 1).filter(live), root, ...order.slice(at + 1).filter(live)];
+  }
+
+  /** Rename a group (into another one's name: the two become one). It keeps its place. */
   renameGroup(from: string, to: string): void {
-    const name = to.trim().slice(0, 30);
+    const name = to.trim().slice(0, MAX_GROUP_NAME);
     const list = this.config.groups ?? [];
     const group = list.find((g) => g.name === from);
     if (!group) throw new WorkspaceError(`No group called "${from}"`);
@@ -148,14 +240,29 @@ export class WorkspaceManager {
     const groups = into
       ? list.filter((g) => g.name !== from).map((g) => (g.name === name ? { ...g, projects: [...new Set([...g.projects, ...group.projects])] } : g))
       : list.map((g) => (g.name === from ? { ...g, name } : g));
-    this.config = { ...this.config, groups };
+    const order = this.config.order?.flatMap((k) => (k !== groupKey(from) ? [k] : into ? [] : [groupKey(name)]));
+    this.config = { ...this.config, groups, ...(order ? { order } : {}) };
     this.store.saveConfig(this.config);
   }
 
-  /** Remove a group: its projects stay, back in the plain project list. */
+  /** Remove a group: its projects stay, back in the plain project list (where the group was). */
   ungroup(name: string): void {
-    this.config = { ...this.config, groups: (this.config.groups ?? []).filter((g) => g.name !== name) };
+    const group = (this.config.groups ?? []).find((g) => g.name === name);
+    const order = this.config.order?.flatMap((k) => (k === groupKey(name) ? [...(group?.projects ?? [])] : [k]));
+    this.config = { ...this.config, groups: (this.config.groups ?? []).filter((g) => g.name !== name), ...(order ? { order } : {}) };
     this.store.saveConfig(this.config);
+  }
+
+  /** Projects you hid that are still on disk (their roots), to show again. */
+  get hiddenProjects(): readonly string[] {
+    const shown = new Set(this.shownRoots());
+    return [...new Set(this.config.hidden)].filter((r) => !shown.has(r) && existsSync(r) && isMainCheckout(r)).sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+  }
+
+  /** Show a hidden project again: it comes back where it was (its group, its place). */
+  showProject(root: string): void {
+    if (!this.config.hidden.includes(root)) throw new WorkspaceError('That project isn’t hidden');
+    this.addProject(root);
   }
 
   hideProject(id: string): void {
@@ -185,15 +292,16 @@ export class WorkspaceManager {
     const named = loaded
       .map((p) => ((counts.get(p.name) ?? 0) > 1 ? { ...p, name: `${p.name} (${path.basename(path.dirname(p.root))})` } : p))
       .sort((a, b) => a.name.localeCompare(b.name));
-    this.projects = [this.chatsProject(), ...named];
+    this.projects = [this.chatsProject(new Set(roots)), ...named];
     return this.projects;
   }
 
   /** Stand-alone Claude chats, always listed first. */
-  private chatsProject(): Project {
+  private chatsProject(roots: ReadonlySet<string> = new Set()): Project {
     const workspaces = this.records
       .filter((r) => r.projectRoot === '')
-      .map((r): Workspace => ({ ...r, projectId: CHATS_PROJECT, external: false }))
+      // A chat started in a project's main folder is questions only, like any run there.
+      .map((r): Workspace => ({ ...r, projectId: CHATS_PROJECT, external: false, ...(roots.has(real(r.path)) ? { askOnly: true } : {}) }))
       .sort(order);
     return { id: CHATS_PROJECT, name: 'Chats', root: '', base: '', workspaces };
   }
@@ -217,10 +325,12 @@ export class WorkspaceManager {
           kind: isMain ? 'main' : 'worktree',
           createdAt: 0,
         };
-        workspaces.push({ ...record, branch: tree.branch ?? record.branch, base: record.base ?? base, projectId: id, external: !rec && !isMain });
+        workspaces.push({ ...record, branch: tree.branch ?? record.branch, base: record.base ?? base, projectId: id, external: !rec && !isMain, ...(isMain ? { askOnly: true } : {}) });
       }
       for (const rec of records) {
-        if (rec.kind === 'chat' || (rec.archived && rec.kind === 'worktree')) workspaces.push({ ...rec, projectId: id, external: false });
+        // Chats in the main folder (every project chat, so far) are questions only: work happens in worktrees.
+        if (rec.kind === 'chat') workspaces.push({ ...rec, projectId: id, external: false, ...(real(rec.path) === real(root) ? { askOnly: true } : {}) });
+        else if (rec.archived && rec.kind === 'worktree') workspaces.push({ ...rec, projectId: id, external: false });
       }
       const withStatus = await Promise.all(
         workspaces.map(async (w) => (w.archived || w.kind === 'chat' ? w : { ...w, status: await g.status(w.path, w.kind === 'main' ? undefined : w.base).catch(() => undefined) })),
@@ -313,12 +423,13 @@ export class WorkspaceManager {
   }
 
   /** Copy a workspace into a new worktree that starts from its current state, with its conversation. */
-  async fork(id: string, name: string): Promise<Workspace> {
+  async fork(id: string, name: string, opts: { base?: string } = {}): Promise<Workspace> {
     const source = this.require(id);
     const project = this.projectOf(source);
     const s = slug(name);
     const dir = this.freeDir(project, s);
-    const from = source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD');
+    // `opts.base`: start from there (e.g. the latest origin) instead of the source's own commits.
+    const from = opts.base ?? (source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD'));
     const branch = await this.freeBranch(project.root, `klaud/${s}`);
     await g.addWorktree(project.root, dir, branch, from);
     await g.excludeKlaudDir(dir);
@@ -330,7 +441,7 @@ export class WorkspaceManager {
       path: dir,
       kind: 'worktree',
       branch,
-      base: source.base ?? project.base,
+      base: opts.base ?? source.base ?? project.base,
       createdAt: Date.now(),
       forkedFrom: source.id,
       forkFromSession: source.sessionId,
@@ -371,11 +482,13 @@ export class WorkspaceManager {
     const ws = this.require(id);
     if (ws.kind === 'main') throw new WorkspaceError("The main folder can't be deleted from klaud");
     if (ws.kind === 'worktree') {
-      // Never force-remove worktrees made by other tools: their uncommitted work isn't ours to discard.
-      if (!ws.archived && existsSync(ws.path)) await g.removeWorktree(ws.projectRoot, ws.path, !ws.external);
+      // Made by another tool (Conductor, Claude Code), even if you've talked in it here: never force-remove it
+      // (its uncommitted work isn't ours to discard) and keep its branch.
+      const foreign = ws.external || !real(ws.path).startsWith(real(this.store.workspacesDir) + path.sep);
+      if (!ws.archived && existsSync(ws.path)) await g.removeWorktree(ws.projectRoot, ws.path, !foreign);
       // Folder deleted by hand: forget it in git too, or the branch stays "checked out" and the worktree comes back.
       else if (!ws.archived) await g.git(ws.projectRoot, ['worktree', 'prune']).catch(() => undefined);
-      if (ws.branch && !ws.external) await g.deleteBranch(ws.projectRoot, ws.branch).catch(() => undefined);
+      if (ws.branch && !foreign) await g.deleteBranch(ws.projectRoot, ws.branch).catch(() => undefined);
     }
     rmSync(this.store.historyFile(id), { force: true });
     // Only ever delete klaud's own scratch folders, never a folder you started a chat in.
@@ -421,7 +534,7 @@ export class WorkspaceManager {
    * Add one run's usage. The SDK reports running totals per conversation, so only the part
    * beyond the last total we saw for the same conversation is new.
    */
-  addUsage(id: string, run: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; session?: string }): WorkspaceUsage | undefined {
+  addUsage(id: string, run: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; session?: string }, now = Date.now()): WorkspaceUsage | undefined {
     const ws = this.find(id);
     if (!ws) return undefined;
     const prev = ws.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, runs: 0 };
@@ -437,6 +550,9 @@ export class WorkspaceManager {
       cost: prev.cost + delta('cost'),
       runs: prev.runs + 1,
       ...(run.session ? { lastSession: run.session, last: { input: run.input, output: run.output, cacheRead: run.cacheRead, cacheWrite: run.cacheWrite, cost: run.cost } } : {}),
+      // Per day too, for the Usage screen's chart and "this week".
+      days: addDay(prev.days, dayKey(now), { tokens: delta('input') + delta('output') + delta('cacheWrite'), cost: delta('cost') }),
+      lastAt: now,
     };
     this.patchRecord(id, { usage: next });
     return next;
@@ -617,7 +733,7 @@ export function normalizeRemote(url: string): string {
 }
 
 function stripLive(ws: Workspace): WorkspaceRecord {
-  const { projectId: _p, external: _e, status: _s, ...record } = ws;
+  const { projectId: _p, external: _e, status: _s, askOnly: _a, ...record } = ws;
   return record;
 }
 

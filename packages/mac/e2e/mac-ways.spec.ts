@@ -8,7 +8,7 @@ const toolbar = (page: Page) => page.locator('main header').first();
 
 async function openWorkspace(page: Page, name: string): Promise<void> {
   const row = sidebar(page).getByRole('button', { name, exact: true });
-  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click();
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
   await sidebar(page).getByRole('button', { name, exact: true }).click();
   await expect(composer(page)).toHaveAttribute('placeholder', new RegExp(name));
   // Its conversation loads from disk; send after it's in, so nothing races it.
@@ -60,21 +60,22 @@ test('the toolbar puts what the workspace needs next up front, the rest one clic
   await page.keyboard.press('Escape');
 });
 
-test('files: clickable breadcrumbs, and a right-click menu that mentions a file in the chat', async ({ page }) => {
+test('files: a tree in the panel, a preview, and a right-click menu that mentions a file in the chat', async ({ page }) => {
   await openWorkspace(page, 'add-auth');
-  await page.getByRole('tab', { name: /Files/ }).click();
-  await page.getByRole('option', { name: 'src', exact: true }).click();
-  const file = page.getByRole('option', { name: /auth\.ts/ });
+  const panel = page.getByRole('complementary', { name: 'Panel' });
+  await panel.getByRole('tab', { name: 'Files' }).click();
+  const file = panel.getByRole('treeitem', { name: 'auth.ts' });
+  // A file opened earlier (the preview is kept) already shows its folder open.
+  if (!(await file.isVisible())) await panel.getByRole('treeitem', { name: 'src' }).click();
   await expect(file).toBeVisible();
-  await page.getByRole('button', { name: 'This workspace', exact: true }).click();
-  await expect(page.getByRole('option', { name: 'src', exact: true })).toBeVisible();
-  await page.getByRole('option', { name: 'src', exact: true }).click();
+  await file.click();
+  await expect(panel.getByRole('region', { name: 'auth.ts' }).getByText('requireUser').first()).toBeVisible();
   await file.click({ button: 'right' });
   await expect(page.getByRole('menuitem', { name: 'Copy Path' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Show in Finder' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Open in Full' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Save a Copy…' })).toBeVisible();
   await page.getByRole('menuitem', { name: 'Mention in Chat' }).click();
-  await expect(page.getByRole('tab', { name: /Chat/ })).toHaveAttribute('aria-selected', 'true');
   await expect(composer(page)).toHaveValue(/src\/auth\.ts/);
   await composer(page).fill('');
 });

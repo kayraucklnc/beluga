@@ -10,6 +10,9 @@ import { findProjects, isMainCheckout } from '../workspaces/discovery.js';
 import { chooseProjectIcon, readProjectIcon, suggestProjects } from '../core/project-icons.js';
 import type { Args, Method } from './api.js';
 import { NETWORK_HANDLERS } from './network-handlers.js';
+import { STRIPE_HANDLERS } from './stripe-handlers.js';
+import { CLAUDE_CODE_HANDLERS } from './claude-code-handlers.js';
+import { GATEWAY_HANDLERS } from './gateway-handlers.js';
 
 /**
  * What each API method does (see api.ts for the list and its arguments). Runs in the core:
@@ -119,6 +122,7 @@ export const HANDLERS = {
   },
 
   'workspaces.open': (s, id, tab) => ctl(s)?.open(id, tab),
+  'workspaces.load': (s, id) => void ctl(s)?.ensureLoaded(id),
   'workspaces.refresh': (s) => ctl(s)?.refresh(),
   'workspaces.newWorktree': async (s, projectId, name, opts) => (await ctl(s)?.newWorktree(projectId, name, opts?.base ? { base: opts.base } : {}))?.id,
   'workspaces.newChat': async (s, projectId, title, dir) => (await ctl(s)?.newChat(projectId, title, dir))?.id,
@@ -126,6 +130,9 @@ export const HANDLERS = {
   'workspaces.startWorktree': (s, projectId, text, opts) => ctl(s)?.startWorktree(projectId, text, (prompt) => s.nameTask(prompt), { ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}) }),
   'workspaces.branches': (s, projectId) => ctl(s)?.branches(projectId),
   'workspaces.fork': async (s, id, name) => (await ctl(s)?.fork(id, name))?.id,
+  'workspaces.continueInWorktree': async (s, id, opts) =>
+    // Claude starts there once whatever runs in the conversation now has finished (its session is complete then).
+    (await ctl(s)?.continueInWorktree(id, (prompt) => s.nameTask(prompt), { ...(opts?.task ? { task: opts.task } : {}), ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), after: s.host.idle(`ws:${id}`) }))?.id,
   'workspaces.archive': (s, id, force) => ctl(s)?.archive(id, force),
   'workspaces.restore': (s, id) => ctl(s)?.restore(id),
   'workspaces.remove': (s, id) => ctl(s)?.remove(id),
@@ -140,11 +147,21 @@ export const HANDLERS = {
   'workspaces.setGroup': (s, projectId, group) => ctl(s)?.setGroup(projectId, group),
   'workspaces.renameGroup': (s, from, to) => ctl(s)?.renameGroup(from, to),
   'workspaces.ungroup': (s, name) => ctl(s)?.ungroup(name),
+  'workspaces.arrange': (s, item, place) => ctl(s)?.arrange(item, place ?? {}) ?? false,
+  'workspaces.newGroup': (s, name, opts) => ctl(s)?.newGroup(name, opts ?? {}),
+  'workspaces.showProject': (s, root) => ctl(s)?.showProject(root) ?? false,
   'workspaces.hideProject': (s, projectId) => ctl(s)?.hideProject(projectId),
   'workspaces.cleanAgentWorktrees': (s, projectId) => ctl(s)?.cleanAgentWorktrees(projectId),
+  'workspaces.otherOrigins': (s, projectId) => ctl(s)?.others.origins(projectId) ?? {},
+  'workspaces.worktreeInfo': (s, id) => ctl(s)?.others.info(id),
+  'workspaces.showConversation': (s, id, sessionId) => ctl(s)?.showConversation(id, sessionId) ?? false,
+  'workspaces.removeOther': (s, id, force) => ctl(s)?.others.remove(id, force ?? false) ?? false,
+  'workspaces.staleOthers': (s, projectId, source) => ctl(s)?.others.stale(projectId, source) ?? [],
+  'workspaces.cleanUpOthers': (s, projectId, ids) => ctl(s)?.others.cleanUp(projectId, ids),
   'workspaces.addProject': (s, dir) => ctl(s)?.addProject(dir),
   'workspaces.addFolder': (s, dir) => ctl(s)?.addFolder(dir),
   'workspaces.selectFile': (s, index) => ctl(s)?.selectFile(index),
+  'workspaces.review': (s, id) => ctl(s)?.loadReview(id),
 
   'workbench.run': (s, wsId) => started(bench(s)?.run(wsId)),
   'workbench.stopRun': (s, wsId) => bench(s)?.stopRun(wsId),
@@ -225,6 +242,9 @@ export const HANDLERS = {
   },
   'local.openFolder': (_s, dir) => openWithSystem(dir),
   ...NETWORK_HANDLERS,
+  ...STRIPE_HANDLERS,
+  ...CLAUDE_CODE_HANDLERS,
+  ...GATEWAY_HANDLERS,
 } satisfies Handlers;
 
 export type Result<M extends Method> = Awaited<ReturnType<(typeof HANDLERS)[M]>>;

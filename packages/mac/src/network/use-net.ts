@@ -1,0 +1,46 @@
+import type { FriendView, GroupView, NetworkState } from '@klaud/net/mesh/views.js';
+import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import { useApp, useKlaud } from '../lib/klaud.js';
+import { dmId, groupId } from './net-model.js';
+
+/** The klaud network as the shared state has it. */
+export const useNetwork = (): NetworkState => useApp((st) => st.network);
+
+export const useFriend = (peerId: string | undefined): FriendView | undefined => useApp((st) => (peerId ? st.network.friends.find((f) => f.peerId === peerId) : undefined));
+
+export const useGroup = (id: string | undefined): GroupView | undefined => useApp((st) => (id ? st.network.groups.find((g) => g.id === id) : undefined));
+
+const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * Run an API call whose failure this screen shows itself (in a sheet, under a field): the
+ * client's generic "Something went wrong" toast is taken back so it isn't said twice.
+ */
+export async function quietly<T>(client: SocketClient, call: Promise<T>): Promise<T> {
+  try {
+    return await call;
+  } catch (err) {
+    const toast = client.store.getState().toast;
+    if (toast && toast.text.includes(message(err).slice(0, 60))) client.store.dispatch({ type: 'toast_clear', id: toast.id });
+    throw err instanceof Error ? err : new Error(message(err));
+  }
+}
+
+/** Go to a conversation with a friend or a group. */
+export function openConversation(client: SocketClient, id: string): void {
+  client.store.dispatch({ type: 'view', view: { kind: 'conversation', id } });
+}
+
+export const openDm = (client: SocketClient, peerId: string): void => openConversation(client, dmId(peerId));
+export const openGroup = (client: SocketClient, id: string): void => openConversation(client, groupId(id));
+
+/** The conversation on screen, if it's one with friends. */
+export const useShownConversation = (): string | undefined => useApp((st) => (st.view.kind === 'conversation' ? st.view.id : undefined));
+
+/** Something short in this window ("Copied the link"). */
+export function useSay(): (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void {
+  const { client } = useKlaud();
+  return (text, level = 'success') => client.store.dispatch({ type: 'toast', text, level });
+}
+
+export const errorText = message;

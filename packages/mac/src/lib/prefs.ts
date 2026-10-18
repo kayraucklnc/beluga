@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { DRAWER_DEFAULT, PANEL_DEFAULT, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs } from './panel-model.js';
 
 /**
  * How this window looks and behaves: kept on this Mac only (klaud's shared settings, like the
@@ -12,7 +13,14 @@ export interface UiPrefs {
   readonly density: 'compact' | 'comfortable';
   /** How wide the conversation can get (characters, roughly). */
   readonly chatWidth: 'narrow' | 'wide' | 'full';
+  /** The right panel (Changes, Files, Terminal, Info) is showing. */
   readonly inspector: boolean;
+  /** How wide the right panel is (px; never more than 60% of the window). */
+  readonly panelWidth: number;
+  /** The tab you last picked in the panel, per workspace ('ws:<id>') and for everything else ('app'). */
+  readonly panelTabs: Readonly<Record<string, PanelTab>>;
+  /** In the Changes and Files tabs: how much of the height the list keeps above a diff or a preview (0.18–0.75). */
+  readonly panelSplit: number;
   readonly sidebar: boolean;
   readonly sidebarWidth: number;
   /** Sidebar sections you've folded. */
@@ -23,10 +31,12 @@ export interface UiPrefs {
   /** Show Claude's tool steps in the chat, or just its answers. */
   readonly steps: 'all' | 'summary';
   readonly reduceMotion: boolean;
-  /** A terminal next to the chat: off, on the right, or underneath. */
-  readonly dock: 'off' | 'right' | 'bottom';
-  /** How much of the space the docked terminal takes (0.2–0.75). */
-  readonly dockSize: number;
+  /** Where ⌘J (and Run) show the terminal: the drawer under the chat, or the right panel's Terminal tab. */
+  readonly termIn: TerminalPlace;
+  /** The terminal drawer under the chat is open. */
+  readonly drawer: boolean;
+  /** How much of the window's height the drawer takes (0.18–0.75). */
+  readonly drawerSize: number;
   /** The terminal's font family ('' : the system's monospace, SF Mono). */
   readonly termFont: string;
   readonly termFontSize: number;
@@ -57,6 +67,9 @@ export const DEFAULT_PREFS: UiPrefs = {
   density: 'comfortable',
   chatWidth: 'wide',
   inspector: true,
+  panelWidth: PANEL_DEFAULT,
+  panelTabs: {},
+  panelSplit: SPLIT_DEFAULT,
   sidebar: true,
   sidebarWidth: 248,
   folded: [],
@@ -64,8 +77,9 @@ export const DEFAULT_PREFS: UiPrefs = {
   timestamps: true,
   steps: 'all',
   reduceMotion: false,
-  dock: 'off',
-  dockSize: 0.42,
+  termIn: 'panel',
+  drawer: false,
+  drawerSize: DRAWER_DEFAULT,
   termFont: '',
   termFontSize: 12.5,
   termLineHeight: 1.18,
@@ -79,7 +93,8 @@ const listeners = new Set<() => void>();
 
 function load(): UiPrefs {
   try {
-    return { ...DEFAULT_PREFS, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<UiPrefs>) };
+    // Older versions docked the terminal beside or under the chat: see migratePrefs.
+    return { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -121,6 +136,7 @@ export function apply(p: UiPrefs = current): void {
   root.style.setProperty('--accent', ACCENTS[p.accent]);
   root.style.setProperty('--text-size', `${p.textSize}px`);
   root.style.setProperty('--sidebar-w', `${p.sidebarWidth}px`);
+  root.style.setProperty('--panel-w', `${p.panelWidth}px`);
   root.style.setProperty('--chat-max', p.chatWidth === 'narrow' ? '42rem' : p.chatWidth === 'wide' ? '60rem' : '100%');
 }
 

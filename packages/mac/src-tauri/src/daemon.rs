@@ -31,6 +31,12 @@ struct Info {
     pid: u32,
     port: u16,
     token: String,
+    /// The klaud version it runs (missing only in daemon.json files from very old versions).
+    #[serde(default)]
+    version: Option<String>,
+    /// Started to stay up for the Mac app (`--keep-alive`), not by a terminal window.
+    #[serde(default, rename = "keepAlive")]
+    keep_alive: bool,
 }
 
 impl From<Info> for Endpoint {
@@ -84,6 +90,26 @@ fn read_info() -> Option<Info> {
 /// The daemon that's really up: its process is there and it answers on its port.
 fn up() -> Option<Info> {
     read_info().filter(|info| alive(info.pid) && listening(info.port))
+}
+
+/// The running daemon's process id (to look at its terminals), if one runs.
+pub fn running_pid() -> Option<u32> {
+    up().map(|info| info.pid)
+}
+
+/// The klaud version bundled in this app (its package.json), `None` in development.
+fn bundled_version(app: &AppHandle) -> Option<String> {
+    let resources = app.path().resource_dir().ok()?;
+    let text = std::fs::read_to_string(resources.join("daemon").join("package.json")).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+    json.get("version")?.as_str().map(str::to_owned)
+}
+
+/// Whether a running daemon is an older (or other) klaud this app should replace with its
+/// own: only a kept-alive one (a Mac app started it, maybe the version before an update),
+/// never one a terminal window started and still uses.
+fn outdated(running: Option<&str>, keep_alive: bool, bundled: Option<&str>) -> bool {
+    keep_alive && matches!((running, bundled), (Some(r), Some(b)) if r != b)
 }
 
 /// If the daemon this app started has quit, let go of it (so it doesn't linger) and say how.
@@ -348,7 +374,17 @@ pub async fn ensure(app: &AppHandle, args: &[String]) -> Result<Endpoint, String
     let state = app.state::<AppState>();
     let _one_at_a_time = state.lock.lock().await;
     if let Some(info) = running(app) {
-        return Ok(info.into());
+        let bundled = bundled_version(app);
+        if !outdated(info.version.as_deref(), info.keep_alive, bundled.as_deref()) {
+            return Ok(info.into());
+        }
+        // After an update: the screens reconnect to the new one by themselves.
+        eprintln!(
+            "klaud: replacing klaud {} with this app's {}",
+            info.version.as_deref().unwrap_or("?"),
+            bundled.as_deref().unwrap_or("?")
+        );
+        stop_running(app).await?;
     }
     start(app, args).await
 }
@@ -439,6 +475,29 @@ mod tests {
         assert_eq!(parse_path(&out).as_deref(), Some("/usr/bin:/bin"));
         assert_eq!(parse_path("nothing here"), None);
         assert_eq!(parse_path(&format!("{PATH_MARK}/usr/bin")), None);
+    }
+
+    #[test]
+    fn replaces_only_a_kept_alive_daemon_of_another_version() {
+        assert!(outdated(Some("0.4.0"), true, Some("0.5.0")));
+        assert!(!outdated(Some("0.5.0"), true, Some("0.5.0")));
+        // The terminal app's daemon is left alone, whatever its version.
+        assert!(!outdated(Some("0.4.0"), false, Some("0.5.0")));
+        // Development (nothing bundled), or a daemon that doesn't say.
+        assert!(!outdated(Some("0.4.0"), true, None));
+        assert!(!outdated(None, true, Some("0.5.0")));
+    }
+
+    #[test]
+    fn reads_what_the_daemon_wrote() {
+        let info: Info = serde_json::from_str(
+            r#"{"pid":42,"port":5000,"token":"t","version":"0.4.0","ipc":3,"room":"r","keepAlive":true}"#,
+        )
+        .unwrap();
+        assert_eq!(info.version.as_deref(), Some("0.4.0"));
+        assert!(info.keep_alive);
+        let old: Info = serde_json::from_str(r#"{"pid":42,"port":5000,"token":"t"}"#).unwrap();
+        assert!(old.version.is_none() && !old.keep_alive);
     }
 
     #[test]

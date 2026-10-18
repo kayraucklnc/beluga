@@ -9,6 +9,9 @@ import type { Bitmap } from '../image/bitmap.js';
 import { type CollabAction, type CollabState, initialCollab, reduceCollab } from './collab-store.js';
 import { type SearchState, type WorkAction, type WorkState, initialWork, reduceWork } from './work-store.js';
 import { type NetworkAction, type NetworkSlice, initialNetwork, reduceNetwork } from './network-store.js';
+import { type EarningsAction, type EarningsSlice, initialEarnings, reduceEarnings } from './earnings-store.js';
+import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceClaudeCode } from './claude-code/model.js';
+import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
 
@@ -209,7 +212,15 @@ export type View =
   /** A new worktree: your first message names it (via a small model) and starts the work. */
   | { readonly kind: 'draft_worktree'; readonly projectId: string; readonly back: View }
   /** Someone else's workspace that they shared with you. */
-  | { readonly kind: 'shared'; readonly owner: string; readonly id: string; readonly tab: SharedTab };
+  | { readonly kind: 'shared'; readonly owner: string; readonly id: string; readonly tab: SharedTab }
+  /** A conversation on the klaud network (Mac app): with a friend (`dm:<peerId>`) or in a group (`group:<id>`). */
+  | { readonly kind: 'conversation'; readonly id: string }
+  /** Claude Code sessions running outside klaud, live and read-only (Mac app): all of them, or one session or agent. */
+  | { readonly kind: 'claude_code'; readonly session?: string; readonly agent?: string }
+  /** A project's home (Mac app): start work in a new worktree or ask about it; its worktrees and chats. */
+  | { readonly kind: 'project'; readonly id: string }
+  /** Tasks between Claudes (Mac app): what you and your Claude asked of others, and what they asked of you. */
+  | { readonly kind: 'requests' };
 
 /** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */
 export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';
@@ -247,7 +258,8 @@ export const channelOf = (view: View): string =>
   view.kind === 'workspace' || view.kind === 'shared' ? `ws:${view.id}` : view.kind === 'draft' || view.kind === 'draft_worktree' ? 'draft' : 'room';
 
 /** The conversation a view shows, if any (Overview, Search, Terminal… show none, so the chat's unread count stays). */
-export const shownChannel = (view: View): string | undefined => (view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' ? channelOf(view) : undefined);
+export const shownChannel = (view: View): string | undefined =>
+  view.kind === 'conversation' ? view.id : view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' ? channelOf(view) : undefined;
 
 /** What the screens attached to this computer's klaud are looking at (all of them together). */
 export interface Attention {
@@ -277,10 +289,14 @@ export interface MyShare {
  * Everything klaud knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
-export interface DomainState extends CollabState, WorkState, NetworkSlice {
+export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, ClaudeCodeSlice, GatewaySlice {
   readonly room: string;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
+  /** The sidebar's top level in the order you arranged it: project roots and `group:<name>` (see workspaces/arrange.ts). */
+  readonly projectOrder: readonly string[];
+  /** Roots of projects you hid (still on disk), to show again. */
+  readonly hiddenProjects: readonly string[];
   /** Files with merge conflicts from the last merge attempt, per workspace. */
   readonly conflicts: Readonly<Record<string, readonly string[]>>;
   readonly review?: ReviewDomain;
@@ -369,7 +385,7 @@ export type Action =
   | { type: 'agent_event'; owner: string; requestId: string; requester: string; event: AgentEventKind; text: string; ts: number; channel?: string; itemId?: string }
   /** One owner's waiting requests in a conversation, in their new order (see orderQueued). */
   | { type: 'queue_order'; owner: string; ids: readonly string[] }
-  | { type: 'projects'; projects: readonly Project[]; groups?: readonly ProjectGroup[] }
+  | { type: 'projects'; projects: readonly Project[]; groups?: readonly ProjectGroup[]; order?: readonly string[]; hidden?: readonly string[] }
   | { type: 'conflicts'; id: string; files: readonly string[] }
   | { type: 'review'; review?: ReviewDomain }
   | { type: 'history'; channel: string; items: readonly LogItem[] }
@@ -403,7 +419,10 @@ export type Action =
   | { type: 'identity'; selfId: string; isHost: boolean; home?: string }
   | CollabAction
   | WorkAction
-  | NetworkAction;
+  | NetworkAction
+  | EarningsAction
+  | ClaudeCodeAction
+  | GatewayAction;
 
 const LOG_LIMIT = 1000;
 const TRANSFER_LIMIT = 20;
@@ -439,6 +458,8 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     room,
     projects: [],
     projectGroups: [],
+    projectOrder: [],
+    hiddenProjects: [],
     conflicts: {},
     unread: {},
     seenShares: [],
@@ -465,6 +486,9 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialCollab,
     ...initialWork,
     ...initialNetwork,
+    ...initialEarnings,
+    ...initialClaudeCode,
+    ...initialGateway,
   };
 }
 
@@ -702,7 +726,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, conflicts: action.files.length ? { ...rest, [action.id]: action.files } : rest };
     }
     case 'projects':
-      return { ...state, projects: action.projects, projectGroups: action.groups ?? state.projectGroups };
+      return { ...state, projects: action.projects, projectGroups: action.groups ?? state.projectGroups, projectOrder: action.order ?? state.projectOrder, hiddenProjects: action.hidden ?? state.hiddenProjects };
     case 'attention':
       return attend(state, action.attention);
     case 'my_shares':
@@ -847,6 +871,16 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'net_messages':
     case 'net_off':
       return { ...state, ...reduceNetwork(state, action) };
+    case 'earnings':
+      return { ...state, ...reduceEarnings(state, action) };
+    case 'claude_code':
+      return { ...state, ...reduceClaudeCode(state, action) };
+    case 'gw_init':
+    case 'gw_task':
+    case 'gw_card':
+    case 'gw_note':
+    case 'gw_off':
+      return { ...state, ...reduceGateway(state, action) };
     case 'context_reset': {
       const { [action.channel]: _gone, ...context } = state.context;
       return { ...state, context };

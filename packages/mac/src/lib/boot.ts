@@ -1,6 +1,7 @@
 import type { Capabilities } from '@klaud/ipc/socket-client.js';
 import { SocketClient } from '@klaud/ipc/socket-client.js';
 import { NOTIFICATION_TAP } from './notices.js';
+import { version } from '../../src-tauri/tauri.conf.json';
 
 /** Running inside the Tauri shell (otherwise: a browser, while developing). */
 export const inApp = (): boolean => '__TAURI_INTERNALS__' in globalThis;
@@ -58,7 +59,8 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
   };
 }
 
-export const APP_VERSION = '0.4.0';
+/** This app's version: tauri.conf.json's, the one the updater compares with new releases. */
+export const APP_VERSION: string = version;
 
 /** Attach to klaud. */
 export async function connect(caps: Capabilities): Promise<SocketClient> {

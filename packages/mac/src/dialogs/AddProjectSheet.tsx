@@ -32,6 +32,9 @@ export function AddProjectSheet() {
   const open = useUi((u) => u.addProject ?? false);
   const home = useApp((st) => st.home);
   const roots = useApp((st) => st.projects.map((p) => p.root).filter(Boolean).join('\n'));
+  // Projects you hid: listed too, with Show (they come back where they were).
+  const hidden = useApp((st) => st.hiddenProjects.join('\n'));
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
   const [found, setFound] = useState<Found[] | undefined>();
   const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
   const [filter, setFilter] = useState('');
@@ -44,6 +47,7 @@ export function AddProjectSheet() {
   useEffect(() => {
     if (!open) return;
     setAdded(new Set());
+    setRevealed(new Set());
     setFilter('');
     setFound(undefined);
     void api.projects.suggest().then(setFound, () => setFound([]));
@@ -77,11 +81,20 @@ export function AddProjectSheet() {
     };
   }, [open]);
 
+  const show = async (path: string): Promise<void> => {
+    if (await api.workspaces.showProject(path)) setRevealed((r) => new Set([...r, path]));
+  };
+
+  const hiddenSet = useMemo(() => new Set(hidden.split('\n').filter(Boolean)), [hidden]);
   const shown = useMemo(() => {
     const known = new Set(roots.split('\n'));
     const q = filter.trim().toLowerCase();
-    return (found ?? []).filter((f) => !known.has(f.path) || added.has(f.path)).filter((f) => !q || f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q));
-  }, [found, filter, roots, added]);
+    const listed = new Set((found ?? []).map((f) => f.path));
+    const hiddenOnly = found ? [...hiddenSet, ...revealed].filter((p, i, all) => !listed.has(p) && all.indexOf(p) === i).map((p): Found => ({ path: p, name: p.split('/').filter(Boolean).pop() ?? p, changed: 0 })) : [];
+    return [...hiddenOnly, ...(found ?? [])]
+      .filter((f) => !known.has(f.path) || added.has(f.path) || revealed.has(f.path))
+      .filter((f) => !q || f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q));
+  }, [found, filter, roots, added, hiddenSet, revealed]);
 
   const choose = async (): Promise<void> => {
     const picked = await pickFolders('Add projects');
@@ -130,20 +143,25 @@ export function AddProjectSheet() {
               <div className={s.note}>{filter ? `Nothing called “${filter}”.` : 'No other git projects in ~/Projects, ~/Developer, ~/code and the like.'}</div>
             ) : (
               shown.map((f) => {
-                const done = added.has(f.path);
+                const done = added.has(f.path) || revealed.has(f.path);
+                const wasHidden = hiddenSet.has(f.path) || revealed.has(f.path);
                 return (
-                  <div key={f.path} className={s.item} role="listitem" onDoubleClick={() => !done && void add([f.path])}>
+                  <div key={f.path} className={s.item} role="listitem" onDoubleClick={() => !done && void (wasHidden ? show(f.path) : add([f.path]))}>
                     <ProjectIcon id={`path:${f.path}`} name={f.name} size={26} />
                     <span className={s.itemText}>
                       <span className={s.itemName}>{f.name}</span>
                       <span className={s.itemPath}>
-                        {short(f.path)} · {ago(f.changed)}
+                        {short(f.path)} · {wasHidden ? 'hidden' : ago(f.changed)}
                       </span>
                     </span>
                     {done ? (
                       <span className={s.added}>
-                        <Icon name="check" size={12} /> Added
+                        <Icon name="check" size={12} /> {wasHidden ? 'Showing' : 'Added'}
                       </span>
+                    ) : wasHidden ? (
+                      <Button size="small" onClick={() => void show(f.path)} aria-label={`Show ${f.name}`}>
+                        Show
+                      </Button>
                     ) : (
                       <Button size="small" onClick={() => void add([f.path])}>
                         Add
@@ -169,8 +187,8 @@ export function AddProjectSheet() {
               Add
             </Button>
             <span className={s.flex} />
-            <Button variant={added.size ? 'primary' : 'quiet'} onClick={close}>
-              {added.size ? 'Done' : 'Cancel'}
+            <Button variant={added.size || revealed.size ? 'primary' : 'quiet'} onClick={close}>
+              {added.size || revealed.size ? 'Done' : 'Cancel'}
             </Button>
           </form>
         </Dialog.Content>

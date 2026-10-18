@@ -2,6 +2,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { asChatRow } from '../lib/said.js';
 import type { LogItem } from '@klaud/core/store.js';
+import { type TaskView, tasksIn } from '@klaud/core/gateway/model.js';
+import { LogTaskCard } from '../gateway/TaskCard.js';
 import { Icon } from '../components/Icon.js';
 import { Empty } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
@@ -12,6 +14,20 @@ import s from './chat.module.css';
 
 const GROUP_GAP_MS = 3 * 60_000;
 
+/** A task your Claude sent from this conversation (to another person's Claude), drawn where it was asked. */
+type TaskRow = { readonly type: 'task'; readonly id: string; readonly ts: number; readonly task: TaskView };
+type Row = LogItem | TaskRow;
+
+function withTasks(items: readonly LogItem[], tasks: readonly TaskView[]): readonly Row[] {
+  if (!tasks.length) return items;
+  const rows: Row[] = [...items];
+  for (const task of tasks) {
+    const at = rows.findIndex((r) => r.ts > task.createdAt);
+    rows.splice(at < 0 ? rows.length : at, 0, { type: 'task', id: `task:${task.id}`, ts: task.createdAt, task });
+  }
+  return rows;
+}
+
 /**
  * A conversation: virtualized (a long one stays fast), anchored to the bottom while you're at
  * the bottom, and left alone while you read further up (with a way back down).
@@ -21,21 +37,24 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   const selfId = useApp((st) => st.selfId);
   // A shared workspace's earlier messages arrive as system lines; drawn here as normal messages.
   const items = useMemo(() => log.filter((l) => l.channel === channel).map(asChatRow), [log, channel]);
+  const gateway = useApp((st) => st.gateway);
+  const tasks = useMemo(() => tasksIn({ gateway }, channel), [gateway, channel]);
+  const rows = useMemo(() => withTasks(items, tasks), [items, tasks]);
   const parent = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
   const stick = useRef(true);
   const virtualizer = useVirtualizer({
-    count: items.length,
+    count: rows.length,
     getScrollElement: () => parent.current,
-    estimateSize: (i) => (items[i]?.type === 'agent' ? 140 : items[i]?.type === 'system' ? 28 : 52),
+    estimateSize: (i) => (rows[i]?.type === 'agent' ? 140 : rows[i]?.type === 'task' ? 160 : rows[i]?.type === 'system' ? 28 : 52),
     overscan: 8,
-    getItemKey: (i) => items[i]?.id ?? i,
+    getItemKey: (i) => rows[i]?.id ?? i,
   });
 
   // New messages (and Claude's streaming text) keep you at the bottom if that's where you were.
   useLayoutEffect(() => {
-    if (stick.current && items.length) virtualizer.scrollToIndex(items.length - 1, { align: 'end' });
-  }, [items, virtualizer]);
+    if (stick.current && rows.length) virtualizer.scrollToIndex(rows.length - 1, { align: 'end' });
+  }, [rows, virtualizer]);
   useEffect(() => {
     stick.current = true;
     setAtBottom(true);
@@ -49,7 +68,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
     if (bottom !== atBottom) setAtBottom(bottom);
   };
 
-  if (!items.length) {
+  if (!rows.length) {
     return (
       <div className={s.logWrap}>
         <FindBar items={items} logRef={parent} onGo={() => undefined} />
@@ -59,14 +78,15 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   }
 
   const continued = (i: number): boolean => {
-    const a = items[i - 1];
-    const b = items[i];
+    const a = rows[i - 1];
+    const b = rows[i];
     return Boolean(a && b && a.type === 'chat' && b.type === 'chat' && a.from === b.from && a.byAgent === b.byAgent && b.ts - a.ts < GROUP_GAP_MS);
   };
 
   const go = (index: number): void => {
     stick.current = false;
-    virtualizer.scrollToIndex(index, { align: 'center' });
+    const id = items[index]?.id;
+    virtualizer.scrollToIndex(Math.max(0, rows.findIndex((r) => r.id === id)), { align: 'center' });
   };
 
   return (
@@ -75,10 +95,12 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
       <div ref={parent} className={s.log} onScroll={onScroll}>
         <div className={s.logInner} style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((v) => {
-            const item = items[v.index] as LogItem;
+            const item = rows[v.index] as Row;
             return (
               <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className={s.logRow} style={{ transform: `translateY(${v.start}px)` }}>
-                {item.type === 'chat' ? (
+                {item.type === 'task' ? (
+                  <LogTaskCard task={item.task} />
+                ) : item.type === 'chat' ? (
                   <ChatRow item={item} continued={continued(v.index)} mine={item.from === selfId} />
                 ) : item.type === 'agent' ? (
                   <AgentCard item={item} />
@@ -99,7 +121,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
           onClick={() => {
             stick.current = true;
             setAtBottom(true);
-            virtualizer.scrollToIndex(items.length - 1, { align: 'end' });
+            virtualizer.scrollToIndex(rows.length - 1, { align: 'end' });
           }}
         >
           <Icon name="chevronDown" size={12} />

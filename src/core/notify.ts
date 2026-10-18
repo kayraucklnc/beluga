@@ -17,6 +17,8 @@ export interface NoticeEvent {
   readonly body: string;
   /** Conversation it's about (opening the notice goes there). */
   readonly channel?: string;
+  /** Into the inbox, but no desktop notification (you're on Do Not Disturb or appearing offline). */
+  readonly quiet?: boolean;
 }
 
 /** A desktop notification: what it says, and where clicking it goes (when it's about one place). */
@@ -119,12 +121,43 @@ function messagesForYou(prev: DomainState, next: DomainState): NoticeEvent[] {
   return out;
 }
 
+/** Messages older than this arriving (a group catching up after days away) aren't news any more. */
+const STALE_MESSAGE_MS = 12 * 60 * 60_000;
+
+/**
+ * A friend writes to you, or someone writes in one of your groups (the klaud network). Quiet
+ * while your status is Do Not Disturb or you appear offline: the inbox still has them.
+ */
+function networkMessages(prev: DomainState, next: DomainState, now: number): NoticeEvent[] {
+  const before = prev.network;
+  const after = next.network;
+  // The first messages after the network starts are history, not news.
+  if (before.messages === after.messages || !before.enabled || !after.self) return [];
+  const self = after.self;
+  const quiet = self.appearOffline || self.presence.state === 'dnd';
+  const mention = new RegExp(`(^|[^\\w@])@${escapeRe(self.name)}(?![\\w-])`, 'i');
+  const out: NoticeEvent[] = [];
+  for (const [conversation, list] of Object.entries(after.messages)) {
+    const old = before.messages[conversation];
+    if (old === list) continue;
+    const seen = new Set((old ?? []).map((m) => m.id));
+    const fresh = list.filter((m) => !seen.has(m.id) && !m.mine && m.status !== 'locked' && now - m.ts < STALE_MESSAGE_MS);
+    if (fresh.length > MESSAGE_BURST * 4) continue;
+    const group = conversation.startsWith('group:') ? after.groups.find((g) => `group:${g.id}` === conversation) : undefined;
+    for (const m of fresh) {
+      const title = group ? (mention.test(m.text) ? `${m.name} mentioned you in ${group.name}` : `${m.name} in ${group.name}`) : m.name;
+      out.push({ kind: 'mentions', tag: group && mention.test(m.text) ? 'mention' : 'message', title, body: firstLine(m.text), channel: conversation, ...(quiet ? { quiet: true } : {}) });
+    }
+  }
+  return out;
+}
+
 /**
  * What happened between two states that you'd want to hear about: Claude finished or
  * stopped, needs an answer or approval, a merge conflict, someone joined or invited you.
  */
-export function detectNotices(prev: DomainState, next: DomainState): NoticeEvent[] {
-  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next)];
+export function detectNotices(prev: DomainState, next: DomainState, now = Date.now()): NoticeEvent[] {
+  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...networkMessages(prev, next, now)];
   if (prev.approvals !== next.approvals) {
     const seen = new Set(prev.approvals.map((a) => a.id));
     for (const a of next.approvals) if (!seen.has(a.id)) out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail) });
@@ -230,7 +263,7 @@ export class Notifier {
     // Opening a conversation reads its notices; answering something reads the notice about it.
     if (prev.attention !== next.attention) this.markSeen(next);
     if (prev.approvals !== next.approvals || prev.questions !== next.questions) this.markAnswered(next);
-    const events = detectNotices(prev, next);
+    const events = detectNotices(prev, next, this.now());
     if (events.length) this.handle(events, next);
   }
 
@@ -257,7 +290,7 @@ export class Notifier {
       }
       const { kind, tag, ref, title, body, channel } = e;
       this.deps.store.dispatch({ type: 'notice_add', notice: { kind, ...(tag ? { tag } : {}), ...(ref ? { ref } : {}), title, body, channel } });
-      if (desktop) this.queue.push(e);
+      if (desktop && !e.quiet) this.queue.push(e);
     }
     this.flush();
   }

@@ -607,7 +607,8 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
       ]
     : [
         ...(scripts?.run ? ([{ label: 'Run', action: 'run', hint: `Start ${scripts.run.command} in the Terminal tab` }] as WorkspaceButton[]) : []),
-        { label: 'Review', action: 'review_claude', hint: 'Ask Claude to check everything: bugs, security, tests and quality' },
+        // A main folder is questions only: a review there would want to fix things.
+        ...(ws.askOnly ? [] : ([{ label: 'Review', action: 'review_claude', hint: 'Ask Claude to check everything: bugs, security, tests and quality' }] as WorkspaceButton[])),
         ...(ws.kind === 'worktree'
           ? ([
               { label: 'Commit', action: 'commit', hint: changed ? `Commit ${changed} changed file(s)` : 'Nothing to commit', disabled: !changed },
@@ -626,7 +627,7 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
             ] as WorkspaceButton[])
           : []),
         ...(state.context[`ws:${ws.id}`] ? ([{ label: 'Compact', action: 'compact', hint: 'Shrink the conversation so Claude has room to keep going' }] as WorkspaceButton[]) : []),
-        ...(ws.kind !== 'chat' ? ([{ label: 'Fork', action: 'fork', hint: 'Copy this workspace and its conversation into a new worktree' }] as WorkspaceButton[]) : []),
+        ...(ws.kind !== 'chat' && !ws.askOnly ? ([{ label: 'Fork', action: 'fork', hint: 'Copy this workspace and its conversation into a new worktree' }] as WorkspaceButton[]) : []),
         { label: 'Finder', action: 'finder', hint: 'Open this folder in Finder' },
         ...(ws.kind !== 'main' ? ([{ label: 'Archive', action: 'archive', hint: 'Put it away; keeps the branch and conversation' }] as WorkspaceButton[]) : []),
         sharedButton(state, ws.id),

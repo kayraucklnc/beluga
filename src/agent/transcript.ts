@@ -1,6 +1,10 @@
-import { getSessionMessages, listSessions } from '@anthropic-ai/claude-agent-sdk';
 import type { LogItem } from '../core/store.js';
 import { summarizeTool } from './prompt.js';
+
+/**
+ * Claude Code transcripts → klaud's chat. Pure: no files, no SDK (reading the files is
+ * claude-sessions.ts), so anything that shows Claude Code conversations can reuse it.
+ */
 
 /** What a Claude Code transcript entry looks like (only the parts we read). */
 export interface TranscriptMessage {
@@ -9,11 +13,18 @@ export interface TranscriptMessage {
   readonly parent_tool_use_id: string | null;
 }
 
-export interface Conversation {
+/** One Claude Code conversation in a folder, without its messages (for lists and pickers). */
+export interface ConversationSummary {
   readonly sessionId: string;
   readonly title: string;
   readonly lastModified: number;
+  readonly createdAt?: number;
+}
+
+export interface Conversation extends ConversationSummary {
   readonly items: LogItem[];
+  /** Every conversation in that folder, newest first (this one included). */
+  readonly all?: readonly ConversationSummary[];
 }
 
 const MAX_ITEMS = 200;
@@ -22,6 +33,10 @@ const SUMMARY_CHARS = 1200;
 const CONTINUED = 'This session is being continued from a previous conversation';
 /** Lines Claude Code adds itself (slash commands, hooks, reminders): not something you typed. */
 const MACHINE = /^\s*<(command-|local-command|system-reminder|user-prompt-submit-hook|bash-|task-notification)/;
+/** Claude Code's own markers when you stop it ("[Request interrupted by user]"). */
+const INTERRUPTED = /^\[Request interrupted by user[^\]]*\]$/;
+/** Instructions a tool wraps around what you typed (Conductor adds its own in <system_instruction>). */
+const WRAPPERS = /<(system_instruction|system-instruction)>[\s\S]*?<\/\1>/g;
 
 type Block = { type?: string; text?: string; name?: string; input?: Record<string, unknown> };
 const blocksOf = (message: unknown): Block[] => {
@@ -30,9 +45,20 @@ const blocksOf = (message: unknown): Block[] => {
   return Array.isArray(content) ? (content as Block[]) : [];
 };
 
+/** What you typed in a user entry, without the instructions tools wrap around it. */
+export function typedText(message: unknown): string {
+  return blocksOf(message)
+    .filter((b) => b.type === 'text' && typeof b.text === 'string')
+    .map((b) => b.text as string)
+    .join('\n')
+    .replace(WRAPPERS, '')
+    .trim();
+}
+
 /**
  * Turn a Claude Code conversation into klaud's chat: your messages, and one Claude card
- * per turn with its steps and final words. Sub-agent chatter and tool output are left out.
+ * per turn with its steps (tool calls, in words) and final words. Sub-agent chatter and
+ * tool output are left out.
  */
 export function transcriptToLog(messages: readonly TranscriptMessage[], opts: { selfId: string; selfName: string; cwd: string; start: number; end: number }): LogItem[] {
   const items: LogItem[] = [];
@@ -62,14 +88,10 @@ export function transcriptToLog(messages: readonly TranscriptMessage[], opts: { 
     if (m.parent_tool_use_id) return; // inside a sub-agent
     const ts = tsAt(i);
     if (m.type === 'user') {
-      const text = blocksOf(m.message)
-        .filter((b) => b.type === 'text' && typeof b.text === 'string')
-        .map((b) => b.text as string)
-        .join('\n')
-        .trim();
+      const text = typedText(m.message);
       if (!text) return;
       flush(); // a new message (yours, or a background task reporting back) starts Claude's next turn
-      if (MACHINE.test(text)) return;
+      if (MACHINE.test(text) || INTERRUPTED.test(text)) return;
       if (text.startsWith(CONTINUED)) {
         const summary = text.slice(text.indexOf('Summary:') >= 0 ? text.indexOf('Summary:') + 8 : 0).trim();
         const short = summary.length > SUMMARY_CHARS ? `${summary.slice(0, SUMMARY_CHARS).trimEnd()}…` : summary;
@@ -93,15 +115,5 @@ export function transcriptToLog(messages: readonly TranscriptMessage[], opts: { 
   return items.slice(-MAX_ITEMS);
 }
 
-/**
- * The latest Claude Code conversation that ran in exactly this folder (e.g. a worktree
- * made by Conductor or by Claude Code itself), ready to show and to continue.
- */
-export async function findConversation(dir: string, self: { id: string; name: string }): Promise<Conversation | undefined> {
-  const sessions = await listSessions({ dir, includeWorktrees: false, limit: 10 });
-  const latest = sessions.filter((s) => !s.cwd || s.cwd === dir).sort((a, b) => b.lastModified - a.lastModified)[0];
-  if (!latest) return undefined;
-  const messages = (await getSessionMessages(latest.sessionId, { dir })) as TranscriptMessage[];
-  const items = transcriptToLog(messages, { selfId: self.id, selfName: self.name, cwd: dir, start: latest.createdAt ?? latest.lastModified, end: latest.lastModified });
-  return { sessionId: latest.sessionId, title: latest.customTitle ?? latest.summary, lastModified: latest.lastModified, items };
-}
+/** Ids of chat items that came from a transcript (so a fresh import may replace them). */
+export const isImportedItem = (id: string): boolean => /^(t-\d+|import-)/.test(id);

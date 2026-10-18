@@ -11,17 +11,24 @@ import { Palette } from './dialogs/Palette.js';
 import { Settings } from './dialogs/Settings.js';
 import { PlanSheet } from './dialogs/PlanSheet.js';
 import type { SettingsPane } from './lib/klaud.js';
-import { Inspector } from './layout/Inspector.js';
+import { RightPanel } from './layout/RightPanel.js';
 import { Main } from './layout/Main.js';
 import { Sidebar } from './layout/Sidebar.js';
 import { useActions } from './lib/actions.js';
 import { commandForKey, runCommand } from './lib/commands.js';
 import { useApp, useKlaud } from './lib/klaud.js';
 import { setPrefs, usePrefs, zoom } from './lib/prefs.js';
+import { byKey, showPanelTab, togglePanel, toggleTerminal } from './lib/panel.js';
+import { PANEL_LABELS, PANEL_TABS } from './lib/panel-model.js';
 import { joinRoom, useMenuState, useNative, useNotificationTaps, useTrayStatus, useWindowFocus } from './lib/native.js';
 import { AddProjectSheet } from './dialogs/AddProjectSheet.js';
+import { UndoToast } from './lib/undo-toast.js';
 import { NativeSheets } from './dialogs/native/WorkSheets.js';
 import { JoinSheet } from './dialogs/JoinSheet.js';
+import { NetworkSheets } from './network/NetworkSheets.js';
+import { StripeSheet } from './dialogs/StripeSheet.js';
+import { useIdleAway, useTrayPresence } from './network/net-native.js';
+import { useUpdateActivity } from './lib/updates.js';
 import { useState } from 'react';
 import s from './layout/Shell.module.css';
 
@@ -100,9 +107,24 @@ function useShortcuts() {
       if (cmd && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         ui.patch({ palette: !ui.get().palette });
-      } else if (cmd && e.key.toLowerCase() === 'j') {
+      } else if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'j') {
+        // ⌘ only: ⌃J is a newline in a shell.
         e.preventDefault();
-        setPrefs({ dock: prefs.dock === 'off' ? 'right' : 'off' });
+        byKey('terminal', () => {
+          const why = toggleTerminal(state);
+          if (why) client.store.dispatch({ type: 'toast', text: why, level: 'info' });
+        });
+      } else if (e.altKey && e.metaKey && !e.shiftKey && e.code === 'Digit0') {
+        // ⌥⌘0 shows and hides the right panel, as in Xcode (⌥⌘I still does too).
+        e.preventDefault();
+        byKey('panel', togglePanel);
+      } else if (e.altKey && e.metaKey && !e.shiftKey && /^Digit[1-4]$/.test(e.code)) {
+        // ⌥⌘1…4: the panel's Changes, Files, Terminal and Info.
+        e.preventDefault();
+        const tab = PANEL_TABS[Number(e.code.slice(5)) - 1]!;
+        byKey(`panel-${tab}`, () => {
+          if (!showPanelTab(state, tab)) client.store.dispatch({ type: 'toast', text: `No ${PANEL_LABELS[tab]} here`, level: 'info' });
+        });
       } else if (cmd && e.key === ',') {
         e.preventDefault();
         ui.patch({ settings: 'general' });
@@ -117,7 +139,7 @@ function useShortcuts() {
         zoom('reset');
       } else if (e.altKey && cmd && e.code === 'KeyI') {
         e.preventDefault();
-        setPrefs({ inspector: !prefs.inspector });
+        byKey('panel', togglePanel);
       } else if (e.ctrlKey && e.metaKey && e.code === 'KeyS') {
         e.preventDefault();
         setPrefs({ sidebar: !prefs.sidebar });
@@ -143,7 +165,7 @@ function useShortcuts() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [prefs.inspector, prefs.sidebar, prefs.dock]);
+  }, [prefs.inspector, prefs.sidebar]);
   useEffect(() => {
     // The Invite sheet, set to the project you're looking at (as the terminal UI's Invite is).
     const invite = (): void => ui.openMenu({ kind: 'invite_link', ...inviteChoice(projectInView(client)) });
@@ -196,12 +218,15 @@ export function App() {
   useMenuState(client);
   useWindowFocus(client);
   useNotificationTaps(client, ui, actions);
+  useTrayPresence(client);
+  useIdleAway(client);
+  useUpdateActivity(client, actions);
   return (
     <Tooltip.Provider delayDuration={450} skipDelayDuration={200}>
       <div className={s.app}>
         {prefs.sidebar ? <Sidebar /> : null}
         <Main />
-        {prefs.inspector ? <Inspector /> : null}
+        <RightPanel />
       </div>
       <MenuSheet />
       <AddProjectSheet />
@@ -209,8 +234,11 @@ export function App() {
       <Palette />
       <Settings />
       <PlanSheet />
+      <NetworkSheets />
+      <StripeSheet />
       {joining ? <JoinSheet invite={joining} onCancel={() => setJoining(undefined)} onJoin={() => void joinRoom(joining)} /> : null}
       <Toasts />
+      <UndoToast />
     </Tooltip.Provider>
   );
 }

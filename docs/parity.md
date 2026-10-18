@@ -13,16 +13,16 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `/room` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Sidebar › Chat (⌥1) |
 | `/new` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Sidebar project ⌥ button · File › New Worktree… (⌘⇧N) · ⌘K · empty Overview / chat › New Worktree |
 | `/chat` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Sidebar + · File › New Chat (⌘N) |
-| `/review` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Workspace › Diff tab |
+| `/review` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · the right panel's Changes tab (⌥⌘1; a diff opens in full with ⌘↩) |
 | `/pr` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar PR · ⌘K |
-| `/run` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar Run · Terminal tab Run · person sheet “Run a command…” |
-| `/terminal` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Workspace › Terminal tab · ⌘J dock · Go › Terminal (⌥6) |
-| `/setup` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Terminal tab Setup |
+| `/run` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar Run (shows the terminal, keeps the keyboard in the message box) · the panel's Terminal tab ▶ · person sheet “Run a command…” |
+| `/terminal` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · the right panel's Terminal tab (⌥⌘3) or the drawer under the chat (⌘J, Settings › Terminal picks which) · Go › Terminal (⌥6) |
+| `/setup` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · the panel terminal's Commands… |
 | `/handoff` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar ⋯ › Hand off |
 | `/model` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Composer model picker |
 | `/search` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Sidebar › Search · ⌘⇧F |
 | `/usage` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Sidebar › Usage (⌥5) |
-| `/inbox` | `session.submit` → `runCommand` | typed in the composer · top bar “● N new” | typed in the composer · toolbar bell (notification centre) · Inspector › Notifications · Go › Inbox · ⌘K › Notifications |
+| `/inbox` | `session.submit` → `runCommand` | typed in the composer · top bar “● N new” | typed in the composer · toolbar bell (notification centre) · the right panel's Info › Notifications · Go › Inbox · ⌘K › Notifications |
 | `/template` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Palette › Start from a template… |
 | `/shell` | `session.submit` → `runCommand` (`/shell fish`, `default`, `login on\|off`, `args …`) | typed in the composer · Settings › Workspaces › Terminal | typed in the composer · Settings › Terminal › Shell |
 | `/env` | `session.submit` → `runCommand` (`/env KEY=value`, `KEY=` removes, `project KEY=value`) | typed in the composer · Settings › Workspaces › Environment variables | typed in the composer · Settings › Environment |
@@ -30,7 +30,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `/merge` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar Merge (the main button when ready) · Workspace › Merge (⇧⌘M) |
 | `/commit` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar Commit · Workspace › Commit (⇧⌘C) |
 | `/fork` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar ⋯ › Fork |
-| `/finder` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar ⋯ › Finder · Inspector Finder |
+| `/finder` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar ⋯ › Finder · the panel's Info › Finder · Files › Show in Finder |
 | `/archive` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Toolbar ⋯ › Archive · Usage row Archive |
 | `/restore` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Archived row › Restore |
 | `/delete` | `session.submit` → `runCommand` | typed in the composer | typed in the composer · Archived row › Delete |
@@ -197,6 +197,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `files.closeViewer` | ✓ | ✓ |
 | `files.readImage` | ✓ | ✓ |
 | `workspaces.open` | ✓ | ✓ |
+| `workspaces.load` | — (opening a workspace loads it) | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ | ✓ |
 | `workspaces.newWorktree` | ✓ | ✓ |
 | `workspaces.newChat` | ✓ | ✓ |
@@ -204,6 +205,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `workspaces.startWorktree` | ✓ | ✓ |
 | `workspaces.branches` | — (Mac only: worktrees start from the default branch) | New worktree › Based on popup |
 | `workspaces.fork` | ✓ | ✓ |
+| `workspaces.continueInWorktree` | — (asking Claude for a change in a main-folder chat moves it; the core runs the same `continueInWorktree`) | Continue in New Worktree… (toolbar and the ask banner) › sheet: Task, Based on, Name |
 | `workspaces.archive` | ✓ | ✓ |
 | `workspaces.restore` | ✓ | ✓ |
 | `workspaces.remove` | ✓ | ✓ |
@@ -217,12 +219,22 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `workspaces.openInFinder` | ✓ | ✓ |
 | `workspaces.setGroup` | ✓ | ✓ |
 | `workspaces.renameGroup` | – | ✓ (group row › Rename) |
-| `workspaces.ungroup` | – | ✓ (group row › Ungroup) |
+| `workspaces.ungroup` | – | ✓ (group row › Ungroup / Delete Group) |
+| `workspaces.arrange` | — (Mac only, see below; the terminal lists projects in the order you arranged them) | drag projects and groups in the sidebar, Move Up / Move Down (⌃⌘↑/↓), Move to Group ▸ |
+| `workspaces.newGroup` | — (Mac only, see below) | Projects + › New Group, right-click › New Group, Move to Group ▸ New Group… |
+| `workspaces.showProject` | — (Mac only, see below; the terminal adds it back with /project add) | Hidden Projects in the sidebar, Settings › Workspaces, the Add Projects sheet's Show |
 | `workspaces.hideProject` | ✓ | ✓ |
 | `workspaces.cleanAgentWorktrees` | ✓ | ✓ |
+| `workspaces.otherOrigins` | — (Mac only) | the Conductor / Claude Code / Other Worktrees folds in a project |
+| `workspaces.worktreeInfo` | — (Mac only) | the page a worktree from another tool shows when it has no conversation (or About This Worktree) |
+| `workspaces.showConversation` | — (Mac only) | that page › Earlier conversations › Show |
+| `workspaces.removeOther` | — (Mac only) | that page › Remove Worktree… (asks first; keeps the branch) |
+| `workspaces.staleOthers` | — (Mac only) | a fold's Clean Up… |
+| `workspaces.cleanUpOthers` | — (Mac only) | Clean Up… › Remove (only what you ticked; branches kept) |
 | `workspaces.addProject` | ✓ | ✓ |
 | `workspaces.addFolder` | ✓ | ✓ |
 | `workspaces.selectFile` | ✓ | ✓ |
+| `workspaces.review` | — (Mac only: the terminal loads it by opening the Diff tab) | the right panel's Changes tab (loads and refreshes the changes while you stay in the chat) |
 | `workbench.run` | ✓ | ✓ |
 | `workbench.stopRun` | ✓ | ✓ |
 | `workbench.runSetup` | ✓ | ✓ |
@@ -259,30 +271,40 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `projects.icon` | — (a terminal can't draw images) | ✓ project icons in the sidebar |
 | `projects.iconAt` | — | ✓ icons of suggested folders |
 | `projects.setIcon` | — | ✓ right-click a project › Change Icon… |
-| `network.status` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.friends.list` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.friends.invite` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.friends.accept` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.friends.cancelInvite` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.friends.remove` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.dm.send` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.dm.history` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.list` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.create` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.send` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.history` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.addMember` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.removeMember` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.setAdmin` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.leave` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.rename` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.invite` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.join` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.approve` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.groups.decline` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.presence.set` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.presence.get` | — (Mac only, see below) | core ready; People, groups and status UI come next |
-| `network.read` | — (Mac only, see below) | core ready; People, groups and status UI come next |
+| `network.setEnabled` | — (Mac only, see below) | ✓ the Friends card’s Turn On, Settings › People & access › Talk with friends directly (starts and stops live) |
+| `network.status` | — (Mac only, see below) | ✓ the network is on (the Friends card, Settings › People & access) |
+| `network.friends.list` | — (Mac only, see below) | ✓ sidebar Friends (presence dots, notes, unread, relayed link) |
+| `network.friends.invite` | — (Mac only, see below) | ✓ Add a Friend sheet › Create Invitation (code, link, QR, expiry) |
+| `network.friends.accept` | — (Mac only, see below) | ✓ Add a Friend sheet › Have a code or link? (pasted from the clipboard; `klaud://add…` links open it) |
+| `network.friends.cancelInvite` | — (Mac only, see below) | ✓ Add a Friend sheet › Cancel Invitation; replacing a group link |
+| `network.friends.remove` | — (Mac only, see below) | ✓ right-click a friend › Remove… (alert); the conversation’s ⋯ |
+| `network.dm.send` | — (Mac only, see below) | ✓ the conversation’s message box; Send Again on an undelivered one |
+| `network.dm.history` | — (Mac only, see below) | ✓ Show Earlier Messages |
+| `network.groups.list` | — (Mac only, see below) | ✓ sidebar Groups (unread, join requests) |
+| `network.groups.create` | — (Mac only, see below) | ✓ New Group sheet (name, friends with checkboxes) |
+| `network.groups.send` | — (Mac only, see below) | ✓ the group’s message box |
+| `network.groups.history` | — (Mac only, see below) | ✓ Show Earlier Messages |
+| `network.groups.addMember` | — (Mac only, see below) | ✓ Add People… sheet; right-click a friend › Add to Group ▸ |
+| `network.groups.removeMember` | — (Mac only, see below) | ✓ group info › a member’s menu › Remove… (alert) |
+| `network.groups.setAdmin` | — (Mac only, see below) | ✓ group info › a member’s menu › Make Admin / Remove as Admin |
+| `network.groups.leave` | — (Mac only, see below) | ✓ Leave Group… (alert) from the sidebar, the header ⋯ or the group info |
+| `network.groups.rename` | — (Mac only, see below) | ✓ rename in place in the group info, or the sidebar (double-click, Rename…) |
+| `network.groups.invite` | — (Mac only, see below) | ✓ group info › Invite with a Link (Approve Each Request / Anyone with the Link), Copy Invite Link |
+| `network.groups.join` | — (Mac only, see below) | ✓ Join a Group sheet (`klaud://join#…` links) |
+| `network.groups.approve` | — (Mac only, see below) | ✓ group info › Asking to Join › Approve |
+| `network.groups.decline` | — (Mac only, see below) | ✓ group info › Asking to Join › Decline |
+| `network.presence.set` | — (Mac only, see below) | ✓ your status (sidebar footer, menu bar, palette), Away when idle |
+| `network.presence.get` | — (Mac only, see below) | ✓ the shared state’s `network.self` (no call needed) |
+| `network.read` | — (Mac only, see below) | ✓ opening a conversation reads it (the `conversation` view is shown); Mark as Read on a group |
+| `stripe.connect` | — (Mac only, see below) | ✓ Connect Stripe… (a project's right-click and ⋯ menus, the Inspector's Earnings row, the Overview's hint and Earnings card): the Connect Stripe sheet checks the key with Stripe and shows the account |
+| `stripe.disconnect` | — (Mac only, see below) | ✓ the Connect Stripe sheet › Disconnect |
+| `stripe.refresh` | — (Mac only, see below) | ✓ Refresh in the Inspector's Earnings row, the sheet and the Overview's Earnings card (the daemon also refreshes once a day by itself) |
+| `gateway.list` | — (Mac only, see below) | ✓ the shared state's `gateway` (task cards in conversations, Requests) |
+| `gateway.confirm` | — (Mac only, see below) | ✓ the “Ask bob's Claude?” card in a conversation: Ask / Not now |
+| `gateway.cancel` | — (Mac only, see below) | ✓ Cancel on a task card and in Requests (sent), Stop in Requests (received) |
+| `gateway.ask` | — (Mac only, see below) | ✓ Requests › Ask someone's Claude… |
+| `gateway.setNote` | — (Mac only, see below) | ✓ Requests › your “Ask me for…” note |
+| `claudeCode.steps` | — (Mac only, see below) | ✓ a Claude Code session's or agent's live, read-only transcript (Activity, the strip above a workspace's chat, the Inspector's Claude Code panel) |
 ## Sending while Claude works, and images
 
 | What | Core | Terminal | Mac |
@@ -302,7 +324,8 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | What | Where | Why |
 |---|---|---|
 | Mouse escape codes, OSC 52 copy, terminal zoom, focus reports | Terminal | they are the terminal's own features (`src/ui/tty`) |
-| Window vibrancy, menu bar, menu-bar icon, `klaud://` links, Settings window, ⌘K palette, docked terminal (⌘J), drag-and-drop images | Mac | native window features; the actions they run are the shared ones above |
+| Window vibrancy, menu bar, menu-bar icon, `klaud://` links, Settings window, ⌘K palette, drag-and-drop images | Mac | native window features; the actions they run are the shared ones above |
+| A workspace's screen: the conversation always in the center; a right panel (⌥⌘0, resizable, its tab remembered per workspace) with Changes (files with +/−, the diff inline, Commit / PR / Review), Files (a tree you filter by name, a preview), Terminal (the workspace's shells, setup and run) and Info (the inspector); ⌘J's terminal in that panel or a drawer under the chat; a diff, file or the terminal in full for a while (⌘↩, Esc back) | Mac (`layout/RightPanel.tsx`, `layout/panel/*`, `lib/panel.ts`) | the terminal app switches the whole screen between Chat, Files, Diff and Terminal tabs (the same shared actions: `workspaces.open`, `workspaces.selectFile`, `files.*`, `terminals.*`) |
 | Dock badge, clicking a desktop notification to go where it's about | Mac | the app shell's (`set_tray_status`, the notification plugin's taps); the count is the shared `badgeCount` |
 | Marking one notification unread again | Mac (hover a notification) | the terminal's inbox is a menu: opening a notice reads it, and it has Mark all as read |
 | Desktop notifications through the terminal (OSC 9/99, terminal-notifier, notify-send) | Terminal | `src/ui/tty/desktop-notify.ts`; which events notify, Do Not Disturb and “only when klaud isn’t in front” are shared settings the core applies for both |
@@ -318,6 +341,8 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | Clicking an invite link (`klaud://<key>…#secret`) opens the Join sheet | Mac (`lib/native.ts` `inviteOf`) | the terminal joins with `klaud join <link>` |
 | Forms instead of typing in the message box: fork name, project Setup/Run (with where each comes from, and “Save to klaud.json”: `workbench.setScript(…, team)`), PR with extra instructions, new template with Plan first (`workbench.saveTemplate(…, plan)`), hand off, a worktree or a command on a friend's computer, the model, the welcome choice | Mac (`dialogs/native/`, `lib/native-routes.ts`) | the terminal types a /command or asks in its box; the Mac's message box is only for messages (`tests/mac-no-typing.test.ts` lists every place the shared runners type) |
 | Groups in the sidebar: Move to Group ▸ submenu, a new group named in place, rename, ungroup (`workspaces.renameGroup`, `workspaces.ungroup`), drag a project onto a group or out of it | Mac (`layout/ProjectGroups.tsx`) | the terminal moves projects with its project menu and a typed name |
+| Arranging the sidebar Finder-style: drag projects to reorder them (an insertion line, the list scrolls near its edges, Esc puts it back), drop one on a group (the folder lights up; a folded one springs open) or between a group's projects, pull it out to the top level, drag groups among the projects; Move Up / Move Down (⌃⌘↑/↓) in a row's menu; empty groups you make stay until you delete them (`workspaces.arrange`, `workspaces.newGroup`; the order lives in projects.json's `order` and each group's list, see `src/workspaces/arrange.ts`). Project rows don't fold (their worktrees and chats always show, never the main checkout; clicking one opens the project); groups fold, with a count | Mac (`layout/ProjectTree.tsx`, `layout/arrange-drag.ts`, `layout/project-layout.ts`) | the terminal keeps its project list and folding as they are; it shows projects and groups in the order you arranged them (`projects` / `projectGroups` come ordered), with no new UI |
+| Hiding a project with Undo (“Hidden klaude — Undo”, ⌘Z) instead of an alert; Hidden Projects folded at the bottom of the sidebar, in Settings › Workspaces and in the Add Projects sheet, each with Show (`workspaces.showProject`; it comes back in its place and group) | Mac (`layout/ProjectTree.tsx`, `lib/undo-toast.tsx`) | the terminal hides from its project menu (with its own confirmation) and adds a project back with /project add |
 | “Connect GitHub” with copyable commands and Check Again (`workbench.refreshPrs(id, true)` looks for gh again) | Mac (PR sheet) | the terminal says to install gh in its PR menu |
 | Stop your Claude in one conversation (`host.stopRun`): your queued messages there come back into the box, other people's requests keep their places and run next, other conversations carry on | Mac (■ Stop beside the send control, ⌘., Conversation › Stop Claude, Stop on a running answer) | the terminal keeps `/stop` (everywhere); `host.stopRun` is in the core for any screen |
 | Workspace and Conversation menus in the menu bar (Commit ⇧⌘C, Pull Request… ⇧⌘P, Merge ⇧⌘M, Run ⌘R, Ask Claude to Review ⇧⌘R, Archive… ⌃⌘A, Stop ⌘., Plan First ⌥⌘P, Find ⌘F / ⌘G / ⇧⌘G, Clear ⇧⌘K, Previous/Next Workspace ⌥⌘↑/↓), greyed out when they can't run (`lib/commands.ts`, `set_menu_state`) | Mac | the same workspace actions as the toolbar (`workspaceButtons`); the terminal has its top bar and /commands |
@@ -327,9 +352,16 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | Right-click menus: messages (Copy, Copy as Markdown, Quote in Reply, Ask Claude About This, Open Image), code blocks, files (Open, Show in Finder, Copy Path, Mention in Chat, Save a Copy…), changed files and commits in Diff, search results, Usage rows, notifications | Mac | native context menus; what they run is shared (`files.open`, `files.download`, `inbox.*`…) |
 | Save a shared file where you choose (`files.download` with `to`, the Save panel) | Mac | the terminal saves to ~/Downloads/klaud |
 | A new worktree's form: Based on (`workspaces.branches`), Name, Create Worktree (`workspaces.startWorktree` with `base` / `name`) | Mac | the terminal names it from the task and starts from the default branch |
+| Never change main: every Claude run in a project's main folder (the main checkout, or a chat there) is questions only. Edits, writes and shell commands that aren't clearly read-only are denied (`agent/policy.ts` `askOnly`, `agent/read-only.ts`), Claude is told so, and a change request makes it call `continue_in_worktree`: a new worktree from the latest origin, named after the task, with the conversation carried over (history copied, Claude's session forked), and the work goes on there (your own requests move right away; someone else's ask you first) | both (core) | the terminal shows the same notes in the chat and goes to the new worktree; no new terminal UI |
+| A project's home (`project` view): icon, name, main's branch and how it compares with origin, counts (active / ready to merge / archived, earnings), “What do you want to do in …?” with New Worktree (Based on, Name) or Just Ask, then its worktrees, questions and recently archived (Show All in Overview). Clicking a project opens it | Mac (`views/ProjectHome.tsx`, `lib/project-home.ts`) | the terminal keeps its project rows; it never gets this view |
+| A questions-only chat: “Questions only — Claude won’t change anything in main.” above the box, Continue in New Worktree… as the toolbar's main button, “Ask about <project>…” in the box | Mac (`chat/AskBanner.tsx`, `dialogs/native/ContinueSheet.tsx`) | the terminal's runs there are read-only too |
+| Friends, direct messages, groups and your status (the klaud network): sidebar Friends and Groups with presence and unread, the Add a Friend sheet (code, link, QR; `klaud://add` / `klaud://join` links), conversations (`conversation` view), New Group / Add People sheets, group info (members, admins, invite link, join requests, rename, leave), the status menu in the sidebar and the menu bar, Away when idle, Settings › People & access switch | Mac (`src/network/*`) | on purpose (docs/network.md): the terminal app keeps its rooms and stays as it is; notifications for messages come from the shared Notifier (`mentions`) |
 | Empty states with one-click starters (New Worktree, New Chat, Add Projects…, first tasks for Claude) | Mac | the terminal's empty views say what to type |
 | The palette's commands as named actions (“Create Pull Request…”, “Fork This Workspace…”), never `/cmd <arg>` | Mac (`dialogs/palette-commands.ts`) | the terminal has the commands themselves |
 | The klaud network: friends added once by a one-time link or a short code, direct messages that wait for offline friends, groups that live on their members' Macs (no host, end-to-end encrypted, admins add and remove people, join by link), and your status (online, away, do not disturb, appear offline) — the `network.*` API and the shared state's `network` | Mac (the daemon runs it when `network: true` is in settings or `KLAUD_NETWORK=1`; `src/net/mesh/`, `src/core/network.ts`) | a home for people and conversations beyond one room is the Mac app's job; the terminal app keeps its rooms (`klaud host` / `klaud join`), which work as before |
+| Earnings from Stripe per project: a key per project (kept in ~/.klaud/stripe.json, 0600; screens only get `earnings`: connected, the account's name, all-time totals per currency, when they were counted, what went wrong), counted in the background once a day (incrementally, with a full recount weekly), shown as a pill beside each project in the sidebar, in the Inspector, and as a card in the Overview — the `stripe.*` API and the shared state's `earnings` | Mac (`src/core/stripe-earnings.ts`, the daemon runs it; `components/EarningsPill.tsx`, `dialogs/StripeSheet.tsx`, `lib/earnings.ts`) | a glance at what each app earns belongs beside the projects in the Mac app's sidebar; the terminal app stays about the work, and the core refuses `stripe.*` where no daemon runs it |
+| Claude Code running outside klaud, live and read-only: sessions you run through Conductor or a terminal, and their sub-agents (description, type, running / finished / failed / stopped / idle, the current step, steps, context), found by watching the transcripts Claude Code writes in ~/.claude/projects (never written to; tailed from the end, at most the last 200 steps per agent kept), in Activity (every live session by project, “6 agents running”), a strip above a workspace's chat and the Inspector's Claude Code panel (the session's folder is the workspace's, Conductor worktrees included), and a read-only transcript per session or agent; a background agent finishing notifies (`background`) — the `claudeCode.steps` API and the shared state's `claudeCode` (screens on this computer only, never sent to the room) | Mac (`src/core/claude-code/`, the daemon runs it; `src/claude-code/*` in the app) | the terminal app is where you'd run Claude Code itself; watching several sessions and their agents side by side is the Mac app's job |
+| Tasks between Claudes (the gateway): your Claude finds who can help (`who_can`), asks their Claude (`ask_person`) or runs one command on their Mac (`run_on`), waits (`wait_for`) or ends its turn and continues when the answer comes back; you're asked first for people you don't trust (a card in the conversation), their side approves with today's approval cards unless they trust you; results go only to the requester, as data. Task cards in conversations, the Requests view (Sent / Received) — the `gateway.*` API and the shared state's `gateway` | Mac (`src/core/gateway/`, the daemon runs it; `src/gateway/*` in the app) | on purpose: the terminal app stays as it is; the tools exist for every Claude but say the klaud app is needed where no daemon runs the gateway |
 
 ## Adding a feature
 

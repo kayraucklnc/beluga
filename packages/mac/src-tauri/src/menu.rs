@@ -30,6 +30,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         true,
         &[
             &PredefinedMenuItem::about(app, Some("About Klaud"), Some(about))?,
+            // Handled in lib.rs (updater.rs): it works even while the window can't reach klaud.
+            &item(app, "check-updates", "Check for Updates…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item(app, "settings", "Settings…", Some("CmdOrCtrl+,"))?,
             &PredefinedMenuItem::separator(app)?,
@@ -58,6 +60,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::separator(app)?,
             &item(app, "share-folder", "Share a Folder…", None)?,
             &item(app, "invite", "Invite…", Some("CmdOrCtrl+Shift+I"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &item(app, "add-friend", "Add a Friend…", None)?,
+            &item(app, "new-group", "New Group…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::close_window(app, None)?,
         ],
@@ -111,18 +116,19 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
                 "Toggle Sidebar",
                 Some("Ctrl+CmdOrCtrl+S"),
             )?,
+            // The right panel (Xcode's inspector keys: ⌥⌘0 shows and hides it, ⌥⌘1…4 pick a tab).
             &item(
                 app,
                 "toggle-inspector",
-                "Toggle Inspector",
-                Some("Alt+CmdOrCtrl+I"),
+                "Toggle Panel",
+                Some("Alt+CmdOrCtrl+0"),
             )?,
-            &item(
-                app,
-                "toggle-dock",
-                "Terminal Beside Chat",
-                Some("CmdOrCtrl+J"),
-            )?,
+            &item(app, "panel-changes", "Changes", Some("Alt+CmdOrCtrl+1"))?,
+            &item(app, "panel-files", "Files", Some("Alt+CmdOrCtrl+2"))?,
+            &item(app, "panel-terminal", "Terminal", Some("Alt+CmdOrCtrl+3"))?,
+            &item(app, "panel-info", "Info", Some("Alt+CmdOrCtrl+4"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &item(app, "toggle-dock", "Toggle Terminal", Some("CmdOrCtrl+J"))?,
             &PredefinedMenuItem::separator(app)?,
             &appearance,
             &item(app, "zoom-in", "Bigger Text", Some("CmdOrCtrl+="))?,
@@ -318,17 +324,76 @@ pub fn on_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     }
 }
 
-/// The icon in the menu bar: open klaud, or quit it (leaving the room).
-pub fn tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let menu = Menu::with_items(
+/// Your status on the klaud network, as the menu-bar menu shows it (see `set_tray_presence`).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct TrayPresence {
+    /// online, away, dnd or offline (appear offline).
+    pub state: String,
+    /// "Do Not Disturb until 3:30 PM · in a meeting".
+    pub line: String,
+}
+
+/// The status items: Online / Away / Do Not Disturb / Appear Offline (yours ticked), pausing
+/// notifications for a while, and the window's status sheet for a note.
+fn status_items<R: Runtime>(
+    app: &AppHandle<R>,
+    p: &TrayPresence,
+) -> tauri::Result<Vec<MenuItemKind<R>>> {
+    let check = |id: &str, label: &str, state: &str| {
+        CheckMenuItem::with_id(app, id, label, true, p.state == state, None::<&str>)
+            .map(MenuItemKind::Check)
+    };
+    let pause = Submenu::with_items(
         app,
+        "Pause Notifications",
+        true,
         &[
-            &item(app, "show", "Open Klaud", None)?,
-            &item(app, "new-chat", "New Chat", None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &item(app, "quit", "Quit Klaud", None)?,
+            &item(app, "status-dnd-hour", "For 1 Hour", None)?,
+            &item(app, "status-dnd-tomorrow", "Until Tomorrow", None)?,
         ],
     )?;
+    Ok(vec![
+        MenuItemKind::MenuItem(MenuItem::with_id(
+            app,
+            "status-line",
+            &p.line,
+            false,
+            None::<&str>,
+        )?),
+        check("status-online", "Online", "online")?,
+        check("status-away", "Away", "away")?,
+        check("status-dnd", "Do Not Disturb", "dnd")?,
+        check("status-offline", "Appear Offline", "offline")?,
+        MenuItemKind::Submenu(pause),
+        MenuItemKind::MenuItem(item(app, "status-set", "Set a Status…", None)?),
+        MenuItemKind::Predefined(PredefinedMenuItem::separator(app)?),
+    ])
+}
+
+/// The menu-bar menu: your status (while you're on the klaud network), open klaud, quit.
+pub fn tray_menu<R: Runtime>(
+    app: &AppHandle<R>,
+    presence: Option<&TrayPresence>,
+) -> tauri::Result<Menu<R>> {
+    let menu = Menu::new(app)?;
+    if let Some(p) = presence {
+        for it in status_items(app, p)? {
+            menu.append(&it)?;
+        }
+    }
+    menu.append(&item(app, "show", "Open Klaud", None)?)?;
+    menu.append(&item(app, "new-chat", "New Chat", None)?)?;
+    if presence.is_some() {
+        menu.append(&item(app, "add-friend", "Add a Friend…", None)?)?;
+    }
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&item(app, "quit", "Quit Klaud", None)?)?;
+    Ok(menu)
+}
+
+/// The icon in the menu bar: open klaud, or quit it (leaving the room).
+pub fn tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    let menu = tray_menu(app, None)?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
     TrayIconBuilder::with_id("klaud")
         .icon(icon)

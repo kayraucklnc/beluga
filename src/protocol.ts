@@ -182,6 +182,8 @@ export const ReportBody = z.object({
 
 /** The host cleared the group chat for everyone. */
 export const RoomClearedBody = z.object({ kind: z.literal('room_cleared') });
+/** The gateway (tasks between Claudes, core/gateway) over a room: one frame, to one person; it checks the frame itself. */
+export const GatewayBody = z.object({ kind: z.literal('gateway'), frame: z.unknown() });
 
 // ---- Claude asking the person who asked it (questions, plans to approve) ----
 
@@ -392,6 +394,7 @@ export const Body = z.discriminatedUnion('kind', [
   FileRequestResultBody,
   FileOfferBody,
   RoomClearedBody,
+  GatewayBody,
   ShareOfferBody,
   AgentQuestionBody,
   AgentAnswerBody,

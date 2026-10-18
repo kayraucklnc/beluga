@@ -4,9 +4,12 @@ import type { Actions } from './actions.js';
 import type { UiStore } from './klaud.js';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { setPrefs, getPrefs, zoom } from './prefs.js';
-import { badgeCount, noticeTarget } from '@klaud/ui/notice-models.js';
-import { NOTIFICATION_TAP, openNoticeTarget } from './notices.js';
+import { byMenu, showPanelTab, togglePanel, toggleTerminal } from './panel.js';
+import { PANEL_LABELS, PANEL_TABS, type PanelTab } from './panel-model.js';
+import { badgeCount } from '@klaud/ui/notice-models.js';
+import { NOTIFICATION_TAP, macNoticeTarget, openNoticeTarget } from './notices.js';
 import { COMMAND_IDS, type CommandId, commandState, runCommand } from './commands.js';
+import { openNetworkLink, runNetworkMenuItem } from '../network/net-native.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
@@ -25,6 +28,8 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
   const state = client.store.getState();
   const project = state.view.kind === 'workspace' ? state.projects.find((p) => p.workspaces.some((w) => w.id === (state.view as { id: string }).id)) : state.projects.find((p) => p.root);
   if (GO[id]) return actions.run({ type: 'view', view: { kind: GO[id]! } });
+  // Friends, groups and your status (Add a Friend…, the menu bar's status items).
+  if (runNetworkMenuItem(id, client)) return;
   if (isCommand(id)) return runCommand({ client, ui, actions }, id);
   switch (id) {
     case 'settings':
@@ -50,9 +55,23 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'toggle-sidebar':
       return setPrefs({ sidebar: !getPrefs().sidebar });
     case 'toggle-dock':
-      return setPrefs({ dock: getPrefs().dock === 'off' ? 'right' : 'off' });
+      // ⌘J: the terminal, where you keep it (the drawer under the chat or the right panel).
+      return byMenu('terminal', () => {
+        const why = toggleTerminal(state);
+        if (why) client.store.dispatch({ type: 'toast', text: why, level: 'info' });
+      });
     case 'toggle-inspector':
-      return setPrefs({ inspector: !getPrefs().inspector });
+      return byMenu('panel', togglePanel);
+    case 'panel-changes':
+    case 'panel-files':
+    case 'panel-terminal':
+    case 'panel-info': {
+      const tab = id.slice('panel-'.length) as PanelTab;
+      if (!PANEL_TABS.includes(tab)) return;
+      return byMenu(`panel-${tab}`, () => {
+        if (!showPanelTab(state, tab)) client.store.dispatch({ type: 'toast', text: `No ${PANEL_LABELS[tab]} here`, level: 'info' });
+      });
+    }
     case 'appearance-system':
     case 'appearance-light':
     case 'appearance-dark':
@@ -88,8 +107,11 @@ export function useNative(client: SocketClient, ui: UiStore, actions: Actions, o
       // The same link can come both ways (live and from the launch buffer): handle it once.
       const handled = new Set<string>();
       const open = (url: string): void => {
+        if (handled.has(url)) return;
+        // klaud://add… and klaud://join#…: a friend's or a group's invitation (the klaud network).
+        if (openNetworkLink(url)) return void handled.add(url);
         const invite = inviteOf(url);
-        if (!invite || handled.has(url)) return;
+        if (!invite) return;
         handled.add(url);
         onInvite(invite);
       };
@@ -180,10 +202,10 @@ export function useWindowFocus(client: SocketClient): void {
 export function useNotificationTaps(client: SocketClient, ui: UiStore, actions: Actions): void {
   useEffect(() => {
     const go = (channel: string | undefined): void => {
-      const target = noticeTarget(client.store.getState(), channel);
+      const target = macNoticeTarget(client.store.getState(), channel);
       if (!target || channel === undefined) return ui.patch({ notices: true });
       void client.api.inbox.read({ channel });
-      openNoticeTarget(actions, target);
+      openNoticeTarget(actions, target, (id) => client.store.dispatch({ type: 'view', view: { kind: 'conversation', id } }));
     };
     const onTap = (e: Event): void => go((e as CustomEvent<{ channel?: string } | undefined>).detail?.channel);
     document.addEventListener(NOTIFICATION_TAP, onTap);

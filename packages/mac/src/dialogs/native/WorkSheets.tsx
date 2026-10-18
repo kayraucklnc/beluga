@@ -10,6 +10,7 @@ import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
 import { type NativeSheet, closeSheet, useSheet } from '../../lib/sheets.js';
 import { RemoteWorktreeForm } from './RemoteWorktreeSheet.js';
 import { TemplateEditorSheet } from './TemplatesSheet.js';
+import { ContinueSheet } from './ContinueSheet.js';
 
 /** The folder and branch name klaud makes from a name (as the core's `slug` does). */
 const slug = (name: string): string =>
@@ -151,6 +152,8 @@ export function NativeSheets() {
   switch (sheet.kind) {
     case 'fork':
       return <ForkSheet key={sheet.wsId} wsId={sheet.wsId} close={close} />;
+    case 'continue_worktree':
+      return <ContinueSheet key={sheet.wsId} wsId={sheet.wsId} close={close} />;
     case 'peer_run':
       return <PeerRunSheet key={sheet.peerId ?? ''} {...(sheet.peerId ? { peerId: sheet.peerId } : {})} close={close} />;
     case 'template':

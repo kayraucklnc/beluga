@@ -1,0 +1,281 @@
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import type { WorktreeInfo } from '@klaud/core/other-worktrees.js';
+import { formatBytes } from '@klaud/shared/format.js';
+import { SOURCE_FOLDS, type WorktreeSource, sourceFromPath } from '@klaud/workspaces/origin.js';
+import type { Workspace } from '@klaud/workspaces/types.js';
+import { Alert } from '../components/Alert.js';
+import { Icon, type IconName } from '../components/Icon.js';
+import { Button, Tip } from '../components/ui.js';
+import { useActions } from '../lib/actions.js';
+import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { setWorktreeFlag, useWorktreeInfo } from './worktree-info-state.js';
+import s from './worktree-info.module.css';
+import { LivePanel } from '../claude-code/Live.js';
+
+/**
+ * What a worktree made outside Klaud is (Conductor's, Claude Code's, a script's): who made it,
+ * its branch and state, the Claude Code conversations that ran in it, and what you can do
+ * with it. Shown instead of an empty chat, and from "About This Worktree" over one with a
+ * conversation.
+ */
+
+export const SOURCE_ICON: Readonly<Record<WorktreeSource, IconName>> = { conductor: 'grid', claude: 'claude', other: 'branch' };
+
+const day = (ms: number): string => new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+const when = (ms: number): string => new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
+function ago(ms: number): string {
+  const d = Math.floor((Date.now() - ms) / 86_400_000);
+  if (d <= 0) return 'today';
+  if (d === 1) return 'yesterday';
+  if (d < 45) return `${d} days ago`;
+  const m = Math.round(d / 30);
+  return m < 18 ? `${m} months ago` : `${Math.round(d / 365)} years ago`;
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={s.field}>
+      <dt>{label}</dt>
+      <dd className="selectable">{children}</dd>
+    </div>
+  );
+}
+
+/** Asks before removing a worktree made outside Klaud; with uncommitted changes the button says what's lost. */
+export function RemoveWorktreeAlert({ ws, info, onDone, onCancel }: { ws: Workspace; info?: WorktreeInfo; onDone: (removed: boolean) => void; onCancel: () => void }) {
+  const api = useApi();
+  const [busy, setBusy] = useState(false);
+  const changed = info?.changed ?? ws.status?.changed ?? 0;
+  const branch = info?.branch ?? ws.branch;
+  const conductor = (info?.origin.source ?? sourceFromPath(ws.path)) === 'conductor';
+  const go = (): void => {
+    setBusy(true);
+    void api.workspaces
+      .removeOther(ws.id, changed > 0)
+      .then((done) => onDone(Boolean(done)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Alert
+      icon="archive"
+      tone={changed > 0 ? 'danger' : 'caution'}
+      title={`Remove “${ws.name}”?`}
+      message={
+        <>
+          <p>
+            Klaud deletes its folder and git’s record of it.{' '}
+            {branch ? (
+              <>
+                The branch <strong>{branch}</strong> stays, so nothing committed is lost.
+              </>
+            ) : (
+              'It isn’t on a branch, so commits only it has may be hard to find later.'
+            )}
+          </p>
+          {changed > 0 ? (
+            <p>
+              <strong>It has {plural(changed, 'uncommitted change')}.</strong> They’ll be lost.
+            </p>
+          ) : null}
+          {conductor ? <p>If you still use it in Conductor, archive it there instead: Conductor would show it as missing.</p> : null}
+        </>
+      }
+      confirm={{ label: changed > 0 ? 'Remove Anyway' : 'Remove', destructive: true, disabled: busy, onClick: go }}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function Conversations({ ws, info }: { ws: Workspace; info: WorktreeInfo }) {
+  const api = useApi();
+  const talked = useApp((st) => st.log.some((l) => l.channel === `ws:${ws.id}` && !/^(t-\d+|import-)/.test(l.id)));
+  if (!info.conversations.length) {
+    return (
+      <p className={s.quiet}>
+        No Claude Code conversation ran in this folder, so there’s nothing to continue.
+        {info.creator?.cwd ? ` The one that made it ran in ${info.creator.cwd}.` : ''}
+      </p>
+    );
+  }
+  return (
+    <ul className={s.convos} aria-label="Claude Code conversations">
+      {info.conversations.map((c) => (
+        <li key={c.sessionId} className={s.convo}>
+          <Icon name="chat" size={14} className={s.convoIcon} />
+          <span className={s.convoText}>
+            <span className={s.convoTitle}>{c.title}</span>
+            <span className={s.convoWhen}>Last active {when(c.lastModified)}</span>
+          </span>
+          <Button
+            size="small"
+            disabled={talked || Boolean(ws.sessionId)}
+            onClick={() => {
+              setWorktreeFlag('about', ws.id, false);
+              void api.workspaces.showConversation(ws.id, c.sessionId);
+            }}
+          >
+            Show
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Size on disk: measured on request (it walks every worktree's folder). */
+function useSize(id: string): number | undefined {
+  const api = useApi();
+  const size = useApp((st) => st.disk[id]);
+  const asked = useRef(false);
+  useEffect(() => {
+    if (size !== undefined || asked.current) return;
+    asked.current = true;
+    void api.workbench.measureDisk().catch(() => undefined);
+  }, [api, size]);
+  return size;
+}
+
+export function WorktreeInfoPage({ ws }: { ws: Workspace }) {
+  const actions = useActions();
+  const api = useApi();
+  const { client } = useKlaud();
+  const statusKey = `${ws.status?.changed ?? '-'}:${ws.status?.ahead ?? '-'}:${ws.status?.behind ?? '-'}:${ws.branch ?? ''}`;
+  const { info, loading, error } = useWorktreeInfo(ws.id, statusKey);
+  const hasChat = useApp((st) => st.log.some((l) => l.channel === `ws:${ws.id}`));
+  const size = useSize(ws.id);
+  const [removing, setRemoving] = useState(false);
+  const source = info?.origin.source ?? sourceFromPath(ws.path);
+  const start = (): void => {
+    setWorktreeFlag('started', ws.id, true);
+    setWorktreeFlag('about', ws.id, false);
+    setTimeout(() => document.dispatchEvent(new CustomEvent('klaud:focus-composer')), 30);
+  };
+  return (
+    <div className={s.page} data-testid="worktree-info">
+      <div className={s.inner}>
+        <header className={s.head}>
+          <span className={s.badge} aria-hidden="true">
+            <Icon name={SOURCE_ICON[source]} size={22} />
+          </span>
+          <div className={s.headText}>
+            <h1 className={s.title}>{ws.name}</h1>
+            <p className={s.origin}>{info?.origin.label ?? SOURCE_FOLDS[source].title}</p>
+          </div>
+          {hasChat ? (
+            <Button size="small" variant="quiet" icon="back" onClick={() => setWorktreeFlag('about', ws.id, false)}>
+              Back to Conversation
+            </Button>
+          ) : null}
+        </header>
+        <p className={s.lead}>{info?.origin.detail ?? SOURCE_FOLDS[source].explainer}</p>
+        <LivePanel workspaceId={ws.id} />
+        {info?.stale ? (
+          <p className={s.stale}>
+            <Icon name="check" size={13} /> Safe to remove: {info.staleText?.toLowerCase()}.
+          </p>
+        ) : null}
+        {info?.missing ? (
+          <p className={s.warn}>
+            <Icon name="alert" size={13} /> Its folder is gone. Git still lists it; removing it tidies that up.
+          </p>
+        ) : null}
+
+        <div className={s.actions}>
+          {!info?.missing ? (
+            <Button variant="primary" icon="chat" onClick={start}>
+              Start a Conversation Here
+            </Button>
+          ) : null}
+          {!info?.missing ? (
+            <Button icon="folder" onClick={() => void api.workspaces.openInFinder(ws.id)}>
+              Open in Finder
+            </Button>
+          ) : null}
+          {!info?.missing ? (
+            <Button icon="terminal" onClick={() => actions.run({ type: 'open_ws', id: ws.id, tab: 'terminal' })}>
+              Open in Terminal
+            </Button>
+          ) : null}
+          <span className={s.flex} />
+          <Button variant="danger" icon="archive" onClick={() => setRemoving(true)}>
+            Remove Worktree…
+          </Button>
+        </div>
+
+        <section className={s.card} aria-label="About this worktree">
+          <dl className={s.fields}>
+            <Field label="Branch">{info ? (info.branch ?? 'None (detached)') : (ws.branch ?? '…')}</Field>
+            <Field label="Based on">{info?.base ?? ws.base ?? '…'}</Field>
+            <Field label="Made">{info?.createdAt ? `${day(info.createdAt)} (${ago(info.createdAt)})` : loading ? '…' : 'Unknown'}</Field>
+            <Field label="Last commit">
+              {info?.lastCommit ? (
+                <>
+                  {ago(info.lastCommit.at)} · <span className={s.subject}>{info.lastCommit.subject}</span>
+                </>
+              ) : loading ? (
+                '…'
+              ) : (
+                'None'
+              )}
+            </Field>
+            <Field label="Compared with base">{info ? `${plural(info.ahead, 'commit')} ahead · ${info.behind} behind${info.merged ? ' · all merged' : ''}` : '…'}</Field>
+            <Field label="Uncommitted">{info ? (info.changed ? plural(info.changed, 'file') : 'Nothing') : '…'}</Field>
+            <Field label="Size on disk">{size !== undefined ? formatBytes(size) : 'Measuring…'}</Field>
+            {info?.conductor ? (
+              <Field label="In Conductor">
+                {info.conductor.name}
+                {info.conductor.state ? ` · ${info.conductor.state}` : ''}
+                {info.conductor.prTitle ? ` · PR: ${info.conductor.prTitle}` : ''}
+              </Field>
+            ) : null}
+            {info?.creator ? (
+              <Field label="Made by">
+                Claude in “{info.creator.title ?? info.creator.sessionId.slice(0, 8)}”{info.creator.at ? `, ${day(info.creator.at)}` : ''}
+                {info.creator.cwd ? ` (ran in ${info.creator.cwd})` : ''}
+              </Field>
+            ) : null}
+            <Field label="Folder">
+              <Tip label="Copy path">
+                <button type="button" className={s.path} onClick={() => void navigator.clipboard?.writeText(ws.path).then(() => toast(client, 'Copied the path', 'success'))}>
+                  {ws.path}
+                </button>
+              </Tip>
+            </Field>
+          </dl>
+        </section>
+
+        <section className={s.section}>
+          <h2 className={s.h2}>{info?.conversations.length ? `Claude Code conversations (${info.conversations.length})` : 'Claude Code conversations'}</h2>
+          {info ? <Conversations ws={ws} info={info} /> : error ? <p className={s.quiet}>Couldn’t look: {error}</p> : <p className={s.quiet}>Looking…</p>}
+        </section>
+      </div>
+      {removing ? (
+        <RemoveWorktreeAlert
+          ws={ws}
+          {...(info ? { info } : {})}
+          onCancel={() => setRemoving(false)}
+          onDone={(removed) => {
+            setRemoving(false);
+            if (removed) actions.run({ type: 'close_tab', id: ws.id });
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** Above a conversation shown from another tool: where it came from, and its info page. */
+export function OtherWorktreeBanner({ ws }: { ws: Workspace }) {
+  const source = sourceFromPath(ws.path);
+  return (
+    <div className={s.banner}>
+      <Icon name={SOURCE_ICON[source]} size={13} />
+      <span className={s.bannerText}>{source === 'other' ? 'A worktree made outside Klaud' : `A worktree from ${SOURCE_FOLDS[source].title}`}. It becomes one of yours once you send a message here.</span>
+      <Button size="small" variant="quiet" onClick={() => setWorktreeFlag('about', ws.id, true)}>
+        About This Worktree
+      </Button>
+    </div>
+  );
+}

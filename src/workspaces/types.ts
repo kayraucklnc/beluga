@@ -13,6 +13,16 @@ export interface WorkspaceUsage {
   /** The SDK reports running totals per conversation; remembered to add only what's new. */
   readonly lastSession?: string;
   readonly last?: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number; readonly cost: number };
+  /** What each local day ("2026-10-18") added, the last few weeks (see usage-days.ts). */
+  readonly days?: Readonly<Record<string, UsageDay>>;
+  /** When Claude last reported usage here (epoch ms). */
+  readonly lastAt?: number;
+}
+
+/** Claude usage on one day: tokens (input, output and cache writes) and estimated cost in USD. */
+export interface UsageDay {
+  readonly tokens: number;
+  readonly cost: number;
 }
 
 export type WorkspaceKind = 'main' | 'worktree' | 'chat';
@@ -50,6 +60,11 @@ export interface Workspace extends WorkspaceRecord {
   /** A worktree that exists in git but wasn't created by klaud (e.g. by another tool). */
   readonly external: boolean;
   readonly status?: Status;
+  /**
+   * A project's main folder (its main checkout, or a chat there): questions only. Claude can read
+   * and answer but changes nothing; work moves to a new worktree.
+   */
+  readonly askOnly?: boolean;
 }
 
 export interface Project {
@@ -78,6 +93,11 @@ export interface ProjectsConfig {
   readonly hidden: readonly string[];
   /** Your own grouping of projects in the sidebar. */
   readonly groups?: readonly ProjectGroup[];
+  /**
+   * The sidebar's top level in the order you arranged it: project roots and `group:<name>`.
+   * Missing until you arrange something (then: projects alphabetically, then groups).
+   */
+  readonly order?: readonly string[];
   /** Setup / run commands you set per project (by project root), over klaud.json and guesses. */
   readonly scripts?: Readonly<Record<string, ProjectScripts>>;
   /** Setup commands from a project's own klaud.json/conductor.json you allowed to run (by root → command hashes). */

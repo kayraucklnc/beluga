@@ -3,6 +3,9 @@ import { ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EFFORTS, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
 import { ENV_KEY, MAX_ENV_VALUE, MAX_ENV_VARS } from '../shared/env-vars.js';
 import { NETWORK_API } from './network-api.js';
+import { STRIPE_API } from './stripe-api.js';
+import { CLAUDE_CODE_API } from './claude-code-api.js';
+import { GATEWAY_API } from './gateway-api.js';
 
 /**
  * Everything a client can ask klaud to do, in one list. The daemon validates every call
@@ -55,6 +58,8 @@ const Policy = z.enum(['ask', 'auto', 'deny']);
 const Answer = z.enum(['yes', 'no', 'always']);
 const LinkOptions = z.object({ scope: id, can: GuestCan, knock: bool, singleUse: bool, expiresInMs: z.number().int().min(0) });
 const GuestPatch = z.object({ addProject: opt(id), room: opt(bool), can: opt(GuestCan) });
+/** A project (by id) or a group (by name) in the sidebar's arrangement. */
+const ArrangeTarget = z.union([z.object({ project: id }).strict(), z.object({ group: z.string().min(1).max(80) }).strict()]);
 const TermSize = z.object({ cols: z.number().int().min(1).max(1000), rows: z.number().int().min(1).max(500) });
 
 export const API = {
@@ -145,6 +150,8 @@ export const API = {
 
   // ---- projects and workspaces
   'workspaces.open': args(id, opt(WorkspaceTab)),
+  // Load a workspace's saved conversation without going there (the Mac Overview's read-only look at an archived one).
+  'workspaces.load': args(id),
   'workspaces.refresh': args(),
   'workspaces.newWorktree': args(id, z.string().max(200), opt(z.object({ base: opt(z.string().min(1).max(250)) }))),
   'workspaces.newChat': args(id, z.string().max(200), opt(path)),
@@ -153,6 +160,8 @@ export const API = {
   // What a new worktree can start from: → { base: the default, branches: default first, then newest }.
   'workspaces.branches': args(id),
   'workspaces.fork': args(id, z.string().max(200)),
+  // Carry a conversation (an ask chat in a main folder, or any chat) into a new worktree and go on there → the new workspace's id.
+  'workspaces.continueInWorktree': args(id, opt(z.object({ task: opt(str), base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)) }).strict())),
   'workspaces.archive': args(id, opt(bool)),
   'workspaces.restore': args(id),
   'workspaces.remove': args(id),
@@ -167,11 +176,25 @@ export const API = {
   'workspaces.setGroup': args(id, opt(z.string().max(80))),
   'workspaces.renameGroup': args(z.string().min(1).max(80), z.string().max(80)),
   'workspaces.ungroup': args(z.string().min(1).max(80)),
+  // Arranging the sidebar: move a project (into a group or to the top level) or a group, before another item or last.
+  'workspaces.arrange': args(ArrangeTarget, opt(z.object({ into: opt(z.string().min(1).max(80).nullable()), before: opt(ArrangeTarget.nullable()) }).strict())),
+  // A new empty group, before an item or last; with a project, it moves in. → its name.
+  'workspaces.newGroup': args(z.string().min(1).max(80), opt(z.object({ before: opt(ArrangeTarget.nullable()), project: opt(id) }).strict())),
+  'workspaces.showProject': args(path),
   'workspaces.hideProject': args(id),
   'workspaces.cleanAgentWorktrees': args(id),
+  // Worktrees klaud didn't make (Conductor's, Claude Code's, a script's): who made them, their info page, tidying up.
+  'workspaces.otherOrigins': args(id),
+  'workspaces.worktreeInfo': args(id),
+  'workspaces.showConversation': args(id, z.string().min(1).max(100)),
+  'workspaces.removeOther': args(id, opt(bool)),
+  'workspaces.staleOthers': args(id, opt(z.enum(['conductor', 'claude', 'other']))),
+  'workspaces.cleanUpOthers': args(id, z.array(id).max(500)),
   'workspaces.addProject': args(path),
   'workspaces.addFolder': args(path),
   'workspaces.selectFile': args(z.number().int().min(0)),
+  // Load (or reload) what changed in a workspace without going to it (the Mac app's Changes panel).
+  'workspaces.review': args(id),
 
   // ---- runs, scripts, pull requests, models, search, templates
   'workbench.run': args(id),
@@ -227,6 +250,11 @@ export const API = {
 
   // ---- the klaud network: friends, direct messages, groups, your status (network-api.ts)
   ...NETWORK_API,
+
+  // ---- earnings from Stripe, per project (stripe-api.ts)
+  ...STRIPE_API,
+  ...CLAUDE_CODE_API,
+  ...GATEWAY_API,
 } as const;
 
 export type Api = typeof API;

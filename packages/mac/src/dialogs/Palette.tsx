@@ -8,7 +8,10 @@ import { useActions } from '../lib/actions.js';
 import { useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { setPrefs, usePrefs, zoom } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
+import { showPanelTab, tabsOf, togglePanel, toggleTerminal } from '../lib/panel.js';
+import { PANEL_LABELS, panelDigit } from '../lib/panel-model.js';
 import { paletteCommands } from './palette-commands.js';
+import { networkPaletteItems } from '../network/net-palette.js';
 import s from './palette.module.css';
 
 interface Item {
@@ -52,7 +55,8 @@ export function Palette() {
   const ws = state.view.kind === 'workspace' ? findWorkspace(state.projects, state.view.id) : undefined;
   const here: Item[] = ws
     ? [
-        ...(['chat', 'files', 'review', 'terminal'] as const).map((tab) => ({ id: `tab:${tab}`, label: `Show ${tab === 'review' ? 'Diff' : tab[0]!.toUpperCase() + tab.slice(1)}`, icon: (tab === 'chat' ? 'chat' : tab === 'files' ? 'folder' : tab === 'review' ? 'diff' : 'terminal') as IconName, run: () => actions.run({ type: 'open_ws', id: ws.id, tab }) })),
+        // The right panel's tabs (the center stays on the conversation).
+        ...tabsOf(state).map((tab) => ({ id: `panel:${tab}`, label: `Show ${PANEL_LABELS[tab]}`, hint: 'in the panel', keys: `⌥${mod()}${panelDigit(tab)}`, icon: (tab === 'changes' ? 'diff' : tab === 'files' ? 'folder' : tab === 'terminal' ? 'terminal' : 'inspector') as IconName, run: () => void showPanelTab(state, tab) })),
         ...workspaceButtons(state, ws)
           .filter((b) => !b.disabled)
           .map((b) => ({ id: `ws-action:${b.action}`, label: b.label, hint: b.hint, icon: (b.action === 'merge' ? 'merge' : b.action === 'pr' ? 'pr' : b.action === 'run' ? 'play' : b.action === 'archive' ? 'archive' : b.action === 'share' ? 'share' : b.action === 'handoff' ? 'hand' : 'claude') as IconName, run: () => actions.run({ type: 'ws', id: ws.id, action: b.action }) })),
@@ -73,6 +77,8 @@ export function Palette() {
     .map((p, index) => ({ p, index }))
     .filter(({ p }) => p.peerId !== state.selfId)
     .map(({ p, index }) => ({ id: `person:${p.peerId}`, label: p.name, hint: 'trust, follow, run a command, share…', icon: 'person' as IconName, run: () => ui.openMenu({ kind: 'person', index }) }));
+  // Friends and groups (the klaud network), and adding a friend or a group.
+  const net = networkPaletteItems(state, client);
   // The /commands as things to do (no `<arg>` syntax); the ones that need more open their sheet.
   const commands: Item[] = paletteCommands({ client, ui, actions, state });
   const window: Item[] = [
@@ -80,7 +86,8 @@ export function Palette() {
     { id: 'inbox', label: 'Notifications', hint: 'What happened while you were elsewhere', icon: 'bell', run: () => ui.patch({ notices: true }) },
     { id: 'appearance', label: `Appearance: ${prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark'}`, icon: 'eye', run: () => setPrefs({ appearance: prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark' }) },
     { id: 'sidebar', label: prefs.sidebar ? 'Hide the sidebar' : 'Show the sidebar', keys: '⌃⌘S', icon: 'sidebar', run: () => setPrefs({ sidebar: !prefs.sidebar }) },
-    { id: 'inspector', label: prefs.inspector ? 'Hide the inspector' : 'Show the inspector', keys: `${mod()}⌥I`, icon: 'inspector', run: () => setPrefs({ inspector: !prefs.inspector }) },
+    { id: 'inspector', label: prefs.inspector ? 'Hide the panel' : 'Show the panel', hint: 'Changes, files, terminal, info', keys: `⌥${mod()}0`, icon: 'panelRight', run: togglePanel },
+    { id: 'terminal-toggle', label: 'Show or hide the terminal', hint: prefs.termIn === 'drawer' ? 'under the chat' : 'in the panel', keys: `${mod()}J`, icon: 'terminal', run: () => void toggleTerminal(client.store.getState()) },
     { id: 'bigger', label: 'Bigger text', keys: `${mod()}+`, icon: 'plus', run: () => zoom('in') },
     { id: 'smaller', label: 'Smaller text', keys: `${mod()}−`, icon: 'x', run: () => zoom('out') },
     { id: 'copy-answer', label: "Copy Claude's last answer", icon: 'copy', run: () => void client.api.session.copyLastAnswer() },
@@ -90,8 +97,9 @@ export function Palette() {
     ['Here', here],
     ['Go to', nav],
     ['Workspaces', places],
-    ['New', create],
-    ['People', people],
+    ['New', [...create, ...net.create]],
+    ['Friends and groups', net.friends],
+    ['In this room', people],
     ['Window', window],
     ['Commands', commands],
   ];

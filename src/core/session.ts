@@ -35,6 +35,7 @@ import type { GuestControl, ProjectInvites } from './project-invites.js';
 import type { GuestShell } from './guest-shell.js';
 import { type SharedDiff, guestMayDo } from './shared-diff.js';
 import type { EnvVars } from './env-vars.js';
+import { gatewayOf } from './gateway/registry.js';
 
 /** Bigger, smaller, or back to normal text. */
 export type ZoomDir = 'in' | 'out' | 'reset';
@@ -80,7 +81,9 @@ export interface SessionOptions {
   /** Where recent requests are remembered across restarts (omit in tests: memory only). */
   readonly replayFile?: string;
   /** Read Claude Code conversations from other tools (omitted in tests and the demo). */
-  readonly findConversation?: (dir: string, self: { id: string; name: string }) => Promise<Conversation | undefined>;
+  readonly findConversation?: (dir: string, self: { id: string; name: string }, opts?: { sessionId?: string; prefer?: string }) => Promise<Conversation | undefined>;
+  /** Read Conductor's and Claude Code's data about worktrees klaud didn't make (omitted in tests and the demo). */
+  readonly otherTools?: import('./other-worktrees.js').OtherTools;
   /** How friends' commands run on this computer (the demo injects canned output). */
   readonly runShell?: ShellRunner;
   /** Stop klaud itself (the daemon, or the terminal UI running it). */
@@ -132,6 +135,7 @@ const GUARDED = new Set([
   'shell_started',
   'fs_search',
   'ws_diff',
+  'gateway',
 ]);
 
 export { dirKey };
@@ -733,6 +737,10 @@ export class Session {
       case 'fs_search_result':
       case 'ws_diff_result':
         this.files.settle(from, body.reqId, body);
+        return;
+      case 'gateway':
+        // Tasks between Claudes (core/gateway): sent to one person; the gateway checks who may say what.
+        gatewayOf(this)?.onRoomFrame(from, body.frame);
         return;
       case 'room_cleared':
         if (this.store.getState().peers.find((p) => p.peerId === from)?.host) {

@@ -6,6 +6,7 @@ import { capabilities, connect, inApp } from './lib/boot.js';
 import { KlaudProvider } from './lib/klaud.js';
 import { apply, zoom } from './lib/prefs.js';
 import { Button } from './components/ui.js';
+import { UpdateLayer } from './dialogs/UpdateSheet.js';
 import s from './layout/Shell.module.css';
 import './styles/tokens.css';
 import './styles/base.css';
@@ -50,6 +51,7 @@ function Root() {
   if (!client) {
     return (
       <div className={s.connecting} data-tauri-drag-region>
+        <UpdateLayer connected={false} />
         <div className={s.connectBox}>
           <strong>{error ? 'klaud isn’t running yet' : 'Starting klaud…'}</strong>
           {error ? <span>{error}</span> : null}
@@ -61,6 +63,7 @@ function Root() {
   return (
     <KlaudProvider client={client}>
       <App />
+      <UpdateLayer connected />
     </KlaudProvider>
   );
 }

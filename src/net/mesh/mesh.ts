@@ -53,6 +53,10 @@ interface MeshEvents {
   change: [];
   /** A message arrived, was sent, or changed status. */
   message: [MessageView];
+  /** A gateway frame from a friend (core/gateway checks and answers it). */
+  gateway: [string, unknown];
+  /** A link to someone came up (what waited for them can go now). */
+  link: [string];
 }
 
 const MAX_FRAME = 2 * 1024 * 1024;
@@ -306,6 +310,28 @@ export class Mesh extends EventEmitter<MeshEvents> {
     this.groups.decline(groupId, peerId);
   }
 
+  // ---- the gateway (tasks between Claudes ride on friends' links)
+
+  isFriend(peerId: string): boolean {
+    return this.friends.has(peerId);
+  }
+
+  isLinked(peerId: string): boolean {
+    return Boolean(this.links.get(peerId)?.isOpen);
+  }
+
+  nameFor(peerId: string): string {
+    return this.nameOf(peerId);
+  }
+
+  /** Hand a gateway frame to a friend's link; false when they're not linked now. */
+  sendGateway(peerId: string, payload: unknown): boolean {
+    const link = this.links.get(peerId);
+    if (!link?.isOpen || !this.friends.has(peerId)) return false;
+    link.send({ t: 'gw', p: payload });
+    return true;
+  }
+
   // ---- status and reading
 
   setPresence(next: Presence): Presence {
@@ -450,6 +476,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
     link.send({ t: 'hello', proto: PROTO, name: this.opts.name, presence: shown(this.presence) });
     this.groups.linkUp(link);
     for (const dm of this.dms.waiting(link.peerId)) link.send({ t: 'dm', id: dm.id, text: dm.text, ts: dm.ts });
+    this.emit('link', link.peerId);
     this.emit('change');
   }
 
@@ -481,6 +508,9 @@ export class Mesh extends EventEmitter<MeshEvents> {
         link.send({ t: 'dm_ack', id: msg.id });
         return;
       }
+      case 'gw':
+        if (this.friends.has(from)) this.emit('gateway', from, msg.p);
+        return;
       case 'dm_ack': {
         const dm = this.dms.delivered(from, msg.id);
         if (dm) {

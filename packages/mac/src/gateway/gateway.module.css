@@ -1,0 +1,299 @@
+/* Tasks between Claudes: the task card in a conversation and the Requests view. Restrained: one
+   accent dot for where a task is, the rest in the window's own greys. */
+
+.card {
+  margin: 4px 0;
+  padding: 10px 12px 11px;
+  border-radius: var(--radius-l);
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  max-width: 44rem;
+}
+.confirm {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 45%, var(--hairline-strong));
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.who {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.via {
+  color: var(--text-3);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.tone_claude {
+  color: var(--claude);
+}
+.tone_ok {
+  color: var(--ok);
+}
+.tone_warn {
+  color: var(--warn);
+}
+.tone_error {
+  color: var(--error);
+}
+.tone_muted {
+  color: var(--text-3);
+}
+.ask {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--hairline-strong);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 9.5em;
+  overflow: auto;
+}
+.command {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hint {
+  margin-top: 8px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+.edit {
+  margin-top: 8px;
+  width: 100%;
+  min-height: 4.5em;
+  resize: vertical;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  border: 0;
+  background: var(--bg-sunken);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  color: var(--text);
+  font: inherit;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+}
+.steps {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.step span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.result {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--hairline);
+}
+.label {
+  display: block;
+  margin: 10px 0 4px;
+  color: var(--text-3);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.problems {
+  margin-top: 8px;
+  color: var(--warn);
+  font-size: 0.88rem;
+}
+.table {
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  width: auto;
+  max-width: 100%;
+}
+.table th,
+.table td {
+  text-align: left;
+  padding: 3px 14px 3px 0;
+  border-bottom: 0.5px solid var(--hairline);
+  vertical-align: top;
+}
+.table th {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.table td.key {
+  color: var(--text-2);
+}
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.json {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  max-height: 14em;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+.file button {
+  all: unset;
+  cursor: pointer;
+  color: var(--text);
+}
+.file button:hover {
+  text-decoration: underline;
+}
+
+/* The Requests view */
+
+.page {
+  flex: 1;
+  overflow: auto;
+  padding: 18px 24px 32px;
+}
+.inner {
+  max-width: 52rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.grow {
+  flex: 1;
+}
+.note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-l);
+  background: var(--bg-sunken);
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+.note input,
+.composeRow input,
+.composeRow select {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-l);
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+}
+.composeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 10rem) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.rowOn {
+  background: var(--bg-selected);
+}
+.rowWho {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowAsk {
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowWhen {
+  color: var(--text-3);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.detail {
+  margin: 2px 0 8px 32px;
+}
+.empty {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--text-3);
+}
+
+/* In a conversation: lined up with the messages' text (past the avatar column). */
+.inLog {
+  max-width: var(--chat-max);
+  margin: 0 auto;
+  padding: 4px 24px 4px 68px;
+}

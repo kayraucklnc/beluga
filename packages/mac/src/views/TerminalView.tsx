@@ -4,6 +4,7 @@ import { Button, Dot, Empty, IconButton, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { type GlobalShells, useGlobalShells } from '../lib/shells.js';
+import { extraShells, useShellOwners } from '../lib/ws-shells.js';
 import s from './terminal.module.css';
 import { TerminalTab } from './TerminalTab.js';
 import { Xterm } from './Xterm.js';
@@ -16,6 +17,7 @@ export function TerminalView() {
   const state = useApp((st) => st);
   const picked = useUi((u) => u.termKey);
   const shells = useGlobalShells();
+  const owners = useShellOwners();
   const view = state.view;
   const { terminals, termExits, termNames } = state;
   const running = (k: string): boolean => k in terminals && !(k in termExits);
@@ -24,7 +26,9 @@ export function TerminalView() {
     const ws = findWorkspace(state.projects, view.id);
     if (!ws) return null;
     const project = state.projects.find((p) => p.id === ws.projectId);
-    const keys = [shellId(ws.id), setupId(ws.id), runId(ws.id)];
+    // Its shell, setup and run, and the shells added with + in the panel (lib/ws-shells.ts).
+    const extra = extraShells(owners, ws.id, terminals, undefined);
+    const keys = [shellId(ws.id), setupId(ws.id), runId(ws.id), ...extra];
     const key = picked && keys.includes(picked) && picked in terminals ? picked : shellId(ws.id);
     const tabs = keys.filter((k) => k in terminals || k === shellId(ws.id));
     return (
@@ -38,7 +42,7 @@ export function TerminalView() {
               on={k === key}
               className={s.tab}
               onClassName={s.tabOn}
-              renamable={k === shellId(ws.id)}
+              renamable={k === shellId(ws.id) || extra.includes(k)}
               onPick={() => ui.patch({ termKey: k })}
               before={running(k) ? <Dot tone="ok" /> : k in termExits ? <Dot tone={termExits[k] === 0 ? 'muted' : 'error'} /> : <Dot tone="muted" />}
               after={k in termExits ? <span className={s.exit}>{termExits[k] === 0 ? 'done' : `exit ${termExits[k] ?? '?'}`}</span> : null}
@@ -69,7 +73,7 @@ export function TerminalView() {
             Commands…
           </Button>
         </div>
-        <Xterm key={`${key}:${key in termExits ? 'x' : 'live'}`} termKey={key} start={(size) => (key === shellId(ws.id) ? void api.terminals.shell(ws.id, size) : undefined)} />
+        <Xterm key={`${key}:${key in termExits ? 'x' : 'live'}`} termKey={key} start={(size) => (key === shellId(ws.id) ? void api.terminals.shell(ws.id, size) : extra.includes(key) ? void api.terminals.global(key, ws.path, size) : undefined)} />
         {key in termExits && key === shellId(ws.id) ? (
           <div className={s.restart}>
             <Button size="small" onClick={() => void api.terminals.shell(ws.id)}>

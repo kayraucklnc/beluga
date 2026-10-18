@@ -91,6 +91,8 @@ export function currentWorkspace(state: AppState): Workspace | undefined {
 
 /** The conversation on screen, if one is (a workspace counts on any of its tabs). */
 export function currentChannel(state: AppState): string | undefined {
+  // A conversation with friends (the klaud network) has no Claude to stop, plan or clear.
+  if (state.view.kind === 'conversation') return undefined;
   return state.view.kind === 'workspace' ? channelOf(state.view) : shownChannel(state.view);
 }
 

@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../core/attachments.js';
-import { buildPrompt, buildSystemAppend, summarizeTool } from './prompt.js';
-import { DENY_REASON, decideTool } from './policy.js';
+import { buildAskOnlyAppend, buildPrompt, buildSystemAppend, summarizeTool } from './prompt.js';
+import { decideTool, denyReason } from './policy.js';
 import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
 import { SubAgentTracker } from './subagents.js';
 import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from './live-run.js';
@@ -89,10 +89,12 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const place = input.place;
       const cwd = place?.cwd ?? opts.cwd;
       const extraDirs = place ? place.additionalDirectories : opts.additionalDirectories;
-      const autoEdit = place?.autoEdit ?? opts.autoEdit;
+      // A project's main folder is questions only: nothing there changes (see policy.ts).
+      const askOnly = place?.askOnly;
+      const autoEdit = !askOnly && (place?.autoEdit ?? opts.autoEdit);
       const remember = (id: string): void => (place ? place.onSession(id) : void (sessionId = id));
       const subagents = new SubAgentTracker(cwd);
-      const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope };
+      const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, askOnly: Boolean(askOnly) };
       const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
         hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: reason },
       });
@@ -103,7 +105,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { klaud: roomTools },
+        mcpServers: { klaud: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -116,7 +118,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                   const toolInput = (hookInput.tool_input ?? {}) as Record<string, unknown>;
                   const decision = decideTool(hookInput.tool_name, toolInput, policy);
                   if (decision === 'allow') return {};
-                  if (decision === 'deny') return verdict('deny', DENY_REASON);
+                  if (decision === 'deny') return verdict('deny', denyReason(hookInput.tool_name, toolInput, policy));
                   return (await input.canUseTool(hookInput.tool_name, toolInput))
                     ? verdict('allow', 'Approved by the machine owner.')
                     : verdict('deny', 'The machine owner declined this action.');
@@ -125,7 +127,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + (askOnly ? buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree)) : '') },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
@@ -137,7 +139,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           if (toolName === 'AskUserQuestion') return answerQuestion(toolInput);
           if (toolName === 'ExitPlanMode') return reviewPlan(toolInput);
           const decision = decideTool(toolName, toolInput, policy);
-          if (decision === 'deny') return { behavior: 'deny', message: DENY_REASON };
+          if (decision === 'deny') return { behavior: 'deny', message: denyReason(toolName, toolInput, policy) };
           if (decision === 'allow' || (await input.canUseTool(toolName, toolInput))) return { behavior: 'allow', updatedInput: toolInput };
           return { behavior: 'deny', message: 'The machine owner declined this action.' };
         },

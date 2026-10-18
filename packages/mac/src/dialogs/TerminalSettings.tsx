@@ -131,10 +131,31 @@ function LookGroup() {
   );
 }
 
-/** Settings › Terminal: the shell (for every screen) and how terminals look here. */
+/** Where ⌘J (and Run) show the terminal in this window: the drawer under the chat or the right panel. */
+function PlaceGroup() {
+  const prefs = usePrefs();
+  return (
+    <Group title="In this window">
+      <Row label="⌘J opens the terminal" detail={prefs.termIn === 'drawer' ? 'It slides up under the conversation, across the window.' : 'It shows as the right panel’s Terminal tab, beside the conversation.'}>
+        <Segmented
+          label="Where the terminal opens"
+          value={prefs.termIn}
+          onChange={(v) => setPrefs({ termIn: v, ...(v === 'panel' ? { drawer: false } : {}) })}
+          options={[
+            { value: 'drawer', label: 'Bottom Drawer', icon: 'panelBottom' },
+            { value: 'panel', label: 'Right Panel', icon: 'panelRight' },
+          ]}
+        />
+      </Row>
+    </Group>
+  );
+}
+
+/** Settings › Terminal: the shell (for every screen), where it opens and how terminals look here. */
 export function TerminalSettings() {
   return (
     <>
+      <PlaceGroup />
       <ShellGroup />
       <LookGroup />
       <p className={t.note}>The shell applies to new terminals; ones already open keep theirs. The look changes right away.</p>

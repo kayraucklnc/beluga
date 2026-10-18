@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 /**
  * The message box is only for messages: confirmations are alerts with Cancel, names and commands
@@ -6,12 +6,14 @@ import { expect, test, type Page } from '@playwright/test';
  */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
+/** A project's own row in a part of the sidebar. */
+const row = (within: Locator, name: string) => within.locator('[data-drag^="project:"]').filter({ has: within.page().getByText(name, { exact: true }) });
 /** The composer (sheets are portalled outside #root, so their text areas don't count). */
 const composer = (page: Page) => page.locator('#root textarea:not(.xterm-helper-textarea)').first();
 
 async function openWorkspace(page: Page, name = 'add-auth'): Promise<void> {
   const row = sidebar(page).getByRole('button', { name, exact: true });
-  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click();
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
   await sidebar(page).getByRole('button', { name, exact: true }).click();
 }
 
@@ -74,6 +76,9 @@ test('a new group is named in place in the sidebar, then renamed and ungrouped',
 
 test("a project's Setup and Run commands are edited in a sheet and saved", async ({ page }) => {
   await openWorkspace(page);
+  // The workspace's details (the inspector) are the right panel's Info tab.
+  await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
+  await page.keyboard.press('Meta+Alt+4');
   await page.getByRole('button', { name: 'Commands', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: /bob-api Settings/ });
   await expect(sheet).toBeVisible();
@@ -136,36 +141,41 @@ test('templates: saved from a sheet (name, prompt, plan first), then picked from
   await expectEmptyComposer(page);
 });
 
-test('hiding a project asks first', async ({ page }) => {
+test('hiding a project says so with Undo, and Undo brings it back', async ({ page }) => {
   await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ button: 'right' });
-  await page.getByRole('menuitem', { name: /Hide this project/ }).click();
-  const alert = page.getByRole('alertdialog', { name: /Hide “landing”\?/ });
-  await expect(alert).toBeVisible();
-  await alert.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('menuitem', { name: /Hide this project/ })).toHaveCount(0);
+  await page.getByRole('menuitem', { name: 'Hide Project' }).click();
+  await expect(sidebar(page).getByRole('button', { name: 'landing' })).toHaveCount(0);
+  const toast = page.getByRole('status').filter({ hasText: 'Hidden landing' });
+  await expect(toast).toBeVisible();
+  await toast.getByRole('button', { name: 'Undo' }).click();
   await expect(sidebar(page).getByRole('button', { name: 'landing' }).first()).toBeVisible();
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
 });
 
-test('dragging a project onto a group moves it there, and out again ungroups it', async ({ page }) => {
+test('dragging a project onto a group moves it there, and out again takes it out', async ({ page }) => {
   await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Move to Group' }).hover();
   await page.getByRole('menuitem', { name: 'New Group…' }).click();
   const name = sidebar(page).getByRole('textbox', { name: /new group for landing/ });
   await name.fill('Drag here');
   await name.press('Enter');
-  const group = sidebar(page).getByRole('button', { name: 'Group Drag here' });
-  await expect(group).toContainText('1');
-  await sidebar(page).getByRole('button', { name: 'bob-api' }).first().dragTo(group);
-  await expect(group).toContainText('2');
-  // Out to the plain list (it says so while you drag): the group keeps one.
-  await sidebar(page).getByRole('button', { name: 'bob-api' }).first().hover();
+  const group = sidebar(page).getByRole('group', { name: 'Drag here' });
+  const head = sidebar(page).getByRole('button', { name: 'Group Drag here' });
+  await expect(row(group, 'landing')).toBeVisible();
+  await row(sidebar(page), 'bob-api').first().dragTo(head, { sourcePosition: { x: 60, y: 10 } });
+  await expect(row(group, 'bob-api')).toBeVisible();
+  // Out to the top level: pulled left below the group's last project.
+  const last = row(group, 'landing').first();
+  const box = (await last.boundingBox())!;
+  await row(group, 'bob-api').first().hover({ position: { x: 60, y: 10 } });
   await page.mouse.down();
-  await page.mouse.move(120, 300, { steps: 4 });
-  const out = sidebar(page).getByText('Drop here to take it out of its group');
-  await expect(out).toBeVisible();
-  await out.hover();
+  await page.mouse.move(box.x - 10, box.y + box.height * 2.5, { steps: 6 });
+  await page.mouse.move(box.x - 30, (await group.boundingBox())!.y + (await group.boundingBox())!.height - 4, { steps: 4 });
   await page.mouse.up();
-  await expect(group).toContainText('1');
-  await group.click({ button: 'right' });
+  await expect(row(group, 'bob-api')).toHaveCount(0);
+  await expect(sidebar(page).getByRole('button', { name: 'bob-api' }).first()).toBeVisible();
+  await head.click({ button: 'right' });
   await page.getByRole('menuitem', { name: /Ungroup/ }).click();
-  await expect(group).toBeHidden();
+  await expect(head).toBeHidden();
 });

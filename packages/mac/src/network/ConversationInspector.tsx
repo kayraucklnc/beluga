@@ -1,0 +1,79 @@
+import type { ReactNode } from 'react';
+import { Button, Tip } from '../components/ui.js';
+import { useApp } from '../lib/klaud.js';
+import { PersonAvatar } from './Avatars.js';
+import { conversationOf, presenceLine, shownState, sortMembers } from './net-model.js';
+import { openNet } from './net-sheets.js';
+import s from '../layout/Inspector.module.css';
+import n from './network.module.css';
+
+function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
+  return (
+    <section className={s.panel}>
+      <div className={s.panelHead}>
+        <h3>{title}</h3>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={s.field}>
+      <span className={s.fieldLabel}>{label}</span>
+      <span className={s.fieldValue}>{children}</span>
+    </div>
+  );
+}
+
+const since = (ts: number): string => new Date(ts).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
+
+/** The inspector beside a conversation with friends: who it's with (a friend, or a group's members). */
+export function ConversationDetails({ id }: { id: string }) {
+  const net = useApp((st) => st.network);
+  const target = conversationOf(id);
+  if (target?.kind === 'dm') {
+    const f = net.friends.find((x) => x.peerId === target.peerId);
+    if (!f) return null;
+    return (
+      <Panel title="Friend">
+        <Field label="Name">{f.name}</Field>
+        <Field label="Status">{presenceLine(f)}</Field>
+        <Field label="Connection">{!f.online ? 'Not connected' : f.via === 'relay' ? 'Through another member’s Mac' : 'Direct'}</Field>
+        <Field label="Added">{since(f.addedAt)}</Field>
+      </Panel>
+    );
+  }
+  if (target?.kind === 'group') {
+    const g = net.groups.find((x) => x.id === target.groupId);
+    if (!g) return null;
+    return (
+      <Panel
+        title="Group"
+        action={
+          <Button size="small" variant="quiet" icon="people" onClick={() => openNet({ kind: 'group_info', groupId: g.id })}>
+            Info
+          </Button>
+        }
+      >
+        <Field label="Name">{g.name}</Field>
+        <Field label="Members">
+          <span className={n.stack} style={{ ['--ring' as string]: 'var(--bg-sunken)', flexWrap: 'wrap', rowGap: 4 }}>
+            {sortMembers(g.members).map((m) => (
+              <Tip key={m.peerId} label={m.self ? `${m.name} (you)` : `${m.name} · ${presenceLine(m)}${m.admin ? ' · admin' : ''}`}>
+                <span style={{ marginRight: 4 }}>
+                  <PersonAvatar name={m.name} id={m.peerId} {...(m.self ? {} : { state: shownState(m) })} size={20} />
+                </span>
+              </Tip>
+            ))}
+          </span>
+        </Field>
+        <Field label="You">{g.active ? (g.admin ? 'Admin' : 'Member') : 'Left'}</Field>
+        <Field label="Created">{since(g.createdAt)}</Field>
+      </Panel>
+    );
+  }
+  return null;
+}
