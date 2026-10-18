@@ -24,6 +24,8 @@ const ENTRIES = [
   'src/ui/workspace-models.ts',
   'src/ui/work-models.ts',
   'src/ui/format.ts',
+  'src/ui/submit.ts',
+  'src/ui/keymap.ts',
 ];
 // Pure packages that run anywhere (string-width measures text the same way in both clients).
 const ALLOWED_PACKAGES = new Set(['zod', 'string-width']);

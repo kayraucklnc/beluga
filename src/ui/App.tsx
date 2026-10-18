@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Box, useApp, useInput, usePaste, useStdout } from 'ink';
 import type { KlaudClient } from '../ipc/client.js';
-import { type AppState, type Location, channelOf, peerName } from '../core/store.js';
+import { type AppState, type Location, peerName } from '../core/store.js';
 import { shareNameOf } from '../core/workspace-controller.js';
 import { localDirKey } from '../core/local.js';
 import { anyActivity } from './banner.js';
@@ -20,7 +20,7 @@ import { type Target, hitTest, offsetZones } from './hit.js';
 import { type Effect, type UiState, handleKey, initialUi, insertText } from './keymap.js';
 import { type MenuKind } from './menus.js';
 import { type MenuContext, POLICY_INDEX, runMenu as runMenuOption } from './menu-actions.js';
-import { answerByNumber, answerTyped, currentQuestion } from './collab-actions.js';
+import { answerByNumber, currentQuestion } from './collab-actions.js';
 import type { MouseEvent } from './mouse.js';
 import { localDirOf, openTarget, suggestionWindow } from './suggest.js';
 import { theme } from './theme.js';
@@ -29,6 +29,7 @@ import { type UiActionContext, runUiActionWith } from './ui-actions.js';
 import { useTerminalPane } from './use-terminal.js';
 import { expandOutgoing, pasteClipboardImage, pasteDroppedImages } from './attach-actions.js';
 import { openLink } from './link-actions.js';
+import { submitTyped } from './submit.js';
 import { setLinkEnv } from './links.js';
 import { openInvite, projectInView } from './invite-actions.js';
 
@@ -264,57 +265,8 @@ export function App({ client, onboarding = false, subscribeMouse, setRawInput, s
   const menuCtx: MenuContext = { client, patchUi, typeInto: (b) => typeInto(b), askForName: (k, p) => askForName(k, p), openFolder: (dir) => openFolder(dir), runUiAction: (a) => runUiAction(a), write };
   const runMenu = (menu: MenuKind, index: number): void => runMenuOption(menuCtx, menu, index);
 
-  const submit = (typed: string, urgent = false): void => {
-    const latest = store.getState();
-    const text = expandOutgoing(client, typed);
-    // While Claude waits on a question in this conversation, what you type here is your answer.
-    const question = latest.questions[0];
-    if (question && (question.channel === channelOf(latest.view) || uiRef.current.planFull === question.qid) && !text.startsWith('/')) {
-      answerTyped(client, question, text);
-      patchUi({ planFull: undefined, planScroll: 0 });
-      return;
-    }
-    // A shared workspace's Terminal tab: what you type is a command for its read-only shell.
-    if (latest.view.kind === 'shared' && latest.view.tab === 'terminal' && !text.startsWith('/')) {
-      void api.shell.run(latest.view.id, text);
-      patchUi({ chatScroll: 0 });
-      return;
-    }
-    if (latest.view.kind === 'draft' && !text.startsWith('/')) {
-      void api.workspaces.startChat(latest.view.projectId, text, latest.view.dir);
-      return;
-    }
-    if (latest.view.kind === 'draft_worktree' && !text.startsWith('/')) {
-      void api.workspaces.startWorktree(latest.view.projectId, text);
-      return;
-    }
-    const pending = uiRef.current.pending;
-    if (pending?.kind === 'peer_run' && pending.peerId) {
-      if (!text.trim()) return toast('Type a command first, or Esc to cancel', 'warn');
-      patchUi({ pending: undefined });
-      void api.session.runOnPeerByHand(peerName(latest, pending.peerId), text.trim(), channelOf(latest.view));
-      return;
-    }
-    if (pending) {
-      // Only commands may be empty (to clear them); names and tasks need words.
-      if (!text.trim() && pending.kind !== 'setup' && pending.kind !== 'run') {
-        toast(pending.kind === 'remote' ? 'Describe the task first, or Esc to cancel' : 'Type a name first, or Esc to cancel', 'warn');
-        return;
-      }
-      patchUi({ pending: undefined });
-      if (pending.kind === 'group') void api.workspaces.setGroup(pending.projectId, text);
-      else if (pending.kind === 'setup' || pending.kind === 'run') void api.workbench.setScript(pending.projectId, pending.kind, text);
-      else if (pending.kind === 'remote' && pending.peerId) void api.remote.requestWorktree(pending.peerId, pending.projectId, text, latest.planMode.room === true);
-      else void (pending.kind === 'worktree' ? api.workspaces.newWorktree(pending.projectId, text) : api.workspaces.newChat(pending.projectId, text));
-      return;
-    }
-    // In Search, Enter opens the highlighted result.
-    if (latest.view.kind === 'search' && !text.startsWith('/')) {
-      if (latest.search.hits.length) runUiAction({ type: 'search_hit', index: latest.search.cursor });
-      return;
-    }
-    void api.session.submit(text, { channel: channelOf(latest.view), urgent });
-  };
+  const submit = (typed: string, urgent = false): void =>
+    submitTyped({ client, ui: () => uiRef.current, patchUi, runUiAction: (a) => runUiAction(a), expand: (t) => expandOutgoing(client, t) }, typed, urgent);
 
   const run = (effect: Effect): void => {
     switch (effect.type) {
