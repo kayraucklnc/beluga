@@ -44,10 +44,9 @@ function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectI
   }
   if (v.kind === 'shared') {
     const w = state.shared.find((x) => x.id === v.id);
-    if (v.tab === 'terminal') return 'Type a command: ls, cd, cat, tree, find, grep';
     return w?.role === 'view' ? `You're following ${w.name}` : `Message ${w?.name ?? 'the workspace'}`;
   }
-  return state.peers.length <= 1 ? 'Talk to your Claude · @workspace reaches the Claude working there · / for commands' : 'Message the room · @claude:name asks someone’s Claude';
+  return state.peers.length <= 1 ? 'Message your Claude' : 'Message the room';
 }
 
 export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
@@ -163,6 +162,13 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     deliver(text, urgent);
   };
   /** Images pasted or dropped become "[image N]" chips where the cursor is. */
+  const caretAfterUpdate = useRef<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const at = caretAfterUpdate.current;
+    if (at === undefined) return;
+    caretAfterUpdate.current = undefined;
+    ref.current?.setSelectionRange(at, at);
+  }, [buffer]);
   const attach = async (files: readonly File[]): Promise<void> => {
     for (const file of files) {
       const ext = (/image\/(png|jpe?g|gif|webp)/.exec(file.type)?.[1] ?? 'png') as 'png' | 'jpg' | 'jpeg' | 'gif' | 'webp';
@@ -184,8 +190,11 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       const before = current.slice(0, at);
       const gap = before && !before.endsWith(' ') ? ' ' : '';
       const next = `${before}${gap}${chip} ${current.slice(at)}`;
-      ui.patch({ buffer: next, cursor: before.length + gap.length + chip.length + 1 });
-      requestAnimationFrame(() => el?.setSelectionRange(before.length + gap.length + chip.length + 1, before.length + gap.length + chip.length + 1));
+      const end = before.length + gap.length + chip.length + 1;
+      // The caret goes after the chip as the text changes (not a frame later, when you may
+      // already be typing and it would jump back).
+      caretAfterUpdate.current = end;
+      ui.patch({ buffer: next, cursor: end });
     }
   };
   const imagesOf = (items: DataTransferItemList | undefined): File[] =>
@@ -399,27 +408,20 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           )}
         </div>
       </div>
+      {/* Keys are shown only when they change what Return does (Mac apps don't keep a legend up). */}
+      {queueing || draftProject ? (
       <div className={s.legend}>
         {queueing ? (
           <>
             <Kbd>{sendKeys}</Kbd> queue · <Kbd>⌥↩</Kbd> send now · <Kbd>{mod()}.</Kbd> stop
           </>
-        ) : draftProject ? (
+        ) : (
           <>
             <Kbd>{sendKeys}</Kbd> create the worktree · <Kbd>esc</Kbd> cancel
           </>
-        ) : prefs.sendWith === 'enter' ? (
-          <>
-            <Kbd>↩</Kbd> send · <Kbd>⇧↩</Kbd> new line
-          </>
-        ) : (
-          <>
-            <Kbd>{mod()}↩</Kbd> send
-          </>
         )}
-        {' · '}
-        <Kbd>/</Kbd> commands · <Kbd>@</Kbd> people and Claudes · <Kbd>{mod()}K</Kbd> everything
       </div>
+      ) : null}
     </div>
   );
 }

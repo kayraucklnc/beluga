@@ -24,6 +24,9 @@ function useItems(menu: MenuKind, hide?: (id: string) => boolean) {
  */
 const keepFocus = (e: Event): void => e.preventDefault();
 
+/** A hint that is a shortcut (⌘J) sits at the right like a menu bar's; a description is a tooltip. */
+const isKeys = (hint: string | undefined): hint is string => !!hint && /^[⌘⌥⇧⌃↩⌫]+.{0,3}$/.test(hint);
+
 const isDanger = (id: string): boolean => /delete|remove|leave|revoke|stop|hide/.test(id);
 
 function Items({ menu, Item, Separator, extra = [], hide, kit }: { menu: MenuKind; Item: typeof Dropdown.Item; Separator: typeof Dropdown.Separator; extra?: readonly ActionItem[]; hide?: (id: string) => boolean; kit: SubKit }) {
@@ -31,9 +34,11 @@ function Items({ menu, Item, Separator, extra = [], hide, kit }: { menu: MenuKin
   const items = useItems(menu, hide);
   // The spec's own actions first, then this window's extras (groups, icon), the dangerous ones last.
   const row = (o: (typeof items)[number]) => (
-    <Item key={o.id} className={`${s.item} ${isDanger(o.id) ? s.danger : ''}`} onSelect={() => actions.pick(menu, o.index)}>
-      <span className={s.label}>{o.label}</span>
-      {guiHint(o.hint) ? <span className={s.hint}>{guiHint(o.hint)}</span> : null}
+    <Item key={o.id} className={`${s.item} ${isDanger(o.id) ? s.danger : ''}`} onSelect={() => actions.pick(menu, o.index)} title={isKeys(guiHint(o.hint)) ? undefined : guiHint(o.hint)}>
+      <span className={s.line}>
+        <span className={s.label}>{o.label}</span>
+        {isKeys(guiHint(o.hint)) ? <span className={s.keys}>{guiHint(o.hint)}</span> : null}
+      </span>
     </Item>
   );
   const safe = items.filter((o) => !isDanger(o.id));
