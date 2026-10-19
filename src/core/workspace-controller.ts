@@ -12,6 +12,8 @@ import { type Conversation, isImportedItem } from '../agent/transcript.js';
 import type { Intent } from './intents.js';
 import { type OtherTools, OtherWorktrees } from './other-worktrees.js';
 import { MainSync } from './main-sync.js';
+import { agentWorktreesFrom, cleanupText, removeAgentWorktrees } from './agent-worktree-cleanup.js';
+import { claudeHome } from './claude-code/launch.js';
 
 export interface ControllerDeps {
   readonly manager: WorkspaceManager;
@@ -36,6 +38,8 @@ export interface ControllerDeps {
   readonly onWorktreeCreated?: (ws: Workspace) => void;
   /** Before a workspace is archived or deleted: stop what runs in its folder (shell, dev server). */
   readonly onWorkspaceGoing?: (id: string) => void;
+  /** Claude Code's folder, where its sub-agents' worktrees are found (default: ~/.claude). */
+  readonly claudeHome?: string;
 }
 
 const HISTORY_SAVE_MS = 400;
@@ -365,6 +369,7 @@ export class WorkspaceController {
   }
 
   async archive(id: string, force = false): Promise<boolean> {
+    const agents = this.agentWorktreesOf(id);
     const done = await this.act("Couldn't archive", async () => {
       this.deps.onWorkspaceGoing?.(id);
       await this.deps.manager.archive(id, force);
@@ -372,9 +377,43 @@ export class WorkspaceController {
     });
     if (done) {
       this.deps.intend({ type: 'close_tab', id });
-      this.deps.toast('Archived. The branch and conversation are kept; restore it any time.', 'success');
+      const also = await this.removeAgentWorktrees(agents);
+      this.deps.toast(['Archived. The branch and conversation are kept; restore it any time.', also].filter(Boolean).join(' '), 'success');
     }
     return Boolean(done);
+  }
+
+  /** The worktrees sub-agents of a workspace's conversations made (they go with it). */
+  private agentWorktreesOf(id: string): { root: string; list: ReturnType<typeof agentWorktreesFrom> } | undefined {
+    try {
+      const ws = this.deps.manager.find(id);
+      const project = ws && this.deps.store.getState().projects.find((p) => p.id === ws.projectId);
+      if (!ws || !project?.root || ws.kind === 'main') return undefined;
+      const list = agentWorktreesFrom(ws, project, this.deps.claudeHome ?? claudeHome());
+      return list.length ? { root: project.root, list } : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Remove them (branches kept; any working or with uncommitted changes stays) → what to say about it. */
+  private async removeAgentWorktrees(agents: { root: string; list: ReturnType<typeof agentWorktreesFrom> } | undefined): Promise<string | undefined> {
+    if (!agents) return undefined;
+    for (const w of agents.list) this.deps.onWorkspaceGoing?.(w.id);
+    const res = await removeAgentWorktrees(agents.root, agents.list, this.deps.store.getState().claudeCode.sessions);
+    await this.refresh();
+    return cleanupText(res);
+  }
+
+  /** Remove a worktree made outside Klaud (its branch kept), and the sub-agent worktrees made from it. */
+  async removeOther(id: string, force = false): Promise<boolean> {
+    const agents = this.agentWorktreesOf(id);
+    const done = await this.others.remove(id, force);
+    if (done) {
+      const also = await this.removeAgentWorktrees(agents);
+      if (also) this.deps.toast(also, 'info');
+    }
+    return done;
   }
 
   /** Look for env changes before archiving/deleting, so the confirm dialog can offer to keep them. */
@@ -402,6 +441,7 @@ export class WorkspaceController {
   }
 
   async remove(id: string): Promise<void> {
+    const agents = this.agentWorktreesOf(id);
     const done = await this.act("Couldn't delete", async () => {
       this.deps.onWorkspaceGoing?.(id);
       await this.deps.manager.remove(id);
@@ -410,7 +450,8 @@ export class WorkspaceController {
     if (done) {
       this.loaded.delete(`${WS_PREFIX}${id}`);
       this.deps.intend({ type: 'close_tab', id });
-      this.deps.toast('Deleted', 'success');
+      const also = await this.removeAgentWorktrees(agents);
+      this.deps.toast(['Deleted.', also].filter(Boolean).join(' '), 'success');
     }
   }
 
