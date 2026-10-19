@@ -1,16 +1,16 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import type { LinkedImage } from '@klaud/shared/attachment-links.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Kbd, Tip, cx } from '../components/ui.js';
 import { toast, useApi, useKlaud } from '../lib/klaud.js';
 import { mod } from '../lib/system.js';
-import { closeLightbox, copyImage, loadImage, openLightbox, stepLightbox, useImage, useLightbox } from './images.js';
+import { openWithDefaultApp } from '../lib/files.js';
+import { type ChatImage, closeLightbox, copyImage, loadImage, openLightbox, stepLightbox, useImage, useLightbox } from './images.js';
 import s from './images.module.css';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** One image in a message: a thumbnail that opens full size. */
-function Thumb({ image, all, index, tiled }: { image: LinkedImage; all: readonly LinkedImage[]; index: number; tiled: boolean }) {
+/** One image in a message: a thumbnail that opens full size (with the message's other images a step away). */
+export function Thumb({ image, all, index, tiled }: { image: ChatImage; all: readonly ChatImage[]; index: number; tiled: boolean }) {
   const api = useApi();
   const state = useImage(api, image);
   const name = `${image.label}${image.detail ? ` (${image.detail})` : ''}`;
@@ -30,7 +30,7 @@ function Thumb({ image, all, index, tiled }: { image: LinkedImage; all: readonly
 }
 
 /** The images a message links to: one keeps its shape, several sit in a neat grid. */
-export function ImageGrid({ images }: { images: readonly LinkedImage[] }) {
+export function ImageGrid({ images }: { images: readonly ChatImage[] }) {
   if (!images.length) return null;
   const tiled = images.length > 1;
   return (
@@ -42,7 +42,7 @@ export function ImageGrid({ images }: { images: readonly LinkedImage[] }) {
   );
 }
 
-function Full({ image }: { image: LinkedImage }) {
+function Full({ image }: { image: ChatImage }) {
   const api = useApi();
   const state = useImage(api, image);
   if (state.status === 'ready') return <img className={s.full} src={state.url} alt={image.label} draggable={false} onClick={(e) => e.stopPropagation()} />;
@@ -66,7 +66,7 @@ export function Lightbox() {
     }
   };
   const openInPreview = (): void => {
-    api.attachments.open(image.owner, image.file).catch((err: unknown) => toast(client, `Couldn't open the image: ${errorText(err)}`, 'error'));
+    (image.local ? openWithDefaultApp(client, image.local) : api.attachments.open(image.owner, image.file)).catch((err: unknown) => toast(client, `Couldn't open the image: ${errorText(err)}`, 'error'));
   };
   return (
     <Dialog.Root open onOpenChange={(v) => (v ? undefined : closeLightbox())}>

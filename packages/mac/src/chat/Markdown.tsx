@@ -1,11 +1,13 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ATTACHMENT_SCHEME } from '@klaud/core/attachment-share.js';
 import type { LinkTarget } from '@klaud/shared/link-target.js';
 import { parseAttachmentHref } from '@klaud/shared/attachment-links.js';
 import { Icon } from '../components/Icon.js';
-import { openLightbox } from './images.js';
+import { type ChatImage, openLightbox } from './images.js';
+import { Thumb } from './ChatImages.js';
+import { imageSource, localImage, messageImages } from './md-images.js';
 import { useActions } from '../lib/actions.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
@@ -72,6 +74,42 @@ function targetOf(href: string): LinkTarget {
   return { kind: 'href', href };
 }
 
+/** An image in the text: a file on this Mac as a thumbnail (click for full size), else a quiet chip. */
+function MdImage({ src, alt, all }: { src: string; alt: string; all: readonly ChatImage[] }) {
+  const actions = useActions();
+  const source = imageSource(src);
+  if (source.kind === 'local') {
+    const index = all.findIndex((i) => i.local === source.path);
+    const image = all[index] ?? localImage(source.path, alt);
+    return <Thumb image={image} all={index < 0 ? [image] : all} index={Math.max(0, index)} tiled={false} />;
+  }
+  // The window only loads what klaud reads for it, so a web image opens in the browser instead.
+  if (source.kind === 'remote') {
+    return (
+      <a href={source.url} className={s.imageRef} title={source.url} onClick={(e) => (e.preventDefault(), actions.openLink({ kind: 'url', url: source.url }))}>
+        <Icon name="image" size={11} />
+        {alt || new URL(source.url).hostname}
+      </a>
+    );
+  }
+  return (
+    <span className={s.imageRef} title={`Can’t show ${src}`}>
+      <Icon name="image" size={11} />
+      {alt || 'image'}
+    </span>
+  );
+}
+
+type HastNode = { type: string; tagName?: string; value?: string; children?: HastNode[] };
+
+/** How many images a paragraph holds when it's nothing but images (0 otherwise). */
+function imagesOnly(node: HastNode | undefined): number {
+  const kids = node?.children ?? [];
+  const images = kids.filter((k) => k.type === 'element' && k.tagName === 'img').length;
+  const rest = kids.filter((k) => !(k.type === 'element' && k.tagName === 'img') && !(k.type === 'text' && !k.value?.trim()) && !(k.type === 'element' && k.tagName === 'br'));
+  return rest.length ? 0 : images;
+}
+
 /** Paths in plain text ("src/app.ts:12", "~/notes/") become links (local ones, when you wrote them). */
 const PATH = /(^|[\s(`'"])((?:~|\.{1,2})?\/[\w@.+-][\w@.+/-]*|[\w@+-][\w@.+-]*\/[\w@.+/-]*\.[A-Za-z][\w-]{0,9})(?::(\d+))?/g;
 
@@ -90,7 +128,21 @@ function linkifyPaths(text: string): string {
 
 export const Markdown = memo(function Markdown({ text, paths = false }: { text: string; paths?: boolean }) {
   const actions = useActions();
+  // Every local image in the message, so the lightbox steps from one to the next.
+  const images = useMemo(() => messageImages(text), [text]);
   const components: Components = {
+    img: ({ src, alt }) => <MdImage src={typeof src === 'string' ? src : ''} alt={alt ?? ''} all={images} />,
+    // A paragraph of nothing but images: a row of them (several get smaller, side by side).
+    p: ({ node, children }) => {
+      const count = imagesOnly(node as HastNode | undefined);
+      return count ? (
+        <div className={s.mdImages} data-count={count > 1 ? 'many' : 'one'}>
+          {children}
+        </div>
+      ) : (
+        <p>{children}</p>
+      );
+    },
     a: ({ href = '', children }) => {
       // An image mentioned mid-sentence: a small link that opens it full size.
       const image = parseAttachmentHref(href);
