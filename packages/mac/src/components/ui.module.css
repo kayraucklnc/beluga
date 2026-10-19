@@ -33,6 +33,18 @@
 .primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 88%, black);
 }
+/* Merging changes your main branch: green, as GitHub's Merge, and never the everyday blue. */
+.merge {
+  background: var(--merge);
+  color: white;
+  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.14);
+}
+.merge:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--merge) 86%, black);
+}
+.merge:disabled {
+  background: color-mix(in srgb, var(--merge) 40%, var(--bg-hover));
+}
 .quiet {
   color: var(--text-2);
 }

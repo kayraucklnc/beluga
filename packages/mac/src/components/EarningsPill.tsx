@@ -1,23 +1,27 @@
 import type { ProjectEarnings } from '@klaud/core/earnings-store.js';
 import { useEffect, useRef, useState } from 'react';
-import { combinedTotal, formatMoney, openStripe, updatedAgo, useMoney, useProjectEarnings } from '../lib/earnings.js';
+import { formatMoney, missingNote, openStripe, ratesWhen, updatedAgo, useConverted, useMoney, useProjectEarnings } from '../lib/earnings.js';
 import { brandText } from '../lib/brand.js';
 import { Icon } from './Icon.js';
 import { Tip, cx } from './ui.js';
 import s from './earnings.module.css';
 
-/** What the tooltip says: the total, each currency on its own when there are several, how fresh, what went wrong. */
+/**
+ * What a project's tooltip says: its total in the currency earnings are shown in, what it earned in
+ * each currency when that's another (or several), how fresh, what went wrong.
+ */
 export function EarningsTipBody({ earnings }: { earnings: ProjectEarnings }) {
-  const { currency, fx } = useMoney();
+  const { fx } = useMoney();
   const totals = earnings.totals ?? [];
-  const combined = combinedTotal(totals, currency, fx);
-  const several = totals.length > 1;
+  const money = useConverted(totals);
+  const breakdown = money.converted || money.missing.length > 0;
+  const note = missingNote(money.missing);
   const head = earnings.refreshing && !earnings.totals ? 'Counting all-time earnings from Stripe…' : `All-time earnings · ${earnings.refreshing ? 'updating…' : `updated ${updatedAgo(earnings.updatedAt)}`}`;
   return (
     <span className={s.tipBody}>
       <span>{head}</span>
-      {several && combined !== undefined ? <span className={s.tipTotal}>≈ {formatMoney(combined, currency)} in all</span> : null}
-      {several
+      {breakdown ? <span className={s.tipTotal}>≈ {formatMoney(money.amount, money.currency)}</span> : totals.length ? <span className={s.tipTotal}>{formatMoney(money.amount, money.currency)}</span> : null}
+      {breakdown
         ? totals.map((t) => (
             <span key={t.currency} className={s.tipLine}>
               <span>{t.currency.toUpperCase()}</span>
@@ -25,7 +29,8 @@ export function EarningsTipBody({ earnings }: { earnings: ProjectEarnings }) {
             </span>
           ))
         : null}
-      {several && fx ? <span className={s.tipDim}>Added up at the European Central Bank’s rates of {new Date(fx.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}; approximate.</span> : null}
+      {note ? <span className={s.tipDim}>{note}</span> : null}
+      {money.converted && fx ? <span className={s.tipDim}>Converted at the European Central Bank’s rates, updated {ratesWhen(fx.at)}; approximate.</span> : null}
       {earnings.mode === 'test' ? <span className={s.tipDim}>Test mode</span> : null}
       {earnings.error ? <span className={s.tipError}>{brandText(earnings.error.message)}</span> : null}
     </span>
@@ -48,19 +53,19 @@ function useChanged(value: string): boolean {
 
 /**
  * A project's all-time earnings beside its name in the sidebar: one amount, compact ("$12.4K"),
- * in your main currency (several currencies are added up at today's rates; each shows on
- * hover). Just the figure, in a quiet money green; it shimmers while Stripe is being read and
+ * in the currency you show earnings in (other currencies converted at today's rates; each shows
+ * on hover). Just the figure, in a quiet money green; it shimmers while Stripe is being read and
  * glows briefly when it grows.
  * Clicking it opens the project's Stripe sheet. Nothing when Stripe isn't connected.
  */
 export function EarningsPill({ root, projectId }: { root: string | undefined; projectId: string }) {
   const earnings = useProjectEarnings(root);
-  const { currency, fx } = useMoney();
   const totals = earnings?.totals ?? [];
-  const combined = combinedTotal(totals, currency, fx);
-  // Without rates for some currency: its biggest total, as before.
-  const shown = combined !== undefined ? { amount: combined, currency } : totals[0];
-  const label = shown ? formatMoney(shown.amount, shown.currency, true) : earnings?.totals ? formatMoney(0, currency, true) : '';
+  const money = useConverted(totals);
+  // Nothing has a rate yet: its biggest total, as it is.
+  const nothingConverts = totals.length > 0 && money.missing.length === totals.length;
+  const shown = totals.length ? (nothingConverts ? totals[0] : { amount: money.amount, currency: money.currency }) : undefined;
+  const label = shown ? formatMoney(shown.amount, shown.currency, true) : earnings?.totals ? formatMoney(0, money.currency, true) : '';
   const pulse = useChanged(label);
   if (!earnings) return null;
   const failed = Boolean(earnings.error) && !shown;
@@ -69,7 +74,7 @@ export function EarningsPill({ root, projectId }: { root: string | undefined; pr
       <button
         type="button"
         className={cx(s.pill, earnings.refreshing && s.shimmer, earnings.mode === 'test' && s.test, failed && s.failed, earnings.error && shown && s.stale, !shown && !failed && !earnings.totals && s.pending, pulse && s.pulse)}
-        aria-label={shown ? `All-time earnings ${totals.length > 1 ? 'about ' : ''}${formatMoney(shown.amount, shown.currency)}` : failed ? 'Stripe earnings: a problem' : 'Counting earnings'}
+        aria-label={shown ? `All-time earnings ${money.converted ? 'about ' : ''}${formatMoney(shown.amount, shown.currency)}` : failed ? 'Stripe earnings: a problem' : 'Counting earnings'}
         data-earnings-pill={projectId}
         onClick={(e) => {
           e.stopPropagation();

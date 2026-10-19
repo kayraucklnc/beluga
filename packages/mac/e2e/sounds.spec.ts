@@ -107,3 +107,94 @@ test('a different sound for each kind of notification', async ({ page }) => {
   await expect(kinds).toBeHidden();
   await reset(page);
 });
+
+/**
+ * Whether notifications reach you. The browser has no app shell to ask macOS, so a test seeds
+ * what macOS says in window.__KLAUD_NOTIFY_ACCESS__ and reads what the buttons asked the shell
+ * for back from window.__KLAUD_NOTIFY_CALLS__ (lib/sounds/access.ts).
+ */
+const soundGroup = (page: Page) => settings(page).locator('section', { has: page.getByRole('heading', { name: 'Sound' }) });
+const status = (page: Page) => settings(page).getByRole('status', { name: 'Notification status' });
+const shellCalls = (page: Page) => page.evaluate(() => window.__KLAUD_NOTIFY_CALLS__ ?? []);
+
+async function seedAccess(page: Page, access: object): Promise<void> {
+  await page.addInitScript((a) => void (window.__KLAUD_NOTIFY_ACCESS__ = a as never), access);
+}
+
+test('Send Test Notification sits right under the sound, near the top', async ({ page }) => {
+  const s = await openSoundSettings(page);
+  const send = soundGroup(page).getByRole('button', { name: 'Send Test Notification' });
+  await expect(send).toBeVisible();
+  // Under "Notification sound", above the picker and long before "Tell me when".
+  const y = async (l: Locator): Promise<number> => (await l.boundingBox())!.y;
+  const sendY = await y(send);
+  expect(sendY).toBeGreaterThan(await y(soundGroup(page).getByText('Notification sound', { exact: true })));
+  expect(sendY).toBeLessThan(await y(soundGroup(page).getByRole('tablist', { name: 'Kind of sound' })));
+  expect(sendY).toBeLessThan(await y(s.getByRole('heading', { name: 'Tell me when' })));
+  await expect(s.getByRole('button', { name: 'Send a test' })).toHaveCount(0);
+
+  // A browser can't read macOS's settings: the status line says so, without a scary warning.
+  await expect(status(page)).toContainText('Can’t check macOS from here');
+  await expect(status(page)).toHaveAttribute('data-tone', 'muted');
+
+  // The test says what happened, under the button (not just a toast).
+  await send.click();
+  const result = soundGroup(page).getByRole('status', { name: 'Test result' });
+  await expect(result).toContainText('Sent. Look for the banner at the top right of your screen.');
+  await expect(result).toContainText('You heard “Glass” here.');
+  await expect(result).toContainText('Focus');
+  await result.getByRole('button', { name: 'Open Focus Settings' }).click();
+  expect(await shellCalls(page)).toContain('open_focus_settings');
+});
+
+test('stays with the sound when it’s one per kind', async ({ page }) => {
+  const s = await openSoundSettings(page);
+  await s.getByRole('tab', { name: 'Per kind' }).click();
+  const send = soundGroup(page).getByRole('button', { name: 'Send Test Notification' });
+  const kinds = s.getByRole('radiogroup', { name: 'Kind of notification' });
+  expect((await send.boundingBox())!.y).toBeGreaterThan((await kinds.boundingBox())!.y);
+  await reset(page);
+});
+
+test('blocked by macOS: the status line says what to turn on and opens System Settings', async ({ page }) => {
+  await seedAccess(page, { state: 'off', alerts: true, sound: true, focus: 'unknown' });
+  await openSoundSettings(page);
+  await expect(status(page)).toContainText('Blocked by macOS');
+  await expect(status(page)).toContainText('Allow notifications');
+  await expect(status(page)).toContainText('Banners');
+  await expect(status(page)).toContainText('Play sound for notifications');
+  await expect(status(page)).toHaveAttribute('data-tone', 'warn');
+  await status(page).getByRole('button', { name: 'Open Notification Settings' }).click();
+  expect(await shellCalls(page)).toContain('open_notification_settings');
+
+  // A test doesn't pretend it showed.
+  await soundGroup(page).getByRole('button', { name: 'Send Test Notification' }).click();
+  const result = soundGroup(page).getByRole('status', { name: 'Test result' });
+  await expect(result).toContainText('Sent, but macOS blocked it.');
+  await expect(result.getByRole('button', { name: 'Open Notification Settings' })).toBeVisible();
+});
+
+test('a Focus holding banners is named, with a way to Focus settings', async ({ page }) => {
+  await seedAccess(page, { state: 'allowed', alerts: true, sound: true, focus: 'on', focusName: 'Do Not Disturb' });
+  await openSoundSettings(page);
+  await expect(status(page)).toContainText('Do Not Disturb is on');
+  await expect(status(page)).toContainText('Allowed Apps');
+  await status(page).getByRole('button', { name: 'Open Focus Settings' }).click();
+  expect(await shellCalls(page)).toContain('open_focus_settings');
+});
+
+test('not set up yet: Allow Notifications asks macOS', async ({ page }) => {
+  await seedAccess(page, { state: 'notAsked', alerts: true, sound: true, focus: 'off' });
+  await openSoundSettings(page);
+  await expect(status(page)).toContainText('Not set up yet');
+  await status(page).getByRole('button', { name: 'Allow Notifications…' }).click();
+  expect(await shellCalls(page)).toContain('notification_request');
+});
+
+test('all clear: notifications are on', async ({ page }) => {
+  await seedAccess(page, { state: 'allowed', alerts: true, sound: true, focus: 'off' });
+  await openSoundSettings(page);
+  await expect(status(page)).toContainText('Notifications are on');
+  await expect(status(page)).toHaveAttribute('data-tone', 'ok');
+  await expect(status(page).getByRole('button')).toHaveCount(0);
+});

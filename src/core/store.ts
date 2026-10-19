@@ -195,6 +195,8 @@ export interface Prefs {
   readonly shellLogin: boolean;
   /** Extra arguments for the terminal's shell. */
   readonly shellArgs: readonly string[];
+  /** The currency every earnings total is shown in (lowercase ISO code; undefined: the one most was earned in). */
+  readonly earningsCurrency?: string;
 }
 
 export interface Transfer {
@@ -459,7 +461,7 @@ export const DEFAULT_PREFS: Prefs = {
 
 /** The preference fields out of saved settings. */
 export function prefsFrom(settings: Partial<Settings>): Prefs {
-  const picked = Object.fromEntries(Object.keys(DEFAULT_PREFS).concat(['model', 'effort', 'shell']).filter((k) => settings[k as keyof Settings] !== undefined).map((k) => [k, settings[k as keyof Settings]]));
+  const picked = Object.fromEntries(Object.keys(DEFAULT_PREFS).concat(['model', 'effort', 'shell', 'earningsCurrency']).filter((k) => settings[k as keyof Settings] !== undefined).map((k) => [k, settings[k as keyof Settings]]));
   return { ...DEFAULT_PREFS, ...picked };
 }
 

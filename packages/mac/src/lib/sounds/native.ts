@@ -3,6 +3,7 @@ import { inApp } from '../boot.js';
 import { filesInUse, renderChoice, soundFileName, soundsInUse } from './catalog.js';
 import { playSound } from './player.js';
 import { SAMPLE_RATE } from './synth.js';
+import { testTone } from './test-sound.js';
 import { encodeWav } from './wav.js';
 
 /**
@@ -62,4 +63,15 @@ export async function syncSounds(prefs: SoundPrefs): Promise<void> {
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('sound_prune', { keep });
   for (const name of [...installed]) if (!keep.includes(name)) installed.delete(name);
+}
+
+/** When Settings last played the test's sound (on the click, so it's heard right away). */
+let testPlayedAt = Number.NEGATIVE_INFINITY;
+
+/** Play the test notification's sound in the window (see test-sound.ts). `clicked`: from Settings. */
+export function playTestSound(n: NoteSound, clicked = false): void {
+  const now = Date.now();
+  const tone = testTone(n, clicked, now, testPlayedAt);
+  if (clicked) testPlayedAt = now;
+  if (tone) void playSound(tone, n.volume ?? DEFAULT_VOLUME).catch(() => undefined);
 }

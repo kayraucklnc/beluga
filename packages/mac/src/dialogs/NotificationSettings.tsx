@@ -2,9 +2,12 @@ import type { NotifySettings } from '@klaud/shared/settings-schema.js';
 import { DND_CHOICES, type DndChoice, dndActive, dndFor, dndLabel } from '@klaud/shared/quiet.js';
 import { Button } from '../components/ui.js';
 import { useApi, useApp } from '../lib/klaud.js';
+import { runAccessAction, useNotificationAccess } from '../lib/sounds/access.js';
+import { type AccessAction, notifyStatus } from '../lib/sounds/access-model.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
-import { AccessNote } from './sound/AccessNote.js';
+import { NotifyStatusLine } from './sound/NotifyStatus.js';
 import { SoundSettings } from './sound/SoundSettings.js';
+import { TestNotification } from './sound/TestNotification.js';
 
 type Toggle = 'desktop' | 'onlyAway' | 'needsYou' | 'done' | 'mentions' | 'people' | 'background' | 'problems' | 'pr';
 
@@ -18,15 +21,23 @@ const KINDS: ReadonlyArray<readonly [Toggle, string, string]> = [
   ['pr', 'Pull requests', 'Opened, checks finished, reviewed'],
 ];
 
-/** Settings › Notifications: what reaches you, how, and when klaud stays quiet. Shared with the terminal app. */
+/**
+ * Settings › Notifications: whether they reach you (and how to fix it when macOS is in the
+ * way), the sound with a test right under it, and what reaches you when. Shared with the
+ * terminal app.
+ */
 export function NotificationSettings() {
   const api = useApi();
   const n = useApp((st) => st.prefs.notify);
   const save = (patch: Partial<NotifySettings>): void => void api.session.setPrefs({ notify: { ...n, ...patch } });
   const quiet = dndActive(n);
+  const { access, recheck } = useNotificationAccess();
+  const status = notifyStatus(access, { desktop: n.desktop, quietUntil: quiet ? dndLabel(n) : null });
+  // Opening System Settings: checked again when you come back (window focus). Asking: right away.
+  const act = (action: AccessAction): void => void runAccessAction(action).then((a) => a && recheck(a)).catch(() => undefined);
   return (
     <>
-      <AccessNote />
+      <NotifyStatusLine status={status} onAction={act} />
       <Group>
         <Row label="Desktop notifications" detail="The bell in the toolbar lists everything either way.">
           <Switch label="Desktop notifications" on={n.desktop} onChange={(v) => save({ desktop: v })} />
@@ -35,7 +46,7 @@ export function NotificationSettings() {
           <Switch label="Only when Klaud isn’t in front" on={n.onlyAway} onChange={(v) => save({ onlyAway: v })} />
         </Row>
       </Group>
-      <SoundSettings n={n} save={save} />
+      <SoundSettings n={n} save={save} test={<TestNotification n={n} onChecked={recheck} onAction={act} />} />
       <Group>
         <Row label="Do Not Disturb" detail={quiet ? `On ${dndLabel(n)}. The bell still fills.` : 'Pause desktop notifications for a while.'}>
           {quiet ? (
@@ -56,11 +67,6 @@ export function NotificationSettings() {
             <Switch label={label} on={n[key]} onChange={(v) => save({ [key]: v })} />
           </Row>
         ))}
-      </Group>
-      <Group>
-        <Row label="Send a test notification" detail="Shows one now, whatever the settings above say.">
-          <Button onClick={() => void api.session.testNotification()}>Send a test</Button>
-        </Row>
       </Group>
     </>
   );

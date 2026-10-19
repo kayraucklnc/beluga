@@ -1,6 +1,7 @@
 import { Icon } from '../components/Icon.js';
 import { Button, Tip, cx } from '../components/ui.js';
-import { formatMoney, openStripe, updatedAgo, useProjectEarnings } from '../lib/earnings.js';
+import { EarningsTipBody } from '../components/EarningsPill.js';
+import { formatMoney, openStripe, updatedAgo, useConverted, useProjectEarnings } from '../lib/earnings.js';
 import { brandText } from '../lib/brand.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import s from './Inspector.module.css';
@@ -14,6 +15,7 @@ export function EarningsPanel({ projectId }: { projectId: string }) {
   const api = useApi();
   const project = useApp((st) => st.projects.find((p) => p.id === projectId));
   const earnings = useProjectEarnings(project?.root || undefined);
+  const money = useConverted(earnings?.totals);
   if (!project?.root) return null;
   if (!earnings) {
     return (
@@ -50,14 +52,11 @@ export function EarningsPanel({ projectId }: { projectId: string }) {
         <span className={s.fieldLabel}>All-time</span>
         <span className={cx(s.fieldValue, earnings.refreshing && !totals.length && e.shimmer)}>
           {totals.length ? (
-            <span className={e.num}>
-              {totals.slice(0, 3).map((t, i) => (
-                <span key={t.currency}>
-                  {i ? ' · ' : ''}
-                  {formatMoney(t.amount, t.currency)}
-                </span>
-              ))}
-            </span>
+            <Tip label={<EarningsTipBody earnings={earnings} />}>
+              <span className={e.num} tabIndex={0}>
+                {formatMoney(money.amount, money.currency)}
+              </span>
+            </Tip>
           ) : earnings.totals ? (
             'Nothing yet'
           ) : (

@@ -1,6 +1,6 @@
 import type { Capabilities } from '@klaud/ipc/socket-client.js';
 import { SocketClient } from '@klaud/ipc/socket-client.js';
-import { brandNotice } from './brand.js';
+import { brandNotice, isTestNotice } from './brand.js';
 import type { SoundChoice } from '../../../../src/shared/notify-sound.js';
 import { NOTIFICATION_TAP } from './notices.js';
 import { REQUEST_NOTIFICATION, notificationActions } from '../gateway/request-actions.js';
@@ -38,12 +38,16 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
     // Clicking one comes back as a tap (the app shell's "notification-tap" event, or NOTIFICATION_TAP here).
     notify: async (raw: { title: string; body: string; sound: boolean; tone?: SoundChoice; volume?: number; channel?: string; approval?: string; task?: string }) => {
       const n = brandNotice(raw);
+      // The test's sound is the window's own, so you hear it whatever macOS does with the banner.
+      const test = isTestNotice(n);
+      const { notificationSound, playTestSound } = await import('./sounds/native.js');
+      if (test) playTestSound(n);
       if (inApp()) {
-        const { isPermissionGranted, requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification');
-        if (!(await isPermissionGranted()) && (await requestPermission()) !== 'granted') return;
+        // No permission check here: the plugin answers "granted" on every Mac whatever System
+        // Settings says. Settings › Notifications asks macOS itself (lib/sounds/access.ts).
+        const { sendNotification } = await import('@tauri-apps/plugin-notification');
         // A real sound name ("default" isn't one on macOS: it was silent). See lib/sounds/native.ts.
-        const { notificationSound } = await import('./sounds/native.js');
-        const { sound, fallback } = await notificationSound(n);
+        const { sound, fallback }: { sound?: string; fallback?: () => void } = test ? {} : await notificationSound(n);
         // An approval on its own gets Approve / Decline (and Always for a friend's request) on the notification.
         sendNotification({ title: n.title, body: n.body, ...(sound ? { sound } : {}), ...notificationActions(n), extra: { ...(n.channel ? { channel: n.channel } : {}), ...(n.approval ? { approval: n.approval } : {}), ...(n.task ? { task: n.task } : {}) } });
         fallback?.();
@@ -52,7 +56,7 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
       if (typeof Notification === 'undefined') return;
       if (Notification.permission === 'default') await Notification.requestPermission();
       if (Notification.permission !== 'granted') return;
-      const shown = new Notification(n.title, { body: n.body, silent: !n.sound });
+      const shown = new Notification(n.title, { body: n.body, silent: test || !n.sound });
       shown.onclick = () => {
         window.focus();
         if (n.approval) document.dispatchEvent(new CustomEvent(REQUEST_NOTIFICATION, { detail: { action: 'review', approval: n.approval, task: n.task } }));

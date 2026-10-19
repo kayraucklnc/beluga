@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import type { NotifySettings } from '../../../../../src/shared/settings-schema.js';
 import { type SoundChoice, type SoundGroup, SOUND_GROUPS, coerceSound, soundFor, volumeOf } from '../../../../../src/shared/notify-sound.js';
 import { Segmented, cx } from '../../components/ui.js';
@@ -26,10 +26,12 @@ const MAX_MADE = 12;
 export interface SoundSettingsProps {
   readonly n: NotifySettings;
   readonly save: (patch: Partial<NotifySettings>) => void;
+  /** Rows right under the sound (Send Test Notification), above the picker. */
+  readonly test?: ReactNode;
 }
 
 /** Settings › Notifications › Sound: which sound, per kind if you like, and how loud. */
-export function SoundSettings({ n, save }: SoundSettingsProps) {
+export function SoundSettings({ n, save, test }: SoundSettingsProps) {
   const perKind = n.perKind !== null && n.perKind !== undefined;
   const [target, setTarget] = useState<Target>(perKind ? 'needsYou' : 'all');
   const [volume, setVolume] = useState(volumeOf(n));
@@ -106,6 +108,7 @@ export function SoundSettings({ n, save }: SoundSettingsProps) {
           <PlayButton choice={value} volume={volume} label={soundTitle(value)} />
         </Row>
       )}
+      {test}
       <SoundPicker key={editing} value={value} volume={volume} made={n.madeSounds} onPick={pick} onKeep={keep} {...(editing === 'all' ? {} : { kindLabel: GROUP_LABELS[editing] })} />
       <Row label="Volume" detail="For Klaud’s own sounds (8-bit and generated). Mac sounds play at your alert volume.">
         <input

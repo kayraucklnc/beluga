@@ -45,6 +45,10 @@ const TEST_NOTICE_TITLE = 'Notifications work';
  * always, the body only for the test notification (other bodies quote messages and commands).
  */
 export function brandNotice<T extends { readonly title: string; readonly body: string; readonly tag?: string }>(n: T): T {
-  const test = n.tag === 'test' || n.title === TEST_NOTICE_TITLE;
-  return { ...n, title: brandText(n.title), body: test ? brandText(n.body) : n.body };
+  return { ...n, title: brandText(n.title), body: isTestNotice(n) ? brandText(n.body) : n.body };
+}
+
+/** The one you asked for in Settings › Notifications (a desktop notification has no tag, only its title). */
+export function isTestNotice(n: { readonly title: string; readonly tag?: string }): boolean {
+  return n.tag === 'test' || n.title === TEST_NOTICE_TITLE;
 }

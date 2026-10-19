@@ -88,6 +88,8 @@ export const Settings = z.object({
   shellLogin: z.boolean().default(true),
   /** Extra arguments for the shell, after -l. */
   shellArgs: z.array(z.string().max(200)).max(20).default([]),
+  /** Show every earnings total in this currency (lowercase ISO code; unset: the one most was earned in). */
+  earningsCurrency: z.string().regex(/^[a-z]{3}$/).optional(),
   /** Be on the klaud network (friends, groups, presence) while the Mac app's daemon runs. Off by default for now. */
   network: z.boolean().optional(),
   /** "Ask me for…": a short note friends' Claudes see on your card (the gateway, Mac app). */

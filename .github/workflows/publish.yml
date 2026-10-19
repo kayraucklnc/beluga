@@ -47,7 +47,10 @@ jobs:
           name=$(node -p "require('./package.json').name")
           published=$(npm view "$name" versions --json 2>/dev/null || echo '[]')
           bumped=false
-          while node -e "process.exit([].concat($published).includes(require('./package.json').version) ? 0 : 1)"; do
+          # Also skip versions already released here (a Mac release can go out while npm can't).
+          git fetch --tags --quiet
+          taken() { node -e "process.exit([].concat($published).includes(require('./package.json').version) ? 0 : 1)" || git rev-parse -q --verify "refs/tags/v$(node -p "require('./package.json').version")" >/dev/null || git rev-parse -q --verify "refs/tags/v$(node -p "require('./package.json').version")-mac" >/dev/null; }
+          while taken; do
             npm version patch --no-git-tag-version > /dev/null
             bumped=true
           done
@@ -56,7 +59,10 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "bumped=$bumped" >> "$GITHUB_OUTPUT"
 
+      # npm needs the trusted publisher set up on npmjs.com (see the top of this file). Until then
+      # (or if npm is down) the Mac app still releases: the failure shows as a warning here.
       - name: Publish
+        continue-on-error: true
         run: npm publish --provenance --access public
 
       - name: Commit the version bump and tag the release

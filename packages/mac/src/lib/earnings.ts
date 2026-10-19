@@ -1,54 +1,60 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import { type FxRates, type MoneyTotal, type ProjectEarnings, convertTotals, mainCurrency } from '@klaud/core/earnings-store.js';
+import { type FxRates, type MoneyTotal, type ProjectEarnings, convertParts, currencyChoices, earningsCurrency, mainCurrency } from '@klaud/core/earnings-store.js';
 import type { Project } from '@klaud/workspaces/types.js';
-import { brandText } from './brand.js';
-import { useApp } from './klaud.js';
+import { type ConvertedSummary, convertSummary, currencyName } from './money.js';
+import { useApi, useApp } from './klaud.js';
 
 /**
- * Earnings from Stripe in this window: formatting money, the projects that have Stripe
- * connected (useEarnings, for the Overview and the Usage view), the Connect Stripe sheet,
- * and the one-time hint that tells you it exists. The counting is the core's
- * (core/stripe-earnings.ts); the keys never come here.
+ * Earnings from Stripe in this window: the currency they're shown in (yours, or the one most was
+ * earned in), the projects that have Stripe connected (useEarnings, for the Overview and the
+ * Usage view), the Connect Stripe sheet, and the one-time hint that tells you it exists. The
+ * counting is the core's (core/stripe-earnings.ts); the keys never come here.
  */
 
 export type { MoneyTotal, ProjectEarnings };
 export { mainCurrency };
+export { formatGlance, formatMoney, missingNote, ratesWhen } from './money.js';
 
-/** A project's earnings as one amount in `currency` (approximate across currencies), or undefined without rates. */
-export const combinedTotal = (totals: readonly MoneyTotal[], currency: string, fx: FxRates | undefined): number | undefined => (totals.length ? convertTotals(totals, currency, fx) : undefined);
+/** The currency earnings are shown in, today's rates, and whether you chose it (undefined: automatic). */
+export interface Money {
+  readonly currency: string;
+  readonly fx: FxRates | undefined;
+  readonly chosen: string | undefined;
+}
 
-/** The main currency and today's rates, for screens. */
-export function useMoney(): { currency: string; fx: FxRates | undefined } {
+export function useMoney(): Money {
   const earnings = useApp((st) => st.earnings);
   const fx = useApp((st) => st.fx);
-  return { currency: mainCurrency(earnings, fx), fx };
+  const chosen = useApp((st) => st.prefs.earningsCurrency);
+  return useMemo(() => ({ currency: earningsCurrency(chosen, earnings, fx), fx, chosen }), [earnings, fx, chosen]);
 }
 
-/** Digits after the point for a currency (2 for USD, 0 for JPY, 3 for KWD). */
-function exponent(currency: string): number {
-  try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() }).resolvedOptions().maximumFractionDigits ?? 2;
-  } catch {
-    return 2;
-  }
-}
+/** A project's totals in the currency earnings are shown in (what converts, and what has no rate yet). */
+export const useConverted = (totals: readonly MoneyTotal[] | undefined): ReturnType<typeof convertParts> & { currency: string } => {
+  const { currency, fx } = useMoney();
+  return { ...convertParts(totals ?? [], currency, fx), currency };
+};
+
+/** The "Show earnings in" choice: "" is automatic. */
+export const AUTOMATIC = '';
 
 /**
- * An amount in a currency's smallest unit, for people: "$12,480.50", or compact for the
- * sidebar ("$12.5K", "$840", "€1.2M").
+ * "Show earnings in": its options (Automatic, then the currencies the rates cover, common ones
+ * first), its value, and setting it (saved in ~/.klaud/settings.json, for every window).
  */
-export function formatMoney(amount: number, currency: string, compact = false): string {
-  const code = currency.toUpperCase();
-  const value = amount / 10 ** exponent(code);
-  try {
-    if (compact) {
-      const small = Math.abs(value) < 1000;
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency: code, notation: small ? 'standard' : 'compact', maximumFractionDigits: small ? 0 : 1 }).format(value);
-    }
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(value);
-  } catch {
-    return `${value.toFixed(compact ? 0 : 2)} ${code}`;
-  }
+export function useCurrencyChoice(): { value: string; options: Array<{ value: string; label: string; short?: string }>; onChange: (v: string) => void } {
+  const api = useApi();
+  const earnings = useApp((st) => st.earnings);
+  const { fx, chosen } = useMoney();
+  const auto = mainCurrency(earnings, fx);
+  const options = useMemo(
+    () => [
+      { value: AUTOMATIC, label: `Automatic (${auto.toUpperCase()})`, short: `Automatic (${auto.toUpperCase()})` },
+      ...currencyChoices(fx, chosen).map((c) => ({ value: c, label: currencyName(c), short: c.toUpperCase() })),
+    ],
+    [auto, fx, chosen],
+  );
+  return { value: chosen ?? AUTOMATIC, options, onChange: (v) => void api.session.setPrefs({ earningsCurrency: v === AUTOMATIC ? null : v }) };
 }
 
 /** "just now", "12 min ago", "3h ago", "2 days ago". */
@@ -91,9 +97,10 @@ export function sumTotals(lists: ReadonlyArray<readonly MoneyTotal[] | undefined
   return [...by].map(([currency, amount]) => ({ currency, amount })).sort((a, b) => b.amount - a.amount);
 }
 
-export function summarize(projects: readonly Project[], earnings: Readonly<Record<string, ProjectEarnings>>): EarningsSummary {
+export function summarize(projects: readonly Project[], earnings: Readonly<Record<string, ProjectEarnings>>, fx?: FxRates): EarningsSummary {
   const connected = projects.flatMap((project) => (project.root && earnings[project.root] ? [{ project, earnings: earnings[project.root]! }] : []));
-  const main = (e: ProjectEarnings): number => e.totals?.[0]?.amount ?? -1;
+  // Compared in dollars, so lira and yen don't outweigh dollars by their size.
+  const main = (e: ProjectEarnings): number => (e.totals ? convertParts(e.totals, 'usd', fx).amount : -1);
   const sorted = [...connected].sort((a, b) => main(b.earnings) - main(a.earnings));
   const times = connected.map((c) => c.earnings.updatedAt).filter((t): t is number => t !== undefined);
   return {
@@ -111,15 +118,16 @@ export function summarize(projects: readonly Project[], earnings: Readonly<Recor
 export function useEarnings(): EarningsSummary {
   const projects = useApp((st) => st.projects);
   const earnings = useApp((st) => st.earnings);
-  return useMemo(() => summarize(projects, earnings), [projects, earnings]);
+  const fx = useApp((st) => st.fx);
+  return useMemo(() => summarize(projects, earnings, fx), [projects, earnings, fx]);
 }
 
-/** What the pill's tooltip says: "All-time earnings · updated 3h ago", and every currency when there are several. */
-export function earningsTip(e: ProjectEarnings, now: number = Date.now()): string {
-  if (e.refreshing && !e.totals) return 'Counting all-time earnings from Stripe…';
-  const head = `All-time earnings · ${e.refreshing ? 'updating…' : `updated ${updatedAgo(e.updatedAt, now)}`}`;
-  const lines = (e.totals ?? []).length > 1 ? (e.totals ?? []).map((t) => formatMoney(t.amount, t.currency)) : [];
-  return [head, ...lines, ...(e.error ? [brandText(e.error.message)] : [])].join('\n');
+/** Every connected project's earnings added up in the currency they're shown in, each project's part of it. */
+export function useConvertedEarnings(): EarningsSummary & { converted: ConvertedSummary<ConnectedProject>; fx: FxRates | undefined } {
+  const summary = useEarnings();
+  const { currency, fx } = useMoney();
+  const converted = useMemo(() => convertSummary(summary.projects, (c) => c.earnings.totals, currency, fx), [summary.projects, currency, fx]);
+  return { ...summary, converted, fx };
 }
 
 // ---- the Connect Stripe sheet (one at a time; projectId unset: pick the project in the sheet)

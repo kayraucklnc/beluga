@@ -3,6 +3,7 @@ import { type WorkspaceAction, type WorkspaceButton, workspaceButtons } from '@k
 import type { Workspace } from '@klaud/workspaces/types.js';
 import type { IconName } from '../components/Icon.js';
 import { COMMAND_KEYS, runRunning } from '../lib/commands.js';
+import { mergeTargetOf } from '../lib/merge-review.js';
 import { asksBeforeWork } from '../lib/work-confirm.js';
 
 /**
@@ -137,7 +138,10 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
     if (archive) return { ...archive, label: 'Archive', danger: false, hint: `PR #${pr.number} is merged: put this workspace away (the branch and conversation are kept)` };
   }
   const merge = by('merge');
-  if (merge) return merge;
+  if (merge) {
+    const into = mergeTargetOf(state, ws);
+    return { ...merge, label: `Merge into ${into}`, hint: `Shows what would merge into ${into} and checks it first; nothing changes until you confirm` };
+  }
   const run = all.find((x) => x.action === 'run' || x.action === 'stop_run');
   return run;
 }

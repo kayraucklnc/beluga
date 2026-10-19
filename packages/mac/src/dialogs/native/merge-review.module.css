@@ -1,0 +1,254 @@
+/* Before merging: a panel under the toolbar's Merge button (or a sheet when it isn't on screen). */
+.panel {
+  z-index: 60;
+  width: 400px;
+  max-width: calc(100vw - 24px);
+  padding: 14px 14px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-raised) 96%, transparent);
+  backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(30px) saturate(1.7);
+  box-shadow: var(--shadow-pop), 0 18px 50px rgba(0, 0, 0, 0.18);
+  transform-origin: var(--radix-popover-content-transform-origin);
+  animation: drop var(--dur) var(--ease-out);
+  outline: none;
+}
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: rgba(0, 0, 0, 0.18);
+}
+.sheet {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: top center;
+}
+@keyframes drop {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+    scale: 0.98;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+}
+:root[data-motion='reduce'] .panel {
+  animation: none;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--merge);
+  background: color-mix(in srgb, var(--merge) 15%, transparent);
+}
+.title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.loading,
+.error {
+  margin: 12px 0 4px;
+  color: var(--text-2);
+}
+.error {
+  color: var(--error);
+}
+
+/* This branch → main: the two ends side by side, so where it goes is never a guess. */
+.flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+.end {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.endLabel {
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+.branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+}
+.target {
+  background: color-mix(in srgb, var(--merge) 14%, transparent);
+  color: var(--merge);
+  font-weight: 600;
+}
+:root[data-theme='dark'] .target {
+  color: color-mix(in srgb, var(--merge) 45%, white);
+}
+.branchName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.arrow {
+  display: grid;
+  place-items: center;
+  height: 22px;
+  margin-bottom: 18px;
+  color: var(--text-3);
+}
+
+/* What merges. */
+.section {
+  margin-top: 12px;
+}
+.summary {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 0.92rem;
+}
+.summary strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.dot {
+  color: var(--text-3);
+}
+.added {
+  color: var(--ok);
+  font-variant-numeric: tabular-nums;
+}
+.removed {
+  color: var(--error);
+  font-variant-numeric: tabular-nums;
+}
+.commits {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.commit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0 3px 12px;
+  position: relative;
+}
+.commit::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta {
+  flex: none;
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+.more {
+  padding-left: 12px;
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
+
+/* Checks: green when fine, blue to know, amber when something stops the merge. */
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border-top: 0.5px solid var(--hairline);
+  list-style: none;
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  line-height: 1.4;
+}
+.checkIcon {
+  flex: none;
+  margin-top: 2px;
+}
+.checkText {
+  flex: 1;
+}
+.check button {
+  flex: none;
+  margin-top: -1px;
+}
+.ok .checkIcon {
+  color: var(--ok);
+}
+.info .checkIcon {
+  color: var(--info);
+}
+.block {
+  color: var(--text);
+}
+.block .checkIcon {
+  color: var(--warn);
+}
+.note {
+  margin: 10px 0 0;
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

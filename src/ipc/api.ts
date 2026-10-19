@@ -53,6 +53,7 @@ export const PrefsPatch = z
     shell: z.string().max(200).optional(),
     shellLogin: bool,
     shellArgs: z.array(z.string().max(200)).max(20),
+    earningsCurrency: z.string().regex(/^[a-z]{3}$/).nullable().optional(),
   })
   .partial();
 

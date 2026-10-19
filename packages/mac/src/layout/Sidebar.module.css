@@ -119,20 +119,16 @@
 .projectRow {
   font-weight: 600;
 }
-/* The project you're in (its home, or any of its worktrees and chats): a soft wash of your accent
-   with a faint glow, so the sidebar always says where you are. */
+/* The project you're in (its home, or any of its worktrees and chats): a quiet wash of your accent,
+   so the sidebar always says where you are without glowing. */
 .currentProject,
 .currentProject:hover {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
-    0 0 12px -5px color-mix(in srgb, var(--accent) 75%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 .currentProject.selected {
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
-    0 0 14px -4px color-mix(in srgb, var(--accent) 80%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 .currentProject .rowIcon {
   color: var(--accent);
