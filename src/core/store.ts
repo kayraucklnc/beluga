@@ -661,7 +661,7 @@ function bumpUnread(state: DomainState, channel: string, isNew: boolean): Domain
 
 /** A Claude Code session in one of your workspaces stopped working (its turn ended): unread there, unless it's shown. */
 function ccFinished(prev: DomainState, next: DomainState): DomainState {
-  const was = new Set(prev.claudeCode.sessions.filter((x) => x.status === 'working').map((x) => x.id));
+  const was = new Set(prev.claudeCode.sessions.filter((x) => x.status === 'working' && !x.own).map((x) => x.id));
   return next.claudeCode.sessions.reduce((st, x) => (x.workspaceId && was.has(x.id) && x.status !== 'working' ? bumpUnread(st, `ws:${x.workspaceId}`, true) : st), next);
 }
 

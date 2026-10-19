@@ -68,7 +68,7 @@ function newsLead(state: Source, channel: string): string | undefined {
 export function signalOf(state: Source, channel: string, ws?: string): Signal {
   const unread = state.unread[channel] ?? 0;
   const need = needOf(state, channel, ws);
-  const working = activityOf(state.log, channel).running || (ws !== undefined && state.claudeCode.sessions.some((x) => x.workspaceId === ws && x.status === 'working'));
+  const working = activityOf(state.log, channel).running || (ws !== undefined && state.claudeCode.sessions.some((x) => !x.own && x.workspaceId === ws && x.status === 'working'));
   const news = unread ? [newsLead(state, channel), plural(unread, 'message')].filter(Boolean).join(' · ') : '';
   if (need) return { level: 'needs', unread, need, working, tip: [needTip(need), unread ? plural(unread, 'message') : ''].filter(Boolean).join(' · ') };
   if (unread) return { level: 'unread', unread, working, tip: news };

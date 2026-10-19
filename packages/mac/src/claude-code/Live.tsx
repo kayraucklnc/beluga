@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { type CcSession, runningAgents, sessionsIn } from '@klaud/core/claude-code/model.js';
+import { type CcSession, outsideSessions, runningAgents, sessionsIn } from '@klaud/core/claude-code/model.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { Badge, Button, Dot, cx } from '../components/ui.js';
@@ -18,7 +18,7 @@ import s from './claude-code.module.css';
 /** The Claude Code sessions in one workspace (selected without making a new array each time). */
 export function useSessionsIn(workspaceId: string | undefined): CcSession[] {
   const all = useApp((st) => st.claudeCode.sessions);
-  return useMemo(() => (workspaceId ? sessionsIn(all, workspaceId) : []), [all, workspaceId]);
+  return useMemo(() => (workspaceId ? sessionsIn(outsideSessions(all), workspaceId) : []), [all, workspaceId]);
 }
 
 const MAX_PILLS = 3;
@@ -146,8 +146,11 @@ function SessionDetails({ session }: { session: CcSession }) {
 /** The Inspector's Claude Code panel: for the workspace you're in, or the session you're watching. */
 export function ClaudeCodeInspector() {
   const view = useApp((st) => st.view);
-  const all = useApp((st) => st.claudeCode.sessions);
-  const sessions = useMemo(() => (view.kind === 'workspace' ? sessionsIn(all, view.id) : view.kind === 'claude_code' && view.session ? all.filter((x) => x.id === view.session) : []), [all, view]);
+  const raw = useApp((st) => st.claudeCode.sessions);
+  const sessions = useMemo(() => {
+    const all = outsideSessions(raw);
+    return view.kind === 'workspace' ? sessionsIn(all, view.id) : view.kind === 'claude_code' && view.session ? all.filter((x) => x.id === view.session) : [];
+  }, [raw, view]);
   if (!sessions.length) return null;
   return (
     <section className={i.panel}>
@@ -164,8 +167,8 @@ export function ClaudeCodeInspector() {
 /** The sidebar's Activity row: how many agents are running outside klaud right now. */
 export function ActivityRow() {
   const { client } = useKlaud();
-  const running = useApp((st) => runningAgents(st.claudeCode.sessions));
-  const live = useApp((st) => st.claudeCode.sessions.length > 0);
+  const running = useApp((st) => runningAgents(outsideSessions(st.claudeCode.sessions)));
+  const live = useApp((st) => outsideSessions(st.claudeCode.sessions).length > 0);
   const selected = useApp((st) => st.view.kind === 'claude_code');
   return (
     <Row

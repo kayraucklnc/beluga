@@ -54,6 +54,8 @@ interface AgentEntry {
   tracker?: TranscriptTracker;
   /** The status last published (to notice an agent finishing). */
   last?: CcAgentStatus;
+  /** When a screen last asked for its steps (kept and shown a while, however old it is). */
+  viewedAt?: number;
 }
 
 interface SessionEntry {
@@ -64,6 +66,8 @@ interface SessionEntry {
   readonly agents: Map<string, AgentEntry>;
   /** When a screen last asked for its steps (kept watched a while after it goes quiet). */
   viewedAt: number;
+  /** One of klaud's own conversations: watched for its sub-agents, kept out of Activity. */
+  readonly own: boolean;
 }
 
 const ACTIVE_MS = 30 * 60_000;
@@ -93,6 +97,12 @@ const list = (dir: string): string[] => {
     return [];
   }
 };
+
+/** One of klaud's own sessions: the workspace whose conversation it is (else where its folder is). */
+function ownPlace(projects: readonly Project[], sessionId: string, cwd: string): { projectId?: string; workspaceId?: string } {
+  for (const p of projects) for (const w of p.workspaces) if (w.sessionId === sessionId) return { projectId: p.id, workspaceId: w.id };
+  return cwd ? placeOf(projects, cwd) : {};
+}
 
 /** The klaud project and workspace a folder belongs to (the deepest workspace folder containing it). */
 export function placeOf(projects: readonly Project[], cwd: string): { projectId?: string; workspaceId?: string } {
@@ -236,16 +246,17 @@ export class ClaudeCodeWatcher {
       const dir = path.join(this.projectsDir, folder);
       for (const name of list(dir)) {
         const id = SESSION_FILE.exec(name)?.[1];
-        if (!id || own.has(id)) continue;
+        if (!id) continue;
         const file = path.join(dir, name);
         const mtime = mtimeOf(file);
-        if (now - mtime > AGENT_LOOKBACK_MS) continue;
+        const known = this.sessions.get(id);
+        const viewed = Boolean(known && now - known.viewedAt <= VIEWED_MS);
+        if (now - mtime > AGENT_LOOKBACK_MS && !viewed) continue;
         const agentsDir = path.join(dir, id, 'subagents');
         const recent = now - mtime <= activeMs || list(agentsDir).some((f) => AGENT_FILE.test(f) && now - mtimeOf(path.join(agentsDir, f)) <= activeMs);
-        const known = this.sessions.get(id);
-        if (!recent && !(known && now - known.viewedAt <= VIEWED_MS)) continue;
+        if (!recent && !viewed) continue;
         found.add(id);
-        if (!known) this.sessions.set(id, { id, file, dir, tracker: new TranscriptTracker(file), agents: new Map(), viewedAt: 0 });
+        if (!known) this.sessions.set(id, { id, file, dir, tracker: new TranscriptTracker(file), agents: new Map(), viewedAt: 0, own: own.has(id) });
       }
     }
     for (const id of [...this.sessions.keys()]) if (!found.has(id)) this.sessions.delete(id);
@@ -265,7 +276,8 @@ export class ClaudeCodeWatcher {
       const file = path.join(dir, name);
       const known = s.agents.get(id);
       const mtime = mtimeOf(file);
-      if (now - mtime > activeMs && known?.last !== 'running') continue;
+      const viewed = known?.viewedAt !== undefined && now - known.viewedAt <= VIEWED_MS;
+      if (now - mtime > activeMs && known?.last !== 'running' && !viewed) continue;
       seen.add(id);
       const metaFile = path.join(dir, `agent-${id}.meta.json`);
       if (!known) s.agents.set(id, { id, file, metaFile, meta: readMeta(metaFile) });
@@ -368,8 +380,12 @@ export class ClaudeCodeWatcher {
     for (const s of this.sessions.values()) {
       const t = s.tracker;
       const agents = [...s.agents.values()].map((a) => this.agentOf(s, a, now, idleMs)).filter((a): a is CcAgent => Boolean(a));
+      const viewedAgent = (id: string): boolean => {
+        const at = s.agents.get(id)?.viewedAt;
+        return at !== undefined && now - at <= VIEWED_MS;
+      };
       const shown = agents
-        .filter((a) => a.status === 'running' || now - a.lastAt <= activeMs)
+        .filter((a) => a.status === 'running' || now - a.lastAt <= activeMs || viewedAgent(a.id))
         .sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || b.lastAt - a.lastAt)
         .slice(0, MAX_AGENTS);
       // Nothing in it yet (just created, or only bookkeeping lines): nothing to show.
@@ -382,7 +398,7 @@ export class ClaudeCodeWatcher {
         id: s.id,
         title: t.title ?? 'Claude Code session',
         cwd,
-        ...(cwd ? placeOf(projects, cwd) : {}),
+        ...(s.own ? { ...ownPlace(projects, s.id, cwd), own: true as const } : cwd ? placeOf(projects, cwd) : {}),
         status: t.final ? 'waiting' : now - lastAt <= idleMs ? 'working' : 'idle',
         ...(t.startedAt !== undefined ? { startedAt: t.startedAt } : {}),
         lastAt,
@@ -427,8 +443,48 @@ export class ClaudeCodeWatcher {
       ...(t.current ? { step: t.current } : {}),
       steps: t.count,
       ...(t.tokens ? { tokens: t.tokens } : {}),
-      ...(launch?.name ? { name: launch.name } : {}),
+      ...(launch?.name || a.meta.name ? { name: launch?.name ?? a.meta.name } : {}),
+      ...((t.model ?? a.meta.model) ? { model: t.model ?? a.meta.model } : {}),
+      ...(t.effort ? { effort: t.effort } : {}),
+      ...(t.cwd ? { cwd: t.cwd } : {}),
+      ...(a.meta.worktreePath ? { worktree: { path: a.meta.worktreePath, ...(a.meta.worktreeBranch ? { branch: a.meta.worktreeBranch } : {}) } } : {}),
+      ...(toolUseId ? { toolUseId } : {}),
+      ...(a.meta.parentAgentId ? { parentAgentId: a.meta.parentAgentId } : {}),
     };
+  }
+
+  /**
+   * Find a sub-agent by its id, however old (its worktree is open on screen, say), and keep it
+   * watched a while: → its session's id, or undefined when Claude Code has no such agent.
+   */
+  adopt(agentId: string): string | undefined {
+    if (!/^[\w-]{4,64}$/.test(agentId)) return undefined;
+    for (const s of this.sessions.values()) {
+      const a = s.agents.get(agentId);
+      if (a) {
+        a.viewedAt = this.now;
+        s.viewedAt = this.now;
+        return s.id;
+      }
+    }
+    const own = this.ownSessions();
+    for (const folder of list(this.projectsDir)) {
+      const dir = path.join(this.projectsDir, folder);
+      for (const name of list(dir)) {
+        const id = SESSION_FILE.exec(`${name}.jsonl`)?.[1];
+        if (!id || name.includes('.')) continue;
+        const agentFile = path.join(dir, name, 'subagents', `agent-${agentId}.jsonl`);
+        if (!mtimeOf(agentFile)) continue;
+        const file = path.join(dir, `${id}.jsonl`);
+        const s: SessionEntry = this.sessions.get(id) ?? { id, file, dir, tracker: new TranscriptTracker(file), agents: new Map(), viewedAt: this.now, own: own.has(id) };
+        s.viewedAt = this.now;
+        this.sessions.set(id, s);
+        s.agents.set(agentId, { id: agentId, file: agentFile, metaFile: path.join(dir, name, 'subagents', `agent-${agentId}.meta.json`), meta: readMeta(path.join(dir, name, 'subagents', `agent-${agentId}.meta.json`)), viewedAt: this.now });
+        this.poll();
+        return id;
+      }
+    }
+    return undefined;
   }
 
   /** One step of a session (or of one of its agents) with its details, while klaud keeps them. */
@@ -448,6 +504,7 @@ export class ClaudeCodeWatcher {
     if (agentId === undefined) return s.tracker.page(opts);
     const a = s.agents.get(agentId);
     if (!a) return { steps: [], more: false, missing: true };
+    a.viewedAt = this.now;
     a.tracker ??= new TranscriptTracker(a.file);
     this.label(s);
     a.tracker.update();

@@ -1,0 +1,53 @@
+/* Sub-agents in the sidebar: quieter than your own worktrees, with Claude's robot. */
+.row {
+  min-height: calc(var(--row) - 4px);
+  font-size: 0.92em;
+}
+.label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+.quiet .label {
+  color: var(--text-3);
+}
+.bot {
+  color: var(--claude);
+  opacity: 0.85;
+}
+.quiet .bot {
+  opacity: 0.55;
+}
+.mark {
+  color: var(--text-3);
+}
+.markFailed {
+  color: var(--error);
+}
+.more .label,
+.more {
+  color: var(--text-3);
+}
+.moreDot {
+  display: inline-block;
+  width: 13px;
+}
+.folder .label {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.count {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  font-size: 0.86em;
+}
+.disclosure {
+  color: var(--text-3);
+  transition: transform var(--dur-fast);
+}
+.disclosureOpen {
+  transform: rotate(90deg);
+}

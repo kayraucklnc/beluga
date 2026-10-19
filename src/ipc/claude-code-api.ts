@@ -16,4 +16,6 @@ export const CLAUDE_CODE_API = {
   'claudeCode.steps': { args: z.tuple([sessionId, agentId.optional(), Page.optional()]) },
   // One step with its details (input and output, or thinking) → a StepRecord, or undefined once it's no longer kept.
   'claudeCode.step': { args: z.tuple([sessionId, agentId.optional(), seq]) },
+  // Find a sub-agent by its id however old (its worktree is open, say) and keep it watched a while → its session's id, or undefined.
+  'claudeCode.findAgent': { args: z.tuple([agentId]) },
 } as const;

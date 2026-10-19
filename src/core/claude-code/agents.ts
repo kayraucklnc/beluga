@@ -14,6 +14,15 @@ export interface AgentMeta {
   readonly toolUseId?: string;
   /** "background" for agents the session sent off to work on their own. */
   readonly requestShape?: string;
+  /** The model it was asked to use ("sonnet"), when not the session's. */
+  readonly model?: string;
+  /** Its own worktree (`isolation: worktree`): <project>/.claude/worktrees/agent-<id>, and that worktree's branch. */
+  readonly worktreePath?: string;
+  readonly worktreeBranch?: string;
+  /** The agent that started it, when an agent did (not the session itself). */
+  readonly parentAgentId?: string;
+  /** The name it can be messaged by. */
+  readonly name?: string;
 }
 
 const MAX_META = 64 * 1024;
@@ -27,10 +36,13 @@ export function readMeta(file: string): AgentMeta {
     const raw = JSON.parse(text) as Record<string, unknown>;
     if (!raw || typeof raw !== 'object') return {};
     const out: Record<string, string> = {};
-    for (const key of ['agentType', 'description', 'toolUseId', 'requestShape'] as const) {
+    for (const key of ['agentType', 'description', 'toolUseId', 'requestShape', 'model', 'worktreeBranch', 'parentAgentId', 'name'] as const) {
       const v = str(raw[key]);
       if (v) out[key] = v;
     }
+    // A worktree is only believed where Claude Code makes them (never somewhere else on disk).
+    const worktree = str(raw.worktreePath, 4096);
+    if (worktree && /[\\/]\.claude[\\/]worktrees[\\/]agent-[\w-]+$/.test(worktree)) out.worktreePath = worktree;
     return out;
   } catch {
     return {};

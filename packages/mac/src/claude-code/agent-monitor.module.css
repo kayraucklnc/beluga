@@ -1,0 +1,120 @@
+/* A sub-agent, followed live: who started it, how it runs, and steering through its lead Claude. */
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 20px 10px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--claude) 14%, transparent);
+  color: var(--claude);
+}
+.avatarLive {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--claude) 35%, transparent);
+}
+.titles {
+  flex: 1;
+  min-width: 0;
+}
+.kicker {
+  color: var(--text-3);
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+.parentLink {
+  color: var(--accent);
+  font-weight: 600;
+}
+.parentLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 5px;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+.fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: 0.8rem;
+  font-weight: 550;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.now {
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 0.86rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.headActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 45%;
+}
+.steer {
+  flex: none;
+  padding: 8px 20px 12px;
+  border-top: 0.5px solid var(--hairline);
+}
+.steerBox {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--radius-l);
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+}
+.steerInput {
+  flex: 1;
+  min-height: 26px;
+  max-height: 140px;
+  padding: 4px 0;
+  border: 0;
+  resize: none;
+  background: transparent;
+  line-height: 18px;
+  field-sizing: content;
+}
+.steerHint,
+.steerOff {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 0.8rem;
+}
+.steerOff {
+  padding: 10px 20px 12px;
+  margin: 0;
+  border-top: 0.5px solid var(--hairline);
+}

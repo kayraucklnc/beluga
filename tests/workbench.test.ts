@@ -109,19 +109,20 @@ describe('setup and run scripts', () => {
     await waitFor(() => kay.state().approvals.length === 1, 4000);
     expect(kay.state().approvals[0]?.title).toBe("app's klaud.json wants to run its setup in new worktrees");
     kay.session.answerApproval('always');
-    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', 8000);
+    // A new worktree and a login shell can take a while on a busy CI runner: generous waits.
+    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', 20_000);
     const next = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'second');
-    await waitFor(() => kay.state().setup[next!.id]?.status === 'done', 8000);
+    await waitFor(() => kay.state().setup[next!.id]?.status === 'done', 20_000);
     expect(kay.state().approvals).toHaveLength(0);
     const setup = terminals.get(setupId(ws!.id))!;
     expect(setup.backlog()).toContain('installing');
 
     const run = kay.bench.run(ws!.id)!;
-    await waitFor(() => run.backlog().includes('serving'), 8000);
+    await waitFor(() => run.backlog().includes('serving'), 20_000);
     expect(kay.bench.run(ws!.id)).toBe(run); // already running: the same session
     kay.bench.stopRun(ws!.id);
-    await waitFor(() => !terminals.get(runId(ws!.id))?.running, 4000);
-  });
+    await waitFor(() => !terminals.get(runId(ws!.id))?.running, 8000);
+  }, 90_000);
 
   it('tells you when setup fails, and can be turned off', async () => {
     hub = await startHub({ keys });

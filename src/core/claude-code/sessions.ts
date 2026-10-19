@@ -52,6 +52,8 @@ export class TranscriptTracker {
   private lastTs = 0;
   tokens?: number;
   model?: string;
+  /** The effort its last answer ran at. */
+  effort?: string;
   /** Claude ended its turn and nothing came after. */
   final = false;
   /** Steps seen in all (the kept ones are the newest MAX_STEPS). */
@@ -147,6 +149,7 @@ export class TranscriptTracker {
     if (f.title && f.steps.length) this.firstMessage ??= f.title;
     if (f.tokens) this.tokens = f.tokens;
     if (f.model) this.model = f.model;
+    if (f.effort) this.effort = f.effort;
     if (f.final !== undefined) this.final = f.final;
     for (const l of f.launches) this.launches.set(l.toolUseId, l);
     if (f.sends?.length) this.sends = [...this.sends, ...f.sends].slice(-MAX_SENDS);
