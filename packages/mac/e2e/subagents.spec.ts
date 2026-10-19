@@ -115,3 +115,40 @@ test('its Outputs: the screenshot and test log it made, wherever it put them, to
   await monitor.getByRole('tab', { name: 'Activity' }).click();
   await expect(page.getByRole('log', { name: 'Sub-agent Write the webhook tests' })).toBeVisible();
 });
+
+test('its background commands: listed with how they run, and their output followed live (on its page and in the panel)', async ({ page }) => {
+  await sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests/ }).click();
+  const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
+  await expect(monitor).toBeVisible({ timeout: 15_000 });
+  // It starts the tests in the background: Claude Code says where their output goes, and writes it there.
+  const worktree = path.join(root, '.claude', 'worktrees', `agent-${AGENT}`);
+  const tasks = path.join(mkdtempSync(path.join(os.tmpdir(), 'claude-e2e-')), 'proj', SID, 'tasks');
+  mkdirSync(tasks, { recursive: true });
+  const out = path.join(tasks, 'bwhtests.output');
+  writeFileSync(out, '\u001b[2m RUN \u001b[22m v5.0.5\n ✓ src/webhooks.test.ts > retries once\n');
+  const at = Date.now();
+  appendFileSync(
+    agentFile,
+    line({ type: 'assistant', timestamp: iso(at), sessionId: SID, agentId: AGENT, isSidechain: true, cwd: worktree, message: { role: 'assistant', model: 'claude-sonnet-5-5', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'bg1', name: 'Bash', input: { command: 'npx vitest --watch src/webhooks.test.ts', description: 'Watch the webhook tests', run_in_background: true } }] } }) +
+      line({ type: 'user', timestamp: iso(at + 100), sessionId: SID, agentId: AGENT, isSidechain: true, cwd: worktree, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'bg1', content: `Command running in background with ID: bwhtests. Output is being written to: ${out}. You will be notified when it completes.` }] }, toolUseResult: { backgroundTaskId: 'bwhtests' } }),
+  );
+
+  await monitor.getByRole('tab', { name: /^Background · 1 running/ }).click({ timeout: 15_000 });
+  const list = monitor.getByRole('listbox', { name: 'Background commands' });
+  await expect(list.getByRole('option', { name: /Watch the webhook tests/ })).toContainText('Running');
+  const output = monitor.getByRole('region', { name: 'Output of Watch the webhook tests' });
+  await expect(output).toContainText('$ npx vitest --watch src/webhooks.test.ts');
+  await expect(output).toContainText('✓ src/webhooks.test.ts > retries once');
+  await expect(output).not.toContainText('\u001b');
+  // More comes: it shows as it's written.
+  appendFileSync(out, ' ✓ src/webhooks.test.ts > gives up after 3 tries\n Tests  2 passed (2)\n');
+  await expect(output).toContainText('gives up after 3 tries', { timeout: 10_000 });
+  await shot(page, 'subagent-background');
+
+  // The panel of its worktree has it too.
+  const panelTab = page.getByRole('tablist', { name: 'Panel' }).getByRole('tab', { name: 'Background', exact: true });
+  await panelTab.click();
+  const panel = page.locator('#panel-body');
+  await expect(panel.getByRole('region', { name: 'Output of Watch the webhook tests' })).toContainText('Tests  2 passed (2)');
+  await shot(page, 'panel-background');
+});

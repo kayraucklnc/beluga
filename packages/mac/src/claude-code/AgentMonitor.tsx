@@ -10,6 +10,8 @@ import { mod } from '../lib/system.js';
 import { RemoveWorktreeAlert, WorktreeInfoPage } from '../views/WorktreeInfo.js';
 import { LiveTranscript } from './LiveTranscript.js';
 import { AgentOutputs, useAgentOutputs } from './AgentOutputs.js';
+import { BackgroundTasks } from './BackgroundTasks.js';
+import { tasksForAgent } from './background-model.js';
 import { agentElapsed, agentLabel, agentTone, plural, tokens, typeLabel } from './cc-model.js';
 import { type SubAgent, agentIdOfPath, agentOfWorktree, agentTitle, effortLabel, modelLabel, parentWorkspace, steerPrompt, steerable } from './subagents-model.js';
 import s from './claude-code.module.css';
@@ -95,10 +97,14 @@ export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Work
   const parentAgent = a.parentAgentId ? sub.session.agents.find((x) => x.id === a.parentAgentId) : undefined;
   const now = useNow(a.status === 'running');
   const [removing, setRemoving] = useState(false);
-  const [view, setView] = useState<'activity' | 'outputs'>('activity');
+  const [picked, setView] = useState<'activity' | 'outputs' | 'background'>('activity');
   const live = a.status === 'running';
   const outputs = useAgentOutputs(sub.session.id, a.id, live);
   const made = outputs?.outputs.length ?? 0;
+  // Commands it runs in the background (a dev server, its tests): a third view, when it has any.
+  const tasks = useMemo(() => tasksForAgent(sub.session, a.id), [sub.session, a.id]);
+  const runningTasks = tasks.filter((t) => t.task.status === 'running').length;
+  const view = picked === 'background' && !tasks.length ? 'activity' : picked;
   const version = `${a.lastAt}:${a.steps}:${a.status}`;
   const facts = [
     { label: typeLabel(a.type) },
@@ -180,11 +186,14 @@ export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Work
           options={[
             { value: 'activity', label: 'Activity', hint: 'What it does, as it does it' },
             { value: 'outputs', label: made ? `Outputs · ${made}` : 'Outputs', hint: 'Screenshots, test output and logs it made or looked at' },
+            ...(tasks.length ? [{ value: 'background' as const, label: `Background · ${runningTasks ? `${runningTasks} running` : tasks.length}`, hint: 'Commands it runs in the background, with their output as it comes' }] : []),
           ]}
         />
       </div>
       {view === 'activity' ? (
         <LiveTranscript key={`${sub.session.id}/${a.id}`} sessionId={sub.session.id} agentId={a.id} version={version} live={live} label={`Sub-agent ${agentTitle(a)}`} />
+      ) : view === 'background' ? (
+        <BackgroundTasks items={tasks} layout="split" empty="Nothing it runs in the background." />
       ) : (
         <AgentOutputs key={`${sub.session.id}/${a.id}`} sessionId={sub.session.id} agentId={a.id} list={outputs} {...(sub.session.cwd ? { cwd: sub.session.cwd } : {})} />
       )}

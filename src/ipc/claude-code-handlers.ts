@@ -14,4 +14,5 @@ export const CLAUDE_CODE_HANDLERS = {
   'claudeCode.findAgent': (s, agentId) => claudeCodeOf(s).adopt(agentId),
   'claudeCode.outputs': (s, sessionId, agentId) => claudeCodeOf(s).outputs(sessionId, agentId),
   'claudeCode.output': (s, sessionId, agentId, file) => claudeCodeOf(s).output(sessionId, agentId, file),
+  'claudeCode.taskOutput': (s, sessionId, agentId, taskId) => claudeCodeOf(s).taskOutput(sessionId, agentId, taskId),
 } satisfies ClaudeCodeHandlers;

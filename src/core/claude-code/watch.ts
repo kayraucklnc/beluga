@@ -3,7 +3,8 @@ import path from 'node:path';
 import type { Project } from '../../workspaces/types.js';
 import type { Store } from '../store.js';
 import { type AgentMeta, agentStatus, readMeta } from './agents.js';
-import type { CcAgent, CcAgentStatus, CcMessage, CcOutputFile, CcOutputs, CcSession, CcSteps, CcTeam } from './model.js';
+import type { CcAgent, CcAgentStatus, CcMessage, CcOutputFile, CcOutputs, CcSession, CcSteps, CcTask, CcTaskOutput, CcTeam } from './model.js';
+import { byLiveThenLatest, taskOutput, tasksOf } from './task-list.js';
 import { agentScratchDir, outputsOnDisk, readOutput } from './output-files.js';
 import { type PageOptions, TranscriptTracker } from './sessions.js';
 import type { StepRecord } from '../../shared/steps.js';
@@ -78,6 +79,8 @@ const AGENT_LOOKBACK_MS = 6 * 60 * 60_000;
 const VIEWED_MS = 10 * 60_000;
 const MAX_SESSIONS = 30;
 const MAX_AGENTS = 12;
+/** Background commands shown per session (running ones, then the latest). */
+const MAX_TASKS = 20;
 /** Messages shown in a team's timeline. */
 const TEAM_MESSAGES = 12;
 const AGENT_FILE = /^agent-([\w-]+)\.jsonl$/;
@@ -392,7 +395,9 @@ export class ClaudeCodeWatcher {
       // Nothing in it yet (just created, or only bookkeeping lines): nothing to show.
       if (!t.count && !t.title && !shown.length) continue;
       const lastAt = t.lastAt;
-      if (now - lastAt > activeMs && !shown.some((a) => a.status === 'running') && now - s.viewedAt > VIEWED_MS) continue;
+      const quiet = now - lastAt > activeMs && !shown.some((a) => a.status === 'running') && now - s.viewedAt > VIEWED_MS;
+      const tasks = this.tasksIn(s, shown, now, idleMs, activeMs);
+      if (quiet && !tasks.some((x) => x.status === 'running')) continue;
       const cwd = t.cwd ?? '';
       const team = this.teamOf(s, shown);
       out.push({
@@ -409,10 +414,21 @@ export class ClaudeCodeWatcher {
         ...(t.model ? { model: t.model } : {}),
         agents: shown,
         ...(team ? { team } : {}),
+        ...(tasks.length ? { tasks } : {}),
       });
     }
     const live = (x: CcSession): number => Number(x.status === 'working' || x.agents.some((a) => a.status === 'running'));
     return out.sort((a, b) => live(b) - live(a) || b.lastAt - a.lastAt).slice(0, MAX_SESSIONS);
+  }
+
+  /** The background commands a session and its agents started: running ones, and those that ended lately. */
+  private tasksIn(s: SessionEntry, shown: readonly CcAgent[], now: number, idleMs: number, activeMs: number): CcTask[] {
+    const agents = shown.flatMap((x) => {
+      const t = s.agents.get(x.id)?.tracker;
+      return t ? tasksOf(t, x.id, now, idleMs) : [];
+    });
+    const all = [...tasksOf(s.tracker, undefined, now, idleMs), ...agents];
+    return all.filter((x) => x.status === 'running' || now - (x.endedAt ?? x.startedAt) <= activeMs).sort(byLiveThenLatest).slice(0, MAX_TASKS);
   }
 
   private agentOf(s: SessionEntry, a: AgentEntry, now: number, idleMs: number): CcAgent | undefined {
@@ -524,6 +540,17 @@ export class ClaudeCodeWatcher {
     const scratch = root && a.meta.toolUseId ? agentScratchDir(root, a.meta.toolUseId) : undefined;
     const outputs = outputsOnDisk(a.tracker.outputs.list(), root && scratch ? { root, dir: scratch } : undefined);
     return { outputs, ...(scratch ? { scratch } : {}) };
+  }
+
+  /** The end of a background command's output (the session's own, or one of its agents'), to follow it. */
+  taskOutput(sessionId: string, agentId: string | undefined, taskId: string): CcTaskOutput | undefined {
+    const s = this.sessions.get(sessionId);
+    if (!s) return undefined;
+    s.viewedAt = this.now;
+    const t = agentId === undefined ? s.tracker : s.agents.get(agentId)?.tracker;
+    if (!t) return undefined;
+    t.update();
+    return taskOutput(t, taskId);
   }
 
   /** One of an agent's outputs, to show it: only a file it made or looked at. */
