@@ -2,22 +2,25 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Workspace } from '@klaud/workspaces/types.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
-import { Button, Dot, Empty, Tip, cx } from '../components/ui.js';
+import { Button, Dot, Empty, Segmented, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { RemoveWorktreeAlert, WorktreeInfoPage } from '../views/WorktreeInfo.js';
 import { LiveTranscript } from './LiveTranscript.js';
+import { AgentOutputs, useAgentOutputs } from './AgentOutputs.js';
 import { agentElapsed, agentLabel, agentTone, plural, tokens, typeLabel } from './cc-model.js';
 import { type SubAgent, agentIdOfPath, agentOfWorktree, agentTitle, effortLabel, modelLabel, parentWorkspace, steerPrompt, steerable } from './subagents-model.js';
 import s from './claude-code.module.css';
 import m from './agent-monitor.module.css';
+import o from './agent-outputs.module.css';
 
 /**
  * One sub-agent, followed live: what it was asked, who started it (and a way back there), its
- * model and effort, everything it does as it does it (thinking, tools, words), and its own
- * worktree's Changes, Files and Scratch in the right panel when it has one. You don't talk to
+ * model and effort, everything it does as it does it (thinking, tools, words), what it makes along
+ * the way (Outputs: screenshots, test output, logs, wherever it puts them), and its own worktree's
+ * Changes, Files and Scratch in the right panel when it has one. You don't talk to
  * a sub-agent: you tell the Claude that started it, which passes it on (SendMessage), so its
  * conversation stays the one story of the work.
  */
@@ -92,7 +95,10 @@ export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Work
   const parentAgent = a.parentAgentId ? sub.session.agents.find((x) => x.id === a.parentAgentId) : undefined;
   const now = useNow(a.status === 'running');
   const [removing, setRemoving] = useState(false);
+  const [view, setView] = useState<'activity' | 'outputs'>('activity');
   const live = a.status === 'running';
+  const outputs = useAgentOutputs(sub.session.id, a.id, live);
+  const made = outputs?.outputs.length ?? 0;
   const version = `${a.lastAt}:${a.steps}:${a.status}`;
   const facts = [
     { label: typeLabel(a.type) },
@@ -166,7 +172,22 @@ export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Work
           ) : null}
         </div>
       </header>
-      <LiveTranscript key={`${sub.session.id}/${a.id}`} sessionId={sub.session.id} agentId={a.id} version={version} live={live} label={`Sub-agent ${agentTitle(a)}`} />
+      <div className={o.tabs}>
+        <Segmented
+          label="Show"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'activity', label: 'Activity', hint: 'What it does, as it does it' },
+            { value: 'outputs', label: made ? `Outputs · ${made}` : 'Outputs', hint: 'Screenshots, test output and logs it made or looked at' },
+          ]}
+        />
+      </div>
+      {view === 'activity' ? (
+        <LiveTranscript key={`${sub.session.id}/${a.id}`} sessionId={sub.session.id} agentId={a.id} version={version} live={live} label={`Sub-agent ${agentTitle(a)}`} />
+      ) : (
+        <AgentOutputs key={`${sub.session.id}/${a.id}`} sessionId={sub.session.id} agentId={a.id} list={outputs} {...(sub.session.cwd ? { cwd: sub.session.cwd } : {})} />
+      )}
       <Steer sub={sub} parent={parent} {...(parent ? { leadName: parent.kind === 'main' ? (projectName ?? parent.name) : parent.name } : {})} />
       {removing && worktree ? <RemoveWorktreeAlert ws={worktree} onDone={() => setRemoving(false)} onCancel={() => setRemoving(false)} /> : null}
     </div>

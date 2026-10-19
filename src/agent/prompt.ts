@@ -66,6 +66,21 @@ export function buildScratchAppend(dir: string): string {
   ].join('\n');
 }
 
+/** How a sub-agent's own scratch folder is introduced (also how klaud tells it already has one). */
+export const AGENT_SCRATCH_MARK = 'Your scratch folder:';
+
+/** Added to each sub-agent's prompt: its own scratch folder, which the owner watches on its page. */
+export function buildAgentScratchNote(dir: string): string {
+  return [
+    '',
+    '',
+    `${AGENT_SCRATCH_MARK} ${dir}/ (git-ignored, already created). Save what you make along the way there,`,
+    'not only to /tmp: screenshots, test and command output (e.g. `npm test 2>&1 | tee <folder>/tests.log`),',
+    'logs, JSON you fetched, notes. Short descriptive names (01-login.png, tests.log). The owner follows',
+    'this folder live. Never put secrets in it.',
+  ].join('\n');
+}
+
 /**
  * For runs in a project's main folder: questions only. A request to change anything moves the
  * conversation to a new worktree (continue_in_worktree) instead of being refused or attempted.

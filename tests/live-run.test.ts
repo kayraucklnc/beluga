@@ -1,15 +1,20 @@
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { BackgroundAgents, PromptQueue, TurnRouter } from '../src/agent/live-run.js';
 import type { AgentRunInput, FollowUp, RoomBridge } from '../src/agent/types.js';
 
 /** A scripted Claude Code: for each prompt it reads, it yields the next scripted turn. */
 type Turn = (prompt: string) => object[];
-const script: { turns: Turn[]; extra: object[][]; prompts: string[] } = { turns: [], extra: [], prompts: [] };
+const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options } = { turns: [], extra: [], prompts: [] };
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({
   ...(await original<object>()),
-  query: ({ prompt }: { prompt: AsyncIterable<{ message: { content: string } }> }) =>
+  query: ({ prompt, options }: { prompt: AsyncIterable<{ message: { content: string } }>; options: Options }) =>
     (async function* () {
+      script.options = options;
       yield { type: 'system', subtype: 'init', session_id: 's1' };
       let turn = 0;
       for await (const msg of prompt) {
@@ -139,5 +144,34 @@ describe('live runs', () => {
     expect(input.events).toEqual(['started 1 job', 'job finished']);
     expect(script.prompts[1]).toContain('also this');
     expect(send).toBeUndefined(); // closed again
+  });
+});
+
+describe('sub-agents get a scratch folder of their own', () => {
+  const preToolUse = (): HookCallback => script.options!.hooks!.PreToolUse![0]!.hooks[0]!;
+  const call = async (tool_name: string, tool_input: object): Promise<unknown> => preToolUse()({ hook_event_name: 'PreToolUse', tool_name, tool_input, tool_use_id: 'toolu_01xyz0123456789', session_id: 's1', transcript_path: '', cwd: '' } as never, 'toolu_01xyz0123456789', { signal: new AbortController().signal });
+
+  it('adds it to each launch’s prompt (and makes it), only when the run has a scratch folder', async () => {
+    const cwd = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-run-')));
+    try {
+      script.turns = [() => [text('ok'), result('ok')]];
+      await createClaudeBackend({ cwd, autoEdit: false, additionalDirectories: [], bridge }).run(runInput({ scratchDir: '.klaud/scratch' }));
+      const out = (await call('Agent', { description: 'Check the UI', prompt: 'Look at it.' })) as { hookSpecificOutput: { permissionDecision: string; updatedInput: { prompt: string; description: string } } };
+      const dir = path.join(cwd, '.klaud/scratch/agents/0123456789');
+      expect(out.hookSpecificOutput.permissionDecision).toBe('allow');
+      expect(out.hookSpecificOutput.updatedInput.prompt).toContain(`Look at it.`);
+      expect(out.hookSpecificOutput.updatedInput.prompt).toContain(`${dir}/`);
+      expect(out.hookSpecificOutput.updatedInput.description).toBe('Check the UI');
+      expect(existsSync(dir)).toBe(true);
+      // Other tools go on as before.
+      expect(((await call('TodoWrite', {})) as { hookSpecificOutput?: unknown }).hookSpecificOutput).toBeUndefined();
+
+      script.turns = [() => [text('ok'), result('ok')]];
+      await createClaudeBackend({ cwd, autoEdit: false, additionalDirectories: [], bridge }).run(runInput());
+      const plain = (await call('Agent', { description: 'x', prompt: 'Look.' })) as { hookSpecificOutput: { updatedInput?: unknown } };
+      expect(plain.hookSpecificOutput.updatedInput).toBeUndefined();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });
