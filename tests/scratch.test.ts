@@ -25,7 +25,7 @@ describe('the scratch folder (.klaud/scratch/)', () => {
     // Never Conductor's (or anyone's) .context/.
     expect(exclude).not.toContain('.context');
     // A worktree shares the main checkout's exclude file.
-    git(dir, 'commit', '-q', '--allow-empty', '-m', 'init');
+    git(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init');
     const wt = path.join(dir, '..', `${path.basename(dir)}-wt`);
     git(dir, 'worktree', 'add', '-q', wt);
     await ensureScratch(wt);
