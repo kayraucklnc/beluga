@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
 import type { UiAction } from '@klaud/ui/workspace-models.js';
@@ -20,7 +20,8 @@ import { useArrangeDrag } from './arrange-drag.js';
 import { GroupHeader, NewGroupRow, groupItems, isGroupOption, moveItems, moveKey } from './ProjectGroups.js';
 import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, useLayout } from './project-layout.js';
 import { OutsideWorktrees } from './OtherWorktrees.js';
-import { LooseSubAgents, SubAgentRows } from './SubAgents.js';
+import { LooseSubAgents, SubAgentRows, useCcSessions } from './SubAgents.js';
+import { hasRowsInside } from './project-rows.js';
 import { outsideOf } from './outside-model.js';
 import { openSheet } from '../lib/sheets.js';
 import { groupTally, groupWorking, projectTally, projectWorking, tallyTip } from './attention-model.js';
@@ -165,6 +166,9 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   const cleanUpItem: ActionItem[] = outsideOf(p).length ? [{ label: 'Clean Up Worktrees…', onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: p.id }) }] : [];
   const extra: ActionItem[] = [...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, Boolean(state.earnings[p.root])), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, onSelect: () => hide(p) }];
   const kids = depth + 2;
+  // Nothing to unfold: no arrow (its place kept, so the icons stay in line).
+  const sessions = useCcSessions();
+  const foldable = useMemo(() => hasRowsInside(p, sessions), [p, sessions]);
   return (
     <>
       <SpecContext menu={{ kind: 'project', id: p.id }} extra={extra} hide={ownWay}>
@@ -174,19 +178,23 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           selected={onHome}
           className={cx(side.projectRow, current && side.currentProject)}
           data-current={current || undefined}
-          aria-expanded={!fold.folded}
+          aria-expanded={foldable ? !fold.folded : undefined}
           aria-label={p.name}
           icon={
             <span className={s.projectIcon}>
-              <button
-                type="button"
-                className={s.foldButton}
-                aria-label={fold.folded ? `Show what's in ${p.name}` : `Fold ${p.name}`}
-                title={fold.folded ? 'Show (Option-click: every project)' : 'Fold (Option-click: every project)'}
-                onClick={(e) => (e.stopPropagation(), fold.toggle(e.altKey))}
-              >
-                <Icon name="chevronRight" size={9} className={cx(s.disclosure, !fold.folded && s.disclosureOpen)} />
-              </button>
+              {foldable ? (
+                <button
+                  type="button"
+                  className={s.foldButton}
+                  aria-label={fold.folded ? `Show what's in ${p.name}` : `Fold ${p.name}`}
+                  title={fold.folded ? 'Show (Option-click: every project)' : 'Fold (Option-click: every project)'}
+                  onClick={(e) => (e.stopPropagation(), fold.toggle(e.altKey))}
+                >
+                  <Icon name="chevronRight" size={9} className={cx(s.disclosure, !fold.folded && s.disclosureOpen)} />
+                </button>
+              ) : (
+                <span className={s.foldButton} aria-hidden="true" />
+              )}
               <ProjectIcon id={p.id} name={p.name} size={16} />
             </span>
           }
@@ -198,7 +206,7 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           }}
           onKeyDown={(e) => {
             // ← folds, → unfolds (as in Finder's lists).
-            if (e.target === e.currentTarget && !e.metaKey && !e.ctrlKey && ((e.key === 'ArrowLeft' && !fold.folded) || (e.key === 'ArrowRight' && fold.folded))) {
+            if (foldable && e.target === e.currentTarget && !e.metaKey && !e.ctrlKey && ((e.key === 'ArrowLeft' && !fold.folded) || (e.key === 'ArrowRight' && fold.folded))) {
               e.preventDefault();
               fold.toggle(e.altKey);
               return;

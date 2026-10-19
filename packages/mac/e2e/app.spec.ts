@@ -214,6 +214,10 @@ test('adds a project from the Add Projects sheet, with its own icon', async ({ p
   const row = sidebar(page).getByRole('button', { name: /^pixel-app/ }).first();
   await expect(row).toBeVisible();
   await expect(row.locator('img')).toHaveAttribute('src', /^data:image\/svg\+xml/);
+  // Nothing in it yet: no fold arrow (a project with worktrees keeps its own).
+  await expect(sidebar(page).getByRole('button', { name: /^(Fold|Show what's in) pixel-app/ })).toHaveCount(0);
+  await expect(sidebar(page).getByRole('button', { name: /^(Fold|Show what's in) bob-api/ })).toHaveCount(1);
+  if (process.env.SHOTS) await sidebar(page).screenshot({ path: `${process.env.SHOTS}/sidebar-empty-project.png` });
 });
 
 // ---- images in the chat, and the queue
