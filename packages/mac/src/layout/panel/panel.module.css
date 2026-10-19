@@ -93,7 +93,8 @@
   margin-left: 4px;
 }
 .tabsFolded .tabOn {
-  flex-grow: 2.4;
+  /* Never narrower than its icon and whole name, however many tabs share the strip. */
+  flex: 2.4 0 auto;
 }
 .tab:hover {
   color: var(--text);
