@@ -2,7 +2,7 @@ import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { Button, IconButton, Tip, cx } from '../components/ui.js';
 import { EarningsTipBody } from '../components/EarningsPill.js';
-import { dismissEarningsHint, formatMoney, openStripe, updatedAgo, useEarnings, useEarningsHintDismissed } from '../lib/earnings.js';
+import { dismissEarningsHint, formatMoney, missingNote, openStripe, updatedAgo, useConvertedEarnings, useEarningsHintDismissed } from '../lib/earnings.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import s from './earnings-card.module.css';
 
@@ -12,7 +12,7 @@ import s from './earnings-card.module.css';
  */
 export function EarningsCard() {
   const api = useApi();
-  const summary = useEarnings();
+  const summary = useConvertedEarnings();
   const dismissed = useEarningsHintDismissed();
   const repos = useApp((st) => st.projects.filter((p) => p.root).length);
   if (!summary.projects.length) {
@@ -33,7 +33,9 @@ export function EarningsCard() {
       </section>
     );
   }
-  const [main, ...more] = summary.totals;
+  const { currency, total, rows } = summary.converted;
+  const several = summary.projects.length > 1;
+  const counted = summary.projects.some((c) => c.earnings.totals);
   return (
     <section className={s.card} aria-label="Earnings">
       <div className={s.head}>
@@ -49,30 +51,27 @@ export function EarningsCard() {
         </span>
       </div>
       <div className={s.tiles}>
-        {summary.projects.length > 1 && main ? (
+        {several && counted ? (
           <div className={cx(s.tile, s.all)}>
             <span className={s.tileName}>All projects</span>
-            <span className={s.amount}>{formatMoney(main.amount, main.currency)}</span>
-            <span className={s.others}>{more.map((t) => formatMoney(t.amount, t.currency, true)).join(' · ') || ' '}</span>
+            <span className={s.amount}>{formatMoney(total.amount, currency)}</span>
+            <span className={s.others}>{missingNote(total.missing) ?? (total.converted ? 'Converted at the ECB’s daily rates' : ' ')}</span>
           </div>
         ) : null}
-        {summary.projects.map(({ project, earnings }) => {
-          const [first, ...rest] = earnings.totals ?? [];
-          return (
-            <Tip key={project.id} label={<EarningsTipBody earnings={earnings} />}>
-              <button type="button" className={cx(s.tile, earnings.refreshing && s.counting)} onClick={() => openStripe(project.id)}>
-                <span className={s.tileName}>
-                  <ProjectIcon id={project.id} name={project.name} size={14} />
-                  {project.name}
-                  {earnings.mode === 'test' ? <span className={s.test}>test</span> : null}
-                  {earnings.error ? <Icon name="alert" size={11} className={s.warn} /> : null}
-                </span>
-                <span className={s.amount}>{first ? formatMoney(first.amount, first.currency) : earnings.totals ? formatMoney(0, 'usd') : 'Counting…'}</span>
-                <span className={s.others}>{rest.map((t) => formatMoney(t.amount, t.currency, true)).join(' · ') || ' '}</span>
-              </button>
-            </Tip>
-          );
-        })}
+        {rows.map(({ item: { project, earnings }, money, share }) => (
+          <Tip key={project.id} label={<EarningsTipBody earnings={earnings} />}>
+            <button type="button" className={cx(s.tile, earnings.refreshing && s.counting)} onClick={() => openStripe(project.id)}>
+              <span className={s.tileName}>
+                <ProjectIcon id={project.id} name={project.name} size={14} />
+                {project.name}
+                {earnings.mode === 'test' ? <span className={s.test}>test</span> : null}
+                {earnings.error ? <Icon name="alert" size={11} className={s.warn} /> : null}
+              </span>
+              <span className={s.amount}>{earnings.totals ? formatMoney(money.amount, currency) : 'Counting…'}</span>
+              <span className={s.others}>{missingNote(money.missing) ?? (several && earnings.totals ? `${Math.round(share * 100)}% of the total` : ' ')}</span>
+            </button>
+          </Tip>
+        ))}
       </div>
     </section>
   );

@@ -80,21 +80,54 @@ export function minorUnits(currency: string): number {
   }
 }
 
+/** Several totals as one currency: what could be added up, and what couldn't (no rate yet). */
+export interface Converted {
+  /** In `into`'s smallest unit: every total that could be converted. */
+  readonly amount: number;
+  /** Totals left out because a rate is missing (theirs or the target's). */
+  readonly missing: readonly MoneyTotal[];
+  /** Some total was in another currency (so the amount is approximate, at the rates). */
+  readonly converted: boolean;
+}
+
+/** One unit of `currency` in dollars' terms: how many of it a dollar buys (1 for USD). */
+const rateOf = (currency: string, fx: FxRates | undefined): number | undefined => {
+  if (currency === 'usd') return 1;
+  const rate = fx?.rates[currency];
+  return rate && Number.isFinite(rate) && rate > 0 ? rate : undefined;
+};
+
 /**
- * Several totals as one, in `into` (smallest unit), at these rates; undefined when a currency has
- * no rate. Approximate on purpose: it's a glance, Stripe has the exact figures.
+ * Add up totals in `into` (smallest unit) at these rates, through dollars. Totals already in
+ * `into` count exactly; a total whose currency has no rate is left out and listed in `missing`
+ * (never NaN). Approximate on purpose: it's a glance, Stripe has the exact figures.
  */
-export function convertTotals(totals: readonly MoneyTotal[], into: string, fx: FxRates | undefined): number | undefined {
+export function convertParts(totals: readonly MoneyTotal[], into: string, fx: FxRates | undefined): Converted {
+  const out = rateOf(into, fx);
+  let exact = 0;
   let usd = 0;
+  let converted = false;
+  const missing: MoneyTotal[] = [];
   for (const t of totals) {
-    if (t.currency === into && totals.length === 1) return t.amount;
-    const rate = t.currency === 'usd' ? 1 : fx?.rates[t.currency];
-    if (!rate) return undefined;
+    if (t.currency === into) {
+      exact += t.amount;
+      continue;
+    }
+    const rate = rateOf(t.currency, fx);
+    if (!rate || !out) {
+      missing.push(t);
+      continue;
+    }
     usd += t.amount / minorUnits(t.currency) / rate;
+    converted = true;
   }
-  const out = into === 'usd' ? 1 : fx?.rates[into];
-  if (!out) return undefined;
-  return Math.round(usd * out * minorUnits(into));
+  return { amount: exact + (out ? Math.round(usd * out * minorUnits(into)) : 0), missing, converted };
+}
+
+/** Several totals as one, in `into` (smallest unit), at these rates; undefined when a currency has no rate. */
+export function convertTotals(totals: readonly MoneyTotal[], into: string, fx: FxRates | undefined): number | undefined {
+  const parts = convertParts(totals, into, fx);
+  return parts.missing.length ? undefined : parts.amount;
 }
 
 /**
@@ -110,4 +143,30 @@ export function mainCurrency(earnings: Readonly<Record<string, ProjectEarnings>>
   let most = -1;
   for (const [currency, value] of usd) if (value > most) [best, most] = [currency, value];
   return best;
+}
+
+/** A currency code as prefs keep it: three lowercase letters. */
+export const CURRENCY_CODE = /^[a-z]{3}$/;
+
+/**
+ * The currency earnings are shown in: the one you chose ("Show earnings in"), else the one the
+ * most money was earned in.
+ */
+export function earningsCurrency(chosen: string | undefined, earnings: Readonly<Record<string, ProjectEarnings>>, fx: FxRates | undefined): string {
+  return chosen && CURRENCY_CODE.test(chosen) ? chosen : mainCurrency(earnings, fx);
+}
+
+/** Offered first when choosing a currency; the rest follow alphabetically. */
+export const COMMON_CURRENCIES: readonly string[] = ['usd', 'eur', 'gbp', 'try', 'inr', 'jpy', 'cad', 'aud', 'chf', 'cny'];
+
+/**
+ * The currencies earnings can be shown in: the ones the rates cover (dollars always), the common
+ * ones first, plus `keep` (your current choice) even if its rate went missing.
+ */
+export function currencyChoices(fx: FxRates | undefined, keep?: string): string[] {
+  const covered = new Set(['usd', ...Object.keys(fx?.rates ?? {}).filter((c) => CURRENCY_CODE.test(c))]);
+  if (keep && CURRENCY_CODE.test(keep)) covered.add(keep);
+  const common = COMMON_CURRENCIES.filter((c) => covered.has(c));
+  const rest = [...covered].filter((c) => !COMMON_CURRENCIES.includes(c)).sort();
+  return [...common, ...rest];
 }

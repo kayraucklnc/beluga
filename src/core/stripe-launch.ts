@@ -44,4 +44,4 @@ function connectDemo(store: Store, service: StripeEarnings): () => void {
 }
 
 /** The demo's exchange rates: fixed, so nothing goes online. */
-const demoRates: typeof fetch = async () => new Response(JSON.stringify({ base: 'USD', rates: { EUR: 0.92, GBP: 0.79, JPY: 151.2, CAD: 1.37, TRY: 34.1 } }), { headers: { 'content-type': 'application/json' } });
+const demoRates: typeof fetch = async () => new Response(JSON.stringify({ base: 'USD', rates: { EUR: 0.92, GBP: 0.79, TRY: 34.1, INR: 83.9, JPY: 151.2, CAD: 1.37, AUD: 1.52, CHF: 0.88, CNY: 7.24 } }), { headers: { 'content-type': 'application/json' } });

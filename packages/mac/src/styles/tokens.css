@@ -56,6 +56,7 @@
   --shadow-pop: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 8px 28px rgba(0, 0, 0, 0.14);
   --claude: #b4693f;
   --ok: #2f8a4c;
+  --merge: #1a7f37;
   --warn: #b36b00;
   --error: #c4352e;
   --info: #2f6cb3;
@@ -82,6 +83,7 @@
   --shadow-pop: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 10px 32px rgba(0, 0, 0, 0.5);
   --claude: #df946a;
   --ok: #6cc187;
+  --merge: #238636;
   --warn: #e3a64a;
   --error: #ef7a72;
   --info: #79aef0;

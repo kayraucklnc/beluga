@@ -5,6 +5,7 @@
 //! plays them with the banner (so Focus and the per-app "Play sound" switch apply). Only
 //! that folder and only `Klaud-…` names are ever written or removed.
 
+use crate::focus::{self, Focus};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -135,6 +136,12 @@ pub struct Access {
     pub alerts: bool,
     /// "Play sound for notifications" is on.
     pub sound: bool,
+    /// A Focus (Do Not Disturb…) holding banners now: "on", "off", or "unknown" (macOS keeps
+    /// that to itself unless Klaud has Full Disk Access; see focus.rs).
+    pub focus: &'static str,
+    /// The Focus that's on, by name ("Do Not Disturb").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focus_name: Option<String>,
 }
 
 impl Access {
@@ -142,28 +149,62 @@ impl Access {
         state: "unknown",
         alerts: true,
         sound: true,
+        focus: "unknown",
+        focus_name: None,
     };
+
+    /// This access, with what the Focus files say.
+    fn with_focus(self, focus: Focus) -> Access {
+        let (focus, focus_name) = match focus {
+            Focus::Off => ("off", None),
+            Focus::On(name) => ("on", name),
+            Focus::Unknown => ("unknown", None),
+        };
+        Access {
+            focus,
+            focus_name,
+            ..self
+        }
+    }
 }
 
 /// What macOS says about Klaud's notifications right now.
 #[tauri::command]
 pub async fn notification_access() -> Access {
-    tauri::async_runtime::spawn_blocking(mac::access)
+    tauri::async_runtime::spawn_blocking(|| mac::access().with_focus(focus::current()))
         .await
         .unwrap_or(Access::UNKNOWN)
+}
+
+/// Which System Settings pane to open: Klaud's notifications, or Focus.
+fn settings_url(pane: &str, id: &str) -> Result<String, String> {
+    match pane {
+        "notifications" => Ok(format!(
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id={id}"
+        )),
+        "focus" => Ok("x-apple.systempreferences:com.apple.Focus-Settings.extension".to_string()),
+        other => Err(format!("Not a settings pane Klaud opens: {other}")),
+    }
+}
+
+fn open_settings(pane: &str, id: &str) -> Result<(), String> {
+    std::process::Command::new("/usr/bin/open")
+        .arg(settings_url(pane, id)?)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Couldn't open System Settings: {e}"))
 }
 
 /// Open System Settings › Notifications (at Klaud, where macOS supports that).
 #[tauri::command]
 pub fn open_notification_settings(app: tauri::AppHandle) -> Result<(), String> {
-    let id = &app.config().identifier;
-    let url =
-        format!("x-apple.systempreferences:com.apple.Notifications-Settings.extension?id={id}");
-    std::process::Command::new("/usr/bin/open")
-        .arg(url)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Couldn't open System Settings: {e}"))
+    open_settings("notifications", &app.config().identifier)
+}
+
+/// Open System Settings › Focus (to turn one off, or allow Klaud in it).
+#[tauri::command]
+pub fn open_focus_settings(app: tauri::AppHandle) -> Result<(), String> {
+    open_settings("focus", &app.config().identifier)
 }
 
 /// Show notifications even while Klaud is the app in front (see `mac::present_in_front`).
@@ -258,10 +299,14 @@ mod mac {
 
     fn read(s: &UNNotificationSettings) -> Access {
         let status = s.authorizationStatus();
+        // Klaud's banners go through macOS's older notification service (the notification
+        // plugin), which this API doesn't describe: "not determined" here only means it won't
+        // say, and asking it for permission does nothing. Only a clear answer counts.
+        if status == UNAuthorizationStatus::NotDetermined {
+            return Access::UNKNOWN;
+        }
         let state = if status == UNAuthorizationStatus::Denied {
             "off"
-        } else if status == UNAuthorizationStatus::NotDetermined {
-            "notAsked"
         } else {
             "allowed"
         };
@@ -269,6 +314,7 @@ mod mac {
             state,
             alerts: s.alertSetting() != UNNotificationSetting::Disabled,
             sound: s.soundSetting() != UNNotificationSetting::Disabled,
+            ..Access::UNKNOWN
         }
     }
 }
@@ -366,6 +412,31 @@ mod tests {
             .is_some());
         // Doing it twice is harmless.
         present_in_front();
+    }
+
+    #[test]
+    fn opens_only_the_two_settings_panes() {
+        assert_eq!(
+            settings_url("notifications", "sh.klaud.mac").unwrap(),
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=sh.klaud.mac"
+        );
+        assert_eq!(
+            settings_url("focus", "sh.klaud.mac").unwrap(),
+            "x-apple.systempreferences:com.apple.Focus-Settings.extension"
+        );
+        assert!(settings_url("../evil", "sh.klaud.mac").is_err());
+    }
+
+    #[test]
+    fn the_window_learns_whether_a_focus_is_on() {
+        let json = |a: Access| serde_json::to_value(a).unwrap();
+        let on = json(Access::UNKNOWN.with_focus(Focus::On(Some("Do Not Disturb".into()))));
+        assert_eq!(on["focus"], "on");
+        assert_eq!(on["focusName"], "Do Not Disturb");
+        let off = json(Access::UNKNOWN.with_focus(Focus::Off));
+        assert_eq!(off["focus"], "off");
+        assert!(off.get("focusName").is_none());
+        assert_eq!(json(Access::UNKNOWN)["focus"], "unknown");
     }
 
     #[test]

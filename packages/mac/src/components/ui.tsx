@@ -8,7 +8,7 @@ const cx = (...c: Array<string | false | undefined | null>): string => c.filter(
 export { cx };
 
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  readonly variant?: 'plain' | 'primary' | 'quiet' | 'danger';
+  readonly variant?: 'plain' | 'primary' | 'quiet' | 'danger' | 'merge';
   readonly size?: 'small' | 'regular';
   readonly icon?: IconName;
   readonly tone?: 'error' | 'ok' | 'info';

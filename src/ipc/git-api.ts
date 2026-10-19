@@ -40,6 +40,8 @@ export const GIT_API = {
   'git.githubRepo': { args: z.tuple([id]) },
   // History of a project (its main folder) or a worktree: a page of commits for the graph → { commits, next? }.
   'git.log': { args: z.tuple([id, LogOptions.optional()]) },
+  // Before merging a worktree: where it goes, its commits and files, and what would stop it → MergePreview.
+  'git.mergePreview': { args: z.tuple([id]) },
   // One commit: message, files with +/− and their diffs.
   'git.commit': { args: z.tuple([id, hash]) },
   // History's filter choices: branches, tags, recent authors, what's checked out.

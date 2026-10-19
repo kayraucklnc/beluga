@@ -1,3 +1,4 @@
+import { type MergePreview, mergePreview } from './merge-preview.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { systemOpen } from '../core/os-open.js';
 import { copyFileSync, existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
@@ -818,11 +819,23 @@ export class WorkspaceManager {
     const ws = this.require(id);
     if (ws.kind !== 'worktree' || !ws.branch) throw new WorkspaceError('Only worktrees can be merged');
     if ((ws.status?.changed ?? 0) > 0) throw new WorkspaceError(`${ws.name} has uncommitted changes. Commit them first.`);
-    const base = ws.base ?? this.projectOf(ws).base;
-    const target = base.startsWith('origin/') ? base.slice('origin/'.length) : base === 'HEAD' ? undefined : base;
-    const result = await g.mergeInto(ws.projectRoot, ws.branch, target);
+    const result = await g.mergeInto(ws.projectRoot, ws.branch, this.mergeTarget(ws));
     await this.refresh();
     return result;
+  }
+
+  /** The branch a worktree merges into: its base, without the remote (undefined: whatever main is on). */
+  private mergeTarget(ws: Workspace): string | undefined {
+    const base = ws.base ?? this.projectOf(ws).base;
+    return base.startsWith('origin/') ? base.slice('origin/'.length) : base === 'HEAD' ? undefined : base;
+  }
+
+  /** What merging this worktree would do (see merge-preview.ts). */
+  async mergePreview(id: string): Promise<MergePreview> {
+    const ws = this.require(id);
+    if (ws.kind !== 'worktree' || !ws.branch) throw new WorkspaceError('Only worktrees can be merged');
+    const into = this.mergeTarget(ws);
+    return mergePreview({ folder: ws.projectRoot, from: ws.branch, ...(into ? { into } : {}), uncommitted: ws.status?.changed ?? 0 });
   }
 
   // --------------------------------------------------------------- env files

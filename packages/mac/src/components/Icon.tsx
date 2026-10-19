@@ -13,6 +13,7 @@ const PATHS = {
   plus: 'M8 3.5v9 M3.5 8h9',
   more: 'M4 8h.01 M8 8h.01 M12 8h.01',
   chevronRight: 'M6 4l4 4-4 4',
+  arrowRight: 'M2.5 8h11 M9.5 4l4 4-4 4',
   chevronDown: 'M4 6l4 4 4-4',
   chevronUp: 'M4 10l4-4 4 4',
   sidebar: 'M2.5 3.5h11v9h-11z M6 3.5v9',

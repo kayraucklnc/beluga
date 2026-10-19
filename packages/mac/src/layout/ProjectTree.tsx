@@ -99,16 +99,38 @@ const foldKey = (projectId: string): string => `folded:${projectId}`;
  * Fold or unfold a project; with Option, every project (as Finder's Option-click does).
  * Folding keeps the item you're in visible under it until you go somewhere else.
  */
-function useProjectFold(projectId: string): { folded: boolean; toggle: (all: boolean) => void } {
+function useProjectFold(projectId: string): { folded: boolean; toggle: (all: boolean) => void; peek: () => void } {
   const { ui } = useKlaud();
   const folded = useUi((u) => u.collapsed.includes(foldKey(projectId)));
+  const peeked = useUi((u) => u.peek === projectId);
   const projects = useApp((st) => st.projects);
-  const toggle = (all: boolean): void => {
-    const keys = all ? projects.filter((x) => x.root).map((x) => foldKey(x.id)) : [foldKey(projectId)];
+  const view = useApp((st) => st.view);
+  const project = projects.find((x) => x.id === projectId);
+  const setFolded = (fold: boolean, keys = [foldKey(projectId)]): void => {
     const rest = ui.get().collapsed.filter((k) => !keys.includes(k));
-    ui.patch({ collapsed: folded ? rest : [...rest, ...keys] });
+    ui.patch({ collapsed: fold ? [...rest, ...keys] : rest });
   };
-  return { folded, toggle };
+  const toggle = (all: boolean): void => {
+    // Folding or unfolding by hand: it stays the way you put it.
+    if (ui.get().peek === projectId) ui.patch({ peek: undefined });
+    setFolded(!folded, all ? projects.filter((x) => x.root).map((x) => foldKey(x.id)) : undefined);
+  };
+  // Clicking the project's row: it unfolds (only until you go somewhere else, unless you open what's in it).
+  const peek = (): void => {
+    if (!folded) return;
+    setFolded(false);
+    ui.patch({ peek: projectId });
+  };
+  const at = view.kind === 'workspace' ? `ws:${view.id}` : view.kind === 'project' ? `project:${view.id}` : view.kind;
+  useEffect(() => {
+    if (!peeked) return;
+    if (at === `project:${projectId}`) return;
+    ui.patch({ peek: undefined });
+    // You opened one of its worktrees or chats: it stays open. Anywhere else: it folds again.
+    const inside = at.startsWith('ws:') && project?.workspaces.some((w) => `ws:${w.id}` === at);
+    if (!inside) setFolded(true);
+  }, [at, peeked]);
+  return { folded, toggle, peek };
 }
 
 /** A project and its worktrees and chats (folded: only the one you're in). `depth` 1: inside a group. */
@@ -166,7 +188,10 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           }
           label={p.name}
           detail={insideTip ? `${p.name}: ${insideTip}` : p.root}
-          onClick={() => openProjectHome(actions.run, state, p.id)}
+          onClick={() => {
+            openProjectHome(actions.run, state, p.id);
+            fold.peek();
+          }}
           onKeyDown={(e) => {
             // ← folds, → unfolds (as in Finder's lists).
             if (e.target === e.currentTarget && !e.metaKey && !e.ctrlKey && ((e.key === 'ArrowLeft' && !fold.folded) || (e.key === 'ArrowRight' && fold.folded))) {

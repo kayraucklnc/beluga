@@ -5,6 +5,9 @@ name: Publish to npm
 # (0.4.0 -> 0.4.1) and the bump is committed back to main. To ship a minor or
 # major release, set the new version in package.json in your PR.
 #
+# Klaud for Mac is released separately, by hand (packages/mac: npm run release, see
+# docs/updates.md): it needs this Mac's updater key and Finder for the .dmg window.
+#
 # Auth is npm trusted publishing (OIDC), so no npm token is stored in the repo.
 # One-time setup on npmjs.com: klaudcode -> Settings -> Trusted publisher ->
 # GitHub Actions, owner kayraucklnc, repository klaud, workflow publish.yml.
@@ -47,7 +50,10 @@ jobs:
           name=$(node -p "require('./package.json').name")
           published=$(npm view "$name" versions --json 2>/dev/null || echo '[]')
           bumped=false
-          while node -e "process.exit([].concat($published).includes(require('./package.json').version) ? 0 : 1)"; do
+          # Also skip versions this workflow already tagged.
+          git fetch --tags --quiet
+          taken() { node -e "process.exit([].concat($published).includes(require('./package.json').version) ? 0 : 1)" || git rev-parse -q --verify "refs/tags/v$(node -p "require('./package.json').version")" >/dev/null; }
+          while taken; do
             npm version patch --no-git-tag-version > /dev/null
             bumped=true
           done
@@ -72,76 +78,3 @@ jobs:
           fi
           git tag "v$VERSION"
           git push origin HEAD:main "v$VERSION"
-
-  # The Mac app, the same version, on the GitHub Release (signed and notarized when the Apple
-  # secrets are set: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
-  # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID).
-  #
-  # Self-updating: the release also gets Klaud_<version>_aarch64.app.tar.gz, its .sig and
-  # latest.json, which every installed Klaud reads from releases/latest/download/latest.json.
-  # The update is signed with the updater key (docs/updates.md), from two secrets:
-  #   TAURI_SIGNING_PRIVATE_KEY           the contents of ~/.tauri/klaud-updater.key
-  #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty for the current key; set it anyway)
-  # Without TAURI_SIGNING_PRIVATE_KEY the app is still released, just without an update for
-  # installed copies to pick up.
-  mac:
-    needs: publish
-    runs-on: macos-latest
-    permissions:
-      contents: write
-    env:
-      VERSION: ${{ needs.publish.outputs.version }}
-      HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.publish.outputs.version }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - uses: dtolnay/rust-toolchain@stable
-      - run: npm ci
-      - run: npm ci
-        working-directory: packages/mac
-      - name: Use the release's version in the app
-        working-directory: packages/mac
-        run: |
-          node -e "const f='src-tauri/tauri.conf.json';const c=require('./'+f);c.version='$VERSION';require('fs').writeFileSync(f,JSON.stringify(c,null,2))"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
-      - name: No updater key, no update artifacts (the build would fail without it)
-        if: env.HAS_UPDATER_KEY != 'true'
-        working-directory: packages/mac
-        run: node -e "const f='src-tauri/tauri.conf.json';const c=require('./'+f);c.bundle.createUpdaterArtifacts=false;require('fs').writeFileSync(f,JSON.stringify(c,null,2))"
-      - name: Bundle klaud's daemon and Node
-        run: node scripts/build-sidecar.mjs --arch arm64
-      # The .app, plus Klaud.app.tar.gz, .sig and latest.json (bundle.createUpdaterArtifacts),
-      # uploaded to the release. The .dmg is made next, with the designed install window.
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: packages/mac
-          tagName: v${{ needs.publish.outputs.version }}
-          releaseName: Klaud ${{ needs.publish.outputs.version }}
-          releaseBody: 'Klaud for Mac (Apple silicon): download the .dmg and drag Klaud into Applications. Klaud Lite, in your terminal: npm i -g klaudcode'
-          includeUpdaterJson: true
-          args: --bundles app
-      # The install window (scripts/make-dmg.mjs drives Finder). If Finder can't be scripted on
-      # the runner, Tauri's own dmg with the same layout (bundle.macOS.dmg in tauri.conf.json).
-      - name: The .dmg
-        working-directory: packages/mac
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          node scripts/make-dmg.mjs || npx tauri bundle --bundles dmg
-          gh release upload "v$VERSION" src-tauri/target/release/bundle/dmg/*.dmg --clobber

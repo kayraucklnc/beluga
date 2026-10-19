@@ -38,6 +38,7 @@ export const GIT_HANDLERS = {
     return log(manager.historyDir(id), opts ?? {}, sync ? { branch: sync.branch, ...(sync.upstream ? { upstream: sync.upstream } : {}) } : undefined);
   },
   'git.commit': (s, id, hash) => commitDetail(ctl(s).manager.historyDir(id), hash),
+  'git.mergePreview': (s, id) => ctl(s).manager.mergePreview(id),
   'git.filters': (s, id) => historyFilters(ctl(s).manager.historyDir(id)),
   'git.worktreeAt': async (s, projectId, hash, name) => {
     const c = ctl(s);

@@ -11,6 +11,7 @@ import { type SettingsPane, useApi, useApp, useKlaud, useUi } from '../lib/klaud
 import { ACCENTS, type Accent, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EnvironmentSettings } from './EnvironmentSettings.js';
 import { ContextSettings } from './ContextSettings.js';
+import { EarningsSettings } from './EarningsSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
@@ -90,6 +91,7 @@ function General() {
           />
         </Row>
       </Group>
+      <EarningsSettings />
     </>
   );
 }
