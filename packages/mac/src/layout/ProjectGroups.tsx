@@ -186,8 +186,8 @@ export function GroupHeader({ name, count, open, busy, tally = NO_TALLY, dropOn,
     },
     ...menu,
     count
-      ? { label: 'Ungroup', hint: 'Its projects stay, where the group was', icon: 'x', danger: true, separate: true, onSelect: () => void api.workspaces.ungroup(name) }
-      : { label: 'Delete Group', icon: 'x', danger: true, separate: true, onSelect: () => void api.workspaces.ungroup(name) },
+      ? { label: 'Ungroup', hint: 'Its projects stay, where the group was', icon: 'x', danger: true, separate: true, onSelect: () => void api.workspaces.ungroup(name).then(() => setGroupIcon(name, undefined)) }
+      : { label: 'Delete Group', icon: 'x', danger: true, separate: true, onSelect: () => void api.workspaces.ungroup(name).then(() => setGroupIcon(name, undefined)) },
   ];
   if (renaming === name) {
     return (
@@ -200,10 +200,7 @@ export function GroupHeader({ name, count, open, busy, tally = NO_TALLY, dropOn,
           label={`New name for the group ${name}`}
           onDone={(to) => {
             editGroups({ renaming: undefined });
-            if (to && to !== name) {
-              renameGroupIcon(name, to);
-              void api.workspaces.renameGroup(name, to);
-            }
+            if (to && to !== name) void api.workspaces.renameGroup(name, to).then(() => renameGroupIcon(name, to), () => undefined);
           }}
         />
       </div>

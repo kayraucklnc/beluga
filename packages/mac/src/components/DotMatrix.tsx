@@ -34,15 +34,34 @@ let frame = 0;
 const still = (): boolean => document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function loop(now: number): void {
+  frame = 0;
+  // Reduce Motion turned on meanwhile: every matrix rests at the same still frame.
+  if (still()) return void painters.forEach((paint) => paint(0));
   const t = ((now % CYCLE_MS) / CYCLE_MS) * Math.PI * 2;
   for (const paint of painters) paint(t);
-  frame = painters.size ? requestAnimationFrame(loop) : 0;
+  if (painters.size) frame = requestAnimationFrame(loop);
+}
+
+/** Start (or settle) every matrix on screen: when one appears, and when Reduce Motion changes. */
+function wake(): void {
+  if (!painters.size) return;
+  if (still()) painters.forEach((paint) => paint(0));
+  else if (!frame) frame = requestAnimationFrame(loop);
+}
+
+let watching = false;
+function watchMotion(): void {
+  if (watching) return;
+  watching = true;
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', wake);
+  // Settings › Appearance › Reduce motion sets data-motion on the document.
+  new MutationObserver(wake).observe(document.documentElement, { attributes: true, attributeFilter: ['data-motion'] });
 }
 
 function join(paint: Painter): () => void {
+  watchMotion();
   painters.add(paint);
-  if (still()) paint(0);
-  else if (!frame) frame = requestAnimationFrame(loop);
+  wake();
   return () => {
     painters.delete(paint);
     if (!painters.size && frame) {

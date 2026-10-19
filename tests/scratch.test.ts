@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -54,6 +54,20 @@ describe('the scratch folder (.klaud/scratch/)', () => {
     const list = await listScratch(dir);
     expect(list.map((f) => f.path)).toEqual(['.klaud/scratch/shots/new.png', '.klaud/scratch/mid.md', '.klaud/scratch/old.json']);
     expect(list[0]).toMatchObject({ size: 3, mtime: 3_000_000 });
+  });
+
+  it('refuses a scratch folder (or its .klaud) that is a link to somewhere else', async () => {
+    const outside = mkdtempSync(path.join(os.tmpdir(), 'klaud-scratch-outside-'));
+    writeFileSync(path.join(outside, 'secret.png'), 'x');
+    const a = repo();
+    mkdirSync(path.join(a, '.klaud'));
+    symlinkSync(outside, path.join(a, SCRATCH_DIR));
+    expect(await ensureScratch(a)).toBeUndefined();
+    expect(await listScratch(a)).toEqual([]);
+    const b = repo();
+    symlinkSync(outside, path.join(b, '.klaud'));
+    expect(await ensureScratch(b)).toBeUndefined();
+    expect(await listScratch(b)).toEqual([]);
   });
 
   it('is empty when there is no folder yet', async () => {

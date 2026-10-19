@@ -31,25 +31,36 @@ interface Listing {
   readonly files: readonly ScratchEntry[];
 }
 
-/** The folder's files, looked at again every moment while the window is in front. */
+/**
+ * The folder's files, looked at again every moment while the window is in front. It changes only
+ * when they do; a late answer never replaces a newer one; a failed look keeps what's on screen.
+ */
 function useScratch(wsId: string): Listing | undefined | null {
   const api = useApi();
   const [list, setList] = useState<Listing | null>();
-  const sig = useRef('');
   useEffect(() => {
     let alive = true;
+    let asked = 0;
+    let shown = 0;
+    let sig: string | undefined;
+    setList(undefined);
     const look = (): void => {
       if (document.visibilityState !== 'visible') return;
+      const n = ++asked;
       api.workspaces.scratch(wsId).then(
         (res) => {
-          if (!alive) return;
+          if (!alive || n < shown) return;
+          shown = n;
           const next = res ? { root: res.root, dir: res.dir, files: res.files } : null;
-          const key = next ? next.files.map((f) => `${f.path}:${f.mtime}:${f.size}`).join('|') : 'none';
-          if (key === sig.current && list !== undefined) return;
-          sig.current = key;
+          const key = next ? `${next.dir}\n${next.files.map((f) => `${f.path}:${f.mtime}:${f.size}`).join('|')}` : 'none';
+          if (key === sig) return;
+          sig = key;
           setList(next);
         },
-        () => alive && setList(null),
+        () => {
+          // Nothing yet: say so; otherwise keep the last listing until the next look.
+          if (alive && sig === undefined) setList(null);
+        },
       );
     };
     look();

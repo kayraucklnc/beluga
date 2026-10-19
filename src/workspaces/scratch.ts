@@ -30,26 +30,49 @@ export interface ScratchFile {
 /** The repo's exclude file (a worktree shares its main checkout's), or undefined outside git. */
 async function excludeFile(dir: string): Promise<string | undefined> {
   try {
-    const { stdout } = await run('git', ['rev-parse', '--git-common-dir'], { cwd: dir });
+    const { stdout } = await run('git', ['rev-parse', '--git-common-dir'], { cwd: dir, timeout: 5000 });
     return path.join(path.resolve(dir, stdout.trim()), 'info', 'exclude');
   } catch {
     return undefined;
   }
 }
 
+/** Each part of the folder's path inside the workspace is a real folder (or not there yet), never a link out. */
+async function noLinks(dir: string): Promise<boolean> {
+  let at = dir;
+  for (const part of SCRATCH_DIR.split('/')) {
+    at = path.join(at, part);
+    const st = await fs.lstat(at).catch(() => undefined);
+    if (st && !st.isDirectory()) return false; // a link (or a file) where the folder goes
+  }
+  return true;
+}
+
+/** Keeping each workspace's folder out of git, done once per process (two runs at once share it). */
+const excluding = new Map<string, Promise<void>>();
+
+async function excludeOnce(dir: string): Promise<void> {
+  const exclude = await excludeFile(dir);
+  if (!exclude) return;
+  const current = await fs.readFile(exclude, 'utf8').catch(() => '');
+  if (current.split('\n').some((l) => l.trim() === EXCLUDE_LINE)) return;
+  await fs.mkdir(path.dirname(exclude), { recursive: true });
+  await fs.appendFile(exclude, `${current && !current.endsWith('\n') ? '\n' : ''}# klaud: Claude's scratch folder\n${EXCLUDE_LINE}\n`);
+}
+
 /** Make the folder and keep it out of git. Never throws: a run goes ahead without it. */
 export async function ensureScratch(dir: string): Promise<string | undefined> {
   const scratch = path.join(dir, SCRATCH_DIR);
   try {
+    if (!(await noLinks(dir))) return undefined;
     await fs.mkdir(scratch, { recursive: true });
-    const exclude = await excludeFile(dir);
-    if (exclude) {
-      const current = await fs.readFile(exclude, 'utf8').catch(() => '');
-      if (!current.split('\n').some((l) => l.trim() === EXCLUDE_LINE)) {
-        await fs.mkdir(path.dirname(exclude), { recursive: true });
-        await fs.appendFile(exclude, `${current && !current.endsWith('\n') ? '\n' : ''}# klaud: Claude's scratch folder\n${EXCLUDE_LINE}\n`);
-      }
+    let job = excluding.get(dir);
+    if (!job) {
+      job = excludeOnce(dir);
+      excluding.set(dir, job);
+      job.catch(() => excluding.delete(dir));
     }
+    await job;
     return scratch;
   } catch {
     return undefined;
@@ -70,6 +93,7 @@ export async function listScratch(dir: string): Promise<ScratchFile[]> {
       }
     }
   };
+  if (!(await noLinks(dir))) return [];
   await walk(SCRATCH_DIR, 1);
   return files.sort((a, b) => b.mtime - a.mtime || a.path.localeCompare(b.path)).slice(0, MAX_FILES);
 }

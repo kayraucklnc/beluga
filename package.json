@@ -1,6 +1,6 @@
 {
   "name": "klaudcode",
-  "version": "0.5.4",
+  "version": "0.6.0",
   "description": "A terminal home for all your projects and the Claude working in them: a worktree per task, sub-agents you can watch, and friends with their own Claude in the same room.",
   "keywords": [
     "claude",

@@ -75,9 +75,18 @@ function targetOf(href: string): LinkTarget {
 }
 
 /** An image in the text: a file on this Mac as a thumbnail (click for full size), else a quiet chip. */
-function MdImage({ src, alt, all }: { src: string; alt: string; all: readonly ChatImage[] }) {
+function MdImage({ src, alt, all, local }: { src: string; alt: string; all: readonly ChatImage[]; local: boolean }) {
   const actions = useActions();
   const source = imageSource(src);
+  // Someone else's message never makes this Mac read its own files (a path to your screenshot, say).
+  if (source.kind === 'local' && !local) {
+    return (
+      <span className={s.imageRef} title={`${source.path} (pictures on this Mac show only in your own and your Claude’s messages)`}>
+        <Icon name="image" size={11} />
+        {alt || source.path.split('/').pop()}
+      </span>
+    );
+  }
   if (source.kind === 'local') {
     const index = all.findIndex((i) => i.local === source.path);
     const image = all[index] ?? localImage(source.path, alt);
@@ -126,12 +135,16 @@ function linkifyPaths(text: string): string {
     .join('\n');
 }
 
-export const Markdown = memo(function Markdown({ text, paths = false }: { text: string; paths?: boolean }) {
+/**
+ * `localImages`: pictures named by a path on this Mac are shown (your own messages and your own
+ * Claude's only; anyone else's stay a chip).
+ */
+export const Markdown = memo(function Markdown({ text, paths = false, localImages = false }: { text: string; paths?: boolean; localImages?: boolean }) {
   const actions = useActions();
   // Every local image in the message, so the lightbox steps from one to the next.
-  const images = useMemo(() => messageImages(text), [text]);
+  const images = useMemo(() => (localImages ? messageImages(text) : []), [text, localImages]);
   const components: Components = {
-    img: ({ src, alt }) => <MdImage src={typeof src === 'string' ? src : ''} alt={alt ?? ''} all={images} />,
+    img: ({ src, alt }) => <MdImage src={typeof src === 'string' ? src : ''} alt={alt ?? ''} all={images} local={localImages} />,
     // A paragraph of nothing but images: a row of them (several get smaller, side by side).
     p: ({ node, children }) => {
       const count = imagesOnly(node as HastNode | undefined);
