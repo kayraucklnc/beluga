@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -61,7 +61,9 @@ describe('finding Claude Code conversations for a folder', () => {
   });
 
   it('finds a conversation recorded under the resolved path when the folder is given through a symlink', async () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-wt-a_b.')); // /var/folders/… → /private/var/folders/…
+    const target = mkdtempSync(path.join(os.tmpdir(), 'klaud-wt-a_b.'));
+    const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-wt-link-')), 'a_b'); // a symlink on every platform, not just macOS's /var → /private/var
+    symlinkSync(target, dir);
     const real = realpathSync(dir);
     expect(real).not.toBe(dir);
     writeSession(real, [

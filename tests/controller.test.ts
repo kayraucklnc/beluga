@@ -29,6 +29,8 @@ beforeEach(async () => {
   mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '--bare', '-b', 'main', path.join(base, 'app.git')], { stdio: 'pipe' });
   sh(repo, 'init', '-b', 'main');
+  sh(repo, 'config', 'user.email', 't@t'); // klaud's own commits and merges need an identity (CI has none)
+  sh(repo, 'config', 'user.name', 'T');
   writeFileSync(path.join(repo, 'a.txt'), 'one\n');
   sh(repo, 'add', '.');
   sh(repo, 'commit', '-m', 'init');
