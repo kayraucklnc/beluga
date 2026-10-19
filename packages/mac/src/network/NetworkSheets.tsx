@@ -14,7 +14,7 @@ import s from './network.module.css';
 
 /** Friends with checkboxes (a new group, adding people). */
 function FriendPicker({ friends, chosen, onChange }: { friends: readonly FriendView[]; chosen: ReadonlySet<string>; onChange: (next: Set<string>) => void }) {
-  if (!friends.length) return <div className={`${s.picker} ${s.pickEmpty}`}>No friends to add yet. Add a friend first, or invite people with the group’s link.</div>;
+  if (!friends.length) return <div className={`${s.picker} ${s.pickEmpty}`}>No friends to add yet. Add a friend first, or invite people with the channel’s link.</div>;
   return (
     <div className={s.picker} role="group" aria-label="Friends">
       {friends.map((f) => (
@@ -65,7 +65,7 @@ function NewGroupSheet({ preset }: { preset: readonly string[] }) {
   };
   return (
     <Sheet
-      title="New Group"
+      title="New Channel"
       subtitle="A conversation with several friends, kept on everyone’s Mac."
       icon="people"
       close={closeNet}
@@ -169,7 +169,7 @@ function Confirmations() {
     return (
       <Alert
         title={`Remove ${f.name}?`}
-        message={`You won’t be connected any more, and your conversation with ${f.name} is removed from this Mac. Groups you share stay.`}
+        message={`You won’t be connected any more, and your conversation with ${f.name} is removed from this Mac. Channels you share stay.`}
         tone="danger"
         icon="person"
         confirm={{

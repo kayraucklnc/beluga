@@ -200,7 +200,8 @@ export const sameDay = (a: number, b: number): boolean => startOfDay(a) === star
 const GROUP_GAP_MS = 3 * 60_000;
 
 /** A message that continues the one before it (same author, same day, shortly after): no name again. */
-export const continues = (prev: MessageView | undefined, m: MessageView): boolean => Boolean(prev && prev.from === m.from && sameDay(prev.ts, m.ts) && m.ts - prev.ts < GROUP_GAP_MS && prev.status !== 'locked' && m.status !== 'locked');
+/** (A person's Claude is its own author: its answers don't run on from what they wrote, nor the other way round.) */
+export const continues = (prev: MessageView | undefined, m: MessageView): boolean => Boolean(prev && prev.from === m.from && Boolean(prev.claude) === Boolean(m.claude) && sameDay(prev.ts, m.ts) && m.ts - prev.ts < GROUP_GAP_MS && prev.status !== 'locked' && m.status !== 'locked');
 
 /** Earlier messages (from history) and the latest ones (from the shared state), once each, oldest first. */
 export function mergeMessages(earlier: readonly MessageView[], latest: readonly MessageView[]): MessageView[] {

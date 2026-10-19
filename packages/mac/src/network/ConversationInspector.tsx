@@ -77,7 +77,7 @@ export function ConversationDetails({ id }: { id: string }) {
     if (!g) return null;
     return (
       <Panel
-        title="Group"
+        title="Channel"
         action={
           <Button size="small" variant="quiet" icon="people" onClick={() => openNet({ kind: 'group_info', groupId: g.id })}>
             Info

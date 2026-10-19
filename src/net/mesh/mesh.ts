@@ -5,6 +5,7 @@ import type DHT from 'hyperdht';
 import type { BootstrapNode } from 'hyperdht';
 import type { Identity } from '../crypto.js';
 import { DmBook } from './dms.js';
+import { checkMessage, parseExtras, wireNote } from './extras.js';
 import { readJson, writeJson } from './files.js';
 import { FriendBook } from './friends.js';
 import { MAX_TEXT } from './groups/engine.js';
@@ -17,7 +18,7 @@ import { type ViewContext, dmView, friendView, groupMessageView, groupView, invi
 import { PairingHost, pairWith } from './pairing.js';
 import { ONLINE, current, loadPresence, savePresence, shown } from './presence.js';
 import { NameSchema, type Profile } from './schemas.js';
-import { type FriendView, type GroupView, type InvitationView, type MessageView, type NetworkSummary, type Presence, dmConversation, groupConversation } from './views.js';
+import { type ChatExtras, type ChatFile, type FriendView, type GroupView, type InvitationView, type MessageView, type NetworkSummary, type Presence, dmConversation, groupConversation } from './views.js';
 import { type LinkMessage, PROTO } from './wire.js';
 
 /**
@@ -57,7 +58,14 @@ interface MeshEvents {
   gateway: [string, unknown];
   /** A link to someone came up (what waited for them can go now). */
   link: [string];
+  /** Someone's Claude started or stopped answering message `for` in a conversation. */
+  live: [{ readonly conversation: string; readonly from: string; readonly for: string; readonly state: 'thinking' | 'idle' }];
+  /** A chat file frame (f_get / f_data / f_err) from someone you're linked to (core/chat-files checks it). */
+  file: [string, FileFrame];
 }
+
+/** The frames chat files travel in. */
+export type FileFrame = Extract<LinkMessage, { t: 'f_get' | 'f_data' | 'f_err' }>;
 
 const MAX_FRAME = 2 * 1024 * 1024;
 const HISTORY_PAGE = 50;
@@ -80,6 +88,8 @@ export class Mesh extends EventEmitter<MeshEvents> {
   private ticker: NodeJS.Timeout | undefined;
   private untilTimer: NodeJS.Timeout | undefined;
   private closed = false;
+  /** Who you're pulling chat files from now (set by core/chat/files.ts). */
+  private filesFrom: (peerId: string) => boolean = () => false;
 
   private constructor(
     private readonly opts: MeshOptions,
@@ -105,10 +115,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
       trusted: (peerId) => this.friends.has(peerId),
       onMessages: (groupId, entries) => {
         const engine = this.groups.get(groupId);
-        for (const entry of entries) {
-          const text = engine?.read(entry);
-          this.emit('message', groupMessageView(this.ctx, groupId, text === undefined ? { entry } : { entry, text }));
-        }
+        for (const entry of entries) this.emit('message', groupMessageView(this.ctx, groupId, engine ? engine.readMessage(entry) : { entry }));
         this.emit('change');
       },
     });
@@ -134,6 +141,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
         this.emit('change');
       },
       onMessage: (link, msg) => this.onMessage(link, msg),
+      wantsFiles: (peerId) => this.filesFrom(peerId),
     });
     this.pairing = new PairingHost({
       node,
@@ -238,11 +246,11 @@ export class Mesh extends EventEmitter<MeshEvents> {
 
   // ---- direct messages
 
-  sendDm(peerId: string, text: string): MessageView {
+  sendDm(peerId: string, text: string, extras?: ChatExtras): MessageView {
     if (!this.friends.has(peerId)) throw new Error('You can only message friends');
-    if (!text.trim() || text.length > MAX_TEXT) throw new Error(`Messages are 1 to ${MAX_TEXT} characters`);
-    const dm = this.dms.compose(this.peerId, peerId, text);
-    this.links.get(peerId)?.send({ t: 'dm', id: dm.id, text: dm.text, ts: dm.ts });
+    checkMessage(text, extras, MAX_TEXT);
+    const dm = this.dms.compose(this.peerId, peerId, text, extras);
+    this.links.get(peerId)?.send(dmFrame(dm));
     const view = dmView(this.ctx, peerId, dm, this.dms.status(peerId));
     this.emit('message', view);
     this.emit('change');
@@ -261,9 +269,68 @@ export class Mesh extends EventEmitter<MeshEvents> {
     return this.groupViewOf(engine.id)!;
   }
 
-  sendGroup(groupId: string, text: string): MessageView {
-    const entries = this.groups.apply(groupId, (e) => e.send(text));
-    return groupMessageView(this.ctx, groupId, { entry: entries.at(-1)!, text });
+  sendGroup(groupId: string, text: string, extras?: ChatExtras): MessageView {
+    const entries = this.groups.apply(groupId, (e) => e.send(text, extras));
+    return groupMessageView(this.ctx, groupId, { entry: entries.at(-1)!, text, ...(extras ? { extras } : {}) });
+  }
+
+  /** Write in a conversation (`dm:<peerId>` or `group:<id>`). */
+  post(conversation: string, text: string, extras?: ChatExtras): MessageView {
+    if (conversation.startsWith('dm:')) return this.sendDm(conversation.slice(3), text, extras);
+    if (conversation.startsWith('group:')) return this.sendGroup(conversation.slice(6), text, extras);
+    throw new Error('No such conversation');
+  }
+
+  /** A conversation's messages, oldest first (all of them: what Claudes read, what files were shared in). */
+  conversation(conversation: string): MessageView[] {
+    if (conversation.startsWith('dm:')) return this.friends.has(conversation.slice(3)) ? this.dmMessages(conversation.slice(3)) : [];
+    if (conversation.startsWith('group:')) return this.groupMessages(conversation.slice(6));
+    return [];
+  }
+
+  /** Conversations you can write in now: friends' and the groups you're in. */
+  conversations(): string[] {
+    return [...this.friends.all().map((f) => dmConversation(f.peerId)), ...this.groups.list().filter((g) => g.isMember()).map((g) => groupConversation(g.id))];
+  }
+
+  /** Is `peerId` in this conversation with you now (your friend for a DM; both of you members of a group)? */
+  shares(conversation: string, peerId: string): boolean {
+    if (peerId === this.peerId) return false;
+    if (conversation.startsWith('dm:')) return conversation.slice(3) === peerId && this.friends.has(peerId);
+    const engine = conversation.startsWith('group:') ? this.groups.get(conversation.slice(6)) : undefined;
+    return Boolean(engine?.isMember() && engine.isMember(peerId));
+  }
+
+  /** The others in a conversation with you now. */
+  peopleIn(conversation: string): string[] {
+    if (conversation.startsWith('dm:')) return this.shares(conversation, conversation.slice(3)) ? [conversation.slice(3)] : [];
+    const engine = conversation.startsWith('group:') ? this.groups.get(conversation.slice(6)) : undefined;
+    if (!engine?.isMember()) return [];
+    return [...(engine.model?.members.keys() ?? [])].filter((p) => p !== this.peerId);
+  }
+
+  /** Every file shared in your conversations, with where and by whom (oldest first). */
+  sharedFiles(): Array<{ readonly conversation: string; readonly from: string; readonly file: ChatFile }> {
+    return this.conversations().flatMap((c) => this.conversation(c).flatMap((m) => (m.files ?? []).map((file) => ({ conversation: c, from: m.from, file }))));
+  }
+
+  /** Tell the others in a conversation that your Claude is answering message `id` (or stopped). */
+  sendLive(conversation: string, id: string, state: 'thinking' | 'idle'): void {
+    const g = conversation.startsWith('group:') ? conversation.slice(6) : undefined;
+    for (const peerId of this.peopleIn(conversation)) this.links.get(peerId)?.send({ t: 'live', ...(g ? { g } : {}), for: id, state });
+  }
+
+  /** Say who you're pulling chat files from (their pieces get the file allowance on the link). */
+  pullingFrom(fn: (peerId: string) => boolean): void {
+    this.filesFrom = fn;
+  }
+
+  /** Send a chat file frame to someone linked now; false when they're not. */
+  sendFile(peerId: string, frame: FileFrame): boolean {
+    const link = this.links.get(peerId);
+    if (!link?.isOpen) return false;
+    link.send(frame);
+    return true;
   }
 
   groupHistory(groupId: string, opts: { before?: number; limit?: number } = {}): MessageView[] {
@@ -475,7 +542,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
   private linkUp(link: MeshLink): void {
     link.send({ t: 'hello', proto: PROTO, name: this.opts.name, presence: shown(this.presence) });
     this.groups.linkUp(link);
-    for (const dm of this.dms.waiting(link.peerId)) link.send({ t: 'dm', id: dm.id, text: dm.text, ts: dm.ts });
+    for (const dm of this.dms.waiting(link.peerId)) link.send(dmFrame(dm));
     this.emit('link', link.peerId);
     this.emit('change');
   }
@@ -500,7 +567,10 @@ export class Mesh extends EventEmitter<MeshEvents> {
         return;
       case 'dm': {
         if (!this.friends.has(from)) return;
-        const dm = { id: msg.id, from, to: this.peerId, text: msg.text, ts: msg.ts };
+        const x = parseExtras(msg.x);
+        if (!msg.text.trim() && !x?.files?.length && !x?.ask) return;
+        const text = x && msg.text === wireNote(x) ? '' : msg.text;
+        const dm = { id: msg.id, from, to: this.peerId, text, ts: msg.ts, ...(x ? { x } : {}) };
         if (this.dms.receive(dm)) {
           this.emit('message', dmView(this.ctx, from, dm, this.dms.status(from)));
           this.emit('change');
@@ -510,6 +580,16 @@ export class Mesh extends EventEmitter<MeshEvents> {
       }
       case 'gw':
         if (this.friends.has(from)) this.emit('gateway', from, msg.p);
+        return;
+      case 'live': {
+        const conversation = msg.g ? groupConversation(msg.g) : dmConversation(from);
+        if (this.shares(conversation, from)) this.emit('live', { conversation, from, for: msg.for, state: msg.state });
+        return;
+      }
+      case 'f_get':
+      case 'f_data':
+      case 'f_err':
+        this.emit('file', from, msg);
         return;
       case 'dm_ack': {
         const dm = this.dms.delivered(from, msg.id);
@@ -549,6 +629,9 @@ export class Mesh extends EventEmitter<MeshEvents> {
     this.links.refresh();
   }
 }
+
+/** A direct message as it goes over the link. */
+const dmFrame = (dm: { id: string; text: string; ts: number; x?: ChatExtras }): LinkMessage => ({ t: 'dm', id: dm.id, text: dm.text.trim() ? dm.text : wireNote(dm.x) || dm.text, ts: dm.ts, ...(dm.x ? { x: dm.x } : {}) });
 
 /** A page of a conversation: the `limit` messages before `before` (default: the latest). */
 function page(messages: readonly MessageView[], opts: { before?: number; limit?: number }): MessageView[] {

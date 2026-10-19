@@ -96,10 +96,24 @@ export const personColor = (id: string): string => {
   return PEOPLE[h % PEOPLE.length]!;
 };
 
-/** A person's initial in their color; Claude gets its mark (the klaud prompt). */
+/** Ids that are no one's Claude in particular (a Claude Code session outside Klaud): Claude's own color. */
+const NOBODY = new Set(['claude-code']);
+
+/**
+ * Someone's Claude, in its owner's color (so a conversation with several people's Claudes reads
+ * as who's who): the mark's tint, and the color of its name. `undefined` keeps Claude's own color.
+ */
+export const claudeColor = (owner: string | undefined): string | undefined => (owner && !NOBODY.has(owner) ? personColor(owner) : undefined);
+
+/** A person's initial in their color; their Claude gets its mark (the klaud prompt), tinted the same. */
 export function Avatar({ name, id, claude, size = 22 }: { name: string; id: string; claude?: boolean; size?: number }) {
+  const tint = claude ? claudeColor(id) : undefined;
   return (
-    <span className={cx(s.avatar, claude && s.avatarClaude)} style={{ width: size, height: size, fontSize: size * 0.46, ...(claude ? {} : { background: personColor(id) }) }} aria-hidden="true">
+    <span
+      className={cx(s.avatar, claude && s.avatarClaude)}
+      style={{ width: size, height: size, fontSize: size * 0.46, ...(claude ? (tint ? { background: `color-mix(in srgb, ${tint} 20%, transparent)`, color: tint } : {}) : { background: personColor(id) }) }}
+      aria-hidden="true"
+    >
       {claude ? <Icon name="claude" size={size * 0.6} /> : (name[0] ?? '?').toUpperCase()}
     </span>
   );

@@ -227,7 +227,7 @@ function AcceptHalf({ preset, group }: { preset?: string; group?: boolean }) {
     <section className={s.half} aria-label="Have a code or link?">
       <h3 className={s.halfTitle}>
         <Icon name="plus" size={13} />
-        {group ? 'Join a group' : 'Have a code or link?'}
+        {group ? 'Join a channel' : 'Have a code or link?'}
       </h3>
       <p className={s.halfText}>{group ? 'Someone sent you an invitation to a group.' : 'Paste what your friend sent you, or type their code.'}</p>
       <form
@@ -271,7 +271,7 @@ function AcceptHalf({ preset, group }: { preset?: string; group?: boolean }) {
         ) : null}
         <div className={s.acceptButtons}>
           <Button ref={add} autoFocus={Boolean(preset)} type="submit" variant={found ? 'primary' : 'plain'} disabled={!text.trim() || busy}>
-            {group || found?.group ? 'Join Group' : 'Add Friend'}
+            {group || found?.group ? 'Join Channel' : 'Add Friend'}
           </Button>
         </div>
       </form>
@@ -311,7 +311,7 @@ export function AddFriendSheet({ accept }: { accept?: string }) {
 /** Join a group from its link: just the accepting half. */
 export function JoinGroupSheet({ accept }: { accept: string }) {
   return (
-    <Sheet title="Join a Group" subtitle="Groups live on their members’ Macs. No server." icon="people" close={closeNet}>
+    <Sheet title="Join a Channel" subtitle="Channels live on their members’ Macs. No server." icon="people" close={closeNet}>
       <div style={{ margin: '0 -18px' }}>
         <AcceptHalf preset={accept} group />
       </div>

@@ -11,6 +11,7 @@ import { type SessionOptions, Session } from '../core/session.js';
 import { loadSettings, saveSettings } from '../core/settings.js';
 import { ShareService } from '../core/shares.js';
 import { networkSwitch } from '../core/network.js';
+import { launchChat } from '../core/chat/launch.js';
 import { launchGateway } from '../core/gateway/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
 import { launchClaudeCode } from '../core/claude-code/launch.js';
@@ -295,6 +296,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopEarnings = (): void => undefined;
   let stopClaudeCode = (): void => undefined;
   let stopGateway = (): void => undefined;
+  let stopChat = (): void => undefined;
   const start = (): void => {
     session.start();
     // The klaud network (friends, groups, presence): only the daemon runs it, and only when it's turned on.
@@ -305,6 +307,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     // Claude Code sessions running outside klaud (Conductor, a terminal): the Mac app shows them live, read-only.
     // Tasks between Claudes (the gateway): over this room now, and over the network whenever it's on.
     if (opts.network) stopGateway = launchGateway({ session, store, demo: Boolean(demo) });
+    // Chats: files shared Mac to Mac, Claudes called into a conversation, your main channel.
+    if (opts.network) stopChat = launchChat({ session, store, demo: Boolean(demo) });
     if (opts.network) stopClaudeCode = launchClaudeCode({ session, store, demo: Boolean(demo), notify: (e) => session.notifier.notify(e) });
     if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => closing);
     if (!demo) return;
@@ -333,6 +337,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     closing = true;
     closeAllTunnels();
     stopGateway();
+    stopChat();
     await stopNetwork();
     stopEarnings();
     stopClaudeCode();

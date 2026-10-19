@@ -8,6 +8,9 @@ import { NameSchema, PeerIdSchema, PresenceSchema, ProfileSchema } from './schem
  */
 export const PROTO = 1;
 
+/** The biggest piece of a chat file one frame carries. */
+export const FILE_PIECE = 256 * 1024;
+
 const hex64 = z.string().regex(/^[0-9a-f]{64}$/);
 const groupId = z.string().regex(/^[0-9a-f]{32}$/);
 const msgId = z.string().regex(/^[\w-]{8,64}$/);
@@ -17,7 +20,13 @@ export const LinkMessage = z.discriminatedUnion('t', [
   z.object({ t: z.literal('hello'), proto: z.number().int(), name: NameSchema, presence: PresenceSchema }),
   z.object({ t: z.literal('presence'), presence: PresenceSchema }),
   /** A direct message (end-to-end: the link is a Noise channel between the two of you). */
-  z.object({ t: z.literal('dm'), id: msgId, text: z.string().min(1).max(8_000), ts: z.number().int().min(0) }),
+  z.object({ t: z.literal('dm'), id: msgId, text: z.string().max(8_000), ts: z.number().int().min(0), x: z.unknown().optional() }),
+  /** Someone's Claude started (or stopped) answering in a conversation: `g` a group's id, or none for your direct messages. */
+  z.object({ t: z.literal('live'), g: groupId.optional(), for: z.string().min(1).max(80), state: z.enum(['thinking', 'idle']) }),
+  /** Chat files (core/chat-files): ask for a piece of a file by checksum, in a conversation you share. */
+  z.object({ t: z.literal('f_get'), rid: msgId, sha: hex64, g: groupId.optional(), off: z.number().int().min(0), len: z.number().int().min(1).max(FILE_PIECE) }),
+  z.object({ t: z.literal('f_data'), rid: msgId, off: z.number().int().min(0), d: z.string().max(Math.ceil(FILE_PIECE / 3) * 4) }),
+  z.object({ t: z.literal('f_err'), rid: msgId, off: z.number().int().min(0), e: z.string().max(200) }),
   z.object({ t: z.literal('dm_ack'), id: msgId }),
   /** The newest entries I have of a group we're both in. */
   z.object({ t: z.literal('g_heads'), group: groupId, heads: z.array(hex64).max(64) }),

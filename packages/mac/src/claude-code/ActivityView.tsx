@@ -4,8 +4,10 @@ import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { Button, Dot, Empty, cx } from '../components/ui.js';
+import { useActions } from '../lib/actions.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { AgentCard, SessionChip } from './Cards.js';
+import { chatOf } from './chat-of.js';
 import { LiveTranscript } from './LiveTranscript.js';
 import { AgentMonitor } from './AgentMonitor.js';
 import { TeamBlock, teamMembers } from './Team.js';
@@ -14,13 +16,23 @@ import s from './claude-code.module.css';
 
 /**
  * Activity: every Claude Code session running outside klaud (a terminal, another app), by project,
- * with its sub-agents as cards; one session or agent opens as a live, read-only transcript.
+ * with its sub-agents as cards. A session in one of Klaud's worktrees opens that worktree's chat
+ * (where it's followed and continued); one Klaud has no chat for opens as a live transcript.
  */
 
-export const READ_ONLY = 'Running in Claude Code · read-only';
+export const OUTSIDE = 'Running in Claude Code, outside Klaud';
+
+/** Open where a session is followed: its worktree's chat when Klaud has one, else its transcript here. */
+function useOpenSession(session: CcSession): (agentId?: string) => void {
+  const { client } = useKlaud();
+  const actions = useActions();
+  const chat = useApp((st) => chatOf(st, session));
+  return (agentId) => (chat ? actions.run({ type: 'open_ws', id: chat }) : openActivity(client, session.id, agentId));
+}
 
 function SessionRow({ session }: { session: CcSession }) {
-  const { client } = useKlaud();
+  const open = useOpenSession(session);
+  const chat = useApp((st) => chatOf(st, session));
   const place = useApp((st) => placeLabel(st, session));
   const now = useNow(session.status === 'working', 5000);
   const st = sessionLabel(session, now);
@@ -29,7 +41,7 @@ function SessionRow({ session }: { session: CcSession }) {
   const others = session.agents.filter((a) => !team.has(a.id));
   return (
     <section className={s.session} aria-label={`Claude Code session ${session.title}`}>
-      <button type="button" className={s.sessionHead} onClick={() => openActivity(client, session.id)}>
+      <button type="button" className={s.sessionHead} onClick={() => open()}>
         <span className={s.sessionDot}>{st.tone === 'claude' ? <Dot tone="claude" live /> : <Dot tone={st.tone === 'ok' ? 'ok' : 'muted'} />}</span>
         <span className={s.sessionText}>
           <span className={s.sessionTitle}>{session.title}</span>
@@ -40,16 +52,16 @@ function SessionRow({ session }: { session: CcSession }) {
           </span>
         </span>
         <span className={s.sessionOpen}>
-          Watch
+          {chat ? 'Open Chat' : 'Watch'}
           <Icon name="chevronRight" size={10} />
         </span>
       </button>
       {/* Agents working as a team (named, messaging each other) under one header, with their messages. */}
-      <TeamBlock session={session} onOpen={(id) => openActivity(client, session.id, id)} />
+      <TeamBlock session={session} onOpen={(id) => open(id)} />
       {others.length ? (
         <div className={s.grid}>
           {others.map((a) => (
-            <AgentCard key={a.id} agent={a} onOpen={() => openActivity(client, session.id, a.id)} />
+            <AgentCard key={a.id} agent={a} onOpen={() => open(a.id)} />
           ))}
         </div>
       ) : null}
@@ -66,7 +78,7 @@ function ActivityList() {
   if (!sessions.length) {
     return (
       <div className={s.page}>
-        <Empty icon="claude" title="No Claude Code sessions right now" detail="When you run Claude Code in a terminal or another app, its sessions and their agents show here live, read-only." />
+        <Empty icon="claude" title="No Claude Code sessions right now" detail="When you run Claude Code in a terminal or another app, its sessions and their agents show here live." />
       </div>
     );
   }
@@ -113,6 +125,8 @@ function AgentLine({ agent }: { agent: CcAgent }) {
 /** One session: its agents in a row (the main conversation first) and the chosen one's transcript. */
 export function SessionPage({ session, agentId }: { session: CcSession; agentId?: string }) {
   const { client } = useKlaud();
+  const actions = useActions();
+  const chat = useApp((st) => chatOf(st, session));
   const place = useApp((st) => placeLabel(st, session));
   const now = useNow(session.status === 'working', 5000);
   const st = sessionLabel(session, now);
@@ -133,10 +147,16 @@ export function SessionPage({ session, agentId }: { session: CcSession; agentId?
             {!agent && session.model ? <span>{session.model}</span> : null}
           </div>
         </div>
-        <span className={s.readOnly}>
-          <Icon name="eye" size={12} />
-          {READ_ONLY}
-        </span>
+        {chat ? (
+          <Button size="small" icon="chat" onClick={() => actions.run({ type: 'open_ws', id: chat })}>
+            Open Chat
+          </Button>
+        ) : (
+          <span className={s.readOnly} title="It runs in a terminal or another app; Klaud shows it live">
+            <Icon name="eye" size={12} />
+            {OUTSIDE}
+          </span>
+        )}
       </header>
       {session.agents.length ? (
         <div className={s.strip} role="group" aria-label="Agents in this session">

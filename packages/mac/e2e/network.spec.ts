@@ -10,7 +10,7 @@ test.describe.configure({ mode: 'serial' });
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const friend = (page: Page, name: string) => sidebar(page).getByRole('button', { name: new RegExp(`^${name}, `) });
-const group = (page: Page, name: string) => sidebar(page).getByRole('button', { name: new RegExp(`^Group ${name}\\b`) });
+const group = (page: Page, name: string) => sidebar(page).getByRole('button', { name: new RegExp(`^Channel ${name}\\b`) });
 const toolbar = (page: Page) => page.locator('header').first();
 
 test.beforeEach(async ({ page }) => {
@@ -46,8 +46,8 @@ test('a direct message goes to bob, and his answer comes back', async ({ page })
 });
 
 test('a new group with bob and mia: create, rename in its info, then leave', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'New group' }).click();
-  const sheet = page.getByRole('dialog', { name: 'New Group' });
+  await sidebar(page).getByRole('button', { name: 'New channel' }).click();
+  const sheet = page.getByRole('dialog', { name: 'New Channel' });
   await sheet.getByLabel('Name').fill('Weekend');
   await sheet.getByRole('checkbox').nth(0).check();
   await sheet.getByRole('checkbox').nth(1).check();
@@ -61,13 +61,13 @@ test('a new group with bob and mia: create, rename in its info, then leave', asy
   const box = page.getByRole('textbox', { name: 'Message Weekend' });
   await box.fill('Hiking on Saturday?');
   await box.press('Enter');
-  await expect(page.getByRole('log', { name: 'Group Weekend' })).toContainText('Hiking on Saturday?');
+  await expect(page.getByRole('log', { name: 'Channel Weekend' })).toContainText('Hiking on Saturday?');
 
   // Rename it in place in the group's info.
   await page.getByRole('button', { name: /Weekend: 3 members, group info/ }).click();
   const info = page.getByRole('dialog', { name: 'About Weekend' });
   await expect(info).toContainText('Admin');
-  const name = info.getByRole('textbox', { name: 'Group name' });
+  const name = info.getByRole('textbox', { name: 'Channel name' });
   await name.fill('Weekend hike');
   await name.press('Enter');
   await expect(group(page, 'Weekend hike')).toBeVisible({ timeout: 10_000 });
@@ -75,7 +75,7 @@ test('a new group with bob and mia: create, rename in its info, then leave', asy
 
   // Leave it: an alert first, then it stays, read-only.
   await toolbar(page).getByRole('button', { name: 'More for Weekend hike' }).click();
-  await page.getByRole('menuitem', { name: 'Leave Group…' }).click();
+  await page.getByRole('menuitem', { name: 'Leave Channel…' }).click();
   const alert = page.getByRole('alertdialog', { name: 'Leave Weekend hike?' });
   await expect(alert).toBeVisible();
   await alert.getByRole('button', { name: 'Leave' }).click();
@@ -112,10 +112,10 @@ test('your status: Do Not Disturb from the sidebar, then back to Online', async 
   await expect(page.getByRole('button', { name: /^Your status: Online/ })).toBeVisible();
 });
 
-test('a friend’s right-click menu: Message, Add to Group, Copy Name, Remove…', async ({ page }) => {
+test('a friend’s right-click menu: Message, Add to Channel, Copy Name, Remove…', async ({ page }) => {
   await friend(page, 'mia').click({ button: 'right' });
   await expect(page.getByRole('menuitem', { name: 'Message' })).toBeVisible();
-  await expect(page.getByRole('menuitem', { name: 'Add to Group' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Add to Channel' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Copy Name' })).toBeVisible();
   await page.getByRole('menuitem', { name: 'Remove mia…' }).click();
   const alert = page.getByRole('alertdialog', { name: 'Remove mia?' });

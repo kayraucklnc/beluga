@@ -1,4 +1,8 @@
+import { spawn } from 'node:child_process';
+import { chatOf } from '../core/chat/launch.js';
 import { networkEnabled, networkOf, networkStatus, networkSwitchOf } from '../core/network.js';
+import { systemOpen } from '../core/os-open.js';
+import type { ChatFile } from '../net/mesh/views.js';
 import { saveSettings } from '../core/settings.js';
 import type { Session } from '../core/session.js';
 import type { Args, Method } from './api.js';
@@ -19,6 +23,23 @@ async function setEnabled(s: Session, on: boolean): Promise<ReturnType<typeof ne
   await sw.set(effective);
   if (effective !== on) throw new Error(on ? 'KLAUD_NETWORK=0 keeps the network off for this klaud' : 'KLAUD_NETWORK=1 keeps the network on for this klaud');
   return networkStatus(s);
+}
+
+/** Write in a conversation: the files must be here (added first), so friends can get them from you. */
+function post(s: Session, conversation: string, body: { text: string; files?: readonly ChatFile[] | undefined; ask?: 'all' | readonly string[] | undefined }) {
+  const chat = chatOf(s);
+  const files = (body.files ?? []).map((f) => {
+    if (!chat.files.store.has(f.sha)) throw new Error(`${f.name} isn’t ready to send: add it again`);
+    return chat.files.info(f.sha) ?? f;
+  });
+  const extras = { ...(files.length ? { files } : {}), ...(body.ask ? { ask: { to: body.ask } } : {}) };
+  return chat.mesh.post(conversation, body.text, Object.keys(extras).length ? extras : undefined);
+}
+
+/** Show a file in Finder, selected. */
+function reveal(file: string): void {
+  if (process.platform !== 'darwin') return systemOpen(file.replace(/\/[^/]*$/, ''));
+  spawn('open', ['-R', file], { stdio: 'ignore', detached: true }).on('error', () => undefined).unref();
 }
 
 export const NETWORK_HANDLERS = {
@@ -47,4 +68,14 @@ export const NETWORK_HANDLERS = {
   'network.presence.set': (s, presence) => net(s).setPresence({ state: presence.state, ...(presence.note !== undefined ? { note: presence.note } : {}), ...(presence.until !== undefined ? { until: presence.until } : {}) }),
   'network.presence.get': (s) => net(s).getPresence(),
   'network.read': (s, conversation) => net(s).markRead(conversation),
+  'network.post': (s, conversation, body) => post(s, conversation, body),
+  'network.files.add': (s, paths) => chatOf(s).files.share(paths),
+  'network.files.addData': (s, name, b64, part) => (part ? chatOf(s).files.sharePart(name, Buffer.from(b64, 'base64'), part) : chatOf(s).files.shareData(name, Buffer.from(b64, 'base64'))),
+  'network.files.download': (s, sha, conversation) => chatOf(s).files.download(sha, conversation),
+  'network.files.cancel': (s, sha) => chatOf(s).files.cancel(sha),
+  'network.files.open': (s, sha) => systemOpen(chatOf(s).files.pathOf(sha)),
+  'network.files.reveal': (s, sha) => reveal(chatOf(s).files.pathOf(sha)),
+  'network.files.saveTo': (s, sha, target) => chatOf(s).files.saveTo(sha, target),
+  'network.files.preview': (s, sha) => chatOf(s).files.preview(sha),
+  'network.channels.main': (s) => chatOf(s).main.ensure(),
 } satisfies NetworkHandlers;

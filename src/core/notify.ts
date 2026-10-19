@@ -162,8 +162,10 @@ function networkMessages(prev: DomainState, next: DomainState, now: number): Not
     if (fresh.length > MESSAGE_BURST * 4) continue;
     const group = conversation.startsWith('group:') ? after.groups.find((g) => `group:${g.id}` === conversation) : undefined;
     for (const m of fresh) {
-      const title = group ? (mention.test(m.text) ? `${m.name} mentioned you in ${group.name}` : `${m.name} in ${group.name}`) : m.name;
-      out.push({ kind: 'mentions', tag: group && mention.test(m.text) ? 'mention' : 'message', title, body: firstLine(m.text), channel: conversation, ...(quiet ? { quiet: true } : {}) });
+      const who = m.claude ? `${m.name}’s Claude` : m.name;
+      const title = group ? (mention.test(m.text) ? `${who} mentioned you in ${group.name}` : `${who} in ${group.name}`) : who;
+      const body = firstLine(m.text) || (m.files?.length ? `Sent ${m.files.map((f) => f.name).join(', ')}` : '');
+      out.push({ kind: 'mentions', tag: group && mention.test(m.text) ? 'mention' : 'message', title, body, channel: conversation, ...(quiet ? { quiet: true } : {}) });
     }
   }
   return out;

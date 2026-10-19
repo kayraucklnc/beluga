@@ -2,6 +2,7 @@ import type { FriendView, GroupView, NetworkState } from '@klaud/net/mesh/views.
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { dmId, groupId } from './net-model.js';
+import { getPrefs, setPrefs } from '../lib/prefs.js';
 
 /** The klaud network as the shared state has it. */
 export const useNetwork = (): NetworkState => useApp((st) => st.network);
@@ -26,8 +27,10 @@ export async function quietly<T>(client: SocketClient, call: Promise<T>): Promis
   }
 }
 
-/** Go to a conversation with a friend or a group. */
+/** Go to a conversation with a friend or a group (its chat tab opens too). */
 export function openConversation(client: SocketClient, id: string): void {
+  const tabs = getPrefs().chatTabs;
+  if (!tabs.includes(id) && id !== (client.store.getState().network.main ? groupId(client.store.getState().network.main!) : '')) setPrefs({ chatTabs: [...tabs, id] });
   client.store.dispatch({ type: 'view', view: { kind: 'conversation', id } });
 }
 
