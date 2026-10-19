@@ -55,7 +55,7 @@ def packet(label, x1, x2, y, t1, t2, color):
 svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" font-family="{FONT}" role="img" aria-label="Your Claude asks a friend's Claude: kay types @mia send me a screenshot of your desktop; the request travels Mac to Mac, end-to-end encrypted; a small pop-up on mia's screen asks her; she clicks Allow; her Claude takes the screenshot; the result comes back to kay's Claude.">
   <rect width="{W}" height="{H}" rx="18" fill="#f6f6f8"/>
   {mac(24, "Your Mac · Klaud", "you and your Claude")}
-  {mac(606, "Mia’s Mac · Figma in front", "mia and her Claude")}
+  {mac(606, "Mia’s Mac · browsing in Chrome", "mia and her Claude")}
 
   <!-- the link between them: no server -->
   <line x1="364" y1="185" x2="596" y2="185" stroke="#c7c7cc" stroke-width="2" stroke-dasharray="5 6">

@@ -36,10 +36,10 @@ Type `@` and pick from the list: a friend (`@bob`), a project (`@bob-api`), a fo
 
 ### 🔔 On their side: a pop-up, wherever they are
 
-Your friend might be in Figma or Chrome. A small card slides in at the top of their screen with a few words of what you want. **See more** shows everything your Claude sent before they decide.
+Your friend is busy doing something else, browsing GitHub in Chrome, say. A small card slides in at the top of their screen with a few words of what you want. **See more** shows everything your Claude sent before they decide. Below, mia's Claude asks kay for a screenshot while kay is on the web.
 
 <p align="center">
-  <img src="assets/mac/wants-to.gif" alt="A pop-up on mia's desktop, over Figma: 'kay's Claude wants to take a screenshot of your desktop and send it to me', with See more, Decline, Allow Always and Allow. See more opens the full request; Allow sends it to her Claude." width="760">
+  <img src="assets/mac/wants-to.gif" alt="kay is browsing GitHub in Chrome when a pop-up slides in at the top right: 'mia's Claude wants to take a screenshot of your desktop and send it to me', with See more, Decline, Allow Always and Allow. See more opens the full request; Allow hands it to kay's Claude." width="900">
 </p>
 
 | Button | What happens |
@@ -60,7 +60,7 @@ Trust someone completely? Mark them **Trusted** or **Full trust** and their requ
 | 🧪 `@bob run the tests in bob-api` | His Claude runs them in his project and sends back passed / failed / skipped. |
 | 🔑 `@mia make me an admin on mia/site on GitHub` | Her Claude does it with **her** GitHub login (`gh`), after she allows it. |
 | 🖥️ `@ali what macOS, chip and free disk does your Mac have?` | Device info: versions, memory, disk, battery. Never serial numbers. |
-| ⚡ `run git status on bob's Mac` | One command, straight on his Mac, output back to you. |
+| ⚡ `@bob what's on port 3000 on your Mac?` | Anything that's one terminal line runs straight on his Mac (`lsof -i :3000`) and the output comes back to you. |
 
 Their Claude can ask yours a question mid-task, and either side can cancel. Results come back as **data, never instructions**: your Claude uses them, it doesn't obey them.
 

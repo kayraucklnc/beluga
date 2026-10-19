@@ -28,26 +28,49 @@ async function say(page, text) {
   await page.keyboard.press('Enter');
 }
 
-/** A desktop behind the pop-up: a wallpaper and someone else's app in front. */
+/** A desktop behind the pop-up: kay browsing the web in Chrome, under the macOS menu bar. */
 const DESKTOP = `
-  html[data-popup], html[data-popup] body { background: linear-gradient(135deg, #6c8cff 0%, #b06cff 45%, #ff8f6c 100%) !important; height: 100%; }
-  html[data-popup] body::before { content: ''; position: fixed; left: 32px; top: 64px; width: 330px; height: 360px; border-radius: 12px;
-    box-shadow: 0 24px 70px rgba(0,0,0,.28), 0 0 0 .5px rgba(0,0,0,.15);
-    background:
-      radial-gradient(circle at 18px 16px, #ff5f57 5px, transparent 6px),
-      radial-gradient(circle at 36px 16px, #febc2e 5px, transparent 6px),
-      radial-gradient(circle at 54px 16px, #28c840 5px, transparent 6px),
-      linear-gradient(#e9e9ee, #e9e9ee) 0 0 / 100% 32px no-repeat,
-      linear-gradient(#d9dbe6, #d9dbe6) 20px 56px / 180px 12px no-repeat,
-      linear-gradient(#e6e7ee, #e6e7ee) 20px 80px / 270px 9px no-repeat,
-      linear-gradient(#e6e7ee, #e6e7ee) 20px 98px / 230px 9px no-repeat,
-      linear-gradient(135deg, #c9d4ff, #f3c6ff) 20px 128px / 290px 150px no-repeat,
-      linear-gradient(#e6e7ee, #e6e7ee) 20px 296px / 250px 9px no-repeat,
-      linear-gradient(#e6e7ee, #e6e7ee) 20px 314px / 200px 9px no-repeat,
-      #fbfbfd; }
-  html[data-popup] body::after { content: 'landing — Figma'; position: fixed; left: 32px; width: 330px; text-align: center; top: 72px; font: 600 12px -apple-system, sans-serif; color: rgba(0,0,0,.5); }
-  html[data-popup] #root { position: fixed; top: 6px; right: 0; width: 392px; }
+  html[data-popup], html[data-popup] body { background: linear-gradient(160deg, #2b3a67 0%, #4a5d9a 40%, #c0729b 100%) !important; height: 100%; }
+  html[data-popup] #root { position: fixed; top: 26px; right: 0; width: 392px; z-index: 10; }
+  #desk { position: fixed; inset: 0; font: 13px -apple-system, BlinkMacSystemFont, sans-serif; color: #1f2328; }
+  #desk .menubar { height: 26px; display: flex; align-items: center; gap: 18px; padding: 0 14px; background: rgba(30,30,40,.35); backdrop-filter: blur(20px); color: #fff; font-weight: 500; }
+  #desk .menubar b { font-weight: 700; } #desk .menubar .right { margin-left: auto; opacity: .9; }
+  #desk .win { position: absolute; left: 24px; top: 44px; right: 24px; bottom: 22px; border-radius: 11px; overflow: hidden; background: #fff; box-shadow: 0 22px 70px rgba(0,0,0,.45), 0 0 0 .5px rgba(0,0,0,.3); }
+  #desk .tabs { height: 38px; background: #dee1e6; display: flex; align-items: flex-end; padding-left: 78px; gap: 2px; position: relative; }
+  #desk .dots { position: absolute; left: 14px; top: 13px; display: flex; gap: 8px; } #desk .dots i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  #desk .tab { height: 30px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-radius: 8px 8px 0 0; font-size: 12px; color: #3c4043; max-width: 210px; white-space: nowrap; overflow: hidden; }
+  #desk .tab.on { background: #fff; } #desk .fav { width: 14px; height: 14px; border-radius: 50%; background: #1f2328; flex: none; }
+  #desk .bar { height: 38px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-bottom: 1px solid #e3e3e3; }
+  #desk .url { flex: 1; height: 28px; border-radius: 14px; background: #f1f3f4; display: flex; align-items: center; padding: 0 14px; color: #3c4043; font-size: 13px; }
+  #desk .page { display: flex; }
+  #desk .main { flex: 1; padding: 18px 26px; }
+  #desk .repo { font-size: 19px; color: #0969da; } #desk .repo b { font-weight: 600; } #desk .pill { font-size: 11px; border: 1px solid #d0d7de; border-radius: 10px; padding: 1px 7px; color: #59636e; margin-left: 8px; vertical-align: 3px; }
+  #desk .nav { display: flex; gap: 22px; margin: 14px 0 16px; padding-bottom: 10px; border-bottom: 1px solid #d0d7de; color: #59636e; } #desk .nav .on { color: #1f2328; font-weight: 600; box-shadow: 0 12px 0 -10px #fd8c73; }
+  #desk .files { border: 1px solid #d0d7de; border-radius: 6px; width: 520px; }
+  #desk .files div { display: flex; gap: 10px; padding: 7px 12px; border-top: 1px solid #d8dee4; color: #59636e; font-size: 12.5px; } #desk .files div:first-child { border-top: 0; background: #f6f8fa; color: #1f2328; }
+  #desk .files span:first-child { width: 150px; color: #1f2328; }
 `;
+
+/** The page kay has open: a GitHub repository in Chrome. */
+const DESKTOP_HTML = `
+  <div class="menubar"><span></span><b>Chrome</b><span>File</span><span>Edit</span><span>View</span><span>History</span><span>Bookmarks</span><span class="right">Mon 12:40</span></div>
+  <div class="win">
+    <div class="tabs"><div class="dots"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+      <div class="tab on"><span class="fav"></span>kay/portfolio: my site</div><div class="tab">Pull requests · kay/portfolio</div><div class="tab">Vercel – Deployments</div></div>
+    <div class="bar"><span>‹ ›</span><div class="url">github.com/kay/portfolio</div></div>
+    <div class="page"><div class="main">
+      <div class="repo">kay / <b>portfolio</b><span class="pill">Public</span></div>
+      <div class="nav"><span class="on">Code</span><span>Issues 3</span><span>Pull requests 2</span><span>Actions</span><span>Settings</span></div>
+      <div class="files">
+        <div><span>kay</span><span>dark mode for the blog</span></div>
+        <div><span>app/</span><span>pricing page</span></div>
+        <div><span>components/</span><span>hero: shorter subtitle</span></div>
+        <div><span>public/</span><span>og image</span></div>
+        <div><span>README.md</span><span>setup notes</span></div>
+        <div><span>package.json</span><span>next 15</span></div>
+      </div>
+    </div></div>
+  </div>`;
 
 const SCENES = {
   /** "@bob run the tests": your Claude asks bob's Claude on his Mac, and the answer comes back. */
@@ -68,13 +91,19 @@ const SCENES = {
   },
   /** mia's Claude wants a screenshot: the pop-up on your desktop, See more, Allow. */
   'wants-to': {
-    viewport: { width: 760, height: 480 },
+    viewport: { width: 1000, height: 600 },
     async run(page, context) {
       const main = await context.newPage();
       await main.goto(url);
       await side(main).waitFor();
       await networkOn(main);
       await page.addStyleTag({ content: DESKTOP });
+      await page.evaluate((html) => {
+        const desk = document.createElement('div');
+        desk.id = 'desk';
+        desk.innerHTML = html;
+        document.body.prepend(desk);
+      }, DESKTOP_HTML);
       await page.bringToFront();
       await page.waitForTimeout(1500);
       await side(main).getByRole('button', { name: /^mia, / }).click();
