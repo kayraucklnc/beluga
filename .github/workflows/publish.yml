@@ -36,6 +36,8 @@ jobs:
       - name: Use an npm that supports trusted publishing
         run: npm install -g npm@latest
       - run: npm ci
+      - run: npm ci
+        working-directory: packages/mac
       - run: npm run typecheck
       - run: npm test
 
@@ -128,8 +130,8 @@ jobs:
         with:
           projectPath: packages/mac
           tagName: v${{ needs.publish.outputs.version }}
-          releaseName: klaud ${{ needs.publish.outputs.version }}
-          releaseBody: 'klaud for macOS (Apple silicon). The terminal app: npm i -g klaudcode'
+          releaseName: Klaud ${{ needs.publish.outputs.version }}
+          releaseBody: 'Klaud for Mac (Apple silicon): download the .dmg and drag Klaud into Applications. Klaud Lite, in your terminal: npm i -g klaudcode'
           includeUpdaterJson: true
           args: --bundles app
       # The install window (scripts/make-dmg.mjs drives Finder). If Finder can't be scripted on

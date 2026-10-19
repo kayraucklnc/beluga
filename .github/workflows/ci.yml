@@ -18,5 +18,8 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
+      # The types check covers the Mac app's shared files too (its Markdown pipeline).
+      - run: npm ci
+        working-directory: packages/mac
       - run: npm run typecheck
       - run: npm test

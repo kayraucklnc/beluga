@@ -304,7 +304,7 @@ async fn start(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
                 log_tail(log_from)
             ));
         }
-        if let Some(info) = up().filter(&ours) {
+        if let Some(info) = up().filter(ours) {
             return Ok(info.into());
         }
         tokio::time::sleep(Duration::from_millis(150)).await;
