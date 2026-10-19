@@ -121,8 +121,8 @@ function useShortcuts() {
         // ⌥⌘0 shows and hides the right panel, as in Xcode (⌥⌘I still does too).
         e.preventDefault();
         byKey('panel', togglePanel);
-      } else if (e.altKey && e.metaKey && !e.shiftKey && /^Digit[1-5]$/.test(e.code)) {
-        // ⌥⌘1…5: the panel's Changes, Files, Terminal, Info and History.
+      } else if (e.altKey && e.metaKey && !e.shiftKey && /^Digit[1-6]$/.test(e.code)) {
+        // ⌥⌘1…6: the panel's Changes, Files, Terminal, Info, History and Scratch.
         e.preventDefault();
         const tab = PANEL_TABS[Number(e.code.slice(5)) - 1]!;
         byKey(`panel-${tab}`, () => {

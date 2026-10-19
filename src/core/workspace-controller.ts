@@ -57,6 +57,7 @@ const sameText = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim(
 export const workspaceIdOf = (channel: string): string | undefined => (channel.startsWith(WS_PREFIX) ? channel.slice(WS_PREFIX.length) : undefined);
 export { shareNameOf } from '../shared/share-names.js';
 import { shareNameOf } from '../shared/share-names.js';
+import { SCRATCH_DIR, type ScratchFile, ensureScratch, listScratch } from '../workspaces/scratch.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -525,6 +526,15 @@ export class WorkspaceController {
   askClaudeToReview(id: string): void {
     this.open(id);
     this.deps.askClaude(REVIEW_PROMPT, `${WS_PREFIX}${id}`);
+  }
+
+  /** A workspace's scratch folder and what's in it, newest first (nothing when it's gone). */
+  async scratch(id: string): Promise<{ root: string; dir: string; files: ScratchFile[] } | undefined> {
+    const ws = this.deps.manager.find(id);
+    if (!ws || !existsSync(ws.path)) return undefined;
+    // Made when you look (kept out of git), so there's a folder to drop things in and show in Finder.
+    if (!ws.askOnly) await ensureScratch(ws.path);
+    return { root: ws.path, dir: path.join(ws.path, SCRATCH_DIR), files: await listScratch(ws.path) };
   }
 
   openInFinder(id: string): void {

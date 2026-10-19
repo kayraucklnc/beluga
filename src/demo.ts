@@ -8,6 +8,7 @@ import { ATTACHMENT_SCHEME, ATTACHMENT_SHARE, formatBytes } from './core/attachm
 import { DEMO_DOCS, DEMO_LANDING_SVG, DEMO_PAYMENTS_TS, DEMO_PLANS_JSON, DEMO_SERVER_WITH_AUTH } from './demo-docs.js';
 import { seedLandingHistory } from './demo-history.js';
 import { demoScreenshot } from './demo-image.js';
+import { demoPdf } from './demo-pdf.js';
 import { type ShellRunner, runShell } from './core/peer-run.js';
 import { Session } from './core/session.js';
 import { ShareService } from './core/shares.js';
@@ -54,7 +55,7 @@ const YOUR_FILES: Record<string, string> = {
   'content/hero.md': '# Ship together\n\nYour friends. Their Claude. One terminal.\n',
 };
 
-function writeTree(root: string, files: Record<string, string>): void {
+function writeTree(root: string, files: Record<string, string | Uint8Array>): void {
   for (const [rel, content] of Object.entries(files)) {
     mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
     writeFileSync(path.join(root, rel), content);
@@ -254,7 +255,13 @@ export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
   }
   if (landing) {
     const hero = await mgr.createWorktree(landing.id, 'new-hero');
-    writeTree(hero.path, { 'content/hero.md': '# Build together\n\nYou, your friends, and everyone\'s Claude.\n' });
+    // Uncommitted: a new hero line, a README edit, a picture and a PDF (the Changes tab shows them as themselves).
+    writeTree(hero.path, {
+      'content/hero.md': '# Build together\n\nYou, your friends, and everyone\'s Claude.\n',
+      'README.md': '# Landing page\n\nMarketing site for the launch. Built with Astro.\n\n## Develop\n\n- `npm run dev` to preview\n- Copy lives in `content/`\n- The brand brief is in `docs/brand-brief.pdf`\n\n| Page | Status |\n| --- | --- |\n| Hero | **new** |\n| Pricing | draft |\n',
+      'public/hero-shot.png': demoScreenshot(),
+      'docs/brand-brief.pdf': demoPdf(),
+    });
   }
   await mgr.refresh();
   seedDemoUsage(mgr);

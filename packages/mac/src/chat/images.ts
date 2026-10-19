@@ -18,11 +18,25 @@ function toBlobUrl(data: string, mime: string): string {
   return URL.createObjectURL(new Blob([bytes], { type: mime }));
 }
 
+/**
+ * An image a message shows: one sent to the room (an attachment), or a file on this Mac that a
+ * message points at by its path (`![](/Users/…/shot.png)`, as Claude shows screenshots).
+ */
+export type ChatImage = LinkedImage & {
+  /** The file's path on this Mac, when the message names one. */
+  readonly local?: string;
+};
+
 /** The image as a URL this window can show (fetched on first use, then cached). */
-export function loadImage(api: Api, image: Pick<LinkedImage, 'href' | 'owner' | 'file'>): Promise<string> {
+export function loadImage(api: Api, image: Pick<ChatImage, 'href' | 'owner' | 'file' | 'local'>): Promise<string> {
   const hit = cache.get(image.href);
   if (hit) return hit;
-  const load = api.attachments.read(image.owner, image.file).then((r) => toBlobUrl(r.data, r.mime));
+  const load = image.local
+    ? api.session
+        .localLocation(image.local, false)
+        .then((at) => api.files.readImageFile(at))
+        .then((r) => toBlobUrl(r.data, r.mediaType))
+    : api.attachments.read(image.owner, image.file).then((r) => toBlobUrl(r.data, r.mime));
   cache.set(image.href, load);
   // A failure isn't kept: the next time it shows, it tries again (the friend may be back).
   load.catch(() => cache.delete(image.href));
@@ -31,7 +45,7 @@ export function loadImage(api: Api, image: Pick<LinkedImage, 'href' | 'owner' | 
 
 export type ImageState = { readonly status: 'loading' } | { readonly status: 'ready'; readonly url: string } | { readonly status: 'error'; readonly error: string };
 
-export function useImage(api: Api, image: LinkedImage): ImageState {
+export function useImage(api: Api, image: ChatImage): ImageState {
   const [state, setState] = useState<ImageState>({ status: 'loading' });
   useEffect(() => {
     let alive = true;
@@ -61,7 +75,7 @@ export const previewOf = (n: number): string | undefined => pending.get(n);
 // ---- the lightbox: one per window, opened from any message
 
 interface Lightbox {
-  readonly images: readonly LinkedImage[];
+  readonly images: readonly ChatImage[];
   readonly index: number;
 }
 
@@ -69,7 +83,7 @@ let open: Lightbox | undefined;
 const listeners = new Set<() => void>();
 const emit = (): void => listeners.forEach((l) => l());
 
-export function openLightbox(images: readonly LinkedImage[], index = 0): void {
+export function openLightbox(images: readonly ChatImage[], index = 0): void {
   open = { images, index: Math.max(0, Math.min(index, images.length - 1)) };
   emit();
 }

@@ -2,13 +2,16 @@ import { type MouseEvent, type ReactNode, useRef, useState } from 'react';
 import type { ViewerState } from '@klaud/core/store.js';
 import { formatBytes } from '@klaud/shared/format.js';
 import { Icon } from '../../components/Icon.js';
-import { Button, Empty, IconButton, cx } from '../../components/ui.js';
+import { Button, Empty, EmptyActions, IconButton, cx } from '../../components/ui.js';
 import { CodeLines } from '../../components/markdown/CodeLines.js';
 import { type DocNav, type DocVariant, MarkdownDoc } from '../../components/markdown/MarkdownDoc.js';
 import { useImageUrl } from '../../components/markdown/MdImage.js';
 import { MAX_FILE_BYTES } from '@klaud/protocol.js';
 import { Bitmap } from '../FilesView.js';
-import { LARGE_MARKDOWN, type ReaderMode, isMarkdownFile, langOf } from './reader-model.js';
+import { isImageFile } from '../../components/markdown/md-paths.js';
+import { BINARY_TEXT, LARGE_MARKDOWN, prettyJson, type ReaderMode, isMarkdownFile, isPdfFile, langOf } from './reader-model.js';
+import { PdfView } from './PdfView.js';
+import { usePinchZoom } from '../../components/usePinchZoom.js';
 import r from './reader.module.css';
 
 /**
@@ -34,8 +37,8 @@ const ZOOMS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
  * zoom in and out, or double-click for actual size. The original file is shown (sharp at any
  * zoom), not the small preview klaud decoded for the terminal.
  */
-function ImageView({ viewer, controls }: { viewer: ViewerState; controls: boolean }) {
-  const { url } = useImageUrl({ owner: viewer.owner, share: viewer.share, path: viewer.path });
+function ImageView({ viewer, controls, version }: { viewer: ViewerState; controls: boolean; version?: string | number }) {
+  const { url, error } = useImageUrl({ owner: viewer.owner, share: viewer.share, path: viewer.path }, version);
   const [zoom, setZoom] = useState<'fit' | number>('fit');
   const [natural, setNatural] = useState<{ w: number; h: number }>();
   const stage = useRef<HTMLDivElement>(null);
@@ -44,6 +47,8 @@ function ImageView({ viewer, controls }: { viewer: ViewerState; controls: boolea
     const el = stage.current;
     return el && natural ? Math.min(1, (el.clientWidth - 56) / natural.w) : 1;
   };
+  // Two fingers on the trackpad zoom it too (anywhere it's shown: the reader, the panel, Changes, Scratch).
+  usePinchZoom(stage, zoom === 'fit' ? fitted() : zoom, setZoom);
   const step = (dir: 1 | -1): void => {
     const now = zoom === 'fit' ? fitted() : zoom;
     const next = dir > 0 ? ZOOMS.find((z) => z > now + 0.001) : [...ZOOMS].reverse().find((z) => z < now - 0.001);
@@ -53,6 +58,7 @@ function ImageView({ viewer, controls }: { viewer: ViewerState; controls: boolea
     e.preventDefault();
     setZoom(zoom === 'fit' ? 1 : 'fit');
   };
+  if (error && !viewer.image) return <Empty icon="alert" title="Can’t show this picture" detail={error} />;
   const sized = zoom !== 'fit' && natural ? { width: natural.w * zoom, height: natural.h * zoom, maxWidth: 'none' } : undefined;
   return (
     <div className={r.imageView}>
@@ -88,15 +94,17 @@ export interface FileContentProps {
   readonly onOpenInEditor?: (() => void) | undefined;
   readonly onSaveCopy?: (() => void) | undefined;
   readonly nav?: Partial<DocNav>;
+  /** Changes when the file may have (a PDF is read again then). */
+  readonly version?: unknown;
 }
 
 /** The file itself, under whatever header the place showing it has. */
-export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEditor, onSaveCopy, nav }: FileContentProps) {
-  if (viewer.loading && !viewer.content && !viewer.image) return <div className={r.opening}>Opening…</div>;
+export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEditor, onSaveCopy, nav, version }: FileContentProps) {
+  // PDFs and pictures are read as themselves (their bytes), whatever the text read made of them.
+  if (isPdfFile(viewer.path)) return <PdfView at={{ owner: viewer.owner, share: viewer.share, path: viewer.path }} controls={variant !== 'panel'} version={version} />;
+  if (viewer.image || (isImageFile(viewer.path) && !viewer.error)) return <ImageView viewer={viewer} controls={variant !== 'panel'} {...(typeof version === 'string' || typeof version === 'number' ? { version } : {})} />;
+  if (viewer.loading && !viewer.content) return <div className={r.opening}>Opening…</div>;
   if (viewer.error) return <Empty icon="alert" title="Can’t open this file" detail={viewer.error} />;
-  if (viewer.image) return <ImageView viewer={viewer} controls={variant !== 'panel'} />;
-  const markdown = isMarkdownFile(viewer.path);
-  const large = markdown && viewer.content.length > LARGE_MARKDOWN;
   const escape = onOpenInEditor ? (
     <Button size="small" variant="quiet" icon="external" onClick={onOpenInEditor}>
       Open in Editor
@@ -106,6 +114,12 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
       Save a Copy…
     </Button>
   ) : undefined;
+  if (viewer.content === BINARY_TEXT) {
+    return <Empty icon="file" title="No preview for this kind of file" detail="It isn’t text, a picture or a PDF." action={escape ? <EmptyActions>{escape}</EmptyActions> : undefined} />;
+  }
+  const markdown = isMarkdownFile(viewer.path);
+  const large = markdown && viewer.content.length > LARGE_MARKDOWN;
+  const json = mode === 'rendered' ? prettyJson(viewer.path, viewer.content) : undefined;
   return (
     <div className={cx(r.content, r[`v_${variant}`])}>
       {viewer.truncated ? <Notice action={escape}>Only the first {formatBytes(MAX_FILE_BYTES)} of this file is shown.</Notice> : null}
@@ -124,7 +138,7 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
         <MarkdownDoc text={viewer.content} at={viewer} variant={variant} {...(nav ? { nav } : {})} />
       ) : (
         <div className={r.codeFile}>
-          <CodeLines text={viewer.content} lang={markdown ? 'markdown' : langOf(viewer.path)} numbers wrap={wrap || variant === 'panel'} />
+          <CodeLines text={json ?? viewer.content} lang={markdown ? 'markdown' : langOf(viewer.path)} numbers wrap={wrap || variant === 'panel'} />
         </div>
       )}
     </div>

@@ -1,5 +1,6 @@
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { type ButtonHTMLAttributes, type ReactNode, forwardRef } from 'react';
+import { DotMatrix } from './DotMatrix.js';
 import { Icon, type IconName } from './Icon.js';
 import s from './ui.module.css';
 
@@ -82,7 +83,9 @@ export function Badge({ count, urgent }: { count: number; urgent?: boolean }) {
 
 /** A status dot. `live` pulses softly (Claude is working). */
 export function Dot({ tone, live }: { tone: 'ok' | 'warn' | 'error' | 'info' | 'claude' | 'muted'; live?: boolean }) {
-  return <span className={cx(s.dot, s[`dot_${tone}`], live && s.live)} aria-hidden="true" />;
+  // At work: the dot matrix, in the dot's color (no pulsing ring).
+  if (live) return <DotMatrix className={s[`live_${tone}`]} size={13} />;
+  return <span className={cx(s.dot, s[`dot_${tone}`])} aria-hidden="true" />;
 }
 
 const PEOPLE = ['#5b8def', '#3fa776', '#a46ed0', '#d39a2c', '#2fa4a0', '#7f72e6', '#b98a5e', '#5f9ad6'];

@@ -4,7 +4,7 @@ import type { CcSession } from '../src/core/claude-code/model.js';
 import type { Notice } from '../src/core/work-store.js';
 import { type ScreenAction, initialAppState, reduceApp } from '../src/client/screen.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
-import { dockCount, groupTally, needOf, projectTally, signalOf, tally, tallyTip, unreadEntries, workspaceSignal } from '../packages/mac/src/layout/attention-model.js';
+import { dockCount, groupTally, groupWorking, needOf, projectTally, projectWorking, signalOf, tally, tallyTip, unreadEntries, workspaceSignal } from '../packages/mac/src/layout/attention-model.js';
 
 /** The sidebar's unread and needs-you marks (packages/mac/src/layout/attention-model.ts), and the core's unread counts behind them. */
 
@@ -170,5 +170,21 @@ describe('the Unread section and the Dock', () => {
     // An approval in a listed conversation (and its notice) is that conversation.
     s = apply(s, { type: 'approval_add', approval: { id: 'a2', kind: 'tool', title: 'Bash', detail: '', channel: 'ws:hooks' } }, notice(4, { kind: 'needsYou', tag: 'approval', ref: 'a2' }));
     expect(dockCount(s)).toBe(5);
+  });
+});
+
+describe('a folded project or group says Claude is working inside it', () => {
+  it('for klaud’s own runs, Claude Code sessions in any worktree (also ones made outside klaud) and the main folder', () => {
+    expect(projectWorking(base(), api)).toBe(false);
+    expect(projectWorking(apply(base(), run('started')), api)).toBe(true);
+    // Claude Code running in a worktree, even while another conversation there has news.
+    const cc = apply(base(), view('auth'), run('started'), overview, run('done'), { type: 'claude_code', sessions: [session({})] });
+    expect(projectTally(cc, api).unread).toBe(1);
+    expect(projectWorking(cc, api)).toBe(true);
+    expect(projectWorking(apply(base(), { type: 'claude_code', sessions: [session({ workspaceId: 'main' })] }), api)).toBe(true);
+    // Not an archived one.
+    expect(projectWorking(apply(base(), { type: 'claude_code', sessions: [session({ workspaceId: 'old' })] }), api)).toBe(false);
+    expect(groupWorking(cc, [site, api])).toBe(true);
+    expect(groupWorking(cc, [site])).toBe(false);
   });
 });

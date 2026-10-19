@@ -3,18 +3,19 @@ import type { Location, ViewerState } from '@klaud/core/store.js';
 import type { FsEntry } from '@klaud/protocol.js';
 import { shareNameOf } from '@klaud/shared/share-names.js';
 import { formatBytes } from '@klaud/shared/format.js';
+import { findWorkspace } from '@klaud/ui/workspace-models.js';
 import { Icon } from '../../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../../components/SpecMenu.js';
 import { IconButton, Segmented, cx } from '../../components/ui.js';
 import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
 import { localPathOf, openWithDefaultApp } from '../../lib/files.js';
-import { focusFor, openFocus, usePanelRuntime } from '../../lib/panel.js';
+import { focusFor, openFocus, showChange, usePanelRuntime } from '../../lib/panel.js';
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { mod } from '../../lib/system.js';
 import { STATE } from '../../views/DiffView.js';
 import { useRowItems } from '../../views/FilesView.js';
-import { type ReaderMode, initialMode, isMarkdownFile } from '../../views/reader/reader-model.js';
+import { type ReaderMode, initialMode, isMarkdownFile, isPdfFile } from '../../views/reader/reader-model.js';
 import { SCROLL_ROOT } from '../../components/markdown/md-dom.js';
 import d from '../../views/diff.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
@@ -41,7 +42,7 @@ function Marked({ name, query }: { name: string; query: string }): ReactNode {
 }
 
 /** The open file under the tree: Markdown formatted (or as source), code in color, images as they are. */
-function Preview({ viewer, wsId, local }: { viewer: ViewerState; wsId: string; local: string | undefined }) {
+function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: string; local: string | undefined; changed: boolean }) {
   const api = useApi();
   const { client } = useKlaud();
   const [mode, setMode] = useState<ReaderMode>(() => initialMode(viewer));
@@ -74,7 +75,8 @@ function Preview({ viewer, wsId, local }: { viewer: ViewerState; wsId: string; l
             ]}
           />
         ) : null}
-        {local ? <IconButton icon="external" label="Open in Editor" onClick={() => void openWithDefaultApp(client, local)} /> : null}
+        {changed ? <IconButton icon="diff" label="Show Changes" onClick={() => showChange(client.store.getState(), viewer.path)} /> : null}
+        {local ? <IconButton icon="external" label={isPdfFile(viewer.path) ? 'Open in Preview' : 'Open in Editor'} onClick={() => void openWithDefaultApp(client, local)} /> : null}
         <IconButton icon="expand" label="Open in full" keys={`${mod()}↩`} onClick={() => openFocus('file', wsId)} />
         <IconButton icon="x" label="Close" keys="Esc" onClick={() => void api.files.closeViewer()} />
       </div>
@@ -155,6 +157,15 @@ export function FilesTab({ wsId }: { wsId: string }) {
     list.current?.querySelector('[data-cursor="true"]')?.scrollIntoView({ block: 'nearest' });
   }, [cursor]);
 
+  // Which files changed (marked in the tree, and Show Changes on them): read once if nothing has yet.
+  const changedCount = useApp((st) => {
+    const w = findWorkspace(st.projects, wsId);
+    return (w?.status?.changed ?? 0) + (w?.status?.ahead ?? 0);
+  });
+  useEffect(() => {
+    if (!review && changedCount) void api.workspaces.review(wsId);
+  }, [wsId]);
+
   const changes = useMemo(() => {
     const files = new Map((review?.files ?? []).map((x) => [x.path, x.state] as const));
     const dirs = new Set([...files.keys()].flatMap(ancestorsOf));
@@ -180,6 +191,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
     if (row.dir) return base;
     return [
       base[0]!,
+      ...(changes.files.has(row.path) ? [{ label: 'Show Changes', icon: 'diff' as const, onSelect: () => void showChange(client.store.getState(), row.path) }] : []),
       { label: 'Open in Full', icon: 'expand', keys: `${mod()}↩`, onSelect: () => void api.files.open(at(row.path)).then(() => openFocus('file', wsId)) },
       ...(local ? [{ label: 'Open With Its App', icon: 'external' as const, onSelect: () => void openWithDefaultApp(client, local) }] : []),
       ...base.slice(1),
@@ -294,7 +306,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
             onReset={() => setPrefs({ panelSplit: SPLIT_DEFAULT })}
             onStep={(dir) => setPrefs({ panelSplit: clampShare(split - dir * 0.04, SPLIT_MIN, SPLIT_MAX) })}
           />
-          <Preview viewer={previewed} wsId={wsId} local={local} />
+          <Preview viewer={previewed} wsId={wsId} local={local} changed={changes.files.has(previewed.path)} />
         </>
       ) : null}
     </div>

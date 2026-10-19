@@ -11,6 +11,8 @@ import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/
 import { copyText } from '../lib/copy.js';
 import { revealInFinder } from '../lib/files.js';
 import { quoteInBox } from '../chat/message-menu.js';
+import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { ChangedFileView, canShowFile, fileLookLabel, onlyAsFile, useChangeLocation } from './ChangedFile.js';
 import s from './diff.module.css';
 
 /** Side by side: deletions on the left, additions on the right, aligned within each change. */
@@ -165,7 +167,9 @@ export function DiffView() {
   const actions = useActions();
   const review = useApp((st) => st.review);
   const view = useApp((st) => st.view);
-  const [mode, setMode] = useState<'unified' | 'split'>('unified');
+  const [layout, setLayout] = useState<'unified' | 'split'>('unified');
+  const prefs = usePrefs();
+  const located = useChangeLocation(review?.data?.files[review.selected]?.path);
   const lines = useMemo(() => (review?.diff ? parseDiff(review.diff) : []), [review?.diff]);
   const files = review?.data?.files ?? [];
   const totals = files.reduce((t, f) => ({ add: t.add + f.added, del: t.del + f.removed }), { add: 0, del: 0 });
@@ -176,6 +180,15 @@ export function DiffView() {
   if (review.error) return <Empty icon="alert" title="Couldn't read the changes" detail={review.error} />;
   if (!files.length) return <Empty icon="check" title="Nothing has changed yet" detail={review.data ? `Everything matches ${review.data.base}.` : undefined} />;
   const file = files[review.selected];
+  const at = file && canShowFile(file) ? located : undefined;
+  // A picture or a PDF as itself; anything else its diff (Unified or Split) or the file (Markdown formatted).
+  const asFile = !!at && !!file && (onlyAsFile(file.path) || prefs.changeLook === 'file');
+  const mode = asFile ? 'file' : layout;
+  const setMode = (m: 'unified' | 'split' | 'file'): void => {
+    if (m === 'file') return setPrefs({ changeLook: 'file' });
+    setLayout(m);
+    setPrefs({ changeLook: 'diff' });
+  };
   return (
     <div className={s.diff}>
       <aside className={s.files} aria-label="Changed files">
@@ -235,18 +248,23 @@ export function DiffView() {
           <Icon name="file" size={13} />
           <span className={s.path}>{file?.path}</span>
           <span className={s.flex} />
-          <Segmented
-            label="Layout"
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: 'unified', label: 'Unified' },
-              { value: 'split', label: 'Split' },
-            ]}
-          />
+          {file && onlyAsFile(file.path) ? null : (
+            <Segmented
+              label="Layout"
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: 'unified', label: 'Unified' },
+                { value: 'split', label: 'Split' },
+                ...(at && file ? [{ value: 'file' as const, label: fileLookLabel(file.path), hint: 'The file as it is now' }] : []),
+              ]}
+            />
+          )}
         </div>
-        <div className={`${s.code} selectable`} tabIndex={0} aria-label="The changes">
-          {!review.diff ? (
+        <div className={cx(s.code, mode === 'file' && s.asFile, 'selectable')} tabIndex={0} aria-label={mode === 'file' ? 'The file' : 'The changes'}>
+          {mode === 'file' && at ? (
+            <ChangedFileView at={at} variant="focus" wrap={false} />
+          ) : !review.diff ? (
             <div className={s.loadingDiff}>Loading the diff…</div>
           ) : mode === 'unified' ? (
             <UnifiedDiff lines={lines} />

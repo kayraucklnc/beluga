@@ -29,6 +29,8 @@ export interface AgentRunInput {
   readonly env?: Readonly<Record<string, string>>;
   /** Auto-compact threshold (percent) for Claude Code's own compaction; unset: auto-compact is off. */
   readonly autoCompactAt?: number;
+  /** A folder (relative to the run's folder, git-ignored) for screenshots and scratch output; the owner watches it live. */
+  readonly scratchDir?: string;
   /** Where to run: a workspace folder with its own Claude conversation. Defaults to the room's folder. */
   readonly place?: AgentPlace;
   /** Called with absolute paths the agent wrote to, so the room can follow along. */

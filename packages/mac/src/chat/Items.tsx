@@ -65,7 +65,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
               {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
             </div>
           )}
-          {text ? <Markdown text={text} paths={mine} /> : null}
+          {text ? <Markdown text={text} paths={mine} localImages={mine} /> : null}
           <ImageGrid images={images} />
         </div>
       </div>
@@ -152,7 +152,7 @@ export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) 
           {/* Steps open to show what ran and what came back (see steps/AgentSteps.tsx). */}
           <AgentSteps item={item} running={running} />
           {item.text ? (
-            <Markdown text={item.text} paths />
+            <Markdown text={item.text} paths localImages={mine} />
           ) : item.status === 'queued' ? (
             // Sending it now, editing or moving it: the queue above the box.
             <div className={s.idle}>Starts when the current task finishes.</div>

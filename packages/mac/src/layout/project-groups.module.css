@@ -74,11 +74,11 @@
   cursor: default !important;
 }
 
-/* A project's icon sits in the column a group's folder uses (the triangle's space is kept). */
+/* A project's triangle and icon sit in the same columns as a group's: at the top level they're
+   siblings, side by side at the sidebar's edge; only a group's own projects step in. */
 .projectIcon {
   display: inline-flex;
   align-items: center;
-  padding-left: 14px;
 }
 /* A group's row reads as the parent it is. */
 .groupHead {
@@ -185,7 +185,9 @@
   place-items: center;
   width: 14px;
   height: 18px;
-  margin-left: -4px;
+  /* Its triangle and the icon after it land where a group's triangle and folder do. */
+  margin-left: -2px;
+  margin-right: 2px;
   border-radius: 4px;
 }
 .foldButton:hover {

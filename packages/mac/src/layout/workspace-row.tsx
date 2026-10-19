@@ -3,11 +3,11 @@ import type { Workspace } from '@klaud/workspaces/types.js';
 import { stateOf, workspaceButtons } from '@klaud/ui/workspace-models.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
-import { Dot, cx } from '../components/ui.js';
+import { cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/klaud.js';
 import { workspaceSignal } from './attention-model.js';
-import { SignalMark, nameClass, signalClass } from './signal-marks.js';
+import { DotMark, SignalMark, nameClass, signalClass } from './signal-marks.js';
 import { toolbarActions } from './toolbar-actions.js';
 import { Row } from './sidebar-parts.js';
 import { outsideLocation } from './outside-model.js';
@@ -52,7 +52,7 @@ export function WorkspaceRow({ ws, indent }: { ws: Workspace; indent: number }) 
   const signal = workspaceSignal(state, ws);
   const icon: IconName = ws.kind === 'chat' ? 'chat' : ws.kind === 'main' ? 'folder' : 'branch';
   // Idle: its git state (uncommitted changes, ready to merge) as before.
-  const quiet = st.tone === 'warn' || st.tone === 'info' || st.tone === 'error' ? <Dot tone={st.tone} /> : null;
+  const quiet = st.tone === 'warn' || st.tone === 'info' || st.tone === 'error' ? <DotMark tone={st.tone} /> : null;
   // Made outside Klaud: where it is, quietly after its name (the full path in the tooltip).
   const where = outsideLocation(state, ws);
   return (
