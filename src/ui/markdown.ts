@@ -2,7 +2,7 @@ import { theme } from './theme.js';
 import { type Line, type Seg, wrapText } from './text.js';
 
 /** Inline markdown: `code`, **bold**, *italic*, and [links](url). */
-export function inlineSegs(text: string, base: Omit<Seg, 'text'> = {}, hrefs?: ReadonlyMap<string, string>): Seg[] {
+export function inlineSegs(text: string, base: Omit<Seg, 'text'> = {}, hrefs?: Map<string, string[]>): Seg[] {
   const segs: Seg[] = [];
   const re = /(`[^`]+`|\*\*[^*]+\*\*|⟦[^⟧]+⟧|\[[^\]]+\]\([^)]+\)|(?<![*\w])\*[^*\s][^*]*\*(?![*\w]))/g;
   let last = 0;
@@ -13,7 +13,9 @@ export function inlineSegs(text: string, base: Omit<Seg, 'text'> = {}, hrefs?: R
     if (tok.startsWith('`')) segs.push({ ...base, text: tok.slice(1, -1), color: theme.info });
     else if (tok.startsWith('**')) segs.push({ ...base, text: tok.slice(2, -2), bold: true });
     else if (tok.startsWith('⟦')) {
-      const href = hrefs?.get(tok.slice(1, -1));
+      // Same text, different links ("here" … "here"): each takes the next target, in order.
+      const queue = hrefs?.get(tok.slice(1, -1));
+      const href = queue && queue.length > 1 ? queue.shift() : queue?.[0];
       segs.push({ ...base, text: tok.slice(1, -1), color: theme.info, ...(href ? { link: { kind: 'href' as const, href } } : {}) });
     }
     else if (tok.startsWith('[')) {
@@ -34,14 +36,14 @@ export function renderMarkdown(text: string, width: number): Line[] {
   const out: Line[] = [];
   let inCode = false;
   // Link targets, by link text (kept so the chat can make them clickable).
-  const hrefs = new Map<string, string>();
+  const hrefs = new Map<string, string[]>();
   const inline = (t: string, base: Omit<Seg, 'text'> = {}): Seg[] => inlineSegs(t, base, hrefs);
   for (const source of text.split('\n')) {
     // Collapse links to their text before wrapping so URLs don't eat line width.
     const raw = inCode
       ? source
       : source.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label: string, href: string) => {
-          hrefs.set(label, href);
+          hrefs.set(label, [...(hrefs.get(label) ?? []), href]);
           return `⟦${label}⟧`;
         });
     if (/^\s*```/.test(raw)) {

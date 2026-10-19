@@ -3,6 +3,11 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createMockBackend } from './agent/mock.js';
+import { seedMockContext } from './agent/mock-context.js';
+import { ATTACHMENT_SCHEME, ATTACHMENT_SHARE, formatBytes } from './core/attachments.js';
+import { DEMO_DOCS, DEMO_LANDING_SVG, DEMO_PAYMENTS_TS, DEMO_PLANS_JSON, DEMO_SERVER_WITH_AUTH } from './demo-docs.js';
+import { seedLandingHistory } from './demo-history.js';
+import { demoScreenshot } from './demo-image.js';
 import { type ShellRunner, runShell } from './core/peer-run.js';
 import { Session } from './core/session.js';
 import { ShareService } from './core/shares.js';
@@ -38,6 +43,10 @@ const BOB_FILES: Record<string, string> = {
   'src/server.ts': "import express from 'express';\n\nconst app = express();\n// TODO: add auth\napp.get('/api/health', (_req, res) => res.send('ok'));\n\napp.listen(3000);\n",
   'design/sunset.svg': SUNSET_SVG,
   'package.json': '{\n  "name": "bob-api",\n  "scripts": { "dev": "tsx src/server.ts", "test": "vitest" }\n}\n',
+  'src/payments.ts': DEMO_PAYMENTS_TS,
+  'data/plans.json': DEMO_PLANS_JSON,
+  'design/landing.svg': DEMO_LANDING_SVG,
+  ...DEMO_DOCS,
 };
 
 const YOUR_FILES: Record<string, string> = {
@@ -118,6 +127,7 @@ export function startDemoFriend(url: string, keys: RoomKeys, folder: string, nam
     session.updateUsage({ plan: 'pro', fiveHour: { pct: friend.usage }, week: { pct: 41 } });
     say(friend.first);
     if (name === 'bob') setTimeout(() => shareDemoWorkspace(session, shares, folder), 1800);
+    if (name === 'bob') setTimeout(() => sendDemoScreenshot(session), 4200);
   });
   client.on('message', (msg) => {
     // Answer you (not each other), one line per message you send.
@@ -168,6 +178,17 @@ function shareDemoWorkspace(session: Session, shares: ShareService, folder: stri
   session.send({ kind: 'ws_invite', ws: { id: DEMO_WS, name: 'payments', project: 'bob-api', branch: 'fix-webhooks' }, role: 'view', can: 'watch', share, history }, { to: host.peerId });
 }
 
+/** bob sends the room a screenshot (the way a pasted image goes out), so the demo shows images in the chat. */
+function sendDemoScreenshot(session: Session): void {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-images-'));
+  const file = 'checkout-error.png';
+  const png = demoScreenshot();
+  writeFileSync(path.join(dir, file), png);
+  const others = session.store.getState().peers.filter((p) => p.peerId !== session.selfId).map((p) => p.peerId);
+  session.serveFolder(ATTACHMENT_SHARE, dir, others);
+  session.sendChat(`this is the checkout error on staging [📎 image 1 (png, ${formatBytes(png.byteLength)})](${ATTACHMENT_SCHEME}${session.selfId}/${file})`, false);
+}
+
 /** Someone who got your link to one project and knocks (the demo's Invite flow, from the other side). */
 export function startDemoGuest(url: string, keys: RoomKeys, name = 'zoe'): Session {
   const store = new Store(initialState('demo', 'deny'));
@@ -195,7 +216,9 @@ function demoRepo(base: string, name: string, files: Record<string, string>): st
   writeTree(dir, files);
   gitIn(dir, 'init', '-b', 'main');
   gitIn(dir, 'add', '.');
-  gitIn(dir, 'commit', '-m', 'Initial commit');
+  // Two weeks back, so the demo's history reads like a real project's.
+  const start = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  execFileSync('git', ['-c', 'user.email=demo@klaud.dev', '-c', 'user.name=klaud demo', 'commit', '-q', '-m', 'Initial commit'], { cwd: dir, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: start, GIT_COMMITTER_DATE: start } });
   gitIn(dir, 'remote', 'add', 'origin', origin);
   gitIn(dir, 'push', '-u', 'origin', 'main');
   gitIn(dir, 'remote', 'set-head', 'origin', 'main');
@@ -206,7 +229,9 @@ function demoRepo(base: string, name: string, files: Record<string, string>): st
 export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
   const base = mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-projects-'));
   demoRepo(base, 'bob-api', BOB_FILES);
-  demoRepo(base, 'landing', YOUR_FILES);
+  const landingDir = demoRepo(base, 'landing', YOUR_FILES);
+  // History with several people and merged branches, and a teammate's push you haven't pulled yet.
+  seedLandingHistory(landingDir, path.join(base, 'remotes', 'landing.git'), base);
   const store = new WorkspaceStore(path.join(base, 'home'));
   store.saveConfig({ roots: [path.join(base, 'Projects')], projects: [], hidden: [] });
   const mgr = new WorkspaceManager(store);
@@ -218,13 +243,13 @@ export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
     writeTree(auth.path, { 'src/auth.ts': "export function requireUser(req: { session?: string }) {\n  if (!req.session) throw new Error('unauthorized');\n}\n" });
     gitIn(auth.path, 'add', '.');
     gitIn(auth.path, 'commit', '-m', 'Add requireUser middleware');
-    writeTree(auth.path, { 'src/server.ts': "import express from 'express';\nimport { requireUser } from './auth';\n\nconst app = express();\napp.use('/api/payments', requireUser);\napp.get('/api/health', (_req, res) => res.send('ok'));\n\napp.listen(3000);\n" });
+    writeTree(auth.path, { 'src/server.ts': DEMO_SERVER_WITH_AUTH });
     gitIn(auth.path, 'add', '.');
     gitIn(auth.path, 'commit', '-m', 'Protect payments routes');
     const tests = await mgr.createWorktree(api.id, 'webhook-retries');
     writeTree(tests.path, { 'src/webhooks.ts': '// retry with backoff\nexport const MAX_RETRIES = 5;\n' });
     await mgr.createChat(api.id, 'How do deploys work?');
-    // Worktrees Claude Code sub-agents leave behind (they fold into their own group).
+    // Worktrees Claude Code sub-agents leave behind (listed after the project's own worktrees).
     for (const id of ['a3f9c1e07b2d', 'a8b24d6e91c0']) gitIn(api.root, 'worktree', 'add', '-q', '-b', `agent-${id}`, path.join(api.root, '.claude', 'worktrees', `agent-${id}`));
   }
   if (landing) {
@@ -232,5 +257,43 @@ export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
     writeTree(hero.path, { 'content/hero.md': '# Build together\n\nYou, your friends, and everyone\'s Claude.\n' });
   }
   await mgr.refresh();
+  seedDemoUsage(mgr);
   return mgr;
+}
+
+/** Two weeks of (made-up) Claude runs, so the Usage screen has days, totals and costs to show. */
+function seedDemoUsage(mgr: WorkspaceManager): void {
+  const weight: Record<string, number> = { 'add-auth': 1, 'webhook-retries': 0.55, 'new-hero': 0.35, 'How do deploys work?': 0.12 };
+  const all = mgr.list.flatMap((p) => p.workspaces).filter((w) => weight[w.name] !== undefined);
+  const day = 86_400_000;
+  for (let ago = 13; ago >= 0; ago--) {
+    // A steady, repeatable rhythm: busier mid-week, quiet weekends.
+    const pace = 0.35 + 0.65 * Math.abs(Math.sin((ago + 2) * 0.9));
+    for (const w of all) {
+      const share = weight[w.name]! * pace;
+      if (share < 0.12) continue;
+      const input = Math.round(42_000 * share);
+      mgr.addUsage(w.id, { input, output: Math.round(input * 0.18), cacheRead: input * 6, cacheWrite: Math.round(input * 0.3), cost: Math.round(input * 0.0000165 * 100) / 100 }, Date.now() - ago * day);
+    }
+  }
+}
+
+/** How full the demo's conversations start (percent of 200k): calm, one getting full, one about to compact. */
+const DEMO_CONTEXT: Readonly<Record<string, number>> = { 'add-auth': 48, 'webhook-retries': 72, 'new-hero': 31, 'How do deploys work?': 83 };
+
+/** Give the demo's conversations a context meter to show (the demo's Claude continues from there). */
+export function seedDemoContext(store: Store, tries = 40): void {
+  const all = store.getState().projects.flatMap((p) => p.workspaces);
+  // The projects arrive a moment after the daemon starts.
+  if (!all.some((w) => DEMO_CONTEXT[w.name] !== undefined)) {
+    if (tries > 0) setTimeout(() => seedDemoContext(store, tries - 1), 250).unref();
+    return;
+  }
+  for (const ws of all) {
+    const pct = DEMO_CONTEXT[ws.name];
+    if (pct === undefined) continue;
+    const used = Math.round(2_000 * pct);
+    seedMockContext(ws.path, used);
+    store.dispatch({ type: 'agent_event', owner: store.getState().selfId, requestId: `demo-context-${ws.id}`, requester: store.getState().selfId, event: 'context', text: JSON.stringify({ used, window: 200_000 }), ts: Date.now(), channel: `ws:${ws.id}` });
+  }
 }

@@ -1,0 +1,283 @@
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import type { Review } from '@klaud/workspaces/git.js';
+import { parseDiff } from '@klaud/shared/diff-lines.js';
+import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { Icon } from '../../components/Icon.js';
+import { ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
+import { Button, Empty, IconButton, Tip, cx } from '../../components/ui.js';
+import { useActions } from '../../lib/actions.js';
+import { useApi, useApp } from '../../lib/klaud.js';
+import { focusFor, openFocus, usePanelRuntime } from '../../lib/panel.js';
+import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
+import { setPrefs, usePrefs } from '../../lib/prefs.js';
+import { mod } from '../../lib/system.js';
+import { STATE, UnifiedDiff, useCommitItems, useFileItems } from '../../views/DiffView.js';
+import d from '../../views/diff.module.css';
+import { ResizeHandle } from './ResizeHandle.js';
+import s from './panel.module.css';
+
+/** The last answer Claude finished in this workspace (its edits may have changed what's shown). */
+function useLastTurn(wsId: string): string {
+  const channel = `ws:${wsId}`;
+  return useApp((st) => {
+    for (let i = st.log.length - 1; i >= 0; i--) {
+      const l = st.log[i]!;
+      if (l.type === 'agent' && l.channel === channel && l.status === 'done') return l.id;
+    }
+    return '';
+  });
+}
+
+/**
+ * What changed, kept fresh while you stay in the chat: it loads when you open the tab and again
+ * whenever the workspace's git status moves or Claude finishes a turn. The list on screen stays
+ * put while it reloads (no flash of "loading").
+ */
+function useChanges(wsId: string): { data: Review | undefined; loading: boolean; error: string | undefined; reload: () => void } {
+  const api = useApi();
+  const review = useApp((st) => st.review);
+  const status = useApp((st) => {
+    const ws = findWorkspace(st.projects, wsId);
+    return ws?.status ? `${ws.status.changed}:${ws.status.ahead}:${ws.status.behind}` : '';
+  });
+  const turn = useLastTurn(wsId);
+  const reload = (): void => void api.workspaces.review(wsId);
+  useEffect(reload, [wsId, status, turn]);
+  const last = useRef<Review | undefined>(undefined);
+  const mine = review?.workspaceId === wsId ? review : undefined;
+  if (mine?.data) last.current = mine.data;
+  return { data: mine?.data ?? last.current, loading: !!mine?.loading, error: mine?.error, reload };
+}
+
+function Summary({ data, loading, onReload }: { data: Review; loading: boolean; onReload: () => void }) {
+  const totals = data.files.reduce((t, f) => ({ add: t.add + f.added, del: t.del + f.removed }), { add: 0, del: 0 });
+  const commitItems = useCommitItems();
+  const [showCommits, setShowCommits] = useState(false);
+  return (
+    <div className={s.summary}>
+      <div className={s.summaryRow}>
+        <span className={s.summaryTitle}>
+          {data.files.length} file{data.files.length === 1 ? '' : 's'} changed
+        </span>
+        <span className={d.add}>+{totals.add}</span>
+        <span className={d.del}>−{totals.del}</span>
+        <span className={s.flex} />
+        <IconButton icon="refresh" label={loading ? 'Looking for changes…' : 'Look again'} className={cx(loading && s.spinning)} onClick={onReload} />
+      </div>
+      <div className={s.summaryMeta}>
+        <span className={s.base} title={data.base}>
+          vs {/^[0-9a-f]{40}$/.test(data.base) ? data.base.slice(0, 7) : data.base}
+        </span>
+        {data.commits.length ? (
+          <button type="button" className={s.disclose} aria-expanded={showCommits} onClick={() => setShowCommits(!showCommits)}>
+            <Icon name={showCommits ? 'chevronDown' : 'chevronRight'} size={9} />
+            {data.commits.length} commit{data.commits.length === 1 ? '' : 's'} ahead
+          </button>
+        ) : null}
+      </div>
+      {showCommits ? (
+        <div className={s.commits}>
+          {data.commits.slice(0, 20).map((c) => (
+            <ActionsContext key={c.hash} items={() => commitItems(c)}>
+              <span className={s.commitWrap}>
+                <ActionsDropdown items={commitItems(c)} align="start">
+                  <button type="button" className={s.commit} title={c.subject}>
+                    <span className={d.hash}>{c.hash}</span>
+                    <span className={s.commitSubject}>{c.subject}</span>
+                  </button>
+                </ActionsDropdown>
+              </span>
+            </ActionsContext>
+          ))}
+          {data.commits.length > 20 ? <div className={s.dim}>and {data.commits.length - 20} earlier</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Commit, a pull request, Claude's review: what you do with changes, right under them. */
+function Actions({ wsId }: { wsId: string }) {
+  const actions = useActions();
+  const ws = useApp((st) => findWorkspace(st.projects, wsId));
+  const pr = useApp((st) => st.prs[wsId]);
+  if (!ws) return null;
+  const changed = ws.status?.changed ?? 0;
+  const ahead = ws.status?.ahead ?? 0;
+  const worktree = ws.kind === 'worktree';
+  const run = (action: 'commit' | 'pr' | 'review_claude'): void => actions.run({ type: 'ws', id: wsId, action });
+  return (
+    <div className={s.actions}>
+      {worktree && changed ? (
+        <Tip label={`Commit ${changed} changed file${changed === 1 ? '' : 's'}`} keys={`⇧${mod()}C`}>
+          <Button size="small" variant="primary" icon="check" onClick={() => run('commit')}>
+            Commit
+          </Button>
+        </Tip>
+      ) : null}
+      {worktree && (ahead || changed || pr) ? (
+        <Tip label={pr ? 'Open it, fix checks, or update it' : 'Claude pushes and opens a pull request'} keys={`⇧${mod()}P`}>
+          <Button size="small" icon="pr" onClick={() => run('pr')}>
+            {pr ? `PR #${pr.number}` : 'Create PR…'}
+          </Button>
+        </Tip>
+      ) : null}
+      <Tip label="Ask Claude to check everything: bugs, security, tests and quality" keys={`⇧${mod()}R`}>
+        <Button size="small" variant="quiet" icon="claude" onClick={() => run('review_claude')}>
+          Review
+        </Button>
+      </Tip>
+    </div>
+  );
+}
+
+/** The selected file's diff, compact, with the way to see it full size. */
+function FileDiff({ wsId, path, onClose }: { wsId: string; path: string; onClose: () => void }) {
+  const review = useApp((st) => st.review);
+  const file = review?.data?.files[review.selected];
+  const current = file?.path === path ? review?.diff : undefined;
+  // Keep showing the last diff of this file while it reloads.
+  const last = useRef<{ path: string; diff: string } | undefined>(undefined);
+  if (current !== undefined) last.current = { path, diff: current };
+  const diff = current ?? (last.current?.path === path ? last.current.diff : undefined);
+  const lines = useMemo(() => (diff ? parseDiff(diff) : []), [diff]);
+  const name = path.split('/').pop() ?? path;
+  const st = file?.path === path ? STATE[file.state] : undefined;
+  return (
+    <section className={s.preview} aria-label={`Changes in ${name}`}>
+      <div className={s.previewHead}>
+        {st ? <span className={cx(d.letter, st.tone)}>{st.letter}</span> : <Icon name="file" size={13} />}
+        <span className={s.previewName} title={path}>
+          {name}
+        </span>
+        {file?.path === path ? (
+          <span className={s.previewCounts}>
+            {file.added ? <span className={d.add}>+{file.added}</span> : null}
+            {file.removed ? <span className={d.del}>−{file.removed}</span> : null}
+          </span>
+        ) : null}
+        <span className={s.flex} />
+        <IconButton icon="expand" label="Open in full" keys={`${mod()}↩`} onClick={() => openFocus('diff', wsId)} />
+        <IconButton icon="x" label="Close the diff" keys="Esc" onClick={onClose} />
+      </div>
+      <div className={cx(s.previewBody, d.code, 'selectable')} tabIndex={0}>{diff === undefined ? <div className={s.dimPad}>Loading the diff…</div> : lines.length ? <UnifiedDiff lines={lines} compact /> : <div className={s.dimPad}>{diff || 'No differences in the text.'}</div>}</div>
+    </section>
+  );
+}
+
+/** The right panel's Changes: the changed files and, picked one, its diff under them. */
+export function ChangesTab({ wsId }: { wsId: string }) {
+  const api = useApi();
+  const prefs = usePrefs();
+  const fileItems = useFileItems();
+  const { data, loading, error, reload } = useChanges(wsId);
+  const selected = useApp((st) => (st.review?.workspaceId === wsId ? st.review.selected : -1));
+  const reviewLoading = useApp((st) => st.review?.workspaceId === wsId && st.review.loading);
+  const [open, setOpen] = useState<string>();
+  const inFocus = usePanelRuntime((r) => r.focus?.wsId === wsId && r.focus.kind === 'diff');
+  const box = useRef<HTMLDivElement>(null);
+  const files = data?.files ?? [];
+  const at = open ? files.findIndex((f) => f.path === open) : -1;
+  // A reload of this workspace's changes (Claude edited, a commit) selects the first file again:
+  // once it's done, go back to the one you're looking at, or close it if it's gone.
+  const wasLoading = useRef(reviewLoading);
+  useEffect(() => {
+    const reloaded = wasLoading.current && !reviewLoading;
+    wasLoading.current = reviewLoading;
+    if (!reloaded || !open || selected < 0) return;
+    if (at < 0) setOpen(undefined);
+    else if (at !== selected) void api.workspaces.selectFile(at);
+  }, [reviewLoading]);
+  // A file picked elsewhere (the full-size diff's own list): show that one here too.
+  useEffect(() => {
+    if (!open || reviewLoading || selected < 0) return;
+    const picked = files[selected]?.path;
+    if (picked && picked !== open) setOpen(picked);
+  }, [selected]);
+
+  const show = (i: number): void => {
+    const f = files[i];
+    if (!f) return;
+    setOpen(f.path);
+    void api.workspaces.selectFile(i);
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    const i = at < 0 ? -1 : at;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      show(Math.max(0, Math.min(files.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1))));
+    } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      if (i >= 0) openFocus('diff', wsId);
+    } else if (e.key === 'Enter' && i < 0 && files.length) {
+      e.preventDefault();
+      show(0);
+    } else if (e.key === 'Escape' && open && !focusFor(wsId)) {
+      // (In the focus view, Esc goes back to the chat first.)
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(undefined);
+    }
+  };
+
+  if (!data && error) return <Empty icon="alert" title="Couldn’t read the changes" detail={error} />;
+  if (!data) return <div className={s.dimPad}>Looking at what changed…</div>;
+  if (!files.length && !data.commits.length) {
+    return (
+      <div className={s.emptyTab}>
+        <Empty icon="check" title="No changes yet" detail={`Everything matches ${data.base}. Claude’s edits show up here as they happen.`} />
+      </div>
+    );
+  }
+  const split = clampShare(prefs.panelSplit, SPLIT_MIN, SPLIT_MAX);
+  // Open full size, the diff is across the center: no second, smaller copy of it here.
+  const shown = inFocus ? undefined : open;
+  return (
+    <div ref={box} className={s.stack}>
+      <div className={s.top} style={shown ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined}>
+        <Summary data={data} loading={loading} onReload={reload} />
+        <div className={s.list} role="listbox" aria-label="Changed files" tabIndex={0} onKeyDown={onKey}>
+          {files.map((f, i) => {
+            const st = STATE[f.state];
+            const name = f.path.split('/').pop() ?? f.path;
+            const dir = f.path.slice(0, f.path.length - name.length).replace(/\/$/, '');
+            const on = f.path === open;
+            const items = (): ReturnType<typeof fileItems> => fileItems(f, i).map((it, k) => (k === 0 ? { ...it, onSelect: () => show(i) } : it));
+            return (
+              <ActionsContext key={f.path} items={items}>
+                <div role="option" aria-selected={on} className={cx(s.row, on && s.rowOn)} title={f.path} onClick={() => show(i)} onDoubleClick={() => (show(i), openFocus('diff', wsId))}>
+                  <span className={cx(d.letter, st.tone)}>{st.letter}</span>
+                  <span className={s.rowName}>
+                    {name}
+                    {dir ? <span className={s.rowDir}>{dir}</span> : null}
+                  </span>
+                  <span className={s.rowCounts}>
+                    {f.added ? <span className={d.add}>+{f.added}</span> : null}
+                    {f.removed ? <span className={d.del}>−{f.removed}</span> : null}
+                  </span>
+                </div>
+              </ActionsContext>
+            );
+          })}
+        </div>
+        {shown ? null : <Actions wsId={wsId} />}
+      </div>
+      {shown ? (
+        <>
+          <ResizeHandle
+            axis="y"
+            label="Resize the list"
+            onMove={(y) => {
+              const r = box.current?.getBoundingClientRect();
+              if (r) setPrefs({ panelSplit: clampShare((y - r.top) / r.height, SPLIT_MIN, SPLIT_MAX) });
+            }}
+            onReset={() => setPrefs({ panelSplit: SPLIT_DEFAULT })}
+            onStep={(dir) => setPrefs({ panelSplit: clampShare(split - dir * 0.04, SPLIT_MIN, SPLIT_MAX) })}
+          />
+          <FileDiff wsId={wsId} path={shown} onClose={() => setOpen(undefined)} />
+          <Actions wsId={wsId} />
+        </>
+      ) : null}
+    </div>
+  );
+}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { type TerminalSession, overlayCursor } from '../../terminal/index.js';
+import { type TerminalEmulator, overlayCursor } from '../../terminal/index.js';
 import type { Model } from '../workspace-models.js';
 import { theme } from '../theme.js';
 import { LineView } from './LineView.js';
@@ -8,7 +8,7 @@ import { ModelBlock } from './ModelBlock.js';
 import { Panel } from './Panel.js';
 
 interface TerminalViewProps {
-  readonly session?: TerminalSession;
+  readonly session?: TerminalEmulator;
   readonly bar: Model;
   readonly width: number;
   readonly height: number;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { describeWindow, fromRateLimitEvent, fromUsageResponse, toMs, toPct } from '../src/agent/usage.js';
-import { initialState, reduce } from '../src/core/store.js';
+import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
 import { peopleRows, usageMeter } from '../src/ui/banner.js';
 import { personMenu } from '../src/ui/menus.js';

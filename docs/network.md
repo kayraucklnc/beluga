@@ -1,0 +1,290 @@
+# The klaud network (Mac app)
+
+Friends, direct messages, groups and presence with **no server and no host**: every Mac is its
+own infrastructure. It runs in the daemon only when turned on (`"network": true` in
+`~/.klaud/settings.json`, or `KLAUD_NETWORK=1`), next to today's rooms, which are unchanged.
+The Mac app turns it on and off while klaud runs (`network.setEnabled`: saved in settings, started
+or stopped at once, no restart).
+Code: `src/net/mesh/` (the node), `src/core/network.ts` (the core service and the `network.*`
+API), `src/core/network-store.ts` (the shared state's `network`).
+
+## Your address
+
+Everything is derived from your identity (`~/.klaud/identity.json`) with HKDF, so it is the same
+on every run:
+
+- the **address**: an Ed25519 Noise key pair your Mac listens on in the Hyperswarm DHT;
+- the **box key**: an X25519 key that group keys are sealed to;
+- your **card**: peer id, identity key, address and box key, signed by your identity key. A card
+  is checked wherever it's learned (pairing, group entries, the friends file).
+
+Unlike a room's per-run key, the address is stable on purpose (friends find you by it), so DHT
+observers can tell when that address is online.
+
+## Adding a friend
+
+An invitation is a one-time link (`klaud://add#<22 chars>`, 128 bits, works for 24 h) and a
+short code (`K7QM-4XPA-R2TD`, 60 bits, works for 1 h). The code can also be sent as a link,
+`klaud://add?code=K7QM-4XPA-R2TD`. Codes are typed loosely: any case, dashes or spaces anywhere,
+O for 0, I or L for 1. Neither form contains your address: the inviter listens on a temporary key
+pair made from the secret (HKDF for the link; scrypt for the code, see below), so only someone
+holding it can find you. On that connection:
+
+```
+invitee → pair_hello { profile, proof }   proof = HMAC(auth, "invitee" ‖ Noise handshake hash ‖ profile)
+inviter → pair_ok    { profile, proof }   (or pair_refused)
+```
+
+The proofs bind both cards to that one connection (no replay, no one in the middle without the
+secret), and the invitee must dial with the address on its card. Friend invitations are
+single-use and last 24 h; five bad proofs in a minute pause an invitation for the rest of it.
+Group invitations (`klaud://join#…`, `klaud://join?code=…`) work the same, are multi-use (the
+link for 7 days, the code for an hour), and either let people in at once (`auto`) or leave a
+request for an admin (`network.groups.approve`). Someone who was removed always needs an admin.
+
+**Why guessing a code is infeasible.** The code's listening key is visible to DHT nodes, so an
+attacker could guess codes offline until one produces that key, then pair first. Each guess costs
+one scrypt with N=2^16, r=8, p=1: 64 MiB of memory and about 0.1 s on a Mac. There are 2^60
+(≈1.2·10^18) codes; finding one takes 2^59 guesses on average. Even granting a large GPU
+10^5 such guesses per second (memory-bound: about a thousand 64 MiB instances at once), that is
+≈5.8·10^12 GPU-seconds, about 1.6 billion GPU-hours, and the code dies after one hour: it would
+take over a billion GPUs. Precomputing a table isn't possible either (2^60 entries of 32 bytes,
+about 37 exabytes). The link (128 bits, no scrypt needed) is out of reach entirely.
+
+## Links
+
+The daemon keeps one Noise link to every friend and group member who is online: it dials them
+(backing off from 1 s to 60 s while they're away) and its firewall accepts only addresses it
+knows. Two Macs dialing each other at once keep the same connection (direct over relayed, then
+the one dialed by the lower address); a reconnection after a restart replaces the stale link
+at once. A relayed link is retried directly now and then and replaced once that works. Each link has a heartbeat (dropped after 3 missed),
+2 MB frames and token-bucket limits on messages and bytes. Messages are versioned JSON (`hello` carries
+`proto: 1`; unknown kinds are ignored): `hello`, `presence`, `dm`/`dm_ack`,
+`g_heads`/`g_sync`/`g_entries`, `tun_open`/`tun_in`/`tun_data`/`tun_close`.
+
+**Relaying.** When a direct dial fails (both sides behind strict NATs, UDP blocked), your Mac asks
+someone linked to both of you (people in a shared group first) to open a tunnel. The relay only
+forwards bytes; inside, the two ends run their own Noise handshake with their addresses
+(`@hyperswarm/secret-stream`), so the relay sees ciphertext and can't pose as either side. It
+does learn that the two of you talk, and how much. HyperDHT's own blind relays (`relayThrough`)
+were not used: they can't be exercised on a local test network, while these tunnels are tested.
+Limits: 16 tunnels per link, 64 per relay, 16 ending at you through one relay; relayed tunnels
+nothing went through for 5 minutes are dropped.
+
+## Groups
+
+A group is a signed, append-only log kept on every member's Mac (`~/.klaud/groups/<id>.jsonl`):
+
+- entry: `{ id, group, author, lamport, parents, type, ts, body, sig }`; `id` = SHA-256 of the
+  canonical JSON of the rest, `sig` = the author's identity signature over `id`, `lamport` = 1 +
+  the highest parent's. Every copy orders entries by `(lamport, id)`, so all copies agree.
+- types: `create`, `member_add`, `member_remove`, `admin_add`, `admin_remove`, `rename`,
+  `sender_key`, `message`.
+- rules, applied in that order: the creator is the first admin; only admins add or remove people
+  and make admins; anyone may leave or rename; entries by non-members change nothing; if the last
+  admin leaves, the longest-standing member becomes admin. Conflicting changes (two admins
+  removing each other) are settled by the order: the first one applied wins. Removal wins over
+  anything the removed person wrote without having seen it, so nobody can write themselves back
+  in from an old copy. Only an admin's add makes a newcomer's entries checkable at all.
+- limits: a sending key belongs to its author (nobody can reuse its id), message numbers may only
+  run 1000 ahead of the chain, at most 100 members.
+- sync: on link up and every 30 s each side sends its heads; whoever lacks something sends its
+  own heads and gets what it's missing oldest first, in batches of 200 entries / 512 KB. New
+  entries are passed on to every linked member (gossip), so they reach people you can't link to.
+  Someone removed is only sent entries up to their removal. Each person gets at most 10 catch-up
+  answers a second (bursts of 60), and a link that delivers more than 200 forged or malformed
+  entries is dropped (they may link again).
+
+**Encryption: sender keys.** Each member sends with a chain key sealed for each current member
+(ephemeral X25519 + HKDF + AES-256-GCM) in a `sender_key` entry. Every message gets its own key
+(`HMAC(chain, 1)`, then `chain = HMAC(chain, 2)`); bodies are AES-256-GCM with the group, author,
+chain and number as associated data. Headers are signed, bodies encrypted. Whenever who's in the
+group changes, each member starts a new chain at their next message, sealed only for the people
+in it now: someone removed can't read what's sent after, and someone added can't read what came
+before. Keys never leave the daemon; the shared state and the API only carry views.
+
+## Offline
+
+Direct messages to an offline friend wait in your outbox (`~/.klaud/outbox.json`, 7 days) and
+are sent when a link comes up; the receiver acknowledges and de-duplicates. Group entries are
+held by every member, so you catch up from whoever is online.
+
+## Presence
+
+`{ state: online | away | dnd | offline, note?, until? }`, sent on link up and on change.
+Choosing `offline` means appear offline: links stay up and messages arrive, but others see a
+plain `offline`. A status with `until` reverts to online by itself. Idle detection is the
+screen's job (`network.presence.set`): the Mac app sets Away after 10 minutes without input (the
+system's idle time) when you chose Online, and Online again when you're back. New messages notify
+through the shared Notifier (the `mentions` kind), silently on Do Not Disturb or while you appear
+offline.
+
+## Known limits (phase 1)
+
+- Logs are never compacted; very long-lived groups grow.
+- Removal wins: once someone is removed, entries they wrote without having seen their removal
+  don't count (even a message written offline at the same moment). Someone removed while
+  offline learns of it from any member who still accepts them (removed people may call in for
+  7 days).
+- A burst of wrong proofs pauses an invitation for a minute rather than burning it, so nobody
+  can kill your invitation, but they can delay it.
+- Open invitations (their link and code) are in the shared state, so any screen attached to
+  your daemon can show and copy them, as with room invites.
+- Appear offline only changes what others are shown: your Mac still links and acknowledges
+  messages, so a friend's klaud could tell you're connected.
+- The relay learns who talks to whom and how much (not what).
+- A join request reaches the admin whose invitation was used, not every admin.
+- Groups you didn't ask for are only fetched from friends (an admin adding you directly) and
+  from the admin whose invite you used; at most 500 groups and 100 people per group.
+- One Mac per identity: a second klaud process with the same `~/.klaud` doesn't start the network.
+
+## Tasks between Claudes (the gateway)
+
+Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `src/agent/gateway-tools.ts`
+(your Claude's tools), the Mac app's `src/gateway/` (task cards, Requests). The daemon runs it
+(`launchGateway`), over today's room at once and over friends' links whenever the network is on.
+
+- **Messages** (`protocol.ts`): `task_request {id, from, to, kind: ask|run|file, ask, needs, project?,
+  expects?: JSON schema | "files", deadline?, command?/cwd?/timeoutSec?, path?, by}`, `task_update {id,
+  state: queued|awaiting_approval|working, step?}`, `task_result {id, status: done|declined|failed|
+  cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log}`, `task_cancel`,
+  `task_question {id, qid, questions}` / `task_answer {id, qid, answers? | skip}`,
+  `file_get {id, ref, offset}` / `file_chunk {id, ref, offset, b64, eof, error?}`, and `card` (your
+  trust in them, what your klaud offers them, your projects, your "Ask me for…" note). Each rides in a frame `{f, m}` that
+  the other side acknowledges (`{ack}`): over a mesh link as `gw`, in a room as a `gateway` body
+  sent to one person. Requests, results and cancels wait in `~/.klaud/tasks/outbox.json` until
+  acknowledged (resent every 20 s while reachable, 7 days at most); updates and cards are only
+  sent to someone reachable now. Over the network only friends are heard; a result is only taken
+  from the person the task went to, and only once.
+- **Receiving**: your rules and capability settings decide (see *Approvals and rules* below):
+  declined (with the reason), let in at once (you trust them, or a rule of yours covers it), or you
+  are asked. It runs in the project it names (if there is one) or a scratch folder
+  (`~/.klaud/tasks/work/<task>`), with the usual tool approvals (none with full trust; commands
+  without asking where Run commands is Allow for their trust level). `run` tasks go through
+  PeerRun (`serveTask`: secrets never, limits per person); `file` tasks are sent by klaud itself.
+  Claude ends its answer with a fenced `klaud-result` block for data and files; data is checked
+  against `expects` on both sides; files only from the folder it ran in (and the folders you chose;
+  anywhere with full trust), never secrets: up to 512 KB in all inline, bigger ones fetched in
+  pieces (see *Big files*).
+- **Asking**: `ask_person` / `run_on` for someone you don't trust (Trusted / Full) first put an
+  "Ask Alice's Claude?" card in the conversation (Ask / Edit / Not now, 10 minutes). Results reach
+  your Claude as data in a `<task_result>` block, marked untrusted. If its turn ended before the
+  result came (or it didn't wait for it), a new turn starts in that conversation with it.
+- **Inside `~/.klaud`** everything stays private to friends' tasks (`isSecretPath`, compared as
+  the Mac compares names: any case, links followed, the old `~/.klaude` too) except the scratch
+  folders tasks run in (`tasks/work/`) and the files results brought (`tasks/files/`).
+- **Files**: `~/.klaud/tasks/tasks.json` (the last 200 tasks, friends' cards, and results whose
+  big files are still coming), `outbox.json`, `files/<task>/` (what results brought),
+  `work/<task>/` (and `work/<task>/screens/`); `~/.klaud/rules.json` (your rules, 0600); your
+  capability settings are `capabilities` in `~/.klaud/settings.json`.
+
+### Approvals and rules
+
+A request from a friend is decided in this order; the first that applies wins:
+
+1. you blocked them: declined;
+2. it needs a capability that is **Off** for their trust level: declined, saying which
+   ("kay's klaud doesn't let you see the screen");
+3. a **Decline** or **Ask** rule of yours catches it: declined, or you're asked. Rules can always
+   narrow what trust allows;
+4. you trust them (Trusted or Full trust) and every capability it needs is **Allow**: it runs
+   (trust decides first; no rule needed);
+5. an **Allow** rule covers it: it runs;
+6. otherwise you're asked.
+
+A rule (`access.ts`, kept by `rule-book.ts`) is person × kind (`task`: their Claude asks yours,
+with these needs; `command`: one command; `file`: one file) × scope (a project by name, or a
+folder and what's inside it; or anywhere) × expiry (or never) → allow, ask or decline. An Allow
+rule covers requests that need no more than it lists (a request naming a project also needs
+`project`); Ask and Decline rules catch any request needing one of what they list (all of that
+kind when they list nothing). A command rule names the exact command (or any command); an Allow
+rule for any command must be limited to a folder or a project. Folders are saved where they
+really are (~ expanded, links followed); a command that names no folder is decided (and its
+"Always" scoped) for the folder it would run in. Expired rules are dropped as they're met. A
+`rules.json` that can't be read is kept aside as `rules.json.bad-<time>` (never overwritten) and
+you're told; requests it covered ask you again.
+
+Capabilities hold inside a run too: every tool call of a friend's task is checked (Bash needs
+Run commands; Write, Edit and the like need Read and write files), so a capability that is Off, or
+a Decline rule, stops it even with full trust. Requests from people you blocked are answered and
+nothing of them is kept. A request is decided before anything about your projects is said: a
+project that isn't there reads "That isn't available on Kay's Mac", like one they can't have.
+
+You're asked with today's approval card (linked to the task) and the **request sheet**: who
+(and your trust in them, with "Trust them instead"), what, what it needs (capabilities that are
+set to Ask me are marked), where it would run, what comes back. **Approve once**; **Always…**
+writes one rule for this person, kind and needs, with the scope spelled out and editable (this
+project or any; for a command, this command or any; for how long: until you change it, a day, a
+week); **Decline…** with an optional reason they see. While it runs, the sheet shows its steps
+and Stop. "Always" on the plain approval card (or a notification, or the menu bar) writes the same
+rule with the narrow defaults (this project, this command, no expiry); it no longer makes the
+person Trusted: that's a separate choice (the sheet's link, their card, Settings).
+
+The same rules apply to commands friends run through a room (`run_on_peer`) while the app's
+gateway runs (PeerRun's "Always" writes a rule for that command in that folder); without it (the
+terminal on its own), trust alone decides as before.
+
+**Notifications.** A friend's request on its own gets buttons on the macOS notification
+(tauri-plugin-notification 2.7 shows actions on desktop: with several, macOS puts them in an
+"Options" menu, and a click on that menu's title reports the first action, so the first is the
+harmless **Review…**): Review… / Approve / Always Allow for a Week / Decline. Anything else (your
+own Claude's tools) only gets Review…: it's answered in the window. A click on the notification
+opens the request sheet. The **menu-bar menu** lists friends' requests waiting (up to six), each
+with Approve / Always Allow for a Week (tasks only) / Decline / Review…. "Always" from outside the
+window is this project, this command, for a week; the sheet offers the other choices. On **Do Not Disturb** or while you **appear offline**, friends'
+requests still queue (cards, inbox, Requests, the menu bar) but make no notification; rules still
+let requests in, and those notices are quiet too.
+
+### What your friends' Claudes can do here
+
+Settings › People & access › *What your friends' Claudes can do here*: each capability is Allow,
+Ask me or Off for each trust level (Ask me each time can only ask or be off; blocked people get
+nothing). Defaults:
+
+| | Ask me each time | Trusted | Full trust |
+|---|---|---|---|
+| Run commands | ask | ask | allow |
+| Read and write files (the folders you choose) | ask | allow | allow |
+| Work in projects | ask | allow | allow |
+| See the screen | off | ask | allow |
+| Device info | ask | allow | allow |
+
+Your card tells each friend what you offer them (their Claude sees it in `who_can`).
+
+- **See the screen**: the task's Claude gets a `screenshot` tool (MCP server `klaud_task`, only in
+  runs for a request that needed `screen` and was let in): `screencapture -x` of the main display,
+  or of one app's front window (found through CoreGraphics' window list). It sees a smaller JPEG
+  (`sips`); the PNG goes back with the result as an image. At most 4 per request. macOS asks you
+  once to allow Screen Recording for klaud.
+- **Device info**: a `device_info` tool: macOS version and build, model and chip (from
+  `system_profiler`, never the serial number), cores, memory, disk space, battery (`pmset`),
+  uptime, local network addresses (no MAC addresses, nothing looked up outside), and the apps in
+  /Applications and ~/Applications.
+- **Read and write files**: the folders you choose are added to the task's Claude's folders when
+  the request needs `files`; `get_file(person, path)` (a `file` task) sends one file from them
+  (anywhere with full trust), never secrets.
+
+### Big files
+
+Files a result can't carry inline (over 512 KB in all) are offered under a random id, to the
+requester only, for 24 hours (in memory: a restart of the sender drops them). The requester pulls
+each one in 192 KB pieces (`file_get` → `file_chunk`) over the same link (a friend's Noise link,
+or the room), one piece at a time, asking again after 20 s (six tries), checks the size it was
+told and the SHA-256, and only then keeps it under `files/<task>/`. At most 32 MB a file and 64 MB
+a task. Meanwhile the task stays *working* ("Receiving files…", with progress); the result is
+kept on disk, so a restart carries on fetching. A file that can't be had is listed as not
+received.
+
+### Questions from their Claude
+
+When the friend's Claude asks something while working on your task (AskUserQuestion), its
+question goes back to you as `task_question` and waits (15 minutes, then it goes on with its best
+judgment; at most 5 per task). On your side your Claude is asked first: a `wait_for` that is
+waiting returns the question; if its turn ended, a new turn starts in that conversation with it.
+It answers with `answer_question` (one answer per question, or skip) from what it knows, or asks
+you first (its own AskUserQuestion). If you never saw that task (it went straight to someone you
+trust), its answer waits on the task's card for you to send, change, or let them decide. Each
+question is taken once (a replay is ignored, frames are de-duplicated by id) and at most five per
+task (more are answered "go on"). The question is shown as data from that person, never as
+instructions. You can also answer (or let them decide) on the task's card; a task you asked
+yourself notifies you.

@@ -1,4 +1,5 @@
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { StepRecord } from '../shared/steps.js';
 
 /** Task types that are Claude working (not a background shell or a watcher). */
 const AGENT_TASKS = new Set(['local_agent', 'local_workflow', 'remote_agent']);
@@ -88,6 +89,8 @@ type OnEvent = (kind: 'text' | 'tool' | 'sub' | 'context' | 'compact' | 'usage',
 /** Where one turn's output goes: the request that started the run, or a follow-up sent into it. */
 export interface TurnRoute {
   readonly onEvent: OnEvent;
+  /** Steps in detail (see AgentRunInput.onStep). */
+  readonly onStep?: (record: StepRecord) => void;
   readonly onDone?: (final: string) => void;
   readonly onError?: (reason: string) => void;
 }
@@ -122,7 +125,11 @@ export class TurnRouter {
     const route = this.current();
     this.inTurn = false;
     if (route === this.original) {
-      if (ok && text) this.answers.push(text);
+      if (ok && text) {
+        this.answers.push(text);
+        // The first answer is what the asker waits for, even if background agents keep the run open.
+        if (this.answers.length === 1) this.original.onDone?.(text);
+      }
       return ok;
     }
     if (ok) route.onDone?.(text);

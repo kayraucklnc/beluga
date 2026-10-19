@@ -1,5 +1,5 @@
 import type { AppState } from '../core/store.js';
-import { describePr } from '../workspaces/pr.js';
+import { describePr } from '../shared/format.js';
 import type { MenuSpec } from './menus.js';
 
 export type WorkMenuKind =

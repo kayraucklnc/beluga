@@ -1,0 +1,247 @@
+/* Klaud's own updates: the pill (sidebar footer, or floating) and the update sheet. */
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: 0 10px 6px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 550;
+  text-align: left;
+  cursor: default;
+  animation: pill-in var(--dur) var(--ease-out);
+  transition: background var(--dur-fast);
+}
+.pill:hover {
+  background: color-mix(in srgb, var(--accent) 19%, transparent);
+}
+.pill:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.news {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text-2);
+  font-weight: 500;
+}
+.news:hover {
+  background: color-mix(in srgb, var(--text) 11%, transparent);
+}
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.news .dot {
+  background: var(--text-3);
+}
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hint {
+  flex: none;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+/* No sidebar to sit in (hidden, or klaud isn't reachable yet): the bottom-left corner. */
+.floating {
+  position: fixed;
+  z-index: 30;
+  left: 12px;
+  bottom: 12px;
+  max-width: 260px;
+  margin: 0;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop);
+}
+.floating:hover {
+  background: var(--bg-raised);
+  box-shadow:
+    var(--shadow-pop),
+    inset 0 0 0 100px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 46;
+  background: rgba(0, 0, 0, 0.14);
+  animation: fade var(--dur) var(--ease-out);
+}
+:global([data-theme='dark']) .overlay {
+  background: rgba(0, 0, 0, 0.3);
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.sheet {
+  position: fixed;
+  z-index: 47;
+  top: 16vh;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  width: min(440px, calc(100vw - 48px));
+  max-height: 68vh;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop), 0 24px 60px rgba(0, 0, 0, 0.18);
+  animation: drop var(--dur) var(--ease-out);
+  outline: none;
+}
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.985);
+  }
+}
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 14px 4px 18px;
+}
+.mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-top: 1px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.titles {
+  flex: 1;
+  min-width: 0;
+}
+.title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 650;
+}
+.sub {
+  margin-top: 1px;
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+.close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  color: var(--text-2);
+}
+.close:hover {
+  background: var(--bg-hover);
+}
+.notes {
+  overflow-y: auto;
+  margin: 8px 18px 0;
+  padding: 2px 12px;
+  max-height: 260px;
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.notes h1,
+.notes h2,
+.notes h3 {
+  margin: 10px 0 4px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+.notes p {
+  margin: 8px 0;
+}
+.notes ul,
+.notes ol {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.notes li {
+  margin: 2px 0;
+}
+.notes code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.notes a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.notes a:hover {
+  text-decoration: underline;
+}
+.line {
+  margin: 10px 18px 0;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.warn {
+  color: var(--warn);
+}
+.error {
+  color: var(--error);
+}
+.bar {
+  height: 4px;
+  margin: 12px 18px 2px;
+  border-radius: 2px;
+  background: var(--bg-press);
+  overflow: hidden;
+}
+.barFill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width var(--dur) var(--ease-out);
+}
+.always {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 18px 0;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+.always input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 16px 14px;
+}
+.spacer {
+  flex: 1;
+}

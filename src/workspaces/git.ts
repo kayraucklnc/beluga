@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 export class GitError extends Error {}
 
 /** Git must never ask for a password on klaud's screen: fail instead, and say why. */
-const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' };
+const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' };
 
 /** Run git in a directory; resolves stdout, rejects with git's own message. */
 export function git(cwd: string, args: readonly string[], timeoutMs = 60_000): Promise<string> {
@@ -66,6 +66,28 @@ export async function hasRemote(repo: string): Promise<boolean> {
   return Boolean((await tryGit(repo, ['remote']))?.trim());
 }
 
+const MAX_BRANCHES = 200;
+
+/**
+ * Local and remote-tracking branches ("main", "origin/main", "origin/feature-x"), most recently
+ * committed first, without symbolic refs like origin/HEAD. Capped at 200.
+ */
+export async function listBranches(repo: string): Promise<string[]> {
+  const out = await git(repo, ['for-each-ref', '--sort=-committerdate', '--format=%(refname:short)%09%(symref)', 'refs/heads', 'refs/remotes']);
+  return out
+    .split('\n')
+    .map((l) => l.split('\t'))
+    .filter(([name, symref]) => name && !symref && !name.endsWith('/HEAD'))
+    .map(([name]) => name!)
+    .slice(0, MAX_BRANCHES);
+}
+
+/** Whether `ref` names a commit in `repo` (a branch, tag or hash). Never reads it as an option. */
+export async function isCommit(repo: string, ref: string): Promise<boolean> {
+  if (!ref || ref.startsWith('-')) return false;
+  return Boolean((await tryGit(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]))?.trim());
+}
+
 /** Create a worktree on a new branch from `base` (fetching origin first so it's the latest). */
 export async function addWorktree(repo: string, path: string, branch: string, base: string): Promise<void> {
   if (base.startsWith('origin/') && (await hasRemote(repo))) await tryGit(repo, ['fetch', 'origin', '--prune']);
@@ -85,6 +107,8 @@ export interface Status {
   readonly changed: number;
   readonly ahead: number;
   readonly behind: number;
+  /** Without a base (the main checkout): the branch it tracks and how it compares, as of the last fetch. */
+  readonly upstream?: { readonly name: string; readonly ahead: number; readonly behind: number };
 }
 
 /** Uncommitted file count plus commits ahead/behind `base`. */
@@ -99,8 +123,12 @@ export async function status(dir: string, base?: string): Promise<Status> {
     const counts = (await tryGit(dir, ['rev-list', '--left-right', '--count', `${base}...HEAD`]))?.trim().split(/\s+/);
     behind = Number(counts?.[0] ?? 0) || 0;
     ahead = Number(counts?.[1] ?? 0) || 0;
+    return { branch, changed: files.length, ahead, behind };
   }
-  return { branch, changed: files.length, ahead, behind };
+  // "## main...origin/main [ahead 1, behind 2]": how the checkout compares to what it tracks.
+  const name = /^## [^.\s]+\.\.\.(\S+)/.exec(head)?.[1];
+  const upstream = name ? { name, ahead: Number(/ahead (\d+)/.exec(head)?.[1] ?? 0), behind: Number(/behind (\d+)/.exec(head)?.[1] ?? 0) } : undefined;
+  return { branch, changed: files.length, ahead, behind, ...(upstream ? { upstream } : {}) };
 }
 
 export interface ChangedFile {
@@ -146,9 +174,9 @@ export async function review(dir: string, base: string): Promise<Review> {
 /** Unified diff for one file against the merge base (new files shown in full). */
 export async function fileDiff(dir: string, base: string, path: string): Promise<string> {
   const mergeBase = (await tryGit(dir, ['merge-base', base, 'HEAD']))?.trim() || base;
-  const diff = await git(dir, ['diff', mergeBase, '--', path]);
+  const diff = await git(dir, ['--literal-pathspecs', 'diff', mergeBase, '--', path]);
   if (diff.trim()) return diff;
-  return (await tryGit(dir, ['diff', '--no-index', '--', '/dev/null', path])) ?? '';
+  return (await tryGit(dir, ['--literal-pathspecs', 'diff', '--no-index', '--', '/dev/null', path])) ?? '';
 }
 
 /** Run git, retrying briefly while another git process holds the index lock. */

@@ -25,6 +25,10 @@ type Pending = { peer: string; resolve: (v: unknown) => void; reject: (e: Error)
 const FS_DEBOUNCE_MS = 250;
 const DIR_CACHE_MS = 5_000;
 
+/** Images a document can show inline, by extension (SVG goes in an <img>, where scripts never run). */
+const DOC_IMAGE_TYPES: Readonly<Record<string, string>> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
+export const MAX_DOC_IMAGE_BYTES = 10 * 1024 * 1024;
+
 export const dirKey = (at: Location): string => `${at.owner}:${at.share}/${at.path}`;
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -128,10 +132,9 @@ export class RoomFiles {
     }
   }
 
-  /** Activate the row under the cursor in the file browser. */
-  async browserEnter(): Promise<void> {
-    const { browser } = this.store.getState();
-    const row = browser.rows[browser.cursor];
+  /** Activate a row of the file browser (the one under the screen's cursor). */
+  async browserEnter(index: number): Promise<void> {
+    const row = this.store.getState().browser.rows[index];
     if (!row) return;
     if (row.target === 'up') return this.browserUp();
     if (row.dir) return this.browseTo(row.target);
@@ -200,16 +203,20 @@ export class RoomFiles {
     }
   }
 
-  /** Download a file from a friend's share into ~/Downloads/klaud/<friend>/. */
-  async download(at: Location): Promise<string | undefined> {
+  /** Download a file from a friend's share into ~/Downloads/klaud/<friend>/, or to `opts.to` (an absolute path). */
+  async download(at: Location, opts: { to?: string } = {}): Promise<string | undefined> {
     const from = peerName(this.store.getState(), at.owner);
     if (!at.path || at.path.endsWith('/')) {
       this.toast('Pick a file to download, not a folder', 'warn');
       return undefined;
     }
+    if (opts.to !== undefined && !path.isAbsolute(opts.to)) {
+      this.toast('Pick where to save it', 'warn');
+      return undefined;
+    }
     this.toast(`Downloading ${at.path} from ${from}…`);
     try {
-      const saved = await downloadFile(at, from, (to, b) => this.request(to, b), this.store, this.deps.downloadDir ?? DEFAULT_DOWNLOAD_DIR);
+      const saved = await downloadFile(at, from, (to, b) => this.request(to, b), this.store, this.deps.downloadDir ?? DEFAULT_DOWNLOAD_DIR, opts);
       this.system(`Saved ${at.path} from ${from} → ${saved}`);
       this.toast(`Downloaded ${path.basename(saved)}`, 'success');
       return saved;
@@ -223,6 +230,16 @@ export class RoomFiles {
     const loc = parseLocation(spec, this.store.getState().peers);
     if (!loc) return this.toast(`Can't find "${spec}". Use /get <name>:<folder>/<file>`, 'warn');
     void this.download(loc);
+  }
+
+  /**
+   * The bytes of an image a document shows (Markdown's `![](diagram.png)`), fetched the way the
+   * viewer fetches an image (the owner decides who may read it), and only images, only so big.
+   */
+  async readImageFile(at: Location): Promise<{ mediaType: string; bytes: Buffer }> {
+    const mediaType = DOC_IMAGE_TYPES[path.extname(at.path).toLowerCase()];
+    if (!mediaType) throw new Error('Not an image');
+    return { mediaType, bytes: await fetchBytes(at, (to, b) => this.request(to, b), MAX_DOC_IMAGE_BYTES) };
   }
 
   async listFiles(at: Location): Promise<readonly FsEntry[]> {

@@ -37,6 +37,17 @@ describe('download helpers', () => {
     expect(store.getState().transfers.at(-1)).toMatchObject({ status: 'done', received: content.length, savedTo: saved });
   });
 
+  it('saves exactly at a path you picked', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-dl-'));
+    const to = path.join(dir, 'chosen name.txt');
+    writeFileSync(to, 'old');
+    const store = new Store(initialState('r'));
+    const request: Requester = async <T>() => ({ kind: 'fs_chunk', reqId: 'x', ok: true, data: Buffer.from('new').toString('base64'), offset: 0, total: 3 }) as T;
+    expect(await downloadFile({ owner: 'b', share: 'api', path: 'docs/notes.txt' }, 'bob', request, store, dir, { to })).toBe(to);
+    expect(readFileSync(to, 'utf8')).toBe('new');
+    expect(store.getState().transfers.at(-1)).toMatchObject({ name: 'chosen name.txt', status: 'done', savedTo: to });
+  });
+
   it('reports failures', async () => {
     const store = new Store(initialState('r'));
     const bad = async <T>() => ({ kind: 'fs_chunk', reqId: 'x', ok: true, data: '', offset: 99, total: 10 }) as T;

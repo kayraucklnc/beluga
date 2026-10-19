@@ -239,7 +239,7 @@ function edit(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): UiStat
   }
   if (key.ctrl && input === 'k') {
     const { end } = rowBounds(buffer, cursor, ctx);
-    return cut(ui, cursor, end === cursor ? Math.min(buffer.length, cursor + 1) : end);
+    return cut(ui, cursor, end === cursor ? Math.min(buffer.length, cursor + charAfter(buffer, cursor)) : end);
   }
   if (key.ctrl || !input) return undefined;
   return insertText(ui, input);
@@ -299,7 +299,7 @@ function handleChat(ui: UiState, input: string, key: KeyInfo, ctx: KeyContext): 
   // Alt+Enter (or Ctrl+Enter where the terminal reports it) sends now instead of queueing.
   if (key.return && (key.meta || key.ctrl)) return submit(ui, true);
   // Shift+Enter (where the terminal tells it apart) and Ctrl+J start a new line.
-  if (((key.return && key.shift) || input === '\n') && !ui.pending) return { ui: insertText(ui, '\n') };
+  if ((key.return && key.shift) || input === '\n') return ui.pending ? { ui } : { ui: insertText(ui, '\n') };
   // Answering a prompt (e.g. a project's setup command) with nothing is a real answer: clear it.
   if (key.return && ui.pending && !ui.buffer.trim() && !shown.length) return { ui: setBuffer(ui, ''), effect: { type: 'submit', text: '' } };
   if (key.return) {

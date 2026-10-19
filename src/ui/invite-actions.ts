@@ -1,5 +1,5 @@
-import { DAY_MS } from '../core/project-invites.js';
-import type { Session } from '../core/session.js';
+import { DAY_MS } from '../shared/invites.js';
+import type { KlaudClient } from '../ipc/client.js';
 import type { GuestCan } from '../protocol.js';
 import { type InviteChoice, copyIndex, inviteChoice, inviteMenu } from './invite-menus.js';
 import type { MenuContext } from './menu-actions.js';
@@ -8,14 +8,14 @@ import type { UiAction } from './workspace-models.js';
 
 /** Open the Invite flow, with "Copy invite link" selected so Enter copies straight away. */
 export function openInvite(ctx: MenuContext, from?: string, choice: InviteChoice = inviteChoice(from), selected?: number): void {
-  const state = ctx.session.store.getState();
+  const state = ctx.client.store.getState();
   const spec = inviteMenu(state, choice, state.self?.host === true);
   ctx.patchUi({ menu: { menu: { kind: 'invite_link', ...choice }, selected: selected ?? copyIndex(spec) } });
 }
 
 /** The project of the workspace you're looking at (invites from there default to it). */
-export function projectInView(session: Session): string | undefined {
-  const state = session.store.getState();
+export function projectInView(client: KlaudClient): string | undefined {
+  const state = client.store.getState();
   if (state.view.kind !== 'workspace') return undefined;
   const id = state.view.id;
   return state.projects.find((p) => p.root && p.workspaces.some((w) => w.id === id))?.id;
@@ -41,10 +41,10 @@ function runInviteMenu(ctx: MenuContext, c: InviteChoice, id: string, index: num
       reopen({ expires: !c.expires });
       return true;
     case 'il-copy':
-      void ctx.session.invites.create({ scope: c.scope, can: c.can, knock: c.knock, singleUse: c.singleUse, expiresInMs: c.expires ? DAY_MS : 0 });
+      void ctx.client.api.invites.create({ scope: c.scope, can: c.can, knock: c.knock, singleUse: c.singleUse, expiresInMs: c.expires ? DAY_MS : 0 });
       return true;
     case 'il-revoke':
-      ctx.session.invites.revoke(arg);
+      void ctx.client.api.invites.revoke(arg);
       // Stay in the menu: the rest of the list is still there.
       openInvite(ctx, c.from, c, Math.max(0, index - 1));
       return true;
@@ -55,15 +55,16 @@ function runInviteMenu(ctx: MenuContext, c: InviteChoice, id: string, index: num
 
 /** Menu options for project links and guests. Returns false when it isn't one of these. */
 export function runInviteOption(ctx: MenuContext, menu: MenuKind, id: string, index: number): boolean {
-  const { session, patchUi } = ctx;
-  const latest = session.store.getState();
+  const { client, patchUi } = ctx;
+  const invites = client.api.invites;
+  const latest = client.store.getState();
   if (menu.kind === 'invite_link') return runInviteMenu(ctx, menu, id, index);
   if (menu.kind === 'guest_add' && id.startsWith('ga:')) {
-    session.invites.change(menu.peerId, { addProject: id.slice(3) });
+    void invites.change(menu.peerId, { addProject: id.slice(3) });
     return true;
   }
   if (id === 'invite-menu') {
-    openInvite(ctx, projectInView(session));
+    openInvite(ctx, projectInView(client));
     return true;
   }
   if (id === 'p-invite' && menu.kind === 'project') {
@@ -77,7 +78,7 @@ export function runInviteOption(ctx: MenuContext, menu: MenuKind, id: string, in
   const guest = menu.kind === 'person' ? latest.guests[latest.peers[menu.index]?.peerId ?? ''] : undefined;
   if (!guest) return false;
   if (id.startsWith('g-can:')) {
-    session.invites.change(guest.peerId, { can: id.slice(6) as GuestCan });
+    void invites.change(guest.peerId, { can: id.slice(6) as GuestCan });
     patchUi({ menu: { menu, selected: index } });
     return true;
   }
@@ -86,10 +87,10 @@ export function runInviteOption(ctx: MenuContext, menu: MenuKind, id: string, in
       patchUi({ menu: { menu: { kind: 'guest_add', peerId: guest.peerId }, selected: 0 } });
       return true;
     case 'g-room':
-      session.invites.change(guest.peerId, { room: true });
+      void invites.change(guest.peerId, { room: true });
       return true;
     case 'g-remove':
-      session.invites.remove(guest.peerId);
+      void invites.remove(guest.peerId);
       return true;
     default:
       return false;
@@ -97,17 +98,18 @@ export function runInviteOption(ctx: MenuContext, menu: MenuKind, id: string, in
 }
 
 /** Clicks on the knock card and in a shared workspace's Terminal. */
-export function runInviteUiAction(session: Session, action: UiAction): boolean {
+export function runInviteUiAction(client: KlaudClient, action: UiAction): boolean {
+  const { api } = client;
   switch (action.type) {
     case 'knock':
-      if (action.pick === 'decline') session.invites.decline(action.peerId);
-      else session.invites.letIn(action.peerId, action.pick === 'watch' ? 'watch' : undefined);
+      if (action.pick === 'decline') void api.invites.decline(action.peerId);
+      else void api.invites.letIn(action.peerId, action.pick === 'watch' ? 'watch' : undefined);
       return true;
     case 'shell_open':
-      void session.shell.openEntry(action.id, action.rel, action.dir);
+      void api.shell.openEntry(action.id, action.rel, action.dir);
       return true;
     case 'shell_run':
-      void session.shell.run(action.id, action.cmd);
+      void api.shell.run(action.id, action.cmd);
       return true;
     default:
       return false;

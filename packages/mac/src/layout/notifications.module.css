@@ -1,0 +1,292 @@
+.popover {
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-height: min(560px, calc(100vh - 90px));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
+  backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(30px) saturate(1.7);
+  box-shadow: var(--shadow-pop), 0 18px 50px rgba(0, 0, 0, 0.18);
+  transform-origin: var(--radix-popover-content-transform-origin);
+  animation: drop var(--dur) var(--ease-out);
+  overflow: hidden;
+}
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .popover {
+    animation: none;
+  }
+}
+:root[data-motion='reduce'] .popover {
+  animation: none;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 8px 6px 14px;
+}
+.heading {
+  flex: 1;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+.link {
+  height: 22px;
+  padding: 0 7px;
+  border-radius: var(--radius-s);
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+.link:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.link:disabled {
+  color: var(--text-3);
+  opacity: 0.6;
+}
+
+.quiet {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 12px 6px;
+  padding: 6px 4px 6px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+.quiet > span {
+  flex: 1;
+}
+
+.filters {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px 8px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  color: var(--text-2);
+  font-size: 0.86rem;
+  font-weight: 500;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.filter:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.filterOn,
+.filterOn:hover {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+.count {
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--bg-press);
+  color: var(--text-2);
+  font-size: 0.76rem;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 6px 8px;
+  overscroll-behavior: contain;
+}
+.group + .group {
+  margin-top: 4px;
+}
+.groupTitle {
+  margin: 0;
+  padding: 10px 8px 4px;
+  color: var(--text-3);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  position: relative;
+  border-radius: 8px;
+}
+.row:hover,
+.row:focus-within {
+  background: var(--bg-hover);
+}
+.rowMain {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px 8px 14px;
+  border-radius: 8px;
+  text-align: left;
+}
+.tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+.tone_warn {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+.tone_error {
+  background: color-mix(in srgb, var(--error) 13%, transparent);
+  color: var(--error);
+}
+.tone_claude {
+  background: color-mix(in srgb, var(--claude) 14%, transparent);
+  color: var(--claude);
+}
+.tone_info {
+  background: color-mix(in srgb, var(--info) 13%, transparent);
+  color: var(--info);
+}
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  padding-top: 1px;
+}
+.title {
+  color: var(--text-2);
+  font-weight: 500;
+  line-height: 1.3;
+}
+.unread .title {
+  color: var(--text);
+  font-weight: 600;
+}
+.body {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.time {
+  flex: none;
+  /* Room for the read and clear buttons that take its place on hover. */
+  min-width: 46px;
+  padding-top: 2px;
+  text-align: right;
+  color: var(--text-3);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.unreadDot {
+  position: absolute;
+  top: 17px;
+  left: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+/* Hovering a row trades its time for read/unread and clear. */
+.rowActions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast);
+}
+.row:hover .rowActions,
+.row:focus-within .rowActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.row:hover .time,
+.row:focus-within .time {
+  visibility: hidden;
+}
+.rowAction {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  color: var(--text-2);
+}
+.rowAction:hover {
+  color: var(--text);
+  background: var(--bg-sunken);
+}
+.readDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.25px currentColor;
+}
+.readDotOn {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 36px 28px 40px;
+  color: var(--text-3);
+  text-align: center;
+}
+.emptyTitle {
+  color: var(--text);
+  font-weight: 600;
+}
+.emptyDetail {
+  max-width: 260px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.bellQuiet {
+  opacity: 0.7;
+}

@@ -1,4 +1,4 @@
-import type { ThemeName } from '../core/settings.js';
+import type { ThemeName } from '../shared/settings-schema.js';
 
 export interface Palette {
   readonly accent: string;

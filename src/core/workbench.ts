@@ -1,5 +1,8 @@
 import { spawn } from 'node:child_process';
-import type { TerminalManager, TerminalSession } from '../terminal/index.js';
+import { type PtyProcess, type TerminalManager, listShells, scriptShell } from '../terminal/index.js';
+import { type ShellChoice, shellArgs } from '../shared/shells.js';
+import type { EnvPlace } from './env-vars.js';
+import { systemOpen } from './os-open.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
@@ -8,10 +11,11 @@ import { buildPrPrompt, customPrPrompt, ensurePrPromptFile, findPr, fixChecksPro
 import { scriptEnv } from '../workspaces/scripts.js';
 import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
-import { type LogItem, type Prefs, type Store, channelOf } from './store.js';
+import { type LogItem, type Prefs, type Store } from './store.js';
 import { addTemplate, loadTemplates, removeTemplate } from './templates.js';
 import type { ModelChoice, PullRequest } from './work-store.js';
 import type { WorkspaceController } from './workspace-controller.js';
+import type { Intent } from './intents.js';
 
 export interface WorkbenchDeps {
   readonly store: Store;
@@ -20,6 +24,8 @@ export interface WorkbenchDeps {
   readonly terminals?: TerminalManager;
   readonly notify: (event: NoticeEvent) => void;
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;
+  /** Ask the screen to go somewhere, open a dialog or close a tab (see core/intents.ts). */
+  readonly intend: (intent: Intent) => void;
   /** Ask your Claude in a workspace conversation. */
   readonly askClaude: (prompt: string, channel: string) => void;
   readonly setPrefs: (prefs: Partial<Prefs>) => void;
@@ -33,6 +39,10 @@ export interface WorkbenchDeps {
   readonly findPr?: (dir: string, branch: string) => Promise<PullRequest | undefined>;
   readonly hasGh?: () => Promise<boolean>;
   readonly measure?: (dir: string) => Promise<number | undefined>;
+  /** Your environment variables for something starting there (see env-vars.ts). */
+  readonly envFor?: (where: EnvPlace) => Record<string, string>;
+  /** The shells you can pick (injected in tests). */
+  readonly listShells?: () => ShellChoice[];
 }
 
 const DISK_EVERY_MS = 5 * 60_000;
@@ -40,27 +50,8 @@ const PR_EVERY_MS = 90_000;
 /** Terminal size until the Terminal tab is shown (it resizes to fit). */
 const START_SIZE = { cols: 120, rows: 30 };
 
-export const shellId = (wsId: string): string => wsId;
-export const setupId = (wsId: string): string => `${wsId}:setup`;
-export const runId = (wsId: string): string => `${wsId}:run`;
-/** Shells of the global Terminal tab (not tied to a workspace): `shell:1`, `shell:2`… */
-export const globalShellId = (n: number): string => `shell:${n}`;
-export const isGlobalShell = (key: string): boolean => /^shell:\d+$/.test(key);
-export const globalShellNumber = (key: string): number => Number(key.slice('shell:'.length)) || 0;
-
-/**
- * Where a new global shell starts: the project you last opened a workspace in, else the
- * project klaud was started in, else your home folder.
- */
-export function globalShellDir(projects: readonly { root: string; workspaces: readonly { id: string }[] }[], openTabs: readonly string[], launchDir: string, home: string): string {
-  for (const id of [...openTabs].reverse()) {
-    const p = projects.find((x) => x.root && x.workspaces.some((w) => w.id === id));
-    if (p) return p.root;
-  }
-  const sep = launchDir.includes('\\') ? '\\' : '/';
-  const launched = projects.find((p) => p.root && (launchDir === p.root || launchDir.startsWith(p.root + sep)));
-  return launched?.root ?? home;
-}
+export { shellId, setupId, runId, globalShellId, isGlobalShell, globalShellNumber, globalShellDir } from '../shared/terminal-keys.js';
+import { runId, setupId, shellId, isGlobalShell, globalShellNumber, cleanTerminalName } from '../shared/terminal-keys.js';
 
 /**
  * What changed about a pull request that's worth telling you. A PR showing up is only news
@@ -76,10 +67,6 @@ export function prNews(name: string, channel: string, before: PullRequest | unde
   return out;
 }
 
-const systemOpen = (target: string): void => {
-  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
-  spawn(opener, [target], { stdio: 'ignore', detached: true }).on('error', () => undefined).unref();
-};
 
 /**
  * Everything around a workspace besides talking to Claude: its terminal, setup and run
@@ -106,6 +93,7 @@ export class Workbench {
   start(): void {
     this.deps.store.dispatch({ type: 'templates', templates: loadTemplates() });
     this.deps.store.dispatch({ type: 'pr_custom', custom: Boolean(customPrPrompt()) });
+    this.deps.store.dispatch({ type: 'shell_choices', shells: (this.deps.listShells ?? listShells)() });
     void (this.deps.hasGh ?? hasGh)().then((ok) => {
       this.deps.store.dispatch({ type: 'gh', ok });
       if (ok) void this.refreshPrs();
@@ -184,8 +172,12 @@ export class Workbench {
    * Look up PRs for your worktrees with commits (and notice when one you asked for opens, or
    * checks finish). Worktrees other tools made (Claude Code sub-agents, Conductor…) are theirs to watch.
    */
-  async refreshPrs(only?: string): Promise<void> {
-    if (this.deps.store.getState().gh === false) return;
+  async refreshPrs(only?: string, recheckGh = false): Promise<void> {
+    if (this.deps.store.getState().gh === false) {
+      // "Check Again" (the Mac's Connect GitHub sheet): maybe gh was installed or signed in to since.
+      if (!recheckGh || !(await (this.deps.hasGh ?? hasGh)())) return;
+      this.deps.store.dispatch({ type: 'gh', ok: true });
+    }
     const find = this.deps.findPr ?? findPr;
     const state = this.deps.store.getState();
     const list = this.manager.list.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && w.branch && !w.archived && worktreeOrigin(w) === 'klaud' && (only ? w.id === only : (w.status?.ahead ?? 0) > 0 || state.prs[w.id]));
@@ -226,24 +218,33 @@ export class Workbench {
 
   // ------------------------------------------------------- terminal & scripts
 
-  private openSession(key: string, ws: Workspace | { path: string }, command?: string, size = START_SIZE): TerminalSession | undefined {
+  private openSession(key: string, ws: Workspace | { path: string }, command?: string, size = START_SIZE): PtyProcess | undefined {
     const terminals = this.deps.terminals;
     if (!terminals) return undefined;
-    const shell = this.deps.store.getState().prefs.shell;
+    const prefs = this.deps.store.getState().prefs;
+    // Commands are written for sh, so they run in an sh-like shell even if yours is fish or nu.
+    const shell = command ? scriptShell(prefs.shell) : prefs.shell;
+    const env = { ...this.deps.envFor?.('id' in ws ? { workspaceId: ws.id } : { dir: ws.path }), ...('projectRoot' in ws ? scriptEnv(ws) : {}) };
     const session = terminals.open(key, {
       cwd: ws.path,
       cols: size.cols,
       rows: size.rows,
-      ...('projectRoot' in ws ? { env: scriptEnv(ws) } : {}),
+      env,
       ...(shell ? { shell } : {}),
-      ...(command ? { args: ['-lc', command], title: command } : {}),
+      ...(command ? { args: ['-l', '-c', command], title: command } : { args: shellArgs({ login: prefs.shellLogin, extra: prefs.shellArgs }) }),
     });
     this.deps.store.dispatch({ type: 'terminal', id: key, title: session.title });
+    // Every screen sees when it ends (the tab shows its exit code; clicking starts it again).
+    const report = (code: number | null): void => {
+      if (this.deps.terminals?.get(key) === session) this.deps.store.dispatch({ type: 'terminal_exit', id: key, code });
+    };
+    if (session.exited) report(session.exited.code);
+    else session.onExit((exit) => report(exit.code));
     return session;
   }
 
   /** The workspace's shell (started on first use). */
-  shell(wsId: string, size?: { cols: number; rows: number }): TerminalSession | undefined {
+  shell(wsId: string, size?: { cols: number; rows: number }): PtyProcess | undefined {
     const ws = this.manager.find(wsId);
     if (!ws || ws.archived) return undefined;
     const existing = this.deps.terminals?.get(shellId(wsId));
@@ -256,7 +257,7 @@ export class Workbench {
    * A shell of the global Terminal tab (`key` from globalShellId), started in `dir`.
    * A running one is kept; an exited one starts again.
    */
-  globalShell(key: string, dir: string, size?: { cols: number; rows: number }): TerminalSession | undefined {
+  globalShell(key: string, dir: string, size?: { cols: number; rows: number }): PtyProcess | undefined {
     const existing = this.deps.terminals?.get(key);
     if (existing?.running) return existing;
     if (existing) this.deps.terminals?.close(key);
@@ -266,6 +267,13 @@ export class Workbench {
   /** The global Terminal tab's shells, in the order they were opened. */
   globalShells(): string[] {
     return (this.deps.terminals?.list() ?? []).map((s) => s.id).filter(isGlobalShell).sort((a, b) => globalShellNumber(a) - globalShellNumber(b));
+  }
+
+  /** Name a terminal for every screen (an empty name goes back to Shell N). Kept until it's closed. */
+  renameTerminal(key: string, name: string): void {
+    if (!(key in this.deps.store.getState().terminals)) return;
+    const clean = cleanTerminalName(name);
+    this.deps.store.dispatch({ type: 'terminal_name', id: key, ...(clean ? { name: clean } : {}) });
   }
 
   /** Close a terminal session (shell, setup or run). */
@@ -284,11 +292,10 @@ export class Workbench {
     for (const key of [shellId(wsId), setupId(wsId), runId(wsId)]) if (this.deps.terminals?.get(key)) this.closeTerminal(key);
   }
 
-  private watchExit(key: string, session: TerminalSession, onExit: (code: number | null) => void): void {
+  private watchExit(key: string, session: PtyProcess, onExit: (code: number | null) => void): void {
     this.watchers.get(key)?.();
-    const off = session.onChange(() => {
-      const exited = session.snapshot().exited;
-      if (!exited) return;
+    if (session.exited) return onExit(session.exited.code);
+    const off = session.onExit((exited) => {
       off();
       this.watchers.delete(key);
       onExit(exited.code);
@@ -348,7 +355,7 @@ export class Workbench {
   }
 
   /** Start (or restart) the project's run command, e.g. its dev server. */
-  run(wsId: string): TerminalSession | undefined {
+  run(wsId: string): PtyProcess | undefined {
     const ws = this.manager.find(wsId);
     const project = ws ? this.manager.list.find((p) => p.id === ws.projectId) : undefined;
     const command = project?.scripts?.run?.command;
@@ -366,11 +373,20 @@ export class Workbench {
     this.deps.terminals?.get(runId(wsId))?.kill();
   }
 
-  setScript(projectId: string, kind: 'setup' | 'run', command: string): void {
+  /**
+   * Set a project's setup or run command for you, or (`team`) in its klaud.json so everyone on
+   * the project gets it; then your own one for it is dropped, so the shared one applies.
+   */
+  setScript(projectId: string, kind: 'setup' | 'run', command: string, team = false): void {
     try {
-      this.manager.setScripts(projectId, { [kind]: command.trim() || undefined });
+      const value = command.trim() || undefined;
+      if (team) {
+        this.manager.setScripts(projectId, { [kind]: value }, { inRepo: true });
+        this.manager.setScripts(projectId, { [kind]: undefined });
+      } else this.manager.setScripts(projectId, { [kind]: value });
       void this.deps.controller.refresh();
-      this.deps.toast(command.trim() ? `${kind === 'setup' ? 'Setup' : 'Run'}: ${command.trim()}` : `${kind === 'setup' ? 'Setup' : 'Run'} command cleared`, 'success');
+      const label = kind === 'setup' ? 'Setup' : 'Run';
+      this.deps.toast(value ? `${label}: ${value}${team ? ' (saved to klaud.json)' : ''}` : `${label} command cleared`, 'success');
     } catch (err) {
       this.deps.toast(err instanceof Error ? err.message : String(err), 'error');
     }
@@ -444,7 +460,7 @@ export class Workbench {
       if (items.length) sources.push({ channel, place: placeOf(ws), items, archived: ws.archived });
     }
     const hits = searchConversations(query, sources);
-    this.deps.store.dispatch({ type: 'search', search: { query, hits, searched: sources.length, cursor: 0 } });
+    this.deps.store.dispatch({ type: 'search', search: { query, hits, searched: sources.length } });
   }
 
   /** Open a search hit's conversation. */
@@ -453,19 +469,19 @@ export class Workbench {
     const hit = state.search.hits[index];
     if (!hit) return;
     if (hit.channel === 'room') {
-      this.deps.store.dispatch({ type: 'view', view: { kind: 'room' } });
+      this.deps.intend({ type: 'navigate', view: { kind: 'room' } });
       return;
     }
     const id = hit.channel.slice(3);
     const shared = state.shared.find((w) => w.id === id);
-    if (shared) this.deps.store.dispatch({ type: 'view', view: { kind: 'shared', owner: shared.owner, id, tab: 'chat' } });
+    if (shared) this.deps.intend({ type: 'navigate', view: { kind: 'shared', owner: shared.owner, id, tab: 'chat' } });
     else this.deps.controller.open(id);
   }
 
   // --------------------------------------------------------------- templates
 
   /** "/template save Fix CI: find out why CI fails…" */
-  saveTemplate(text: string): void {
+  saveTemplate(text: string, plan = false): void {
     const at = text.indexOf(':');
     const name = at > 0 ? text.slice(0, at).trim() : text.trim().split(/\s+/).slice(0, 4).join(' ');
     const prompt = at > 0 ? text.slice(at + 1).trim() : text.trim();
@@ -473,7 +489,7 @@ export class Workbench {
       this.deps.toast('Usage: /template save <name>: <what Claude should do>', 'warn');
       return;
     }
-    this.deps.store.dispatch({ type: 'templates', templates: addTemplate(name, prompt) });
+    this.deps.store.dispatch({ type: 'templates', templates: addTemplate(name, prompt, plan) });
     this.deps.toast(`Template "${name}" saved. It shows up when you start a worktree or chat`, 'success');
   }
 
@@ -482,8 +498,4 @@ export class Workbench {
     this.deps.toast('Template removed', 'success');
   }
 
-  /** The conversation a view belongs to, for the model picker. */
-  channelFor(): string {
-    return channelOf(this.deps.store.getState().view);
-  }
 }

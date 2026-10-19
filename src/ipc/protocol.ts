@@ -1,0 +1,89 @@
+import { z } from 'zod';
+import type { Intent } from '../core/intents.js';
+import type { Action, DomainState } from '../core/store.js';
+import { decode, encode } from '../shared/codec.js';
+
+/**
+ * How screens talk to the klaud daemon on this computer: one WebSocket on 127.0.0.1, a token
+ * from $KLAUD_HOME/daemon.json, then a snapshot of the shared state followed by the stream of
+ * actions that change it (every client replays them with the same reducer). Browser-safe.
+ */
+export const IPC_VERSION = 1;
+
+/** Capabilities a screen may offer: things only it can do (its clipboard, its notifications…). */
+export const CAPS = ['copyText', 'notify', 'openExternal', 'zoom', 'readClipboardImage'] as const;
+export type Cap = (typeof CAPS)[number];
+
+const id = z.string().min(1).max(200);
+const term = z.string().min(1).max(200);
+
+/** Screen → daemon. */
+export const ClientFrame = z.discriminatedUnion('t', [
+  z.object({
+    t: z.literal('hello'),
+    token: z.string().min(16).max(200),
+    ipc: z.number().int(),
+    kind: z.enum(['tui', 'mac', 'test']),
+    version: z.string().max(40),
+    launchDir: z.string().max(4096).optional(),
+    caps: z.array(z.enum(CAPS)).max(CAPS.length).default([]),
+  }),
+  z.object({ t: z.literal('call'), id, method: z.string().max(100), args: z.array(z.unknown()).max(20) }),
+  z.object({
+    t: z.literal('attention'),
+    attention: z.object({ shown: z.array(z.string().max(200)).max(50), visible: z.array(z.string().max(200)).max(50), files: z.boolean(), front: z.boolean().optional() }),
+  }),
+  z.object({ t: z.literal('cap_result'), id, ok: z.boolean(), value: z.unknown().optional(), error: z.string().max(2000).optional() }),
+  z.object({ t: z.literal('term_attach'), term }),
+  z.object({ t: z.literal('term_detach'), term }),
+  z.object({ t: z.literal('term_input'), term, data: z.string().max(1_000_000), reply: z.boolean().optional() }),
+  z.object({ t: z.literal('term_resize'), term, cols: z.number().int().min(1).max(1000), rows: z.number().int().min(1).max(500) }),
+  z.object({ t: z.literal('resync') }),
+  z.object({ t: z.literal('ping') }),
+]);
+export type ClientFrame = z.input<typeof ClientFrame>;
+
+/** Daemon → screen (trusted: the daemon is this computer's own klaud). */
+export type DaemonFrame =
+  | { readonly t: 'welcome'; readonly clientId: string; readonly version: string; readonly ipc: number; readonly snapshot: DomainState; readonly seq: number; readonly clients: number }
+  | { readonly t: 'snapshot'; readonly snapshot: DomainState; readonly seq: number }
+  | { readonly t: 'action'; readonly seq: number; readonly action: Action }
+  | { readonly t: 'result'; readonly id: string; readonly ok: boolean; readonly value?: unknown; readonly error?: string }
+  | { readonly t: 'intent'; readonly intent: Intent }
+  | { readonly t: 'cap_call'; readonly id: string; readonly cap: Cap; readonly args: readonly unknown[] }
+  | { readonly t: 'term_data'; readonly term: string; readonly data: string }
+  | { readonly t: 'term_status'; readonly term: string; readonly running: boolean; readonly exited?: { readonly code: number | null; readonly signal?: number } }
+  | { readonly t: 'clients'; readonly count: number }
+  | { readonly t: 'pong' }
+  | { readonly t: 'bye'; readonly reason: string };
+
+export const encodeFrame = (frame: ClientFrame | DaemonFrame): string => encode(frame);
+
+/** Parse a frame from a screen; undefined when it isn't one. */
+export function parseClientFrame(text: string): z.output<typeof ClientFrame> | undefined {
+  let raw: unknown;
+  try {
+    raw = decode(text);
+  } catch {
+    return undefined;
+  }
+  const parsed = ClientFrame.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
+}
+
+export const parseDaemonFrame = (text: string): DaemonFrame => decode(text) as DaemonFrame;
+
+/** What $KLAUD_HOME/daemon.json says about the running daemon. */
+export const DaemonInfo = z.object({
+  pid: z.number().int().min(2),
+  port: z.number().int().min(1).max(65535),
+  token: z.string().min(16),
+  version: z.string(),
+  ipc: z.number().int(),
+  room: z.string(),
+  /** Which room it's in: 'host', 'demo', or a fingerprint of the invite it joined with. */
+  roomKey: z.string().default('host'),
+  startedAt: z.number(),
+  keepAlive: z.boolean().optional(),
+});
+export type DaemonInfo = z.infer<typeof DaemonInfo>;

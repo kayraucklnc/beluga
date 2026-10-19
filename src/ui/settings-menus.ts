@@ -1,10 +1,14 @@
 import type { AppState } from '../core/store.js';
-import type { Settings } from '../core/settings.js';
+import type { Settings } from '../shared/settings-schema.js';
 import { TRUST_INFO, defaultTrust, trustOf } from '../core/trust.js';
 import { THEME_LABELS } from './theme.js';
 import type { MenuOption, MenuSpec } from './menus.js';
+import { joinArgs, shellName } from '../shared/shells.js';
+import { dndActive, dndLabel } from '../shared/quiet.js';
+import { soundOn } from '../shared/notify-sound.js';
+import { type NoticeFilter, NOTICE_FILTERS, filterNotices, groupNotices, noticeAgo } from './notice-models.js';
 
-export type SettingsSection = 'claude' | 'notify' | 'workspaces' | 'people' | 'display' | 'buttons';
+export type SettingsSection = 'claude' | 'notify' | 'workspaces' | 'people' | 'display' | 'buttons' | 'terminal' | 'env';
 
 const onOff = (on: boolean): string => (on ? 'On' : 'Off');
 const sw = '  ·  Enter to switch';
@@ -42,6 +46,14 @@ export function modelLabel(state: AppState, value: string | undefined): string {
   return state.models.find((m) => m.value === value)?.label ?? value;
 }
 
+/** The terminal's shell in words: "zsh" (yours), or the one you picked. */
+export function shellLabel(state: AppState): string {
+  const p = state.prefs;
+  const login = state.shellChoices.find((c) => c.isDefault);
+  if (!p.shell) return login ? `${login.name} (your login shell)` : 'your login shell';
+  return state.shellChoices.find((c) => c.path === p.shell)?.name ?? shellName(p.shell);
+}
+
 /** Everything you can change, grouped so nothing is more than one click away. */
 export function settingsMenu(state: AppState, section?: SettingsSection, extra: { prCustom?: boolean; remembered?: Settings['people'] } = {}): MenuSpec {
   const p = state.prefs;
@@ -66,13 +78,17 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
         intro: ['klaud tells you when something needs you, on the desktop and in the inbox (top right).', 'Nothing is announced about the conversation you are looking at.', ''],
         options: [
           { id: 'n-desktop', label: 'Desktop notifications', hint: `${onOff(p.notify.desktop)}${sw}` },
-          { id: 'n-sound', label: 'Sound', hint: `${onOff(p.notify.sound)}${sw}` },
-          { id: 'n-done', label: 'Claude finished', hint: `${onOff(p.notify.done)}${sw}` },
+          { id: 'n-sound', label: 'Sound', hint: `${onOff(soundOn(p.notify))}${sw}` },
+          { id: 'n-onlyAway', label: 'Only when klaud isn’t in front', hint: `${onOff(p.notify.onlyAway)}${sw}` },
+          { id: 'n-dnd', label: 'Do Not Disturb', hint: dndActive(p.notify) ? `On ${dndLabel(p.notify)}  ·  Enter for longer, then off` : 'Off  ·  Enter: for 1 hour, then longer' },
           { id: 'n-needsYou', label: 'Claude needs you', hint: `${onOff(p.notify.needsYou)}  ·  questions, plans, approvals` },
+          { id: 'n-done', label: 'Claude finished', hint: `${onOff(p.notify.done)}${sw}` },
+          { id: 'n-mentions', label: 'Mentions and messages to you', hint: `${onOff(p.notify.mentions)}  ·  @${state.self?.name ?? 'you'}` },
+          { id: 'n-people', label: 'People', hint: `${onOff(p.notify.people)}  ·  joins, leaves, invites, handoffs` },
+          { id: 'n-background', label: 'Background tasks', hint: `${onOff(p.notify.background)}  ·  Claude's background work, worktree setup` },
           { id: 'n-problems', label: 'Errors and merge conflicts', hint: `${onOff(p.notify.problems)}${sw}` },
-          { id: 'n-people', label: 'People', hint: `${onOff(p.notify.people)}  ·  joins, invites, handoffs` },
           { id: 'n-pr', label: 'Pull requests', hint: `${onOff(p.notify.pr)}  ·  opened, checks passed or failed` },
-          { id: 'n-test', label: 'Send a test notification', hint: '' },
+          { id: 'n-test', label: 'Send a test notification', hint: 'whatever the settings above say' },
           back,
         ],
       };
@@ -83,11 +99,44 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
         options: [
           { id: 'w-setup', label: 'Run setup in new worktrees', hint: `${onOff(p.autoSetup)}  ·  e.g. npm install (set per project in its ⋯ menu)` },
           { id: 'w-friend', label: 'Friends may start work here', hint: `${p.friendWorktrees === 'ask' ? 'Yes, I approve each one' : 'No'}  ·  worktrees and handoffs from friends` },
-          { id: 'w-shell', label: 'Terminal shell', hint: `${p.shell ?? process.env.SHELL ?? '/bin/zsh'}  ·  type a new one` },
+          { id: 'sec:terminal', label: 'Terminal ›', hint: `${shellLabel(state)}${p.shellLogin ? '' : ' · not a login shell'}${p.shellArgs.length ? ` · ${joinArgs(p.shellArgs)}` : ''}` },
+          { id: 'sec:env', label: 'Environment variables ›', hint: envHint(state) },
           { id: 'w-buttons', label: 'Top bar buttons…', hint: p.hiddenButtons.length ? `${p.hiddenButtons.length} hidden` : 'all shown' },
           back,
         ],
       };
+    case 'terminal': {
+      const picked = p.shell ?? '';
+      const listed = state.shellChoices.some((c) => c.path === picked);
+      return {
+        title: 'Settings › Terminal',
+        intro: ['The shell your terminals run. New shells use it; open ones keep theirs.', ''],
+        options: [
+          ...state.shellChoices.map((c) => ({ id: `sh:${c.path}`, label: `${(picked || state.shellChoices.find((x) => x.isDefault)?.path) === c.path ? '◉' : '○'} ${c.name}`, hint: `${c.path}${c.isDefault ? '  ·  your login shell' : ''}` })),
+          { id: 'sh-other', label: `${picked && !listed ? '◉' : '○'} Another shell…`, hint: picked && !listed ? `${picked}  ·  type a new path` : 'type its path' },
+          { id: 'sh-login', label: 'Login shell', hint: `${onOff(p.shellLogin)}  ·  reads your profile (~/.zprofile…)${sw}` },
+          { id: 'sh-args', label: 'Extra arguments', hint: `${p.shellArgs.length ? joinArgs(p.shellArgs) : 'none'}  ·  type them` },
+          { id: 'set-back-workspaces', label: '‹ Back', hint: 'Esc' },
+        ],
+      };
+    }
+    case 'env': {
+      const mine = state.envKeys.global;
+      return {
+        title: 'Settings › Environment variables',
+        intro: [
+          'Given to your shells, setup and run commands, and your Claude (never to a friend\'s request).',
+          'New shells and Claude runs pick up changes. They stay on this computer.',
+          'For one project only: /env project KEY=value in one of its workspaces.',
+          '',
+        ],
+        options: [
+          ...mine.map((key) => ({ id: `env:${key}`, label: key, hint: '••••••  ·  Enter to change or remove' })),
+          { id: 'env-add', label: 'Add a variable…', hint: 'type KEY=value' },
+          { id: 'set-back-workspaces', label: '‹ Back', hint: 'Esc' },
+        ],
+      };
+    }
     case 'buttons':
       return {
         title: 'Settings › Top bar buttons',
@@ -139,15 +188,23 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
           { id: 'set-name', label: 'Your name', hint: `${state.self?.name ?? '–'}  ·  type a new one` },
           { id: 'set-theme', label: 'Color theme', hint: `${THEME_LABELS[p.theme]}${sw}` },
           { id: 'sec:people', label: 'People & permissions ›', hint: `new people: ${TRUST_INFO[defaultTrust(state)].short}${others ? ` · ${others} here` : ''}` },
-          { id: 'sec:notify', label: 'Notifications ›', hint: n.desktop ? `desktop on${n.sound ? ' · sound' : ''}` : 'desktop off · inbox only' },
+          { id: 'sec:notify', label: 'Notifications ›', hint: dndActive(n) ? `Do Not Disturb ${dndLabel(n)}` : n.desktop ? `desktop on${soundOn(n) ? ' · sound' : ''}` : 'desktop off · inbox only' },
           { id: 'sec:claude', label: 'Claude ›', hint: `${modelLabel(state, p.model)} · PR instructions · templates` },
-          { id: 'sec:workspaces', label: 'Workspaces ›', hint: `setup ${p.autoSetup ? 'on' : 'off'} · terminal · top bar` },
+          { id: 'sec:workspaces', label: 'Workspaces ›', hint: `setup ${p.autoSetup ? 'on' : 'off'} · terminal · environment · top bar` },
           { id: 'sec:display', label: 'Display ›', hint: 'mouse, text size, context meter, sub-agents' },
           { id: 'close', label: 'Done', hint: 'Esc' },
         ],
       };
     }
   }
+}
+
+/** "3 yours · 2 in projects", or "none yet". */
+function envHint(state: AppState): string {
+  const mine = state.envKeys.global.length;
+  const projects = Object.values(state.envKeys.projects).reduce((n, x) => n + x.keys.length, 0);
+  const parts = [mine ? `${mine} yours` : '', projects ? `${projects} in projects` : ''].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'none yet  ·  for shells, scripts and Claude';
 }
 
 /** Pick the model for one conversation (or the default for new ones). */
@@ -162,20 +219,45 @@ export function modelMenu(state: AppState, current: string | undefined, forWhat:
   };
 }
 
-const AGO = (ts: number, now: number): string => {
-  const s = Math.max(0, Math.round((now - ts) / 1000));
-  return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86_400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86_400)}d ago`;
-};
+/** The inbox as the menu shows it: which notices, and whether each row clears one. */
+export interface InboxView {
+  readonly filter?: NoticeFilter;
+  /** Each row clears its notice (instead of opening it). */
+  readonly manage?: boolean;
+}
+
+const INBOX_ROWS = 30;
 
 /** Everything that happened while you were elsewhere, newest first. Click one to go there. */
-export function inboxMenu(state: AppState, now = Date.now()): MenuSpec {
-  const list = state.inbox.slice(0, 30);
+export function inboxMenu(state: AppState, view: InboxView = {}, now = Date.now()): MenuSpec {
+  const filter = view.filter ?? 'all';
+  const all = state.inbox;
+  const unread = all.filter((x) => !x.read).length;
+  const groups = groupNotices(filterNotices(all, filter), now);
+  // "Earlier" starts on its row, so the list reads in the same two parts as the Mac app.
+  const rows = groups.flatMap((g, gi) => g.notices.map((x, i) => ({ x, mark: gi > 0 && i === 0 ? 'Earlier · ' : '' }))).slice(0, INBOX_ROWS);
+  const label = NOTICE_FILTERS.find((f) => f.value === filter)?.label ?? 'All';
+  const next = NOTICE_FILTERS[(NOTICE_FILTERS.findIndex((f) => f.value === filter) + 1) % NOTICE_FILTERS.length]!;
+  if (view.manage) {
+    return {
+      title: 'Inbox › Clear',
+      intro: [all.length ? 'Pick what to clear. Clearing removes it from the inbox for every screen.' : 'The inbox is empty.', ''],
+      options: [
+        ...rows.map(({ x }) => ({ id: `notice-x:${x.id}`, label: `× ${x.title}`, hint: `${noticeAgo(x.ts, now)}  ·  Enter to clear` })),
+        ...(all.length ? [{ id: 'inbox-clear', label: 'Clear all', hint: `${all.length} notice${all.length === 1 ? '' : 's'}` }] : []),
+        { id: 'inbox-back', label: '‹ Back', hint: 'Esc' },
+      ],
+    };
+  }
+  const empty = all.length ? `Nothing ${filter === 'unread' ? 'unread' : `in ${label}`}.` : 'Nothing yet. klaud lists what happens in other workspaces here.';
   return {
     title: 'Inbox',
-    intro: [list.length ? `${state.inbox.filter((x) => !x.read).length} new · click one to open it` : 'Nothing yet. klaud lists what happens in other workspaces here.', ''],
+    intro: [rows.length ? `${unread} new · click one to open it` : empty, ''],
     options: [
-      ...list.map((x) => ({ id: `notice:${x.id}`, label: `${x.read ? '  ' : '● '}${x.title}`, hint: `${AGO(x.ts, now)}${x.body ? `  ·  ${x.body}` : ''}` })),
-      ...(list.length ? [{ id: 'inbox-read', label: 'Mark all as read', hint: '' }, { id: 'inbox-clear', label: 'Clear the inbox', hint: '' }] : []),
+      ...rows.map(({ x, mark }) => ({ id: `notice:${x.id}`, label: `${x.read ? '  ' : '● '}${x.title}`, hint: `${mark}${noticeAgo(x.ts, now)}${x.body ? `  ·  ${x.body}` : ''}` })),
+      ...(all.length ? [{ id: 'inbox-filter', label: `Showing: ${label}`, hint: `Enter for ${next.label}` }] : []),
+      ...(unread ? [{ id: 'inbox-read', label: 'Mark all as read', hint: '' }] : []),
+      ...(all.length ? [{ id: 'inbox-manage', label: 'Clear one by one…', hint: '' }, { id: 'inbox-clear', label: 'Clear all', hint: '' }] : []),
       { id: 'sec:notify', label: 'Notification settings…', hint: '' },
       { id: 'close', label: 'Close', hint: 'Esc' },
     ],

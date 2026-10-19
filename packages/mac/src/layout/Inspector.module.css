@@ -1,0 +1,188 @@
+.inspector {
+  width: var(--inspector-w);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-left: 0.5px solid var(--hairline);
+  background: var(--bg-sunken);
+}
+.titlebar {
+  height: var(--titlebar-h);
+  flex: none;
+  border-bottom: 0.5px solid var(--hairline);
+  background: var(--bg);
+}
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0 16px;
+}
+.panel {
+  padding: 10px 16px 12px;
+}
+.panel + .panel {
+  border-top: 0.5px solid var(--hairline);
+}
+.panelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+  margin-bottom: 6px;
+}
+.panelHead h3 {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.field {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 0.94rem;
+}
+.fieldLabel {
+  width: 76px;
+  flex: none;
+  color: var(--text-3);
+}
+.fieldValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tone_claude {
+  color: var(--claude);
+}
+.tone_warn {
+  color: var(--warn);
+}
+.tone_error {
+  color: var(--error);
+}
+.tone_info {
+  color: var(--info);
+}
+.meter {
+  position: relative;
+  display: inline-block;
+  width: 70px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg-press);
+  overflow: hidden;
+}
+.meter span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--text-3);
+}
+.meter[data-tone='warn'] span {
+  background: var(--warn);
+}
+.meter[data-tone='full'] span {
+  background: var(--error);
+}
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.prTitle {
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+.personName {
+  flex: 1;
+}
+.dim {
+  color: var(--text-3);
+  font-size: 0.9rem;
+}
+.need {
+  padding: 6px 0;
+}
+.needTitle {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+  font-size: 0.94rem;
+}
+.needActions {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0 0 14px;
+}
+.needLink {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 0.94rem;
+}
+.needLink:hover {
+  background: var(--bg-hover);
+}
+.needLink svg:first-child {
+  color: var(--claude);
+}
+.needLink svg:last-child {
+  margin-left: auto;
+  color: var(--text-3);
+}
+.notice {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: calc(100% + 12px);
+  padding: 5px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
+  text-align: left;
+}
+.notice:hover {
+  background: var(--bg-hover);
+}
+.readDot {
+  width: 7px;
+  flex: none;
+}
+.noticeText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.noticeTitle {
+  font-size: 0.94rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The Earnings row's problem (EarningsPanel.tsx): a link to the Stripe sheet. */
+.earningsProblem {
+  align-items: baseline;
+  text-align: left;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.panelActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}

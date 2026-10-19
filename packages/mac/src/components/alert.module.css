@@ -1,0 +1,226 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.16);
+  animation: fade var(--dur) var(--ease-out);
+}
+:global([data-theme='dark']) .overlay {
+  background: rgba(0, 0, 0, 0.36);
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.alert {
+  position: fixed;
+  z-index: 51;
+  top: 22vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(448px, calc(100vw - 48px));
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 20px 20px 16px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop), 0 24px 60px rgba(0, 0, 0, 0.2);
+  animation: pop var(--dur) var(--ease-out);
+  outline: none;
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.96);
+  }
+}
+.body {
+  display: flex;
+  gap: 14px;
+}
+.icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+.icon_info {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.icon_caution {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+}
+.icon_danger {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 13%, transparent);
+}
+.text {
+  flex: 1;
+  min-width: 0;
+  padding-top: 1px;
+}
+.title {
+  margin: 0;
+  font-size: 1.06rem;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.message {
+  margin: 5px 0 0;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.message p {
+  margin: 0 0 5px;
+}
+.message p:last-child {
+  margin: 0;
+}
+.detail {
+  margin-top: 12px;
+}
+.caption {
+  margin-bottom: 5px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 7px;
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  font-size: 0.88rem;
+  overflow: hidden;
+}
+.table th {
+  padding: 4px 9px;
+  background: var(--bg-hover);
+  color: var(--text-3);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: left;
+}
+.table td {
+  padding: 4px 9px;
+  border-top: 0.5px solid var(--hairline);
+  vertical-align: top;
+}
+.table code {
+  font-size: 0.95em;
+}
+.accessory {
+  margin-top: 12px;
+}
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+.flex {
+  flex: 1;
+}
+.button {
+  min-width: 78px;
+  height: 26px;
+  padding: 0 13px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.07);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--dur-fast);
+}
+:global([data-theme='dark']) .button:not(.default) {
+  background: color-mix(in srgb, var(--bg-raised) 80%, white);
+}
+.button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-raised) 92%, var(--text));
+}
+.button:disabled {
+  opacity: 0.45;
+}
+.default {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.15), inset 0 0.5px 0 rgba(255, 255, 255, 0.18);
+}
+.default:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, black);
+}
+.destructive {
+  background: var(--error);
+}
+:global([data-theme='dark']) .destructive {
+  background: #d9483f;
+}
+.destructive:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 88%, black);
+}
+.destructiveText {
+  color: var(--error);
+}
+
+/* A macOS checkbox. */
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.35;
+}
+.box {
+  flex: none;
+  position: relative;
+  width: 14px;
+  height: 14px;
+  margin: 1.5px 0 0;
+  border-radius: 3.5px;
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.08);
+  appearance: none;
+  transition: background var(--dur-fast);
+}
+:global([data-theme='dark']) .box {
+  background: color-mix(in srgb, var(--bg-raised) 80%, white);
+}
+.box:checked {
+  background: var(--accent);
+  box-shadow: none;
+}
+.box:checked::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 3.5px;
+  height: 7.5px;
+  border: solid white;
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(42deg);
+}
+.box:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 1px;
+}
+.checkText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.checkDetail {
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+.message code,
+.table code {
+  font-size: 0.92em;
+  white-space: nowrap;
+}

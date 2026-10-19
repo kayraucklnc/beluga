@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TRUST_INFO, defaultTrust, reachOf, trustOf } from '../src/core/trust.js';
 import { People, type PeopleDeps } from '../src/core/people.js';
-import { Store, initialState, reduce, type AppState, type Policy } from '../src/core/store.js';
+import { Store, initialState, reduce, type DomainState, type Policy } from '../src/core/store.js';
 import type { Settings } from '../src/core/settings.js';
 import type { PeerInfo } from '../src/protocol.js';
 
@@ -10,7 +10,7 @@ const SELF = 'self-peer-id';
 const BOB = 'bob-peer-id';
 const ANN = 'ann-peer-id';
 
-const withSelf = (policy: Policy = 'ask'): AppState => reduce(initialState('r', policy), { type: 'welcome', self: peer(SELF, 'kay') });
+const withSelf = (policy: Policy = 'ask'): DomainState => reduce(initialState('r', policy), { type: 'welcome', self: peer(SELF, 'kay') });
 
 describe('trust', () => {
   it('defaultTrust maps policy to a level', () => {

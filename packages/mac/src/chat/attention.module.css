@@ -1,0 +1,191 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: var(--chat-max);
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 24px 8px;
+}
+.stack:empty {
+  display: none;
+}
+.card {
+  padding: 10px 12px;
+  border-radius: var(--radius-l);
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 2px 10px rgba(0, 0, 0, 0.06);
+  animation: rise var(--dur) var(--ease-out);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.urgent {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 55%, transparent), 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+.more,
+.countdown {
+  color: var(--text-3);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+.claude {
+  color: var(--claude);
+}
+.detail {
+  margin: 8px 0 0;
+  padding: 7px 9px;
+  max-height: 10rem;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.hint {
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+.actions .hint {
+  margin: 0 0 0 4px;
+}
+.plan {
+  margin-top: 8px;
+  max-height: 14rem;
+  overflow: auto;
+  padding-right: 4px;
+}
+.question {
+  margin-top: 6px;
+}
+.options {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 9px;
+  border-radius: var(--radius);
+  text-align: left;
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+}
+.option:hover {
+  background: var(--bg-hover);
+}
+.optionOn {
+  box-shadow: 0 0 0 1.5px var(--accent);
+  background: var(--bg-selected);
+}
+.optionKey {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 5px;
+  background: var(--bg-press);
+  color: var(--text-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.optionText {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.optionLabel {
+  font-weight: 500;
+}
+.optionDesc {
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+.trustRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+.trust {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 9px;
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  text-align: left;
+}
+.trust:hover {
+  background: var(--bg-hover);
+}
+
+/* "+2 more": the other approvals waiting, each answerable right here. */
+.moreButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+.moreButton:hover {
+  background: var(--bg-press);
+  color: var(--text);
+}
+.others {
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  list-style: none;
+  border-top: 0.5px solid var(--hairline);
+}
+.other {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+.otherText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.otherTitle,
+.otherDetail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.otherDetail {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}

@@ -1,0 +1,151 @@
+import type { KeyboardEvent, MouseEvent } from 'react';
+import { activityOf, stateOf } from '@klaud/ui/workspace-models.js';
+import { describePr, formatBytes } from '@klaud/shared/format.js';
+import { Icon } from '../../components/Icon.js';
+import { type ActionItem, ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
+import { Button, Dot, IconButton, Tip, cx } from '../../components/ui.js';
+import { useActions } from '../../lib/actions.js';
+import { useApp } from '../../lib/klaud.js';
+import { workspaceItems } from '../../layout/workspace-row.js';
+import type { OverviewItem } from './overview-model.js';
+import s from '../overview.module.css';
+
+const ago = (ts: number, now: number): string => {
+  const m = Math.round((now - ts) / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+};
+
+/** What every row shares: it's focusable (one at a time, the arrow keys move it), and clicking selects it. */
+interface RowBase {
+  readonly item: OverviewItem;
+  readonly selected: boolean;
+  readonly onSelect: (id: string) => void;
+  /** Return (or a click): open it. */
+  readonly onOpen: (item: OverviewItem) => void;
+}
+
+const rowProps = ({ item, selected, onSelect, onOpen }: RowBase, label: string) => ({
+  role: 'listitem',
+  tabIndex: selected ? 0 : -1,
+  'data-row': item.ws.id,
+  'aria-label': label,
+  'aria-current': selected ? ('true' as const) : undefined,
+  onFocus: () => onSelect(item.ws.id),
+  onClick: (e: MouseEvent) => {
+    // A button inside the row does its own thing.
+    if ((e.target as HTMLElement).closest('button')) return;
+    onOpen(item);
+  },
+  onKeyDown: (e: KeyboardEvent) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onOpen(item);
+    }
+  },
+});
+
+/** A live worktree or chat: as the Overview always showed it (state, PR, context, when). */
+export function ActiveRow(props: RowBase & { now: number }) {
+  const { item, now } = props;
+  const w = item.ws;
+  const actions = useActions();
+  const state = useApp((st) => st);
+  const st = stateOf(state, w, 0);
+  const act = activityOf(state.log, `ws:${w.id}`);
+  const unread = state.unread[`ws:${w.id}`] ?? 0;
+  const pr = state.prs[w.id];
+  const ctx = state.context[`ws:${w.id}`];
+  return (
+    <ActionsContext items={() => workspaceItems(state, w, actions.run)}>
+      <div {...rowProps(props, `${w.name}, ${st.label}`)} className={s.row}>
+        <span className={s.kind}>
+          <Icon name={w.kind === 'chat' ? 'chat' : w.kind === 'main' ? 'folder' : 'branch'} size={14} />
+        </span>
+        <span className={s.name}>
+          {w.name}
+          {unread ? <span className={s.unread}>{unread} new</span> : null}
+        </span>
+        <span className={s.branch}>{w.branch ?? (w.kind === 'chat' ? 'chat' : '')}</span>
+        <span className={cx(s.state, s[`tone_${st.tone}`])}>
+          <Dot tone={st.tone} live={act.running} />
+          {st.label}
+        </span>
+        <span className={s.extra} title={item.last}>
+          {pr ? describePr(pr) : ''}
+          {ctx ? `${pr ? ' · ' : ''}${Math.round((ctx.used / ctx.window) * 100)}% context` : ''}
+          {!pr && !ctx && item.last ? item.last : ''}
+        </span>
+        <span className={s.when}>{act.lastTs ? ago(act.lastTs, now) : item.size !== undefined ? formatBytes(item.size) : ''}</span>
+      </div>
+    </ActionsContext>
+  );
+}
+
+export interface ArchivedActions {
+  readonly restore: (item: OverviewItem) => void;
+  readonly read: (item: OverviewItem) => void;
+  readonly finder: (item: OverviewItem) => void;
+  readonly remove: (item: OverviewItem) => void;
+  /** The one being restored right now (its button says so). */
+  readonly restoring: string | undefined;
+}
+
+/** The archived row's menu: right-click, or its ⋯ button. */
+export function archivedItems(item: OverviewItem, act: ArchivedActions): ActionItem[] {
+  return [
+    { label: 'Restore', icon: 'refresh', hint: item.ws.kind === 'worktree' ? 'Make the worktree again from its branch' : 'Show it in the sidebar again', onSelect: () => act.restore(item) },
+    { label: 'Read Conversation', icon: 'eye', keys: 'Space', onSelect: () => act.read(item) },
+    ...(item.project.root ? [{ label: 'Show Project in Finder', icon: 'folder' as const, onSelect: () => act.finder(item) }] : []),
+    { label: 'Delete Permanently…', danger: true, keys: '⌘⌫', onSelect: () => act.remove(item) },
+  ];
+}
+
+/**
+ * An archived worktree or chat, quiet: its folder is gone (a chat keeps its own), its branch
+ * and conversation are kept. Hover (or select) for Restore, Read and ⋯; right-click for all.
+ */
+export function ArchivedRow(props: RowBase & { act: ArchivedActions }) {
+  const { item, act } = props;
+  const w = item.ws;
+  const worktree = w.kind === 'worktree';
+  const busy = act.restoring === w.id;
+  const kept = worktree && w.branch ? 'Branch kept' : 'Conversation kept';
+  const keptLong = worktree && w.branch ? `The folder was removed. Branch ${w.branch} and the conversation are kept.` : 'The conversation is kept.';
+  const items = archivedItems(item, act);
+  return (
+    <ActionsContext items={items}>
+      <div {...rowProps(props, `${w.name}, archived`)} className={cx(s.row, s.archived)}>
+        <span className={s.kind}>
+          <Icon name="archive" size={14} />
+        </span>
+        <span className={s.name}>{w.name}</span>
+        <span className={s.branch}>{w.branch ?? (w.kind === 'chat' ? 'chat' : '')}</span>
+        <span className={cx(s.state, s.tone_muted)}>
+          <Dot tone="muted" />
+          Archived
+        </span>
+        <span className={s.extra} title={keptLong}>
+          {kept}
+        </span>
+        <span className={s.when}>{item.size !== undefined ? formatBytes(item.size) : ''}</span>
+        <span className={cx(s.hoverActions, busy && s.hoverBusy)}>
+          <Tip label={worktree ? 'Make the worktree again from its branch, and open it' : 'Show it in the sidebar again, and open it'}>
+            <Button size="small" variant="plain" disabled={busy} onClick={() => act.restore(item)}>
+              {busy ? 'Restoring…' : 'Restore'}
+            </Button>
+          </Tip>
+          <IconButton icon="eye" label="Read Conversation" keys="Space" onClick={() => act.read(item)} />
+          <ActionsDropdown items={items}>
+            <button type="button" className={s.more} aria-label={`More for ${w.name}`}>
+              <Icon name="more" size={14} />
+            </button>
+          </ActionsDropdown>
+        </span>
+      </div>
+    </ActionsContext>
+  );
+}

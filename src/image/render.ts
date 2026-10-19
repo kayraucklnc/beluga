@@ -1,4 +1,4 @@
-import type { Line, Seg } from '../ui/text.js';
+import type { Line, Seg } from '../shared/text.js';
 import { type Bitmap, type Rgb, fitPixels, pixelOver, resize } from './bitmap.js';
 
 /**

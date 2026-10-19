@@ -30,7 +30,7 @@ const MAX_WAITING = 20;
  * are only accepted from that person, and nobody waits forever.
  */
 export class QuestionBroker {
-  private readonly waiting = new Map<string, { peer: string; resolve: (a: ClaudeAnswer) => void; timer: NodeJS.Timeout }>();
+  private readonly waiting = new Map<string, { peer: string; channel: string; resolve: (a: ClaudeAnswer) => void; timer: NodeJS.Timeout }>();
   /** Requests you sent → whose Claude got them, so only that Claude can ask you things. */
   private readonly mine = new Map<string, { target: string; channel: string }>();
 
@@ -54,7 +54,7 @@ export class QuestionBroker {
         resolve(SKIP);
       }, this.deps.timeoutMs());
       timer.unref();
-      this.waiting.set(qid, { peer: requester, resolve, timer });
+      this.waiting.set(qid, { peer: requester, channel, resolve, timer });
       if (requester === this.deps.selfId()) {
         this.deps.store.dispatch({ type: 'question_add', question: { qid, requestId, owner: requester, channel, question, picked: {} } });
       } else if (!this.deps.send({ kind: 'agent_question', requestId, qid, channel, question }, { to: requester })) {
@@ -93,6 +93,11 @@ export class QuestionBroker {
   /** Stop waiting on everything (e.g. Claude was stopped). */
   cancelAll(): void {
     for (const [qid, w] of [...this.waiting]) this.settle(qid, w.peer, SKIP);
+  }
+
+  /** Stop waiting on Claude's questions in one conversation (you stopped Claude there). */
+  cancelChannel(channel: string): void {
+    for (const [qid, w] of [...this.waiting]) if (w.channel === channel) this.settle(qid, w.peer, SKIP);
   }
 
   private settle(qid: string, from: string, answer: ClaudeAnswer): void {

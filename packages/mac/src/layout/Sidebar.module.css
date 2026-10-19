@@ -1,0 +1,244 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-w);
+  flex: none;
+  height: 100%;
+  background: var(--bg-sidebar);
+  border-right: 0.5px solid var(--hairline);
+}
+:global(html:not([data-app])) .sidebar {
+  background: var(--bg-sidebar-solid);
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--titlebar-h);
+  padding: 0 10px 0 0;
+  flex: none;
+}
+.trafficSpace {
+  width: 78px;
+  height: 100%;
+}
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.section {
+  margin-top: 10px;
+}
+.section:first-child {
+  margin-top: 0;
+}
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 26px;
+  padding: 0 4px 0 8px;
+}
+.sectionTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.sectionChevron {
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.sectionHead:hover .sectionChevron {
+  opacity: 1;
+}
+.sectionAction {
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.sectionHead:hover .sectionAction,
+.sectionAction:focus-within {
+  opacity: 1;
+}
+.sectionAction button {
+  width: 22px;
+  height: 20px;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--row);
+  padding-right: 6px;
+  border-radius: 6px;
+  color: var(--text);
+  outline: none;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.row:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.selected,
+.selected:hover {
+  background: var(--bg-selected);
+}
+.rowIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  flex: none;
+  color: var(--text-2);
+}
+.selected .rowIcon {
+  color: var(--accent);
+}
+.rowLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+}
+
+.projectRow {
+  font-weight: 600;
+}
+/* The project you're in (its home, or any of its worktrees and chats): a soft wash of your accent
+   with a faint glow, so the sidebar always says where you are. */
+.currentProject,
+.currentProject:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 12px -5px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+.currentProject.selected {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 14px -4px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+.currentProject .rowIcon {
+  color: var(--accent);
+}
+.projectRow .rowIcon {
+  width: auto;
+  color: var(--text-3);
+}
+/* The disclosure triangle, then the project's icon (like Finder's sidebar and Xcode's navigator). */
+.projectIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: -4px;
+}
+.disclosure {
+  opacity: 0.5;
+  transition: opacity var(--dur-fast);
+}
+.projectRow:hover .disclosure {
+  opacity: 1;
+}
+.hoverTools {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+/* At rest the buttons take no room, so a status dot after them sits at the row's right edge;
+   on hover (or keyboard focus) they open up to its left. */
+.hoverTools button {
+  width: 0;
+  height: 20px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+/* Keyboard focus only: a row you clicked keeps focus, and its tools mustn't stay open after the
+   pointer leaves. */
+.row:hover .hoverTools button,
+.row:focus-visible .hoverTools button,
+.row:has(:focus-visible) .hoverTools button,
+.hoverTools:has(button[data-state='open']) button {
+  width: 22px;
+  opacity: 1;
+}
+/* A status dot in a row's trailing tools: always the last thing, at the right edge. */
+.status {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  margin-left: 2px;
+}
+
+.fold {
+  color: var(--text-2);
+  font-size: 0.94rem;
+}
+.groupRow {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.external {
+  color: var(--text-2);
+}
+.hintRow {
+  color: var(--text-3);
+}
+.hintRow .rowIcon {
+  color: var(--text-3);
+}
+.dim {
+  color: var(--text-3);
+}
+.claudeMark {
+  color: var(--claude);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px 0 16px;
+  border-top: 0.5px solid var(--hairline);
+  flex: none;
+  color: var(--text-2);
+  font-size: 0.92rem;
+}
+.footerLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.invite {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.invite:hover {
+  background: var(--bg-hover);
+}
+/* A folder dragged from Finder over the sidebar: dropping it adds it as a project. */
+.dropping {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}

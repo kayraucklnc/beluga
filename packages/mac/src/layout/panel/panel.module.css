@@ -1,0 +1,659 @@
+/*
+ * The right panel (Changes, Files, Terminal, Info), the terminal drawer under the center, and the
+ * focus view. The panel's chrome continues the toolbar (same height, same background); its
+ * lists sit on the sunken background like a sidebar; code, diffs and previews on the page white.
+ */
+
+/* ---- the panel */
+
+.panel {
+  position: relative;
+  flex: none;
+  height: 100%;
+  overflow: hidden;
+  border-left: 0.5px solid var(--hairline);
+  background: var(--bg-sunken);
+  transition: width var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+}
+.closed {
+  border-left-color: transparent;
+}
+.dragging {
+  transition: none;
+}
+/* Fixed to the panel's width and pinned right, so it slides instead of re-wrapping as the panel opens and closes. */
+.inner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+.head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: var(--titlebar-h);
+  padding: 0 12px;
+  border-bottom: 0.5px solid var(--hairline);
+  background: var(--bg);
+}
+.tabs {
+  display: flex;
+  gap: 1px;
+  width: 100%;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+}
+.tab {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 5px;
+  color: var(--text-2);
+  font-size: 0.92rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast);
+}
+.tab > span:not(.count):not(.tabDot) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab:hover {
+  color: var(--text);
+}
+.tabOn,
+.tabOn:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+  box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.count {
+  flex: none;
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--bg-press);
+  color: var(--text-2);
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.countFresh {
+  background: var(--accent);
+  color: white;
+}
+.tabDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.tabDot_ok {
+  background: var(--ok);
+}
+.tabDot_error {
+  background: var(--error);
+}
+.tabDot_warn {
+  background: var(--warn);
+}
+.tabDot_accent {
+  background: var(--accent);
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.loading {
+  flex: 1;
+}
+/* Info is the inspector as it is, made to fill the tab. */
+.info {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.info > aside {
+  flex: 1;
+  width: 100%;
+  border-left: 0;
+  background: transparent;
+}
+.info > aside > [data-tauri-drag-region] {
+  display: none;
+}
+
+/* ---- resizing */
+
+.handle {
+  position: relative;
+  flex: none;
+  z-index: 4;
+  outline: none;
+  transition: background var(--dur-fast) 80ms;
+}
+.handle::before {
+  content: '';
+  position: absolute;
+}
+.handleX {
+  width: 1px;
+  cursor: col-resize;
+}
+.handleX::before {
+  inset: 0 -4px;
+}
+.handleY {
+  height: 1px;
+  background: var(--hairline);
+  cursor: row-resize;
+}
+.handleY::before {
+  inset: -4px 0;
+}
+.handle:hover,
+.handleActive,
+.handle:focus-visible {
+  background: var(--accent);
+}
+/* The panel's own border is the line; the handle only lights up. */
+.edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+}
+:global(:root[data-resizing='x']),
+:global(:root[data-resizing='x'] *) {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+:global(:root[data-resizing='y']),
+:global(:root[data-resizing='y'] *) {
+  cursor: row-resize !important;
+  user-select: none !important;
+}
+
+/* ---- lists (Changes, Files) */
+
+.stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.top {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 8px 8px;
+  outline: none;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row);
+  padding: 0 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.rowOn,
+.rowOn:hover {
+  background: var(--bg-selected);
+}
+.rowShown {
+  background: var(--bg-hover);
+}
+.list:focus-visible .rowOn {
+  background: var(--accent);
+  color: white;
+}
+.list:focus-visible .rowOn * {
+  color: rgba(255, 255, 255, 0.86) !important;
+}
+.rowName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowDir {
+  margin-left: 6px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+.rowCounts {
+  flex: none;
+  display: inline-flex;
+  gap: 6px;
+}
+.flex {
+  flex: 1;
+}
+.dim {
+  color: var(--text-3);
+}
+.dimPad {
+  padding: 16px;
+  color: var(--text-3);
+}
+.emptyTab {
+  flex: 1;
+  display: flex;
+}
+
+/* ---- Changes */
+
+.summary {
+  flex: none;
+  padding: 8px 10px 4px 16px;
+}
+.summaryRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+.summaryTitle {
+  font-weight: 600;
+}
+.summaryMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
+.base {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.disclose {
+  flex: none;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px;
+  margin: 0 -4px;
+  border-radius: 4px;
+  color: inherit;
+}
+.disclose:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.commits {
+  padding: 4px 0 2px;
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+.commitWrap {
+  display: block;
+}
+.commit {
+  display: flex;
+  gap: 8px;
+  width: calc(100% + 12px);
+  margin: 0 -6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  text-align: left;
+  color: inherit;
+}
+.commit:hover,
+.commit[data-state='open'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.commitSubject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spinning svg {
+  animation: spin 900ms linear infinite;
+}
+:global(:root[data-motion='reduce']) .spinning svg {
+  animation: none;
+}
+.actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 0.5px solid var(--hairline);
+}
+
+/* ---- a diff or a file under the list */
+
+.preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.previewHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 6px 0 12px;
+  border-bottom: 0.5px solid var(--hairline);
+  color: var(--text-2);
+}
+.previewName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.previewDir {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.previewCounts {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+}
+.previewBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+}
+/* A file fills the preview (an image centers in it); a long one scrolls. */
+.previewFile {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Files */
+
+.filterRow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px 6px 10px;
+}
+.filter {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-3);
+  transition: box-shadow var(--dur-fast);
+}
+.filter:focus-within {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 3.5px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.filter input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+  box-shadow: none;
+}
+.tree {
+  padding-top: 0;
+}
+.treeRow {
+  gap: 5px;
+  padding-right: 8px;
+}
+.chevron {
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  flex: none;
+  color: var(--text-3);
+}
+.dirIcon {
+  flex: none;
+  color: var(--info);
+}
+.fileIcon {
+  flex: none;
+  color: var(--text-3);
+}
+.treeNote {
+  height: var(--row);
+  padding: 0 10px;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  line-height: var(--row);
+}
+.changedDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--warn);
+  opacity: 0.8;
+}
+.mark {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: inherit;
+}
+.size {
+  flex: none;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the terminal (in the panel and in the drawer) */
+
+.term {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--term-bg, var(--bg));
+}
+.termBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0 6px 0 8px;
+  border-bottom: 0.5px solid var(--hairline);
+  background: var(--bg);
+}
+.termTabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.termTab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.termTab:hover,
+.termTabOn {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.termAdd {
+  flex: none;
+}
+.termBody {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- the drawer under the center */
+
+.drawer {
+  position: relative;
+  flex: none;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  border-top: 0.5px solid var(--hairline-strong);
+  background: var(--term-bg, var(--bg));
+  overflow: hidden;
+  animation: drawerIn var(--dur) var(--ease-out);
+}
+.drawerClosing {
+  animation: drawerOut var(--dur) var(--ease-out) forwards;
+}
+@keyframes drawerIn {
+  from {
+    height: 0;
+    min-height: 0;
+  }
+}
+@keyframes drawerOut {
+  to {
+    height: 0;
+    min-height: 0;
+  }
+}
+/* A 5 px strip along the drawer's top edge (it can't reach above: the drawer clips). */
+.drawerEdge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background: transparent;
+}
+.drawerEdge:hover,
+.drawerEdge.handleActive,
+.drawerEdge:focus-visible {
+  background: transparent;
+  box-shadow: inset 0 1px 0 var(--accent), inset 0 2px 0 var(--accent);
+}
+
+/* ---- the focus view (a diff, a file or the terminal across the center) */
+
+.focus {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: focusIn var(--dur) var(--ease-out);
+}
+@keyframes focusIn {
+  from {
+    opacity: 0;
+  }
+}
+.focusBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px 0 8px;
+  border-bottom: 0.5px solid var(--hairline);
+  background: var(--bg-sunken);
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 4px 0 6px;
+  border-radius: 6px;
+  color: var(--text);
+  font-weight: 500;
+}
+.back:hover {
+  background: var(--bg-hover);
+}
+.back kbd {
+  margin-left: 2px;
+}
+.focusTitle {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.focusPath {
+  margin-left: 8px;
+  color: var(--text-3);
+  font-weight: 400;
+}
+.focusBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

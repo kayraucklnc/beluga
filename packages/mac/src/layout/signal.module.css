@@ -1,0 +1,106 @@
+/*
+ * What a conversation waits on, in the sidebar (signal-marks.tsx). Restrained on purpose:
+ * news is a bold name and a count in your accent; needing you is an amber glow with a lit left
+ * edge and a light sweeping across now and then (a problem: ! in red).
+ */
+
+.unreadName {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.needsRow,
+.needsRow.needsRow:hover {
+  overflow: hidden;
+  background: color-mix(in srgb, var(--warn) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 32%, transparent);
+}
+.needsRow.needsRow:hover {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+}
+/* A soft light sweeping across, now and then: findable at a glance without shouting. */
+.needsRow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 25%, color-mix(in srgb, var(--warn) 26%, transparent) 50%, transparent 75%);
+  transform: translateX(-100%);
+  animation: scan 4.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+@keyframes scan {
+  0% {
+    transform: translateX(-100%);
+  }
+  40%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .needsRow::after {
+    animation: none;
+    display: none;
+  }
+}
+.problemRow,
+.problemRow.problemRow:hover {
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+.problemRow.problemRow:hover {
+  background: color-mix(in srgb, var(--error) 13%, transparent);
+}
+
+/* Needing you: a lit amber edge at the row's left. */
+.edge {
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--warn);
+  box-shadow: 0 0 6px 0 color-mix(in srgb, var(--warn) 80%, transparent);
+  pointer-events: none;
+}
+
+.mark {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+}
+.markNeeds {
+  color: var(--warn);
+}
+.markProblem {
+  color: var(--error);
+}
+.count {
+  display: inline-flex;
+  margin-left: 2px;
+}
+
+.tally {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+}
+
+/* The Unread section: each conversation with where it lives, quietly, after its name. */
+.section {
+  margin-top: 10px;
+}
+.where::after {
+  content: attr(data-where);
+  margin-left: 5px;
+  color: var(--text-3);
+  font-size: 0.88rem;
+  font-weight: 400;
+}
+.unreadIcon {
+  display: inline-grid;
+  place-items: center;
+}

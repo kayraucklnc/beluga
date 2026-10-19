@@ -15,6 +15,8 @@ Usage:
   klaud demo                      try everything alone with a pretend friend and simulated Claude
   klaud view <image> [--ascii]    show a PNG, JPEG, GIF or SVG right in the terminal
   klaud update [--check]          get the latest klaud (or just check whether you have it)
+  klaud daemon [--keep-alive]     run klaud in the background for other windows (the Mac app)
+                                  KLAUD_DAEMON=1 klaud attaches this window to it (or starts it)
 
 Options:
   -n, --name <name>        display name (default: your OS username)

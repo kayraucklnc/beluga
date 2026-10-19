@@ -1,20 +1,22 @@
-import os from 'node:os';
-import path from 'node:path';
 import type { AppState } from '../core/store.js';
 import type { MenuOption, MenuSpec } from './menus.js';
 
-const tilde = (p: string): string => p.replace(os.homedir(), '~');
+// Plain string paths (this runs in the Mac app's web view too).
+const norm = (p: string): string => (p.length > 1 ? p.replace(/\/+$/, '') : p);
+const baseName = (p: string): string => norm(p).split('/').pop() ?? p;
+const tildeIn = (home: string) => (p: string): string => (home && (p === home || p.startsWith(`${home}/`)) ? `~${p.slice(home.length)}` : p);
 
 /** "Share a folder": this folder, one of your projects, or any path, then who sees it. */
 export function shareFolderMenu(state: AppState, launchDir: string, mine: ReadonlyArray<{ name: string; root?: string; private?: boolean; allowed?: readonly string[] }>): MenuSpec {
-  const sharedRoots = new Set(mine.filter((s) => s.root).map((s) => path.resolve(s.root as string)));
+  const tilde = tildeIn(state.home);
+  const sharedRoots = new Set(mine.filter((s) => s.root).map((s) => norm(s.root as string)));
   const candidates = [
     { dir: launchDir, label: `This folder · ${tilde(launchDir)}` },
-    ...state.projects.filter((p) => p.root && path.resolve(p.root) !== path.resolve(launchDir)).slice(0, 12).map((p) => ({ dir: p.root, label: `${p.name} · ${tilde(p.root)}` })),
+    ...state.projects.filter((p) => p.root && norm(p.root) !== norm(launchDir)).slice(0, 12).map((p) => ({ dir: p.root, label: `${p.name} · ${tilde(p.root)}` })),
   ];
   const nameOf = (id: string) => state.peers.find((p) => p.peerId === id)?.name ?? '?';
   const options: MenuOption[] = [
-    ...candidates.map((c) => ({ id: `sf-dir:${c.dir}`, label: c.label, hint: sharedRoots.has(path.resolve(c.dir)) ? 'shared now · pick to change who sees it' : '' })),
+    ...candidates.map((c) => ({ id: `sf-dir:${c.dir}`, label: c.label, hint: sharedRoots.has(norm(c.dir)) ? 'shared now · pick to change who sees it' : '' })),
     { id: 'sf-type', label: 'Another folder…', hint: 'type a path (Tab completes)' },
     ...mine
       .filter((s) => !s.name.startsWith('ws-'))
@@ -32,8 +34,8 @@ export function shareFolderMenu(state: AppState, launchDir: string, mine: Readon
 export function shareWhoMenu(state: AppState, dir: string): MenuSpec {
   const people = state.peers.filter((p) => p.peerId !== state.self?.peerId);
   return {
-    title: `Share ${path.basename(dir) || dir} with…`,
-    intro: [tilde(dir)],
+    title: `Share ${baseName(dir) || dir} with…`,
+    intro: [tildeIn(state.home)(dir)],
     options: [
       { id: 'sw-all', label: 'Everyone in the room', hint: 'read-only' },
       ...people.map((p) => ({ id: `sw-peer:${p.peerId}`, label: `Only ${p.name}`, hint: 'read-only, nobody else sees it' })),

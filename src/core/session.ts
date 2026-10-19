@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
@@ -6,7 +7,7 @@ import { type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, typ
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { type ShareService, parseShareSpec } from './shares.js';
 import { existsSync } from 'node:fs';
-import { type Location, type Prefs, type Store, channelOf, peerName } from './store.js';
+import { type Attention, type Location, type MyShare, type Prefs, type Store, peerName } from './store.js';
 import { WorkspaceController } from './workspace-controller.js';
 import { QuestionBroker } from './questions.js';
 import type { Conversation } from '../agent/transcript.js';
@@ -14,7 +15,6 @@ import { slugify } from '../agent/namer.js';
 import { WorkspaceSharing } from './workspace-sharing.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Settings } from './settings.js';
-import { type ZoomDir, zoom as zoomTerminal } from './zoom.js';
 import { runCommand } from './commands.js';
 import { People } from './people.js';
 import { ReplayGuard } from './replay.js';
@@ -22,6 +22,9 @@ import { AgentHost } from './agent-host.js';
 import { RoomFiles, dirKey } from './room-files.js';
 import { createRoomBridge } from './agent-bridge.js';
 import { createSessionParts } from './session-parts.js';
+import { type Intent, IntentBus } from './intents.js';
+import { AttentionRegistry } from './attention.js';
+import { currentClient } from './client-context.js';
 import { ATTACHMENT_SHARE } from './attachments.js';
 import { Notifier } from './notify.js';
 import { Workbench } from './workbench.js';
@@ -31,6 +34,11 @@ import { type PeerRun, type ShellRunner, describeShellResult } from './peer-run.
 import type { GuestControl, ProjectInvites } from './project-invites.js';
 import type { GuestShell } from './guest-shell.js';
 import { type SharedDiff, guestMayDo } from './shared-diff.js';
+import type { EnvVars } from './env-vars.js';
+import { gatewayOf } from './gateway/registry.js';
+
+/** Bigger, smaller, or back to normal text. */
+export type ZoomDir = 'in' | 'out' | 'reset';
 
 export interface SessionOptions {
   readonly client: PeerClient;
@@ -41,7 +49,6 @@ export interface SessionOptions {
   readonly agentCwd: string;
   readonly requestTimeoutMs?: number;
   readonly agentTimeoutMs?: number;
-  readonly onQuit?: () => void;
   /** Folder klaud was started in; new stand-alone chats run here. */
   readonly launchDir?: string;
   /** Clipboard writer (injected so tests don't touch the real clipboard). */
@@ -63,7 +70,7 @@ export interface SessionOptions {
   /** Terminal sessions for workspaces (omitted in tests). */
   readonly terminals?: TerminalManager;
   /** Show a desktop notification (omitted in tests: the inbox still fills). */
-  readonly desktopNotify?: (n: { title: string; body: string; sound: boolean }) => void;
+  readonly desktopNotify?: (n: import('./notify.js').DesktopNote) => void;
   /** Open a URL or file with the system (injected in tests). */
   readonly open?: (target: string) => void;
   /** Injected in tests: pull request lookups and the GitHub CLI check. */
@@ -73,10 +80,16 @@ export interface SessionOptions {
   readonly savedPeople?: Settings['people'];
   /** Where recent requests are remembered across restarts (omit in tests: memory only). */
   readonly replayFile?: string;
+  /** Where the details of Claude's steps are kept across restarts (omit in tests: memory only). */
+  readonly stepsDir?: string;
   /** Read Claude Code conversations from other tools (omitted in tests and the demo). */
-  readonly findConversation?: (dir: string, self: { id: string; name: string }) => Promise<Conversation | undefined>;
+  readonly findConversation?: (dir: string, self: { id: string; name: string }, opts?: { sessionId?: string; prefer?: string }) => Promise<Conversation | undefined>;
+  /** Read Conductor's and Claude Code's data about worktrees klaud didn't make (omitted in tests and the demo). */
+  readonly otherTools?: import('./other-worktrees.js').OtherTools;
   /** How friends' commands run on this computer (the demo injects canned output). */
   readonly runShell?: ShellRunner;
+  /** Stop klaud itself (the daemon, or the terminal UI running it). */
+  readonly shutdown?: () => void;
 }
 
 /** What the host can do with the room itself. */
@@ -124,6 +137,7 @@ const GUARDED = new Set([
   'shell_started',
   'fs_search',
   'ws_diff',
+  'gateway',
 ]);
 
 export { dirKey };
@@ -156,7 +170,13 @@ export class Session {
   readonly shell: GuestShell;
   /** What changed in a workspace shared with you (and serving yours). */
   readonly diff: SharedDiff;
+  /** Your environment variables for shells, scripts and your Claude (never sent to the room). */
+  readonly env: EnvVars;
   private projectsTimer?: NodeJS.Timeout;
+  /** What this session asks screens to do (see core/intents.ts). */
+  readonly intents = new IntentBus();
+  /** What the attached screens look at (unread counts and notifications follow it). */
+  readonly attention: AttentionRegistry;
 
   constructor(private readonly opts: SessionOptions) {
     this.bridge = createRoomBridge(this, () => opts.agentCwd);
@@ -175,7 +195,11 @@ export class Session {
     this.invites = parts.invites;
     this.shell = parts.shell;
     this.diff = parts.diff;
+    this.env = parts.env;
     this.agent = opts.createAgent?.(this.bridge);
+    this.attention = new AttentionRegistry(opts.store);
+    opts.store.dispatch({ type: 'identity', selfId: opts.client.peerId, isHost: Boolean(opts.room), home: os.homedir() });
+    this.publishShares();
     this.wire();
   }
 
@@ -219,6 +243,8 @@ export class Session {
       this.projectsTimer.unref();
       this.workspaceTimer = setInterval(() => void this.workspaces?.refresh(), WORKSPACE_REFRESH_MS);
       this.workspaceTimer.unref();
+      // A quiet fetch of each project's remote every ~15 minutes (the project home's "fetched … ago").
+      this.workspaces.mainSync.start();
     }
   }
 
@@ -243,22 +269,41 @@ export class Session {
     this.agentWaiters.clear();
   }
 
+  /** Leave: the screen that asked closes (the room stays up while other screens are attached). */
   quit(): void {
-    this.opts.onQuit?.();
+    this.intend({ type: 'quit' });
+  }
+
+  /** Stop klaud entirely (every screen closes). */
+  shutdown(): void {
+    if (this.opts.shutdown) this.opts.shutdown();
+    else this.intend({ type: 'quit' });
+  }
+
+  /** A screen says what it's looking at (`clientId`: which screen). */
+  attend(clientId: string, attention: Attention): void {
+    this.attention.set(clientId, attention);
+  }
+
+  /** A screen closed. */
+  detach(clientId: string): void {
+    this.attention.remove(clientId);
   }
 
   // -------------------------------------------------------------------------
   // User actions
   // -------------------------------------------------------------------------
 
-  /** Handle a line from the composer. `urgent` (Alt/Ctrl+Enter) interrupts your Claude instead of queueing. */
-  submit(raw: string, urgent = false): void {
+  /**
+   * Handle a line from the composer, typed in `channel` (the conversation on screen). `urgent`
+   * (Alt/Ctrl+Enter) interrupts your Claude instead of queueing.
+   */
+  submit(raw: string, { channel = 'room', urgent = false }: { channel?: string; urgent?: boolean } = {}): void {
     const state = this.store.getState();
     // "/run @bob <command>": the command exactly as typed (spacing and quotes kept).
     const peerRun = /^\/run\s+@([\w.-]+)\s+([\s\S]+)$/.exec(raw.trim());
-    if (peerRun) return this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim());
+    if (peerRun) return this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim(), channel);
     const parsed = parseInput(raw, this.selfId, state.peers);
-    const channel = channelOf(state.view);
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
       this.askOwnClaude(parsed.kind === 'agent' ? parsed.prompt : parsed.text, channel, urgent);
@@ -276,7 +321,7 @@ export class Session {
       case 'empty':
         return;
       case 'command':
-        runCommand(this, parsed.name, parsed.args);
+        runCommand(this, parsed.name, parsed.args, channel);
         return;
       case 'chat':
         this.sendChat(parsed.text, false);
@@ -297,7 +342,12 @@ export class Session {
   }
 
   toast(text: string, level: 'info' | 'success' | 'warn' | 'error' = 'info'): void {
-    this.store.dispatch({ type: 'toast', text, level });
+    this.intend({ type: 'toast', text, level });
+  }
+
+  /** Ask the screen(s) to go somewhere, open a dialog, show a message or close a tab. */
+  intend(intent: Intent): void {
+    this.intents.emit(intent, currentClient());
   }
 
   async copyInvite(): Promise<void> {
@@ -364,9 +414,9 @@ export class Session {
 
   /**
    * Send a message to the Claude of a workspace conversation: yours, or (in a workspace
-   * someone shared with you) theirs.
+   * someone shared with you) theirs. `echo: false` leaves the prompt out of the chat (it's there already).
    */
-  askOwnClaude(prompt: string, channel: string, urgent = false): void {
+  askOwnClaude(prompt: string, channel: string, urgent = false, echo = true): void {
     const shared = this.sharing.sharedFor(channel);
     if (shared && shared.role !== 'contribute') {
       this.toast(`You can follow ${shared.name}, but not ask its Claude. Ask the owner to let you contribute`, 'warn');
@@ -374,7 +424,7 @@ export class Session {
     }
     // Load the saved conversation first, so what's said now is kept with it.
     if (!shared && channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
-    this.sendChat(prompt, false, channel);
+    if (echo) this.sendChat(prompt, false, channel);
     this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent);
   }
 
@@ -394,6 +444,12 @@ export class Session {
 
   stopAgent(): void {
     this.host.stopAgent();
+  }
+
+  /** Compact a conversation's context (Claude keeps what matters; the chat stays on screen). */
+  compact(channel: string, instructions = ''): void {
+    if (channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
+    this.host.compact(channel, instructions);
   }
 
   /** Ask you to approve something; `peer` is who it's for. */
@@ -426,14 +482,12 @@ export class Session {
   async runOnPeer(name: string, command: string, opts: { cwd?: string; project?: string; timeoutSec?: number; why?: string; viaAgent?: boolean; channel?: string } = {}): Promise<string> {
     const peer = this.findPeer(name);
     if (!peer || peer.peerId === this.selfId) throw new Error(`No friend named "${name}" is here. Call list_peers first.`);
-    const res = await this.peerRun.run(peer.peerId, command, { ...opts, viaAgent: opts.viaAgent ?? false, channel: opts.channel ?? channelOf(this.store.getState().view) });
+    const res = await this.peerRun.run(peer.peerId, command, { ...opts, viaAgent: opts.viaAgent ?? false, channel: opts.channel ?? 'room' });
     return describeShellResult(peer.name, res);
   }
 
-  /** "/run @bob npm test" and the person menu: you run a command on a friend's computer. */
-  runOnPeerByHand(name: string, command: string): void {
-    const state = this.store.getState();
-    const channel = channelOf(state.view);
+  /** "/run @bob npm test" and the person menu: you run a command on a friend's computer (shown in `channel`). */
+  runOnPeerByHand(name: string, command: string, channel = 'room'): void {
     this.runOnPeer(name, command, { channel: channel === 'draft' ? 'room' : channel }).catch((err: unknown) => this.toast(errorText(err), 'warn'));
   }
 
@@ -452,6 +506,7 @@ export class Session {
     const root = dir ? absPath : path.dirname(absPath);
     const name = `local-${createHash('sha1').update(root).digest('hex').slice(0, 10)}`;
     if (!this.opts.shares.configs.some((c) => c.name === name)) this.opts.shares.upsert({ name, root, writable: false, private: true, allowed: [] });
+    this.publishShares();
     return { owner: this.selfId, share: name, path: dir ? '' : path.basename(absPath) };
   }
 
@@ -459,6 +514,7 @@ export class Session {
   serveFolder(name: string, root: string, allowed: readonly string[]): void {
     const current = this.opts.shares.configs.find((c) => c.name === name)?.allowed ?? [];
     this.opts.shares.upsert({ name, root, writable: false, private: true, allowed: [...new Set([...current, ...allowed])] });
+    this.publishShares();
   }
 
   /** Ask your own Claude in a conversation (shown there) and wait for its final answer. */
@@ -517,16 +573,17 @@ export class Session {
     return this.files.browseTo(at);
   }
 
-  browserEnter(): Promise<void> {
-    return this.files.browserEnter();
+  browserEnter(index: number): Promise<void> {
+    return this.files.browserEnter(index);
   }
 
   browserUp(): Promise<void> {
     return this.files.browserUp();
   }
 
-  download(at: Location): Promise<string | undefined> {
-    return this.files.download(at);
+  /** Download a shared file to ~/Downloads/klaud/<friend>/, or to `opts.to` (an absolute path). */
+  download(at: Location, opts: { to?: string } = {}): Promise<string | undefined> {
+    return this.files.download(at, opts);
   }
 
   downloadSpec(spec: string): void {
@@ -608,6 +665,7 @@ export class Session {
     if (opts.fresh && channel.startsWith('ws:')) {
       this.workspaces?.forgetConversation(channel.slice(3));
       this.store.dispatch({ type: 'context_reset', channel });
+      this.host.forgetContext(channel);
       this.toast('Cleared. Claude starts a fresh conversation here', 'success');
       return;
     }
@@ -690,6 +748,10 @@ export class Session {
       case 'fs_search_result':
       case 'ws_diff_result':
         this.files.settle(from, body.reqId, body);
+        return;
+      case 'gateway':
+        // Tasks between Claudes (core/gateway): sent to one person; the gateway checks who may say what.
+        gatewayOf(this)?.onRoomFrame(from, body.frame);
         return;
       case 'room_cleared':
         if (this.store.getState().peers.find((p) => p.peerId === from)?.host) {
@@ -804,14 +866,18 @@ export class Session {
 
   /** Make the terminal's text bigger or smaller, without needing a keyboard shortcut. */
   async zoom(dir: ZoomDir): Promise<void> {
-    const result = await (this.opts.zoom ?? zoomTerminal)(dir);
+    if (!this.opts.zoom) return this.toast('Text size can only be changed from a terminal', 'warn');
+    const result = await this.opts.zoom(dir);
     this.toast(result.message, result.ok ? 'success' : 'warn');
   }
 
   /** Update a display preference and remember it. */
-  setPrefs(prefs: Partial<Prefs>): void {
-    this.store.dispatch({ type: 'prefs', prefs });
-    this.opts.saveSettings?.(prefs as Partial<Settings>);
+  /** Change preferences; a null (or undefined) one goes back to its default. */
+  setPrefs(prefs: { readonly [K in keyof Prefs]?: Prefs[K] | null }): void {
+    // Unset travels as null, so every screen clears it too (JSON drops undefined).
+    const forScreens = Object.fromEntries(Object.entries(prefs).map(([k, v]) => [k, v === undefined ? null : v]));
+    this.store.dispatch({ type: 'prefs', prefs: forScreens });
+    this.opts.saveSettings?.(Object.fromEntries(Object.entries(prefs).map(([k, v]) => [k, v === null ? undefined : v])) as Partial<Settings>);
   }
 
   /** Share a folder with the room (read-only unless `writable`). */
@@ -827,6 +893,7 @@ export class Session {
     const config = only?.length ? { ...spec, private: true, allowed: [...only] } : spec;
     this.opts.shares.upsert(config);
     this.updateProfile({ shares: this.opts.shares.infos });
+    this.publishShares();
     for (const to of only ?? []) this.send({ kind: 'share_offer', name: config.name, writable: config.writable, active: true }, { to });
     const state = this.store.getState();
     const who = only?.length ? only.map((id) => peerName(state, id)).join(', ') : 'the room';
@@ -839,12 +906,23 @@ export class Session {
     for (const to of config.private ? (config.allowed ?? []) : []) this.send({ kind: 'share_offer', name, writable: config.writable, active: false }, { to });
     this.opts.shares.remove(name);
     this.updateProfile({ shares: this.opts.shares.infos });
+    this.publishShares();
     if (!quiet) this.toast(`Stopped sharing ${name}`);
   }
 
   /** Your shared folders (not workspaces), for the Share menu. */
-  get myShares(): ReadonlyArray<{ name: string; root: string; private?: boolean; allowed?: readonly string[] }> {
-    return this.opts.shares.configs.filter((c) => !c.name.startsWith('ws-') && !c.name.startsWith('local-') && c.name !== ATTACHMENT_SHARE);
+  get myShares(): readonly MyShare[] {
+    return this.opts.shares.configs
+      .filter((c) => !c.name.startsWith('ws-') && !c.name.startsWith('local-') && c.name !== ATTACHMENT_SHARE)
+      .map((c) => ({ name: c.name, root: c.root, ...(c.private ? { private: true } : {}), ...(c.allowed ? { allowed: c.allowed } : {}), ...(c.writable ? { writable: true } : {}) }));
+  }
+
+  /** Keep the list of your shared folders in the state (screens show it in the Share menu). */
+  private publishShares(): void {
+    const shares = this.myShares;
+    const now = this.store.getState().myShares;
+    if (shares.length === now.length && shares.every((x, i) => JSON.stringify(x) === JSON.stringify(now[i]))) return;
+    this.store.dispatch({ type: 'my_shares', shares });
   }
 
   /** Give a friend access to only your shared folders, or your whole computer. */
@@ -876,6 +954,15 @@ export class Session {
       return;
     }
     const waiter = this.agentWaiters.get(body.requestId);
+    if (body.event === 'answered') {
+      // Only for the Claude waiting on it; the chat shows the run as it goes on.
+      if (waiter && waiter.peer === from) {
+        clearTimeout(waiter.timer);
+        this.agentWaiters.delete(body.requestId);
+        waiter.resolve(body.text);
+      }
+      return;
+    }
     // Your Claude asked from a workspace: follow the friend's Claude there (only from the one you asked).
     const channel = waiter?.mirror && waiter.peer === from && body.requester === this.selfId ? waiter.mirror : body.channel;
     this.store.dispatch({ type: 'agent_event', owner: from, requestId: body.requestId, requester: body.requester, event: body.event, text: body.text, ts, channel });

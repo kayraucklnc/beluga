@@ -1,6 +1,7 @@
 import type { Session } from './session.js';
-import { type Policy, channelOf } from './store.js';
-import { THEMES, type ThemeName } from './settings.js';
+import type { Policy } from './store.js';
+import { THEMES, type ThemeName } from '../shared/settings-schema.js';
+import { runEnvCommand, runShellCommand } from './terminal-commands.js';
 
 export interface CommandSpec {
   readonly name: string;
@@ -26,7 +27,8 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'usage', desc: 'disk space and Claude usage per workspace' },
   { name: 'inbox', desc: 'what happened while you were elsewhere' },
   { name: 'template', args: 'save <name>: <prompt>', desc: 'start from a template, or save your own' },
-  { name: 'shell', args: '<path>', desc: 'the shell for the built-in terminal' },
+  { name: 'shell', args: '<path>|default|login on|off|args …', desc: 'the shell for the built-in terminal, and how it starts' },
+  { name: 'env', args: '[project] KEY=value', desc: 'set an environment variable for your shells, scripts and Claude (KEY= removes it)' },
   { name: 'compact', args: '[focus]', desc: "shrink this conversation's context (Claude keeps what matters)" },
   { name: 'merge', desc: 'merge this worktree into the main folder' },
   { name: 'commit', args: '[message]', desc: 'commit all changes in this workspace' },
@@ -64,8 +66,8 @@ export const COMMANDS: readonly CommandSpec[] = [
 
 const POLICIES: readonly Policy[] = ['ask', 'auto', 'deny'];
 
-/** Execute a `/command` (or legacy `:command`). */
-export function runCommand(session: Session, name: string, args: readonly string[]): void {
+/** Execute a `/command` (or legacy `:command`) typed in `channel` (the conversation on screen). */
+export function runCommand(session: Session, name: string, args: readonly string[], channel = 'room'): void {
   const state = session.store.getState();
   const arg = args[0];
   switch (name) {
@@ -77,7 +79,7 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'h':
     case 'help':
     case '?':
-      session.store.dispatch({ type: 'overlay', overlay: 'help' });
+      session.intend({ type: 'overlay', overlay: 'help' });
       return;
     case 'invite':
       void session.copyInvite();
@@ -85,20 +87,20 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'overview':
     case 'projects':
     case 'workspaces':
-      session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+      session.intend({ type: 'navigate', view: { kind: 'overview' } });
       return;
     case 'room':
     case 'lobby':
-      session.store.dispatch({ type: 'view', view: { kind: 'room' } });
+      session.intend({ type: 'navigate', view: { kind: 'room' } });
       return;
     case 'run':
       if (arg?.startsWith('@')) {
         const command = args.slice(1).join(' ').trim();
         if (!command) return session.toast('Usage: /run @name <command>', 'warn');
-        session.runOnPeerByHand(arg.slice(1), command);
+        session.runOnPeerByHand(arg.slice(1), command, channel);
         return;
       }
-      runWorkspaceCommand(session, name, args);
+      runWorkspaceCommand(session, name, args, channel);
       return;
     case 'new':
     case 'worktree':
@@ -117,39 +119,39 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'terminal':
     case 'setup':
     case 'handoff':
-      runWorkspaceCommand(session, name, args);
+      runWorkspaceCommand(session, name, args, channel);
       return;
     case 'model': {
-      const channel = channelOf(state.view);
       const pick = state.models.find((m) => m.value === arg || m.label.toLowerCase() === (arg ?? '').toLowerCase());
-      if (!arg || !pick) return session.store.dispatch({ type: 'overlay', overlay: 'model' });
+      if (!arg || !pick) return session.intend({ type: 'overlay', overlay: 'model' });
       if (session.workbench) session.workbench.setModel(channel === 'room' || channel === 'draft' ? undefined : channel, pick.value);
       else session.setPrefs({ model: pick.value || undefined });
       return;
     }
     case 'search':
     case 'find':
-      session.store.dispatch({ type: 'view', view: { kind: 'search' } });
+      session.intend({ type: 'navigate', view: { kind: 'search' } });
       if (args.length) session.workbench?.search(args.join(' '));
       return;
     case 'usage':
     case 'space':
-      session.store.dispatch({ type: 'view', view: { kind: 'usage' } });
+      session.intend({ type: 'navigate', view: { kind: 'usage' } });
       void session.workbench?.measureDisk();
       return;
     case 'inbox':
     case 'notifications':
-      session.store.dispatch({ type: 'overlay', overlay: 'inbox' });
+      session.intend({ type: 'overlay', overlay: 'inbox' });
       return;
     case 'template':
     case 'templates':
       if (arg === 'save') return session.workbench?.saveTemplate(args.slice(1).join(' '));
-      session.store.dispatch({ type: 'overlay', overlay: 'templates' });
+      session.intend({ type: 'overlay', overlay: 'templates' });
       return;
     case 'shell':
-      if (!arg) return session.toast(`Terminal shell: ${state.prefs.shell ?? process.env.SHELL ?? '/bin/zsh'}. Use /shell <path> to change it`);
-      session.setPrefs({ shell: arg });
-      session.toast(`New terminals use ${arg}`, 'success');
+      runShellCommand(session, args);
+      return;
+    case 'env':
+      runEnvCommand(session, args, channel);
       return;
     case 'copy':
       void session.copyLastAnswer();
@@ -217,10 +219,9 @@ export function runCommand(session: Session, name: string, args: readonly string
       return;
     }
     case 'clear':
-      session.store.dispatch({ type: 'overlay', overlay: 'clear' });
+      session.intend({ type: 'overlay', overlay: 'clear' });
       return;
     case 'plan': {
-      const channel = channelOf(state.view);
       session.setPlanMode(channel, arg ? arg !== 'off' : !state.planMode[channel]);
       return;
     }
@@ -239,7 +240,7 @@ export function runCommand(session: Session, name: string, args: readonly string
       return;
     case 'settings':
     case 'prefs':
-      session.store.dispatch({ type: 'overlay', overlay: 'settings' });
+      session.intend({ type: 'overlay', overlay: 'settings' });
       return;
     case 'name':
       session.rename(args.join(''));
@@ -261,11 +262,11 @@ export function runCommand(session: Session, name: string, args: readonly string
 }
 
 /** Workspace commands act on the workspace you're looking at (or its project). */
-function runWorkspaceCommand(session: Session, name: string, args: readonly string[]): void {
+function runWorkspaceCommand(session: Session, name: string, args: readonly string[], channel: string): void {
   const ctl = session.workspaces;
   if (!ctl) return session.toast('Projects are not available in this mode', 'warn');
   const text = args.join(' ').trim();
-  const ws = ctl.current();
+  const ws = ctl.inChannel(channel);
   if (name === 'project') {
     const [sub, ...rest] = args;
     if (sub === 'setup' || sub === 'run') {
@@ -288,7 +289,7 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
     return;
   }
   // Outside a workspace, /terminal opens your own shell (the Terminal tab).
-  if (!ws && name === 'terminal') return session.store.dispatch({ type: 'view', view: { kind: 'terminal' } });
+  if (!ws && name === 'terminal') return session.intend({ type: 'navigate', view: { kind: 'terminal' } });
   if (!ws) return session.toast('Open a workspace first (Projects on the left)', 'warn');
   switch (name) {
     case 'pr':
@@ -307,7 +308,7 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
       return;
     case 'handoff': {
       const peer = text ? session.findPeer(text) : undefined;
-      if (!peer) return session.store.dispatch({ type: 'overlay', overlay: 'handoff' });
+      if (!peer) return session.intend({ type: 'overlay', overlay: 'handoff' });
       void session.remote.handoff(ws.id, peer.peerId);
       return;
     }

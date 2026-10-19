@@ -94,6 +94,8 @@ export const AgentEventKind = z.enum([
   'done',
   'error',
   'denied',
+  /** The first answer is ready (the run may go on for background agents); lets the asker stop waiting. */
+  'answered',
   /** Sub-agent progress; text is JSON {id, phase, title?, step?}. */
   'sub',
   /** How full the conversation's context is; text is JSON {used, window}. */
@@ -182,6 +184,8 @@ export const ReportBody = z.object({
 
 /** The host cleared the group chat for everyone. */
 export const RoomClearedBody = z.object({ kind: z.literal('room_cleared') });
+/** The gateway (tasks between Claudes, core/gateway) over a room: one frame, to one person; it checks the frame itself. */
+export const GatewayBody = z.object({ kind: z.literal('gateway'), frame: z.unknown() });
 
 // ---- Claude asking the person who asked it (questions, plans to approve) ----
 
@@ -392,6 +396,7 @@ export const Body = z.discriminatedUnion('kind', [
   FileRequestResultBody,
   FileOfferBody,
   RoomClearedBody,
+  GatewayBody,
   ShareOfferBody,
   AgentQuestionBody,
   AgentAnswerBody,

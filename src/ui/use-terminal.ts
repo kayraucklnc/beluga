@@ -1,9 +1,11 @@
 import os from 'node:os';
-import { useEffect, useState, type MutableRefObject } from 'react';
-import type { Session } from '../core/session.js';
+import { useEffect, useMemo, useState, type MutableRefObject } from 'react';
+import type { KlaudClient } from '../ipc/client.js';
 import type { AppState } from '../core/store.js';
-import { globalShellDir, globalShellId, isGlobalShell, runId, setupId, shellId } from '../core/workbench.js';
-import { isLeaveChord, type TerminalSession } from '../terminal/index.js';
+import { globalShellDir, globalShellId, globalShellNumber, isGlobalShell, runId, setupId, shellId } from '../core/workbench.js';
+import { terminalLabel } from '../shared/terminal-keys.js';
+import { isLeaveChord, type TerminalEmulator } from '../terminal/index.js';
+import { TerminalScreens } from './terminal-screens.js';
 import { terminalSize } from './components/TerminalView.js';
 import { type UiState, rawTabStep } from './keymap.js';
 import type { Geometry } from './layout.js';
@@ -12,7 +14,7 @@ import type { Model } from './workspace-models.js';
 import { splitPaste } from './mouse.js';
 
 export interface TerminalPaneInput {
-  readonly session: Session;
+  readonly client: KlaudClient;
   readonly state: AppState;
   readonly ui: UiState;
   readonly uiRef: MutableRefObject<UiState>;
@@ -29,7 +31,7 @@ export interface TerminalPane {
   readonly termWs?: string;
   readonly termKey?: string;
   readonly termPane: { cols: number; rows: number };
-  readonly termSession?: TerminalSession;
+  readonly termSession?: TerminalEmulator;
   readonly termFocused: boolean;
   readonly termBar?: Model;
   /** Where a new global shell starts ('' outside the global Terminal tab). */
@@ -41,30 +43,35 @@ export interface TerminalPane {
  * or run), starting the shell, keeping it sized to the pane, redrawing on output, and giving
  * it the raw keyboard while it's focused.
  */
-export function useTerminalPane({ session, state, ui, uiRef, patchUi, focus, geometry: g, setRawInput, onTabStep }: TerminalPaneInput): TerminalPane {
+export function useTerminalPane({ client, state, ui, uiRef, patchUi, focus, geometry: g, setRawInput, onTabStep }: TerminalPaneInput): TerminalPane {
   const d = { focus };
-  const bench = session.workbench;
+  const screens = useMemo(() => new TerminalScreens(client), [client]);
+  useEffect(() => () => screens.dispose(), [screens]);
+  const { terminals, termExits } = state;
+  const isRunning = (key: string): boolean => key in terminals && !(key in termExits);
   const termWs = state.view.kind === 'workspace' && state.view.tab === 'terminal' ? state.view.id : undefined;
   const global = state.view.kind === 'terminal';
   const termKeys = termWs ? [shellId(termWs), setupId(termWs), runId(termWs)] : [];
-  const globals = global ? (bench?.globalShells() ?? []) : [];
+  const globals = global ? Object.keys(terminals).filter(isGlobalShell).sort((a, b) => globalShellNumber(a) - globalShellNumber(b)) : [];
   // The global tab shows the shell you picked (or a new one you asked for with +), else the first.
   const termKey = termWs
-    ? ui.termKey && termKeys.includes(ui.termKey) && bench?.terminals?.get(ui.termKey) ? ui.termKey : shellId(termWs)
+    ? ui.termKey && termKeys.includes(ui.termKey) && ui.termKey in terminals ? ui.termKey : shellId(termWs)
     : global
       ? ui.termKey && isGlobalShell(ui.termKey) ? ui.termKey : (globals[0] ?? globalShellId(1))
       : undefined;
-  const globalDir = global ? globalShellDir(state.projects, state.tabs, session.launchDir, os.homedir()) : '';
+  const globalDir = global ? globalShellDir(state.projects, state.tabs, client.launchDir, os.homedir()) : '';
   const termPane = terminalSize(g.mainWidth, g.paneHeight);
-  const termSession: TerminalSession | undefined = termKey ? bench?.terminals?.get(termKey) : undefined;
+  screens.prune(state);
+  const termSession: TerminalEmulator | undefined = termKey ? screens.get(termKey, termPane, state) : undefined;
   const [, setTermTick] = useState(0);
   // The shell starts the first time you open the Terminal tab (or after it exited and you come back).
-  const termRunning = termSession?.running ?? false;
+  const termRunning = termKey ? isRunning(termKey) : false;
+  const known = termKey ? termKey in terminals : false;
   useEffect(() => {
-    if (termSession || !termKey) return;
-    if (termWs && termKey === shellId(termWs) && bench?.shell(termWs, termPane)) setTermTick((n) => n + 1);
-    if (global && bench?.globalShell(termKey, globalDir, termPane)) setTermTick((n) => n + 1);
-  }, [termWs, global, termKey, termSession]);
+    if (known || !termKey) return;
+    if (termWs && termKey === shellId(termWs)) void client.api.terminals.shell(termWs, termPane);
+    if (global) void client.api.terminals.global(termKey, globalDir, termPane);
+  }, [termWs, global, termKey, known]);
   // A shell that exited gives the keyboard back; clicking the terminal starts a new one.
   useEffect(() => {
     if (!termRunning && uiRef.current.focus === 'terminal' && termSession) patchUi({ focus: 'chat' });
@@ -113,23 +120,20 @@ export function useTerminalPane({ session, state, ui, uiRef, patchUi, focus, geo
     });
     return () => setRawInput(undefined);
   }, [termFocused, termSession, setRawInput]);
+  const exitOf = (key: string): { exitCode?: number | null } => (key in termExits ? { exitCode: termExits[key] ?? null } : {});
   const termTabs: TerminalTabInfo[] = termWs
     ? termKeys
-        .map((key) => ({ key, s: bench?.terminals?.get(key) }))
-        .filter((t) => t.s || t.key === shellId(termWs))
-        .map(({ key, s }) => ({ key, label: key === shellId(termWs) ? 'Shell' : key.endsWith(':setup') ? 'Setup' : 'Run', running: s?.running ?? false, ...(s?.exited ? { exitCode: s.exited.code } : {}) }))
+        .filter((key) => key in terminals || key === shellId(termWs))
+        .map((key) => ({ key, label: terminalLabel(key, state.termNames), running: isRunning(key), ...exitOf(key) }))
     : [];
   const termProject = termWs ? state.projects.find((p) => p.workspaces.some((w) => w.id === termWs)) : undefined;
-  const globalTabs: TerminalTabInfo[] = global
-    ? [...new Set([...globals, ...(termKey ? [termKey] : [])])].map((key, i) => {
-        const s = bench?.terminals?.get(key);
-        return { key, label: `Shell ${i + 1}`, running: s?.running ?? false, ...(s?.exited ? { exitCode: s.exited.code } : {}) };
-      })
-    : [];
+  const globalKeys = global ? [...new Set([...globals, ...(termKey ? [termKey] : [])])] : [];
+  // Shell 1, Shell 2… (just "Shell" when it's the only one), or the name you gave it.
+  const globalTabs: TerminalTabInfo[] = globalKeys.map((key, i) => ({ key, label: state.termNames[key] ?? (globalKeys.length > 1 ? `Shell ${i + 1}` : 'Shell'), running: isRunning(key), ...exitOf(key) }));
   const home = os.homedir();
   const shownDir = globalDir.startsWith(home) ? `~${globalDir.slice(home.length)}` : globalDir;
   const termBar = global && termKey
-    ? globalTerminalBarModel(globalTabs.length > 1 ? globalTabs : globalTabs.map((t) => ({ ...t, label: 'Shell' })), termKey, Math.max(1, g.mainWidth - 2), { focused: termFocused, dir: shownDir })
+    ? globalTerminalBarModel(globalTabs, termKey, Math.max(1, g.mainWidth - 2), { focused: termFocused, dir: shownDir })
     : termWs && termKey ? terminalBarModel(termWs, termTabs, termKey, Math.max(1, g.mainWidth - 2), { hasRun: Boolean(termProject?.scripts?.run), hasSetup: Boolean(termProject?.scripts?.setup), focused: termFocused }) : undefined;
 
 

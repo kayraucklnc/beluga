@@ -1,0 +1,187 @@
+.pane {
+  flex: 1;
+  overflow: auto;
+  /* The filter bar fits itself to the pane's width (the sidebar and inspector come and go). */
+  container: overview / inline-size;
+  padding: 6px 24px 32px;
+}
+.group {
+  max-width: 72rem;
+  margin: 0 auto 22px;
+}
+.groupTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  margin: 0 0 6px 8px;
+  font-size: 1rem;
+  font-weight: 650;
+}
+.groupIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  color: var(--text-2);
+}
+/* "Archived" inside a project, like the sidebar's fold: quiet, and the rows under it too. */
+.subhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px 10px;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.groupActions {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.group:hover .groupActions,
+.groupActions:focus-within {
+  opacity: 1;
+}
+.count {
+  color: var(--text-3);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+.table {
+  display: flex;
+  flex-direction: column;
+}
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(10rem, 1.3fr) minmax(6rem, 1fr) minmax(12rem, 1.4fr) minmax(6rem, 1fr) 6rem;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  outline: none;
+}
+.row:nth-child(odd) {
+  background: color-mix(in srgb, var(--bg-hover) 55%, transparent);
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.row:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+/* The selected row (the arrow keys move it), like a Finder list's. */
+.row:focus,
+.row:focus-within {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.archived .name {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.archived .kind,
+.archived .branch {
+  color: var(--text-3);
+}
+/* Restore, Read and ⋯ sit over the right end of an archived row while you point at it (or it's selected). */
+.hoverActions {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 28px;
+  /* The row's tint over the window's colour, so nothing shows through. */
+  background: linear-gradient(to right, transparent, var(--row-tint, transparent) 24px), linear-gradient(to right, transparent, var(--bg) 24px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast);
+}
+.row:hover .hoverActions,
+.row:focus .hoverActions,
+.row:focus-within .hoverActions,
+.hoverBusy {
+  opacity: 1;
+  pointer-events: auto;
+}
+.row:hover {
+  --row-tint: var(--bg-hover);
+}
+.row:focus,
+.row:focus-within {
+  --row-tint: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.more {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  border-radius: var(--radius-s);
+  color: var(--text-2);
+}
+.more:hover,
+.more[data-state='open'] {
+  background: var(--bg-press);
+  color: var(--text);
+}
+.kind {
+  color: var(--text-3);
+  display: grid;
+}
+.name {
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.unread {
+  margin-left: 8px;
+  color: var(--accent);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.branch,
+.extra,
+.when {
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92rem;
+}
+.when {
+  text-align: right;
+}
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.tone_claude {
+  color: var(--claude);
+}
+.tone_warn {
+  color: var(--warn);
+}
+.tone_error {
+  color: var(--error);
+}
+.tone_info {
+  color: var(--info);
+}
+.archived .state {
+  color: var(--text-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hoverActions {
+    transition: none;
+  }
+}

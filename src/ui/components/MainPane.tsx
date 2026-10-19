@@ -1,7 +1,7 @@
 import React from 'react';
-import os from 'node:os';
+import { tilde } from '../../core/paths.js';
 import type { AppState } from '../../core/store.js';
-import type { TerminalSession } from '../../terminal/index.js';
+import type { TerminalEmulator } from '../../terminal/index.js';
 import type { Derived } from '../derive.js';
 import type { UiState } from '../keymap.js';
 import type { Model } from '../workspace-models.js';
@@ -19,7 +19,7 @@ interface MainPaneProps {
   readonly d: Derived;
   readonly ui: UiState;
   readonly frame: number;
-  readonly terminal: { readonly session?: TerminalSession; readonly bar?: Model; readonly focused: boolean };
+  readonly terminal: { readonly session?: TerminalEmulator; readonly bar?: Model; readonly focused: boolean };
 }
 
 /** The big area right of the sidebar: a menu, help, or whatever the current view shows. */
@@ -124,7 +124,7 @@ export function MainPane({ state, d, ui, frame, terminal }: MainPaneProps) {
     case 'draft': {
       const where = state.view.dir ?? state.projects.find((p) => p.id === (state.view as { projectId: string }).projectId)?.root ?? '';
       return (
-        <Panel title={`New Claude chat · ${where.replace(os.homedir(), '~')}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'}>
+        <Panel title={`New Claude chat · ${tilde(where)}`} width={paneW} height={g.paneHeight} focused={d.focus === 'chat'}>
           <ModelBlock lines={d.pane?.lines ?? []} height={g.paneHeight - 2} scroll={d.paneScroll} />
         </Panel>
       );

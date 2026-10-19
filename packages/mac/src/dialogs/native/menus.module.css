@@ -1,0 +1,244 @@
+.muted {
+  color: var(--text-3);
+}
+.warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.keys > span {
+  padding: 0 5px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  line-height: 1.6;
+}
+.keyAdded {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.keyChanged {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+.keyRemoved {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 11%, transparent);
+}
+
+/* Numbered steps ("what happens"), in a soft box. */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  list-style: none;
+  counter-reset: step;
+}
+.steps li {
+  display: flex;
+  gap: 9px;
+  color: var(--text-2);
+  line-height: 1.4;
+  counter-increment: step;
+}
+.steps li::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin-top: 0.5px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* The pull request card. */
+.pr {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: var(--bg-hover);
+}
+.prTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.prNumber {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.prTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+  color: var(--text-2);
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+.pillOk {
+  color: var(--ok);
+}
+.pillBad {
+  color: var(--error);
+}
+.pillWait {
+  color: var(--warn);
+}
+.prActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+.ghSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ghStep {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ghStepTitle {
+  font-weight: 600;
+}
+.ghStepTitle span {
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+/* Templates. */
+.templates {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 380px;
+  overflow-y: auto;
+  margin: 0 -6px;
+}
+.template {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+.template:hover,
+.template:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+.templateIcon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--claude);
+  background: color-mix(in srgb, var(--claude) 12%, transparent);
+}
+.templateText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.templateName {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+.templatePrompt {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 0.92rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.badge {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+  color: var(--info);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.badgeMuted {
+  background: var(--bg-hover);
+  color: var(--text-3);
+}
+.remove {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 3px;
+  border-radius: 11px;
+  color: var(--text-3);
+}
+.remove:hover {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+}
+.empty {
+  padding: 18px 8px;
+  color: var(--text-3);
+  text-align: center;
+}
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.note svg {
+  flex: none;
+  margin-top: 1.5px;
+}

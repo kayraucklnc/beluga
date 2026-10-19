@@ -1,6 +1,7 @@
 import { mkdtempSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DEFAULT_CAPABILITIES, type Rule, decideAccess, ruleFor } from '../src/core/gateway/access.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { decideTool } from '../src/agent/policy.js';
 import { peerRunTarget } from '../src/agent/mock.js';
@@ -9,7 +10,7 @@ import { describePeers } from '../src/core/agent-bridge.js';
 import { describeShellResult, keepTail, runShell, tilde } from '../src/core/peer-run.js';
 import { Session } from '../src/core/session.js';
 import { ShareService } from '../src/core/shares.js';
-import { Store, initialState, type AppState, type Policy, type ShellItem } from '../src/core/store.js';
+import { Store, initialState, type DomainState, type Policy, type ShellItem } from '../src/core/store.js';
 import { canRunOn, shellGate } from '../src/core/trust.js';
 import { deriveKeys, generateSecret } from '../src/net/crypto.js';
 import { startHub, type Hub } from '../src/net/hub.js';
@@ -17,7 +18,7 @@ import { PeerClient } from '../src/net/peer-client.js';
 import { ShellRequestBody, ShellResultBody } from '../src/protocol.js';
 import { personMenu } from '../src/ui/menus.js';
 import { shellLines, shortFolder } from '../src/ui/format.js';
-import { waitFor } from './helpers.js';
+import { waitFor, appOf } from './helpers.js';
 
 describe('run_on_peer gating', () => {
   it('runs with full trust, asks for trusted and ask, declines blocked', () => {
@@ -113,7 +114,7 @@ afterEach(async () => {
 
 interface Peer {
   session: Session;
-  state: () => AppState;
+  state: () => DomainState;
   root: string;
   bridge: RoomBridge;
   ran: string[];
@@ -151,7 +152,7 @@ async function room(...peers: Peer[]): Promise<void> {
   await waitFor(() => peers.every((p) => p.state().peers.length === peers.length && p.state().self));
 }
 
-const shellItems = (s: AppState) => s.log.filter((l): l is ShellItem => l.type === 'shell');
+const shellItems = (s: DomainState) => s.log.filter((l): l is ShellItem => l.type === 'shell');
 
 describe('running a command on a friend', () => {
   it("asks the friend (showing the exact command and folder), then shows the output in the asker's chat", async () => {
@@ -211,6 +212,32 @@ describe('running a command on a friend', () => {
     expect(bob.state().approvals).toHaveLength(0);
   });
 
+  it('with the app’s rules attached, Always writes a rule for that command there (not every command), and a decline rule holds', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    let rules: Rule[] = [];
+    bob.session.peerRun.useAccess({
+      decide: (facts, trust) => decideAccess({ trust, caps: DEFAULT_CAPABILITIES, rules, facts, now: Date.now() }),
+      remember: (facts, name, d) => void (rules = [...rules, ruleFor(facts, name, d, Date.now(), `r_test${rules.length}xyz`)]),
+    });
+    const first = kay.session.runOnPeer('bob', 'echo one');
+    await waitFor(() => bob.state().approvals.length === 1);
+    expect(bob.state().approvals[0]!.detail).toContain('Always = run this command from kay in this folder');
+    bob.session.answerApproval('always');
+    expect(await first).toContain('one');
+    expect(rules).toEqual([expect.objectContaining({ kind: 'command', command: 'echo one', folder: bob.root, decision: 'allow' })]);
+    expect(await kay.session.runOnPeer('bob', 'echo one')).toContain('one');
+    expect(bob.state().approvals).toHaveLength(0);
+    const other = kay.session.runOnPeer('bob', 'echo two');
+    await waitFor(() => bob.state().approvals.length === 1);
+    bob.session.answerApproval('no');
+    expect(await other).toContain('declined');
+    rules = [...rules, { ...rules[0]!, id: 'r_declineall', command: undefined, decision: 'decline' }];
+    expect(await kay.session.runOnPeer('bob', 'echo one')).toBe('bob did not run it: bob has a rule that declines requests like this one');
+  });
+
   it('runs right away with full trust, in their home folder by default', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');
@@ -244,14 +271,14 @@ describe('running a command on a friend', () => {
     bob.session.people.setTrust(kay.session.selfId, 'full', true);
     await waitFor(() => kay.state().granted[bob.session.selfId]?.level === 'full');
     const bobIndex = kay.state().peers.findIndex((p) => p.name === 'bob');
-    const menu = personMenu(kay.state(), bobIndex)!;
+    const menu = personMenu(appOf(kay.state()), bobIndex)!;
     expect(menu.intro).toContain('bob lets your Claude: anything, without asking');
     expect(menu.options.some((o) => o.id === 'person-run' && o.label === "Run a command on bob's computer…")).toBe(true);
     const bobSeen = describePeers(kay.session).find((p) => p.name === 'bob');
     expect(bobSeen).toMatchObject({ shares: ['proj'], lets_you: { trust: 'full' } });
     bob.session.people.setTrust(kay.session.selfId, 'blocked', true);
     await waitFor(() => kay.state().granted[bob.session.selfId]?.level === 'blocked');
-    expect(personMenu(kay.state(), bobIndex)!.options.some((o) => o.id === 'person-run')).toBe(false);
+    expect(personMenu(appOf(kay.state()), bobIndex)!.options.some((o) => o.id === 'person-run')).toBe(false);
   });
 
   it('/run @bob <command> runs it exactly as typed', async () => {

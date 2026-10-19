@@ -1,0 +1,228 @@
+import { useEffect, useState } from 'react';
+import { activityOf } from '@klaud/ui/workspace-models.js';
+import type { StashUpdateOutcome, UpdateOutcome } from '@klaud/workspaces/sync.js';
+import type { Project } from '@klaud/workspaces/types.js';
+import { Alert } from '../../components/Alert.js';
+import { Icon } from '../../components/Icon.js';
+import { Button, Dot, Tip, cx } from '../../components/ui.js';
+import { useActions } from '../../lib/actions.js';
+import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { type MainLine, agoText } from './home-model.js';
+import s from './main-sync.module.css';
+
+/**
+ * Under the project's name: Update main (fetch and fast-forward), Fetch and when it last did, the
+ * main folder being on another branch (Switch to main), and Claude updating main. What can't
+ * simply fast-forward asks: set your changes aside, move them to a worktree, or let Claude do it.
+ */
+
+type Dialog =
+  | { readonly kind: 'dirty'; readonly files: readonly string[]; readonly behind: number }
+  | { readonly kind: 'claude'; readonly title: string; readonly message: string }
+  | { readonly kind: 'conflicts'; readonly files: readonly string[]; readonly message: string }
+  | { readonly kind: 'switch'; readonly dirty: number };
+
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** Re-render every so often (for "fetched 3 min ago"). */
+function useNow(ms: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return now;
+}
+
+/** A conversation where Claude is updating main right now (its workspace id). */
+function useClaudeUpdating(project: Project): string | undefined {
+  return useApp((st) => project.workspaces.find((w) => w.purpose === 'sync_main' && !w.archived && activityOf(st.log, `ws:${w.id}`).running)?.id);
+}
+
+export function MainSyncBar({ project, line }: { project: Project; line: MainLine }) {
+  const api = useApi();
+  const { client } = useKlaud();
+  const actions = useActions();
+  const sync = project.sync;
+  const [busy, setBusy] = useState<'update' | 'switch' | 'claude'>();
+  const [dialog, setDialog] = useState<Dialog>();
+  const now = useNow(30_000);
+  const claude = useClaudeUpdating(project);
+  const branch = line.branch ?? 'main';
+
+  // Opening the home fetches when the last fetch is a few minutes old (quietly).
+  useEffect(() => {
+    void api.git.fetchIfStale(project.id).catch(() => undefined);
+  }, [project.id]);
+
+  if (!sync) return null;
+  const upstream = sync.upstream ?? `origin/${branch}`;
+
+  const run = async <T,>(what: 'update' | 'switch' | 'claude', job: () => Promise<T>): Promise<T | undefined> => {
+    setBusy(what);
+    try {
+      return await job();
+    } catch (err) {
+      toast(client, errorText(err), 'error');
+      return undefined;
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  /** What an update came back with that needs you (the rest the core already said in a toast). */
+  const decide = (out: UpdateOutcome | StashUpdateOutcome): void => {
+    if ('restored' in out && !out.restored) {
+      setDialog({ kind: 'conflicts', files: out.conflicts ?? [], message: `${branch} is up to date, but putting your changes back conflicted with the new commits. Your changes are safe in the stash “${out.stash?.message ?? 'klaud'}”, and the files have conflict markers.` });
+      return;
+    }
+    switch (out.kind) {
+      case 'dirty':
+        setDialog({ kind: 'dirty', files: out.files, behind: out.behind });
+        return;
+      case 'diverged':
+        setDialog({ kind: 'claude', title: `${out.branch} and ${out.upstream} have both moved on`, message: `${out.branch} has ${plural(out.ahead, 'commit')} that ${out.ahead === 1 ? 'isn’t' : 'aren’t'} on ${out.upstream}, and ${out.upstream} has ${plural(out.behind, 'new commit')}. Bringing them together takes a merge or a rebase.` });
+        return;
+      case 'busy':
+        setDialog({ kind: 'claude', title: `A ${out.operation} is stopped halfway in main`, message: `The main folder is in the middle of a ${out.operation} (there are conflicts to resolve). Claude can finish it and then update ${branch}.` });
+        return;
+      case 'failed':
+        setDialog({ kind: 'claude', title: `Couldn’t update ${branch}`, message: out.message });
+        return;
+      default:
+    }
+  };
+
+  const update = (): void => void run('update', () => api.git.updateMain(project.id)).then((out) => out && decide(out));
+  const fetchNow = (): void => void api.git.fetch(project.id).catch((err: unknown) => toast(client, errorText(err), 'error'));
+  const askClaude = (): void => {
+    setDialog(undefined);
+    void run('claude', () => api.git.askClaude(project.id));
+  };
+  const stashAndUpdate = (): void => {
+    setDialog(undefined);
+    void run('update', () => api.git.stashAndUpdate(project.id)).then((out) => out && decide(out));
+  };
+  const moveAndUpdate = (): void => {
+    setDialog(undefined);
+    void run('update', () => api.git.moveAndUpdate(project.id)).then((out) => out && decide(out.outcome));
+  };
+  const switchTo = (mode: 'clean' | 'stash' | 'move'): void => {
+    setDialog(undefined);
+    void run('switch', () => api.git.switchToDefault(project.id, mode)).then((out) => {
+      if (!out) return;
+      if (out.kind === 'dirty') setDialog({ kind: 'switch', dirty: out.files?.length || sync.dirty || 1 });
+      else if (out.kind === 'conflicts') setDialog({ kind: 'conflicts', files: out.files ?? [], message: out.message ?? '' });
+      else if (out.kind === 'failed') toast(client, out.message ?? `Couldn’t switch to ${branch}`, 'error');
+    });
+  };
+
+  const diverged = sync.ahead > 0 && sync.behind > 0;
+  const showUpdate = Boolean(sync.upstream) && (line.canUpdate || diverged || Boolean(sync.operation));
+  const fetchedLabel = sync.fetching ? 'Fetching…' : sync.fetchedAt ? `fetched ${agoText(sync.fetchedAt, now)}` : 'never fetched';
+
+  return (
+    <div className={s.wrap}>
+      {line.elsewhere ? (
+        <div className={s.callout} role="note" aria-label="Main folder branch">
+          <Icon name="branch" size={13} className={s.calloutIcon} />
+          <span className={s.calloutText}>
+            <strong>{line.elsewhere}.</strong> Updating and History here are about {branch}{sync.dirty ? `; the folder has ${plural(sync.dirty, 'uncommitted change')}` : ''}.
+          </span>
+          <Tip label={sync.dirty ? 'Choose what happens to the uncommitted changes first' : `Check out ${branch} in the main folder`}>
+            <Button size="small" disabled={busy === 'switch'} onClick={() => (sync.dirty ? setDialog({ kind: 'switch', dirty: sync.dirty }) : switchTo('clean'))}>
+              {busy === 'switch' ? 'Switching…' : `Switch to ${branch}`}
+            </Button>
+          </Tip>
+        </div>
+      ) : null}
+      {claude ? (
+        <div className={cx(s.callout, s.calloutClaude)} role="status" aria-label="Claude is updating main">
+          <Dot tone="claude" live />
+          <span className={s.calloutText}>
+            <strong>Claude is updating {branch}.</strong> It may only sync git here: fetch, merge, stash, resolve conflicts. Nothing is pushed.
+          </span>
+          <Button size="small" onClick={() => actions.run({ type: 'open_ws', id: claude, tab: 'chat' })}>
+            Open
+          </Button>
+        </div>
+      ) : null}
+      <div className={s.bar}>
+        {showUpdate ? (
+          <Tip label={diverged ? `Both sides moved on: choose how to bring them together` : `Fetch ${upstream} and fast-forward ${branch}${sync.onDefault ? '' : ' (the folder stays where it is)'}`}>
+            <Button size="small" variant="primary" icon="download" disabled={busy === 'update' || Boolean(claude)} onClick={update}>
+              {busy === 'update' ? 'Updating…' : `Update ${branch}`}
+            </Button>
+          </Tip>
+        ) : null}
+        {sync.upstream ? (
+          <Tip label={`Fetch ${sync.remote ?? 'origin'} now (Klaud also fetches quietly every 15 minutes)`}>
+            <Button size="small" variant="quiet" icon="refresh" className={cx(sync.fetching && s.spinning)} disabled={sync.fetching} onClick={fetchNow}>
+              Fetch
+            </Button>
+          </Tip>
+        ) : null}
+        {sync.fetchError ? (
+          <Tip label={sync.fetchError.message}>
+            <span className={cx(s.status, s.statusWarn)} role="status">
+              <Icon name="alert" size={12} />
+              {sync.fetchError.reason === 'auth' ? 'Sign-in needed to fetch' : sync.fetchError.reason === 'offline' ? 'Couldn’t reach the remote' : 'Couldn’t fetch'}
+            </span>
+          </Tip>
+        ) : sync.upstream ? (
+          <span className={s.status} title={sync.fetchedAt ? new Date(sync.fetchedAt).toLocaleString() : undefined}>
+            {fetchedLabel}
+          </span>
+        ) : null}
+      </div>
+      {dialog?.kind === 'dirty' ? (
+        <Alert
+          title="Your uncommitted changes are in the way"
+          icon="alert"
+          message={`${upstream} has ${plural(dialog.behind, 'new commit')}, and some change files you’ve edited in main. Klaud can stash your changes, update, and put them back, or move them to a worktree of their own first.`}
+          table={{ caption: 'Changed in main', columns: ['File'], rows: dialog.files.slice(0, 8).map((f) => [<code key={f}>{f}</code>]) }}
+          confirm={{ label: 'Stash and Update', onClick: stashAndUpdate }}
+          alternative={{ label: 'Move to Worktree', onClick: moveAndUpdate }}
+          onCancel={() => setDialog(undefined)}
+        />
+      ) : null}
+      {dialog?.kind === 'claude' ? (
+        <Alert
+          title={dialog.title}
+          icon="claude"
+          tone="info"
+          message={
+            <>
+              {dialog.message}
+              <span className={s.alertNote}> Claude can do it in the main folder: it may only sync git there (fetch, merge or rebase, stash, resolve conflicts), keeps your changes, never pushes, and explains what it did.</span>
+            </>
+          }
+          confirm={{ label: 'Let Claude Handle It', onClick: askClaude }}
+          onCancel={() => setDialog(undefined)}
+        />
+      ) : null}
+      {dialog?.kind === 'conflicts' ? (
+        <Alert
+          title="Your changes conflicted with the update"
+          icon="alert"
+          message={dialog.message}
+          {...(dialog.files.length ? { table: { caption: 'Conflicts in', columns: ['File'], rows: dialog.files.slice(0, 8).map((f) => [<code key={f}>{f}</code>]) } } : {})}
+          confirm={{ label: 'Let Claude Handle It', onClick: askClaude }}
+          cancel="I’ll Handle It"
+          onCancel={() => setDialog(undefined)}
+        />
+      ) : null}
+      {dialog?.kind === 'switch' ? (
+        <Alert
+          title={`Switch the main folder to ${branch}?`}
+          icon="branch"
+          message={`It has ${plural(dialog.dirty, 'uncommitted change')} on ${sync.current ?? 'a detached HEAD'}. Move ${sync.current ?? 'that work'} and its changes to a worktree of their own (recommended), or bring the changes along to ${branch}.`}
+          confirm={{ label: 'Move to Worktree', onClick: () => switchTo('move') }}
+          alternative={{ label: 'Bring Them Along', onClick: () => switchTo('stash') }}
+          onCancel={() => setDialog(undefined)}
+        />
+      ) : null}
+    </div>
+  );
+}

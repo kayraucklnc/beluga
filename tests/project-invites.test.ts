@@ -16,7 +16,7 @@ import { deriveKeys, generateIdentity, generateSecret } from '../src/net/crypto.
 import { startHub, type Hub } from '../src/net/hub.js';
 import { PeerClient } from '../src/net/peer-client.js';
 import type { WorkspaceManager } from '../src/workspaces/manager.js';
-import { waitFor } from './helpers.js';
+import { waitFor, attach } from './helpers.js';
 
 describe('project links (pure parts)', () => {
   it('single-use and expiring links stop working', () => {
@@ -57,8 +57,12 @@ describe('project links (pure parts)', () => {
     expect(toolInside('Edit', { file_path: 'src/a.ts' }, '/p')).toBe(true);
     expect(toolInside('Write', { file_path: '/etc/hosts' }, '/p')).toBe(false);
     expect(toolInside('Read', { file_path: '/p/../q/x' }, '/p')).toBe(false);
-    expect(toolInside('Bash', { command: 'npm test' }, '/p')).toBe(true);
-    expect(toolInside('Bash', { command: 'cat /p/src/a.ts && ls src' }, '/p')).toBe(true);
+    // Commands can reach anywhere whatever their arguments look like: they always ask.
+    expect(toolInside('Bash', { command: 'npm test' }, '/p')).toBe(false);
+    expect(toolInside('Bash', { command: 'cat src/../../../../Users/kay/.zsh_history' }, '/p')).toBe(false);
+    // So do tools without a file: the web, room tools, sub-agents.
+    for (const tool of ['WebFetch', 'Task', 'mcp__klaud__run_on_peer', 'mcp__klaud__ask_agent', 'mcp__klaud__get_peer_file']) expect(toolInside(tool, {}, '/p'), tool).toBe(false);
+    expect(toolInside('Grep', { pattern: 'x', path: 'src' }, '/p')).toBe(true);
     expect(toolInside('Bash', { command: 'cat ~/.zshrc' }, '/p')).toBe(false);
     expect(toolInside('Bash', { command: 'ls ../other' }, '/p')).toBe(false);
     expect(toolInside('Bash', { command: 'rm -rf /etc' }, '/p')).toBe(false);
@@ -148,7 +152,8 @@ function person(name: string, opts: { host?: boolean; workspaces?: WorkspaceMana
   });
   session.start();
   sessions.push(session);
-  return { session, state: store.getState, store };
+  const screen = attach(session);
+  return { session, state: store.getState, store, screen };
 }
 
 describe('inviting someone into one project by link', () => {
@@ -180,7 +185,7 @@ describe('inviting someone into one project by link', () => {
     kay.session.invites.letIn(mia.session.selfId);
     const count = project!.workspaces.filter((w) => !w.archived).length;
     await waitFor(() => mia.state().shared.length === count);
-    expect(mia.state().view.kind).toBe('shared');
+    expect(mia.screen.store.getState().view.kind).toBe('shared');
     expect(mia.state().log.some((l) => l.type === 'chat' && l.text === 'secret room plans')).toBe(false);
     expect(kay.state().log.some((l) => l.type === 'chat' && l.text === 'hello room')).toBe(false);
     expect(kay.state().guests[mia.session.selfId]).toMatchObject({ can: 'prompt', room: false });

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FALLBACK_MODELS, initialWork, reduceWork, unreadCount, type Notice, type PullRequest, type WorkState } from '../src/core/work-store.js';
-import { DEFAULT_PREFS, initialState, prefsFrom, reduce, type AppState } from '../src/core/store.js';
+import { DEFAULT_PREFS, initialState, prefsFrom, reduce, stampAction, type DomainState } from '../src/core/store.js';
 import type { PeerInfo } from '../src/protocol.js';
 
 const note = (title: string, channel?: string): Omit<Notice, 'id' | 'ts' | 'read'> => ({ kind: 'done', title, body: `${title} body`, ...(channel ? { channel } : {}) });
-const add = (s: WorkState, title: string, channel?: string): WorkState => reduceWork(s, { type: 'notice_add', notice: note(title, channel) });
+const add = (s: WorkState, title: string, channel?: string): WorkState => reduceWork(s, stampAction({ type: 'notice_add', notice: note(title, channel) }) as Parameters<typeof reduceWork>[1]);
 const pr: PullRequest = { number: 7, url: 'https://x/pr/7', state: 'OPEN', title: 'Fix', draft: false, checks: 'passing' };
 
 describe('reduceWork: inbox', () => {
@@ -87,12 +87,12 @@ describe('reduceWork: inbox', () => {
 });
 
 describe('reduceWork: other actions', () => {
-  it('away returns the same state when unchanged', () => {
-    expect(reduceWork(initialWork, { type: 'away', away: false })).toBe(initialWork);
-    const s = reduceWork(initialWork, { type: 'away', away: true });
-    expect(s.away).toBe(true);
-    expect(reduceWork(s, { type: 'away', away: true })).toBe(s);
-    expect(reduceWork(s, { type: 'away', away: false }).away).toBe(false);
+  it('terminal exits are kept until the program starts again', () => {
+    const s = reduceWork(reduceWork(initialWork, { type: 'terminal', id: 'w1', title: 'zsh' }), { type: 'terminal_exit', id: 'w1', code: 3 });
+    expect(s.termExits).toEqual({ w1: 3 });
+    expect(reduceWork(s, { type: 'terminal', id: 'w1', title: 'zsh' }).termExits).toEqual({});
+    expect(reduceWork(s, { type: 'terminal', id: 'w1' })).toMatchObject({ terminals: {}, termExits: {} });
+    expect(reduceWork(initialWork, { type: 'terminal_exit', id: 'gone', code: 0 })).toBe(initialWork);
   });
 
   it('models falls back to the built-in list when empty', () => {
@@ -128,8 +128,8 @@ describe('reduceWork: other actions', () => {
   it('search merges partial state', () => {
     const hit = { channel: 'room', place: 'room', who: 'bob', text: 'hello', at: 0, ts: 1 };
     const s = reduceWork(initialWork, { type: 'search', search: { query: 'he', hits: [hit] } });
-    expect(s.search).toEqual({ query: 'he', hits: [hit], searched: 0, cursor: 0 });
-    expect(reduceWork(s, { type: 'search', search: { cursor: 1 } }).search).toMatchObject({ query: 'he', cursor: 1 });
+    expect(s.search).toEqual({ query: 'he', hits: [hit], searched: 0 });
+    expect(reduceWork(s, { type: 'search', search: { searched: 3 } }).search).toMatchObject({ query: 'he', searched: 3 });
   });
 
   it('templates replaces the list', () => {
@@ -169,7 +169,6 @@ describe('store reduce wires work actions', () => {
     expect(unreadCount(s)).toBe(0);
     s = reduce(s, { type: 'notice_clear' });
     expect(s.inbox).toEqual([]);
-    s = reduce(s, { type: 'away', away: true });
     s = reduce(s, { type: 'models', models: [] });
     s = reduce(s, { type: 'disk', sizes: { w: 5 } });
     s = reduce(s, { type: 'pr', id: 'w', pr });
@@ -181,7 +180,6 @@ describe('store reduce wires work actions', () => {
     s = reduce(s, { type: 'gh', ok: true });
     s = reduce(s, { type: 'remembered', people: { abcdefgh: { name: 'b', trust: 'ask' } } });
     expect(s).toMatchObject({
-      away: true,
       models: FALLBACK_MODELS,
       disk: { w: 5 },
       prs: { w: pr },
@@ -237,7 +235,7 @@ describe('prefs', () => {
 });
 
 describe('trust actions', () => {
-  const s0 = (): AppState => initialState('r');
+  const s0 = (): DomainState => initialState('r');
 
   it('trust_level sets, replaces and clears a level', () => {
     let s = reduce(s0(), { type: 'trust_level', peerId: 'b', level: 'trusted' });

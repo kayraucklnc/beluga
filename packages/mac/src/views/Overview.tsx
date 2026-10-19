@@ -1,0 +1,260 @@
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import type { Project } from '@klaud/workspaces/types.js';
+import { Icon } from '../components/Icon.js';
+import { ProjectIcon } from '../components/ProjectIcon.js';
+import { SpecContext } from '../components/SpecMenu.js';
+import { Button, Empty, EmptyActions } from '../components/ui.js';
+import { useActions } from '../lib/actions.js';
+import { toast, useApp, useKlaud } from '../lib/klaud.js';
+import { EarningsCard } from './EarningsCard.js';
+import { ConversationPeek, DeleteArchivedAlert } from './overview/ConversationPeek.js';
+import { FilterBar } from './overview/FilterBar.js';
+import { ActiveRow, type ArchivedActions, ArchivedRow } from './overview/OverviewRows.js';
+import { type OverviewGroup, type OverviewItem, emptyText, filterCounts, groupItems, inFilter, narrow, overviewItems, rowOrder, stepRow } from './overview/overview-model.js';
+import { useOverviewPrefs } from './overview/use-overview-prefs.js';
+import s from './overview.module.css';
+
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * Every worktree and chat at a glance, archived ones too, grouped by project: what needs you
+ * comes first. Narrow it by segment, project and search (⌘F); ↑↓ move, Return opens, Space
+ * reads an archived conversation, ⌘⌫ deletes one (after asking).
+ */
+export function OverviewView() {
+  const actions = useActions();
+  const { client } = useKlaud();
+  const api = client.api;
+  const state = useApp((st) => st);
+  const [prefs, setPrefs] = useOverviewPrefs();
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<string>();
+  const [peek, setPeek] = useState<string>();
+  const [deleting, setDeleting] = useState<string>();
+  const [restoring, setRestoring] = useState<string>();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const all = useMemo(() => overviewItems(state), [state]);
+  const projects = useMemo(() => [...new Map(all.map((i) => [i.project.id, i.project])).values()], [all]);
+  // A project that's gone (removed, hidden) means all of them again.
+  const project = projects.find((p) => p.id === prefs.project);
+  const narrowed = narrow(all, project?.id, search);
+  const counts = filterCounts(narrowed);
+  const groups = groupItems(
+    narrowed.filter((i) => inFilter(i, prefs.filter)),
+    prefs.sort,
+  );
+  const order = rowOrder(groups);
+  const current = selected && order.includes(selected) ? selected : order[0];
+  const find = (id: string | undefined): OverviewItem | undefined => (id ? all.find((i) => i.ws.id === id) : undefined);
+  const peekItem = find(peek);
+  const deleteItem = find(deleting);
+
+  // ⌘F: the search field (the Find menu item is off here, so the key comes to the window).
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent): void => {
+      if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || e.key.toLowerCase() !== 'f') return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, []);
+
+  const focusRow = (id: string | undefined): void => {
+    if (!id) return;
+    setSelected(id);
+    listRef.current?.querySelector<HTMLElement>(`[data-row="${CSS.escape(id)}"]`)?.focus();
+  };
+
+  const act: ArchivedActions = {
+    restoring,
+    restore: (item) => {
+      setPeek(undefined);
+      setRestoring(item.ws.id);
+      // The core opens it once it's back (and says so if it couldn't).
+      api.workspaces
+        .restore(item.ws.id)
+        .catch((err: unknown) => toast(client, `Couldn’t restore ${item.ws.name}: ${errorText(err)}`, 'error'))
+        .finally(() => setRestoring(undefined));
+    },
+    read: (item) => setPeek(item.ws.id),
+    finder: (item) => void api.local.openFolder(item.project.root).catch((err: unknown) => toast(client, `Couldn’t open the folder: ${errorText(err)}`, 'error')),
+    remove: (item) => setDeleting(item.ws.id),
+  };
+  const open = (item: OverviewItem): void => (item.archived ? act.read(item) : actions.run({ type: 'open_ws', id: item.ws.id }));
+  const remove = (item: OverviewItem): void => {
+    setDeleting(undefined);
+    setPeek(undefined);
+    api.workspaces.remove(item.ws.id).catch((err: unknown) => toast(client, `Couldn’t delete ${item.ws.name}: ${errorText(err)}`, 'error'));
+  };
+
+  const onListKey = (e: KeyboardEvent): void => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('[data-row]');
+    const item = find(row?.dataset.row);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      if (!row) return;
+      e.preventDefault();
+      // ↑ on the first row goes back up to the search.
+      if (e.key === 'ArrowUp' && order[0] === row.dataset.row) return searchRef.current?.focus();
+      focusRow(stepRow(order, row.dataset.row, e.key));
+    } else if (e.key === ' ' && item?.archived && e.target === row) {
+      e.preventDefault();
+      act.read(item);
+    } else if (e.key === 'Backspace' && e.metaKey && item?.archived) {
+      e.preventDefault();
+      act.remove(item);
+    }
+  };
+
+  if (!all.length) return <NothingYet />;
+  const searching = search.trim().length > 0;
+  return (
+    <div className={s.pane}>
+      <FilterBar
+        filter={prefs.filter}
+        counts={counts}
+        onFilter={(filter) => setPrefs({ filter })}
+        search={search}
+        onSearch={setSearch}
+        searchRef={searchRef}
+        onLeaveSearch={() => (order.length ? focusRow(current) : searchRef.current?.blur())}
+        sort={prefs.sort}
+        onSort={(sort) => setPrefs({ sort })}
+        projects={projects}
+        project={project}
+        onProject={(id) => setPrefs({ project: id })}
+      />
+      {!searching && !project && (prefs.filter === 'all' || prefs.filter === 'active') ? <EarningsCard /> : null}
+      <div ref={listRef} onKeyDown={onListKey}>
+        {groups.length ? (
+          groups.map((g) => <Group key={g.project.id} group={g} filter={prefs.filter} current={current} onSelect={setSelected} onOpen={open} act={act} />)
+        ) : (
+          <NothingHere
+            search={searching ? search.trim() : undefined}
+            filter={prefs.filter}
+            project={project}
+            onClearSearch={() => setSearch('')}
+            onAllProjects={() => setPrefs({ project: undefined })}
+            onShowAll={() => setPrefs({ filter: 'all' })}
+            othersHere={counts.all > 0}
+          />
+        )}
+      </div>
+      {peekItem ? <ConversationPeek item={peekItem} onClose={() => setPeek(undefined)} onRestore={() => act.restore(peekItem)} onDelete={() => act.remove(peekItem)} /> : null}
+      {deleteItem ? <DeleteArchivedAlert item={deleteItem} onCancel={() => setDeleting(undefined)} onDelete={() => remove(deleteItem)} /> : null}
+    </div>
+  );
+}
+
+const projectName = (p: Project): string => (p.root ? p.name : 'Chats');
+
+/** One project: its icon, name and count, its live rows, then its archived ones under a quiet heading. */
+function Group({ group, filter, current, onSelect, onOpen, act }: { group: OverviewGroup; filter: string; current: string | undefined; onSelect: (id: string) => void; onOpen: (i: OverviewItem) => void; act: ArchivedActions }) {
+  const actions = useActions();
+  const { project: p, active, archived } = group;
+  const now = Date.now();
+  const name = projectName(p);
+  const title = (
+    <h2 className={s.groupTitle}>
+      <span className={s.groupIcon}>{p.root ? <ProjectIcon id={p.id} name={p.name} size={18} /> : <Icon name="chat" size={15} />}</span>
+      {name}
+      <span className={s.count}>{active.length + archived.length}</span>
+      <span className={s.groupActions}>
+        <Button size="small" variant="quiet" icon={p.root ? 'branch' : 'plus'} onClick={() => actions.run(p.root ? { type: 'new_worktree', projectId: p.id } : { type: 'new_chat', projectId: 'chats' })}>
+          {p.root ? 'New Worktree' : 'New Chat'}
+        </Button>
+      </span>
+    </h2>
+  );
+  return (
+    <section className={s.group} aria-label={name}>
+      {p.root ? <SpecContext menu={{ kind: 'project', id: p.id }}>{title}</SpecContext> : title}
+      {active.length ? (
+        <div className={s.table} role="list" aria-label={`${name}: workspaces`}>
+          {active.map((i) => (
+            <ActiveRow key={i.ws.id} item={i} now={now} selected={i.ws.id === current} onSelect={onSelect} onOpen={onOpen} />
+          ))}
+        </div>
+      ) : null}
+      {archived.length ? (
+        <>
+          {filter !== 'archived' ? (
+            <h3 className={s.subhead}>
+              <Icon name="archive" size={12} />
+              Archived
+              <span className={s.count}>{archived.length}</span>
+            </h3>
+          ) : null}
+          <div className={s.table} role="list" aria-label={`${name}: archived`}>
+            {archived.map((i) => (
+              <ArchivedRow key={i.ws.id} item={i} selected={i.ws.id === current} onSelect={onSelect} onOpen={onOpen} act={act} />
+            ))}
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+/** Nothing matches: say why, and offer the way back. */
+function NothingHere({ search, filter, project, othersHere, onClearSearch, onAllProjects, onShowAll }: { search: string | undefined; filter: Parameters<typeof emptyText>[0]; project: Project | undefined; othersHere: boolean; onClearSearch: () => void; onAllProjects: () => void; onShowAll: () => void }) {
+  if (search) {
+    return (
+      <Empty
+        icon="search"
+        title={`No results for “${search}”`}
+        detail={`Nothing${project ? ` in ${projectName(project)}` : ''} has that in its name, branch or last message${filter === 'all' ? '' : ' here'}.`}
+        action={
+          <EmptyActions>
+            <Button onClick={onClearSearch}>Clear Search</Button>
+            {filter !== 'all' && othersHere ? <Button variant="quiet" onClick={onShowAll}>Show All</Button> : null}
+            {project ? <Button variant="quiet" onClick={onAllProjects}>All Projects</Button> : null}
+          </EmptyActions>
+        }
+      />
+    );
+  }
+  const text = emptyText(filter, project ? projectName(project) : undefined);
+  const icon = filter === 'archived' ? 'archive' : filter === 'needs' ? 'check' : filter === 'ready' ? 'merge' : 'grid';
+  return (
+    <Empty
+      icon={icon}
+      title={text.title}
+      detail={text.detail}
+      action={project ? <EmptyActions><Button onClick={onAllProjects}>Show All Projects</Button></EmptyActions> : undefined}
+    />
+  );
+}
+
+/** No workspaces at all: what this is, and the one action that fills it. */
+function NothingYet() {
+  const actions = useActions();
+  const project = useApp((st) => st.projects.find((p) => p.root));
+  return (
+    <Empty
+      icon="grid"
+      title="No workspaces yet"
+      detail={project ? `Start a worktree in ${project.name}: its own branch, with Claude on your task.` : 'Add your projects, then give Claude a task in a worktree of its own.'}
+      action={
+        <EmptyActions>
+          {project ? (
+            <Button variant="primary" icon="branch" onClick={() => actions.run({ type: 'new_worktree', projectId: project.id })}>
+              New Worktree
+            </Button>
+          ) : (
+            <Button variant="primary" icon="plus" onClick={() => actions.run({ type: 'add_project' })}>
+              Add Projects…
+            </Button>
+          )}
+          <Button icon="chat" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })}>
+            New Chat
+          </Button>
+        </EmptyActions>
+      }
+    />
+  );
+}

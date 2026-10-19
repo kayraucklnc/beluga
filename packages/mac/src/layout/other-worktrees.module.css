@@ -1,0 +1,16 @@
+/* Worktrees made outside Klaud in the sidebar. */
+
+/* Where it is, quietly after its name (the full path is in the tooltip). */
+.where {
+  margin-left: 6px;
+  color: var(--text-3);
+  font-size: 0.9em;
+}
+/* "Show N more" / "Show Fewer": reads like a fold, quieter than a worktree. */
+.more {
+  color: var(--text-3);
+  font-size: 0.94rem;
+}
+.more:hover {
+  color: var(--text-2);
+}

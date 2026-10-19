@@ -1,0 +1,76 @@
+/* The top of the message box for a new worktree: project · Based on [branch ▾] · Name [ ]. */
+.draft {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 2px 4px 9px;
+  margin-bottom: 4px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.project {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text);
+}
+.project svg {
+  color: var(--accent);
+}
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.fieldLabel {
+  color: var(--text-3);
+  font-size: 0.9rem;
+}
+.select {
+  max-width: 240px;
+}
+.name {
+  width: 170px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  font-size: 0.92rem;
+}
+.name::placeholder {
+  color: var(--text-3);
+}
+.name:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* "Create Worktree ↩": the box's button while drafting one. */
+.create {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px 0 10px;
+  border-radius: 13px;
+  background: var(--bg-press);
+  color: var(--text-3);
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast);
+}
+.createReady {
+  background: var(--accent);
+  color: white;
+}
+.createReady:active {
+  transform: scale(0.97);
+}
+.createKey {
+  opacity: 0.7;
+  font-weight: 500;
+}

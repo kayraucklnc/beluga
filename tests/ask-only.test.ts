@@ -1,0 +1,253 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { ASK_ONLY_REASON, DENY_REASON, decideTool, denyReason } from '../src/agent/policy.js';
+import { buildAskOnlyAppend } from '../src/agent/prompt.js';
+import { isReadOnlyCommand } from '../src/agent/read-only.js';
+import { carrySession } from '../src/agent/session-carry.js';
+import { encodeProjectDir } from '../src/agent/claude-sessions.js';
+import { createMockBackend } from '../src/agent/mock.js';
+import type { AgentRunInput, RoomBridge } from '../src/agent/types.js';
+import { status } from '../src/workspaces/git.js';
+import { WorkspaceManager } from '../src/workspaces/manager.js';
+import { WorkspaceStore } from '../src/workspaces/store.js';
+import type { Project, Workspace } from '../src/workspaces/types.js';
+import { agoText, homeModel, mainLineOf } from '../packages/mac/src/views/project/home-model.js';
+
+/** "Never change main": runs in a project's main folder are questions only (see policy.ts). */
+
+const main = { cwd: '/work/app', roots: ['/work/app'], autoEdit: false, askOnly: true, scope: 'full' as const };
+
+describe('isReadOnlyCommand', () => {
+  it('lets through commands that only look', () => {
+    for (const c of [
+      'ls -la',
+      'cat README.md | head -20',
+      'git status',
+      'git log --oneline -20',
+      'git diff origin/main --stat',
+      'git show HEAD~1:src/a.ts',
+      'git branch -a',
+      'git branch --list "klaud/*"',
+      'git -C ../other status',
+      'rg "TODO" src && wc -l src/*.ts',
+      'find . -name "*.ts" -not -path "./node_modules/*"',
+      'grep -rn requireUser src 2>/dev/null',
+      'npm ls react',
+      'git remote -v',
+      'git config --get remote.origin.url',
+      'GIT_PAGER=cat git log -3',
+      'cd src && ls',
+    ])
+      expect(isReadOnlyCommand(c), c).toBe(true);
+  });
+
+  it('refuses anything that could change files, git or run other programs', () => {
+    for (const c of [
+      'git commit -am wip',
+      'git push',
+      'git merge feature',
+      'git reset --hard',
+      'git checkout -b x',
+      'git branch -D old',
+      'git branch new-one',
+      'git stash',
+      'git tag v1',
+      'git config user.name x',
+      'git diff --output=patch.diff',
+      'rm -rf build',
+      'echo hi > notes.txt',
+      'cat a >> b',
+      'sed -i s/a/b/ file',
+      'npm install',
+      'npm test',
+      'find . -delete',
+      'find . -name x -exec rm {} \\;',
+      'ls; rm x',
+      'ls && touch x',
+      'cat $(rm x)',
+      'echo `rm x`',
+      'sort -o out.txt in.txt',
+      'xargs rm',
+      'python3 script.py',
+      'node -e "require(\'fs\').writeFileSync(\'x\', \'\')"',
+      'cat <<EOF > x',
+      '',
+    ])
+      expect(isReadOnlyCommand(c), c).toBe(false);
+  });
+});
+
+describe('decideTool in a main folder (ask-only)', () => {
+  it('denies every edit, even with full trust', () => {
+    for (const t of ['Write', 'Edit', 'MultiEdit']) expect(decideTool(t, { file_path: 'src/a.ts' }, main)).toBe('deny');
+    expect(decideTool('NotebookEdit', { notebook_path: 'a.ipynb' }, main)).toBe('deny');
+    expect(decideTool('Edit', { file_path: 'src/a.ts' }, { ...main, autoEdit: true })).toBe('deny');
+  });
+
+  it('denies shell commands that change things, and leaves read-only ones to the usual rules', () => {
+    expect(decideTool('Bash', { command: 'git commit -am x' }, main)).toBe('deny');
+    expect(decideTool('Bash', { command: 'npm install' }, main)).toBe('deny');
+    expect(decideTool('Bash', { command: 'git status' }, main)).toBe('ask');
+    expect(decideTool('Bash', { command: 'cat .env' }, main)).toBe('deny');
+  });
+
+  it('can still read, and offers continue_in_worktree', () => {
+    expect(decideTool('Read', { file_path: 'src/a.ts' }, main)).toBe('allow');
+    expect(decideTool('Grep', { pattern: 'TODO' }, main)).toBe('allow');
+    expect(decideTool('mcp__klaud__continue_in_worktree', { task: 'x' }, main)).toBe('allow');
+  });
+
+  it('keeps fetched files out of the main folder', () => {
+    expect(decideTool('mcp__klaud__get_peer_file', { peer: 'bob', path: '~/x', save_to: '/work/app/vendor' }, main)).toBe('deny');
+    expect(decideTool('mcp__klaud__get_peer_file', { peer: 'bob', path: '~/x', save_to: '/tmp' }, main)).toBe('ask');
+  });
+
+  it('tells Claude why, and what to do instead', () => {
+    expect(denyReason('Edit', { file_path: 'a.ts' }, main)).toBe(ASK_ONLY_REASON);
+    expect(ASK_ONLY_REASON).toContain('continue_in_worktree');
+    expect(denyReason('Read', { file_path: '/Users/me/.ssh/id_rsa' }, main)).toBe(DENY_REASON);
+    // Outside a main folder nothing changes.
+    expect(decideTool('Edit', { file_path: 'src/a.ts' }, { ...main, askOnly: false, autoEdit: true })).toBe('allow');
+  });
+});
+
+describe('the system prompt for a main folder', () => {
+  it('says it is read-only and to move changes to a worktree right away', () => {
+    const text = buildAskOnlyAppend('api', true);
+    expect(text).toContain("You're in the main folder of api");
+    expect(text).toContain('mcp__klaud__continue_in_worktree right away');
+    expect(buildAskOnlyAppend('api', false)).not.toContain('continue_in_worktree');
+  });
+});
+
+describe('the demo Claude in a main folder', () => {
+  const bridge = { writeReport: async () => '' } as unknown as RoomBridge;
+  const input = (prompt: string, move?: (task: string) => Promise<string>): AgentRunInput => ({
+    prompt,
+    requesterName: 'kay',
+    viaAgent: false,
+    context: [],
+    scope: 'full',
+    signal: new AbortController().signal,
+    onEvent: () => undefined,
+    onFileTouched: () => undefined,
+    canUseTool: async () => true,
+    place: { cwd: '/work/app', additionalDirectories: [], autoEdit: false, onSession: () => undefined, askOnly: { project: 'app' } },
+    ...(move ? { continueInWorktree: move } : {}),
+  });
+
+  it('moves a change request to a new worktree instead of pretending to edit', async () => {
+    const moved: string[] = [];
+    const answer = await createMockBackend(bridge, 0).run(input('Add a health check endpoint', async (t) => (moved.push(t), 'ok')));
+    expect(moved).toEqual(['Add a health check endpoint']);
+    expect(answer).toMatch(/new worktree/);
+  });
+
+  it('answers questions there as usual', async () => {
+    const moved: string[] = [];
+    await createMockBackend(bridge, 0).run(input('How is this organized?', async (t) => (moved.push(t), 'ok')));
+    expect(moved).toEqual([]);
+  });
+});
+
+const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
+
+describe('main folders in the workspace list', () => {
+  it('marks the main checkout and chats in it as ask-only, never worktrees, and compares main with origin', async () => {
+    const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-ask-')));
+    const repo = path.join(base, 'code', 'app');
+    mkdirSync(repo, { recursive: true });
+    execFileSync('git', ['init', '--bare', '-b', 'main', path.join(base, 'app.git')], { stdio: 'pipe' });
+    git(repo, 'init', '-b', 'main');
+    writeFileSync(path.join(repo, 'a.txt'), '1\n');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '-m', 'init');
+    git(repo, 'remote', 'add', 'origin', path.join(base, 'app.git'));
+    git(repo, 'push', '-u', 'origin', 'main');
+    const store = new WorkspaceStore(path.join(base, 'home'));
+    store.saveConfig({ roots: [path.join(base, 'code')], projects: [], hidden: [] });
+    const manager = new WorkspaceManager(store);
+    await manager.refresh();
+    const project = manager.list.find((p) => p.root)!;
+    const chat = await manager.createChat(project.id, 'how does it work?');
+    const wt = await manager.createWorktree(project.id, 'feature');
+    const standalone = await manager.createStandaloneChat('here', repo);
+    const all = manager.list.flatMap((p) => p.workspaces);
+    expect(all.find((w) => w.kind === 'main')?.askOnly).toBe(true);
+    expect(all.find((w) => w.id === chat.id)?.askOnly).toBe(true);
+    expect(all.find((w) => w.id === standalone.id)?.askOnly).toBe(true);
+    expect(all.find((w) => w.id === wt.id)?.askOnly).toBeUndefined();
+    // Derived, never saved.
+    expect(readFileSync(path.join(base, 'home', 'workspaces.json'), 'utf8')).not.toContain('askOnly');
+
+    expect((await status(repo)).upstream).toEqual({ name: 'origin/main', ahead: 0, behind: 0 });
+    writeFileSync(path.join(repo, 'a.txt'), '2\n');
+    git(repo, 'commit', '-am', 'local');
+    expect((await status(repo)).upstream).toEqual({ name: 'origin/main', ahead: 1, behind: 0 });
+  });
+});
+
+describe('carrySession', () => {
+  it('copies a Claude Code conversation next to the folder it continues in', () => {
+    const config = mkdtempSync(path.join(os.tmpdir(), 'klaud-cc-'));
+    const from = path.join(config, 'projects', encodeProjectDir('/work/app'));
+    mkdirSync(from, { recursive: true });
+    writeFileSync(path.join(from, 'abc-123.jsonl'), '{"type":"user"}\n');
+    expect(carrySession('abc-123', '/work/app', '/work/wt/feature', config)).toBe(true);
+    expect(existsSync(path.join(config, 'projects', encodeProjectDir('/work/wt/feature'), 'abc-123.jsonl'))).toBe(true);
+    expect(carrySession('missing', '/work/app', '/work/wt/feature', config)).toBe(false);
+    expect(carrySession('../evil', '/work/app', '/work/wt/feature', config)).toBe(false);
+  });
+});
+
+describe('the project home (Mac)', () => {
+  const ws = (over: Partial<Workspace>): Workspace => ({ id: 'w', projectRoot: '/p', name: 'w', path: '/wt/w', kind: 'worktree', branch: 'klaud/w', base: 'origin/main', createdAt: 1, projectId: 'p1', external: false, status: { changed: 0, ahead: 0, behind: 0 }, ...over });
+  const project: Project = {
+    id: 'p1',
+    name: 'api',
+    root: '/p',
+    base: 'origin/main',
+    workspaces: [
+      ws({ id: 'main', name: 'main', kind: 'main', path: '/p', branch: 'main', askOnly: true, status: { branch: 'main', changed: 0, ahead: 0, behind: 0, upstream: { name: 'origin/main', ahead: 0, behind: 2 } } }),
+      ws({ id: 'auth', name: 'add-auth', status: { changed: 0, ahead: 2, behind: 0 }, createdAt: 5 }),
+      ws({ id: 'hooks', name: 'webhooks', status: { changed: 1, ahead: 0, behind: 0 }, createdAt: 9 }),
+      ws({ id: 'ext', name: 'ext', external: true, path: '/x/.claude/worktrees/a' }),
+      ws({ id: 'q', name: 'how does auth work', kind: 'chat', path: '/p', askOnly: true, createdAt: 3 }),
+      ws({ id: 'old', name: 'old', archived: true, createdAt: 2 }),
+    ],
+  };
+
+  it('lists worktrees, questions and archived, with counts', () => {
+    const m = homeModel({ log: [], conflicts: {} }, project);
+    expect(m.worktrees.map((w) => w.id)).toEqual(['hooks', 'auth']);
+    expect(m.asks.map((w) => w.id)).toEqual(['q']);
+    expect(m.archived.map((w) => w.id)).toEqual(['old']);
+    expect(m.stats).toEqual({ active: 2, ready: 1, archived: 1 });
+    expect(m.mainLine).toEqual({ label: '2 behind origin/main', tone: 'info' });
+  });
+
+  it('says how main compares with origin', () => {
+    const at = (status: Workspace['status']) => mainLineOf(ws({ kind: 'main', status }));
+    expect(at({ changed: 0, ahead: 0, behind: 0, upstream: { name: 'origin/main', ahead: 0, behind: 0 } })).toEqual({ label: 'Up to date with origin/main', tone: 'ok' });
+    expect(at({ changed: 3, ahead: 0, behind: 0, upstream: { name: 'origin/main', ahead: 1, behind: 0 } })).toEqual({ label: '1 ahead of origin/main', tone: 'warn', dirty: '3 uncommitted changes in main' });
+    expect(at({ changed: 0, ahead: 0, behind: 0 })).toEqual({ label: 'Not tracking a remote branch', tone: 'muted' });
+    expect(agoText(1000, 1000 + 5 * 60_000)).toBe('5 min ago');
+  });
+});
+
+describe('isReadOnlyCommand: what the shell would really run', () => {
+  it('splits on separators the way the shell does, escapes included', () => {
+    expect(isReadOnlyCommand("ls \\'; rm -rf x; echo \\'")).toBe(false);
+    expect(isReadOnlyCommand(String.raw`echo a\;b`)).toBe(true);
+  });
+
+  it('refuses environment settings that could run something, or last beyond the command', () => {
+    expect(isReadOnlyCommand('PATH=/tmp/evil; git status')).toBe(false);
+    expect(isReadOnlyCommand('A=--output=/tmp/x; git diff $A')).toBe(false);
+    expect(isReadOnlyCommand('GIT_EXTERNAL_DIFF=/tmp/evil git diff')).toBe(false);
+    expect(isReadOnlyCommand('GIT_PAGER=cat git log -3')).toBe(true);
+  });
+});

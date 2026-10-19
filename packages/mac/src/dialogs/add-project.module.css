@@ -1,0 +1,152 @@
+.overlay {
+  composes: overlay from './sheet.module.css';
+}
+.sheet {
+  composes: sheet from './sheet.module.css';
+  width: min(600px, calc(100vw - 48px));
+  max-height: 76vh;
+}
+.head {
+  composes: head from './sheet.module.css';
+}
+.title {
+  composes: title from './sheet.module.css';
+}
+.close {
+  composes: close from './sheet.module.css';
+}
+.drop {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 18px 4px;
+  padding: 18px 18px;
+  border-radius: 10px;
+  border: 1.5px dashed var(--hairline-strong);
+  color: var(--text-2);
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.dropOver {
+  border-color: var(--accent);
+  background: var(--bg-selected);
+  color: var(--text);
+}
+.dropText {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.dropText strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.dropText span {
+  color: var(--text-3);
+  font-size: 0.9rem;
+}
+.listHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px 6px;
+  font-weight: 600;
+}
+.listHead > span {
+  flex: 1;
+}
+.filter,
+.path {
+  border: none;
+  color: var(--text);
+}
+.filter {
+  width: 180px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  font-size: 0.92rem;
+}
+.filter:focus,
+.path:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.list {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  margin: 0 10px;
+  padding: 2px 0 6px;
+}
+.note {
+  padding: 18px 8px;
+  color: var(--text-3);
+  text-align: center;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.item:hover {
+  background: var(--bg-hover);
+}
+.glyph {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+.itemText {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.itemName {
+  font-weight: 550;
+}
+.itemPath {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.added {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  color: var(--ok);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.pathRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 14px 18px;
+  border-top: 0.5px solid var(--hairline);
+}
+.path {
+  width: 260px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.88rem;
+}
+.flex {
+  flex: 1;
+}

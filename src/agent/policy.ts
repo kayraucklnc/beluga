@@ -1,5 +1,7 @@
 import path from 'node:path';
 import { isSecretPath } from '../core/shares.js';
+import { isReadOnlyCommand } from './read-only.js';
+import { SYNC_MAIN_REASON, type SyncScope, isSyncMainCommand } from './sync-main.js';
 
 /** Read-only tools and the input field that names their target path. */
 const READ_TOOLS: Readonly<Record<string, string>> = {
@@ -22,11 +24,22 @@ const WRITE_TOOLS: Readonly<Record<string, string>> = {
 const ALWAYS_OK = new Set([
   'TodoWrite',
   'ToolSearch',
-  ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report'].map((n) => `mcp__klaud__${n}`),
+  // continue_in_worktree is only offered in main folders, and decides who must confirm itself.
+  ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report', 'continue_in_worktree'].map((n) => `mcp__klaud__${n}`),
+  // The gateway's look-and-wait tools (core/gateway); ask_person and run_on ask, and the gateway checks trust itself.
+  ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__klaud__${n}`),
+  // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).
+  ...['screenshot', 'device_info'].map((n) => `mcp__klaud_task__${n}`),
 ]);
 
-/** Shell commands that mention credential stores are refused outright. */
-export const SECRET_IN_COMMAND = /(^|[\s'"/=])(\.env(\.[\w-]+)?|id_(rsa|ed25519|ecdsa|dsa)|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.npmrc|\.netrc|\.git-credentials|credentials(\.json)?)([\s'"/]|$)/;
+/**
+ * Shell commands that mention credential stores are refused outright. A name counts when it isn't
+ * part of a longer word, so shell punctuation around it (`cat .env|base64`, `(cat .env)`) still matches.
+ */
+export const SECRET_IN_COMMAND = /(?<![\w.-])(\.env(\.[\w-]+)?|id_(rsa|ed25519|ecdsa|dsa)|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.npmrc|\.netrc|\.git-credentials|credentials(\.json)?)(?![\w-])/;
+
+/** True when a shell command touches secrets, also through quoting tricks like `".e"nv` or `\.env`. */
+export const mentionsSecret = (command: string): boolean => SECRET_IN_COMMAND.test(command) || SECRET_IN_COMMAND.test(command.replace(/['"\\]/g, ''));
 
 export type Decision = 'allow' | 'deny' | 'ask';
 
@@ -37,6 +50,18 @@ export interface PolicyContext {
   readonly autoEdit: boolean;
   /** 'folder': reading outside the shared folders asks the owner; 'full': it just runs. */
   readonly scope?: 'folder' | 'full';
+  /**
+   * A project's main folder: questions only. Nothing may change there (work happens in
+   * worktrees): edits are denied, and shell commands that aren't clearly read-only too.
+   */
+  readonly askOnly?: boolean;
+  /**
+   * With askOnly, for one run: Claude is bringing main up to date, so git syncing (and editing
+   * files with conflict markers) is allowed too; nothing else changes (see sync-main.ts).
+   */
+  readonly syncMain?: SyncScope;
+  /** A guest invited into one project asked: they never reach the room through your Claude. */
+  readonly guest?: boolean;
 }
 
 const inside = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
@@ -52,6 +77,8 @@ const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, t
  *  - everything else (Bash, web, other edits, reads outside shares, ask_agent) asks the owner
  */
 export function decideTool(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): Decision {
+  if (ctx.askOnly && changesMain(toolName, input, ctx)) return 'deny';
+  if (ctx.guest && toolName.startsWith('mcp__klaud__')) return 'deny';
   if (ALWAYS_OK.has(toolName)) return 'allow';
   // Sending a file reads it: same rules as Read (secrets never leave; outside shared folders asks).
   if (toolName === 'mcp__klaud__send_file') {
@@ -64,8 +91,8 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
     return ctx.scope === 'full' ? 'allow' : 'ask';
   }
   // Commands on a friend's computer: their klaud decides; secrets are refused on both ends.
-  if (toolName === 'mcp__klaud__run_on_peer') return typeof input.command === 'string' && SECRET_IN_COMMAND.test(input.command) ? 'deny' : 'ask';
-  if (toolName === 'Bash') return typeof input.command === 'string' && SECRET_IN_COMMAND.test(input.command) ? 'deny' : 'ask';
+  if (toolName === 'mcp__klaud__run_on_peer' || toolName === 'mcp__klaud__run_on') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
+  if (toolName === 'Bash') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
   const readField = READ_TOOLS[toolName];
   if (readField) {
     const target = resolveTarget(ctx.cwd, input[readField]);
@@ -85,4 +112,25 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
   return 'ask';
 }
 
+/** In a main folder (ask-only): would this tool change something there? */
+function changesMain(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): boolean {
+  const writeField = WRITE_TOOLS[toolName];
+  if (writeField) return !ctx.syncMain?.conflicted?.(resolveTarget(ctx.cwd, input[writeField]));
+  if (toolName === 'Bash') return !(typeof input.command === 'string' && (isReadOnlyCommand(input.command) || (ctx.syncMain !== undefined && isSyncMainCommand(input.command, ctx.syncMain))));
+  // A file fetched from a friend may not land in the main folder.
+  if (toolName === 'mcp__klaud__get_peer_file') return typeof input.save_to === 'string' && inside(path.resolve(ctx.cwd), resolveTarget(ctx.cwd, input.save_to.replace(/^~(?=$|\/)/, process.env.HOME ?? '~')));
+  return false;
+}
+
 export const DENY_REASON = 'klaud blocked this: credential files are off-limits, and this request may only use the shared folders.';
+
+/** Why an ask-only run can't do it, and what to do instead. */
+export const ASK_ONLY_REASON =
+  "klaud blocked this: you're in the project's main folder, which is read-only (questions only; work happens in worktrees). " +
+  "Don't try another way to change it here. If a change is wanted, call mcp__klaud__continue_in_worktree with the task.";
+
+/** The reason to give Claude for a denied tool call. */
+export function denyReason(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): string {
+  if (!ctx.askOnly || !changesMain(toolName, input, ctx)) return DENY_REASON;
+  return ctx.syncMain ? SYNC_MAIN_REASON : ASK_ONLY_REASON;
+}

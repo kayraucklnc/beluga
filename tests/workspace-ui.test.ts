@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SubAgentTracker } from '../src/agent/subagents.js';
-import { initialState, reduce, channelOf, type AppState } from '../src/core/store.js';
+import { channelOf, type AppState } from '../src/core/store.js';
+import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import { derive } from '../src/ui/derive.js';
 import { initialUi } from '../src/ui/keymap.js';
 import { activityOf, contextMeter, isCompacting, isProjectOpen, overviewModel, projectsModel, reviewModel, stateOf, tabsModel, toggleProject, workspaceHeaderModel } from '../src/ui/workspace-models.js';
@@ -67,7 +68,7 @@ describe('store: channels, views and sub-agents', () => {
     expect(s).toMatchObject({ tabs: [], view: { kind: 'overview' } });
     s = reduce(s, { type: 'history', channel: 'ws:w1', items: [{ id: 'h', type: 'system', channel: 'x', text: 'old', ts: 0, level: 'info' }] });
     expect(s.log.filter((l) => l.channel === 'ws:w1').map((l) => l.id)).toEqual(['h']);
-    expect(reduce(s, { type: 'review', review: { workspaceId: 'w1', selected: 0, diffScroll: 0, loading: true } }).review?.loading).toBe(true);
+    expect(reduce(s, { type: 'review', review: { workspaceId: 'w1', selected: 0, loading: true } }).review?.loading).toBe(true);
     // tabs for workspaces that disappear are dropped
     const withTab = reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
     expect(reduce(withTab, { type: 'projects', projects: [] }).tabs).toEqual([]);
@@ -285,7 +286,7 @@ describe('store: per-conversation history', () => {
     let s = base();
     s = reduce(s, { type: 'chat', id: '1', from: 'me', text: 'room', ts: 1, byAgent: false });
     s = reduce(s, { type: 'chat', id: '2', from: 'me', text: 'ws', ts: 1, byAgent: false, channel: 'ws:w1' });
-    expect(reduce(s, { type: 'clear' }).log.map((l) => l.channel)).toEqual(['ws:w1']);
+    expect(reduce(s, { type: 'clear', channel: 'room' }).log.map((l) => l.channel)).toEqual(['ws:w1']);
     expect(reduce(s, { type: 'clear', channel: 'ws:w1' }).log.map((l) => l.channel)).toEqual(['room']);
     for (let i = 0; i < 1005; i++) s = reduce(s, { type: 'system', text: `n${i}` });
     expect(s.log.filter((l) => l.channel === 'room')).toHaveLength(1000);

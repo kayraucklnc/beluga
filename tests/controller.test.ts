@@ -10,11 +10,13 @@ import { Store, initialState } from '../src/core/store.js';
 import { WorkspaceController, shareNameOf, workspaceIdOf } from '../src/core/workspace-controller.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
-import { waitFor } from './helpers.js';
+import { screenOver, waitFor } from './helpers.js';
+import type { ClientStore } from '../src/client/client-store.js';
 
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
 
 let store: Store;
+let screen: ClientStore;
 let shares: ShareService;
 let ctl: WorkspaceController;
 let toasts: string[];
@@ -27,6 +29,8 @@ beforeEach(async () => {
   mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '--bare', '-b', 'main', path.join(base, 'app.git')], { stdio: 'pipe' });
   sh(repo, 'init', '-b', 'main');
+  sh(repo, 'config', 'user.email', 't@t'); // klaud's own commits and merges need an identity (CI has none)
+  sh(repo, 'config', 'user.name', 'T');
   writeFileSync(path.join(repo, 'a.txt'), 'one\n');
   sh(repo, 'add', '.');
   sh(repo, 'commit', '-m', 'init');
@@ -39,12 +43,15 @@ beforeEach(async () => {
   shares = new ShareService([]);
   toasts = [];
   asked = [];
+  const shown = screenOver(store);
+  screen = shown.screen;
   ctl = new WorkspaceController({
     manager: new WorkspaceManager(wsStore),
     store,
     shares,
     selfId: () => 'me',
     toast: (t) => void toasts.push(t),
+    intend: shown.intend,
     askClaude: (prompt, channel) => void asked.push({ prompt, channel }),
   });
   await ctl.refresh();
@@ -62,11 +69,30 @@ describe('WorkspaceController', () => {
     expect(shares.infos).toEqual([]); // never advertised to the room
   });
 
+  it('starts a worktree from a chosen branch with your own name, or with no message at all', async () => {
+    sh(repo, 'checkout', '-b', 'feature');
+    sh(repo, 'push', '-u', 'origin', 'feature');
+    sh(repo, 'checkout', 'main');
+    const namer = (): Promise<string> => Promise.reject(new Error('should not be asked'));
+    await ctl.startWorktree(projectId(), 'do the thing', namer, { base: 'origin/feature', name: 'mine' });
+    const mine = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.name === 'mine')!;
+    expect(mine).toMatchObject({ base: 'origin/feature' });
+    expect(toasts).toContain('Creating worktree "mine" from origin/feature…');
+    expect(toasts).not.toContain('Naming the worktree…');
+    expect(asked).toEqual([{ prompt: 'do the thing', channel: `ws:${mine.id}` }]);
+
+    await ctl.startWorktree(projectId(), '   ', namer, { name: 'quiet' });
+    const quiet = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.name === 'quiet')!;
+    expect(quiet).toMatchObject({ base: 'origin/main' });
+    expect(asked).toHaveLength(1);
+    expect(await ctl.branches(projectId())).toMatchObject({ base: 'origin/main', branches: expect.arrayContaining(['origin/main', 'feature']) });
+  });
+
   it('creates a worktree, opens it, runs Claude there, and saves its conversation', async () => {
     const ws = (await ctl.newWorktree(projectId(), 'feature'))!;
-    expect(store.getState().view).toEqual({ kind: 'workspace', id: ws.id, tab: 'chat' });
-    expect(ctl.current()?.id).toBe(ws.id);
-    expect(ctl.isCurrentChannel(`ws:${ws.id}`)).toBe(true);
+    expect(screen.getState().view).toEqual({ kind: 'workspace', id: ws.id, tab: 'chat' });
+    expect(ctl.inChannel(`ws:${ws.id}`)?.id).toBe(ws.id);
+    expect(ctl.inChannel('room')).toBeUndefined();
     const place = ctl.place(`ws:${ws.id}`)!;
     expect(place).toMatchObject({ cwd: ws.path, autoEdit: true, resume: undefined, forkSession: false });
     place.onSession('sess-1');
@@ -119,7 +145,7 @@ describe('WorkspaceController', () => {
     expect(fork.forkedFrom).toBe(ws.id);
     expect(ctl.place(`ws:${fork.id}`)?.forkSession).toBe(false); // parent had no Claude session yet
     expect(await ctl.archive(fork.id)).toBe(true);
-    expect(store.getState().tabs).not.toContain(fork.id);
+    expect(screen.getState().tabs).not.toContain(fork.id);
     await ctl.restore(fork.id);
     expect(ctl.manager.find(fork.id)?.archived).toBe(false);
     await ctl.remove(fork.id);
@@ -141,10 +167,37 @@ describe('WorkspaceController', () => {
   it('organizes projects into groups and hides them', async () => {
     await ctl.setGroup(projectId(), 'work');
     expect(store.getState().projectGroups).toEqual([{ name: 'work', projects: [repo] }]);
+    await ctl.renameGroup('work', 'Client work');
+    expect(store.getState().projectGroups).toEqual([{ name: 'Client work', projects: [repo] }]);
+    await ctl.renameGroup('nope', 'x');
+    expect(toasts.at(-1)).toMatch(/No group called "nope"/);
+    await ctl.ungroup('Client work');
+    expect(store.getState().projectGroups).toEqual([]);
+    await ctl.setGroup(projectId(), 'work');
     await ctl.setGroup(projectId(), undefined);
     expect(store.getState().projectGroups).toEqual([]);
     await ctl.hideProject(projectId());
     expect(store.getState().projects.filter((p) => p.root)).toEqual([]);
+  });
+
+  it('arranges the sidebar at once, refuses what isn’t there, and shows hidden projects again', async () => {
+    expect(store.getState().projectOrder).toEqual([repo]);
+    expect(ctl.newGroup('Work', { before: { project: projectId() } })).toBe('Work');
+    expect(store.getState().projectOrder).toEqual(['group:Work', repo]);
+    expect(store.getState().projectGroups).toEqual([{ name: 'Work', projects: [] }]);
+    expect(ctl.arrange({ project: projectId() }, { into: 'Work' })).toBe(true);
+    expect(store.getState().projectOrder).toEqual(['group:Work']);
+    expect(store.getState().projectGroups).toEqual([{ name: 'Work', projects: [repo] }]);
+    expect(ctl.arrange({ project: 'nope' }, {})).toBe(false);
+    expect(toasts.at(-1)).toMatch(/Project not found/);
+    expect(ctl.newGroup('Work')).toBeUndefined();
+    expect(toasts.at(-1)).toMatch(/already a group/);
+    await ctl.hideProject(projectId());
+    expect(store.getState().hiddenProjects).toEqual([repo]);
+    expect(await ctl.showProject(repo)).toBe(true);
+    expect(store.getState().hiddenProjects).toEqual([]);
+    expect(store.getState().projectGroups).toEqual([{ name: 'Work', projects: [repo] }]);
+    expect(await ctl.showProject('/not/hidden')).toBe(false);
   });
 
   it('starts chats and adds projects or folders', async () => {
@@ -163,22 +216,23 @@ describe('WorkspaceController', () => {
   });
 
   it('runs workspace commands against the current workspace', async () => {
-    const session = { workspaces: ctl, toast: (t: string) => void toasts.push(t), store } as unknown as Session;
-    runCommand(session, 'merge', []);
+    const session = { workspaces: ctl, toast: (t: string) => void toasts.push(t), intend: (i: Parameters<ClientStore['applyIntent']>[0]) => screen.applyIntent(i), store } as unknown as Session;
+    const here = (): string => (screen.getState().view.kind === 'workspace' ? `ws:${(screen.getState().view as { id: string }).id}` : 'room');
+    runCommand(session, 'merge', [], here());
     expect(toasts.at(-1)).toBe('Open a workspace first (Projects on the left)');
-    runCommand(session, 'new', []);
+    runCommand(session, 'new', [], here());
     expect(toasts.at(-1)).toBe('Usage: /new <name>');
-    runCommand(session, 'new', ['cmd', 'test']);
-    await waitFor(() => store.getState().view.kind === 'workspace', 5000);
-    runCommand(session, 'fork', []);
+    runCommand(session, 'new', ['cmd', 'test'], here());
+    await waitFor(() => screen.getState().view.kind === 'workspace', 5000);
+    runCommand(session, 'fork', [], here());
     expect(toasts.at(-1)).toBe('Usage: /fork <name>');
-    runCommand(session, 'review', []);
-    expect(store.getState().view).toMatchObject({ tab: 'review' });
-    runCommand(session, 'project', ['oops']);
+    runCommand(session, 'review', [], here());
+    expect(screen.getState().view).toMatchObject({ tab: 'review' });
+    runCommand(session, 'project', ['oops'], here());
     expect(toasts.at(-1)).toContain('/project add <path>');
-    runCommand(session, 'overview', []);
-    expect(store.getState().view.kind).toBe('overview');
-    runCommand(session, 'room', []);
-    expect(store.getState().view.kind).toBe('room');
+    runCommand(session, 'overview', [], here());
+    expect(screen.getState().view.kind).toBe('overview');
+    runCommand(session, 'room', [], here());
+    expect(screen.getState().view.kind).toBe('room');
   });
 });

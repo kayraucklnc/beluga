@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { initialState, newShares, reduce, type AppState } from '../src/core/store.js';
+import { newShares, type AppState } from '../src/core/store.js';
+import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import { globalShellDir, globalShellId, isGlobalShell } from '../src/core/workbench.js';
 import type { PeerInfo } from '../src/protocol.js';
 import { normalizeKeys } from '../src/ui/mouse.js';

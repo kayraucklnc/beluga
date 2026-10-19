@@ -12,12 +12,12 @@ import {
   roomAttachmentsDir,
   saveClipboardImage,
 } from '../core/attachments.js';
-import type { Session } from '../core/session.js';
+import type { KlaudClient } from '../ipc/client.js';
 import { channelOf } from '../core/store.js';
 import type { UiState } from './keymap.js';
 
 export interface AttachContext {
-  readonly session: Session;
+  readonly client: KlaudClient;
   readonly uiRef: { readonly current: UiState };
   readonly patchUi: (patch: Partial<UiState>) => void;
 }
@@ -44,10 +44,10 @@ export async function pasteClipboardImage(c: AttachContext, quiet = false): Prom
       return true;
     }
   } catch (err) {
-    c.session.toast(`Couldn't attach the image: ${err instanceof Error ? err.message : String(err)}`, 'warn');
+    c.client.store.dispatch({ type: 'toast', text: `Couldn't attach the image: ${err instanceof Error ? err.message : String(err)}`, level: 'warn' });
     return false;
   }
-  if (!quiet) c.session.toast(process.platform === 'darwin' || process.platform === 'linux' ? 'No image on the clipboard. Copy one, then Ctrl+V' : 'Pasting images works on macOS and Linux', 'warn');
+  if (!quiet) c.client.store.dispatch({ type: 'toast', text: process.platform === 'darwin' || process.platform === 'linux' ? 'No image on the clipboard. Copy one, then Ctrl+V' : 'Pasting images works on macOS and Linux', level: 'warn' });
   return false;
 }
 
@@ -61,7 +61,7 @@ export function pasteDroppedImages(c: AttachContext, text: string): boolean {
   if (!files) return false;
   void Promise.all(files.map((f) => importImage(f)))
     .then((copies) => addChips(c, copies))
-    .catch((err: unknown) => c.session.toast(err instanceof Error ? err.message : String(err), 'warn'));
+    .catch((err: unknown) => c.client.store.dispatch({ type: 'toast', text: err instanceof Error ? err.message : String(err), level: 'warn' }));
   return true;
 }
 
@@ -69,12 +69,13 @@ export function pasteDroppedImages(c: AttachContext, text: string): boolean {
  * Before sending: "[image N]" chips become links to the images. Sent to the room with friends
  * there, a copy goes where they (and only they) can fetch it.
  */
-export function expandOutgoing(session: Session, text: string): string {
+export function expandOutgoing(client: KlaudClient, text: string): string {
   if (!text.includes('[image ') || text.startsWith('/')) return text;
-  const state = session.store.getState();
-  const friends = state.peers.filter((p) => p.peerId !== session.selfId).map((p) => p.peerId);
+  const state = client.store.getState();
+  // People in the room only: guests invited into one project never get room images.
+  const friends = state.peers.filter((p) => p.peerId !== state.selfId && !p.guest && state.guests[p.peerId]?.room !== false).map((p) => p.peerId);
   const toRoom = channelOf(state.view) === 'room' && friends.length > 0;
-  const { text: out, attachments } = expandChips(text, session.selfId, toRoom ? (a) => publishForRoom(a) : (a) => path.basename(a.path));
-  if (toRoom && attachments.length) session.serveFolder(ATTACHMENT_SHARE, roomAttachmentsDir(), friends);
+  const { text: out, attachments } = expandChips(text, state.selfId, toRoom ? (a) => publishForRoom(a) : (a) => path.basename(a.path));
+  if (toRoom && attachments.length) void client.api.session.serveFolder(ATTACHMENT_SHARE, roomAttachmentsDir(), friends);
   return out;
 }

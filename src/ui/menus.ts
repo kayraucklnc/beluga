@@ -3,9 +3,9 @@ import { worktreeOrigin } from '../workspaces/origin.js';
 import { clearMenu, invitePersonMenu, sharedMenu, wsShareMenu } from './collab-menus.js';
 import { shareFolderMenu, shareWhoMenu } from './share-menus.js';
 import { type InviteMenuKind, guestAddMenu, guestPersonMenu, inviteMenu } from './invite-menus.js';
-import { type SettingsSection, inboxMenu, modelMenu, modelLabel, settingsMenu } from './settings-menus.js';
+import { type InboxView, type SettingsSection, inboxMenu, modelMenu, modelLabel, settingsMenu } from './settings-menus.js';
 import { GRANT_INFO, TRUST_INFO, canRunOn, trustOf } from '../core/trust.js';
-import { TRUST_LEVELS } from '../core/settings.js';
+import { TRUST_LEVELS } from '../shared/settings-schema.js';
 import { workMenuSpec, type WorkMenuKind } from './work-menus.js';
 import { describeWindow } from '../agent/usage.js';
 import type { Usage } from '../protocol.js';
@@ -32,7 +32,7 @@ export type MenuKind =
   | { readonly kind: 'settings'; readonly section?: SettingsSection }
   /** The model for one conversation (`channel`), or the default for new ones. */
   | { readonly kind: 'model'; readonly channel?: string }
-  | { readonly kind: 'inbox' }
+  | ({ readonly kind: 'inbox' } & InboxView)
   | WorkMenuKind
   | InviteMenuKind
   | { readonly kind: 'person'; readonly index: number }
@@ -249,7 +249,7 @@ export function menuSpec(state: AppState, menu: MenuKind): MenuSpec | undefined 
   if (menu.kind === 'welcome') return welcomeMenu(state);
   if (menu.kind === 'settings') return settingsMenu(state, menu.section, { prCustom: state.prCustom, remembered: state.remembered });
   if (menu.kind === 'model') return modelMenu(state, menu.channel === undefined ? state.prefs.model : modelOf(state, menu.channel), menu.channel === undefined ? 'new conversations' : 'this conversation');
-  if (menu.kind === 'inbox') return inboxMenu(state);
+  if (menu.kind === 'inbox') return inboxMenu(state, menu);
   const work = workMenuSpec(state, menu);
   if (work !== null) return work;
   if (menu.kind === 'confirm') return confirmMenu(state, menu.action, menu.id);

@@ -1,6 +1,6 @@
 import type { Knock, SharedWorkspace, ShellLine } from '../core/collab-store.js';
 import { SHELL_COMMANDS, completions, parseCommand, shownPath } from '../core/guest-shell.js';
-import { CAN_INFO } from '../core/project-invites.js';
+import { CAN_INFO } from '../shared/invites.js';
 import { type AppState, peerName } from '../core/store.js';
 import type { FsEntry } from '../protocol.js';
 import type { Suggestion } from './suggest.js';
@@ -24,6 +24,8 @@ export function knockCardModel(state: AppState, knock: Knock, width: number): Mo
       [
         { text: `${glyph.dot} `, color: theme.info },
         { text: `${name} wants to join ${where}`, color: theme.text, bold: true },
+        // The name is whatever they typed: the id is what tells two "alice"s apart.
+        { text: ` #${knock.peerId.slice(0, 6)}`, color: theme.muted },
         { text: `  with your link (${CAN_INFO[can].short})`, color: theme.muted },
         { text: more > 0 ? `   +${more} more waiting` : '', color: theme.muted },
       ],

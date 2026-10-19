@@ -1,0 +1,19 @@
+.image {
+  flex: none;
+  display: block;
+  object-fit: contain;
+}
+.tile {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 650;
+  line-height: 1;
+  color: hsl(var(--h) 45% 32%);
+  background: hsl(var(--h) 55% 88%);
+  box-shadow: inset 0 0 0 0.5px hsl(var(--h) 40% 50% / 0.25);
+}
+:global([data-theme='dark']) .tile {
+  color: hsl(var(--h) 60% 82%);
+  background: hsl(var(--h) 30% 28%);
+}

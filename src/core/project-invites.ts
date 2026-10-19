@@ -5,7 +5,7 @@ import type { GuestCan, PeerInfo, WsRole } from '../protocol.js';
 import type { Guest, Knock, ProjectLink } from './collab-store.js';
 import type { People } from './people.js';
 import type { TrustLevel } from './settings.js';
-import { type AppState, type Store, peerName } from './store.js';
+import { type DomainState, type Store, peerName } from './store.js';
 import type { WorkspaceSharing } from './workspace-sharing.js';
 
 /** How the host's room lets guests in (implemented by the hub). */
@@ -16,30 +16,8 @@ export interface GuestControl {
   turnAway(peerId: string): void;
 }
 
-export interface LinkOptions {
-  /** A project id, or 'room' for everything. */
-  readonly scope: string;
-  readonly can: GuestCan;
-  readonly knock: boolean;
-  readonly singleUse: boolean;
-  /** 0: never expires. */
-  readonly expiresInMs: number;
-}
-
-export const DAY_MS = 24 * 60 * 60_000;
-export const DEFAULT_LINK: Omit<LinkOptions, 'scope'> = { can: 'prompt', knock: true, singleUse: true, expiresInMs: DAY_MS };
-
-export const CAN_INFO: Readonly<Record<GuestCan, { label: string; short: string; detail: string }>> = {
-  watch: { label: 'Watch', short: 'can watch', detail: 'see the chat history and browse the files' },
-  prompt: { label: 'Prompt', short: 'can prompt', detail: 'talk to your Claude there; edits and commands follow your approval rules' },
-  edit: { label: 'Edit', short: 'can edit', detail: 'your Claude edits and runs commands in that folder without asking; secrets stay blocked' },
-};
-
-/** Watching is following along; prompting and editing are working there. */
-export const roleFor = (can: GuestCan): WsRole => (can === 'watch' ? 'view' : 'contribute');
-
-/** The trust level a guest gets for your Claude (editing inside their projects is allowed separately). */
-export const trustFor = (can: GuestCan): TrustLevel => (can === 'watch' ? 'blocked' : can === 'edit' ? 'trusted' : 'ask');
+export { type LinkOptions, DAY_MS, DEFAULT_LINK, CAN_INFO, roleFor, trustFor, guestSummary, expiresIn } from '../shared/invites.js';
+import { type LinkOptions, CAN_INFO, roleFor, trustFor } from '../shared/invites.js';
 
 /** Whether a new person may come in with this link right now. */
 export function linkUsable(link: Pick<ProjectLink, 'singleUse' | 'used' | 'expiresAt'>, now: number): boolean {
@@ -50,29 +28,15 @@ export function linkUsable(link: Pick<ProjectLink, 'singleUse' | 'used' | 'expir
 /** The room's link with a project link's secret in place of the room's. */
 export const withSecret = (roomInvite: string, secret: string): string => roomInvite.replace(/#[\w-]+$/, `#${secret}`);
 
-/** "bob-api · can prompt", or "everything · can watch". */
-export function guestSummary(guest: Guest, projectName: (id: string) => string): string {
-  const where = guest.room ? 'everything' : guest.projects.map(projectName).join(', ') || 'nothing yet';
-  return `${where} · ${CAN_INFO[guest.can].short}`;
-}
-
-/** "in 23h", "in 40 min", "expired". */
-export function expiresIn(expiresAt: number | undefined, now: number): string {
-  if (expiresAt === undefined) return 'never expires';
-  const left = expiresAt - now;
-  if (left <= 0) return 'expired';
-  return left >= 60 * 60_000 ? `expires in ${Math.round(left / (60 * 60_000))}h` : `expires in ${Math.max(1, Math.round(left / 60_000))} min`;
-}
-
 /** Everyone a guest shares a workspace with (they may see and message each other). */
-export function contactsFor(peerId: string, members: AppState['members']): string[] {
+export function contactsFor(peerId: string, members: DomainState['members']): string[] {
   const out = new Set<string>();
   for (const people of Object.values(members)) if (people[peerId]) for (const id of Object.keys(people)) if (id !== peerId) out.add(id);
   return [...out];
 }
 
 /** Workspaces in a project a guest should be in (not archived, not someone else's checkout). */
-export function projectWorkspaces(state: Pick<AppState, 'projects'>, projectId: string): string[] {
+export function projectWorkspaces(state: Pick<DomainState, 'projects'>, projectId: string): string[] {
   return state.projects.find((p) => p.id === projectId)?.workspaces.filter((w) => !w.archived).map((w) => w.id) ?? [];
 }
 
@@ -97,10 +61,12 @@ export interface ProjectInvitesDeps {
  */
 export class ProjectInvites {
   private readonly secrets = new Map<string, { secret: string; keys: RoomKeys }>();
+  /** Keys of revoked links: only guests already let in may still reconnect with them. */
+  private readonly revoked = new Map<string, RoomKeys>();
   /** Who came to the door with which link (until you decide). */
   private readonly arrivals = new Map<string, string>();
   private pendingCopy?: string;
-  private lastProjects: AppState['projects'] = [];
+  private lastProjects: DomainState['projects'] = [];
 
   constructor(private readonly deps: ProjectInvitesDeps) {
     deps.room?.setGate({ keys: () => this.liveKeys(), admit: (id, peerId, closed) => this.admit(id, peerId, closed) });
@@ -112,7 +78,7 @@ export class ProjectInvites {
     return Boolean(this.deps.room);
   }
 
-  private get state(): AppState {
+  private get state(): DomainState {
     return this.deps.store.getState();
   }
 
@@ -171,6 +137,8 @@ export class ProjectInvites {
   /** The link stops working; people already in keep their place until you remove them. */
   revoke(id: string): void {
     const link = this.state.links.find((l) => l.id === id);
+    const old = this.secrets.get(id);
+    if (old) this.revoked.set(id, old.keys);
     this.secrets.delete(id);
     this.deps.store.dispatch({ type: 'link_remove', id });
     for (const k of this.state.knocks.filter((x) => x.linkId === id)) this.decline(k.peerId, true);
@@ -178,7 +146,7 @@ export class ProjectInvites {
   }
 
   private liveKeys(): Array<{ id: string; keys: RoomKeys }> {
-    return [...this.secrets.entries()].map(([id, s]) => ({ id, keys: s.keys }));
+    return [...[...this.secrets.entries()].map(([id, s]) => ({ id, keys: s.keys })), ...[...this.revoked.entries()].map(([id, keys]) => ({ id, keys }))];
   }
 
   /** The hub asks: may this person come in with link `id`? (Synchronous: single-use links are consumed here.) */
@@ -256,6 +224,8 @@ export class ProjectInvites {
     if (!guest) return;
     for (const wsId of Object.keys(this.state.members)) this.deps.sharing.remove(wsId, peerId, true);
     this.deps.store.dispatch({ type: 'guest_set', peerId });
+    // The trust that came with the link goes too: coming back by another link starts from your default.
+    this.deps.people.forget(peerId);
     this.deps.room?.turnAway(peerId);
     this.deps.toast(`${guest.name} was removed`, 'success');
   }

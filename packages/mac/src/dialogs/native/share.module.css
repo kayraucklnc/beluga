@@ -1,0 +1,102 @@
+.pathRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.pathIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.path {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-left: 34px;
+}
+.chip {
+  height: 20px;
+  padding: 0 9px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+.chip:hover {
+  background: var(--bg-press);
+  color: var(--text);
+}
+.chipOn {
+  background: var(--accent);
+  color: white;
+}
+.chipOn:hover {
+  background: var(--accent);
+  color: white;
+}
+.people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.person input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.folderIcon {
+  flex: none;
+  color: var(--accent);
+}
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px 7px 8px;
+  border-radius: 9px;
+  background: var(--bg-sunken);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+}
+.folderTile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+.folderText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.folderText strong {
+  font-weight: 600;
+}
+.folderText span {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

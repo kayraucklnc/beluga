@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+export { formatBytes } from '../shared/format.js';
 
 /** Bytes used by a folder (du), or undefined when it can't be measured in time. */
 export function folderSize(dir: string, timeoutMs = 30_000): Promise<number | undefined> {
@@ -9,13 +10,6 @@ export function folderSize(dir: string, timeoutMs = 30_000): Promise<number | un
       resolve(Number.isFinite(kb) && kb >= 0 ? kb * 1024 : undefined);
     });
   });
-}
-
-/** "340 MB", "1.2 GB" */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(0, Math.round(bytes / 1024))} KB`;
-  if (bytes < 1024 ** 3) return `${Math.round(bytes / 1024 ** 2)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(bytes < 10 * 1024 ** 3 ? 1 : 0)} GB`;
 }
 
 /** Measure folders one at a time (so a dozen worktrees don't hammer the disk at once). */

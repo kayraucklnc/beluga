@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Store, initialState, reduce, type Action, type AppState } from '../src/core/store.js';
+import { Store, initialState, reduce, type Action, type DomainState } from '../src/core/store.js';
+import { AttentionRegistry } from '../src/core/attention.js';
+import { ClientStore } from '../src/client/client-store.js';
 import { Notifier, detectNotices, enabled, placeName, type NoticeEvent } from '../src/core/notify.js';
-import { pickRoute, plan, type RouteEnv } from '../src/core/desktop-notify.js';
+import { pickRoute, plan, type RouteEnv } from '../src/ui/tty/desktop-notify.js';
 import type { PeerInfo } from '../src/protocol.js';
 import type { Project } from '../src/workspaces/types.js';
 import type { PendingQuestion, SharedWorkspace } from '../src/core/collab-store.js';
@@ -18,8 +20,8 @@ const project: Project = {
   workspaces: [{ id: 'w1', projectId: 'p1', projectRoot: '/tmp/app', name: 'add-auth', path: '/tmp/app-w1', kind: 'worktree', createdAt: 0, external: false }],
 };
 
-const apply = (s: AppState, ...actions: Action[]): AppState => actions.reduce(reduce, s);
-const base = (): AppState =>
+const apply = (s: DomainState, ...actions: Action[]): DomainState => actions.reduce(reduce, s);
+const base = (): DomainState =>
   apply(initialState('room'), { type: 'peers', peers: [me, bob] }, { type: 'welcome', self: me }, { type: 'projects', projects: [project] });
 
 const ev = (owner: string, requester: string, event: 'started' | 'text' | 'done' | 'error' | 'denied', text = '', channel = 'ws:w1'): Action => ({
@@ -114,8 +116,8 @@ describe('detectNotices: runs', () => {
     expect(detectNotices(running, apply(running, ev('me', 'me', 'text', 'thinking')))).toEqual([]);
   });
 
-  it('ignores chat-only log changes', () => {
-    const s = base();
+  it('ignores chat-only log changes when it is not about you', () => {
+    const s = apply(base(), { type: 'peers', peers: [me, bob, cat] });
     expect(detectNotices(s, apply(s, { type: 'chat', id: 'c1', from: 'b', text: 'hi', ts: 1, byAgent: false }))).toEqual([]);
   });
 });
@@ -124,19 +126,19 @@ describe('detectNotices: needs you', () => {
   it('announces new approvals only', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'approval_add', approval: { id: 'a1', kind: 'tool', title: 'Run npm test?', detail: '`npm test`\nin /app' } });
-    expect(detectNotices(s0, s1)).toEqual([{ kind: 'needsYou', title: 'Run npm test?', body: 'npm test' }]);
+    expect(detectNotices(s0, s1)).toEqual([{ kind: 'needsYou', tag: 'approval', ref: 'a1', title: 'Run npm test?', body: 'npm test' }]);
     const s2 = apply(s1, { type: 'approval_add', approval: { id: 'a2', kind: 'request', title: 'bob asks', detail: '' } });
-    expect(detectNotices(s1, s2)).toEqual([{ kind: 'needsYou', title: 'bob asks', body: '' }]);
+    expect(detectNotices(s1, s2)).toEqual([{ kind: 'needsYou', tag: 'approval', ref: 'a2', title: 'bob asks', body: '' }]);
     expect(detectNotices(s2, apply(s2, { type: 'approval_remove', id: 'a1' }))).toEqual([]);
   });
 
   it('tells questions and plans apart', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'question_add', question: question('q1', 'question') });
-    expect(detectNotices(s0, s1)).toEqual([{ kind: 'needsYou', title: 'Claude asks in add-auth', body: 'Which db?', channel: 'ws:w1' }]);
+    expect(detectNotices(s0, s1)).toEqual([{ kind: 'needsYou', tag: 'question', ref: 'q1', title: 'Claude asks in add-auth', body: 'Which db?', channel: 'ws:w1' }]);
     const s2 = apply(s1, { type: 'question_add', question: question('q2', 'plan', 'room') });
     expect(detectNotices(s1, s2)).toEqual([
-      { kind: 'needsYou', title: 'Claude has a plan for the group chat', body: 'Approve it, or say what to change', channel: 'room' },
+      { kind: 'needsYou', tag: 'plan', ref: 'q2', title: 'Claude has a plan for the group chat', body: 'Approve it, or say what to change', channel: 'room' },
     ]);
     expect(detectNotices(s2, apply(s2, { type: 'question_remove', qid: 'q1' }))).toEqual([]);
   });
@@ -147,7 +149,7 @@ describe('detectNotices: conflicts', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'conflicts', id: 'w1', files: ['a.ts', 'b.ts', 'c.ts', 'd.ts'] });
     expect(detectNotices(s0, s1)).toEqual([
-      { kind: 'problems', title: 'Merge conflict in add-auth', body: '4 file(s): a.ts, b.ts, c.ts', channel: 'ws:w1' },
+      { kind: 'problems', tag: 'conflict', title: 'Merge conflict in add-auth', body: '4 file(s): a.ts, b.ts, c.ts', channel: 'ws:w1' },
     ]);
     // Still conflicted (different files): not announced again.
     expect(detectNotices(s1, apply(s1, { type: 'conflicts', id: 'w1', files: ['a.ts'] }))).toEqual([]);
@@ -167,11 +169,20 @@ describe('detectNotices: people', () => {
   it('announces people joining afterwards, with or without their Claude', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'peers', peers: [me, bob, cat] });
-    expect(detectNotices(s0, s1)).toEqual([{ kind: 'people', title: 'cat joined', body: 'Say hi in the group chat', channel: 'room' }]);
+    expect(detectNotices(s0, s1)).toEqual([{ kind: 'people', tag: 'joined', title: 'cat joined', body: 'Say hi in the group chat', channel: 'room' }]);
     const dan: PeerInfo = { peerId: 'd', name: 'dan', agent: true, shares: [] };
     expect(detectNotices(s1, apply(s1, { type: 'peers', peers: [me, bob, cat, dan] }))[0]?.body).toBe('They brought their Claude');
-    // Someone leaving is not news.
-    expect(detectNotices(s1, apply(s1, { type: 'peers', peers: [me] }))).toEqual([]);
+  });
+
+  it('announces people leaving while you are still in the room', () => {
+    const s1 = apply(base(), { type: 'status', status: 'connected' }, { type: 'peers', peers: [me, bob, cat] });
+    expect(detectNotices(s1, apply(s1, { type: 'peers', peers: [me, cat] }))).toEqual([
+      { kind: 'people', tag: 'left', title: 'bob left', body: 'Their Claude left with them', channel: 'room' },
+    ]);
+    expect(detectNotices(s1, apply(s1, { type: 'peers', peers: [me] })).map((e) => e.title)).toEqual(['bob left', 'cat left']);
+    // Losing the room yourself (or not connected) is not news about each person.
+    expect(detectNotices(s1, apply(s1, { type: 'peers', peers: [] }))).toEqual([]);
+    expect(detectNotices(s1, apply(s1, { type: 'status', status: 'disconnected' }, { type: 'peers', peers: [me] }))).toEqual([]);
   });
 
   it('never announces yourself joining', () => {
@@ -183,12 +194,12 @@ describe('detectNotices: people', () => {
     const s0 = base();
     const s1 = apply(s0, { type: 'shared_add', ws: sharedWs('contribute') });
     expect(detectNotices(s0, s1)).toEqual([
-      { kind: 'people', title: 'bob invited you to api-fix', body: 'You can work there with their Claude', channel: 'ws:sw1' },
+      { kind: 'people', tag: 'invited', title: 'bob invited you to api-fix', body: 'You can work there with their Claude', channel: 'ws:sw1' },
     ]);
     // Re-sent invite (role change) for the same workspace: not new.
     expect(detectNotices(s1, apply(s1, { type: 'shared_add', ws: sharedWs('view') }))).toEqual([]);
     const s2 = apply(s0, { type: 'shared_add', ws: sharedWs('view', 'zz') });
-    expect(detectNotices(s0, s2)).toEqual([{ kind: 'people', title: 'Someone invited you to api-fix', body: 'You can follow along', channel: 'ws:sw1' }]);
+    expect(detectNotices(s0, s2)).toEqual([{ kind: 'people', tag: 'invited', title: 'Someone invited you to api-fix', body: 'You can follow along', channel: 'ws:sw1' }]);
   });
 });
 
@@ -202,13 +213,17 @@ describe('enabled', () => {
 
 describe('Notifier', () => {
   let store: Store;
+  let screen: ClientStore;
   let desktop: ReturnType<typeof vi.fn<(n: { title: string; body: string; sound: boolean }) => void>>;
   let notifier: Notifier;
 
-  const start = (state: AppState = base(), burstMs?: number): void => {
+  /** A store with one screen attached, showing the room (the way the terminal UI starts). */
+  const start = (state: DomainState = base(), burstMs?: number): void => {
     store = new Store(state);
+    const attention = new AttentionRegistry(store);
     desktop = vi.fn<(n: { title: string; body: string; sound: boolean }) => void>();
     notifier = new Notifier({ store, desktop, burstMs });
+    screen = new ClientStore(store, (a) => attention.set('screen', a));
   };
   const finishRun = (requestId: string, channel: string, text = 'ok'): void => {
     store.dispatch({ ...(ev('me', 'me', 'started', '', channel) as Extract<Action, { type: 'agent_event' }>), requestId });
@@ -230,17 +245,18 @@ describe('Notifier', () => {
     expect(desktop).not.toHaveBeenCalled();
     vi.advanceTimersByTime(0);
     expect(desktop).toHaveBeenCalledTimes(1);
-    expect(desktop).toHaveBeenCalledWith({ title: 'Claude finished in add-auth', body: 'shipped', sound: true });
+    expect(desktop).toHaveBeenCalledWith({ title: 'Claude finished in add-auth', body: 'shipped', sound: true, tone: { kind: 'mac', id: 'Glass' }, volume: 0.7, channel: 'ws:w1' });
   });
 
   it('stays quiet about the conversation you are looking at, unless away', () => {
-    start(apply(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } }));
+    start();
+    screen.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
     finishRun('r1', 'ws:w1');
     vi.runAllTimers();
     expect(store.getState().inbox).toEqual([]);
     expect(desktop).not.toHaveBeenCalled();
 
-    store.dispatch({ type: 'away', away: true });
+    screen.dispatch({ type: 'away', away: true });
     finishRun('r2', 'ws:w1');
     vi.runAllTimers();
     expect(store.getState().inbox).toHaveLength(1);
@@ -261,7 +277,7 @@ describe('Notifier', () => {
   });
 
   it('combines a burst into one desktop notification with a combined title', () => {
-    start(apply(base(), { type: 'prefs', prefs: { notify: { ...initialState('room').prefs.notify, sound: false } } }));
+    start(apply(base(), { type: 'prefs', prefs: { notify: { ...initialState('room').prefs.notify, sound: { kind: 'none' } } } }));
     for (const id of ['r1', 'r2', 'r3', 'r4', 'r5']) finishRun(id, 'ws:w1', id);
     vi.advanceTimersByTime(0);
     expect(desktop).toHaveBeenCalledTimes(1);
@@ -293,21 +309,21 @@ describe('Notifier', () => {
     finishRun('r2', 'room');
     // r2 is about the room, which you are looking at.
     expect(store.getState().inbox).toHaveLength(1);
-    store.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    screen.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
     expect(store.getState().inbox[0]?.read).toBe(true);
 
-    store.dispatch({ type: 'away', away: true });
+    screen.dispatch({ type: 'away', away: true });
     store.dispatch({ type: 'question_add', question: question('q1', 'question') });
     expect(store.getState().inbox[0]).toMatchObject({ channel: 'ws:w1', read: false });
-    store.dispatch({ type: 'away', away: false });
+    screen.dispatch({ type: 'away', away: false });
     expect(store.getState().inbox[0]?.read).toBe(true);
   });
 
   it('does not mark notices read while away', () => {
     start();
-    store.dispatch({ type: 'away', away: true });
+    screen.dispatch({ type: 'away', away: true });
     finishRun('r1', 'ws:w1');
-    store.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
+    screen.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
     expect(store.getState().inbox[0]?.read).toBe(false);
   });
 
@@ -317,7 +333,7 @@ describe('Notifier', () => {
     notifier.notify(e);
     vi.runAllTimers();
     expect(store.getState().inbox[0]).toMatchObject({ kind: 'pr', title: 'PR #3 opened' });
-    expect(desktop).toHaveBeenCalledWith({ title: 'PR #3 opened', body: 'add-auth', sound: true });
+    expect(desktop).toHaveBeenCalledWith({ title: 'PR #3 opened', body: 'add-auth', sound: true, tone: { kind: 'mac', id: 'Glass' }, volume: 0.7 });
   });
 
   it('stops listening after stop()', () => {
@@ -408,5 +424,56 @@ describe('plan', () => {
   it('rings the bell only with sound on', () => {
     expect(plan('bell', n)).toEqual({ write: '\x07' });
     expect(plan('bell', { ...n, sound: false })).toEqual({ write: '' });
+  });
+});
+
+describe('the klaud network: messages from friends and groups', () => {
+  type Net = DomainState['network'];
+  const selfNet = { peerId: 'me'.padEnd(32, 'x'), name: 'kay', presence: { state: 'online' as const }, appearOffline: false };
+  const msg = (id: string, conversation: string, text: string, extra: Partial<Net['messages'][string][number]> = {}) => ({ id, conversation, from: 'b'.padEnd(32, 'x'), name: 'bob', text, ts: 1_000_000, mine: false, ...extra });
+  const on = (messages: Net['messages'] = {}, self = selfNet): DomainState => ({
+    ...base(),
+    network: { enabled: true, self, friends: [], groups: [{ id: 'g1', name: 'launch', members: [], admin: false, active: true, unread: 0, requests: [], createdAt: 0 }], invitations: [], pendingJoins: [], messages },
+  });
+  const withMessages = (s: DomainState, messages: Net['messages']): DomainState => ({ ...s, network: { ...s.network, messages } });
+
+  it('announces a direct message by who sent it, and a group message by where', () => {
+    const prev = on();
+    const next = withMessages(prev, { 'dm:b': [msg('1', 'dm:b', 'lunch?')], 'group:g1': [msg('2', 'group:g1', 'ship it @kay')] });
+    expect(detectNotices(prev, next, 1_000_000)).toEqual([
+      { kind: 'mentions', tag: 'message', title: 'bob', body: 'lunch?', channel: 'dm:b' },
+      { kind: 'mentions', tag: 'mention', title: 'bob mentioned you in launch', body: 'ship it @kay', channel: 'group:g1' },
+    ]);
+  });
+
+  it('leaves out your own, unreadable, old and first-load messages', () => {
+    const prev = on();
+    const next = withMessages(prev, { 'dm:b': [msg('1', 'dm:b', 'mine', { mine: true }), msg('2', 'dm:b', '', { status: 'locked' }), msg('3', 'dm:b', 'old', { ts: 1_000_000 - 13 * 3_600_000 })] });
+    expect(detectNotices(prev, next, 1_000_000)).toEqual([]);
+    const off = { ...prev, network: { ...prev.network, enabled: false } };
+    expect(detectNotices(off, withMessages(off, { 'dm:b': [msg('4', 'dm:b', 'hi')] }), 1_000_000)).toEqual([]);
+  });
+
+  it('is quiet (inbox only) on Do Not Disturb or while appearing offline', () => {
+    const dnd = on({}, { ...selfNet, presence: { state: 'dnd' } as never });
+    expect(detectNotices(dnd, withMessages(dnd, { 'dm:b': [msg('1', 'dm:b', 'hi')] }), 1_000_000)[0]).toMatchObject({ quiet: true });
+    const hidden = on({}, { ...selfNet, appearOffline: true });
+    expect(detectNotices(hidden, withMessages(hidden, { 'dm:b': [msg('1', 'dm:b', 'hi')] }), 1_000_000)[0]).toMatchObject({ quiet: true });
+  });
+
+  it('a quiet notice goes to the inbox without a desktop notification', () => {
+    vi.useFakeTimers({ now: 1_000_000 });
+    try {
+      const store = new Store(on({}, { ...selfNet, presence: { state: 'dnd' } as never }));
+      const desktop = vi.fn();
+      const notifier = new Notifier({ store, desktop });
+      store.dispatch({ type: 'net_message', message: msg('1', 'dm:b', 'hi') });
+      vi.runAllTimers();
+      expect(store.getState().inbox).toMatchObject([{ title: 'bob', channel: 'dm:b' }]);
+      expect(desktop).not.toHaveBeenCalled();
+      notifier.stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

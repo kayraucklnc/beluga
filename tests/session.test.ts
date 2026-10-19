@@ -1,15 +1,16 @@
-import { mkdtempSync, realpathSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentBackend, AgentRunInput, RoomBridge } from '../src/agent/types.js';
 import { Session } from '../src/core/session.js';
 import { ShareService } from '../src/core/shares.js';
-import { Store, initialState, type AppState, type Policy } from '../src/core/store.js';
+import { Store, initialState, type DomainState, type Policy } from '../src/core/store.js';
 import { deriveKeys, generateSecret } from '../src/net/crypto.js';
 import { startHub, type Hub } from '../src/net/hub.js';
 import { PeerClient } from '../src/net/peer-client.js';
-import { waitFor } from './helpers.js';
+import { attach, waitFor } from './helpers.js';
+import type { InProcessClient } from '../src/ipc/in-process.js';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -24,7 +25,9 @@ type Script = (input: AgentRunInput, bridge: RoomBridge) => Promise<string>;
 
 interface Peer {
   session: Session;
-  state: () => AppState;
+  state: () => DomainState;
+  /** A screen attached to it (view, tabs, toasts). */
+  screen: InProcessClient;
   runs: AgentRunInput[];
   bridge: RoomBridge;
   root: string;
@@ -44,12 +47,6 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
   const quit = { called: false };
   const toasts: string[] = [];
   const copied: string[] = [];
-  let lastToast: unknown;
-  store.subscribe(() => {
-    const t = store.getState().toast;
-    if (t && t !== lastToast) toasts.push(t.text);
-    lastToast = t;
-  });
   const session = new Session({
     zoom: async (dir) => ({ ok: true, message: `zoom ${dir}` }),
     copy: async (text) => {
@@ -63,7 +60,6 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
     requestTimeoutMs: 2000,
     approvalTimeoutMs: opts.approvalTimeoutMs,
     agentTimeoutMs: 2000,
-    onQuit: () => (quit.called = true),
     downloadDir: path.join(root, 'downloads'),
     createAgent:
       opts.agent === false
@@ -78,13 +74,23 @@ function peer(name: string, opts: { policy?: Policy; script?: Script; agent?: bo
             };
           },
   });
+  const screen = attach(session);
+  let lastToast: unknown;
+  screen.store.subscribe(() => {
+    const t = screen.store.getState().toast;
+    if (t && t !== lastToast) toasts.push(t.text);
+    lastToast = t;
+  });
+  screen.onIntent((intent) => {
+    if (intent.type === 'quit') quit.called = true;
+  });
   session.start();
   sessions.push(session);
-  return { session, state: store.getState, runs, get bridge() { return bridge; }, root, quit, toasts, copied };
+  return { session, state: store.getState, screen, runs, get bridge() { return bridge; }, root, quit, toasts, copied };
 }
 
-const agentItems = (s: AppState) => s.log.filter((l) => l.type === 'agent');
-const systemText = (s: AppState) => s.log.filter((l) => l.type === 'system').map((l) => (l.type === 'system' ? l.text : ''));
+const agentItems = (s: DomainState) => s.log.filter((l) => l.type === 'agent');
+const systemText = (s: DomainState) => s.log.filter((l) => l.type === 'system').map((l) => (l.type === 'system' ? l.text : ''));
 
 async function room(...peers: Peer[]): Promise<void> {
   await waitFor(() => peers.every((p) => p.state().peers.length === peers.length && p.state().self));
@@ -201,11 +207,9 @@ describe('Session', () => {
     await room(kay, bob);
 
     const bobRow = kay.state().browser.rows.findIndex((r) => r.label === 'bob · proj');
-    kay.session.store.dispatch({ type: 'browser_cursor', delta: bobRow });
-    await kay.session.browserEnter();
+    await kay.session.browserEnter(bobRow);
     expect(kay.state().browser.rows.map((r) => r.label)).toEqual(['..', 'README.md']);
-    kay.session.store.dispatch({ type: 'browser_cursor', delta: 1 });
-    await kay.session.browserEnter();
+    await kay.session.browserEnter(1);
     expect(kay.state().viewer).toMatchObject({ content: 'v1', path: 'README.md' });
     await waitFor(() => bob.state().focus[kay.session.selfId]?.path === 'README.md');
 
@@ -224,11 +228,30 @@ describe('Session', () => {
     expect(kay.state().dirCache[`${bob.session.selfId}:proj/`]?.map((e) => e.name)).toEqual(['README.md']);
     await kay.session.loadDir({ owner: bob.session.selfId, share: 'proj', path: 'nope' }); // errors are ignored
 
-    kay.session.store.dispatch({ type: 'browser_cursor', delta: -10 });
-    await kay.session.browserEnter(); // '..' goes back to root
+    await kay.session.browserEnter(0); // '..' goes back to root
     expect(kay.state().browser.at).toBeUndefined();
     await kay.session.browseTo({ owner: bob.session.selfId, share: 'nope', path: '' });
     expect(kay.state().browser.error).toMatch(/not shared with you/);
+  });
+
+  it('reads the images a friend’s document shows, by the same rules as opening a file', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"/>';
+    const bob = peer('bob', { files: { 'flow.svg': svg, 'notes.md': '# Notes' } });
+    mkdirSync(path.join(bob.root, 'node_modules'));
+    writeFileSync(path.join(bob.root, 'node_modules', 'logo.png'), 'x');
+    await room(kay, bob);
+    const at = (p: string) => ({ owner: bob.session.selfId, share: 'proj', path: p });
+    const image = await kay.session.files.readImageFile(at('flow.svg'));
+    expect(image.mediaType).toBe('image/svg+xml');
+    expect(image.bytes.toString('utf8')).toBe(svg);
+    // Only images; nothing the share keeps private; nothing outside it; nothing that isn't there.
+    await expect(kay.session.files.readImageFile(at('notes.md'))).rejects.toThrow('Not an image');
+    await expect(kay.session.files.readImageFile(at('node_modules/logo.png'))).rejects.toThrow('That file is private');
+    await expect(kay.session.files.readImageFile(at('../outside.png'))).rejects.toThrow(/traversal/);
+    await expect(kay.session.files.readImageFile(at('missing.png'))).rejects.toThrow(/ENOENT/);
+    await expect(kay.session.files.readImageFile({ owner: bob.session.selfId, share: 'nope', path: 'flow.svg' })).rejects.toThrow(/not shared with you/);
   });
 
   it('follows a friend and their agent like Google Docs', async () => {
@@ -318,11 +341,11 @@ describe('Session', () => {
     }
     expect(kay.state().policy).toBe('auto');
     kay.session.submit('/help');
-    expect(kay.state().overlay).toBe('help');
+    expect(kay.screen.store.getState().overlay).toBe('help');
     kay.session.submit('//not a command');
     await waitFor(() => bob.state().log.some((l) => l.type === 'chat' && l.text === '/not a command'));
     kay.session.submit('/clear'); // asks how to clear (just me / everyone)
-    expect(kay.state().overlay).toBe('clear');
+    expect(kay.screen.store.getState().overlay).toBe('clear');
     kay.session.clearChat('room');
     expect(kay.state().log).toHaveLength(0);
     kay.session.submit('/quit');
@@ -376,6 +399,44 @@ describe('Session hardening', () => {
     expect(kay.state().approvals).toHaveLength(0);
     expect(kay.runs).toHaveLength(1);
     expect(agentItems(kay.state()).map((a) => (a.type === 'agent' ? a.text : ''))).toContain('Cancelled by owner');
+  });
+
+  it('stops your Claude in one conversation; your queued messages come back, others keep going', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      policy: 'auto',
+      script: async (input) => {
+        if (input.prompt !== 'first') return `done: ${input.prompt}`;
+        await input.canUseTool('Bash', { command: 'sleep 100' });
+        return 'should not matter';
+      },
+    });
+    const bob = peer('bob');
+    await room(kay, bob);
+    kay.session.store.dispatch({ type: 'prefs', prefs: { selfApproval: 'ask' } });
+    kay.session.submit('@claude first');
+    await waitFor(() => kay.state().approvals.length === 1);
+    kay.session.submit('@claude second');
+    bob.session.submit('@claude:kay from bob');
+    kay.session.submit('@claude third');
+    const queued = () => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.status === 'queued');
+    await waitFor(() => queued().length === 3);
+
+    // Nothing of yours in another conversation: nothing there (or here) stops.
+    expect(kay.session.host.stopRun('ws:elsewhere')).toEqual({ stopped: false, returned: [] });
+    await waitFor(() => kay.toasts.includes("Your Claude isn't working here"));
+    expect(kay.state().approvals).toHaveLength(1);
+
+    expect(kay.session.host.stopRun('room')).toEqual({ stopped: true, returned: ['second', 'third'] });
+    await waitFor(() => kay.toasts.includes('Stopped your Claude here · 2 queued messages back in the box'));
+    expect(kay.state().approvals).toHaveLength(0);
+    const text = (prompt: string) => agentItems(kay.state()).find((a) => a.type === 'agent' && a.prompt === prompt);
+    // The run that was going (it never queued, so its log line has no prompt) is the first one.
+    await waitFor(() => agentItems(kay.state())[0]?.type === 'agent' && agentItems(kay.state())[0]?.text === 'Stopped by you');
+    for (const prompt of ['second', 'third']) expect(text(prompt)).toMatchObject({ status: 'error', text: 'Taken out of the queue when you stopped Claude' });
+    // Bob's request kept its place and runs next.
+    await waitFor(() => agentItems(bob.state()).some((a) => a.type === 'agent' && a.status === 'done' && a.text === 'done: from bob'));
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['first', 'from bob']);
   });
 
   it('scopes "always" tool approval to one requester', async () => {
@@ -432,6 +493,14 @@ describe('Session hardening', () => {
     kay.session.submit('/get nope');
     kay.session.submit('/get');
     expect(kay.toasts).toContain('Usage: /get <name>:<folder>/<file>');
+
+    // Saved exactly where you picked (a Save dialog), replacing what's there; never a relative path.
+    const picked = path.join(kay.root, 'Desktop copy.md');
+    writeFileSync(picked, 'old');
+    expect(await kay.session.download({ owner: bob.session.selfId, share: 'proj', path: 'notes.md' }, { to: picked })).toBe(picked);
+    expect(readFileSync(picked, 'utf8')).toBe('hi from bob');
+    expect(await kay.session.download({ owner: bob.session.selfId, share: 'proj', path: 'notes.md' }, { to: 'relative.md' })).toBeUndefined();
+    expect(kay.toasts.at(-1)).toBe('Pick where to save it');
   });
 
   it('lets you keep your Claude private', async () => {
@@ -500,7 +569,7 @@ describe('Session hardening', () => {
     kay.session.setClaudeSharing('auto');
     expect(saved).toEqual([{ name: 'kayra' }, { theme: 'mono' }, { policy: 'auto' }]);
     kay.session.submit('/settings');
-    expect(kay.state().overlay).toBe('settings');
+    expect(kay.screen.store.getState().overlay).toBe('settings');
   });
 
   it('changes text size via /zoom', async () => {
@@ -531,7 +600,7 @@ describe('Session hardening', () => {
     await waitFor(() => kay.runs.length === 1);
     kay.session.submit('@claude next');
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'queued'));
-    kay.session.submit('@claude now', true);
+    kay.session.submit('@claude now', { urgent: true });
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'Interrupted by a newer message'));
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did now'));
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did next'));
@@ -563,6 +632,53 @@ describe('Session hardening', () => {
     expect(kay.session.host.promote('nope')).toBe(false);
   });
 
+  it('says what waits in the queue, and moves your waiting messages around', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', {
+      script: (input) =>
+        input.prompt === 'slow'
+          ? new Promise((_resolve, reject) => input.signal.addEventListener('abort', () => reject(new Error('aborted'))))
+          : Promise.resolve(`did ${input.prompt}`),
+    });
+    await room(kay);
+    kay.session.submit('@claude slow');
+    await waitFor(() => kay.runs.length === 1);
+    for (const p of ['one', 'two', 'three']) kay.session.submit(`@claude ${p}`);
+    const queued = () => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.status === 'queued') as Array<{ requestId: string; prompt?: string; requester?: string }>;
+    await waitFor(() => queued().length === 3);
+    expect(queued().map((q) => q.prompt)).toEqual(['one', 'two', 'three']);
+    expect(queued()[0]!.requester).toBe(kay.session.selfId);
+    const [one, , three] = queued();
+    expect(kay.session.host.reorderQueued(three!.requestId, 0)).toBe(true);
+    expect(queued().map((q) => q.prompt)).toEqual(['three', 'one', 'two']);
+    expect(kay.session.host.reorderQueued(one!.requestId, 99)).toBe(true);
+    expect(queued().map((q) => q.prompt)).toEqual(['three', 'two', 'one']);
+    expect(kay.session.host.reorderQueued('nope', 0)).toBe(false);
+    // The queue runs in the new order once the slow task stops.
+    kay.session.host.promote(three!.requestId);
+    await waitFor(() => kay.runs.length === 4);
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'three', 'two', 'one']);
+  });
+
+  it("shows a friend the images you send to the room, and only them", async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    const zoe = peer('zoe');
+    await room(kay, bob, zoe);
+    const { publishForRoom, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes, ATTACHMENT_SHARE } = await import('../src/core/attachments.js');
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+    const a = registerAttachment(await saveImageBytes(png, 'png'), png.byteLength);
+    const file = publishForRoom(a);
+    kay.session.serveFolder(ATTACHMENT_SHARE, roomAttachmentsDir(), [bob.session.selfId]);
+    const fetchVia = (p: Peer) => (at: { owner: string; share: string; path: string }, max: number) =>
+      import('../src/core/downloads.js').then((d) => d.fetchBytes(at, p.session.files.request.bind(p.session.files), max));
+    expect(await readAttachment(kay.session.selfId, file, kay.session.selfId, fetchVia(kay))).toEqual(png);
+    expect(await readAttachment(kay.session.selfId, file, bob.session.selfId, fetchVia(bob))).toEqual(png);
+    await expect(readAttachment(kay.session.selfId, file, zoe.session.selfId, fetchVia(zoe))).rejects.toThrow();
+    await expect(readAttachment(kay.session.selfId, '../secret.png', bob.session.selfId, fetchVia(bob))).rejects.toThrow("isn't an image link");
+  });
+
   it("sends your messages into a run that waits on background agents instead of queueing; others still queue", async () => {
     hub = await startHub({ keys });
     let finishAgents!: () => void;
@@ -587,7 +703,7 @@ describe('Session hardening', () => {
     await room(kay, bob);
     kay.session.submit('@claude start jobs');
     await waitFor(() => kay.runs.length === 1);
-    kay.session.submit('@claude how is it going', true);
+    kay.session.submit('@claude how is it going', { urgent: true });
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'got how is it going'));
     bob.session.submit('@claude:kay hi');
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'queued'));
@@ -643,8 +759,8 @@ describe('Session hardening', () => {
     kay.session.submit('@claude slow');
     await waitFor(() => kay.runs.length === 1);
     kay.session.submit('@claude queued');
-    kay.session.submit('@claude first', true);
-    kay.session.submit('@claude second', true);
+    kay.session.submit('@claude first', { urgent: true });
+    kay.session.submit('@claude second', { urgent: true });
     await waitFor(() => kay.runs.length === 4);
     expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'first', 'second', 'queued']);
   });

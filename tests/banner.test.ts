@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { initialState, reduce, type AppState } from '../src/core/store.js';
+import { type AppState } from '../src/core/store.js';
+import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
 import { anyActivity, inviteBanner, peopleRows } from '../src/ui/banner.js';
 

@@ -1,0 +1,67 @@
+/* Before work that starts Claude or changes git: a small popover under its toolbar button. */
+.popover {
+  z-index: 60;
+  width: 320px;
+  padding: 14px 14px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-raised) 96%, transparent);
+  backdrop-filter: blur(30px) saturate(1.7);
+  -webkit-backdrop-filter: blur(30px) saturate(1.7);
+  box-shadow: var(--shadow-pop), 0 18px 50px rgba(0, 0, 0, 0.18);
+  transform-origin: var(--radix-popover-content-transform-origin);
+  animation: drop var(--dur) var(--ease-out);
+  outline: none;
+}
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .popover {
+    animation: none;
+  }
+}
+:root[data-motion='reduce'] .popover {
+  animation: none;
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.message {
+  margin-top: 8px;
+  color: var(--text);
+  line-height: 1.45;
+}
+.message p {
+  margin: 0 0 6px;
+}
+.quiet {
+  color: var(--text-2);
+  font-size: 0.92rem;
+}
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}

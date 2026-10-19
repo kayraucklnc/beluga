@@ -1,0 +1,97 @@
+import { expect, test, type Page } from '@playwright/test';
+
+/**
+ * The context meter beside the send button, Compact now, auto-compact when a conversation is
+ * nearly full, and the divider each compaction leaves in the chat (the messages all stay; the
+ * divider opens to show what Claude kept). The demo seeds each conversation's fill level and its
+ * Claude fills the window as it works (src/demo.ts, src/agent/mock-context.ts).
+ */
+
+const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
+const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea)');
+const meter = (page: Page) => page.locator('[data-context-meter]');
+const popover = (page: Page) => page.getByRole('dialog', { name: 'Context window' });
+const dividers = (page: Page) => page.locator('[data-compact-divider]');
+
+async function open(page: Page, name: string, project = 'bob-api'): Promise<void> {
+  const row = sidebar(page).getByRole('button', { name, exact: true });
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: project }).first().click({ position: { x: 60, y: 10 } });
+  await sidebar(page).getByRole('button', { name, exact: true }).click();
+  await expect(composer(page)).toBeVisible();
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/');
+  await expect(sidebar(page)).toBeVisible();
+});
+
+test('the meter shows how full the conversation is, with the details on hover', async ({ page }) => {
+  await open(page, 'add-auth');
+  await expect(meter(page)).toHaveText(/^\d+%$/);
+  await expect(meter(page)).toHaveAttribute('data-context-meter', 'normal');
+  const pct = Number((await meter(page).textContent())!.replace('%', ''));
+  expect(pct).toBeGreaterThan(0);
+  await meter(page).hover();
+  await expect(popover(page)).toBeVisible();
+  await expect(popover(page).locator('[data-context-usage]')).toContainText(`${pct}% of 200k`);
+  await expect(popover(page)).toContainText('Model window');
+  await expect(popover(page)).toContainText('Auto-compact');
+  await expect(popover(page).getByRole('button', { name: /Compact/ })).toBeEnabled();
+  // Getting full: amber, and the toolbar says so quietly.
+  await page.mouse.move(0, 0);
+  await open(page, 'webhook-retries');
+  await expect(meter(page)).toHaveAttribute('data-context-meter', /warn|full/);
+  await expect(page.locator('header').getByText(/\d+% context/)).toBeVisible();
+});
+
+test('a conversation past the threshold compacts on its own after Claude answers', async ({ page }) => {
+  await open(page, 'How do deploys work?');
+  const before = Number((await meter(page).textContent())!.replace('%', ''));
+  expect(before).toBeGreaterThanOrEqual(80);
+  await composer(page).fill('how do the deploy scripts work?');
+  await composer(page).press('Enter');
+  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 30_000 });
+  const divider = dividers(page).filter({ hasText: /compact/i }).last();
+  await expect(divider).toHaveAttribute('data-compact-divider', 'done', { timeout: 15_000 });
+  await expect(divider).toContainText(/Auto-compacted · \d+k → \d+k tokens/);
+  // Claude's working memory is small again; the conversation is all still there.
+  await expect.poll(async () => Number((await meter(page).textContent())!.replace('%', ''))).toBeLessThan(30);
+  await expect(page.getByText('how do the deploy scripts work?')).toBeVisible();
+});
+
+test('Compact now leaves a divider that opens to show what Claude kept', async ({ page }) => {
+  await open(page, 'How do deploys work?');
+  await meter(page).click();
+  await popover(page).getByRole('button', { name: 'Compact Now' }).click();
+  // Compacting shows in the meter, then the divider lands (a manual one says "Context compacted").
+  const divider = dividers(page).filter({ hasText: 'Context compacted' }).last();
+  await expect(divider).toHaveAttribute('data-compact-divider', 'done', { timeout: 15_000 });
+  await expect(divider).toContainText(/Context compacted · \d+k → \d+k tokens · \d{1,2}:\d{2}/);
+  const already = (await dividers(page).count()) - 1;
+  const toggle = divider.getByRole('button');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(divider.getByText('What Claude kept')).toBeVisible();
+  await expect(divider.getByText('Open tasks')).toBeVisible();
+  await expect(divider.getByText(/requireUser\(\)/).first()).toBeVisible();
+  // Each divider opens on its own, and closes again.
+  if (already) await expect(dividers(page).first().getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(divider.getByText('What Claude kept')).toHaveCount(0);
+});
+
+test('Settings › Claude has auto-compact with its threshold', async ({ page }) => {
+  await page.keyboard.press('Meta+,');
+  const settings = page.getByRole('dialog');
+  await settings.getByRole('button', { name: 'Claude' }).click();
+  const auto = settings.getByRole('switch', { name: 'Auto-compact' });
+  await expect(auto).toHaveAttribute('aria-checked', 'true');
+  const slider = settings.getByRole('slider', { name: 'Compact at' });
+  await expect(slider).toHaveValue('85');
+  await expect(settings.getByText('When a conversation is 85% full')).toBeVisible();
+  await auto.click();
+  await expect(slider).toBeDisabled();
+  await auto.click();
+  await expect(slider).toBeEnabled();
+});

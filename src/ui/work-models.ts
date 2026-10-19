@@ -1,9 +1,9 @@
 import { type AppState, peerName } from '../core/store.js';
 import { TRUST_INFO } from '../core/trust.js';
-import { TRUST_LEVELS } from '../core/settings.js';
+import { TRUST_LEVELS } from '../shared/settings-schema.js';
 import { unreadCount } from '../core/work-store.js';
 import { snippet } from '../core/search.js';
-import { formatBytes } from '../workspaces/disk.js';
+import { formatBytes } from '../shared/format.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import type { Workspace } from '../workspaces/types.js';
 import { type Line, type Seg, lineWidth, pad, plain, truncate } from './text.js';

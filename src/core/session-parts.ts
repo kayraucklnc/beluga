@@ -9,11 +9,13 @@ import { ReplayGuard } from './replay.js';
 import { People } from './people.js';
 import { RoomFiles } from './room-files.js';
 import { AgentHost } from './agent-host.js';
+import { StepBook } from './step-book.js';
 import { RemoteWork } from './remote-work.js';
 import { PeerRun } from './peer-run.js';
 import { ProjectInvites } from './project-invites.js';
 import { GuestShell } from './guest-shell.js';
 import { SharedDiff } from './shared-diff.js';
+import { EnvVars } from './env-vars.js';
 
 /** Everything a session is made of, wired to each other and to the session. */
 export interface SessionParts {
@@ -31,11 +33,14 @@ export interface SessionParts {
   readonly invites: ProjectInvites;
   readonly shell: GuestShell;
   readonly diff: SharedDiff;
+  /** Your environment variables (kept on this computer). */
+  readonly env: EnvVars;
 }
 
 export function createSessionParts(session: Session, opts: SessionOptions): SessionParts {
   let workspaces: WorkspaceController | undefined;
   let workbench: Workbench | undefined;
+  const env = new EnvVars({ store: opts.store });
     if (opts.workspaces) {
       workspaces = new WorkspaceController({
         manager: opts.workspaces,
@@ -43,13 +48,23 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         shares: opts.shares,
         selfId: () => session.selfId,
         toast: (text, level) => session.toast(text, level),
-        askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
-        findConversation: opts.findConversation ? (dir) => opts.findConversation!(dir, { id: session.selfId, name: session.store.getState().self?.name ?? 'you' }) : undefined,
+        intend: (intent) => session.intend(intent),
+        askClaude: (prompt, channel, o) => session.askOwnClaude(prompt, channel, false, o?.echo ?? true),
+        compact: (channel, instructions) => session.compact(channel, instructions),
+        findConversation: opts.findConversation
+          ? async (dir, o) => {
+              const found = await opts.findConversation!(dir, { id: session.selfId, name: session.store.getState().self?.name ?? 'you' }, o);
+              // Its steps in detail stay beside the chat (opened from the Claude cards).
+              if (found?.steps) host.keepImported(found.sessionId, found.steps);
+              return found;
+            }
+          : undefined,
+        ...(opts.otherTools ? { otherTools: opts.otherTools } : {}),
         onWorktreeCreated: (ws) => workbench?.onWorktreeCreated(ws),
         onWorkspaceGoing: (id) => workbench?.closeTerminals(id),
       });
     }
-    const notifier = new Notifier({ store: opts.store, desktop: (n) => opts.desktopNotify?.(n) });
+    const notifier = new Notifier({ store: opts.store, desktop: (n) => opts.desktopNotify?.(n), toast: (text, level) => session.toast(text, level) });
     if (workspaces) {
       workbench = new Workbench({
         store: opts.store,
@@ -57,6 +72,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         terminals: opts.terminals,
         notify: (e) => notifier.notify(e),
         toast: (text, level) => session.toast(text, level),
+        intend: (intent) => session.intend(intent),
         askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
         setPrefs: (prefs) => session.setPrefs(prefs),
         confirm: (title, detail) => session.ask('request', title, detail),
@@ -64,6 +80,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         listModels: async () => (await session.backend?.listModels?.()) as readonly ModelChoice[] | undefined,
         findPr: opts.findPr,
         hasGh: opts.hasGh,
+        envFor: (where) => env.envFor(where),
       });
     }
     const questions = new QuestionBroker({
@@ -80,6 +97,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       shares: opts.shares,
       workspaces: opts.workspaces,
       toast: (text, level) => session.toast(text, level),
+      intend: (intent) => session.intend(intent),
     });
     const replay = new ReplayGuard(opts.replayFile);
     const people = new People({
@@ -114,6 +132,10 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       approvalTimeoutMs: () => session.approvalTimeoutMs,
       refreshUsage: () => session.refreshUsage(),
       canEditIn: (peerId, channel) => invites.canEditIn(peerId, channel),
+      envFor: (channel, dir) => env.envFor(channel.startsWith('ws:') ? { workspaceId: channel.slice(3), dir } : { dir }),
+      nameTask: (prompt) => session.nameTask(prompt),
+      steps: new StepBook(opts.stepsDir),
+      isGuest: (peerId) => invites.isRestricted(peerId),
     });
     const remote = new RemoteWork({
       store: opts.store,
@@ -131,6 +153,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       nameTask: (prompt) => session.nameTask(prompt),
       notify: (e) => notifier.notify(e),
       toast: (text, level) => session.toast(text, level),
+      intend: (intent) => session.intend(intent),
       onWorktreeCreated: (ws) => workbench?.onWorktreeCreated(ws),
       downloadDir: opts.downloadDir,
     });
@@ -162,5 +185,5 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       openLocation: (at) => files.openLocation(at),
       search: (at, mode, query) => diff.search(at, mode, query),
     });
-  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff };
+  return { workspaces, notifier, workbench, questions, sharing, replay, people, files, host, remote, peerRun, invites, shell, diff, env };
 }

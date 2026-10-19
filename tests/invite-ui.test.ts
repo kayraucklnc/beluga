@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SharedWorkspace } from '../src/core/collab-store.js';
-import { initialState, reduce, type AppState } from '../src/core/store.js';
+import { type AppState } from '../src/core/store.js';
+import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import { actionButtons } from '../src/ui/actions.js';
 import { renderLog } from '../src/ui/format.js';
 import { copyIndex, guestAddMenu, guestPersonMenu, inviteChoice, inviteMenu } from '../src/ui/invite-menus.js';

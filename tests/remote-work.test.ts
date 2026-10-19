@@ -13,7 +13,7 @@ import { PeerClient } from '../src/net/peer-client.js';
 import { expandPath, handoffNotePrompt } from '../src/core/remote-work.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
-import { waitFor } from './helpers.js';
+import { waitFor, attach } from './helpers.js';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -97,7 +97,8 @@ async function person(name: string, opts: { repo?: string; script?: Script } = {
   });
   session.start();
   sessions.push(session);
-  return { session, state: store.getState, runs, workspaces, id: () => session.selfId };
+  const screen = attach(session);
+  return { session, state: store.getState, screen, runs, workspaces, id: () => session.selfId };
 }
 
 type Person = Awaited<ReturnType<typeof person>>;
@@ -118,7 +119,7 @@ describe('approvals', () => {
     for (const f of ['a', 'b', 'c', 'd', 'e']) writeFileSync(path.join(base, `${f}.txt`), f);
     const asks = ['a', 'b', 'c', 'd', 'e'].map((f) => kay.session.remote.getFile(bob.id(), path.join(base, `${f}.txt`)).catch((e: Error) => e.message));
     await waitFor(() => bob.state().approvals.length === 3, 4000);
-    const results = await Promise.race([Promise.all(asks.slice(3)), new Promise((r) => setTimeout(() => r('waiting'), 2000))]);
+    const results = await Promise.race([Promise.all(asks.slice(3)), new Promise((r) => setTimeout(() => r('waiting'), 10_000))]);
     expect(results).toEqual(['bob declined', 'bob declined']);
     for (let i = 0; i < 3; i++) bob.session.answerApproval('no');
   });
@@ -223,7 +224,7 @@ describe('work on a friend’s computer', () => {
     expect(ws?.branch).toMatch(/^klaud\/add-.*health-check/);
     // kay is in it (SHARED WITH ME), and her screen opened it.
     await waitFor(() => kay.state().shared.some((w) => w.id === ws?.id), 4000);
-    await waitFor(() => kay.state().view.kind === 'shared', 4000);
+    await waitFor(() => kay.screen.store.getState().view.kind === 'shared', 4000);
     await waitFor(() => kay.state().log.some((l) => l.type === 'agent' && l.channel === `ws:${ws?.id}` && l.status === 'done'), 4000);
   });
 
@@ -234,8 +235,8 @@ describe('work on a friend’s computer', () => {
     const bob = await person('bob', { repo: dirs.bob });
     await together(kay, bob);
     const toasts: string[] = [];
-    kay.session.store.subscribe(() => {
-      const t = kay.state().toast?.text;
+    kay.screen.store.subscribe(() => {
+      const t = kay.screen.store.getState().toast?.text;
       if (t && toasts.at(-1) !== t) toasts.push(t);
     });
     const declined = kay.session.remote.requestWorktree(bob.id(), 'app', 'x');

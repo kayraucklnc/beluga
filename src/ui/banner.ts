@@ -1,4 +1,4 @@
-import { CAN_INFO } from '../core/project-invites.js';
+import { CAN_INFO } from '../shared/invites.js';
 import type { AppState } from '../core/store.js';
 import type { Usage } from '../protocol.js';
 import { card, isRunning } from './format.js';

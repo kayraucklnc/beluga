@@ -1,5 +1,5 @@
 import type { Guest } from '../core/collab-store.js';
-import { CAN_INFO, expiresIn, guestSummary } from '../core/project-invites.js';
+import { CAN_INFO, expiresIn, guestSummary } from '../shared/invites.js';
 import type { AppState } from '../core/store.js';
 import type { GuestCan } from '../protocol.js';
 import type { MenuOption, MenuSpec } from './menus.js';

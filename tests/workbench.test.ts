@@ -15,7 +15,7 @@ import { TerminalManager } from '../src/terminal/index.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
 import { runId, setupId } from '../src/core/workbench.js';
-import { waitFor } from './helpers.js';
+import { attach, waitFor } from './helpers.js';
 
 const keys = deriveKeys(generateSecret());
 let hub: Hub;
@@ -88,10 +88,11 @@ async function solo(dir: string, opts: { findPr?: (d: string, b: string) => Prom
       },
     }),
   });
+  const screen = attach(session);
   session.start();
   sessions.push(session);
   await waitFor(() => store.getState().self, 4000);
-  return { session, state: store.getState, runs, workspaces, desktop, opened, bench: session.workbench! };
+  return { session, state: store.getState, screen: screen.store, runs, workspaces, desktop, opened, bench: session.workbench! };
 }
 
 const projectOf = (w: WorkspaceManager) => w.list.find((p) => p.root)!;
@@ -112,10 +113,10 @@ describe('setup and run scripts', () => {
     await waitFor(() => kay.state().setup[next!.id]?.status === 'done', 8000);
     expect(kay.state().approvals).toHaveLength(0);
     const setup = terminals.get(setupId(ws!.id))!;
-    expect(setup.snapshot().lines.map((l) => l.map((s) => s.text).join('')).join('\n')).toContain('installing');
+    expect(setup.backlog()).toContain('installing');
 
     const run = kay.bench.run(ws!.id)!;
-    await waitFor(() => run.snapshot().lines.some((l) => l.map((s) => s.text).join('').includes('serving')), 8000);
+    await waitFor(() => run.backlog().includes('serving'), 8000);
     expect(kay.bench.run(ws!.id)).toBe(run); // already running: the same session
     kay.bench.stopRun(ws!.id);
     await waitFor(() => !terminals.get(runId(ws!.id))?.running, 4000);
@@ -131,8 +132,8 @@ describe('setup and run scripts', () => {
     await waitFor(() => kay.state().setup[ws!.id]?.status === 'failed', 8000);
     expect(kay.state().setup[ws!.id]?.detail).toBe('exit code 3');
     // You're looking at it, so it's a toast; from elsewhere it goes to the inbox (and the desktop).
-    expect(kay.state().toast?.text).toContain('Setup failed in broken');
-    kay.session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+    expect(kay.screen.getState().toast?.text).toContain('Setup failed in broken');
+    kay.screen.dispatch({ type: 'view', view: { kind: 'overview' } });
     kay.bench.runSetup(ws!.id); // you asked for it: no question
     await waitFor(() => kay.state().inbox.some((n) => n.title === 'Setup failed in broken'), 8000);
     await waitFor(() => kay.desktop.includes('Setup failed in broken'), 4000);
@@ -153,6 +154,22 @@ describe('setup and run scripts', () => {
     await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.command === 'npm ci', 4000);
     expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaud.json')]).toString())).toEqual({ scripts: { setup: 'npm ci', run: 'npm run dev' } });
   });
+
+  it('saves one command straight to klaud.json, dropping your own one for it', async () => {
+    hub = await startHub({ keys });
+    const dir = repo({ 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    const kay = await solo(dir);
+    const id = projectOf(kay.workspaces).id;
+    kay.bench.setScript(id, 'run', 'npm start');
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source === 'yours', 4000);
+    kay.bench.setScript(id, 'run', 'npm run serve', true);
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source === 'klaud.json', 4000);
+    expect(projectOf(kay.workspaces).scripts?.run?.command).toBe('npm run serve');
+    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaud.json')]).toString())).toEqual({ scripts: { run: 'npm run serve' } });
+    kay.bench.setScript(id, 'run', '', true);
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source !== 'klaud.json', 4000);
+    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaud.json')]).toString())).toEqual({ scripts: {} });
+  });
 });
 
 describe('pull requests', () => {
@@ -168,7 +185,7 @@ describe('pull requests', () => {
     expect(kay.runs[0]?.prompt).toContain('For this pull request, also: mention the migration');
     expect(kay.runs[0]?.prompt).toContain('## Why');
 
-    kay.session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+    kay.screen.dispatch({ type: 'view', view: { kind: 'overview' } });
     pr = { number: 7, url: 'https://github.com/x/app/pull/7', state: 'OPEN', title: 'Add auth', draft: false, checks: 'pending' };
     await kay.bench.refreshPrs(ws!.id);
     expect(kay.state().prs[ws!.id]?.number).toBe(7);
@@ -189,7 +206,7 @@ describe('pull requests', () => {
     const asked: string[] = [];
     const kay = await solo(dir, { findPr: async (d) => (asked.push(d), { number: 9, url: 'u', state: 'OPEN', title: 'T', draft: false, checks: 'pending' }) });
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'quiet');
-    kay.session.store.dispatch({ type: 'view', view: { kind: 'overview' } });
+    kay.screen.dispatch({ type: 'view', view: { kind: 'overview' } });
     await kay.bench.refreshPrs(ws!.id);
     await kay.bench.refreshPrs(ws!.id);
     expect(kay.state().prs[ws!.id]?.number).toBe(9);
@@ -209,11 +226,16 @@ describe('pull requests', () => {
     const kay = await solo(repo());
     const main = projectOf(kay.workspaces).workspaces.find((w) => w.kind === 'main')!;
     kay.bench.createPr(main.id);
-    expect(kay.state().toast?.text).toContain('Pull requests are for worktrees');
+    expect(kay.screen.getState().toast?.text).toContain('Pull requests are for worktrees');
     kay.session.store.dispatch({ type: 'gh', ok: false });
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'x');
     kay.bench.createPr(ws!.id);
-    expect(kay.state().toast?.text).toContain('Install the GitHub CLI');
+    expect(kay.screen.getState().toast?.text).toContain('Install the GitHub CLI');
+    // Installed and signed in since: the Mac's Check Again looks again (a plain refresh doesn't).
+    await kay.bench.refreshPrs(ws!.id);
+    expect(kay.state().gh).toBe(false);
+    await kay.bench.refreshPrs(ws!.id, true);
+    expect(kay.state().gh).toBe(true);
   });
 });
 
@@ -284,7 +306,7 @@ describe('models, usage, space and search', () => {
     const hits = kay.state().search.hits;
     expect(hits.map((h) => h.place)).toEqual(['app › payments', 'app › docs']);
     kay.bench.openHit(1);
-    expect(kay.state().view).toMatchObject({ kind: 'workspace', id: b!.id });
+    expect(kay.screen.getState().view).toMatchObject({ kind: 'workspace', id: b!.id });
     kay.bench.search('nothing like this');
     expect(kay.state().search.hits).toEqual([]);
   });
@@ -296,5 +318,40 @@ describe('models, usage, space and search', () => {
     expect(kay.state().templates.at(-1)).toMatchObject({ name: 'Write docs', prompt: 'document the public API in README.md' });
     kay.bench.removeTemplate(kay.state().templates.at(-1)!.id);
     expect(kay.state().templates.some((t) => t.name === 'Write docs')).toBe(false);
+    kay.bench.saveTemplate('Big change: plan it, then build it', true);
+    expect(kay.state().templates.at(-1)).toMatchObject({ name: 'Big change', plan: true });
+    kay.bench.removeTemplate(kay.state().templates.at(-1)!.id);
+  });
+});
+
+describe('your shell, its names and your variables', () => {
+  it('starts shells the way you set them up, with your variables, and names them for every screen', async () => {
+    hub = await startHub({ keys });
+    const dir = repo();
+    const kay = await solo(dir);
+    const project = projectOf(kay.workspaces);
+    await waitFor(() => kay.state().projects.some((p) => p.id === project.id), 4000);
+    kay.session.setPrefs({ shell: '/bin/bash', shellLogin: false, shellArgs: ['--norc', '--noprofile'] });
+    kay.session.env.set(undefined, [{ key: 'KLAUD_T_MINE', value: 'mine' }, { key: 'KLAUD_T_BOTH', value: 'mine' }]);
+    kay.session.env.set(project.id, [{ key: 'KLAUD_T_BOTH', value: 'project' }]);
+    const shell = kay.bench.globalShell('shell:1', dir)!;
+    shell.run('echo "got:$KLAUD_T_MINE:$KLAUD_T_BOTH:$0"');
+    await waitFor(() => shell.backlog().includes('got:mine:project:'), 8000);
+    expect(shell.shell).toBe('/bin/bash');
+
+    // Setup and run commands get them too (alongside klaud's own).
+    const ws = await kay.session.workspaces!.newWorktree(project.id, 'envy');
+    kay.bench.setScript(project.id, 'run', 'echo "run:$KLAUD_T_BOTH:$KLAUD_WORKSPACE_NAME"; sleep 5');
+    await waitFor(() => kay.workspaces.list.find((p) => p.id === project.id)?.scripts?.run?.source === 'yours', 4000);
+    const run = kay.bench.run(ws!.id)!;
+    await waitFor(() => run.backlog().includes('run:project:envy'), 8000);
+
+    kay.bench.renameTerminal('shell:1', '  logs\n');
+    expect(kay.state().termNames['shell:1']).toBe('logs');
+    kay.bench.renameTerminal('shell:1', '');
+    expect(kay.state().termNames['shell:1']).toBeUndefined();
+    kay.bench.renameTerminal('shell:1', 'tail');
+    kay.bench.closeTerminal('shell:1');
+    expect(kay.state().termNames).toEqual({});
   });
 });

@@ -3,6 +3,8 @@ import { copyFileSync, mkdirSync, promises as fs, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { klaudHome } from './home.js';
+export { ATTACHMENT_SHARE, ATTACHMENT_SCHEME } from './attachment-share.js';
+import { ATTACHMENT_SHARE, ATTACHMENT_SCHEME } from './attachment-share.js';
 
 /**
  * Images pasted into the box you type in. Each becomes a chip like "[image 1]" in the
@@ -10,10 +12,6 @@ import { klaudHome } from './home.js';
  * ("📎 image 1 (png, 120K)") that open the image, and your own Claude gets the pixels.
  */
 
-/** The private share friends fetch room images from (only copies of images sent to the room). */
-export const ATTACHMENT_SHARE = 'klaud-attachments';
-/** Link scheme for an image in a chat message: klaud-attachment:<owner peer id>/<file name>. */
-export const ATTACHMENT_SCHEME = 'klaud-attachment:';
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
 /** Biggest image accepted (the Claude API takes up to 5 MB per image once base64-encoded, a third bigger). */
 export const MAX_ATTACHMENT_BYTES = Math.floor(3.7 * 1024 * 1024);
@@ -189,6 +187,15 @@ async function shrinkImage(file: string): Promise<string> {
  * Text pasted by dragging files into the terminal: one or more paths, maybe quoted,
  * with escaped spaces, or file:// URLs. Returns them only if every one is an image file.
  */
+/** decodeURIComponent that never throws (a pasted "%zz" would otherwise crash the input handler). */
+const safeDecode = (s: string): string => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+};
+
 export function droppedImagePaths(text: string, exists: (p: string) => boolean = isFile): string[] | undefined {
   const trimmed = text.trim();
   if (!trimmed || trimmed.length > 4000) return undefined;
@@ -197,7 +204,7 @@ export function droppedImagePaths(text: string, exists: (p: string) => boolean =
   for (const m of trimmed.matchAll(re)) tokens.push(m[1] ?? m[2] ?? (m[3] ?? '').replace(/\\(.)/g, '$1'));
   if (!tokens.length) return undefined;
   const paths = tokens.map((t) => {
-    const p = t.startsWith('file://') ? decodeURIComponent(t.slice(7)) : t;
+    const p = t.startsWith('file://') ? safeDecode(t.slice(7)) : t;
     return p.replace(/^~(?=$|\/)/, os.homedir());
   });
   return paths.every((p) => path.isAbsolute(p) && IMAGE_EXT.test(p) && exists(p)) ? paths : undefined;
@@ -221,10 +228,64 @@ export async function importImage(src: string, dir = attachmentsDir()): Promise<
   return file;
 }
 
+/** Save image bytes a screen sent (a paste or a drop in the Mac app) into the attachments folder. */
+export async function saveImageBytes(bytes: Uint8Array, ext: string, dir = attachmentsDir()): Promise<string> {
+  if (bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error(`That image is too big (${formatBytes(bytes.byteLength)}; up to ${formatBytes(MAX_ATTACHMENT_BYTES)})`);
+  await fs.mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${stamp()}.${ext.toLowerCase().replace(/^\./, '')}`);
+  await fs.writeFile(file, bytes);
+  return file;
+}
+
 /** Put a copy where friends can fetch it; returns the file name to link to. */
 export function publishForRoom(a: Attachment, dir = roomAttachmentsDir()): string {
   const name = path.basename(a.path);
   mkdirSync(dir, { recursive: true });
   copyFileSync(a.path, path.join(dir, name));
   return name;
+}
+
+/** Biggest image shown in a chat (bigger ones still open in the viewer). */
+export const MAX_PREVIEW_BYTES = 8 * 1024 * 1024;
+
+/** A file name an image link may name: no folders, not hidden, an image. */
+export const isAttachmentName = (name: string): boolean => !/[/\\]/.test(name) && !name.startsWith('.') && name.length <= 255 && IMAGE_EXT.test(name);
+
+/** Your own copy of an image you linked: in the attachments folder, or among the room's copies. */
+export function ownAttachment(file: string, dir = attachmentsDir()): string | undefined {
+  if (!isAttachmentName(file)) return undefined;
+  return [path.join(dir, file), path.join(dir, 'room', file)].find(isFile);
+}
+
+/** Fetches a file from a friend's share (end-to-end encrypted, refusing anything over `max` bytes). */
+export type FetchShared = (at: { owner: string; share: string; path: string }, max: number) => Promise<Buffer>;
+
+/**
+ * The bytes of an image linked in a chat message: yours from disk, a friend's through their
+ * share of room images (only people they sent it to may fetch it).
+ */
+export async function readAttachment(owner: string, file: string, selfId: string, fetchShared: FetchShared, dir = attachmentsDir()): Promise<Buffer> {
+  if (!isAttachmentName(file)) throw new Error("That isn't an image link");
+  if (owner === selfId) {
+    const own = ownAttachment(file, dir);
+    if (!own) throw new Error('That image is gone from this computer');
+    if (statSync(own).size > MAX_PREVIEW_BYTES) throw new Error('That image is too big to show here');
+    return fs.readFile(own);
+  }
+  return fetchShared({ owner, share: ATTACHMENT_SHARE, path: file }, MAX_PREVIEW_BYTES);
+}
+
+/** An image from a chat message as a file on this computer (a friend's is saved under attachments/received). */
+export async function attachmentOnDisk(owner: string, file: string, selfId: string, fetchShared: FetchShared, dir = attachmentsDir()): Promise<string> {
+  if (owner === selfId) {
+    const own = ownAttachment(file, dir);
+    if (!own) throw new Error('That image is gone from this computer');
+    return own;
+  }
+  const bytes = await readAttachment(owner, file, selfId, fetchShared, dir);
+  const received = path.join(dir, 'received');
+  await fs.mkdir(received, { recursive: true });
+  const saved = path.join(received, `${owner.replace(/[^\w-]/g, '').slice(0, 12)}-${file}`);
+  await fs.writeFile(saved, bytes);
+  return saved;
 }

@@ -1,8 +1,8 @@
 import type { LinkTarget } from './links.js';
 import { type AppState, type LogItem, type ReviewState, type SharedTab, type WorkspaceTab, newShares } from '../core/store.js';
 import type { TrustLevel } from '../core/settings.js';
-import { describePr } from '../workspaces/pr.js';
-import { formatBytes } from '../workspaces/disk.js';
+import { describePr } from '../shared/format.js';
+import { formatBytes } from '../shared/format.js';
 import type { Project, Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { isRunning } from './format.js';
@@ -145,16 +145,35 @@ export interface Activity {
   readonly lastTs?: number;
 }
 
+const IDLE: Activity = { running: false, awaiting: false, subagents: 0, background: 0 };
+// The log is replaced, never changed, so one pass per log serves every channel (the sidebar
+// asks for each workspace on every update).
+const activityIndex = new WeakMap<readonly LogItem[], ReadonlyMap<string, Activity>>();
+
 /** What Claude is doing in a workspace, derived from its conversation. */
 export function activityOf(log: readonly LogItem[], channel: string): Activity {
-  let last: LogItem | undefined;
-  let run: Extract<LogItem, { type: 'agent' }> | undefined;
-  for (const item of log) {
-    if (item.channel !== channel) continue;
-    last = item;
-    if (item.type === 'agent' && isRunning(item.status)) run = item;
+  let index = activityIndex.get(log);
+  if (!index) {
+    index = indexActivity(log);
+    activityIndex.set(log, index);
   }
-  const lastText = last?.type === 'agent' ? last.text || last.steps.at(-1) : last?.type === 'chat' ? last.text : undefined;
+  return index.get(channel) ?? IDLE;
+}
+
+function indexActivity(log: readonly LogItem[]): ReadonlyMap<string, Activity> {
+  const last = new Map<string, LogItem>();
+  const run = new Map<string, Extract<LogItem, { type: 'agent' }>>();
+  for (const item of log) {
+    last.set(item.channel, item);
+    if (item.type === 'agent' && isRunning(item.status)) run.set(item.channel, item);
+  }
+  const out = new Map<string, Activity>();
+  for (const [channel, latest] of last) out.set(channel, activity(latest, run.get(channel)));
+  return out;
+}
+
+function activity(last: LogItem, run: Extract<LogItem, { type: 'agent' }> | undefined): Activity {
+  const lastText = last.type === 'agent' ? last.text || last.steps.at(-1) : last.type === 'chat' ? last.text : undefined;
   return {
     running: Boolean(run),
     awaiting: run?.status === 'awaiting_approval',
@@ -162,7 +181,7 @@ export function activityOf(log: readonly LogItem[], channel: string): Activity {
     background: run?.subagents.filter((s) => s.status === 'running' && s.kind === 'background').length ?? 0,
     startedAt: run?.ts,
     last: lastText?.split('\n').find((l) => l.trim())?.replace(/[*_`#>]/g, '').trim(),
-    lastTs: last?.ts,
+    lastTs: last.ts,
   };
 }
 
@@ -186,24 +205,26 @@ export interface WorkspaceState {
   readonly label: string;
   readonly color: string;
   readonly icon: string;
+  /** What the color means (for screens with their own palette). */
+  readonly tone: 'error' | 'warn' | 'claude' | 'muted' | 'info' | 'ok';
 }
 
 /** One plain-language phrase for a workspace's state, used everywhere it's shown. */
 export function stateOf(state: AppState, ws: Workspace, frame: number, now = Date.now()): WorkspaceState {
   const act = activityOf(state.log, `ws:${ws.id}`);
   const spin = SPINNER[frame % SPINNER.length] ?? '•';
-  if (state.conflicts[ws.id]?.length) return { label: 'Merge conflict', color: theme.error, icon: '!' };
-  if (act.awaiting) return { label: 'Needs your approval', color: theme.warn, icon: glyph.wait };
+  if (state.conflicts[ws.id]?.length) return { label: 'Merge conflict', color: theme.error, icon: '!', tone: 'error' };
+  if (act.awaiting) return { label: 'Needs your approval', color: theme.warn, icon: glyph.wait, tone: 'warn' };
   if (act.running) {
     const extra = act.subagents ? ` · ${act.subagents} sub-agent${act.subagents > 1 ? 's' : ''} running` : act.background ? ' · background task' : '';
-    return { label: `Claude working${act.startedAt ? ` ${formatDuration(now - act.startedAt)}` : ''}${extra}`, color: theme.claude, icon: spin };
+    return { label: `Claude working${act.startedAt ? ` ${formatDuration(now - act.startedAt)}` : ''}${extra}`, color: theme.claude, icon: spin, tone: 'claude' };
   }
-  if (ws.archived) return { label: 'Archived', color: theme.muted, icon: glyph.ring };
-  if (ws.kind === 'chat') return { label: act.lastTs ? `Chat · ${ago(act.lastTs, now)}` : 'New chat', color: theme.muted, icon: '◇' };
+  if (ws.archived) return { label: 'Archived', color: theme.muted, icon: glyph.ring, tone: 'muted' };
+  if (ws.kind === 'chat') return { label: act.lastTs ? `Chat · ${ago(act.lastTs, now)}` : 'New chat', color: theme.muted, icon: '◇', tone: 'muted' };
   const st = ws.status;
-  if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.warn, icon: glyph.dot };
-  if (ws.kind === 'worktree' && st?.ahead) return { label: `Ready to merge · ${st.ahead} commit${st.ahead > 1 ? 's' : ''}`, color: theme.info, icon: glyph.dot };
-  return { label: ws.kind === 'main' ? 'Main folder' : 'Up to date', color: theme.ok, icon: glyph.dot };
+  if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.warn, icon: glyph.dot, tone: 'warn' };
+  if (ws.kind === 'worktree' && st?.ahead) return { label: `Ready to merge · ${st.ahead} commit${st.ahead > 1 ? 's' : ''}`, color: theme.info, icon: glyph.dot, tone: 'info' };
+  return { label: ws.kind === 'main' ? 'Main folder' : 'Up to date', color: theme.ok, icon: glyph.dot, tone: 'ok' };
 }
 
 const BRANCH = '⌥'; // in every common terminal font, and it looks like a fork
@@ -381,7 +402,7 @@ export function overviewNews(state: AppState): { count: number; urgent: boolean 
 }
 
 /** Option+N on a Mac, Alt+N elsewhere: the quick key for tab N, shown only in hover hints. */
-export const tabKey = (n: number, platform = process.platform): string => (platform === 'darwin' ? `⌥${n}` : `Alt+${n}`);
+export const tabKey = (n: number, platform: string = typeof process === 'undefined' ? 'darwin' : process.platform): string => (platform === 'darwin' ? `⌥${n}` : `Alt+${n}`);
 
 /** The six top tabs, in order (Option/Alt+1…6 jump to them). */
 export function topTabs(state: AppState): TopTab[] {
@@ -539,14 +560,81 @@ export function overviewModel(state: AppState, frame: number, width: number, now
  * a button. Buttons that can't do anything right now are dimmed and explain why.
  */
 /** "Share" (or "Shared · 2") opens who's in this workspace and lets you invite or remove people. */
-function sharedButton(state: AppState, wsId: string): { label: string; action: WorkspaceAction; hint: string } {
+function sharedButton(state: AppState, wsId: string): WorkspaceButton {
   const count = Object.keys(state.members[wsId] ?? {}).length;
   const others = state.peers.filter((p) => p.peerId !== state.self?.peerId).length;
   return {
     label: count ? `Shared · ${count}` : 'Share',
     action: 'share',
+    tone: 'info',
     hint: count ? `${count} ${count === 1 ? 'person is' : 'people are'} in this workspace: invite or remove people` : others ? 'Invite people in the room to work here with you' : 'Invite a friend to work here with you',
   };
+}
+
+/** A workspace's views: its chat, files, what changed (not for chats), and its terminal. */
+export function workspaceTabs(ws: Workspace): Array<{ label: string; tab: WorkspaceTab; hint: string }> {
+  return [
+    { label: 'Chat', tab: 'chat', hint: 'Your conversation with Claude' },
+    { label: 'Files', tab: 'files', hint: 'Browse this folder' },
+    ...(ws.kind === 'chat' ? [] : [{ label: 'Diff', tab: 'review' as WorkspaceTab, hint: 'See exactly what changed' }]),
+    { label: 'Terminal', tab: 'terminal', hint: 'A real shell in this folder, plus setup and run' },
+  ];
+}
+
+/** One button of a workspace's toolbar. `tone`: a color that means something (a failing PR, a conflict). */
+export interface WorkspaceButton {
+  readonly label: string;
+  readonly action: WorkspaceAction;
+  readonly hint: string;
+  /** Shown but inactive (nothing to merge yet); the hint says why. */
+  readonly disabled?: boolean;
+  readonly tone?: 'error' | 'ok' | 'info';
+}
+
+/** The toolbar of a workspace, in order, as both screens show it (your hidden buttons left out). */
+export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButton[] {
+  const project = state.projects.find((p) => p.id === ws.projectId);
+  const changed = ws.status?.changed ?? 0;
+  const ahead = ws.status?.ahead ?? 0;
+  const conflict = Boolean(state.conflicts[ws.id]?.length);
+  const pr = state.prs[ws.id];
+  const scripts = project?.scripts;
+  const friends = state.peers.some((p) => p.peerId !== state.self?.peerId && p.agent);
+  const all: WorkspaceButton[] = ws.archived
+    ? [
+        { label: 'Restore', action: 'restore', hint: 'Bring this workspace back' },
+        { label: 'Delete', action: 'delete', hint: 'Delete permanently', tone: 'error' },
+      ]
+    : [
+        ...(scripts?.run ? ([{ label: 'Run', action: 'run', hint: `Start ${scripts.run.command} in the Terminal tab` }] as WorkspaceButton[]) : []),
+        // A main folder is questions only: a review there would want to fix things.
+        ...(ws.askOnly ? [] : ([{ label: 'Review', action: 'review_claude', hint: 'Ask Claude to check everything: bugs, security, tests and quality' }] as WorkspaceButton[])),
+        ...(ws.kind === 'worktree'
+          ? ([
+              { label: 'Commit', action: 'commit', hint: changed ? `Commit ${changed} changed file(s)` : 'Nothing to commit', disabled: !changed },
+              pr
+                ? { label: `PR #${pr.number}${pr.checks === 'passing' ? ' ✓' : pr.checks === 'failing' ? ' ✗' : pr.checks === 'pending' ? ' …' : ''}`, action: 'pr', hint: `${describePr(pr)}: open it, fix checks, or update it`, tone: pr.checks === 'failing' ? 'error' : pr.state === 'MERGED' ? 'ok' : 'info' }
+                : { label: 'PR', action: 'pr', hint: ahead || changed ? 'Claude pushes and opens a pull request with a short description' : 'Nothing to put in a pull request yet', disabled: !ahead && !changed },
+              conflict
+                ? { label: 'Solve conflict', action: 'merge_claude', hint: 'Ask Claude to resolve the merge conflict and finish the merge', tone: 'error' }
+                : {
+                    label: 'Merge',
+                    action: 'merge',
+                    hint: changed ? 'Commit your changes first' : ahead ? `Merge ${ahead} commit(s) into ${project?.name ?? 'the'} main folder` : 'Nothing to merge yet',
+                    disabled: !ahead || changed > 0,
+                  },
+              { label: 'Hand off', action: 'handoff', hint: friends ? "Someone else's Claude continues this on their computer" : 'Invite someone first; then they can take this over', disabled: !friends },
+            ] as WorkspaceButton[])
+          : []),
+        ...(state.context[`ws:${ws.id}`] ? ([{ label: 'Compact', action: 'compact', hint: 'Shrink the conversation so Claude has room to keep going' }] as WorkspaceButton[]) : []),
+        ...(ws.kind !== 'chat' && !ws.askOnly ? ([{ label: 'Fork', action: 'fork', hint: 'Copy this workspace and its conversation into a new worktree' }] as WorkspaceButton[]) : []),
+        { label: 'Finder', action: 'finder', hint: 'Open this folder in Finder' },
+        ...(ws.kind !== 'main' ? ([{ label: 'Archive', action: 'archive', hint: 'Put it away; keeps the branch and conversation' }] as WorkspaceButton[]) : []),
+        sharedButton(state, ws.id),
+      ];
+  // You choose which buttons show (Settings → Workspaces → Top bar buttons); hidden ones still work as /commands.
+  // "Solve conflict" is never hidden: it's the way out of a conflict.
+  return all.filter((b) => b.action === 'merge_claude' || !state.prefs.hiddenButtons.includes(b.action));
 }
 
 export function workspaceHeaderModel(state: AppState, ws: Workspace, width: number, frame = 0): Model {
@@ -561,56 +649,12 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
     { text: '   ' },
     { text: `${st.icon} ${st.label}`, color: st.color },
   ];
-  const tabs: Array<[string, WorkspaceTab, string]> = [
-    ['Chat', 'chat', 'Your conversation with Claude'],
-    ['Files', 'files', 'Browse this folder'],
-    ...(ws.kind === 'chat' ? [] : ([['Diff', 'review', 'See exactly what changed']] as Array<[string, WorkspaceTab, string]>)),
-    ['Terminal', 'terminal', 'A real shell in this folder, plus setup and run'],
-  ];
-  const changed = ws.status?.changed ?? 0;
-  const ahead = ws.status?.ahead ?? 0;
+  const tabs = workspaceTabs(ws);
   const conflict = Boolean(state.conflicts[ws.id]?.length);
-  const pr = state.prs[ws.id];
-  const scripts = project?.scripts;
-  const friends = state.peers.some((p) => p.peerId !== state.self?.peerId && p.agent);
-  type Btn = { label: string; action: WorkspaceAction; hint: string; disabled?: boolean; danger?: boolean; color?: string };
-  const all: Btn[] = ws.archived
-    ? [
-        { label: 'Restore', action: 'restore', hint: 'Bring this workspace back' },
-        { label: 'Delete', action: 'delete', hint: 'Delete permanently', danger: true },
-      ]
-    : [
-        ...(scripts?.run ? ([{ label: 'Run', action: 'run', hint: `Start ${scripts.run.command} in the Terminal tab` }] as Btn[]) : []),
-        { label: 'Review', action: 'review_claude', hint: 'Ask Claude to check everything: bugs, security, tests and quality' },
-        ...(ws.kind === 'worktree'
-          ? ([
-              { label: 'Commit', action: 'commit', hint: changed ? `Commit ${changed} changed file(s)` : 'Nothing to commit', disabled: !changed },
-              pr
-                ? { label: `PR #${pr.number}${pr.checks === 'passing' ? ' ✓' : pr.checks === 'failing' ? ' ✗' : pr.checks === 'pending' ? ' …' : ''}`, action: 'pr', hint: `${describePr(pr)}: open it, fix checks, or update it`, color: pr.checks === 'failing' ? theme.error : pr.state === 'MERGED' ? theme.ok : theme.info }
-                : { label: 'PR', action: 'pr', hint: ahead || changed ? 'Claude pushes and opens a pull request with a short description' : 'Nothing to put in a pull request yet', disabled: !ahead && !changed },
-              conflict
-                ? { label: 'Solve conflict', action: 'merge_claude', hint: 'Ask Claude to resolve the merge conflict and finish the merge' }
-                : {
-                    label: 'Merge',
-                    action: 'merge',
-                    hint: changed ? 'Commit your changes first' : ahead ? `Merge ${ahead} commit(s) into ${project?.name ?? 'the'} main folder` : 'Nothing to merge yet',
-                    disabled: !ahead || changed > 0,
-                  },
-              { label: 'Hand off', action: 'handoff', hint: friends ? "Someone else's Claude continues this on their computer" : 'Invite someone first; then they can take this over', disabled: !friends },
-            ] as Btn[])
-          : []),
-        ...(state.context[`ws:${ws.id}`] ? ([{ label: 'Compact', action: 'compact', hint: 'Shrink the conversation so Claude has room to keep going' }] as Btn[]) : []),
-        ...(ws.kind !== 'chat' ? ([{ label: 'Fork', action: 'fork', hint: 'Copy this workspace and its conversation into a new worktree' }] as Btn[]) : []),
-        { label: 'Finder', action: 'finder', hint: 'Open this folder in Finder' },
-        ...(ws.kind !== 'main' ? ([{ label: 'Archive', action: 'archive', hint: 'Put it away; keeps the branch and conversation' }] as Btn[]) : []),
-        sharedButton(state, ws.id),
-      ];
-  // You choose which buttons show (Settings → Workspaces → Top bar buttons); hidden ones still work as /commands.
-  // "Solve conflict" is never hidden: it's the way out of a conflict.
-  const buttons = all.filter((b) => b.action === 'merge_claude' || !state.prefs.hiddenButtons.includes(b.action));
+  const buttons = workspaceButtons(state, ws);
   const segs: Seg[] = [];
   let x = 0;
-  for (const [label, tab, hint] of tabs) {
+  for (const { label, tab, hint } of tabs) {
     const active = view?.tab === tab;
     const text = ` ${label} `;
     segs.push({ text, color: active ? theme.text : theme.muted, bold: active, inverse: active });
@@ -633,7 +677,7 @@ export function workspaceHeaderModel(state: AppState, ws: Workspace, width: numb
   }
   for (const btn of buttons.slice(0, fit)) {
     const text = ` ${btn.label} `;
-    segs.push({ text, color: btn.disabled ? theme.border : btn.danger ? theme.error : btn.label === 'Solve conflict' ? theme.error : (btn.color ?? (btn.action === 'share' ? theme.info : theme.text)), bold: !btn.disabled });
+    segs.push({ text, color: btn.disabled ? theme.border : btn.tone ? theme[btn.tone] : theme.text, bold: !btn.disabled });
     zones.push({ x0: x, x1: x + text.length - 1, y: 1, action: { type: 'ws', id: ws.id, action: btn.action }, hint: btn.hint, disabled: btn.disabled });
     x += text.length;
   }
