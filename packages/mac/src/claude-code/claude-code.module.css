@@ -153,8 +153,9 @@
 .cardSession .cardTitle { color: var(--text-2); }
 .cardTop {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px 6px;
   min-width: 0;
 }
 .typeBadge {
