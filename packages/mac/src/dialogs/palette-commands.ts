@@ -72,6 +72,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
       ? [
           cmd('clear', 'clear', state.view.kind === 'room' ? 'Clear the Group Chat…' : 'Clear This Conversation…', 'x', () => ui.openMenu({ kind: 'clear', channel, host: state.isHost })),
           cmd('plan', 'plan', state.planMode[channel] ? 'Turn Off Plan First' : 'Turn On Plan First', 'claude', () => ctx.actions.run({ type: 'plan_toggle', channel }), 'Claude plans, you approve, then it works'),
+          cmd('visualize', 'visualize', 'Draw This as a Graph', 'grid', () => void api.session.submit('/visualize', { channel }), 'Claude draws this conversation as an interactive diagram'),
           cmd('model', 'model', 'Choose the Model…', 'spark', () => ui.openMenu({ kind: 'model', ...(channel === 'room' ? {} : { channel }) }), 'For this conversation'),
         ]
       : []),

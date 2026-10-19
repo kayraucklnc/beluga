@@ -84,6 +84,12 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
     const el = parent.current;
     if (starting && stick.current && el) el.scrollTop = el.scrollHeight;
   }, [starting]);
+  // A row grew after it was drawn (a graph laid out, a picture loaded): still at the bottom.
+  const total = virtualizer.getTotalSize();
+  useLayoutEffect(() => {
+    const el = parent.current;
+    if (stick.current && el) el.scrollTop = el.scrollHeight;
+  }, [total]);
   // You sent a message: back to the newest, where it lands (see flight.ts).
   useEffect(() => {
     const toBottom = (): void => {
@@ -99,10 +105,20 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
     setAtBottom(true);
   }, [channel]);
 
+  // Only you scrolling (wheel, trackpad, keys, the scroll bar) leaves the bottom; the list moving
+  // itself (a tall row measured, a graph laid out) doesn't.
+  const youScrolled = useRef(0);
+  const markScroll = (): void => {
+    youScrolled.current = Date.now();
+  };
   const onScroll = (): void => {
     const el = parent.current;
     if (!el) return;
     const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    if (!bottom && stick.current && Date.now() - youScrolled.current > 400) {
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
     stick.current = bottom;
     if (bottom !== atBottom) setAtBottom(bottom);
   };
@@ -131,7 +147,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   return (
     <div className={s.logWrap} data-flight-layer="">
       <FindBar items={items} logRef={parent} onGo={go} />
-      <div ref={parent} className={s.log} onScroll={onScroll}>
+      <div ref={parent} className={s.log} onScroll={onScroll} onWheel={markScroll} onTouchMove={markScroll} onPointerDown={markScroll} onKeyDown={markScroll}>
         <div className={s.logInner} style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((v) => {
             const item = rows[v.index] as Row;

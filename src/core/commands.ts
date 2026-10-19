@@ -29,6 +29,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'template', args: 'save <name>: <prompt>', desc: 'start from a template, or save your own' },
   { name: 'shell', args: '<path>|default|login on|off|args …', desc: 'the shell for the built-in terminal, and how it starts' },
   { name: 'env', args: '[project] KEY=value', desc: 'set an environment variable for your shells, scripts and Claude (KEY= removes it)' },
+  { name: 'visualize', args: '[what]', desc: 'Claude draws it as an interactive graph: architecture, a flow, what changed' },
   { name: 'compact', args: '[focus]', desc: "shrink this conversation's context (Claude keeps what matters)" },
   { name: 'merge', desc: 'merge this worktree into the main folder' },
   { name: 'commit', args: '[message]', desc: 'commit all changes in this workspace' },
@@ -65,6 +66,16 @@ export const COMMANDS: readonly CommandSpec[] = [
 ];
 
 const POLICIES: readonly Policy[] = ['ask', 'auto', 'deny'];
+
+/** What /visualize asks Claude (the graph format is in its instructions: agent/graph-prompt.ts). */
+export function visualizePrompt(what: string): string {
+  const subject = what.trim() || 'what we are working on in this conversation (or, if nothing yet, this project\'s architecture)';
+  return [
+    `Visualize ${subject} as an interactive graph.`,
+    'Look at the real code first if you need to. Answer with one klaud-graph block (more only if one would be',
+    'crowded), with a walkthrough when there is a flow to follow, and at most two sentences of prose.',
+  ].join(' ');
+}
 
 /** Execute a `/command` (or legacy `:command`) typed in `channel` (the conversation on screen). */
 export function runCommand(session: Session, name: string, args: readonly string[], channel = 'room'): void {
@@ -221,6 +232,18 @@ export function runCommand(session: Session, name: string, args: readonly string
     case 'clear':
       session.intend({ type: 'overlay', overlay: 'clear' });
       return;
+    case 'visualize':
+    case 'graph':
+    {
+      const what = args.join(' ').trim();
+      // What you asked shows as you'd say it; Claude gets the full ask (unless it can't be asked here).
+      const shared = session.sharing.sharedFor(channel);
+      // Load the saved conversation first, so the line is kept with it (as askOwnClaude does).
+      if (!shared && channel.startsWith('ws:')) session.workspaces?.ensureLoaded(channel.slice(3));
+      if (!shared || shared.role === 'contribute') session.sendChat(what ? `Visualize ${what}` : 'Visualize this', false, channel);
+      session.askOwnClaude(visualizePrompt(what), channel, false, false);
+      return;
+    }
     case 'plan': {
       session.setPlanMode(channel, arg ? arg !== 'off' : !state.planMode[channel]);
       return;
