@@ -174,9 +174,9 @@ export async function review(dir: string, base: string): Promise<Review> {
 /** Unified diff for one file against the merge base (new files shown in full). */
 export async function fileDiff(dir: string, base: string, path: string): Promise<string> {
   const mergeBase = (await tryGit(dir, ['merge-base', base, 'HEAD']))?.trim() || base;
-  const diff = await git(dir, ['diff', mergeBase, '--', path]);
+  const diff = await git(dir, ['--literal-pathspecs', 'diff', mergeBase, '--', path]);
   if (diff.trim()) return diff;
-  return (await tryGit(dir, ['diff', '--no-index', '--', '/dev/null', path])) ?? '';
+  return (await tryGit(dir, ['--literal-pathspecs', 'diff', '--no-index', '--', '/dev/null', path])) ?? '';
 }
 
 /** Run git, retrying briefly while another git process holds the index lock. */

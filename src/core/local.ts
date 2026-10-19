@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { readdirSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -28,7 +27,4 @@ export function listLocalDirs(dir: string): FsEntry[] {
 }
 
 /** Open a folder (or file, or URL) with the system's default app. */
-export function openWithSystem(target: string): void {
-  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
-  spawn(opener, [target], { stdio: 'ignore', detached: true }).on('error', () => undefined).unref();
-}
+export { systemOpen as openWithSystem } from './os-open.js';

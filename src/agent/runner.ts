@@ -120,7 +120,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const remember = (id: string): void => (place ? place.onSession(id) : void (sessionId = id));
       const subagents = new SubAgentTracker(cwd);
       const syncMain = askOnly ? place?.syncMain : undefined;
-      const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}) };
+      const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, guest: input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}) };
       const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
         hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: reason },
       });
@@ -214,7 +214,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const prompts = new PromptQueue();
       prompts.push(isCompactCommand(input.prompt) ? input.prompt.trim() : imageContent(buildPrompt(input), linkedImages(input.prompt)));
       const background = new BackgroundAgents();
-      const turns = new TurnRouter({ onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}) });
+      const turns = new TurnRouter({ onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}), ...(input.onAnswered ? { onDone: input.onAnswered } : {}) });
       // Steps in detail go to the request whose turn it is (a follow-up's turn: the follow-up).
       let stepTo = input.onStep;
       const recorder = new StepRecorder({ cwd, emit: (record) => stepTo?.(record) });
@@ -298,7 +298,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             const turn = turns.current();
             turn.onEvent('usage', JSON.stringify(usageOf(msg.modelUsage ?? {}, msg.total_cost_usd ?? 0, msg.session_id)));
             const stopped = `Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`;
-            if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped)) throw new Error(stopped);
+            // A later turn failing (e.g. reporting a finished agent) doesn't throw away answers already given.
+            if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped) && !turns.answers.length) throw new Error(stopped);
             settle();
           }
         }

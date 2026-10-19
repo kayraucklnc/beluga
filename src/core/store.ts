@@ -436,7 +436,8 @@ const TRANSFER_LIMIT = 20;
 
 /** Strip terminal control sequences from peer-supplied text (keeps newlines and tabs). */
 // eslint-disable-next-line no-control-regex
-export const clean = (s: string): string => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
+/** Strip control characters (terminal escapes) and invisible bidi/zero-width marks from remote text. */
+export const clean = (s: string): string => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u200B-\u200D\u202A-\u202E\u2066-\u2069]/g, '');
 const MAX_STEPS = 6;
 
 export const DEFAULT_PREFS: Prefs = {

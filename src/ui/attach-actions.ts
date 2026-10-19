@@ -72,7 +72,8 @@ export function pasteDroppedImages(c: AttachContext, text: string): boolean {
 export function expandOutgoing(client: KlaudClient, text: string): string {
   if (!text.includes('[image ') || text.startsWith('/')) return text;
   const state = client.store.getState();
-  const friends = state.peers.filter((p) => p.peerId !== state.selfId).map((p) => p.peerId);
+  // People in the room only: guests invited into one project never get room images.
+  const friends = state.peers.filter((p) => p.peerId !== state.selfId && !p.guest && state.guests[p.peerId]?.room !== false).map((p) => p.peerId);
   const toRoom = channelOf(state.view) === 'room' && friends.length > 0;
   const { text: out, attachments } = expandChips(text, state.selfId, toRoom ? (a) => publishForRoom(a) : (a) => path.basename(a.path));
   if (toRoom && attachments.length) void client.api.session.serveFolder(ATTACHMENT_SHARE, roomAttachmentsDir(), friends);

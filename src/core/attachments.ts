@@ -187,6 +187,15 @@ async function shrinkImage(file: string): Promise<string> {
  * Text pasted by dragging files into the terminal: one or more paths, maybe quoted,
  * with escaped spaces, or file:// URLs. Returns them only if every one is an image file.
  */
+/** decodeURIComponent that never throws (a pasted "%zz" would otherwise crash the input handler). */
+const safeDecode = (s: string): string => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+};
+
 export function droppedImagePaths(text: string, exists: (p: string) => boolean = isFile): string[] | undefined {
   const trimmed = text.trim();
   if (!trimmed || trimmed.length > 4000) return undefined;
@@ -195,7 +204,7 @@ export function droppedImagePaths(text: string, exists: (p: string) => boolean =
   for (const m of trimmed.matchAll(re)) tokens.push(m[1] ?? m[2] ?? (m[3] ?? '').replace(/\\(.)/g, '$1'));
   if (!tokens.length) return undefined;
   const paths = tokens.map((t) => {
-    const p = t.startsWith('file://') ? decodeURIComponent(t.slice(7)) : t;
+    const p = t.startsWith('file://') ? safeDecode(t.slice(7)) : t;
     return p.replace(/^~(?=$|\/)/, os.homedir());
   });
   return paths.every((p) => path.isAbsolute(p) && IMAGE_EXT.test(p) && exists(p)) ? paths : undefined;

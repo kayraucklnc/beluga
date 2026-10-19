@@ -1,6 +1,6 @@
-import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { systemOpen } from '../core/os-open.js';
 import { ATTACHMENT_SHARE, attachmentsDir, roomAttachmentsDir } from '../core/attachments.js';
 import type { KlaudClient } from '../ipc/client.js';
 import type { Location } from '../core/store.js';
@@ -17,8 +17,7 @@ export interface LinkContext {
 /** Open a web page in the default browser. */
 export function openUrl(url: string): void {
   if (!/^https?:\/\//i.test(url)) return;
-  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
-  spawn(opener, [url], { stdio: 'ignore', detached: true }).on('error', () => undefined).unref();
+  systemOpen(url);
 }
 
 /** Rows to scroll so `line` (1-based) shows near the top, with a little context above. */

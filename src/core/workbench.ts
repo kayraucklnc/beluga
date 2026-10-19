@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { type PtyProcess, type TerminalManager, listShells, scriptShell } from '../terminal/index.js';
 import { type ShellChoice, shellArgs } from '../shared/shells.js';
 import type { EnvPlace } from './env-vars.js';
+import { systemOpen } from './os-open.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
@@ -66,10 +67,6 @@ export function prNews(name: string, channel: string, before: PullRequest | unde
   return out;
 }
 
-const systemOpen = (target: string): void => {
-  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
-  spawn(opener, [target], { stdio: 'ignore', detached: true }).on('error', () => undefined).unref();
-};
 
 /**
  * Everything around a workspace besides talking to Claude: its terminal, setup and run

@@ -32,8 +32,14 @@ const ALWAYS_OK = new Set([
   ...['screenshot', 'device_info'].map((n) => `mcp__klaud_task__${n}`),
 ]);
 
-/** Shell commands that mention credential stores are refused outright. */
-export const SECRET_IN_COMMAND = /(^|[\s'"/=])(\.env(\.[\w-]+)?|id_(rsa|ed25519|ecdsa|dsa)|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.npmrc|\.netrc|\.git-credentials|credentials(\.json)?)([\s'"/]|$)/;
+/**
+ * Shell commands that mention credential stores are refused outright. A name counts when it isn't
+ * part of a longer word, so shell punctuation around it (`cat .env|base64`, `(cat .env)`) still matches.
+ */
+export const SECRET_IN_COMMAND = /(?<![\w.-])(\.env(\.[\w-]+)?|id_(rsa|ed25519|ecdsa|dsa)|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.npmrc|\.netrc|\.git-credentials|credentials(\.json)?)(?![\w-])/;
+
+/** True when a shell command touches secrets, also through quoting tricks like `".e"nv` or `\.env`. */
+export const mentionsSecret = (command: string): boolean => SECRET_IN_COMMAND.test(command) || SECRET_IN_COMMAND.test(command.replace(/['"\\]/g, ''));
 
 export type Decision = 'allow' | 'deny' | 'ask';
 
@@ -54,6 +60,8 @@ export interface PolicyContext {
    * files with conflict markers) is allowed too; nothing else changes (see sync-main.ts).
    */
   readonly syncMain?: SyncScope;
+  /** A guest invited into one project asked: they never reach the room through your Claude. */
+  readonly guest?: boolean;
 }
 
 const inside = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
@@ -70,6 +78,7 @@ const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, t
  */
 export function decideTool(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): Decision {
   if (ctx.askOnly && changesMain(toolName, input, ctx)) return 'deny';
+  if (ctx.guest && toolName.startsWith('mcp__klaud__')) return 'deny';
   if (ALWAYS_OK.has(toolName)) return 'allow';
   // Sending a file reads it: same rules as Read (secrets never leave; outside shared folders asks).
   if (toolName === 'mcp__klaud__send_file') {
@@ -82,8 +91,8 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
     return ctx.scope === 'full' ? 'allow' : 'ask';
   }
   // Commands on a friend's computer: their klaud decides; secrets are refused on both ends.
-  if (toolName === 'mcp__klaud__run_on_peer' || toolName === 'mcp__klaud__run_on') return typeof input.command === 'string' && SECRET_IN_COMMAND.test(input.command) ? 'deny' : 'ask';
-  if (toolName === 'Bash') return typeof input.command === 'string' && SECRET_IN_COMMAND.test(input.command) ? 'deny' : 'ask';
+  if (toolName === 'mcp__klaud__run_on_peer' || toolName === 'mcp__klaud__run_on') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
+  if (toolName === 'Bash') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
   const readField = READ_TOOLS[toolName];
   if (readField) {
     const target = resolveTarget(ctx.cwd, input[readField]);

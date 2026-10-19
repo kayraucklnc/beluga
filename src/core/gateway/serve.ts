@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AgentBackend, AgentPlace, TaskTools } from '../../agent/types.js';
-import { SECRET_IN_COMMAND } from '../../agent/policy.js';
+import { mentionsSecret } from '../../agent/policy.js';
 import type { ClaudeAnswer, ClaudeQuestion } from '../../protocol.js';
 import { isSecretPath } from '../shares.js';
 import type { TrustLevel } from '../trust.js';
@@ -202,7 +202,7 @@ export class TaskServer {
     if (open > MAX_OPEN_PER_PERSON) return this.finish(task, 'declined', `Too many of your requests are already waiting on ${me}'s Mac; try again when they're done`);
     if (req.kind === 'run' && !req.command) return this.finish(task, 'failed', 'It named no command to run');
     // Secrets stay off-limits at every trust level: refused before anyone is asked.
-    if (req.kind === 'run' && SECRET_IN_COMMAND.test(req.command ?? '')) return this.finish(task, 'failed', 'klaud never runs commands that touch secrets (.env files, keys, credentials)');
+    if (req.kind === 'run' && mentionsSecret(req.command ?? '')) return this.finish(task, 'failed', 'klaud never runs commands that touch secrets (.env files, keys, credentials)');
     if (req.kind === 'file' && !req.path) return this.finish(task, 'failed', 'It named no file');
     const facts = await this.factsFor(from, req);
     // It may have been stopped (or cancelled) meanwhile.

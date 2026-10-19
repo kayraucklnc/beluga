@@ -6,7 +6,7 @@ import { type AppState } from '../src/core/store.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
 import { chatLinkModel } from '../src/ui/link-zones.js';
-import { type LinkTarget, findCandidates, linkHint, linkSpans, linkifyLine, plausiblePath, resolveLocal, resolverFor, setLinkEnv, statCached } from '../src/ui/links.js';
+import { type LinkTarget, chatLinkify, findCandidates, linkHint, linkSpans, linkifyLine, plausiblePath, resolveLocal, resolverFor, setLinkEnv, statCached } from '../src/ui/links.js';
 import { renderMarkdown } from '../src/ui/markdown.js';
 import { modifiersOf, parseMouse, takePastes } from '../src/ui/mouse.js';
 import { scrollForLine } from '../src/ui/link-actions.js';
@@ -84,6 +84,17 @@ describe('resolving and linkifying', () => {
   ] as unknown as PeerInfo[];
   const state = (): AppState => reduce(reduce(initialState('room'), { type: 'peers', peers }), { type: 'welcome', self: peers[0]! });
   const chat = (from: string, text: string) => ({ id: '1', type: 'chat' as const, channel: 'room', from, name: from, text, ts: 0, byAgent: false });
+
+  it('every piece of a URL wrapped over lines opens the whole URL', () => {
+    setLinkEnv({ roots: () => [tmp] });
+    const url = 'https://github.com/kayraucklnc/klaud/pull/31/files#diff-0123456789abcdef0123456789abcdef';
+    const lines = renderLog([chat('me', `see ${url} and [here](https://a.io) or [here](https://b.io)`)], 30, { linkify: chatLinkify(state()) });
+    const links = lines.flatMap((l) => l.filter((s) => s.link).map((s) => (s.link?.kind === 'url' ? s.link.url : '')));
+    expect(links.filter((u) => u === url).length).toBeGreaterThan(1);
+    expect(links.every((u) => u === url || u === 'https://a.io' || u === 'https://b.io')).toBe(true);
+    expect(links).toContain('https://a.io');
+    expect(links).toContain('https://b.io');
+  });
 
   it('resolves your messages on this computer and friends’ through their shares', () => {
     setLinkEnv({ roots: () => [tmp] });

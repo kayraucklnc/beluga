@@ -135,6 +135,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       envFor: (channel, dir) => env.envFor(channel.startsWith('ws:') ? { workspaceId: channel.slice(3), dir } : { dir }),
       nameTask: (prompt) => session.nameTask(prompt),
       steps: new StepBook(opts.stepsDir),
+      isGuest: (peerId) => invites.isRestricted(peerId),
     });
     const remote = new RemoteWork({
       store: opts.store,

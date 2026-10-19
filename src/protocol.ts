@@ -94,6 +94,8 @@ export const AgentEventKind = z.enum([
   'done',
   'error',
   'denied',
+  /** The first answer is ready (the run may go on for background agents); lets the asker stop waiting. */
+  'answered',
   /** Sub-agent progress; text is JSON {id, phase, title?, step?}. */
   'sub',
   /** How full the conversation's context is; text is JSON {used, window}. */

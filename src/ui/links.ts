@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import os from 'node:os';
+import { tilde } from '../core/paths.js';
 import path from 'node:path';
 import { ATTACHMENT_SCHEME } from '../core/attachments.js';
 import type { AppState, LogItem } from '../core/store.js';
@@ -214,7 +215,7 @@ export function linkSpans(line: Line): LinkSpan[] {
 
 export const sameLink = (a: LinkTarget, b: LinkTarget): boolean => JSON.stringify(a) === JSON.stringify(b);
 
-const shortPath = (p: string): string => p.replace(os.homedir(), '~');
+const shortPath = (p: string): string => tilde(p);
 
 /** What hovering a link says in the bottom bar. */
 export function linkHint(link: LinkTarget, cwd?: string): string {
@@ -240,5 +241,50 @@ export function linkHint(link: LinkTarget, cwd?: string): string {
 /** The chat's linkify option: each message's paths resolved for its author and conversation. */
 export const chatLinkify = (state: AppState) => (item: LogItem): ((line: Line) => Line) | undefined => {
   const resolve = resolverFor(state, item);
-  return resolve ? (line) => linkifyLine(line, resolve) : undefined;
+  if (!resolve) return undefined;
+  // URLs longer than the chat is wide get split over lines when wrapped: every piece opens the whole URL.
+  const urls = 'text' in item && typeof item.text === 'string' ? [...item.text.matchAll(URL_RE)].map((m) => m[0].replace(/[.,;:!?]+$/, '')) : [];
+  if (!urls.length) return (line) => linkifyLine(line, resolve);
+  let rest: { url: string; left: string } | undefined;
+  const whole: Resolve = (c) => (c.kind === 'url' ? { kind: 'url', url: urls.find((u) => u.startsWith(c.value)) ?? c.value } : resolve(c));
+  return (line) => {
+    const carry = rest;
+    rest = undefined;
+    const first = linkifyLine(line, whole);
+    const cont = carry ? linkContinuation(first, carry) : { line: first, used: 0 };
+    const out = cont.line;
+    const last = [...out].reverse().find((g) => g.text.trim());
+    const onlyContinuation = carry && cont.used > 0 && out.filter((g) => g.link).length === 1 && last?.link?.kind === 'url';
+    if (carry && onlyContinuation && cont.used < carry.left.length) rest = { url: carry.url, left: carry.left.slice(cont.used) };
+    else if (last?.link?.kind === 'url' && !onlyContinuation && last.link.url.length > last.text.trimEnd().length && last.link.url.startsWith(last.text.trimEnd())) {
+      // This line ends in the start of a longer URL: the next line carries on with it.
+      rest = { url: last.link.url, left: last.link.url.slice(last.text.trimEnd().length) };
+    }
+    return out;
+  };
 };
+
+/** The first piece of a line that continues a wrapped URL becomes part of that link. */
+function linkContinuation(line: Line, carry: { url: string; left: string }): { line: Line; used: number } {
+  const out: Seg[] = [];
+  let used = 0;
+  let done = false;
+  for (const seg of line) {
+    if (done || seg.link || !seg.text.trim()) {
+      out.push(seg);
+      if (seg.text.trim()) done = true;
+      continue;
+    }
+    const lead = seg.text.length - seg.text.trimStart().length;
+    const body = seg.text.slice(lead);
+    let n = 0;
+    while (n < body.length && n < carry.left.length && body[n] === carry.left[n]) n++;
+    if (n === 0) return { line, used: 0 };
+    used = n;
+    if (lead) out.push({ ...seg, text: seg.text.slice(0, lead) });
+    out.push({ ...seg, text: body.slice(0, n), color: seg.color ?? theme.info, link: { kind: 'url', url: carry.url } });
+    if (n < body.length) out.push({ ...seg, text: body.slice(n) });
+    done = true;
+  }
+  return { line: out, used };
+}

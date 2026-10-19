@@ -197,12 +197,6 @@ export function startHub(opts: HubOptions): Promise<Hub> {
       conn.ws.close(REMOVED_CODE, 'removed');
       return;
     }
-    const admission = link && !removed.has(frame.peerId) ? gate?.admit(link.id, frame.peerId, !open) : undefined;
-    if (link && !admission) {
-      send(conn, { t: 'error', message: 'This link has expired, was already used, or was turned off. Ask for a new one' });
-      conn.ws.close(4001, 'link');
-      return;
-    }
     if (!link && !open && !members.has(frame.peerId) && frame.peerId !== opts.hostId) {
       send(conn, { t: 'error', message: "This room isn't taking new people right now" });
       conn.ws.close(CLOSED_CODE, 'closed');
@@ -222,6 +216,13 @@ export function startHub(opts: HubOptions): Promise<Hub> {
     if (authed().length >= maxPeers) {
       send(conn, { t: 'error', message: 'Room is full' });
       conn.ws.close(4004, 'full');
+      return;
+    }
+    // Last, so a single-use link is only used up by a join that actually happens.
+    const admission = link ? gate?.admit(link.id, frame.peerId, !open) : undefined;
+    if (link && !admission) {
+      send(conn, { t: 'error', message: 'This link has expired, was already used, or was turned off. Ask for a new one' });
+      conn.ws.close(4001, 'link');
       return;
     }
     const peer: PeerInfo = { ...profile.data, name: uniqueName(profile.data.name), peerId: frame.peerId, ...(frame.peerId === opts.hostId ? { host: true } : {}), ...(admission && !admission.full ? { guest: true } : {}) };

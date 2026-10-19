@@ -61,6 +61,8 @@ export interface ProjectInvitesDeps {
  */
 export class ProjectInvites {
   private readonly secrets = new Map<string, { secret: string; keys: RoomKeys }>();
+  /** Keys of revoked links: only guests already let in may still reconnect with them. */
+  private readonly revoked = new Map<string, RoomKeys>();
   /** Who came to the door with which link (until you decide). */
   private readonly arrivals = new Map<string, string>();
   private pendingCopy?: string;
@@ -135,6 +137,8 @@ export class ProjectInvites {
   /** The link stops working; people already in keep their place until you remove them. */
   revoke(id: string): void {
     const link = this.state.links.find((l) => l.id === id);
+    const old = this.secrets.get(id);
+    if (old) this.revoked.set(id, old.keys);
     this.secrets.delete(id);
     this.deps.store.dispatch({ type: 'link_remove', id });
     for (const k of this.state.knocks.filter((x) => x.linkId === id)) this.decline(k.peerId, true);
@@ -142,7 +146,7 @@ export class ProjectInvites {
   }
 
   private liveKeys(): Array<{ id: string; keys: RoomKeys }> {
-    return [...this.secrets.entries()].map(([id, s]) => ({ id, keys: s.keys }));
+    return [...[...this.secrets.entries()].map(([id, s]) => ({ id, keys: s.keys })), ...[...this.revoked.entries()].map(([id, keys]) => ({ id, keys }))];
   }
 
   /** The hub asks: may this person come in with link `id`? (Synchronous: single-use links are consumed here.) */
@@ -220,6 +224,8 @@ export class ProjectInvites {
     if (!guest) return;
     for (const wsId of Object.keys(this.state.members)) this.deps.sharing.remove(wsId, peerId, true);
     this.deps.store.dispatch({ type: 'guest_set', peerId });
+    // The trust that came with the link goes too: coming back by another link starts from your default.
+    this.deps.people.forget(peerId);
     this.deps.room?.turnAway(peerId);
     this.deps.toast(`${guest.name} was removed`, 'success');
   }

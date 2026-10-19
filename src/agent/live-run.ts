@@ -125,7 +125,11 @@ export class TurnRouter {
     const route = this.current();
     this.inTurn = false;
     if (route === this.original) {
-      if (ok && text) this.answers.push(text);
+      if (ok && text) {
+        this.answers.push(text);
+        // The first answer is what the asker waits for, even if background agents keep the run open.
+        if (this.answers.length === 1) this.original.onDone?.(text);
+      }
       return ok;
     }
     if (ok) route.onDone?.(text);

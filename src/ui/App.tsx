@@ -696,7 +696,8 @@ export function App({ client, onboarding = false, subscribeMouse, setRawInput, s
         hasViewer: dd.geometry.viewerWidth > 0,
         overlay: Boolean(latest.overlay),
         page: dd.geometry.paneHeight - 2,
-        maxChatScroll: Math.max(0, total - (dd.geometry.paneHeight - 2)),
+        // A shared workspace's Terminal tab scrolls its own output, not the chat.
+        maxChatScroll: latest.view.kind === 'shared' && latest.view.tab === 'terminal' ? dd.shellMaxScroll : Math.max(0, total - (dd.geometry.paneHeight - 2)),
         suggestions: dd.suggestions,
         peopleCount: latest.peers.length,
         menuSize: dd.menu?.options.length ?? 0,
@@ -724,7 +725,8 @@ export function App({ client, onboarding = false, subscribeMouse, setRawInput, s
     safely('paste', () => {
       const current = uiRef.current;
       if (current.menu) return;
-      setUi(insertText({ ...current, focus: 'chat' }, text));
+      // A name or command prompt is one line: pasted line breaks become spaces there.
+      setUi(insertText({ ...current, focus: 'chat' }, current.pending ? text.replace(/\r?\n/g, ' ') : text));
     }),
   );
 

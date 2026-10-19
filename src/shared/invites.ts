@@ -20,7 +20,7 @@ export const DEFAULT_LINK: Omit<LinkOptions, 'scope'> = { can: 'prompt', knock: 
 export const CAN_INFO: Readonly<Record<GuestCan, { label: string; short: string; detail: string }>> = {
   watch: { label: 'Watch', short: 'can watch', detail: 'see the chat history and browse the files' },
   prompt: { label: 'Prompt', short: 'can prompt', detail: 'talk to your Claude there; edits and commands follow your approval rules' },
-  edit: { label: 'Edit', short: 'can edit', detail: 'your Claude edits and runs commands in that folder without asking; secrets stay blocked' },
+  edit: { label: 'Edit', short: 'can edit', detail: 'your Claude edits files in that folder without asking; commands still ask you' },
 };
 
 /** Watching is following along; prompting and editing are working there. */

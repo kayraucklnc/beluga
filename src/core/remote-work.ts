@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { promises as fs, rmSync } from 'node:fs';
 import os from 'node:os';
+import { tilde } from './paths.js';
 import path from 'node:path';
 import { type BodyInput, type BodyOf, MAX_DOWNLOAD_BYTES } from '../protocol.js';
 import { git } from '../workspaces/git.js';
@@ -270,7 +271,7 @@ export class RemoteWork {
     const abs = await fs.realpath(asked).catch(() => asked);
     if (isSecretPath(asked) || isSecretPath(abs)) return void reply({ ok: false, error: `${unavailable}: it holds secrets, so klaud never sends it` });
     // Whether a file exists is only revealed once you said yes (or fully trust them).
-    const ok = await this.allowed(from, `${this.who(from)} wants a file from your computer`, `${asked.replace(os.homedir(), '~')}${body.why ? `\n${clean(body.why)}` : ''}`);
+    const ok = await this.allowed(from, `${this.who(from)} wants a file from your computer`, `${tilde(asked)}${body.why ? `\n${clean(body.why)}` : ''}`);
     if (!ok) return void reply({ ok: false, error: `${this.state.self?.name ?? 'The owner'} declined` });
     const stat = await fs.stat(abs).catch(() => undefined);
     if (!stat?.isFile()) return void reply({ ok: false, error: `There is no file at ${body.path}` });
@@ -305,7 +306,7 @@ export class RemoteWork {
     if (!ok) return;
     try {
       const saved = await downloadFile({ owner: from, share: body.share, path: body.path }, who, this.deps.request, this.deps.store, this.deps.downloadDir);
-      this.deps.notify({ kind: 'people', title: `${who} sent you ${path.basename(saved)}`, body: saved.replace(os.homedir(), '~') });
+      this.deps.notify({ kind: 'people', title: `${who} sent you ${path.basename(saved)}`, body: tilde(saved) });
     } catch (err) {
       this.deps.toast(`Couldn't get ${clean(body.name)} from ${who}: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
