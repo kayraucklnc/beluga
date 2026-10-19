@@ -1,6 +1,10 @@
 /** Whether macOS lets Klaud notify (System Settings › Notifications › Klaud). */
 export interface NotificationAccess {
-  /** `off`: turned off for Klaud; `notAsked`: macOS hasn't asked you yet; `unknown`: can't tell (a dev build, a browser). */
+  /**
+   * `off`: turned off for Klaud; `unknown`: macOS won't say. Klaud's banners go through macOS's
+   * older notification service, which the settings API doesn't describe, so on most Macs this is
+   * `unknown` and a test is what tells (`notAsked` from an older app shell counts as `unknown`).
+   */
   readonly state: 'allowed' | 'off' | 'notAsked' | 'unknown';
   /** Banners or alerts are on (otherwise they only collect in Notification Center). */
   readonly alerts: boolean;
@@ -17,13 +21,12 @@ export interface NotificationAccess {
 
 export const UNKNOWN_ACCESS: NotificationAccess = { state: 'unknown', alerts: true, sound: true, focus: 'unknown' };
 
-/** What fixes it: System Settings › Notifications › Klaud, Focus settings, or macOS's own prompt. */
-export type AccessAction = 'notifications' | 'focus' | 'ask';
+/** What fixes it: System Settings › Notifications › Klaud, or Focus settings. */
+export type AccessAction = 'notifications' | 'focus';
 
 export const ACTION_LABELS: Readonly<Record<AccessAction, string>> = {
   notifications: 'Open Notification Settings',
   focus: 'Open Focus Settings',
-  ask: 'Allow Notifications…',
 };
 
 /** Klaud's own switches that keep banners away (Settings › Notifications, above). */
@@ -66,15 +69,18 @@ function focusBlock(a: NotificationAccess): Block | null {
   return { tone: 'warn', title: `${name} is on`, detail: 'macOS holds Klaud’s banners in Notification Center and mutes their sound until it ends.', fix: 'Turn it off in Control Center, or add Klaud to this Focus’s “Allowed Apps” in System Settings › Focus.', action: 'focus', held: `Sent, but ${a.focusName ?? 'a Focus'} is holding it in Notification Center, muted.` };
 }
 
+/** An older app shell's "not asked yet" isn't true for Klaud's banners: macOS just won't say. */
+const normalize = (a: NotificationAccess): NotificationAccess => (a.state === 'notAsked' ? { ...a, state: 'unknown', alerts: true, sound: true } : a);
+
 /** How things stand, from what macOS says and Klaud's own switches. */
-export function notifyStatus(a: NotificationAccess | undefined, own: OwnSettings): NotifyStatus {
-  if (!a) return { tone: 'muted', title: 'Checking…', detail: 'Asking macOS whether Klaud may notify you.' };
+export function notifyStatus(raw: NotificationAccess | undefined, own: OwnSettings): NotifyStatus {
+  if (!raw) return { tone: 'muted', title: 'Checking…', detail: 'Asking macOS whether Klaud may notify you.' };
+  const a = normalize(raw);
   const mac = macBlock(a) ?? focusBlock(a);
   if (mac) return mac;
-  if (a.state === 'notAsked') return { tone: 'warn', title: 'Not set up yet', detail: 'macOS hasn’t asked you whether Klaud may show notifications.', fix: 'Allow them when macOS asks, then send a test.', action: 'ask' };
   if (!own.desktop) return { tone: 'muted', title: 'Desktop notifications are off', detail: 'Turn them on below. The bell in the toolbar still lists everything.' };
   if (own.quietUntil) return { tone: 'muted', title: 'Klaud’s Do Not Disturb is on', detail: `Banners are paused ${own.quietUntil}. The bell still fills.` };
-  if (a.state === 'unknown') return { tone: 'muted', title: 'Can’t check macOS from here', detail: 'This window can’t read System Settings. Send a test to see whether a banner shows.' };
+  if (a.state === 'unknown') return { tone: 'muted', title: 'Send a test to check', detail: 'macOS doesn’t tell apps whether their banners are allowed. If the test’s banner doesn’t show at the top right of your screen, allow Klaud in Notification Settings.', action: 'notifications' };
   const detail = 'macOS shows Klaud’s banners and plays their sound.';
   if (a.focus === 'off') return { tone: 'ok', title: 'Notifications are on', detail };
   return { tone: 'ok', title: 'Notifications are on', detail: `${detail} Do Not Disturb or another Focus can still hold them.` };
@@ -91,11 +97,14 @@ export interface TestOutcome {
  * After a test: whether the banner can have shown. When macOS seems fine, say where to look and
  * what can still hold it (a Focus macOS doesn't tell Klaud about).
  */
-export function testOutcome(a: NotificationAccess, soundName: string | null): TestOutcome {
+export function testOutcome(raw: NotificationAccess, soundName: string | null): TestOutcome {
+  const a = normalize(raw);
   const heard = soundName ? ` You heard “${soundName}” here.` : '';
   const block = macBlock(a) ?? focusBlock(a);
   if (block) return { tone: 'warn', text: `${block.held}${heard}`, action: block.action };
-  if (a.state === 'notAsked') return { tone: 'warn', text: `Sent, but you haven’t allowed Klaud’s notifications in macOS yet.${heard}`, action: 'ask' };
-  if (a.focus === 'off') return { tone: 'ok', text: `Sent. Look for the banner at the top right of your screen.${heard}` };
-  return { tone: 'ok', text: `Sent. Look for the banner at the top right of your screen.${heard} Nothing? If Do Not Disturb or another Focus is on (the moon in the menu bar), macOS holds it in Notification Center.`, action: 'focus' };
+  // macOS closes the banners of the app you're using as soon as you click in it.
+  const look = `Sent: the banner shows at the top right of your screen for a few seconds (clicking in Klaud closes it at once).${heard}`;
+  if (a.state === 'unknown') return { tone: 'ok', text: `${look} No banner? Allow Klaud in Notification Settings, and check Do Not Disturb (the moon in the menu bar).`, action: 'notifications' };
+  if (a.focus === 'off') return { tone: 'ok', text: look };
+  return { tone: 'ok', text: `${look} Nothing? If Do Not Disturb or another Focus is on (the moon in the menu bar), macOS holds it in Notification Center.`, action: 'focus' };
 }

@@ -53,8 +53,10 @@ describe('the status line', () => {
     expect(notifyStatus({ ...allowed, state: 'off', focus: 'on' }, own).title).toBe('Blocked by macOS');
   });
 
-  it('not asked yet: macOS’s prompt is one click away', () => {
-    expect(notifyStatus({ ...allowed, state: 'notAsked' }, own)).toMatchObject({ tone: 'warn', title: 'Not set up yet', action: 'ask' });
+  it('never claims macOS hasn’t asked: Klaud’s banners don’t need asking, so a test is what tells', () => {
+    const s = notifyStatus({ ...allowed, state: 'notAsked', alerts: false }, own);
+    expect(s).toMatchObject({ tone: 'muted', title: 'Send a test to check', action: 'notifications' });
+    expect(s.title).not.toContain('Not set up');
   });
 
   it('then Klaud’s own switches', () => {
@@ -66,8 +68,8 @@ describe('the status line', () => {
     expect(notifyStatus({ ...allowed, state: 'off' }, { desktop: false, quietUntil: null }).title).toBe('Blocked by macOS');
   });
 
-  it('says so when it can’t check (a browser, a dev build), and while checking', () => {
-    expect(notifyStatus(UNKNOWN_ACCESS, own)).toMatchObject({ tone: 'muted', title: 'Can’t check macOS from here' });
+  it('when macOS won’t say, asks for a test and offers Notification Settings; and while checking', () => {
+    expect(notifyStatus(UNKNOWN_ACCESS, own)).toMatchObject({ tone: 'muted', title: 'Send a test to check', action: 'notifications' });
     expect(notifyStatus(undefined, own)).toMatchObject({ tone: 'muted', title: 'Checking…' });
   });
 });
@@ -86,7 +88,10 @@ describe('what a test notification reports', () => {
     expect(testOutcome({ ...allowed, alerts: false }, null).text).toContain('banners are off');
     expect(testOutcome({ ...allowed, sound: false }, null).text).toContain('silent');
     expect(testOutcome({ ...allowed, focus: 'on', focusName: 'Work' }, null)).toMatchObject({ tone: 'warn', text: 'Sent, but Work is holding it in Notification Center, muted.', action: 'focus' });
-    expect(testOutcome({ ...allowed, state: 'notAsked' }, null)).toMatchObject({ tone: 'warn', action: 'ask' });
+    // Not a warning when macOS just won't say: where to look, and what to open if nothing shows.
+    const unknown = testOutcome({ ...allowed, state: 'notAsked' }, null);
+    expect(unknown).toMatchObject({ tone: 'ok', action: 'notifications' });
+    expect(unknown.text).toContain('clicking in Klaud closes it');
   });
 
   it('when Focus can’t be checked, says what to look for and offers Focus settings', () => {

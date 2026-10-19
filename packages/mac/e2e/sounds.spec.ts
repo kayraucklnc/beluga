@@ -133,18 +133,19 @@ test('Send Test Notification sits right under the sound, near the top', async ({
   expect(sendY).toBeLessThan(await y(s.getByRole('heading', { name: 'Tell me when' })));
   await expect(s.getByRole('button', { name: 'Send a test' })).toHaveCount(0);
 
-  // A browser can't read macOS's settings: the status line says so, without a scary warning.
-  await expect(status(page)).toContainText('Can’t check macOS from here');
+  // macOS won't say: the status line asks for a test, without a scary warning.
+  await expect(status(page)).toContainText('Send a test to check');
   await expect(status(page)).toHaveAttribute('data-tone', 'muted');
 
   // The test says what happened, under the button (not just a toast).
   await send.click();
   const result = soundGroup(page).getByRole('status', { name: 'Test result' });
-  await expect(result).toContainText('Sent. Look for the banner at the top right of your screen.');
+  await expect(result).toContainText('the banner shows at the top right of your screen');
+  await expect(result).toContainText('clicking in Klaud closes it');
   await expect(result).toContainText('You heard “Glass” here.');
-  await expect(result).toContainText('Focus');
-  await result.getByRole('button', { name: 'Open Focus Settings' }).click();
-  expect(await shellCalls(page)).toContain('open_focus_settings');
+  await expect(result).toContainText('Do Not Disturb');
+  await result.getByRole('button', { name: 'Open Notification Settings' }).click();
+  expect(await shellCalls(page)).toContain('open_notification_settings');
 });
 
 test('stays with the sound when it’s one per kind', async ({ page }) => {
@@ -183,12 +184,13 @@ test('a Focus holding banners is named, with a way to Focus settings', async ({ 
   expect(await shellCalls(page)).toContain('open_focus_settings');
 });
 
-test('not set up yet: Allow Notifications asks macOS', async ({ page }) => {
+test('an older shell’s “not asked yet” never shows a button that can’t do anything', async ({ page }) => {
   await seedAccess(page, { state: 'notAsked', alerts: true, sound: true, focus: 'off' });
   await openSoundSettings(page);
-  await expect(status(page)).toContainText('Not set up yet');
-  await status(page).getByRole('button', { name: 'Allow Notifications…' }).click();
-  expect(await shellCalls(page)).toContain('notification_request');
+  await expect(status(page)).toContainText('Send a test to check');
+  await expect(page.getByRole('button', { name: /Allow Notifications/ })).toHaveCount(0);
+  await status(page).getByRole('button', { name: 'Open Notification Settings' }).click();
+  expect(await shellCalls(page)).toContain('open_notification_settings');
 });
 
 test('all clear: notifications are on', async ({ page }) => {

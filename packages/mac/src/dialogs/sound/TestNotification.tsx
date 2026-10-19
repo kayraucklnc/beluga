@@ -4,7 +4,7 @@ import { soundFor, volumeOf } from '../../../../../src/shared/notify-sound.js';
 import { Icon } from '../../components/Icon.js';
 import { Button, cx } from '../../components/ui.js';
 import { useApi } from '../../lib/klaud.js';
-import { notificationAccess, requestNotificationAccess } from '../../lib/sounds/access.js';
+import { notificationAccess } from '../../lib/sounds/access.js';
 import { ACTION_LABELS, type AccessAction, type NotificationAccess, type TestOutcome, testOutcome } from '../../lib/sounds/access-model.js';
 import { soundTitle } from '../../lib/sounds/catalog.js';
 import { playTestSound } from '../../lib/sounds/native.js';
@@ -20,8 +20,8 @@ export interface TestNotificationProps {
 
 /**
  * Send Test Notification, right under the sound: plays the sound here at once (heard even when
- * macOS holds the banner), asks macOS to allow notifications if it never has, sends the banner,
- * and then says what really happened, with the button that fixes it when something's in the way.
+ * macOS holds the banner), sends the banner, and then says what really happened, with the button
+ * that fixes it when something's in the way.
  */
 export function TestNotification({ n, onChecked, onAction }: TestNotificationProps) {
   const api = useApi();
@@ -35,8 +35,7 @@ export function TestNotification({ n, onChecked, onAction }: TestNotificationPro
     setOutcome(undefined);
     playTestSound({ sound: tone.kind !== 'none', tone, volume: volumeOf(n) }, true);
     try {
-      const before = await notificationAccess();
-      const access = before.state === 'notAsked' ? await requestNotificationAccess() : before;
+      const access = await notificationAccess();
       await api.session.testNotification();
       onChecked(access);
       setOutcome(testOutcome(access, tone.kind === 'none' ? null : soundTitle(tone)));

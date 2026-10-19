@@ -176,18 +176,6 @@ pub async fn notification_access() -> Access {
         .unwrap_or(Access::UNKNOWN)
 }
 
-/// Ask macOS to let Klaud notify (it shows its "Allow notifications?" prompt the first time
-/// only), then say where things stand.
-#[tauri::command]
-pub async fn notification_request() -> Access {
-    tauri::async_runtime::spawn_blocking(|| {
-        mac::request();
-        mac::access().with_focus(focus::current())
-    })
-    .await
-    .unwrap_or(Access::UNKNOWN)
-}
-
 /// Which System Settings pane to open: Klaud's notifications, or Focus.
 fn settings_url(pane: &str, id: &str) -> Result<String, String> {
     match pane {
@@ -229,10 +217,9 @@ mod mac {
     use super::Access;
     use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, Sel};
     use objc2::{sel, Encode};
-    use objc2_foundation::NSError;
     use objc2_user_notifications::{
-        UNAuthorizationOptions, UNAuthorizationStatus, UNNotificationSetting,
-        UNNotificationSettings, UNUserNotificationCenter,
+        UNAuthorizationStatus, UNNotificationSetting, UNNotificationSettings,
+        UNUserNotificationCenter,
     };
     use std::ffi::CString;
     use std::ptr::NonNull;
@@ -310,30 +297,16 @@ mod mac {
             .unwrap_or(Access::UNKNOWN)
     }
 
-    /// Ask for banners, sounds and badges; macOS prompts only while it hasn't been asked
-    /// before. Waits (a while: the prompt waits on you) for the answer.
-    pub fn request() {
-        if !in_app_bundle() {
-            return;
-        }
-        let (tx, rx) = mpsc::channel();
-        let block = block2::RcBlock::new(move |_granted: Bool, _error: *mut NSError| {
-            let _ = tx.send(());
-        });
-        let center = UNUserNotificationCenter::currentNotificationCenter();
-        let options = UNAuthorizationOptions::Alert
-            | UNAuthorizationOptions::Sound
-            | UNAuthorizationOptions::Badge;
-        center.requestAuthorizationWithOptions_completionHandler(options, &block);
-        let _ = rx.recv_timeout(Duration::from_secs(120));
-    }
-
     fn read(s: &UNNotificationSettings) -> Access {
         let status = s.authorizationStatus();
+        // Klaud's banners go through macOS's older notification service (the notification
+        // plugin), which this API doesn't describe: "not determined" here only means it won't
+        // say, and asking it for permission does nothing. Only a clear answer counts.
+        if status == UNAuthorizationStatus::NotDetermined {
+            return Access::UNKNOWN;
+        }
         let state = if status == UNAuthorizationStatus::Denied {
             "off"
-        } else if status == UNAuthorizationStatus::NotDetermined {
-            "notAsked"
         } else {
             "allowed"
         };
@@ -350,7 +323,6 @@ mod mac {
 mod mac {
     use super::Access;
     pub fn present_in_front() {}
-    pub fn request() {}
     pub fn access() -> Access {
         Access::UNKNOWN
     }

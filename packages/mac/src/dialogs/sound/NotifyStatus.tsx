@@ -13,7 +13,7 @@ export interface NotifyStatusProps {
 
 /**
  * The top of Settings › Notifications: whether your banners reach you ("Notifications are on",
- * "Blocked by macOS", "Not set up yet"…), and when something's in the way, what to turn on and
+ * "Blocked by macOS", "Send a test to check"…), and when something's in the way, what to turn on and
  * a button that goes there. It updates when you come back from System Settings.
  */
 export function NotifyStatusLine({ status, onAction }: NotifyStatusProps) {
