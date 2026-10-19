@@ -1,4 +1,5 @@
 import type { Dm, DmStatus } from './dms.js';
+import { extrasFields } from './extras.js';
 import type { FriendRecord } from './friends.js';
 import type { GroupEngine, ReadMessage } from './groups/engine.js';
 import type { JoinRequest } from './groups/joins.js';
@@ -27,7 +28,7 @@ export function person(ctx: ViewContext, peerId: string, name: string): PersonVi
 export function dmView(ctx: ViewContext, peerId: string, dm: Dm, status: DmStatus): MessageView {
   const mine = dm.from === ctx.me;
   const state = !mine ? undefined : status.delivered.has(dm.id) ? 'delivered' : status.expired.has(dm.id) ? 'expired' : 'waiting';
-  return { id: dm.id, conversation: dmConversation(peerId), from: dm.from, name: mine ? 'you' : ctx.nameOf(dm.from), text: dm.text, ts: dm.ts, mine, ...(state ? { status: state } : {}) };
+  return { id: dm.id, conversation: dmConversation(peerId), from: dm.from, name: mine ? 'you' : ctx.nameOf(dm.from), text: dm.text, ts: dm.ts, mine, ...extrasFields(dm.x), ...(state ? { status: state } : {}) };
 }
 
 export function groupMessageView(ctx: ViewContext, groupId: string, m: ReadMessage): MessageView {
@@ -40,6 +41,7 @@ export function groupMessageView(ctx: ViewContext, groupId: string, m: ReadMessa
     text: m.text ?? '',
     ts: m.entry.ts,
     mine,
+    ...extrasFields(m.extras),
     ...(m.text === undefined ? { status: 'locked' as const } : {}),
   };
 }

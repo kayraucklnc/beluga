@@ -1,7 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { z } from 'zod';
+import { ExtrasSchema, parseExtras } from './extras.js';
 import { appendLine, readJson, readLines, safeName, writeJson } from './files.js';
+import type { ChatExtras } from './views.js';
 
 /**
  * Direct messages with friends: each conversation kept in ~/.klaud/dms/<peer>.jsonl, and what
@@ -18,16 +20,24 @@ export interface Dm {
   readonly to: string;
   readonly text: string;
   readonly ts: number;
+  /** Files, a call for Claudes, or a Claude's answer (see extras.ts). */
+  readonly x?: ChatExtras;
 }
 
 const DmLine = z.union([
-  z.object({ id: z.string(), from: z.string(), to: z.string(), text: z.string(), ts: z.number() }),
+  z.object({ id: z.string(), from: z.string(), to: z.string(), text: z.string(), ts: z.number(), x: ExtrasSchema.optional() }),
   z.object({ ack: z.string() }),
   z.object({ expired: z.string() }),
 ]);
 
-const Outgoing = z.object({ id: z.string(), from: z.string(), to: z.string(), text: z.string(), ts: z.number(), expiresAt: z.number() });
-type Outgoing = z.infer<typeof Outgoing>;
+const Outgoing = z.object({ id: z.string(), from: z.string(), to: z.string(), text: z.string(), ts: z.number(), x: ExtrasSchema.optional(), expiresAt: z.number() });
+type Outgoing = Dm & { readonly expiresAt: number };
+
+/** A stored line or outbox record as a message (extras checked again: the file could be old or edited). */
+function toDm(v: { id: string; from: string; to: string; text: string; ts: number; x?: unknown }): Dm {
+  const x = parseExtras(v.x);
+  return { id: v.id, from: v.from, to: v.to, text: v.text, ts: v.ts, ...(x ? { x } : {}) };
+}
 
 export interface DmStatus {
   readonly delivered: ReadonlySet<string>;
@@ -49,7 +59,7 @@ export class DmBook {
     const raw = readJson(path.join(dir, 'outbox.json'));
     this.outbox = (Array.isArray(raw) ? raw : []).flatMap((o) => {
       const parsed = Outgoing.safeParse(o);
-      return parsed.success ? [parsed.data] : [];
+      return parsed.success ? [{ ...toDm(parsed.data), expiresAt: parsed.data.expiresAt }] : [];
     });
   }
 
@@ -68,9 +78,9 @@ export class DmBook {
   }
 
   /** Write a message to a friend: kept in the conversation and in the outbox until they confirm. */
-  compose(from: string, to: string, text: string): Dm {
+  compose(from: string, to: string, text: string, x?: ChatExtras): Dm {
     if (this.outbox.length >= MAX_OUTBOX) throw new Error('Your outbox is full; wait for friends to come online');
-    const dm: Dm = { id: randomBytes(12).toString('base64url'), from, to, text, ts: Date.now() };
+    const dm: Dm = { id: randomBytes(12).toString('base64url'), from, to, text, ts: Date.now(), ...(x ? { x } : {}) };
     this.record(to, dm);
     this.saveOutbox([...this.outbox, { ...dm, expiresAt: dm.ts + OUTBOX_TTL_MS }]);
     return dm;
@@ -104,7 +114,7 @@ export class DmBook {
       const c = this.load(o.to);
       c.expired.add(o.id);
       appendLine(this.file(o.to), { expired: o.id });
-      return { id: o.id, from: o.from, to: o.to, text: o.text, ts: o.ts };
+      return toDm(o);
     });
   }
 
@@ -136,7 +146,7 @@ export class DmBook {
       if ('ack' in v) c.delivered.add(v.ack);
       else if ('expired' in v) c.expired.add(v.expired);
       else if (!c.ids.has(v.id)) {
-        c.messages.push(v);
+        c.messages.push(toDm(v));
         c.ids.add(v.id);
       }
     }

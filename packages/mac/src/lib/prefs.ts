@@ -49,6 +49,8 @@ export interface UiPrefs {
   readonly termScrollback: number;
   /** A file open full size wraps its long lines (instead of scrolling sideways). */
   readonly readerWrap: boolean;
+  /** Chats open as tabs above the conversation (`dm:<peerId>` / `group:<id>`; the main channel is always first). */
+  readonly chatTabs: readonly string[];
   /** A changed file shows its diff, or the file as itself (Markdown formatted). Pictures and PDFs always as themselves. */
   readonly changeLook: 'diff' | 'file';
   /** The panel has a Scratch tab: the workspace's .klaud/scratch/ folder, live. */
@@ -98,6 +100,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   termCursorBlink: true,
   termScrollback: 5000,
   readerWrap: false,
+  chatTabs: [],
   changeLook: 'diff',
   scratchTab: true,
   groupIcons: {},

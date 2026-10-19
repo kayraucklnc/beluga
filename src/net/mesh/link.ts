@@ -11,6 +11,14 @@ const BURST = 1_500;
 /** Bytes per second on average, and in a burst (catching up on a group sends a lot at once). */
 const BYTE_RATE = 4 * 1024 * 1024;
 const BYTE_BURST = 32 * 1024 * 1024;
+/**
+ * Chat file pieces have their own, larger allowance while you're pulling a file from that Mac
+ * (`wantsFiles`): they only come when asked for, a few at a time (core/chat/file-transfer.ts), so
+ * they can use the link's speed without starving everything else. Unasked, they count as usual.
+ */
+const FILE_BYTE_RATE = 64 * 1024 * 1024;
+const FILE_BYTE_BURST = 128 * 1024 * 1024;
+const FILE_PREFIX = '{"t":"f_data"';
 /** Messages dropped for flooding before the link is closed. */
 const MAX_DROPS = 3_000;
 
@@ -50,6 +58,7 @@ export class MeshLink extends EventEmitter<LinkEvents> {
   readonly openedAt = Date.now();
   private readonly bucket = new Bucket(RATE, BURST);
   private readonly bytes = new Bucket(BYTE_RATE, BYTE_BURST);
+  private readonly fileBytes = new Bucket(FILE_BYTE_RATE, FILE_BYTE_BURST);
   private drops = 0;
   private heard = Date.now();
   private readonly beat: NodeJS.Timeout;
@@ -62,6 +71,8 @@ export class MeshLink extends EventEmitter<LinkEvents> {
     readonly outgoing: boolean,
     readonly via: 'direct' | 'relay',
     pingMs: number,
+    /** Are you pulling a file from them now? (their pieces get the file allowance) */
+    private readonly wantsFiles: () => boolean = () => false,
   ) {
     super();
     socket.on('message', (text) => this.onText(text));
@@ -93,13 +104,15 @@ export class MeshLink extends EventEmitter<LinkEvents> {
 
   private onText(text: string): void {
     this.heard = Date.now();
-    if (!this.bucket.take() || !this.bytes.take(text.length)) {
+    const piece = text.startsWith(FILE_PREFIX) && this.wantsFiles();
+    if (!this.bucket.take() || !(piece ? this.fileBytes : this.bytes).take(text.length)) {
       this.drops += 1;
       if (this.drops > MAX_DROPS) this.close(CLOSE.flooding, 'too many messages');
       return;
     }
     const msg = parseLink(text);
-    if (msg) this.emit('message', msg);
+    // A frame that claimed to be a file piece to use that allowance must be one.
+    if (msg && (!piece || msg.t === 'f_data')) this.emit('message', msg);
   }
 
   private finish(code: number): void {

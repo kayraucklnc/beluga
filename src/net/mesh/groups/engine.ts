@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { type MeshKeys, openSealed, sealTo } from '../keys.js';
+import { checkMessage, extrasFields, parseExtras } from '../extras.js';
 import { type Body, type Entry, type EntryType, MAX_PARENTS, type Profile } from '../schemas.js';
+import type { ChatExtras } from '../views.js';
 import { bodyOf, signEntry } from './entry.js';
 import { GroupLog } from './log.js';
 import { type GroupModel, MAX_MEMBERS, buildModel, chainKey } from './model.js';
@@ -9,10 +11,16 @@ import { Ratchets, decrypt, encrypt, keyAad, messageAad, newChainId, newChainKey
 /** The longest message text. */
 export const MAX_TEXT = 8_000;
 
-/** A group message as you read it: its text, or undefined while you have no key for it. */
+/** A group message as you read it: its text (and extras), or undefined while you have no key for it. */
 export interface ReadMessage {
   readonly entry: Entry;
   readonly text?: string;
+  readonly extras?: ChatExtras;
+}
+
+interface Plain {
+  readonly text: string;
+  readonly extras?: ChatExtras;
 }
 
 /**
@@ -22,7 +30,7 @@ export interface ReadMessage {
 export class GroupEngine {
   private cached: GroupModel | undefined;
   private readonly ratchets = new Ratchets();
-  private readonly texts = new Map<string, string | null>();
+  private readonly texts = new Map<string, Plain | null>();
   private readonly chainKeys = new Map<string, Buffer | null>();
   /** Next message number per chain of yours (counts sends not yet folded into the model). */
   private readonly nextN = new Map<string, number>();
@@ -126,9 +134,9 @@ export class GroupEngine {
   }
 
   /** Send a message (and first a new sending key, when the group changed since your last one). */
-  send(text: string): Entry[] {
+  send(text: string, extras?: ChatExtras): Entry[] {
     this.mustMember();
-    if (!text.trim() || text.length > MAX_TEXT) throw new Error(`Messages are 1 to ${MAX_TEXT} characters`);
+    checkMessage(text, extras, MAX_TEXT);
     const out: Entry[] = [];
     let chain = this.myChain();
     if (!chain) {
@@ -140,38 +148,48 @@ export class GroupEngine {
     if (!key) throw new Error('Your sending key for this group is unreadable');
     const n = this.nextN.get(chain) ?? 0;
     this.nextN.set(chain, n + 1);
-    const box = encrypt(this.ratchets.messageKey(chainKey(this.me, chain), key, n), JSON.stringify({ text }), messageAad(this.id, this.me, chain, n));
+    const box = encrypt(this.ratchets.messageKey(chainKey(this.me, chain), key, n), JSON.stringify({ text, ...extrasFields(extras) }), messageAad(this.id, this.me, chain, n));
     out.push(this.write('message', { chain, n, ...box }));
     return out;
   }
 
   /** The group's messages in order, with their text when you hold the key. */
   messages(): ReadMessage[] {
-    return (this.model?.messages ?? []).map((entry) => {
-      const text = this.read(entry);
-      return text === undefined ? { entry } : { entry, text };
-    });
+    return (this.model?.messages ?? []).map((entry) => this.readMessage(entry));
+  }
+
+  /** One message as you read it (its text and extras, when you hold the key). */
+  readMessage(entry: Entry): ReadMessage {
+    const plain = this.open(entry);
+    return plain === undefined ? { entry } : { entry, text: plain.text, ...(plain.extras ? { extras: plain.extras } : {}) };
   }
 
   read(entry: Entry): string | undefined {
+    return this.open(entry)?.text;
+  }
+
+  private open(entry: Entry): Plain | undefined {
     const known = this.texts.get(entry.id);
     if (known !== undefined) return known ?? undefined;
     const body = bodyOf(entry, 'message');
     const chain = this.model?.chains.get(chainKey(entry.author, body.chain));
     const key = chain ? this.keyOf(entry.author, body.chain) : undefined;
-    let text: string | undefined;
+    let out: Plain | undefined;
     if (key) {
       const plain = decrypt(this.ratchets.messageKey(chainKey(entry.author, body.chain), key, body.n), body, messageAad(this.id, entry.author, body.chain, body.n));
       try {
         const parsed = plain === undefined ? undefined : (JSON.parse(plain) as { text?: unknown });
-        text = typeof parsed?.text === 'string' ? parsed.text.slice(0, MAX_TEXT) : undefined;
+        if (typeof parsed?.text === 'string') {
+          const extras = parseExtras(parsed);
+          out = { text: parsed.text.slice(0, MAX_TEXT), ...(extras ? { extras } : {}) };
+        }
       } catch {
-        text = undefined;
+        out = undefined;
       }
     }
     // Remember failures only once the chain is known: its key may simply not have arrived yet.
-    if (text !== undefined || chain) this.texts.set(entry.id, text ?? null);
-    return text;
+    if (out !== undefined || chain) this.texts.set(entry.id, out ?? null);
+    return out;
   }
 
   /** Your chain for the group as it is now (made after the last change to who's in it). */

@@ -1,11 +1,39 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { generateIdentity } from '../net/crypto.js';
 import { Mesh } from '../net/mesh/mesh.js';
 import { dmConversation, groupConversation } from '../net/mesh/views.js';
 import { type NetworkService, startNetwork } from './network.js';
+import { demoScreenshot } from '../demo-image.js';
+import { ChatClaude } from './chat/claude.js';
+import { demoAnswerFromPrompt } from './chat/demo-answers.js';
+import { ChatFiles } from './chat/files.js';
 import type { Store } from './store.js';
+
+const CHECKLIST = `# Friday release
+
+- [x] Staging green
+- [x] Migrations dry-run
+- [ ] Smoke test checkout
+- [ ] Announce in #launch
+`;
+
+/** A demo friend's Mac shares files and answers when their Claude is asked, like a real one (with made-up answers). */
+function demoChat(mesh: Mesh, dir: string, pace: number): { files: ChatFiles; claude: ChatClaude } {
+  const files = new ChatFiles({ mesh, dir: path.join(dir, 'chat-files') });
+  const claude = new ChatClaude({
+    mesh,
+    files,
+    answer: async (req) => {
+      await new Promise((r) => setTimeout(r, (1800 + Math.random() * 1500) * pace));
+      return demoAnswerFromPrompt(req.system, req.prompt);
+    },
+    policy: () => 'everyone',
+    trustOf: () => 'trusted',
+  });
+  return { files, claude };
+}
 
 /** Wait (up to 20 s) for something to become true. */
 async function until(ok: () => boolean): Promise<boolean> {
@@ -36,8 +64,17 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
   await mia.accept((await bob.createInvite()).code);
   mia.setPresence({ state: 'away', note: 'in a meeting' });
   let stopped = false;
+  const pace = Number(process.env.KLAUD_DEMO_PACE) || 1;
+  const chats = { bob: demoChat(bob, path.join(base, 'bob'), pace), mia: demoChat(mia, path.join(base, 'mia'), pace) };
   const group = bob.createGroup('launch', [meId, mia.peerId]);
   bob.sendGroup(group.id, 'Morning! Staging is green, ready when you are.');
+  // bob shares the checklist and a screenshot: they come straight from his Mac.
+  void (async () => {
+    writeFileSync(path.join(base, 'release-checklist.md'), CHECKLIST);
+    writeFileSync(path.join(base, 'checkout.png'), demoScreenshot());
+    const shared = await chats.bob.files.share([path.join(base, 'release-checklist.md'), path.join(base, 'checkout.png')]);
+    if (!stopped) bob.sendGroup(group.id, 'Checklist for Friday, and how checkout looks on staging.', { files: shared });
+  })().catch(() => undefined);
   bob.sendDm(meId, 'Could you look at the deploy script later?');
   // mia writes once the group has reached her (in the background: the demo doesn't wait).
   void until(() => mia.summary().groups.some((g) => g.id === group.id && g.active)).then((ok) => {
@@ -66,6 +103,10 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
     mesh: me.mesh,
     stop: async () => {
       stopped = true;
+      for (const c of Object.values(chats)) {
+        c.claude.stop();
+        c.files.stop();
+      }
       responders.bob.stop();
       responders.mia.stop();
       await me.stop();

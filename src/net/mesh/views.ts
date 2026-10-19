@@ -26,8 +26,33 @@ export interface PersonView {
   readonly via?: 'direct' | 'relay';
 }
 
+/** A file shared in a chat: who has it is found by its checksum; the bytes come Mac to Mac. */
+export interface ChatFile {
+  /** SHA-256 of the bytes (hex): the file's id everywhere. */
+  readonly sha: string;
+  readonly name: string;
+  readonly size: number;
+  readonly mime?: string;
+  /** A picture the chat can show. */
+  readonly image?: boolean;
+}
+
+/** Who a message asks to answer: everyone's Claude in the chat, or these people's. */
+export interface ChatAsk {
+  readonly to: 'all' | readonly string[];
+}
+
+/** What a message carries besides its text (all inside the encryption). */
+export interface ChatExtras {
+  readonly files?: readonly ChatFile[];
+  /** The author called for Claudes to answer this message. */
+  readonly ask?: ChatAsk;
+  /** This message is the author's Claude answering message `for`. */
+  readonly claude?: { readonly for: string };
+}
+
 /** One message in a conversation with a friend (`dm:<peerId>`) or in a group (`group:<id>`). */
-export interface MessageView {
+export interface MessageView extends ChatExtras {
   readonly id: string;
   readonly conversation: string;
   readonly from: string;
@@ -118,9 +143,35 @@ export interface NetworkSummary {
   readonly pendingJoins: readonly PendingJoinView[];
 }
 
+/** A file of a chat on this Mac: here, coming, or not had (yet). */
+export interface ChatFileState {
+  readonly state: 'here' | 'coming' | 'failed';
+  /** Where it is on this Mac (here). */
+  readonly path?: string;
+  /** Bytes so far (coming). */
+  readonly received?: number;
+  readonly size: number;
+  readonly error?: string;
+}
+
+/** Someone's Claude working on an answer in a conversation right now. */
+export interface LiveClaude {
+  readonly peerId: string;
+  readonly name: string;
+  /** The message it answers. */
+  readonly for: string;
+  readonly since: number;
+}
+
 export interface NetworkState extends NetworkSummary {
   /** The latest messages per conversation (older ones: `network.dm.history` / `network.groups.history`). */
   readonly messages: Readonly<Record<string, readonly MessageView[]>>;
+  /** Chat files by checksum: the ones on this Mac and the ones coming. */
+  readonly files?: Readonly<Record<string, ChatFileState>>;
+  /** Claudes answering, per conversation. */
+  readonly live?: Readonly<Record<string, readonly LiveClaude[]>>;
+  /** Your main channel (a group with all your friends), once it exists. */
+  readonly main?: string;
 }
 
 export const dmConversation = (peerId: string): string => `dm:${peerId}`;

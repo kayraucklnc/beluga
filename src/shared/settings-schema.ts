@@ -82,6 +82,10 @@ export const Settings = z.object({
   hiddenButtons: z.array(z.string().max(40)).max(40).default([]),
   /** Friends may ask to start a worktree (and hand work over) on this computer; you still approve each one. */
   friendWorktrees: z.enum(['ask', 'off']).default('ask'),
+  /** Who may call your Claude into a chat (you always can): friends in the chat, people you trust, or only you. */
+  chatClaude: z.enum(['everyone', 'trusted', 'off']).default('everyone'),
+  /** Your main channel: a group with all your friends (made the first time you open it). */
+  mainChannel: z.string().regex(/^[0-9a-f]{32}$/).optional(),
   /** People you chose a trust level for (by their key-derived id). */
   people: z.record(peerKey, z.object({ name: z.string().max(32), trust: z.enum(TRUST_LEVELS) })).default({}),
   /** Shell for the built-in terminal (default: $SHELL). */

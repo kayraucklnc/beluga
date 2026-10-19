@@ -11,6 +11,8 @@ import { GroupAvatar, PersonAvatar } from './Avatars.js';
 import { dmId, groupId, membersLine, openGroupInvitation, presenceLine, shownState, sortFriends, sortGroups } from './net-model.js';
 import { openNet } from './net-sheets.js';
 import { errorText, openDm, openGroup, quietly, useNetwork, useSay } from './use-net.js';
+import { channelName, isMain } from './chat-model.js';
+import { openMain } from './ChatTabs.js';
 import side from '../layout/Sidebar.module.css';
 import s from './network.module.css';
 
@@ -67,12 +69,12 @@ function friendItems(f: FriendView, groups: readonly GroupView[], ctx: { open: (
   return [
     { label: 'Message', icon: 'chat', onSelect: ctx.open },
     {
-      label: 'Add to Group',
+      label: 'Add to Channel',
       icon: 'people',
       onSelect: () => undefined,
       submenu: [
         ...mine.map((g) => ({ label: g.name, onSelect: () => ctx.addTo(g) })),
-        { label: `New Group with ${f.name}…`, separate: mine.length > 0, onSelect: () => openNet({ kind: 'new_group', with: [f.peerId] }) },
+        { label: `New Channel with ${f.name}…`, separate: mine.length > 0, onSelect: () => openNet({ kind: 'new_group', with: [f.peerId] }) },
       ],
     },
     { label: 'Copy Name', icon: 'copy', separate: true, onSelect: () => void copyText(f.name).then(() => ctx.say(`Copied “${f.name}”`)) },
@@ -171,7 +173,7 @@ function groupItems(g: GroupView, ctx: { open: () => void; rename: () => void; c
                 { label: 'Copy Invite Link', icon: 'link' as const, onSelect: ctx.copyLink },
               ]
             : []),
-          { label: 'Leave Group…', danger: true, separate: true, onSelect: () => openNet({ kind: 'leave_group', groupId: g.id }) },
+          { label: 'Leave Channel…', danger: true, separate: true, onSelect: () => openNet({ kind: 'leave_group', groupId: g.id }) },
         ]
       : []),
   ];
@@ -180,6 +182,8 @@ function groupItems(g: GroupView, ctx: { open: () => void; rename: () => void; c
 function GroupRow({ g }: { g: GroupView }) {
   const { client } = useKlaud();
   const say = useSay();
+  const net = useNetwork();
+  const main = isMain(net, g);
   const invitations = useApp((st) => st.network.invitations);
   const selected = useApp((st) => st.view.kind === 'conversation' && st.view.id === groupId(g.id));
   const [renaming, setRenaming] = useState(false);
@@ -195,12 +199,12 @@ function GroupRow({ g }: { g: GroupView }) {
         data-group-row={g.id}
         selected={selected}
         className={g.active ? undefined : s.left}
-        icon={<GroupAvatar name={g.name} id={g.id} size={18} muted={!g.active} />}
-        aria-label={`Group ${g.name}${g.unread ? `, ${g.unread} unread` : ''}`}
-        label={renaming ? <RenameField g={g} done={() => setRenaming(false)} /> : <span className={cx(s.whoName, g.unread > 0 && g.active && s.unreadName)}>{g.name}</span>}
-        detail={g.active ? `${g.name} · ${membersLine(g.members)}` : `${g.name} · you’re no longer in this group`}
+        icon={main ? <span className={s.mainIcon}><Icon name="people" size={12} /></span> : <GroupAvatar name={g.name} id={g.id} size={18} muted={!g.active} />}
+        aria-label={`Channel ${channelName(net, g)}${g.unread ? `, ${g.unread} unread` : ''}`}
+        label={renaming ? <RenameField g={g} done={() => setRenaming(false)} /> : <span className={cx(s.whoName, g.unread > 0 && g.active && s.unreadName)}>{channelName(net, g)}</span>}
+        detail={main ? `Your main channel: all your friends · ${membersLine(g.members)}` : g.active ? `${g.name} · ${membersLine(g.members)}` : `${g.name} · you’re no longer in this channel`}
         onClick={() => (renaming ? undefined : openGroup(client, g.id))}
-        onDoubleClick={() => g.active && setRenaming(true)}
+        onDoubleClick={() => g.active && !main && setRenaming(true)}
         trailing={
           <>
             {requests ? (
@@ -241,18 +245,40 @@ export function FriendsSection() {
   );
 }
 
-/** Groups you're in (and ones you left, dimmed, with their history). */
+/** Your main channel before it exists: one click makes it, with all your friends. */
+function MainRow() {
+  const { client } = useKlaud();
+  const say = useSay();
+  return (
+    <Row
+      data-main-row
+      icon={
+        <span className={s.mainIcon}>
+          <Icon name="people" size={12} />
+        </span>
+      }
+      aria-label="Channel All Friends"
+      label={<span className={s.whoName}>All Friends</span>}
+      detail="Your main channel: everyone you’ve added, in one conversation"
+      onClick={() => void openMain(client).catch((err) => say(errorText(err), 'error'))}
+    />
+  );
+}
+
+/** Channels you're in (your main one first; ones you left, dimmed, with their history). */
 export function GroupsSection() {
   const net = useNetwork();
   if (!net.enabled) return null;
-  const groups = sortGroups(net.groups);
+  const groups = sortGroups(net.groups).filter((g) => g.id !== net.main);
+  const main = net.main ? net.groups.find((g) => g.id === net.main) : undefined;
   return (
-    <Section id="net-groups" title="Groups" action={<IconButton icon="plus" label="New group" onClick={() => openNet({ kind: 'new_group' })} />}>
+    <Section id="net-groups" title="Channels" action={<IconButton icon="plus" label="New channel" onClick={() => openNet({ kind: 'new_group' })} />}>
       <div className={s.sidebarList}>
+        {main ? <GroupRow g={main} /> : <MainRow />}
         {groups.map((g) => (
           <GroupRow key={g.id} g={g} />
         ))}
-        {groups.length ? null : <Row className={side.hintRow} icon={<Icon name="plus" size={13} />} label="New group…" detail="A conversation with several friends, kept on everyone’s Mac" onClick={() => openNet({ kind: 'new_group' })} />}
+        {groups.length ? null : <Row className={side.hintRow} icon={<Icon name="plus" size={13} />} label="New channel…" detail="A conversation with several friends, kept on everyone’s Mac" onClick={() => openNet({ kind: 'new_group' })} />}
       </div>
     </Section>
   );
