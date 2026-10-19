@@ -102,6 +102,14 @@ export const projectTally = (state: Source, p: Project): Tally => tally(projectC
 
 export const groupTally = (state: Source, projects: readonly Project[]): Tally => tally(projects.flatMap((p) => projectConversations(p).map((w) => workspaceSignal(state, w))));
 
+/**
+ * Claude is at work somewhere in a project: a klaud run or a Claude Code session, in any of its
+ * live workspaces (its main folder and worktrees made outside klaud too). Folded, its row shows it.
+ */
+export const projectWorking = (state: Source, p: Project): boolean => p.workspaces.some((w) => !w.archived && workspaceSignal(state, w).working);
+
+export const groupWorking = (state: Source, projects: readonly Project[]): boolean => projects.some((p) => projectWorking(state, p));
+
 /** What a project's (or group's) row says on hover about what's inside. */
 export function tallyTip(t: Tally): string {
   const parts = [t.needs ? `${t.needs} need${t.needs === 1 ? 's' : ''} you` : '', t.unread ? `${t.unread} unread` : ''].filter(Boolean);

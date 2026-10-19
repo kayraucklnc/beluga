@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
-import { type UiAction, activityOf } from '@klaud/ui/workspace-models.js';
+import type { UiAction } from '@klaud/ui/workspace-models.js';
 import { setOverviewView } from '../views/overview/use-overview-prefs.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext, ActionsDropdown, SpecContext, SpecDropdown, type ActionItem } from '../components/SpecMenu.js';
@@ -22,7 +22,7 @@ import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, us
 import { OutsideWorktrees } from './OtherWorktrees.js';
 import { outsideOf } from './outside-model.js';
 import { openSheet } from '../lib/sheets.js';
-import { groupTally, projectTally, tallyTip } from './attention-model.js';
+import { groupTally, groupWorking, projectTally, projectWorking, tallyTip } from './attention-model.js';
 import { TallyMark } from './signal-marks.js';
 import { Row } from './sidebar-parts.js';
 import { WorkspaceRow } from './workspace-row.js';
@@ -145,7 +145,7 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   const current = onHome || (here !== undefined && p.workspaces.some((w) => w.id === here));
   const hide = useHide();
   const iconItems = useIconItems(p);
-  const busy = p.workspaces.some((w) => activityOf(state.log, `ws:${w.id}`).running);
+  const busy = projectWorking(state, p);
   // What's inside: how many conversations have news, and whether one needs you (folded, it's how you notice).
   const inside = projectTally(state, p);
   const insideTip = tallyTip(inside);
@@ -322,7 +322,6 @@ export function Projects() {
   const arrange = useArrange();
   const tree = useRef<HTMLDivElement>(null);
   const collapsed = useUi((u) => u.collapsed);
-  const log = useApp((st) => st.log);
   const state = useApp((st) => st);
   const { creating } = useGroupEdit();
   const { dragging, onPointerDown } = useArrangeDrag(tree, entries, arrange, s.ghost ?? '');
@@ -364,7 +363,7 @@ export function Projects() {
                       name={e.name}
                       count={e.projects.length}
                       open={!collapsed.includes(`group:${e.name}`)}
-                      busy={e.projects.some((p) => p.workspaces.some((w) => activityOf(log, `ws:${w.id}`).running))}
+                      busy={groupWorking(state, e.projects)}
                       tally={groupTally(state, e.projects)}
                       dropOn={intoGroup === e.name}
                       menu={moveItems(entries, { group: e.name }, arrange)}
