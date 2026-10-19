@@ -81,6 +81,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         findPr: opts.findPr,
         hasGh: opts.hasGh,
         envFor: (where) => env.envFor(where),
+        fixSetup: (dir, failed, output) => session.fixSetup(dir, failed, output),
       });
     }
     const questions = new QuestionBroker({
