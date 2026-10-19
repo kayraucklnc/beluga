@@ -165,6 +165,18 @@
   padding: 18px 40px 8px;
   cursor: zoom-out;
 }
+/* Zoomed past the window: it scrolls, both ways. */
+.stageZoom {
+  display: block;
+  overflow: auto;
+  cursor: default;
+}
+.stageZoom .full {
+  display: block;
+  max-width: none;
+  max-height: none;
+  margin: auto;
+}
 .full {
   max-width: 100%;
   max-height: 100%;

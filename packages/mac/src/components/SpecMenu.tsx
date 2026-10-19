@@ -138,10 +138,12 @@ function ActionRows({ items, Item, Separator, kit = DROPDOWN_SUB }: { items: rea
               </kit.Portal>
             </kit.Sub>
           ) : (
-          <Item className={`${s.item} ${it.danger ? s.danger : ''}`} disabled={it.disabled} onSelect={it.onSelect}>
+          <Item className={`${s.item} ${it.danger ? s.danger : ''}`} disabled={it.disabled} onSelect={it.onSelect} data-checked={it.checked || undefined}>
             <span className={s.line}>
-              {icons ? <span className={s.icon}>{it.checked ? <Icon name="check" size={12} /> : it.icon ? <Icon name={it.icon} size={13} /> : null}</span> : null}
+              {/* A row with its own icon keeps it (a choice of icons); the check then goes after the name. */}
+              {icons ? <span className={s.icon}>{it.icon ? <Icon name={it.icon} size={13} /> : it.checked ? <Icon name="check" size={12} /> : null}</span> : null}
               <span className={s.label}>{it.label}</span>
+              {it.checked && it.icon ? <Icon name="check" size={12} className={s.trailingCheck} /> : null}
               {it.keys ? <kbd className={s.keys}>{it.keys}</kbd> : null}
             </span>
             {it.hint ? <span className={`${s.hint} ${icons ? s.hintIndent : ''}`}>{it.hint}</span> : null}

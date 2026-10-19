@@ -25,9 +25,14 @@ type Pending = { peer: string; resolve: (v: unknown) => void; reject: (e: Error)
 const FS_DEBOUNCE_MS = 250;
 const DIR_CACHE_MS = 5_000;
 
-/** Images a document can show inline, by extension (SVG goes in an <img>, where scripts never run). */
-const DOC_IMAGE_TYPES: Readonly<Record<string, string>> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
+/**
+ * Files the Mac app shows as themselves, by extension: images a document shows inline (SVG goes
+ * in an <img>, where scripts never run) and PDFs its reader draws page by page.
+ */
+const DOC_IMAGE_TYPES: Readonly<Record<string, string>> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf' };
 export const MAX_DOC_IMAGE_BYTES = 10 * 1024 * 1024;
+/** PDFs are often bigger than a diagram (scans, slides). */
+export const MAX_DOC_PDF_BYTES = 40 * 1024 * 1024;
 
 export const dirKey = (at: Location): string => `${at.owner}:${at.share}/${at.path}`;
 
@@ -233,13 +238,14 @@ export class RoomFiles {
   }
 
   /**
-   * The bytes of an image a document shows (Markdown's `![](diagram.png)`), fetched the way the
-   * viewer fetches an image (the owner decides who may read it), and only images, only so big.
+   * The bytes of an image a document shows (Markdown's `![](diagram.png)`) or of a PDF, fetched the
+   * way the viewer fetches an image (the owner decides who may read it), and only those, only so big.
    */
   async readImageFile(at: Location): Promise<{ mediaType: string; bytes: Buffer }> {
     const mediaType = DOC_IMAGE_TYPES[path.extname(at.path).toLowerCase()];
     if (!mediaType) throw new Error('Not an image');
-    return { mediaType, bytes: await fetchBytes(at, (to, b) => this.request(to, b), MAX_DOC_IMAGE_BYTES) };
+    const max = mediaType === 'application/pdf' ? MAX_DOC_PDF_BYTES : MAX_DOC_IMAGE_BYTES;
+    return { mediaType, bytes: await fetchBytes(at, (to, b) => this.request(to, b), max) };
   }
 
   async listFiles(at: Location): Promise<readonly FsEntry[]> {

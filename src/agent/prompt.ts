@@ -54,6 +54,18 @@ export function buildSystemAppend(ownerName: string): string {
   ].join('\n');
 }
 
+/** A workspace's scratch folder: where screenshots and intermediate output go (shown live to the owner). */
+export function buildScratchAppend(dir: string): string {
+  return [
+    '',
+    `Scratch folder: ${dir}/ in your working folder (git-ignored, already created). Save what you make while`,
+    'working but that is not the deliverable there: screenshots, rendered previews, logs, command output,',
+    'JSON you fetched or produced, notes. Give files short descriptive names (e.g. 01-login-page.png,',
+    'api-response.json) and prefer .png/.json/.md/.txt. The owner watches this folder live to follow what',
+    'you are doing, so write there as you go instead of only to /tmp. Never put secrets in it.',
+  ].join('\n');
+}
+
 /**
  * For runs in a project's main folder: questions only. A request to change anything moves the
  * conversation to a new worktree (continue_in_worktree) instead of being refused or attempted.

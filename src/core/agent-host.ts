@@ -12,6 +12,7 @@ import type { WorkspaceController } from './workspace-controller.js';
 import type { WorkspaceSharing } from './workspace-sharing.js';
 import { StepBook, importedKey, runKey } from './step-book.js';
 import { Compactor } from './compactor.js';
+import { SCRATCH_DIR, ensureScratch } from '../workspaces/scratch.js';
 import { isImportedItem } from '../agent/transcript.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
 
@@ -617,7 +618,10 @@ export class AgentHost {
     this.currentChannel = body.channel;
     this.emitAgent(body.requestId, from, 'started', '', body.channel);
     try {
+      // A workspace (not a main folder, where nothing may change) gets its scratch folder.
+      const scratch = place && !place.askOnly && this.store.getState().prefs.scratchFolder && (await ensureScratch(place.cwd)) ? SCRATCH_DIR : undefined;
       const final = await agent.run({
+        ...(scratch ? { scratchDir: scratch } : {}),
         prompt: body.prompt,
         requesterName,
         viaAgent: body.viaAgent,

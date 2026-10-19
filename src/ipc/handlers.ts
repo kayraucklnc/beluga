@@ -127,6 +127,7 @@ export const HANDLERS = {
     const { mediaType, bytes } = await s.files.readImageFile(at);
     return { mediaType, data: bytes.toString('base64') };
   },
+  'files.read': (s, at) => s.files.readFile(at),
 
   'workspaces.open': (s, id, tab) => ctl(s)?.open(id, tab),
   'workspaces.load': (s, id) => void ctl(s)?.ensureLoaded(id),
@@ -170,6 +171,7 @@ export const HANDLERS = {
   'workspaces.addFolder': (s, dir) => ctl(s)?.addFolder(dir),
   'workspaces.selectFile': (s, index) => ctl(s)?.selectFile(index),
   'workspaces.review': (s, id) => ctl(s)?.loadReview(id),
+  'workspaces.scratch': (s, id) => ctl(s)?.scratch(id),
 
   'workbench.run': (s, wsId) => started(bench(s)?.run(wsId)),
   'workbench.stopRun': (s, wsId) => bench(s)?.stopRun(wsId),

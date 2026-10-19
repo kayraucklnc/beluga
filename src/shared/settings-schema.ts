@@ -74,6 +74,8 @@ export const Settings = z.object({
   autoCompact: z.boolean().default(true),
   /** How full (percent) a conversation gets before it's compacted. */
   autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX).catch(AUTO_COMPACT_DEFAULT),
+  /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.klaud/scratch/` folder. */
+  scratchFolder: z.boolean().default(true),
   /** How much of Claude's sub-agent work the chat shows. */
   subagents: z.enum(['full', 'compact', 'hidden']).default('full'),
   /** Workspace buttons you chose to hide from the top bar. */

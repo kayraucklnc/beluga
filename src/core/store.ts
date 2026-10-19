@@ -187,6 +187,8 @@ export interface Prefs {
   /** Compact a conversation on its own when its context passes `autoCompactAt` percent. */
   readonly autoCompact: boolean;
   readonly autoCompactAt: number;
+  /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.klaud/scratch/` folder (watched live in the Mac app). */
+  readonly scratchFolder: boolean;
   readonly subagents: Settings['subagents'];
   readonly hiddenButtons: readonly string[];
   readonly friendWorktrees: Settings['friendWorktrees'];
@@ -452,6 +454,7 @@ export const DEFAULT_PREFS: Prefs = {
   contextMeter: true,
   autoCompact: true,
   autoCompactAt: AUTO_COMPACT_DEFAULT,
+  scratchFolder: true,
   subagents: 'full',
   hiddenButtons: [],
   friendWorktrees: 'ask',

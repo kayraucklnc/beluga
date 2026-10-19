@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Location } from '@klaud/core/store.js';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { Icon } from '../Icon.js';
@@ -14,11 +14,11 @@ import m from './markdown.module.css';
 const urls = new Map<string, Promise<string>>();
 const KEEP = 64;
 
-const keyOf = (at: Location): string => `${at.owner}\0${at.share}\0${at.path}`;
+const keyOf = (at: Location, version?: string | number): string => `${at.owner}\0${at.share}\0${at.path}${version === undefined ? '' : `\0${version}`}`;
 
-/** An object URL for an image file, read once and kept for a while (the oldest are let go). */
-export function imageUrl(client: SocketClient, at: Location): Promise<string> {
-  const key = keyOf(at);
+/** An object URL for an image file, read once and kept for a while (the oldest are let go); a new `version` reads it again. */
+export function imageUrl(client: SocketClient, at: Location, version?: string | number): Promise<string> {
+  const key = keyOf(at, version);
   const hit = urls.get(key);
   if (hit) return hit;
   const p = client.api.files.readImageFile(at).then(({ mediaType, data }) => {
@@ -38,14 +38,16 @@ export function imageUrl(client: SocketClient, at: Location): Promise<string> {
 }
 
 /** The object URL of an image file once it's read (undefined meanwhile), or the error. */
-export function useImageUrl(at: Location | undefined): { url?: string; error?: string } {
+export function useImageUrl(at: Location | undefined, version?: string | number): { url?: string; error?: string } {
   const { client } = useKlaud();
   const [state, setState] = useState<{ key: string; url?: string; error?: string }>();
-  const key = at ? keyOf(at) : '';
+  const key = at ? keyOf(at, version) : '';
+  // While a newer version loads, the last picture stays (no flash).
+  const last = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!at) return;
     let alive = true;
-    imageUrl(client, at).then(
+    imageUrl(client, at, version).then(
       (url) => alive && setState({ key, url }),
       (err: unknown) => alive && setState({ key, error: err instanceof Error ? err.message : String(err) }),
     );
@@ -53,7 +55,9 @@ export function useImageUrl(at: Location | undefined): { url?: string; error?: s
       alive = false;
     };
   }, [key]);
-  return state?.key === key ? { ...(state.url ? { url: state.url } : {}), ...(state.error ? { error: state.error } : {}) } : {};
+  if (state?.key === key && state.url) last.current = state.url;
+  if (state?.key === key) return { ...(state.url ? { url: state.url } : {}), ...(state.error ? { error: state.error } : {}) };
+  return version !== undefined && last.current ? { url: last.current } : {};
 }
 
 function Missing({ alt, why }: { alt: string; why: string }) {

@@ -19,6 +19,8 @@ import { Markdown } from './Markdown.js';
 import { AgentSteps, StepsToggle } from './steps/AgentSteps.js';
 import { useFlightLanding } from './flight.js';
 import { useMentionWorld } from './Mention.js';
+import type { TaskView } from '@klaud/core/gateway/model.js';
+import { TaskCard } from '../gateway/TaskCard.js';
 import s from './chat.module.css';
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
@@ -67,7 +69,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
               {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
             </div>
           )}
-          {text ? <Markdown text={text} paths={mine} mentions={mentions} /> : null}
+          {text ? <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} /> : null}
           <ImageGrid images={images} />
         </div>
       </div>
@@ -108,7 +110,7 @@ function statusOf(item: AgentItem, now: number): { label: string; tone: 'claude'
 }
 
 /** What Claude is doing (or did): its steps, sub-agents and background work, then its answer. */
-export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) {
+export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentItem; tasks?: readonly TaskView[] | undefined }) {
   const selfId = useApp((st) => st.selfId);
   const running = isRunning(item.status) && item.status !== 'queued';
   const now = useNow(running);
@@ -153,8 +155,14 @@ export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) 
           </div>
           {/* Steps open to show what ran and what came back (see steps/AgentSteps.tsx). */}
           <AgentSteps item={item} running={running} />
+          {/* What it asked other people's Claudes, before its answer (which comes last). */}
+          {tasks?.map((t) => (
+            <div key={t.id} className={s.turnTask}>
+              <TaskCard task={t} />
+            </div>
+          ))}
           {item.text ? (
-            <Markdown text={item.text} paths />
+            <Markdown text={item.text} paths localImages={mine} />
           ) : item.status === 'queued' ? (
             // Sending it now, editing or moving it: the queue above the box.
             <div className={s.idle}>Starts when the current task finishes.</div>

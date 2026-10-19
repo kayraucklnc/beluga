@@ -1,13 +1,14 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
-import { Icon } from '../components/Icon.js';
+import { Icon, type IconName } from '../components/Icon.js';
+import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
-import { Dot, cx } from '../components/ui.js';
+import { cx } from '../components/ui.js';
 import { editGroups, newGroupFor, useGroupEdit } from '../lib/group-edit.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import { type Entry, type Place, type Target, outOfGroup, stepOf } from './project-layout.js';
 import { NO_TALLY, type Tally, tallyTip } from './attention-model.js';
-import { TallyMark } from './signal-marks.js';
+import { DotMark, TallyMark } from './signal-marks.js';
 import side from './Sidebar.module.css';
 import s from './project-groups.module.css';
 
@@ -87,14 +88,49 @@ function NameField({ initial, onDone, label }: { initial: string; onDone: (name:
   );
 }
 
-/** A group's disclosure triangle and folder (like a folder in Finder's sidebar). */
-function GroupIcon({ open }: { open: boolean }) {
+/** Icons a group can wear instead of the folder (Change Icon ▸ on its right-click menu). */
+export const GROUP_ICONS: ReadonlyArray<{ readonly icon: IconName; readonly label: string }> = [
+  { icon: 'folder', label: 'Folder' },
+  { icon: 'grid', label: 'Grid' },
+  { icon: 'spark', label: 'Prompt' },
+  { icon: 'people', label: 'People' },
+  { icon: 'globe', label: 'Globe' },
+  { icon: 'coin', label: 'Coin' },
+  { icon: 'bulb', label: 'Idea' },
+  { icon: 'wand', label: 'Wand' },
+  { icon: 'terminal', label: 'Terminal' },
+  { icon: 'lock', label: 'Lock' },
+  { icon: 'archive', label: 'Archive' },
+  { icon: 'important', label: 'Flag' },
+];
+
+const iconOfGroup = (icons: Readonly<Record<string, string>>, name: string): IconName => {
+  const picked = icons[name];
+  return GROUP_ICONS.find((g) => g.icon === picked)?.icon ?? 'folder';
+};
+
+/** A group's disclosure triangle and its icon (a folder unless you picked another). */
+function GroupIcon({ open, icon = 'folder' }: { open: boolean; icon?: IconName }) {
   return (
     <span className={s.groupIcon}>
       <Icon name="chevronRight" size={9} className={cx(s.disclosure, open && s.disclosureOpen)} />
-      <Icon name="folder" size={15} className={s.folder} />
+      <Icon name={icon} size={15} className={s.folder} />
     </span>
   );
+}
+
+/** Pick a group's icon; it follows the group when it's renamed. */
+function setGroupIcon(name: string, icon: IconName | undefined): void {
+  const { [name]: _old, ...rest } = getPrefs().groupIcons;
+  setPrefs({ groupIcons: icon && icon !== 'folder' ? { ...rest, [name]: icon } : rest });
+}
+
+function renameGroupIcon(from: string, to: string): void {
+  const icons = getPrefs().groupIcons;
+  const icon = icons[from];
+  if (!icon) return;
+  const { [from]: _old, ...rest } = icons;
+  setPrefs({ groupIcons: { ...rest, [to]: icon } });
 }
 
 /** The row of a group being made: a folder and its name field (like Finder's New Folder). */
@@ -139,25 +175,32 @@ export interface GroupHeaderProps {
 export function GroupHeader({ name, count, open, busy, tally = NO_TALLY, dropOn, menu, onToggle, onMove }: GroupHeaderProps) {
   const api = useApi();
   const { renaming } = useGroupEdit();
+  const icon = iconOfGroup(usePrefs().groupIcons, name);
   const items: ActionItem[] = [
     { label: 'Rename…', icon: 'pencil', onSelect: () => editGroups({ renaming: name, creating: undefined }) },
+    {
+      label: 'Change Icon',
+      icon,
+      submenu: GROUP_ICONS.map((g) => ({ label: g.label, icon: g.icon, checked: g.icon === icon, onSelect: () => setGroupIcon(name, g.icon) })),
+      onSelect: () => undefined,
+    },
     ...menu,
     count
-      ? { label: 'Ungroup', hint: 'Its projects stay, where the group was', icon: 'x', danger: true, separate: true, onSelect: () => void api.workspaces.ungroup(name) }
-      : { label: 'Delete Group', icon: 'x', danger: true, separate: true, onSelect: () => void api.workspaces.ungroup(name) },
+      ? { label: 'Ungroup', hint: 'Its projects stay, where the group was', icon: 'x', danger: true, separate: true, onSelect: () => void api.workspaces.ungroup(name).then(() => setGroupIcon(name, undefined)) }
+      : { label: 'Delete Group', icon: 'x', danger: true, separate: true, onSelect: () => void api.workspaces.ungroup(name).then(() => setGroupIcon(name, undefined)) },
   ];
   if (renaming === name) {
     return (
       <div className={cx(side.row, side.groupRow, s.editing)} style={{ paddingLeft: 8 }} data-head>
         <span className={side.rowIcon} style={{ width: 'auto' }}>
-          <GroupIcon open={open} />
+          <GroupIcon open={open} icon={icon} />
         </span>
         <NameField
           initial={name}
           label={`New name for the group ${name}`}
           onDone={(to) => {
             editGroups({ renaming: undefined });
-            if (to && to !== name) void api.workspaces.renameGroup(name, to);
+            if (to && to !== name) void api.workspaces.renameGroup(name, to).then(() => renameGroupIcon(name, to), () => undefined);
           }}
         />
       </div>
@@ -193,21 +236,15 @@ export function GroupHeader({ name, count, open, busy, tally = NO_TALLY, dropOn,
         }}
       >
         <span className={side.rowIcon} style={{ width: 'auto' }}>
-          <GroupIcon open={open} />
+          <GroupIcon open={open} icon={icon} />
         </span>
         <span className={side.rowLabel}>{name}</span>
         <span className={side.trailing}>
           {open ? null : (
-            <TallyMark
-              tally={tally}
-              folded
-              fallback={
-                <>
-                  <span className={s.count}>{count}</span>
-                  {busy ? <Dot tone="claude" live /> : null}
-                </>
-              }
-            />
+            <>
+              {busy ? <DotMark tone="claude" live signal="busy" /> : null}
+              <TallyMark tally={tally} folded fallback={<span className={s.count}>{count}</span>} />
+            </>
           )}
           {open && !count ? <span className={s.empty}>Empty</span> : null}
         </span>

@@ -53,7 +53,7 @@ const workspaceOf = (state: PanelState): Workspace | undefined => (state.view.ki
 /** Uncommitted files or commits ahead of its base. */
 export const hasChanges = (ws: Workspace | undefined): boolean => (ws?.status?.changed ?? 0) + (ws?.status?.ahead ?? 0) > 0;
 
-export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind);
+export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind).filter((t) => t !== 'scratch' || getPrefs().scratchTab);
 
 /** The tab showing (or that would show, when the panel is hidden) for what's on screen. */
 export function currentTab(state: PanelState, prefs: UiPrefs = getPrefs()): PanelTab {
@@ -79,6 +79,24 @@ export function showPanelTab(state: PanelState, tab: PanelTab): boolean {
   setPrefs({ inspector: true, panelTabs: rememberTab(getPrefs().panelTabs, panelKey(state.view), tab) });
   return true;
 }
+
+/** A changed file the Changes tab should open when it next shows (asked from the Files tab). */
+let changeAsk: { readonly wsId: string; readonly path: string; readonly at: number } | undefined;
+/** Asked a moment ago, or not at all (a later visit to Changes opens on its own). */
+const ASK_MS = 2000;
+
+/** Show a file's changes: the Changes tab, with that file's diff open. */
+export function showChange(state: PanelState, path: string): boolean {
+  if (state.view.kind !== 'workspace') return false;
+  changeAsk = { wsId: state.view.id, path, at: Date.now() };
+  if (showPanelTab(state, 'changes')) return true;
+  changeAsk = undefined;
+  return false;
+}
+
+/** The file to open (for this workspace's Changes tab). Read it while rendering, then forget it. */
+export const peekChangeAsk = (wsId: string): string | undefined => (changeAsk?.wsId === wsId && Date.now() - changeAsk.at < ASK_MS ? changeAsk.path : undefined);
+export const forgetChangeAsk = (): void => void (changeAsk = undefined);
 
 export const togglePanel = (): void => {
   panelChosen();

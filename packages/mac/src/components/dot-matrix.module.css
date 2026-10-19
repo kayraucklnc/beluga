@@ -1,0 +1,15 @@
+/* A 5×5 grid of round dots in the current color (see DotMatrix.tsx). */
+.matrix {
+  flex: none;
+  display: inline-grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(5, 1fr);
+  gap: 1px;
+  vertical-align: middle;
+}
+.matrix i {
+  display: block;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.4;
+}

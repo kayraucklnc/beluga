@@ -207,17 +207,24 @@
   background: var(--text-3);
   opacity: 0.6;
 }
-.live {
-  animation: pulse 1.6s var(--ease-out) infinite;
+/* Live dots are a dot matrix in the tone's color (components/DotMatrix.tsx). */
+.live_claude {
+  color: var(--claude);
 }
-@keyframes pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--claude) 55%, transparent);
-  }
-  60% {
-    box-shadow: 0 0 0 5px transparent;
-  }
+.live_ok {
+  color: var(--ok);
+}
+.live_warn {
+  color: var(--warn);
+}
+.live_error {
+  color: var(--error);
+}
+.live_info {
+  color: var(--info);
+}
+.live_muted {
+  color: var(--text-3);
 }
 
 .avatar {

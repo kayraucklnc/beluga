@@ -96,7 +96,7 @@ function Shot({ task, name, path }: { task: TaskView; name: string; path: string
 }
 
 /**
- * Your Claude asked, and it has the answer: it tells you in its own words just above, so the
+ * Your Claude asked, and it has the answer: it tells you in its own words just below, so the
  * card only says it was answered (their reply one click away). Screenshots and files stay.
  */
 export const relayed = (t: Pick<TaskView, 'direction' | 'by' | 'conversation' | 'delivered' | 'state'>): boolean =>
@@ -115,7 +115,7 @@ function Result({ task }: { task: TaskView }) {
         <button type="button" className={s.reveal} aria-expanded={open} onClick={() => setOpen(!open)}>
           <Icon name={open ? 'chevronDown' : 'chevronRight'} size={10} />
           {open ? `Hide ${task.peerName}’s reply` : `Show ${task.peerName}’s reply`}
-          <span className={s.via}>your Claude passed it on above</span>
+          <span className={s.via}>your Claude passes it on below</span>
         </button>
       ) : null}
       {r.summary && !folded ? <Markdown text={r.summary} /> : null}

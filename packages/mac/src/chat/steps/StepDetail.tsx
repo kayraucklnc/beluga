@@ -1,4 +1,5 @@
-import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { Location } from '@klaud/core/store.js';
 import type { StepRecord } from '@klaud/shared/steps.js';
 import { toolFamily } from '@klaud/shared/steps.js';
 import { stripAnsi } from '@klaud/shared/ansi.js';
@@ -8,7 +9,10 @@ import { Icon } from '../../components/Icon.js';
 import { cx } from '../../components/ui.js';
 import { copyText } from '../../lib/copy.js';
 import { useActions } from '../../lib/actions.js';
-import { toast, useKlaud } from '../../lib/klaud.js';
+import { toast, useApi, useKlaud } from '../../lib/klaud.js';
+import { Thumb } from '../ChatImages.js';
+import { imageSource, localImage } from '../md-images.js';
+import { isPdfFile } from '../../views/reader/reader-model.js';
 import { UnifiedDiff } from '../../views/DiffView.js';
 import { Markdown } from '../Markdown.js';
 import { AnsiText } from './AnsiText.js';
@@ -117,6 +121,46 @@ function BashDetail({ record }: { record: StepRecord }) {
   );
 }
 
+const PdfView = lazy(() => import('../../views/reader/PdfView.js').then((m) => ({ default: m.PdfView })));
+
+/** A PDF on this Mac, drawn small (it opens in full from its path above). */
+function LocalPdf({ path }: { path: string }) {
+  const api = useApi();
+  const [at, setAt] = useState<Location>();
+  useEffect(() => {
+    let alive = true;
+    api.session.localLocation(path, false).then((l) => alive && setAt(l), () => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+  return <div className={s.pdfPeek}>{at ? <Suspense fallback={null}><PdfView at={at} controls={false} /></Suspense> : null}</div>;
+}
+
+/** What Claude looked at, when it's a picture or a PDF: the thing itself (its "lines" are just "[image]"). */
+function Seen({ file }: { file: string }) {
+  const src = imageSource(file);
+  const name = file.split('/').pop() ?? file;
+  if (src.kind === 'local') {
+    const image = localImage(src.path, name);
+    return (
+      <Section label="Image">
+        <div className={s.seen}>
+          <Thumb image={image} all={[image]} index={0} tiled={false} />
+        </div>
+      </Section>
+    );
+  }
+  if (file.startsWith('/') && isPdfFile(file)) {
+    return (
+      <Section label="PDF">
+        <LocalPdf path={file} />
+      </Section>
+    );
+  }
+  return null;
+}
+
 function ReadDetail({ record }: { record: StepRecord }) {
   const input = record.input ?? {};
   const file = str(input.file_path) || str(input.notebook_path);
@@ -128,7 +172,7 @@ function ReadDetail({ record }: { record: StepRecord }) {
         <PathLink path={file} {...(from ? { line: from } : {})} />
         {from || count ? <span className={s.quiet}>{from ? `from line ${from}` : ''}{from && count ? ', ' : ''}{count ? `${count} lines` : ''}</span> : null}
       </div>
-      <Output record={record} label="Lines read" ansi={false} />
+      {file.startsWith('/') && (imageSource(file).kind === 'local' || isPdfFile(file)) && !record.isError ? <Seen file={file} /> : <Output record={record} label="Lines read" ansi={false} />}
     </>
   );
 }
