@@ -21,6 +21,9 @@ import s from './composer.module.css';
 import img from './images.module.css';
 import d from './draft.module.css';
 
+/** Suggestions listed under / and @ at most. */
+const MAX_LISTED = 50;
+
 /** Images waiting to be sent, per conversation (so switching away and back keeps them). */
 const waitingImages = new Map<string, readonly number[]>();
 
@@ -105,7 +108,17 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           }),
     [buffer, hidden, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects],
   );
-  const pick = Math.min(selected, Math.max(0, suggestions.length - 1));
+  /** Only the first 50 are listed, so the arrows move within those. */
+  const listed = Math.min(suggestions.length, MAX_LISTED);
+  const pick = Math.min(selected, Math.max(0, listed - 1));
+  const list = useRef<HTMLDivElement>(null);
+  /** The arrow keys moved the highlight (the pointer hovering an item doesn't scroll the list). */
+  const byKeys = useRef(false);
+  // The highlighted item stays in view as the arrows move it through a long list.
+  useLayoutEffect(() => {
+    if (!byKeys.current) return;
+    list.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [pick, listed]);
 
   // Folders to suggest for "/project add …", and shared files for "/open …".
   const localDir = localDirOf(buffer);
@@ -239,7 +252,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     if (suggestions.length) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelected((n) => (n + (e.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length);
+        byKeys.current = true;
+        setSelected((n) => (Math.min(n, listed - 1) + (e.key === 'ArrowDown' ? 1 : -1) + listed) % listed);
         return;
       }
       if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !modKey && suggestions[pick]?.value !== buffer)) {
@@ -294,9 +308,17 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   return (
     <div className={s.wrap}>
       {suggestions.length ? (
-        <div className={s.suggestions} role="listbox">
-          {suggestions.slice(0, 50).map((sug, i) => (
-            <div key={`${sug.value}:${i}`} role="option" aria-selected={i === pick} className={cx(s.suggestion, i === pick && s.suggestionOn)} onMouseEnter={() => setSelected(i)} onMouseDown={(e) => (e.preventDefault(), accept(sug))}>
+        <div ref={list} className={s.suggestions} role="listbox" aria-label="Suggestions">
+          {suggestions.slice(0, MAX_LISTED).map((sug, i) => (
+            <div
+              key={`${sug.value}:${i}`}
+              role="option"
+              aria-selected={i === pick}
+              className={cx(s.suggestion, i === pick && s.suggestionOn)}
+              onMouseEnter={() => {
+                byKeys.current = false;
+                setSelected(i);
+              }} onMouseDown={(e) => (e.preventDefault(), accept(sug))}>
               <span className={s.sugLabel}>{sug.label}</span>
               <span className={s.sugHint}>{sug.hint}</span>
             </div>
