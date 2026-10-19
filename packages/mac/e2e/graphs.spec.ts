@@ -11,9 +11,16 @@ async function openWorkspace(page: Page, name: string): Promise<void> {
   await sidebar(page).getByRole('button', { name, exact: true }).click();
 }
 
+/** Earlier specs leave Claude busy here (a long run, queued messages): wait until it's free. */
+async function untilIdle(page: Page): Promise<void> {
+  await expect(page.getByRole('button', { name: 'Stop Claude' })).toHaveCount(0, { timeout: 90_000 });
+}
+
 test('draws what Claude visualizes, and you can explore it', async ({ page }) => {
+  test.setTimeout(150_000);
   await page.goto('/');
   await openWorkspace(page, 'webhook-retries');
+  await untilIdle(page);
   await composer(page).fill('/visualize how a payment goes through');
   await composer(page).press('Enter');
   // Your words, not the command.
@@ -59,8 +66,10 @@ test('draws what Claude visualizes, and you can explore it', async ({ page }) =>
 });
 
 test('a broken graph says what is wrong and shows its JSON', async ({ page }) => {
+  test.setTimeout(150_000);
   await page.goto('/');
   await openWorkspace(page, 'webhook-retries');
+  await untilIdle(page);
   // Your own message is Markdown too: a block with a mistake in it.
   await composer(page).fill('```klaud-graph\n{"nodes": [{"id": "a"}]}\n```');
   await composer(page).press('Enter');
