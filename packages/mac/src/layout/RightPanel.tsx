@@ -45,12 +45,16 @@ function useBadges(): Partial<Record<PanelTab, { count?: number; tone?: 'ok' | '
   };
 }
 
+/** Wide enough for every tab's name: below this, only the tab you're on shows its name. */
+const ALL_NAMES_FROM = 470;
+
 function TabStrip({ tabs, tab, width }: { tabs: readonly PanelTab[]; tab: PanelTab; width: number }) {
   const view = useApp((st) => st.view);
   const badges = useBadges();
   const list = useRef<HTMLDivElement>(null);
-  // Wide: icon and name; narrower: the name; narrowest: the icon (named in its tooltip).
-  const look = width >= 430 || tabs.length < 3 ? 'full' : width >= 352 ? 'label' : 'icon';
+  // Wide: every tab with its icon and name. Narrower: the tab you're on keeps its name and the
+  // others fold to their icons (named in their tooltips), sliding open as you pick one.
+  const named = width >= ALL_NAMES_FROM || tabs.length < 4;
   const pick = (t: PanelTab): void => setPanelTab(view, t);
   const onKey = (e: KeyboardEvent): void => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -60,15 +64,17 @@ function TabStrip({ tabs, tab, width }: { tabs: readonly PanelTab[]; tab: PanelT
     list.current?.querySelector<HTMLElement>(`[data-tab="${next}"]`)?.focus();
   };
   return (
-    <div ref={list} className={s.tabs} role="tablist" aria-label="Panel" onKeyDown={onKey}>
+    <div ref={list} className={cx(s.tabs, !named && s.tabsFolded)} role="tablist" aria-label="Panel" onKeyDown={onKey}>
       {tabs.map((t) => {
         const b = badges[t];
         const on = t === tab;
         return (
           <Tip key={t} label={PANEL_LABELS[t]} keys={`⌥⌘${panelDigit(t)}`}>
             <button type="button" role="tab" data-tab={t} id={`panel-tab-${t}`} aria-controls="panel-body" aria-selected={on} aria-label={PANEL_LABELS[t]} tabIndex={on ? 0 : -1} className={cx(s.tab, on && s.tabOn)} onClick={() => pick(t)}>
-              {look !== 'label' ? <Icon name={ICONS[t]} size={13} /> : null}
-              {look !== 'icon' ? <span>{PANEL_LABELS[t]}</span> : null}
+              <Icon name={ICONS[t]} size={13} />
+              <span className={s.tabName}>
+                <span>{PANEL_LABELS[t]}</span>
+              </span>
               {b?.count ? <span className={cx(s.count, b.tone === 'accent' && s.countFresh)}>{b.count > 99 ? '99+' : b.count}</span> : b?.tone ? <span className={cx(s.tabDot, s[`tabDot_${b.tone}`])} /> : null}
             </button>
           </Tip>

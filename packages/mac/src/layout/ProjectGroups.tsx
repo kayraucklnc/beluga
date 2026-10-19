@@ -2,12 +2,12 @@ import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
-import { Dot, cx } from '../components/ui.js';
+import { cx } from '../components/ui.js';
 import { editGroups, newGroupFor, useGroupEdit } from '../lib/group-edit.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import { type Entry, type Place, type Target, outOfGroup, stepOf } from './project-layout.js';
 import { NO_TALLY, type Tally, tallyTip } from './attention-model.js';
-import { TallyMark } from './signal-marks.js';
+import { DotMark, TallyMark } from './signal-marks.js';
 import side from './Sidebar.module.css';
 import s from './project-groups.module.css';
 
@@ -204,7 +204,7 @@ export function GroupHeader({ name, count, open, busy, tally = NO_TALLY, dropOn,
               fallback={
                 <>
                   <span className={s.count}>{count}</span>
-                  {busy ? <Dot tone="claude" live /> : null}
+                  {busy ? <DotMark tone="claude" live /> : null}
                 </>
               }
             />

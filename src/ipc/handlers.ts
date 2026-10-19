@@ -127,6 +127,7 @@ export const HANDLERS = {
     const { mediaType, bytes } = await s.files.readImageFile(at);
     return { mediaType, data: bytes.toString('base64') };
   },
+  'files.read': (s, at) => s.files.readFile(at),
 
   'workspaces.open': (s, id, tab) => ctl(s)?.open(id, tab),
   'workspaces.load': (s, id) => void ctl(s)?.ensureLoaded(id),

@@ -154,8 +154,10 @@ export const API = {
   'files.downloadSpec': args(z.string().max(4096)),
   'files.closeViewer': args(),
   'files.readImage': args(),
-  // An image a document points at (Markdown's ![](diagram.png)), read the way files.open reads one: → { mediaType, data (base64) }.
+  // An image a document points at (Markdown's ![](diagram.png)) or a PDF, read the way files.open reads one: → { mediaType, data (base64) }.
   'files.readImageFile': args(Location),
+  // A file's text without opening it in the viewer (the Mac Changes tab shows a changed file as itself): → { content, truncated }.
+  'files.read': args(Location),
 
   // ---- projects and workspaces
   'workspaces.open': args(id, opt(WorkspaceTab)),

@@ -49,6 +49,8 @@ export interface UiPrefs {
   readonly termScrollback: number;
   /** A file open full size wraps its long lines (instead of scrolling sideways). */
   readonly readerWrap: boolean;
+  /** A changed file shows its diff, or the file as itself (Markdown formatted). Pictures and PDFs always as themselves. */
+  readonly changeLook: 'diff' | 'file';
 }
 
 export const ACCENTS = {
@@ -92,6 +94,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   termCursorBlink: true,
   termScrollback: 5000,
   readerWrap: false,
+  changeLook: 'diff',
 };
 
 const KEY = 'klaud.prefs.v1';

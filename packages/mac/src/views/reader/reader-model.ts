@@ -1,5 +1,5 @@
 import type { ViewerState } from '@klaud/core/store.js';
-import { isMarkdownPath } from '../../components/markdown/md-paths.js';
+import { isImageFile, isMarkdownPath } from '../../components/markdown/md-paths.js';
 
 /**
  * The reader's small decisions, kept apart from its components so the panel and the Files view
@@ -12,6 +12,18 @@ export type ReaderMode = 'rendered' | 'source';
 export const LARGE_MARKDOWN = 400 * 1024;
 
 export const isMarkdownFile = (path: string): boolean => isMarkdownPath(path);
+
+export const isPdfFile = (path: string): boolean => /\.pdf$/i.test(path);
+
+/** Shown as itself (a picture, pages), never as text. */
+export const isVisualFile = (path: string): boolean => isImageFile(path) || isPdfFile(path);
+
+/** What klaud reads for a file that isn't text (a null byte in it). */
+export const BINARY_TEXT = '[binary file]';
+
+/** The file has text to copy, find in and show as source. */
+export const hasText = (viewer: Pick<ViewerState, 'path' | 'image' | 'error' | 'content'>): boolean =>
+  !viewer.image && !viewer.error && !isVisualFile(viewer.path) && viewer.content !== BINARY_TEXT;
 
 /** How a file opens at first: big Markdown as source, everything else as itself. */
 export const initialMode = (viewer: Pick<ViewerState, 'path' | 'content'>): ReaderMode => (isMarkdownFile(viewer.path) && viewer.content.length > LARGE_MARKDOWN ? 'source' : 'rendered');

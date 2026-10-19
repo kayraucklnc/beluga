@@ -36,6 +36,18 @@ function NeedMark({ need }: { need: Need | undefined }) {
   return <span className={m.edge} data-signal="needs" aria-hidden="true" />;
 }
 
+/**
+ * A dot in the same 14px slot as every other mark, so a row's git dot and Claude's pulse line up
+ * at the right edge whichever one a row shows.
+ */
+export function DotMark({ tone, live, signal }: { tone: Parameters<typeof Dot>[0]['tone']; live?: boolean; signal?: string }) {
+  return (
+    <span className={m.mark} data-signal={signal}>
+      <Dot tone={tone} live={live} />
+    </span>
+  );
+}
+
 /** A conversation's mark. `fallback`: what an idle row shows instead (its git state, say). */
 export function SignalMark({ signal, fallback = null }: { signal: Signal; fallback?: ReactNode }) {
   switch (signal.level) {
@@ -48,11 +60,7 @@ export function SignalMark({ signal, fallback = null }: { signal: Signal; fallba
         </span>
       );
     case 'working':
-      return (
-        <span className={m.mark} data-signal="working">
-          <Dot tone="claude" live />
-        </span>
-      );
+      return <DotMark tone="claude" live signal="working" />;
     default:
       return <>{fallback}</>;
   }

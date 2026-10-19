@@ -155,6 +155,14 @@
   font-size: 0.88rem;
   line-height: 1.6;
 }
+/* The file as itself (Markdown formatted, a picture, a PDF): the reader's own type and layout. */
+.asFile {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font);
+  font-size: inherit;
+  line-height: inherit;
+}
 .loadingDiff {
   padding: 16px;
   color: var(--text-3);

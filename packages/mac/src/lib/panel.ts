@@ -80,6 +80,24 @@ export function showPanelTab(state: PanelState, tab: PanelTab): boolean {
   return true;
 }
 
+/** A changed file the Changes tab should open when it next shows (asked from the Files tab). */
+let changeAsk: { readonly wsId: string; readonly path: string; readonly at: number } | undefined;
+/** Asked a moment ago, or not at all (a later visit to Changes opens on its own). */
+const ASK_MS = 2000;
+
+/** Show a file's changes: the Changes tab, with that file's diff open. */
+export function showChange(state: PanelState, path: string): boolean {
+  if (state.view.kind !== 'workspace') return false;
+  changeAsk = { wsId: state.view.id, path, at: Date.now() };
+  if (showPanelTab(state, 'changes')) return true;
+  changeAsk = undefined;
+  return false;
+}
+
+/** The file to open (for this workspace's Changes tab). Read it while rendering, then forget it. */
+export const peekChangeAsk = (wsId: string): string | undefined => (changeAsk?.wsId === wsId && Date.now() - changeAsk.at < ASK_MS ? changeAsk.path : undefined);
+export const forgetChangeAsk = (): void => void (changeAsk = undefined);
+
 export const togglePanel = (): void => {
   panelChosen();
   setPrefs({ inspector: !getPrefs().inspector });

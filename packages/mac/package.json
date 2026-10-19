@@ -39,6 +39,7 @@
     "cmdk": "^1.1.1",
     "katex": "^0.16.47",
     "mermaid": "^11.17.2",
+    "pdfjs-dist": "^6.4.299",
     "qrcode-generator": "^2.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
