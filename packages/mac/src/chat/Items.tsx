@@ -18,6 +18,7 @@ import { messageItems } from './message-menu.js';
 import { Markdown } from './Markdown.js';
 import { AgentSteps, StepsToggle } from './steps/AgentSteps.js';
 import { useFlightLanding } from './flight.js';
+import { useMentionWorld } from './Mention.js';
 import s from './chat.module.css';
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
@@ -51,6 +52,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
   // Screenshots and other images sent with the message show as pictures, under its words.
   const { text, images } = useMemo(() => splitImages(item.text), [item.text]);
   const menu = useMenuContext();
+  const mentions = useMentionWorld(item.channel);
   // The message you just sent flies in from the box (see flight.ts).
   const row = useRef<HTMLDivElement>(null);
   useFlightLanding(row, item.channel, 'chat', item.text, mine && !item.byAgent);
@@ -65,7 +67,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
               {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
             </div>
           )}
-          {text ? <Markdown text={text} paths={mine} /> : null}
+          {text ? <Markdown text={text} paths={mine} mentions={mentions} /> : null}
           <ImageGrid images={images} />
         </div>
       </div>

@@ -1,0 +1,8 @@
+/* The pop-up's window is see-through: only the card shows. */
+html[data-popup],
+html[data-popup] body,
+html[data-popup] #root {
+  background: transparent !important;
+  margin: 0;
+  overflow: hidden;
+}

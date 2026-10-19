@@ -35,5 +35,11 @@ export default defineConfig({
   resolve: { alias: { '@klaud': path.join(repo, 'src') } },
   clearScreen: false,
   server: { port: 1420, strictPort: true, fs: { allow: [repo] } },
-  build: { target: 'safari16', outDir: 'dist', sourcemap: true },
+  build: {
+    target: 'safari16',
+    outDir: 'dist',
+    sourcemap: true,
+    // The window, and the request pop-up's own window (src-tauri/src/popup.rs).
+    rollupOptions: { input: { main: path.join(import.meta.dirname, 'index.html'), popup: path.join(import.meta.dirname, 'popup.html') } },
+  },
 });

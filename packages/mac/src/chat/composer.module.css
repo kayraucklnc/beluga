@@ -273,3 +273,13 @@
 .planKeys {
   font-variant-numeric: tabular-nums;
 }
+
+/* The message box over its mention pills (MentionHighlighter): the field is see-through. */
+.inputWrap {
+  position: relative;
+}
+.overHighlight {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}

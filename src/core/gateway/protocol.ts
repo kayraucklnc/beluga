@@ -33,6 +33,8 @@ export const TRUST = ['blocked', 'ask', 'trusted', 'full'] as const;
 
 /** Limits: what one task may carry. */
 export const MAX_ASK = 16_000;
+/** The few words a request's notification shows (the full ask is one click away). */
+export const MAX_REQUEST_SUMMARY = 140;
 export const MAX_SUMMARY = 60_000;
 export const MAX_DATA_CHARS = 256 * 1024;
 export const MAX_FILES = 8;
@@ -71,6 +73,8 @@ export const TaskRequest = z.object({
   /** ask: their Claude does it; run: one command, directly on their Mac; file: one file from their Mac. */
   kind: z.enum(TASK_KINDS).default('ask'),
   ask: z.string().min(1).max(MAX_ASK),
+  /** A few words for the notification ("take a screenshot of your desktop"); the full ask is behind See more. */
+  summary: z.string().min(1).max(MAX_REQUEST_SUMMARY).optional(),
   needs: z.array(z.enum(NEEDS)).max(NEEDS.length).default([]),
   /** One of their projects (by name) to work or run in. */
   project: z.string().min(1).max(80).optional(),

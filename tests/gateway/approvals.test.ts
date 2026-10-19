@@ -302,6 +302,25 @@ describe('a file from their Mac', () => {
     await settle(() => task(kay, secret.id)?.state === 'declined');
     expect(task(kay, secret.id)?.result?.summary).toContain('not allowed');
   }, 60_000);
+
+  it('one they said yes to comes from anywhere (their Desktop), with no folders shared; secrets still never', async () => {
+    const desktop = mkdtempSync(path.join(os.tmpdir(), 'klaud-desktop-'));
+    writeFileSync(path.join(desktop, 'contract.pdf'), 'pdf');
+    writeFileSync(path.join(desktop, 'id_rsa'), 'key');
+    const [kay, bob] = await pair('kayA', 'bobA');
+    kay.trust(bob.id, 'trusted');
+    // bob has kay on "Ask me each time" and shares no folders: he sees each request and decides.
+    const t = kay.gw.ask({ person: 'bobA', kind: 'file', ask: 'the contract on your Desktop', path: path.join(desktop, 'contract.pdf'), by: 'agent' });
+    await settle(() => bob.approvals.length === 1);
+    bob.approvals[0]!.answer('yes');
+    await settle(() => task(kay, t.id)?.state === 'done');
+    expect(readFileSync(task(kay, t.id)!.result!.files[0]!.path!, 'utf8')).toBe('pdf');
+    // A secret is refused before bob is even asked.
+    const key = kay.gw.ask({ person: 'bobA', kind: 'file', ask: '', path: path.join(desktop, 'id_rsa'), by: 'agent' });
+    await settle(() => task(kay, key.id)?.state === 'declined');
+    expect(task(kay, key.id)?.result?.summary).toContain('not allowed');
+    expect(bob.approvals).toHaveLength(1);
+  }, 60_000);
 });
 
 /** Your Claude's gateway tools, as it would call them from conversation `channel`. */

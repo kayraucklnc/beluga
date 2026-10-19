@@ -52,10 +52,10 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
   bob.on('message', (m) => {
     if (m.mine) return;
     if (m.conversation === dmConversation(meId)) setTimeout(() => !stopped && bob.sendDm(meId, `On it: “${m.text.slice(0, 60)}”`), 1200).unref();
-    if (m.conversation === dmConversation(meId) && /claude/i.test(m.text)) setTimeout(() => !stopped && responders.bob.askBack(), 2000).unref();
+    if (m.conversation === dmConversation(meId) && /claude|screenshot/i.test(m.text)) setTimeout(() => !stopped && responders.bob.askBack(/screenshot/i.test(m.text) ? 'screenshot' : 'question'), 2000).unref();
   });
   mia.on('message', (m) => {
-    if (!m.mine && m.conversation === dmConversation(meId) && /claude/i.test(m.text)) setTimeout(() => !stopped && responders.mia.askBack(), 1500).unref();
+    if (!m.mine && m.conversation === dmConversation(meId) && /claude|screenshot/i.test(m.text)) setTimeout(() => !stopped && responders.mia.askBack(/screenshot/i.test(m.text) ? 'screenshot' : 'question'), 1500).unref();
   });
   mia.on('message', (m) => {
     if (m.mine || m.from !== meId || m.conversation !== groupConversation(group.id)) return;

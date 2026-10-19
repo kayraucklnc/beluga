@@ -40,7 +40,8 @@ export const DEFAULT_CAPABILITIES: Capabilities = {
     project: { ask: 'ask', trusted: 'allow', full: 'allow' },
     shell: { ask: 'ask', trusted: 'ask', full: 'allow' },
     files: { ask: 'ask', trusted: 'allow', full: 'allow' },
-    screen: { ask: 'off', trusted: 'ask', full: 'allow' },
+    // Asking is safe at every level: you see who wants your screen, and why, before anything is taken.
+    screen: { ask: 'ask', trusted: 'ask', full: 'allow' },
     device: { ask: 'ask', trusted: 'allow', full: 'allow' },
   },
   folders: [],

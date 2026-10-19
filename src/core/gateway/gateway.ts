@@ -7,7 +7,7 @@ import { type Capabilities, Decision, type DecisionInput, type Rule, offersFor }
 import { TaskBook } from './book.js';
 import type { SystemPort } from './device.js';
 import { type GatewayState, type PeerCard, type TaskFile, type TaskView, isFinal } from './model.js';
-import { type Expects, type GatewayMsg, MAX_QUESTIONS, type Need, type PeerCardMsg, type TaskKind, type TaskQuestion, type TaskResult, type TaskUpdate } from './protocol.js';
+import { type Expects, type GatewayMsg, MAX_QUESTIONS, MAX_REQUEST_SUMMARY, type Need, type PeerCardMsg, type TaskKind, type TaskQuestion, type TaskResult, type TaskUpdate } from './protocol.js';
 import { describeForClaude, oneLine, questionPrompt, resumePrompt } from './result.js';
 import { RuleBook, type RuleInput } from './rule-book.js';
 import { validate } from './schema.js';
@@ -71,6 +71,8 @@ export interface AskInput {
   /** A name (friend or someone in the room) or a peer id. */
   readonly person: string;
   readonly ask: string;
+  /** A few words for their notification; the full ask is behind See more. */
+  readonly summary?: string;
   readonly kind?: TaskKind;
   /** file: the file on their Mac. */
   readonly path?: string;
@@ -319,6 +321,7 @@ export class Gateway {
       peerName: peer.name,
       kind,
       ask,
+      ...(input.summary?.trim() ? { summary: oneLine(input.summary, MAX_REQUEST_SUMMARY) } : {}),
       needs: [...new Set(input.needs ?? (kind === 'run' ? ['shell'] : kind === 'file' ? ['files'] : []))] as Need[],
       by: input.by,
       state: confirm ? 'confirm' : 'sent',
@@ -336,7 +339,7 @@ export class Gateway {
       ...(input.conversation ? { conversation: input.conversation } : {}),
     });
     if (confirm) {
-      this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your Claude wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : kind === 'file' ? '’s Mac for a file' : '’s Claude'}`, body: oneLine(ask, 140), ...(input.conversation ? { channel: input.conversation } : {}) });
+      this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your Claude wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : kind === 'file' ? '’s Mac for a file' : '’s Claude'}`, body: oneLine(input.summary?.trim() || ask, 140), ...(input.conversation ? { channel: input.conversation } : {}) });
       const timer = setTimeout(() => this.confirm(task.id, false, undefined, 'Not sent: nobody answered in time'), this.deps.confirmTimeoutMs ?? DEFAULT_CONFIRM_MS);
       timer.unref();
       this.confirmTimers.set(task.id, timer);
@@ -567,6 +570,7 @@ export class Gateway {
         to: task.peerId,
         kind: task.kind,
         ask: task.ask,
+        ...(task.summary ? { summary: task.summary } : {}),
         needs: [...task.needs],
         by: task.by,
         ts: this.now(),

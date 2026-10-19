@@ -56,6 +56,8 @@ export interface TaskView {
   readonly peerName: string;
   readonly kind: TaskKind;
   readonly ask: string;
+  /** The few words the requester's Claude chose for notifications (the full ask is `ask`). */
+  readonly summary?: string;
   readonly needs: readonly Need[];
   readonly project?: string;
   readonly expects?: Expects;
@@ -177,12 +179,15 @@ export const oneLine = (text: string, max = 120): string => {
 };
 
 /** The approval card's title for a request that reached you (screens find the card by it). */
-export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path'>>): string => {
+export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path' | 'summary'>>): string => {
   const who = `${t.peerName}${t.by === 'agent' ? "'s Claude" : ''}`;
   if (t.kind === 'run' && t.command) return `${who} wants to run on your Mac: ${oneLine(t.command)}`;
   if (t.kind === 'file' && t.path) return `${who} wants a file from your Mac: ${oneLine(t.path)}`;
-  return `${who} wants to: ${oneLine(t.ask)}`;
+  return `${who} wants to: ${requestGist(t)}`;
 };
+
+/** The few words a request is shown by: the summary its sender chose, else the start of the ask. */
+export const requestGist = (t: Pick<TaskView, 'ask'> & Partial<Pick<TaskView, 'summary'>>, max = 120): string => oneLine(t.summary?.trim() || t.ask, max);
 
 /** Tasks shown in a conversation (sent from it), oldest first. */
 export const tasksIn = (state: GatewaySlice, channel: string): readonly TaskView[] => state.gateway.tasks.filter((t) => t.direction === 'sent' && t.conversation === channel);

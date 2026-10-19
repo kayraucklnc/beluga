@@ -10,10 +10,14 @@ import type { Approval } from '../../../../src/core/store.js';
 /** A notification's button was pressed (or it was clicked): the app shell's "notification-request", or this in a browser. */
 export const REQUEST_NOTIFICATION = 'klaud:request-notification';
 
-export type RequestAction = 'review' | 'approve' | 'always' | 'decline';
+/** `always`: a rule for a week (a notification, the menu bar). `allow_always`: a rule until you change it (the pop-up, where the full ask is one click away). */
+export type RequestAction = 'review' | 'approve' | 'always' | 'allow_always' | 'decline';
 
 /** "Always" pressed outside the window: this project, this command, for a week. */
 export const ALWAYS_FROM_OUTSIDE = { answer: 'always', scope: 'this', command: 'this', expiry: 'week' } as const;
+
+/** "Allow Always" on the pop-up: this project, this command, until you change it (as the approval card's Always). */
+export const ALWAYS_FROM_POPUP = { answer: 'always', scope: 'this', command: 'this', expiry: 'never' } as const;
 
 /** The buttons a notification gets: a friend's request (Approve / Always for a week / Decline), anything else Review only. */
 export function notificationActions(n: { readonly approval?: string; readonly task?: string }): { actionTypeId?: string } {
@@ -37,11 +41,12 @@ export function outsideStep(action: RequestAction, approval: Approval | undefine
   // Your own Claude's tools (and anything that isn't a friend's request) are only reviewed in the window.
   if (!answerableOutside(approval)) return { kind: 'review', ...(approval.task ? { task: approval.task } : {}) };
   if (approval.task) {
-    const answer = action === 'approve' ? 'yes' : action === 'decline' ? 'no' : 'always';
-    return { kind: 'decide', task: approval.task, decision: answer === 'always' ? ALWAYS_FROM_OUTSIDE : { answer, scope: 'this', command: 'this', expiry: 'never' } };
+    if (action === 'always') return { kind: 'decide', task: approval.task, decision: ALWAYS_FROM_OUTSIDE };
+    if (action === 'allow_always') return { kind: 'decide', task: approval.task, decision: ALWAYS_FROM_POPUP };
+    return { kind: 'decide', task: approval.task, decision: { answer: action === 'approve' ? 'yes' : 'no', scope: 'this', command: 'this', expiry: 'never' } };
   }
   // A request that isn't a task (a command through the room): Always isn't offered outside.
-  if (action === 'always') return { kind: 'review' };
+  if (action === 'always' || action === 'allow_always') return { kind: 'review' };
   return { kind: 'answer', id: approval.id, answer: action === 'approve' ? 'yes' : 'no' };
 }
 

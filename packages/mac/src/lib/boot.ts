@@ -1,7 +1,7 @@
 import type { Capabilities } from '@klaud/ipc/socket-client.js';
 import { SocketClient } from '@klaud/ipc/socket-client.js';
 import { brandNotice, isTestNotice } from './brand.js';
-import type { SoundChoice } from '../../../../src/shared/notify-sound.js';
+import type { SoundChoice } from '@klaud/shared/notify-sound.js';
 import { NOTIFICATION_TAP } from './notices.js';
 import { REQUEST_NOTIFICATION, notificationActions } from '../gateway/request-actions.js';
 import { version } from '../../src-tauri/tauri.conf.json';
@@ -42,6 +42,14 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
       const test = isTestNotice(n);
       const { notificationSound, playTestSound } = await import('./sounds/native.js');
       if (test) playTestSound(n);
+      if (inApp() && n.approval && n.task) {
+        // A friend's request gets the floating pop-up (gateway/popup-bridge.ts) instead of a
+        // banner: only its sound here, so it's heard once.
+        const { playSound } = await import('./sounds/player.js');
+        const { DEFAULT_SOUND, DEFAULT_VOLUME, NO_SOUND } = await import('@klaud/shared/notify-sound.js');
+        void playSound(n.tone ?? (n.sound ? DEFAULT_SOUND : NO_SOUND), n.volume ?? DEFAULT_VOLUME).catch(() => undefined);
+        return;
+      }
       if (inApp()) {
         // No permission check here: the plugin answers "granted" on every Mac whatever System
         // Settings says. Settings › Notifications asks macOS itself (lib/sounds/access.ts).

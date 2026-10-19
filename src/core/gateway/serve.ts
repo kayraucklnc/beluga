@@ -10,7 +10,7 @@ import type { TrustLevel } from '../trust.js';
 import { type AccessDecision, CAP_INFO, type Capabilities, Decision, type RequestFacts, type Rule, capFor, declineReason, ruleKindOf } from './access.js';
 import type { TaskBook } from './book.js';
 import { type SystemPort, captureScreen, describeDevice, deviceInfo, realSystem } from './device.js';
-import { type TaskOutcome, type TaskView, approvalTitle, isFinal } from './model.js';
+import { type TaskOutcome, type TaskView, approvalTitle, isFinal, requestGist } from './model.js';
 import { type FileGet, MAX_FILES, MAX_QUESTIONS, type Need, type ResultStatus, type TaskAnswer, type TaskCancel, type TaskRequest } from './protocol.js';
 import { oneLine, parseAnswer, readResultFiles, taskPrompt } from './result.js';
 import { FileOffers } from './transfer.js';
@@ -168,6 +168,7 @@ export class TaskServer {
       peerName: name,
       kind: req.kind,
       ask: req.ask,
+      ...(req.summary?.trim() ? { summary: oneLine(req.summary, 140) } : {}),
       needs: req.needs,
       by: req.by,
       state: 'queued',
@@ -204,6 +205,8 @@ export class TaskServer {
     // Secrets stay off-limits at every trust level: refused before anyone is asked.
     if (req.kind === 'run' && mentionsSecret(req.command ?? '')) return this.finish(task, 'failed', 'klaud never runs commands that touch secrets (.env files, keys, credentials)');
     if (req.kind === 'file' && !req.path) return this.finish(task, 'failed', 'It named no file');
+    // A secret file is refused before anyone is asked too (the read checks again, links followed).
+    if (req.kind === 'file' && isSecretPath(req.path ?? '')) return this.finish(task, 'declined', `${path.basename(req.path ?? '')}: not allowed (klaud never sends secrets: .env files, keys, credentials)`);
     const facts = await this.factsFor(from, req);
     // It may have been stopped (or cancelled) meanwhile.
     if (this.isOver(task.id)) return;
@@ -214,6 +217,10 @@ export class TaskServer {
     if (decided.verdict === 'decline') return this.finish(task, 'declined', declineReason(decided, me));
     if (req.kind !== 'file' && req.project && !ctx.projectRoot(req.project)) return this.finish(task, 'declined', `That isn't available on ${me}'s Mac`);
     let allowedBy: string;
+    // You said yes to this very request, having seen its path: that one file may come from anywhere,
+    // not only the folders you share. A rule doesn't reach that far (its folder could be your home).
+    // Secrets never.
+    const youChose = decided.verdict === 'ask';
     if (decided.verdict === 'ask') {
       const answer = await this.ask(task, 'request', approvalTitle(task), this.detail(req, name, decided));
       if (this.isOver(task.id)) return;
@@ -228,13 +235,13 @@ export class TaskServer {
       } else allowedBy = 'you approved it';
     } else {
       allowedBy = decided.by === 'rule' ? 'a rule of yours allows it' : 'you trust them';
-      const what = req.kind === 'run' ? `run \`${oneLine(req.command ?? '', 60)}\` on your Mac` : req.kind === 'file' ? `get ${path.basename(req.path ?? '')} from your Mac` : `ask your Claude to: ${oneLine(req.ask, 80)}`;
+      const what = req.kind === 'run' ? `run \`${oneLine(req.command ?? '', 60)}\` on your Mac` : req.kind === 'file' ? `get ${path.basename(req.path ?? '')} from your Mac` : `ask your Claude to: ${requestGist(req, 80)}`;
       ctx.notify(`${name}${req.by === 'agent' ? "'s Claude" : ''} wants to ${what}`, `It runs without asking: ${allowedBy}`);
     }
     if (this.isOver(task.id)) return;
     this.update(task.id, { allowedBy });
     if (req.kind === 'run') return this.runCommand(this.current(task), req);
-    if (req.kind === 'file') return this.sendFile(this.current(task), req, facts);
+    if (req.kind === 'file') return this.sendFile(this.current(task), req, facts, youChose);
     this.queue.push({ task: this.current(task), req, facts });
     if (this.running >= MAX_RUNNING) this.update(task.id, { state: 'queued' }, 'Waiting for your Claude to finish another request');
     void this.pump();
@@ -550,18 +557,18 @@ export class TaskServer {
   }
 
   /** One file, sent by klaud itself: from the folders you chose (anywhere with full trust), never secrets. */
-  private async sendFile(task: TaskView, req: TaskRequest, facts: RequestFacts): Promise<void> {
+  private async sendFile(task: TaskView, req: TaskRequest, facts: RequestFacts, youChose: boolean): Promise<void> {
     try {
-      await this.readAndSend(task, req, facts);
+      await this.readAndSend(task, req, facts, youChose);
     } catch (err) {
       if (!this.isOver(task.id)) this.finish(this.current(task), 'failed', `${this.ctx.selfName()}'s klaud couldn't read it: ${errorText(err)}`);
     }
   }
 
-  private async readAndSend(task: TaskView, req: TaskRequest, facts: RequestFacts): Promise<void> {
+  private async readAndSend(task: TaskView, req: TaskRequest, facts: RequestFacts, youChose: boolean): Promise<void> {
     const { ctx } = this;
     const me = ctx.selfName();
-    const full = ctx.trustFor(task.peerId) === 'full';
+    const full = ctx.trustFor(task.peerId) === 'full' || youChose;
     const folders = ctx.access.capabilities().folders;
     if (!full && !folders.length) return this.finish(task, 'declined', `${me} hasn't chosen any folders friends may take files from`);
     const name = path.basename(req.path ?? '');

@@ -6,74 +6,146 @@
 </p>
 
 <p align="center">
-  <b>A Mac app for every project and the Claude working in each, side by side.<br>Bring your friends: everyone brings their own Claude, and you all work together.</b>
+  <b>A Mac app for every project and the Claude working in each.<br>And your Claude can talk to your friends' Claudes, Mac to Mac.</b>
 </p>
 
 <p align="center">
   <a href="https://github.com/kayraucklnc/klaud/releases/latest"><img src="https://img.shields.io/github/v/release/kayraucklnc/klaud?label=Download%20for%20Mac&logo=apple&color=0a84ff&style=for-the-badge" alt="Download Klaud for Mac"></a>
 </p>
 <p align="center">
-  <sub>Apple Silicon · macOS 13+ · updates itself &nbsp;·&nbsp; Prefer the terminal? <a href="#klaud-lite-in-your-terminal">Klaud Lite</a></sub>
+  <sub>Apple Silicon · macOS 13+ · updates itself &nbsp;·&nbsp; Prefer the terminal? <a href="#-klaud-lite-in-your-terminal">Klaud Lite</a></sub>
+</p>
+
+---
+
+## 🤝 Your Claude, talking to your friends' Claudes
+
+Tag a friend in a message, say what you need, and your Claude asks **their** Claude to do it **on their Mac**. They get a small pop-up, click **Allow**, and the answer comes back into your conversation. No server in between, no shared accounts: every Claude runs on its owner's Mac, with its owner's subscription and logins.
+
+<p align="center">
+  <img src="assets/flow.svg" alt="How it works: you tag a friend, the ask travels Mac to Mac end-to-end encrypted, a pop-up asks them, they allow it, their Claude does it, the answer comes back" width="900">
+</p>
+
+### 💬 Tag them, and keep working
+
+Type `@` and pick from the list: a friend (`@bob`), a project (`@bob-api`), a folder or a file in this worktree (`@src/auth.ts`). Whatever names something real turns into a pill, in the box as you type and in the conversation, where a click opens it. Tag a friend and your Claude finds them, asks their Claude, waits, and carries on with the answer (results with data come back as a table).
+
+<p align="center">
+  <img src="assets/mac/ask-a-friend.gif" alt="Typing '@bob run the tests in bob-api' in Klaud: your Claude asks bob's Claude, bob's Claude runs the tests on his Mac, and the result (27 passed) comes back into the conversation" width="900">
+</p>
+
+### 🔔 On their side: a pop-up, wherever they are
+
+Your friend might be in Figma or Chrome. A small card slides in at the top of their screen with a few words of what you want. **See more** shows everything your Claude sent before they decide.
+
+<p align="center">
+  <img src="assets/mac/wants-to.gif" alt="A pop-up on mia's desktop, over Figma: 'kay's Claude wants to take a screenshot of your desktop and send it to me', with See more, Decline, Allow Always and Allow. See more opens the full request; Allow sends it to her Claude." width="760">
+</p>
+
+| Button | What happens |
+|---|---|
+| ✅ **Allow** | Their Claude does it this once. |
+| ♾️ **Allow Always** | Requests like this one from you (same kind, same project or command) run without asking from now on. They can change it in Settings › People & access. |
+| ✋ **Decline** | You hear "declined", and your Claude won't try to get around it. |
+| 🔎 **See more** | The full request, what it needs (screen, files, commands…), where it runs and what goes back. |
+
+Trust someone completely? Mark them **Trusted** or **Full trust** and their requests just happen, behind the scenes (you get a quiet notice).
+
+### ✨ Things you can ask
+
+| You type | What happens on their Mac |
+|---|---|
+| 📸 `@mia send me a screenshot of your desktop` | Her Claude takes it; the picture lands in your chat. |
+| 📁 `@bob send me the contract PDF on your Desktop` | Klaud sends the file itself (big files come in pieces, checked end to end). |
+| 🧪 `@bob run the tests in bob-api` | His Claude runs them in his project and sends back passed / failed / skipped. |
+| 🔑 `@mia make me an admin on mia/site on GitHub` | Her Claude does it with **her** GitHub login (`gh`), after she allows it. |
+| 🖥️ `@ali what macOS, chip and free disk does your Mac have?` | Device info: versions, memory, disk, battery. Never serial numbers. |
+| ⚡ `run git status on bob's Mac` | One command, straight on his Mac, output back to you. |
+
+Their Claude can ask yours a question mid-task, and either side can cancel. Results come back as **data, never instructions**: your Claude uses them, it doesn't obey them.
+
+### 🛡️ Trust, per friend
+
+Each friend gets a trust level, and you decide what their Claude may do at each one (Settings › People & access):
+
+| | 🙋 Ask me each time | 🤝 Trusted | 💯 Full trust |
+|---|:-:|:-:|:-:|
+| Work in your projects | 🔔 | ✅ | ✅ |
+| Read and write files (folders you pick) | 🔔 | ✅ | ✅ |
+| Run commands | 🔔 | 🔔 | ✅ |
+| See the screen | 🔔 | 🔔 | ✅ |
+| Device info | 🔔 | ✅ | ✅ |
+
+🔔 = a pop-up asks you · ✅ = runs without asking. Anything can be turned **Off**. Secrets (`.env`, keys, credentials) are refused at every level, Do Not Disturb keeps pop-ups away, and blocked people get nothing.
+
+### 🌐 No server, no host
+
+Add a friend with a short code or a link. From then on your Macs find each other directly (peer to peer, over Hyperswarm) and talk **end-to-end encrypted**. Groups live on every member's Mac, so nobody hosts them; messages to someone offline wait until they're back.
+
+More: [tasks between Claudes](docs/network.md#tasks-between-claudes-the-gateway) · [the friends network](docs/network.md) · [security](docs/security.md) · [peer-to-peer connections](docs/p2p.md)
+
+---
+
+## 🌿 A worktree per task, a Claude in each
+
+Say what you want done and Klaud makes a fresh worktree for it (its own folder, branch and Claude), named for the task. Your main folder stays untouched, and every task runs at the same time.
+
+<p align="center">
+  <img src="assets/worktrees.svg" alt="One project, three worktrees: add-auth, fix-webhooks and new-hero, each with its own Claude working at once, each ready to merge when done" width="900">
 </p>
 
 <p align="center">
-  <img src="assets/mac/hero.png" alt="Klaud for Mac: a worktree with Claude's finished run in the middle, its changes and diff in the right panel, projects and friends in the sidebar" width="940">
+  <img src="assets/mac/worktree-per-task.gif" alt="Asking Claude to add rate limiting in the add-auth worktree: its steps appear live, the changed files show in the right panel, and it's ready to merge" width="900">
 </p>
 
-## What Klaud does
+- ⚡ **Many Claudes at once**, each with sub-agents you can watch. The sidebar shows who's working, what's ready to merge and what needs you.
+- 🧩 **Everything beside the chat**: changes and diffs, files, terminals and details in the right panel. Commit, open a pull request or merge in one click.
+- 💬 **Questions stay safe**: in the main folder Claude only reads; asking for a change moves you to a new worktree.
 
-| | |
-|---|---|
-| 🌿 **A worktree per task** | Say what you want done; Klaud makes a fresh worktree (its own folder, branch and Claude), named for the task. Your main folder is only for questions: Claude never changes it, and asking for a change moves you to a new worktree. |
-| ⚡ **Many Claudes at once** | Every worktree in every project works in parallel, each with sub-agents you can watch. The sidebar shows who's working, what's ready to merge, what needs you. |
-| 🧩 **Everything beside the chat** | The conversation stays in the middle; the right panel has the changes and diffs, the files, your terminals and the details. Commit, open a pull request or merge in one click. |
-| 👀 **See every Claude on your Mac** | Activity shows Claude Code sessions running anywhere, Conductor included, and every background agent they started, live. |
-| 💬 **Friends, with no server** | Add a friend with a code; talk directly, Mac to Mac, end-to-end encrypted. Groups live on everyone's Mac, so nobody hosts them. |
-| 🤝 **Claudes that work for each other** | Your Claude can ask a friend's Claude to do something on their Mac, or run a command there, and continue with the result. Trusted friends skip the approval. |
-| 📊 **Usage, disk and earnings** | Plan limits, tokens per day, disk per project with one-click clean up, and each project's all-time Stripe earnings. |
-| 🎨 **A real Mac app** | Light and dark, your accent colour, right-click everywhere, drag and drop, ⌘K for anything, a menu-bar icon, notifications with your own sounds, and it updates itself. |
+---
 
-## A tour
+## 👀 A real Mac app
 
-<table>
-  <tr>
-    <td width="50%"><img src="assets/mac/project-home.png" alt="A project's home page"><br><b>Start from the project.</b> Describe a task and Klaud makes the worktree; or just ask a question about the code.</td>
-    <td width="50%"><img src="assets/mac/activity.png" alt="Activity: Claude Code agents running"><br><b>Activity.</b> Every Claude Code session and background agent on your Mac, with what each is doing right now.</td>
-  </tr>
-  <tr>
-    <td><img src="assets/mac/terminal-dark.png" alt="A terminal in the right panel"><br><b>Terminals beside the chat.</b> The worktree's shell, setup and run in the right panel, or a drawer under the chat with ⌘J.</td>
-    <td><img src="assets/mac/friends.png" alt="A conversation with a friend"><br><b>Friends.</b> Direct, end-to-end encrypted, no server. Set how much each friend's Claude may do.</td>
-  </tr>
-  <tr>
-    <td><img src="assets/mac/usage.png" alt="Usage"><br><b>Usage.</b> Your plan's limits, tokens and cost per day, disk per project, and space you can free.</td>
-    <td><img src="assets/mac/overview.png" alt="Overview"><br><b>Overview.</b> Every worktree and chat, archived ones too, filtered by what needs you.</td>
-  </tr>
-  <tr>
-    <td><img src="assets/mac/earnings.png" alt="Stripe earnings for a project"><br><b>Earnings.</b> Connect a project's Stripe and see what it has earned, refreshed once a day.</td>
-    <td><img src="assets/mac/model.png" alt="Model and thinking picker"><br><b>Model and thinking.</b> Pick the model per conversation and how hard Claude thinks, in plain words.</td>
-  </tr>
-</table>
+<p align="center">
+  <img src="assets/mac/hero.png" alt="Klaud for Mac: a worktree with Claude's finished run in the middle, its changes and diff in the right panel, projects and friends in the sidebar" width="900">
+</p>
+<p align="center"><sub>The conversation in the middle, the changes on the right, projects and friends on the left.</sub></p>
 
-## Install
+<p align="center">
+  <img src="assets/mac/activity.png" alt="Activity: every Claude Code session and background agent on your Mac" width="900">
+</p>
+<p align="center"><sub>👀 <b>Activity</b>: every Claude Code session on your Mac (Conductor's too) and the background agents they started, live.</sub></p>
+
+<p align="center">
+  <img src="assets/mac/usage.png" alt="Usage: plan limits, tokens per day, disk per project" width="900">
+</p>
+<p align="center"><sub>📊 <b>Usage</b>: your plan's limits, tokens and cost per day, disk per project with one-click clean up.</sub></p>
+
+<details>
+<summary><b>More screenshots</b></summary>
+<br>
+<p align="center"><img src="assets/mac/project-home.png" alt="A project's home page" width="900"><br><sub>🏠 <b>Project home</b>: describe a task and Klaud makes the worktree, or just ask about the code.</sub></p>
+<p align="center"><img src="assets/mac/friends.png" alt="A conversation with a friend" width="900"><br><sub>💬 <b>Friends</b>: direct, end-to-end encrypted, no server.</sub></p>
+<p align="center"><img src="assets/mac/terminal-dark.png" alt="A terminal in the right panel, dark mode" width="900"><br><sub>🖥️ <b>Terminals</b> beside the chat, or in a drawer with ⌘J.</sub></p>
+<p align="center"><img src="assets/mac/overview.png" alt="Overview of every worktree and chat" width="900"><br><sub>🗂️ <b>Overview</b>: every worktree and chat, filtered by what needs you.</sub></p>
+<p align="center"><img src="assets/mac/earnings.png" alt="Stripe earnings for a project" width="900"><br><sub>💰 <b>Earnings</b>: a project's all-time Stripe earnings.</sub></p>
+<p align="center"><img src="assets/mac/model.png" alt="Model and thinking picker" width="900"><br><sub>🧠 <b>Model and thinking</b> per conversation, in plain words.</sub></p>
+</details>
+
+Light and dark, your accent colour, right-click everywhere, drag and drop, ⌘K for anything, a menu-bar icon, notifications with your own sounds, and it updates itself.
+
+---
+
+## 📦 Install
 
 1. **[Download Klaud](https://github.com/kayraucklnc/klaud/releases/latest)**, open the `.dmg` and drag Klaud into Applications.
 2. The first time, right-click Klaud in Applications and choose **Open** (it isn't notarized by Apple yet).
 3. Sign in to [Claude Code](https://claude.com/claude-code) if you haven't (`claude`, then `/login`). Klaud brings everything else.
+4. To work with friends: **Friends › Turn On**, then **Add a Friend** and send them the code.
 
-Klaud checks for updates once a day and installs them when you say so, or by itself when you're away.
+## 🧑‍💻 Klaud Lite, in your terminal
 
-## Working with friends
-
-- **Add a friend** with a short code or a link. From then on your Macs talk directly whenever you're both online, end-to-end encrypted, with nothing in between.
-- **Groups** live on every member's Mac: anyone can be offline, and you catch up when you're back.
-- **Everyone keeps their own Claude**, subscription and permissions. Ask a friend's Claude to do something on their Mac and get the result back; decide per friend what their Claude may do on yours.
-- **Share a worktree** to build it together, or hand it off so their Claude continues.
-
-More: [the friends network](docs/network.md) · [security](docs/security.md).
-
-## Klaud Lite, in your terminal
-
-The same Klaud as a lightweight terminal app: projects, worktrees, every Claude and your friends, everything clickable. Great over SSH or if you live in the terminal.
+The same Klaud as a lightweight terminal app: projects, worktrees, every Claude and your friends, everything clickable. Great over SSH.
 
 ```bash
 npm install -g klaudcode   # the command is `klaud`
@@ -87,13 +159,13 @@ klaud demo                 # look around with two pretend friends
 
 Klaud Lite and the Mac app can run at the same time on the same projects. The full guide: [docs/terminal.md](docs/terminal.md).
 
-## How it works
+## ⚙️ How it works
 
-Klaud is one engine with two faces. The engine (projects, Claude, terminals, friends) runs in the background on your Mac; the Mac app and Klaud Lite are windows onto it. Each Claude runs on its owner's computer through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview), with their own subscription.
+One engine, two faces. The engine (projects, Claude, terminals, friends) runs in the background on your Mac; the Mac app and Klaud Lite are windows onto it. Each Claude runs on its owner's computer through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview), with their own subscription.
 
 More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [peer-to-peer connections](docs/p2p.md) · [the friends network](docs/network.md) · [updates](docs/updates.md) · [what each app offers](docs/parity.md).
 
-## Development
+## 🛠️ Development
 
 ```bash
 git clone https://github.com/kayraucklnc/klaud.git && cd klaud
@@ -104,12 +176,14 @@ npm run app:dev            # the Mac app, running Klaud from this repo
 npm run e2e                # Playwright tests against the demo
 npm run app:build          # the .app and the designed .dmg
 npm run release            # build, sign and publish a release (see docs/updates.md)
+node scripts/gifs.mjs      # re-record the README's GIFs (vite + `klaud daemon demo`, needs ffmpeg)
 ```
 
 ```
 packages/mac/   the Mac app (React UI in src/, the native shell in src-tauri/)
 src/            the engine (core, friends network, Claude, terminals) and Klaud Lite (src/ui)
 docs/           guides and design notes
+scripts/readme/ the README's animated diagrams (python3 scripts/readme/*.py)
 ```
 
 Klaud used to be called klaude. Your `~/.klaude` settings, projects and worktrees carry over automatically.

@@ -128,8 +128,10 @@ async function mockPeerRun(input: AgentRunInput, bridge: RoomBridge, target: { p
   return `Ran \`${target.command}\` on ${target.peer}'s computer. ${head}.${passed ? ` **${passed} tests pass.**` : ''}`;
 }
 
-/** "ask bob to run the tests" / "ask mia's Claude whether …": whom to ask, and what. */
+/** "ask bob to run the tests" / "ask mia's Claude whether …" / "@bob run the tests": whom to ask, and what. */
 export function gatewayTarget(prompt: string): { person: string; ask: string } | undefined {
+  const tagged = /(?:^|\s)@(?!claude)(\w[\w.-]*)[,:]?\s+([\s\S]+)/i.exec(prompt.trim());
+  if (tagged) return { person: tagged[1]!, ask: tagged[2]!.trim().replace(/[.?!]+$/, '') };
   const m = /\bask (\w[\w.-]*?)(?:['’]s claude)?(?: to)?\s+([\s\S]+)/i.exec(prompt.trim());
   if (!m || /^(me|you|claude|it|them|him|her)$/i.test(m[1]!)) return undefined;
   return { person: m[1]!, ask: m[2]!.trim().replace(/[.?!]+$/, '') };
@@ -167,7 +169,7 @@ async function mockAsk(input: AgentRunInput, bridge: RoomBridge, target: { perso
   input.onEvent('tool', `ask_person ${target.person}${MORE}${JSON.stringify({ ask: target.ask })}`);
   let sent: string;
   try {
-    sent = gw.askPerson({ person: target.person, ask: target.ask, ...(/\btests?\b/i.test(target.ask) ? { expects: TEST_SCHEMA } : {}) });
+    sent = gw.askPerson({ person: target.person, ask: target.ask, summary: target.ask.length > 70 ? `${target.ask.slice(0, 69)}…` : target.ask, ...(/\btests?\b/i.test(target.ask) ? { expects: TEST_SCHEMA } : {}) });
   } catch (err) {
     return `I couldn't ask ${target.person}: ${err instanceof Error ? err.message : String(err)}`;
   }

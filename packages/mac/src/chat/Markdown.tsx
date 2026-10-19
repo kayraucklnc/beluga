@@ -10,6 +10,8 @@ import { useActions } from '../lib/actions.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
 import { useKlaud } from '../lib/klaud.js';
+import { MentionPill } from './Mention.js';
+import { type MentionWorld, linkMentions, parseMentionHref } from './mentions.js';
 import { quoteInBox } from './message-menu.js';
 import s from './chat.module.css';
 
@@ -88,10 +90,13 @@ function linkifyPaths(text: string): string {
     .join('\n');
 }
 
-export const Markdown = memo(function Markdown({ text, paths = false }: { text: string; paths?: boolean }) {
+/** `mentions`: draw "@mia", "@bob-api", "@src/auth.ts"… as pills when they name someone or something here. */
+export const Markdown = memo(function Markdown({ text, paths = false, mentions }: { text: string; paths?: boolean; mentions?: MentionWorld }) {
   const actions = useActions();
   const components: Components = {
     a: ({ href = '', children }) => {
+      const mention = parseMentionHref(href);
+      if (mention) return <MentionPill mention={mention} />;
       // An image mentioned mid-sentence: a small link that opens it full size.
       const image = parseAttachmentHref(href);
       if (image) {
@@ -137,7 +142,7 @@ export const Markdown = memo(function Markdown({ text, paths = false }: { text: 
   return (
     <div className={`${s.markdown} selectable`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={(u) => u}>
-        {paths ? linkifyPaths(text) : text}
+        {((t: string) => (paths ? linkifyPaths(t) : t))(mentions ? linkMentions(text, mentions) : text)}
       </ReactMarkdown>
     </div>
   );
