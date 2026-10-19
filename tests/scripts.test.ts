@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { detectRun, detectSetup, readProjectFile, resolveScripts, saveProjectFile, scriptEnv } from '../src/workspaces/scripts.js';
+import { checkSetup, detectRun, detectSetup, readProjectFile, resolveScripts, saveProjectFile, scriptEnv } from '../src/workspaces/scripts.js';
 
 let dir: string;
 const touch = (name: string, content = '') => writeFileSync(path.join(dir, name), content);
@@ -203,5 +203,32 @@ describe('scriptEnv', () => {
     expect(Object.keys(scriptEnv({ path: '/w', name: 'n', projectRoot: '/p' })).sort()).toEqual(
       ['CONDUCTOR_ROOT_PATH', 'CONDUCTOR_WORKSPACE_NAME', 'CONDUCTOR_WORKSPACE_PATH', 'KLAUD_ROOT_PATH', 'KLAUD_WORKSPACE_NAME', 'KLAUD_WORKSPACE_PATH'],
     );
+  });
+});
+
+describe('checkSetup', () => {
+  it('skips a JavaScript install where there is no package.json', () => {
+    expect(checkSetup(dir, 'yarn')).toMatchObject({ kind: 'skip' });
+    expect(checkSetup(dir, 'npm ci')).toMatchObject({ kind: 'skip' });
+  });
+
+  it("swaps in the package manager the project's lockfile belongs to", () => {
+    pkg({});
+    touch('pnpm-lock.yaml');
+    expect(checkSetup(dir, 'yarn install')).toEqual({ kind: 'swap', command: 'pnpm install', reason: 'it uses pnpm (pnpm-lock.yaml), not yarn' });
+    expect(checkSetup(dir, 'pnpm install --frozen-lockfile')).toEqual({ kind: 'ok' });
+  });
+
+  it('runs anything else as written', () => {
+    expect(checkSetup(dir, 'yarn && make')).toEqual({ kind: 'ok' });
+    expect(checkSetup(dir, 'make setup')).toEqual({ kind: 'ok' });
+    pkg({});
+    expect(checkSetup(dir, 'yarn')).toEqual({ kind: 'ok' }); // no lockfile: any manager will do
+  });
+
+  it('a project learned to need no setup has none, unless you set one', () => {
+    touch('yarn.lock');
+    expect(resolveScripts(dir, { skipSetup: true }).setup).toBeUndefined();
+    expect(resolveScripts(dir, { skipSetup: true, setup: 'make' }).setup).toEqual({ command: 'make', source: 'yours' });
   });
 });

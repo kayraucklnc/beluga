@@ -1,0 +1,20 @@
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { inApp } from '../lib/boot.js';
+import { apply } from '../lib/prefs.js';
+import { popupPort } from '../gateway/popup-bridge.js';
+import { RequestPopup } from './RequestPopup.js';
+import '../styles/tokens.css';
+import '../styles/base.css';
+import './popup.css';
+
+/** The request pop-up's own window (see src-tauri/src/popup.rs): your theme and accent, the card. */
+apply();
+if (inApp()) document.documentElement.dataset.app = 'tauri';
+document.documentElement.dataset.popup = 'true';
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <RequestPopup port={popupPort()} />
+  </StrictMode>,
+);

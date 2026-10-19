@@ -95,14 +95,30 @@ function Shot({ task, name, path }: { task: TaskView; name: string; path: string
   );
 }
 
+/**
+ * Your Claude asked, and it has the answer: it tells you in its own words just below, so the
+ * card only says it was answered (their reply one click away). Screenshots and files stay.
+ */
+export const relayed = (t: Pick<TaskView, 'direction' | 'by' | 'conversation' | 'delivered' | 'state'>): boolean =>
+  t.direction === 'sent' && t.by === 'agent' && Boolean(t.conversation) && t.delivered === true && t.state === 'done';
+
 function Result({ task }: { task: TaskView }) {
   const { client } = useKlaud();
+  const [open, setOpen] = useState(false);
   const r = task.result;
   if (!r) return null;
   const shots = r.files.filter((f) => f.image && f.path);
+  const folded = relayed(task) && !open;
   return (
     <div className={s.result}>
-      {r.summary ? <Markdown text={r.summary} /> : null}
+      {relayed(task) ? (
+        <button type="button" className={s.reveal} aria-expanded={open} onClick={() => setOpen(!open)}>
+          <Icon name={open ? 'chevronDown' : 'chevronRight'} size={10} />
+          {open ? `Hide ${task.peerName}’s reply` : `Show ${task.peerName}’s reply`}
+          <span className={s.via}>your Claude passes it on below</span>
+        </button>
+      ) : null}
+      {r.summary && !folded ? <Markdown text={r.summary} /> : null}
       {shots.length ? (
         <>
           <span className={s.label}>Screenshots</span>
@@ -113,7 +129,7 @@ function Result({ task }: { task: TaskView }) {
           </div>
         </>
       ) : null}
-      {r.data !== undefined ? (
+      {r.data !== undefined && !folded ? (
         <>
           <span className={s.label}>Data</span>
           <DataTable data={r.data} />
@@ -287,7 +303,7 @@ export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
         <Confirm task={task} />
       ) : (
         <>
-          {task.kind === 'run' && task.command ? <div className={`${s.command} selectable`}>$ {task.command}</div> : <div className={`${s.ask} selectable`}>{task.ask}</div>}
+          {task.kind === 'run' && task.command ? <div className={`${s.command} selectable`}>$ {task.command}</div> : relayed(task) ? null : <div className={`${s.ask} selectable`}>{task.ask}</div>}
           {live && task.steps.length ? (
             <div className={s.steps} aria-label="Steps">
               {task.steps.slice(-4).map((step, i) => (

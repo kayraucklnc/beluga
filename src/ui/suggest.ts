@@ -24,6 +24,38 @@ export interface SuggestContext {
   readonly listLocalDirs?: (dir: string) => readonly FsEntry[];
   /** "@workspace" targets, offered in the main chat. */
   readonly workspaces?: ReadonlyArray<{ readonly label: string; readonly hint: string }>;
+  /** Friends on the klaud network: "@mia" anywhere in a message asks your Claude to reach mia's Claude. */
+  readonly friends?: ReadonlyArray<{ readonly name: string; readonly online: boolean }>;
+  /** Your projects ("@bob-api"). */
+  readonly projects?: ReadonlyArray<{ readonly name: string }>;
+  /** A folder's entries in this conversation's worktree ("@src/auth.ts"); undefined while not loaded. */
+  readonly entries?: (dir: string) => readonly FsEntry[] | undefined;
+}
+
+/** How a friend is written in a message: "@mia" ("@Mia Chen" → "@MiaChen", "@Zoë" stays). */
+export const friendMention = (name: string): string => `@${name.replace(/[^\p{L}\p{N}_.-]+/gu, '')}`;
+
+/** The "@…" being typed at the end of the box, without the @ (undefined: not typing a mention). */
+export const typedMention = (buffer: string): string | undefined => /(?:^|\s)@([\p{L}\p{N}_.:/+-]*)$/u.exec(buffer)?.[1];
+
+/** The worktree folder a typed "@src/au" lists ('' for the top), if it's a path at all. */
+export function mentionDir(buffer: string): string | undefined {
+  const token = typedMention(buffer);
+  if (token === undefined || token.startsWith('/') || token.includes('..') || token.includes(':')) return undefined;
+  const slash = token.lastIndexOf('/');
+  return slash < 0 ? '' : token.slice(0, slash);
+}
+
+/** Folders and files of the worktree for "@src/au" (only once something is typed). */
+function pathMentions(token: string, ctx: SuggestContext): Array<{ label: string; hint: string; folder: boolean }> {
+  const dir = mentionDir(`@${token}`);
+  if (dir === undefined || !ctx.entries || (!token.includes('/') && !token)) return [];
+  const partial = token.slice(dir ? dir.length + 1 : 0).toLowerCase();
+  const prefix = dir ? `${dir}/` : '';
+  return (ctx.entries(dir) ?? [])
+    .filter((e) => !e.name.startsWith('.') && e.name.toLowerCase().startsWith(partial))
+    .slice(0, 40)
+    .map((e) => ({ label: `@${prefix}${e.name}${e.dir ? '/' : ''}`, hint: e.dir ? 'folder' : 'file', folder: e.dir }));
 }
 
 /** The folder being typed after "/project add" (or folder): "~/Proj" → "~/". */
@@ -130,22 +162,37 @@ function argumentSuggestions(cmd: string, partial: string, ctx: SuggestContext):
 }
 
 function mentionSuggestions(buffer: string, ctx: SuggestContext): Suggestion[] {
-  const m = /(^|\s)(@[\w.:/-]*)$/.exec(buffer);
-  if (!m) return [];
-  const token = (m[2] ?? '').toLowerCase();
+  const typed = typedMention(buffer);
+  if (typed === undefined) return [];
+  const token = `@${typed}`.toLowerCase();
   const before = buffer.slice(0, buffer.length - token.length);
+  // Inside a folder: only what's in it ("@src/" → "@src/auth.ts").
+  if (typed.includes('/')) {
+    return pathMentions(typed, ctx)
+      .filter((o) => o.label.toLowerCase() !== token)
+      .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const }));
+  }
   const options: Array<{ label: string; hint: string }> = [
     { label: '@claude', hint: 'ask your Claude' },
     ...ctx.peers
       .filter((p) => p.agent && p.peerId !== ctx.selfId)
       .map((p) => ({ label: `@claude:${p.name}`, hint: `ask ${p.name}'s Claude (on their machine)` })),
     ...(ctx.peers.length > 1 ? [{ label: '@claudes', hint: 'ask every Claude in the room' }] : []),
+    ...(ctx.friends ?? [])
+      .filter((f) => friendMention(f.name).length > 1)
+      .map((f) => ({ label: friendMention(f.name), hint: `ask ${f.name}'s Claude, on their Mac${f.online ? '' : ' (offline: it goes when they’re back)'}` })),
+    ...(ctx.projects ?? []).map((p) => ({ label: `@${p.name}`, hint: 'a project' })),
     // Only at the start: "@add-auth …" sends the whole message to that workspace's Claude.
     ...(before.trim() ? [] : (ctx.workspaces ?? [])),
   ];
-  return options
+  const named = options
     .filter((o) => o.label.toLowerCase().startsWith(token) && o.label.toLowerCase() !== token)
     .map((o) => ({ ...o, value: `${before}${o.label} `, enter: 'complete' as const }));
+  const seen = new Set(named.map((o) => o.label.toLowerCase()));
+  const paths = pathMentions(typed, ctx)
+    .filter((o) => !seen.has(o.label.toLowerCase()))
+    .map((o) => ({ label: o.label, hint: o.hint, value: `${before}${o.label}${o.folder ? '' : ' '}`, enter: 'complete' as const }));
+  return [...named, ...paths];
 }
 
 /** Autocomplete for the composer: /commands, their arguments (incl. file paths), and @mentions. */

@@ -12,6 +12,7 @@ import { compactEnv } from '../shared/context-usage.js';
 import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from './live-run.js';
 import { answerChat } from './chat-answer.js';
 import { nameTask } from './namer.js';
+import { fixSetup } from './setup-fixer.js';
 import { createRoomTools } from './tools.js';
 import { createTaskTools } from './task-tools.js';
 import type { AgentBackend, AgentRunInput, FollowUp, RoomBridge } from './types.js';
@@ -314,6 +315,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
 
     nameTask: (prompt: string) => nameTask(prompt, { cwd: opts.cwd, claudePath: opts.claudePath }),
     answerChat: (req) => answerChat(req, { cwd: opts.cwd, ...(opts.claudePath ? { claudePath: opts.claudePath } : {}), ...(opts.model ? { model: opts.model } : {}) }),
+
+    fixSetup: (dir: string, failed: string, output: string) => fixSetup(dir, failed, output, { claudePath: opts.claudePath }),
 
     /** Ask Claude Code which models it offers (no prompt is sent). */
     async listModels() {

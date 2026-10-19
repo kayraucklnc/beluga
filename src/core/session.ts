@@ -12,6 +12,7 @@ import { WorkspaceController } from './workspace-controller.js';
 import { QuestionBroker } from './questions.js';
 import type { Conversation } from '../agent/transcript.js';
 import { slugify } from '../agent/namer.js';
+import type { SetupFix } from '../agent/setup-fixer.js';
 import { WorkspaceSharing } from './workspace-sharing.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Settings } from './settings.js';
@@ -549,6 +550,11 @@ export class Session {
   /** A worktree name for a task: from a small model when your Claude is on, else from its words. */
   async nameTask(prompt: string): Promise<string> {
     return this.agent?.nameTask ? this.agent.nameTask(prompt).catch(() => slugify(prompt)) : slugify(prompt);
+  }
+
+  /** What a project's setup should be after it failed in a worktree (undefined without your Claude). */
+  async fixSetup(dir: string, failed: string, output: string): Promise<SetupFix | undefined> {
+    return this.agent?.fixSetup ? this.agent.fixSetup(dir, failed, output).catch(() => undefined) : undefined;
   }
 
   /** Plan first in this conversation: Claude investigates read-only, then proposes a plan. */

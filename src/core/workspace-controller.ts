@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { slugify } from '../agent/namer.js';
 import { carrySession } from '../agent/session-carry.js';
 import type { AgentPlace } from '../agent/types.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
@@ -276,19 +277,29 @@ export class WorkspaceController {
   }
 
   /**
-   * Turn a draft into a worktree: a small model names it after your first message (unless you
-   * named it), then Claude starts on it. With no message it just creates the worktree.
+   * Turn a draft into a worktree: it's made right away under a quick name from your first message
+   * while a small model names it (then the worktree takes that name), and Claude starts on it.
+   * With no message it just creates the worktree.
    */
   async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>, opts: { base?: string; name?: string } = {}): Promise<void> {
     const text = firstMessage.trim();
-    const name = opts.name?.trim() || (text ? await this.nameFor(firstMessage, nameTask) : 'worktree');
-    const ws = await this.newWorktree(projectId, name, opts.base ? { base: opts.base } : {});
+    const named = opts.name?.trim();
+    const proper = named || !text ? undefined : nameTask(firstMessage).catch(() => undefined);
+    const ws = await this.newWorktree(projectId, named || (text ? slugify(text) : 'worktree'), opts.base ? { base: opts.base } : {});
     if (ws && text) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
+    if (ws && proper) await this.renameWhenNamed(ws.id, proper);
   }
 
-  private nameFor(firstMessage: string, nameTask: (prompt: string) => Promise<string>): Promise<string> {
-    this.deps.toast('Naming the worktree…');
-    return nameTask(firstMessage);
+  /** The model's name for a worktree made under a quick one, once it arrives (never fails the start). */
+  private async renameWhenNamed(id: string, proper: Promise<string | undefined>): Promise<void> {
+    const name = await proper;
+    if (!name) return;
+    try {
+      await this.deps.manager.renameWorktree(id, name);
+      await this.refresh();
+    } catch {
+      // Keeps its quick name.
+    }
   }
 
   /**
@@ -308,11 +319,16 @@ export class WorkspaceController {
     const from = `${WS_PREFIX}${id}`;
     const task = opts.task?.trim();
     const asked = [...this.deps.store.getState().log].reverse().find((l) => l.channel === from && l.type === 'chat' && l.from === this.deps.selfId());
-    const name = opts.name?.trim() || (await this.nameFor(task || (asked?.type === 'chat' ? asked.text : '') || source.name, nameTask));
-    this.deps.store.dispatch({ type: 'system', channel: from, text: `Moving to a new worktree: ${name}…` });
+    const about = task || (asked?.type === 'chat' ? asked.text : '') || source.name;
+    const proper = opts.name?.trim() ? undefined : nameTask(about).catch(() => undefined);
+    const name = opts.name?.trim() || slugify(about);
+    this.deps.store.dispatch({ type: 'system', channel: from, text: "Moving to a new worktree…" });
     this.saveNow(); // the copy gets everything said so far
-    const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.fork(id, name, { base: opts.base ?? project.base }));
-    if (!ws) return undefined;
+    const made = await this.act("Couldn't create the worktree", () => this.deps.manager.fork(id, name, { base: opts.base ?? project.base }));
+    if (!made) return undefined;
+    // Named while it was being made; announced under its proper name.
+    if (proper) await this.renameWhenNamed(made.id, proper);
+    const ws = this.deps.manager.find(made.id) ?? made;
     // Claude Code looks for a conversation under the folder it runs in: bring it along.
     if (source.sessionId) carrySession(source.sessionId, source.path, ws.path);
     const to = `${WS_PREFIX}${ws.id}`;

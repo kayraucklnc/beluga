@@ -792,6 +792,21 @@ export class WorkspaceManager {
     this.patchRecord(id, { name: name.trim().slice(0, 40) || this.require(id).name });
   }
 
+  /**
+   * Give a just-made worktree its proper name (it was created under a quick one while a model
+   * named it): the label and its klaud/ branch, unless the branch was pushed. The folder stays.
+   */
+  async renameWorktree(id: string, name: string): Promise<void> {
+    const ws = this.require(id);
+    const s = slug(name);
+    if (ws.kind !== 'worktree' || !s || s === ws.name) return;
+    const pushed = ws.branch && (await g.tryGit(ws.path, ['for-each-ref', '--count=1', `refs/remotes/*/${ws.branch}`]))?.trim();
+    const branch = ws.branch?.startsWith('klaud/') && !pushed ? await this.freeBranch(ws.path, `klaud/${s}`) : undefined;
+    if (branch) await g.git(ws.path, ['branch', '-m', ws.branch!, branch]);
+    this.patchRecord(id, { name: s, ...(branch ? { branch } : {}) });
+    await this.refresh();
+  }
+
   rememberSession(id: string, sessionId: string): void {
     this.patchRecord(id, { sessionId, forkFromSession: undefined });
   }

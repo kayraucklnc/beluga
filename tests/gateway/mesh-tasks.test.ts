@@ -109,11 +109,22 @@ describe('asking a friend’s Claude', () => {
   it('declines what a capability you turned off would need, saying which', async () => {
     const [fay, gus] = await pair('fay', 'gus');
     fay.trust(gus.id, 'trusted');
-    // gus has fay on "Ask me each time": the screen is off for that by default.
+    // gus has fay on "Ask me each time", and turned the screen off for that.
+    gus.gw.setCapabilities({ levels: { screen: { ask: 'off', trusted: 'ask', full: 'allow' } } });
     const t = fay.gw.ask({ person: 'gus', ask: 'what is on screen', needs: ['screen'], by: 'agent' });
     await settle(() => task(fay, t.id)?.state === 'declined');
     expect(task(fay, t.id)?.result?.summary).toBe("gus's klaud doesn't let you see the screen");
     expect(gus.approvals).toHaveLength(0);
+  }, 60_000);
+
+  it('asks for the screen by default, with the few words the requester chose', async () => {
+    const [lia, max] = await pair('lia', 'max');
+    lia.trust(max.id, 'trusted');
+    const t = lia.gw.ask({ person: 'max', ask: 'Take a screenshot of your whole desktop and send it back, I want to see the new dock layout.', summary: 'take a screenshot of your desktop', needs: ['screen'], by: 'agent' });
+    await settle(() => max.approvals.length === 1);
+    expect(max.approvals[0]?.title).toBe("lia's Claude wants to: take a screenshot of your desktop");
+    expect(task(max, t.id)).toMatchObject({ state: 'awaiting_approval', summary: 'take a screenshot of your desktop' });
+    expect(task(max, t.id)?.ask).toContain('new dock layout');
   }, 60_000);
 });
 

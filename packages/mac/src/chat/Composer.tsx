@@ -3,7 +3,8 @@ import { type AppState, channelOf, peerName } from '@klaud/core/store.js';
 import { localDirKey } from '@klaud/core/local-key.js';
 import { workspaceMentions } from '@klaud/core/mentions.js';
 import { composeState, queueIn } from '@klaud/ui/compose.js';
-import { localDirOf, openTarget, suggest, type Suggestion } from '@klaud/ui/suggest.js';
+import { localDirOf, mentionDir, openTarget, suggest, type Suggestion } from '@klaud/ui/suggest.js';
+import { shareNameOf } from '@klaud/shared/share-names.js';
 import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -17,6 +18,8 @@ import { expectClaude, launchFlight } from './flight.js';
 import { type WorktreeChoice, WorktreeDraft } from './WorktreeDraft.js';
 import { stopClaude } from '../lib/commands.js';
 import { keepPreview, previewOf } from './images.js';
+import { MentionHighlighter } from './MentionHighlighter.js';
+import { useMentionWorld, worktreeOf } from './Mention.js';
 import s from './composer.module.css';
 import img from './images.module.css';
 import d from './draft.module.css';
@@ -91,6 +94,14 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   useEffect(() => setWorktree({ name: '' }), [draftProject]);
   const canCreate = Boolean(buffer.trim() && !buffer.trim().startsWith('/')) || Boolean(worktree.name.trim());
 
+  // "@src/au" in a worktree: its folders and files (loaded as you type into a folder).
+  const wsId = worktreeOf(channel);
+  const atDir = wsId ? mentionDir(buffer) : undefined;
+  useEffect(() => {
+    if (wsId && atDir !== undefined) void api.files.loadDir({ owner: state.selfId, share: shareNameOf(wsId), path: atDir });
+  }, [wsId, atDir, state.selfId]);
+  const mentionWorld = useMentionWorld(channel);
+
   // Suggestions as you type: commands, people and Claudes, workspaces, folders.
   const suggestions: Suggestion[] = useMemo(
     () =>
@@ -102,8 +113,11 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             dirCache: state.dirCache,
             listLocalDirs: (dir) => state.dirCache[localDirKey(dir)] ?? [],
             workspaces: state.view.kind === 'room' ? workspaceMentions(state.projects) : [],
+            friends: state.network.friends,
+            projects: state.projects.filter((p) => p.root),
+            ...(wsId ? { entries: (dir: string) => state.dirCache[`${state.selfId}:${shareNameOf(wsId)}/${dir}`] } : {}),
           }),
-    [buffer, hidden, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects],
+    [buffer, hidden, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.network.friends, wsId],
   );
   const pick = Math.min(selected, Math.max(0, suggestions.length - 1));
 
@@ -361,23 +375,26 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             ))}
           </div>
         ) : null}
-        <textarea
-          ref={ref}
-          className={`${s.input} selectable`}
-          rows={1}
-          value={buffer}
-          disabled={readOnly}
-          placeholder={to ? `Message ${recipientLabel(to)}` : placeholderOf(state, pending ? { pending } : {})}
-          onChange={(e) => set(e.target.value)}
-          onKeyDown={onKey}
-          onPaste={(e) => {
-            const files = imagesOf(e.clipboardData.items);
-            if (!files.length) return;
-            e.preventDefault();
-            void attach(files);
-          }}
-          spellCheck
-        />
+        <div className={s.inputWrap}>
+          <MentionHighlighter text={buffer} world={mentionWorld} input={ref} className={s.input ?? ""} />
+          <textarea
+            ref={ref}
+            className={`${s.input} ${s.overHighlight} selectable`}
+            rows={1}
+            value={buffer}
+            disabled={readOnly}
+            placeholder={to ? `Message ${recipientLabel(to)}` : placeholderOf(state, pending ? { pending } : {})}
+            onChange={(e) => set(e.target.value)}
+            onKeyDown={onKey}
+            onPaste={(e) => {
+              const files = imagesOf(e.clipboardData.items);
+              if (!files.length) return;
+              e.preventDefault();
+              void attach(files);
+            }}
+            spellCheck
+          />
+        </div>
         <div className={s.bar}>
           {channel !== 'draft' && !shared ? (
             <Tip label={plan ? 'Plan mode: Claude looks first and asks you to approve a plan' : 'Act right away (click for plan mode)'} keys="⇧Tab">

@@ -1,12 +1,15 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { inApp } from '../lib/boot.js';
+import { dndActive } from '@klaud/shared/quiet.js';
+import { popupPublisher } from './popup-bridge.js';
+import { popupRequests } from './popup-model.js';
 import { REQUEST_NOTIFICATION, type RequestAction, outsideStep, parseRequestMenuId, trayRequests } from './request-actions.js';
 
 /**
- * Friends' requests outside the window: Approve / Always / Decline on the macOS notification,
- * the same in the menu-bar menu, and the request sheet they open (one at a time). The app shell
- * (src-tauri) shows the buttons and menu items; this side answers them.
+ * Friends' requests outside the window: the floating pop-up (Allow / Allow Always / Decline,
+ * with See more), the same in the menu-bar menu, and the request sheet they open (one at a
+ * time). The app shell (src-tauri) shows the pop-up and menu items; this side answers them.
  */
 
 export { REQUEST_NOTIFICATION, type RequestAction, notificationActions } from './request-actions.js';
@@ -58,7 +61,8 @@ export async function runRequestAction(client: SocketClient, action: RequestActi
     if (step.kind === 'decide') await client.api.gateway.decide(step.task, step.decision);
     else await client.api.host.answerApproval(step.answer, step.id);
     const answer = step.kind === 'decide' ? step.decision.answer : step.answer;
-    say(answer === 'no' ? 'Declined' : answer === 'always' ? 'Approved; requests like it run without asking for a week' : 'Approved', answer === 'no' ? 'info' : 'success');
+    const always = step.kind === 'decide' && step.decision.expiry === 'never' ? 'Allowed; requests like it run without asking (Settings › People & access)' : 'Approved; requests like it run without asking for a week';
+    say(answer === 'no' ? 'Declined' : answer === 'always' ? always : 'Approved', answer === 'no' ? 'info' : 'success');
   } catch (err) {
     say(`Couldn't answer it: ${message(err)}`, 'error');
   }
@@ -72,8 +76,36 @@ export function runRequestMenuItem(id: string, client: SocketClient): boolean {
   return true;
 }
 
-/** Keep the menu bar's requests in step, and answer the notifications' buttons. */
+/** Do Not Disturb (Klaud's or your status), or appearing offline: friends' requests wait quietly. */
+const quietNow = (st: ReturnType<SocketClient['store']['getState']>): boolean =>
+  dndActive(st.prefs.notify) || Boolean(st.network.self && (st.network.self.appearOffline || st.network.self.presence.state === 'dnd'));
+
+/** Keep the pop-up showing the friends' requests waiting for you (and hide it once they're answered). */
+export function useRequestPopup(client: SocketClient): void {
+  useEffect(() => {
+    const popup = popupPublisher();
+    let last = '';
+    const update = (): void => {
+      const st = client.store.getState();
+      const requests = popupRequests(st.approvals, st.gateway.tasks, quietNow(st));
+      const key = JSON.stringify(requests);
+      if (key === last) return;
+      last = key;
+      popup.publish(requests);
+    };
+    update();
+    const unsubscribe = client.store.subscribe(update);
+    return () => {
+      unsubscribe();
+      popup.publish([]);
+      popup.close();
+    };
+  }, [client]);
+}
+
+/** Keep the menu bar's requests in step, and answer the notifications' (and the pop-up's) buttons. */
 export function useRequestNative(client: SocketClient): void {
+  useRequestPopup(client);
   useEffect(() => {
     const onEvent = (e: Event): void => {
       const d = (e as CustomEvent<{ action?: RequestAction; approval?: string; task?: string }>).detail;

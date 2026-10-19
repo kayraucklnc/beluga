@@ -166,14 +166,21 @@ function HomeComposer({ project }: { project: Project }) {
       if (!ready) toast(client, worktree ? 'Describe the task, or give the worktree a name' : 'Type your question first', 'info');
       return;
     }
+    if (worktree) {
+      // The worktree is made in the background (it opens when ready): you can go on right away.
+      const named = name.trim();
+      setText('');
+      setName('');
+      void api.workspaces.startWorktree(project.id, task, { ...(base ? { base } : {}), ...(named ? { name: named } : {}) }).catch((err: unknown) => toast(client, `Couldn’t create the worktree: ${errorText(err)}`, 'error'));
+      return;
+    }
     setBusy(true);
     try {
-      if (worktree) await api.workspaces.startWorktree(project.id, task, { ...(base ? { base } : {}), ...(name.trim() ? { name: name.trim() } : {}) });
-      else await api.workspaces.startChat(project.id, task);
+      await api.workspaces.startChat(project.id, task);
       setText('');
       setName('');
     } catch (err) {
-      toast(client, `${worktree ? 'Couldn’t create the worktree' : 'Couldn’t start the chat'}: ${errorText(err)}`, 'error');
+      toast(client, `Couldn’t start the chat: ${errorText(err)}`, 'error');
     } finally {
       setBusy(false);
     }

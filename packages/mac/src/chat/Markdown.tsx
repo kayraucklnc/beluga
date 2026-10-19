@@ -12,6 +12,8 @@ import { useActions } from '../lib/actions.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
 import { useKlaud } from '../lib/klaud.js';
+import { MentionPill } from './Mention.js';
+import { type MentionWorld, linkMentions, parseMentionHref } from './mentions.js';
 import { quoteInBox } from './message-menu.js';
 import s from './chat.module.css';
 
@@ -137,9 +139,10 @@ function linkifyPaths(text: string): string {
 
 /**
  * `localImages`: pictures named by a path on this Mac are shown (your own messages and your own
- * Claude's only; anyone else's stay a chip).
+ * Claude's only; anyone else's stay a chip). `mentions`: draw "@mia", "@bob-api", "@src/auth.ts"…
+ * as pills when they name someone or something here.
  */
-export const Markdown = memo(function Markdown({ text, paths = false, localImages = false }: { text: string; paths?: boolean; localImages?: boolean }) {
+export const Markdown = memo(function Markdown({ text, paths = false, localImages = false, mentions }: { text: string; paths?: boolean; localImages?: boolean; mentions?: MentionWorld }) {
   const actions = useActions();
   // Every local image in the message, so the lightbox steps from one to the next.
   const images = useMemo(() => (localImages ? messageImages(text) : []), [text, localImages]);
@@ -157,6 +160,8 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       );
     },
     a: ({ href = '', children }) => {
+      const mention = parseMentionHref(href);
+      if (mention) return <MentionPill mention={mention} />;
       // An image mentioned mid-sentence: a small link that opens it full size.
       const image = parseAttachmentHref(href);
       if (image) {
@@ -202,7 +207,7 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
   return (
     <div className={`${s.markdown} selectable`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={(u) => u}>
-        {paths ? linkifyPaths(text) : text}
+        {((t: string) => (paths ? linkifyPaths(t) : t))(mentions ? linkMentions(text, mentions) : text)}
       </ReactMarkdown>
     </div>
   );

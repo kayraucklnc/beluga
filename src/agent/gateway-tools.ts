@@ -16,7 +16,7 @@ export interface GatewayBridge {
   available(): boolean;
   whoCan(need?: Need): unknown;
   /** Send (or ask the user first); returns what Claude is told right away. */
-  askPerson(input: { person: string; ask: string; needs?: readonly Need[]; project?: string; expects?: 'files' | Record<string, unknown>; deadlineSec?: number }): string;
+  askPerson(input: { person: string; ask: string; summary?: string; needs?: readonly Need[]; project?: string; expects?: 'files' | Record<string, unknown>; deadlineSec?: number }): string;
   runOn(input: { person: string; command: string; cwd?: string; project?: string; timeoutSec?: number; why?: string }): string;
   /** Ask their klaud for one file (from the folders they share with friends); big files come in pieces. */
   getFile(input: { person: string; path: string; why?: string }): string;
@@ -64,6 +64,7 @@ export function createGatewayToolDefs(bridge: RoomBridge) {
       {
         person: z.string().min(1).max(80).describe('Their name (from who_can)'),
         ask: z.string().min(1).max(16_000).describe('What to do, complete and self-contained: they see only this'),
+        summary: z.string().min(1).max(140).optional().describe('A few words their notification shows, e.g. "take a screenshot of your desktop" (the full ask is one click away). Always give one.'),
         needs: z.array(need).max(5).optional().describe('What it needs on their side'),
         project: z.string().min(1).max(80).optional().describe('One of their projects to work in (from who_can)'),
         expects: z.union([z.literal('files'), z.record(z.string(), z.unknown())]).optional().describe('What to get back: a JSON schema for structured data (checked on arrival), or "files"'),
@@ -74,6 +75,7 @@ export function createGatewayToolDefs(bridge: RoomBridge) {
           gw().askPerson({
             person: a.person,
             ask: a.ask,
+            ...(a.summary ? { summary: a.summary } : {}),
             ...(a.needs ? { needs: a.needs } : {}),
             ...(a.project ? { project: a.project } : {}),
             ...(a.expects ? { expects: a.expects } : {}),
@@ -106,7 +108,7 @@ export function createGatewayToolDefs(bridge: RoomBridge) {
     ),
     tool(
       'get_file',
-      "Get one file from another person's Mac, sent by their klaud (no Claude involved): from the folders they let friends read (anywhere with their full trust), never secrets. Big files come in pieces. Returns a task id at once; wait_for gives where it was saved here.",
+      "Get one file from another person's Mac, sent by their klaud (no Claude involved): from the folders they let friends read, or from anywhere if they allow this request (or fully trust you); never secrets. Big files come in pieces. Returns a task id at once; wait_for gives where it was saved here.",
       {
         person: z.string().min(1).max(80).describe('Their name (from who_can)'),
         path: z.string().min(1).max(4096).describe('The full path of the file on their Mac (~ is their home)'),

@@ -27,8 +27,16 @@ interface Persona {
   readonly fallback: string;
   /** What their Claude asks yours when you mention Claude to them (in one of your projects, maybe). */
   readonly asksBack: string;
+  /** The few words their notification shows for it. */
+  readonly asksBackSummary: string;
   readonly asksIn?: string;
 }
+
+/** What a demo friend's Claude asks when you mention a screenshot to them. */
+const SCREENSHOT_ASK = {
+  ask: 'Please take a screenshot of your whole desktop and send it back to me. I want to see how the new dock and menu bar layout looks on your Mac before I copy it. Nothing else is needed: no files, no commands.',
+  summary: 'take a screenshot of your desktop and send it to me',
+} as const;
 
 const PERSONAS: Readonly<Record<'bob' | 'mia', Persona>> = {
   bob: {
@@ -43,6 +51,7 @@ const PERSONAS: Readonly<Record<'bob' | 'mia', Persona>> = {
     ],
     fallback: 'Done. I looked into it in bob-api; nothing needed changing.',
     asksBack: 'Could you check the landing page links still work after the domain change? A short list of anything broken is enough.',
+    asksBackSummary: 'check the landing page links after the domain change',
   },
   mia: {
     name: 'mia',
@@ -54,6 +63,7 @@ const PERSONAS: Readonly<Record<'bob' | 'mia', Persona>> = {
     ],
     fallback: 'Looked at it on my side: all good from the landing page.',
     asksBack: 'What does your auth middleware return for an expired session? I need the exact status code for the error page.',
+    asksBackSummary: 'tell me what auth returns for an expired session',
     asksIn: 'bob-api',
   },
 };
@@ -107,7 +117,7 @@ function demoClaude(persona: Persona): AgentBackend {
 }
 
 /** Give a demo friend a gateway that answers your tasks. Returns how to stop it. */
-export function demoResponder(mesh: Mesh, persona: 'bob' | 'mia', meId: string, base: string): { gateway: Gateway; stop: () => void; askBack: () => void } {
+export function demoResponder(mesh: Mesh, persona: 'bob' | 'mia', meId: string, base: string): { gateway: Gateway; stop: () => void; askBack: (what?: 'question' | 'screenshot') => void } {
   const p = PERSONAS[persona];
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'identity', selfId: mesh.peerId, isHost: false });
@@ -155,9 +165,12 @@ export function demoResponder(mesh: Mesh, persona: 'bob' | 'mia', meId: string, 
       mesh.off('change', sync);
       gateway.stop();
     },
-    askBack: () => {
+    askBack: (what = 'question') => {
       try {
-        const t = gateway.ask({ person: meId, ask: p.asksBack, by: 'agent', ...(p.asksIn ? { project: p.asksIn, needs: ['project'] } : {}) });
+        const t =
+          what === 'screenshot'
+            ? gateway.ask({ person: meId, ask: SCREENSHOT_ASK.ask, summary: SCREENSHOT_ASK.summary, needs: ['screen'], expects: 'files', by: 'agent' })
+            : gateway.ask({ person: meId, ask: p.asksBack, summary: p.asksBackSummary, by: 'agent', ...(p.asksIn ? { project: p.asksIn, needs: ['project'] } : {}) });
         // Their user said yes to asking you (it's a demo).
         if (t.state === 'confirm') gateway.confirm(t.id, true);
       } catch {

@@ -297,3 +297,20 @@
   margin: 0 auto;
   padding: 4px 24px 4px 68px;
 }
+
+/* "Show bob's reply": the card of a task your Claude already passed on. */
+.reveal {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.reveal .via {
+  margin-left: 4px;
+}
