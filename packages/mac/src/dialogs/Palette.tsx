@@ -5,6 +5,7 @@ import { macTabs } from '../lib/go.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
+import { asksBeforeWork } from '../lib/work-confirm.js';
 import { useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { setPrefs, usePrefs, zoom } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
@@ -59,7 +60,7 @@ export function Palette() {
         ...tabsOf(state).map((tab) => ({ id: `panel:${tab}`, label: `Show ${PANEL_LABELS[tab]}`, hint: 'in the panel', keys: `⌥${mod()}${panelDigit(tab)}`, icon: (tab === 'changes' ? 'diff' : tab === 'files' ? 'folder' : tab === 'terminal' ? 'terminal' : 'inspector') as IconName, run: () => void showPanelTab(state, tab) })),
         ...workspaceButtons(state, ws)
           .filter((b) => !b.disabled)
-          .map((b) => ({ id: `ws-action:${b.action}`, label: b.label, hint: b.hint, icon: (b.action === 'merge' ? 'merge' : b.action === 'pr' ? 'pr' : b.action === 'run' ? 'play' : b.action === 'archive' ? 'archive' : b.action === 'share' ? 'share' : b.action === 'handoff' ? 'hand' : 'claude') as IconName, run: () => actions.run({ type: 'ws', id: ws.id, action: b.action }) })),
+          .map((b) => ({ id: `ws-action:${b.action}`, label: asksBeforeWork(b.action) ? `${b.label}…` : b.label, hint: b.hint, icon: (b.action === 'merge' ? 'merge' : b.action === 'pr' ? 'pr' : b.action === 'run' ? 'play' : b.action === 'archive' ? 'archive' : b.action === 'share' ? 'share' : b.action === 'handoff' ? 'hand' : b.action === 'review_claude' ? 'review' : b.action === 'commit' ? 'commit' : 'claude') as IconName, run: () => actions.run({ type: 'ws', id: ws.id, action: b.action }) })),
       ]
     : [];
   const create: Item[] = [

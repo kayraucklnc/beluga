@@ -1,6 +1,9 @@
 import type { Capabilities } from '@klaud/ipc/socket-client.js';
 import { SocketClient } from '@klaud/ipc/socket-client.js';
+import { brandNotice } from './brand.js';
+import type { SoundChoice } from '../../../../src/shared/notify-sound.js';
 import { NOTIFICATION_TAP } from './notices.js';
+import { REQUEST_NOTIFICATION, notificationActions } from '../gateway/request-actions.js';
 import { version } from '../../src-tauri/tauri.conf.json';
 
 /** Running inside the Tauri shell (otherwise: a browser, while developing). */
@@ -19,7 +22,7 @@ export async function endpoint(): Promise<Endpoint> {
   }
   const res = await fetch('/__klaud/endpoint');
   const body = (await res.json()) as Endpoint & { error?: string };
-  if (!res.ok || body.error) throw new Error(body.error ?? 'klaud is not running');
+  if (!res.ok || body.error) throw new Error(body.error ?? 'Klaud is not running');
   return body;
 }
 
@@ -33,11 +36,17 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
       } else await navigator.clipboard.writeText(text);
     },
     // Clicking one comes back as a tap (the app shell's "notification-tap" event, or NOTIFICATION_TAP here).
-    notify: async (n: { title: string; body: string; sound: boolean; channel?: string }) => {
+    notify: async (raw: { title: string; body: string; sound: boolean; tone?: SoundChoice; volume?: number; channel?: string; approval?: string; task?: string }) => {
+      const n = brandNotice(raw);
       if (inApp()) {
         const { isPermissionGranted, requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification');
         if (!(await isPermissionGranted()) && (await requestPermission()) !== 'granted') return;
-        sendNotification({ title: n.title, body: n.body, ...(n.sound ? { sound: 'default' } : {}), extra: n.channel ? { channel: n.channel } : {} });
+        // A real sound name ("default" isn't one on macOS: it was silent). See lib/sounds/native.ts.
+        const { notificationSound } = await import('./sounds/native.js');
+        const { sound, fallback } = await notificationSound(n);
+        // An approval on its own gets Approve / Decline (and Always for a friend's request) on the notification.
+        sendNotification({ title: n.title, body: n.body, ...(sound ? { sound } : {}), ...notificationActions(n), extra: { ...(n.channel ? { channel: n.channel } : {}), ...(n.approval ? { approval: n.approval } : {}), ...(n.task ? { task: n.task } : {}) } });
+        fallback?.();
         return;
       }
       if (typeof Notification === 'undefined') return;
@@ -46,7 +55,8 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
       const shown = new Notification(n.title, { body: n.body, silent: !n.sound });
       shown.onclick = () => {
         window.focus();
-        document.dispatchEvent(new CustomEvent(NOTIFICATION_TAP, { detail: { channel: n.channel } }));
+        if (n.approval) document.dispatchEvent(new CustomEvent(REQUEST_NOTIFICATION, { detail: { action: 'review', approval: n.approval, task: n.task } }));
+        else document.dispatchEvent(new CustomEvent(NOTIFICATION_TAP, { detail: { channel: n.channel } }));
       };
     },
     openExternal: async (target: string) => {

@@ -44,6 +44,8 @@ export interface Pending {
   readonly title: string;
   readonly detail: string;
   readonly peer: string;
+  /** The request it's about (request approvals only). */
+  readonly task?: string;
   answer(a: Answer): void;
   withdrawn: boolean;
 }
@@ -89,10 +91,10 @@ export async function node(net: Crowd, name: string, extra: Partial<GatewayDeps>
     selfId: () => id,
     selfName: () => name,
     agent: () => claude,
-    approve: (kind, title, detail, peer) => {
+    approve: (kind, title, detail, peer, taskId) => {
       let resolve!: (a: Answer) => void;
       const answer = new Promise<Answer>((r) => (resolve = r));
-      const p: Pending = { kind, title, detail, peer, answer: (a) => resolve(a), withdrawn: false };
+      const p: Pending = { kind, title, detail, peer, ...(taskId ? { task: taskId } : {}), answer: (a) => resolve(a), withdrawn: false };
       approvals.push(p);
       return {
         answer,
@@ -102,7 +104,6 @@ export async function node(net: Crowd, name: string, extra: Partial<GatewayDeps>
         },
       };
     },
-    setTrust: (peerId, level) => store.dispatch({ type: 'trust_level', peerId, level }),
     resume: (channel, prompt) => void resumes.push({ channel, prompt }),
     projectRoot: () => undefined,
     projects: () => [],

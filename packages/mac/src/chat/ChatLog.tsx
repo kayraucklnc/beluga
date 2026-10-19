@@ -5,12 +5,16 @@ import type { LogItem } from '@klaud/core/store.js';
 import { type TaskView, tasksIn } from '@klaud/core/gateway/model.js';
 import { LogTaskCard } from '../gateway/TaskCard.js';
 import { Icon } from '../components/Icon.js';
-import { Empty } from '../components/ui.js';
+import { Avatar, Empty, Working } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
 import { Lightbox } from './ChatImages.js';
 import { FindBar } from './FindBar.js';
 import { AgentCard, ChatRow, ShellCard, SystemRow } from './Items.js';
+import { CompactDivider } from './CompactDivider.js';
+import { isCompactItem } from './context-model.js';
+import { useClaudeStarting } from './flight.js';
 import s from './chat.module.css';
+import f from './flight.module.css';
 
 const GROUP_GAP_MS = 3 * 60_000;
 
@@ -51,10 +55,28 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
     getItemKey: (i) => rows[i]?.id ?? i,
   });
 
+  // Until Claude's card for the message you just sent appears.
+  const cards = useMemo(() => items.filter((l) => l.type === 'agent').length, [items]);
+  const starting = useClaudeStarting(channel, cards);
+
   // New messages (and Claude's streaming text) keep you at the bottom if that's where you were.
   useLayoutEffect(() => {
     if (stick.current && rows.length) virtualizer.scrollToIndex(rows.length - 1, { align: 'end' });
   }, [rows, virtualizer]);
+  useLayoutEffect(() => {
+    const el = parent.current;
+    if (starting && stick.current && el) el.scrollTop = el.scrollHeight;
+  }, [starting]);
+  // You sent a message: back to the newest, where it lands (see flight.ts).
+  useEffect(() => {
+    const toBottom = (): void => {
+      stick.current = true;
+      setAtBottom(true);
+      if (rows.length) virtualizer.scrollToIndex(rows.length - 1, { align: 'end' });
+    };
+    document.addEventListener('klaud:chat-bottom', toBottom);
+    return () => document.removeEventListener('klaud:chat-bottom', toBottom);
+  }, [rows.length, virtualizer]);
   useEffect(() => {
     stick.current = true;
     setAtBottom(true);
@@ -90,7 +112,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   };
 
   return (
-    <div className={s.logWrap}>
+    <div className={s.logWrap} data-flight-layer="">
       <FindBar items={items} logRef={parent} onGo={go} />
       <div ref={parent} className={s.log} onScroll={onScroll}>
         <div className={s.logInner} style={{ height: virtualizer.getTotalSize() }}>
@@ -106,6 +128,8 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
                   <AgentCard item={item} />
                 ) : item.type === 'shell' ? (
                   <ShellCard item={item} />
+                ) : isCompactItem(item) ? (
+                  <CompactDivider item={item} />
                 ) : (
                   <SystemRow item={item} />
                 )}
@@ -113,6 +137,15 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
             );
           })}
         </div>
+        {starting ? (
+          <div className={f.starting} data-claude-starting="true" role="status">
+            <span className={f.startingAvatar}>
+              <Avatar name="Claude" id={selfId} claude size={22} />
+            </span>
+            <Working />
+            <span>Claude is starting…</span>
+          </div>
+        ) : null}
       </div>
       {atBottom ? null : (
         <button

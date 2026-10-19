@@ -1,6 +1,7 @@
 import { Icon } from '../components/Icon.js';
 import { Button, Tip, cx } from '../components/ui.js';
 import { formatMoney, openStripe, updatedAgo, useProjectEarnings } from '../lib/earnings.js';
+import { brandText } from '../lib/brand.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import s from './Inspector.module.css';
 import e from '../components/earnings.module.css';
@@ -80,7 +81,7 @@ export function EarningsPanel({ projectId }: { projectId: string }) {
           <span className={s.fieldLabel} />
           <button type="button" className={cx(s.fieldValue, s.tone_warn, s.earningsProblem)} onClick={() => openStripe(project.id)}>
             <Icon name="alert" size={11} />
-            {earnings.error.message}
+            {brandText(earnings.error.message)}
           </button>
         </div>
       ) : null}

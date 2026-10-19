@@ -25,6 +25,10 @@ type Pending = { peer: string; resolve: (v: unknown) => void; reject: (e: Error)
 const FS_DEBOUNCE_MS = 250;
 const DIR_CACHE_MS = 5_000;
 
+/** Images a document can show inline, by extension (SVG goes in an <img>, where scripts never run). */
+const DOC_IMAGE_TYPES: Readonly<Record<string, string>> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
+export const MAX_DOC_IMAGE_BYTES = 10 * 1024 * 1024;
+
 export const dirKey = (at: Location): string => `${at.owner}:${at.share}/${at.path}`;
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -226,6 +230,16 @@ export class RoomFiles {
     const loc = parseLocation(spec, this.store.getState().peers);
     if (!loc) return this.toast(`Can't find "${spec}". Use /get <name>:<folder>/<file>`, 'warn');
     void this.download(loc);
+  }
+
+  /**
+   * The bytes of an image a document shows (Markdown's `![](diagram.png)`), fetched the way the
+   * viewer fetches an image (the owner decides who may read it), and only images, only so big.
+   */
+  async readImageFile(at: Location): Promise<{ mediaType: string; bytes: Buffer }> {
+    const mediaType = DOC_IMAGE_TYPES[path.extname(at.path).toLowerCase()];
+    if (!mediaType) throw new Error('Not an image');
+    return { mediaType, bytes: await fetchBytes(at, (to, b) => this.request(to, b), MAX_DOC_IMAGE_BYTES) };
   }
 
   async listFiles(at: Location): Promise<readonly FsEntry[]> {

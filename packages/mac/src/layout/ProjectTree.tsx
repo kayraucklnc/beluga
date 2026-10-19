@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useRef } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
-import { activityOf } from '@klaud/ui/workspace-models.js';
+import { type UiAction, activityOf } from '@klaud/ui/workspace-models.js';
+import { setOverviewView } from '../views/overview/use-overview-prefs.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext, ActionsDropdown, SpecContext, SpecDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
@@ -18,9 +19,14 @@ import { showUndo } from '../lib/undo-toast.js';
 import { useArrangeDrag } from './arrange-drag.js';
 import { GroupHeader, NewGroupRow, groupItems, isGroupOption, moveItems, moveKey } from './ProjectGroups.js';
 import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, useLayout } from './project-layout.js';
-import { OtherWorktreeFolds } from './OtherWorktrees.js';
+import { OutsideWorktrees } from './OtherWorktrees.js';
+import { outsideOf } from './outside-model.js';
+import { openSheet } from '../lib/sheets.js';
+import { groupTally, projectTally, tallyTip } from './attention-model.js';
+import { TallyMark } from './signal-marks.js';
 import { Row } from './sidebar-parts.js';
 import { WorkspaceRow } from './workspace-row.js';
+import { useGitHubMenuItems } from '../views/project/GitHubRow.js';
 import side from './Sidebar.module.css';
 import s from './project-groups.module.css';
 
@@ -80,6 +86,12 @@ function useIconItems(p: Project): readonly ActionItem[] {
   ];
 }
 
+/** The Overview, narrowed to a project's archived work. */
+function showArchivedOf(run: (a: UiAction) => void, projectId: string): void {
+  setOverviewView({ filter: 'archived', project: projectId });
+  run({ type: 'view', view: { kind: 'overview' } });
+}
+
 /** Folding a project: its key in the window's folded list (folded when present). */
 const foldKey = (projectId: string): string => `folded:${projectId}`;
 
@@ -109,13 +121,20 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   const hide = useHide();
   const iconItems = useIconItems(p);
   const busy = p.workspaces.some((w) => activityOf(state.log, `ws:${w.id}`).running);
+  // What's inside: how many conversations have news, and whether one needs you (folded, it's how you notice).
+  const inside = projectTally(state, p);
+  const insideTip = tallyTip(inside);
   const live = p.workspaces.filter((w) => !w.archived);
   // Not the main checkout (work happens in worktrees); questions asked in its folder stay, as chats.
   const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud');
   const archived = p.workspaces.filter((w) => w.archived);
-  const showArchived = collapsed.includes(`archive:${p.id}`);
   const item: Target = { project: p.id };
-  const extra: ActionItem[] = [...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, Boolean(state.earnings[p.root])), ...iconItems, { label: 'Hide Project', danger: true, onSelect: () => hide(p) }];
+  const githubItems = useGitHubMenuItems(p.id, Boolean(p.root));
+  // Archived work stays out of the sidebar: the Overview's Archived list has it.
+  const showArchivedItem: ActionItem[] = archived.length ? [{ label: `Show Archived (${archived.length})`, onSelect: () => showArchivedOf(actions.run, p.id) }] : [];
+  // Worktrees made outside Klaud that can go, from any tool, ticked in one list.
+  const cleanUpItem: ActionItem[] = outsideOf(p).length ? [{ label: 'Clean Up Worktrees…', onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: p.id }) }] : [];
+  const extra: ActionItem[] = [...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, Boolean(state.earnings[p.root])), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, onSelect: () => hide(p) }];
   const kids = depth + 2;
   return (
     <>
@@ -125,6 +144,7 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           indent={depth}
           className={side.projectRow}
           aria-expanded={!fold.folded}
+          aria-label={p.name}
           icon={
             <span className={s.projectIcon}>
               <button
@@ -140,7 +160,7 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
             </span>
           }
           label={p.name}
-          detail={p.root}
+          detail={insideTip ? `${p.name}: ${insideTip}` : p.root}
           onClick={() => openProjectHome(actions.run, state, p.id)}
           onKeyDown={(e) => {
             // ← folds, → unfolds (as in Finder's lists).
@@ -164,11 +184,17 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
                 <SpecDropdown menu={{ kind: 'project', id: p.id }} align="end" extra={extra} hide={ownWay}>
                   <IconButton icon="more" label={`More for ${p.name}`} onClick={(e) => e.stopPropagation()} />
                 </SpecDropdown>
-                {busy ? (
-                  <span className={side.status}>
-                    <Dot tone="claude" live />
-                  </span>
-                ) : null}
+                <TallyMark
+                  tally={inside}
+                  folded={fold.folded}
+                  fallback={
+                    busy ? (
+                      <span className={side.status}>
+                        <Dot tone="claude" live />
+                      </span>
+                    ) : null
+                  }
+                />
               </span>
             </>
           }
@@ -182,20 +208,10 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           {mine.map((w) => (
             <WorkspaceRow key={w.id} ws={w} indent={kids} />
           ))}
-          {/* Worktrees made outside Klaud, folded by what made them (Conductor, Claude Code, other). */}
-          <OtherWorktreeFolds p={p} indent={kids} row={(w) => <WorkspaceRow key={w.id} ws={w} indent={kids + 1} />} />
+          {/* Worktrees made outside Klaud: after Klaud's own, most recent first, each with where it is. */}
+          <OutsideWorktrees p={p} indent={kids} />
         </>
       )}
-      {!fold.folded && archived.length ? (
-        <Row indent={kids} className={side.fold} label="Archived" trailing={<Badge count={archived.length} />} icon={<Icon name={showArchived ? 'chevronDown' : 'chevronRight'} size={10} />} onClick={() => actions.run({ type: 'toggle_archive', projectId: p.id })} />
-      ) : null}
-      {!fold.folded && showArchived
-        ? archived.map((w) => (
-            <SpecContext key={w.id} menu={{ kind: 'archived', id: w.id }}>
-              <Row indent={kids + 1} className={side.fold} icon={<Icon name="archive" size={13} />} label={w.name} onClick={() => actions.run({ type: 'archived_menu', id: w.id })} />
-            </SpecContext>
-          ))
-        : null}
     </>
   );
 }
@@ -281,6 +297,7 @@ export function Projects() {
   const tree = useRef<HTMLDivElement>(null);
   const collapsed = useUi((u) => u.collapsed);
   const log = useApp((st) => st.log);
+  const state = useApp((st) => st);
   const { creating } = useGroupEdit();
   const { dragging, onPointerDown } = useArrangeDrag(tree, entries, arrange, s.ghost ?? '');
   const hover = dragging?.hover;
@@ -322,6 +339,7 @@ export function Projects() {
                       count={e.projects.length}
                       open={!collapsed.includes(`group:${e.name}`)}
                       busy={e.projects.some((p) => p.workspaces.some((w) => activityOf(log, `ws:${w.id}`).running))}
+                      tally={groupTally(state, e.projects)}
                       dropOn={intoGroup === e.name}
                       menu={moveItems(entries, { group: e.name }, arrange)}
                       onToggle={() => actions.run({ type: 'toggle_group', name: e.name })}

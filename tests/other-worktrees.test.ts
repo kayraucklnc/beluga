@@ -150,12 +150,12 @@ describe('labelling worktrees by who made them', () => {
   });
 
   it('names each origin', () => {
-    expect(describeOrigin({ path: '/h/conductor/workspaces/app/berlin' })).toMatchObject({ source: 'conductor', label: 'Conductor workspace “berlin”' });
-    expect(describeOrigin({ path: '/custom/place/berlin', conductor: { name: 'Open Source Strategy', state: 'archived', prTitle: 'feat: x' } })).toMatchObject({
-      source: 'conductor',
-      label: 'Conductor workspace “Open Source Strategy”',
-      detail: expect.stringContaining('Archived in Conductor'),
-    });
+    // Another app's worktrees are told apart (to keep its live ones safe) but never named.
+    expect(describeOrigin({ path: '/h/conductor/workspaces/app/berlin' })).toMatchObject({ source: 'conductor', label: 'Made outside Klaud' });
+    const archived = describeOrigin({ path: '/custom/place/berlin', conductor: { name: 'Open Source Strategy', state: 'archived', prTitle: 'feat: x' } });
+    expect(archived).toMatchObject({ source: 'conductor', label: 'Made outside Klaud', detail: expect.stringContaining('put it away') });
+    expect(archived.detail).toContain('Pull request: feat: x');
+    for (const o of [archived, describeOrigin({ path: '/h/conductor/workspaces/app/berlin' })]) expect(`${o.label} ${o.detail}`).not.toMatch(/conductor/i);
     expect(describeOrigin({ path: '/r/.claude/worktrees/agent-1' })).toMatchObject({ source: 'claude', label: 'Claude Code sub-agent' });
     expect(describeOrigin({ path: '/d/rc210-replay', creator: { title: 'RC-210 epic', cwd: '/d/ratel-cloud' } })).toMatchObject({ source: 'claude', label: 'Made by Claude in “RC-210 epic”', detail: expect.stringContaining('ratel-cloud') });
     expect(describeOrigin({ path: '/d/scratch' })).toMatchObject({ source: 'other', label: 'Made outside Klaud' });
@@ -237,6 +237,20 @@ describe('worktrees from other tools, end to end in a real repo', () => {
     expect((await worktreeFacts({ path: path.join(base, 'gone'), branch: 'gone' }, 'origin/main')).missing).toBe(true);
     // Klaud's own main folder isn't one of these.
     expect(await others.info(mgr.list.find((p) => p.root)!.workspaces.find((w) => w.kind === 'main')!.id)).toBeUndefined();
+  });
+
+  it('says when git last saw something happen in each one (a commit moves it forward)', async () => {
+    const projectId = mgr.list.find((p) => p.root)!.id;
+    const before = await others.activity(projectId);
+    expect(Object.keys(before).sort()).toEqual([ext('busy').id, ext('dirty').id, ext('done').id].sort());
+    expect(before[ext('busy').id]).toBeGreaterThan(0);
+    const { utimesSync } = await import('node:fs');
+    const admin = sh(ext('done').path, 'rev-parse', '--absolute-git-dir').trim();
+    const old = new Date(Date.now() - 86_400_000);
+    for (const f of ['logs/HEAD', 'index', 'HEAD']) if (existsSync(path.join(admin, f))) utimesSync(path.join(admin, f), old, old);
+    expect((await others.activity(projectId))[ext('done').id]).toBeLessThan(before[ext('busy').id]!);
+    sh(ext('done').path, 'commit', '-q', '--allow-empty', '-m', 'later');
+    expect((await others.activity(projectId))[ext('done').id]).toBeGreaterThan(old.getTime() + 1000);
   });
 
   it('lists stale ones and removes only what you ticked, keeping branches', async () => {

@@ -1,4 +1,5 @@
-import type { Expects, LiveState, Need, ResultStatus } from './protocol.js';
+import { type Capabilities, DEFAULT_CAPABILITIES, type Rule } from './access.js';
+import type { Expects, LiveState, Need, ResultStatus, TaskKind, TaskQuestionItem } from './protocol.js';
 
 /**
  * Tasks between Claudes in the shared state (the Mac app draws them): what you sent and what
@@ -19,8 +20,20 @@ export const isFinal = (state: TaskState): state is ResultStatus => FINAL_STATES
 export interface TaskFile {
   readonly name: string;
   readonly size: number;
-  /** Where it was saved on this Mac (missing: it was too big to come with the result). */
+  /** Where it was saved on this Mac (missing: it was too big to come with the result, or didn't arrive). */
   readonly path?: string;
+  /** A picture (a screenshot): screens show it. */
+  readonly image?: boolean;
+  /** Received (yours to send): offered to be fetched in pieces under this id (kept so the result can be sent again). */
+  readonly ref?: string;
+  readonly sha256?: string;
+}
+
+/** A question the friend's Claude asked while working on your task (waiting for an answer). */
+export interface TaskQuestionView {
+  readonly qid: string;
+  readonly questions: readonly TaskQuestionItem[];
+  readonly askedAt: number;
 }
 
 export interface TaskOutcome {
@@ -41,7 +54,7 @@ export interface TaskView {
   /** The other person. */
   readonly peerId: string;
   readonly peerName: string;
-  readonly kind: 'ask' | 'run';
+  readonly kind: TaskKind;
   readonly ask: string;
   readonly needs: readonly Need[];
   readonly project?: string;
@@ -50,6 +63,8 @@ export interface TaskView {
   readonly command?: string;
   readonly cwd?: string;
   readonly timeoutSec?: number;
+  /** file: the file asked for. */
+  readonly path?: string;
   readonly by: 'agent' | 'person';
   /** Sent: the conversation your Claude asked from (its answer continues there). */
   readonly conversation?: string;
@@ -65,6 +80,20 @@ export interface TaskView {
   readonly delivered?: boolean;
   /** Received: where it ran here ("landing", "a scratch folder"). */
   readonly where?: string;
+  /** Sent: their Claude asks something and waits (your Claude answers first, else you). */
+  readonly question?: TaskQuestionView;
+  /** Sent: big files of the result still coming (bytes so far of the total). */
+  readonly incoming?: { readonly received: number; readonly total: number };
+  /** Received (a command or a file): the folder it would run or read in, resolved. */
+  readonly folder?: string;
+  /** Received: how it was let in ("you trust them", "your rule", "you approved it"). */
+  readonly allowedBy?: string;
+  /** Sent: you saw it before it left (you asked yourself, or said Ask on "Ask Alice's Claude?"). */
+  readonly confirmed?: boolean;
+  /** Sent: the questions their Claude asked so far (by id: each is taken once, a few at most). */
+  readonly asked?: readonly string[];
+  /** Sent: your Claude's answer to their question, waiting for you to send it (you hadn't seen the task). */
+  readonly answerDraft?: { readonly qid: string; readonly answers: readonly string[] };
 }
 
 /** What someone's klaud offers you (their card), as they told you. */
@@ -86,6 +115,10 @@ export interface GatewayState {
   readonly cards: Readonly<Record<string, PeerCard>>;
   /** Your own "Ask me for…" note. */
   readonly note: string;
+  /** Your rules for people's requests (see access.ts). */
+  readonly rules: readonly Rule[];
+  /** What friends' Claudes may do here, by trust level. */
+  readonly capabilities: Capabilities;
 }
 
 export interface GatewaySlice {
@@ -94,7 +127,7 @@ export interface GatewaySlice {
 
 export const KEEP_TASKS = 200;
 
-export const NO_GATEWAY: GatewayState = { enabled: false, tasks: [], cards: {}, note: '' };
+export const NO_GATEWAY: GatewayState = { enabled: false, tasks: [], cards: {}, note: '', rules: [], capabilities: DEFAULT_CAPABILITIES };
 export const initialGateway: GatewaySlice = { gateway: NO_GATEWAY };
 
 export type GatewayAction =
@@ -104,6 +137,8 @@ export type GatewayAction =
   | { type: 'gw_task'; task: TaskView }
   | { type: 'gw_card'; peerId: string; card: PeerCard }
   | { type: 'gw_note'; note: string }
+  | { type: 'gw_rules'; rules: readonly Rule[] }
+  | { type: 'gw_caps'; capabilities: Capabilities }
   | { type: 'gw_off' };
 
 function withTask(list: readonly TaskView[], task: TaskView): readonly TaskView[] {
@@ -122,6 +157,10 @@ export function reduceGateway(state: GatewaySlice, action: GatewayAction): Gatew
       return { gateway: { ...state.gateway, cards: { ...state.gateway.cards, [action.peerId]: action.card } } };
     case 'gw_note':
       return { gateway: { ...state.gateway, note: action.note } };
+    case 'gw_rules':
+      return { gateway: { ...state.gateway, rules: action.rules } };
+    case 'gw_caps':
+      return { gateway: { ...state.gateway, capabilities: action.capabilities } };
     case 'gw_off':
       return { gateway: NO_GATEWAY };
     default:
@@ -138,13 +177,24 @@ export const oneLine = (text: string, max = 120): string => {
 };
 
 /** The approval card's title for a request that reached you (screens find the card by it). */
-export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'>): string => `${t.peerName}${t.by === 'agent' ? "'s Claude" : ''} wants to: ${oneLine(t.ask)}`;
+export const approvalTitle = (t: Pick<TaskView, 'peerName' | 'by' | 'ask'> & Partial<Pick<TaskView, 'kind' | 'command' | 'path'>>): string => {
+  const who = `${t.peerName}${t.by === 'agent' ? "'s Claude" : ''}`;
+  if (t.kind === 'run' && t.command) return `${who} wants to run on your Mac: ${oneLine(t.command)}`;
+  if (t.kind === 'file' && t.path) return `${who} wants a file from your Mac: ${oneLine(t.path)}`;
+  return `${who} wants to: ${oneLine(t.ask)}`;
+};
 
 /** Tasks shown in a conversation (sent from it), oldest first. */
 export const tasksIn = (state: GatewaySlice, channel: string): readonly TaskView[] => state.gateway.tasks.filter((t) => t.direction === 'sent' && t.conversation === channel);
 
-/** "bob's Claude", or "bob's Mac" for a command. */
-export const targetLabel = (t: Pick<TaskView, 'peerName' | 'kind'>): string => (t.kind === 'run' ? `${t.peerName}’s Mac` : `${t.peerName}’s Claude`);
+/** "bob's Claude", or "bob's Mac" for a command or a file. */
+export const targetLabel = (t: Pick<TaskView, 'peerName' | 'kind'>): string => (t.kind === 'ask' ? `${t.peerName}’s Claude` : `${t.peerName}’s Mac`);
+
+/** A received request waiting for your answer. */
+export const awaitingYou = (t: Pick<TaskView, 'direction' | 'state'>): boolean => t.direction === 'received' && t.state === 'awaiting_approval';
+
+/** Your rules for one person, newest first. */
+export const rulesFor = (state: GatewaySlice, peerId: string): readonly Rule[] => state.gateway.rules.filter((r) => r.peerId === peerId).slice().reverse();
 
 /** Plain words for where a task is, from the point of view of the one looking. */
 export function stateLabel(t: TaskView): string {
@@ -156,7 +206,7 @@ export function stateLabel(t: TaskView): string {
       case 'awaiting_approval':
         return 'Waiting for you to approve';
       case 'working':
-        return t.kind === 'run' ? 'Running' : 'Your Claude is working';
+        return t.kind === 'run' ? 'Running' : t.kind === 'file' ? 'Sending the file' : 'Your Claude is working';
       case 'done':
         return 'Done';
       case 'declined':
@@ -179,7 +229,9 @@ export function stateLabel(t: TaskView): string {
     case 'awaiting_approval':
       return `Waiting for ${them} to approve`;
     case 'working':
-      return t.kind === 'run' ? `Running on ${them}’s Mac` : `${them}’s Claude is working`;
+      if (t.question) return `${them}’s Claude has a question`;
+      if (t.incoming) return `Receiving files from ${them}`;
+      return t.kind === 'run' ? `Running on ${them}’s Mac` : t.kind === 'file' ? `Getting the file from ${them}’s Mac` : `${them}’s Claude is working`;
     case 'done':
       return 'Done';
     case 'declined':
@@ -200,6 +252,8 @@ export function stateTone(t: TaskView): 'claude' | 'ok' | 'warn' | 'error' | 'mu
     case 'confirm':
     case 'awaiting_approval':
       return 'warn';
+    case 'working':
+      return t.question ? 'warn' : 'claude';
     case 'failed':
       return 'error';
     case 'cancelled':

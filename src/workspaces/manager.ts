@@ -4,11 +4,12 @@ import { copyFileSync, existsSync, mkdirSync, realpathSync, rmSync } from 'node:
 import path from 'node:path';
 import { findProjects, isMainCheckout } from './discovery.js';
 import * as g from './git.js';
+import * as sync from './sync.js';
 import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
 import { WorkspaceStore } from './store.js';
 import { worktreeOrigin } from './origin.js';
 import { addDay, dayKey } from './usage-days.js';
-import type { Project, ProjectGroup, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
+import type { Project, ProjectGroup, ProjectSync, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
 import { ArrangeError, type Item, type Layout, MAX_GROUP_NAME, arrangedOrder, groupKey, groupOfKey, isGroupKey, keyOf, move, settle } from './arrange.js';
 
 /** A project (by id) or a group (by name), for arranging the sidebar. */
@@ -55,6 +56,10 @@ export class WorkspaceManager {
   private projects: Project[] = [];
   private refreshGen = 0;
   private appliedGen = 0;
+  /** Fetching state per project root (in flight, the last failure), shown with the default branch. */
+  private fetchState = new Map<string, Pick<ProjectSync, 'fetching' | 'fetchError'>>();
+  /** A remote's default branch learned while fetching, for repos without origin/HEAD (by root). */
+  private remoteDefaults = new Map<string, string>();
 
   constructor(readonly store: WorkspaceStore = new WorkspaceStore()) {
     this.records = store.loadRecords();
@@ -310,7 +315,7 @@ export class WorkspaceManager {
     const id = projectId(root);
     const name = path.basename(root);
     try {
-      const base = await g.defaultBase(root);
+      const base = await this.baseOf(root);
       const trees = await g.listWorktrees(root);
       const records = this.records.filter((r) => r.projectRoot === root);
       const workspaces: Workspace[] = [];
@@ -335,10 +340,147 @@ export class WorkspaceManager {
       const withStatus = await Promise.all(
         workspaces.map(async (w) => (w.archived || w.kind === 'chat' ? w : { ...w, status: await g.status(w.path, w.kind === 'main' ? undefined : w.base).catch(() => undefined) })),
       );
-      return { id, name, root, base, workspaces: withStatus.sort(order), scripts: resolveScripts(root, this.config.scripts?.[root]) };
+      // The main checkout's status (just read) says what it's on and how much is uncommitted.
+      const mainStatus = withStatus.find((w) => w.kind === 'main')?.status;
+      const known = mainStatus ? { current: mainStatus.branch && mainStatus.branch !== 'HEAD' ? mainStatus.branch : undefined, dirty: mainStatus.changed } : undefined;
+      const line = await sync.defaultBranch(root, base, known).catch(() => undefined);
+      const syncInfo: ProjectSync | undefined = line ? { ...line, ...this.fetchState.get(root) } : undefined;
+      return { id, name, root, base, workspaces: withStatus.sort(order), scripts: resolveScripts(root, this.config.scripts?.[root]), ...(syncInfo ? { sync: syncInfo } : {}) };
     } catch (err) {
       return { id, name, root, base: 'HEAD', workspaces: [], error: err instanceof Error ? err.message : String(err) };
     }
+  }
+
+  /** origin's default branch ("origin/main"), or the one learned from the remote when origin/HEAD isn't set. */
+  private async baseOf(root: string): Promise<string> {
+    const learned = this.remoteDefaults.get(root);
+    if (learned && (await g.isCommit(root, `origin/${learned}`))) return `origin/${learned}`;
+    return g.defaultBase(root);
+  }
+
+  /** The project for an id, with a folder (not the Chats pseudo-project). */
+  repoProject(projectId: string): Project {
+    const project = this.projects.find((p) => p.id === projectId && p.root);
+    if (!project) throw new WorkspaceError('Project not found');
+    return project;
+  }
+
+  /** Mark a project as fetching (or record how its last fetch went), shown right away. */
+  setFetchState(projectId: string, state: Pick<ProjectSync, 'fetching' | 'fetchError'>): void {
+    const project = this.projects.find((p) => p.id === projectId && p.root);
+    if (!project) return;
+    this.fetchState.set(project.root, state);
+    this.projects = this.projects.map((p) => {
+      if (p !== project || !p.sync) return p;
+      const { fetching: _f, fetchError: _e, ...line } = p.sync;
+      return { ...p, sync: { ...line, ...state } };
+    });
+  }
+
+  /** A remote's default branch, learned while fetching (used when origin/HEAD isn't set). */
+  learnRemoteDefault(projectId: string, branch: string): void {
+    const project = this.projects.find((p) => p.id === projectId && p.root);
+    if (project && /^[\w./-]+$/.test(branch)) this.remoteDefaults.set(project.root, branch);
+  }
+
+  /**
+   * The folder whose history to show for a project or workspace id: a worktree's own folder,
+   * else the project's main folder.
+   */
+  historyDir(id: string): string {
+    const project = this.projects.find((p) => p.id === id && p.root);
+    if (project) return project.root;
+    const ws = this.find(id);
+    if (!ws) throw new WorkspaceError('That project or workspace no longer exists');
+    if (ws.kind === 'worktree' && !ws.archived && existsSync(ws.path)) return ws.path;
+    if (ws.projectRoot) return ws.projectRoot;
+    throw new WorkspaceError('A chat outside a project has no history');
+  }
+
+  /** A new worktree on a new klaud/<name> branch starting at `startPoint` (a commit), compared with `base`. */
+  async createWorktreeAt(projectId: string, name: string, startPoint: string, base?: string): Promise<Workspace> {
+    const project = this.repoProject(projectId);
+    if (!(await g.isCommit(project.root, startPoint))) throw new WorkspaceError(`There’s no commit ${startPoint.slice(0, 12)} here`);
+    const s = slug(name);
+    const dir = this.freeDir(project, s);
+    const branch = await this.freeBranch(project.root, `klaud/${s}`);
+    await g.git(project.root, ['worktree', 'add', '-b', branch, dir, startPoint]);
+    await g.excludeKlaudDir(dir);
+    await copyEnvFiles(project.root, dir);
+    const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: base ?? project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
+    this.saveRecord(record);
+    await this.refresh();
+    return this.require(record.id);
+  }
+
+  /**
+   * "Move my changes to a new worktree": a worktree from the main folder's current commit gets
+   * its uncommitted changes (stash, apply there), so the main folder is clean; then the default
+   * branch fast-forwards. If the changes can't land in the worktree, they go back and nothing moves.
+   */
+  async moveChangesToWorktree(projectId: string, name = 'changes-from-main'): Promise<{ ws: Workspace; outcome: sync.UpdateOutcome }> {
+    const project = this.repoProject(projectId);
+    const operation = await sync.operationIn(project.root);
+    if (operation) throw new WorkspaceError(`A ${operation} is in progress in the main folder. Finish or abort it first.`);
+    const head = (await g.git(project.root, ['rev-parse', 'HEAD'])).trim();
+    const ws = await this.createWorktreeAt(projectId, name, head);
+    try {
+      await this.carryChanges(project.root, ws, `moving to the worktree ${ws.name}`);
+    } catch (err) {
+      // Nothing moved: the new worktree (and its branch) go again.
+      if (this.find(ws.id)) await this.remove(ws.id).catch(() => undefined);
+      throw err;
+    }
+    const outcome = await sync.updateDefault(project.root, project.base);
+    await this.refresh();
+    return { ws: this.find(ws.id) ?? ws, outcome };
+  }
+
+  /**
+   * The main folder is on another branch with uncommitted work: that branch and its changes move
+   * to a worktree of their own, and the main folder goes back to the default branch.
+   */
+  async moveBranchToWorktree(projectId: string): Promise<{ ws: Workspace; branch: string }> {
+    const project = this.repoProject(projectId);
+    const line = await sync.defaultBranch(project.root, project.base);
+    if (line.onDefault) throw new WorkspaceError(`The main folder is already on ${line.branch}`);
+    if (line.operation) throw new WorkspaceError(`A ${line.operation} is in progress in the main folder. Finish or abort it first.`);
+    const head = (await g.git(project.root, ['rev-parse', 'HEAD'])).trim();
+    const stash = await sync.stashPush(project.root, `moving ${line.current ?? 'the detached HEAD'} to a worktree`);
+    const switched = await sync.switchToDefault(project.root, project.base);
+    if (switched.kind !== 'switched') {
+      const back = stash ? (await sync.stashApply(project.root, stash.sha)).ok : true;
+      if (stash && back) await sync.stashDrop(project.root, stash.sha);
+      const why = switched.kind === 'dirty' ? `${switched.files.join(', ')} would be overwritten` : switched.message;
+      throw new WorkspaceError(`Couldn’t switch to ${line.branch}: ${why}${stash && !back ? `. Your changes are safe in the stash “${stash.message}”.` : ''}`);
+    }
+    let ws: Workspace;
+    try {
+      ws = line.current ? await this.createWorktreeOn(projectId, line.current, line.current) : await this.createWorktreeAt(projectId, 'detached-work', head);
+    } catch (err) {
+      const kept = stash ? ` Your uncommitted changes are kept in the stash “${stash.message}”.` : '';
+      throw new WorkspaceError(`The main folder is on ${line.branch} now, but the worktree for ${line.current ?? 'your work'} couldn’t be made: ${err instanceof Error ? err.message : String(err)}.${kept}`);
+    }
+    if (stash) {
+      const applied = await sync.stashApply(ws.path, stash.sha);
+      if (!applied.ok) throw new WorkspaceError(`${ws.name} is ready, but your changes conflicted there (${applied.conflicts.join(', ') || applied.message}). They’re kept in the stash “${stash.message}”.`);
+      await sync.stashDrop(ws.path, stash.sha);
+    }
+    await this.refresh();
+    return { ws: this.find(ws.id) ?? ws, branch: line.branch };
+  }
+
+  /** Move the main folder's uncommitted changes into `ws` (same commit), or put them back and remove `ws`. */
+  private async carryChanges(root: string, ws: Workspace, label: string): Promise<void> {
+    const stash = await sync.stashPush(root, label);
+    if (!stash) return;
+    const applied = await sync.stashApply(ws.path, stash.sha);
+    if (applied.ok) return sync.stashDrop(root, stash.sha);
+    // Back where they were; the new worktree goes (its branch has nothing of its own).
+    const back = await sync.stashApply(root, stash.sha);
+    if (back.ok) await sync.stashDrop(root, stash.sha);
+    await this.remove(ws.id).catch(() => undefined);
+    throw new WorkspaceError(`Couldn’t move the changes: ${applied.message}${back.ok ? '. They’re back in the main folder.' : ` They’re kept in the stash “${stash.message}”.`}`);
   }
 
   // -------------------------------------------------------------- workspaces
@@ -556,6 +698,11 @@ export class WorkspaceManager {
     };
     this.patchRecord(id, { usage: next });
     return next;
+  }
+
+  /** Remember what a conversation was started for (e.g. Claude updating main). */
+  markPurpose(id: string, purpose: 'sync_main'): void {
+    this.patchRecord(id, { purpose });
   }
 
   markHandedOff(id: string, to: string): void {

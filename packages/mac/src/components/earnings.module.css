@@ -1,19 +1,20 @@
 /* Earnings from Stripe: the sidebar pill and its tooltip (see EarningsPill.tsx). */
 .pill {
+  /* Just the figure, in a quiet money green; a faint tint shows on hover. */
+  --money: var(--ok);
   display: inline-flex;
   align-items: center;
   gap: 3px;
   flex: none;
   height: 17px;
-  min-width: 18px;
-  padding: 0 6px;
+  padding: 0 4px;
   border: 0;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-  color: var(--text-2);
+  border-radius: 5px;
+  background: transparent;
+  color: color-mix(in srgb, var(--money) 78%, var(--text-2));
   font: inherit;
-  font-size: 0.8rem;
-  font-weight: 550;
+  font-size: 0.78rem;
+  font-weight: 600;
   line-height: 1;
   letter-spacing: 0.01em;
   cursor: default;
@@ -22,12 +23,20 @@
     color var(--dur-fast);
 }
 .pill:hover {
-  background: color-mix(in srgb, var(--text) 11%, transparent);
-  color: var(--text);
+  background: color-mix(in srgb, var(--money) 14%, transparent);
+  color: color-mix(in srgb, var(--money) 92%, var(--text));
 }
-.pill:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+/* A new sale counted: a brief glow. */
+.pulse {
+  animation: pulse 1.2s var(--ease-out);
+}
+@keyframes pulse {
+  30% {
+    background: color-mix(in srgb, var(--money) 22%, transparent);
+  }
+}
+:global([data-motion='reduce']) .pulse {
+  animation: none;
 }
 .num {
   font-variant-numeric: tabular-nums;
@@ -87,6 +96,9 @@
   gap: 2px;
   min-width: 0;
 }
+.tipTotal {
+  font-weight: 600;
+}
 .tipLine {
   display: flex;
   justify-content: space-between;
@@ -101,7 +113,4 @@
   color: var(--warn);
 }
 
-/* The row hovered opens its tools: the pill keeps its total and drops the "+1", so the name keeps its room. */
-:hover > * > .pill > .more {
-  display: none;
-}
+

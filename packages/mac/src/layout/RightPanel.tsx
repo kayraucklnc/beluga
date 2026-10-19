@@ -5,7 +5,7 @@ import { findWorkspace } from '@klaud/ui/workspace-models.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Tip, cx } from '../components/ui.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
-import { currentTab, setPanelTab, showPanelTab, tabsOf, useWorkspaceTabBridge } from '../lib/panel.js';
+import { currentTab, focusFor, setPanelTab, showPanelTab, tabsOf, useWorkspaceTabBridge } from '../lib/panel.js';
 import { PANEL_DEFAULT, PANEL_LABELS, type PanelTab, clampPanelWidth, panelDigit } from '../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { Inspector } from './Inspector.js';
@@ -13,10 +13,11 @@ import { ResizeHandle, usePresence, useWindowWidth } from './panel/ResizeHandle.
 import { ChangesTab } from './panel/ChangesTab.js';
 import { FilesTab } from './panel/FilesTab.js';
 import { TerminalPane } from './panel/TerminalPane.js';
+import { HistoryTab } from './panel/HistoryTab.js';
 import s from './panel/panel.module.css';
 
 
-const ICONS: Record<PanelTab, IconName> = { changes: 'diff', files: 'folder', terminal: 'terminal', info: 'inspector' };
+const ICONS: Record<PanelTab, IconName> = { changes: 'diff', files: 'folder', terminal: 'terminal', info: 'inspector', history: 'clock' };
 const SLIDE_MS = 200;
 const STEP = 24;
 
@@ -78,7 +79,7 @@ function TabStrip({ tabs, tab, width }: { tabs: readonly PanelTab[]; tab: PanelT
 }
 
 /** The tab's content. Memoized: the panel re-renders as the conversation streams; its tabs only when their own data changes. */
-const Body = memo(function Body({ tab, wsId }: { tab: PanelTab; wsId: string | undefined }) {
+const Body = memo(function Body({ tab, wsId, projectId }: { tab: PanelTab; wsId: string | undefined; projectId?: string }) {
   switch (tab) {
     case 'changes':
       return wsId ? <ChangesTab key={wsId} wsId={wsId} /> : null;
@@ -92,10 +93,17 @@ const Body = memo(function Body({ tab, wsId }: { tab: PanelTab; wsId: string | u
           <Inspector />
         </div>
       );
+    case 'history': {
+      const target = wsId ?? projectId;
+      return target ? <HistoryTab key={target} target={target} /> : null;
+    }
   }
 });
 
-/** Opening a file yourself (a link in the chat, Open File in a diff) shows it in the Files tab. */
+/**
+ * Opening a file yourself (a link in the chat, Open File in a diff) shows it in the Files tab.
+ * Not while a file is open full size: a link in it opens the next page right there.
+ */
 function useFileFollow(): void {
   const { client } = useKlaud();
   const opened = useApp((st) => (st.viewer && !st.viewer.by ? `${st.viewer.owner}\n${st.viewer.share}\n${st.viewer.path}` : ''));
@@ -104,7 +112,7 @@ function useFileFollow(): void {
     if (first.current) return void (first.current = false);
     const state = client.store.getState();
     const v = state.view;
-    if (!opened || v.kind !== 'workspace') return;
+    if (!opened || v.kind !== 'workspace' || focusFor(v.id)) return;
     const [owner, share] = opened.split('\n');
     if (owner === state.selfId && share === shareNameOf(v.id)) showPanelTab(state, 'files');
   }, [opened]);
@@ -152,7 +160,7 @@ export function RightPanel() {
           </header>
           <div className={s.body} id="panel-body" role="tabpanel" aria-labelledby={`panel-tab-${tab}`}>
             <Suspense fallback={<div className={s.loading} />}>
-              <Body tab={tab} wsId={wsId} />
+              <Body tab={tab} wsId={wsId} {...(view.kind === 'project' ? { projectId: view.id } : {})} />
             </Suspense>
           </div>
         </div>

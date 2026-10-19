@@ -139,6 +139,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `session.copyText` | ✓ | ✓ |
 | `session.setPrefs` | ✓ | ✓ |
 | `session.setPlanMode` | ✓ | ✓ |
+| `session.compact` | ✓ (/compact, ⋯ › Compact) | ✓ (context meter › Compact now) |
 | `session.setClaudeSharing` | ✓ | ✓ |
 | `session.rename` | ✓ | ✓ |
 | `session.zoom` | ✓ | ✓ |
@@ -196,6 +197,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `files.downloadSpec` | ✓ | ✓ |
 | `files.closeViewer` | ✓ | ✓ |
 | `files.readImage` | ✓ | ✓ |
+| `files.readImageFile` | – (the terminal shows Markdown as text) | ✓ images in the Markdown reader (`![](diagram.png)` next to the file) |
 | `workspaces.open` | ✓ | ✓ |
 | `workspaces.load` | — (opening a workspace loads it) | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ | ✓ |
@@ -225,12 +227,13 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `workspaces.showProject` | — (Mac only, see below; the terminal adds it back with /project add) | Hidden Projects in the sidebar, Settings › Workspaces, the Add Projects sheet's Show |
 | `workspaces.hideProject` | ✓ | ✓ |
 | `workspaces.cleanAgentWorktrees` | ✓ | ✓ |
-| `workspaces.otherOrigins` | — (Mac only) | the Conductor / Claude Code / Other Worktrees folds in a project |
+| `workspaces.otherOrigins` | — (Mac only) | who made each worktree made outside Klaud (picks the right conversation; never shown as a tool's name) |
+| `workspaces.otherActivity` | — (Mac only) | worktrees made outside Klaud listed after a project's own, most recently active first (5, then Show N more) |
 | `workspaces.worktreeInfo` | — (Mac only) | the page a worktree from another tool shows when it has no conversation (or About This Worktree) |
 | `workspaces.showConversation` | — (Mac only) | that page › Earlier conversations › Show |
 | `workspaces.removeOther` | — (Mac only) | that page › Remove Worktree… (asks first; keeps the branch) |
-| `workspaces.staleOthers` | — (Mac only) | a fold's Clean Up… |
-| `workspaces.cleanUpOthers` | — (Mac only) | Clean Up… › Remove (only what you ticked; branches kept) |
+| `workspaces.staleOthers` | — (Mac only) | a project's Clean Up Worktrees… (its right-click menu and its home) |
+| `workspaces.cleanUpOthers` | — (Mac only) | Clean Up Worktrees… › Remove (only what you ticked; branches kept) |
 | `workspaces.addProject` | ✓ | ✓ |
 | `workspaces.addFolder` | ✓ | ✓ |
 | `workspaces.selectFile` | ✓ | ✓ |
@@ -304,7 +307,29 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `gateway.cancel` | — (Mac only, see below) | ✓ Cancel on a task card and in Requests (sent), Stop in Requests (received) |
 | `gateway.ask` | — (Mac only, see below) | ✓ Requests › Ask someone's Claude… |
 | `gateway.setNote` | — (Mac only, see below) | ✓ Requests › your “Ask me for…” note |
+| `gateway.decide` | — (Mac only, see below) | ✓ the request sheet (Approve once / Always, with its scope and expiry / Decline with a reason), the notification's and the menu bar's Approve / Always / Decline |
+| `gateway.answer` | — (Mac only, see below) | ✓ a sent task's card when their Claude asks something: pick an answer or write one, or Let them decide |
+| `gateway.saveRule` | — (Mac only, see below) | ✓ Settings › People & access › Rules, and a friend's card: change a rule's answer or expiry |
+| `gateway.removeRule` | — (Mac only, see below) | ✓ Settings › People & access › Rules, and a friend's card: Delete |
+| `gateway.setCapabilities` | — (Mac only, see below) | ✓ Settings › People & access › What your friends’ Claudes can do here (per capability and trust level, the folders) |
+| `gateway.image` | — (Mac only, see below) | ✓ screenshots on a task card's result |
 | `claudeCode.steps` | — (Mac only, see below) | ✓ a Claude Code session's or agent's live, read-only transcript (Activity, the strip above a workspace's chat, the Inspector's Claude Code panel) |
+| `claudeCode.step` | — (Mac only, see below) | ✓ opening a tool call or thinking line in that transcript: the command and its output, the file, the diff, the thinking |
+| `agent.steps` | — (the terminal keeps its one-line steps) | ✓ a Claude card's steps as disclosure rows (an icon per tool, ✓/✗, how long it took), thinking as “Thought for 12s”, sub-agents' steps |
+| `agent.step` | — (the terminal keeps its one-line steps) | ✓ opening a step on a Claude card: Bash's command and output (colours kept), the file read, an edit's diff, a search's matches, a page fetched, an MCP tool's input and output as JSON, the thinking |
+| `git.fetch` | — (Mac only, see below) | ✓ Fetch on a project's home (“fetched 3 min ago”, or why it couldn't: sign-in needed, offline) |
+| `git.fetchIfStale` | — (Mac only, see below) | ✓ opening a project's home fetches quietly when the last fetch is a few minutes old (the daemon also fetches every project every ~15 min) |
+| `git.updateMain` | — (Mac only, see below) | ✓ Update main on a project's home: fetch and fast-forward the default branch; what can't fast-forward asks (changes in the way, or Let Claude Handle It) |
+| `git.stashAndUpdate` | — (Mac only, see below) | ✓ the “changes in the way” alert › Stash and Update (and put them back) |
+| `git.moveAndUpdate` | — (Mac only, see below) | ✓ the “changes in the way” alert › Move to Worktree |
+| `git.switchToDefault` | — (Mac only, see below) | ✓ “The main folder is on feat/…” › Switch to main (clean; or Move to Worktree / Bring Them Along) |
+| `git.askClaude` | — (Mac only, see below) | ✓ Let Claude Handle It: a conversation in the project's Questions whose run may only sync git (banner “Claude is updating main”) |
+| `git.github` | — (Mac only, see below) | ✓ the GitHub row on a project's home: GitHub ↗, Private/Public, people, open PRs, stars (through gh, cached an hour; Connect GitHub when gh isn't set up) |
+| `git.githubRepo` | — (Mac only, see below) | ✓ Open on GitHub in a project's right-click and ⋯ menus |
+| `git.log` | — (Mac only, see below) | ✓ History: a project home's latest commits, the History page (Show All) and the panel's History tab (⌥⌘5), as a graph |
+| `git.commit` | — (Mac only, see below) | ✓ a commit in History: message, author, date, parents, files with +/− and their diffs |
+| `git.filters` | — (Mac only, see below) | ✓ History's Branch and Author pop-ups |
+| `git.worktreeAt` | — (Mac only, see below) | ✓ a commit in History › Start a Worktree Here |
 ## Sending while Claude works, and images
 
 | What | Core | Terminal | Mac |
@@ -345,7 +370,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | Hiding a project with Undo (“Hidden klaude — Undo”, ⌘Z) instead of an alert; Hidden Projects folded at the bottom of the sidebar, in Settings › Workspaces and in the Add Projects sheet, each with Show (`workspaces.showProject`; it comes back in its place and group) | Mac (`layout/ProjectTree.tsx`, `lib/undo-toast.tsx`) | the terminal hides from its project menu (with its own confirmation) and adds a project back with /project add |
 | “Connect GitHub” with copyable commands and Check Again (`workbench.refreshPrs(id, true)` looks for gh again) | Mac (PR sheet) | the terminal says to install gh in its PR menu |
 | Stop your Claude in one conversation (`host.stopRun`): your queued messages there come back into the box, other people's requests keep their places and run next, other conversations carry on | Mac (■ Stop beside the send control, ⌘., Conversation › Stop Claude, Stop on a running answer) | the terminal keeps `/stop` (everywhere); `host.stopRun` is in the core for any screen |
-| Workspace and Conversation menus in the menu bar (Commit ⇧⌘C, Pull Request… ⇧⌘P, Merge ⇧⌘M, Run ⌘R, Ask Claude to Review ⇧⌘R, Archive… ⌃⌘A, Stop ⌘., Plan First ⌥⌘P, Find ⌘F / ⌘G / ⇧⌘G, Clear ⇧⌘K, Previous/Next Workspace ⌥⌘↑/↓), greyed out when they can't run (`lib/commands.ts`, `set_menu_state`) | Mac | the same workspace actions as the toolbar (`workspaceButtons`); the terminal has its top bar and /commands |
+| Workspace and Conversation menus in the menu bar (Commit… ⇧⌘C, Pull Request… ⇧⌘P, Merge… ⇧⌘M, Run ⌘R, Ask Claude to Review… ⇧⌘R, Archive… ⌃⌘A, Stop ⌘., Plan First ⌥⌘P, Find ⌘F / ⌘G / ⇧⌘G, Clear ⇧⌘K, Previous/Next Workspace ⌥⌘↑/↓), greyed out when they can't run (`lib/commands.ts`, `set_menu_state`); what starts Claude or changes git (Review, Commit, Merge, Solve Conflict, Compact, Fix Checks) says what it will do and waits for Start, from every way in (a popover under its toolbar button, else an alert; `lib/work-confirm.ts`) | Mac | the same workspace actions as the toolbar (`workspaceButtons`); the terminal has its top bar and /commands |
 | The places in the sidebar's order (Chat, Overview, Shared files, Search, Usage, Terminal) for ⌥1…6, ⌃Tab, the Go menu and the palette (`lib/go.ts`) | Mac | the terminal keeps its tab order (`topTabs`) |
 | The toolbar's main button chosen from the workspace's state (Commit / Merge / PR #n / Fix Checks / Solve Conflict / Restore / Run), the rest as icons and a ⋯ menu with shortcuts (`layout/toolbar-actions.ts`) | Mac | the same `workspaceButtons`; the terminal's top bar shows them as words |
 | Find in a conversation (⌘F) | Mac (`chat/FindBar.tsx`) | the terminal has Search (all conversations) |
@@ -354,6 +379,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | A new worktree's form: Based on (`workspaces.branches`), Name, Create Worktree (`workspaces.startWorktree` with `base` / `name`) | Mac | the terminal names it from the task and starts from the default branch |
 | Never change main: every Claude run in a project's main folder (the main checkout, or a chat there) is questions only. Edits, writes and shell commands that aren't clearly read-only are denied (`agent/policy.ts` `askOnly`, `agent/read-only.ts`), Claude is told so, and a change request makes it call `continue_in_worktree`: a new worktree from the latest origin, named after the task, with the conversation carried over (history copied, Claude's session forked), and the work goes on there (your own requests move right away; someone else's ask you first) | both (core) | the terminal shows the same notes in the chat and goes to the new worktree; no new terminal UI |
 | A project's home (`project` view): icon, name, main's branch and how it compares with origin, counts (active / ready to merge / archived, earnings), “What do you want to do in …?” with New Worktree (Based on, Name) or Just Ask, then its worktrees, questions and recently archived (Show All in Overview). Clicking a project opens it | Mac (`views/ProjectHome.tsx`, `lib/project-home.ts`) | the terminal keeps its project rows; it never gets this view |
+| Keeping main current and seeing history: the project home is about the default branch (main or master, “3 behind origin/main”, and “The main folder is on feat/…” with Switch to main), Update main and Fetch with when it last fetched, a quiet fetch of every project every ~15 min (never a password prompt: GIT_TERMINAL_PROMPT=0), uncommitted changes in the way (stash and put back, or move to a worktree), anything else to Claude in a run whose only permission beyond reading is syncing git (`agent/sync-main.ts`; never push, never discard), the GitHub row, and History (a commit graph with lanes and merges, authors as initials, refs as pills, filters, a commit's diffs; `views/history/*`) | Mac (`views/project/MainSyncBar.tsx`, `views/project/GitHubRow.tsx`, `views/history/*`, `layout/panel/HistoryTab.tsx`; core: `core/main-sync.ts`, `workspaces/sync.ts`, `workspaces/history.ts`, `workspaces/github.ts`) | the terminal app is unchanged; its main folder runs stay questions only |
 | A questions-only chat: “Questions only — Claude won’t change anything in main.” above the box, Continue in New Worktree… as the toolbar's main button, “Ask about <project>…” in the box | Mac (`chat/AskBanner.tsx`, `dialogs/native/ContinueSheet.tsx`) | the terminal's runs there are read-only too |
 | Friends, direct messages, groups and your status (the klaud network): sidebar Friends and Groups with presence and unread, the Add a Friend sheet (code, link, QR; `klaud://add` / `klaud://join` links), conversations (`conversation` view), New Group / Add People sheets, group info (members, admins, invite link, join requests, rename, leave), the status menu in the sidebar and the menu bar, Away when idle, Settings › People & access switch | Mac (`src/network/*`) | on purpose (docs/network.md): the terminal app keeps its rooms and stays as it is; notifications for messages come from the shared Notifier (`mentions`) |
 | Empty states with one-click starters (New Worktree, New Chat, Add Projects…, first tasks for Claude) | Mac | the terminal's empty views say what to type |

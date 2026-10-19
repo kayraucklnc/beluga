@@ -346,7 +346,7 @@ describe('settingsMenu', () => {
     expect(ids(m)).toEqual(['set-name', 'set-theme', 'sec:people', 'sec:notify', 'sec:claude', 'sec:workspaces', 'sec:display', 'close']);
     expect(m.options[0]!.hint).toContain('kayra');
     expect(m.options[3]!.hint).toBe('desktop on · sound');
-    expect(settingsMenu(reduce(s(), { type: 'prefs', prefs: { notify: { ...s().prefs.notify, sound: false } } })).options[3]!.hint).toBe('desktop on');
+    expect(settingsMenu(reduce(s(), { type: 'prefs', prefs: { notify: { ...s().prefs.notify, sound: { kind: 'none' } } } })).options[3]!.hint).toBe('desktop on');
     const quiet = reduce(s(), { type: 'prefs', prefs: { notify: { ...s().prefs.notify, desktop: false } } });
     expect(settingsMenu(quiet).options[3]!.hint).toBe('desktop off · inbox only');
     const others = reduce(s(), { type: 'peers', peers: [ME, peer('fr000001', 'ana')] });

@@ -1,5 +1,7 @@
 import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
 import { slugify } from './namer.js';
+import { MORE, MockStepper, splitLine } from './mock-steps.js';
+import { MockContext, withGrowingContext } from './mock-context.js';
 
 interface Script {
   readonly match: RegExp;
@@ -34,7 +36,7 @@ const SCRIPTS: readonly Script[] = [
   },
   {
     match: /build|implement|add|create|make/i,
-    steps: ['Read src/server.ts'],
+    steps: ['Read src/server.ts', 'Write src/auth.ts', 'Edit src/server.ts', 'Bash npm test'],
     subagents: [
       { title: 'Explore · find the right place', steps: ['Glob src/**/*.ts', 'Grep "app.get"', 'Read src/server.ts'] },
       { title: 'Plan · design the change', steps: ['Read README.md', 'Read content/hero.md'] },
@@ -58,7 +60,7 @@ const SCRIPTS: readonly Script[] = [
   },
   {
     match: /test/i,
-    steps: ['Read package.json'],
+    steps: ['Read package.json', 'Bash npm test'],
     subagents: [{ title: 'npm test --watch', steps: ['24 passed', '24 passed'], kind: 'background' }],
     answer: 'All **24 tests** pass. Coverage is 87%; `payments.ts` is the least covered file.',
   },
@@ -118,7 +120,7 @@ export function peerRunTarget(prompt: string, requester: string): { peer: string
 async function mockPeerRun(input: AgentRunInput, bridge: RoomBridge, target: { peer: string; command: string }, pace: number): Promise<string> {
   await sleep(450 * pace, input.signal);
   input.onEvent('tool', 'list_peers');
-  input.onEvent('tool', `run_on_peer ${target.command}`);
+  input.onEvent('tool', `run_on_peer ${target.command}${MORE}${JSON.stringify({ peer: target.peer })}`);
   const result = await bridge.runOnPeer!(target.peer, target.command, { why: 'to check before I change anything' }).catch((err: unknown) => `failed: ${err instanceof Error ? err.message : String(err)}`);
   const head = result.split('\n')[0] ?? '';
   if (/did not run|failed:/.test(head)) return `I couldn't run \`${target.command}\` on ${target.peer}'s computer: ${head.replace(/^.*?: /, '')}`;
@@ -162,7 +164,7 @@ async function mockAsk(input: AgentRunInput, bridge: RoomBridge, target: { perso
   await sleep(400 * pace, input.signal);
   input.onEvent('tool', 'who_can');
   await sleep(300 * pace, input.signal);
-  input.onEvent('tool', `ask_person ${target.person}`);
+  input.onEvent('tool', `ask_person ${target.person}${MORE}${JSON.stringify({ ask: target.ask })}`);
   let sent: string;
   try {
     sent = gw.askPerson({ person: target.person, ask: target.ask, ...(/\btests?\b/i.test(target.ask) ? { expects: TEST_SCHEMA } : {}) });
@@ -179,82 +181,127 @@ async function mockAsk(input: AgentRunInput, bridge: RoomBridge, target: { perso
   return `${target.person}'s Claude says: ${result.summary}${tableOf(result.data)}`;
 }
 
+/** The demo's Claude bringing main up to date: the steps and the explanation, without touching git. */
+async function mockSyncMain(input: AgentRunInput, target: { branch: string; upstream: string }, pace: number): Promise<string> {
+  for (const step of ['git status', `git log --oneline --graph -15 ${target.branch} ${target.upstream}`, 'git stash push -u -m "before updating main"', `git merge ${target.upstream}`, 'git stash pop']) {
+    await sleep(500 * pace, input.signal);
+    input.onEvent('tool', `Bash ${step}`);
+  }
+  await sleep(400 * pace, input.signal);
+  return `${target.branch} is up to date with ${target.upstream}. I set your uncommitted changes aside, merged the new commits (no conflicts), and put your changes back. Nothing was pushed.`;
+}
+
 export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
-  let contextUsed = 52_000;
+  const context = new MockContext();
   return {
     nameTask: async (prompt) => {
       await new Promise((r) => setTimeout(r, 600 * pace));
       return slugify(prompt);
     },
-    async run(input: AgentRunInput): Promise<string> {
-      const script = SCRIPTS.find((s) => s.match.test(input.prompt)) ?? FALLBACK;
-      if (/^\/compact/.test(input.prompt.trim())) {
-        await sleep(900 * pace, input.signal);
-        input.onEvent('compact', JSON.stringify({ pre: 168_000, post: 21_000, trigger: 'manual' }));
-        return 'Compacted the conversation. I kept the plan, decisions so far, and open TODOs.';
+    async run(original: AgentRunInput): Promise<string> {
+      const stepper = original.onStep ? new MockStepper(original.prompt, original.onStep) : undefined;
+      // The context window fills as Claude works (the meter moves live).
+      const input = withGrowingContext(withSteps(original, stepper), context);
+      try {
+        return await runScript(input);
+      } finally {
+        stepper?.finish();
       }
-      // A main folder is questions only: a change request moves to a new worktree, as real Claude is told to.
-      if (input.place?.askOnly && WANTS_CHANGE.test(input.prompt)) {
-        if (!input.continueInWorktree) return "This is the project's main folder, which is read-only. Ask the owner to continue in a new worktree.";
-        await sleep(300 * pace, input.signal);
-        input.onEvent('tool', 'continue_in_worktree');
-        await input.continueInWorktree(input.prompt.trim());
-        return 'Moving this to a new worktree; I’ll continue there.';
+    },
+  };
+
+  async function runScript(input: AgentRunInput): Promise<string> {
+    const script = SCRIPTS.find((s) => s.match.test(input.prompt)) ?? FALLBACK;
+    if (/^\/compact/.test(input.prompt.trim())) return context.compact(input, (ms) => sleep(ms * pace, input.signal));
+    // Updating main (the one thing a main-folder run may change): what real Claude would report.
+    if (input.place?.syncMain) return mockSyncMain(input, input.place.syncMain, pace);
+    // A main folder is questions only: a change request moves to a new worktree, as real Claude is told to.
+    if (input.place?.askOnly && WANTS_CHANGE.test(input.prompt)) {
+      if (!input.continueInWorktree) return "This is the project's main folder, which is read-only. Ask the owner to continue in a new worktree.";
+      await sleep(300 * pace, input.signal);
+      input.onEvent('tool', 'continue_in_worktree');
+      await input.continueInWorktree(input.prompt.trim());
+      return 'Moving this to a new worktree; I’ll continue there.';
+    }
+    // Plan mode, and questions back to you, work in the demo too.
+    if (input.plan) return mockPlan(input, pace);
+    // A friend's Claude answered after this conversation's turn ended: carry on with it.
+    if (/^\[klaud\] /.test(input.prompt)) {
+      await sleep(500 * pace, input.signal);
+      const result = readResult(input.prompt);
+      return `Picking this back up: ${result?.summary ?? 'they answered.'}${tableOf(result?.data)}`;
+    }
+    // A friend's task: only what they asked (between <request> tags) can name someone to ask.
+    const asked = /<request>\n([\s\S]*?)\n<\/request>/.exec(input.prompt)?.[1] ?? input.prompt;
+    const gwTarget = bridge.gateway?.available() ? gatewayTarget(asked) : undefined;
+    if (gwTarget) return mockAsk(input, bridge, gwTarget, pace);
+    const remote = peerRunTarget(input.prompt, input.requesterName);
+    if (remote && bridge.runOnPeer) return mockPeerRun(input, bridge, remote, pace);
+    if (/\b(which|choose|pick)\b/i.test(input.prompt) && input.askUser) {
+      await sleep(450 * pace, input.signal);
+      input.onEvent('tool', 'Read src/server.ts');
+      const answer = await input.askUser({
+        kind: 'question',
+        questions: [
+          {
+            question: 'Which session store should auth use?',
+            header: 'Sessions',
+            multiSelect: false,
+            options: [
+              { label: 'Signed cookies', description: 'no server state, simplest' },
+              { label: 'Redis', description: 'shared across servers' },
+              { label: 'Postgres', description: 'reuses the existing database' },
+            ],
+          },
+        ],
+      });
+      const picked = answer.kind === 'answers' ? Object.values(answer.answers)[0] : undefined;
+      return picked ? `Going with **${picked}**. I'll wire \`requireUser()\` to it next.` : "No preference, so I'll start with **signed cookies**: the simplest option.";
+    }
+    for (const step of script.steps) {
+      await sleep((script.stepMs ?? 450) * pace, input.signal);
+      input.onEvent('tool', step);
+    }
+    const subs = (script.subagents ?? []).map((s, i) => ({ ...s, id: `sub-${Date.now()}-${i}` }));
+    for (const s of subs) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'start', title: s.title, kind: s.kind ?? 'agent' }));
+    const longest = Math.max(0, ...subs.map((s) => s.steps.length));
+    for (let i = 0; i < longest; i++) {
+      await sleep(500 * pace, input.signal);
+      for (const s of subs) {
+        const step = s.steps[i];
+        if (step) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'step', step }));
+        if (i === s.steps.length - 1) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'done' }));
       }
-      // Plan mode, and questions back to you, work in the demo too.
-      if (input.plan) return mockPlan(input, pace);
-      // A friend's Claude answered after this conversation's turn ended: carry on with it.
-      if (/^\[klaud\] /.test(input.prompt)) {
-        await sleep(500 * pace, input.signal);
-        const result = readResult(input.prompt);
-        return `Picking this back up: ${result?.summary ?? 'they answered.'}${tableOf(result?.data)}`;
-      }
-      const gwTarget = bridge.gateway?.available() ? gatewayTarget(input.prompt) : undefined;
-      if (gwTarget) return mockAsk(input, bridge, gwTarget, pace);
-      const remote = peerRunTarget(input.prompt, input.requesterName);
-      if (remote && bridge.runOnPeer) return mockPeerRun(input, bridge, remote, pace);
-      if (/\b(which|choose|pick)\b/i.test(input.prompt) && input.askUser) {
-        await sleep(450 * pace, input.signal);
-        input.onEvent('tool', 'Read src/server.ts');
-        const answer = await input.askUser({
-          kind: 'question',
-          questions: [
-            {
-              question: 'Which session store should auth use?',
-              header: 'Sessions',
-              multiSelect: false,
-              options: [
-                { label: 'Signed cookies', description: 'no server state, simplest' },
-                { label: 'Redis', description: 'shared across servers' },
-                { label: 'Postgres', description: 'reuses the existing database' },
-              ],
-            },
-          ],
-        });
-        const picked = answer.kind === 'answers' ? Object.values(answer.answers)[0] : undefined;
-        return picked ? `Going with **${picked}**. I'll wire \`requireUser()\` to it next.` : "No preference, so I'll start with **signed cookies**: the simplest option.";
-      }
-      for (const step of script.steps) {
-        await sleep((script.stepMs ?? 450) * pace, input.signal);
-        input.onEvent('tool', step);
-      }
-      const subs = (script.subagents ?? []).map((s, i) => ({ ...s, id: `sub-${Date.now()}-${i}` }));
-      for (const s of subs) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'start', title: s.title, kind: s.kind ?? 'agent' }));
-      const longest = Math.max(0, ...subs.map((s) => s.steps.length));
-      for (let i = 0; i < longest; i++) {
-        await sleep(500 * pace, input.signal);
-        for (const s of subs) {
-          const step = s.steps[i];
-          if (step) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'step', step }));
-          if (i === s.steps.length - 1) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'done' }));
+    }
+    if (script.report) await bridge.writeReport(script.report.title, script.report.markdown);
+    await sleep(400 * pace, input.signal);
+    const contextUsed = context.finish(input);
+    input.onEvent('usage', JSON.stringify({ input: 18_000 + script.steps.length * 6_000, output: 2_400, cacheRead: contextUsed, cacheWrite: 9_000, cost: 0.21 + script.steps.length * 0.04 }));
+    return script.answer;
+  }
+}
+
+/** The run's events, also recorded as steps in detail (tool calls and sub-agents' steps). */
+function withSteps(input: AgentRunInput, stepper: MockStepper | undefined): AgentRunInput {
+  const background = new Set<string>();
+  return {
+    ...input,
+    onEvent: (kind, raw) => {
+      // The extra input a line may carry (see mock-steps.ts) is for the step's record, not the chat.
+      const { line: text, more } = kind === 'tool' ? splitLine(raw) : { line: raw, more: {} };
+      if (!stepper) return input.onEvent(kind, text);
+      if (kind === 'tool') stepper.step(text, undefined, more);
+      if (kind === 'sub') {
+        try {
+          const e = JSON.parse(text) as { id?: string; phase?: string; step?: string; kind?: string };
+          if (e.id && e.phase === 'start' && e.kind === 'background') background.add(e.id);
+          if (e.id && !background.has(e.id) && e.phase === 'step' && e.step) stepper.step(e.step, e.id);
+          if (e.id && e.phase === 'done') stepper.close(e.id);
+        } catch {
+          // Not a sub-agent event we know.
         }
       }
-      if (script.report) await bridge.writeReport(script.report.title, script.report.markdown);
-      await sleep(400 * pace, input.signal);
-      contextUsed = Math.min(195_000, contextUsed + 34_000 + script.steps.length * 9_000);
-      input.onEvent('context', JSON.stringify({ used: contextUsed, window: 200_000 }));
-      input.onEvent('usage', JSON.stringify({ input: 18_000 + script.steps.length * 6_000, output: 2_400, cacheRead: contextUsed, cacheWrite: 9_000, cost: 0.21 + script.steps.length * 0.04 }));
-      return script.answer;
+      input.onEvent(kind, text);
     },
   };
 }

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { isSecretPath } from '../core/shares.js';
 import { isReadOnlyCommand } from './read-only.js';
+import { SYNC_MAIN_REASON, type SyncScope, isSyncMainCommand } from './sync-main.js';
 
 /** Read-only tools and the input field that names their target path. */
 const READ_TOOLS: Readonly<Record<string, string>> = {
@@ -26,7 +27,9 @@ const ALWAYS_OK = new Set([
   // continue_in_worktree is only offered in main folders, and decides who must confirm itself.
   ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report', 'continue_in_worktree'].map((n) => `mcp__klaud__${n}`),
   // The gateway's look-and-wait tools (core/gateway); ask_person and run_on ask, and the gateway checks trust itself.
-  ...['who_can', 'wait_for', 'check', 'cancel'].map((n) => `mcp__klaud__${n}`),
+  ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__klaud__${n}`),
+  // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).
+  ...['screenshot', 'device_info'].map((n) => `mcp__klaud_task__${n}`),
 ]);
 
 /** Shell commands that mention credential stores are refused outright. */
@@ -46,6 +49,11 @@ export interface PolicyContext {
    * worktrees): edits are denied, and shell commands that aren't clearly read-only too.
    */
   readonly askOnly?: boolean;
+  /**
+   * With askOnly, for one run: Claude is bringing main up to date, so git syncing (and editing
+   * files with conflict markers) is allowed too; nothing else changes (see sync-main.ts).
+   */
+  readonly syncMain?: SyncScope;
 }
 
 const inside = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
@@ -97,8 +105,9 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
 
 /** In a main folder (ask-only): would this tool change something there? */
 function changesMain(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): boolean {
-  if (WRITE_TOOLS[toolName]) return true;
-  if (toolName === 'Bash') return !(typeof input.command === 'string' && isReadOnlyCommand(input.command));
+  const writeField = WRITE_TOOLS[toolName];
+  if (writeField) return !ctx.syncMain?.conflicted?.(resolveTarget(ctx.cwd, input[writeField]));
+  if (toolName === 'Bash') return !(typeof input.command === 'string' && (isReadOnlyCommand(input.command) || (ctx.syncMain !== undefined && isSyncMainCommand(input.command, ctx.syncMain))));
   // A file fetched from a friend may not land in the main folder.
   if (toolName === 'mcp__klaud__get_peer_file') return typeof input.save_to === 'string' && inside(path.resolve(ctx.cwd), resolveTarget(ctx.cwd, input.save_to.replace(/^~(?=$|\/)/, process.env.HOME ?? '~')));
   return false;
@@ -113,5 +122,6 @@ export const ASK_ONLY_REASON =
 
 /** The reason to give Claude for a denied tool call. */
 export function denyReason(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): string {
-  return ctx.askOnly && changesMain(toolName, input, ctx) ? ASK_ONLY_REASON : DENY_REASON;
+  if (!ctx.askOnly || !changesMain(toolName, input, ctx)) return DENY_REASON;
+  return ctx.syncMain ? SYNC_MAIN_REASON : ASK_ONLY_REASON;
 }

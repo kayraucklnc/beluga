@@ -25,6 +25,8 @@ export interface UiPrefs {
   readonly sidebarWidth: number;
   /** Sidebar sections you've folded. */
   readonly folded: readonly string[];
+  /** The sidebar's Unread section: conversations that finished or need you, at the top (only while there are some). */
+  readonly unreadSection: boolean;
   /** Enter sends and Shift+Enter makes a new line, or the other way round with ⌘Enter. */
   readonly sendWith: 'enter' | 'cmd-enter';
   readonly timestamps: boolean;
@@ -45,6 +47,8 @@ export interface UiPrefs {
   readonly termCursorBlink: boolean;
   /** Lines each terminal keeps to scroll back through. */
   readonly termScrollback: number;
+  /** A file open full size wraps its long lines (instead of scrolling sideways). */
+  readonly readerWrap: boolean;
 }
 
 export const ACCENTS = {
@@ -73,6 +77,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   sidebar: true,
   sidebarWidth: 248,
   folded: [],
+  unreadSection: true,
   sendWith: 'enter',
   timestamps: true,
   steps: 'all',
@@ -86,6 +91,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   termCursor: 'block',
   termCursorBlink: true,
   termScrollback: 5000,
+  readerWrap: false,
 };
 
 const KEY = 'klaud.prefs.v1';

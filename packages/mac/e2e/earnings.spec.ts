@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { pick } from './helpers.js';
 
 /**
  * Earnings from Stripe, against the demo's pretend Stripe (src/core/stripe-demo.ts; no real key,
@@ -36,10 +37,24 @@ test('the Overview shows what connected projects earned', async ({ page }) => {
   await expect(page.locator('[data-earnings-pill]').first()).toBeVisible();
 });
 
+test('the Usage view shows connected projects’ earnings, and a project opens its sheet', async ({ page }) => {
+  await sidebar(page).getByRole('button', { name: 'Usage', exact: true }).click();
+  const card = page.getByRole('region', { name: 'Earnings' });
+  await expect(card).toBeVisible();
+  await expect(card.getByText('all time')).toBeVisible();
+  const rows = card.getByRole('list', { name: 'Earnings by project' });
+  await expect(rows.getByRole('button', { name: /^bob-api: \$[\d,]+\.\d\d/ })).toBeVisible();
+  await rows.getByRole('button', { name: /^bob-api/ }).click();
+  await expect(page.getByRole('dialog', { name: 'bob-api earnings' })).toContainText('Bob API, Inc.');
+  await page.keyboard.press('Escape');
+  await card.getByRole('button', { name: 'Connect Another…' }).click();
+  await expect(page.getByRole('dialog', { name: /Connect Stripe to/ })).toBeVisible();
+});
+
 test('connecting Stripe checks the key, then the project shows its earnings; disconnecting forgets them', async ({ page }) => {
   const sheet = await openConnectSheet(page);
   await expect(sheet).toBeVisible();
-  await sheet.getByLabel('Project').selectOption({ label: 'landing' });
+  await pick(sheet, 'Project', 'landing');
   await expect(sheet.getByRole('heading', { name: 'Connect Stripe to landing' })).toBeVisible();
   const key = sheet.getByLabel('Restricted key');
   const connect = sheet.getByRole('button', { name: 'Connect', exact: true });
@@ -87,8 +102,8 @@ test('connecting Stripe checks the key, then the project shows its earnings; dis
   await expect(pills).toHaveCount(1);
 });
 
-test('Connect Stripe… is in every project’s right-click menu, and the pill opens its earnings', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: /^landing New worktree/ }).click({ button: 'right' });
+test('Connect Stripe… is in every project’s right-click menu, and the amount opens its earnings', async ({ page }) => {
+  await sidebar(page).getByRole('button', { name: 'landing', exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Connect Stripe…' }).click();
   const sheet = page.getByRole('dialog', { name: 'Connect Stripe to landing' });
   await expect(sheet).toBeVisible();
@@ -96,6 +111,8 @@ test('Connect Stripe… is in every project’s right-click menu, and the pill o
   await sheet.getByRole('button', { name: 'Cancel' }).click();
   await expect(sheet).toBeHidden();
 
-  await sidebar(page).locator('[data-earnings-pill]').first().click();
+  // The sidebar's amount steps aside for the row's tools on hover: the project home's opens it.
+  await sidebar(page).getByText('bob-api', { exact: true }).first().click();
+  await page.getByRole('main').locator('[data-earnings-pill]').first().click();
   await expect(page.getByRole('dialog', { name: 'bob-api earnings' })).toContainText('Bob API, Inc.');
 });

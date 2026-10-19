@@ -1,6 +1,7 @@
 import type { Store } from './store.js';
 import { StripeEarnings, attachEarnings } from './stripe-earnings.js';
 import { demoStripe } from './stripe-demo.js';
+import { FxService } from './fx-rates.js';
 
 /**
  * Start the earnings service for the daemon (the Mac app's klaud): keys from ~/.klaud/stripe.json,
@@ -15,9 +16,13 @@ export function launchEarnings(host: { readonly session: object; readonly store:
     : new StripeEarnings({ store: host.store, ...(base ? { stripe: { base } } : {}) });
   attachEarnings(host.session, service);
   service.start();
+  // Exchange rates to add up several currencies (the demo uses made-up ones, no network).
+  const fx = new FxService(host.demo ? { store: host.store, file: null, fetch: demoRates } : { store: host.store });
+  fx.start();
   const off = host.demo ? connectDemo(host.store, service) : undefined;
   return () => {
     off?.();
+    fx.stop();
     service.stop();
   };
 }
@@ -37,3 +42,6 @@ function connectDemo(store: Store, service: StripeEarnings): () => void {
   tryNow();
   return off;
 }
+
+/** The demo's exchange rates: fixed, so nothing goes online. */
+const demoRates: typeof fetch = async () => new Response(JSON.stringify({ base: 'USD', rates: { EUR: 0.92, GBP: 0.79, JPY: 151.2, CAD: 1.37, TRY: 34.1 } }), { headers: { 'content-type': 'application/json' } });

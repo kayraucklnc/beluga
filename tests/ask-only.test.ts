@@ -237,3 +237,17 @@ describe('the project home (Mac)', () => {
     expect(agoText(1000, 1000 + 5 * 60_000)).toBe('5 min ago');
   });
 });
+
+describe('isReadOnlyCommand: what the shell would really run', () => {
+  it('splits on separators the way the shell does, escapes included', () => {
+    expect(isReadOnlyCommand("ls \\'; rm -rf x; echo \\'")).toBe(false);
+    expect(isReadOnlyCommand(String.raw`echo a\;b`)).toBe(true);
+  });
+
+  it('refuses environment settings that could run something, or last beyond the command', () => {
+    expect(isReadOnlyCommand('PATH=/tmp/evil; git status')).toBe(false);
+    expect(isReadOnlyCommand('A=--output=/tmp/x; git diff $A')).toBe(false);
+    expect(isReadOnlyCommand('GIT_EXTERNAL_DIFF=/tmp/evil git diff')).toBe(false);
+    expect(isReadOnlyCommand('GIT_PAGER=cat git log -3')).toBe(true);
+  });
+});

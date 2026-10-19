@@ -3,16 +3,20 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../core/attachments.js';
 import { buildAskOnlyAppend, buildPrompt, buildSystemAppend, summarizeTool } from './prompt.js';
 import { decideTool, denyReason } from './policy.js';
+import { buildSyncMainAppend, syncProbes } from './sync-main.js';
 import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
 import { SubAgentTracker } from './subagents.js';
+import { type RecorderMessage, StepRecorder } from './step-recorder.js';
+import { type ContextMessage, ContextReport, breakdownReader, isCompactCommand } from './context-report.js';
+import { compactEnv } from '../shared/context-usage.js';
 import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from './live-run.js';
 import { nameTask } from './namer.js';
 import { createRoomTools } from './tools.js';
+import { createTaskTools } from './task-tools.js';
 import type { AgentBackend, AgentRunInput, FollowUp, RoomBridge } from './types.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
-const DEFAULT_CONTEXT_WINDOW = 200_000;
 /** How long a run may stay open after answering while its background agents work. */
 const BACKGROUND_LIMIT_MS = 3 * 60 * 60_000;
 /**
@@ -40,6 +44,12 @@ const INTERACTIVE = new Set(['AskUserQuestion', 'ExitPlanMode']);
 export function toQuestion(input: Record<string, unknown>): ClaudeQuestion | undefined {
   const parsed = ClaudeQuestion.safeParse({ kind: 'question', questions: input.questions });
   return parsed.success ? parsed.data : undefined;
+}
+
+/** A friend's task brings the tools its owner allowed (the screen, device info) as a server of their own. */
+function taskServer(input: AgentRunInput): { klaud_task?: NonNullable<ReturnType<typeof createTaskTools>> } {
+  const server = input.taskTools ? createTaskTools(input.taskTools) : undefined;
+  return server ? { klaud_task: server } : {};
 }
 
 /** Tokens and cost of a run, summed over every model it used (sub-agents included). */
@@ -73,6 +83,21 @@ export function imageContent(text: string, files: readonly string[]): PromptCont
 }
 
 /**
+ * Ask Claude Code to send Claude's thinking as readable summaries (current models send it empty
+ * unless asked), so screens can show it. Only the display changes: how much Claude thinks stays
+ * the session's own. Older Claude Code without this control just ignores it.
+ */
+function showThinking(q: unknown): void {
+  const set = (q as { setMaxThinkingTokens?: (max: number | null, display?: 'summarized') => Promise<void> }).setMaxThinkingTokens;
+  if (typeof set !== 'function') return;
+  try {
+    void set.call(q, null, 'summarized').catch(() => undefined);
+  } catch {
+    // Not supported here: thinking shows as hidden.
+  }
+}
+
+/**
  * Runs turns through the Claude Agent SDK, which drives the local Claude Code
  * install and therefore uses the owner's own login/subscription. One session
  * is kept per room so the agent remembers the conversation.
@@ -94,7 +119,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const autoEdit = !askOnly && (place?.autoEdit ?? opts.autoEdit);
       const remember = (id: string): void => (place ? place.onSession(id) : void (sessionId = id));
       const subagents = new SubAgentTracker(cwd);
-      const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, askOnly: Boolean(askOnly) };
+      const syncMain = askOnly ? place?.syncMain : undefined;
+      const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}) };
       const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
         hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: reason },
       });
@@ -105,7 +131,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { klaud: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools },
+        mcpServers: { klaud: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -116,6 +142,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                   if (hookInput.hook_event_name !== 'PreToolUse') return {};
                   if (INTERACTIVE.has(hookInput.tool_name)) return {}; // answered in canUseTool
                   const toolInput = (hookInput.tool_input ?? {}) as Record<string, unknown>;
+                  const veto = input.vetTool?.(hookInput.tool_name, toolInput);
+                  if (veto) return verdict('deny', veto);
                   const decision = decideTool(hookInput.tool_name, toolInput, policy);
                   if (decision === 'allow') return {};
                   if (decision === 'deny') return verdict('deny', denyReason(hookInput.tool_name, toolInput, policy));
@@ -126,18 +154,32 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
               ],
             },
           ],
+          // The summary Claude keeps when it compacts, for the divider in the chat.
+          PostCompact: [
+            {
+              hooks: [
+                async (hookInput) => {
+                  if (hookInput.hook_event_name === 'PostCompact') report.summary(hookInput.compact_summary);
+                  return {};
+                },
+              ],
+            },
+          ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + (askOnly ? buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree)) : '') },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
         ...(input.effort ? { effort: input.effort } : {}),
         // Set, this replaces Claude Code's whole environment, so it starts from ours.
-        ...(input.env && Object.keys(input.env).length ? { env: { ...process.env, ...input.env } } : {}),
+        // Claude Code's own auto-compact follows Klaud's threshold (see shared/context-usage.ts).
+        ...((input.env && Object.keys(input.env).length) || input.autoCompactAt ? { env: { ...process.env, ...input.env, ...compactEnv(Boolean(input.autoCompactAt), input.autoCompactAt ?? 0) } } : {}),
         ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
         canUseTool: async (toolName, toolInput) => {
           if (toolName === 'AskUserQuestion') return answerQuestion(toolInput);
           if (toolName === 'ExitPlanMode') return reviewPlan(toolInput);
+          const veto = input.vetTool?.(toolName, toolInput);
+          if (veto) return { behavior: 'deny', message: veto };
           const decision = decideTool(toolName, toolInput, policy);
           if (decision === 'deny') return { behavior: 'deny', message: denyReason(toolName, toolInput, policy) };
           if (decision === 'allow' || (await input.canUseTool(toolName, toolInput))) return { behavior: 'allow', updatedInput: toolInput };
@@ -165,13 +207,18 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         return { behavior: 'deny' as const, message: feedback };
       };
 
-      let contextUsed = 0;
+      // The context meter, live: what Claude saw on each response, compactions and their summaries.
+      const report = new ContextReport((kind, text) => input.onEvent(kind, text), input.model ?? opts.model);
       // Streaming input keeps Claude Code alive after it answers while background agents still
       // work: a one-shot prompt would cut them off 10 minutes later, rejecting their next step.
       const prompts = new PromptQueue();
-      prompts.push(imageContent(buildPrompt(input), linkedImages(input.prompt)));
+      prompts.push(isCompactCommand(input.prompt) ? input.prompt.trim() : imageContent(buildPrompt(input), linkedImages(input.prompt)));
       const background = new BackgroundAgents();
-      const turns = new TurnRouter({ onEvent: input.onEvent });
+      const turns = new TurnRouter({ onEvent: input.onEvent, ...(input.onStep ? { onStep: input.onStep } : {}) });
+      // Steps in detail go to the request whose turn it is (a follow-up's turn: the follow-up).
+      let stepTo = input.onStep;
+      const recorder = new StepRecorder({ cwd, emit: (record) => stepTo?.(record) });
+      recorder.begin();
       let limit: NodeJS.Timeout | undefined;
       let quiet: NodeJS.Timeout | undefined;
       const finish = (): void => {
@@ -185,6 +232,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const send = (followUp: FollowUp): boolean => {
         if (prompts.closed) return false;
         turns.queue(followUp);
+        recorder.begin();
         return prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)));
       };
       /** After an answer: end the run, or keep it open (taking follow-ups) while agents work. */
@@ -205,6 +253,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       abortController.signal.addEventListener('abort', finish, { once: true });
 
       const q = query({ prompt: prompts, options });
+      showThinking(q);
+      let failed = true;
       try {
         for await (const msg of q) {
           background.observe(msg as Parameters<BackgroundAgents['observe']>[0]);
@@ -217,19 +267,13 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           if (msg.type === 'assistant') {
             for (const e of subagents.assistant(msg.parent_tool_use_id, msg.message.content)) input.onEvent('sub', JSON.stringify(e));
           }
-          if (msg.type === 'system' && msg.subtype === 'compact_boundary') {
-            const meta = msg.compact_metadata;
-            input.onEvent('compact', JSON.stringify({ pre: meta.pre_tokens, post: meta.post_tokens ?? 0, trigger: meta.trigger }));
-            contextUsed = meta.post_tokens ?? 0;
-          }
-          if (msg.type === 'assistant' && msg.parent_tool_use_id === null && msg.message.usage) {
-            const u = msg.message.usage;
-            contextUsed = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
-          }
+          report.observe(msg as ContextMessage);
           if (msg.type === 'system' && 'task_id' in msg) {
             for (const e of subagents.task(msg as Parameters<SubAgentTracker['task']>[0])) input.onEvent('sub', JSON.stringify(e));
           }
           const route = msg.type === 'assistant' && msg.parent_tool_use_id === null ? turns.current() : undefined;
+          if (route) stepTo = route.onStep;
+          recorder.observe(msg as RecorderMessage);
           if (msg.type === 'user' && msg.parent_tool_use_id === null) {
             for (const e of subagents.user(msg.message.content as never)) input.onEvent('sub', JSON.stringify(e));
           }
@@ -250,16 +294,17 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           }
           if (msg.type === 'result') {
             remember(msg.session_id);
-            const window = Object.values(msg.modelUsage ?? {})[0]?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+            await report.result(msg.modelUsage, breakdownReader(q));
             const turn = turns.current();
-            if (contextUsed) turn.onEvent('context', JSON.stringify({ used: contextUsed, window }));
             turn.onEvent('usage', JSON.stringify(usageOf(msg.modelUsage ?? {}, msg.total_cost_usd ?? 0, msg.session_id)));
             const stopped = `Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`;
             if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped)) throw new Error(stopped);
             settle();
           }
         }
+        failed = false;
       } finally {
+        recorder.finish(failed || abortController.signal.aborted);
         finish();
       }
       return turns.answers.join('\n\n');

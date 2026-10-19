@@ -29,6 +29,11 @@ dirs = "6"
 libc = "0.2"
 tokio = { version = "1", features = ["time", "sync"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "block2", "UNUserNotificationCenter", "UNNotificationSettings"] }
+
 [profile.release]
 codegen-units = 1
 lto = true

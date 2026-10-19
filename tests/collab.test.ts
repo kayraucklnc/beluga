@@ -1,7 +1,7 @@
 import { mkdtempSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { AgentBackend, AgentRunInput } from '../src/agent/types.js';
 import { Session, type RoomControl, type SessionOptions as SessionOpts } from '../src/core/session.js';
 import { ShareService } from '../src/core/shares.js';
@@ -18,6 +18,15 @@ const keys = deriveKeys(secret);
 const HOST = generateIdentity();
 let hub: Hub;
 const sessions: Session[] = [];
+/**
+ * The demo projects take ~100 git commands to build (about a second alone, several under a busy
+ * parallel run), so the tests share one set, built once. Each test has its own fresh room and
+ * peers, and the workspaces it talks in don't depend on what another test said there.
+ */
+let demo: WorkspaceManager;
+beforeAll(async () => {
+  demo = await createDemoWorkspaces();
+});
 
 afterEach(async () => {
   for (const s of sessions.splice(0)) await s.stop();
@@ -134,7 +143,7 @@ describe("Claude's questions and plans", () => {
 describe('sharing a workspace', () => {
   it('invites a friend to contribute: they see the chat, can ask your Claude there, and can be removed', async () => {
     hub = await startHub({ keys });
-    const mgr = await createDemoWorkspaces();
+    const mgr = demo;
     const kay = peer('kay', { workspaces: mgr });
     const bob = peer('bob');
     await room(kay, bob);
@@ -173,7 +182,7 @@ describe('sharing a workspace', () => {
 
   it('viewers follow along but cannot ask Claude or post', async () => {
     hub = await startHub({ keys });
-    const mgr = await createDemoWorkspaces();
+    const mgr = demo;
     const kay = peer('kay', { workspaces: mgr });
     const bob = peer('bob');
     await room(kay, bob);
@@ -190,7 +199,7 @@ describe('sharing a workspace', () => {
 
   it("nobody can talk to Claude in a workspace that wasn't shared with them", async () => {
     hub = await startHub({ keys });
-    const mgr = await createDemoWorkspaces();
+    const mgr = demo;
     const kay = peer('kay', { workspaces: mgr });
     const bob = peer('bob');
     await room(kay, bob);
@@ -263,7 +272,7 @@ describe('the host manages the room', () => {
 
 describe('Claude Code agent worktrees', () => {
   it('removes the finished ones and keeps those with uncommitted work', async () => {
-    const mgr = await createDemoWorkspaces();
+    const mgr = demo; // the only test that removes worktrees; no other test looks at agent worktrees
     const api = mgr.list.find((p) => p.name === 'bob-api')!;
     const agents = api.workspaces.filter((w) => w.path.includes('/.claude/worktrees/'));
     expect(agents).toHaveLength(2);
@@ -298,7 +307,7 @@ describe('review hardening', () => {
 
   it("respects 'nobody uses my Claude' even for workspace contributors", async () => {
     hub = await startHub({ keys });
-    const mgr = await createDemoWorkspaces();
+    const mgr = demo;
     const kay = peer('kay', { workspaces: mgr });
     const bob = peer('bob');
     await room(kay, bob);
@@ -316,7 +325,7 @@ describe('review hardening', () => {
 describe('on your own', () => {
   it('plain messages in the chat go to your Claude, and @workspace reaches the Claude working there', async () => {
     hub = await startHub({ keys });
-    const mgr = await createDemoWorkspaces();
+    const mgr = demo;
     const kay = peer('kay', { workspaces: mgr });
     await room(kay);
     await kay.session.workspaces!.refresh();
@@ -331,7 +340,7 @@ describe('on your own', () => {
 
   it("opening a workspace klaud hasn't used shows its Claude Code conversation and continues it", async () => {
     hub = await startHub({ keys });
-    const mgr = await createDemoWorkspaces();
+    const mgr = demo;
     const seen: string[] = [];
     const kay = peer('kay', {
       workspaces: mgr,
@@ -354,7 +363,7 @@ describe('on your own', () => {
 describe('workspaces work in parallel', () => {
   it("runs different workspaces' Claudes at the same time, and one conversation in order", async () => {
     hub = await startHub({ keys });
-    const mgr = await createDemoWorkspaces();
+    const mgr = demo;
     let inFlight = 0;
     let peak = 0;
     const order: string[] = [];

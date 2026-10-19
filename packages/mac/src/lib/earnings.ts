@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import type { MoneyTotal, ProjectEarnings } from '@klaud/core/earnings-store.js';
+import { type FxRates, type MoneyTotal, type ProjectEarnings, convertTotals, mainCurrency } from '@klaud/core/earnings-store.js';
 import type { Project } from '@klaud/workspaces/types.js';
+import { brandText } from './brand.js';
 import { useApp } from './klaud.js';
 
 /**
@@ -11,6 +12,17 @@ import { useApp } from './klaud.js';
  */
 
 export type { MoneyTotal, ProjectEarnings };
+export { mainCurrency };
+
+/** A project's earnings as one amount in `currency` (approximate across currencies), or undefined without rates. */
+export const combinedTotal = (totals: readonly MoneyTotal[], currency: string, fx: FxRates | undefined): number | undefined => (totals.length ? convertTotals(totals, currency, fx) : undefined);
+
+/** The main currency and today's rates, for screens. */
+export function useMoney(): { currency: string; fx: FxRates | undefined } {
+  const earnings = useApp((st) => st.earnings);
+  const fx = useApp((st) => st.fx);
+  return { currency: mainCurrency(earnings, fx), fx };
+}
 
 /** Digits after the point for a currency (2 for USD, 0 for JPY, 3 for KWD). */
 function exponent(currency: string): number {
@@ -107,7 +119,7 @@ export function earningsTip(e: ProjectEarnings, now: number = Date.now()): strin
   if (e.refreshing && !e.totals) return 'Counting all-time earnings from Stripe…';
   const head = `All-time earnings · ${e.refreshing ? 'updating…' : `updated ${updatedAgo(e.updatedAt, now)}`}`;
   const lines = (e.totals ?? []).length > 1 ? (e.totals ?? []).map((t) => formatMoney(t.amount, t.currency)) : [];
-  return [head, ...lines, ...(e.error ? [e.error.message] : [])].join('\n');
+  return [head, ...lines, ...(e.error ? [brandText(e.error.message)] : [])].join('\n');
 }
 
 // ---- the Connect Stripe sheet (one at a time; projectId unset: pick the project in the sheet)

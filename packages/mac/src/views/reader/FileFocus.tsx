@@ -1,0 +1,153 @@
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { ViewerState } from '@klaud/core/store.js';
+import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { Icon } from '../../components/Icon.js';
+import { IconButton, Kbd, Segmented } from '../../components/ui.js';
+import { DocFind } from '../../components/markdown/DocFind.js';
+import type { DocNav } from '../../components/markdown/MarkdownDoc.js';
+import { useCopied } from '../../components/markdown/CodeBlock.js';
+import { useApp, useKlaud } from '../../lib/klaud.js';
+import { localPathOf, openWithDefaultApp, revealInFinder, saveFile } from '../../lib/files.js';
+import { closeFocus, showPanelTab } from '../../lib/panel.js';
+import { setPrefs, usePrefs } from '../../lib/prefs.js';
+import { SCROLL_ROOT } from '../../components/markdown/md-dom.js';
+import { FileContent } from './FileReader.js';
+import { type ReaderMode, initialMode, isMarkdownFile } from './reader-model.js';
+import r from './reader.module.css';
+
+/** Space, Page Up/Down, Home and End scroll the page even when nothing has the keyboard. */
+const PAGE_KEYS = new Set([' ', 'PageDown', 'PageUp', 'Home', 'End']);
+
+function usePageKeys(page: RefObject<HTMLDivElement | null>): void {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const el = page.current;
+      if (!el || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || !PAGE_KEYS.has(e.key)) return;
+      // Only when nothing has the keyboard: the page scrolls on its own, a field types, a button presses.
+      if (e.target instanceof HTMLElement && e.target !== document.body) return;
+      e.preventDefault();
+      const pageBy = el.clientHeight * 0.9;
+      const to =
+        e.key === 'Home' ? 0 : e.key === 'End' ? el.scrollHeight : el.scrollTop + (e.key === 'PageUp' || (e.key === ' ' && e.shiftKey) ? -pageBy : pageBy);
+      el.scrollTo({ top: to });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+}
+
+/**
+ * A file across the whole center: where it is, Rendered or Source for Markdown, wrap for code,
+ * Copy, Open in Editor and Show in Finder, and the file itself in a page that scrolls (⌘F finds
+ * in it; Esc goes back to the chat).
+ */
+export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string }) {
+  const { client } = useKlaud();
+  const prefs = usePrefs();
+  const wsName = useApp((st) => findWorkspace(st.projects, wsId)?.name);
+  const local = useApp((st) => localPathOf(st, viewer));
+  const page = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const [mode, setModeNow] = useState<ReaderMode>(() => initialMode(viewer));
+  // Rendered ⇄ Source keeps your place (as a share of the way down the file).
+  const place = useRef<number | undefined>(undefined);
+  const setMode = (next: ReaderMode): void => {
+    const el = page.current;
+    place.current = el && el.scrollHeight > el.clientHeight ? el.scrollTop / (el.scrollHeight - el.clientHeight) : undefined;
+    setModeNow(next);
+  };
+  useLayoutEffect(() => {
+    const el = page.current;
+    if (!el || place.current === undefined) return;
+    el.scrollTop = place.current * (el.scrollHeight - el.clientHeight);
+    place.current = undefined;
+  }, [mode]);
+  const [copied, copy] = useCopied();
+  usePageKeys(page);
+
+  // Another file opened here (a link in a document): it starts at its top, as itself.
+  useEffect(() => {
+    setModeNow(initialMode(viewer));
+    page.current?.scrollTo({ top: 0 });
+    page.current?.focus({ preventScroll: true });
+  }, [viewer.path]);
+
+  const markdown = isMarkdownFile(viewer.path);
+  const isText = !viewer.image && !viewer.error;
+  const showsCode = isText && (!markdown || mode === 'source');
+  const name = viewer.path.split('/').pop() || viewer.path;
+  const folders = viewer.path.split('/').slice(0, -1);
+  // Other files (not Markdown) open in the panel's Files, next to the chat.
+  const nav: Partial<DocNav> = {
+    openFile: (path) => {
+      closeFocus();
+      const state = client.store.getState();
+      showPanelTab(state, 'files');
+      void client.api.files.open({ ...viewer, path });
+    },
+    openDir: (path) => {
+      closeFocus();
+      showPanelTab(client.store.getState(), 'files');
+      void client.api.files.browseTo({ ...viewer, path });
+    },
+  };
+  return (
+    <section className={r.focus} aria-label={name}>
+      <header className={r.bar}>
+        <button type="button" className={r.back} onClick={closeFocus} aria-label="Back to Chat">
+          <Icon name="back" size={12} />
+          Back to Chat
+          <Kbd>Esc</Kbd>
+        </button>
+        <span className={r.divider} />
+        <nav className={r.crumbs} aria-label="Path" title={viewer.path}>
+          <Icon name="file" size={13} className={r.crumbIcon} />
+          {wsName ? <span className={r.crumb}>{wsName}</span> : null}
+          {folders.map((f, i) => (
+            <span key={`${f}:${i}`} className={r.crumb}>
+              {f}
+            </span>
+          ))}
+          <span className={r.crumbFile}>{name}</span>
+          {viewer.by ? <span className={r.following}>following {viewer.by}</span> : null}
+        </nav>
+        <span className={r.flex} />
+        {markdown && isText ? (
+          <Segmented
+            label="Show as"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'rendered', label: 'Rendered' },
+              { value: 'source', label: 'Source' },
+            ]}
+          />
+        ) : null}
+        {showsCode ? <IconButton icon="wrap" label={prefs.readerWrap ? 'Don’t wrap long lines' : 'Wrap long lines'} active={prefs.readerWrap} onClick={() => setPrefs({ readerWrap: !prefs.readerWrap })} /> : null}
+        <span className={r.tools}>
+          {isText ? <IconButton icon={copied ? 'check' : 'copy'} label={copied ? 'Copied' : 'Copy the text'} onClick={() => copy(viewer.content)} /> : null}
+          {local ? <IconButton icon="external" label="Open in Editor" onClick={() => void openWithDefaultApp(client, local)} /> : null}
+          {local ? <IconButton icon="folder" label="Show in Finder" onClick={() => void revealInFinder(client, local)} /> : null}
+          {!local ? <IconButton icon="download" label="Save a copy…" onClick={() => void saveFile(client, viewer)} /> : null}
+        </span>
+      </header>
+      <div className={r.body}>
+        <div ref={page} className={r.page} tabIndex={0} {...{ [SCROLL_ROOT]: '' }} aria-label={`${name}, ${markdown && mode === 'rendered' ? 'formatted' : 'contents'}`}>
+          <div ref={content} className={r.pageInner}>
+            <FileContent
+              viewer={viewer}
+              variant="focus"
+              mode={mode}
+              onMode={setMode}
+              wrap={prefs.readerWrap}
+              onOpenInEditor={local ? () => void openWithDefaultApp(client, local) : undefined}
+              onSaveCopy={() => void saveFile(client, viewer)}
+              nav={nav}
+            />
+          </div>
+        </div>
+        {isText ? <DocFind root={content} version={`${viewer.path}\0${mode}\0${viewer.content.length}`} /> : null}
+      </div>
+    </section>
+  );
+}

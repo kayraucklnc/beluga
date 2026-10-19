@@ -277,7 +277,7 @@ async fn start(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
     let began = SystemTime::now();
     let child = cmd
         .spawn()
-        .map_err(|e| format!("Couldn't start klaud: {e}"))?;
+        .map_err(|e| format!("Couldn't start Klaud: {e}"))?;
     let pid = child.id();
     if let Some(state) = app.try_state::<AppState>() {
         *locked(&state.child) = Some(child);
@@ -363,7 +363,7 @@ async fn stop_running(app: &AppHandle) -> Result<(), String> {
     }
     if let Some(info) = up() {
         if !terminate_pid(info.pid).await {
-            return Err("Couldn't stop the klaud that's running.".into());
+            return Err("Couldn't stop the Klaud that's running.".into());
         }
     }
     Ok(())
@@ -404,7 +404,7 @@ fn check_join(args: &[String]) -> Result<(), String> {
         "klaud://", "https://", "http://", "wss://", "ws://", "klaude:",
     ];
     let [verb, invite] = args else {
-        return Err("That isn't something klaud can start with.".into());
+        return Err("That isn't something Klaud can start with.".into());
     };
     let plain = |c: char| c.is_ascii_alphanumeric() || "-._~:/?#=&%".contains(c);
     if verb != "join"
@@ -412,7 +412,7 @@ fn check_join(args: &[String]) -> Result<(), String> {
         || !PREFIXES.iter().any(|p| invite.starts_with(p))
         || !invite.chars().all(plain)
     {
-        return Err("That doesn't look like a klaud invite.".into());
+        return Err("That doesn't look like a Klaud invite.".into());
     }
     Ok(())
 }

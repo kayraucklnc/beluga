@@ -3,6 +3,7 @@ import { type WorkspaceAction, type WorkspaceButton, workspaceButtons } from '@k
 import type { Workspace } from '@klaud/workspaces/types.js';
 import type { IconName } from '../components/Icon.js';
 import { COMMAND_KEYS, runRunning } from '../lib/commands.js';
+import { asksBeforeWork } from '../lib/work-confirm.js';
 
 /**
  * A workspace's toolbar, the Mac way: one prominent button for what this workspace needs next
@@ -13,6 +14,8 @@ export interface ToolAction {
   readonly id: string;
   readonly label: string;
   readonly hint: string;
+  /** The icon button's tooltip, when its name and hint together don't say it well. */
+  readonly tip?: string;
   readonly icon: IconName;
   readonly keys?: string;
   readonly disabled?: boolean;
@@ -32,8 +35,8 @@ export interface ToolbarActions {
 const ICON: Record<WorkspaceAction, IconName> = {
   run: 'play',
   stop_run: 'stop',
-  review_claude: 'eye',
-  commit: 'check',
+  review_claude: 'review',
+  commit: 'commit',
   pr: 'pr',
   merge: 'merge',
   merge_claude: 'merge',
@@ -59,13 +62,22 @@ const KEYS: Partial<Record<WorkspaceAction, string>> = {
   archive: COMMAND_KEYS['ws-archive'],
 };
 
-/** Menu-style names for the shared buttons (Finder → Show in Finder, PR → Create Pull Request). */
+/**
+ * Menu-style names for the shared buttons (Finder → Show in Finder, PR → Create Pull Request).
+ * The ones that ask first (they start Claude or change git) end in "…", as on the Mac.
+ */
 function labelOf(b: WorkspaceButton, pr: boolean): string {
   switch (b.action) {
     case 'pr':
       return pr ? b.label : 'Create PR';
     case 'review_claude':
-      return 'Ask Claude to Review';
+      return 'Ask Claude to Review…';
+    case 'commit':
+      return 'Commit…';
+    case 'merge':
+      return 'Merge…';
+    case 'compact':
+      return 'Compact…';
     case 'finder':
       return 'Show in Finder';
     case 'fork':
@@ -79,16 +91,23 @@ function labelOf(b: WorkspaceButton, pr: boolean): string {
     case 'share':
       return b.label.endsWith('…') ? b.label : `${b.label}…`;
     case 'merge_claude':
-      return 'Solve Conflict';
+      return 'Solve Conflict…';
     default:
       return b.label;
   }
+}
+
+/** Tooltips for the icons that ask first: what they'd do, ending in "…" (they ask before doing it). */
+function tipOf(b: WorkspaceButton): string | undefined {
+  if (b.action === 'review_claude') return 'Ask Claude to review this worktree…';
+  return asksBeforeWork(b.action) && !b.disabled ? `${b.hint}…` : undefined;
 }
 
 const toAction = (b: WorkspaceButton, pr: boolean): ToolAction => ({
   id: b.action,
   label: labelOf(b, pr),
   hint: b.hint,
+  ...(tipOf(b) ? { tip: tipOf(b) } : {}),
   icon: ICON[b.action],
   action: b.action,
   ...(KEYS[b.action] ? { keys: KEYS[b.action] } : {}),
@@ -105,7 +124,7 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
   const solve = by('merge_claude');
   if (solve) return { ...solve, tone: 'error' };
   if (pr?.state === 'OPEN' && pr.checks === 'failing') {
-    return { id: 'fix_checks', label: 'Fix Checks', hint: `PR #${pr.number}'s checks are failing: Claude reads the logs and fixes them`, icon: 'wand', action: 'fix_checks', tone: 'error' };
+    return { id: 'fix_checks', label: 'Fix Checks…', hint: `PR #${pr.number}'s checks are failing: Claude reads the logs and fixes them`, icon: 'wand', action: 'fix_checks', tone: 'error' };
   }
   const commit = by('commit');
   if (commit) return commit;

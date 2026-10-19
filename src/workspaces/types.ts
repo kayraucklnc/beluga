@@ -1,4 +1,5 @@
 import type { Status } from './git.js';
+import type { DefaultBranch, FetchProblem } from './sync.js';
 import type { ProjectScripts, ResolvedScripts } from './scripts.js';
 
 /** Claude usage in one workspace, summed over every run. */
@@ -52,6 +53,8 @@ export interface WorkspaceRecord {
   readonly handedTo?: string;
   /** Came from a friend's handoff (their name). */
   readonly handedFrom?: string;
+  /** A conversation started for one job: 'sync_main' is Claude bringing the main folder up to date. */
+  readonly purpose?: 'sync_main';
 }
 
 /** A workspace as shown in the UI: record + live git status. */
@@ -76,6 +79,16 @@ export interface Project {
   readonly error?: string;
   /** Setup and run commands that apply to this project. */
   readonly scripts?: ResolvedScripts;
+  /** The default branch (main or master) against its remote, and fetching it (see sync.ts). */
+  readonly sync?: ProjectSync;
+}
+
+/** How a project's default branch stands, plus Klaud's fetching of it. */
+export interface ProjectSync extends DefaultBranch {
+  /** A fetch is running now. */
+  readonly fetching?: boolean;
+  /** The last fetch failed (cleared by the next one that works). */
+  readonly fetchError?: { readonly reason: FetchProblem; readonly message: string; readonly at: number };
 }
 
 export interface ProjectGroup {

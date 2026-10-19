@@ -26,7 +26,7 @@ export function AgentsAlert({ menu, close }: NativeMenuProps<'agents'>) {
         icon="branch"
         tone="info"
         title={`Claude Code left ${count(agents.length, 'worktree')} in ${project.name}`}
-        message="Each one has uncommitted changes, so klaud leaves them alone. Open one to look at what’s in it."
+        message="Each one has uncommitted changes, so Klaud leaves them alone. Open one to look at what’s in it."
         table={table}
         cancel={false}
         confirm={{ label: 'OK', onClick: close }}

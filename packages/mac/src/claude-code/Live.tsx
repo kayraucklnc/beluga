@@ -171,7 +171,7 @@ export function ActivityRow() {
     <Row
       icon={<Icon name="pulse" size={14} />}
       label="Activity"
-      detail={running ? `${plural(running, 'Claude Code agent')} running outside klaud` : 'Claude Code sessions running outside klaud (Conductor, a terminal), live'}
+      detail={running ? `${plural(running, 'Claude Code agent')} running outside Klaud` : 'Claude Code sessions running outside Klaud (a terminal, another app), live'}
       selected={selected}
       onClick={() => openActivity(client)}
       trailing={running ? <Badge count={running} /> : live ? <Dot tone="muted" /> : null}

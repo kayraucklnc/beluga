@@ -7,11 +7,12 @@ import { Button, Dot, Empty, cx } from '../components/ui.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { AgentCard, SessionChip } from './Cards.js';
 import { LiveTranscript } from './LiveTranscript.js';
+import { TeamBlock, teamMembers } from './Team.js';
 import { activitySummary, agentElapsed, agentLabel, agentTone, groupByProject, openActivity, placeLabel, plural, sessionLabel, tokens, typeLabel } from './cc-model.js';
 import s from './claude-code.module.css';
 
 /**
- * Activity: every Claude Code session running outside klaud (Conductor, a terminal), by project,
+ * Activity: every Claude Code session running outside klaud (a terminal, another app), by project,
  * with its sub-agents as cards; one session or agent opens as a live, read-only transcript.
  */
 
@@ -23,6 +24,8 @@ function SessionRow({ session }: { session: CcSession }) {
   const now = useNow(session.status === 'working', 5000);
   const st = sessionLabel(session, now);
   const running = session.agents.filter((a) => a.status === 'running').length;
+  const team = new Set(teamMembers(session).map((a) => a.id));
+  const others = session.agents.filter((a) => !team.has(a.id));
   return (
     <section className={s.session} aria-label={`Claude Code session ${session.title}`}>
       <button type="button" className={s.sessionHead} onClick={() => openActivity(client, session.id)}>
@@ -40,9 +43,11 @@ function SessionRow({ session }: { session: CcSession }) {
           <Icon name="chevronRight" size={10} />
         </span>
       </button>
-      {session.agents.length ? (
+      {/* Agents working as a team (named, messaging each other) under one header, with their messages. */}
+      <TeamBlock session={session} onOpen={(id) => openActivity(client, session.id, id)} />
+      {others.length ? (
         <div className={s.grid}>
-          {session.agents.map((a) => (
+          {others.map((a) => (
             <AgentCard key={a.id} agent={a} onOpen={() => openActivity(client, session.id, a.id)} />
           ))}
         </div>
@@ -59,7 +64,7 @@ function ActivityList() {
   if (!sessions.length) {
     return (
       <div className={s.page}>
-        <Empty icon="claude" title="No Claude Code sessions right now" detail="When you run Claude Code in a terminal or through Conductor, its sessions and their agents show here live, read-only." />
+        <Empty icon="claude" title="No Claude Code sessions right now" detail="When you run Claude Code in a terminal or another app, its sessions and their agents show here live, read-only." />
       </div>
     );
   }
@@ -68,7 +73,7 @@ function ActivityList() {
       <div className={s.inner}>
         <header className={s.summary}>
           <h1 className={s.summaryTitle}>{activitySummary(sessions)}</h1>
-          <p className={s.summaryText}>Claude Code sessions running outside klaud, and the agents they started. You can watch them here; they keep running where they are.</p>
+          <p className={s.summaryText}>Claude Code sessions running outside Klaud, and the agents they started. You can watch them here; they keep running where they are.</p>
         </header>
         {groups.map((g) => (
           <section key={g.key} className={s.group} aria-label={g.name}>

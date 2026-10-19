@@ -9,6 +9,7 @@ import { IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
+import { brandNotice } from '../lib/brand.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { macNoticeTarget, openNoticeTarget } from '../lib/notices.js';
 import s from './notifications.module.css';
@@ -61,6 +62,7 @@ function useNow(): number {
 function Row({ n, now, onOpen }: { n: Notice; now: number; onOpen: (n: Notice) => void }) {
   const api = useApi();
   const { look, tone } = noticeLook(n);
+  const shown = brandNotice(n);
   const items: ActionItem[] = [
     { label: 'Open', onSelect: () => onOpen(n) },
     { label: n.read ? 'Mark as Unread' : 'Mark as Read', onSelect: () => void (n.read ? api.inbox.unread(n.id) : api.inbox.read({ id: n.id })) },
@@ -75,8 +77,8 @@ function Row({ n, now, onOpen }: { n: Notice; now: number; onOpen: (n: Notice) =
           <Mark look={look} />
         </span>
         <span className={s.text}>
-          <span className={s.title}>{n.title}</span>
-          {n.body ? <span className={s.body}>{n.body}</span> : null}
+          <span className={s.title}>{shown.title}</span>
+          {shown.body ? <span className={s.body}>{shown.body}</span> : null}
         </span>
         <span className={s.time}>{noticeAgo(n.ts, now)}</span>
       </button>
@@ -100,7 +102,7 @@ function Row({ n, now, onOpen }: { n: Notice; now: number; onOpen: (n: Notice) =
 
 function Empty({ filter, any }: { filter: NoticeFilter; any: boolean }) {
   const title = !any ? 'You’re all caught up' : filter === 'unread' ? 'Nothing unread' : filter === 'needsYou' ? 'Nothing waiting for you' : 'No mentions';
-  const detail = !any ? 'klaud lists here when Claude finishes or needs you, and when friends come and go.' : 'The rest are under All.';
+  const detail = !any ? 'Klaud lists here when Claude finishes or needs you, and when friends come and go.' : 'The rest are under All.';
   return (
     <div className={s.empty}>
       <Icon name="bell" size={20} />

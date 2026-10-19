@@ -15,6 +15,9 @@ import { PersonContextMenu } from '../dialogs/native/PersonMenu.js';
 import { RoomStatus } from '../dialogs/native/RoomPopover.js';
 import { Projects, ProjectsAddMenu } from './ProjectTree.js';
 import { WorkspaceRow } from './workspace-row.js';
+import { UnreadSection } from './UnreadSection.js';
+import { signalOf } from './attention-model.js';
+import { SignalMark, nameClass, signalClass } from './signal-marks.js';
 import { Row, Section } from './sidebar-parts.js';
 import { ActivityRow } from '../claude-code/Live.js';
 import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
@@ -156,6 +159,8 @@ export function Sidebar() {
           <RequestsNav />
         </section>
 
+        <UnreadSection />
+
         <Section id="chats" title="Chats" action={<IconButton icon="plus" label="New chat (not tied to a project)" onClick={() => actions.run({ type: 'new_chat', projectId: 'chats' })} />}>
           {liveChats.map((w) => (
             <WorkspaceRow key={w.id} ws={w} indent={0} />
@@ -172,15 +177,19 @@ export function Sidebar() {
             {state.shared.map((w) => {
               const owner = state.peers.find((p) => p.peerId === w.owner)?.name ?? 'someone';
               const selected = state.view.kind === 'shared' && state.view.id === w.id;
+              const signal = signalOf(state, `ws:${w.id}`);
               return (
                 <SpecContext key={`${w.owner}:${w.id}`} menu={{ kind: 'shared', owner: w.owner, id: w.id }}>
                   <Row
                     selected={selected}
+                    className={signalClass(signal, selected)}
+                    data-signal-row={signal.level}
+                    aria-label={w.name}
                     icon={<Avatar name={owner} id={w.owner} size={16} />}
-                    label={w.name}
-                    detail={`${owner}'s ${w.project} · ${w.role === 'contribute' ? 'you can work here' : 'you can follow along'}`}
+                    label={<span className={nameClass(signal)}>{w.name}</span>}
+                    detail={`${owner}'s ${w.project} · ${signal.tip || (w.role === 'contribute' ? 'you can work here' : 'you can follow along')}`}
                     onClick={() => actions.run({ type: 'open_shared', owner: w.owner, id: w.id, tab: 'chat' })}
-                    trailing={state.unread[`ws:${w.id}`] ? <Badge count={state.unread[`ws:${w.id}`]!} urgent /> : null}
+                    trailing={<SignalMark signal={signal} />}
                   />
                 </SpecContext>
               );

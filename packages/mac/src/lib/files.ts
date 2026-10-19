@@ -42,6 +42,15 @@ export async function revealInFinder(client: SocketClient, path: string): Promis
   await client.api.local.openFolder(parentOf(path));
 }
 
+/** Files that run something when opened (opening one shows it in Finder instead). */
+const RUNS = /\.(command|tool|app|pkg|mpkg|terminal|workflow|scpt|scptd|action|sh|zsh|bash|py|rb|pl|jar)$/i;
+
+/** Open a file of yours the way Finder would (its default app, usually your editor). */
+export async function openWithDefaultApp(client: SocketClient, path: string): Promise<void> {
+  if (RUNS.test(path)) return revealInFinder(client, path);
+  await client.api.local.openFolder(path);
+}
+
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**

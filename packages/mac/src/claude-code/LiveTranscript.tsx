@@ -1,8 +1,12 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CcStep } from '@klaud/core/claude-code/model.js';
+import type { StepSummary } from '@klaud/shared/steps.js';
 import { Markdown } from '../chat/Markdown.js';
+import { StepRow } from '../chat/steps/StepRow.js';
+import { type Disclosure, useDisclosure } from '../chat/steps/step-memory.js';
 import { Icon } from '../components/Icon.js';
-import { Avatar, Button, Dot, Working, cx } from '../components/ui.js';
+import { Avatar, Button, Working, cx } from '../components/ui.js';
+import { useApi } from '../lib/klaud.js';
 import { useSteps } from './use-steps.js';
 import s from './claude-code.module.css';
 
@@ -16,23 +20,76 @@ const time = (ts: number): string => (ts ? new Date(ts).toLocaleTimeString([], {
 
 type Block = { kind: 'tools'; steps: CcStep[] } | { kind: 'one'; step: CcStep };
 
-/** Tool calls in a row go in one quiet box; everything else stands alone. */
+/** Tool calls and thinking in a row go in one quiet box; everything else stands alone. */
 function blocks(steps: readonly CcStep[]): Block[] {
   const out: Block[] = [];
+  const quiet = (st: CcStep): boolean => st.kind === 'tool' || st.kind === 'thinking';
   for (const step of steps) {
     const last = out.at(-1);
-    if (step.kind === 'tool' && last?.kind === 'tools') last.steps.push(step);
-    else out.push(step.kind === 'tool' ? { kind: 'tools', steps: [step] } : { kind: 'one', step });
+    if (quiet(step) && last?.kind === 'tools') last.steps.push(step);
+    else out.push(quiet(step) ? { kind: 'tools', steps: [step] } : { kind: 'one', step });
   }
   return out;
 }
 
-const ToolRow = memo(function ToolRow({ step, live }: { step: CcStep; live: boolean }) {
-  const running = step.status === 'running' && live;
+/** A transcript step as the step rows draw it (the same rows as Claude's cards in a chat). */
+const summaryOf = (step: CcStep): StepSummary => ({
+  id: String(step.seq),
+  kind: step.kind === 'thinking' ? 'thinking' : 'tool',
+  title: step.text,
+  status: step.status ?? 'done',
+  startedAt: step.ts,
+  ...(step.tool ? { tool: step.tool } : {}),
+  ...(step.durationMs !== undefined ? { durationMs: step.durationMs } : {}),
+  ...(step.hidden ? { hidden: true } : {}),
+});
+
+/** A tool call or thinking: opens to show what ran and what came back (`claudeCode.step`). */
+const ToolRow = memo(function ToolRow({ step, live, sessionId, agentId, open, now }: { step: CcStep; live: boolean; sessionId: string; agentId?: string; open: Disclosure; now: number }) {
+  const api = useApi();
+  const id = String(step.seq);
   return (
-    <div className={cx(s.tool, step.status === 'error' && s.toolError)} title={`${step.tool ?? ''} · ${time(step.ts)}`}>
-      <span className={s.toolIcon}>{running ? <Dot tone="claude" live /> : step.status === 'error' ? <Icon name="x" size={10} /> : <Icon name="chevronRight" size={10} />}</span>
-      <span className={cx(s.toolText, 'selectable')}>{step.text}</span>
+    <div className={cx(s.tool, s.toolRich, step.status === 'error' && s.toolError)} title={`${step.tool ?? ''} · ${time(step.ts)}`}>
+      <StepRow step={summaryOf(step)} open={open.isOpen(id)} onToggle={() => open.toggle(id)} load={() => api.claudeCode.step(sessionId, agentId, step.seq)} live={live} now={now} openable={step.detail === true} />
+    </div>
+  );
+});
+
+function useTick(active: boolean): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [active]);
+  return now;
+}
+
+/**
+ * A message another session sent this one (SendMessage): from the lead session, another agent,
+ * or an agent's report handed back. A row of its own; opens to the whole message.
+ */
+const MessageStep = memo(function MessageStep({ step, open }: { step: CcStep; open: Disclosure }) {
+  const id = `msg:${step.seq}`;
+  const isOpen = open.isOpen(id);
+  const title = `${step.report ? 'Report' : 'Message'} from ${step.who ?? step.from ?? 'another session'}`;
+  const preview = step.text.split('\n').find((l) => l.trim()) ?? '';
+  return (
+    <div className={cx(s.message, isOpen && s.messageOpen)} data-received-message={step.report ? 'report' : 'message'}>
+      <button type="button" className={s.messageHead} aria-expanded={isOpen} onClick={() => open.toggle(id)}>
+        <span className={cx(s.messageChev, isOpen && s.messageChevOpen)}>
+          <Icon name="chevronRight" size={9} />
+        </span>
+        <Icon name={step.report ? 'inbox' : 'chat'} size={12} />
+        <span className={s.messageWho}>{title}</span>
+        {isOpen ? null : <span className={s.messagePreview}>{preview}</span>}
+        <span className={s.when}>{time(step.ts)}</span>
+      </button>
+      {isOpen ? (
+        <div className={s.messageBody}>
+          <Markdown text={step.text} />
+        </div>
+      ) : null}
     </div>
   );
 });
@@ -62,6 +119,8 @@ const StepView = memo(function StepView({ step, who }: { step: CcStep; who: 'ses
 
 export function LiveTranscript({ sessionId, agentId, version, live, label }: { sessionId: string; agentId?: string; version: string; live: boolean; label: string }) {
   const { steps, more, missing, loading, error, loadEarlier } = useSteps(sessionId, agentId, version);
+  const open = useDisclosure(`cc:${sessionId}/${agentId ?? ''}`);
+  const now = useTick(live);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [away, setAway] = useState(false);
@@ -138,9 +197,11 @@ export function LiveTranscript({ sessionId, agentId, version, live, label }: { s
             b.kind === 'tools' ? (
               <div key={b.steps[0]!.seq} className={s.tools}>
                 {b.steps.map((step) => (
-                  <ToolRow key={step.seq} step={step} live={live} />
+                  <ToolRow key={step.seq} step={step} live={live} sessionId={sessionId} {...(agentId ? { agentId } : {})} open={open} now={now} />
                 ))}
               </div>
+            ) : b.step.kind === 'message' ? (
+              <MessageStep key={b.step.seq} step={b.step} open={open} />
             ) : (
               <StepView key={b.step.seq} step={b.step} who={who} />
             ),

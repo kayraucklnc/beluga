@@ -58,7 +58,7 @@ export function createRoomBridge(session: Session, cwd: () => string): RoomBridg
 export function gatewayBridge(session: Session): GatewayBridge {
   const gw = () => needGateway(session);
   const told = (t: TaskView): string => {
-    const target = t.kind === 'run' ? `${t.peerName}'s Mac` : `${t.peerName}'s Claude`;
+    const target = t.kind === 'ask' ? `${t.peerName}'s Claude` : `${t.peerName}'s Mac`;
     const next = `Call wait_for with task "${t.id}" to wait for the answer, or end your turn saying you asked: the answer comes back into this conversation when it arrives.`;
     if (t.state === 'confirm') return `Task ${t.id}: your user is asked first ("Ask ${target}?"), because they haven't marked ${t.peerName} as trusted. ${next} (wait_for waits through their answer too.)`;
     const offline = t.steps.some((s) => s.includes('offline')) ? ` ${t.peerName} is offline right now; it goes out when they're back.` : '';
@@ -83,6 +83,22 @@ export function gatewayBridge(session: Session): GatewayBridge {
           ...(input.timeoutSec ? { timeoutSec: input.timeoutSec } : {}),
         }),
       ),
+    getFile: (input) =>
+      told(
+        gw().ask({
+          person: input.person,
+          kind: 'file',
+          ask: input.why ?? `Send me ${input.path}`,
+          path: input.path,
+          by: 'agent',
+          conversation: session.host.currentChannel,
+        }),
+      ),
+    answerQuestion: (task, answers) => {
+      const t = gw().answer(task, answers, 'agent');
+      if (t.answerDraft) return `Your user hadn't seen task ${t.id}, so they see your answer before it goes to ${t.peerName}'s Claude (they can send it, change it, or let them decide). End your turn or call wait_for: the result comes back here.`;
+      return `Answer sent to ${t.peerName}'s Claude for task ${t.id}. Call wait_for to wait for the result (or end your turn: it comes back here).`;
+    },
     waitFor: async (task, timeoutSec) => {
       await gw().wait(task, timeoutSec * 1000);
       return gw().describe(task);

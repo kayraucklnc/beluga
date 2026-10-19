@@ -1,11 +1,14 @@
 import { z } from 'zod';
 import { ClaudeAnswer, GuestCan, WsRole } from '../protocol.js';
 import { EFFORTS, NotifySettings, THEMES, TRUST_LEVELS } from '../shared/settings-schema.js';
+import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from '../shared/context-usage.js';
 import { ENV_KEY, MAX_ENV_VALUE, MAX_ENV_VARS } from '../shared/env-vars.js';
 import { NETWORK_API } from './network-api.js';
 import { STRIPE_API } from './stripe-api.js';
 import { CLAUDE_CODE_API } from './claude-code-api.js';
+import { STEPS_API } from './steps-api.js';
 import { GATEWAY_API } from './gateway-api.js';
+import { GIT_API } from './git-api.js';
 
 /**
  * Everything a client can ask klaud to do, in one list. The daemon validates every call
@@ -37,10 +40,13 @@ export const PrefsPatch = z
     tunnel: z.enum(['auto', 'p2p', 'cloudflared', 'ngrok', 'none']),
     selfApproval: z.enum(['never', 'ask']),
     notify: NotifySettings,
-    model: z.string().max(80).optional(),
-    effort: z.enum(EFFORTS).optional(),
+    // null: back to the default (JSON can't carry undefined, so "unset" travels as null).
+    model: z.string().max(80).nullable().optional(),
+    effort: z.enum(EFFORTS).nullable().optional(),
     autoSetup: bool,
     contextMeter: bool,
+    autoCompact: bool,
+    autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX),
     subagents: z.enum(['full', 'compact', 'hidden']),
     hiddenButtons: z.array(z.string().max(40)).max(40),
     friendWorktrees: z.enum(['ask', 'off']),
@@ -84,6 +90,7 @@ export const API = {
   'session.setAccess': args(id, z.enum(['folder', 'full'])),
   'session.runOnPeerByHand': args(z.string().max(64), str, opt(channel)),
   'session.stopAgent': args(),
+  'session.compact': args(channel, opt(z.string().max(2000))),
   'session.quit': args(),
   'session.serveFolder': args(id, path, z.array(id).max(50)),
   'session.localLocation': args(path, bool),
@@ -147,6 +154,8 @@ export const API = {
   'files.downloadSpec': args(z.string().max(4096)),
   'files.closeViewer': args(),
   'files.readImage': args(),
+  // An image a document points at (Markdown's ![](diagram.png)), read the way files.open reads one: → { mediaType, data (base64) }.
+  'files.readImageFile': args(Location),
 
   // ---- projects and workspaces
   'workspaces.open': args(id, opt(WorkspaceTab)),
@@ -185,6 +194,8 @@ export const API = {
   'workspaces.cleanAgentWorktrees': args(id),
   // Worktrees klaud didn't make (Conductor's, Claude Code's, a script's): who made them, their info page, tidying up.
   'workspaces.otherOrigins': args(id),
+  // When each one last changed (git's view): the Mac sidebar lists them most recent first.
+  'workspaces.otherActivity': args(id),
   'workspaces.worktreeInfo': args(id),
   'workspaces.showConversation': args(id, z.string().min(1).max(100)),
   'workspaces.removeOther': args(id, opt(bool)),
@@ -254,7 +265,10 @@ export const API = {
   // ---- earnings from Stripe, per project (stripe-api.ts)
   ...STRIPE_API,
   ...CLAUDE_CODE_API,
+  ...STEPS_API,
   ...GATEWAY_API,
+  // ---- git: keeping main current, GitHub, history (git-api.ts)
+  ...GIT_API,
 } as const;
 
 export type Api = typeof API;

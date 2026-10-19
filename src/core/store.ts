@@ -12,6 +12,10 @@ import { type NetworkAction, type NetworkSlice, initialNetwork, reduceNetwork } 
 import { type EarningsAction, type EarningsSlice, initialEarnings, reduceEarnings } from './earnings-store.js';
 import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceClaudeCode } from './claude-code/model.js';
 import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
+import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
+import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
+
+export type { CompactMark, ContextInfo } from './context-log.js';
 
 export type Policy = 'ask' | 'auto' | 'deny';
 
@@ -26,7 +30,7 @@ export interface SubAgent {
 
 export type LogItem =
   | { readonly id: string; readonly type: 'chat'; readonly channel: string; readonly from: string; readonly name: string; readonly text: string; readonly ts: number; readonly byAgent: boolean }
-  | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error'; readonly said?: SaidBy }
+  | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error'; readonly said?: SaidBy; readonly compact?: CompactMark }
   | {
       readonly id: string;
       readonly type: 'agent';
@@ -97,6 +101,12 @@ export interface Approval {
   /** When it was asked, and how long it waits before it's declined (screens show a countdown). */
   readonly askedAt?: number;
   readonly timeoutMs?: number;
+  /** Who it's for (someone else's request: quiet on Do Not Disturb). */
+  readonly peer?: string;
+  /** The friend's request it's about (the gateway: the request sheet and notifications open it). */
+  readonly task?: string;
+  /** The conversation it holds up, when that's a workspace ("ws:<id>"): the sidebar marks it as needing you. */
+  readonly channel?: string;
 }
 
 export interface Location {
@@ -174,6 +184,9 @@ export interface Prefs {
   readonly effort?: Effort;
   readonly autoSetup: boolean;
   readonly contextMeter: boolean;
+  /** Compact a conversation on its own when its context passes `autoCompactAt` percent. */
+  readonly autoCompact: boolean;
+  readonly autoCompactAt: number;
   readonly subagents: Settings['subagents'];
   readonly hiddenButtons: readonly string[];
   readonly friendWorktrees: Settings['friendWorktrees'];
@@ -218,7 +231,7 @@ export type View =
   /** Claude Code sessions running outside klaud, live and read-only (Mac app): all of them, or one session or agent. */
   | { readonly kind: 'claude_code'; readonly session?: string; readonly agent?: string }
   /** A project's home (Mac app): start work in a new worktree or ask about it; its worktrees and chats. */
-  | { readonly kind: 'project'; readonly id: string }
+  | { readonly kind: 'project'; readonly id: string; readonly page?: 'history' }
   /** Tasks between Claudes (Mac app): what you and your Claude asked of others, and what they asked of you. */
   | { readonly kind: 'requests' };
 
@@ -239,12 +252,6 @@ export interface ReviewDomain {
 
 export interface ReviewState extends ReviewDomain {
   readonly diffScroll: number;
-}
-
-/** How full a conversation's context window is. */
-export interface ContextInfo {
-  readonly used: number;
-  readonly window: number;
 }
 
 /** A compaction that just happened, kept briefly so the UI can animate it. */
@@ -410,7 +417,7 @@ export type Action =
   | { type: 'access'; peerId: string; scope: 'folder' | 'full' }
   | { type: 'dir_cache'; key: string; entries: readonly FsEntry[] }
   | { type: 'transfer'; transfer: Transfer }
-  | { type: 'prefs'; prefs: Partial<Prefs> }
+  | { type: 'prefs'; prefs: { readonly [K in keyof Prefs]?: Prefs[K] | null } }
   | { type: 'clear'; channel: string }
   | { type: 'context_reset'; channel: string }
   /** What the attached screens look at changed (see core/attention.ts). */
@@ -440,6 +447,8 @@ export const DEFAULT_PREFS: Prefs = {
   notify: NotifySchema.parse({}),
   autoSetup: true,
   contextMeter: true,
+  autoCompact: true,
+  autoCompactAt: AUTO_COMPACT_DEFAULT,
   subagents: 'full',
   hiddenButtons: [],
   friendWorktrees: 'ask',
@@ -602,40 +611,16 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ...(a.event === 'queued' && a.text ? { prompt: a.text } : {}),
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);
-  return bumpUnread({ ...state, log }, updated.channel, !existing);
+  // A new message, or a run in a workspace finishing while no screen shows it (Claude's answer is news).
+  const finished = Boolean(existing) && updated.channel.startsWith('ws:') && (updated.status === 'done' || updated.status === 'error') && existing?.status !== 'done' && existing?.status !== 'error';
+  return bumpUnread({ ...state, log }, updated.channel, !existing || finished);
 }
 
-/** Context meter updates and compactions don't create chat items; they update the meter. */
+/** Context meter updates and compactions: the meter's numbers, and a divider where Claude compacted (see context-log.ts). */
 function reduceContext(state: DomainState, a: Extract<Action, { type: 'agent_event' }>): DomainState {
-  const channel = a.channel ?? 'room';
-  let data: { used?: number; window?: number; pre?: number; post?: number };
-  try {
-    data = JSON.parse(a.text) as typeof data;
-  } catch {
-    return state;
-  }
-  const window = data.window ?? state.context[channel]?.window ?? 200_000;
-  if (a.event === 'context' && typeof data.used === 'number') {
-    return { ...state, context: { ...state.context, [channel]: { used: data.used, window } } };
-  }
-  if (a.event === 'compact' && typeof data.pre === 'number') {
-    const post = data.post ?? 0;
-    const saved = data.pre > 0 ? Math.round((1 - post / data.pre) * 100) : 0;
-    return {
-      ...state,
-      context: { ...state.context, [channel]: { used: post, window } },
-      compactions: { ...state.compactions, [channel]: { pre: data.pre, post, at: a.ts } },
-      log: appendLog(state.log, {
-        id: `${a.itemId ?? a.requestId}:compact`,
-        type: 'system',
-        channel,
-        text: `Context compacted: ${formatTokens(data.pre)} → ${formatTokens(post)} tokens (${saved}% freed)`,
-        ts: a.ts,
-        level: 'info',
-      }),
-    };
-  }
-  return state;
+  const data = parseContextEvent(a.text);
+  if (!data || (a.event !== 'context' && a.event !== 'compact')) return state;
+  return applyContextEvent(state, { event: a.event, channel: a.channel ?? 'room', id: a.itemId ?? a.requestId, ts: a.ts, data }, appendLog);
 }
 
 export const formatTokens = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
@@ -663,6 +648,12 @@ function applySub(list: readonly SubAgent[], json: string): readonly SubAgent[] 
 function bumpUnread(state: DomainState, channel: string, isNew: boolean): DomainState {
   if (!isNew || state.attention.shown.includes(channel)) return state;
   return { ...state, unread: { ...state.unread, [channel]: (state.unread[channel] ?? 0) + 1 } };
+}
+
+/** A Claude Code session in one of your workspaces stopped working (its turn ended): unread there, unless it's shown. */
+function ccFinished(prev: DomainState, next: DomainState): DomainState {
+  const was = new Set(prev.claudeCode.sessions.filter((x) => x.status === 'working').map((x) => x.id));
+  return next.claudeCode.sessions.reduce((st, x) => (x.workspaceId && was.has(x.id) && x.status !== 'working' ? bumpUnread(st, `ws:${x.workspaceId}`, true) : st), next);
 }
 
 /** Apply an action: stamps it first (see stampAction), then reduces it purely. */
@@ -814,8 +805,15 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'trust':
       if (!action.trusted && state.levels[action.peerId] !== 'trusted') return state;
       return reduceDomain(state, { type: 'trust_level', peerId: action.peerId, level: action.trusted ? (state.levels[action.peerId] === 'full' ? 'full' : 'trusted') : 'ask' });
-    case 'prefs':
-      return { ...state, prefs: { ...state.prefs, ...action.prefs } };
+    case 'prefs': {
+      // A null clears a preference back to its default (an unset value can't travel as JSON).
+      const prefs: Record<string, unknown> = { ...state.prefs };
+      for (const [key, value] of Object.entries(action.prefs)) {
+        if (value === null) delete prefs[key];
+        else if (value !== undefined) prefs[key] = value;
+      }
+      return { ...state, prefs: prefs as unknown as Prefs };
+    }
     case 'transfer': {
       const others = state.transfers.filter((t) => t.id !== action.transfer.id);
       return { ...state, transfers: [...others, action.transfer].slice(-TRANSFER_LIMIT) };
@@ -872,13 +870,16 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'net_off':
       return { ...state, ...reduceNetwork(state, action) };
     case 'earnings':
+    case 'fx_rates':
       return { ...state, ...reduceEarnings(state, action) };
     case 'claude_code':
-      return { ...state, ...reduceClaudeCode(state, action) };
+      return ccFinished(state, { ...state, ...reduceClaudeCode(state, action) });
     case 'gw_init':
     case 'gw_task':
     case 'gw_card':
     case 'gw_note':
+    case 'gw_rules':
+    case 'gw_caps':
     case 'gw_off':
       return { ...state, ...reduceGateway(state, action) };
     case 'context_reset': {

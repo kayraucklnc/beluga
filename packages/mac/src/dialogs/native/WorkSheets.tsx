@@ -11,6 +11,8 @@ import { type NativeSheet, closeSheet, useSheet } from '../../lib/sheets.js';
 import { RemoteWorktreeForm } from './RemoteWorktreeSheet.js';
 import { TemplateEditorSheet } from './TemplatesSheet.js';
 import { ContinueSheet } from './ContinueSheet.js';
+import { CleanUpWorktreesAlert } from './CleanUpWorktrees.js';
+import { WorkConfirm } from './WorkConfirm.js';
 
 /** The folder and branch name klaud makes from a name (as the core's `slug` does). */
 const slug = (name: string): string =>
@@ -162,6 +164,10 @@ export function NativeSheets() {
       return <RemoteWorktreeForm key={sheet.peerId} peerId={sheet.peerId} {...(sheet.project ? { project: sheet.project } : {})} close={close} />;
     case 'confirm_option':
       return <OptionAlert sheet={sheet} close={close} />;
+    case 'work':
+      return <WorkConfirm key={`${sheet.wsId}:${sheet.action}`} wsId={sheet.wsId} action={sheet.action} close={close} />;
+    case 'clean_up_worktrees':
+      return <CleanUpWorktreesAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'confirm':
       return (
         <Alert

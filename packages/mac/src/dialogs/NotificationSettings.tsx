@@ -3,8 +3,10 @@ import { DND_CHOICES, type DndChoice, dndActive, dndFor, dndLabel } from '@klaud
 import { Button } from '../components/ui.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
+import { AccessNote } from './sound/AccessNote.js';
+import { SoundSettings } from './sound/SoundSettings.js';
 
-type Toggle = 'desktop' | 'sound' | 'onlyAway' | 'needsYou' | 'done' | 'mentions' | 'people' | 'background' | 'problems' | 'pr';
+type Toggle = 'desktop' | 'onlyAway' | 'needsYou' | 'done' | 'mentions' | 'people' | 'background' | 'problems' | 'pr';
 
 const KINDS: ReadonlyArray<readonly [Toggle, string, string]> = [
   ['needsYou', 'Claude needs you', 'A question, a plan, or an approval'],
@@ -24,17 +26,16 @@ export function NotificationSettings() {
   const quiet = dndActive(n);
   return (
     <>
+      <AccessNote />
       <Group>
         <Row label="Desktop notifications" detail="The bell in the toolbar lists everything either way.">
           <Switch label="Desktop notifications" on={n.desktop} onChange={(v) => save({ desktop: v })} />
         </Row>
-        <Row label="Sound">
-          <Switch label="Sound" on={n.sound} onChange={(v) => save({ sound: v })} />
-        </Row>
-        <Row label="Only when klaud isn’t in front" detail="Stay quiet while you’re using klaud. Nothing is ever announced about the conversation you’re looking at.">
-          <Switch label="Only when klaud isn’t in front" on={n.onlyAway} onChange={(v) => save({ onlyAway: v })} />
+        <Row label="Only when Klaud isn’t in front" detail="Stay quiet while you’re using Klaud. Nothing is ever announced about the conversation you’re looking at.">
+          <Switch label="Only when Klaud isn’t in front" on={n.onlyAway} onChange={(v) => save({ onlyAway: v })} />
         </Row>
       </Group>
+      <SoundSettings n={n} save={save} />
       <Group>
         <Row label="Do Not Disturb" detail={quiet ? `On ${dndLabel(n)}. The bell still fills.` : 'Pause desktop notifications for a while.'}>
           {quiet ? (

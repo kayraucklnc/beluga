@@ -1,0 +1,66 @@
+/*
+ * What a conversation waits on, in the sidebar (signal-marks.tsx). Restrained on purpose:
+ * news is a bold name and a count in your accent; needing you is a hand in amber (a problem:
+ * ! in red) and the faintest tint, so it's findable without shouting.
+ */
+
+.unreadName {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.needsRow,
+.needsRow.needsRow:hover {
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
+}
+.needsRow.needsRow:hover {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+.problemRow,
+.problemRow.problemRow:hover {
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+.problemRow.problemRow:hover {
+  background: color-mix(in srgb, var(--error) 13%, transparent);
+}
+
+.mark {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+}
+.markNeeds {
+  color: var(--warn);
+}
+.markProblem {
+  color: var(--error);
+}
+.count {
+  display: inline-flex;
+  margin-left: 2px;
+}
+
+.tally {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+}
+
+/* The Unread section: each conversation with where it lives, quietly, after its name. */
+.section {
+  margin-top: 10px;
+}
+.where::after {
+  content: attr(data-where);
+  margin-left: 5px;
+  color: var(--text-3);
+  font-size: 0.88rem;
+  font-weight: 400;
+}
+.unreadIcon {
+  display: inline-grid;
+  place-items: center;
+}

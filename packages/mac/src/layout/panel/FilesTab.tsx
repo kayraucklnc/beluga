@@ -1,37 +1,31 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { Location, ViewerState } from '@klaud/core/store.js';
 import type { FsEntry } from '@klaud/protocol.js';
 import { shareNameOf } from '@klaud/shared/share-names.js';
 import { formatBytes } from '@klaud/shared/format.js';
-import { Markdown } from '../../chat/Markdown.js';
 import { Icon } from '../../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../../components/SpecMenu.js';
-import { Empty, IconButton, Segmented, cx } from '../../components/ui.js';
+import { IconButton, Segmented, cx } from '../../components/ui.js';
 import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
-import { localPathOf, revealInFinder } from '../../lib/files.js';
-import { focusFor, openFocus } from '../../lib/panel.js';
+import { localPathOf, openWithDefaultApp } from '../../lib/files.js';
+import { focusFor, openFocus, usePanelRuntime } from '../../lib/panel.js';
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { mod } from '../../lib/system.js';
 import { STATE } from '../../views/DiffView.js';
-import { Bitmap, LANG, ext, fenced, useRowItems } from '../../views/FilesView.js';
+import { useRowItems } from '../../views/FilesView.js';
+import { type ReaderMode, initialMode, isMarkdownFile } from '../../views/reader/reader-model.js';
+import { SCROLL_ROOT } from '../../components/markdown/md-dom.js';
 import d from '../../views/diff.module.css';
-import f from '../../views/files.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
 import { type TreeRow, ancestorsOf, filterLoads, treeRows } from './tree.js';
 import s from './panel.module.css';
 
+/** The reader comes in its own chunk, the first time a file is opened. */
+const FileContent = lazy(() => import('../../views/reader/FileReader.js').then((m) => ({ default: m.FileContent })));
+
 /** Folders you opened in each workspace's tree, kept while the window is open. */
 const opened = new Map<string, ReadonlySet<string>>();
-
-/** Files that run something when opened (double-click shows them in Finder instead). */
-const RUNS = /\.(command|tool|app|pkg|mpkg|terminal|workflow|scpt|scptd|action|sh|zsh|bash|py|rb|pl|jar)$/i;
-
-/** Open a file of yours the way Finder would (its default app, usually your editor). */
-async function openWithDefaultApp(client: ReturnType<typeof useKlaud>['client'], path: string): Promise<void> {
-  if (RUNS.test(path)) return revealInFinder(client, path);
-  await client.api.local.openFolder(path);
-}
 
 /** A name with the part you typed highlighted. */
 function Marked({ name, query }: { name: string; query: string }): ReactNode {
@@ -46,14 +40,20 @@ function Marked({ name, query }: { name: string; query: string }): ReactNode {
   );
 }
 
-/** The open file, as the Files view shows it (Markdown formatted, code in color, images as they are). */
+/** The open file under the tree: Markdown formatted (or as source), code in color, images as they are. */
 function Preview({ viewer, wsId, local }: { viewer: ViewerState; wsId: string; local: string | undefined }) {
   const api = useApi();
   const { client } = useKlaud();
-  const [raw, setRaw] = useState(false);
+  const [mode, setMode] = useState<ReaderMode>(() => initialMode(viewer));
+  const body = useRef<HTMLDivElement>(null);
+  // Another file: from its top, as itself.
+  useEffect(() => {
+    setMode(initialMode(viewer));
+    body.current?.scrollTo({ top: 0 });
+  }, [viewer.path]);
   const name = viewer.path.split('/').pop() || viewer.path;
   const dir = viewer.path.slice(0, viewer.path.length - name.length).replace(/\/$/, '');
-  const markdown = ext(viewer.path) === 'md' || ext(viewer.path) === 'markdown';
+  const markdown = isMarkdownFile(viewer.path) && !viewer.image;
   return (
     <section className={s.preview} aria-label={name}>
       <div className={s.previewHead}>
@@ -66,37 +66,22 @@ function Preview({ viewer, wsId, local }: { viewer: ViewerState; wsId: string; l
         {markdown ? (
           <Segmented
             label="Show as"
-            value={raw ? 'raw' : 'rendered'}
-            onChange={(v) => setRaw(v === 'raw')}
+            value={mode}
+            onChange={setMode}
             options={[
               { value: 'rendered', label: 'Preview' },
-              { value: 'raw', label: 'Source' },
+              { value: 'source', label: 'Source' },
             ]}
           />
         ) : null}
-        {local ? <IconButton icon="external" label="Open with its app" onClick={() => void openWithDefaultApp(client, local)} /> : null}
+        {local ? <IconButton icon="external" label="Open in Editor" onClick={() => void openWithDefaultApp(client, local)} /> : null}
         <IconButton icon="expand" label="Open in full" keys={`${mod()}↩`} onClick={() => openFocus('file', wsId)} />
         <IconButton icon="x" label="Close" keys="Esc" onClick={() => void api.files.closeViewer()} />
       </div>
-      <div className={cx(s.previewBody, 'selectable')}>
-        {viewer.loading && !viewer.content && !viewer.image ? (
-          <div className={s.dimPad}>Opening…</div>
-        ) : viewer.error ? (
-          <Empty icon="alert" title="Can’t open this file" detail={viewer.error} />
-        ) : viewer.image ? (
-          <div className={f.imageWrap}>
-            <Bitmap image={viewer.image} />
-          </div>
-        ) : markdown && !raw ? (
-          <div className={s.doc}>
-            <Markdown text={viewer.content} />
-          </div>
-        ) : (
-          <div className={cx(f.codeWrap, s.code)}>
-            <Markdown text={fenced(viewer.content, LANG[ext(viewer.path)])} />
-          </div>
-        )}
-        {viewer.truncated ? <div className={f.truncated}>Only the beginning is shown.</div> : null}
+      <div ref={body} className={cx(s.previewBody, s.previewFile, 'selectable')} tabIndex={0} {...{ [SCROLL_ROOT]: '' }}>
+        <Suspense fallback={<div className={s.dimPad}>Opening…</div>}>
+          <FileContent viewer={viewer} variant="panel" mode={mode} onMode={setMode} wrap onOpenInEditor={local ? () => void openWithDefaultApp(client, local) : undefined} />
+        </Suspense>
       </div>
     </section>
   );
@@ -151,6 +136,9 @@ export function FilesTab({ wsId }: { wsId: string }) {
 
   // A file opened from the chat or a diff: show it in the tree.
   const shown = viewer && viewer.owner === selfId && viewer.share === share ? viewer : undefined;
+  // Open full size, the file is across the center: no second, smaller copy of it here.
+  const inFocus = usePanelRuntime((r) => r.focus?.wsId === wsId && r.focus.kind === 'file');
+  const previewed = inFocus ? undefined : shown;
   useEffect(() => {
     if (!shown) return;
     const up = ancestorsOf(shown.path);
@@ -234,7 +222,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
   const local = shown ? localOf(shown.path) : undefined;
   return (
     <div ref={box} className={s.stack}>
-      <div className={s.top} style={shown ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined}>
+      <div className={s.top} style={previewed ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined}>
         <div className={s.filterRow}>
           <label className={s.filter}>
             <Icon name="search" size={12} />
@@ -294,7 +282,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
           {q && !rows.length ? <div className={s.treeNote}>No names with “{q}” in the folders looked at</div> : null}
         </div>
       </div>
-      {shown ? (
+      {previewed ? (
         <>
           <ResizeHandle
             axis="y"
@@ -306,7 +294,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
             onReset={() => setPrefs({ panelSplit: SPLIT_DEFAULT })}
             onStep={(dir) => setPrefs({ panelSplit: clampShare(split - dir * 0.04, SPLIT_MIN, SPLIT_MAX) })}
           />
-          <Preview viewer={shown} wsId={wsId} local={local} />
+          <Preview viewer={previewed} wsId={wsId} local={local} />
         </>
       ) : null}
     </div>

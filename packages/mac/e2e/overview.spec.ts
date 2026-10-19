@@ -148,3 +148,17 @@ test('deleting an archived worktree asks first, in red; reading it changes nothi
   await page.getByRole('menuitem', { name: 'Restore' }).click();
   await expect(sidebar(page).getByRole('button', { name: 'new-hero', exact: true })).toBeVisible({ timeout: 20_000 });
 });
+
+test('archived work leaves the sidebar; the project menu shows it in the Overview', async ({ page }) => {
+  await archive(page, 'webhook-retries');
+  await expect(sidebar(page).getByRole('button', { name: 'webhook-retries', exact: true })).toHaveCount(0);
+  await expect(sidebar(page).getByRole('button', { name: /^Archived/ })).toHaveCount(0);
+  await sidebar(page).getByRole('button', { name: 'bob-api', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: /^Show Archived/ }).click();
+  await expect(segment(page, 'Archived')).toHaveAttribute('aria-selected', 'true');
+  await expect(row(page, 'webhook-retries')).toBeVisible();
+  // Put it back for the tests after this one.
+  await row(page, 'webhook-retries').hover();
+  await row(page, 'webhook-retries').getByRole('button', { name: /^Restore/ }).click();
+  await expect(sidebar(page).getByRole('button', { name: 'webhook-retries', exact: true })).toBeVisible({ timeout: 15_000 });
+});

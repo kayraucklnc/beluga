@@ -34,7 +34,12 @@ export const RESEND_MS = 20_000;
 
 const frameId = (): string => randomBytes(12).toString('base64url');
 
+/** Frame ids remembered per person, to drop a frame that comes twice (a resend whose ack was lost). */
+const SEEN_FRAMES = 1000;
+
 export class Courier {
+  private readonly seen = new Map<string, Set<string>>();
+
   constructor(
     private readonly book: TaskBook,
     private readonly ports: { readonly mesh: () => MeshPort | undefined; readonly room: () => RoomPort | undefined },
@@ -72,7 +77,13 @@ export class Courier {
       this.book.acked(from, frame.ack);
       return undefined;
     }
+    // Always acknowledged (the ack may be what got lost), handed on only once.
     this.deliverVia(from, via, { ack: frame.f });
+    const seen = this.seen.get(from) ?? new Set<string>();
+    this.seen.set(from, seen);
+    if (seen.has(frame.f)) return undefined;
+    seen.add(frame.f);
+    if (seen.size > SEEN_FRAMES) seen.delete(seen.values().next().value!);
     return frame.m;
   }
 

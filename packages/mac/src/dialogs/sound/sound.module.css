@@ -1,0 +1,156 @@
+/* Settings › Notifications › Sound: the picker, the per-kind list, and the System Settings note. */
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-top: 0.5px solid var(--hairline);
+}
+.hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+  gap: 6px;
+}
+.tile {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 28px;
+  padding-right: 3px;
+  border-radius: 7px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.05);
+  transition: box-shadow var(--dur-fast), background var(--dur-fast);
+}
+.tile:hover {
+  background: color-mix(in srgb, var(--bg-raised) 92%, var(--text) 8%);
+}
+.tileOn,
+.tileOn:hover {
+  background: var(--bg-selected);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.tileName {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px 0 9px;
+  color: var(--text);
+  text-align: left;
+}
+.tileName span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tileName svg {
+  flex: none;
+  color: var(--accent);
+}
+.play {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  color: var(--text-2);
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.play:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.play:active {
+  background: var(--bg-press);
+}
+.current {
+  color: var(--text-2);
+}
+.generator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px 11px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+}
+.genText {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.genName {
+  font-weight: 500;
+}
+.genSeed {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+.kinds {
+  border-top: 0.5px solid var(--hairline);
+}
+.kind {
+  min-height: 36px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.kindOn {
+  background: var(--bg-selected);
+}
+.kindPick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  height: 28px;
+  color: var(--text);
+  text-align: left;
+}
+.kindPick > :first-child {
+  flex: 1;
+}
+.kindSound {
+  color: var(--text-2);
+}
+.access {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+}
+.access > svg {
+  flex: none;
+  color: var(--warn);
+}
+.accessText {
+  flex: 1;
+  min-width: 0;
+}
+.accessTitle {
+  font-weight: 600;
+}
+.accessDetail {
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+.picker > [role='tablist'] {
+  align-self: flex-start;
+}
+.pickerFor {
+  font-weight: 500;
+}

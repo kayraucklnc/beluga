@@ -9,6 +9,7 @@ import { ReplayGuard } from './replay.js';
 import { People } from './people.js';
 import { RoomFiles } from './room-files.js';
 import { AgentHost } from './agent-host.js';
+import { StepBook } from './step-book.js';
 import { RemoteWork } from './remote-work.js';
 import { PeerRun } from './peer-run.js';
 import { ProjectInvites } from './project-invites.js';
@@ -48,8 +49,16 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
         selfId: () => session.selfId,
         toast: (text, level) => session.toast(text, level),
         intend: (intent) => session.intend(intent),
-        askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
-        findConversation: opts.findConversation ? (dir, o) => opts.findConversation!(dir, { id: session.selfId, name: session.store.getState().self?.name ?? 'you' }, o) : undefined,
+        askClaude: (prompt, channel, o) => session.askOwnClaude(prompt, channel, false, o?.echo ?? true),
+        compact: (channel, instructions) => session.compact(channel, instructions),
+        findConversation: opts.findConversation
+          ? async (dir, o) => {
+              const found = await opts.findConversation!(dir, { id: session.selfId, name: session.store.getState().self?.name ?? 'you' }, o);
+              // Its steps in detail stay beside the chat (opened from the Claude cards).
+              if (found?.steps) host.keepImported(found.sessionId, found.steps);
+              return found;
+            }
+          : undefined,
         ...(opts.otherTools ? { otherTools: opts.otherTools } : {}),
         onWorktreeCreated: (ws) => workbench?.onWorktreeCreated(ws),
         onWorkspaceGoing: (id) => workbench?.closeTerminals(id),
@@ -125,6 +134,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       canEditIn: (peerId, channel) => invites.canEditIn(peerId, channel),
       envFor: (channel, dir) => env.envFor(channel.startsWith('ws:') ? { workspaceId: channel.slice(3), dir } : { dir }),
       nameTask: (prompt) => session.nameTask(prompt),
+      steps: new StepBook(opts.stepsDir),
     });
     const remote = new RemoteWork({
       store: opts.store,

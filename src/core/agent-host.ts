@@ -9,6 +9,10 @@ import { type Store, peerName } from './store.js';
 import { reachOf, trustOf } from './trust.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { WorkspaceSharing } from './workspace-sharing.js';
+import { StepBook, importedKey, runKey } from './step-book.js';
+import { Compactor } from './compactor.js';
+import { isImportedItem } from '../agent/transcript.js';
+import type { StepPage, StepRecord } from '../shared/steps.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -30,6 +34,8 @@ export interface AgentHostDeps {
   readonly envFor?: (channel: string, dir?: string) => Record<string, string>;
   /** A short worktree name for a task (a small model names it). */
   readonly nameTask?: (prompt: string) => Promise<string>;
+  /** Where the details of Claude's steps are kept (default: in memory only). */
+  readonly steps?: StepBook;
 }
 
 /**
@@ -62,7 +68,9 @@ const MAX_QUEUED_PER_PERSON = 10;
 
 /** The queue for one conversation (the room, or a workspace). `askTo`: who gets Claude's questions. */
 interface Lane {
-  waiting: Array<{ from: string; body: BodyOf<'agent_request'>; urgent?: boolean; askTo?: string }>;
+  readonly channel: string;
+  /** `compact`: not a message but compacting the conversation (Compact now, /compact). */
+  waiting: Array<{ from: string; body: BodyOf<'agent_request'>; urgent?: boolean; askTo?: string; compact?: boolean }>;
   pumping: boolean;
   current?: AbortController;
   interruptedBy?: string;
@@ -107,7 +115,99 @@ export class AgentHost {
   /** Final agent events that could not be sent while disconnected. */
   private outbox: Array<{ body: BodyInput; opts: { to?: string; keep?: boolean } }> = [];
 
-  constructor(private readonly deps: AgentHostDeps) {}
+  /** Every step of your Claude's runs in detail, for the screens on this computer (see step-book.ts). */
+  readonly steps: StepBook;
+  /** Compacting conversations, by hand or when they're nearly full (see compactor.ts). */
+  private readonly compactor: Compactor;
+
+  constructor(private readonly deps: AgentHostDeps) {
+    this.steps = deps.steps ?? new StepBook();
+    this.compactor = new Compactor({
+      store: deps.store,
+      agent: () => this.agent,
+      place: (channel) => this.deps.workspaces?.place(channel),
+      emit: (requestId, kind, text, channel) => this.emitAgent(requestId, this.selfId, kind, text, channel),
+      requesterName: () => peerName(this.store.getState(), this.selfId),
+      modelFor: (place) => this.modelFor(place?.model),
+    });
+  }
+
+  /**
+   * Compact a conversation: Claude summarizes what matters and continues from there (the chat
+   * stays). Waits for Claude's current turn there to end first; once is enough when asked twice.
+   */
+  compact(channel: string, instructions = ''): void {
+    if (!this.agent) return this.toast('No Claude is running on this computer', 'warn');
+    const lane = this.lane(channel);
+    if (lane.waiting.some((w) => w.compact)) return;
+    const body: BodyOf<'agent_request'> = { kind: 'agent_request', requestId: `compact-${randomUUID()}`, prompt: instructions.slice(0, 2000), viaAgent: false, channel, urgent: false, plan: false };
+    lane.waiting.push({ from: this.selfId, body, compact: true });
+    if (lane.current) this.toast('Claude compacts this conversation when it finishes what it’s doing');
+    void this.pump(lane);
+  }
+
+  /** A conversation starts over (its chat was cleared fresh): forget how full it was. */
+  forgetContext(channel: string): void {
+    this.compactor.forget(channel);
+  }
+
+  /** Compact in the conversation's queue, as its current run (so a new message waits for it). */
+  private async runCompaction(lane: Lane, auto: boolean, instructions = ''): Promise<void> {
+    const controller = new AbortController();
+    lane.current = controller;
+    lane.runFrom = this.selfId;
+    try {
+      await this.compactor.run(lane.channel, auto ? 'auto' : 'manual', controller.signal, instructions);
+    } finally {
+      if (lane.current === controller) {
+        lane.current = undefined;
+        lane.runFrom = undefined;
+      }
+      lane.stopping = undefined;
+      lane.interruptedBy = undefined;
+      if (!lane.current) this.wakeIdle(lane.channel);
+    }
+  }
+
+  /** Nothing runs in this conversation any more: let whoever waited for that go on. */
+  private wakeIdle(channel: string): void {
+    const waiters = this.idleWaiters.get(channel) ?? [];
+    this.idleWaiters.delete(channel);
+    for (const resolve of waiters) resolve();
+  }
+
+  /**
+   * The steps of a Claude card in a conversation, light. Only for your own Claude's work (runs
+   * on this computer, or turns imported from your Claude Code transcripts): someone else's
+   * Claude keeps its details on their computer.
+   */
+  stepsFor(channel: string, itemId: string, after?: number): StepPage {
+    const key = this.stepKey(channel, itemId);
+    return key ? this.steps.page(key, after) : { steps: [], version: 0, missing: true };
+  }
+
+  /** One step of a Claude card, with its input, output or thinking. */
+  stepFor(channel: string, itemId: string, stepId: string): StepRecord | undefined {
+    const key = this.stepKey(channel, itemId);
+    return key ? this.steps.get(key, stepId) : undefined;
+  }
+
+  /** Keep the steps of turns imported from a Claude Code transcript (by session, then chat item). */
+  keepImported(sessionId: string, steps: Readonly<Record<string, readonly StepRecord[]>>): void {
+    for (const [itemId, records] of Object.entries(steps)) if (records.length) this.steps.putAll(importedKey(sessionId, itemId), records);
+  }
+
+  private stepKey(channel: string, itemId: string): string | undefined {
+    const log = this.store.getState().log;
+    const item = log.find((l) => l.id === itemId && l.channel === channel);
+    if (!item || item.type !== 'agent' || item.owner !== this.selfId) return undefined;
+    // A turn imported from Claude Code: the conversation's note says which transcript it came from.
+    if (isImportedItem(item.id)) {
+      const note = [...log].reverse().find((l) => l.channel === channel && l.id.startsWith('import-'));
+      if (note) return importedKey(note.id.slice('import-'.length), item.id);
+    }
+    return runKey(item.requestId);
+  }
 
   private get store(): Store {
     return this.deps.store;
@@ -169,7 +269,7 @@ export class AgentHost {
   private lane(channel: string): Lane {
     let lane = this.lanes.get(channel);
     if (!lane) {
-      lane = { waiting: [], pumping: false };
+      lane = { channel, waiting: [], pumping: false };
       this.lanes.set(channel, lane);
     }
     return lane;
@@ -223,7 +323,7 @@ export class AgentHost {
       const cancelled = lane.waiting;
       lane.waiting = [];
       lane.current?.abort();
-      for (const { from, body } of cancelled) this.emitAgent(body.requestId, from, 'error', 'Cancelled by owner', body.channel);
+      for (const { from, body, compact } of cancelled) if (!compact) this.emitAgent(body.requestId, from, 'error', 'Cancelled by owner', body.channel);
     }
     this.toast('Stopping your Claude everywhere (queued requests cancelled)', 'warn');
   }
@@ -246,15 +346,15 @@ export class AgentHost {
     for (const [id, at] of [...this.toolApprovals]) if (at === channel) this.answerApproval('no', id);
     this.deps.questions.cancelChannel(channel);
     lane.waiting = lane.waiting.filter((w) => w.from !== this.selfId);
-    for (const { from, body } of mine) this.emitAgent(body.requestId, from, 'error', 'Taken out of the queue when you stopped Claude', body.channel);
+    for (const { from, body, compact } of mine) if (!compact) this.emitAgent(body.requestId, from, 'error', 'Taken out of the queue when you stopped Claude', body.channel);
     if (lane.current) {
       lane.stopping = true;
       lane.current.abort();
     }
-    const n = mine.length;
+    const n = mine.filter((w) => !w.compact).length;
     const back = n ? ` · ${n} queued message${n === 1 ? '' : 's'} back in the box` : '';
     this.toast(`Stopped your Claude here${back}`, 'success');
-    return { stopped: true, returned: mine.map((w) => w.body.prompt) };
+    return { stopped: true, returned: mine.filter((w) => !w.compact).map((w) => w.body.prompt) };
   }
 
   /** Run one of your waiting requests now: it goes next and interrupts the current run. */
@@ -280,7 +380,7 @@ export class AgentHost {
    */
   reorderQueued(requestId: string, index: number): boolean {
     for (const lane of this.lanes.values()) {
-      const isMine = (w: Lane['waiting'][number]): boolean => w.from === this.selfId && !w.urgent;
+      const isMine = (w: Lane['waiting'][number]): boolean => w.from === this.selfId && !w.urgent && !w.compact;
       const mine = lane.waiting.filter(isMine);
       const from = mine.findIndex((w) => w.body.requestId === requestId);
       if (from < 0) continue;
@@ -388,7 +488,11 @@ export class AgentHost {
       viaAgent: body.viaAgent,
       context: this.recentChat(body.channel),
       onEvent: (kind, text) => emit(kind, text),
-      onDone: (final) => emit('done', final || '(done)'),
+      onStep: (record) => this.steps.put(runKey(body.requestId), record),
+      onDone: (final) => {
+        this.steps.flush(runKey(body.requestId));
+        emit('done', final || '(done)');
+      },
       onError: (reason) => emit('error', reason),
     });
     if (sent) emit('started');
@@ -399,11 +503,16 @@ export class AgentHost {
     if (lane.pumping) return;
     lane.pumping = true;
     try {
-      for (let next = lane.waiting.shift(); next; next = lane.waiting.shift()) {
+      // Nearly full (after the last run, or before the next message): compact first, between turns.
+      for (;;) {
+        const auto = this.compactor.due(lane.channel);
+        const next = auto ? undefined : lane.waiting.shift();
+        if (!auto && !next) break;
         while (this.running >= MAX_PARALLEL_RUNS) await new Promise((r) => setTimeout(r, 200));
         this.running++;
         try {
-          await this.runAgent(next.from, next.body, lane, next.askTo).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
+          if (!next || next.compact) await this.runCompaction(lane, auto, next?.body.prompt);
+          else await this.runAgent(next.from, next.body, lane, next.askTo).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
         } finally {
           this.running--;
         }
@@ -436,13 +545,13 @@ export class AgentHost {
     if (level === 'trusted' || level === 'full') return true;
     this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`, body.channel);
     const reach = reachOf(state, from) === 'full' ? 'whole computer' : 'shared folders; anything else asks you';
-    const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to run this (${reach})`, body.prompt, from);
+    const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to run this (${reach})`, body.prompt, from, body.channel);
     if (answer === 'always') this.deps.people.setTrust(from, 'trusted');
     return answer !== 'no';
   }
 
   /** Ask you to approve something; `peer` is who it's for (each person can have a few waiting at most). */
-  ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string, channel = 'room'): Promise<'yes' | 'no' | 'always'> {
+  ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string, channel = 'room', meta: { task?: string } = {}): Promise<'yes' | 'no' | 'always'> {
     if (this.approvals.size >= MAX_PENDING_APPROVALS) return Promise.resolve('no');
     if (peer && peer !== this.selfId && (this.approvalsBy.get(peer) ?? 0) >= MAX_APPROVALS_PER_PERSON) return Promise.resolve('no');
     if (peer) this.approvalsBy.set(peer, (this.approvalsBy.get(peer) ?? 0) + 1);
@@ -460,7 +569,7 @@ export class AgentHost {
         if (peer) this.approvalsBy.set(peer, Math.max(0, (this.approvalsBy.get(peer) ?? 1) - 1));
         resolve(answer);
       });
-      this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail, askedAt: Date.now(), timeoutMs: this.approvalTimeoutMs } });
+      this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail, askedAt: Date.now(), timeoutMs: this.approvalTimeoutMs, ...(peer && peer !== this.selfId ? { peer } : {}), ...(meta.task ? { task: meta.task } : {}), ...(channel.startsWith('ws:') ? { channel } : {}) } });
     });
   }
 
@@ -476,7 +585,7 @@ export class AgentHost {
     let markFinished: () => void = () => undefined;
     const finished = new Promise<void>((resolve) => (markFinished = resolve));
     // In a main folder, a change request carries the conversation into a new worktree.
-    const move = place?.askOnly && body.channel !== 'room' ? (task: string) => this.moveToWorktree(from, requesterName, body.channel, task, finished) : undefined;
+    const move = place?.askOnly && !place.syncMain && body.channel !== 'room' ? (task: string) => this.moveToWorktree(from, requesterName, body.channel, task, finished) : undefined;
     if (body.channel !== 'room' && !place) {
       this.emitAgent(body.requestId, from, 'error', 'That workspace is archived or missing.', body.channel);
       if (lane.current === controller) lane.current = undefined;
@@ -493,7 +602,11 @@ export class AgentHost {
         ...(place ? { place } : {}),
         scope: from === this.selfId ? 'full' : reachOf(this.store.getState(), from),
         signal: controller.signal,
-        onEvent: (kind, text) => this.emitAgent(body.requestId, from, kind, text, body.channel),
+        onEvent: (kind, text) => {
+          this.compactor.observe(body.channel, kind, text);
+          this.emitAgent(body.requestId, from, kind, text, body.channel);
+        },
+        onStep: (record) => this.steps.put(runKey(body.requestId), record),
         onFileTouched: (abs) => this.announceAgentFocus(abs),
         canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input, body.channel, place?.cwd),
         askUser: (question) => this.deps.questions.ask(askTo, body.requestId, body.channel, question),
@@ -507,6 +620,7 @@ export class AgentHost {
         ...this.modelFor(place?.model),
         // Your variables can hold secrets: only runs you asked for get them, never a friend's.
         ...(from === this.selfId && this.deps.envFor ? { env: this.deps.envFor(body.channel, place?.cwd) } : {}),
+        ...this.compactor.threshold(),
       });
       if (controller.signal.aborted) throw new Error('aborted');
       this.emitAgent(body.requestId, from, 'done', final || '(done)', body.channel);
@@ -525,11 +639,9 @@ export class AgentHost {
       lane.interruptedBy = undefined; // never carry an interrupt label into the next run
       lane.stopping = undefined;
       markFinished();
-      if (!lane.current) {
-        const waiters = this.idleWaiters.get(body.channel) ?? [];
-        this.idleWaiters.delete(body.channel);
-        for (const resolve of waiters) resolve();
-      }
+      this.compactor.ran(body.channel);
+      this.steps.flush(runKey(body.requestId));
+      if (!lane.current) this.wakeIdle(body.channel);
       void this.deps.refreshUsage();
       if (body.channel !== 'room') void this.deps.workspaces?.refresh();
     }

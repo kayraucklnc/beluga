@@ -1,9 +1,9 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { readJson, safeName, writeJson } from '../../net/mesh/files.js';
 import { KEEP_TASKS, type PeerCard, type TaskView, isFinal } from './model.js';
-import { type Frame, MAX_FILE_TOTAL, type ResultFile } from './protocol.js';
+import { type Frame, MAX_FILE_TOTAL, type ResultFile, TaskResult } from './protocol.js';
 
 /**
  * The gateway's files under ~/.klaud/tasks/ (readable only by you): tasks.json (your last
@@ -24,7 +24,7 @@ export interface Outgoing {
   readonly sentAt?: number;
 }
 
-const TasksFile = z.object({ version: z.literal(1), tasks: z.array(z.unknown()), cards: z.record(z.string(), z.unknown()).default({}) });
+const TasksFile = z.object({ version: z.literal(1), tasks: z.array(z.unknown()), cards: z.record(z.string(), z.unknown()).default({}), pending: z.record(z.string(), z.unknown()).default({}) });
 
 /** A task as saved: the same as its view (loose check: it's our own file). */
 const SavedTask = z
@@ -35,6 +35,8 @@ export class TaskBook {
   private tasks: readonly TaskView[] = [];
   private cards: Readonly<Record<string, PeerCard>> = {};
   private outbox: readonly Outgoing[] = [];
+  /** Results whose big files are still being fetched (kept, so a restart carries on). */
+  private pendingResults: Readonly<Record<string, TaskResult>> = {};
 
   constructor(private readonly dir: string | null) {
     if (!dir) return;
@@ -42,6 +44,12 @@ export class TaskBook {
     if (parsed.success) {
       this.tasks = parsed.data.tasks.flatMap((raw) => (SavedTask.safeParse(raw).success ? [raw as TaskView] : []));
       this.cards = parsed.data.cards as Record<string, PeerCard>;
+      this.pendingResults = Object.fromEntries(
+        Object.entries(parsed.data.pending).flatMap(([id, raw]) => {
+          const r = TaskResult.safeParse(raw);
+          return r.success ? [[id, r.data]] : [];
+        }),
+      );
     }
     const out = readJson(path.join(dir, 'outbox.json'));
     this.outbox = (Array.isArray(out) ? out : []).filter((o): o is Outgoing => typeof o === 'object' && o !== null && typeof (o as Outgoing).to === 'string' && typeof (o as Outgoing).frame?.f === 'string');
@@ -63,6 +71,15 @@ export class TaskBook {
     this.save();
     return task;
   }
+
+  /** A result waiting for its files (or undefined to drop it). */
+  setPending(taskId: string, result: TaskResult | undefined): void {
+    const { [taskId]: _old, ...rest } = this.pendingResults;
+    this.pendingResults = result ? { ...rest, [taskId]: result } : rest;
+    this.save();
+  }
+
+  pending = (): Readonly<Record<string, TaskResult>> => this.pendingResults;
 
   putCard(peerId: string, card: PeerCard): void {
     this.cards = { ...this.cards, [peerId]: card };
@@ -114,26 +131,40 @@ export class TaskBook {
     return dir;
   }
 
+  /** A new path for a file of this task (a safe name, nothing there yet). */
+  claimPath(taskId: string, raw: string, base: string): string {
+    const dir = path.join(this.dir ?? base, 'files', safeName(taskId));
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const name = fileName(raw);
+    for (let i = 1; ; i++) {
+      const dot = name.lastIndexOf('.');
+      const candidate = i === 1 ? name : dot > 0 ? `${name.slice(0, dot)} ${i}${name.slice(dot)}` : `${name} ${i}`;
+      const target = path.join(dir, candidate);
+      if (!existsSync(target) && !existsSync(`${target}.part`)) return target;
+    }
+  }
+
   /** Save the files a result brought (names made safe, at most MAX_FILE_TOTAL bytes). */
-  saveFiles(taskId: string, files: readonly ResultFile[], base: string): Array<{ name: string; size: number; path?: string }> {
+  saveFiles(taskId: string, files: readonly ResultFile[], base: string): Array<{ name: string; size: number; path?: string; image?: boolean }> {
     const dir = path.join(this.dir ?? base, 'files', safeName(taskId));
     let budget = MAX_FILE_TOTAL;
     const used = new Set<string>();
     return files.map((f) => {
       const name = uniqueName(fileName(f.name), used);
-      if (!f.b64) return { name, size: f.size };
+      const image = f.image ? { image: true } : {};
+      if (!f.b64) return { name, size: f.size, ...image };
       const bytes = Buffer.from(f.b64, 'base64');
-      if (bytes.length > budget) return { name, size: f.size };
+      if (bytes.length > budget) return { name, size: f.size, ...image };
       budget -= bytes.length;
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       const target = path.join(dir, name);
       writeFileSync(target, bytes, { mode: 0o600 });
-      return { name, size: bytes.length, path: target };
+      return { name, size: bytes.length, path: target, ...image };
     });
   }
 
   private save(): void {
-    if (this.dir) writeJson(path.join(this.dir, 'tasks.json'), { version: 1, tasks: this.tasks, cards: this.cards });
+    if (this.dir) writeJson(path.join(this.dir, 'tasks.json'), { version: 1, tasks: this.tasks, cards: this.cards, pending: this.pendingResults });
   }
 
   private saveOutbox(next: readonly Outgoing[]): void {

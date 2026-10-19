@@ -54,7 +54,7 @@ const GIT_READ = new Set([
 const BRANCH_LIST = /^(-a|-r|-l|-v|-vv|--all|--remotes|--list|--verbose|--show-current|--no-color|--color(=.*)?|--sort=.*|--format=.*|--contains|--no-contains|--merged|--no-merged|--points-at|--column|--no-column|--abbrev=.*)$/;
 
 /** Split a command line into its simple commands (on |, ||, &&, ;, & and newlines), keeping quotes intact. */
-function segments(command: string): string[] | undefined {
+export function segments(command: string): string[] | undefined {
   const out: string[] = [];
   let cur = '';
   let quote: '"' | "'" | undefined;
@@ -67,6 +67,11 @@ function segments(command: string): string[] | undefined {
         continue;
       }
       cur += ch;
+      continue;
+    }
+    // Outside quotes a backslash makes the next character plain (\' is not a quote, \; not a separator).
+    if (ch === '\\') {
+      cur += ch + (command[++i] ?? '');
       continue;
     }
     if (ch === '"' || ch === "'") {
@@ -87,12 +92,12 @@ function segments(command: string): string[] | undefined {
 }
 
 /** The words of one simple command (quotes removed). */
-function words(segment: string): string[] {
+export function words(segment: string): string[] {
   return (segment.match(/'[^']*'|"(?:\\.|[^"\\])*"|[^\s]+/g) ?? []).map((w) => w.replace(/^'(.*)'$/s, '$1').replace(/^"(.*)"$/s, '$1'));
 }
 
 /** Output redirection that only goes to the terminal or nowhere (2>&1, >/dev/null). */
-const HARMLESS_REDIRECT = /\d?>&\d|\d?>\s*\/dev\/null/g;
+export const HARMLESS_REDIRECT = /\d?>&\d|\d?>\s*\/dev\/null/g;
 
 function gitReads(args: readonly string[]): boolean {
   let i = 0;
@@ -134,11 +139,19 @@ function npmReads(args: readonly string[]): boolean {
   return ['ls', 'list', 'view', 'info', 'outdated', 'why', 'explain', '--version', '-v'].includes(args[0] ?? '');
 }
 
+/**
+ * Environment settings a read-only command may lead with (they only change how it prints). Others
+ * can run programs (GIT_EXTERNAL_DIFF, GIT_SSH_COMMAND, PATH…), and a bare `PATH=…` would last
+ * for the commands after it.
+ */
+const SAFE_ENV = /^(GIT_PAGER|PAGER|LESS|LANG|LC_ALL|LC_CTYPE|TERM|NO_COLOR|COLUMNS|TZ)=[\w.:/=-]*$/;
+
 function simpleReads(segment: string): boolean {
   const all = words(segment);
-  // Leading VAR=value assignments only change this one command's environment.
   const start = all.findIndex((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
-  if (start < 0) return true;
+  // A bare assignment changes the shell for what follows: not a read.
+  if (start < 0) return false;
+  if (!all.slice(0, start).every((w) => SAFE_ENV.test(w))) return false;
   const [program, ...args] = all.slice(start);
   if (!program) return true;
   if (program === 'git') return gitReads(args);

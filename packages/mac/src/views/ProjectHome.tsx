@@ -4,6 +4,7 @@ import type { Project, Workspace } from '@klaud/workspaces/types.js';
 import { EarningsPill } from '../components/EarningsPill.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
+import { Select } from '../components/Select.js';
 import { Button, Dot, Empty, Segmented, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
@@ -11,6 +12,12 @@ import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { type OverviewFilter, readOverviewPrefs } from './overview/overview-model.js';
 import { type HomeModel, agoText, homeModel, lastActive } from './project/home-model.js';
+import { branchOptions } from '../chat/WorktreeDraft.js';
+import { HomeHistory } from './history/HomeHistory.js';
+import { GitHubRow } from './project/GitHubRow.js';
+import { MainSyncBar } from './project/MainSyncBar.js';
+import { outsideOf } from '../layout/outside-model.js';
+import { openSheet } from '../lib/sheets.js';
 import d from '../chat/draft.module.css';
 import s from './project-home.module.css';
 
@@ -55,7 +62,8 @@ function useOpenOverview(): (projectId: string, filter: OverviewFilter) => void 
 function Header({ model }: { model: HomeModel }) {
   const { project, main, mainLine, stats } = model;
   const overview = useOpenOverview();
-  const branch = main?.status?.branch ?? main?.branch;
+  // The default branch (main or master), even when the main folder has another one checked out.
+  const branch = mainLine.branch ?? main?.status?.branch ?? main?.branch;
   return (
     <header className={s.header}>
       <ProjectIcon id={project.id} name={project.name} size={44} />
@@ -76,6 +84,7 @@ function Header({ model }: { model: HomeModel }) {
           </Tip>
           {mainLine.dirty ? <span className={cx(s.sync, s.tone_warn)}>{mainLine.dirty}</span> : null}
         </div>
+        <MainSyncBar project={project} line={mainLine} />
       <div className={s.stats} role="group" aria-label="At a glance">
         <span className={s.stat}>
           <strong>{stats.active}</strong> active
@@ -87,6 +96,7 @@ function Header({ model }: { model: HomeModel }) {
           <strong>{stats.archived}</strong> archived
         </button>
         <EarningsPill root={project.root} projectId={project.id} />
+        <GitHubRow projectId={project.id} />
       </div>
       </div>
     </header>
@@ -213,14 +223,7 @@ function HomeComposer({ project }: { project: Project }) {
               <label className={d.field}>
                 <span className={d.fieldLabel}>Based on</span>
                 <Tip label="The branch the new one starts from (origin branches are fetched first, so it's the latest)">
-                  <select className={d.select} aria-label="Based on" value={chosen} onChange={(e) => setBase(e.target.value)}>
-                    {options.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                        {b === branches?.base ? ' (default)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <Select className={d.select} size="small" mono label="Based on" value={chosen} onChange={setBase} options={branchOptions(options, branches?.base)} searchPlaceholder="Find a branch" />
                 </Tip>
               </label>
               <label className={d.field}>
@@ -253,7 +256,18 @@ function Lists({ model }: { model: HomeModel }) {
   const { project, worktrees, asks, archived } = model;
   return (
     <div className={s.lists}>
-      <Section title="Worktrees" count={worktrees.length}>
+      <Section
+        title="Worktrees"
+        count={worktrees.length}
+        action={
+          // Worktrees made outside Klaud that can go (any tool's), ticked in one list.
+          outsideOf(project).length ? (
+            <Button size="small" variant="quiet" icon="archive" onClick={() => openSheet({ kind: 'clean_up_worktrees', projectId: project.id })}>
+              Clean Up Worktrees…
+            </Button>
+          ) : null
+        }
+      >
         {worktrees.length ? worktrees.map((w) => <Row key={w.id} ws={w} />) : <p className={s.none}>No worktrees yet. Describe a task above and Claude starts one from the latest origin.</p>}
       </Section>
       {asks.length ? (
@@ -263,6 +277,7 @@ function Lists({ model }: { model: HomeModel }) {
           ))}
         </Section>
       ) : null}
+      <HomeHistory projectId={project.id} />
       {archived.length ? (
         <Section
           title="Recently Archived"

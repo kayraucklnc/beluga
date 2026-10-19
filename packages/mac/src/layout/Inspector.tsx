@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { findWorkspace, stateOf } from '@klaud/ui/workspace-models.js';
 import { formatTokens } from '@klaud/ui/work-models.js';
 import { formatBytes } from '@klaud/shared/format.js';
+import { contextPct, contextTone, formatTokenCount } from '@klaud/shared/context-usage.js';
 import { unreadCount } from '@klaud/core/work-store.js';
 import { noticeAgo, noticeLook } from '@klaud/ui/notice-models.js';
 import { Icon } from '../components/Icon.js';
@@ -117,12 +118,13 @@ function WorkspaceDetails({ id }: { id: string }) {
             {ws.status.changed} uncommitted · {ws.status.ahead} ahead{ws.status.behind ? ` · ${ws.status.behind} behind` : ''}
           </Field>
         ) : null}
-        {ctx ? (
+        {ctx && state.prefs.contextMeter ? (
           <Field label="Context">
-            <span className={s.meter}>
-              <span style={{ width: `${Math.min(100, (ctx.used / ctx.window) * 100)}%` }} />
+            {/* The same numbers and colours as the meter in the box you type in. */}
+            <span className={s.meter} data-tone={contextTone(contextPct(ctx))} title={`${formatTokenCount(ctx.used)} of ${formatTokenCount(ctx.window)} tokens`}>
+              <span style={{ width: `${contextPct(ctx)}%` }} />
             </span>
-            {Math.round((ctx.used / ctx.window) * 100)}%
+            {ctx.compacting ? 'Compacting…' : `${contextPct(ctx)}% · ${formatTokenCount(ctx.used)} of ${formatTokenCount(ctx.window)}`}
           </Field>
         ) : null}
         {tokens ? <Field label="Claude">{`${formatTokens(tokens)} tokens${ws.usage?.cost ? ` · $${ws.usage.cost.toFixed(2)}` : ''}`}</Field> : null}

@@ -10,11 +10,13 @@ import { revealInFinder } from '../lib/files.js';
 import { type SettingsPane, useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { ACCENTS, type Accent, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EnvironmentSettings } from './EnvironmentSettings.js';
+import { ContextSettings } from './ContextSettings.js';
 import { NotificationSettings } from './NotificationSettings.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 import { TerminalSettings } from './TerminalSettings.js';
 import { NetworkSettings } from '../network/NetworkSettings.js';
+import { AccessSettings } from '../gateway/AccessSettings.js';
 import { UpdateAboutRow, UpdateSettingsGroup } from './UpdateSettings.js';
 
 const PANES: ReadonlyArray<{ id: SettingsPane; label: string; icon: IconName }> = [
@@ -144,6 +146,9 @@ function Appearance() {
             ]}
           />
         </Row>
+        <Row label="Unread in the sidebar" detail="Conversations that finished or need you, listed at the top while there are any.">
+          <Switch label="Unread in the sidebar" on={prefs.unreadSection} onChange={(v) => setPrefs({ unreadSection: v })} />
+        </Row>
         <Row label="Sidebar width">
           <input className={s.slider} type="range" min={200} max={360} step={4} value={prefs.sidebarWidth} onChange={(e) => setPrefs({ sidebarWidth: Number(e.target.value) })} />
         </Row>
@@ -186,10 +191,8 @@ function ClaudePane() {
             ]}
           />
         </Row>
-        <Row label="Context meter" detail="How full each conversation is, next to its name.">
-          <Switch label="Context meter" on={p.contextMeter} onChange={(v) => void api.session.setPrefs({ contextMeter: v })} />
-        </Row>
       </Group>
+      <ContextSettings />
       <Group title="Pull requests and templates">
         <Row label="Pull request instructions" detail={state.prCustom ? 'Customized' : 'Built-in'}>
           <Button onClick={() => void api.workbench.editPrPrompt()}>Edit…</Button>
@@ -263,12 +266,13 @@ function People() {
   return (
     <>
       <NetworkSettings />
+      <AccessSettings />
       <Group title="In the room">
         {others.length ? (
           others.map((p) => (
             <Row key={p.peerId} label={p.name} detail={TRUST_INFO[trustOf(state, p.peerId)].detail}>
               <Avatar name={p.name} id={p.peerId} size={20} />
-              <Select<TrustLevel> label={`Trust ${p.name}`} value={trustOf(state, p.peerId)} onChange={(v) => void api.people.setTrust(p.peerId, v)} options={TRUST_LEVELS.map((l) => ({ value: l, label: TRUST_INFO[l].label }))} />
+              <Select<TrustLevel> label={`Trust ${p.name}`} value={trustOf(state, p.peerId)} onChange={(v) => void api.people.setTrust(p.peerId, v)} options={TRUST_LEVELS.map((l) => ({ value: l, label: TRUST_INFO[l].label, description: TRUST_INFO[l].detail }))} />
             </Row>
           ))
         ) : (
@@ -314,9 +318,9 @@ function About() {
   const logPath = `${home}/.klaud/logs/daemon.log`;
   return (
     <Group>
-      <Row label="klaud for Mac">{APP_VERSION}</Row>
+      <Row label="Klaud for Mac">{APP_VERSION}</Row>
       <UpdateAboutRow />
-      <Row label="klaud (the part that runs your room)">{client.daemonVersion}</Row>
+      <Row label="Klaud (the part that runs your room)">{client.daemonVersion}</Row>
       <Row label="Windows attached" detail="The terminal app and this one share the same room.">
         {client.clients}
       </Row>

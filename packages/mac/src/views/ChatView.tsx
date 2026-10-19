@@ -83,7 +83,7 @@ export function ChatView() {
     ) : ws?.askOnly ? (
       <Empty icon="eye" title={`Ask about ${projectName ?? 'this project'}`} detail="Claude reads the main folder and answers; it won’t change anything here. Ask for a change and it continues in a new worktree." action={<Starters />} />
     ) : view.kind === 'draft_worktree' ? (
-      <Empty icon="branch" title="A new worktree" detail="Describe the task below. klaud makes a branch and a folder for it from the branch you pick, and Claude starts right away." />
+      <Empty icon="branch" title="A new worktree" detail="Describe the task below. Klaud makes a branch and a folder for it from the branch you pick, and Claude starts right away." />
     ) : view.kind === 'room' ? (
       <Empty icon="claude" title={solo ? 'Talk to your Claude' : 'Say hi to the room'} detail={solo ? 'Ask anything here, or give Claude a task in a worktree of its own.' : 'Everyone here sees this chat. Mention @claude to ask your Claude.'} action={<Starters />} />
     ) : (

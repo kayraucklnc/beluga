@@ -4,6 +4,7 @@ import { pickFolders } from '../lib/projects.js';
 import { copyText } from '../lib/copy.js';
 import { inApp } from '../lib/boot.js';
 import { Icon, type IconName } from './Icon.js';
+import { Select, type SelectEntry } from './Select.js';
 import { cx } from './ui.js';
 import s from './form.module.css';
 
@@ -62,7 +63,7 @@ export function FormSheet({ title, intro, icon, submitLabel, onSubmit, onCancel,
           onOpenAutoFocus={(e) => {
             // The first field gets the focus (not the close button).
             const root = e.currentTarget as HTMLElement | null;
-            const first = root?.querySelector<HTMLElement>('[data-autofocus]') ?? root?.querySelector<HTMLElement>('input:not([type=checkbox]), textarea, select');
+            const first = root?.querySelector<HTMLElement>('[data-autofocus]') ?? root?.querySelector<HTMLElement>('input:not([type=checkbox]), textarea, [data-select-trigger]');
             if (first) {
               e.preventDefault();
               first.focus();
@@ -149,17 +150,9 @@ export function TextArea({ value, onChange, mono, className, rows = 4, ...rest }
   return <textarea {...rest} rows={rows} className={cx(s.input, s.area, mono && s.mono, className)} value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
-/** A pop-up button (NSPopUpButton). */
-export function Popup<T extends string>({ value, options, onChange, label, id }: { value: T; options: ReadonlyArray<{ value: T; label: string }>; onChange: (v: T) => void; label?: string; id?: string }) {
-  return (
-    <select id={id} className={s.popup} value={value} aria-label={label} onChange={(e) => onChange(e.target.value as T)}>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
+/** A pop-up button (NSPopUpButton): Klaud's own Select, at least as wide as a field's start. */
+export function Popup<T extends string>({ value, options, onChange, label, id }: { value: T; options: ReadonlyArray<SelectEntry<T>>; onChange: (v: T) => void; label?: string; id?: string }) {
+  return <Select id={id} className={s.popup} value={value} options={options} label={label ?? ''} onChange={onChange} />;
 }
 
 /** A folder path you can type, or choose with the Open panel. */

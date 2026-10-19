@@ -71,7 +71,7 @@ const isAgent = (w: Workspace): boolean => !w.archived && worktreeOrigin(w) === 
 /** Folders that are space you could get back: worktrees and stand-alone chat folders. */
 const counted = (w: Workspace): boolean => w.kind === 'worktree' || (w.kind === 'chat' && !w.projectRoot);
 
-function slotOf(projects: readonly Project[], p: Project): ColorSlot {
+export function slotOf(projects: readonly Project[], p: Project): ColorSlot {
   if (!p.root) return 'chats';
   const i = projects.filter((x) => x.root).indexOf(p);
   return i >= 0 && i < COLOR_SLOTS ? i + 1 : 'other';

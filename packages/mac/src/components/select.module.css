@@ -1,0 +1,272 @@
+/* Klaud's pop-up button and its menu (components/Select.tsx). A quiet Mac pop-up: raised, a
+   hairline, the value, grey up-and-down chevrons; the menu matches SpecMenu's. */
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 7px 0 9px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.06);
+  color: var(--text);
+  font-size: 0.95rem;
+  text-align: left;
+  white-space: nowrap;
+  transition: background var(--dur-fast), box-shadow var(--dur-fast);
+}
+:global([data-theme='dark']) .trigger {
+  background: color-mix(in srgb, var(--bg-raised) 82%, white);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.3);
+}
+.trigger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-raised) 94%, var(--text));
+}
+:global([data-theme='dark']) .trigger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-raised) 76%, white);
+}
+.trigger[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--bg-raised) 90%, var(--text));
+}
+.trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.trigger:disabled {
+  opacity: 0.45;
+}
+.small {
+  height: 22px;
+  gap: 5px;
+  padding: 0 6px 0 8px;
+  font-size: 0.88rem;
+}
+.full {
+  display: flex;
+  width: 100%;
+}
+.full .value {
+  flex: 1;
+}
+.mono .valueText,
+.mono .ghost::after,
+.mono .optionLabel {
+  font-family: var(--font-mono);
+  font-size: 0.93em;
+}
+.placeholder .valueText {
+  color: var(--text-3);
+}
+
+/* The value: every short option's label stacked in one cell, so the button is as wide as the longest. */
+.value {
+  display: grid;
+  min-width: 0;
+}
+.ghost,
+.valueText {
+  grid-area: 1 / 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ghost {
+  visibility: hidden;
+  pointer-events: none;
+}
+.ghost::after {
+  content: attr(data-ghost);
+}
+.triggerIcon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  color: var(--text-2);
+}
+.chevrons {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-3);
+}
+.trigger:hover:not(:disabled) .chevrons,
+.trigger[aria-expanded='true'] .chevrons {
+  color: var(--text-2);
+}
+
+/* ---- the menu */
+
+.menu {
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  min-width: max(150px, calc(var(--radix-popover-trigger-width) + 24px));
+  max-width: min(400px, calc(100vw - 16px));
+  padding: 5px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: var(--shadow-pop);
+  color: var(--text);
+  font-size: 0.95rem;
+  outline: none;
+  transform-origin: var(--radix-popover-content-transform-origin);
+  animation: appear var(--dur-fast) var(--ease-out);
+}
+/* Measured before it shows: its whole height, out of sight. */
+.menu:not([data-placed]) {
+  visibility: hidden;
+}
+.menu[data-mode='below'] {
+  max-height: min(var(--radix-popover-content-available-height, 60vh), 420px);
+}
+.menuSmall {
+  font-size: 0.9rem;
+}
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    animation: none;
+  }
+}
+:global(:root[data-motion='reduce']) .menu {
+  animation: none;
+}
+
+.searchRow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 5px;
+  padding: 0 8px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--bg-press);
+  color: var(--text-3);
+}
+.searchRow:focus-within {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.search {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+  user-select: text;
+}
+.search::placeholder {
+  color: var(--text-3);
+}
+
+.list {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 2px 10px 2px 4px;
+  border-radius: 5px;
+  cursor: default;
+  scroll-margin: 4px;
+}
+.menuSmall .option {
+  min-height: 20px;
+}
+.twoLine {
+  align-items: flex-start;
+  padding-top: 4px;
+  padding-bottom: 5px;
+}
+.option[data-active] {
+  background: var(--accent);
+  color: white;
+}
+.option[aria-disabled='true'] {
+  opacity: 0.4;
+}
+.check {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 18px;
+}
+.twoLine .check,
+.twoLine .optionIcon {
+  height: 18px;
+}
+.optionIcon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  min-width: 16px;
+  color: var(--text-2);
+}
+.option[data-active] .optionIcon {
+  color: rgba(255, 255, 255, 0.9);
+}
+.optionText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.optionLabel {
+  overflow: hidden;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.optionDescription {
+  max-width: 320px;
+  color: var(--text-3);
+  font-size: 0.88em;
+  line-height: 1.3;
+  white-space: normal;
+}
+.option[data-active] .optionDescription {
+  color: rgba(255, 255, 255, 0.8);
+}
+.badge {
+  flex: none;
+  margin-left: 10px;
+  color: var(--text-3);
+  font-size: 0.86em;
+}
+.option[data-active] .badge {
+  color: rgba(255, 255, 255, 0.8);
+}
+.header {
+  padding: 5px 10px 2px 24px;
+  color: var(--text-3);
+  font-size: 0.82em;
+  font-weight: 600;
+}
+.separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--hairline);
+}
+.empty {
+  padding: 6px 10px 6px 24px;
+  color: var(--text-3);
+}

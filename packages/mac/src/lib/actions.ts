@@ -14,6 +14,7 @@ import { openExternal } from './system.js';
 import { asksFirst, routeOption, routeTyped } from './native-routes.js';
 import { newGroupFor } from './group-edit.js';
 import { openSheet } from './sheets.js';
+import { askBeforeWork, asksBeforeWork } from './work-confirm.js';
 
 export interface Actions {
   /** Do what a clicked row, button or card means (the same actions as the terminal UI). */
@@ -118,6 +119,8 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
       // Things a window does its own way (the terminal UI types a command for them).
       if (action.type === 'add_project') return ui.patch({ addProject: true });
       if (action.type === 'ws' && action.action === 'fork') return openSheet({ kind: 'fork', wsId: action.id });
+      // Starting Claude or changing git says what it will do first, however it was asked for.
+      if (action.type === 'ws' && asksBeforeWork(action.action)) return askBeforeWork(action.id, action.action);
       runUiActionWith(uiCtx, action);
     },
     pick: (menu, index, confirmed = false) => {

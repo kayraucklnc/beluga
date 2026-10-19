@@ -1,6 +1,7 @@
 import { mkdtempSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DEFAULT_CAPABILITIES, type Rule, decideAccess, ruleFor } from '../src/core/gateway/access.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { decideTool } from '../src/agent/policy.js';
 import { peerRunTarget } from '../src/agent/mock.js';
@@ -209,6 +210,32 @@ describe('running a command on a friend', () => {
     expect(await second).toContain('two');
     expect(await kay.session.runOnPeer('bob', 'echo three')).toContain('three');
     expect(bob.state().approvals).toHaveLength(0);
+  });
+
+  it('with the app’s rules attached, Always writes a rule for that command there (not every command), and a decline rule holds', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const bob = peer('bob');
+    await room(kay, bob);
+    let rules: Rule[] = [];
+    bob.session.peerRun.useAccess({
+      decide: (facts, trust) => decideAccess({ trust, caps: DEFAULT_CAPABILITIES, rules, facts, now: Date.now() }),
+      remember: (facts, name, d) => void (rules = [...rules, ruleFor(facts, name, d, Date.now(), `r_test${rules.length}xyz`)]),
+    });
+    const first = kay.session.runOnPeer('bob', 'echo one');
+    await waitFor(() => bob.state().approvals.length === 1);
+    expect(bob.state().approvals[0]!.detail).toContain('Always = run this command from kay in this folder');
+    bob.session.answerApproval('always');
+    expect(await first).toContain('one');
+    expect(rules).toEqual([expect.objectContaining({ kind: 'command', command: 'echo one', folder: bob.root, decision: 'allow' })]);
+    expect(await kay.session.runOnPeer('bob', 'echo one')).toContain('one');
+    expect(bob.state().approvals).toHaveLength(0);
+    const other = kay.session.runOnPeer('bob', 'echo two');
+    await waitFor(() => bob.state().approvals.length === 1);
+    bob.session.answerApproval('no');
+    expect(await other).toContain('declined');
+    rules = [...rules, { ...rules[0]!, id: 'r_declineall', command: undefined, decision: 'decline' }];
+    expect(await kay.session.runOnPeer('bob', 'echo one')).toBe('bob did not run it: bob has a rule that declines requests like this one');
   });
 
   it('runs right away with full trust, in their home folder by default', async () => {

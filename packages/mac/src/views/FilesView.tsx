@@ -1,20 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { BrowserRow, ViewerState } from '@klaud/core/store.js';
 import { shareNameOf } from '@klaud/shared/share-names.js';
 import { formatBytes } from '@klaud/shared/format.js';
-import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { useApi, useApp, useKlaud } from '../lib/klaud.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { useActions } from '../lib/actions.js';
 import { copyText } from '../lib/copy.js';
-import { localPathOf, mentionOf, revealInFinder, saveFile } from '../lib/files.js';
+import { localPathOf, mentionOf, openWithDefaultApp, revealInFinder, saveFile } from '../lib/files.js';
+import { SCROLL_ROOT } from '../components/markdown/md-dom.js';
+import { type ReaderMode, initialMode, isMarkdownFile } from './reader/reader-model.js';
 import { SearchField, SearchResults } from './SharedSearch.js';
 import s from './files.module.css';
 
-export const ext = (p: string): string => /\.([\w-]+)$/.exec(p)?.[1]?.toLowerCase() ?? '';
-export const LANG: Record<string, string> = { ts: 'ts', tsx: 'tsx', js: 'js', jsx: 'jsx', mjs: 'js', json: 'json', sh: 'bash', py: 'python', go: 'go', rs: 'rust', css: 'css', html: 'html', yml: 'yaml', yaml: 'yaml', sql: 'sql', swift: 'swift', java: 'java', kt: 'kotlin', c: 'c', h: 'c', cpp: 'cpp', rb: 'ruby', toml: 'toml' };
+export { LANG, ext } from './reader/reader-model.js';
+
+/** The reader comes in its own chunk, the first time a file is opened. */
+const FileContent = lazy(() => import('./reader/FileReader.js').then((m) => ({ default: m.FileContent })));
 
 /** A decoded image (RGBA pixels) drawn at its size, scaled down to fit. */
 export function Bitmap({ image }: { image: NonNullable<ViewerState['image']> }) {
@@ -30,13 +33,19 @@ export function Bitmap({ image }: { image: NonNullable<ViewerState['image']> }) 
   return <canvas ref={ref} className={s.image} />;
 }
 
+/** The open file beside the folder list (a friend's, or yours), read the way the reader reads it. */
 export function Viewer({ viewer }: { viewer: ViewerState }) {
   const api = useApi();
   const { client } = useKlaud();
-  const [raw, setRaw] = useState(false);
+  const [mode, setMode] = useState<ReaderMode>(() => initialMode(viewer));
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setMode(initialMode(viewer));
+    body.current?.scrollTo({ top: 0 });
+  }, [viewer.path]);
   const name = viewer.path.split('/').pop() || viewer.path;
-  const markdown = ext(viewer.path) === 'md' || ext(viewer.path) === 'markdown';
-  const lang = LANG[ext(viewer.path)];
+  const markdown = isMarkdownFile(viewer.path) && !viewer.image;
+  const local = useApp((st) => localPathOf(st, viewer));
   return (
     <section className={s.viewer} aria-label={name}>
       <div className={s.viewerHead}>
@@ -47,46 +56,24 @@ export function Viewer({ viewer }: { viewer: ViewerState }) {
         {markdown ? (
           <Segmented
             label="Show as"
-            value={raw ? 'raw' : 'rendered'}
-            onChange={(v) => setRaw(v === 'raw')}
+            value={mode}
+            onChange={setMode}
             options={[
               { value: 'rendered', label: 'Preview' },
-              { value: 'raw', label: 'Source' },
+              { value: 'source', label: 'Source' },
             ]}
           />
         ) : null}
         <IconButton icon="download" label="Save a copy…" onClick={() => void saveFile(client, viewer)} />
         <IconButton icon="x" label="Close" onClick={() => void api.files.closeViewer()} />
       </div>
-      <div className={s.viewerBody}>
-        {viewer.loading && !viewer.content && !viewer.image ? (
-          <div className={s.loading}>Opening…</div>
-        ) : viewer.error ? (
-          <Empty icon="alert" title="Can't open this file" detail={viewer.error} />
-        ) : viewer.image ? (
-          <div className={s.imageWrap}>
-            <Bitmap image={viewer.image} />
-          </div>
-        ) : markdown && !raw ? (
-          <div className={s.doc}>
-            <Markdown text={viewer.content} />
-          </div>
-        ) : (
-          <div className={s.codeWrap}>
-            <Markdown text={fenced(viewer.content, lang)} />
-          </div>
-        )}
-        {viewer.truncated ? <div className={s.truncated}>Only the beginning is shown. Download it for the rest.</div> : null}
+      <div ref={body} className={cx(s.viewerBody, 'selectable')} tabIndex={0} {...{ [SCROLL_ROOT]: '' }}>
+        <Suspense fallback={<div className={s.loading}>Opening…</div>}>
+          <FileContent viewer={viewer} variant="page" mode={mode} onMode={setMode} wrap={false} onOpenInEditor={local ? () => void openWithDefaultApp(client, local) : undefined} onSaveCopy={() => void saveFile(client, viewer)} />
+        </Suspense>
       </div>
     </section>
   );
-}
-
-/** A file as one code block: the fence is longer than any run of backticks in it, so it can't end early. */
-export function fenced(content: string, lang: string | undefined): string {
-  const longest = Math.max(0, ...[...content.matchAll(/`+/g)].map((m) => m[0].length));
-  const fence = '`'.repeat(Math.max(3, longest + 1));
-  return `${fence}${lang ?? 'text'}\n${content}\n${fence}`;
 }
 
 /** Right-click on a file or folder: open it, find it in Finder, copy its path, mention it, save it. */

@@ -91,7 +91,7 @@ export function PullRequestSheet({ menu, close }: NativeMenuProps<'pr'>) {
       toast(client, 'GitHub is connected', 'success');
     };
     return (
-      <FormSheet title="Connect GitHub" icon="pr" intro="klaud opens pull requests with GitHub’s command-line tool. Set it up once, in Terminal:" submitLabel={checking ? 'Checking…' : 'Check Again'} canSubmit={!checking} onSubmit={check} onCancel={close}>
+      <FormSheet title="Connect GitHub" icon="pr" intro="Klaud opens pull requests with GitHub’s command-line tool. Set it up once, in Terminal:" submitLabel={checking ? 'Checking…' : 'Check Again'} canSubmit={!checking} onSubmit={check} onCancel={close}>
         <div className={s.ghSteps}>
           <div className={s.ghStep}>
             <div className={s.ghStepTitle}>

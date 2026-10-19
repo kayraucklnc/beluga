@@ -1,0 +1,45 @@
+/* The message you sent, on its way from the box to the chat (see flight.ts). */
+
+/* The real row waits, invisible, while its copy flies in. */
+.waiting {
+  opacity: 0;
+}
+
+.flight {
+  position: fixed;
+  margin: 0;
+  z-index: 50;
+  pointer-events: none;
+  transform-origin: 0 100%;
+  will-change: transform, opacity;
+  box-sizing: border-box;
+}
+
+/* The copy's words, drawn (not text the page has twice). */
+.drawn::before {
+  content: attr(data-text);
+}
+
+/* "Claude is starting…" under your message, until Claude's card appears. */
+.starting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: var(--chat-max);
+  margin: 0 auto;
+  padding: 6px 24px 10px;
+  color: var(--text-3);
+  font-size: 0.92rem;
+  animation: in var(--dur) var(--ease-out);
+}
+.startingAvatar {
+  display: inline-flex;
+  width: 34px;
+  justify-content: center;
+}
+@keyframes in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}

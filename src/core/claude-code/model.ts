@@ -32,6 +32,8 @@ export interface CcAgent {
   readonly steps: number;
   /** How full its context was at its last answer (tokens). */
   readonly tokens?: number;
+  /** The name it was given, to be messaged by (Agent's `name`). */
+  readonly name?: string;
 }
 
 export interface CcSession {
@@ -52,19 +54,60 @@ export interface CcSession {
   readonly model?: string;
   /** Its sub-agents that are running or ended lately, newest first. */
   readonly agents: readonly CcAgent[];
+  /** Agents working as a team, and the messages between them (when any are named or message each other). */
+  readonly team?: CcTeam;
 }
 
 /** One step of a transcript, ready to show. `seq` grows along the transcript (for paging and updates). */
 export interface CcStep {
   readonly seq: number;
   readonly ts: number;
-  /** user: a message to Claude · text: Claude's words · tool: a tool call (summarised) · note: a task reporting back, a compaction… */
-  readonly kind: 'user' | 'text' | 'tool' | 'note';
+  /**
+   * user: a message to Claude · text: Claude's words · tool: a tool call (summarised) · thinking:
+   * Claude thinking · message: another session or agent messaged this one (SendMessage) · note: a
+   * task reporting back, a compaction…
+   */
+  readonly kind: 'user' | 'text' | 'tool' | 'thinking' | 'message' | 'note';
   readonly text: string;
   /** For tools: its name ("Read", "Bash", "Agent"). */
   readonly tool?: string;
   /** For tools: still running, done, or failed. */
   readonly status?: 'running' | 'done' | 'error';
+  /** How long the tool call (from it until its result) or the thinking took. */
+  readonly durationMs?: number;
+  /** Thinking whose words Claude didn't write down. */
+  readonly hidden?: boolean;
+  /** There's more to see when it's opened (`claudeCode.step`): the input and output, or the thinking. */
+  readonly detail?: boolean;
+  /** A message: who sent it ('lead' for the session that started the agents, else an agent's id or name). */
+  readonly from?: string;
+  /** A message: its sender in words ("the lead session", "Reviewer"). */
+  readonly who?: string;
+  /** A message that is an agent's final report handed back to the session. */
+  readonly report?: boolean;
+  /** SendMessage: whom it went to (an agent's id or name, or 'main' for the lead session). */
+  readonly to?: string;
+}
+
+/** One message between the sessions of a team (SendMessage), for its timeline. */
+export interface CcMessage {
+  /** 'lead' (the session that started the agents) or an agent's id. */
+  readonly from: string;
+  /** 'lead', an agent's id, or a name nobody here answers to. */
+  readonly to: string;
+  /** What it's about, in a few words (its summary, else its start). */
+  readonly summary: string;
+  readonly ts: number;
+}
+
+/**
+ * Agents that work as a team: named (so they can be messaged) or messaging each other, and the
+ * messages between them and the lead session, newest last.
+ */
+export interface CcTeam {
+  /** Its members' agent ids (each is in the session's `agents`). */
+  readonly members: readonly string[];
+  readonly messages: readonly CcMessage[];
 }
 
 /** A page of steps: the newest `limit` before `before`, or everything after `after`. */

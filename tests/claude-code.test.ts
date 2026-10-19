@@ -71,6 +71,8 @@ describe('transcript lines → steps', () => {
   it("reads Claude's words, tool calls, context size and whether it ended its turn", () => {
     const f = factsOf(parseLine(assistant([{ type: 'thinking', thinking: 'hm' }, { type: 'text', text: 'Looking.' }, toolUse('t1', 'Read', { file_path: `${CWD}/a.ts` })], T0))!);
     expect(f.steps.map((s) => [s.kind, s.text, s.status])).toEqual([
+      // Thinking is a step of its own (opened from the transcript); its time is set once it's placed.
+      ['thinking', 'Thought', undefined],
       ['text', 'Looking.', undefined],
       ['tool', 'Reading a.ts', 'running'],
     ]);
@@ -88,7 +90,7 @@ describe('transcript lines → steps', () => {
     const launch = factsOf(parseLine(assistant([toolUse('toolu_A', 'Agent', { description: 'Fix worktrees', subagent_type: 'general-purpose', prompt: 'long' })], T0))!);
     expect(launch.launches).toEqual([{ toolUseId: 'toolu_A', description: 'Fix worktrees', type: 'general-purpose', background: false, ts: T0 }]);
     const async = factsOf(parseLine(toolResult('toolu_A', T0 + 1, { text: 'Async agent launched successfully.\nagentId: a1', tur: { isAsync: true, status: 'async_launched', agentId: 'a1' } }))!);
-    expect(async.results).toEqual([{ toolUseId: 'toolu_A', error: false, async: true, agentId: 'a1', ts: T0 + 1 }]);
+    expect(async.results).toEqual([{ toolUseId: 'toolu_A', error: false, async: true, agentId: 'a1', ts: T0 + 1, output: 'Async agent launched successfully.\nagentId: a1' }]);
     const queued = factsOf(parseLine(JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(T0 + 5), content: notice('a1', 'toolu_A', 'completed', 'Agent "Fix worktrees" finished') }))!);
     expect(queued.notices).toEqual([{ taskId: 'a1', toolUseId: 'toolu_A', status: 'completed', summary: 'Agent "Fix worktrees" finished', ts: T0 + 5 }]);
     expect(queued.steps).toEqual([]);
@@ -447,5 +449,35 @@ describe('launching, the state and the API', () => {
     const state = reduce(initialState('room'), { type: 'claude_code', sessions: [s] });
     expect(state.claudeCode.sessions).toEqual([s]);
     expect(reduceClaudeCode(state, { type: 'claude_code', sessions: [] }).claudeCode.sessions).toEqual([]);
+  });
+});
+
+describe('klaud’s own conversations stay out of Activity', () => {
+  it('remembers them after the conversation is deleted', async () => {
+    const { ClaudeCodeWatcher } = await import('../src/core/claude-code/watch.js');
+    const { Store, initialState } = await import('../src/core/store.js');
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+    const os = await import('node:os');
+    const pathMod = await import('node:path');
+    const home = mkdtempSync(pathMod.join(os.tmpdir(), 'cc-own-'));
+    const own = pathMod.join(home, 'own.json');
+    const dir = pathMod.join(home, 'projects', '-tmp-proj');
+    mkdirSync(dir, { recursive: true });
+    const sid = '11111111-2222-3333-4444-555555555555';
+    writeFileSync(pathMod.join(dir, `${sid}.jsonl`), JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), sessionId: sid, cwd: '/tmp/proj', message: { role: 'user', content: 'hi' } }) + '\n');
+    const store = new Store(initialState('test', 'ask'));
+    const ws = { id: 'w1', projectId: 'p1', name: 'chat', path: '/tmp/proj', kind: 'chat', createdAt: 0, sessionId: sid, external: false };
+    store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'proj', root: '/tmp/proj', base: 'main', workspaces: [ws] }] } as never);
+    const first = new ClaudeCodeWatcher({ home, store, watch: false, ownFile: own });
+    first.scan();
+    expect(store.getState().claudeCode?.sessions ?? []).toHaveLength(0);
+    first.stop();
+    // The conversation is deleted; a new klaud (restarted) still keeps its session out.
+    store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'proj', root: '/tmp/proj', base: 'main', workspaces: [] }] } as never);
+    const second = new ClaudeCodeWatcher({ home, store, watch: false, ownFile: own });
+    second.scan();
+    await new Promise((r) => setTimeout(r, 400));
+    expect((store.getState().claudeCode?.sessions ?? []).map((s: { id: string }) => s.id)).not.toContain(sid);
+    second.stop();
   });
 });

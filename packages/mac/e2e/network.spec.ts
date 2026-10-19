@@ -96,7 +96,7 @@ test('Add a Friend shows a code and a link, and says when a code is wrong', asyn
   const field = sheet.getByRole('textbox', { name: 'Invitation code or link' });
   await field.fill('hello there');
   await sheet.getByRole('button', { name: 'Add Friend' }).click();
-  await expect(sheet.getByRole('alert')).toContainText('doesn’t look like a klaud invitation');
+  await expect(sheet.getByRole('alert')).toContainText('doesn’t look like a Klaud invitation');
   await sheet.getByRole('button', { name: 'Done' }).click();
   await expect(sheet).toBeHidden();
 });

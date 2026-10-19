@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon.js';
 import { Button, Dot, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { brandText } from '../lib/brand.js';
 import { Markdown } from './Markdown.js';
 import { useNow } from './Items.js';
 import s from './attention.module.css';
@@ -40,7 +41,7 @@ function Approvals() {
     <div className={`${s.card} ${s.urgent}`} role="alertdialog" aria-label="Approval needed">
       <div className={s.head}>
         <Dot tone="warn" />
-        <span className={s.title}>{first.title}</span>
+        <span className={s.title}>{brandText(first.title)}</span>
         {others.length ? (
           <button type="button" className={s.moreButton} aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
             {showAll ? 'Show less' : `+${others.length} more`}
@@ -64,7 +65,7 @@ function Approvals() {
           {others.map((a) => (
             <li key={a.id} className={s.other}>
               <span className={s.otherText}>
-                <span className={s.otherTitle}>{a.title}</span>
+                <span className={s.otherTitle}>{brandText(a.title)}</span>
                 {a.detail ? <code className={s.otherDetail}>{a.detail}</code> : null}
               </span>
               <Button size="small" onClick={() => void api.host.answerApproval('yes', a.id)}>

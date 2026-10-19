@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { expectPicked, pick } from './helpers.js';
 
 /**
  * Klaud's own updates. The browser build has no app shell (the updater lives in
@@ -93,9 +94,8 @@ test('Settings › General: how updates install, Check Now and when Klaud last l
   await page.keyboard.press('Meta+,');
   const settings = page.getByRole('dialog', { name: 'Settings' });
   await expect(settings.getByText('Last checked: 5 minutes ago')).toBeVisible();
-  const mode = settings.getByLabel('Install updates');
-  await expect(mode).toHaveValue('ask');
-  await mode.selectOption('idle');
+  await expectPicked(settings.getByLabel('Install updates'), 'ask');
+  await pick(settings, 'Install updates', 'Automatically when idle');
   await expect(settings.getByText(/installs once you step away/)).toBeVisible();
   await settings.getByRole('button', { name: 'Check Now' }).first().click();
   await expect(settings.getByText(/Klaud is up to date\. · Last checked: Just now/).first()).toBeVisible();

@@ -1,7 +1,10 @@
+import { type ReactNode, useRef } from 'react';
 import type { QueuedMessage } from '@klaud/ui/compose.js';
+import { channelOf } from '@klaud/core/store.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Tip, cx } from '../components/ui.js';
-import { toast, useApi, useKlaud } from '../lib/klaud.js';
+import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useFlightLanding } from './flight.js';
 import s from './queue.module.css';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -16,6 +19,17 @@ function Act({ icon, label, onClick, disabled }: { icon: IconName; label: string
   );
 }
 
+/** A queued message's row: the one you just sent flies into it from the box (see flight.ts). */
+function Row({ channel, prompt, mine, className, children }: { channel: string; prompt: string; mine: boolean; className?: string; children: ReactNode }) {
+  const ref = useRef<HTMLLIElement>(null);
+  useFlightLanding(ref, channel, 'queue', prompt, mine);
+  return (
+    <li ref={ref} className={className}>
+      {children}
+    </li>
+  );
+}
+
 /**
  * What waits for Claude in this conversation, above the box you type in: send one now
  * (interrupting the current task), pull it back to edit, drop it, or change the order.
@@ -23,6 +37,7 @@ function Act({ icon, label, onClick, disabled }: { icon: IconName; label: string
 export function QueueTray({ queue, selfName, onEdit }: { queue: readonly QueuedMessage[]; selfName: string; onEdit: (text: string) => void }) {
   const { client } = useKlaud();
   const api = useApi();
+  const channel = useApp((st) => channelOf(st.view));
   if (!queue.length) return null;
   const yours = queue.filter((q) => q.yours);
   const call = (p: Promise<unknown>): void => void p.catch((err: unknown) => toast(client, errorText(err), 'error'));
@@ -39,7 +54,7 @@ export function QueueTray({ queue, selfName, onEdit }: { queue: readonly QueuedM
           const at = yours.indexOf(q);
           const who = q.by === selfName ? (q.claude === selfName ? '' : `for ${q.claude}'s Claude`) : `${q.by}`;
           return (
-            <li key={q.requestId} className={cx(s.row, !q.yours && s.theirs)}>
+            <Row key={q.requestId} channel={channel} prompt={q.prompt} mine={q.yours} className={cx(s.row, !q.yours && s.theirs)}>
               <span className={s.n}>{i + 1}</span>
               <span className={s.text} title={q.prompt}>
                 {q.prompt || 'A message'}
@@ -72,7 +87,7 @@ export function QueueTray({ queue, selfName, onEdit }: { queue: readonly QueuedM
                   </Tip>
                 </span>
               ) : null}
-            </li>
+            </Row>
           );
         })}
       </ol>

@@ -64,7 +64,7 @@ describe('structured results', () => {
     writeFileSync(path.join(root, 'big.bin'), Buffer.alloc(600 * 1024));
     const { files, skipped } = await readResultFiles([path.join(root, 'report.md'), path.join(other, 'notes.txt'), path.join(root, '.ssh', 'id_rsa'), path.join(root, 'big.bin'), 'relative.txt'], { roots: [root], anywhere: false });
     expect(files.map((f) => [f.name, Boolean(f.b64)])).toEqual([['report.md', true], ['big.bin', false]]);
-    expect(skipped).toEqual(['notes.txt (outside the folder the task ran in)', 'id_rsa (not allowed)', 'big.bin (too big to send with the result)', 'relative.txt (not allowed)']);
+    expect(skipped).toEqual(['notes.txt (outside the folder the task ran in)', 'id_rsa (not allowed)', 'big.bin (too big to send)', 'relative.txt (not allowed)']);
     const anywhere = await readResultFiles([path.join(other, 'notes.txt')], { roots: [root], anywhere: true });
     expect(anywhere.files[0]).toMatchObject({ name: 'notes.txt', size: 9 });
   });

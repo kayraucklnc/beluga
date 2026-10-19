@@ -121,19 +121,9 @@
   font-family: var(--font-mono);
   font-size: 0.92rem;
 }
+/* The FormSheet's pop-up (a Select): at least as wide as a short field. */
 .popup {
   min-width: 160px;
-  max-width: 100%;
-  height: 24px;
-  padding: 0 26px 0 9px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--bg-raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2.5 3.8L5 1.5l2.5 2.3M2.5 6.2L5 8.5l2.5-2.3' fill='none' stroke='%23888' stroke-width='1.3'/%3E%3C/svg%3E") no-repeat right 8px center;
-  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.07);
-  appearance: none;
-}
-:global([data-theme='dark']) .popup {
-  background-color: color-mix(in srgb, var(--bg-raised) 80%, white);
 }
 .folder {
   display: flex;

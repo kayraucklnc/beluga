@@ -1,5 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
+import { klaudHome } from '../home.js';
 import type { Store } from '../store.js';
 import type { NoticeEvent } from '../notify.js';
 import { ClaudeCodeWatcher } from './watch.js';
@@ -29,6 +30,8 @@ export function launchClaudeCode(host: { readonly session: object; readonly stor
   const watcher = new ClaudeCodeWatcher({
     home: claudeHome(),
     store: host.store,
+    // The demo keeps nothing on disk.
+    ...(host.demo ? {} : { ownFile: path.join(klaudHome(), 'claude-code-own.json') }),
     notify: ({ title, body, failed }) => host.notify?.({ kind: failed ? 'problems' : 'background', tag: 'task', title, body }),
   });
   attachClaudeCode(host.session, watcher);

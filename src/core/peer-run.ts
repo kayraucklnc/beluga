@@ -7,7 +7,9 @@ import { type BodyInput, type BodyOf, MAX_SHELL_OUTPUT, MAX_SHELL_SECONDS } from
 import { expandPath } from './remote-work.js';
 import { type ShareService, isSecretPath } from './shares.js';
 import { type ShellItem, type Store, clean, peerName } from './store.js';
-import { reachOf, shellGate, trustOf } from './trust.js';
+import type { AccessDecision, Decision, RequestFacts } from './gateway/access.js';
+import { declineReason } from './gateway/access.js';
+import { type TrustLevel, reachOf, shellGate, trustOf } from './trust.js';
 import type { WorkspaceController } from './workspace-controller.js';
 
 /** What running one command produced. */
@@ -111,6 +113,12 @@ export interface PeerRunDeps {
   readonly approvalWaitMs?: number;
 }
 
+/** Your rules and capabilities (the Mac app's gateway attaches them; without it, trust alone decides). */
+export interface PeerRunAccess {
+  decide(facts: RequestFacts, trust: TrustLevel): AccessDecision;
+  remember(facts: RequestFacts, peerName: string, decision: Pick<Decision, 'scope' | 'command' | 'expiry'>): void;
+}
+
 type Reply = (r: Omit<BodyInput & { kind: 'shell_result' }, 'kind' | 'reqId'>) => void;
 type Waiter = { peer: string; item: ShellItem; resolve: (r: BodyOf<'shell_result'>) => void; reject: (e: Error) => void; timer: NodeJS.Timeout };
 
@@ -128,6 +136,7 @@ export class PeerRun {
   /** When each of your commands started running there (after their approval). */
   private readonly started = new Map<string, number>();
   private readonly unsubscribe: () => void;
+  private access: PeerRunAccess | undefined;
 
   constructor(private readonly deps: PeerRunDeps) {
     this.unsubscribe = deps.store.subscribe(() => this.tellGrants());
@@ -144,6 +153,11 @@ export class PeerRun {
 
   private get state() {
     return this.deps.store.getState();
+  }
+
+  /** Decide by your rules and capabilities too (and "Always" writes a rule instead of lasting until klaud quits). */
+  useAccess(access: PeerRunAccess | undefined): void {
+    this.access = access;
   }
 
   private get home(): string {
@@ -282,7 +296,7 @@ export class PeerRun {
    * room): the same gates as run_on_peer (full trust runs, others ask you, blocked is declined,
    * secrets never). Resolves with what came of it; `onAsking` / `onStarted` say where it is.
    */
-  async serveTask(from: string, ask: { command: string; cwd?: string; project?: string; timeoutSec: number; why: string }, hooks: { onAsking: () => void; onStarted: (cwd: string) => void }): Promise<Omit<BodyOf<'shell_result'>, 'kind' | 'reqId'>> {
+  async serveTask(from: string, ask: { command: string; cwd?: string; project?: string; timeoutSec: number; why: string }, hooks: { onAsking: () => void; onStarted: (cwd: string) => void; approved?: boolean }): Promise<Omit<BodyOf<'shell_result'>, 'kind' | 'reqId'>> {
     const body: BodyOf<'shell_request'> = {
       kind: 'shell_request',
       reqId: randomUUID(),
@@ -298,11 +312,19 @@ export class PeerRun {
       result = { output: '', truncated: false, timedOut: false, ...r };
     };
     try {
-      await this.serve(from, body, reply, { started: hooks.onStarted, asking: hooks.onAsking });
+      await this.serve(from, body, reply, { started: hooks.onStarted, asking: hooks.onAsking, ...(hooks.approved ? { approved: true } : {}) });
     } catch (err) {
       reply({ ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 400) });
     }
     return result;
+  }
+
+  /** Where a command from this person runs when it names no folder: your shared folder (home with full trust). */
+  async defaultFolder(from: string): Promise<string> {
+    const full = trustOf(this.state, from) === 'full';
+    const shared = this.deps.shares.configs.find((c) => !c.name.startsWith('out-') && !c.name.startsWith('handoff-') && this.deps.shares.canAccess(c.name, from, this.deps.selfId()));
+    const dir = full ? this.home : (shared?.root ?? this.deps.agentCwd);
+    return fs.realpath(dir).catch(() => dir);
   }
 
   /** Where a request runs: the project or folder it names, else your shared folder (home with full trust). */
@@ -325,27 +347,38 @@ export class PeerRun {
     return real;
   }
 
-  private async serve(from: string, body: BodyOf<'shell_request'>, reply: Reply, hooks: { started: (cwd: string) => void; asking?: () => void }): Promise<void> {
+  private async serve(from: string, body: BodyOf<'shell_request'>, reply: Reply, hooks: { started: (cwd: string) => void; asking?: () => void; approved?: boolean }): Promise<void> {
     const state = this.state;
     const owner = state.self?.name ?? 'The owner';
     const level = trustOf(state, from);
-    const gate = shellGate(level);
+    let gate = shellGate(level);
     if (gate === 'decline' || from === this.deps.selfId()) return reply({ ok: false, error: `${owner} declined (blocked)` });
     // Secrets stay off-limits at every trust level, like for Claude's own commands.
     if (SECRET_IN_COMMAND.test(body.command)) return reply({ ok: false, error: 'klaud never runs commands that touch secrets (.env files, keys, credentials)' });
     if ((this.running.get(from) ?? 0) >= MAX_RUNNING_PER_PERSON) return reply({ ok: false, error: 'too many of your commands are already running there; wait for them to finish' });
-    const cwd = await this.where(from, body, gate === 'run');
+    const cwd = await this.where(from, body, level === 'full');
     const name = peerName(state, from);
     const who = `${name}${body.viaAgent ? "'s Claude" : ''}`;
-    if (gate === 'ask' && !this.always.has(from)) {
+    const facts: RequestFacts = { peerId: from, kind: 'command', needs: ['shell'], command: body.command, folder: cwd, ...(body.project ? { project: body.project } : {}) };
+    // The gateway decided already; otherwise your rules and capabilities decide (when attached), else trust alone.
+    if (hooks.approved) gate = 'run';
+    else if (this.access) {
+      const decided = this.access.decide(facts, level);
+      if (decided.verdict === 'decline') return reply({ ok: false, error: declineReason(decided, owner) });
+      gate = decided.verdict === 'allow' ? 'run' : 'ask';
+    }
+    if (gate === 'ask' && (this.access || !this.always.has(from))) {
       hooks.asking?.();
       const answer = await this.deps.approve(
         `${name} (#${from.slice(0, 6)})${body.viaAgent ? "'s Claude" : ''} wants to run a command on your computer`,
-        `$ ${clean(body.command)}\nin ${tilde(cwd, this.home)} · stops after ${formatDuration(body.timeoutSec * 1000)} · no input${body.why ? `\nwhy: ${clean(body.why)}` : ''}\nAlways = run ${name}'s commands without asking until klaud quits`,
+        `$ ${clean(body.command)}\nin ${tilde(cwd, this.home)} · stops after ${formatDuration(body.timeoutSec * 1000)} · no input${body.why ? `\nwhy: ${clean(body.why)}` : ''}\n${this.access ? `Always = run this command from ${name} in this folder without asking (a rule you can change in Settings › People & access)` : `Always = run ${name}'s commands without asking until klaud quits`}`,
         from,
       );
       if (answer === 'no') return reply({ ok: false, error: `${owner} declined` });
-      if (answer === 'always') this.always.add(from);
+      if (answer === 'always') {
+        if (this.access) this.access.remember(facts, name, { scope: 'this', command: 'this', expiry: 'never' });
+        else this.always.add(from);
+      }
     }
     const place = tilde(cwd, this.home);
     hooks.started(place);
@@ -362,6 +395,6 @@ export class PeerRun {
     const short = clean(body.command).split('\n')[0]!.slice(0, 80);
     const text = `${who} ran \`${short}\` in ${place}${res.timedOut ? ' (timed out)' : res.exitCode ? ` (exit ${res.exitCode})` : ''}`;
     this.deps.store.dispatch({ type: 'system', text });
-    this.deps.store.dispatch({ type: 'notice_add', notice: { kind: 'people', title: text, body: gate === 'run' ? 'You fully trust them, so it ran without asking' : 'You approved it', channel: 'room' } });
+    this.deps.store.dispatch({ type: 'notice_add', notice: { kind: 'people', title: text, body: hooks.approved ? 'Through a request you allowed' : gate === 'run' ? (level === 'full' ? 'You fully trust them, so it ran without asking' : 'A rule of yours allows it') : 'You approved it', channel: 'room' } });
   }
 }

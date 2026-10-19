@@ -1,0 +1,130 @@
+/*
+ * Code in the reader: a file across the center, a fenced block in a document. Lines are blocks
+ * (so the numbers can sit in a gutter that stays put sideways); colors come from shiki, light and
+ * dark in every token.
+ */
+
+.pre {
+  margin: 0;
+  overflow-x: auto;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  tab-size: 4;
+  -moz-tab-size: 4;
+  background: transparent;
+}
+.code {
+  display: block;
+  min-width: max-content;
+  font: inherit;
+}
+.wrap .code {
+  min-width: 0;
+}
+.line {
+  display: block;
+  min-height: 1.6em;
+}
+.src {
+  white-space: pre;
+}
+.wrap .src {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+:global([data-theme='dark']) .colored .src span {
+  color: var(--shiki-dark) !important;
+}
+
+/* ---- line numbers */
+
+.numbered .line {
+  display: grid;
+  grid-template-columns: calc(var(--gutter) + 28px) max-content;
+}
+.numbered.wrap .line {
+  grid-template-columns: calc(var(--gutter) + 28px) minmax(0, 1fr);
+}
+.ln {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding-right: 16px;
+  background: var(--code-surface, var(--bg));
+  color: var(--text-3);
+  opacity: 0.7;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Drawn, not text: copying and Find skip the numbers. */
+.ln::before {
+  content: attr(data-n);
+}
+.numbered .line:hover {
+  background: var(--bg-hover);
+}
+.numbered .line:hover .ln {
+  color: var(--text-2);
+  opacity: 1;
+}
+
+/* ---- a fenced block in a document */
+
+.block {
+  position: relative;
+  margin: 0 0 1.15em;
+  border-radius: 8px;
+  background: var(--code-bg);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+.block .pre {
+  padding: 13px 16px;
+  font-size: 0.84em;
+  line-height: 1.6;
+}
+.tools {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.block:hover .tools,
+.block:focus-within .tools {
+  opacity: 1;
+}
+.lang {
+  padding: 0 4px;
+  color: var(--text-3);
+  font-family: var(--font);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 1px 2px rgba(0, 0, 0, 0.06);
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.tool:hover {
+  color: var(--text);
+}
+.toolOn {
+  color: var(--accent);
+}

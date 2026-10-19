@@ -6,6 +6,8 @@ import { Dot, cx } from '../components/ui.js';
 import { editGroups, newGroupFor, useGroupEdit } from '../lib/group-edit.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import { type Entry, type Place, type Target, outOfGroup, stepOf } from './project-layout.js';
+import { NO_TALLY, type Tally, tallyTip } from './attention-model.js';
+import { TallyMark } from './signal-marks.js';
 import side from './Sidebar.module.css';
 import s from './project-groups.module.css';
 
@@ -124,6 +126,8 @@ export interface GroupHeaderProps {
   readonly count: number;
   readonly open: boolean;
   readonly busy: boolean;
+  /** What its projects add up to (folded, it shows instead of how many projects it holds). */
+  readonly tally?: Tally;
   /** A project being dragged would go inside: the folder lights up. */
   readonly dropOn: boolean;
   readonly menu: readonly ActionItem[];
@@ -132,7 +136,7 @@ export interface GroupHeaderProps {
 }
 
 /** A group in the sidebar: click to fold, drag to move, right-click to rename or ungroup. */
-export function GroupHeader({ name, count, open, busy, dropOn, menu, onToggle, onMove }: GroupHeaderProps) {
+export function GroupHeader({ name, count, open, busy, tally = NO_TALLY, dropOn, menu, onToggle, onMove }: GroupHeaderProps) {
   const api = useApi();
   const { renaming } = useGroupEdit();
   const items: ActionItem[] = [
@@ -166,6 +170,7 @@ export function GroupHeader({ name, count, open, busy, dropOn, menu, onToggle, o
         tabIndex={0}
         aria-expanded={open}
         aria-label={`Group ${name}`}
+        title={tallyTip(tally) || undefined}
         className={cx(side.row, side.groupRow, s.groupHead, dropOn && s.dropOn)}
         style={{ paddingLeft: 8 }}
         data-head
@@ -192,8 +197,18 @@ export function GroupHeader({ name, count, open, busy, dropOn, menu, onToggle, o
         </span>
         <span className={side.rowLabel}>{name}</span>
         <span className={side.trailing}>
-          {open ? null : <span className={s.count}>{count}</span>}
-          {busy && !open ? <Dot tone="claude" live /> : null}
+          {open ? null : (
+            <TallyMark
+              tally={tally}
+              folded
+              fallback={
+                <>
+                  <span className={s.count}>{count}</span>
+                  {busy ? <Dot tone="claude" live /> : null}
+                </>
+              }
+            />
+          )}
           {open && !count ? <span className={s.empty}>Empty</span> : null}
         </span>
       </div>

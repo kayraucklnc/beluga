@@ -6,6 +6,8 @@
 
 mod daemon;
 mod menu;
+mod requests;
+mod sounds;
 mod update_rules;
 mod updater;
 
@@ -93,12 +95,7 @@ fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32, unread: Op
 /// Your klaud network status in the menu-bar menu (`None`: the network is off, no status items).
 #[tauri::command]
 fn set_tray_presence(app: tauri::AppHandle, presence: Option<menu::TrayPresence>) {
-    let Some(tray) = app.tray_by_id("klaud") else {
-        return;
-    };
-    if let Ok(m) = menu::tray_menu(&app, presence.as_ref()) {
-        let _ = tray.set_menu(Some(m));
-    }
+    requests::set_presence(&app, presence);
 }
 
 #[cfg(target_os = "macos")]
@@ -185,6 +182,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::Updates::default())
+        .manage(requests::TrayState::default())
         .manage(AppState {
             lock: tokio::sync::Mutex::new(()),
             child: Mutex::new(None),
@@ -197,8 +195,14 @@ pub fn run() {
             set_menu_state,
             set_tray_status,
             set_tray_presence,
+            requests::set_tray_requests,
             system_idle_seconds,
             take_pending_links,
+            sounds::sound_install,
+            sounds::sound_prune,
+            sounds::sound_play_system,
+            sounds::notification_access,
+            sounds::open_notification_settings,
             updater::update_state,
             updater::update_check,
             updater::update_set_mode,
@@ -228,9 +232,16 @@ pub fn run() {
                 }
             }
             menu::tray(&handle)?;
+            // Banners (and their sound) even while Klaud is in front.
+            sounds::present_in_front();
+            // A friend's request on a notification: Review… / Approve / Always Allow / Decline.
+            requests::register_actions(&handle)?;
             // Clicking a notification brings the window back and tells it where to go.
             let taps = handle.clone();
             app.notification().on_action(move |performed| {
+                if requests::on_notification(&taps, performed) {
+                    return;
+                }
                 if performed.action_id() != "tap" {
                     return;
                 }

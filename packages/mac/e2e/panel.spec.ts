@@ -47,9 +47,9 @@ test.beforeEach(async ({ page }) => {
   await expect(sidebar(page)).toBeVisible();
 });
 
-test('a workspace has Changes, Files, Terminal and Info; the keys pick them and each workspace keeps its own', async ({ page }) => {
+test('a workspace has Changes, Files, Terminal, Info and History; the keys pick them and each workspace keeps its own', async ({ page }) => {
   await openWorkspace(page);
-  await expect(panel(page).getByRole('tablist', { name: 'Panel' }).getByRole('tab')).toHaveText(['Changes', 'Files', 'Terminal', 'Info']);
+  await expect(panel(page).getByRole('tablist', { name: 'Panel' }).getByRole('tab')).toHaveText(['Changes', 'Files', 'Terminal', 'Info', 'History']);
   // It has commits ahead: Changes is where it starts.
   await expect(tab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Meta+Alt+4');

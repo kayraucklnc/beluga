@@ -23,9 +23,12 @@ import { PANEL_LABELS, PANEL_TABS } from './lib/panel-model.js';
 import { joinRoom, useMenuState, useNative, useNotificationTaps, useTrayStatus, useWindowFocus } from './lib/native.js';
 import { AddProjectSheet } from './dialogs/AddProjectSheet.js';
 import { UndoToast } from './lib/undo-toast.js';
+import { brandText } from './lib/brand.js';
 import { NativeSheets } from './dialogs/native/WorkSheets.js';
 import { JoinSheet } from './dialogs/JoinSheet.js';
 import { NetworkSheets } from './network/NetworkSheets.js';
+import { RequestSheet } from './gateway/RequestSheet.js';
+import { useRequestNative } from './gateway/request-native.js';
 import { StripeSheet } from './dialogs/StripeSheet.js';
 import { useIdleAway, useTrayPresence } from './network/net-native.js';
 import { useUpdateActivity } from './lib/updates.js';
@@ -49,7 +52,7 @@ function Toasts() {
       <div key={toast.id} className={s.toast} style={{ color: toast.level === 'error' ? 'var(--error)' : toast.level === 'warn' ? 'var(--warn)' : undefined }}>
         <Icon name={icon} size={13} />
         <span className={s.toastText} style={{ color: 'var(--text)' }}>
-          {toast.text}
+          {brandText(toast.text)}
         </span>
       </div>
     </div>
@@ -118,8 +121,8 @@ function useShortcuts() {
         // ⌥⌘0 shows and hides the right panel, as in Xcode (⌥⌘I still does too).
         e.preventDefault();
         byKey('panel', togglePanel);
-      } else if (e.altKey && e.metaKey && !e.shiftKey && /^Digit[1-4]$/.test(e.code)) {
-        // ⌥⌘1…4: the panel's Changes, Files, Terminal and Info.
+      } else if (e.altKey && e.metaKey && !e.shiftKey && /^Digit[1-5]$/.test(e.code)) {
+        // ⌥⌘1…5: the panel's Changes, Files, Terminal, Info and History.
         e.preventDefault();
         const tab = PANEL_TABS[Number(e.code.slice(5)) - 1]!;
         byKey(`panel-${tab}`, () => {
@@ -220,6 +223,7 @@ export function App() {
   useNotificationTaps(client, ui, actions);
   useTrayPresence(client);
   useIdleAway(client);
+  useRequestNative(client);
   useUpdateActivity(client, actions);
   return (
     <Tooltip.Provider delayDuration={450} skipDelayDuration={200}>
@@ -235,6 +239,7 @@ export function App() {
       <Settings />
       <PlanSheet />
       <NetworkSheets />
+      <RequestSheet />
       <StripeSheet />
       {joining ? <JoinSheet invite={joining} onCancel={() => setJoining(undefined)} onJoin={() => void joinRoom(joining)} /> : null}
       <Toasts />

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pick } from './helpers.js';
 
 /** The Mac app's web view against a real klaud (the demo): what you click does what it says. */
 
@@ -55,9 +56,9 @@ test('the palette goes anywhere', async ({ page }) => {
 test('switches to dark from Settings', async ({ page }) => {
   await page.keyboard.press('Meta+,');
   await page.getByRole('button', { name: 'Appearance' }).click();
-  await page.getByLabel('Appearance').selectOption('dark');
+  await pick(page, 'Appearance', 'Dark');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.getByLabel('Appearance').selectOption('light');
+  await pick(page, 'Appearance', 'Light');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
 
@@ -79,8 +80,8 @@ test('picks a model and how hard Claude thinks', async ({ page }) => {
   await openWorkspace(page);
   await page.getByRole('button', { name: 'Model and effort' }).click();
   await page.getByRole('radio', { name: /Opus/ }).click();
-  await page.getByRole('radio', { name: 'Thorough' }).click();
-  await expect(page.getByRole('button', { name: 'Model and effort' })).toHaveText(/Opus · Thorough/);
+  await page.getByRole('radio', { name: 'High', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Model and effort' })).toHaveText(/Opus · High/);
   await page.getByRole('radio', { name: 'Auto' }).click();
 });
 
@@ -368,4 +369,21 @@ test('clicking a notification goes where it happened', async ({ page }) => {
   await expect(centre(page)).toBeHidden();
   await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
   await expect(page.getByText('Add a readiness probe').last()).toBeVisible();
+});
+
+test('effort goes back to Auto, and Shift-Tab switches plan mode on and off', async ({ page }) => {
+  await openWorkspace(page);
+  await page.getByRole('button', { name: 'Model and effort' }).click();
+  await page.getByRole('radio', { name: 'Max', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Model and effort' })).toHaveText(/Max/);
+  await page.getByRole('radio', { name: 'Auto' }).click();
+  await expect(page.getByRole('radio', { name: 'Auto' })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('button', { name: 'Model and effort' })).not.toHaveText(/Max/);
+  await page.keyboard.press('Escape');
+  await composer(page).click();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('status').filter({ hasText: 'Plan mode' }).filter({ hasText: 'to act' })).toBeVisible();
+  await expect(composer(page)).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('status').filter({ hasText: 'Plan mode' }).filter({ hasText: 'to act' })).toHaveCount(0);
 });

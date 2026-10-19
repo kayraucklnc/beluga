@@ -10,4 +10,5 @@ type ClaudeCodeHandlers = { readonly [M in ClaudeCodeMethod]: (s: Session, ...ar
 export const CLAUDE_CODE_HANDLERS = {
   'claudeCode.steps': (s, sessionId, agentId, page) =>
     claudeCodeOf(s).steps(sessionId, agentId, { ...(page?.before !== undefined ? { before: page.before } : {}), ...(page?.after !== undefined ? { after: page.after } : {}), ...(page?.limit !== undefined ? { limit: page.limit } : {}) }),
+  'claudeCode.step': (s, sessionId, agentId, seq) => claudeCodeOf(s).step(sessionId, agentId, seq),
 } satisfies ClaudeCodeHandlers;

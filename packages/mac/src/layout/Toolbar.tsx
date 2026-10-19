@@ -5,8 +5,9 @@ import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApp, useKlaud } from '../lib/klaud.js';
 import { type ToolAction, toolbarActions } from './toolbar-actions.js';
+import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { terminalShowing, togglePanel, toggleTerminal } from '../lib/panel.js';
 import { drawerFits } from '../lib/panel-model.js';
@@ -14,6 +15,7 @@ import { mod } from '../lib/system.js';
 import { NotificationBell } from './NotificationCenter.js';
 import { ContinueButton } from '../chat/AskBanner.js';
 import { useConversationHeader } from '../network/ConversationHeader.js';
+import { ContextNote } from '../chat/ContextMeter.js';
 import s from './Toolbar.module.css';
 
 /** Room the title keeps, and the window buttons on the right (terminal, bell, palette, panel). */
@@ -80,7 +82,6 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
 export function Toolbar() {
   const [headerRef, width] = useToolbarWidth();
   const actions = useActions();
-  const api = useApi();
   const klaud = useKlaud();
   const { client } = klaud;
   const state = useApp((st) => st);
@@ -98,7 +99,7 @@ export function Toolbar() {
     const overflow = [...icons.slice(fit), ...more];
     const run = (a: ToolAction): void => {
       if (a.disabled) return toast(client, a.hint, 'info');
-      if (a.action === 'fix_checks') return void api.workbench.fixChecks(ws.id);
+      if (a.action === 'fix_checks') return askBeforeWork(ws.id, 'fix_checks');
       actions.run({ type: 'ws', id: ws.id, action: a.action });
     };
     const pr = state.prs[ws.id];
@@ -117,6 +118,8 @@ export function Toolbar() {
               <Dot tone={st.tone === 'claude' ? 'claude' : st.tone === 'muted' ? 'muted' : st.tone} live={st.tone === 'claude'} />
               {st.label}
             </span>
+            {/* Never cut: past 70% it's worth seeing (the branch and the rest give way). */}
+            <ContextNote channel={`ws:${ws.id}`} className={s.meta} />
             {ws.branch ? (
               <span className={cx(s.meta, s.metaBranch)} title={ws.branch}>
                 <Icon name="branch" size={11} />
@@ -143,7 +146,7 @@ export function Toolbar() {
             ) : primary ? (
               <Tip label={primary.hint} keys={primary.keys}>
                 <span className={s.primaryWrap}>
-                  <Button variant="primary" icon={primary.icon} className={cx(s.primary, primary.tone === 'error' && s.primaryError)} aria-disabled={primary.disabled} onClick={() => run(primary)}>
+                  <Button variant="primary" icon={primary.icon} className={cx(s.primary, primary.tone === 'error' && s.primaryError)} aria-disabled={primary.disabled} data-tool={primary.action} data-tool-ws={ws.id} onClick={() => run(primary)}>
                     {primary.label}
                   </Button>
                 </span>
@@ -151,7 +154,7 @@ export function Toolbar() {
             ) : null}
             <span className={s.tools} role="group" aria-label="Workspace actions">
               {icons.slice(0, fit).map((a) => (
-                <IconButton key={a.id} icon={a.icon} label={a.disabled ? `${a.label}: ${a.hint}` : `${a.label} · ${a.hint}`} keys={a.keys} aria-disabled={a.disabled} className={cx(a.disabled && s.off, a.tone === 'error' && s.toolError)} onClick={() => run(a)} />
+                <IconButton key={a.id} icon={a.icon} label={a.disabled ? `${a.label}: ${a.hint}` : (a.tip ?? `${a.label} · ${a.hint}`)} keys={a.keys} aria-disabled={a.disabled} data-tool={a.action} data-tool-ws={ws.id} className={cx(a.disabled && s.off, a.tone === 'error' && s.toolError)} onClick={() => run(a)} />
               ))}
               {overflow.length ? (
                 <ActionsDropdown items={overflow.map((a, i) => ({ label: a.label, icon: a.icon, hint: a.disabled ? a.hint : undefined, keys: a.keys, disabled: a.disabled, danger: a.danger, separate: i > 0 && i === icons.length - fit, onSelect: () => run(a) }))}>
@@ -218,10 +221,24 @@ export function Toolbar() {
 
   if (view.kind === 'project') {
     const project = state.projects.find((p) => p.id === view.id);
+    if (view.page === 'history') {
+      return (
+        <Shell
+          headerRef={headerRef}
+          title={
+            <>
+              {project ? <span className={s.crumb}>{project.name}</span> : null}
+              <span className={s.name}>History</span>
+            </>
+          }
+          subtitle={<span className={s.meta}>Who committed what, and when · every branch</span>}
+        />
+      );
+    }
     return <Shell headerRef={headerRef} title={project?.name ?? 'Project'} subtitle={<span className={s.meta}>Work happens in worktrees · the main folder is for questions</span>} />;
   }
 
-  return <Shell headerRef={headerRef} title={TITLES[view.kind] ?? 'klaud'} />;
+  return <Shell headerRef={headerRef} title={TITLES[view.kind] ?? 'Klaud'} />;
 }
 
 /** A conversation with friends or a group: who it's with, their status, the group's people. */

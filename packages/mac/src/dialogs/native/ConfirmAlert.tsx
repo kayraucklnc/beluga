@@ -70,7 +70,7 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
                   This deletes the worktree folder, its branch <code>{ws.branch ?? ''}</code> and the conversation.
                 </>
               ) : (
-                'This removes it from klaud and deletes the conversation.'
+                'This removes it from Klaud and deletes the conversation.'
               )}
             </p>
             <p>You can’t undo this.</p>

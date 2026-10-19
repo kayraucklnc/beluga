@@ -1,10 +1,10 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { LogItem, ShellItem } from '@klaud/core/store.js';
-import { DONE_STEPS, HIDDEN_STEPS, isRunning } from '@klaud/ui/format.js';
+import { isRunning } from '@klaud/ui/format.js';
 import { formatDuration } from '@klaud/shared/text.js';
 import { splitImages } from '@klaud/shared/attachment-links.js';
 import { Icon } from '../components/Icon.js';
-import { Avatar, Button, Dot, Working, cx } from '../components/ui.js';
+import { Avatar, Button, Dot, cx } from '../components/ui.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { stopClaude } from '../lib/commands.js';
 import { copyText } from '../lib/copy.js';
@@ -13,8 +13,11 @@ import { useApp, useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { ImageGrid } from './ChatImages.js';
 import { openLightbox } from './images.js';
+import { brandText } from '../lib/brand.js';
 import { messageItems } from './message-menu.js';
 import { Markdown } from './Markdown.js';
+import { AgentSteps, StepsToggle } from './steps/AgentSteps.js';
+import { useFlightLanding } from './flight.js';
 import s from './chat.module.css';
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
@@ -48,9 +51,12 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
   // Screenshots and other images sent with the message show as pictures, under its words.
   const { text, images } = useMemo(() => splitImages(item.text), [item.text]);
   const menu = useMenuContext();
+  // The message you just sent flies in from the box (see flight.ts).
+  const row = useRef<HTMLDivElement>(null);
+  useFlightLanding(row, item.channel, 'chat', item.text, mine && !item.byAgent);
   return (
     <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
-      <div className={cx(s.message, continued && s.continued)}>
+      <div ref={row} className={cx(s.message, continued && s.continued)} data-mine={mine && !item.byAgent ? 'true' : undefined}>
         <div className={s.gutter}>{continued ? null : <Avatar name={item.name} id={item.from} claude={item.byAgent} size={26} />}</div>
         <div className={s.body}>
           {continued ? null : (
@@ -72,7 +78,8 @@ export const SystemRow = memo(function SystemRow({ item }: { item: SystemItem })
   return (
     <ActionsContext items={() => messageItems({ ...menu, text: item.text })}>
         <div className={cx(s.system, item.level === 'warn' && s.systemWarn, item.level === 'error' && s.systemError)}>
-          <Markdown text={item.text} />
+          {/* Core words ("klaud") in this app's; a line quoting what someone said stays as written. */}
+          <Markdown text={item.said ? item.text : brandText(item.text)} />
         </div>
     </ActionsContext>
   );
@@ -100,17 +107,10 @@ function statusOf(item: AgentItem, now: number): { label: string; tone: 'claude'
 
 /** What Claude is doing (or did): its steps, sub-agents and background work, then its answer. */
 export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) {
-  const prefs = usePrefs();
   const selfId = useApp((st) => st.selfId);
-  const detail = useApp((st) => st.prefs.subagents);
   const running = isRunning(item.status) && item.status !== 'queued';
   const now = useNow(running);
   const st = statusOf(item, now);
-  const [expanded, setExpanded] = useState(false);
-  const visible = item.steps.filter((x) => !HIDDEN_STEPS.test(x));
-  const showSteps = prefs.steps === 'all' || running;
-  const steps = running || expanded ? visible : visible.slice(-DONE_STEPS);
-  const hidden = visible.length - steps.length;
   const forSomeoneElse = item.requesterName !== item.ownerName;
   const mine = item.owner === selfId;
   const { client, ui } = useKlaud();
@@ -132,6 +132,7 @@ export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) 
             {forSomeoneElse ? <span className={s.time}>for {item.requesterName}</span> : null}
             {!running && item.text && item.status === 'done' ? (
               <span className={s.hoverActions}>
+                {mine && item.steps.length ? <StepsToggle item={item} /> : null}
                 <Button size="small" variant="quiet" icon="copy" onClick={() => void copyText(item.text).then(() => menu.toast('Copied the answer'))}>
                   Copy
                 </Button>
@@ -148,54 +149,10 @@ export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) 
               {st.label}
             </span>
           </div>
-          {showSteps && (steps.length || item.subagents.length) ? (
-            <div className={s.steps}>
-              {hidden > 0 ? (
-                <button type="button" className={s.more} onClick={() => setExpanded(true)}>
-                  {hidden} earlier step{hidden === 1 ? '' : 's'}
-                </button>
-              ) : null}
-              {steps.map((step, i) => (
-                <div key={i} className={s.step}>
-                  <Icon name="chevronRight" size={10} />
-                  <span className="selectable">{step}</span>
-                </div>
-              ))}
-              {detail === 'hidden' && item.subagents.length ? (
-                <div className={s.step}>
-                  <Icon name="claude" size={11} />
-                  {item.subagents.length} sub-agent{item.subagents.length === 1 ? '' : 's'}
-                </div>
-              ) : (
-                item.subagents.map((sub) => {
-                  const live = sub.status === 'running';
-                  return (
-                    <div key={sub.id} className={s.sub}>
-                      <div className={s.subHead}>
-                        {live ? <Dot tone="claude" live /> : <Icon name={sub.status === 'failed' ? 'x' : 'check'} size={11} className={sub.status === 'failed' ? s.subFailed : s.subDone} />}
-                        <span className={s.subTitle}>{sub.kind === 'background' ? `Background · ${sub.title}` : sub.title}</span>
-                        {sub.steps.length ? <span className={s.time}>{sub.steps.length} steps</span> : null}
-                      </div>
-                      {live && detail === 'full'
-                        ? sub.steps.slice(-2).map((x, i) => (
-                            <div key={i} className={cx(s.step, s.subStep)}>
-                              <Icon name="chevronRight" size={10} />
-                              {x}
-                            </div>
-                          ))
-                        : null}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          ) : null}
+          {/* Steps open to show what ran and what came back (see steps/AgentSteps.tsx). */}
+          <AgentSteps item={item} running={running} />
           {item.text ? (
             <Markdown text={item.text} paths />
-          ) : running ? (
-            <div className={s.thinking}>
-              <Working />
-            </div>
           ) : item.status === 'queued' ? (
             // Sending it now, editing or moving it: the queue above the box.
             <div className={s.idle}>Starts when the current task finishes.</div>

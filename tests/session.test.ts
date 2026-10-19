@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -232,6 +232,26 @@ describe('Session', () => {
     expect(kay.state().browser.at).toBeUndefined();
     await kay.session.browseTo({ owner: bob.session.selfId, share: 'nope', path: '' });
     expect(kay.state().browser.error).toMatch(/not shared with you/);
+  });
+
+  it('reads the images a friend’s document shows, by the same rules as opening a file', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"/>';
+    const bob = peer('bob', { files: { 'flow.svg': svg, 'notes.md': '# Notes' } });
+    mkdirSync(path.join(bob.root, 'node_modules'));
+    writeFileSync(path.join(bob.root, 'node_modules', 'logo.png'), 'x');
+    await room(kay, bob);
+    const at = (p: string) => ({ owner: bob.session.selfId, share: 'proj', path: p });
+    const image = await kay.session.files.readImageFile(at('flow.svg'));
+    expect(image.mediaType).toBe('image/svg+xml');
+    expect(image.bytes.toString('utf8')).toBe(svg);
+    // Only images; nothing the share keeps private; nothing outside it; nothing that isn't there.
+    await expect(kay.session.files.readImageFile(at('notes.md'))).rejects.toThrow('Not an image');
+    await expect(kay.session.files.readImageFile(at('node_modules/logo.png'))).rejects.toThrow('That file is private');
+    await expect(kay.session.files.readImageFile(at('../outside.png'))).rejects.toThrow(/traversal/);
+    await expect(kay.session.files.readImageFile(at('missing.png'))).rejects.toThrow(/ENOENT/);
+    await expect(kay.session.files.readImageFile({ owner: bob.session.selfId, share: 'nope', path: 'flow.svg' })).rejects.toThrow(/not shared with you/);
   });
 
   it('follows a friend and their agent like Google Docs', async () => {

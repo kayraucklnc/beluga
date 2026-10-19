@@ -1,14 +1,18 @@
 import { randomBytes } from 'node:crypto';
 import type { AgentBackend } from '../../agent/types.js';
-import type { NoticeEvent } from '../notify.js';
+import { type NoticeEvent, presenceQuiet } from '../notify.js';
 import { type Action, type Store, peerName } from '../store.js';
 import { type TrustLevel, defaultTrust } from '../trust.js';
+import { type Capabilities, Decision, type DecisionInput, type Rule, offersFor } from './access.js';
 import { TaskBook } from './book.js';
-import { type GatewayState, type PeerCard, type TaskView, isFinal } from './model.js';
-import { type Expects, type GatewayMsg, type Need, OFFERED, type PeerCardMsg, type TaskResult, type TaskUpdate } from './protocol.js';
-import { describeForClaude, oneLine, resumePrompt } from './result.js';
+import type { SystemPort } from './device.js';
+import { type GatewayState, type PeerCard, type TaskFile, type TaskView, isFinal } from './model.js';
+import { type Expects, type GatewayMsg, MAX_QUESTIONS, type Need, type PeerCardMsg, type TaskKind, type TaskQuestion, type TaskResult, type TaskUpdate } from './protocol.js';
+import { describeForClaude, oneLine, questionPrompt, resumePrompt } from './result.js';
+import { RuleBook, type RuleInput } from './rule-book.js';
 import { validate } from './schema.js';
 import { type Pending, type ServeShell, TaskServer, defaultScratch } from './serve.js';
+import { FileFetcher, mergeFiles, wantedFiles } from './transfer.js';
 import { Courier, type MeshPort, type RoomPort, type Via } from './transport.js';
 
 /**
@@ -31,9 +35,20 @@ export interface GatewayDeps {
   /** Where scratch folders go when `dir` is null. */
   readonly scratch?: string;
   readonly agent: () => AgentBackend | undefined;
-  /** Ask you (today's approval cards), with a way to take the question back. */
-  readonly approve: (kind: 'request' | 'tool', title: string, detail: string, peer: string) => Pending;
-  readonly setTrust: (peerId: string, level: TrustLevel) => void;
+  /** Ask you (today's approval cards, linked to the task they're about), with a way to take the question back. */
+  readonly approve: (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string) => Pending;
+  /** ~/.klaud/rules.json (null or missing: rules stay in memory). */
+  readonly rulesFile?: string | null;
+  /** Your capability settings (what friends' Claudes may do here), and saving them. */
+  readonly loadCaps?: () => unknown;
+  readonly saveCaps?: (caps: Capabilities) => void;
+  /** The screen and device info (tests pass a pretend one). */
+  readonly system?: SystemPort;
+  readonly questionWaitMs?: number;
+  /** Where a friend's command runs when it names no folder (PeerRun's default). */
+  readonly runFolder?: (from: string) => Promise<string | undefined>;
+  /** How long a piece of a big file may take to come (tests make it short). */
+  readonly chunkTimeoutMs?: number;
   /** Commands friends' tasks run here (PeerRun's gates: full trust runs, others ask, secrets never). */
   readonly serveShell?: ServeShell;
   /** Start a new turn of your Claude in a conversation, with this prompt (resume). */
@@ -56,7 +71,9 @@ export interface AskInput {
   /** A name (friend or someone in the room) or a peer id. */
   readonly person: string;
   readonly ask: string;
-  readonly kind?: 'ask' | 'run';
+  readonly kind?: TaskKind;
+  /** file: the file on their Mac. */
+  readonly path?: string;
   readonly needs?: readonly Need[];
   readonly project?: string;
   readonly expects?: Expects;
@@ -104,8 +121,14 @@ const isAgentFinal = (status: string): boolean => status === 'done' || status ==
 
 export class Gateway {
   readonly book: TaskBook;
+  readonly rules: RuleBook;
   private readonly courier: Courier;
   private readonly server: TaskServer;
+  private readonly fetcher: FileFetcher;
+  /** Tasks whose open question waits for your Claude's current run there to end. */
+  private readonly toAsk = new Set<string>();
+  /** Questions already handed to your Claude (so the same one doesn't start two turns). */
+  private readonly toldQuestion = new Map<string, string>();
   private mesh: MeshNode | undefined;
   private readonly meshOff: Array<() => void> = [];
   private readonly waiters = new Map<string, Set<() => void>>();
@@ -122,6 +145,20 @@ export class Gateway {
 
   constructor(private readonly deps: GatewayDeps) {
     this.book = new TaskBook(deps.dir);
+    this.rules = new RuleBook({
+      file: deps.rulesFile ?? null,
+      loadCaps: deps.loadCaps ?? (() => undefined),
+      saveCaps: deps.saveCaps ?? (() => undefined),
+      onChange: (rules, capabilities) => {
+        deps.store.dispatch({ type: 'gw_rules', rules });
+        deps.store.dispatch({ type: 'gw_caps', capabilities });
+        // What you offer people may have changed: tell them.
+        this.told.clear();
+        this.queueCards();
+      },
+      now: () => this.now(),
+      onProblem: (title, body) => deps.notify?.({ kind: 'problems', title, body }),
+    });
     this.courier = new Courier(this.book, { mesh: () => this.mesh, room: () => deps.room?.() });
     this.server = new TaskServer({
       book: this.book,
@@ -133,16 +170,26 @@ export class Gateway {
       put: (t) => this.put(t),
       agent: deps.agent,
       approve: deps.approve,
-      setTrust: deps.setTrust,
+      access: { decide: (facts, trust) => this.rules.decide(facts, trust), remember: (facts, name, d) => this.rules.remember(facts, name, d), capabilities: () => this.rules.capabilities() },
       ...(deps.serveShell ? { serveShell: deps.serveShell } : {}),
       projectRoot: deps.projectRoot,
       model: () => {
         const prefs = deps.store.getState().prefs;
         return { ...(prefs.model ? { model: prefs.model } : {}), ...(prefs.effort ? { effort: prefs.effort } : {}) };
       },
-      notify: (title, body) => deps.notify?.({ kind: 'people', title, body }),
+      // Requests that run without asking still say so (silently on Do Not Disturb or while you appear offline).
+      notify: (title, body) => deps.notify?.({ kind: 'people', tag: 'task', title, body, ...(presenceQuiet(deps.store.getState()) ? { quiet: true } : {}) }),
       scratch: deps.scratch ?? defaultScratch(),
       now: () => this.now(),
+      ...(deps.system ? { system: deps.system } : {}),
+      ...(deps.questionWaitMs ? { questionWaitMs: deps.questionWaitMs } : {}),
+      ...(deps.runFolder ? { runFolder: deps.runFolder } : {}),
+    });
+    this.fetcher = new FileFetcher({
+      send: (to, msg) => this.courier.send(to, msg, false),
+      target: async (taskId, name) => this.book.claimPath(taskId, name, deps.scratch ?? defaultScratch()),
+      now: () => this.now(),
+      ...(deps.chunkTimeoutMs ? { chunkTimeoutMs: deps.chunkTimeoutMs } : {}),
     });
     // Tasks that were waiting on the other side when klaud quit are still there: keep waiting.
     // Received ones that were running here stopped with it.
@@ -151,6 +198,12 @@ export class Gateway {
       if (t.direction === 'sent' && t.state === 'confirm') this.put({ ...t, state: 'cancelled', result: { status: 'cancelled', summary: 'Not sent (klaud quit before you answered)', files: [], log: [] }, endedAt: this.now(), updatedAt: this.now() });
     }
     deps.store.dispatch({ type: 'gw_init', state: this.view() });
+    // Results whose big files were still coming when klaud quit: carry on fetching them.
+    for (const [id, result] of Object.entries(this.book.pending())) {
+      const task = this.book.get(id);
+      if (task && !isFinal(task.state)) setImmediate(() => void this.receiveFiles(task, result));
+      else this.book.setPending(id, undefined);
+    }
     this.offStore.push(deps.store.onAction((a) => this.onAction(a)));
     this.offStore.push(deps.store.subscribe(() => this.queueCards()));
     this.ticker = setInterval(() => this.tick(), TICK_MS);
@@ -165,6 +218,7 @@ export class Gateway {
     for (const off of this.offStore) off();
     this.detachMesh();
     this.server.stop();
+    this.fetcher.stop();
     for (const ws of this.waiters.values()) for (const w of ws) w();
     this.deps.store.dispatch({ type: 'gw_off' });
   }
@@ -229,6 +283,18 @@ export class Gateway {
       case 'card':
         this.onCard(from, msg);
         return;
+      case 'task_question':
+        this.onQuestion(from, msg);
+        return;
+      case 'task_answer':
+        this.server.onAnswer(from, msg);
+        return;
+      case 'file_get':
+        void this.server.onFileGet(from, msg);
+        return;
+      case 'file_chunk':
+        this.fetcher.onChunk(from, msg);
+        return;
     }
   }
 
@@ -239,7 +305,8 @@ export class Gateway {
     const peer = this.resolve(input.person);
     const kind = input.kind ?? 'ask';
     if (kind === 'run' && !input.command) throw new Error('Say which command to run');
-    const ask = (input.ask || input.command || '').trim();
+    if (kind === 'file' && !input.path?.trim()) throw new Error('Say which file (its full path on their Mac)');
+    const ask = (input.ask || input.command || (input.path ? `Send me ${input.path}` : '')).trim();
     if (!ask) throw new Error('Say what to ask');
     if (input.expects && input.expects !== 'files' && validateSchema(input.expects)) throw new Error(`The expects schema isn't usable: ${validateSchema(input.expects)}`);
     const level = this.trustFor(peer.peerId);
@@ -252,9 +319,10 @@ export class Gateway {
       peerName: peer.name,
       kind,
       ask,
-      needs: [...new Set(input.needs ?? (kind === 'run' ? ['shell'] : []))] as Need[],
+      needs: [...new Set(input.needs ?? (kind === 'run' ? ['shell'] : kind === 'file' ? ['files'] : []))] as Need[],
       by: input.by,
       state: confirm ? 'confirm' : 'sent',
+      ...(input.by === 'person' ? { confirmed: true } : {}),
       steps: [],
       createdAt: now,
       updatedAt: now,
@@ -264,10 +332,11 @@ export class Gateway {
       ...(input.command ? { command: input.command } : {}),
       ...(input.cwd ? { cwd: input.cwd } : {}),
       ...(input.timeoutSec ? { timeoutSec: input.timeoutSec } : {}),
+      ...(input.path ? { path: input.path.trim() } : {}),
       ...(input.conversation ? { conversation: input.conversation } : {}),
     });
     if (confirm) {
-      this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your Claude wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : '’s Claude'}`, body: oneLine(ask, 140), ...(input.conversation ? { channel: input.conversation } : {}) });
+      this.deps.notify?.({ kind: 'needsYou', tag: 'approval', title: `Your Claude wants to ask ${peer.name}${kind === 'run' ? `’s Mac to run a command` : kind === 'file' ? '’s Mac for a file' : '’s Claude'}`, body: oneLine(ask, 140), ...(input.conversation ? { channel: input.conversation } : {}) });
       const timer = setTimeout(() => this.confirm(task.id, false, undefined, 'Not sent: nobody answered in time'), this.deps.confirmTimeoutMs ?? DEFAULT_CONFIRM_MS);
       timer.unref();
       this.confirmTimers.set(task.id, timer);
@@ -283,7 +352,7 @@ export class Gateway {
     this.confirmTimers.delete(id);
     if (!yes) return this.finishLocal(task, 'cancelled', why ?? `Not sent: ${this.deps.selfName()} said not now`);
     const ask = edited?.trim() ? edited.trim().slice(0, 16_000) : task.ask;
-    const sent = this.put({ ...task, ask, state: 'sent', updatedAt: this.now() });
+    const sent = this.put({ ...task, ask, state: 'sent', confirmed: true, updatedAt: this.now() });
     this.transmit(sent);
     return this.book.get(id) ?? sent;
   }
@@ -320,12 +389,16 @@ export class Gateway {
         if (!set.size) this.waiters.delete(id);
         resolve(this.book.get(id) ?? first);
       };
+      const asked = first.question?.qid;
       const check = (): void => {
         const t = this.book.get(id);
         if (!t) return done();
         onChange?.(t);
         if (isFinal(t.state)) this.claimed.add(id);
-        if (isFinal(t.state) || this.stopped) done();
+        // A new question from their Claude: the one waiting gets it (and answers it).
+        const question = t.question && t.question.qid !== asked;
+        if (question) this.toldQuestion.set(id, t.question!.qid);
+        if (isFinal(t.state) || question || this.stopped) done();
       };
       const timer = setTimeout(done, Math.max(0, timeoutMs));
       timer.unref?.();
@@ -337,7 +410,53 @@ export class Gateway {
   describe(id: string): string {
     const task = this.need(id);
     if (task.result) this.markDelivered(task);
+    if (task.question) this.toldQuestion.set(id, task.question.qid);
     return describeForClaude(this.book.get(id) ?? task);
+  }
+
+  /**
+   * Answer the question their Claude asked about your task (your Claude, from what it knows,
+   * or you on the card): one answer per question in order, or skip (it goes on as it sees fit).
+   */
+  answer(id: string, answers: readonly string[] | 'skip', by: 'agent' | 'person'): TaskView {
+    const task = this.need(id);
+    const q = task.question;
+    if (task.direction !== 'sent' || !q || isFinal(task.state)) throw new Error(`Task ${id} has no question waiting for an answer`);
+    const skip = answers === 'skip';
+    if (!skip && !answers.some((a) => a.trim())) throw new Error('Give an answer (or skip)');
+    // Your Claude's answer tells them something: if you never saw this task, you see the answer first.
+    if (by === 'agent' && !skip && !task.confirmed) {
+      this.deps.notify?.({ kind: 'needsYou', tag: 'question', title: `Your Claude wants to answer ${task.peerName}'s Claude`, body: oneLine(answers.join(' · '), 140), ...(task.conversation ? { channel: task.conversation } : {}) });
+      return this.put({ ...task, answerDraft: { qid: q.qid, answers: answers.map((a) => a.slice(0, 4000)) }, updatedAt: this.now() });
+    }
+    const record = skip ? undefined : Object.fromEntries(q.questions.map((item, i) => [item.question, (answers[i] ?? '').trim().slice(0, 4000)]).filter(([, a]) => a));
+    this.courier.send(task.peerId, { t: 'task_answer', id, qid: q.qid, ...(record ? { answers: record } : { skip: true }), ts: this.now() }, true);
+    this.toAsk.delete(id);
+    const who = by === 'agent' ? 'Your Claude' : 'You';
+    const { question: _done, answerDraft: _draft, ...rest } = task;
+    return this.put({ ...rest, steps: [...task.steps, skip ? `${who} let them decide` : `${who} answered: ${oneLine(Object.values(record ?? {}).join(' · '), 120)}`].slice(-MAX_STEPS), updatedAt: this.now() });
+  }
+
+  // ------------------------------------------------------------------ approvals and rules
+
+  /** Your answer to a request waiting on you (the request sheet, a notification, the menu bar). */
+  decide(id: string, input: DecisionInput): TaskView {
+    const task = this.need(id);
+    if (task.direction !== 'received' || task.state !== 'awaiting_approval') throw new Error('That request is not waiting for you');
+    if (!this.server.decide(id, Decision.parse(input))) throw new Error('That request is not waiting for you');
+    return this.book.get(id) ?? task;
+  }
+
+  saveRule(input: RuleInput): Rule {
+    return this.rules.save(input);
+  }
+
+  removeRule(id: string): void {
+    if (!this.rules.remove(id)) throw new Error('That rule is gone');
+  }
+
+  setCapabilities(patch: { levels?: Partial<Capabilities['levels']>; folders?: readonly string[] }): Capabilities {
+    return this.rules.setCapabilities(patch);
   }
 
   // ------------------------------------------------------------------ people
@@ -355,7 +474,7 @@ export class Gateway {
       const card = state.gateway.cards[id];
       const yours = this.trustFor(id);
       const theirs = card?.trust ?? state.granted[id]?.level;
-      const offers = card?.offers ?? (room?.agent ? OFFERED : []);
+      const offers = card?.offers ?? (room?.agent ? ['project', 'shell', 'files'] : []);
       const status = friend ? `${friend.presence.state}${friend.presence.note ? ` · ${friend.presence.note}` : ''}` : undefined;
       return {
         name: friend?.name ?? room?.name ?? 'someone',
@@ -397,7 +516,7 @@ export class Gateway {
   }
 
   private view(): GatewayState {
-    return { enabled: true, tasks: this.book.all(), cards: this.book.allCards(), note: this.deps.loadNote() };
+    return { enabled: true, tasks: this.book.all(), cards: this.book.allCards(), note: this.deps.loadNote(), rules: this.rules.rules(), capabilities: this.rules.capabilities() };
   }
 
   /** Save a task, show it, and wake whoever waits on it. */
@@ -457,6 +576,7 @@ export class Gateway {
         ...(task.command ? { command: task.command } : {}),
         ...(task.cwd ? { cwd: task.cwd } : {}),
         ...(task.timeoutSec ? { timeoutSec: task.timeoutSec } : {}),
+        ...(task.path ? { path: task.path } : {}),
       },
       true,
     );
@@ -469,18 +589,116 @@ export class Gateway {
 
   private onUpdate(from: string, msg: TaskUpdate): void {
     const task = this.book.get(msg.id);
-    if (!task || task.direction !== 'sent' || task.peerId !== from || isFinal(task.state) || task.state === 'confirm') return;
+    if (!task || task.direction !== 'sent' || task.peerId !== from || isFinal(task.state) || task.state === 'confirm' || this.book.pending()[task.id]) return;
     this.put({ ...task, state: msg.state, ...(msg.step ? { steps: [...task.steps, msg.step].slice(-MAX_STEPS) } : {}), ...(msg.state === 'working' && !task.startedAt ? { startedAt: this.now() } : {}), updatedAt: this.now() });
   }
 
   private onResult(from: string, msg: TaskResult): void {
     const task = this.book.get(msg.id);
     // Only the person it was sent to answers it, once.
+    if (!task || task.direction !== 'sent' || task.peerId !== from || isFinal(task.state) || task.state === 'confirm' || this.book.pending()[task.id]) return;
+    if (msg.files.some((f) => f.ref && !f.b64)) {
+      void this.receiveFiles(task, msg);
+      return;
+    }
+    try {
+      this.complete(task, msg, this.book.saveFiles(task.id, msg.files, this.deps.scratch ?? defaultScratch()));
+    } catch (err) {
+      this.cantKeep(task.id, err);
+    }
+  }
+
+  /** What came back couldn't be kept here (the disk said no): the task ends, saying why. */
+  private cantKeep(id: string, err: unknown): void {
+    this.book.setPending(id, undefined);
+    const current = this.book.get(id);
+    if (!current || isFinal(current.state)) return;
+    const { incoming: _i, ...rest } = current;
+    const done = this.finishLocal(rest, 'failed', `${current.peerName} answered, but what came back couldn't be saved on this Mac: ${err instanceof Error ? err.message : String(err)}`);
+    this.announce(done);
+    this.settle(done);
+  }
+
+  /** The result's big files come in pieces first; then it's complete (files that didn't come are listed). */
+  private async receiveFiles(task: TaskView, msg: TaskResult): Promise<void> {
+    try {
+      await this.fetchFiles(task, msg);
+    } catch (err) {
+      this.cantKeep(task.id, err);
+    }
+  }
+
+  private async fetchFiles(task: TaskView, msg: TaskResult): Promise<void> {
+    this.book.setPending(task.id, msg);
+    const base = this.deps.scratch ?? defaultScratch();
+    const inline = this.book.saveFiles(task.id, msg.files.filter((f) => !f.ref || f.b64), base);
+    const wanted = wantedFiles(msg.files);
+    const total = wanted.reduce((n, f) => n + f.size, 0);
+    const mb = (n: number): string => `${(n / 1024 / 1024).toFixed(1)} MB`;
+    this.put({ ...task, state: 'working', incoming: { received: 0, total }, steps: [...task.steps, `Receiving ${wanted.length} file${wanted.length === 1 ? '' : 's'} (${mb(total)})`].slice(-MAX_STEPS), updatedAt: this.now() });
+    let shown = 0;
+    const fetched = await this.fetcher.fetchAll(task.peerId, task.id, wanted, (received) => {
+      // Progress at most every 5%: it's in the shared state.
+      if (received - shown < total / 20 && received < total) return;
+      shown = received;
+      const t = this.book.get(task.id);
+      if (t && !isFinal(t.state)) this.put({ ...t, incoming: { received, total }, updatedAt: this.now() });
+    });
+    if (this.stopped) return;
+    this.book.setPending(task.id, undefined);
+    const current = this.book.get(task.id);
+    if (!current || isFinal(current.state)) return;
+    const files = mergeFiles(msg.files, inline, wanted, fetched);
+    const missed = fetched.filter((f) => f.error).map((f) => `${f.name} didn't arrive: ${f.error}`);
+    const { incoming: _i, ...rest } = current;
+    this.complete(rest, msg, files, missed);
+  }
+
+  /** Their Claude asks something about your task: your Claude first (it knows the context), else you. */
+  private onQuestion(from: string, msg: TaskQuestion): void {
+    const task = this.book.get(msg.id);
     if (!task || task.direction !== 'sent' || task.peerId !== from || isFinal(task.state) || task.state === 'confirm') return;
-    const files = this.book.saveFiles(task.id, msg.files, this.deps.scratch ?? defaultScratch());
-    const problems = task.expects && task.expects !== 'files' && msg.status === 'done' ? (msg.data === undefined ? ['No structured data came back'] : validate(msg.data, task.expects)) : task.expects === 'files' && msg.status === 'done' && !files.some((f) => f.path) ? ['No files came back'] : [];
+    // Each question once (a replay of an answered one is nothing new), and only a few per task.
+    const asked = task.asked ?? [];
+    if (asked.includes(msg.qid)) return;
+    if (asked.length >= MAX_QUESTIONS) {
+      this.courier.send(from, { t: 'task_answer', id: task.id, qid: msg.qid, skip: true, ts: this.now() }, true);
+      return;
+    }
+    const { answerDraft: _old, ...plainTask } = task;
+    const next = this.put({
+      ...plainTask,
+      asked: [...asked, msg.qid],
+      question: { qid: msg.qid, questions: msg.questions, askedAt: this.now() },
+      steps: [...task.steps, `${task.peerName}'s Claude asks: ${oneLine(msg.questions[0]!.question, 120)}`].slice(-MAX_STEPS),
+      updatedAt: this.now(),
+    });
+    // A wait_for that was waiting already took it (see wait).
+    if (this.toldQuestion.get(next.id) === msg.qid) return;
+    if (next.by === 'agent' && next.conversation) {
+      if (this.busy(next.conversation)) this.toAsk.add(next.id);
+      else this.askClaude(next);
+      return;
+    }
+    this.deps.notify?.({ kind: 'needsYou', tag: 'question', title: `${next.peerName}'s Claude has a question`, body: oneLine(msg.questions[0]!.question, 140) });
+  }
+
+  /** Start a turn of your Claude with the question (once per question). */
+  private askClaude(task: TaskView): void {
+    const current = this.book.get(task.id);
+    if (!current?.question || !current.conversation || isFinal(current.state)) return;
+    if (this.toldQuestion.get(current.id) === current.question.qid) return;
+    this.toldQuestion.set(current.id, current.question.qid);
+    this.deps.resume(current.conversation, questionPrompt(current));
+  }
+
+  private complete(task: TaskView, msg: TaskResult, files: readonly TaskFile[], missed: readonly string[] = []): void {
+    const checked = task.expects && task.expects !== 'files' && msg.status === 'done' ? (msg.data === undefined ? ['No structured data came back'] : validate(msg.data, task.expects)) : task.expects === 'files' && msg.status === 'done' && !files.some((f) => f.path) ? ['No files came back'] : [];
+    const problems = [...checked, ...missed];
+    const { question: _q, incoming: _in, answerDraft: _d, ...plain } = task;
+    this.toAsk.delete(task.id);
     const done = this.put({
-      ...task,
+      ...plain,
       state: msg.status,
       result: {
         status: msg.status,
@@ -488,7 +706,7 @@ export class Gateway {
         files,
         log: msg.log,
         ...(msg.data !== undefined ? { data: msg.data } : {}),
-        ...(task.expects && msg.status === 'done' ? { valid: problems.length === 0 } : {}),
+        ...(task.expects && msg.status === 'done' ? { valid: checked.length === 0 } : {}),
         ...(problems.length ? { problems } : {}),
       },
       endedAt: this.now(),
@@ -499,7 +717,7 @@ export class Gateway {
   }
 
   private announce(task: TaskView): void {
-    const who = task.kind === 'run' ? `Your command on ${task.peerName}'s Mac` : `${task.peerName}'s Claude`;
+    const who = task.kind === 'run' ? `Your command on ${task.peerName}'s Mac` : task.kind === 'file' ? `Your file request to ${task.peerName}'s Mac` : `${task.peerName}'s Claude`;
     const verb = task.state === 'done' ? (task.kind === 'run' ? 'finished' : 'replied') : task.state === 'declined' ? 'was declined' : task.state === 'cancelled' ? 'was cancelled' : 'failed';
     this.deps.notify?.({ kind: task.state === 'done' ? 'done' : 'problems', title: `${who} ${verb}`, body: oneLine((task.result?.summary ?? task.ask).replace(/[*_`#>]/g, ''), 140), ...(task.conversation ? { channel: task.conversation } : {}) });
   }
@@ -536,9 +754,20 @@ export class Gateway {
   }
 
   private onAction(action: Action): void {
-    // A run of yours ended: results it didn't pick up start the next turn.
-    if (action.type !== 'agent_event' || action.owner !== this.deps.selfId() || !isAgentFinal(action.event) || !this.toResume.size) return;
+    // A run of yours ended: results (and questions) it didn't pick up start the next turn.
+    if (action.type !== 'agent_event' || action.owner !== this.deps.selfId() || !isAgentFinal(action.event) || (!this.toResume.size && !this.toAsk.size)) return;
     setImmediate(() => {
+      for (const id of [...this.toAsk]) {
+        const task = this.book.get(id);
+        if (!task?.question || !task.conversation) {
+          this.toAsk.delete(id);
+          continue;
+        }
+        if (task.conversation === (action.channel ?? 'room') && !this.busy(task.conversation)) {
+          this.toAsk.delete(id);
+          this.askClaude(task);
+        }
+      }
       for (const id of [...this.toResume]) {
         const task = this.book.get(id);
         if (!task?.conversation) {
@@ -581,7 +810,8 @@ export class Gateway {
     for (const id of people) {
       if (!this.courier.reach(id)) continue;
       const trust = this.trustFor(id);
-      const card: PeerCardMsg = { t: 'card', trust, offers: trust === 'blocked' ? [] : [...OFFERED], projects: trust === 'blocked' ? [] : [...projects], claude, ...(note ? { note } : {}) };
+      const offers = offersFor(this.rules.capabilities(), trust);
+      const card: PeerCardMsg = { t: 'card', trust, offers, projects: offers.includes('project') ? [...projects] : [], claude, ...(note ? { note } : {}) };
       const key = JSON.stringify(card);
       if (this.told.get(id) === key) continue;
       if (this.courier.send(id, card, false)) this.told.set(id, key);

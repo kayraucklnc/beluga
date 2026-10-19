@@ -1,10 +1,16 @@
 import { execFile, spawn } from 'node:child_process';
+import { MAC_SOUNDS, type SoundChoice } from '../../shared/notify-sound.js';
 
 export interface DesktopNotice {
   readonly title: string;
   readonly body: string;
   readonly sound: boolean;
+  /** The sound chosen in Settings: a Mac sound plays as itself; Klaud's own sounds need the Mac app. */
+  readonly tone?: SoundChoice;
 }
+
+/** The Mac sound to ask for (`fallback` when the chosen sound isn't one of the Mac's). */
+const macSound = (n: DesktopNotice, fallback: string): string => (n.tone?.kind === 'mac' && MAC_SOUNDS.includes(n.tone.id) ? n.tone.id : fallback);
 
 /** How a notification reaches the desktop on this machine. */
 export type NotifyRoute = 'osc9' | 'osc99' | 'terminal-notifier' | 'osascript' | 'notify-send' | 'bell';
@@ -46,10 +52,10 @@ export function plan(route: NotifyRoute, n: DesktopNotice, env: NodeJS.ProcessEn
       return { write: `\x1b]99;i=klaud:d=0;${title}\x1b\\\x1b]99;i=klaud:d=1:p=body;${body}\x1b\\${bell}` };
     case 'terminal-notifier': {
       const app = env.__CFBundleIdentifier;
-      return { cmd: 'terminal-notifier', args: ['-title', 'klaud', '-subtitle', title, '-message', body || ' ', '-group', 'klaud', ...(n.sound ? ['-sound', 'default'] : []), ...(app ? ['-activate', app] : [])] };
+      return { cmd: 'terminal-notifier', args: ['-title', 'klaud', '-subtitle', title, '-message', body || ' ', '-group', 'klaud', ...(n.sound ? ['-sound', macSound(n, 'default')] : []), ...(app ? ['-activate', app] : [])] };
     }
     case 'osascript':
-      return { cmd: 'osascript', args: ['-e', `display notification ${appleString(body || ' ')} with title "klaud" subtitle ${appleString(title)}${n.sound ? ' sound name "Glass"' : ''}`] };
+      return { cmd: 'osascript', args: ['-e', `display notification ${appleString(body || ' ')} with title "klaud" subtitle ${appleString(title)}${n.sound ? ` sound name "${macSound(n, 'Glass')}"` : ''}`] };
     case 'notify-send':
       return { cmd: 'notify-send', args: ['-a', 'klaud', '--', title, body] };
     case 'bell':

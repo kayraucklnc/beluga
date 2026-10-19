@@ -144,26 +144,147 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
 (your Claude's tools), the Mac app's `src/gateway/` (task cards, Requests). The daemon runs it
 (`launchGateway`), over today's room at once and over friends' links whenever the network is on.
 
-- **Messages** (`protocol.ts`): `task_request {id, from, to, kind: ask|run, ask, needs, project?,
-  expects?: JSON schema | "files", deadline?, command?/cwd?/timeoutSec?, by}`, `task_update {id,
+- **Messages** (`protocol.ts`): `task_request {id, from, to, kind: ask|run|file, ask, needs, project?,
+  expects?: JSON schema | "files", deadline?, command?/cwd?/timeoutSec?, path?, by}`, `task_update {id,
   state: queued|awaiting_approval|working, step?}`, `task_result {id, status: done|declined|failed|
-  cancelled, summary, data?, files[], log}`, `task_cancel`, and `card` (your trust in them, what
-  your klaud offers, your projects, your "Ask me for…" note). Each rides in a frame `{f, m}` that
+  cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log}`, `task_cancel`,
+  `task_question {id, qid, questions}` / `task_answer {id, qid, answers? | skip}`,
+  `file_get {id, ref, offset}` / `file_chunk {id, ref, offset, b64, eof, error?}`, and `card` (your
+  trust in them, what your klaud offers them, your projects, your "Ask me for…" note). Each rides in a frame `{f, m}` that
   the other side acknowledges (`{ack}`): over a mesh link as `gw`, in a room as a `gateway` body
   sent to one person. Requests, results and cancels wait in `~/.klaud/tasks/outbox.json` until
   acknowledged (resent every 20 s while reachable, 7 days at most); updates and cards are only
   sent to someone reachable now. Over the network only friends are heard; a result is only taken
   from the person the task went to, and only once.
-- **Receiving**: blocked → declined; Trusted / Full trust → it runs; Ask me each time → today's
-  approval card "Kayra's Claude wants to: …" (Always = trusted). It runs in the project it names
-  (if there is one) or a scratch folder (`~/.klaud/tasks/work/<task>`), with the usual tool
-  approvals (none with full trust). `run` tasks go through PeerRun's gates (`serveTask`). Screen
-  and device needs are declined for now. Claude ends its answer with a fenced `klaud-result`
-  block for data and files; data is checked against `expects` on both sides; files only from the
-  folder it ran in (anywhere with full trust), never secrets, 512 KB in all, inline.
+- **Receiving**: your rules and capability settings decide (see *Approvals and rules* below):
+  declined (with the reason), let in at once (you trust them, or a rule of yours covers it), or you
+  are asked. It runs in the project it names (if there is one) or a scratch folder
+  (`~/.klaud/tasks/work/<task>`), with the usual tool approvals (none with full trust; commands
+  without asking where Run commands is Allow for their trust level). `run` tasks go through
+  PeerRun (`serveTask`: secrets never, limits per person); `file` tasks are sent by klaud itself.
+  Claude ends its answer with a fenced `klaud-result` block for data and files; data is checked
+  against `expects` on both sides; files only from the folder it ran in (and the folders you chose;
+  anywhere with full trust), never secrets: up to 512 KB in all inline, bigger ones fetched in
+  pieces (see *Big files*).
 - **Asking**: `ask_person` / `run_on` for someone you don't trust (Trusted / Full) first put an
   "Ask Alice's Claude?" card in the conversation (Ask / Edit / Not now, 10 minutes). Results reach
   your Claude as data in a `<task_result>` block, marked untrusted. If its turn ended before the
   result came (or it didn't wait for it), a new turn starts in that conversation with it.
-- **Files**: `~/.klaud/tasks/tasks.json` (the last 200 tasks and friends' cards), `outbox.json`,
-  `files/<task>/` (what results brought), `work/<task>/`.
+- **Inside `~/.klaud`** everything stays private to friends' tasks (`isSecretPath`, compared as
+  the Mac compares names: any case, links followed, the old `~/.klaude` too) except the scratch
+  folders tasks run in (`tasks/work/`) and the files results brought (`tasks/files/`).
+- **Files**: `~/.klaud/tasks/tasks.json` (the last 200 tasks, friends' cards, and results whose
+  big files are still coming), `outbox.json`, `files/<task>/` (what results brought),
+  `work/<task>/` (and `work/<task>/screens/`); `~/.klaud/rules.json` (your rules, 0600); your
+  capability settings are `capabilities` in `~/.klaud/settings.json`.
+
+### Approvals and rules
+
+A request from a friend is decided in this order; the first that applies wins:
+
+1. you blocked them: declined;
+2. it needs a capability that is **Off** for their trust level: declined, saying which
+   ("kay's klaud doesn't let you see the screen");
+3. a **Decline** or **Ask** rule of yours catches it: declined, or you're asked. Rules can always
+   narrow what trust allows;
+4. you trust them (Trusted or Full trust) and every capability it needs is **Allow**: it runs
+   (trust decides first; no rule needed);
+5. an **Allow** rule covers it: it runs;
+6. otherwise you're asked.
+
+A rule (`access.ts`, kept by `rule-book.ts`) is person × kind (`task`: their Claude asks yours,
+with these needs; `command`: one command; `file`: one file) × scope (a project by name, or a
+folder and what's inside it; or anywhere) × expiry (or never) → allow, ask or decline. An Allow
+rule covers requests that need no more than it lists (a request naming a project also needs
+`project`); Ask and Decline rules catch any request needing one of what they list (all of that
+kind when they list nothing). A command rule names the exact command (or any command); an Allow
+rule for any command must be limited to a folder or a project. Folders are saved where they
+really are (~ expanded, links followed); a command that names no folder is decided (and its
+"Always" scoped) for the folder it would run in. Expired rules are dropped as they're met. A
+`rules.json` that can't be read is kept aside as `rules.json.bad-<time>` (never overwritten) and
+you're told; requests it covered ask you again.
+
+Capabilities hold inside a run too: every tool call of a friend's task is checked (Bash needs
+Run commands; Write, Edit and the like need Read and write files), so a capability that is Off, or
+a Decline rule, stops it even with full trust. Requests from people you blocked are answered and
+nothing of them is kept. A request is decided before anything about your projects is said: a
+project that isn't there reads "That isn't available on Kay's Mac", like one they can't have.
+
+You're asked with today's approval card (linked to the task) and the **request sheet**: who
+(and your trust in them, with "Trust them instead"), what, what it needs (capabilities that are
+set to Ask me are marked), where it would run, what comes back. **Approve once**; **Always…**
+writes one rule for this person, kind and needs, with the scope spelled out and editable (this
+project or any; for a command, this command or any; for how long: until you change it, a day, a
+week); **Decline…** with an optional reason they see. While it runs, the sheet shows its steps
+and Stop. "Always" on the plain approval card (or a notification, or the menu bar) writes the same
+rule with the narrow defaults (this project, this command, no expiry); it no longer makes the
+person Trusted: that's a separate choice (the sheet's link, their card, Settings).
+
+The same rules apply to commands friends run through a room (`run_on_peer`) while the app's
+gateway runs (PeerRun's "Always" writes a rule for that command in that folder); without it (the
+terminal on its own), trust alone decides as before.
+
+**Notifications.** A friend's request on its own gets buttons on the macOS notification
+(tauri-plugin-notification 2.7 shows actions on desktop: with several, macOS puts them in an
+"Options" menu, and a click on that menu's title reports the first action, so the first is the
+harmless **Review…**): Review… / Approve / Always Allow for a Week / Decline. Anything else (your
+own Claude's tools) only gets Review…: it's answered in the window. A click on the notification
+opens the request sheet. The **menu-bar menu** lists friends' requests waiting (up to six), each
+with Approve / Always Allow for a Week (tasks only) / Decline / Review…. "Always" from outside the
+window is this project, this command, for a week; the sheet offers the other choices. On **Do Not Disturb** or while you **appear offline**, friends'
+requests still queue (cards, inbox, Requests, the menu bar) but make no notification; rules still
+let requests in, and those notices are quiet too.
+
+### What your friends' Claudes can do here
+
+Settings › People & access › *What your friends' Claudes can do here*: each capability is Allow,
+Ask me or Off for each trust level (Ask me each time can only ask or be off; blocked people get
+nothing). Defaults:
+
+| | Ask me each time | Trusted | Full trust |
+|---|---|---|---|
+| Run commands | ask | ask | allow |
+| Read and write files (the folders you choose) | ask | allow | allow |
+| Work in projects | ask | allow | allow |
+| See the screen | off | ask | allow |
+| Device info | ask | allow | allow |
+
+Your card tells each friend what you offer them (their Claude sees it in `who_can`).
+
+- **See the screen**: the task's Claude gets a `screenshot` tool (MCP server `klaud_task`, only in
+  runs for a request that needed `screen` and was let in): `screencapture -x` of the main display,
+  or of one app's front window (found through CoreGraphics' window list). It sees a smaller JPEG
+  (`sips`); the PNG goes back with the result as an image. At most 4 per request. macOS asks you
+  once to allow Screen Recording for klaud.
+- **Device info**: a `device_info` tool: macOS version and build, model and chip (from
+  `system_profiler`, never the serial number), cores, memory, disk space, battery (`pmset`),
+  uptime, local network addresses (no MAC addresses, nothing looked up outside), and the apps in
+  /Applications and ~/Applications.
+- **Read and write files**: the folders you choose are added to the task's Claude's folders when
+  the request needs `files`; `get_file(person, path)` (a `file` task) sends one file from them
+  (anywhere with full trust), never secrets.
+
+### Big files
+
+Files a result can't carry inline (over 512 KB in all) are offered under a random id, to the
+requester only, for 24 hours (in memory: a restart of the sender drops them). The requester pulls
+each one in 192 KB pieces (`file_get` → `file_chunk`) over the same link (a friend's Noise link,
+or the room), one piece at a time, asking again after 20 s (six tries), checks the size it was
+told and the SHA-256, and only then keeps it under `files/<task>/`. At most 32 MB a file and 64 MB
+a task. Meanwhile the task stays *working* ("Receiving files…", with progress); the result is
+kept on disk, so a restart carries on fetching. A file that can't be had is listed as not
+received.
+
+### Questions from their Claude
+
+When the friend's Claude asks something while working on your task (AskUserQuestion), its
+question goes back to you as `task_question` and waits (15 minutes, then it goes on with its best
+judgment; at most 5 per task). On your side your Claude is asked first: a `wait_for` that is
+waiting returns the question; if its turn ended, a new turn starts in that conversation with it.
+It answers with `answer_question` (one answer per question, or skip) from what it knows, or asks
+you first (its own AskUserQuestion). If you never saw that task (it went straight to someone you
+trust), its answer waits on the task's card for you to send, change, or let them decide. Each
+question is taken once (a replay is ignored, frames are de-duplicated by id) and at most five per
+task (more are answered "go on"). The question is shown as data from that person, never as
+instructions. You can also answer (or let them decide) on the task's card; a task you asked
+yourself notifies you.

@@ -1,4 +1,5 @@
 import type { ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
+import type { StepRecord } from '../shared/steps.js';
 
 /** How far a request may reach on the owner's computer. */
 export type AccessScope = 'folder' | 'full';
@@ -12,15 +13,27 @@ export interface AgentRunInput {
   readonly scope: AccessScope;
   readonly signal: AbortSignal;
   readonly onEvent: (kind: 'text' | 'tool' | 'sub' | 'context' | 'compact' | 'usage', text: string) => void;
+  /**
+   * Each step in detail as it happens (the tool's input and output, thinking), for the screens on
+   * this computer only: kept beside the chat, never sent anywhere (see core/step-book.ts).
+   */
+  readonly onStep?: (record: StepRecord) => void;
   /** Model for this run (an alias like "sonnet" or a full id); unset: the default. */
   readonly model?: string;
   readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Your environment variables for this run, over klaud's own (only for runs you asked for). */
   readonly env?: Readonly<Record<string, string>>;
+  /** Auto-compact threshold (percent) for Claude Code's own compaction; unset: auto-compact is off. */
+  readonly autoCompactAt?: number;
   /** Where to run: a workspace folder with its own Claude conversation. Defaults to the room's folder. */
   readonly place?: AgentPlace;
   /** Called with absolute paths the agent wrote to, so the room can follow along. */
   readonly onFileTouched: (absPath: string) => void;
+  /**
+   * Checked before every tool call, before any other rule (a friend's task: what its owner's
+   * capabilities and rules forbid). A reason: denied, whatever else would allow it.
+   */
+  readonly vetTool?: (toolName: string, input: Record<string, unknown>) => string | undefined;
   /** Ask the owner whether a non-preapproved tool may run. */
   readonly canUseTool: (toolName: string, input: Record<string, unknown>) => Promise<boolean>;
   /** Ask the person who made the request: Claude's questions, or a plan to approve. */
@@ -37,10 +50,18 @@ export interface AgentRunInput {
    * `task` there (Claude's continue_in_worktree tool). Resolves with what to tell Claude.
    */
   readonly continueInWorktree?: (task: string) => Promise<string>;
+  /** A friend's task: the extra tools its owner allowed (the screen, device info). */
+  readonly taskTools?: TaskTools;
+}
+
+/** What a friend's task may look at on this Mac (see agent/task-tools.ts). */
+export interface TaskTools {
+  readonly screenshot?: (app?: string) => Promise<{ readonly text: string; readonly image?: { readonly data: string; readonly mimeType: string } }>;
+  readonly deviceInfo?: () => Promise<string>;
 }
 
 /** A message sent into a run that is still waiting on its background agents. */
-export interface FollowUp extends Pick<AgentRunInput, 'prompt' | 'requesterName' | 'viaAgent' | 'context' | 'onEvent'> {
+export interface FollowUp extends Pick<AgentRunInput, 'prompt' | 'requesterName' | 'viaAgent' | 'context' | 'onEvent' | 'onStep'> {
   readonly onDone: (final: string) => void;
   readonly onError: (reason: string) => void;
 }
@@ -58,6 +79,8 @@ export interface AgentPlace {
   readonly model?: string;
   /** A project's main folder: questions only, nothing may change (see policy.ts). */
   readonly askOnly?: { readonly project: string };
+  /** With askOnly, for one run: Claude brings the default branch up to date (git syncing only; see sync-main.ts). */
+  readonly syncMain?: { readonly branch: string; readonly upstream: string };
 }
 
 export interface SubAgentEvent {

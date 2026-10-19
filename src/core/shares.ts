@@ -34,23 +34,56 @@ const MAX_WATCHED = 200;
 const segmentsOf = (p: string): string[] => p.split(/[\\/]/).filter(Boolean).map((s) => s.toLowerCase());
 
 /** klaud's own home (~/.klaud): your identity key, settings and trust choices live there. */
-const klaudHomeDir = (): string => path.resolve(process.env.KLAUD_HOME ?? path.join(process.env.HOME ?? '~', '.klaud'));
+const klaudHomeDir = (): string => path.resolve(process.env.KLAUD_HOME ?? process.env.KLAUDE_HOME ?? path.join(process.env.HOME ?? '~', '.klaud'));
+
+/** The Mac's file system ignores case: compare paths the way it does. */
+const fold = (p: string): string => (process.platform === 'darwin' || process.platform === 'win32' ? p.toLowerCase() : p);
+
+/** Where a path really is (its links followed, its case as on disk), for as much of it as exists. */
+function realOf(p: string): string {
+  const rest: string[] = [];
+  for (let at = p; ; at = path.dirname(at)) {
+    try {
+      return path.join(realpathSync.native(at), ...rest);
+    } catch {
+      if (path.dirname(at) === at) return p;
+      rest.unshift(path.basename(at));
+    }
+  }
+}
+
+/** klaud's home in every form it can be reached by: as named, really, and the old ~/.klaude. */
+function klaudHomes(): string[] {
+  const named = klaudHomeDir();
+  const legacy = path.resolve(process.env.HOME ?? '~', '.klaude');
+  return [...new Set([named, realOf(named), legacy, realOf(legacy)].map(fold))];
+}
+
+/**
+ * Inside klaud's home, what stays usable: worktrees, chat folders, files put in the outbox, and
+ * friends' tasks (the scratch folders they run in, and the files their results brought).
+ */
+const OPEN_IN_HOME = [['workspaces'], ['chats'], ['outbox'], ['tasks', 'work'], ['tasks', 'files']];
+
+function secretInHome(abs: string): boolean {
+  for (const candidate of new Set([fold(abs), fold(realOf(abs))])) {
+    for (const home of klaudHomes()) {
+      if (candidate === home) return true;
+      if (!candidate.startsWith(home + path.sep)) continue;
+      const parts = candidate.slice(home.length + 1).split(path.sep);
+      // An open folder and what's in it (but not what's beside it, e.g. tasks/tasks.json).
+      if (!OPEN_IN_HOME.some((open) => parts.length >= open.length && open.every((seg, i) => parts[i] === seg))) return true;
+    }
+  }
+  return false;
+}
 
 export function isSecretPath(p: string): boolean {
   const segments = segmentsOf(p);
   if (segments.some((s) => SECRET_SEGMENTS.has(s))) return true;
   if (SECRET_PATHS.some((re) => re.test(p))) return true;
-  // klaud's own files in ~/.klaud (identity key, settings, trust choices, history). Worktrees,
-  // chat folders and files deliberately put in the outbox live there too, and stay usable.
-  if (path.isAbsolute(p)) {
-    const home = klaudHomeDir();
-    const abs = path.resolve(p);
-    if (abs === home) return true;
-    if (abs.startsWith(home + path.sep)) {
-      const top = abs.slice(home.length + 1).split(path.sep)[0] ?? '';
-      if (!['workspaces', 'chats', 'outbox'].includes(top)) return true;
-    }
-  }
+  // klaud's own files in ~/.klaud (identity key, settings, rules, trust choices, history).
+  if (path.isAbsolute(p) && secretInHome(path.resolve(p))) return true;
   const base = segments.at(-1) ?? '';
   return SECRET_FILE.some((re) => re.test(base));
 }

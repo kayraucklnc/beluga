@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { AUTO_COMPACT_DEFAULT, AUTO_COMPACT_MAX, AUTO_COMPACT_MIN } from './context-usage.js';
+import { coercePerKind, coerceSound, DEFAULT_SOUND, DEFAULT_VOLUME, PerKindSounds, SoundChoice } from './notify-sound.js';
 
 // Settings as data (no file access), so the reducer and the clients can use them anywhere.
 
@@ -19,7 +21,14 @@ export type Effort = (typeof EFFORTS)[number];
 export const NotifySettings = z.object({
   /** Show a desktop notification (macOS Notification Center, notify-send on Linux). */
   desktop: z.boolean().default(true),
-  sound: z.boolean().default(true),
+  /** The sound notifications make (was on/off: `true` reads as the default sound, `false` as none). */
+  sound: z.preprocess((v) => (v === undefined ? v : coerceSound(v)), SoundChoice).default(DEFAULT_SOUND),
+  /** How loud Klaud's own sounds (8-bit, generated) are, 0–1. Mac sounds play at the system's alert volume. */
+  soundVolume: z.number().min(0).max(1).default(DEFAULT_VOLUME),
+  /** A sound for each kind of notification (`null`: the same sound for all). */
+  perKind: z.preprocess((v) => (v === undefined ? v : coercePerKind(v)), PerKindSounds.partial().nullable()).default(null),
+  /** Generated sounds you kept (their seeds), to pick from again. */
+  madeSounds: z.array(z.number().int().min(0).max(0xffffffff)).max(12).default([]),
   /** Claude finished (or stopped) in a workspace you're not looking at. */
   done: z.boolean().default(true),
   /** Claude asks a question, proposes a plan, or needs an approval. */
@@ -61,6 +70,10 @@ export const Settings = z.object({
   autoSetup: z.boolean().default(true),
   /** Show how full each conversation's context is. */
   contextMeter: z.boolean().default(true),
+  /** Compact a conversation on its own when its context is nearly full (the chat stays on screen). */
+  autoCompact: z.boolean().default(true),
+  /** How full (percent) a conversation gets before it's compacted. */
+  autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX).catch(AUTO_COMPACT_DEFAULT),
   /** How much of Claude's sub-agent work the chat shows. */
   subagents: z.enum(['full', 'compact', 'hidden']).default('full'),
   /** Workspace buttons you chose to hide from the top bar. */
@@ -79,5 +92,7 @@ export const Settings = z.object({
   network: z.boolean().optional(),
   /** "Ask me for…": a short note friends' Claudes see on your card (the gateway, Mac app). */
   askMeFor: z.string().max(280).optional(),
+  /** What friends' Claudes may do here, by trust level (checked fully in core/gateway/access.ts). */
+  capabilities: z.object({ levels: z.record(z.string(), z.record(z.string(), z.string())).optional(), folders: z.array(z.string().max(4096)).max(20).optional() }).optional(),
 });
 export type Settings = z.infer<typeof Settings>;

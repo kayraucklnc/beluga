@@ -39,20 +39,75 @@ export interface ProjectEarnings {
   readonly error?: EarningsError;
 }
 
+/**
+ * Exchange rates, roughly (the European Central Bank's, fetched once a day), to add up earnings in
+ * several currencies: how many of each currency one US dollar buys. Lowercase codes.
+ */
+export interface FxRates {
+  readonly rates: Readonly<Record<string, number>>;
+  /** When they were fetched. */
+  readonly at: number;
+}
+
 export interface EarningsSlice {
   /** By project folder (like the environment's names). */
   readonly earnings: Readonly<Record<string, ProjectEarnings>>;
+  readonly fx?: FxRates;
 }
 
 export const initialEarnings: EarningsSlice = { earnings: {} };
 
 export type EarningsAction =
   /** A project's Stripe connection changed (no `earnings`: disconnected). */
-  { type: 'earnings'; root: string; earnings?: ProjectEarnings };
+  | { type: 'earnings'; root: string; earnings?: ProjectEarnings }
+  | { type: 'fx_rates'; fx: FxRates };
 
 export function reduceEarnings(state: EarningsSlice, action: EarningsAction): EarningsSlice {
-  if (action.earnings) return { earnings: { ...state.earnings, [action.root]: action.earnings } };
+  if (action.type === 'fx_rates') return { ...state, fx: action.fx };
+  if (action.earnings) return { ...state, earnings: { ...state.earnings, [action.root]: action.earnings } };
   if (!(action.root in state.earnings)) return state;
   const { [action.root]: _gone, ...rest } = state.earnings;
-  return { earnings: rest };
+  return { ...state, earnings: rest };
+}
+
+/** A currency's smallest unit per whole unit (100 for USD, 1 for JPY). */
+export function minorUnits(currency: string): number {
+  try {
+    const digits = new Intl.NumberFormat('en', { style: 'currency', currency: currency.toUpperCase() }).resolvedOptions().maximumFractionDigits;
+    return 10 ** (digits ?? 2);
+  } catch {
+    return 100;
+  }
+}
+
+/**
+ * Several totals as one, in `into` (smallest unit), at these rates; undefined when a currency has
+ * no rate. Approximate on purpose: it's a glance, Stripe has the exact figures.
+ */
+export function convertTotals(totals: readonly MoneyTotal[], into: string, fx: FxRates | undefined): number | undefined {
+  let usd = 0;
+  for (const t of totals) {
+    if (t.currency === into && totals.length === 1) return t.amount;
+    const rate = t.currency === 'usd' ? 1 : fx?.rates[t.currency];
+    if (!rate) return undefined;
+    usd += t.amount / minorUnits(t.currency) / rate;
+  }
+  const out = into === 'usd' ? 1 : fx?.rates[into];
+  if (!out) return undefined;
+  return Math.round(usd * out * minorUnits(into));
+}
+
+/**
+ * The currency totals are shown in: the one the most money was earned in (converted to compare),
+ * dollars when nothing is connected.
+ */
+export function mainCurrency(earnings: Readonly<Record<string, ProjectEarnings>>, fx: FxRates | undefined): string {
+  const usd = new Map<string, number>();
+  for (const e of Object.values(earnings)) {
+    for (const t of e.totals ?? []) usd.set(t.currency, (usd.get(t.currency) ?? 0) + (convertTotals([t], 'usd', fx) ?? 0));
+  }
+  let best = 'usd';
+  let most = -1;
+  for (const [currency, value] of usd) if (value > most) [best, most] = [currency, value];
+  return best;
 }

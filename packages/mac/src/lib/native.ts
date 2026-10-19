@@ -6,10 +6,11 @@ import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { setPrefs, getPrefs, zoom } from './prefs.js';
 import { byMenu, showPanelTab, togglePanel, toggleTerminal } from './panel.js';
 import { PANEL_LABELS, PANEL_TABS, type PanelTab } from './panel-model.js';
-import { badgeCount } from '@klaud/ui/notice-models.js';
+import { dockCount } from '../layout/attention-model.js';
 import { NOTIFICATION_TAP, macNoticeTarget, openNoticeTarget } from './notices.js';
 import { COMMAND_IDS, type CommandId, commandState, runCommand } from './commands.js';
 import { openNetworkLink, runNetworkMenuItem } from '../network/net-native.js';
+import { runRequestMenuItem } from '../gateway/request-native.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
@@ -30,6 +31,8 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
   if (GO[id]) return actions.run({ type: 'view', view: { kind: GO[id]! } });
   // Friends, groups and your status (Add a Friend…, the menu bar's status items).
   if (runNetworkMenuItem(id, client)) return;
+  // A friend's request in the menu-bar menu: Approve / Always / Decline / Review….
+  if (runRequestMenuItem(id, client)) return;
   if (isCommand(id)) return runCommand({ client, ui, actions }, id);
   switch (id) {
     case 'settings':
@@ -65,7 +68,8 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'panel-changes':
     case 'panel-files':
     case 'panel-terminal':
-    case 'panel-info': {
+    case 'panel-info':
+    case 'panel-history': {
       const tab = id.slice('panel-'.length) as PanelTab;
       if (!PANEL_TABS.includes(tab)) return;
       return byMenu(`panel-${tab}`, () => {
@@ -136,8 +140,9 @@ export async function joinRoom(invite: string): Promise<void> {
 }
 
 /**
- * Keep the Dock icon's badge and the menu-bar icon in step with what's new for you: unread
- * notifications plus anything still waiting on you (see badgeCount).
+ * Keep the Dock icon's badge and the menu-bar icon in step with what's new for you: the
+ * sidebar's Unread conversations (one each), plus other unread notifications and anything
+ * still waiting on you (see dockCount).
  */
 export function useTrayStatus(client: SocketClient): void {
   useEffect(() => {
@@ -147,7 +152,7 @@ export function useTrayStatus(client: SocketClient): void {
       const st = client.store.getState();
       const waiting = st.approvals.length + st.questions.length + st.knocks.length;
       const working = new Set(st.log.filter((l) => l.type === 'agent' && l.owner === st.selfId && ['started', 'text', 'tool', 'sub'].includes(l.status)).map((l) => l.channel)).size;
-      const unread = badgeCount(st);
+      const unread = dockCount(st);
       const key = `${waiting}:${working}:${unread}`;
       if (key === last) return;
       last = key;

@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { WorktreeInfo } from '@klaud/core/other-worktrees.js';
 import { formatBytes } from '@klaud/shared/format.js';
-import { SOURCE_FOLDS, type WorktreeSource, sourceFromPath } from '@klaud/workspaces/origin.js';
+import { type WorktreeSource, sourceFromPath } from '@klaud/workspaces/origin.js';
 import type { Workspace } from '@klaud/workspaces/types.js';
 import { Alert } from '../components/Alert.js';
 import { Icon, type IconName } from '../components/Icon.js';
@@ -13,13 +13,16 @@ import s from './worktree-info.module.css';
 import { LivePanel } from '../claude-code/Live.js';
 
 /**
- * What a worktree made outside Klaud is (Conductor's, Claude Code's, a script's): who made it,
- * its branch and state, the Claude Code conversations that ran in it, and what you can do
+ * What a worktree made outside Klaud is (another app's, Claude Code's, a script's): where it
+ * is, its branch and state, the Claude Code conversations that ran in it, and what you can do
  * with it. Shown instead of an empty chat, and from "About This Worktree" over one with a
- * conversation.
+ * conversation. Another app is never named: the worktree's name and location say enough.
  */
 
-export const SOURCE_ICON: Readonly<Record<WorktreeSource, IconName>> = { conductor: 'grid', claude: 'claude', other: 'branch' };
+/** Claude's mark for one Claude made; a branch for the rest. */
+const iconOf = (source: WorktreeSource): IconName => (source === 'claude' ? 'claude' : 'branch');
+const MADE_OUTSIDE = 'Made outside Klaud';
+const MADE_OUTSIDE_DETAIL = 'Made by hand, by a script or by another app.';
 
 const day = (ms: number): string => new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 const when = (ms: number): string => new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -49,7 +52,8 @@ export function RemoveWorktreeAlert({ ws, info, onDone, onCancel }: { ws: Worksp
   const [busy, setBusy] = useState(false);
   const changed = info?.changed ?? ws.status?.changed ?? 0;
   const branch = info?.branch ?? ws.branch;
-  const conductor = (info?.origin.source ?? sourceFromPath(ws.path)) === 'conductor';
+  // Another app made it and may still use it.
+  const anotherApp = (info?.origin.source ?? sourceFromPath(ws.path)) === 'conductor';
   const go = (): void => {
     setBusy(true);
     void api.workspaces
@@ -79,7 +83,7 @@ export function RemoveWorktreeAlert({ ws, info, onDone, onCancel }: { ws: Worksp
               <strong>It has {plural(changed, 'uncommitted change')}.</strong> They’ll be lost.
             </p>
           ) : null}
-          {conductor ? <p>If you still use it in Conductor, archive it there instead: Conductor would show it as missing.</p> : null}
+          {anotherApp ? <p>If you still use it in the app that made it, remove it there instead: that app would show it as missing.</p> : null}
         </>
       }
       confirm={{ label: changed > 0 ? 'Remove Anyway' : 'Remove', destructive: true, disabled: busy, onClick: go }}
@@ -157,11 +161,11 @@ export function WorktreeInfoPage({ ws }: { ws: Workspace }) {
       <div className={s.inner}>
         <header className={s.head}>
           <span className={s.badge} aria-hidden="true">
-            <Icon name={SOURCE_ICON[source]} size={22} />
+            <Icon name={iconOf(source)} size={22} />
           </span>
           <div className={s.headText}>
             <h1 className={s.title}>{ws.name}</h1>
-            <p className={s.origin}>{info?.origin.label ?? SOURCE_FOLDS[source].title}</p>
+            <p className={s.origin}>{info?.origin.label ?? MADE_OUTSIDE}</p>
           </div>
           {hasChat ? (
             <Button size="small" variant="quiet" icon="back" onClick={() => setWorktreeFlag('about', ws.id, false)}>
@@ -169,7 +173,7 @@ export function WorktreeInfoPage({ ws }: { ws: Workspace }) {
             </Button>
           ) : null}
         </header>
-        <p className={s.lead}>{info?.origin.detail ?? SOURCE_FOLDS[source].explainer}</p>
+        <p className={s.lead}>{info?.origin.detail ?? MADE_OUTSIDE_DETAIL}</p>
         <LivePanel workspaceId={ws.id} />
         {info?.stale ? (
           <p className={s.stale}>
@@ -223,13 +227,7 @@ export function WorktreeInfoPage({ ws }: { ws: Workspace }) {
             <Field label="Compared with base">{info ? `${plural(info.ahead, 'commit')} ahead · ${info.behind} behind${info.merged ? ' · all merged' : ''}` : '…'}</Field>
             <Field label="Uncommitted">{info ? (info.changed ? plural(info.changed, 'file') : 'Nothing') : '…'}</Field>
             <Field label="Size on disk">{size !== undefined ? formatBytes(size) : 'Measuring…'}</Field>
-            {info?.conductor ? (
-              <Field label="In Conductor">
-                {info.conductor.name}
-                {info.conductor.state ? ` · ${info.conductor.state}` : ''}
-                {info.conductor.prTitle ? ` · PR: ${info.conductor.prTitle}` : ''}
-              </Field>
-            ) : null}
+            {info?.conductor?.prTitle ? <Field label="Pull request">{info.conductor.prTitle}</Field> : null}
             {info?.creator ? (
               <Field label="Made by">
                 Claude in “{info.creator.title ?? info.creator.sessionId.slice(0, 8)}”{info.creator.at ? `, ${day(info.creator.at)}` : ''}
@@ -266,13 +264,12 @@ export function WorktreeInfoPage({ ws }: { ws: Workspace }) {
   );
 }
 
-/** Above a conversation shown from another tool: where it came from, and its info page. */
+/** Above a conversation shown from a worktree made outside Klaud: what it is, and its info page. */
 export function OtherWorktreeBanner({ ws }: { ws: Workspace }) {
-  const source = sourceFromPath(ws.path);
   return (
     <div className={s.banner}>
-      <Icon name={SOURCE_ICON[source]} size={13} />
-      <span className={s.bannerText}>{source === 'other' ? 'A worktree made outside Klaud' : `A worktree from ${SOURCE_FOLDS[source].title}`}. It becomes one of yours once you send a message here.</span>
+      <Icon name={iconOf(sourceFromPath(ws.path))} size={13} />
+      <span className={s.bannerText}>A worktree made outside Klaud. It becomes one of yours once you send a message here.</span>
       <Button size="small" variant="quiet" onClick={() => setWorktreeFlag('about', ws.id, true)}>
         About This Worktree
       </Button>

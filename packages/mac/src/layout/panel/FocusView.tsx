@@ -8,7 +8,7 @@ import { ChatView } from '../../views/ChatView.js';
 import s from './panel.module.css';
 
 const DiffView = lazy(() => import('../../views/DiffView.js').then((m) => ({ default: m.DiffView })));
-const Viewer = lazy(() => import('../../views/FilesView.js').then((m) => ({ default: m.Viewer })));
+const FileFocus = lazy(() => import('../../views/reader/FileFocus.js').then((m) => ({ default: m.FileFocus })));
 const TerminalView = lazy(() => import('../../views/TerminalView.js').then((m) => ({ default: m.TerminalView })));
 
 const TITLES: Record<FocusKind, string> = { diff: 'Changes', file: 'File', terminal: 'Terminal' };
@@ -43,11 +43,19 @@ function useEscapeBack(): void {
 function FocusView({ kind, wsId }: { kind: FocusKind; wsId: string }) {
   useEscapeBack();
   const viewer = useApp((st) => (st.viewer && st.viewer.owner === st.selfId && st.viewer.share === shareNameOf(wsId) ? st.viewer : undefined));
-  const path = useApp((st) => (kind === 'diff' ? st.review?.data?.files[st.review.selected]?.path : kind === 'file' ? viewer?.path : undefined));
+  const path = useApp((st) => (kind === 'diff' ? st.review?.data?.files[st.review.selected]?.path : undefined));
   // The file was closed: nothing left to focus on.
   useEffect(() => {
     if (kind === 'file' && !viewer) closeFocus();
   }, [kind, viewer]);
+  // A file brings its own header (where it is, Rendered / Source, Copy, Open in Editor…).
+  if (kind === 'file') {
+    return viewer ? (
+      <Suspense fallback={<div className={s.loading} />}>
+        <FileFocus viewer={viewer} wsId={wsId} />
+      </Suspense>
+    ) : null;
+  }
   return (
     <div className={s.focus}>
       <div className={s.focusBar}>
@@ -62,7 +70,7 @@ function FocusView({ kind, wsId }: { kind: FocusKind; wsId: string }) {
         </span>
       </div>
       <Suspense fallback={<div className={s.loading} />}>
-        <div className={s.focusBody}>{kind === 'diff' ? <DiffView /> : kind === 'terminal' ? <TerminalView /> : viewer ? <Viewer viewer={viewer} /> : null}</div>
+        <div className={s.focusBody}>{kind === 'diff' ? <DiffView /> : <TerminalView />}</div>
       </Suspense>
     </div>
   );

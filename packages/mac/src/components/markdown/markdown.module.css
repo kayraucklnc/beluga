@@ -1,0 +1,553 @@
+/*
+ * The Markdown reader's typography: a comfortable measure (about 760 px), an even rhythm, and
+ * GitHub's conventions drawn the Mac way. Class names Markdown itself produces (alerts, task
+ * lists, footnotes) are global; everything else is this module's.
+ */
+
+.reader {
+  --md-size: 15px;
+  --md-leading: 1.7;
+  --md-measure: 760px;
+  --md-faint: color-mix(in srgb, var(--text) 3%, transparent);
+  --alert-note: var(--info);
+  --alert-tip: var(--ok);
+  --alert-important: #8250df;
+  --alert-warning: var(--warn);
+  --alert-caution: var(--error);
+}
+:global([data-theme='dark']) .reader {
+  --alert-important: #b392f0;
+  --md-faint: color-mix(in srgb, var(--text) 3.5%, transparent);
+}
+
+/* ---- where it's shown */
+
+/* Across the center: the page centered, the outline in the margin on the right. */
+.focus {
+  display: grid;
+  grid-template-columns: minmax(32px, 1fr) minmax(0, var(--md-measure)) minmax(32px, 1fr);
+  column-gap: 40px;
+  padding: 40px 0 30vh;
+}
+.focus .doc {
+  grid-column: 2;
+}
+.page {
+  padding: 32px 36px 96px;
+}
+.page .doc {
+  max-width: var(--md-measure);
+  margin: 0 auto;
+}
+.panel {
+  --md-size: 13px;
+  --md-leading: 1.62;
+  padding: 14px 18px 40px;
+}
+
+/* ---- the text */
+
+.doc {
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--md-size);
+  line-height: var(--md-leading);
+  overflow-wrap: break-word;
+  font-feature-settings: 'kern';
+}
+.doc > :first-child {
+  margin-top: 0 !important;
+}
+.doc > :last-child {
+  margin-bottom: 0 !important;
+}
+.doc p,
+.doc ul,
+.doc ol,
+.doc dl,
+.doc blockquote,
+.doc details,
+.doc :global(.markdown-alert) {
+  margin: 0 0 1.05em;
+}
+
+.doc h1,
+.doc h2,
+.doc h3,
+.doc h4,
+.doc h5,
+.doc h6 {
+  position: relative;
+  margin: 1.9em 0 0.6em;
+  color: var(--text);
+  font-weight: 650;
+  line-height: 1.25;
+  scroll-margin-top: 16px;
+}
+.doc h1 {
+  margin-top: 0.4em;
+  font-size: 2em;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+}
+.doc h2 {
+  padding-bottom: 0.32em;
+  border-bottom: 0.5px solid var(--hairline-strong);
+  font-size: 1.45em;
+  letter-spacing: -0.015em;
+}
+.doc h3 {
+  font-size: 1.2em;
+  letter-spacing: -0.008em;
+}
+.doc h4 {
+  font-size: 1em;
+}
+.doc h5 {
+  font-size: 0.9em;
+}
+.doc h6 {
+  color: var(--text-2);
+  font-size: 0.86em;
+}
+/* The link to a section, in the margin beside its heading. */
+.anchor {
+  position: absolute;
+  top: 50%;
+  left: -24px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  border-radius: 5px;
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.doc h2 .anchor {
+  margin-top: calc(-10px - 0.16em);
+}
+.doc :is(h1, h2, h3, h4, h5, h6):hover .anchor,
+.anchor:focus-visible {
+  opacity: 1;
+}
+.anchor:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  text-decoration: none;
+}
+.panel .anchor {
+  display: none;
+}
+
+.doc a {
+  color: var(--accent);
+  text-decoration: none;
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: from-font;
+}
+.doc a:hover {
+  text-decoration: underline;
+}
+.doc strong {
+  font-weight: 650;
+}
+.doc del {
+  color: var(--text-2);
+}
+.doc hr {
+  height: 0;
+  margin: 2.2em 0;
+  border: 0;
+  border-top: 0.5px solid var(--hairline-strong);
+}
+.doc sup,
+.doc sub {
+  line-height: 0;
+}
+
+/* ---- lists */
+
+.doc ul,
+.doc ol {
+  padding-left: 1.65em;
+}
+.doc li + li {
+  margin-top: 0.3em;
+}
+.doc li > p {
+  margin-bottom: 0.5em;
+}
+.doc li > :is(ul, ol) {
+  margin: 0.3em 0 0;
+}
+.doc li::marker {
+  color: var(--text-3);
+}
+.doc ol > li::marker {
+  font-variant-numeric: tabular-nums;
+}
+.doc :global(.contains-task-list) {
+  padding-left: 0.25em;
+  list-style: none;
+}
+.doc :global(.contains-task-list) :global(.contains-task-list) {
+  padding-left: 1.6em;
+}
+.doc :global(.task-list-item) {
+  list-style: none;
+}
+.check {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  top: 0.18em;
+  width: 1em;
+  height: 1em;
+  margin: 0 0.55em 0 0;
+  border-radius: 0.28em;
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  background: var(--bg-raised);
+  vertical-align: baseline;
+  opacity: 1;
+}
+.check:checked {
+  background: var(--accent);
+  box-shadow: none;
+}
+.check:checked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.8 8.4l2.7 2.7 5.7-6.2' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 78% no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.8 8.4l2.7 2.7 5.7-6.2' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 78% no-repeat;
+}
+.doc :global(.task-list-item):has(> .check:checked) {
+  color: var(--text-2);
+}
+
+/* ---- quotes and GitHub's alerts */
+
+.doc blockquote {
+  padding: 0.1em 0 0.1em 1.05em;
+  border-left: 3px solid var(--hairline-strong);
+  color: var(--text-2);
+}
+.doc blockquote > :last-child {
+  margin-bottom: 0;
+}
+.doc :global(.markdown-alert) {
+  --tone: var(--alert-note);
+  padding: 0.7em 1em 0.75em 1.05em;
+  border-left: 3px solid var(--tone);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--tone) 7%, transparent);
+}
+.doc :global(.markdown-alert) > :last-child {
+  margin-bottom: 0;
+}
+.doc :global(.markdown-alert-tip) {
+  --tone: var(--alert-tip);
+}
+.doc :global(.markdown-alert-important) {
+  --tone: var(--alert-important);
+}
+.doc :global(.markdown-alert-warning) {
+  --tone: var(--alert-warning);
+}
+.doc :global(.markdown-alert-caution) {
+  --tone: var(--alert-caution);
+}
+.doc :global(.markdown-alert-title) {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 0.3em;
+  color: var(--tone);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* ---- code */
+
+.inlineCode {
+  padding: 0.14em 0.38em;
+  border-radius: 5px;
+  background: var(--code-bg);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+.doc a .inlineCode {
+  color: inherit;
+}
+.doc :is(h1, h2, h3) .inlineCode {
+  font-size: 0.85em;
+}
+
+/* ---- tables: striped, scrolling sideways when they're wide */
+
+/* As wide as its content (wrapping to the page first); only a table that can't fit scrolls. */
+.tableWrap {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 1.15em;
+  overflow-x: auto;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+}
+.tableWrap table {
+  border-collapse: collapse;
+  font-size: 0.93em;
+  font-variant-numeric: tabular-nums;
+}
+.tableWrap th,
+.tableWrap td {
+  padding: 0.5em 0.95em;
+  border-bottom: 0.5px solid var(--hairline);
+  vertical-align: top;
+}
+.tableWrap td :global(code) {
+  white-space: nowrap;
+}
+.tableWrap th:not([align]),
+.tableWrap td:not([align]) {
+  text-align: left;
+}
+.tableWrap th {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tableWrap tbody tr:nth-child(even) {
+  background: var(--md-faint);
+}
+.tableWrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ---- images, math, diagrams */
+
+.image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+.doc p > .image:only-child {
+  display: block;
+  margin: 0.4em auto;
+}
+.imageLoading {
+  display: inline-block;
+  width: min(100%, 320px);
+  height: 140px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  vertical-align: middle;
+}
+.imageMissing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: 0.86em;
+}
+.mathBlock {
+  margin: 0 0 1.15em;
+  padding: 0.2em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+}
+.mathInline {
+  white-space: nowrap;
+}
+.diagram {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 1.15em;
+  padding: 20px 16px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--md-faint);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+.diagramSvg {
+  width: 100%;
+  min-width: 0;
+}
+.diagramSvg :global(svg) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+.diagramLoading {
+  padding: 24px;
+  color: var(--text-3);
+  font-size: 0.86em;
+}
+.diagramError {
+  margin: 0 0 1.15em;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--error) 6%, transparent);
+}
+.diagramError figcaption {
+  margin-bottom: 6px;
+  color: var(--error);
+  font-size: 0.86em;
+}
+
+/* ---- HTML GitHub allows */
+
+.doc details {
+  padding: 0.55em 0.95em;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+}
+.doc details[open] > summary {
+  margin-bottom: 0.55em;
+}
+.doc details > :last-child {
+  margin-bottom: 0;
+}
+.doc summary {
+  font-weight: 600;
+  cursor: default;
+}
+.doc kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), inset 0 -1px 0 var(--hairline-strong);
+  font: 500 0.8em/1.5 var(--font);
+  text-align: center;
+}
+.doc img[align='right'] {
+  margin: 0 0 0.6em 1em;
+}
+.doc img[align='left'] {
+  margin: 0 1em 0.6em 0;
+}
+.doc :global(.sr-only) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- footnotes */
+
+.doc :global(.footnotes) {
+  margin-top: 2.6em;
+  padding-top: 1em;
+  border-top: 0.5px solid var(--hairline-strong);
+  color: var(--text-2);
+  font-size: 0.88em;
+}
+.doc sup a[data-footnote-ref] {
+  padding: 0 0.1em;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+.doc :global(.data-footnote-backref) {
+  font-family: var(--font);
+}
+
+/* ---- front matter: a small table of its own */
+
+.meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  margin: 0 0 1.8em;
+  padding: 0.55em 0.9em;
+  border-radius: 8px;
+  background: var(--md-faint);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  font-size: 0.84em;
+}
+.metaRow {
+  display: contents;
+}
+.metaRow dt {
+  padding: 0.18em 1.4em 0.18em 0;
+  color: var(--text-3);
+}
+.metaRow dd {
+  margin: 0;
+  padding: 0.18em 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+/* ---- the outline beside the page (focus view) */
+
+.outline {
+  grid-column: 3;
+  grid-row: 1;
+  position: sticky;
+  top: 8px;
+  align-self: start;
+  justify-self: start;
+  width: min(220px, 100%);
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  padding-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.outlineTitle {
+  margin: 0 0 8px 11px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.outlineList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 1px solid var(--hairline-strong);
+}
+.outlineItem {
+  display: block;
+  margin-left: -1px;
+  padding: 4px 8px 4px 10px;
+  border-left: 1.5px solid transparent;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--dur-fast), border-color var(--dur-fast);
+}
+.outlineItem:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.outlineOn,
+.outlineOn:hover {
+  border-left-color: var(--accent);
+  color: var(--text);
+  font-weight: 500;
+}
+/* Narrow: the page takes the whole width, no outline. */
+@container (max-width: 1000px) {
+  .focus {
+    grid-template-columns: minmax(28px, 1fr) minmax(0, var(--md-measure)) minmax(28px, 1fr);
+    column-gap: 0;
+  }
+  .outline {
+    display: none;
+  }
+}

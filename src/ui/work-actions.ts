@@ -9,6 +9,7 @@ import { joinArgs } from '../shared/shells.js';
 import type { WorkspaceAction } from './workspace-models.js';
 import { NOTICE_FILTERS } from './notice-models.js';
 import { nextDnd } from '../shared/quiet.js';
+import { toggledSound } from '../shared/notify-sound.js';
 
 const SECTIONS: readonly SettingsSection[] = ['claude', 'notify', 'workspaces', 'people', 'display', 'buttons', 'terminal', 'env'];
 type NotifyKey = 'desktop' | 'sound' | 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background' | 'onlyAway';
@@ -60,7 +61,8 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
   }
   if (id.startsWith('n-') && id !== 'n-test') {
     const key = id.slice(2) as NotifyKey;
-    if (key in prefs.notify) setPrefs({ notify: { ...prefs.notify, [key]: !prefs.notify[key] } });
+    if (key === 'sound') setPrefs({ notify: { ...prefs.notify, ...toggledSound(prefs.notify) } });
+    else if (key in prefs.notify) setPrefs({ notify: { ...prefs.notify, [key]: !prefs.notify[key] } });
     reopen();
     return true;
   }

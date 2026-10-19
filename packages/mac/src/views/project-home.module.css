@@ -162,7 +162,7 @@ button.stat:disabled {
   flex-shrink: 0;
   white-space: nowrap;
 }
-.bar select {
+.bar [role='combobox'] {
   max-width: 180px;
 }
 

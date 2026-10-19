@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
 import * as g from './git.js';
 
 /**
@@ -60,6 +61,25 @@ export async function bornAt(dir: string): Promise<number | undefined> {
     if (t) return Math.round(t);
   }
   return undefined;
+}
+
+/** The worktree's admin folder in the repo's .git/worktrees, from its `.git` file (no git process). */
+async function adminDir(dir: string): Promise<string | undefined> {
+  const text = await readFile(path.join(dir, '.git'), 'utf8').catch(() => undefined);
+  const at = text ? /^gitdir:\s*(.+)$/m.exec(text)?.[1]?.trim() : undefined;
+  return at ? path.resolve(dir, at) : undefined;
+}
+
+/**
+ * When something last happened in a worktree, as git sees it: a commit or checkout (its HEAD
+ * log), staging (its index), or switching branches (HEAD). Cheap: a few `stat`s, no git process.
+ */
+export async function touchedAt(dir: string): Promise<number | undefined> {
+  const admin = await adminDir(dir);
+  const files = admin ? [path.join(admin, 'logs', 'HEAD'), path.join(admin, 'index'), path.join(admin, 'HEAD')] : [path.join(dir, '.git')];
+  const times = await Promise.all(files.map((f) => stat(f).then((st) => st.mtimeMs, () => 0)));
+  const latest = Math.max(0, ...times);
+  return latest > 0 ? Math.round(latest) : undefined;
 }
 
 /** Look at one worktree (read-only git calls, without taking the index lock). */

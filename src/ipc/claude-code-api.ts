@@ -14,4 +14,6 @@ const Page = z.object({ before: seq.optional(), after: seq.optional(), limit: z.
 export const CLAUDE_CODE_API = {
   // A session's steps (or one of its agents'): the newest, or before/after a step → { steps, more, missing? }.
   'claudeCode.steps': { args: z.tuple([sessionId, agentId.optional(), Page.optional()]) },
+  // One step with its details (input and output, or thinking) → a StepRecord, or undefined once it's no longer kept.
+  'claudeCode.step': { args: z.tuple([sessionId, agentId.optional(), seq]) },
 } as const;

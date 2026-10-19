@@ -1,5 +1,7 @@
+import { activityOf, findWorkspace } from '@klaud/ui/workspace-models.js';
 import { Icon } from '../components/Icon.js';
-import { Button, Tip } from '../components/ui.js';
+import { Button, Dot, Tip } from '../components/ui.js';
+import { useApp } from '../lib/klaud.js';
 import { openSheet } from '../lib/sheets.js';
 import s from './ask.module.css';
 
@@ -22,6 +24,9 @@ export function ContinueButton({ wsId, className, variant = 'primary' }: { wsId:
  * moves it too.)
  */
 export function AskBanner({ wsId }: { wsId: string }) {
+  const sync = useApp((st) => findWorkspace(st.projects, wsId)?.purpose === 'sync_main');
+  const running = useApp((st) => activityOf(st.log, `ws:${wsId}`).running);
+  if (sync) return <SyncBanner running={running} />;
   return (
     <div className={s.wrap}>
       <div className={s.banner} role="note" aria-label="Questions only">
@@ -30,6 +35,31 @@ export function AskBanner({ wsId }: { wsId: string }) {
           <span className={s.lead}>Questions only</span> — Claude won’t change anything in main. Ask for a change and it moves to a new worktree.
         </span>
         <ContinueButton wsId={wsId} variant="plain" className={s.button} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A conversation where Claude brings main up to date ("Let Claude handle it" on the project
+ * home): that one run may sync git in the main folder; afterwards it's questions only again.
+ */
+function SyncBanner({ running }: { running: boolean }) {
+  return (
+    <div className={s.wrap}>
+      <div className={s.banner} role="note" aria-label={running ? 'Claude is updating main' : 'Updating main'}>
+        {running ? <Dot tone="claude" live /> : <Icon name="download" size={13} className={s.icon} />}
+        <span className={s.text}>
+          {running ? (
+            <>
+              <span className={s.lead}>Claude is updating main</span> — it may only sync git here (fetch, merge or rebase, stash, resolve conflicts). It keeps your changes and never pushes.
+            </>
+          ) : (
+            <>
+              <span className={s.lead}>Updating main</span> — Claude’s update run is over; from here on this chat is questions only.
+            </>
+          )}
+        </span>
       </div>
     </div>
   );

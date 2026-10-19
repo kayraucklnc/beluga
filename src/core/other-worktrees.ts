@@ -4,7 +4,7 @@ import type { WorktreeCreator } from '../agent/worktree-creators.js';
 import type { ConductorWorkspace } from '../workspaces/conductor.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import { type OriginInfo, type WorktreeSource, describeOrigin, sourceFromPath } from '../workspaces/origin.js';
-import { type StaleReason, type WorktreeFacts, bornAt, removeWorktreeKeepingBranch, staleReason, staleText, worktreeFacts } from '../workspaces/others.js';
+import { type StaleReason, type WorktreeFacts, bornAt, removeWorktreeKeepingBranch, staleReason, staleText, touchedAt, worktreeFacts } from '../workspaces/others.js';
 import type { Project, Workspace } from '../workspaces/types.js';
 
 /**
@@ -56,7 +56,7 @@ export interface OtherDeps {
 const DAY = 86_400_000;
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** A worktree klaud didn't make and hasn't talked in (what the Mac sidebar folds by source). */
+/** A worktree klaud didn't make and hasn't talked in (listed after klaud's own in the Mac sidebar). */
 export const isOther = (w: Workspace): boolean => w.kind === 'worktree' && w.external && !w.archived;
 
 export class OtherWorktrees {
@@ -100,6 +100,13 @@ export class OtherWorktrees {
     const since = Math.min(...born.map((t) => t ?? Date.now() - 365 * DAY)) - DAY;
     const creators = unknown.length && this.deps.tools ? await this.deps.tools.creators(unknown.map((w) => w.path), since).catch(() => new Map()) : new Map<string, WorktreeCreator>();
     return Object.fromEntries(others.map((w) => [w.id, describeOrigin({ path: w.path, conductor: conductor.find((c) => c.path === w.path), creator: creators.get(w.path) })]));
+  }
+
+  /** When git last saw something happen in each of a project's other worktrees (by id): how the Mac sidebar orders them. */
+  async activity(projectId: string): Promise<Record<string, number>> {
+    const others = this.project(projectId)?.workspaces.filter(isOther) ?? [];
+    const times = await Promise.all(others.map(async (w) => [w.id, await touchedAt(w.path)] as const));
+    return Object.fromEntries(times.filter((t): t is readonly [string, number] => t[1] !== undefined));
   }
 
   /** Everything the info page shows about one other worktree. */

@@ -70,7 +70,7 @@ export interface SessionOptions {
   /** Terminal sessions for workspaces (omitted in tests). */
   readonly terminals?: TerminalManager;
   /** Show a desktop notification (omitted in tests: the inbox still fills). */
-  readonly desktopNotify?: (n: { title: string; body: string; sound: boolean }) => void;
+  readonly desktopNotify?: (n: import('./notify.js').DesktopNote) => void;
   /** Open a URL or file with the system (injected in tests). */
   readonly open?: (target: string) => void;
   /** Injected in tests: pull request lookups and the GitHub CLI check. */
@@ -80,6 +80,8 @@ export interface SessionOptions {
   readonly savedPeople?: Settings['people'];
   /** Where recent requests are remembered across restarts (omit in tests: memory only). */
   readonly replayFile?: string;
+  /** Where the details of Claude's steps are kept across restarts (omit in tests: memory only). */
+  readonly stepsDir?: string;
   /** Read Claude Code conversations from other tools (omitted in tests and the demo). */
   readonly findConversation?: (dir: string, self: { id: string; name: string }, opts?: { sessionId?: string; prefer?: string }) => Promise<Conversation | undefined>;
   /** Read Conductor's and Claude Code's data about worktrees klaud didn't make (omitted in tests and the demo). */
@@ -241,6 +243,8 @@ export class Session {
       this.projectsTimer.unref();
       this.workspaceTimer = setInterval(() => void this.workspaces?.refresh(), WORKSPACE_REFRESH_MS);
       this.workspaceTimer.unref();
+      // A quiet fetch of each project's remote every ~15 minutes (the project home's "fetched … ago").
+      this.workspaces.mainSync.start();
     }
   }
 
@@ -410,9 +414,9 @@ export class Session {
 
   /**
    * Send a message to the Claude of a workspace conversation: yours, or (in a workspace
-   * someone shared with you) theirs.
+   * someone shared with you) theirs. `echo: false` leaves the prompt out of the chat (it's there already).
    */
-  askOwnClaude(prompt: string, channel: string, urgent = false): void {
+  askOwnClaude(prompt: string, channel: string, urgent = false, echo = true): void {
     const shared = this.sharing.sharedFor(channel);
     if (shared && shared.role !== 'contribute') {
       this.toast(`You can follow ${shared.name}, but not ask its Claude. Ask the owner to let you contribute`, 'warn');
@@ -420,7 +424,7 @@ export class Session {
     }
     // Load the saved conversation first, so what's said now is kept with it.
     if (!shared && channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
-    this.sendChat(prompt, false, channel);
+    if (echo) this.sendChat(prompt, false, channel);
     this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent);
   }
 
@@ -440,6 +444,12 @@ export class Session {
 
   stopAgent(): void {
     this.host.stopAgent();
+  }
+
+  /** Compact a conversation's context (Claude keeps what matters; the chat stays on screen). */
+  compact(channel: string, instructions = ''): void {
+    if (channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
+    this.host.compact(channel, instructions);
   }
 
   /** Ask you to approve something; `peer` is who it's for. */
@@ -655,6 +665,7 @@ export class Session {
     if (opts.fresh && channel.startsWith('ws:')) {
       this.workspaces?.forgetConversation(channel.slice(3));
       this.store.dispatch({ type: 'context_reset', channel });
+      this.host.forgetContext(channel);
       this.toast('Cleared. Claude starts a fresh conversation here', 'success');
       return;
     }
@@ -861,9 +872,12 @@ export class Session {
   }
 
   /** Update a display preference and remember it. */
-  setPrefs(prefs: Partial<Prefs>): void {
-    this.store.dispatch({ type: 'prefs', prefs });
-    this.opts.saveSettings?.(prefs as Partial<Settings>);
+  /** Change preferences; a null (or undefined) one goes back to its default. */
+  setPrefs(prefs: { readonly [K in keyof Prefs]?: Prefs[K] | null }): void {
+    // Unset travels as null, so every screen clears it too (JSON drops undefined).
+    const forScreens = Object.fromEntries(Object.entries(prefs).map(([k, v]) => [k, v === undefined ? null : v]));
+    this.store.dispatch({ type: 'prefs', prefs: forScreens });
+    this.opts.saveSettings?.(Object.fromEntries(Object.entries(prefs).map(([k, v]) => [k, v === null ? undefined : v])) as Partial<Settings>);
   }
 
   /** Share a folder with the room (read-only unless `writable`). */

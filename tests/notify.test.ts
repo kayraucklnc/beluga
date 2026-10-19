@@ -245,7 +245,7 @@ describe('Notifier', () => {
     expect(desktop).not.toHaveBeenCalled();
     vi.advanceTimersByTime(0);
     expect(desktop).toHaveBeenCalledTimes(1);
-    expect(desktop).toHaveBeenCalledWith({ title: 'Claude finished in add-auth', body: 'shipped', sound: true, channel: 'ws:w1' });
+    expect(desktop).toHaveBeenCalledWith({ title: 'Claude finished in add-auth', body: 'shipped', sound: true, tone: { kind: 'mac', id: 'Glass' }, volume: 0.7, channel: 'ws:w1' });
   });
 
   it('stays quiet about the conversation you are looking at, unless away', () => {
@@ -277,7 +277,7 @@ describe('Notifier', () => {
   });
 
   it('combines a burst into one desktop notification with a combined title', () => {
-    start(apply(base(), { type: 'prefs', prefs: { notify: { ...initialState('room').prefs.notify, sound: false } } }));
+    start(apply(base(), { type: 'prefs', prefs: { notify: { ...initialState('room').prefs.notify, sound: { kind: 'none' } } } }));
     for (const id of ['r1', 'r2', 'r3', 'r4', 'r5']) finishRun(id, 'ws:w1', id);
     vi.advanceTimersByTime(0);
     expect(desktop).toHaveBeenCalledTimes(1);
@@ -333,7 +333,7 @@ describe('Notifier', () => {
     notifier.notify(e);
     vi.runAllTimers();
     expect(store.getState().inbox[0]).toMatchObject({ kind: 'pr', title: 'PR #3 opened' });
-    expect(desktop).toHaveBeenCalledWith({ title: 'PR #3 opened', body: 'add-auth', sound: true });
+    expect(desktop).toHaveBeenCalledWith({ title: 'PR #3 opened', body: 'add-auth', sound: true, tone: { kind: 'mac', id: 'Glass' }, volume: 0.7 });
   });
 
   it('stops listening after stop()', () => {

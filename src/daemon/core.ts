@@ -15,7 +15,7 @@ import { launchGateway } from '../core/gateway/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
 import { launchClaudeCode } from '../core/claude-code/launch.js';
 import { Store, initialState, prefsFrom } from '../core/store.js';
-import { createDemoFolders, createDemoWorkspaces, startDemoFriend, startDemoGuest } from '../demo.js';
+import { createDemoFolders, createDemoWorkspaces, seedDemoContext, startDemoFriend, startDemoGuest } from '../demo.js';
 import { type Identity, deriveKeys, generateSecret, loadIdentity } from '../net/crypto.js';
 import { type GuestAccess, type GuestGate, type Hub, startHub } from '../net/hub.js';
 import { P2P_SCHEME, decodeInvite, encodeInvite, findInvite, isDirect, toWsUrl } from '../net/invite.js';
@@ -283,6 +283,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     terminals,
     savedPeople: saved.people,
     replayFile: path.join(klaudHome(), 'seen.json'),
+    stepsDir: path.join(klaudHome(), 'steps'),
     ...(demo ? {} : { findConversation, otherTools }),
     ...(roomControl ? { room: roomControl } : {}),
   });
@@ -311,6 +312,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     store.dispatch({ type: 'invite', invite: 'https://calm-river-demo.trycloudflare.com#k3JdQ9vXr2Lm8TzW4yBn' });
     store.dispatch({ type: 'hosting', hosting: { phase: 'ready', copied: true } });
     session.system('Demo mode: bob, mia and every Claude are simulated. Nothing leaves your computer.');
+    seedDemoContext(store);
     setTimeout(() => session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } }), 300);
     // bob "arrives" a moment later so you first see how inviting works.
     setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob, 'bob'), 2500);

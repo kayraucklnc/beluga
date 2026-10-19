@@ -40,9 +40,9 @@ function workspaceCommands({ ui, actions, state }: Ctx): PaletteCommand[] {
     ['pr', cmd('pr', 'pr', state.prs[ws.id] ? 'Pull Request…' : 'Create Pull Request…', 'pr', act('pr'), 'Claude pushes and opens one'), worktree],
     ['fork', cmd('fork', 'fork', 'Fork This Workspace…', 'branch', act('fork'), 'A copy with its conversation'), ws.kind !== 'chat'],
     ['handoff', cmd('handoff', 'handoff', 'Hand Off to Someone…', 'hand', act('handoff'), 'Their Claude continues it'), worktree],
-    ['commit', cmd('commit', 'commit', 'Commit All Changes', 'check', act('commit')), worktree && Boolean(ws.status?.changed)],
-    ['merge', cmd('merge', 'merge', 'Merge into the Main Folder', 'merge', act('merge')), worktree],
-    ['compact', cmd('compact', 'compact', 'Compact the Conversation', 'wand', act('compact'), 'Claude keeps what matters'), true],
+    ['commit', cmd('commit', 'commit', 'Commit All Changes…', 'commit', act('commit')), worktree && Boolean(ws.status?.changed)],
+    ['merge', cmd('merge', 'merge', 'Merge into the Main Folder…', 'merge', act('merge')), worktree],
+    ['compact', cmd('compact', 'compact', 'Compact the Conversation…', 'wand', act('compact'), 'Claude keeps what matters'), true],
     ['run', cmd('run', 'run', 'Run the Project', 'play', act('run')), Boolean(project?.scripts?.run)],
     ['setup', cmd('setup', 'setup', 'Run Setup Again', 'refresh', act('setup')), Boolean(project?.scripts?.setup)],
     ['finder', cmd('finder', 'finder', 'Show in Finder', 'folder', act('finder')), true],
@@ -92,7 +92,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
             openSheet({ kind: 'confirm', title: 'Make a new invite link?', message: 'The current link stops working. People already in the room stay.', confirm: 'New Link', run: () => void api.session.newInviteLink() }),
           ),
         ]
-      : [cmd('quit', 'quit', 'Leave the Room…', 'x', () => openSheet({ kind: 'confirm', title: 'Leave the room?', message: 'klaud disconnects and closes. You can come back with the invite link.', confirm: 'Leave', destructive: true, run: () => void api.session.quit() }))]),
+      : [cmd('quit', 'quit', 'Leave the Room…', 'x', () => openSheet({ kind: 'confirm', title: 'Leave the room?', message: 'Klaud disconnects and closes. You can come back with the invite link.', confirm: 'Leave', destructive: true, run: () => void api.session.quit() }))]),
   ];
 }
 

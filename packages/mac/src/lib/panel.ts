@@ -24,6 +24,11 @@ interface Runtime {
   readonly termFocus: number;
   /** The tab the panel showed before ⌘J switched it to Terminal (⌘J again goes back), and where. */
   readonly before?: { readonly key: string; readonly tab: PanelTab; readonly closed: boolean };
+  /**
+   * The panel was open when a file or a diff took the center: it steps aside for the focus view
+   * and comes back with Esc. Showing or hiding it yourself meanwhile forgets this (your choice stays).
+   */
+  readonly panelBack?: boolean;
 }
 
 let runtime: Runtime = { termFocus: 0 };
@@ -61,15 +66,24 @@ export function setPanelTab(view: View, tab: PanelTab): void {
   setPrefs({ panelTabs: rememberTab(getPrefs().panelTabs, panelKey(view), tab) });
 }
 
+/** You showed or hid the panel yourself: during a focus view, that's what stays after it. */
+const panelChosen = (): void => {
+  if (runtime.focus && runtime.panelBack !== undefined) patch({ panelBack: undefined });
+};
+
 /** Show the panel on this tab. False when the view has no such tab. */
 export function showPanelTab(state: PanelState, tab: PanelTab): boolean {
   if (!tabsOf(state).includes(tab)) return false;
+  panelChosen();
   patch({ before: undefined });
   setPrefs({ inspector: true, panelTabs: rememberTab(getPrefs().panelTabs, panelKey(state.view), tab) });
   return true;
 }
 
-export const togglePanel = (): void => setPrefs({ inspector: !getPrefs().inspector });
+export const togglePanel = (): void => {
+  panelChosen();
+  setPrefs({ inspector: !getPrefs().inspector });
+};
 
 /** The terminal is on screen: in the drawer, or as the panel's tab. */
 export function terminalShowing(state: PanelState, prefs: UiPrefs = getPrefs()): boolean {
@@ -92,6 +106,7 @@ export function revealTerminal(state: PanelState, focus: boolean): boolean {
     const tab = currentTab(state, prefs);
     if (!(prefs.inspector && tab === 'terminal')) {
       const before = { key: panelKey(state.view), tab, closed: !prefs.inspector };
+      panelChosen();
       setPrefs({ inspector: true, panelTabs: rememberTab(prefs.panelTabs, panelKey(state.view), 'terminal') });
       patch({ before });
     }
@@ -142,12 +157,23 @@ export function moveTerminal(state: PanelState, to: 'drawer' | 'panel'): void {
   }
 }
 
+/**
+ * A diff, a file or the terminal across the center. The panel steps aside meanwhile (it would
+ * only show a smaller copy of the same thing) and comes back when you go back to the chat.
+ */
 export function openFocus(kind: FocusKind, wsId: string): void {
-  patch({ focus: { kind, wsId } });
+  const open = getPrefs().inspector;
+  // Already focused (another file, the diff after the file): keep what the panel was before all of it.
+  const panelBack = runtime.focus && runtime.panelBack !== undefined ? runtime.panelBack : open;
+  patch({ focus: { kind, wsId }, panelBack });
+  if (open) setPrefs({ inspector: false });
 }
 
 export function closeFocus(): void {
-  if (runtime.focus) patch({ focus: undefined });
+  if (!runtime.focus) return;
+  const back = runtime.panelBack;
+  patch({ focus: undefined, panelBack: undefined });
+  if (back && !getPrefs().inspector) setPrefs({ inspector: true });
 }
 
 export const focusFor = (wsId: string | undefined): FocusKind | undefined => (wsId && runtime.focus?.wsId === wsId ? runtime.focus.kind : undefined);

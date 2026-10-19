@@ -3,7 +3,7 @@ import { open, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { getSessionMessages, listSessions } from '@anthropic-ai/claude-agent-sdk';
-import { type Conversation, type ConversationSummary, type TranscriptMessage, transcriptToLog, typedText } from './transcript.js';
+import { type Conversation, type ConversationSummary, type TranscriptMessage, transcriptToTurns, typedText } from './transcript.js';
 
 /**
  * Finding the Claude Code conversations that ran in a folder (a worktree made by Conductor or
@@ -177,8 +177,8 @@ export async function findConversation(dir: string, self: { id: string; name: st
   for (const pick of candidates) {
     const messages = await messagesOf(pick.sessionId, dir);
     // Claude Code records resolved paths, so steps read relative to the resolved folder.
-    const items = transcriptToLog(messages, { selfId: self.id, selfName: self.name, cwd: realOf(dir), start: pick.createdAt ?? pick.lastModified, end: pick.lastModified });
-    if (items.length) return { ...pick, items, all };
+    const { items, steps } = transcriptToTurns(messages, { selfId: self.id, selfName: self.name, cwd: realOf(dir), start: pick.createdAt ?? pick.lastModified, end: pick.lastModified });
+    if (items.length) return { ...pick, items, steps, all };
   }
   return undefined;
 }

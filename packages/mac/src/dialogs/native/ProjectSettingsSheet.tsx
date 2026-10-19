@@ -10,8 +10,8 @@ type Source = NonNullable<ResolvedScripts['setup']>['source'];
 const SOURCE: Record<Source, { label: string; tone: 'team' | 'mine' | 'guess'; detail: string }> = {
   yours: { label: 'Your settings', tone: 'mine', detail: 'Only you have it' },
   'klaud.json': { label: 'klaud.json', tone: 'team', detail: 'Shared with everyone on the project' },
-  'conductor.json': { label: 'conductor.json', tone: 'team', detail: 'From the project’s Conductor settings' },
-  detected: { label: 'Guessed', tone: 'guess', detail: 'klaud guessed it from the project. Change it if it’s wrong' },
+  'conductor.json': { label: 'conductor.json', tone: 'team', detail: 'A setup file in the project, shared with everyone on it' },
+  detected: { label: 'Guessed', tone: 'guess', detail: 'Klaud guessed it from the project. Change it if it’s wrong' },
 };
 
 /**

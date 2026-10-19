@@ -12,7 +12,9 @@ import type { Args, Method } from './api.js';
 import { NETWORK_HANDLERS } from './network-handlers.js';
 import { STRIPE_HANDLERS } from './stripe-handlers.js';
 import { CLAUDE_CODE_HANDLERS } from './claude-code-handlers.js';
+import { STEPS_HANDLERS } from './steps-handlers.js';
 import { GATEWAY_HANDLERS } from './gateway-handlers.js';
+import { GIT_HANDLERS } from './git-handlers.js';
 
 /**
  * What each API method does (see api.ts for the list and its arguments). Runs in the core:
@@ -55,6 +57,7 @@ export const HANDLERS = {
   'session.setAccess': (s, peerId, scope) => s.setAccess(peerId, scope),
   'session.runOnPeerByHand': (s, name, command, channel) => s.runOnPeerByHand(name, command, channel),
   'session.stopAgent': (s) => s.stopAgent(),
+  'session.compact': (s, channel, instructions) => s.compact(channel, instructions),
   'session.quit': (s) => s.quit(),
   'session.serveFolder': (s, name, root, allowed) => s.serveFolder(name, root, allowed),
   'session.localLocation': (s, abs, dir) => s.localLocation(abs, dir),
@@ -120,6 +123,10 @@ export const HANDLERS = {
     const image = s.store.getState().viewer?.image;
     return image ? { width: image.width, height: image.height, data: Buffer.from(image.data.buffer, image.data.byteOffset, image.data.byteLength).toString('base64') } : undefined;
   },
+  'files.readImageFile': async (s, at) => {
+    const { mediaType, bytes } = await s.files.readImageFile(at);
+    return { mediaType, data: bytes.toString('base64') };
+  },
 
   'workspaces.open': (s, id, tab) => ctl(s)?.open(id, tab),
   'workspaces.load': (s, id) => void ctl(s)?.ensureLoaded(id),
@@ -153,6 +160,7 @@ export const HANDLERS = {
   'workspaces.hideProject': (s, projectId) => ctl(s)?.hideProject(projectId),
   'workspaces.cleanAgentWorktrees': (s, projectId) => ctl(s)?.cleanAgentWorktrees(projectId),
   'workspaces.otherOrigins': (s, projectId) => ctl(s)?.others.origins(projectId) ?? {},
+  'workspaces.otherActivity': (s, projectId) => ctl(s)?.others.activity(projectId) ?? {},
   'workspaces.worktreeInfo': (s, id) => ctl(s)?.others.info(id),
   'workspaces.showConversation': (s, id, sessionId) => ctl(s)?.showConversation(id, sessionId) ?? false,
   'workspaces.removeOther': (s, id, force) => ctl(s)?.others.remove(id, force ?? false) ?? false,
@@ -244,7 +252,9 @@ export const HANDLERS = {
   ...NETWORK_HANDLERS,
   ...STRIPE_HANDLERS,
   ...CLAUDE_CODE_HANDLERS,
+  ...STEPS_HANDLERS,
   ...GATEWAY_HANDLERS,
+  ...GIT_HANDLERS,
 } satisfies Handlers;
 
 export type Result<M extends Method> = Awaited<ReturnType<(typeof HANDLERS)[M]>>;

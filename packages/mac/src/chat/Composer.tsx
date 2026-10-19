@@ -11,7 +11,9 @@ import { recipientLabel, recipientPrefix, toast, useApi, useApp, useKlaud, useUi
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { ModelPicker } from './ModelPicker.js';
+import { ContextMeter } from './ContextMeter.js';
 import { QueueTray } from './QueueTray.js';
+import { expectClaude, launchFlight } from './flight.js';
 import { type WorktreeChoice, WorktreeDraft } from './WorktreeDraft.js';
 import { stopClaude } from '../lib/commands.js';
 import { keepPreview, previewOf } from './images.js';
@@ -161,6 +163,11 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       return;
     }
     if (!text && draftProject) return createWorktree(draftProject, '');
+    // The words fly from the box into the chat (or into the queue while Claude works): see flight.ts.
+    if (typed && !typed.startsWith('/') && !draftProject && !pending) {
+      launchFlight({ channel, target: compose.busy && compose.typing && !urgent ? 'queue' : 'chat', text: typed, from: ref.current });
+      if (compose.typing && (!compose.busy || urgent)) expectClaude(channel, state.log.filter((l) => l.type === 'agent' && l.channel === channel).length);
+    }
     ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, typed].slice(-200), historyIndex: -1 });
     // Image chips become links to the images (klaud keeps them) before the message goes.
     if (text.includes('[image ') && !text.startsWith('/')) {
@@ -222,6 +229,12 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     // Enter while an input method is composing (Japanese, Chinese…) picks the characters.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    // Shift-Tab switches between acting and planning first, as in Claude Code (not focus).
+    if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && channel !== 'draft' && !shared) {
+      e.preventDefault();
+      void api.session.setPlanMode(channel, !plan);
+      return;
+    }
     const modKey = e.metaKey || e.ctrlKey;
     if (suggestions.length) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -292,7 +305,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       ) : null}
       <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={editQueued} />
       <div
-        className={cx(s.box, pending && s.asking, readOnly && s.readOnly, dropping && s.dropping)}
+        className={cx(s.box, pending && s.asking, readOnly && s.readOnly, dropping && s.dropping, plan && s.planning)}
+        data-plan={plan || undefined}
         onDragOver={(e) => {
           if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) {
             e.preventDefault();
@@ -308,6 +322,15 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           void attach(files);
         }}
       >
+        {plan ? (
+          <div className={s.planBanner} role="status">
+            <Icon name="wand" size={11} />
+            <strong>Plan mode</strong>
+            <span>Claude looks around and proposes a plan before changing anything</span>
+            <span className={s.flex} />
+            <span className={s.planKeys}>⇧⇥ to act</span>
+          </div>
+        ) : null}
         {draftProject ? <WorktreeDraft projectId={draftProject} choice={worktree} onChange={setWorktree} /> : null}
         {to ? (
           <div className={s.askChip} aria-label={`To ${recipientLabel(to)}`}>
@@ -366,6 +389,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           ) : null}
           {!shared ? <ModelPicker channel={channel} /> : null}
           <span className={s.flex} />
+          {channel !== 'draft' ? <ContextMeter channel={channel} /> : null}
           {compose.busy ? (
             <Tip label="Stop Claude here · your queued messages come back to the box" keys={`${mod()}.`}>
               <button type="button" className={s.stop} aria-label="Stop Claude" onClick={() => stopClaude({ client, ui, actions }, channel)}>

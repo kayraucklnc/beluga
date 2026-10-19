@@ -56,6 +56,10 @@ const PATHS = {
   forward: 'M6 3.5L10.5 8 6 12.5',
   pr: 'M4.5 3v10 M11.5 6.5V13 M11.5 6.5c0-2-1.5-3-3.5-3H7 M8.5 1.8L7 3.5l1.5 1.7 M4.5 3a1.2 1.2 0 1 0 0 .01 M4.5 13a1.2 1.2 0 1 0 0 .01 M11.5 13a1.2 1.2 0 1 0 0 .01',
   merge: 'M5 3v10 M5 6c0 3 6 2 6 5v2 M5 3a1.2 1.2 0 1 0 0 .01 M11 13a1.2 1.2 0 1 0 0 .01',
+  /** A commit: a dot on a line (as git tools draw one). */
+  commit: 'M8 10.4a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8z M1.75 8h3.85 M10.4 8h3.85',
+  /** Review (doc.text.magnifyingglass): a page of text under a magnifier. */
+  review: 'M8.5 13.5H3.5v-11h5.25l2.75 2.75V7 M5.5 6h3 M5.5 8.5h2 M10.75 13a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5z M12.4 12.4l1.6 1.6',
   hand: 'M5 8V4.2a1 1 0 0 1 2 0V7.5 M7 7V3.2a1 1 0 0 1 2 0V7.5 M9 7V4a1 1 0 0 1 2 0v5c0 2.5-1.5 4.5-4 4.5-1.7 0-2.6-.8-3.6-2.3L2.4 9a1 1 0 0 1 1.7-1L5 9',
   /** Earnings (Stripe): a coin. */
   coin: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M9.7 6.3c-.3-.6-.9-.9-1.7-.9-.9 0-1.7.5-1.7 1.25 0 1.75 3.4 1 3.4 2.75 0 .75-.8 1.25-1.7 1.25-.8 0-1.4-.3-1.7-.9 M8 4.4v1 M8 10.6v1',
@@ -69,6 +73,16 @@ const PATHS = {
   panelBottom: 'M2.5 3.5h11v9h-11z M2.5 9.5h11',
   /** The window with its right panel. */
   panelRight: 'M2.5 3.5h11v9h-11z M9.5 3.5v9',
+  /** Soft wrap: a line that turns back under itself. */
+  wrap: 'M2.5 4h11 M2.5 8h9a2 2 0 0 1 0 4H8 M9.5 10.5L8 12l1.5 1.5 M2.5 12h3',
+  /** A document's outline (its headings). */
+  outline: 'M5.5 4h8 M7.5 8h6 M7.5 12h6 M2.5 4h.01 M4.5 8h.01 M4.5 12h.01',
+  minus: 'M3.5 8h9',
+  /** The reader's callouts: note, tip, important, caution (warning is `alert`). */
+  info: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M8 7.5v3.5 M8 5.2v.01',
+  bulb: 'M6 11.5h4 M6.5 13.5h3 M8 2.5a3.75 3.75 0 0 0-2.4 6.6c.4.4.6.8.6 1.4h3.6c0-.6.2-1 .6-1.4A3.75 3.75 0 0 0 8 2.5z',
+  important: 'M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v5A1.5 1.5 0 0 1 11.5 11H7l-3 2.5V11h.5A1.5 1.5 0 0 1 3 9.5z M8 5v2.6 M8 9.2v.01',
+  stopSign: 'M5.7 2.5h4.6l3.2 3.2v4.6l-3.2 3.2H5.7l-3.2-3.2V5.7z M8 5.3v3.2 M8 10.7v.01',
 } as const;
 
 export type IconName = keyof typeof PATHS;

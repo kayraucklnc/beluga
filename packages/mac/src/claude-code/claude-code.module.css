@@ -331,6 +331,8 @@
   transform: translateY(1px);
 }
 .toolText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A tool call or thinking as an opening step row (chat/steps/StepRow.tsx). */
+.toolRich { display: block; }
 .toolError { color: var(--error); }
 .toolError .toolIcon { color: var(--error); }
 .note {
@@ -445,3 +447,112 @@
 .inspectorAgentText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspectorAgent { font-size: 0.92rem; color: var(--text-2); }
 .inspectorAgent .num { color: var(--text-3); font-size: 0.84rem; }
+
+/* A message from another session (SendMessage): its own row, opening to the whole message. */
+.message {
+  align-self: stretch;
+  border: 0.5px solid var(--hairline-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--info) 5%, transparent);
+}
+.messageHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 10px;
+  color: var(--text-2);
+  text-align: left;
+  font-size: 0.92rem;
+}
+.messageHead > svg {
+  flex: none;
+  color: var(--info);
+}
+.messageChev {
+  display: inline-flex;
+  color: var(--text-3);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.messageChevOpen {
+  transform: rotate(90deg);
+}
+.messageWho {
+  flex: none;
+  color: var(--text);
+  font-weight: 500;
+}
+.messagePreview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+}
+.messageOpen .messageHead {
+  border-bottom: 0.5px solid var(--hairline);
+}
+.messageBody {
+  padding: 6px 12px 8px 30px;
+  color: var(--text-2);
+}
+
+/* Agents working as a team (named, messaging each other): members and their messages. */
+.team {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0 4px;
+  padding: 8px 10px 10px;
+  border: 0.5px solid var(--hairline);
+  border-radius: var(--radius-l);
+}
+.teamHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+.teamHead strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.86rem;
+}
+.timeline li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-2);
+}
+.timelineWho {
+  flex: none;
+  color: var(--text);
+}
+.timelineArrow {
+  flex: none;
+  color: var(--text-3);
+}
+.timelineText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timelineWhen {
+  flex: none;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}

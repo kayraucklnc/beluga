@@ -25,11 +25,6 @@
 .dragging [role='button'] button:not([data-earnings-pill]) {
   opacity: 0 !important;
 }
-/* On hover the row's tools open up: an earnings pill drops its “+1” rather than squeeze the name. */
-.tree [data-drag]:hover [data-earnings-pill] > span + span,
-.tree [data-drag]:focus-within [data-earnings-pill] > span + span {
-  display: none;
-}
 
 /* Where it will land: a line with a ring at its start (as in Finder and Xcode). */
 .insertion {
@@ -198,4 +193,10 @@
 }
 .foldButton:hover .disclosure {
   color: var(--text);
+}
+/* Hovering a project row: its tools take the earnings' place (the amount comes back after), so
+   nothing slides under the pointer while you aim at the name. */
+.tree [data-drag]:hover [data-earnings-pill],
+.tree [data-drag]:focus-within [data-earnings-pill] {
+  display: none;
 }

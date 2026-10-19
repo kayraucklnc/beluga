@@ -290,7 +290,7 @@ describe('Notifier settings', () => {
     start(apply(base(), notify({ desktop: false, done: false, dnd: {} })));
     notifier.test();
     vi.runAllTimers();
-    expect(desktop).toHaveBeenCalledWith({ title: 'Notifications work', body: expect.any(String), sound: true });
+    expect(desktop).toHaveBeenCalledWith({ title: 'Notifications work', body: expect.any(String), sound: true, tone: { kind: 'mac', id: 'Glass' }, volume: 0.7 });
     expect(store.getState().inbox[0]).toMatchObject({ tag: 'test', read: false });
   });
 

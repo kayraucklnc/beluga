@@ -103,7 +103,7 @@ describe('tasks between Claudes in a room', () => {
     expect(zoe.state().log.some((l) => JSON.stringify(l).includes('README for typos'))).toBe(false);
   });
 
-  it('run_on goes through PeerRun’s gates: full trust runs, trusted asks, blocked is declined', async () => {
+  it('run_on: full trust runs, trusted asks (the request card), secrets never, blocked is declined', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');
     const bob = peer('bob');
@@ -120,8 +120,9 @@ describe('tasks between Claudes in a room', () => {
     bob.session.people.setTrust(idOf(kay), 'trusted', true);
     const asked = gw(kay).ask({ person: 'bob', kind: 'run', ask: 'to see the folder', command: 'pwd', by: 'agent' });
     await waitFor(() => bob.state().approvals.length === 1);
-    expect(bob.state().approvals[0]?.title).toContain("kay (#");
+    expect(bob.state().approvals[0]?.title).toBe("kay's Claude wants to run on your Mac: pwd");
     expect(bob.state().approvals[0]?.detail).toContain('$ pwd');
+    expect(bob.state().approvals[0]?.task).toBe(asked.id);
     await waitFor(() => gw(kay).get(asked.id)?.state === 'awaiting_approval');
     bob.session.answerApproval('yes');
     await waitFor(() => gw(kay).get(asked.id)?.state === 'done', 5000);

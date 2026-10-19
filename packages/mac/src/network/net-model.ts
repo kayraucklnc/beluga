@@ -150,7 +150,7 @@ export function openGroupInvitation(invitations: readonly InvitationView[], id: 
 export function acceptError(message: string): string {
   if (/Nobody is waiting/i.test(message)) return 'That invitation expired or was already used. Ask for a new one.';
   if (/own invitation/i.test(message)) return 'That’s your own invitation. Send it to a friend instead.';
-  if (/isn.t a klaud invitation/i.test(message)) return 'That doesn’t look like a klaud invitation. Paste the link or type the code (like K7QM-4XPA-R2TD).';
+  if (/isn.t a klaud invitation/i.test(message)) return 'That doesn’t look like a Klaud invitation. Paste the link or type the code (like K7QM-4XPA-R2TD).';
   if (/network is off/i.test(message)) return 'Turn on talking with friends first.';
   return message.replace(/^Something went wrong: /, '');
 }

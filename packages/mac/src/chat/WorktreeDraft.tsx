@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Icon } from '../components/Icon.js';
+import { Select, type SelectOption } from '../components/Select.js';
 import { Tip } from '../components/ui.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import s from './draft.module.css';
@@ -12,7 +13,7 @@ export interface WorktreeChoice {
 
 /**
  * The top of the message box for a new worktree: which project, the branch it starts from
- * (a native popup) and an optional name. The task below is Claude's first message.
+ * (a pop-up, searchable when there are many) and an optional name. The task below is Claude's first message.
  */
 export function WorktreeDraft({ projectId, choice, onChange }: { projectId: string; choice: WorktreeChoice; onChange: (c: WorktreeChoice) => void }) {
   const api = useApi();
@@ -40,14 +41,7 @@ export function WorktreeDraft({ projectId, choice, onChange }: { projectId: stri
       <label className={s.field}>
         <span className={s.fieldLabel}>Based on</span>
         <Tip label="The branch the new one starts from (origin branches are fetched first, so it's the latest)">
-          <select className={s.select} aria-label="Based on" value={base} onChange={(e) => onChange({ ...choice, base: e.target.value })}>
-            {options.map((b) => (
-              <option key={b} value={b}>
-                {b}
-                {b === branches?.base ? ' (default)' : ''}
-              </option>
-            ))}
-          </select>
+          <Select className={s.select} size="small" mono label="Based on" value={base} onChange={(b) => onChange({ ...choice, base: b })} options={branchOptions(options, branches?.base)} searchPlaceholder="Find a branch" />
         </Tip>
       </label>
       <label className={s.field}>
@@ -71,4 +65,9 @@ export function WorktreeDraft({ projectId, choice, onChange }: { projectId: stri
       </label>
     </div>
   );
+}
+
+/** The branches a worktree can start from, for the Based on pop-up: the default one says so. */
+export function branchOptions(branches: readonly string[], base: string | undefined): Array<SelectOption<string>> {
+  return branches.map((b) => ({ value: b, label: b, ...(b === base ? { badge: 'default' } : {}) }));
 }

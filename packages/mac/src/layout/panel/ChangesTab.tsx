@@ -7,7 +7,7 @@ import { ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
 import { useApi, useApp } from '../../lib/klaud.js';
-import { focusFor, openFocus } from '../../lib/panel.js';
+import { focusFor, openFocus, usePanelRuntime } from '../../lib/panel.js';
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { mod } from '../../lib/system.js';
@@ -160,7 +160,7 @@ function FileDiff({ wsId, path, onClose }: { wsId: string; path: string; onClose
         <IconButton icon="expand" label="Open in full" keys={`${mod()}↩`} onClick={() => openFocus('diff', wsId)} />
         <IconButton icon="x" label="Close the diff" keys="Esc" onClick={onClose} />
       </div>
-      <div className={cx(s.previewBody, d.code, 'selectable')}>{diff === undefined ? <div className={s.dimPad}>Loading the diff…</div> : lines.length ? <UnifiedDiff lines={lines} compact /> : <div className={s.dimPad}>{diff || 'No differences in the text.'}</div>}</div>
+      <div className={cx(s.previewBody, d.code, 'selectable')} tabIndex={0}>{diff === undefined ? <div className={s.dimPad}>Loading the diff…</div> : lines.length ? <UnifiedDiff lines={lines} compact /> : <div className={s.dimPad}>{diff || 'No differences in the text.'}</div>}</div>
     </section>
   );
 }
@@ -174,6 +174,7 @@ export function ChangesTab({ wsId }: { wsId: string }) {
   const selected = useApp((st) => (st.review?.workspaceId === wsId ? st.review.selected : -1));
   const reviewLoading = useApp((st) => st.review?.workspaceId === wsId && st.review.loading);
   const [open, setOpen] = useState<string>();
+  const inFocus = usePanelRuntime((r) => r.focus?.wsId === wsId && r.focus.kind === 'diff');
   const box = useRef<HTMLDivElement>(null);
   const files = data?.files ?? [];
   const at = open ? files.findIndex((f) => f.path === open) : -1;
@@ -229,9 +230,11 @@ export function ChangesTab({ wsId }: { wsId: string }) {
     );
   }
   const split = clampShare(prefs.panelSplit, SPLIT_MIN, SPLIT_MAX);
+  // Open full size, the diff is across the center: no second, smaller copy of it here.
+  const shown = inFocus ? undefined : open;
   return (
     <div ref={box} className={s.stack}>
-      <div className={s.top} style={open ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined}>
+      <div className={s.top} style={shown ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined}>
         <Summary data={data} loading={loading} onReload={reload} />
         <div className={s.list} role="listbox" aria-label="Changed files" tabIndex={0} onKeyDown={onKey}>
           {files.map((f, i) => {
@@ -257,9 +260,9 @@ export function ChangesTab({ wsId }: { wsId: string }) {
             );
           })}
         </div>
-        {open ? null : <Actions wsId={wsId} />}
+        {shown ? null : <Actions wsId={wsId} />}
       </div>
-      {open ? (
+      {shown ? (
         <>
           <ResizeHandle
             axis="y"
@@ -271,7 +274,7 @@ export function ChangesTab({ wsId }: { wsId: string }) {
             onReset={() => setPrefs({ panelSplit: SPLIT_DEFAULT })}
             onStep={(dir) => setPrefs({ panelSplit: clampShare(split - dir * 0.04, SPLIT_MIN, SPLIT_MAX) })}
           />
-          <FileDiff wsId={wsId} path={open} onClose={() => setOpen(undefined)} />
+          <FileDiff wsId={wsId} path={shown} onClose={() => setOpen(undefined)} />
           <Actions wsId={wsId} />
         </>
       ) : null}

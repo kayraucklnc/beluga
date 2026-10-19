@@ -106,7 +106,7 @@ export function DeleteArchivedAlert({ item, onCancel, onDelete }: { item: Overvi
                 This deletes its branch <code>{w.branch}</code> and the conversation. Commits that aren’t on another branch are lost.
               </>
             ) : (
-              'This deletes the conversation and removes it from klaud.'
+              'This deletes the conversation and removes it from Klaud.'
             )}
           </p>
           <p>You can’t undo this.</p>

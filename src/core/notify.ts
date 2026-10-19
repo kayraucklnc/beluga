@@ -1,6 +1,7 @@
 import type { NotifySettings } from './settings.js';
 import { type DomainState, type LogItem, type Store } from './store.js';
 import { dndActive } from '../shared/quiet.js';
+import { loudestKind, type SoundChoice, type SoundPrefs, soundFor, volumeOf } from '../shared/notify-sound.js';
 
 /** The groups you can switch on or off in Settings → Notifications. */
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background';
@@ -19,14 +20,30 @@ export interface NoticeEvent {
   readonly channel?: string;
   /** Into the inbox, but no desktop notification (you're on Do Not Disturb or appearing offline). */
   readonly quiet?: boolean;
+  /** A friend's request (the gateway) this approval is about. */
+  readonly task?: string;
 }
 
 /** A desktop notification: what it says, and where clicking it goes (when it's about one place). */
 export interface DesktopNote {
   readonly title: string;
   readonly body: string;
+  /** Whether it makes a sound (screens that can't play `tone` use their default sound). */
   readonly sound: boolean;
+  /** Which sound (Settings › Notifications), and how loud Klaud's own sounds are (0–1). */
+  readonly tone?: SoundChoice;
+  readonly volume?: number;
   readonly channel?: string;
+  /** The approval it asks for: the notification offers Approve / Decline (Always too for a friend's request). */
+  readonly approval?: string;
+  /** The friend's request that approval is about. */
+  readonly task?: string;
+}
+
+/** Your network status says not now (Do Not Disturb, or appearing offline): notices still arrive, silently. */
+export function presenceQuiet(state: Pick<DomainState, 'network'>): boolean {
+  const self = state.network.self;
+  return Boolean(self && (self.appearOffline || self.presence.state === 'dnd'));
 }
 
 /** Runs that end like this were your own doing, so they're not worth a notification. */
@@ -160,7 +177,9 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
   const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...networkMessages(prev, next, now)];
   if (prev.approvals !== next.approvals) {
     const seen = new Set(prev.approvals.map((a) => a.id));
-    for (const a of next.approvals) if (!seen.has(a.id)) out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail) });
+    // Someone else's request waits for you either way; on Do Not Disturb it just doesn't make a sound.
+    const quiet = presenceQuiet(next);
+    for (const a of next.approvals) if (!seen.has(a.id)) out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...(a.task ? { task: a.task } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
   }
   if (prev.questions !== next.questions) {
     const seen = new Set(prev.questions.map((q) => q.qid));
@@ -308,18 +327,28 @@ export class Notifier {
       this.queue = [];
       if (!batch.length) return;
       this.lastSent = this.now();
-      this.deps.desktop(combine(batch, this.deps.store.getState().prefs.notify.sound));
+      this.deps.desktop(combine(batch, this.deps.store.getState().prefs.notify));
     }, wait);
     this.timer.unref?.();
   }
 }
 
+/** The sound part of a desktop notification: on/off only (`boolean`), or the sound its kinds make. */
+function soundOf(batch: readonly NoticeEvent[], prefs: boolean | SoundPrefs): Pick<DesktopNote, 'sound' | 'tone' | 'volume'> {
+  if (typeof prefs === 'boolean') return { sound: prefs };
+  const tone = soundFor(prefs, loudestKind(batch.map((e) => e.kind)));
+  return { sound: tone.kind !== 'none', tone, volume: volumeOf(prefs) };
+}
+
 /** One desktop notification for a burst; clicking it goes where they all are, if that's one place. */
-export function combine(batch: readonly NoticeEvent[], sound: boolean): DesktopNote {
+export function combine(batch: readonly NoticeEvent[], prefs: boolean | SoundPrefs): DesktopNote {
   const first = batch[0]!;
+  const sound = soundOf(batch, prefs);
   const channel = first.channel !== undefined && batch.every((e) => e.channel === first.channel) ? { channel: first.channel } : {};
-  if (batch.length === 1) return { title: first.title, body: first.body, sound, ...channel };
-  return { title: `${batch.length} updates in klaud`, body: batch.map((e) => e.title).slice(0, 4).join(' · '), sound, ...channel };
+  // One approval on its own can be answered from the notification itself.
+  const approval = first.tag === 'approval' && first.ref ? { approval: first.ref, ...(first.task ? { task: first.task } : {}) } : {};
+  if (batch.length === 1) return { title: first.title, body: first.body, ...sound, ...channel, ...approval };
+  return { title: `${batch.length} updates in klaud`, body: batch.map((e) => e.title).slice(0, 4).join(' · '), ...sound, ...channel };
 }
 
 /** Whether you want to hear about this kind (missing in old settings: yes). */

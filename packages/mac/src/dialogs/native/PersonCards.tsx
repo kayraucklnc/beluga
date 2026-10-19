@@ -306,7 +306,7 @@ export function AccountCard({ peer, menu, close, confirm }: CardProps & { menu: 
             ui.patch({ settings: 'general' });
           }}
         />
-        {host ? null : <Row icon="x" danger label="Leave the Room…" onClick={() => confirm({ title: `Leave ${room}?`, message: 'klaud closes and you leave the room. Your projects and chats stay on this Mac.', confirm: 'Leave', run: () => pick('leave-room') })} />}
+        {host ? null : <Row icon="x" danger label="Leave the Room…" onClick={() => confirm({ title: `Leave ${room}?`, message: 'Klaud closes and you leave the room. Your projects and chats stay on this Mac.', confirm: 'Leave', run: () => pick('leave-room') })} />}
       </div>
     </>
   );

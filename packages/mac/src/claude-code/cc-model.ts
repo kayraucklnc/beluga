@@ -48,7 +48,7 @@ export function activitySummary(sessions: readonly CcSession[]): string {
   return sessions.length ? 'Nothing running right now' : 'No Claude Code sessions lately';
 }
 
-/** "~/conductor/workspaces/klaude/madrid". */
+/** "~/code/klaude/madrid" for a path under your home folder. */
 export const tildify = (state: Pick<AppState, 'home'>, p: string): string => (state.home && (p === state.home || p.startsWith(`${state.home}/`)) ? `~${p.slice(state.home.length)}` : p);
 
 /** Where it runs, in klaud's words: the workspace's name, else the folder. */

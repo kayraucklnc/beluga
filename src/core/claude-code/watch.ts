@@ -1,10 +1,11 @@
-import { type FSWatcher, readdirSync, statSync, watch } from 'node:fs';
+import { type FSWatcher, mkdirSync, readFileSync, readdirSync, renameSync, statSync, watch, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Project } from '../../workspaces/types.js';
 import type { Store } from '../store.js';
 import { type AgentMeta, agentStatus, readMeta } from './agents.js';
-import type { CcAgent, CcAgentStatus, CcSession, CcSteps } from './model.js';
+import type { CcAgent, CcAgentStatus, CcMessage, CcSession, CcSteps, CcTeam } from './model.js';
 import { type PageOptions, TranscriptTracker } from './sessions.js';
+import type { StepRecord } from '../../shared/steps.js';
 import type { Facts } from './transcript.js';
 
 /**
@@ -35,7 +36,15 @@ export interface WatcherOptions {
   readonly watch?: boolean;
   /** Tell you a background agent finished (through the notifier, which minds your settings). */
   readonly notify?: (note: { title: string; body: string; failed: boolean }) => void;
+  /**
+   * Where klaud remembers the Claude sessions it ran, so they stay out of Activity after their
+   * conversation is archived or deleted (undefined: memory only).
+   */
+  readonly ownFile?: string;
 }
+
+/** The most sessions remembered as klaud's own (the oldest are forgotten first). */
+const MAX_OWN = 5000;
 
 interface AgentEntry {
   readonly id: string;
@@ -64,6 +73,8 @@ const AGENT_LOOKBACK_MS = 6 * 60 * 60_000;
 const VIEWED_MS = 10 * 60_000;
 const MAX_SESSIONS = 30;
 const MAX_AGENTS = 12;
+/** Messages shown in a team's timeline. */
+const TEAM_MESSAGES = 12;
 const AGENT_FILE = /^agent-([\w-]+)\.jsonl$/;
 const SESSION_FILE = /^([0-9a-f-]{8,})\.jsonl$/i;
 
@@ -174,11 +185,42 @@ export class ClaudeCodeWatcher {
     return false;
   }
 
-  /** klaud's own conversations (its workspaces) show in klaud's chat already. */
+  private remembered?: Set<string>;
+
+  /**
+   * klaud's own conversations (its workspaces) show in klaud's chat already, and stay out of
+   * Activity for good: once seen they're remembered, even after the conversation is deleted.
+   */
   private ownSessions(): Set<string> {
-    const ids = new Set<string>();
-    for (const p of this.opts.store.getState().projects) for (const w of p.workspaces) if (w.sessionId) ids.add(w.sessionId);
-    return ids;
+    if (!this.remembered) {
+      this.remembered = new Set();
+      try {
+        if (this.opts.ownFile) for (const id of JSON.parse(readFileSync(this.opts.ownFile, 'utf8')) as unknown[]) if (typeof id === 'string') this.remembered.add(id);
+      } catch {
+        // none yet
+      }
+    }
+    let added = false;
+    for (const p of this.opts.store.getState().projects) {
+      for (const w of p.workspaces) {
+        if (w.sessionId && !this.remembered.has(w.sessionId)) {
+          this.remembered.add(w.sessionId);
+          added = true;
+        }
+      }
+    }
+    if (added && this.opts.ownFile) {
+      const ids = [...this.remembered].slice(-MAX_OWN);
+      try {
+        mkdirSync(path.dirname(this.opts.ownFile), { recursive: true });
+        const tmp = `${this.opts.ownFile}.${process.pid}.tmp`;
+        writeFileSync(tmp, JSON.stringify(ids));
+        renameSync(tmp, this.opts.ownFile);
+      } catch {
+        // kept in memory for this run
+      }
+    }
+    return this.remembered;
   }
 
   /** Find sessions written lately (or with agents still writing), and forget ones gone quiet. */
@@ -232,15 +274,63 @@ export class ClaudeCodeWatcher {
     for (const id of [...s.agents.keys()]) if (!seen.has(id)) s.agents.delete(id);
   }
 
+  /** The launch that started an agent (its description, type and name). */
+  private launchOf(s: SessionEntry, a: AgentEntry) {
+    return a.meta.toolUseId ? s.tracker.launches.get(a.meta.toolUseId) : undefined;
+  }
+
+  /** An agent (by id, or by the name it was given) → its id in this session, if it's one of them. */
+  private agentIdOf(s: SessionEntry, who: string): string | undefined {
+    if (s.agents.has(who)) return who;
+    for (const a of s.agents.values()) if (this.launchOf(s, a)?.name === who) return a.id;
+    return undefined;
+  }
+
+  /** An agent in words: its name, else what it was asked to do. */
+  private labelOf(s: SessionEntry, who: string): string {
+    const id = this.agentIdOf(s, who);
+    const a = id ? s.agents.get(id) : undefined;
+    if (!a) return who;
+    const launch = this.launchOf(s, a);
+    return launch?.name ?? a.meta.description ?? launch?.description ?? who;
+  }
+
+  /** Transcripts name agents the way the watcher knows them. */
+  private label(s: SessionEntry): void {
+    s.tracker.labeler ??= (who) => this.labelOf(s, who);
+    for (const a of s.agents.values()) if (a.tracker) a.tracker.labeler ??= (who) => this.labelOf(s, who);
+  }
+
+  /**
+   * Agents working as a team: when any is named (so it can be messaged) or an agent messages
+   * another session. Its members are the named agents and every agent in a message; the
+   * timeline is the messages between them and the lead session (SendMessage), newest last.
+   */
+  private teamOf(s: SessionEntry, shown: readonly CcAgent[]): CcTeam | undefined {
+    const resolve = (to: string): string => (to === 'main' || to === 'lead' ? 'lead' : (this.agentIdOf(s, to) ?? to));
+    const messages: CcMessage[] = [
+      ...s.tracker.sends.map((m) => ({ from: 'lead', to: resolve(m.to), summary: m.summary, ts: m.ts })),
+      ...[...s.agents.values()].flatMap((a) => (a.tracker?.sends ?? []).map((m) => ({ from: a.id, to: resolve(m.to), summary: m.summary, ts: m.ts }))),
+    ].sort((a, b) => a.ts - b.ts);
+    const ids = new Set(shown.map((a) => a.id));
+    const named = shown.filter((a) => a.name).map((a) => a.id);
+    const fromAgents = messages.some((m) => m.from !== 'lead');
+    if (!named.length && !fromAgents) return undefined;
+    const members = new Set([...named, ...messages.flatMap((m) => [m.from, m.to]).filter((id) => ids.has(id))]);
+    return { members: shown.filter((a) => members.has(a.id)).map((a) => a.id), messages: messages.slice(-TEAM_MESSAGES) };
+  }
+
   /** Read what was added to every watched transcript. */
   poll(): void {
     if (this.stopped) return;
     for (const s of this.sessions.values()) {
+      this.label(s);
       const facts = s.tracker.update();
       // It started an agent: its transcript appears any moment.
       if (facts.some((f: Facts) => f.launches.length)) this.scanAgents(s);
       for (const a of s.agents.values()) {
         a.tracker ??= new TranscriptTracker(a.file);
+        a.tracker.labeler ??= (who) => this.labelOf(s, who);
         a.tracker.update();
       }
     }
@@ -287,6 +377,7 @@ export class ClaudeCodeWatcher {
       const lastAt = t.lastAt;
       if (now - lastAt > activeMs && !shown.some((a) => a.status === 'running') && now - s.viewedAt > VIEWED_MS) continue;
       const cwd = t.cwd ?? '';
+      const team = this.teamOf(s, shown);
       out.push({
         id: s.id,
         title: t.title ?? 'Claude Code session',
@@ -300,6 +391,7 @@ export class ClaudeCodeWatcher {
         ...(t.tokens ? { tokens: t.tokens } : {}),
         ...(t.model ? { model: t.model } : {}),
         agents: shown,
+        ...(team ? { team } : {}),
       });
     }
     const live = (x: CcSession): number => Number(x.status === 'working' || x.agents.some((a) => a.status === 'running'));
@@ -317,6 +409,7 @@ export class ClaudeCodeWatcher {
     const { status, endedAt } = agentStatus({ lastAt: t.lastAt, final: t.final, ...(notice ? { notice } : {}), ...(result ? { result } : {}), now, idleMs });
     const background = a.meta.requestShape === 'background' || launch?.background === true || result?.async === true;
     const description = a.meta.description ?? launch?.description ?? t.title ?? 'Sub-agent';
+    t.labeler ??= (who) => this.labelOf(s, who);
     if (a.last === 'running' && status !== 'running' && status !== 'idle' && background) {
       const where = s.tracker.cwd ? path.basename(s.tracker.cwd) : 'Claude Code';
       this.opts.notify?.({ title: status === 'finished' ? `An agent finished in ${where}` : `An agent ${status === 'failed' ? 'failed' : 'stopped'} in ${where}`, body: description, failed: status === 'failed' });
@@ -334,7 +427,16 @@ export class ClaudeCodeWatcher {
       ...(t.current ? { step: t.current } : {}),
       steps: t.count,
       ...(t.tokens ? { tokens: t.tokens } : {}),
+      ...(launch?.name ? { name: launch.name } : {}),
     };
+  }
+
+  /** One step of a session (or of one of its agents) with its details, while klaud keeps them. */
+  step(sessionId: string, agentId: string | undefined, seq: number): StepRecord | undefined {
+    const s = this.sessions.get(sessionId);
+    if (!s) return undefined;
+    if (agentId === undefined) return s.tracker.detail(seq);
+    return s.agents.get(agentId)?.tracker?.detail(seq);
   }
 
   /** A session's (or one of its agents') recent steps, for a screen showing it live. */
@@ -342,10 +444,12 @@ export class ClaudeCodeWatcher {
     const s = this.sessions.get(sessionId);
     if (!s) return { steps: [], more: false, missing: true };
     s.viewedAt = this.now;
+    this.label(s);
     if (agentId === undefined) return s.tracker.page(opts);
     const a = s.agents.get(agentId);
     if (!a) return { steps: [], more: false, missing: true };
     a.tracker ??= new TranscriptTracker(a.file);
+    this.label(s);
     a.tracker.update();
     return a.tracker.page(opts);
   }

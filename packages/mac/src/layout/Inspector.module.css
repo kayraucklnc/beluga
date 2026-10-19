@@ -79,7 +79,13 @@
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: 3px;
-  background: var(--claude);
+  background: var(--text-3);
+}
+.meter[data-tone='warn'] span {
+  background: var(--warn);
+}
+.meter[data-tone='full'] span {
+  background: var(--error);
 }
 .buttons {
   display: flex;

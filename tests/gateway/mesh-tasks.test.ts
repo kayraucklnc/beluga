@@ -82,10 +82,10 @@ describe('asking a friend’s Claude', () => {
     expect(ben.claude.runs).toHaveLength(1);
   }, 60_000);
 
-  it('says no when they decline, and Always makes the requester trusted', async () => {
+  it('says no when they decline, and Always writes a rule for requests like it (not trust)', async () => {
     const [dee, eve] = await pair('dee', 'eve');
     dee.trust(eve.id, 'trusted');
-    const t = dee.gw.ask({ person: 'eve', ask: 'look at my screen', by: 'agent' });
+    const t = dee.gw.ask({ person: 'eve', ask: 'look at my readme', by: 'agent' });
     await settle(() => eve.approvals.length === 1);
     eve.approvals[0]!.answer('no');
     await settle(() => task(dee, t.id)?.state === 'declined');
@@ -94,16 +94,26 @@ describe('asking a friend’s Claude', () => {
     await settle(() => eve.approvals.length === 2);
     eve.approvals[1]!.answer('always');
     await settle(() => task(dee, again.id)?.state === 'done');
-    expect(eve.store.getState().levels[dee.id]).toBe('trusted');
+    expect(eve.store.getState().levels[dee.id]).toBeUndefined();
+    expect(eve.gw.rules.rules()).toEqual([expect.objectContaining({ peerId: dee.id, kind: 'task', needs: [], decision: 'allow' })]);
+    expect(eve.store.getState().gateway.rules).toHaveLength(1);
+    // The same kind of request now runs without asking; one that needs more asks again.
+    const third = dee.gw.ask({ person: 'eve', ask: 'and the changelog', by: 'agent' });
+    await settle(() => task(dee, third.id)?.state === 'done');
+    expect(eve.approvals).toHaveLength(2);
+    expect(task(eve, third.id)?.allowedBy).toBe('a rule of yours allows it');
+    dee.gw.ask({ person: 'eve', ask: 'run the tests', needs: ['shell'], by: 'agent' });
+    await settle(() => eve.approvals.length === 3);
   }, 60_000);
 
-  it('declines needs it can’t offer yet (screen, device)', async () => {
+  it('declines what a capability you turned off would need, saying which', async () => {
     const [fay, gus] = await pair('fay', 'gus');
     fay.trust(gus.id, 'trusted');
-    gus.trust(fay.id, 'trusted');
+    // gus has fay on "Ask me each time": the screen is off for that by default.
     const t = fay.gw.ask({ person: 'gus', ask: 'what is on screen', needs: ['screen'], by: 'agent' });
     await settle(() => task(fay, t.id)?.state === 'declined');
-    expect(task(fay, t.id)?.result?.summary).toContain('look at the screen');
+    expect(task(fay, t.id)?.result?.summary).toBe("gus's klaud doesn't let you see the screen");
+    expect(gus.approvals).toHaveLength(0);
   }, 60_000);
 });
 

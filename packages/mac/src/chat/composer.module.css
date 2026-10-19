@@ -236,3 +236,40 @@
   border-radius: 2px;
   background: currentColor;
 }
+
+/* Plan mode: the whole box turns to the plan colour, with a faint stripe, and says so. */
+.planning {
+  --plan: #2bb3a3;
+  background:
+    repeating-linear-gradient(135deg, color-mix(in srgb, var(--plan) 5%, transparent) 0 6px, transparent 6px 12px),
+    color-mix(in srgb, var(--plan) 7%, var(--bg-raised));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--plan) 65%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--plan) 14%, transparent);
+}
+.planning:focus-within {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--plan) 85%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--plan) 20%, transparent);
+}
+.planning .chipOn {
+  background: color-mix(in srgb, var(--plan) 22%, transparent);
+  color: color-mix(in srgb, var(--plan) 80%, var(--text));
+}
+.planBanner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 0;
+  color: color-mix(in srgb, var(--plan) 75%, var(--text));
+  font-size: 0.82rem;
+}
+.planBanner span {
+  color: var(--text-3);
+}
+.planBanner strong {
+  font-weight: 650;
+}
+.planKeys {
+  font-variant-numeric: tabular-nums;
+}

@@ -404,25 +404,12 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  outline: none;
 }
-.doc {
-  padding: 14px 18px 32px;
-}
-/* Narrow: code wraps instead of running off the side, on the page's own background. */
-.code {
-  min-height: 100%;
-}
-.code :global(pre) {
-  min-height: 100%;
-  margin: 0;
-  padding: 10px 14px !important;
-  background: transparent !important;
-  font-size: 0.86em;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.code :global(pre code) {
-  white-space: inherit;
+/* A file fills the preview (an image centers in it); a long one scrolls. */
+.previewFile {
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- Files */

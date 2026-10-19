@@ -18,7 +18,7 @@ function hostingNote(phase: string | undefined, detail: string | undefined): str
   if (phase === 'failed') return detail ?? 'Couldn’t open remote access. Try again, or pick another way in Settings › People & access.';
   if (phase === 'local') return 'Only people on this network can join right now.';
   if (phase) return 'Opening a secure link… it’s copied as soon as it’s ready.';
-  return 'klaud opens a secure link the first time you copy one.';
+  return 'Klaud opens a secure link the first time you copy one.';
 }
 
 /**
@@ -99,7 +99,7 @@ function HostInvite({ menu, close }: NativeMenuProps<'invite_link'>) {
       <Field label="The link">
         <Check checked={c.knock} onChange={(knock) => set({ knock })} label="Knock first" detail={c.knock ? 'You let them in from a card in the chat.' : 'They come straight in.'} />
         <Check checked={c.singleUse} onChange={(singleUse) => set({ singleUse })} label="One person only" detail={c.singleUse ? 'It stops working after the first person.' : 'Anyone with the link can come.'} />
-        <Check checked={c.expires} onChange={(expires) => set({ expires })} label="Expires in 24 hours" detail={c.expires ? undefined : 'Works until you revoke it or quit klaud.'} />
+        <Check checked={c.expires} onChange={(expires) => set({ expires })} label="Expires in 24 hours" detail={c.expires ? undefined : 'Works until you revoke it or quit Klaud.'} />
       </Field>
       {!invite ? <div className={v.status}>{hostingNote(hosting?.phase, hosting?.detail)}</div> : null}
       <HowTheyJoin knock={c.knock} />
@@ -148,7 +148,7 @@ function HowTheyJoin({ knock }: { knock: boolean }) {
       <li>
         <span className={v.stepIcon}><Icon name="claude" size={13} /></span>
         <span>
-          <strong>They open it in klaud.</strong> With klaud for Mac a click on the link is enough; in a terminal they paste it (it starts with <code>klaud join</code>).
+          <strong>They open it in Klaud.</strong> With Klaud for Mac a click on the link is enough; in a terminal they paste it (it starts with <code>klaud join</code>).
         </span>
       </li>
       <li>

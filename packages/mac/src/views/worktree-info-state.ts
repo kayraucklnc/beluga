@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { WorktreeInfo } from '@klaud/core/other-worktrees.js';
-import type { OriginInfo } from '@klaud/workspaces/origin.js';
 import { useApi } from '../lib/klaud.js';
 
 /**
  * This window's memory for worktrees made outside Klaud: which ones you chose to start a
  * conversation in (the chat shows instead of the info page) and which show their info page
- * over the conversation. Plus the lookups the info page and the sidebar folds make.
+ * over the conversation. Plus the lookups the info page and the sidebar make.
  */
 
 type Kind = 'started' | 'about';
@@ -51,29 +50,30 @@ export function useWorktreeInfo(id: string, key: string): { info?: WorktreeInfo;
   return { ...(state.for === id ? state : { loading: true }), reload };
 }
 
-const originCache = new Map<string, Record<string, OriginInfo>>();
+/** How long the sidebar trusts what git said about when each outside worktree last changed. */
+const ACTIVITY_FRESH_MS = 60_000;
+const activityCache = new Map<string, { readonly at: number; readonly times: Record<string, number> }>();
 
 /**
- * Who made each of a project's other worktrees (looked up once per set of worktrees: it reads
- * Conductor's data and Claude Code's transcripts). Empty until it's known.
+ * When git last saw something happen in each of a project's worktrees made outside Klaud (a
+ * commit, a checkout, staging): how the sidebar orders them. Asked again when the set of
+ * worktrees changes, or after a minute. Empty until it's known.
  */
-export function useOrigins(projectId: string, ids: readonly string[]): Record<string, OriginInfo> {
+export function useOtherActivity(projectId: string, ids: readonly string[]): Record<string, number> {
   const api = useApi();
   const key = `${projectId}:${[...ids].sort().join(',')}`;
-  const [origins, setOrigins] = useState<Record<string, OriginInfo>>(() => originCache.get(key) ?? {});
+  const [times, setTimes] = useState<Record<string, number>>(() => activityCache.get(key)?.times ?? {});
   useEffect(() => {
     if (!ids.length) return;
-    const hit = originCache.get(key);
-    if (hit) {
-      setOrigins(hit);
-      return;
-    }
+    const hit = activityCache.get(key);
+    if (hit) setTimes(hit.times);
+    if (hit && Date.now() - hit.at < ACTIVITY_FRESH_MS) return;
     let live = true;
     api.workspaces
-      .otherOrigins(projectId)
+      .otherActivity(projectId)
       .then((found) => {
-        originCache.set(key, found ?? {});
-        if (live) setOrigins(found ?? {});
+        activityCache.set(key, { at: Date.now(), times: found ?? {} });
+        if (live) setTimes(found ?? {});
       })
       .catch(() => undefined);
     return () => {
@@ -82,5 +82,5 @@ export function useOrigins(projectId: string, ids: readonly string[]): Record<st
     // `key` covers ids.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, key, projectId]);
-  return origins;
+  return times;
 }

@@ -13,7 +13,11 @@ export function worktreeOrigin(ws: Pick<Workspace, 'external' | 'path'>): Worktr
   return AGENT_DIR.test(ws.path) ? 'agent' : 'external';
 }
 
-/** Which tool made a worktree klaud didn't: how the Mac sidebar groups them. */
+/**
+ * Which tool made a worktree klaud didn't (Conductor's folders, Claude Code's, or anything else).
+ * Used to pick the right conversation and to keep another app's live workspaces safe; the Mac
+ * app never shows the tool's name, only the worktree's name and where it is.
+ */
 export type WorktreeSource = 'conductor' | 'claude' | 'other';
 
 /** The source from the folder alone (Conductor's and Claude Code's own folders); the rest is "other" until looked up. */
@@ -23,17 +27,10 @@ export function sourceFromPath(dir: string): WorktreeSource {
   return 'other';
 }
 
-/** The sidebar fold for each source: its title and the one line that explains it. */
-export const SOURCE_FOLDS: Readonly<Record<WorktreeSource, { readonly title: string; readonly explainer: string }>> = {
-  conductor: { title: 'Conductor', explainer: 'Worktrees Conductor made for its workspaces. Their Claude Code conversations show here; Conductor still owns them.' },
-  claude: { title: 'Claude Code', explainer: 'Worktrees Claude Code made: by its sub-agents, or by a conversation that ran git worktree add.' },
-  other: { title: 'Other Worktrees', explainer: 'Worktrees made outside Klaud, by hand, a script or another tool.' },
-};
-
 /** Who made a worktree, in words. */
 export interface OriginInfo {
   readonly source: WorktreeSource;
-  /** "Conductor workspace “berlin”", "Made by Claude in “RC-210 epic”", "Made outside Klaud"… */
+  /** "Made outside Klaud", "Made by Claude in “RC-210 epic”"… (never another app's name). */
   readonly label: string;
   readonly detail: string;
 }
@@ -48,13 +45,12 @@ export interface OriginFacts {
 
 const lastPart = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 
-/** Label a worktree klaud didn't make by what made it. */
+/** Label a worktree klaud didn't make by what made it (another app stays unnamed). */
 export function describeOrigin(f: OriginFacts): OriginInfo {
   const source = sourceFromPath(f.path);
   if (f.conductor || source === 'conductor') {
-    const name = f.conductor?.name ?? lastPart(f.path);
-    const state = f.conductor?.state === 'archived' ? 'Archived in Conductor, but its folder is still here.' : 'Conductor made it for one of its workspaces; you can keep working in it from either app.';
-    return { source: 'conductor', label: `Conductor workspace “${name}”`, detail: f.conductor?.prTitle ? `${state} Pull request: ${f.conductor.prTitle}` : state };
+    const state = f.conductor?.state === 'archived' ? 'The app that made it put it away, but its folder is still here.' : 'Another app made it and still uses it; you can keep working in it from either.';
+    return { source: 'conductor', label: 'Made outside Klaud', detail: f.conductor?.prTitle ? `${state} Pull request: ${f.conductor.prTitle}` : state };
   }
   if (source === 'claude') return { source: 'claude', label: 'Claude Code sub-agent', detail: 'A Claude Code agent made it to work in isolation (in .claude/worktrees). It usually isn’t needed once that agent finished.' };
   if (f.creator) {

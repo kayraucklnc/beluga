@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { expectPicked } from './helpers.js';
 
 /** The Mac ways in: Stop, the toolbar's main action, right-click menus, the new worktree form, Find. */
 
@@ -49,7 +50,7 @@ test('the toolbar puts what the workspace needs next up front, the rest one clic
   await openWorkspace(page, 'add-auth');
   const primary = toolbar(page).locator('button[class*="primary"]');
   await expect(primary).toHaveText(/Merge|Commit|Create PR|PR #|Fix Checks|Solve Conflict|Run/);
-  await expect(toolbar(page).getByRole('group', { name: 'Workspace actions' }).getByRole('button', { name: /^Ask Claude to Review/ })).toBeVisible();
+  await expect(toolbar(page).getByRole('group', { name: 'Workspace actions' }).getByRole('button', { name: /^Ask Claude to review/ })).toBeVisible();
   await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
   const archive = page.getByRole('menuitem', { name: /Archive…/ });
   await expect(archive).toContainText('⌃⌘A');
@@ -87,7 +88,7 @@ test('a new worktree: pick the branch, name it, Create Worktree; then one click 
   await expect(toolbar(page)).toContainText('New Worktree');
   await expect(toolbar(page)).toContainText('bob-api');
   const base = page.getByRole('combobox', { name: 'Based on' });
-  await expect(base).toHaveValue(/origin\/main|main/);
+  await expectPicked(base, /origin\/main|main/);
   await page.getByLabel('Worktree name').fill('e2e-polish');
   await page.getByRole('button', { name: /Create Worktree/ }).click();
   await expect(sidebar(page).getByRole('button', { name: 'e2e-polish', exact: true })).toBeVisible({ timeout: 20_000 });

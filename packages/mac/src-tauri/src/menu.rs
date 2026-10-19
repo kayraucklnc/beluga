@@ -245,15 +245,15 @@ fn workspace_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
         "Workspace",
         true,
         &[
-            &item(app, "ws-commit", "Commit", Some("Shift+CmdOrCtrl+C"))?,
+            &item(app, "ws-commit", "Commit…", Some("Shift+CmdOrCtrl+C"))?,
             &item(app, "ws-pr", "Pull Request…", Some("Shift+CmdOrCtrl+P"))?,
-            &item(app, "ws-merge", "Merge", Some("Shift+CmdOrCtrl+M"))?,
+            &item(app, "ws-merge", "Merge…", Some("Shift+CmdOrCtrl+M"))?,
             &PredefinedMenuItem::separator(app)?,
             &item(app, "ws-run", "Run", Some("CmdOrCtrl+R"))?,
             &item(
                 app,
                 "ws-review",
-                "Ask Claude to Review",
+                "Ask Claude to Review…",
                 Some("Shift+CmdOrCtrl+R"),
             )?,
             &PredefinedMenuItem::separator(app)?,
@@ -370,12 +370,56 @@ fn status_items<R: Runtime>(
     ])
 }
 
-/// The menu-bar menu: your status (while you're on the klaud network), open klaud, quit.
+/// One request waiting for you: a submenu with Approve / Always Allow / Decline / Review….
+fn request_item<R: Runtime>(
+    app: &AppHandle<R>,
+    r: &crate::requests::TrayRequest,
+) -> tauri::Result<Submenu<R>> {
+    let mut items: Vec<MenuItem<R>> =
+        vec![item(app, &format!("req-yes:{}", r.id), "Approve", None)?];
+    if r.always {
+        items.push(item(
+            app,
+            &format!("req-always:{}", r.id),
+            "Always Allow for a Week",
+            None,
+        )?);
+    }
+    items.push(item(app, &format!("req-no:{}", r.id), "Decline", None)?);
+    items.push(item(app, &format!("req-open:{}", r.id), "Review…", None)?);
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<R>> = items
+        .iter()
+        .map(|i| i as &dyn tauri::menu::IsMenuItem<R>)
+        .collect();
+    Submenu::with_items(app, &r.title, true, &refs)
+}
+
+/// The menu-bar menu: requests waiting for you, your status (while you're on the klaud
+/// network), open klaud, quit.
 pub fn tray_menu<R: Runtime>(
     app: &AppHandle<R>,
     presence: Option<&TrayPresence>,
+    requests: &[crate::requests::TrayRequest],
 ) -> tauri::Result<Menu<R>> {
     let menu = Menu::new(app)?;
+    if !requests.is_empty() {
+        let head = if requests.len() == 1 {
+            "1 Request Waiting for You".to_string()
+        } else {
+            format!("{} Requests Waiting for You", requests.len())
+        };
+        menu.append(&MenuItem::with_id(
+            app,
+            "req-head",
+            head,
+            false,
+            None::<&str>,
+        )?)?;
+        for r in requests {
+            menu.append(&request_item(app, r)?)?;
+        }
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
     if let Some(p) = presence {
         for it in status_items(app, p)? {
             menu.append(&it)?;
@@ -393,7 +437,7 @@ pub fn tray_menu<R: Runtime>(
 
 /// The icon in the menu bar: open klaud, or quit it (leaving the room).
 pub fn tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let menu = tray_menu(app, None)?;
+    let menu = tray_menu(app, None, &[])?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
     TrayIconBuilder::with_id("klaud")
         .icon(icon)

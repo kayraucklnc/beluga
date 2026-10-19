@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { type TaskView, isFinal, oneLine, stateLabel, stateTone, targetLabel } from '@klaud/core/gateway/model.js';
+import { Select } from '../components/Select.js';
 import { Avatar, Button, Dot, Empty, Segmented, cx } from '../components/ui.js';
 import { useApi, useApp, useKlaud } from '../lib/klaud.js';
 import { TaskCard } from './TaskCard.js';
@@ -123,13 +124,7 @@ function Compose({ onDone }: { onDone: () => void }) {
     <div className={s.compose} role="group" aria-label="Ask someone's Claude">
       <div className={s.composeRow}>
         <span>To</span>
-        <select aria-label="Whose Claude" value={to} onChange={(e) => setTo(e.target.value)}>
-          {list.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}’s Claude
-            </option>
-          ))}
-        </select>
+        <Select label="Whose Claude" value={to} onChange={setTo} options={list.map((p) => ({ value: p.id, label: `${p.name}’s Claude`, icon: <Avatar name={p.name} id={p.id} size={16} /> }))} />
       </div>
       <textarea className={s.edit} aria-label="What to ask" placeholder="What should their Claude do? They see only this." value={ask} onChange={(e) => setAsk(e.target.value)} autoFocus />
       <div className={s.actions}>
@@ -150,7 +145,7 @@ export function RequestsView() {
   const [open, setOpen] = useState<string | undefined>();
   const [composing, setComposing] = useState(false);
   if (!gateway.enabled) {
-    return <Empty icon="hand" title="Requests need the klaud app" detail="Tasks between Claudes run in the klaud app's daemon." />;
+    return <Empty icon="hand" title="Requests need the Klaud app" detail="Tasks between Claudes run in the Klaud app's daemon." />;
   }
   const list = gateway.tasks.filter((t) => t.direction === tab).slice().reverse();
   const count = (d: Tab): number => gateway.tasks.filter((t) => t.direction === d).length;

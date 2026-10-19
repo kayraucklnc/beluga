@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { App } from './App.js';
+import { brandText } from './lib/brand.js';
 import { capabilities, connect, inApp } from './lib/boot.js';
 import { KlaudProvider } from './lib/klaud.js';
 import { apply, zoom } from './lib/prefs.js';
@@ -24,7 +25,7 @@ function Root() {
     let alive = true;
     // Waits longer each time in a row it fails (up to 10 s), so a broken klaud isn't hammered.
     const retry = (): void => void setTimeout(() => alive && setAttempt((n) => n + 1), Math.min(10_000, 500 * 2 ** Math.min(failures.current++, 5)));
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("klaud didn't answer")), 15_000));
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Klaud didn't answer")), 15_000));
     Promise.race([connect(capabilities(zoom)), timeout])
       .then((c) => {
         if (!alive) return c.close();
@@ -53,8 +54,8 @@ function Root() {
       <div className={s.connecting} data-tauri-drag-region>
         <UpdateLayer connected={false} />
         <div className={s.connectBox}>
-          <strong>{error ? 'klaud isn’t running yet' : 'Starting klaud…'}</strong>
-          {error ? <span>{error}</span> : null}
+          <strong>{error ? 'Klaud isn’t running yet' : 'Starting Klaud…'}</strong>
+          {error ? <span>{brandText(error)}</span> : null}
           {error ? <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button> : null}
         </div>
       </div>

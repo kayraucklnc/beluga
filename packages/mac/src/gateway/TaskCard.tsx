@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { type TaskView, approvalTitle, isFinal, stateLabel, stateTone, targetLabel } from '@klaud/core/gateway/model.js';
 import { formatDuration } from '@klaud/shared/text.js';
 import { Markdown } from '../chat/Markdown.js';
@@ -7,6 +7,8 @@ import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot } from '../components/ui.js';
 import { revealInFinder } from '../lib/files.js';
 import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { openRequest } from './request-native.js';
+import a from './access.module.css';
 import s from './gateway.module.css';
 
 /**
@@ -71,13 +73,46 @@ export function DataTable({ data }: { data: unknown }) {
 
 const kb = (n: number): string => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
+/** A screenshot a result brought: a thumbnail; clicking shows it in Finder. */
+function Shot({ task, name, path }: { task: TaskView; name: string; path: string }) {
+  const api = useApi();
+  const { client } = useKlaud();
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    let alive = true;
+    void api.gateway
+      .image(task.id, name)
+      .then((u) => alive && setUrl(u))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [task.id, name]);
+  return (
+    <button type="button" className={a.shot} aria-label={`Screenshot ${name}: show in Finder`} title={name} onClick={() => void revealInFinder(client, path)}>
+      {url ? <img src={url} alt={name} draggable={false} /> : null}
+    </button>
+  );
+}
+
 function Result({ task }: { task: TaskView }) {
   const { client } = useKlaud();
   const r = task.result;
   if (!r) return null;
+  const shots = r.files.filter((f) => f.image && f.path);
   return (
     <div className={s.result}>
       {r.summary ? <Markdown text={r.summary} /> : null}
+      {shots.length ? (
+        <>
+          <span className={s.label}>Screenshots</span>
+          <div className={a.shots}>
+            {shots.map((f) => (
+              <Shot key={f.name} task={task} name={f.name} path={f.path!} />
+            ))}
+          </div>
+        </>
+      ) : null}
       {r.data !== undefined ? (
         <>
           <span className={s.label}>Data</span>
@@ -98,7 +133,7 @@ function Result({ task }: { task: TaskView }) {
                 ) : (
                   <span>{f.name}</span>
                 )}
-                <span className={s.via}>{f.path ? kb(f.size) : 'too big to come with the result'}</span>
+                <span className={s.via}>{f.path ? kb(f.size) : 'didn’t arrive'}</span>
               </div>
             ))}
           </div>
@@ -109,21 +144,82 @@ function Result({ task }: { task: TaskView }) {
   );
 }
 
-/** A friend's request waiting for you: the same answers as the approval card above the message box. */
+/** A friend's request waiting for you: Approve, Always (a rule for requests like it), Decline, or the full sheet. */
 function Approve({ task }: { task: TaskView }) {
   const api = useApi();
   const call = useCall();
-  const approval = useApp((st) => st.approvals.find((a) => a.title === approvalTitle(task)));
-  if (!approval) return <div className={s.hint}>Waiting for your answer above the message box.</div>;
+  const waiting = useApp((st) => st.approvals.some((x) => x.task === task.id || x.title === approvalTitle(task)));
+  const answer = (decision: 'yes' | 'always' | 'no'): Promise<unknown> => api.gateway.decide(task.id, { answer: decision, scope: 'this', command: 'this', expiry: 'never' });
+  if (!waiting) return <div className={s.hint}>Waiting for your answer above the message box.</div>;
   return (
     <div className={s.actions}>
-      <Button variant="primary" onClick={() => call('approve it', api.host.answerApproval('yes', approval.id))}>
+      <Button variant="primary" onClick={() => call('approve it', answer('yes'))}>
         Approve
       </Button>
-      <Button onClick={() => call('approve it', api.host.answerApproval('always', approval.id))}>Always allow from {task.peerName}</Button>
-      <Button variant="quiet" onClick={() => call('decline it', api.host.answerApproval('no', approval.id))}>
+      <Button onClick={() => call('approve it', answer('always'))}>Always Allow from {task.peerName}</Button>
+      <Button variant="quiet" onClick={() => call('decline it', answer('no'))}>
         Decline
       </Button>
+      <Button variant="quiet" icon="eye" onClick={() => openRequest(task.id)}>
+        Review…
+      </Button>
+    </div>
+  );
+}
+
+/** Their Claude asks something about your task (your Claude was told first): answer it, or let them decide. */
+function Question({ task }: { task: TaskView }) {
+  const api = useApi();
+  const call = useCall();
+  const q = task.question;
+  const draft = q && task.answerDraft?.qid === q.qid ? task.answerDraft.answers : undefined;
+  const [texts, setTexts] = useState<string[]>(() => [...(draft ?? [])]);
+  useEffect(() => {
+    if (draft) setTexts([...draft]);
+  }, [draft?.join('\u0000')]);
+  if (!q) return null;
+  const send = (answers: string[] | 'skip'): void => call('answer', api.gateway.answer(task.id, answers));
+  // Your Claude's answer waits for you: shown to edit and send.
+  const single = !draft && q.questions.length === 1 && q.questions[0]!.options.length > 0 && !q.questions[0]!.multiSelect;
+  return (
+    <div className={a.question} role="group" aria-label={`${task.peerName}’s Claude asks`}>
+      {q.questions.map((item, i) => (
+        <div key={i}>
+          <div className={a.questionText}>
+            {task.peerName}’s Claude asks: {item.question}
+          </div>
+          {single ? (
+            <div className={a.answers}>
+              {item.options.map((o) => (
+                <Button key={o.label} size="small" onClick={() => send([o.label])} title={o.description || undefined}>
+                  {o.label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          {!single ? (
+            <input
+              className={a.input}
+              style={{ width: '100%', marginBottom: 6 }}
+              aria-label={`Answer: ${item.question}`}
+              placeholder={item.options.length ? item.options.map((o) => o.label).join(' / ') : 'Your answer'}
+              value={texts[i] ?? ''}
+              onChange={(e) => setTexts(Object.assign([...texts], { [i]: e.target.value }))}
+            />
+          ) : null}
+        </div>
+      ))}
+      <div className={s.actions} style={{ marginTop: 4 }}>
+        {!single ? (
+          <Button size="small" variant="primary" disabled={!texts.some((t) => t?.trim())} onClick={() => send(q.questions.map((_, i) => texts[i] ?? ''))}>
+            {draft ? 'Send It' : 'Send Answer'}
+          </Button>
+        ) : null}
+        <Button size="small" variant="quiet" onClick={() => send('skip')}>
+          Let Them Decide
+        </Button>
+        <span className={s.via}>{draft ? 'Your Claude’s answer: you hadn’t seen this request, so it waits for you' : task.by === 'agent' ? 'Your Claude was asked first' : ''}</span>
+      </div>
     </div>
   );
 }
@@ -171,7 +267,7 @@ export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
   const now = useNow(task.state === 'working');
   const tone = stateTone(task);
   const sent = task.direction === 'sent';
-  const working = task.state === 'working' && task.startedAt ? ` · ${formatDuration(now - task.startedAt)}` : '';
+  const working = task.incoming ? ` · ${kb(task.incoming.received)} of ${kb(task.incoming.total)}` : task.state === 'working' && task.startedAt ? ` · ${formatDuration(now - task.startedAt)}` : '';
   const done = isFinal(task.state) && task.endedAt ? ` · ${formatDuration(task.endedAt - task.createdAt)}` : '';
   const title = task.state === 'confirm' ? `Ask ${targetLabel(task)}?` : sent ? `To ${targetLabel(task)}` : `From ${task.peerName}${task.by === 'agent' ? '’s Claude' : ''}`;
   return (
@@ -202,6 +298,7 @@ export const TaskCard = memo(function TaskCard({ task }: { task: TaskView }) {
               ))}
             </div>
           ) : null}
+          {sent && task.question ? <Question task={task} /> : null}
           <Result task={task} />
           {!sent && task.state === 'awaiting_approval' ? <Approve task={task} /> : null}
           {live && !(!sent && task.state === 'awaiting_approval') ? (

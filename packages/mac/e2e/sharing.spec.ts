@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { pick } from './helpers.js';
 
 /** Inviting, people and sharing, the Mac way: sheets, cards and real controls (against the demo). */
 
@@ -20,7 +21,7 @@ test('the Invite sheet copies a link, lists it, and revokes it', async ({ page }
   await sidebar(page).getByRole('button', { name: 'Invite', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: 'Invite People' });
   await expect(sheet).toBeVisible();
-  await sheet.getByLabel('Invite to').selectOption({ label: 'bob-api' });
+  await pick(sheet, 'Invite to', 'bob-api');
   await sheet.getByRole('radio', { name: 'Watch' }).click();
   await expect(sheet.getByText('See the chat history and browse the files.')).toBeVisible();
   await sheet.getByRole('checkbox', { name: /One person only/ }).uncheck();

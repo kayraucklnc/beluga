@@ -245,7 +245,7 @@ export function DiffView() {
             ]}
           />
         </div>
-        <div className={`${s.code} selectable`}>
+        <div className={`${s.code} selectable`} tabIndex={0} aria-label="The changes">
           {!review.diff ? (
             <div className={s.loadingDiff}>Loading the diff…</div>
           ) : mode === 'unified' ? (

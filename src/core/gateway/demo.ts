@@ -25,8 +25,9 @@ interface Persona {
   /** What they answer, by what was asked. */
   readonly answers: ReadonlyArray<{ readonly match: RegExp; readonly steps: readonly string[]; readonly summary: string }>;
   readonly fallback: string;
-  /** What their Claude asks yours when you mention Claude to them. */
+  /** What their Claude asks yours when you mention Claude to them (in one of your projects, maybe). */
   readonly asksBack: string;
+  readonly asksIn?: string;
 }
 
 const PERSONAS: Readonly<Record<'bob' | 'mia', Persona>> = {
@@ -53,6 +54,7 @@ const PERSONAS: Readonly<Record<'bob' | 'mia', Persona>> = {
     ],
     fallback: 'Looked at it on my side: all good from the landing page.',
     asksBack: 'What does your auth middleware return for an expired session? I need the exact status code for the error page.',
+    asksIn: 'bob-api',
   },
 };
 
@@ -131,7 +133,6 @@ export function demoResponder(mesh: Mesh, persona: 'bob' | 'mia', meId: string, 
       });
       return { answer, withdraw: () => clearTimeout(timer) };
     },
-    setTrust: () => undefined,
     serveShell: async (_from, ask, hooks) => {
       if (p.trust !== 'full') {
         hooks.onAsking();
@@ -156,7 +157,7 @@ export function demoResponder(mesh: Mesh, persona: 'bob' | 'mia', meId: string, 
     },
     askBack: () => {
       try {
-        const t = gateway.ask({ person: meId, ask: p.asksBack, by: 'agent' });
+        const t = gateway.ask({ person: meId, ask: p.asksBack, by: 'agent', ...(p.asksIn ? { project: p.asksIn, needs: ['project'] } : {}) });
         // Their user said yes to asking you (it's a demo).
         if (t.state === 'confirm') gateway.confirm(t.id, true);
       } catch {

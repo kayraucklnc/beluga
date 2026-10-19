@@ -176,16 +176,6 @@
 .switchOn::after {
   transform: translateX(13px);
 }
-.select {
-  height: 24px;
-  padding: 0 24px 0 9px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--bg-raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 4l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 7px center;
-  box-shadow: 0 0 0 0.5px var(--hairline-strong), 0 0.5px 1px rgba(0, 0, 0, 0.06);
-  appearance: none;
-  font-size: 0.95rem;
-}
 .text {
   width: 200px;
   height: 24px;
@@ -199,6 +189,9 @@
 .slider {
   width: 180px;
   accent-color: var(--accent);
+}
+.slider:disabled {
+  opacity: 0.4;
 }
 .swatches {
   display: flex;

@@ -7,6 +7,7 @@ import { watchNetwork } from '../network.js';
 import type { Session } from '../session.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import type { Store } from '../store.js';
+import { pretendSystem } from './demo-system.js';
 import { Gateway, type MeshNode } from './gateway.js';
 import { attachGateway, detachGateway } from './registry.js';
 import type { Pending } from './serve.js';
@@ -38,11 +39,11 @@ export function meshNode(mesh: Mesh): MeshNode {
   };
 }
 
-/** Ask through today's approval cards, with a way to take the question back (it's answered "no"). */
-export function approvals(session: Pick<Session, 'host' | 'store'>): (kind: 'request' | 'tool', title: string, detail: string, peer: string) => Pending {
-  return (kind, title, detail, peer) => {
+/** Ask through today's approval cards (linked to the task), with a way to take the question back (it's answered "no"). */
+export function approvals(session: Pick<Session, 'host' | 'store'>): (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string) => Pending {
+  return (kind, title, detail, peer, task) => {
     const before = new Set(session.store.getState().approvals.map((a) => a.id));
-    const answer = session.host.ask(kind, title, detail, peer);
+    const answer = session.host.ask(kind, title, detail, peer, 'room', task ? { task } : {});
     // ask() shows its card right away: find it, so it can be withdrawn.
     const id = session.store.getState().approvals.find((a) => !before.has(a.id))?.id;
     return { answer, withdraw: () => void (id && session.host.answerApproval('no', id)) };
@@ -59,6 +60,7 @@ export function launchGateway(host: GatewayHost): () => void {
   const { session, store } = host;
   const dir = host.demo ? mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-tasks-')) : path.join(klaudHome(), 'tasks');
   let note = host.demo ? 'a review of the landing page, or anything in my projects' : (loadSettings().askMeFor ?? '');
+  let caps: unknown;
   const projects = (): Array<{ name: string; root: string }> => (session.workspaces?.manager.list ?? []).filter((p) => p.root && !p.error).map((p) => ({ name: p.name, root: p.root }));
   const gateway = new Gateway({
     store,
@@ -68,8 +70,16 @@ export function launchGateway(host: GatewayHost): () => void {
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'me',
     agent: () => session.backend,
     approve: approvals(session),
-    setTrust: (peerId, level) => session.people.setTrust(peerId, level, true),
+    rulesFile: path.join(host.demo ? dir : klaudHome(), 'rules.json'),
+    loadCaps: () => (host.demo ? caps : loadSettings().capabilities),
+    saveCaps: (next) => {
+      if (host.demo) caps = next;
+      else saveSettings({ capabilities: next });
+    },
     serveShell: (from, ask, hooks) => session.peerRun.serveTask(from, ask, hooks),
+    runFolder: (from) => session.peerRun.defaultFolder(from),
+    // The demo never looks at your real screen.
+    ...(host.demo ? { system: pretendSystem() } : {}),
     resume: (channel, prompt) => {
       const name = /^\[klaud\] (.+?) \(task/.exec(prompt)?.[1] ?? 'A reply came';
       store.dispatch({ type: 'system', text: `${name}. Claude continues with it.`, channel });
@@ -92,6 +102,11 @@ export function launchGateway(host: GatewayHost): () => void {
     }),
   });
   attachGateway(session, gateway);
+  // Commands friends run here through the room (run_on_peer) follow the same rules and capabilities.
+  session.peerRun.useAccess({
+    decide: (facts, trust) => gateway.rules.decide(facts, trust),
+    remember: (facts, name, decision) => void gateway.rules.remember(facts, name, decision),
+  });
   const offNetwork = watchNetwork(session, (service) => (service ? gateway.attachMesh(meshNode(service.mesh)) : gateway.detachMesh()));
   let peers = store.getState().peers;
   const offPeers = store.subscribe(() => {
@@ -103,6 +118,7 @@ export function launchGateway(host: GatewayHost): () => void {
   return () => {
     offNetwork();
     offPeers();
+    session.peerRun.useAccess(undefined);
     detachGateway(session);
     gateway.stop();
     if (host.demo) rmSync(dir, { recursive: true, force: true });

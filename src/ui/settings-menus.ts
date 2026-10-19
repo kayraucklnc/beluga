@@ -5,6 +5,7 @@ import { THEME_LABELS } from './theme.js';
 import type { MenuOption, MenuSpec } from './menus.js';
 import { joinArgs, shellName } from '../shared/shells.js';
 import { dndActive, dndLabel } from '../shared/quiet.js';
+import { soundOn } from '../shared/notify-sound.js';
 import { type NoticeFilter, NOTICE_FILTERS, filterNotices, groupNotices, noticeAgo } from './notice-models.js';
 
 export type SettingsSection = 'claude' | 'notify' | 'workspaces' | 'people' | 'display' | 'buttons' | 'terminal' | 'env';
@@ -77,7 +78,7 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
         intro: ['klaud tells you when something needs you, on the desktop and in the inbox (top right).', 'Nothing is announced about the conversation you are looking at.', ''],
         options: [
           { id: 'n-desktop', label: 'Desktop notifications', hint: `${onOff(p.notify.desktop)}${sw}` },
-          { id: 'n-sound', label: 'Sound', hint: `${onOff(p.notify.sound)}${sw}` },
+          { id: 'n-sound', label: 'Sound', hint: `${onOff(soundOn(p.notify))}${sw}` },
           { id: 'n-onlyAway', label: 'Only when klaud isn’t in front', hint: `${onOff(p.notify.onlyAway)}${sw}` },
           { id: 'n-dnd', label: 'Do Not Disturb', hint: dndActive(p.notify) ? `On ${dndLabel(p.notify)}  ·  Enter for longer, then off` : 'Off  ·  Enter: for 1 hour, then longer' },
           { id: 'n-needsYou', label: 'Claude needs you', hint: `${onOff(p.notify.needsYou)}  ·  questions, plans, approvals` },
@@ -187,7 +188,7 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
           { id: 'set-name', label: 'Your name', hint: `${state.self?.name ?? '–'}  ·  type a new one` },
           { id: 'set-theme', label: 'Color theme', hint: `${THEME_LABELS[p.theme]}${sw}` },
           { id: 'sec:people', label: 'People & permissions ›', hint: `new people: ${TRUST_INFO[defaultTrust(state)].short}${others ? ` · ${others} here` : ''}` },
-          { id: 'sec:notify', label: 'Notifications ›', hint: dndActive(n) ? `Do Not Disturb ${dndLabel(n)}` : n.desktop ? `desktop on${n.sound ? ' · sound' : ''}` : 'desktop off · inbox only' },
+          { id: 'sec:notify', label: 'Notifications ›', hint: dndActive(n) ? `Do Not Disturb ${dndLabel(n)}` : n.desktop ? `desktop on${soundOn(n) ? ' · sound' : ''}` : 'desktop off · inbox only' },
           { id: 'sec:claude', label: 'Claude ›', hint: `${modelLabel(state, p.model)} · PR instructions · templates` },
           { id: 'sec:workspaces', label: 'Workspaces ›', hint: `setup ${p.autoSetup ? 'on' : 'off'} · terminal · environment · top bar` },
           { id: 'sec:display', label: 'Display ›', hint: 'mouse, text size, context meter, sub-agents' },

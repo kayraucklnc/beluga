@@ -156,4 +156,39 @@ describe('a chat in the main folder', () => {
     expect(kay.runs[1]!.prompt).toBe(CONTINUE_PROMPT);
     expect(kay.runs[1]!.place?.cwd).toBe(id!.path);
   });
+
+  it('shows the task once when it is word-for-word what you asked last', { timeout: 20_000 }, async () => {
+    const dir = repo();
+    const kay = await solo(dir, async () => 'Answered.');
+    const project = projectOf(kay.workspaces);
+    await kay.session.workspaces!.startChat(project.id, 'Make the  login button blue');
+    await waitFor(() => kay.runs.length === 1, 4000);
+    const chat = kay.workspaces.list.flatMap((p) => p.workspaces).find((w) => w.kind === 'chat')!;
+    await waitFor(() => said(kay.state, `ws:${chat.id}`).includes('Answered.'), 4000);
+    // The sheet starts with what you asked last (trimmed): the task is the same message.
+    const ws = await kay.session.workspaces!.continueInWorktree(chat.id, async () => 'blue-login', { task: 'Make the login button blue' });
+    await waitFor(() => kay.runs.length === 2, 4000);
+    // Claude still starts on it, there…
+    expect(kay.runs[1]!.prompt).toBe('Make the login button blue');
+    expect(kay.runs[1]!.place?.cwd).toBe(ws!.path);
+    await waitFor(() => said(kay.state, `ws:${ws!.id}`).filter((t) => t === 'Answered.').length === 2, 4000);
+    // …but the conversation shows your message once (the one carried over).
+    const mine = kay.state().log.filter((l) => l.channel === `ws:${ws!.id}` && l.type === 'chat' && l.from === kay.state().self?.peerId);
+    expect(mine.map((l) => ('text' in l ? l.text : ''))).toEqual(['Make the  login button blue']);
+  });
+
+  it('still shows a different task as your message', { timeout: 20_000 }, async () => {
+    const dir = repo();
+    const kay = await solo(dir, async () => 'Answered.');
+    const project = projectOf(kay.workspaces);
+    await kay.session.workspaces!.startChat(project.id, 'How does login work?');
+    await waitFor(() => kay.runs.length === 1, 4000);
+    const chat = kay.workspaces.list.flatMap((p) => p.workspaces).find((w) => w.kind === 'chat')!;
+    await waitFor(() => said(kay.state, `ws:${chat.id}`).includes('Answered.'), 4000);
+    const ws = await kay.session.workspaces!.continueInWorktree(chat.id, async () => 'login-fix', { task: 'Fix the login bug' });
+    await waitFor(() => kay.runs.length === 2, 4000);
+    const mine = () => kay.state().log.filter((l) => l.channel === `ws:${ws!.id}` && l.type === 'chat' && l.from === kay.state().self?.peerId).map((l) => ('text' in l ? l.text : ''));
+    await waitFor(() => mine().includes('Fix the login bug'), 4000);
+    expect(mine()).toEqual(['How does login work?', 'Fix the login bug']);
+  });
 });

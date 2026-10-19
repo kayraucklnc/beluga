@@ -6,13 +6,13 @@ import { cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import s from './picker.module.css';
 
-/** Effort in words: how long Claude thinks before it acts. */
+/** Effort, named as Claude Code names it, with what it means. */
 export const EFFORT_INFO: Record<Effort, { label: string; detail: string }> = {
-  low: { label: 'Quick', detail: 'Answers fast; best for small, clear asks' },
-  medium: { label: 'Balanced', detail: 'Thinks enough for most everyday work' },
-  high: { label: 'Thorough', detail: 'Takes its time on tricky changes' },
-  xhigh: { label: 'Deep', detail: 'Works hard problems through carefully' },
-  max: { label: 'Maximum', detail: 'As much thinking as it can; slowest' },
+  low: { label: 'Low', detail: 'Answers fast; best for small, clear asks' },
+  medium: { label: 'Medium', detail: 'Thinks enough for most everyday work' },
+  high: { label: 'High', detail: 'Takes its time on tricky changes' },
+  xhigh: { label: 'Extra High', detail: 'Works hard problems through carefully' },
+  max: { label: 'Max', detail: 'As much thinking as it can; slowest' },
 };
 
 /** A friendlier word for a model, from its name (Opus is the most capable, Haiku the fastest). */
@@ -74,7 +74,7 @@ export function ModelPicker({ channel }: { channel: string }) {
             <span className={s.scope}>for every conversation</span>
           </div>
           <div className={s.meterRow}>
-            <button type="button" role="radio" aria-checked={!effort} className={cx(s.auto, !effort && s.autoOn)} onClick={() => void api.session.setPrefs({ effort: undefined })}>
+            <button type="button" role="radio" aria-checked={!effort} className={cx(s.auto, !effort && s.autoOn)} onClick={() => void api.session.setPrefs({ effort: null })}>
               Auto
             </button>
             <div className={s.meter} role="radiogroup" aria-label="Thinking effort">

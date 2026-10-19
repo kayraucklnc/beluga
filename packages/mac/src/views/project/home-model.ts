@@ -1,7 +1,7 @@
 import type { AppState } from '../../../../../src/core/store.js';
 import { activityOf } from '../../../../../src/ui/workspace-models.js';
 import { worktreeOrigin } from '../../../../../src/workspaces/origin.js';
-import type { Project, Workspace } from '../../../../../src/workspaces/types.js';
+import type { Project, ProjectSync, Workspace } from '../../../../../src/workspaces/types.js';
 
 /**
  * What a project's home shows (ProjectHome.tsx draws it): how its main folder compares with
@@ -17,6 +17,12 @@ export interface MainLine {
   readonly tone: Tone;
   /** "4 uncommitted changes in main" (they were made outside klaud). */
   readonly dirty?: string;
+  /** The default branch the line is about ("main" or "master"). */
+  readonly branch?: string;
+  /** "The main folder is on feat/panel-first": it isn't on the default branch. */
+  readonly elsewhere?: string;
+  /** Update main can do something: new commits on the remote (or the branch only exists there). */
+  readonly canUpdate?: boolean;
 }
 
 export interface HomeModel {
@@ -35,8 +41,25 @@ export interface HomeModel {
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+/**
+ * How the project's default branch (main or master) compares with its remote, as of the last
+ * fetch, and where the main folder is when it's on another branch.
+ */
+export function defaultLineOf(sync: ProjectSync): MainLine {
+  const where = sync.onDefault ? 'main' : 'the main folder';
+  const dirty = sync.dirty ? `${plural(sync.dirty, 'uncommitted change')} in ${where}` : undefined;
+  const extra = { branch: sync.branch, ...(dirty ? { dirty } : {}), ...(sync.onDefault ? {} : { elsewhere: `The main folder is on ${sync.current ?? 'a detached HEAD'}` }) };
+  const up = sync.upstream;
+  if (!up) return { label: 'Not tracking a remote branch', tone: 'muted', ...extra };
+  if (!sync.local) return { label: `Only on ${up} so far`, tone: 'info', canUpdate: true, ...extra };
+  if (!sync.ahead && !sync.behind) return { label: `Up to date with ${up}`, tone: 'ok', ...extra };
+  const label = sync.ahead && sync.behind ? `${sync.ahead} ahead, ${sync.behind} behind ${up}` : sync.ahead ? `${sync.ahead} ahead of ${up}` : `${sync.behind} behind ${up}`;
+  return { label, tone: sync.ahead ? 'warn' : 'info', ...(sync.behind ? { canUpdate: true } : {}), ...extra };
+}
+
 /** How the main checkout compares with the branch it tracks (as of the last fetch). */
-export function mainLineOf(main: Workspace | undefined): MainLine {
+export function mainLineOf(main: Workspace | undefined, sync?: ProjectSync): MainLine {
+  if (sync) return defaultLineOf(sync);
   const st = main?.status;
   const dirty = st?.changed ? `${plural(st.changed, 'uncommitted change')} in main` : undefined;
   const extra = dirty ? { dirty } : {};
@@ -68,7 +91,7 @@ export function homeModel(state: Pick<AppState, 'log' | 'conflicts'>, project: P
   return {
     project,
     ...(main ? { main } : {}),
-    mainLine: mainLineOf(main),
+    mainLine: mainLineOf(main, project.sync),
     worktrees,
     asks,
     archived,

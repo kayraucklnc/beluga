@@ -9,6 +9,7 @@ import { type LogItem, type Store, type WorkspaceTab } from './store.js';
 import { type Conversation, isImportedItem } from '../agent/transcript.js';
 import type { Intent } from './intents.js';
 import { type OtherTools, OtherWorktrees } from './other-worktrees.js';
+import { MainSync } from './main-sync.js';
 
 export interface ControllerDeps {
   readonly manager: WorkspaceManager;
@@ -18,8 +19,13 @@ export interface ControllerDeps {
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;
   /** Ask the screen to go somewhere, open a dialog or close a tab (see core/intents.ts). */
   readonly intend: (intent: Intent) => void;
-  /** Ask your own Claude to do something in a workspace conversation. */
-  readonly askClaude: (prompt: string, channel: string) => void;
+  /**
+   * Ask your own Claude to do something in a workspace conversation. `echo: false` starts Claude
+   * without posting the prompt as your message (it is already in the conversation).
+   */
+  readonly askClaude: (prompt: string, channel: string, opts?: { readonly echo?: boolean }) => void;
+  /** Compact a conversation's context in your Claude's queue (falls back to asking Claude for /compact). */
+  readonly compact?: (channel: string, instructions: string) => void;
   /** A Claude Code conversation in a folder (from other tools), to show and continue: the newest, or the one asked for. */
   readonly findConversation?: (dir: string, opts?: { sessionId?: string; prefer?: string }) => Promise<Conversation | undefined>;
   /** Reads Conductor's and Claude Code's data about worktrees klaud didn't make (omitted in the demo and tests). */
@@ -45,6 +51,9 @@ const WS_PREFIX = 'ws:';
 export const CONTINUE_PROMPT = 'We moved here from the main folder so you can make changes. Go ahead with what we discussed.';
 const CONTINUE_WAIT_MS = 60_000;
 
+/** The same message, ignoring spacing differences (the sheet trims and may rewrap it). */
+const sameText = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim();
+
 export const workspaceIdOf = (channel: string): string | undefined => (channel.startsWith(WS_PREFIX) ? channel.slice(WS_PREFIX.length) : undefined);
 export { shareNameOf } from '../shared/share-names.js';
 import { shareNameOf } from '../shared/share-names.js';
@@ -65,10 +74,24 @@ export class WorkspaceController {
   private readonly pendingResume = new Map<string, string>();
   /** Worktrees klaud didn't make: who made them, their info page, tidying them away. */
   readonly others: OtherWorktrees;
+  /** Keeping main folders current: fetching, Update main, and Claude's sync runs. */
+  readonly mainSync: MainSync;
+  /** Conversations whose next run may sync git in the main folder ("Let Claude handle it"), by workspace id. */
+  private readonly syncRuns = new Map<string, { branch: string; upstream: string }>();
 
   constructor(private readonly deps: ControllerDeps) {
     this.unsubscribe = deps.store.subscribe(() => this.scheduleSave());
     this.others = new OtherWorktrees({ manager: deps.manager, refresh: () => this.refresh(), toast: deps.toast, ...(deps.otherTools ? { tools: deps.otherTools } : {}) });
+    this.mainSync = new MainSync({
+      manager: deps.manager,
+      refresh: () => this.refresh(),
+      publish: () => this.publish(),
+      toast: deps.toast,
+      newChat: (projectId, title) => this.newChat(projectId, title),
+      armSync: (wsId, target) => void this.syncRuns.set(wsId, target),
+      askClaude: (prompt, channel) => deps.askClaude(prompt, channel),
+      open: (wsId) => this.open(wsId),
+    });
   }
 
   get manager(): WorkspaceManager {
@@ -77,6 +100,7 @@ export class WorkspaceController {
 
   stop(): void {
     this.unsubscribe();
+    this.mainSync.stop();
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveNow();
@@ -189,6 +213,9 @@ export class WorkspaceController {
     const ws = id ? this.deps.manager.find(id) : undefined;
     // A folder deleted behind klaud's back: say so instead of Claude failing to start.
     if (!ws || ws.archived || !existsSync(ws.path)) return undefined;
+    // "Let Claude handle it": this one run may sync git in the main folder (and nothing else).
+    const syncMain = ws.askOnly ? this.syncRuns.get(ws.id) : undefined;
+    if (syncMain) this.syncRuns.delete(ws.id);
     return {
       cwd: ws.path,
       additionalDirectories: [],
@@ -200,6 +227,7 @@ export class WorkspaceController {
       forkSession: Boolean(ws.forkFromSession),
       onSession: (sessionId) => this.deps.manager.rememberSession(ws.id, sessionId),
       ...(ws.model ? { model: ws.model } : {}),
+      ...(syncMain ? { syncMain } : {}),
     };
   }
 
@@ -294,14 +322,17 @@ export class WorkspaceController {
     this.deps.store.dispatch({ type: 'system', channel: from, text: `Continued in the worktree ${ws.name} (${ws.branch}).${source.askOnly ? ' This chat stays here for questions.' : ''}` });
     this.deps.toast(`Continuing in ${ws.name}, with the conversation so far`, 'success');
     this.deps.onWorktreeCreated?.(ws);
-    void this.startWhen(opts.after, task || CONTINUE_PROMPT, to);
+    // The task is often word-for-word what you asked last, already in the carried-over chat: start
+    // Claude with it without showing it a second time.
+    const repeat = Boolean(task) && asked?.type === 'chat' && sameText(asked.text, task!);
+    void this.startWhen(opts.after, task || CONTINUE_PROMPT, to, !repeat);
     return ws;
   }
 
   /** Ask Claude in `channel` once `after` resolves (or a minute passed: never stuck behind a run that hangs). */
-  private async startWhen(after: Promise<void> | undefined, prompt: string, channel: string): Promise<void> {
+  private async startWhen(after: Promise<void> | undefined, prompt: string, channel: string, echo = true): Promise<void> {
     if (after) await Promise.race([after, new Promise<void>((r) => setTimeout(r, CONTINUE_WAIT_MS).unref())]);
-    if (this.inChannel(channel)) this.deps.askClaude(prompt, channel);
+    if (this.inChannel(channel)) this.deps.askClaude(prompt, channel, echo ? undefined : { echo: false });
   }
 
   async fork(id: string, name: string): Promise<Workspace | undefined> {
@@ -486,6 +517,7 @@ export class WorkspaceController {
   /** Shrink the conversation's context: Claude summarizes what matters and continues from there. */
   compact(id: string, instructions = ''): void {
     this.open(id);
+    if (this.deps.compact) return this.deps.compact(`${WS_PREFIX}${id}`, instructions);
     this.deps.askClaude(`/compact${instructions ? ` ${instructions}` : ''}`, `${WS_PREFIX}${id}`);
   }
 
