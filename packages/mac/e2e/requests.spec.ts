@@ -29,6 +29,9 @@ test('your Claude asks bob’s Claude and mia’s (after you say yes); answers c
   const bob = task(page, /^Task: To bob’s Claude/).last();
   await expect(bob).toBeVisible({ timeout: 15_000 });
   await expect(bob).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
+  // Your Claude passes the answer on; the card keeps it one click away (not shown twice).
+  await expect(page.getByText(/^bob's Claude says: All 27 tests/).last()).toBeVisible();
+  await bob.getByRole('button', { name: 'Show bob’s reply' }).click();
   await expect(bob).toContainText('27 tests');
   await expect(bob.getByRole('table', { name: 'Data' })).toContainText('passed');
 
@@ -42,6 +45,7 @@ test('your Claude asks bob’s Claude and mia’s (after you say yes); answers c
   await expect(mia).toHaveAttribute('data-state', 'awaiting_approval', { timeout: 15_000 });
   await expect(mia).toContainText('Waiting for mia to approve');
   await expect(mia).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
+  await mia.getByRole('button', { name: 'Show mia’s reply' }).click();
   await expect(mia).toContainText('landing copy is final');
 });
 
@@ -61,7 +65,9 @@ test('Requests lists what you sent, and Not now never sends', async ({ page }) =
   await expect(sent.getByRole('button', { name: /^To bob’s Claude: run the tests in bob-api, Done/ })).toBeVisible();
   await expect(sent.getByRole('button', { name: /^To mia’s Claude: whether the hero image is final, Cancelled/ })).toBeVisible();
   await sent.getByRole('button', { name: /^To bob’s Claude/ }).click();
-  await expect(page.getByRole('region', { name: /^Task: To bob’s Claude/ })).toContainText('27 tests');
+  const card = page.getByRole('region', { name: /^Task: To bob’s Claude/ });
+  await card.getByRole('button', { name: 'Show bob’s reply' }).click();
+  await expect(card).toContainText('27 tests');
   await page.getByRole('tab', { name: /^Received/ }).click();
   await expect(page.getByRole('list', { name: 'Received requests' })).toContainText('Nothing received yet');
 });
