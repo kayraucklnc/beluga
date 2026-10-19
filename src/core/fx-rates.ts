@@ -7,8 +7,9 @@ import type { Store } from './store.js';
 /**
  * Exchange rates for adding up earnings in several currencies: the European Central Bank's daily
  * rates from frankfurter.app (free, no account; the request says nothing about you). Fetched
- * only while some project has Stripe connected, at most once every 20 hours, kept in
- * ~/.klaud/fx.json so the last ones work offline.
+ * only while some project has Stripe connected, alongside the daily Stripe count, at most once
+ * every 20 hours, kept in ~/.klaud/fx.json so the last ones work offline (and a newly chosen
+ * currency converts right away with them).
  */
 
 const SOURCE = 'https://api.frankfurter.app/latest?from=USD';
@@ -93,17 +94,34 @@ export class FxService {
     }
   }
 
+  /**
+   * Keep the rates as fresh as the earnings: check now, when the first project connects Stripe,
+   * whenever a Stripe count starts (the daily refresh, or Refresh Now), when you choose another
+   * currency, and every hour. Each check fetches only if the rates are a day old.
+   */
   start(): void {
     void this.refreshIfStale();
-    // When the first project connects Stripe.
-    let had = Object.keys(this.deps.store.getState().earnings).length > 0;
+    let last = this.watched();
     this.off = this.deps.store.subscribe(() => {
-      const has = Object.keys(this.deps.store.getState().earnings).length > 0;
-      if (has && !had) void this.refreshIfStale();
-      had = has;
+      // Most changes are elsewhere in the state: skip them cheaply.
+      const state = this.deps.store.getState();
+      if (state.earnings === last.earnings && state.prefs.earningsCurrency === last.currency) return;
+      const now = this.watched();
+      const connected = now.connected && !last.connected;
+      const counting = now.counting.some((root) => !last.counting.includes(root));
+      const currency = now.currency !== last.currency;
+      last = now;
+      if (connected || counting || currency) void this.refreshIfStale();
     });
     this.timer = setInterval(() => void this.refreshIfStale(), CHECK_MS);
     this.timer.unref();
+  }
+
+  /** What, in the state, may call for fresh rates. */
+  private watched(): { earnings: object; connected: boolean; counting: string[]; currency: string | undefined } {
+    const state = this.deps.store.getState();
+    const entries = Object.entries(state.earnings);
+    return { earnings: state.earnings, connected: entries.length > 0, counting: entries.filter(([, e]) => e.refreshing).map(([root]) => root), currency: state.prefs.earningsCurrency };
   }
 
   stop(): void {

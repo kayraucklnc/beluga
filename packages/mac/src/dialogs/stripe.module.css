@@ -115,6 +115,13 @@
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
+.othersLabel {
+  color: var(--text-3);
+}
+.note {
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
 .meta {
   display: flex;
   align-items: center;

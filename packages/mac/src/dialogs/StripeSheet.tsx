@@ -6,7 +6,8 @@ import { Alert } from '../components/Alert.js';
 import { Field, FormSheet, Popup, TextInput, formStyles as f } from '../components/FormSheet.js';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { STRIPE_KEY_URL, closeStripe, formatMoney, updatedAgo, useProjectEarnings, useStripeSheet } from '../lib/earnings.js';
+import { STRIPE_KEY_URL, closeStripe, formatMoney, missingNote, updatedAgo, useConverted, useProjectEarnings, useStripeSheet } from '../lib/earnings.js';
+import { CurrencySelect } from './EarningsSettings.js';
 import { brandText } from '../lib/brand.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import { openExternal } from '../lib/system.js';
@@ -155,7 +156,9 @@ function Connected({ project, earnings, onReplace }: { project: Project; earning
   const api = useApi();
   const [confirm, setConfirm] = useState(false);
   const totals = earnings.totals ?? [];
-  const [main, ...rest] = totals;
+  const money = useConverted(totals);
+  const breakdown = money.converted || money.missing.length > 0;
+  const note = missingNote(money.missing);
   const needsKey = earnings.error?.code === 'revoked' || earnings.error?.code === 'permission';
   if (confirm) {
     return (
@@ -204,14 +207,16 @@ function Connected({ project, earnings, onReplace }: { project: Project; earning
     >
       <div className={cx(s.total, earnings.refreshing && s.counting)} aria-live="polite">
         <span className={s.totalLabel}>All-time earnings</span>
-        <span className={s.totalValue}>{main ? formatMoney(main.amount, main.currency) : earnings.totals ? formatMoney(0, 'usd') : 'Counting…'}</span>
-        {rest.length ? (
+        <span className={s.totalValue}>{earnings.totals ? `${money.converted ? '≈ ' : ''}${formatMoney(money.amount, money.currency)}` : 'Counting…'}</span>
+        {breakdown ? (
           <span className={s.others}>
-            {rest.map((t) => (
+            <span className={s.othersLabel}>In Stripe</span>
+            {totals.map((t) => (
               <span key={t.currency}>{formatMoney(t.amount, t.currency)}</span>
             ))}
           </span>
         ) : null}
+        {note ? <span className={s.note}>{note}</span> : null}
         <span className={s.meta}>
           {earnings.refreshing ? 'Counting…' : `Updated ${updatedAgo(earnings.updatedAt)}`}
           <button type="button" className={f.linkButton} disabled={earnings.refreshing} onClick={() => void api.stripe.refresh(project.id)}>
@@ -219,6 +224,9 @@ function Connected({ project, earnings, onReplace }: { project: Project; earning
           </button>
         </span>
       </div>
+      <Field label="Currency" htmlFor="stripe-currency" hint="Every project’s earnings show in it, in the sidebar and the Usage view. Also in Settings › General.">
+        <CurrencySelect id="stripe-currency" className={f.popup} />
+      </Field>
       {earnings.error ? (
         <div className={s.problem} role="status">
           <Icon name="alert" size={13} />

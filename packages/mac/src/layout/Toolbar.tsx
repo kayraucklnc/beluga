@@ -146,7 +146,7 @@ export function Toolbar() {
             ) : primary ? (
               <Tip label={primary.hint} keys={primary.keys}>
                 <span className={s.primaryWrap}>
-                  <Button variant="primary" icon={primary.icon} className={cx(s.primary, primary.tone === 'error' && s.primaryError)} aria-disabled={primary.disabled} data-tool={primary.action} data-tool-ws={ws.id} onClick={() => run(primary)}>
+                  <Button variant={primary.action === 'merge' ? 'merge' : 'primary'} icon={primary.icon} className={cx(s.primary, primary.tone === 'error' && s.primaryError)} aria-disabled={primary.disabled} data-tool={primary.action} data-tool-ws={ws.id} onClick={() => run(primary)}>
                     {primary.label}
                   </Button>
                 </span>

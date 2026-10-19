@@ -81,3 +81,27 @@ test('asking for a change in a questions-only chat moves to a new worktree on it
   await expect(home(page).getByText(/Continued from/)).toBeVisible();
   await expect(sidebar(page).getByRole('button', { name: /fix-typo-readme/ }).first()).toBeVisible();
 });
+
+test('clicking a folded project unfolds it until you go elsewhere; opening one of its items keeps it open', async ({ page }) => {
+  const project = sidebar(page).getByRole('button', { name: 'landing', exact: true }).and(page.locator('[aria-expanded]'));
+  const row = (name: string) => sidebar(page).getByRole('button', { name, exact: true });
+  // Start folded.
+  if ((await project.getAttribute('aria-expanded')) === 'true') await sidebar(page).getByRole('button', { name: 'Fold landing' }).click();
+  await expect(project).toHaveAttribute('aria-expanded', 'false');
+
+  // One click on the row: its home, unfolded.
+  await openHome(page, 'landing');
+  await expect(project).toHaveAttribute('aria-expanded', 'true');
+  await expect(row('new-hero')).toBeVisible();
+  // Somewhere else: it folds again, so the sidebar stays tidy.
+  await openHome(page, 'bob-api');
+  await expect(project).toHaveAttribute('aria-expanded', 'false');
+  await expect(row('new-hero')).toBeHidden();
+
+  // Open it, then one of its items: it stays open after you leave.
+  await openHome(page, 'landing');
+  await row('new-hero').click();
+  await openHome(page, 'bob-api');
+  await expect(project).toHaveAttribute('aria-expanded', 'true');
+  await expect(row('new-hero')).toBeVisible();
+});

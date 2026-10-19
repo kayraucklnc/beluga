@@ -1,9 +1,10 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { pick } from './helpers.js';
+import { expectPicked, pick, popup } from './helpers.js';
 
 /**
  * Earnings from Stripe, against the demo's pretend Stripe (src/core/stripe-demo.ts; no real key,
- * nothing leaves the computer): bob-api starts connected, landing gets connected here.
+ * nothing leaves the computer): bob-api starts connected (dollars and euros), landing gets
+ * connected here (with a "Lira" key: Turkish lira and rupees).
  */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
@@ -47,7 +48,7 @@ test('the Usage view shows connected projects’ earnings, and a project opens i
   await rows.getByRole('button', { name: /^bob-api/ }).click();
   await expect(page.getByRole('dialog', { name: 'bob-api earnings' })).toContainText('Bob API, Inc.');
   await page.keyboard.press('Escape');
-  await card.getByRole('button', { name: 'Connect Another…' }).click();
+  await card.getByRole('button', { name: 'Connect Stripe to Another Project…' }).click();
   await expect(page.getByRole('dialog', { name: /Connect Stripe to/ })).toBeVisible();
 });
 
@@ -115,4 +116,59 @@ test('Connect Stripe… is in every project’s right-click menu, and the amount
   await sidebar(page).getByText('bob-api', { exact: true }).first().click();
   await page.getByRole('main').locator('[data-earnings-pill]').first().click();
   await expect(page.getByRole('dialog', { name: 'bob-api earnings' })).toContainText('Bob API, Inc.');
+});
+
+test('every total shows in one currency you choose, in Settings or the Stripe sheet', async ({ page }) => {
+  // landing sells in lira and rupees, bob-api in dollars and euros.
+  const sheet = await openConnectSheet(page);
+  await pick(sheet, 'Project', 'landing');
+  await paste(sheet.getByLabel('Restricted key'), ['rk', 'live', 'landingLiraShop000000'].join('_'));
+  await sheet.getByRole('button', { name: 'Connect', exact: true }).click();
+  const done = page.getByRole('dialog', { name: 'landing earnings' });
+  await expect(done.getByText(/≈ \$[\d,]+\.\d\d/)).toBeVisible();
+  await expect(done.getByText('In Stripe')).toBeVisible();
+  await done.getByRole('button', { name: 'Done' }).last().click();
+
+  // The Usage card: one total, no pile of currencies.
+  await sidebar(page).getByRole('button', { name: 'Usage', exact: true }).click();
+  const card = page.getByRole('region', { name: 'Earnings' });
+  const total = card.locator('[data-earnings-total]');
+  await expect(total).toHaveAttribute('data-earnings-total', 'usd');
+  await expect(total).toHaveText(/^\$[\d.,]+K?$/);
+  await expect(card.getByText(/All time · 2 projects · ECB rates, updated today/)).toBeVisible();
+  await expect(card.getByText('+', { exact: false })).toHaveCount(0);
+  const rows = card.getByRole('list', { name: 'Earnings by project' });
+  await expect(rows.getByRole('button', { name: /^landing: \$[\d,]+\.\d\d, \d+% of the total$/ })).toBeVisible();
+
+  // Settings › General › Show earnings in: euros, everywhere at once.
+  await page.keyboard.press('Meta+,');
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await expectPicked(popup(settings, 'Show earnings in'), '');
+  await expect(popup(settings, 'Show earnings in')).toHaveText(/Automatic \(USD\)/);
+  await pick(settings, 'Show earnings in', /^EUR/);
+  await expectPicked(popup(settings, 'Show earnings in'), 'eur');
+  await page.keyboard.press('Escape');
+  await expect(total).toHaveAttribute('data-earnings-total', 'eur');
+  await expect(total).toHaveText(/^€[\d.,]+K?$/);
+  await expect(rows.getByRole('button', { name: /^bob-api: €[\d,]+\.\d\d/ })).toBeVisible();
+  await expect(rows.getByRole('button', { name: /^landing: €[\d,]+\.\d\d/ })).toBeVisible();
+  await expect(page.locator('[data-earnings-pill]').first()).toHaveText(/€/);
+
+  // The Stripe sheet has the same choice: lira.
+  await rows.getByRole('button', { name: /^landing/ }).click();
+  const landing = page.getByRole('dialog', { name: 'landing earnings' });
+  await pick(landing, 'Show earnings in', /^TRY/);
+  await expect(landing.getByText(/^≈ ₺[\d,]+\.\d\d$/)).toBeVisible();
+  await landing.getByRole('button', { name: 'Done' }).last().click();
+  await expect(total).toHaveText(/^₺[\d.,]+K?$/);
+
+  // Back to automatic, and landing disconnected (the daemon is shared by every test).
+  await page.keyboard.press('Meta+,');
+  await pick(settings, 'Show earnings in', /^Automatic/);
+  await page.keyboard.press('Escape');
+  await expect(total).toHaveAttribute('data-earnings-total', 'usd');
+  await rows.getByRole('button', { name: /^landing/ }).click();
+  await page.getByRole('dialog', { name: 'landing earnings' }).getByRole('button', { name: 'Disconnect…' }).click();
+  await page.getByRole('alertdialog', { name: 'Disconnect Stripe from landing?' }).getByRole('button', { name: 'Disconnect' }).click();
+  await expect(rows.getByRole('button', { name: /^landing/ })).toBeHidden();
 });

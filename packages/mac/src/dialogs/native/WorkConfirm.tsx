@@ -8,6 +8,7 @@ import { Icon, type IconName } from '../../components/Icon.js';
 import { Button } from '../../components/ui.js';
 import { useApi, useApp } from '../../lib/klaud.js';
 import type { AskedWork } from '../../lib/work-confirm.js';
+import { MergeReview } from './MergeReview.js';
 import s from './work-confirm.module.css';
 
 /**
@@ -125,6 +126,8 @@ export function WorkConfirm({ wsId, action, close }: { wsId: string; action: Ask
   const ws = findWorkspace(state.projects, wsId);
   const start = useRef<HTMLButtonElement>(null);
   if (!ws) return null;
+  // Merging gets a closer look: where it goes, what comes along, and what would stop it.
+  if (action === 'merge') return <MergeReview ws={ws} anchor={toolbarButton(ws.id, action)} close={close} />;
   const words = wordsFor(state, ws, action);
   const go = (): void => {
     close();

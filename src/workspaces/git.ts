@@ -210,7 +210,8 @@ export async function mergeInto(mainDir: string, branch: string, target?: string
     const current = (await tryGit(mainDir, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim() ?? 'HEAD';
     if (current !== target) return { ok: false, reason: 'wrong_branch', files: [], current, expected: target };
   }
-  const dirty = (await git(mainDir, ['status', '--porcelain'])).split('\n').filter(Boolean);
+  // Untracked files don't stop a merge (git says so itself if the merge would overwrite one).
+  const dirty = (await git(mainDir, ['status', '--porcelain', '--untracked-files=no'])).split('\n').filter(Boolean);
   if (dirty.length) return { ok: false, reason: 'dirty', files: dirty.map((l) => l.slice(3)) };
   try {
     await git(mainDir, ['merge', '--no-ff', '--no-edit', branch]);

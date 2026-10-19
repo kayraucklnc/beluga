@@ -5,7 +5,6 @@ import { CHIP_CHOICES, MAC_CHOICES, choiceFromKey, choiceKey, filesInUse, klaudM
 import { generatedName, generatedSpec, randomSeed, rng } from '../packages/mac/src/lib/sounds/generated.js';
 import { LOUDNESS, PEAK, SAMPLE_RATE, midi, render } from '../packages/mac/src/lib/sounds/synth.js';
 import { encodeWav } from '../packages/mac/src/lib/sounds/wav.js';
-import { UNKNOWN_ACCESS, accessProblem } from '../packages/mac/src/lib/sounds/access-model.js';
 
 /**
  * The Mac app's notification sounds (packages/mac/src/lib/sounds): made from notes, the same
@@ -171,22 +170,5 @@ describe('the sound catalog', () => {
   it('tunes notes to concert pitch', () => {
     expect(midi(69)).toBe(440);
     expect(midi(81)).toBeCloseTo(880, 6);
-  });
-});
-
-describe('whether macOS lets Klaud notify', () => {
-  const allowed = { state: 'allowed', alerts: true, sound: true } as const;
-
-  it('says what is off in System Settings, most important first', () => {
-    expect(accessProblem({ ...allowed, state: 'off', alerts: false })?.title).toBe('Notifications are off for Klaud in System Settings');
-    expect(accessProblem({ ...allowed, alerts: false, sound: false })?.title).toBe('Klaud’s banners are off in System Settings');
-    expect(accessProblem({ ...allowed, sound: false })?.title).toBe('Sounds are off for Klaud in System Settings');
-  });
-
-  it('says nothing when all is well, not asked yet, or unknown (a dev build)', () => {
-    expect(accessProblem(allowed)).toBeNull();
-    expect(accessProblem({ ...allowed, state: 'notAsked', alerts: false })).toBeNull();
-    expect(accessProblem(UNKNOWN_ACCESS)).toBeNull();
-    expect(accessProblem(undefined)).toBeNull();
   });
 });

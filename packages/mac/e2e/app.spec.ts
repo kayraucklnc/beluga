@@ -313,7 +313,8 @@ async function emptyCentre(page: Page): Promise<void> {
 async function sendTestNotification(page: Page): Promise<void> {
   await page.keyboard.press('Meta+,');
   await page.getByRole('button', { name: 'Notifications', exact: true }).click();
-  await page.getByRole('button', { name: 'Send a test' }).click();
+  await page.getByRole('button', { name: 'Send Test Notification' }).click();
+  await expect(page.getByRole('status', { name: 'Test result' })).toContainText('Sent');
   await page.keyboard.press('Escape');
 }
 

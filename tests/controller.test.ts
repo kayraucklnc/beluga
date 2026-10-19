@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -134,10 +134,14 @@ describe('WorkspaceController', () => {
     const ws = (await ctl.newWorktree(projectId(), 'clean'))!;
     writeFileSync(path.join(ws.path, 'b.txt'), 'b\n');
     await ctl.commit(ws.id);
-    writeFileSync(path.join(repo, 'dirty.txt'), 'x');
+    // An untracked file doesn't stand in the way; an uncommitted edit to a tracked one does.
+    writeFileSync(path.join(repo, 'scratch.txt'), 'x');
+    const tracked = path.join(repo, sh(repo, 'ls-files').split('\n')[0]!);
+    const original = readFileSync(tracked, 'utf8');
+    writeFileSync(tracked, `${original}edited\n`);
     await ctl.merge(ws.id);
     expect(toasts.some((t) => t.includes('uncommitted changes'))).toBe(true);
-    execFileSync('rm', [path.join(repo, 'dirty.txt')]);
+    writeFileSync(tracked, original);
     await ctl.merge(ws.id);
     expect(toasts.some((t) => t.startsWith('Merged klaud/clean'))).toBe(true);
 

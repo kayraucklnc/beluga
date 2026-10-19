@@ -5,6 +5,7 @@
 //! Everything klaud does happens in the daemon, which the terminal app attaches to as well.
 
 mod daemon;
+mod focus;
 mod menu;
 mod requests;
 mod sounds;
@@ -202,7 +203,9 @@ pub fn run() {
             sounds::sound_prune,
             sounds::sound_play_system,
             sounds::notification_access,
+            sounds::notification_request,
             sounds::open_notification_settings,
+            sounds::open_focus_settings,
             updater::update_state,
             updater::update_check,
             updater::update_set_mode,

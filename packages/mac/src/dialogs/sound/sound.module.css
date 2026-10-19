@@ -1,4 +1,4 @@
-/* Settings › Notifications › Sound: the picker, the per-kind list, and the System Settings note. */
+/* Settings › Notifications › Sound: the picker, the per-kind list, the status line and the test. */
 
 .picker {
   display: flex;
@@ -127,26 +127,69 @@
 .kindSound {
   color: var(--text-2);
 }
-.access {
+/* The status line at the top of Settings › Notifications. */
+.status {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 11px 14px;
 }
-.access > svg {
+.status > svg {
   flex: none;
+  align-self: flex-start;
+  margin-top: 1px;
+}
+.status_ok > svg {
+  color: var(--ok);
+}
+.status_warn > svg {
   color: var(--warn);
 }
-.accessText {
+.status_muted > svg {
+  color: var(--text-3);
+}
+.statusText {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
 }
-.accessTitle {
+.statusTitle {
   font-weight: 600;
 }
-.accessDetail {
-  color: var(--text-3);
+.statusDetail {
+  color: var(--text-2);
   font-size: 0.88rem;
+}
+.statusFix {
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+/* What happened to a test notification, under its button. */
+.outcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 10px;
+  font-size: 0.88rem;
+}
+.outcome > svg {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+.outcome_ok > svg {
+  color: var(--ok);
+}
+.outcome_warn > svg {
+  color: var(--warn);
+}
+.outcomeText {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
 }
 .picker > [role='tablist'] {
   align-self: flex-start;

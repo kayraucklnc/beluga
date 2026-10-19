@@ -32,19 +32,28 @@ function seeded(text: string): () => number {
   };
 }
 
+/**
+ * Which currencies a key's shop sells in, and how big a sale is in each (smallest units): most
+ * in dollars, some in euros; keys with "Lira" in them sell in Turkish lira, some in rupees.
+ */
+function currenciesFor(key: string): { main: string; other: string; scale: number; otherScale: number } {
+  return key.includes('Lira') ? { main: 'try', other: 'inr', scale: 30, otherScale: 40 } : { main: 'usd', other: 'eur', scale: 1, otherScale: 1 };
+}
+
 function chargesFor(key: string, now: number): FakeCharge[] {
   const rand = seeded(key);
+  const mix = currenciesFor(key);
   const out: FakeCharge[] = [];
   for (let i = 0; i < 260; i++) {
-    const eur = rand() < 0.12;
-    const amount = Math.round((eur ? 900 : 1900) + rand() * 7000);
+    const second = rand() < 0.12;
+    const amount = Math.round(((second ? 900 : 1900) + rand() * 7000) * (second ? mix.otherScale : mix.scale));
     const failed = rand() < 0.04;
     const refunded = !failed && rand() < 0.05 ? amount : 0;
     out.push({
       id: `ch_demo_${i.toString().padStart(4, '0')}`,
       object: 'charge',
       created: Math.floor(now - (260 - i) * 1.3 * DAY),
-      currency: eur ? 'eur' : 'usd',
+      currency: second ? mix.other : mix.main,
       amount,
       amount_captured: failed ? 0 : amount,
       amount_refunded: refunded,

@@ -13,6 +13,11 @@ export interface MacUi extends UiState {
   readonly palette: boolean;
   /** The Add Project sheet is open. */
   readonly addProject?: boolean;
+  /**
+   * A project unfolded by clicking its row: it folds again when you go elsewhere, unless you
+   * opened one of its worktrees or chats (then it stays open).
+   */
+  readonly peek?: string;
   /** The notification centre (the bell in the toolbar) is open. */
   readonly notices: boolean;
   readonly settings?: SettingsPane;
