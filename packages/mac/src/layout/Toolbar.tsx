@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { agentOfWorktree, agentTitle, isAgentWorktree } from '../claude-code/subagents-model.js';
 import { findWorkspace, stateOf } from '@klaud/ui/workspace-models.js';
 import { describePr } from '@klaud/shared/format.js';
 import { Icon } from '../components/Icon.js';
@@ -91,6 +92,22 @@ export function Toolbar() {
     const ws = findWorkspace(state.projects, view.id);
     if (!ws) return <Shell headerRef={headerRef} title="Workspace" />;
     const project = state.projects.find((p) => p.id === ws.projectId);
+    // A sub-agent's own worktree is the agent: its name, no worktree actions (it's Claude's, not yours).
+    if (isAgentWorktree(ws)) {
+      const sub = agentOfWorktree(state.claudeCode.sessions, ws);
+      return (
+        <Shell
+          headerRef={headerRef}
+          title={
+            <>
+              {project?.root ? <span className={s.crumb}>{project.name}</span> : null}
+              <span className={s.name}>{sub ? agentTitle(sub.agent) : 'Sub-agent'}</span>
+            </>
+          }
+          subtitle={<span className={s.meta}>Sub-agent · its own worktree{ws.branch ? ` · ${ws.branch}` : ''}</span>}
+        />
+      );
+    }
     const st = stateOf(state, ws, 0);
     const { primary, icons, more } = toolbarActions(state, ws);
     // A narrow window: the icons that don't fit move under ⋯ (the everyday action keeps its place).

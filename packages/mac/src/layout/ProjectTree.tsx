@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useCallback, useEffect, useRef } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
 import type { UiAction } from '@klaud/ui/workspace-models.js';
@@ -20,6 +20,7 @@ import { useArrangeDrag } from './arrange-drag.js';
 import { GroupHeader, NewGroupRow, groupItems, isGroupOption, moveItems, moveKey } from './ProjectGroups.js';
 import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, useLayout } from './project-layout.js';
 import { OutsideWorktrees } from './OtherWorktrees.js';
+import { LooseSubAgents, SubAgentRows } from './SubAgents.js';
 import { outsideOf } from './outside-model.js';
 import { openSheet } from '../lib/sheets.js';
 import { groupTally, groupWorking, projectTally, projectWorking, tallyTip } from './attention-model.js';
@@ -152,6 +153,9 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   const live = p.workspaces.filter((w) => !w.archived);
   // Not the main checkout (work happens in worktrees); questions asked in its folder stay, as chats.
   const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud');
+  const main = live.find((w) => w.kind === 'main');
+  // Conversations whose rows show their sub-agents (so those agents' worktrees aren't listed again).
+  const shownUnder = useCallback((wsId: string) => live.some((w) => w.id === wsId && worktreeOrigin(w) !== 'agent'), [live]);
   const archived = p.workspaces.filter((w) => w.archived);
   const item: Target = { project: p.id };
   const githubItems = useGitHubMenuItems(p.id, Boolean(p.root));
@@ -231,11 +235,18 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
         live.filter((w) => w.id === here && w.kind !== 'main').map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)
       ) : (
         <>
+          {/* Sub-agents the project's main folder conversation started (Claude's helpers, not worktrees). */}
+          {main ? <SubAgentRows ws={main} indent={kids} /> : null}
           {mine.map((w) => (
-            <WorkspaceRow key={w.id} ws={w} indent={kids} />
+            <Fragment key={w.id}>
+              <WorkspaceRow ws={w} indent={kids} />
+              <SubAgentRows ws={w} indent={kids + 1} />
+            </Fragment>
           ))}
           {/* Worktrees made outside Klaud: after Klaud's own, most recent first, each with where it is. */}
           <OutsideWorktrees p={p} indent={kids} />
+          {/* Sub-agents' own worktrees that no conversation above shows: one folded row. */}
+          <LooseSubAgents p={p} indent={kids} shownUnder={shownUnder} />
         </>
       )}
     </>

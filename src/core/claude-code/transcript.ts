@@ -17,6 +17,8 @@ export interface RawEntry {
   readonly cwd?: string;
   readonly isMeta?: boolean;
   readonly agentId?: string;
+  /** How hard Claude thinks on this turn ("low" … "max"), as Claude Code records it. */
+  readonly effort?: string;
   readonly message?: { readonly role?: string; readonly content?: unknown; readonly model?: string; readonly usage?: Usage; readonly stop_reason?: string | null };
   readonly toolUseResult?: unknown;
   readonly summary?: string;
@@ -104,6 +106,7 @@ export interface Facts {
   /** Context size at this answer (tokens). */
   readonly tokens?: number;
   readonly model?: string;
+  readonly effort?: string;
   /** true: Claude ended its turn here; false: the conversation went on; undefined: says nothing. */
   readonly final?: boolean;
 }
@@ -325,6 +328,7 @@ function assistantFacts(e: RawEntry, ts: number, cwd: string | undefined): Facts
     ...(sends.length ? { sends } : {}),
     ...(tokens && !synthetic ? { tokens } : {}),
     ...(m.model && !synthetic ? { model: m.model } : {}),
+    ...(typeof e.effort === 'string' && /^[\w-]{1,20}$/.test(e.effort) ? { effort: e.effort } : {}),
     final: ended && !launches.length && !steps.some((s) => s.kind === 'tool'),
   };
 }

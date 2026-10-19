@@ -141,7 +141,8 @@ function useSize(id: string): number | undefined {
   return size;
 }
 
-export function WorktreeInfoPage({ ws }: { ws: Workspace }) {
+/** `agent`: a sub-agent's own worktree whose agent Claude Code no longer has (no conversation to start in it). */
+export function WorktreeInfoPage({ ws, agent }: { ws: Workspace; agent?: boolean }) {
   const actions = useActions();
   const api = useApi();
   const { client } = useKlaud();
@@ -161,7 +162,7 @@ export function WorktreeInfoPage({ ws }: { ws: Workspace }) {
       <div className={s.inner}>
         <header className={s.head}>
           <span className={s.badge} aria-hidden="true">
-            <Icon name={iconOf(source)} size={22} />
+            <Icon name={agent ? 'bot' : iconOf(source)} size={22} />
           </span>
           <div className={s.headText}>
             <h1 className={s.title}>{ws.name}</h1>
@@ -173,7 +174,7 @@ export function WorktreeInfoPage({ ws }: { ws: Workspace }) {
             </Button>
           ) : null}
         </header>
-        <p className={s.lead}>{info?.origin.detail ?? MADE_OUTSIDE_DETAIL}</p>
+        <p className={s.lead}>{agent ? 'A sub-agent made this worktree to work in. It finished a while ago and Claude Code no longer has what it did step by step; its changes are in the right panel.' : (info?.origin.detail ?? MADE_OUTSIDE_DETAIL)}</p>
         <LivePanel workspaceId={ws.id} />
         {info?.stale ? (
           <p className={s.stale}>
@@ -187,7 +188,7 @@ export function WorktreeInfoPage({ ws }: { ws: Workspace }) {
         ) : null}
 
         <div className={s.actions}>
-          {!info?.missing ? (
+          {!info?.missing && !agent ? (
             <Button variant="primary" icon="chat" onClick={start}>
               Start a Conversation Here
             </Button>

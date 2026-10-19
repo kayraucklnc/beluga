@@ -84,6 +84,8 @@ const PATHS = {
   bulb: 'M6 11.5h4 M6.5 13.5h3 M8 2.5a3.75 3.75 0 0 0-2.4 6.6c.4.4.6.8.6 1.4h3.6c0-.6.2-1 .6-1.4A3.75 3.75 0 0 0 8 2.5z',
   important: 'M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v5A1.5 1.5 0 0 1 11.5 11H7l-3 2.5V11h.5A1.5 1.5 0 0 1 3 9.5z M8 5v2.6 M8 9.2v.01',
   stopSign: 'M5.7 2.5h4.6l3.2 3.2v4.6l-3.2 3.2H5.7l-3.2-3.2V5.7z M8 5.3v3.2 M8 10.7v.01',
+  /** A sub-agent: a small robot (Claude's helpers, as opposed to your own work). */
+  bot: 'M4.5 6.5h7A1.5 1.5 0 0 1 13 8v3.5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5V8a1.5 1.5 0 0 1 1.5-1.5z M8 6.5V4.2 M8 2.8v.01 M6.2 9.4v.8 M9.8 9.4v.8 M1.5 9.2v1.4 M14.5 9.2v1.4',
 } as const;
 
 export type IconName = keyof typeof PATHS;

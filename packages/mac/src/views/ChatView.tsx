@@ -7,6 +7,8 @@ import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/klaud.js';
 import s from './views.module.css';
 import { OtherWorktreeBanner, WorktreeInfoPage } from './WorktreeInfo.js';
+import { AgentWorktreePage } from '../claude-code/AgentMonitor.js';
+import { isAgentWorktree } from '../claude-code/subagents-model.js';
 import { LiveStrip } from '../claude-code/Live.js';
 import { useWorktreeFlag } from './worktree-info-state.js';
 import { AskBanner } from '../chat/AskBanner.js';
@@ -94,6 +96,8 @@ export function ChatView() {
   const hasItems = useApp((st) => st.log.some((l) => l.channel === channel));
   const started = useWorktreeFlag('started', other?.id ?? '');
   const about = useWorktreeFlag('about', other?.id ?? '');
+  // A sub-agent's own worktree is the agent, followed live (never a place to start a conversation).
+  if (other && isAgentWorktree(other) && !hasItems) return <AgentWorktreePage ws={other} />;
   if (other && (about || (!hasItems && !started))) return <WorktreeInfoPage ws={other} />;
   const chat = (
     <div className={s.chat}>

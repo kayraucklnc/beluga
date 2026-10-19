@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { worktreeOrigin } from '../workspaces/origin.js';
 import path from 'node:path';
 import { slugify } from '../agent/namer.js';
 import { carrySession } from '../agent/session-carry.js';
@@ -549,7 +550,8 @@ export class WorkspaceController {
     const ws = this.deps.manager.find(id);
     if (!ws || !existsSync(ws.path)) return undefined;
     // Made when you look (kept out of git), so there's a folder to drop things in and show in Finder.
-    if (!ws.askOnly) await ensureScratch(ws.path);
+    // (Never in a sub-agent's own worktree: that's Claude Code's, looked at, not written to.)
+    if (!ws.askOnly && worktreeOrigin(ws) !== 'agent') await ensureScratch(ws.path);
     return { root: ws.path, dir: path.join(ws.path, SCRATCH_DIR), files: await listScratch(ws.path) };
   }
 

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { CcAgent, CcSession } from '@klaud/core/claude-code/model.js';
+import { type CcAgent, type CcSession, outsideSessions } from '@klaud/core/claude-code/model.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
@@ -7,6 +7,7 @@ import { Button, Dot, Empty, cx } from '../components/ui.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { AgentCard, SessionChip } from './Cards.js';
 import { LiveTranscript } from './LiveTranscript.js';
+import { AgentMonitor } from './AgentMonitor.js';
 import { TeamBlock, teamMembers } from './Team.js';
 import { activitySummary, agentElapsed, agentLabel, agentTone, groupByProject, openActivity, placeLabel, plural, sessionLabel, tokens, typeLabel } from './cc-model.js';
 import s from './claude-code.module.css';
@@ -57,7 +58,8 @@ function SessionRow({ session }: { session: CcSession }) {
 }
 
 function ActivityList() {
-  const sessions = useApp((st) => st.claudeCode.sessions);
+  const raw = useApp((st) => st.claudeCode.sessions);
+  const sessions = useMemo(() => outsideSessions(raw), [raw]);
   const projects = useApp((st) => st.projects);
   // Selectors must return what's in the state (a fresh array each time would render forever).
   const groups = useMemo(() => groupByProject({ projects }, sessions), [projects, sessions]);
@@ -168,5 +170,8 @@ export function ActivityView() {
       </div>
     );
   }
+  // One of Klaud's own conversations' sub-agents: followed on its own page (the conversation is in its chat).
+  const agent = agentId ? session.agents.find((a) => a.id === agentId) : undefined;
+  if (session.own && agent) return <AgentMonitor sub={{ session, agent }} />;
   return <SessionPage session={session} {...(agentId ? { agentId } : {})} />;
 }

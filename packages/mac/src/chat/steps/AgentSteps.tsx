@@ -13,6 +13,9 @@ import { usePrefs } from '../../lib/prefs.js';
 import { useDisclosure } from './step-memory.js';
 import { StepRow, usePersonId } from './StepRow.js';
 import { useAgentSteps } from './use-steps.js';
+import { useActions } from '../../lib/actions.js';
+import { agentOfToolUse, allSubAgents } from '../../claude-code/subagents-model.js';
+import { openSubAgent } from '../../layout/SubAgents.js';
 import { waitState, waitTone, waitedLabel, waitingFor } from './waiting.js';
 import c from '../chat.module.css';
 import s from './steps.module.css';
@@ -202,6 +205,35 @@ function WaitingRow({ step, task, now }: { step: StepSummary; task: TaskView | u
 }
 
 /** Sub-agents and background work: a row each, opening (your own Claude's) to its steps. */
+/** Follow one of this conversation's sub-agents on its own page (live: thinking, tools, its worktree). */
+function WatchAgent({ id }: { id: string }) {
+  const { client } = useKlaud();
+  const actions = useActions();
+  const sessions = useApp((st) => st.claudeCode.sessions);
+  // The chat knows a sub-agent by the call that started it (or, in the background, by its agent id).
+  const sub = useMemo(() => agentOfToolUse(sessions, id) ?? allSubAgents(sessions).find((x) => x.agent.id === id), [sessions, id]);
+  if (!sub) return null;
+  return (
+    // A span (it sits inside the sub-agent's own toggle button).
+    <span
+      role="button"
+      tabIndex={0}
+      className={s.watch}
+      aria-label={`Watch ${sub.agent.description} live`}
+      onClick={(e) => (e.stopPropagation(), openSubAgent(client, actions, sub))}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        e.stopPropagation();
+        openSubAgent(client, actions, sub);
+      }}
+    >
+      <Icon name="eye" size={11} />
+      Watch
+    </span>
+  );
+}
+
 function SubAgents({ item, rich, detail, stepsOf, open, load, live, now }: { item: AgentItem; rich: boolean; detail: string; stepsOf: (sub: SubAgent) => StepSummary[]; open: ReturnType<typeof useDisclosure>; load: (id: string) => () => Promise<import('@klaud/shared/steps.js').StepRecord | undefined>; live: boolean; now: number }) {
   if (!item.subagents.length) return null;
   if (detail === 'hidden') {
@@ -230,6 +262,7 @@ function SubAgents({ item, rich, detail, stepsOf, open, load, live, now }: { ite
             {running ? <Dot tone="claude" live /> : <Icon name={sub.status === 'failed' ? 'x' : 'check'} size={11} className={sub.status === 'failed' ? c.subFailed : c.subDone} />}
             <span className={c.subTitle}>{sub.kind === 'background' ? `Background · ${sub.title}` : sub.title}</span>
             {sub.steps.length ? <span className={c.time}>{sub.steps.length} steps</span> : null}
+            <WatchAgent id={sub.id} />
           </>
         );
         return (

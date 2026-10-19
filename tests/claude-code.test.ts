@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { agentStatus, noticeStatus, readMeta } from '../src/core/claude-code/agents.js';
 import { attachClaudeCode, claudeCodeOf, claudeHome, launchClaudeCode } from '../src/core/claude-code/launch.js';
-import { agentEnded, reduceClaudeCode, runningAgents, sessionLive, sessionsIn, type CcSession } from '../src/core/claude-code/model.js';
+import { agentEnded, outsideSessions, reduceClaudeCode, runningAgents, sessionLive, sessionsIn, type CcSession } from '../src/core/claude-code/model.js';
 import { MAX_STEPS, TranscriptTracker } from '../src/core/claude-code/sessions.js';
 import { Tail, headLines } from '../src/core/claude-code/tail.js';
 import { describeTool, factsOf, parseLine, parseNotices } from '../src/core/claude-code/transcript.js';
@@ -367,8 +367,52 @@ describe('the watcher', () => {
     writeFileSync(path.join(other, 'bbbbbbbb-1111-1111-1111-111111111111.jsonl'), `${JSON.stringify({ type: 'user', timestamp: iso(now), cwd: '/tmp/x', message: { content: 'elsewhere' } })}\n`);
     writeFileSync(path.join(other, 'notes.txt'), 'not a transcript');
     tick();
-    expect(sessions().map((s) => s.id)).toEqual(['bbbbbbbb-1111-1111-1111-111111111111']);
-    expect(sessions()[0]).not.toHaveProperty('workspaceId');
+    // klaud's own conversation is watched (for its sub-agents) but marked, so Activity leaves it out.
+    expect(outsideSessions(sessions()).map((s) => s.id)).toEqual(['bbbbbbbb-1111-1111-1111-111111111111']);
+    expect(sessions().find((s) => s.id.startsWith('aaaa'))).toMatchObject({ own: true });
+    expect(outsideSessions(sessions())[0]).not.toHaveProperty('workspaceId');
+  });
+
+  it("follows klaud's own conversations' sub-agents: where they started, model, effort, own worktree", () => {
+    const OWN = 'aaaaaaaa-0000-0000-0000-000000000000';
+    const folder = path.dirname(fake.session);
+    const ownFile = path.join(folder, `${OWN}.jsonl`);
+    const agents = path.join(folder, OWN, 'subagents');
+    mkdirSync(agents, { recursive: true });
+    const wt = '/work/klaude/main/.claude/worktrees/agent-b0b1';
+    writeFileSync(ownFile, `${JSON.stringify({ type: 'user', timestamp: iso(now - 3000), sessionId: OWN, cwd: '/work/klaude/own', message: { content: 'Fix it' } })}\n${assistant([toolUse('toolu_O', 'Agent', { description: 'Check the tests', subagent_type: 'general-purpose', isolation: 'worktree' })], now - 2500, { sessionId: OWN, cwd: '/work/klaude/own' })}\n`);
+    writeFileSync(path.join(agents, 'agent-b0b1.meta.json'), JSON.stringify({ agentType: 'general-purpose', description: 'Check the tests', toolUseId: 'toolu_O', model: 'sonnet', worktreePath: wt, worktreeBranch: 'worktree-agent-b0b1', parentAgentId: 'x1', name: 'checker' }));
+    // A worktree path outside .claude/worktrees isn't believed.
+    writeFileSync(path.join(agents, 'agent-bad.meta.json'), JSON.stringify({ description: 'Elsewhere', worktreePath: '/etc' }));
+    writeFileSync(path.join(agents, 'agent-b0b1.jsonl'), `${assistant([toolUse('r', 'Read', { file_path: `${wt}/a.ts` })], now - 1000, { sessionId: OWN, cwd: wt, effort: 'high' })}\n`);
+    writeFileSync(path.join(agents, 'agent-bad.jsonl'), `${user('x', now - 1000)}\n`);
+    tick();
+    const own = sessions().find((x) => x.id === OWN)!;
+    expect(own).toMatchObject({ own: true, workspaceId: 'w-own', projectId: 'p1' });
+    const agent = own.agents.find((a) => a.id === 'b0b1')!;
+    expect(agent).toMatchObject({ description: 'Check the tests', model: 'claude-opus-5-5', effort: 'high', cwd: wt, worktree: { path: wt, branch: 'worktree-agent-b0b1' }, toolUseId: 'toolu_O', parentAgentId: 'x1', name: 'checker' });
+    expect(own.agents.find((a) => a.id === 'bad')).not.toHaveProperty('worktree');
+    expect(outsideSessions(sessions()).some((x) => x.id === OWN)).toBe(false);
+  });
+
+  it('finds an old sub-agent by its id and keeps it watched while you look', () => {
+    const old = T0 - 5 * 60 * 60_000;
+    const agentFile = path.join(fake.agentsDir, 'agent-ancient1.jsonl');
+    fake.add(fake.session, user('Long ago', old));
+    touch(fake.session, old);
+    fake.add(agentFile, user('Old task', old));
+    touch(agentFile, old);
+    tick();
+    expect(sessions()).toEqual([]);
+    expect(w.adopt('nope-nothing')).toBeUndefined();
+    expect(w.adopt('ancient1')).toBe(SID);
+    tick();
+    expect(sessions()[0]!.agents.map((a) => a.id)).toEqual(['ancient1']);
+    expect(w.steps(SID, 'ancient1').steps.map((x) => x.text)).toContain('Old task');
+    // Once nobody looks for a while, it's let go again.
+    now += 11 * 60_000;
+    tick();
+    expect(sessions()).toEqual([]);
   });
 
   it('starts, watches and stops on its own timers', async () => {

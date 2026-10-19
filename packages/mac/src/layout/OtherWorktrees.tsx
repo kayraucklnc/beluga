@@ -6,6 +6,9 @@ import { useOtherActivity } from '../views/worktree-info-state.js';
 import { orderOutside, outsideActivity, outsideOf, visibleOutside } from './outside-model.js';
 import { Row } from './sidebar-parts.js';
 import { WorkspaceRow } from './workspace-row.js';
+import { SubAgentRows } from './SubAgents.js';
+import { isAgentWorktree } from '../claude-code/subagents-model.js';
+import { Fragment } from 'react';
 import o from './other-worktrees.module.css';
 
 /**
@@ -19,7 +22,8 @@ export function OutsideWorktrees({ p, indent }: { p: Project; indent: number }) 
   const here = useApp((st) => (st.view.kind === 'workspace' ? st.view.id : undefined));
   const key = `outside-more:${p.id}`;
   const expanded = useUi((u) => u.collapsed.includes(key));
-  const list = outsideOf(p);
+  // Sub-agents' own worktrees aren't yours: they show as the agent (see SubAgents.tsx).
+  const list = outsideOf(p).filter((w) => !isAgentWorktree(w));
   const activity = useOtherActivity(
     p.id,
     list.map((w) => w.id),
@@ -33,7 +37,10 @@ export function OutsideWorktrees({ p, indent }: { p: Project; indent: number }) 
   return (
     <>
       {shown.map((w) => (
-        <WorkspaceRow key={w.id} ws={w} indent={indent} />
+        <Fragment key={w.id}>
+          <WorkspaceRow ws={w} indent={indent} />
+          <SubAgentRows ws={w} indent={indent + 1} />
+        </Fragment>
       ))}
       {hidden.length ? (
         <Row

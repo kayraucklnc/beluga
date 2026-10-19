@@ -612,3 +612,19 @@ button.head:focus-visible {
   border-radius: 8px;
   box-shadow: 0 0 0 0.5px var(--hairline-strong);
 }
+.watch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 0 7px;
+  height: 18px;
+  border-radius: 9px;
+  color: var(--text-3);
+  font-size: 0.8rem;
+  font-weight: 550;
+}
+.watch:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}

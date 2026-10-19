@@ -5,6 +5,9 @@
  * draw; the steps themselves come on demand (`claudeCode.steps`). Browser-safe: the Mac app runs it.
  */
 
+/** Sessions running outside Klaud (Activity's): Klaud's own are watched only for their sub-agents. */
+export const outsideSessions = (sessions: readonly CcSession[]): readonly CcSession[] => (sessions.some((s) => s.own) ? sessions.filter((s) => !s.own) : sessions);
+
 /** running: working now · finished · failed · stopped (killed or interrupted) · idle: no writes for a while and no final answer. */
 export type CcAgentStatus = 'running' | 'finished' | 'failed' | 'stopped' | 'idle';
 
@@ -34,6 +37,17 @@ export interface CcAgent {
   readonly tokens?: number;
   /** The name it was given, to be messaged by (Agent's `name`). */
   readonly name?: string;
+  /** The model it runs on (its transcript's, else the one it was asked for) and the effort of its last answer. */
+  readonly model?: string;
+  readonly effort?: string;
+  /** The folder it works in. */
+  readonly cwd?: string;
+  /** Its own worktree, when it was started in isolation (and that worktree's branch). */
+  readonly worktree?: { readonly path: string; readonly branch?: string };
+  /** The tool call that started it (Klaud's chat knows its sub-agents by it). */
+  readonly toolUseId?: string;
+  /** The agent that started it, when it wasn't the session itself. */
+  readonly parentAgentId?: string;
 }
 
 export interface CcSession {
@@ -54,6 +68,11 @@ export interface CcSession {
   readonly model?: string;
   /** Its sub-agents that are running or ended lately, newest first. */
   readonly agents: readonly CcAgent[];
+  /**
+   * One of Klaud's own conversations (a worktree's chat). It's shown in that chat, not in Activity;
+   * it's watched for its sub-agents, so they can be followed live.
+   */
+  readonly own?: true;
   /** Agents working as a team, and the messages between them (when any are named or message each other). */
   readonly team?: CcTeam;
 }
