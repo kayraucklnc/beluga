@@ -75,6 +75,43 @@ export interface CcSession {
   readonly own?: true;
   /** Agents working as a team, and the messages between them (when any are named or message each other). */
   readonly team?: CcTeam;
+  /** Background commands and watches it or its agents started (running first, then the latest). */
+  readonly tasks?: readonly CcTask[];
+}
+
+/**
+ * A background command (a dev server, the full tests, a build) or a watch (Monitor) that Claude
+ * or one of its agents started. running · finished · failed · stopped · idle: no word on it, and
+ * nothing written for a while (its session may be gone).
+ */
+export interface CcTask {
+  /** Claude Code's id for it (its tool call's, until it has one). */
+  readonly id: string;
+  readonly kind: 'command' | 'monitor';
+  /** What it's for ("Start the dev server"). */
+  readonly description: string;
+  /** The command (secrets redacted). */
+  readonly command: string;
+  readonly status: CcAgentStatus;
+  readonly startedAt: number;
+  readonly endedAt?: number;
+  readonly exitCode?: number;
+  /** How it ended, in Claude Code's words. */
+  readonly summary?: string;
+  /** The agent that started it (none: the session itself). */
+  readonly agentId?: string;
+}
+
+/** The end of a background command's output, cleaned for reading. */
+export interface CcTaskOutput {
+  readonly text: string;
+  /** The whole file's size (bytes); only its end is in `text` when `truncated`. */
+  readonly size: number;
+  readonly truncated?: boolean;
+  /** The file it comes from (its own output, or the log its command writes to). */
+  readonly file: string;
+  /** Last written (ms). */
+  readonly mtime: number;
 }
 
 /** One step of a transcript, ready to show. `seq` grows along the transcript (for paging and updates). */

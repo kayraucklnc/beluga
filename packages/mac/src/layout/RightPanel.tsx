@@ -15,10 +15,11 @@ import { FilesTab } from './panel/FilesTab.js';
 import { TerminalPane } from './panel/TerminalPane.js';
 import { HistoryTab } from './panel/HistoryTab.js';
 import { ScratchTab } from './panel/ScratchTab.js';
+import { BackgroundTab, useBackgroundRunning } from './panel/BackgroundTab.js';
 import s from './panel/panel.module.css';
 
 
-const ICONS: Record<PanelTab, IconName> = { changes: 'diff', files: 'folder', terminal: 'terminal', info: 'inspector', history: 'clock', scratch: 'pulse' };
+const ICONS: Record<PanelTab, IconName> = { changes: 'diff', files: 'folder', terminal: 'terminal', info: 'inspector', history: 'clock', scratch: 'pulse', background: 'play' };
 const SLIDE_MS = 200;
 const STEP = 24;
 
@@ -39,7 +40,9 @@ function useBadges(): Partial<Record<PanelTab, { count?: number; tone?: 'ok' | '
   const fresh = ws ? changed > 0 && changed !== seen.current.get(ws.id) : false;
   const running = (k: string): boolean => k in terminals && !(k in exits);
   const failed = ws ? [runId(ws.id), setupId(ws.id)].some((k) => (exits[k] ?? 0) !== 0) : false;
+  const background = useBackgroundRunning(ws);
   return {
+    ...(background ? { background: { tone: 'ok' as const } } : {}),
     ...(changed ? { changes: { count: changed, ...(fresh ? { tone: 'accent' as const } : {}) } } : {}),
     ...(ws && (running(runId(ws.id)) || running(setupId(ws.id))) ? { terminal: { tone: 'ok' as const } } : failed ? { terminal: { tone: 'error' as const } } : {}),
     ...(waiting ? { info: { tone: 'warn' as const } } : {}),
@@ -102,6 +105,8 @@ const Body = memo(function Body({ tab, wsId, projectId }: { tab: PanelTab; wsId:
       );
     case 'scratch':
       return wsId ? <ScratchTab key={wsId} wsId={wsId} /> : null;
+    case 'background':
+      return wsId ? <BackgroundTab key={wsId} wsId={wsId} /> : null;
     case 'history': {
       const target = wsId ?? projectId;
       return target ? <HistoryTab key={target} target={target} /> : null;

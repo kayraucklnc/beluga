@@ -3,6 +3,7 @@ import { Tail, type TailOptions, headLines } from './tail.js';
 import { type Facts, type Launch, type Sent, type StepDetail, type StepDraft, type TaskNotice, type ToolResult, factsOf, parseLine } from './transcript.js';
 import { type StepRecord, sizeOf, thinkingTitle } from '../../shared/steps.js';
 import { OutputLog } from './outputs.js';
+import type { BgLaunch } from './tasks.js';
 
 /**
  * One transcript being watched (a session, or one of its sub-agents): reads what was added,
@@ -18,6 +19,8 @@ const NOTE_DEDUPE = 12;
 const RESULT_LOOKBACK = 80;
 /** Characters of step details (inputs, outputs, thinking) kept per transcript; the oldest go first. */
 export const MAX_DETAIL_CHARS = 2_000_000;
+/** Background commands remembered per transcript (the oldest go first). */
+const MAX_BG = 60;
 /** Messages sent (SendMessage) remembered per transcript, for a team's timeline. */
 const MAX_SENDS = 40;
 
@@ -67,6 +70,8 @@ export class TranscriptTracker {
   sends: Sent[] = [];
   /** Files it made or looked at (screenshots, logs, test output). */
   readonly outputs = new OutputLog();
+  /** Background commands and watches it started, by the tool call that started each (newest last; bounded). */
+  readonly bg = new Map<string, BgLaunch>();
   /** Names agents (set by the watcher, which knows them); ids show as they are without it. */
   labeler?: Labeler;
   /** What opening a step shows, by seq (bounded: see MAX_DETAIL_CHARS). */
@@ -156,6 +161,10 @@ export class TranscriptTracker {
     if (f.final !== undefined) this.final = f.final;
     for (const l of f.launches) this.launches.set(l.toolUseId, l);
     if (f.outputs?.length) this.outputs.add(f.outputs);
+    for (const b of f.bg ?? []) {
+      this.bg.set(b.toolUseId, b);
+      if (this.bg.size > MAX_BG) this.bg.delete(this.bg.keys().next().value!);
+    }
     if (f.sends?.length) this.sends = [...this.sends, ...f.sends].slice(-MAX_SENDS);
     for (const n of f.notices) {
       const old = this.notices.get(n.taskId);
@@ -163,7 +172,7 @@ export class TranscriptTracker {
     }
     for (const r of f.results) {
       this.settle(r);
-      if (r.async || r.agentId || this.launches.has(r.toolUseId)) this.results.set(r.toolUseId, r);
+      if (r.async || r.agentId || r.taskId || this.launches.has(r.toolUseId)) this.results.set(r.toolUseId, r);
     }
     for (const draft of f.steps) this.push(draft.kind === 'thinking' ? withThinkingTime(draft, before) : draft);
   }

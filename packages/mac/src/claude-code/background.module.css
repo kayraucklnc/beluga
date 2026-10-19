@@ -1,0 +1,193 @@
+/* Background commands: the list, and the one you follow (its output scrolling as it comes). */
+.root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.split {
+  flex-direction: row;
+}
+.stack {
+  flex-direction: column;
+}
+.side {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.split .side {
+  flex: 0 0 300px;
+  border-right: 0.5px solid var(--hairline);
+}
+.stack .side {
+  flex: 0 1 auto;
+  max-height: 42%;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 16px 4px;
+}
+.headTitle {
+  font-weight: 600;
+}
+.dim {
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+.flex {
+  flex: 1;
+}
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 8px 8px;
+  outline: none;
+}
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.rowOn,
+.rowOn:hover {
+  background: var(--bg-selected);
+}
+.list:focus-visible .rowOn {
+  background: var(--accent);
+  color: white;
+}
+.list:focus-visible .rowOn * {
+  color: rgba(255, 255, 255, 0.86) !important;
+}
+.markBox {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 18px;
+}
+.mark {
+  color: var(--text-3);
+}
+.markFailed {
+  color: var(--error);
+}
+.markDone {
+  color: var(--ok);
+}
+.rowText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rowName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowWho {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.output {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.outputHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 6px 0 12px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.outputTitle {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.state {
+  flex: none;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.tone_claude {
+  color: var(--claude);
+}
+.tone_ok {
+  color: var(--ok);
+}
+.tone_error {
+  color: var(--error);
+}
+.tone_muted {
+  color: var(--text-3);
+}
+.command {
+  flex: none;
+  padding: 6px 12px;
+  overflow: hidden;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.prompt {
+  color: var(--text-3);
+}
+.summary {
+  flex: none;
+  padding: 6px 12px;
+  color: var(--text-2);
+  font-size: 0.84rem;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.text {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+}
+.cut {
+  color: var(--text-3);
+}
+.dimPad {
+  padding: 16px;
+  color: var(--text-3);
+}
+.empty {
+  flex: 1;
+  display: flex;
+}

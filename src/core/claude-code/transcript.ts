@@ -1,6 +1,7 @@
 import type { CcStep } from './model.js';
 import { boundInput, boundText, redactSecrets, resultText, thinkingOf } from '../../shared/steps.js';
 import { type OutputRef, pathsInText, refsOfTool } from './outputs.js';
+import { type BgLaunch, bgLaunchOf, outputFileOf, taskIdOf } from './tasks.js';
 
 /**
  * Claude Code's transcript lines → what klaud shows: readable steps ("Reading src/app.ts", Claude's
@@ -79,6 +80,9 @@ export interface ToolResult {
   /** What came back (bounded, secrets redacted). */
   readonly output?: string;
   readonly truncated?: boolean;
+  /** A background command or watch it started: Claude Code's id for it, and where its output goes. */
+  readonly taskId?: string;
+  readonly outputFile?: string;
 }
 
 /** A background task reporting back (`<task-notification>`): an agent or a command finished. */
@@ -104,6 +108,8 @@ export interface Facts {
   readonly notices: readonly TaskNotice[];
   /** Messages sent to other sessions (SendMessage). */
   readonly sends?: readonly Sent[];
+  /** Background commands and watches it started (see tasks.ts). */
+  readonly bg?: readonly BgLaunch[];
   /** Files it made or looked at (screenshots, logs…): see outputs.ts. */
   readonly outputs?: readonly OutputRef[];
   /** Context size at this answer (tokens). */
@@ -284,7 +290,9 @@ function userFacts(e: RawEntry, ts: number): Facts {
     const full = resultText(b.content);
     for (const p of pathsInText(full)) outputs.push({ path: p, how: 'ran', ts });
     const out = boundText(redactSecrets(full));
-    results.push({ toolUseId: b.tool_use_id, error: b.is_error === true, async, ts, output: out.text, ...(out.truncated ? { truncated: true } : {}), ...(typeof tur.agentId === 'string' ? { agentId: tur.agentId } : {}) });
+    const taskId = taskIdOf(e.toolUseResult, firstText);
+    const outputFile = taskId ? outputFileOf(firstText) : undefined;
+    results.push({ toolUseId: b.tool_use_id, error: b.is_error === true, async, ts, output: out.text, ...(out.truncated ? { truncated: true } : {}), ...(typeof tur.agentId === 'string' ? { agentId: tur.agentId } : {}), ...(taskId ? { taskId } : {}), ...(outputFile ? { outputFile } : {}) });
   }
   if (results.length) return { ts, steps: [], results, launches: [], notices: [], final: false, ...(outputs.length ? { outputs } : {}) };
   const text = typed(blocks);
@@ -305,6 +313,7 @@ function assistantFacts(e: RawEntry, ts: number, cwd: string | undefined): Facts
   const launches: Launch[] = [];
   const sends: Sent[] = [];
   const outputs: OutputRef[] = [];
+  const bg: BgLaunch[] = [];
   for (const b of blocksOf(m.content)) {
     if (b.type === 'text' && b.text?.trim()) steps.push({ ts, kind: synthetic ? 'note' : 'text', text: clip(b.text.trim(), TEXT_MAX) });
     if (b.type === 'thinking' || b.type === 'redacted_thinking') {
@@ -315,6 +324,8 @@ function assistantFacts(e: RawEntry, ts: number, cwd: string | undefined): Facts
     if (b.type !== 'tool_use' || !b.name) continue;
     const input = b.input ?? {};
     outputs.push(...refsOfTool(b.name, input, cwd, ts));
+    const task = b.id ? bgLaunchOf(b.id, b.name, input, ts) : undefined;
+    if (task) bg.push(task);
     const kept = boundInput(input);
     const to = b.name === 'SendMessage' ? str(input.to) || str(input.recipient) : '';
     steps.push({ ts, kind: 'tool', tool: b.name, text: redactSecrets(describeTool(b.name, input, cwd)), status: 'running', detail: true, details: { input: kept.input, ...(kept.truncated ? { truncated: true } : {}) }, ...(b.id ? { toolUseId: b.id } : {}), ...(to ? { to } : {}) });
@@ -335,6 +346,7 @@ function assistantFacts(e: RawEntry, ts: number, cwd: string | undefined): Facts
     notices: [],
     ...(sends.length ? { sends } : {}),
     ...(outputs.length ? { outputs } : {}),
+    ...(bg.length ? { bg } : {}),
     ...(tokens && !synthetic ? { tokens } : {}),
     ...(m.model && !synthetic ? { model: m.model } : {}),
     ...(typeof e.effort === 'string' && /^[\w-]{1,20}$/.test(e.effort) ? { effort: e.effort } : {}),

@@ -112,6 +112,9 @@ function commandPaths(command: string, cwd?: string): string[] {
   return found;
 }
 
+/** The text files a command sends its output to (`> app.log`, `| tee run.txt`, `-o out.json`). */
+export const commandLogs = (command: string, cwd?: string): string[] => commandPaths(command, cwd).filter((p) => TEXT.test(p));
+
 const FILE_TOOLS: Readonly<Record<string, OutputHow>> = { Write: 'wrote', Edit: 'wrote', MultiEdit: 'wrote', NotebookEdit: 'wrote', Read: 'read' };
 /** Where other tools (browsers, MCP servers) say they save a file. */
 const SAVE_KEYS = ['filename', 'filePath', 'file_path', 'outputPath', 'output_path', 'savePath', 'save_path', 'screenshotPath', 'outFile'];

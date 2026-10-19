@@ -5,12 +5,12 @@ import type { View } from '../../../../src/core/store.js';
  * get, and how older window preferences carry over. No DOM here, so it's tested on its own.
  */
 
-export type PanelTab = 'changes' | 'files' | 'terminal' | 'info' | 'history' | 'scratch';
+export type PanelTab = 'changes' | 'files' | 'terminal' | 'info' | 'history' | 'scratch' | 'background';
 
-/** Every tab in its fixed place: ⌥⌘1 is always Changes, ⌥⌘4 always Info, ⌥⌘5 History, ⌥⌘6 Scratch. */
-export const PANEL_TABS: readonly PanelTab[] = ['changes', 'files', 'terminal', 'info', 'history', 'scratch'];
+/** Every tab in its fixed place: ⌥⌘1 is always Changes, ⌥⌘4 always Info, ⌥⌘5 History, ⌥⌘6 Scratch, ⌥⌘7 Background. */
+export const PANEL_TABS: readonly PanelTab[] = ['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background'];
 
-export const PANEL_LABELS: Record<PanelTab, string> = { changes: 'Changes', files: 'Files', terminal: 'Terminal', info: 'Info', history: 'History', scratch: 'Scratch' };
+export const PANEL_LABELS: Record<PanelTab, string> = { changes: 'Changes', files: 'Files', terminal: 'Terminal', info: 'Info', history: 'History', scratch: 'Scratch', background: 'Background' };
 
 export const PANEL_MIN = 320;
 export const PANEL_DEFAULT = 384;
@@ -36,7 +36,8 @@ type WsKind = 'chat' | 'main' | 'worktree' | string;
 /** The panel's tabs for what's on screen, in their fixed order. */
 export function panelTabsFor(view: View, wsKind?: WsKind): PanelTab[] {
   // Scratch: what Claude saves to the workspace's .klaud/scratch/ while it works, live.
-  if (view.kind === 'workspace') return wsKind === 'chat' ? ['files', 'terminal', 'info', 'scratch'] : [...PANEL_TABS];
+  // Background: the commands Claude and its agents run there in the background (dev servers, tests), live.
+  if (view.kind === 'workspace') return wsKind === 'chat' ? ['files', 'terminal', 'info', 'scratch', 'background'] : [...PANEL_TABS];
   // A project's home (and its History page): the project's history too.
   if (view.kind === 'project') return ['terminal', 'info', 'history'];
   // A shared workspace's shell is its owner's; the Terminal view is already all shells.
@@ -71,7 +72,7 @@ export const clampShare = (v: number, min: number, max: number): number => Math.
 /** The bottom drawer works under any conversation or page, but not over the Terminal view or a friend's workspace. */
 export const drawerFits = (view: View): boolean => view.kind !== 'terminal' && view.kind !== 'shared';
 
-/** The ⌥⌘ digit for a tab (1–6). */
+/** The ⌥⌘ digit for a tab (1–7). */
 export const panelDigit = (tab: PanelTab): number => PANEL_TABS.indexOf(tab) + 1;
 
 /**

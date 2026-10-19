@@ -23,4 +23,6 @@ export const CLAUDE_CODE_API = {
   'claudeCode.outputs': { args: z.tuple([sessionId, agentId]) },
   // One of them, to show it (only a file that agent made or looked at) → its contents, or undefined.
   'claudeCode.output': { args: z.tuple([sessionId, agentId, filePath]) },
+  // The end of a background command's output (the session's, or one of its agents') → { text, size, file, mtime, truncated? }, or undefined.
+  'claudeCode.taskOutput': { args: z.tuple([sessionId, agentId.optional(), agentId]) },
 } as const;

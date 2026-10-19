@@ -102,6 +102,27 @@ function head(file: string, bytes: number): { buf: Buffer; size: number } | unde
   }
 }
 
+/** The end of a text file (secrets redacted by the caller), through a handle that never follows a link. */
+export function readTail(file: string, bytes: number): { text: string; size: number; mtime: number } | undefined {
+  const real = realOf(file);
+  if (!real || off(file, real)) return undefined;
+  try {
+    const fd = openSync(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const st = fstatSync(fd);
+      if (!st.isFile()) return undefined;
+      const start = Math.max(0, st.size - bytes);
+      const buf = Buffer.alloc(st.size - start);
+      const n = readSync(fd, buf, 0, buf.length, start);
+      return { text: buf.subarray(0, n).toString('utf8'), size: st.size, mtime: Math.round(st.mtimeMs) };
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return undefined;
+  }
+}
+
 /** One output's contents, to show it. */
 export function readOutput(o: CcOutput): CcOutputFile {
   try {

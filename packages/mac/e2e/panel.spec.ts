@@ -47,14 +47,17 @@ test.beforeEach(async ({ page }) => {
   await expect(sidebar(page)).toBeVisible();
 });
 
-test('a workspace has Changes, Files, Terminal, Info, History and Scratch; the keys pick them and each workspace keeps its own', async ({ page }) => {
+test('a workspace has Changes, Files, Terminal, Info, History, Scratch and Background; the keys pick them and each workspace keeps its own', async ({ page }) => {
   await openWorkspace(page);
-  await expect(panel(page).getByRole('tablist', { name: 'Panel' }).getByRole('tab')).toHaveText(['Changes', 'Files', 'Terminal', 'Info', 'History', 'Scratch']);
+  await expect(panel(page).getByRole('tablist', { name: 'Panel' }).getByRole('tab')).toHaveText(['Changes', 'Files', 'Terminal', 'Info', 'History', 'Scratch', 'Background']);
   // It has commits ahead: Changes is where it starts.
   await expect(tab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Meta+Alt+4');
   await expect(tab(page, 'Info')).toHaveAttribute('aria-selected', 'true');
   await expect(panel(page).getByRole('complementary', { name: 'Inspector' })).toContainText('This workspace');
+  await page.keyboard.press('Meta+Alt+7');
+  await expect(tab(page, 'Background')).toHaveAttribute('aria-selected', 'true');
+  await expect(panel(page)).toContainText('No background commands');
   await page.keyboard.press('Meta+Alt+2');
   await expect(tab(page, 'Files')).toHaveAttribute('aria-selected', 'true');
   // Another workspace has its own tab; coming back finds Files again.

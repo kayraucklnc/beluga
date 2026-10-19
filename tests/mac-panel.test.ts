@@ -21,9 +21,9 @@ const room: View = { kind: 'room' };
 
 describe('the right panel’s tabs', () => {
   it('a workspace has every tab; a chat has no Changes; a friend’s workspace and the Terminal view only Info', () => {
-    expect(panelTabsFor(ws, 'worktree')).toEqual(['changes', 'files', 'terminal', 'info', 'history', 'scratch']);
+    expect(panelTabsFor(ws, 'worktree')).toEqual(['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background']);
     expect(panelTabsFor({ kind: 'project', id: 'p' })).toEqual(['terminal', 'info', 'history']);
-    expect(panelTabsFor(ws, 'chat')).toEqual(['files', 'terminal', 'info', 'scratch']);
+    expect(panelTabsFor(ws, 'chat')).toEqual(['files', 'terminal', 'info', 'scratch', 'background']);
     expect(panelTabsFor({ kind: 'shared', owner: 'o', id: 'x', tab: 'chat' })).toEqual(['info']);
     expect(panelTabsFor({ kind: 'terminal' })).toEqual(['info']);
     expect(panelTabsFor(room)).toEqual(['terminal', 'info']);
@@ -49,7 +49,7 @@ describe('the right panel’s tabs', () => {
   });
 
   it('has fixed ⌥⌘ digits', () => {
-    expect(['changes', 'files', 'terminal', 'info', 'history', 'scratch'].map((t) => panelDigit(t as 'changes'))).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background'].map((t) => panelDigit(t as 'changes'))).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
   it('is never narrower than the minimum nor wider than 60% of the window', () => {
