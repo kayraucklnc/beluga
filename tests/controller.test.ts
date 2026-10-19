@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -22,10 +22,12 @@ let ctl: WorkspaceController;
 let toasts: string[];
 let asked: Array<{ prompt: string; channel: string }>;
 let repo: string;
+let claude: string;
 
 beforeEach(async () => {
   const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-ctl-')));
   repo = path.join(base, 'code', 'app');
+  claude = path.join(base, 'claude');
   mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '--bare', '-b', 'main', path.join(base, 'app.git')], { stdio: 'pipe' });
   sh(repo, 'init', '-b', 'main');
@@ -53,9 +55,27 @@ beforeEach(async () => {
     toast: (t) => void toasts.push(t),
     intend: shown.intend,
     askClaude: (prompt, channel) => void asked.push({ prompt, channel }),
+    claudeHome: claude,
   });
   await ctl.refresh();
 });
+
+/** A Claude Code session in `cwd` whose sub-agent made a worktree of its own (as Claude Code lays it out). */
+function subAgentWorktree(cwd: string, agent: string, session = 'aaaaaaaa-0000-0000-0000-00000000000a'): string {
+  const wt = path.join(repo, '.claude', 'worktrees', `agent-${agent}`);
+  sh(repo, 'worktree', 'add', '-q', '-b', `worktree-agent-${agent}`, wt);
+  const folder = path.join(claude, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+  mkdirSync(path.join(folder, session, 'subagents'), { recursive: true });
+  writeFileSync(path.join(folder, `${session}.jsonl`), `${JSON.stringify({ type: 'user', sessionId: session, cwd, message: { content: 'go' } })}\n`);
+  const meta = path.join(folder, session, 'subagents', `agent-${agent}.meta.json`);
+  writeFileSync(meta, JSON.stringify({ description: agent, worktreePath: wt, worktreeBranch: `worktree-agent-${agent}` }));
+  // It finished a while ago (an agent that wrote lately may still be at work).
+  const old = (Date.now() - 60 * 60_000) / 1000;
+  utimesSync(meta, old, old);
+  return wt;
+}
+
+const branches = (): string => sh(repo, 'branch', '--list', 'worktree-agent-*');
 
 const projectId = () => store.getState().projects.find((p) => p.root)!.id;
 
@@ -179,6 +199,45 @@ describe('WorkspaceController', () => {
     expect(ctl.manager.find(fork.id)).toBeUndefined();
     expect(await ctl.archive('missing')).toBe(false);
     expect(toasts.some((t) => t.startsWith("Couldn't archive"))).toBe(true);
+  });
+
+  it('archiving or deleting a conversation takes its sub-agents’ worktrees with it (branches kept; work in progress stays)', async () => {
+    const ws = (await ctl.newWorktree(projectId(), 'lead'))!;
+    const done = subAgentWorktree(ws.path, 'a1');
+    const dirty = subAgentWorktree(ws.path, 'a2');
+    writeFileSync(path.join(dirty, 'a.txt'), 'half done\n');
+    const working = subAgentWorktree(ws.path, 'a3');
+    // No branch (detached): its commits would be lost with it.
+    const detached = subAgentWorktree(ws.path, 'a4');
+    sh(detached, 'checkout', '-q', '--detach');
+    // Written to just now, in a session Klaud doesn't follow: maybe still working.
+    const fresh = subAgentWorktree(ws.path, 'a5');
+    const now = Date.now() / 1000;
+    utimesSync(path.join(claude, 'projects', ws.path.replace(/[^a-zA-Z0-9]/g, '-'), 'aaaaaaaa-0000-0000-0000-00000000000a', 'subagents', 'agent-a5.meta.json'), now, now);
+    store.dispatch({ type: 'claude_code', sessions: [{ id: 's', title: 's', cwd: ws.path, status: 'working', lastAt: 1, steps: 1, agents: [{ id: 'a3', description: 'a3', type: 'general-purpose', background: true, status: 'running', startedAt: 1, lastAt: 1, steps: 1, worktree: { path: working } }] }] });
+    // Another conversation's sub-agent: not this one's to remove.
+    const other = (await ctl.newWorktree(projectId(), 'other'))!;
+    const theirs = subAgentWorktree(other.path, 'b1', 'bbbbbbbb-0000-0000-0000-00000000000b');
+    await ctl.refresh();
+
+    expect(await ctl.archive(ws.id)).toBe(true);
+    expect(existsSync(done)).toBe(false);
+    expect(existsSync(dirty)).toBe(true);
+    expect(existsSync(working)).toBe(true);
+    expect(existsSync(detached)).toBe(true);
+    expect(existsSync(fresh)).toBe(true);
+    expect(existsSync(theirs)).toBe(true);
+    expect(branches()).toContain('worktree-agent-a1');
+    expect(toasts.at(-1)).toBe('Archived. The branch and conversation are kept; restore it any time. Removed its 1 sub-agent worktree too (branches kept). Kept 4 sub-agent worktrees: still working, uncommitted changes or no branch.');
+
+    await ctl.remove(other.id);
+    expect(existsSync(theirs)).toBe(false);
+    expect(branches()).toContain('worktree-agent-b1');
+    expect(toasts.at(-1)).toBe('Deleted. Removed its 1 sub-agent worktree too (branches kept).');
+    // Nothing of its own: says only what it did.
+    const plain = (await ctl.newWorktree(projectId(), 'plain'))!;
+    await ctl.remove(plain.id);
+    expect(toasts.at(-1)).toBe('Deleted.');
   });
 
   it('turns a draft into a chat with the first message, in the folder klaud started in', async () => {

@@ -20,7 +20,7 @@ The lightweight Klaud: everything in your terminal, clickable, no shortcuts to m
   - **Compact**: summarizes the conversation when the context meter fills up.
   - **Fork**: a new worktree that keeps the conversation.
   - **Finder**: opens the folder.
-  - **Archive**: keeps the conversation, removes the worktree. Restore it any time from **Archived**.
+  - **Archive**: keeps the conversation, removes the worktree. Restore it any time from **Archived**. Archiving or deleting a conversation also removes the worktrees its Claude Code sub-agents made (their branches are kept; one with uncommitted changes, without a branch, or whose agent is still working, stays).
   - **Share**: invite people from the room to work here or follow along, and remove them any time.
 - **Worktrees from other tools** stay out of the way. The ones Claude Code sub-agents create (`.claude/worktrees/agent-*`) fold into **Claude Code agents**, where **⋯** removes the finished ones (branches are kept). Other tools' worktrees fold into **Other worktrees**.
 - **Env files**: `.env*` files (and `.ssh` / `.aws` folders inside the project) are copied into new worktrees. When you archive or delete one, klaud shows which keys changed and offers to copy them back to main.
