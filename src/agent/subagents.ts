@@ -1,8 +1,27 @@
-import { summarizeTool } from './prompt.js';
+import { mkdirSync } from 'node:fs';
+import { AGENT_SCRATCH_MARK, buildAgentScratchNote, summarizeTool } from './prompt.js';
+import { agentScratchName } from '../shared/scratch-dir.js';
 import type { SubAgentEvent } from './types.js';
 
 /** Tools that launch a sub-agent in Claude Code. */
 export const SUBAGENT_TOOLS = new Set(['Task', 'Agent']);
+
+/**
+ * A sub-agent launch with its own scratch folder in the prompt (`<scratch>/agents/<name>/`, made
+ * here), so what it makes lands where its page shows it. Undefined: not a launch, no prompt, or
+ * it already has one.
+ */
+export function withAgentScratch(toolName: string, input: Readonly<Record<string, unknown>>, toolUseId: string, scratch: string): Record<string, unknown> | undefined {
+  const prompt = input.prompt;
+  if (!SUBAGENT_TOOLS.has(toolName) || typeof prompt !== 'string' || !prompt.trim() || prompt.includes(AGENT_SCRATCH_MARK)) return undefined;
+  const dir = `${scratch.replace(/\/+$/, '')}/agents/${agentScratchName(toolUseId)}`;
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch {
+    // It can make the folder itself.
+  }
+  return { ...input, prompt: `${prompt}${buildAgentScratchNote(dir)}` };
+}
 
 interface Block {
   readonly type: string;

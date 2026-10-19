@@ -138,6 +138,35 @@ export interface CcSteps {
   readonly missing?: boolean;
 }
 
+/** Something an agent made or looked at (a screenshot, a log, test output), still on disk. */
+export interface CcOutput {
+  /** A full path. */
+  readonly path: string;
+  /** wrote: it saved it · read: it looked at it · ran: a command wrote it or named it. */
+  readonly how: 'wrote' | 'read' | 'ran';
+  readonly kind: 'image' | 'pdf' | 'video' | 'json' | 'markdown' | 'text' | 'file';
+  readonly size: number;
+  /** Last written (ms). */
+  readonly mtime: number;
+}
+
+export interface CcOutputs {
+  /** Newest first. */
+  readonly outputs: readonly CcOutput[];
+  /** Its own scratch folder (`.klaud/scratch/agents/<name>/` where its session runs), when it has one. */
+  readonly scratch?: string;
+  /** No such session or agent being watched. */
+  readonly missing?: true;
+}
+
+/** One output's contents: pictures as base64, text (secrets redacted, cut when long); neither for the rest. */
+export interface CcOutputFile extends CcOutput {
+  readonly mime?: string;
+  readonly data?: string;
+  readonly text?: string;
+  readonly truncated?: boolean;
+}
+
 export interface ClaudeCodeSlice {
   readonly claudeCode: { readonly sessions: readonly CcSession[] };
 }
