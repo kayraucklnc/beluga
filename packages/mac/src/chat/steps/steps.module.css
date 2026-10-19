@@ -601,3 +601,14 @@ button.head:focus-visible {
     background: none;
   }
 }
+
+/* A picture or a PDF Claude read: the thing itself, not "[image]". */
+.seen {
+  padding: 2px 0 4px;
+}
+.pdfPeek {
+  height: 280px;
+  overflow: auto;
+  border-radius: 8px;
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+}

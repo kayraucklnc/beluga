@@ -12,7 +12,7 @@ import { closeFocus, showPanelTab } from '../../lib/panel.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { SCROLL_ROOT } from '../../components/markdown/md-dom.js';
 import { FileContent } from './FileReader.js';
-import { type ReaderMode, initialMode, isMarkdownFile } from './reader-model.js';
+import { type ReaderMode, hasText, initialMode, isMarkdownFile } from './reader-model.js';
 import r from './reader.module.css';
 
 /** Space, Page Up/Down, Home and End scroll the page even when nothing has the keyboard. */
@@ -73,7 +73,7 @@ export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string 
   }, [viewer.path]);
 
   const markdown = isMarkdownFile(viewer.path);
-  const isText = !viewer.image && !viewer.error;
+  const isText = hasText(viewer);
   const showsCode = isText && (!markdown || mode === 'source');
   const name = viewer.path.split('/').pop() || viewer.path;
   const folders = viewer.path.split('/').slice(0, -1);

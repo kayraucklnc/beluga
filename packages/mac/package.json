@@ -1,7 +1,7 @@
 {
   "name": "@klaud/mac",
   "private": true,
-  "version": "0.5.4",
+  "version": "0.6.2",
   "description": "klaud for macOS: the same klaud as the terminal UI, as a native app.",
   "type": "module",
   "scripts": {
@@ -39,6 +39,7 @@
     "cmdk": "^1.1.1",
     "katex": "^0.16.47",
     "mermaid": "^11.17.2",
+    "pdfjs-dist": "^6.4.299",
     "qrcode-generator": "^2.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

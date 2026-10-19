@@ -197,7 +197,9 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `files.downloadSpec` | ✓ | ✓ |
 | `files.closeViewer` | ✓ | ✓ |
 | `files.readImage` | ✓ | ✓ |
-| `files.readImageFile` | – (the terminal shows Markdown as text) | ✓ images in the Markdown reader (`![](diagram.png)` next to the file) |
+| `files.readImageFile` | – (the terminal shows Markdown as text) | ✓ images in the Markdown reader (`![](diagram.png)` next to the file); PDFs drawn page by page in Files, Changes and the reader |
+| `workspaces.scratch` | – | ✓ the panel's Scratch tab: the workspace's `.klaud/scratch/` folder, newest first, live |
+| `files.read` | – | ✓ a changed file as itself in Changes (Markdown formatted), without moving the Files tab's open file |
 | `workspaces.open` | ✓ | ✓ |
 | `workspaces.load` | — (opening a workspace loads it) | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ | ✓ |
@@ -361,7 +363,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 |---|---|---|
 | Mouse escape codes, OSC 52 copy, terminal zoom, focus reports | Terminal | they are the terminal's own features (`src/ui/tty`) |
 | Window vibrancy, menu bar, menu-bar icon, `klaud://` links, Settings window, ⌘K palette, drag-and-drop images | Mac | native window features; the actions they run are the shared ones above |
-| A workspace's screen: the conversation always in the center; a right panel (⌥⌘0, resizable, its tab remembered per workspace) with Changes (files with +/−, the diff inline, Commit / PR / Review), Files (a tree you filter by name, a preview), Terminal (the workspace's shells, setup and run) and Info (the inspector); ⌘J's terminal in that panel or a drawer under the chat; a diff, file or the terminal in full for a while (⌘↩, Esc back) | Mac (`layout/RightPanel.tsx`, `layout/panel/*`, `lib/panel.ts`) | the terminal app switches the whole screen between Chat, Files, Diff and Terminal tabs (the same shared actions: `workspaces.open`, `workspaces.selectFile`, `files.*`, `terminals.*`) |
+| A workspace's screen: the conversation always in the center; a right panel (⌥⌘0, resizable, its tab remembered per workspace; narrow, only the tab you're on shows its name) with Changes (files with +/−, the diff inline or the file as itself — Markdown formatted, pictures and PDFs always as themselves — Show in Files, Commit / PR / Review), Files (a tree you filter by name, a preview with PDFs drawn page by page, Show Changes on a changed file), Terminal (the workspace's shells, setup and run) and Info (the inspector); ⌘J's terminal in that panel or a drawer under the chat; a diff, file or the terminal in full for a while (⌘↩, Esc back) | Mac (`layout/RightPanel.tsx`, `layout/panel/*`, `lib/panel.ts`) | the terminal app switches the whole screen between Chat, Files, Diff and Terminal tabs (the same shared actions: `workspaces.open`, `workspaces.selectFile`, `files.*`, `terminals.*`) |
 | Dock badge, clicking a desktop notification to go where it's about | Mac | the app shell's (`set_tray_status`, the notification plugin's taps); the count is the shared `badgeCount` |
 | Marking one notification unread again | Mac (hover a notification) | the terminal's inbox is a menu: opening a notice reads it, and it has Mark all as read |
 | Desktop notifications through the terminal (OSC 9/99, terminal-notifier, notify-send) | Terminal | `src/ui/tty/desktop-notify.ts`; which events notify, Do Not Disturb and “only when klaud isn’t in front” are shared settings the core applies for both |

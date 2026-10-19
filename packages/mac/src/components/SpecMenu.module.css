@@ -97,3 +97,11 @@
 .item[data-state='open']:not([data-highlighted]) {
   background: var(--bg-hover);
 }
+
+/* The chosen one, in a menu of choices that each have an icon. */
+.trailingCheck {
+  flex: none;
+  margin-left: auto;
+  padding-left: 10px;
+  box-sizing: content-box;
+}

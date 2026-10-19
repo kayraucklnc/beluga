@@ -4,14 +4,15 @@ import { parseDiff } from '@klaud/shared/diff-lines.js';
 import { findWorkspace } from '@klaud/ui/workspace-models.js';
 import { Icon } from '../../components/Icon.js';
 import { ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
-import { Button, Empty, IconButton, Tip, cx } from '../../components/ui.js';
+import { Button, Empty, IconButton, Segmented, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useApi, useApp } from '../../lib/klaud.js';
-import { focusFor, openFocus, usePanelRuntime } from '../../lib/panel.js';
+import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { focusFor, openFocus, showPanelTab, forgetChangeAsk, peekChangeAsk, usePanelRuntime } from '../../lib/panel.js';
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { mod } from '../../lib/system.js';
 import { STATE, UnifiedDiff, useCommitItems, useFileItems } from '../../views/DiffView.js';
+import { type ChangeLook, ChangedFileView, canShowFile, fileLookLabel, onlyAsFile, useChangeLocation } from '../../views/ChangedFile.js';
 import d from '../../views/diff.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
 import s from './panel.module.css';
@@ -131,9 +132,16 @@ function Actions({ wsId }: { wsId: string }) {
   );
 }
 
-/** The selected file's diff, compact, with the way to see it full size. */
+/**
+ * The selected file, compact: its diff, or the file as itself (Markdown formatted, a picture or a
+ * PDF only as itself), with the way to see it full size or in Files.
+ */
 function FileDiff({ wsId, path, onClose }: { wsId: string; path: string; onClose: () => void }) {
+  const api = useApi();
+  const { client } = useKlaud();
+  const prefs = usePrefs();
   const review = useApp((st) => st.review);
+  const at = useChangeLocation(path);
   const file = review?.data?.files[review.selected];
   const current = file?.path === path ? review?.diff : undefined;
   // Keep showing the last diff of this file while it reloads.
@@ -142,7 +150,15 @@ function FileDiff({ wsId, path, onClose }: { wsId: string; path: string; onClose
   const diff = current ?? (last.current?.path === path ? last.current.diff : undefined);
   const lines = useMemo(() => (diff ? parseDiff(diff) : []), [diff]);
   const name = path.split('/').pop() ?? path;
-  const st = file?.path === path ? STATE[file.state] : undefined;
+  const mine = file?.path === path ? file : undefined;
+  const st = mine ? STATE[mine.state] : undefined;
+  const showable = !!at && (!mine || canShowFile(mine));
+  const look: ChangeLook = showable && (onlyAsFile(path) || prefs.changeLook === 'file') ? 'file' : 'diff';
+  const showInFiles = (): void => {
+    if (!at) return;
+    showPanelTab(client.store.getState(), 'files');
+    void api.files.open(at);
+  };
   return (
     <section className={s.preview} aria-label={`Changes in ${name}`}>
       <div className={s.previewHead}>
@@ -150,17 +166,35 @@ function FileDiff({ wsId, path, onClose }: { wsId: string; path: string; onClose
         <span className={s.previewName} title={path}>
           {name}
         </span>
-        {file?.path === path ? (
+        {mine ? (
           <span className={s.previewCounts}>
-            {file.added ? <span className={d.add}>+{file.added}</span> : null}
-            {file.removed ? <span className={d.del}>−{file.removed}</span> : null}
+            {mine.added ? <span className={d.add}>+{mine.added}</span> : null}
+            {mine.removed ? <span className={d.del}>−{mine.removed}</span> : null}
           </span>
         ) : null}
         <span className={s.flex} />
+        {showable && !onlyAsFile(path) ? (
+          <Segmented
+            label="Show"
+            value={look}
+            onChange={(v) => setPrefs({ changeLook: v })}
+            options={[
+              { value: 'diff', label: 'Changes', hint: 'What changed, line by line' },
+              { value: 'file', label: fileLookLabel(path), hint: 'The file as it is now' },
+            ]}
+          />
+        ) : null}
+        {showable ? <IconButton icon="folder" label="Show in Files" onClick={showInFiles} /> : null}
         <IconButton icon="expand" label="Open in full" keys={`${mod()}↩`} onClick={() => openFocus('diff', wsId)} />
-        <IconButton icon="x" label="Close the diff" keys="Esc" onClick={onClose} />
+        <IconButton icon="x" label="Close" keys="Esc" onClick={onClose} />
       </div>
-      <div className={cx(s.previewBody, d.code, 'selectable')} tabIndex={0}>{diff === undefined ? <div className={s.dimPad}>Loading the diff…</div> : lines.length ? <UnifiedDiff lines={lines} compact /> : <div className={s.dimPad}>{diff || 'No differences in the text.'}</div>}</div>
+      {look === 'file' && at ? (
+        <div className={cx(s.previewBody, s.previewFile, 'selectable')} tabIndex={0}>
+          <ChangedFileView at={at} variant="panel" />
+        </div>
+      ) : (
+        <div className={cx(s.previewBody, d.code, 'selectable')} tabIndex={0}>{diff === undefined ? <div className={s.dimPad}>Loading the diff…</div> : lines.length ? <UnifiedDiff lines={lines} compact /> : <div className={s.dimPad}>{diff || 'No differences in the text.'}</div>}</div>
+      )}
     </section>
   );
 }
@@ -173,6 +207,9 @@ export function ChangesTab({ wsId }: { wsId: string }) {
   const { data, loading, error, reload } = useChanges(wsId);
   const selected = useApp((st) => (st.review?.workspaceId === wsId ? st.review.selected : -1));
   const reviewLoading = useApp((st) => st.review?.workspaceId === wsId && st.review.loading);
+  // Show Changes from the Files tab: that file, once the list is here.
+  const [asked] = useState(() => peekChangeAsk(wsId));
+  useEffect(forgetChangeAsk, []);
   const [open, setOpen] = useState<string>();
   const inFocus = usePanelRuntime((r) => r.focus?.wsId === wsId && r.focus.kind === 'diff');
   const box = useRef<HTMLDivElement>(null);
@@ -201,6 +238,13 @@ export function ChangesTab({ wsId }: { wsId: string }) {
     setOpen(f.path);
     void api.workspaces.selectFile(i);
   };
+  const answered = useRef(false);
+  useEffect(() => {
+    if (!asked || answered.current || !data || reviewLoading) return;
+    answered.current = true;
+    const i = files.findIndex((f) => f.path === asked);
+    if (i >= 0) show(i);
+  }, [data, reviewLoading]);
   const onKey = (e: KeyboardEvent): void => {
     const i = at < 0 ? -1 : at;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

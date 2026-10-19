@@ -254,6 +254,22 @@ describe('Session', () => {
     await expect(kay.session.files.readImageFile({ owner: bob.session.selfId, share: 'nope', path: 'flow.svg' })).rejects.toThrow(/not shared with you/);
   });
 
+  it('reads a PDF for the Mac reader, and a file’s text without opening the viewer', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay');
+    const pdf = '%PDF-1.4\n%\u00e2\u00e3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n';
+    const bob = peer('bob', { files: { 'spec.pdf': pdf, 'README.md': '# Hello' } });
+    await room(kay, bob);
+    const at = (p: string) => ({ owner: bob.session.selfId, share: 'proj', path: p });
+    const doc = await kay.session.files.readImageFile(at('spec.pdf'));
+    expect(doc.mediaType).toBe('application/pdf');
+    expect(doc.bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    const text = await kay.session.files.readFile(at('README.md'));
+    expect(text).toEqual({ content: '# Hello', truncated: false });
+    // Reading it doesn't open it.
+    expect(kay.session.store.getState().viewer).toBeUndefined();
+  });
+
   it('follows a friend and their agent like Google Docs', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');

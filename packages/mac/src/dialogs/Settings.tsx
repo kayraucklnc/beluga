@@ -164,6 +164,7 @@ function Appearance() {
 
 function ClaudePane() {
   const api = useApi();
+  const macPrefs = usePrefs();
   const { ui } = useKlaud();
   const state = useApp((st) => st);
   const p = state.prefs;
@@ -195,6 +196,14 @@ function ClaudePane() {
         </Row>
       </Group>
       <ContextSettings />
+      <Group title="Scratch folder">
+        <Row label="Give Claude a scratch folder" detail="Screenshots, JSON, logs and notes Claude makes while it works go to the workspace’s .klaud/scratch/ folder (kept out of git; never touches other tools’ .context/).">
+          <Switch label="Scratch folder" on={p.scratchFolder} onChange={(v) => void api.session.setPrefs({ scratchFolder: v })} />
+        </Row>
+        <Row label="Show the Scratch tab" detail="Watch that folder live in the right panel, newest first (⌥⌘6).">
+          <Switch label="Scratch tab" on={macPrefs.scratchTab} onChange={(v) => setPrefs({ scratchTab: v })} />
+        </Row>
+      </Group>
       <Group title="Pull requests and templates">
         <Row label="Pull request instructions" detail={state.prCustom ? 'Customized' : 'Built-in'}>
           <Button onClick={() => void api.workbench.editPrPrompt()}>Edit…</Button>

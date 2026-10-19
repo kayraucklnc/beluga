@@ -356,7 +356,7 @@
 }
 
 /* An image mentioned mid-sentence (it shows below the message). */
-.markdown a.imageRef {
+.markdown .imageRef {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -370,4 +370,17 @@
 .markdown a.imageRef:hover {
   background: var(--bg-press);
   color: var(--text);
+}
+
+/* Images a message shows by path (Claude's screenshots): the thumbnails pasted images get, in a row. */
+.mdImages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0;
+}
+.mdImages[data-count='many'] img {
+  max-width: 220px;
+  max-height: 160px;
 }

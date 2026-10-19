@@ -218,6 +218,28 @@
   border-radius: 4px;
   box-shadow: var(--shadow-pop);
 }
+/* ---- PDFs: pages one under another, each in its place before it's drawn */
+
+.pdfStage {
+  align-content: start;
+  background: var(--bg-hover);
+}
+.pdfPage {
+  flex: none;
+  overflow: hidden;
+  border-radius: 2px;
+  background: white;
+  box-shadow: var(--shadow-pop);
+}
+.pdfPage canvas,
+.stage .pdfPage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  border-radius: 0;
+  box-shadow: none;
+}
 .zoomBar {
   position: sticky;
   bottom: 16px;
