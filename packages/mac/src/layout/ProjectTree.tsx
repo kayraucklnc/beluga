@@ -118,6 +118,9 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   const collapsed = useUi((u) => u.collapsed);
   const fold = useProjectFold(p.id);
   const here = state.view.kind === 'workspace' ? state.view.id : undefined;
+  // You're in this project: on its home page, or in one of its worktrees or chats.
+  const onHome = state.view.kind === 'project' && state.view.id === p.id;
+  const current = onHome || (here !== undefined && p.workspaces.some((w) => w.id === here));
   const hide = useHide();
   const iconItems = useIconItems(p);
   const busy = p.workspaces.some((w) => activityOf(state.log, `ws:${w.id}`).running);
@@ -142,7 +145,9 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
         <Row
           data-drag={`project:${p.id}`}
           indent={depth}
-          className={side.projectRow}
+          selected={onHome}
+          className={cx(side.projectRow, current && side.currentProject)}
+          data-current={current || undefined}
           aria-expanded={!fold.folded}
           aria-label={p.name}
           icon={

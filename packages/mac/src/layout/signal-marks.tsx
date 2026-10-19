@@ -5,9 +5,10 @@ import type { Need, Signal, Tally } from './attention-model.js';
 import m from './signal.module.css';
 
 /**
- * How the sidebar draws what a conversation waits on: a hand (or !) when it needs you, a count
- * in your accent when there's news, Claude's soft pulse while it works. One mark per row, at
- * its right edge; see attention-model.ts for which one wins.
+ * How the sidebar draws what a conversation waits on: when it needs you, the row glows amber with
+ * a light sweeping across it and a lit edge on its left (a red ! for conflicts and failing
+ * checks); a count in your accent when there's news; Claude's soft pulse while it works. See
+ * attention-model.ts for which one wins.
  */
 
 const PROBLEMS: ReadonlySet<Need> = new Set(['conflict', 'checks']);
@@ -24,12 +25,15 @@ export function signalClass(signal: Signal, selected: boolean): string | undefin
 export const nameClass = (signal: Signal): string | undefined => (signal.unread > 0 ? m.unreadName : undefined);
 
 function NeedMark({ need }: { need: Need | undefined }) {
-  const problem = isProblem(need);
-  return (
-    <span className={cx(m.mark, problem ? m.markProblem : m.markNeeds)} data-signal="needs" aria-hidden="true">
-      <Icon name={problem ? 'alert' : 'hand'} size={12} />
-    </span>
-  );
+  if (isProblem(need)) {
+    return (
+      <span className={cx(m.mark, m.markProblem)} data-signal="needs" aria-hidden="true">
+        <Icon name="alert" size={12} />
+      </span>
+    );
+  }
+  // A lit edge on the row's left, not one more icon among the dots and counts.
+  return <span className={m.edge} data-signal="needs" aria-hidden="true" />;
 }
 
 /** A conversation's mark. `fallback`: what an idle row shows instead (its git state, say). */
@@ -55,7 +59,7 @@ export function SignalMark({ signal, fallback = null }: { signal: Signal; fallba
 }
 
 /**
- * What a project or folder adds up to: a hand if anything inside needs you, and how many
+ * What a project or folder adds up to: a lit edge if anything inside needs you, and how many
  * conversations have news (in your accent while it's folded, quiet while you can see them).
  */
 export function TallyMark({ tally, folded, fallback = null }: { tally: Tally; folded: boolean; fallback?: ReactNode }) {

@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 
 /**
  * The sidebar tells you which conversations finished or need you, Slack-style: a bold name and
- * a count, a hand while Claude waits on you, a tally on the project, and an Unread section at
+ * a count, a glow while Claude waits on you, a tally on the project, and an Unread section at
  * the top that's only there while something is.
  */
 
@@ -88,7 +88,7 @@ test("Claude's question makes the row need you until it's answered; Unread comes
   await composer(page).press('Enter');
   await expect(page.getByRole('button', { name: /Signed cookies/ })).toBeVisible({ timeout: 15_000 });
 
-  // Away from it, it needs you: the hand, the tint, the tooltip, and the project says so too.
+  // Away from it, it needs you: the lit edge, the glow, the tooltip, and the project says so too.
   await openWorkspace(page, 'add-auth', 'bob-api');
   const hero = row(page, 'new-hero');
   await expect(hero).toHaveAttribute('data-signal-row', 'needs');
@@ -121,4 +121,17 @@ test("Claude's question makes the row need you until it's answered; Unread comes
     await openWorkspace(page, 'add-auth', 'bob-api');
     await expect(unreadSection(page)).toHaveCount(0);
   }
+});
+
+test('the project you are in is lit, and its tools leave with the pointer', async ({ page }) => {
+  await openWorkspace(page, 'add-auth', 'bob-api');
+  const project = projectRow(page, 'bob-api');
+  await expect(project).toHaveAttribute('data-current', 'true');
+  await expect(projectRow(page, 'landing')).not.toHaveAttribute('data-current', 'true');
+  // Its home lights it too.
+  await project.click();
+  await expect(project).toHaveAttribute('data-current', 'true');
+  // Clicked, then the pointer moves away: the row keeps focus, but its tools fold back.
+  await page.mouse.move(600, 400);
+  await expect(project.getByRole('button', { name: 'New chat in bob-api' })).toHaveCSS('opacity', '0');
 });

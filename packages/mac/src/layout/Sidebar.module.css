@@ -72,6 +72,7 @@
 }
 
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -118,6 +119,24 @@
 .projectRow {
   font-weight: 600;
 }
+/* The project you're in (its home, or any of its worktrees and chats): a soft wash of your accent
+   with a faint glow, so the sidebar always says where you are. */
+.currentProject,
+.currentProject:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 12px -5px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+.currentProject.selected {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 14px -4px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+.currentProject .rowIcon {
+  color: var(--accent);
+}
 .projectRow .rowIcon {
   width: auto;
   color: var(--text-3);
@@ -150,8 +169,11 @@
   opacity: 0;
   transition: opacity var(--dur-fast);
 }
+/* Keyboard focus only: a row you clicked keeps focus, and its tools mustn't stay open after the
+   pointer leaves. */
 .row:hover .hoverTools button,
-.row:focus-within .hoverTools button,
+.row:focus-visible .hoverTools button,
+.row:has(:focus-visible) .hoverTools button,
 .hoverTools:has(button[data-state='open']) button {
   width: 22px;
   opacity: 1;
