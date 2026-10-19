@@ -189,17 +189,13 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
                 <SpecDropdown menu={{ kind: 'project', id: p.id }} align="end" extra={extra} hide={ownWay}>
                   <IconButton icon="more" label={`More for ${p.name}`} onClick={(e) => e.stopPropagation()} />
                 </SpecDropdown>
-                <TallyMark
-                  tally={inside}
-                  folded={fold.folded}
-                  fallback={
-                    busy ? (
-                      <span className={side.status}>
-                        <Dot tone="claude" live />
-                      </span>
-                    ) : null
-                  }
-                />
+                {/* Claude at work inside, beside what needs you or what's new (never hidden by them). */}
+                {busy ? (
+                  <span className={side.status} data-busy>
+                    <Dot tone="claude" live />
+                  </span>
+                ) : null}
+                <TallyMark tally={inside} folded={fold.folded} />
               </span>
             </>
           }

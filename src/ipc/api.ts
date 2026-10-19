@@ -47,6 +47,7 @@ export const PrefsPatch = z
     contextMeter: bool,
     autoCompact: bool,
     autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX),
+    scratchFolder: bool,
     subagents: z.enum(['full', 'compact', 'hidden']),
     hiddenButtons: z.array(z.string().max(40)).max(40),
     friendWorktrees: z.enum(['ask', 'off']),
@@ -208,6 +209,8 @@ export const API = {
   'workspaces.selectFile': args(z.number().int().min(0)),
   // Load (or reload) what changed in a workspace without going to it (the Mac app's Changes panel).
   'workspaces.review': args(id),
+  // A workspace's scratch folder (.klaud/scratch/): where it is and its files, newest first. → { root, dir, files: [{ path, size, mtime }] }
+  'workspaces.scratch': args(id),
 
   // ---- runs, scripts, pull requests, models, search, templates
   'workbench.run': args(id),

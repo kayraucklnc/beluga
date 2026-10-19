@@ -685,3 +685,24 @@
   display: flex;
   flex-direction: column;
 }
+
+/* ---- Scratch: .klaud/scratch/, newest first */
+
+.freshDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ago {
+  flex: none;
+  min-width: 28px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.rowOn .ago {
+  color: inherit;
+}

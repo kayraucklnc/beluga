@@ -1,0 +1,238 @@
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import type { Location } from '@klaud/core/store.js';
+import { shareNameOf } from '@klaud/shared/share-names.js';
+import { SCRATCH_DIR } from '@klaud/shared/scratch-dir.js';
+import { formatBytes } from '@klaud/shared/format.js';
+import { Icon, type IconName } from '../../components/Icon.js';
+import { Button, Empty, EmptyActions, IconButton, Segmented, cx } from '../../components/ui.js';
+import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { openWithDefaultApp, revealInFinder } from '../../lib/files.js';
+import { openFocus } from '../../lib/panel.js';
+import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
+import { setPrefs, usePrefs } from '../../lib/prefs.js';
+import { mod } from '../../lib/system.js';
+import { ChangedFileView } from '../../views/ChangedFile.js';
+import { ResizeHandle } from './ResizeHandle.js';
+import { type ScratchEntry, type ScratchKind, fileKind, followed, isFresh, timeAgo } from './scratch-model.js';
+import s from './panel.module.css';
+
+/**
+ * The right panel's Scratch: what Claude saves to the workspace's `.klaud/scratch/` while it works
+ * (screenshots, JSON, logs, notes), newest first and live. Following, the preview shows the
+ * newest file as it lands; pick one to stay on it.
+ */
+
+const POLL_MS = 1200;
+const ICONS: Record<ScratchKind, IconName> = { image: 'image', pdf: 'file', json: 'file', markdown: 'file', text: 'file' };
+
+interface Listing {
+  readonly root: string;
+  readonly dir: string;
+  readonly files: readonly ScratchEntry[];
+}
+
+/** The folder's files, looked at again every moment while the window is in front. */
+function useScratch(wsId: string): Listing | undefined | null {
+  const api = useApi();
+  const [list, setList] = useState<Listing | null>();
+  const sig = useRef('');
+  useEffect(() => {
+    let alive = true;
+    const look = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      api.workspaces.scratch(wsId).then(
+        (res) => {
+          if (!alive) return;
+          const next = res ? { root: res.root, dir: res.dir, files: res.files } : null;
+          const key = next ? next.files.map((f) => `${f.path}:${f.mtime}:${f.size}`).join('|') : 'none';
+          if (key === sig.current && list !== undefined) return;
+          sig.current = key;
+          setList(next);
+        },
+        () => alive && setList(null),
+      );
+    };
+    look();
+    const timer = setInterval(look, POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [wsId]);
+  return list;
+}
+
+/** "now", "12s", "3m": kept current without a new listing. */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+function Preview({ wsId, file, root, onClose }: { wsId: string; file: ScratchEntry; root: string; onClose: () => void }) {
+  const api = useApi();
+  const { client } = useKlaud();
+  const selfId = useApp((st) => st.selfId);
+  const now = useNow();
+  const at: Location = { owner: selfId, share: shareNameOf(wsId), path: file.path };
+  const name = file.path.split('/').pop() ?? file.path;
+  const local = `${root}/${file.path}`;
+  return (
+    <section className={s.preview} aria-label={name}>
+      <div className={s.previewHead}>
+        <Icon name={ICONS[fileKind(file.path)]} size={13} className={s.fileIcon} />
+        <span className={s.previewName} title={file.path}>
+          {name}
+        </span>
+        <span className={s.previewDir}>{timeAgo(file.mtime, Math.max(now, Date.now()))}</span>
+        <span className={s.flex} />
+        <IconButton icon="external" label="Open With Its App" onClick={() => void openWithDefaultApp(client, local)} />
+        <IconButton icon="expand" label="Open in full" keys={`${mod()}↩`} onClick={() => void api.files.open(at).then(() => openFocus('file', wsId))} />
+        <IconButton icon="x" label="Close" keys="Esc" onClick={onClose} />
+      </div>
+      <div className={cx(s.previewBody, s.previewFile, 'selectable')} tabIndex={0}>
+        <ChangedFileView key={file.path} at={at} variant="panel" version={file.mtime} />
+      </div>
+    </section>
+  );
+}
+
+export function ScratchTab({ wsId }: { wsId: string }) {
+  const { client } = useKlaud();
+  const prefs = usePrefs();
+  const on = useApp((st) => st.prefs.scratchFolder);
+  const list = useScratch(wsId);
+  const now = useNow();
+  const [follow, setFollow] = useState(true);
+  const [picked, setPicked] = useState<string>();
+  const [closed, setClosed] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const files = list?.files ?? [];
+  const shown = closed ? undefined : followed(files, follow, picked);
+  const file = files.find((f) => f.path === shown);
+  const root = list?.root ?? '';
+
+  // Following: the newest file stays in sight as new ones arrive.
+  useEffect(() => {
+    if (follow) listRef.current?.scrollTo({ top: 0 });
+  }, [follow, files[0]?.path, files[0]?.mtime]);
+
+  const pick = (path: string): void => {
+    setClosed(false);
+    setPicked(path);
+    setFollow(path === files[0]?.path && follow);
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    const i = files.findIndex((f) => f.path === shown);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const next = files[Math.max(0, Math.min(files.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+      if (next) {
+        pick(next.path);
+        setFollow(false);
+      }
+    } else if (e.key === 'Escape' && shown) {
+      e.preventDefault();
+      e.stopPropagation();
+      setClosed(true);
+    }
+  };
+
+  if (list === undefined) return <div className={s.dimPad}>Looking in the scratch folder…</div>;
+  if (list === null) return <Empty icon="alert" title="No folder to look in" detail="This workspace’s folder is missing." />;
+  if (!files.length) {
+    return (
+      <div className={s.emptyTab}>
+        <Empty
+          icon="pulse"
+          title="Nothing here yet"
+          detail={on ? 'While Claude works, the screenshots, JSON, logs and notes it saves to its scratch folder (.klaud/scratch/) show up here, newest first.' : 'Claude isn’t given a scratch folder (Settings › Claude). Files you put in .klaud/scratch/ still show here.'}
+          action={
+            <EmptyActions>
+              <Button icon="folder" title={list.dir} onClick={() => void revealInFinder(client, list.dir)}>
+                Show in Finder
+              </Button>
+            </EmptyActions>
+          }
+        />
+      </div>
+    );
+  }
+  const split = clampShare(prefs.panelSplit, SPLIT_MIN, SPLIT_MAX);
+  return (
+    <div ref={box} className={s.stack}>
+      <div className={s.top} style={file ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined}>
+        <div className={s.summary}>
+          <div className={s.summaryRow}>
+            <span className={s.summaryTitle}>
+              {files.length} file{files.length === 1 ? '' : 's'}
+            </span>
+            <span className={s.dim}>{SCRATCH_DIR}</span>
+            <span className={s.flex} />
+            <Segmented
+              label="Preview"
+              value={follow ? 'follow' : 'pinned'}
+              onChange={(v) => {
+                setFollow(v === 'follow');
+                setClosed(false);
+              }}
+              options={[
+                { value: 'follow', label: 'Latest', hint: 'Show each new file as it’s written' },
+                { value: 'pinned', label: 'Picked', hint: 'Stay on the file you picked' },
+              ]}
+            />
+            <IconButton icon="folder" label="Show in Finder" onClick={() => void revealInFinder(client, list.dir)} />
+          </div>
+        </div>
+        <div ref={listRef} className={s.list} role="listbox" aria-label="Scratch files" tabIndex={0} onKeyDown={onKey}>
+          {files.map((f) => {
+            const name = f.path.split('/').pop() ?? f.path;
+            const dir = f.path.slice(SCRATCH_DIR.length + 1, f.path.length - name.length).replace(/\/$/, '');
+            const sel = f.path === shown;
+            return (
+              <div
+                key={f.path}
+                role="option"
+                aria-selected={sel}
+                className={cx(s.row, sel && s.rowOn)}
+                title={f.path}
+                onClick={() => {
+                  pick(f.path);
+                  if (f.path !== files[0]?.path) setFollow(false);
+                }}
+              >
+                <Icon name={ICONS[fileKind(f.path)]} size={13} className={s.fileIcon} />
+                <span className={s.rowName}>
+                  {name}
+                  {dir ? <span className={s.rowDir}>{dir}</span> : null}
+                </span>
+                {isFresh(f.mtime, Math.max(now, Date.now())) ? <span className={s.freshDot} aria-label="new" /> : null}
+                <span className={s.size}>{f.size < 1024 ? `${f.size} B` : formatBytes(f.size)}</span>
+                <span className={s.ago}>{timeAgo(f.mtime, Math.max(now, Date.now()))}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {file ? (
+        <>
+          <ResizeHandle
+            axis="y"
+            label="Resize the list"
+            onMove={(y) => {
+              const r = box.current?.getBoundingClientRect();
+              if (r) setPrefs({ panelSplit: clampShare((y - r.top) / r.height, SPLIT_MIN, SPLIT_MAX) });
+            }}
+            onReset={() => setPrefs({ panelSplit: SPLIT_DEFAULT })}
+            onStep={(dir) => setPrefs({ panelSplit: clampShare(split - dir * 0.04, SPLIT_MIN, SPLIT_MAX) })}
+          />
+          <Preview wsId={wsId} file={file} root={root} onClose={() => setClosed(true)} />
+        </>
+      ) : null}
+    </div>
+  );
+}

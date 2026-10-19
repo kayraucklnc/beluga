@@ -53,7 +53,7 @@ const workspaceOf = (state: PanelState): Workspace | undefined => (state.view.ki
 /** Uncommitted files or commits ahead of its base. */
 export const hasChanges = (ws: Workspace | undefined): boolean => (ws?.status?.changed ?? 0) + (ws?.status?.ahead ?? 0) > 0;
 
-export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind);
+export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind).filter((t) => t !== 'scratch' || getPrefs().scratchTab);
 
 /** The tab showing (or that would show, when the panel is hidden) for what's on screen. */
 export function currentTab(state: PanelState, prefs: UiPrefs = getPrefs()): PanelTab {

@@ -9,7 +9,7 @@ import { useImageUrl } from '../../components/markdown/MdImage.js';
 import { MAX_FILE_BYTES } from '@klaud/protocol.js';
 import { Bitmap } from '../FilesView.js';
 import { isImageFile } from '../../components/markdown/md-paths.js';
-import { BINARY_TEXT, LARGE_MARKDOWN, type ReaderMode, isMarkdownFile, isPdfFile, langOf } from './reader-model.js';
+import { BINARY_TEXT, LARGE_MARKDOWN, prettyJson, type ReaderMode, isMarkdownFile, isPdfFile, langOf } from './reader-model.js';
 import { PdfView } from './PdfView.js';
 import r from './reader.module.css';
 
@@ -36,8 +36,8 @@ const ZOOMS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
  * zoom in and out, or double-click for actual size. The original file is shown (sharp at any
  * zoom), not the small preview klaud decoded for the terminal.
  */
-function ImageView({ viewer, controls }: { viewer: ViewerState; controls: boolean }) {
-  const { url, error } = useImageUrl({ owner: viewer.owner, share: viewer.share, path: viewer.path });
+function ImageView({ viewer, controls, version }: { viewer: ViewerState; controls: boolean; version?: string | number }) {
+  const { url, error } = useImageUrl({ owner: viewer.owner, share: viewer.share, path: viewer.path }, version);
   const [zoom, setZoom] = useState<'fit' | number>('fit');
   const [natural, setNatural] = useState<{ w: number; h: number }>();
   const stage = useRef<HTMLDivElement>(null);
@@ -99,7 +99,7 @@ export interface FileContentProps {
 export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEditor, onSaveCopy, nav, version }: FileContentProps) {
   // PDFs and pictures are read as themselves (their bytes), whatever the text read made of them.
   if (isPdfFile(viewer.path)) return <PdfView at={{ owner: viewer.owner, share: viewer.share, path: viewer.path }} controls={variant !== 'panel'} version={version} />;
-  if (viewer.image || (isImageFile(viewer.path) && !viewer.error)) return <ImageView viewer={viewer} controls={variant !== 'panel'} />;
+  if (viewer.image || (isImageFile(viewer.path) && !viewer.error)) return <ImageView viewer={viewer} controls={variant !== 'panel'} {...(typeof version === 'string' || typeof version === 'number' ? { version } : {})} />;
   if (viewer.loading && !viewer.content) return <div className={r.opening}>Opening…</div>;
   if (viewer.error) return <Empty icon="alert" title="Can’t open this file" detail={viewer.error} />;
   const escape = onOpenInEditor ? (
@@ -116,6 +116,7 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
   }
   const markdown = isMarkdownFile(viewer.path);
   const large = markdown && viewer.content.length > LARGE_MARKDOWN;
+  const json = mode === 'rendered' ? prettyJson(viewer.path, viewer.content) : undefined;
   return (
     <div className={cx(r.content, r[`v_${variant}`])}>
       {viewer.truncated ? <Notice action={escape}>Only the first {formatBytes(MAX_FILE_BYTES)} of this file is shown.</Notice> : null}
@@ -134,7 +135,7 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
         <MarkdownDoc text={viewer.content} at={viewer} variant={variant} {...(nav ? { nav } : {})} />
       ) : (
         <div className={r.codeFile}>
-          <CodeLines text={viewer.content} lang={markdown ? 'markdown' : langOf(viewer.path)} numbers wrap={wrap || variant === 'panel'} />
+          <CodeLines text={json ?? viewer.content} lang={markdown ? 'markdown' : langOf(viewer.path)} numbers wrap={wrap || variant === 'panel'} />
         </div>
       )}
     </div>

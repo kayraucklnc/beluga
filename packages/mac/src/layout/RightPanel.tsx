@@ -14,10 +14,11 @@ import { ChangesTab } from './panel/ChangesTab.js';
 import { FilesTab } from './panel/FilesTab.js';
 import { TerminalPane } from './panel/TerminalPane.js';
 import { HistoryTab } from './panel/HistoryTab.js';
+import { ScratchTab } from './panel/ScratchTab.js';
 import s from './panel/panel.module.css';
 
 
-const ICONS: Record<PanelTab, IconName> = { changes: 'diff', files: 'folder', terminal: 'terminal', info: 'inspector', history: 'clock' };
+const ICONS: Record<PanelTab, IconName> = { changes: 'diff', files: 'folder', terminal: 'terminal', info: 'inspector', history: 'clock', scratch: 'pulse' };
 const SLIDE_MS = 200;
 const STEP = 24;
 
@@ -99,6 +100,8 @@ const Body = memo(function Body({ tab, wsId, projectId }: { tab: PanelTab; wsId:
           <Inspector />
         </div>
       );
+    case 'scratch':
+      return wsId ? <ScratchTab key={wsId} wsId={wsId} /> : null;
     case 'history': {
       const target = wsId ?? projectId;
       return target ? <HistoryTab key={target} target={target} /> : null;

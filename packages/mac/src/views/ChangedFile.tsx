@@ -46,9 +46,8 @@ export function useChangeLocation(path: string | undefined): Location | undefine
 }
 
 /** The file's text, read again whenever the changes are (Claude edited it, a commit). */
-function useText(at: Location, skip: boolean): { content?: string; truncated?: boolean; error?: string } {
+function useText(at: Location, skip: boolean, version: unknown): { content?: string; truncated?: boolean; error?: string } {
   const api = useApi();
-  const version = useApp((st) => st.review?.data);
   const key = `${at.owner}\0${at.share}\0${at.path}`;
   const [state, setState] = useState<{ key: string; content?: string; truncated?: boolean; error?: string }>();
   useEffect(() => {
@@ -65,11 +64,12 @@ function useText(at: Location, skip: boolean): { content?: string; truncated?: b
   return state?.key === key ? state : {};
 }
 
-export function ChangedFileView({ at, variant, wrap = true }: { at: Location; variant: DocVariant; wrap?: boolean }) {
+export function ChangedFileView({ at, variant, wrap = true, version: own }: { at: Location; variant: DocVariant; wrap?: boolean; version?: string | number }) {
   const visual = isVisualFile(at.path);
-  const text = useText(at, visual);
-  // A PDF is read again when the changes are (it may have been rewritten).
-  const version = useApp((st) => st.review?.data);
+  // Read again when the changes are (or, given one, its own version: when it was last written).
+  const reviewed = useApp((st) => st.review?.data);
+  const version = own ?? reviewed;
+  const text = useText(at, visual, version);
   const viewer: ViewerState = {
     ...at,
     content: text.content ?? '',

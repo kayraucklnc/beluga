@@ -18,6 +18,16 @@ export const isPdfFile = (path: string): boolean => /\.pdf$/i.test(path);
 /** Shown as itself (a picture, pages), never as text. */
 export const isVisualFile = (path: string): boolean => isImageFile(path) || isPdfFile(path);
 
+/** JSON laid out with two-space indents (a one-line API response becomes readable); undefined when it isn't JSON. */
+export function prettyJson(path: string, content: string): string | undefined {
+  if (!/\.json$/i.test(path) || content.length > 2_000_000) return undefined;
+  try {
+    return JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    return undefined;
+  }
+}
+
 /** What klaud reads for a file that isn't text (a null byte in it). */
 export const BINARY_TEXT = '[binary file]';
 

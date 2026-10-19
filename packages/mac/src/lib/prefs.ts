@@ -51,6 +51,10 @@ export interface UiPrefs {
   readonly readerWrap: boolean;
   /** A changed file shows its diff, or the file as itself (Markdown formatted). Pictures and PDFs always as themselves. */
   readonly changeLook: 'diff' | 'file';
+  /** The panel has a Scratch tab: the workspace's .klaud/scratch/ folder, live. */
+  readonly scratchTab: boolean;
+  /** The icon you picked for each sidebar group (by name; unset: a folder). */
+  readonly groupIcons: Readonly<Record<string, string>>;
 }
 
 export const ACCENTS = {
@@ -95,6 +99,8 @@ export const DEFAULT_PREFS: UiPrefs = {
   termScrollback: 5000,
   readerWrap: false,
   changeLook: 'diff',
+  scratchTab: true,
+  groupIcons: {},
 };
 
 const KEY = 'klaud.prefs.v1';
