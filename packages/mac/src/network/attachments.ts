@@ -18,8 +18,8 @@ export interface Pending {
   readonly thumb?: string;
 }
 
-/** Pasted bytes ride one message to the daemon (8 MB, as base64): bigger files are dragged in or picked. */
-export const MAX_PASTE_BYTES = 5_500_000;
+/** Pasted bytes go to the daemon in parts of this size (any total size). */
+export const PART_BYTES = 4 * 1024 * 1024;
 export const MAX_ATTACHMENTS = 20;
 
 const lists = new Map<string, readonly Pending[]>();
@@ -87,9 +87,16 @@ export async function addBlobs(client: SocketClient, id: string, files: readonly
   await Promise.all(
     keys.map(async (key, i) => {
       const f = files[i]!;
-      if (f.size > MAX_PASTE_BYTES) return update(id, key, { state: 'failed', error: 'Too big to paste: drag it in from Finder or use the paper clip' });
+      const name = lists.get(id)?.find((p) => p.key === key)?.name ?? 'file';
       try {
-        const file = await client.api.network['files.addData'](lists.get(id)?.find((p) => p.key === key)?.name ?? 'file', await base64(f));
+        // In parts, so any size goes (each part is one message to the daemon).
+        const upload = `up-${key}-${Date.now().toString(36)}`;
+        let file: ChatFile | undefined;
+        for (let at = 0; at < Math.max(f.size, 1); at += PART_BYTES) {
+          const last = at + PART_BYTES >= f.size;
+          file = await client.api.network['files.addData'](name, await base64(f.slice(at, at + PART_BYTES)), { id: upload, last });
+        }
+        if (!file) throw new Error('It didn’t arrive whole');
         update(id, key, { state: 'ready', file, name: file.name });
       } catch (err) {
         update(id, key, { state: 'failed', error: message(err) });

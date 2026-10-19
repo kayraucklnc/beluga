@@ -61,6 +61,9 @@ describe('files in chats', () => {
 
     const [file] = await a.files.share([src]);
     expect(file).toMatchObject({ name: 'notes.bin', size: bytes.length });
+    // Pasted media of any size comes in parts.
+    expect(await a.files.sharePart('clip.mov', Buffer.from('part1-'), { id: 'upload-1x', last: false })).toBeUndefined();
+    expect(await a.files.sharePart('clip.mov', Buffer.from('part2'), { id: 'upload-1x', last: true })).toMatchObject({ name: 'clip.mov', size: 11, mime: 'video/quicktime' });
     // Pasted bytes keep the name they were given.
     expect(await a.files.shareData('Pasted image.png', Buffer.from('png!'))).toMatchObject({ name: 'Pasted image.png', size: 4, mime: 'image/png', image: true });
     ann.mesh.sendDm(id(bob), 'here you go', { files: [file!] });

@@ -72,7 +72,7 @@ export class FileStore {
     if (!stat) throw new Error(`${path.basename(file)} isn’t there any more`);
     if (stat.isDirectory()) throw new Error(`${path.basename(file)} is a folder: compress it first (right-click › Compress in Finder)`);
     if (!stat.isFile()) throw new Error(`${path.basename(file)} can’t be sent`);
-    if (stat.size > MAX_CHAT_FILE) throw new Error(`${path.basename(file)} is over 4 GB`);
+    if (stat.size > MAX_CHAT_FILE) throw new Error(`${path.basename(file)} is too big to send`);
     const sha = await sha256File(file);
     const name = cleanFileName(as ?? path.basename(file));
     if (!this.here.has(sha)) {
@@ -85,6 +85,24 @@ export class FileStore {
       this.here.set(sha, target);
     }
     return { sha, name, size: stat.size, ...kindOf(name) };
+  }
+
+  /**
+   * Bytes without a file behind them (pasted media), any size: they come in parts (`part`), each
+   * appended to `incoming/<id>`; the last one takes the whole file in.
+   */
+  async addPart(name: string, data: Buffer, part: { id: string; last: boolean }): Promise<ChatFile | undefined> {
+    if (!/^[\w-]{8,64}$/.test(part.id)) throw new Error('Not an upload id');
+    const dir = path.join(this.root, 'incoming');
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+    const tmp = path.join(dir, part.id);
+    await fs.appendFile(tmp, data, { mode: 0o600 });
+    if (!part.last) return undefined;
+    try {
+      return await this.add(tmp, name);
+    } finally {
+      await fs.rm(tmp, { force: true });
+    }
   }
 
   /** Bytes pasted or dropped without a file behind them (a screenshot from the clipboard). */

@@ -10,8 +10,8 @@ import type { ChatExtras, ChatFile } from './views.js';
  * (`claude`). Older Macs read only `text` and ignore the rest.
  */
 
-/** The biggest file a chat can share (it's pulled in pieces, straight from Mac to Mac). */
-export const MAX_CHAT_FILE = 4 * 1024 ** 3;
+/** No size limit on chat files (they're pulled in pieces, straight from Mac to Mac): only what a number can say. */
+export const MAX_CHAT_FILE = Number.MAX_SAFE_INTEGER;
 /** Files on one message. */
 export const MAX_FILES = 20;
 
@@ -55,17 +55,23 @@ export function parseExtras(raw: unknown): ChatExtras | undefined {
 /** The fields to spread into a message or a view: nothing when there are no extras. */
 export const extrasFields = (x: ChatExtras | undefined): ChatExtras => (x ? { ...(x.files ? { files: x.files } : {}), ...(x.ask ? { ask: x.ask } : {}), ...(x.claude ? { claude: x.claude } : {}) } : {});
 
-/** A message needs words, files, or both. */
+/** A message needs words, files, or a call for Claudes (who then read the conversation and answer it). */
 export function checkMessage(text: string, extras: ChatExtras | undefined, maxText: number): void {
   if (text.length > maxText) throw new Error(`Messages are at most ${maxText} characters`);
-  if (!text.trim() && !extras?.files?.length) throw new Error('Write something or add a file');
+  if (!text.trim() && !extras?.files?.length && !extras?.ask) throw new Error('Write something or add a file');
 }
+
+/** What a direct message with no words says to Macs that need some text (they drop it otherwise). */
+export const ASK_NOTE = '✳ Asked Claude to read the conversation';
 
 /**
  * What a direct message with only files says to Macs that don't know about files (they need some
  * text): "📎 deck.pdf". Newer Macs see the files and drop the note.
  */
 export const filesNote = (files: ReadonlyArray<{ readonly name: string }>): string => `📎 ${files.map((f) => f.name).join(', ')}`.slice(0, 500);
+
+/** The text a wordless direct message carries on the wire (see filesNote, ASK_NOTE). */
+export const wireNote = (x: ChatExtras | undefined): string => (x?.files?.length ? filesNote(x.files) : x?.ask ? ASK_NOTE : '');
 
 /** Does this call for Claudes include `peerId`'s? */
 export const asks = (x: ChatExtras | undefined, peerId: string): boolean => Boolean(x?.ask && (x.ask.to === 'all' || x.ask.to.includes(peerId)));

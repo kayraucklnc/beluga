@@ -114,7 +114,8 @@ export function NetComposer({ id, placeholder, people, me, send }: { id: string;
   const over = text.length > MAX;
   const adding = pending.some((p) => p.state === 'adding');
   const ready = pending.filter((p) => p.state === 'ready');
-  const canSend = !over && !adding && (Boolean(text.trim()) || ready.length > 0);
+  // Asking a Claude needs no words: it reads the conversation and answers what's open.
+  const canSend = !over && !adding && (Boolean(text.trim()) || ready.length > 0 || Boolean(ask && me));
   const submit = (): void => {
     if (!canSend) return;
     const body = text.trim();
@@ -149,7 +150,7 @@ export function NetComposer({ id, placeholder, people, me, send }: { id: string;
           className={`${c.input} selectable`}
           rows={1}
           value={text}
-          placeholder={ask ? `${askLabel(ask)}…` : placeholder}
+          placeholder={ask ? `${askLabel(ask)}: write a question, or just send and it reads the conversation` : placeholder}
           aria-label={placeholder}
           spellCheck
           onChange={(e) => setText(e.target.value)}

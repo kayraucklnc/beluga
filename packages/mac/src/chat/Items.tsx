@@ -4,7 +4,7 @@ import { isRunning } from '@klaud/ui/format.js';
 import { formatDuration } from '@klaud/shared/text.js';
 import { splitImages } from '@klaud/shared/attachment-links.js';
 import { Icon } from '../components/Icon.js';
-import { Avatar, Button, Dot, cx } from '../components/ui.js';
+import { Avatar, Button, Dot, claudeColor, cx } from '../components/ui.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { stopClaude } from '../lib/commands.js';
 import { copyText } from '../lib/copy.js';
@@ -61,7 +61,9 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
         <div className={s.body}>
           {continued ? null : (
             <div className={s.meta}>
-              <span className={cx(s.author, item.byAgent && s.claudeName)}>{mine && !item.byAgent ? 'You' : item.name}</span>
+              <span className={cx(s.author, item.byAgent && s.claudeName)} style={item.byAgent && claudeColor(item.from) ? { color: claudeColor(item.from) } : undefined}>
+                {mine && !item.byAgent ? 'You' : item.name}
+              </span>
               {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
             </div>
           )}
@@ -128,7 +130,9 @@ export const AgentCard = memo(function AgentCard({ item }: { item: AgentItem }) 
         </div>
         <div className={s.body}>
           <div className={s.meta}>
-            <span className={cx(s.author, s.claudeName)}>{mine ? 'Claude' : `${item.ownerName}'s Claude`}</span>
+            <span className={cx(s.author, s.claudeName)} style={claudeColor(item.owner) ? { color: claudeColor(item.owner) } : undefined}>
+              {mine ? 'Claude' : `${item.ownerName}'s Claude`}
+            </span>
             {forSomeoneElse ? <span className={s.time}>for {item.requesterName}</span> : null}
             {!running && item.text && item.status === 'done' ? (
               <span className={s.hoverActions}>

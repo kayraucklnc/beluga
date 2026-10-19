@@ -103,6 +103,15 @@ export class ChatFiles {
     return f;
   }
 
+  /** One part of pasted bytes; → the file once the last part is in. */
+  async sharePart(name: string, data: Buffer, part: { id: string; last: boolean }): Promise<ChatFile | undefined> {
+    const f = await this.store.addPart(name, data, part);
+    if (!f) return undefined;
+    this.setState(f.sha, { state: 'here', path: this.store.pathOf(f.sha)!, size: f.size });
+    this.flush();
+    return f;
+  }
+
   /** Get a file shared in a conversation (now, or when its turn comes). */
   download(sha: string, conversation?: string): void {
     if (this.store.has(sha) || this.pulls.has(sha) || this.queue.some((q) => q.sha === sha)) return;

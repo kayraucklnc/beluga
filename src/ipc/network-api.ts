@@ -54,8 +54,9 @@ export const NETWORK_API = {
   'network.post': { args: z.tuple([conversation, Post]) },
   // Take files in to share them (checksummed and cloned; folders are refused): → what a message says about each.
   'network.files.add': { args: z.tuple([z.array(z.string().min(1).max(4096)).min(1).max(20)]) },
-  // Bytes without a file behind them (a pasted picture), base64 (it rides one daemon frame, 8 MB): → the file.
-  'network.files.addData': { args: z.tuple([z.string().min(1).max(200), z.string().max(7_600_000)]) },
+  // Bytes without a file behind them (pasted media), base64, in parts of up to 4 MB (`part`: the upload's id, and
+  // whether this is the last part; without it, the whole file in one): → the file once the last part is in.
+  'network.files.addData': { args: z.tuple([z.string().min(1).max(200), z.string().max(7_600_000), z.object({ id: z.string().regex(/^[\w-]{8,64}$/), last: z.boolean() }).optional()]) },
   // Get a file shared in a conversation (big ones only come when asked).
   'network.files.download': { args: z.tuple([sha, conversation.optional()]) },
   'network.files.cancel': { args: z.tuple([sha]) },

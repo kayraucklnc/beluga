@@ -5,7 +5,7 @@ import type DHT from 'hyperdht';
 import type { BootstrapNode } from 'hyperdht';
 import type { Identity } from '../crypto.js';
 import { DmBook } from './dms.js';
-import { checkMessage, filesNote, parseExtras } from './extras.js';
+import { checkMessage, parseExtras, wireNote } from './extras.js';
 import { readJson, writeJson } from './files.js';
 import { FriendBook } from './friends.js';
 import { MAX_TEXT } from './groups/engine.js';
@@ -568,8 +568,8 @@ export class Mesh extends EventEmitter<MeshEvents> {
       case 'dm': {
         if (!this.friends.has(from)) return;
         const x = parseExtras(msg.x);
-        if (!msg.text.trim() && !x?.files?.length) return;
-        const text = x?.files?.length && msg.text === filesNote(x.files) ? '' : msg.text;
+        if (!msg.text.trim() && !x?.files?.length && !x?.ask) return;
+        const text = x && msg.text === wireNote(x) ? '' : msg.text;
         const dm = { id: msg.id, from, to: this.peerId, text, ts: msg.ts, ...(x ? { x } : {}) };
         if (this.dms.receive(dm)) {
           this.emit('message', dmView(this.ctx, from, dm, this.dms.status(from)));
@@ -631,7 +631,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
 }
 
 /** A direct message as it goes over the link. */
-const dmFrame = (dm: { id: string; text: string; ts: number; x?: ChatExtras }): LinkMessage => ({ t: 'dm', id: dm.id, text: dm.text.trim() || !dm.x?.files?.length ? dm.text : filesNote(dm.x.files), ts: dm.ts, ...(dm.x ? { x: dm.x } : {}) });
+const dmFrame = (dm: { id: string; text: string; ts: number; x?: ChatExtras }): LinkMessage => ({ t: 'dm', id: dm.id, text: dm.text.trim() ? dm.text : wireNote(dm.x) || dm.text, ts: dm.ts, ...(dm.x ? { x: dm.x } : {}) });
 
 /** A page of a conversation: the `limit` messages before `before` (default: the latest). */
 function page(messages: readonly MessageView[], opts: { before?: number; limit?: number }): MessageView[] {

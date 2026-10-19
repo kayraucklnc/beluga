@@ -150,6 +150,9 @@ bytes travel separately), `ask: { to: 'all' | peerIds }` calls Claudes in, `clau
 answer to message `for`. Older Macs read only `text`. Names are cleaned (no folders, control or bidi
 characters); malformed extras are dropped.
 
+Each person's Claude is drawn in that person's color (its mark and its name), here and in rooms, so a
+conversation with several Claudes reads as who's who.
+
 **Channels.** Groups are shown as channels, as tabs above the conversation (`chatTabs` in the window's
 preferences). Your **main channel** ("All Friends" to you, "kay’s friends" to the others) is a group with all
 your friends, made the first time you open it (nobody gets a group they didn't expect before that); every
@@ -157,8 +160,8 @@ friend you add later joins it (you're its admin). Its id is `mainChannel` in set
 
 **Files.** Attaching a file takes it into `~/.klaud/chat-files/<sha>/<name>` (an APFS clone: instant, no space;
 a copy elsewhere), so Send is instant and later edits to the original don't change what friends get. Folders
-are refused (compress them first); 4 GB at most, 20 per message; pasted bytes 5.5 MB (they ride one daemon
-frame). Friends pull a file straight from a Mac that has it over the same Noise links as messages:
+are refused (compress them first); there's no size limit, 20 files per message; pasted media goes to the daemon
+in 4 MB parts. Friends pull a file straight from a Mac that has it over the same Noise links as messages:
 `f_get { rid, sha, off, len }` → `f_data { rid, off, d }` (base64, 256 KB pieces) or `f_err`, with 12 pieces
 in flight. Any Mac that has the file serves it, but only to someone in a conversation it was shared in (who
 isn't gets the same "not here" as for a file that isn't there); if the one asked stops answering, the rest
@@ -173,7 +176,9 @@ other times they count like anything else. On a local link a 128 MB file takes a
 with only files carries "📎 name" as its text for Macs that don't know about files yet.
 
 **Claudes, only when asked.** Nobody's Claude reads along. The Ask Claude menu under the message box asks
-your Claude, everyone's, or one person's, for that one message. Each Mac whose owner's Claude was asked
+your Claude, everyone's, or one person's, for that one message. The message may have no words: the Claudes
+then read the conversation and answer what's being discussed (older Macs get "✳ Asked Claude to read the
+conversation" as its text). Each Mac whose owner's Claude was asked
 answers on that owner's Claude login: one turn, no tools, no saved session (`AgentBackend.answerChat`),
 reading the conversation as every member's Mac holds it (the last 60 messages, 30 000 characters, with
 who wrote what), the ask's text files (200 KB each, 120 000 characters in all) and pictures (4, 3.75 MB

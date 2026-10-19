@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 import type { FriendView, GroupView, MessageView } from '@klaud/net/mesh/views.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
-import { Avatar, Button, Empty, cx } from '../components/ui.js';
+import { Avatar, Button, Empty, claudeColor, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
@@ -66,7 +66,9 @@ const Message = memo(function Message({ m, continued, dm, last, resend, me, name
         <div className={chat.body} title={fullTime(m.ts)}>
           {continued ? null : (
             <div className={chat.meta}>
-              <span className={cx(chat.author, m.claude && s.claudeAuthor)}>{authorLabel(m)}</span>
+              <span className={cx(chat.author, m.claude && s.claudeAuthor)} style={m.claude ? { color: claudeColor(m.mine && me ? me.peerId : m.from) } : undefined}>
+                {authorLabel(m)}
+              </span>
               {m.claude ? <span className={s.claudeTag}>on {m.mine ? 'your' : `${m.name}’s`} Mac</span> : null}
               {prefs.timestamps ? <span className={chat.time}>{time(m.ts)}</span> : null}
             </div>

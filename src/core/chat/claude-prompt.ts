@@ -120,7 +120,7 @@ export function userPrompt(opts: { history: readonly string[]; ask: MessageView;
   if (withText.length) parts.push(`Files attached to the message:\n${withText.map((f) => `<file name="${fence(f.file.name).replace(/"/g, "'")}">\n${fence(f.text ?? '')}\n</file>`).join('\n')}`);
   const missing = opts.files.filter((f) => f.missing);
   if (missing.length) parts.push(`Attached but not readable here: ${missing.map((f) => `${f.file.name} (${f.missing})`).join(', ')}.`);
-  parts.push(`The message to answer, from ${opts.asker}:\n<message>\n${fence(opts.ask.text.trim()) || '(no text: just the attached files)'}\n</message>`);
+  parts.push(`The message to answer, from ${opts.asker}:\n<message>\n${fence(opts.ask.text.trim()) || (opts.files.length ? '(no text: just the attached files)' : '(no text: they asked you to read the conversation above and answer what is being discussed or still open)')}\n</message>`);
   if (opts.since.length) parts.push(`Written since (other Claudes may have answered already):\n<chat>\n${opts.since.map(fence).join('\n')}\n</chat>`);
   return parts.join('\n\n');
 }

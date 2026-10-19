@@ -143,6 +143,20 @@ describe('Claudes in chats', () => {
     b.files.stop();
   });
 
+  it('an ask with no words: each Claude reads the conversation and answers what’s open', async () => {
+    const [ann, bob] = await Promise.all([net.add('ann6'), net.add('bob6')]);
+    await befriend(ann, bob);
+    const b = rig(bob);
+    ann.mesh.sendDm(id(bob), 'Which day works for the release, Thursday or Friday?');
+    const ask = ann.mesh.sendDm(id(bob), '', { ask: { to: [id(bob)] } });
+    await settle(() => answers(ann, `dm:${id(bob)}`, ask.id).length === 1);
+    // It arrived with no words (older Macs got a note instead), and Claude read what came before.
+    expect(bob.mesh.dmHistory(id(ann)).find((m) => m.id === ask.id)?.text).toBe('');
+    expect(b.asked[0]!.prompt).toContain('Thursday or Friday');
+    expect(b.asked[0]!.prompt).toContain('read the conversation above');
+    b.stop();
+  });
+
   it('read the ask’s files: text inline, pictures as images', async () => {
     const [ann, bob] = await Promise.all([net.add('ann3'), net.add('bob3')]);
     await befriend(ann, bob);

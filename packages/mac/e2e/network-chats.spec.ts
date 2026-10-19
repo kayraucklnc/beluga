@@ -70,6 +70,12 @@ test('Claude answers only when asked: everyone’s Claude answers from their own
   await expect(log.getByText('mia’s Claude', { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(log.getByText('Your Claude', { exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(log.locator('[data-claude="true"]')).toHaveCount(3);
+
+  // No words needed: your Claude reads the conversation and answers.
+  await page.getByRole('button', { name: 'Ask Claude' }).click();
+  await page.getByRole('menuitem', { name: /Ask Your Claude/ }).click();
+  await page.getByRole('button', { name: 'Send and asking your claude' }).click();
+  await expect(log.locator('[data-claude="true"]')).toHaveCount(4, { timeout: 20_000 });
   await shot(page, 'chat-claudes');
 });
 
