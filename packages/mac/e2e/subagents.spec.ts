@@ -32,9 +32,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('a sub-agent shows under what started it, as a robot, not as a worktree', async ({ page }) => {
-  const row = sidebar(page).locator('[title$="/bob-api"]').first();
+  // The demo's projects sit side by side; a project row's tooltip is its folder (until it has news, so take either).
+  const row = sidebar(page).locator('[title$="/bob-api"], [title$="/landing"]').first();
   await expect(row).toBeVisible();
-  root = (await row.getAttribute('title'))!;
+  root = path.join(path.dirname((await row.getAttribute('title'))!), 'bob-api');
   const worktree = path.join(root, '.claude', 'worktrees', `agent-${AGENT}`);
   const folder = path.join(process.env.KLAUD_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
   const agents = path.join(folder, SID, 'subagents');
