@@ -56,7 +56,7 @@ function repo(files: Record<string, string> = {}): string {
   return dir;
 }
 
-async function solo(dir: string, opts: { findPr?: (d: string, b: string) => Promise<PullRequest | undefined>; script?: (i: AgentRunInput) => Promise<string> } = {}) {
+async function solo(dir: string, opts: { findPr?: (d: string, b: string) => Promise<PullRequest | undefined>; script?: (i: AgentRunInput) => Promise<string>; fixSetup?: AgentBackend['fixSetup'] } = {}) {
   const store = new Store(initialState('test', 'ask'));
   const client = new PeerClient({ url: `ws://127.0.0.1:${hub.port}`, keys, profile: { name: 'kay', shares: [], agent: true }, reconnect: false });
   const wsStore = new WorkspaceStore(path.join(base, 'home'));
@@ -86,6 +86,7 @@ async function solo(dir: string, opts: { findPr?: (d: string, b: string) => Prom
         input.onEvent('usage', JSON.stringify({ input: 1000, output: 200, cacheRead: 5000, cacheWrite: 300, cost: 0.05, session: 's1' }));
         return opts.script ? opts.script(input) : 'done';
       },
+      ...(opts.fixSetup ? { fixSetup: opts.fixSetup } : {}),
     }),
   });
   const screen = attach(session);
@@ -140,6 +141,37 @@ describe('setup and run scripts', () => {
     kay.session.setPrefs({ autoSetup: false });
     const quiet = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'quiet');
     expect(kay.state().setup[quiet!.id]).toBeUndefined();
+  });
+
+  it('skips an install that has nothing to install, and remembers', async () => {
+    hub = await startHub({ keys });
+    const dir = repo();
+    const kay = await solo(dir);
+    const id = projectOf(kay.workspaces).id;
+    kay.bench.setScript(id, 'setup', 'yarn');
+    await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.command === 'yarn', 4000);
+    const ws = await kay.session.workspaces!.newWorktree(id, 'plain');
+    await waitFor(() => !projectOf(kay.workspaces).scripts?.setup, 4000);
+    expect(kay.state().setup[ws!.id]).toBeUndefined();
+    expect(terminals.get(setupId(ws!.id))).toBeUndefined();
+    // Setting one yourself again wins over what was learned.
+    kay.bench.setScript(id, 'setup', 'make');
+    await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.command === 'make', 4000);
+  });
+
+  it('when setup fails, Claude works out the right one: it runs now and next time', async () => {
+    hub = await startHub({ keys });
+    const dir = repo({ 'Makefile': 'setup:\n\ttouch .ready\n' });
+    const asked: string[] = [];
+    const kay = await solo(dir, { fixSetup: async (_d, failed, output) => (asked.push(`${failed}|${output.includes('nope')}`), { command: 'touch .ready' }) });
+    const id = projectOf(kay.workspaces).id;
+    kay.bench.setScript(id, 'setup', 'echo nope && exit 2');
+    await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.command === 'echo nope && exit 2', 4000);
+    const ws = await kay.session.workspaces!.newWorktree(id, 'learn');
+    await waitFor(() => kay.state().setup[ws!.id]?.status === 'done', 8000);
+    expect(kay.state().setup[ws!.id]?.command).toBe('touch .ready');
+    expect(asked).toEqual(['echo nope && exit 2|true']);
+    await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.command === 'touch .ready', 4000);
   });
 
   it('lets you set the commands for yourself or for the team (klaud.json)', async () => {

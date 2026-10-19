@@ -8,7 +8,8 @@ import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { buildPrPrompt, customPrPrompt, ensurePrPromptFile, findPr, fixChecksPrompt, hasGh, resetPrPrompt } from '../workspaces/pr.js';
-import { scriptEnv } from '../workspaces/scripts.js';
+import { checkSetup, scriptEnv } from '../workspaces/scripts.js';
+import type { SetupFix } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
 import { type LogItem, type Prefs, type Store } from './store.js';
@@ -43,6 +44,8 @@ export interface WorkbenchDeps {
   readonly envFor?: (where: EnvPlace) => Record<string, string>;
   /** The shells you can pick (injected in tests). */
   readonly listShells?: () => ShellChoice[];
+  /** What a project's setup should be after it failed in `dir` (a small model looks). */
+  readonly fixSetup?: (dir: string, failed: string, output: string) => Promise<SetupFix | undefined>;
 }
 
 const DISK_EVERY_MS = 5 * 60_000;
@@ -306,7 +309,8 @@ export class Workbench {
   /**
    * Run the project's setup in a new worktree (visible in its Terminal tab). A command that comes
    * from the repository itself (klaud.json / conductor.json) asks you the first time it would
-   * run by itself, and again whenever it changes.
+   * run by itself, and again whenever it changes. A command that doesn't fit the project (an
+   * install with no package.json, the wrong package manager) is skipped or corrected, and remembered.
    */
   runSetup(wsId: string, auto = false): void {
     const ws = this.manager.find(wsId);
@@ -318,6 +322,15 @@ export class Workbench {
       return;
     }
     if (!this.deps.terminals) return;
+    const fit = checkSetup(ws.path, command);
+    if (fit.kind === 'skip') {
+      this.learnSetup(project.id, { none: true }, `No setup for ${project.name}: ${fit.reason}. New worktrees skip it from now on`);
+      return;
+    }
+    if (fit.kind === 'swap') {
+      this.learnSetup(project.id, { command: fit.command }, `Setup for ${project.name} is now \`${fit.command}\`: ${fit.reason}`);
+      return this.startSetup(ws, fit.command);
+    }
     const fromRepo = setup.source === 'klaud.json' || setup.source === 'conductor.json';
     if (auto && fromRepo && !this.manager.isScriptApproved(project.id, command)) {
       if (!this.deps.confirm) return;
@@ -331,7 +344,19 @@ export class Workbench {
     this.startSetup(ws, command);
   }
 
-  private startSetup(ws: Workspace, command: string): void {
+  /** Remember a project's setup for you (a command, or none), so the next worktree gets it right. */
+  private learnSetup(projectId: string, fix: SetupFix, note: string): void {
+    try {
+      this.manager.setScripts(projectId, 'none' in fix ? { setup: undefined, skipSetup: true } : { setup: fix.command, skipSetup: undefined });
+      void this.deps.controller.refresh();
+      this.deps.toast(note, 'success');
+    } catch (err) {
+      this.deps.toast(`Couldn't remember the setup: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  }
+
+  /** `learn`: if it fails, a small model works out the right setup once, and that runs instead. */
+  private startSetup(ws: Workspace, command: string, learn = true): void {
     const wsId = ws.id;
     this.closeTerminal(setupId(wsId));
     const session = this.openSession(setupId(wsId), ws, command);
@@ -344,9 +369,28 @@ export class Workbench {
         this.deps.toast(`${ws.name} is set up`, 'success');
         return;
       }
-      this.deps.store.dispatch({ type: 'setup', id: wsId, run: { status: 'failed', command, detail: `exit code ${code ?? '?'}` } });
-      this.deps.notify({ kind: 'problems', title: `Setup failed in ${ws.name}`, body: `${command} (exit code ${code ?? '?'}). See its Terminal tab`, channel: `ws:${wsId}` });
+      if (learn && this.deps.fixSetup) return void this.retrySetup(ws, command, code, session.backlog());
+      this.setupFailed(ws, command, code);
     });
+  }
+
+  private setupFailed(ws: Workspace, command: string, code: number | null): void {
+    this.deps.store.dispatch({ type: 'setup', id: ws.id, run: { status: 'failed', command, detail: `exit code ${code ?? '?'}` } });
+    this.deps.notify({ kind: 'problems', title: `Setup failed in ${ws.name}`, body: `${command} (exit code ${code ?? '?'}). See its Terminal tab`, channel: `ws:${ws.id}` });
+  }
+
+  /** Setup failed: ask what it should be, remember the answer, and run that (once). */
+  private async retrySetup(ws: Workspace, command: string, code: number | null, output: string): Promise<void> {
+    this.deps.toast(`Setup failed in ${ws.name}. Looking for the right one…`);
+    const fix = await this.deps.fixSetup!(ws.path, command, output);
+    const project = this.manager.find(ws.id) && this.manager.list.find((p) => p.id === ws.projectId);
+    if (!project || !fix || ('command' in fix && fix.command === command)) return this.setupFailed(ws, command, code);
+    if ('none' in fix) {
+      this.deps.store.dispatch({ type: 'setup', id: ws.id });
+      return this.learnSetup(project.id, fix, `${project.name} needs no setup. New worktrees skip it from now on`);
+    }
+    this.learnSetup(project.id, fix, `Setup for ${project.name} is now \`${fix.command}\` (\`${command}\` failed)`);
+    this.startSetup(ws, fix.command, false);
   }
 
   /** New worktrees (and forks, handoffs) get the project's setup when that's switched on. */
@@ -380,10 +424,12 @@ export class Workbench {
   setScript(projectId: string, kind: 'setup' | 'run', command: string, team = false): void {
     try {
       const value = command.trim() || undefined;
+      // Choosing a setup yourself overrides one learned as unneeded.
+      const learned = kind === 'setup' ? { skipSetup: undefined } : {};
       if (team) {
         this.manager.setScripts(projectId, { [kind]: value }, { inRepo: true });
-        this.manager.setScripts(projectId, { [kind]: undefined });
-      } else this.manager.setScripts(projectId, { [kind]: value });
+        this.manager.setScripts(projectId, { [kind]: undefined, ...learned });
+      } else this.manager.setScripts(projectId, { [kind]: value, ...learned });
       void this.deps.controller.refresh();
       const label = kind === 'setup' ? 'Setup' : 'Run';
       this.deps.toast(value ? `${label}: ${value}${team ? ' (saved to klaud.json)' : ''}` : `${label} command cleared`, 'success');

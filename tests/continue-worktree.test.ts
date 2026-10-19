@@ -134,7 +134,7 @@ describe('a chat in the main folder', () => {
     expect(kay.state().approvals).toEqual([]);
     expect(kay.state().questions).toEqual([]);
     // The note in main, the conversation carried over, and your screen went there.
-    expect(said(kay.state, `ws:${chat.id}`)).toContain('Moving to a new worktree: blue-button…');
+    expect(said(kay.state, `ws:${chat.id}`)).toContain('Moving to a new worktree…');
     const there = said(kay.state, `ws:${worktree.id}`);
     expect(there).toContain('How does the button work?');
     expect(there).toContain('Please make the button blue');

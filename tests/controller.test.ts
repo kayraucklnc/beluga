@@ -88,6 +88,29 @@ describe('WorkspaceController', () => {
     expect(await ctl.branches(projectId())).toMatchObject({ base: 'origin/main', branches: expect.arrayContaining(['origin/main', 'feature']) });
   });
 
+  it('makes the worktree right away while a model names it, then takes that name', async () => {
+    let name!: (n: string) => void;
+    const naming = new Promise<string>((r) => (name = r));
+    const started = ctl.startWorktree(projectId(), 'Please fix the login redirect bug', () => naming);
+    // Made and Claude started before the model answers, under a quick name from the message.
+    await waitFor(() => asked.length === 1, 8000);
+    const ws = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.kind === 'worktree')!;
+    expect(ws).toMatchObject({ name: 'fix-login-redirect-bug', branch: 'klaud/fix-login-redirect-bug' });
+    expect(asked[0]).toEqual({ prompt: 'Please fix the login redirect bug', channel: `ws:${ws.id}` });
+    expect(toasts).not.toContain('Naming the worktree…');
+    name('login-redirect');
+    await started;
+    const renamed = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === ws.id)!;
+    expect(renamed).toMatchObject({ name: 'login-redirect', branch: 'klaud/login-redirect', path: ws.path });
+    expect(sh(ws.path, 'branch', '--show-current').trim()).toBe('klaud/login-redirect');
+  });
+
+  it('keeps the quick name when naming fails', async () => {
+    await ctl.startWorktree(projectId(), 'add dark mode', () => Promise.reject(new Error('offline')));
+    const ws = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.kind === 'worktree')!;
+    expect(ws).toMatchObject({ name: 'add-dark-mode', branch: 'klaud/add-dark-mode' });
+  });
+
   it('creates a worktree, opens it, runs Claude there, and saves its conversation', async () => {
     const ws = (await ctl.newWorktree(projectId(), 'feature'))!;
     expect(screen.getState().view).toEqual({ kind: 'workspace', id: ws.id, tab: 'chat' });

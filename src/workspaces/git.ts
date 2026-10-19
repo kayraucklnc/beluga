@@ -15,7 +15,7 @@ export function git(cwd: string, args: readonly string[], timeoutMs = 60_000): P
   });
 }
 
-const tryGit = (cwd: string, args: readonly string[]): Promise<string | undefined> => git(cwd, args).then((s) => s, () => undefined);
+export const tryGit = (cwd: string, args: readonly string[]): Promise<string | undefined> => git(cwd, args).then((s) => s, () => undefined);
 
 export interface WorktreeEntry {
   readonly path: string;
