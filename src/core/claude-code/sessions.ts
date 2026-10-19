@@ -2,6 +2,7 @@ import type { CcStep, CcSteps } from './model.js';
 import { Tail, type TailOptions, headLines } from './tail.js';
 import { type Facts, type Launch, type Sent, type StepDetail, type StepDraft, type TaskNotice, type ToolResult, factsOf, parseLine } from './transcript.js';
 import { type StepRecord, sizeOf, thinkingTitle } from '../../shared/steps.js';
+import { OutputLog } from './outputs.js';
 
 /**
  * One transcript being watched (a session, or one of its sub-agents): reads what was added,
@@ -64,6 +65,8 @@ export class TranscriptTracker {
   readonly notices = new Map<string, TaskNotice>();
   /** Messages it sent to other sessions (SendMessage), oldest first. */
   sends: Sent[] = [];
+  /** Files it made or looked at (screenshots, logs, test output). */
+  readonly outputs = new OutputLog();
   /** Names agents (set by the watcher, which knows them); ids show as they are without it. */
   labeler?: Labeler;
   /** What opening a step shows, by seq (bounded: see MAX_DETAIL_CHARS). */
@@ -152,6 +155,7 @@ export class TranscriptTracker {
     if (f.effort) this.effort = f.effort;
     if (f.final !== undefined) this.final = f.final;
     for (const l of f.launches) this.launches.set(l.toolUseId, l);
+    if (f.outputs?.length) this.outputs.add(f.outputs);
     if (f.sends?.length) this.sends = [...this.sends, ...f.sends].slice(-MAX_SENDS);
     for (const n of f.notices) {
       const old = this.notices.get(n.taskId);

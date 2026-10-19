@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../core/attachments.js';
 import { buildAskOnlyAppend, buildPrompt, buildScratchAppend, buildSystemAppend, summarizeTool } from './prompt.js';
@@ -6,7 +7,7 @@ import { buildGraphAppend } from './graph-prompt.js';
 import { decideTool, denyReason } from './policy.js';
 import { buildSyncMainAppend, syncProbes } from './sync-main.js';
 import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
-import { SubAgentTracker } from './subagents.js';
+import { SubAgentTracker, withAgentScratch } from './subagents.js';
 import { type RecorderMessage, StepRecorder } from './step-recorder.js';
 import { type ContextMessage, ContextReport, breakdownReader, isCompactCommand } from './context-report.js';
 import { compactEnv } from '../shared/context-usage.js';
@@ -122,6 +123,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const autoEdit = !askOnly && (place?.autoEdit ?? opts.autoEdit);
       const remember = (id: string): void => (place ? place.onSession(id) : void (sessionId = id));
       const subagents = new SubAgentTracker(cwd);
+      const scratchRoot = input.scratchDir ? path.resolve(cwd, input.scratchDir) : undefined;
       const syncMain = askOnly ? place?.syncMain : undefined;
       const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, guest: input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}) };
       const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
@@ -148,11 +150,12 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                   const veto = input.vetTool?.(hookInput.tool_name, toolInput);
                   if (veto) return verdict('deny', veto);
                   const decision = decideTool(hookInput.tool_name, toolInput, policy);
-                  if (decision === 'allow') return {};
                   if (decision === 'deny') return verdict('deny', denyReason(hookInput.tool_name, toolInput, policy));
-                  return (await input.canUseTool(hookInput.tool_name, toolInput))
-                    ? verdict('allow', 'Approved by the machine owner.')
-                    : verdict('deny', 'The machine owner declined this action.');
+                  // A sub-agent is told where its own scratch folder is, so what it makes shows on its page.
+                  const patched = scratchRoot ? withAgentScratch(hookInput.tool_name, toolInput, hookInput.tool_use_id, scratchRoot) : undefined;
+                  const allow = (reason: string) => (patched ? { hookSpecificOutput: { ...verdict('allow', reason).hookSpecificOutput, updatedInput: patched } } : verdict('allow', reason));
+                  if (decision === 'allow') return patched ? allow('Allowed by klaud.') : {};
+                  return (await input.canUseTool(hookInput.tool_name, toolInput)) ? allow('Approved by the machine owner.') : verdict('deny', 'The machine owner declined this action.');
                 },
               ],
             },

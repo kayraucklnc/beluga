@@ -1,4 +1,5 @@
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -85,4 +86,32 @@ test('its page follows it live: who started it, model, effort, thinking and tool
   // Never a place to start a conversation of your own.
   await expect(page.getByRole('button', { name: 'Start a Conversation Here' })).toHaveCount(0);
   await shot(page, 'subagent-monitor');
+});
+
+test('its Outputs: the screenshot and test log it made, wherever it put them, to look at', async ({ page }) => {
+  await sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests/ }).click();
+  const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
+  await expect(monitor).toBeVisible({ timeout: 15_000 });
+  // It takes a screenshot (a real one: of this page) and runs the tests into a log, both in /tmp.
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-out-'));
+  const png = path.join(tmp, '01-webhooks-page.png');
+  await page.screenshot({ path: png });
+  writeFileSync(path.join(tmp, 'tests.log'), ' FAIL  src/webhooks.test.ts > retries 3 times\n   expected 3 calls, got 2\n\n Tests  1 failed | 11 passed (12)\n');
+  const worktree = path.join(root, '.claude', 'worktrees', `agent-${AGENT}`);
+  const said = (id: string, name: string, input: object) => line({ type: 'assistant', timestamp: iso(Date.now()), sessionId: SID, agentId: AGENT, isSidechain: true, cwd: worktree, message: { role: 'assistant', model: 'claude-sonnet-5-5', stop_reason: 'tool_use', content: [{ type: 'tool_use', id, name, input }] } });
+  appendFileSync(agentFile, said('o1', 'Bash', { command: `npx playwright screenshot http://localhost:3000/webhooks ${png}` }) + said('o2', 'Bash', { command: `npm test 2>&1 | tee ${tmp}/tests.log` }));
+
+  await monitor.getByRole('tab', { name: /^Outputs/ }).click();
+  const list = monitor.getByRole('listbox', { name: 'Outputs' });
+  await expect(list.getByRole('option')).toHaveCount(2, { timeout: 15_000 });
+  await expect(monitor.getByRole('tab', { name: 'Outputs · 2' })).toBeVisible();
+  // Following: the newest shows.
+  await list.getByRole('option', { name: /01-webhooks-page\.png/ }).click();
+  await expect(monitor.getByRole('img', { name: '01-webhooks-page.png' })).toBeVisible();
+  await shot(page, 'subagent-outputs');
+  await list.getByRole('option', { name: /tests\.log/ }).click();
+  await expect(monitor.getByRole('region', { name: 'tests.log' })).toContainText('expected 3 calls, got 2');
+  // Back to what it does.
+  await monitor.getByRole('tab', { name: 'Activity' }).click();
+  await expect(page.getByRole('log', { name: 'Sub-agent Write the webhook tests' })).toBeVisible();
 });

@@ -329,6 +329,8 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `claudeCode.steps` | — (Mac only, see below) | ✓ a Claude Code session's or agent's live, read-only transcript (Activity, the strip above a workspace's chat, the Inspector's Claude Code panel) |
 | `claudeCode.step` | — (Mac only, see below) | ✓ opening a tool call or thinking line in that transcript: the command and its output, the file, the diff, the thinking |
 | `claudeCode.findAgent` | — (Mac only, see below) | ✓ opening a sub-agent's own worktree whose agent finished a while ago: it's found again and followed live |
+| `claudeCode.outputs` | — (Mac only, see below) | ✓ a sub-agent's Outputs tab: the screenshots, test output, logs and JSON it made or looked at (from its transcript, wherever it put them, plus its own `.klaud/scratch/agents/<name>/`), still on disk, newest first |
+| `claudeCode.output` | — (Mac only, see below) | ✓ looking at one of them: pictures inline, text with secrets redacted (only files that agent made or looked at) |
 | `agent.steps` | — (the terminal keeps its one-line steps) | ✓ a Claude card's steps as disclosure rows (an icon per tool, ✓/✗, how long it took), thinking as “Thought for 12s”, sub-agents' steps |
 | `agent.step` | — (the terminal keeps its one-line steps) | ✓ opening a step on a Claude card: Bash's command and output (colours kept), the file read, an edit's diff, a search's matches, a page fetched, an MCP tool's input and output as JSON, the thinking |
 | `git.fetch` | — (Mac only, see below) | ✓ Fetch on a project's home (“fetched 3 min ago”, or why it couldn't: sign-in needed, offline) |

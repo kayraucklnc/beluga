@@ -3,7 +3,8 @@ import path from 'node:path';
 import type { Project } from '../../workspaces/types.js';
 import type { Store } from '../store.js';
 import { type AgentMeta, agentStatus, readMeta } from './agents.js';
-import type { CcAgent, CcAgentStatus, CcMessage, CcSession, CcSteps, CcTeam } from './model.js';
+import type { CcAgent, CcAgentStatus, CcMessage, CcOutputFile, CcOutputs, CcSession, CcSteps, CcTeam } from './model.js';
+import { agentScratchDir, outputsOnDisk, readOutput } from './output-files.js';
 import { type PageOptions, TranscriptTracker } from './sessions.js';
 import type { StepRecord } from '../../shared/steps.js';
 import type { Facts } from './transcript.js';
@@ -509,5 +510,25 @@ export class ClaudeCodeWatcher {
     this.label(s);
     a.tracker.update();
     return a.tracker.page(opts);
+  }
+
+  /** What one of a session's agents made or looked at (screenshots, logs, test output) that's still there. */
+  outputs(sessionId: string, agentId: string): CcOutputs {
+    const s = this.sessions.get(sessionId);
+    const a = s?.agents.get(agentId);
+    if (!s || !a) return { outputs: [], missing: true };
+    a.viewedAt = this.now;
+    a.tracker ??= new TranscriptTracker(a.file);
+    a.tracker.update();
+    const root = s.tracker.cwd;
+    const scratch = root && a.meta.toolUseId ? agentScratchDir(root, a.meta.toolUseId) : undefined;
+    const outputs = outputsOnDisk(a.tracker.outputs.list(), root && scratch ? { root, dir: scratch } : undefined);
+    return { outputs, ...(scratch ? { scratch } : {}) };
+  }
+
+  /** One of an agent's outputs, to show it: only a file it made or looked at. */
+  output(sessionId: string, agentId: string, file: string): CcOutputFile | undefined {
+    const found = this.outputs(sessionId, agentId).outputs.find((o) => o.path === file);
+    return found ? readOutput(found) : undefined;
   }
 }
