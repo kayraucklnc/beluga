@@ -11,6 +11,7 @@ import { Bitmap } from '../FilesView.js';
 import { isImageFile } from '../../components/markdown/md-paths.js';
 import { BINARY_TEXT, LARGE_MARKDOWN, prettyJson, type ReaderMode, isMarkdownFile, isPdfFile, langOf } from './reader-model.js';
 import { PdfView } from './PdfView.js';
+import { usePinchZoom } from '../../components/usePinchZoom.js';
 import r from './reader.module.css';
 
 /**
@@ -46,6 +47,8 @@ function ImageView({ viewer, controls, version }: { viewer: ViewerState; control
     const el = stage.current;
     return el && natural ? Math.min(1, (el.clientWidth - 56) / natural.w) : 1;
   };
+  // Two fingers on the trackpad zoom it too (anywhere it's shown: the reader, the panel, Changes, Scratch).
+  usePinchZoom(stage, zoom === 'fit' ? fitted() : zoom, setZoom);
   const step = (dir: 1 | -1): void => {
     const now = zoom === 'fit' ? fitted() : zoom;
     const next = dir > 0 ? ZOOMS.find((z) => z > now + 0.001) : [...ZOOMS].reverse().find((z) => z < now - 0.001);

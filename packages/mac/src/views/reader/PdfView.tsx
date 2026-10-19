@@ -3,6 +3,7 @@ import type { Location } from '@klaud/core/store.js';
 import { Empty, IconButton, cx } from '../../components/ui.js';
 import { useApi } from '../../lib/klaud.js';
 import type { PDFDocumentProxy } from './pdf-lib.js';
+import { usePinchZoom } from '../../components/usePinchZoom.js';
 import r from './reader.module.css';
 
 /**
@@ -119,9 +120,11 @@ export function PdfView({ at, controls, version }: { at: Location; controls: boo
   const [zoom, setZoom] = useState<'fit' | number>('fit');
   // The stage appears once the PDF is open: watch its width from then on.
   const watch = useRef<ResizeObserver | undefined>(undefined);
+  const stageEl = useRef<HTMLDivElement | null>(null);
   const stage = useCallback((el: HTMLDivElement | null) => {
     watch.current?.disconnect();
     watch.current = undefined;
+    stageEl.current = el;
     if (!el) return;
     // The room inside its padding.
     const measure = (): void => {
@@ -143,6 +146,9 @@ export function PdfView({ at, controls, version }: { at: Location; controls: boo
       alive = false;
     };
   }, [doc]);
+  // Two fingers on the trackpad zoom the pages (they stretch at once and are redrawn sharp when you stop).
+  const fittedNow = first && width > 0 ? Math.min(FIT_MAX, width / first.w) : 1;
+  usePinchZoom(stageEl, zoom === 'fit' ? fittedNow : zoom, setZoom, { min: 0.25, max: 6 });
   if (error) return <Empty icon="alert" title="Can’t show this PDF" detail={error} />;
   if (!doc || !first) return <div className={r.opening}>Opening…</div>;
   const fitted = width > 0 ? Math.min(FIT_MAX, width / first.w) : 1;
