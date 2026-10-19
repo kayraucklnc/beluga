@@ -62,7 +62,7 @@ test('a Claude Code session and its agents show in Activity, live', async ({ pag
 
   // Its transcript, read-only, following new lines.
   await card.click();
-  await expect(page.getByText('Running in Claude Code · read-only')).toBeVisible();
+  await expect(page.getByText('Running in Claude Code, outside Klaud')).toBeVisible();
   const log = page.getByRole('log', { name: 'Agent Tighten the hero copy' });
   await expect(log).toContainText('Task: Tighten the hero copy');
   await expect(log).toContainText('Reading index.html');
