@@ -19,7 +19,8 @@ describe('deciding a request', () => {
   });
 
   it('a capability that is off declines first, even over an allow rule, saying which', () => {
-    const d = decide('ask', task({ needs: ['screen'] }), [rule({ needs: ['screen'] })]);
+    const screenOff: Capabilities = { ...DEFAULT_CAPABILITIES, levels: { ...DEFAULT_CAPABILITIES.levels, screen: { ask: 'off', trusted: 'ask', full: 'allow' } } };
+    const d = decide('ask', task({ needs: ['screen'] }), [rule({ needs: ['screen'] })], screenOff);
     expect(d).toMatchObject({ verdict: 'decline', by: 'capability', caps: ['screen'] });
     expect(declineReason(d, 'bob')).toBe("bob's klaud doesn't let you see the screen");
   });
@@ -116,7 +117,8 @@ describe('capabilities', () => {
     expect(caps.levels.shell).toEqual(DEFAULT_CAPABILITIES.levels.shell);
     expect(caps.folders).toEqual(['/Users/bob/Shared']);
     expect(capabilitiesFrom(undefined)).toEqual(DEFAULT_CAPABILITIES);
-    expect(offersFor(DEFAULT_CAPABILITIES, 'ask')).toEqual(['project', 'shell', 'files', 'device']);
+    // Everything asks for someone on "Ask me each time" (the screen too: you see who and why first).
+    expect(offersFor(DEFAULT_CAPABILITIES, 'ask')).toEqual(['project', 'shell', 'files', 'screen', 'device']);
     expect(offersFor(DEFAULT_CAPABILITIES, 'trusted')).toEqual(['project', 'shell', 'files', 'screen', 'device']);
     expect(offersFor(DEFAULT_CAPABILITIES, 'blocked')).toEqual([]);
   });

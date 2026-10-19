@@ -7,6 +7,7 @@
 mod daemon;
 mod focus;
 mod menu;
+mod popup;
 mod requests;
 mod sounds;
 mod update_rules;
@@ -179,11 +180,14 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(window_state)
+                // The request pop-up places itself (and is never restored visible).
+                .with_denylist(&[popup::LABEL])
                 .build(),
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::Updates::default())
         .manage(requests::TrayState::default())
+        .manage(popup::PopupState::default())
         .manage(AppState {
             lock: tokio::sync::Mutex::new(()),
             child: Mutex::new(None),
@@ -197,6 +201,11 @@ pub fn run() {
             set_tray_status,
             set_tray_presence,
             requests::set_tray_requests,
+            popup::set_request_popup,
+            popup::request_popup_state,
+            popup::request_popup_resize,
+            popup::request_popup_dismiss,
+            popup::request_popup_action,
             system_idle_seconds,
             take_pending_links,
             sounds::sound_install,

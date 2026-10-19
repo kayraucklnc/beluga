@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 380" width="960" height="380" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="Your Claude asks a friend's Claude: kay types @mia send me a screenshot of your desktop; the request travels Mac to Mac, end-to-end encrypted; a small pop-up on mia's screen asks her; she clicks Allow; her Claude takes the screenshot; the result comes back to kay's Claude.">
+  <rect width="960" height="380" rx="18" fill="#f6f6f8"/>
+  
+  <g transform="translate(24 40)">
+    <rect width="330" height="290" rx="14" fill="#ffffff" stroke="#d9d9de"/>
+    <rect width="330" height="34" rx="14" fill="#f1f1f4"/><rect y="20" width="330" height="14" fill="#f1f1f4"/>
+    <circle cx="18" cy="17" r="5" fill="#ff5f57"/><circle cx="34" cy="17" r="5" fill="#febc2e"/><circle cx="50" cy="17" r="5" fill="#28c840"/>
+    <text x="165" y="22" text-anchor="middle" font-size="12" font-weight="600" fill="#5d5d63">Your Mac · Klaud</text>
+    <text x="16" y="276" font-size="11" fill="#8e8e93">you and your Claude</text>
+  </g>
+  
+  <g transform="translate(606 40)">
+    <rect width="330" height="290" rx="14" fill="#ffffff" stroke="#d9d9de"/>
+    <rect width="330" height="34" rx="14" fill="#f1f1f4"/><rect y="20" width="330" height="14" fill="#f1f1f4"/>
+    <circle cx="18" cy="17" r="5" fill="#ff5f57"/><circle cx="34" cy="17" r="5" fill="#febc2e"/><circle cx="50" cy="17" r="5" fill="#28c840"/>
+    <text x="165" y="22" text-anchor="middle" font-size="12" font-weight="600" fill="#5d5d63">Mia’s Mac · browsing in Chrome</text>
+    <text x="16" y="276" font-size="11" fill="#8e8e93">mia and her Claude</text>
+  </g>
+
+  <!-- the link between them: no server -->
+  <line x1="364" y1="185" x2="596" y2="185" stroke="#c7c7cc" stroke-width="2" stroke-dasharray="5 6">
+    <animate attributeName="stroke-dashoffset" from="0" to="-22" dur="1s" repeatCount="indefinite"/>
+  </line>
+  <text x="480" y="160" text-anchor="middle" font-size="12" fill="#5d5d63">🔒 Mac to Mac, end-to-end encrypted</text>
+  <text x="480" y="216" text-anchor="middle" font-size="11" fill="#8e8e93">no server, no host</text>
+
+  <!-- 1. you tag a friend -->
+  
+  <g opacity="0"><animate attributeName="opacity" dur="12.0s" repeatCount="indefinite" keyTimes="0.00000;0.00417;0.02500;0.96667;0.98750;1.00000" values="0;0;1;1;0;0"/>
+    <rect x="44" y="90" width="290" height="34" rx="10" fill="#0a84ff"/>
+    <text x="56" y="111.5" font-size="12.5" fill="#fff">@mia send me a screenshot of your desktop</text>
+  </g>
+  
+  <g opacity="0"><animate attributeName="opacity" dur="12.0s" repeatCount="indefinite" keyTimes="0.00000;0.07917;0.10000;0.71667;0.73750;1.00000" values="0;0;1;1;0;0"/>
+    <rect x="44" y="132" width="220" height="34" rx="10" fill="#f4e9e2"/>
+    <text x="56" y="153.5" font-size="12" fill="#8a4a26">›_  Claude: asking mia’s Claude…</text>
+  </g>
+
+  <!-- 2. the request travels -->
+  
+  <g opacity="0"><animate attributeName="opacity" dur="12.0s" repeatCount="indefinite" keyTimes="0.00000;0.12917;0.14167;0.29167;0.30417;1.00000" values="0;0;1;1;0;0"/>
+    <g><animateTransform attributeName="transform" type="translate" dur="12.0s" repeatCount="indefinite" keyTimes="0;0.15;0.2833;1" values="400 185;400 185;560 185;560 185" calcMode="spline" keySplines="0 0 1 1;0.4 0 0.2 1;0 0 1 1"/>
+      <rect x="-70" y="-15" width="140" height="30" rx="15" fill="#0a84ff"/>
+      <text x="0" y="5" text-anchor="middle" font-size="12" font-weight="600" fill="#fff">📨 request</text>
+    </g>
+  </g>
+
+  <!-- 3. the pop-up on mia's screen -->
+  <g opacity="0"><animate attributeName="opacity" dur="12.0s" repeatCount="indefinite" keyTimes="0.00000;0.27083;0.29167;0.51667;0.53750;1.00000" values="0;0;1;1;0;0"/>
+    <rect x="636" y="86" width="270" height="118" rx="12" fill="#ffffff" stroke="#e1e1e6"/>
+    <circle cx="660" cy="110" r="12" fill="#f4e9e2"/><text x="660" y="114" text-anchor="middle" font-size="10" fill="#b4693f">›_</text>
+    <text x="680" y="107" font-size="11.5" fill="#5d5d63"><tspan font-weight="700" fill="#1d1d1f">kay’s Claude</tspan> wants to</text>
+    <text x="680" y="124" font-size="12.5" font-weight="600" fill="#1d1d1f">take a screenshot of your desktop</text>
+    <text x="680" y="145" font-size="11" fill="#0a84ff">› See more</text>
+    <rect x="648" y="164" width="60" height="24" rx="6" fill="#fff" stroke="#d1d1d6"/><text x="678" y="180" text-anchor="middle" font-size="11">Decline</text>
+    <rect x="752" y="164" width="88" height="24" rx="6" fill="#fff" stroke="#d1d1d6"/><text x="796" y="180" text-anchor="middle" font-size="11">Allow Always</text>
+    <rect x="846" y="164" width="50" height="24" rx="6" fill="#0a84ff"/><text x="871" y="180" text-anchor="middle" font-size="11" fill="#fff" font-weight="600">Allow</text>
+    <!-- her click -->
+    <circle cx="871" cy="176" r="0" fill="none" stroke="#0a84ff" stroke-width="2">
+      <animate attributeName="r" dur="12.0s" repeatCount="indefinite" keyTimes="0;0.4333;0.4833;1" values="0;0;18;18"/>
+      <animate attributeName="opacity" dur="12.0s" repeatCount="indefinite" keyTimes="0;0.4333;0.4833;1" values="0;1;0;0"/>
+    </circle>
+  </g>
+  
+  <g opacity="0"><animate attributeName="opacity" dur="12.0s" repeatCount="indefinite" keyTimes="0.00000;0.27083;0.29167;0.51667;0.53750;1.00000" values="0;0;1;1;0;0"/>
+    <rect x="626" y="228" width="220" height="28" rx="10" fill="#ffffff"/>
+    <text x="638" y="246.5" font-size="11.5" fill="#5d5d63">🔔 a pop-up, wherever she is</text>
+  </g>
+
+  <!-- 4. her Claude works -->
+  
+  <g opacity="0"><animate attributeName="opacity" dur="12.0s" repeatCount="indefinite" keyTimes="0.00000;0.51250;0.53333;0.80000;0.82083;1.00000" values="0;0;1;1;0;0"/>
+    <rect x="636" y="96" width="270" height="34" rx="10" fill="#f4e9e2"/>
+    <text x="648" y="117.5" font-size="12" fill="#8a4a26">›_  mia’s Claude: 📸 took a screenshot</text>
+  </g>
+
+  <!-- 5. the result comes back -->
+  
+  <g opacity="0"><animate attributeName="opacity" dur="12.0s" repeatCount="indefinite" keyTimes="0.00000;0.59583;0.60833;0.75833;0.77083;1.00000" values="0;0;1;1;0;0"/>
+    <g><animateTransform attributeName="transform" type="translate" dur="12.0s" repeatCount="indefinite" keyTimes="0;0.6167;0.75;1" values="560 185;560 185;400 185;400 185" calcMode="spline" keySplines="0 0 1 1;0.4 0 0.2 1;0 0 1 1"/>
+      <rect x="-70" y="-15" width="140" height="30" rx="15" fill="#2f8a4c"/>
+      <text x="0" y="5" text-anchor="middle" font-size="12" font-weight="600" fill="#fff">🖼️ desktop.png</text>
+    </g>
+  </g>
+  
+  <g opacity="0"><animate attributeName="opacity" dur="12.0s" repeatCount="indefinite" keyTimes="0.00000;0.73750;0.75833;0.96667;0.98750;1.00000" values="0;0;1;1;0;0"/>
+    <rect x="44" y="132" width="290" height="34" rx="10" fill="#e6f4ea"/>
+    <text x="56" y="153.5" font-size="12.5" fill="#1f6b37">✅ mia’s Claude sent desktop.png</text>
+  </g>
+
+  <!-- the steps, along the bottom -->
+  <g font-size="11" fill="#8e8e93">
+    <text x="480" y="358" text-anchor="middle">1 tag a friend · 2 the ask travels · 3 they Allow (or trust you: no pop-up) · 4 their Claude works · 5 the answer comes back</text>
+  </g>
+</svg>

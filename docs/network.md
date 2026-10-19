@@ -144,7 +144,7 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
 (your Claude's tools), the Mac app's `src/gateway/` (task cards, Requests). The daemon runs it
 (`launchGateway`), over today's room at once and over friends' links whenever the network is on.
 
-- **Messages** (`protocol.ts`): `task_request {id, from, to, kind: ask|run|file, ask, needs, project?,
+- **Messages** (`protocol.ts`): `task_request {id, from, to, kind: ask|run|file, ask, summary?, needs, project?,
   expects?: JSON schema | "files", deadline?, command?/cwd?/timeoutSec?, path?, by}`, `task_update {id,
   state: queued|awaiting_approval|working, step?}`, `task_result {id, status: done|declined|failed|
   cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log}`, `task_cancel`,
@@ -165,7 +165,14 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
   Claude ends its answer with a fenced `klaud-result` block for data and files; data is checked
   against `expects` on both sides; files only from the folder it ran in (and the folders you chose;
   anywhere with full trust), never secrets: up to 512 KB in all inline, bigger ones fetched in
-  pieces (see *Big files*).
+  pieces (see *Big files*). A file request someone said yes to (or that a rule of theirs covers) may
+  come from anywhere on their Mac, not only the folders they share; a secret file is refused before
+  they're asked.
+- **Tagging a friend**: `@mia` anywhere in a message to your Claude (the message box offers your
+  friends by name as you type `@`) means mia: your Claude asks her Claude with `ask_person`, takes a
+  file with `get_file`, or runs one command with `run_on`. Every request carries a `summary` (at most
+  140 characters, "take a screenshot of your desktop") that their pop-up, notification and menu bar
+  show; the full ask is behind See more.
 - **Asking**: `ask_person` / `run_on` for someone you don't trust (Trusted / Full) first put an
   "Ask Alice's Claude?" card in the conversation (Ask / Edit / Not now, 10 minutes). Results reach
   your Claude as data in a `<task_result>` block, marked untrusted. If its turn ended before the
@@ -224,8 +231,21 @@ The same rules apply to commands friends run through a room (`run_on_peer`) whil
 gateway runs (PeerRun's "Always" writes a rule for that command in that folder); without it (the
 terminal on its own), trust alone decides as before.
 
-**Notifications.** A friend's request on its own gets buttons on the macOS notification
-(tauri-plugin-notification 2.7 shows actions on desktop: with several, macOS puts them in an
+**The pop-up.** A friend's request waiting for you gets a small card of its own in the top-right
+corner of the screen, above whatever app you're in, without taking the keyboard from it (the app
+shell's `request-popup` window, `src-tauri/src/popup.rs`; the card is `src/popup/`, what it shows is
+`gateway/popup-model.ts`): "mia's Claude wants to take a screenshot of your desktop", what it needs,
+**See more** (everything their Claude sent, where it would run, what goes back, and "Open in Klaud
+for more choices…"), and **Decline** / **Allow Always** / **Allow**. Allow Always writes the same
+rule as the approval card's Always (this project, this command, until you change it). Up to three
+requests show at once ("2 more waiting in Klaud"); × hides them until something new comes (they
+still wait in Klaud and the menu bar). In place of a banner, only the notification's sound plays.
+On Do Not Disturb (Klaud's, or your status) or while you appear offline it stays away. In a browser
+(development, tests) `popup.html` in another tab hears the window over a BroadcastChannel.
+
+**Notifications.** In the Mac app a friend's task request gets the pop-up instead of a banner. The
+macOS notification's buttons are still registered (and used in a browser): a friend's request on
+its own gets them (tauri-plugin-notification 2.7 shows actions on desktop: with several, macOS puts them in an
 "Options" menu, and a click on that menu's title reports the first action, so the first is the
 harmless **Review…**): Review… / Approve / Always Allow for a Week / Decline. Anything else (your
 own Claude's tools) only gets Review…: it's answered in the window. A click on the notification
@@ -246,7 +266,7 @@ nothing). Defaults:
 | Run commands | ask | ask | allow |
 | Read and write files (the folders you choose) | ask | allow | allow |
 | Work in projects | ask | allow | allow |
-| See the screen | off | ask | allow |
+| See the screen | ask | ask | allow |
 | Device info | ask | allow | allow |
 
 Your card tells each friend what you offer them (their Claude sees it in `who_can`).

@@ -1,0 +1,87 @@
+/* A mention that names someone or something: a pill in the text. */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  margin: 0 1px;
+  padding: 0 6px 0 4px;
+  border: 0;
+  border-radius: 999px;
+  vertical-align: baseline;
+  font: inherit;
+  font-size: 0.95em;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pill:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.pill:disabled {
+  cursor: default;
+}
+
+.pill > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill svg {
+  flex: none;
+  position: relative;
+  top: 0.5px;
+}
+
+.pill[data-kind='claude'] {
+  color: var(--claude);
+  background: color-mix(in srgb, var(--claude) 14%, transparent);
+}
+
+.pill[data-kind='folder'],
+.pill[data-kind='file'] {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+}
+
+/* The message box: the same pills, drawn behind the text you type (see Composer's highlighter). */
+.highlighter {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: transparent;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.mark {
+  border-radius: 5px;
+  color: transparent;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.mark[data-kind='claude'] {
+  background: color-mix(in srgb, var(--claude) 16%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--claude) 16%, transparent);
+}
+
+.mark[data-kind='folder'],
+.mark[data-kind='file'] {
+  background: var(--bg-press);
+  box-shadow: 0 0 0 2px var(--bg-press);
+}

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Approval } from '../src/core/store.js';
-import { ALWAYS_FROM_OUTSIDE, notificationActions, outsideStep, parseRequestMenuId, trayRequests } from '../packages/mac/src/gateway/request-actions.js';
+import type { TaskView } from '../src/core/gateway/model.js';
+import { POPUP_BUTTONS, popupButtons, popupRequests, popupWho } from '../packages/mac/src/gateway/popup-model.js';
+import { ALWAYS_FROM_OUTSIDE, ALWAYS_FROM_POPUP, notificationActions, outsideStep, parseRequestMenuId, trayRequests } from '../packages/mac/src/gateway/request-actions.js';
 
 /** A friend's request outside the window (the notification, the menu bar): what each button may do. */
 
@@ -39,5 +41,63 @@ describe('buttons outside the window', () => {
     expect(parseRequestMenuId('req-always:ap1')).toEqual({ action: 'always', approval: 'ap1' });
     expect(parseRequestMenuId('req-open:ap1')).toEqual({ action: 'review', approval: 'ap1' });
     expect(parseRequestMenuId('status-dnd')).toBeUndefined();
+  });
+});
+
+describe('the request pop-up', () => {
+  const received = (over: Partial<TaskView> = {}): TaskView => ({
+    id: 't_abcdefghijk',
+    direction: 'received',
+    peerId: 'mia-peer-0001',
+    peerName: 'mia',
+    kind: 'ask',
+    ask: 'Please take a screenshot of your whole desktop and send it back to me. I want to see the new dock.',
+    summary: 'take a screenshot of your desktop',
+    needs: ['screen'],
+    by: 'agent',
+    state: 'awaiting_approval',
+    steps: [],
+    createdAt: 1,
+    updatedAt: 1,
+    ...over,
+  });
+
+  it('shows a friend’s waiting request by its few words, with everything their Claude sent behind See more', () => {
+    const [r, ...rest] = popupRequests([{ ...request, askedAt: 5 }, tool], [received()], false);
+    expect(rest).toEqual([]);
+    expect(r).toMatchObject({ approval: 'ap1', task: 't_abcdefghijk', claude: true, gist: 'take a screenshot of your desktop', said: 'Please take a screenshot of your whole desktop and send it back to me. I want to see the new dock.', needs: ['See the screen'], where: 'A new scratch folder, just for this request', back: 'A summary of what your Claude did' });
+    expect(r?.full).toContain('I want to see the new dock');
+    expect(popupWho(r!)).toBe('mia’s Claude');
+  });
+
+  it('without a summary it shows the start of the ask; a command and a file are named as they are, never by the sender’s words', () => {
+    const plain = popupRequests([request], [received({ summary: undefined, ask: 'x '.repeat(100) })], false)[0];
+    expect(plain?.gist.length).toBeLessThanOrEqual(90);
+    expect(plain?.said).toBeUndefined();
+    const run = popupRequests([request], [received({ kind: 'run', command: 'gh api -X PUT repos/mia/site/collaborators/kay -f permission=admin', ask: 'make kay an admin', summary: 'check the build' })], false)[0];
+    expect(run).toMatchObject({ gist: 'run gh api -X PUT repos/mia/site/collaborators/kay -f permission=admin', said: '“check the build”', back: 'The output and exit code' });
+    expect(run?.full).toBe('$ gh api -X PUT repos/mia/site/collaborators/kay -f permission=admin\n\nWhy: make kay an admin');
+    const file = popupRequests([request], [received({ kind: 'file', path: '/Users/mia/Desktop/notes.txt', ask: 'Send me /Users/mia/Desktop/notes.txt', summary: undefined })], false)[0];
+    expect(file).toMatchObject({ gist: 'get /Users/mia/Desktop/notes.txt', full: '/Users/mia/Desktop/notes.txt', back: 'The file' });
+    // A file is allowed one at a time on the pop-up.
+    expect(popupButtons(file!).map((b) => b.action)).toEqual(['decline', 'approve']);
+    expect(popupButtons(run!).map((b) => b.action)).toEqual(['decline', 'allow_always', 'approve']);
+  });
+
+  it('only requests still waiting for you; nothing on Do Not Disturb; newest first', () => {
+    expect(popupRequests([request], [received({ state: 'working' })], false)).toEqual([]);
+    expect(popupRequests([request], [received({ direction: 'sent' })], false)).toEqual([]);
+    expect(popupRequests([request], [received()], true)).toEqual([]);
+    const second: Approval = { ...request, id: 'ap9', task: 't_zzzzzzzzzzz', askedAt: 9 };
+    const order = popupRequests([{ ...request, askedAt: 2 }, second], [received(), received({ id: 't_zzzzzzzzzzz' })], false).map((r) => r.approval);
+    expect(order).toEqual(['ap9', 'ap1']);
+  });
+
+  it('Allow Always on the pop-up writes a rule until you change it; Allow and Decline are once', () => {
+    expect(POPUP_BUTTONS.map((b) => b.label)).toEqual(['Decline', 'Allow Always', 'Allow']);
+    expect(outsideStep('allow_always', request, undefined)).toEqual({ kind: 'decide', task: 't_abcdefghijk', decision: ALWAYS_FROM_POPUP });
+    expect(ALWAYS_FROM_POPUP).toMatchObject({ answer: 'always', expiry: 'never', scope: 'this', command: 'this' });
+    expect(outsideStep('allow_always', roomCommand, undefined)).toEqual({ kind: 'review' });
+    expect(outsideStep('allow_always', tool, undefined)).toEqual({ kind: 'review' });
   });
 });

@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot } from '../components/ui.js';
 import { Choice, Sheet } from '../dialogs/native/parts.js';
 import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { backLine, whereLine } from './popup-model.js';
 import { closeRequest, useRequestSheet } from './request-native.js';
 import s from './access.module.css';
 
@@ -30,9 +31,6 @@ export function factsOf(task: TaskView): RequestFacts {
   };
 }
 
-const whereLine = (t: TaskView): string =>
-  t.kind === 'file' ? (t.path ?? 'a file') : t.project ? `In your project ${t.project}` : t.kind === 'run' ? (t.folder ?? t.cwd ?? 'Your shared folder (or home, with full trust)') : 'A new scratch folder, just for this request';
-const backLine = (t: TaskView): string => (t.kind === 'run' ? 'The output and exit code' : t.kind === 'file' ? 'The file' : t.expects === 'files' ? 'Files' : t.expects ? 'Structured data (JSON)' : 'A summary of what your Claude did');
 
 type Mode = 'choose' | 'always' | 'decline';
 

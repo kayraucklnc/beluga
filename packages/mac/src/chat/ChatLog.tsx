@@ -22,6 +22,23 @@ const GROUP_GAP_MS = 3 * 60_000;
 type TaskRow = { readonly type: 'task'; readonly id: string; readonly ts: number; readonly task: TaskView };
 type Row = LogItem | TaskRow;
 
+/**
+ * Tasks your Claude sent during one of its turns belong to that turn: drawn inside its card,
+ * after its steps and before its answer (you asked → their Claude worked → your Claude's answer,
+ * last). Others (sent by you, or outside a turn) are rows of their own, in time order.
+ */
+export function placeTasks(items: readonly LogItem[], tasks: readonly TaskView[]): { rows: readonly Row[]; inTurn: ReadonlyMap<string, readonly TaskView[]> } {
+  const inTurn = new Map<string, TaskView[]>();
+  const loose: TaskView[] = [];
+  const turns = items.filter((l): l is Extract<LogItem, { type: 'agent' }> => l.type === 'agent');
+  for (const task of tasks) {
+    const turn = task.by === 'agent' ? turns.filter((t) => t.ts <= task.createdAt && (t.endTs === undefined || t.endTs >= task.createdAt)).at(-1) : undefined;
+    if (turn) inTurn.set(turn.id, [...(inTurn.get(turn.id) ?? []), task]);
+    else loose.push(task);
+  }
+  return { rows: withTasks(items, loose), inTurn };
+}
+
 function withTasks(items: readonly LogItem[], tasks: readonly TaskView[]): readonly Row[] {
   if (!tasks.length) return items;
   const rows: Row[] = [...items];
@@ -43,7 +60,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   const items = useMemo(() => log.filter((l) => l.channel === channel).map(asChatRow), [log, channel]);
   const gateway = useApp((st) => st.gateway);
   const tasks = useMemo(() => tasksIn({ gateway }, channel), [gateway, channel]);
-  const rows = useMemo(() => withTasks(items, tasks), [items, tasks]);
+  const { rows, inTurn } = useMemo(() => placeTasks(items, tasks), [items, tasks]);
   const parent = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
   const stick = useRef(true);
@@ -125,7 +142,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
                 ) : item.type === 'chat' ? (
                   <ChatRow item={item} continued={continued(v.index)} mine={item.from === selfId} />
                 ) : item.type === 'agent' ? (
-                  <AgentCard item={item} />
+                  <AgentCard item={item} tasks={inTurn.get(item.id)} />
                 ) : item.type === 'shell' ? (
                   <ShellCard item={item} />
                 ) : isCompactItem(item) ? (

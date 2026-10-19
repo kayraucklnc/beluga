@@ -384,3 +384,8 @@
   max-width: 220px;
   max-height: 160px;
 }
+
+/* A friend's Claude your Claude asked during this turn: between its steps and its answer. */
+.turnTask {
+  margin: 8px 0 10px;
+}
