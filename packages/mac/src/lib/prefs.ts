@@ -49,6 +49,8 @@ export interface UiPrefs {
   readonly termScrollback: number;
   /** A file open full size wraps its long lines (instead of scrolling sideways). */
   readonly readerWrap: boolean;
+  /** Chats open as tabs above the conversation (`dm:<peerId>` / `group:<id>`; the main channel is always first). */
+  readonly chatTabs: readonly string[];
 }
 
 export const ACCENTS = {
@@ -92,6 +94,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   termCursorBlink: true,
   termScrollback: 5000,
   readerWrap: false,
+  chatTabs: [],
 };
 
 const KEY = 'klaud.prefs.v1';

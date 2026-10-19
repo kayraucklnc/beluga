@@ -1,4 +1,5 @@
 import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
+import { demoAnswerFromPrompt } from '../core/chat/demo-answers.js';
 import { slugify } from './namer.js';
 import { MORE, MockStepper, splitLine } from './mock-steps.js';
 import { MockContext, withGrowingContext } from './mock-context.js';
@@ -197,6 +198,10 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     nameTask: async (prompt) => {
       await new Promise((r) => setTimeout(r, 600 * pace));
       return slugify(prompt);
+    },
+    answerChat: async (req) => {
+      await sleep(1800 * pace, req.signal);
+      return demoAnswerFromPrompt(req.system, req.prompt);
     },
     async run(original: AgentRunInput): Promise<string> {
       const stepper = original.onStep ? new MockStepper(original.prompt, original.onStep) : undefined;

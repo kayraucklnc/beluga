@@ -190,6 +190,8 @@ export interface Prefs {
   readonly subagents: Settings['subagents'];
   readonly hiddenButtons: readonly string[];
   readonly friendWorktrees: Settings['friendWorktrees'];
+  /** Who may call your Claude into a chat (core/chat/claude.ts). */
+  readonly chatClaude: Settings['chatClaude'];
   readonly shell?: string;
   /** Start the terminal's shell as a login shell. */
   readonly shellLogin: boolean;
@@ -455,6 +457,7 @@ export const DEFAULT_PREFS: Prefs = {
   subagents: 'full',
   hiddenButtons: [],
   friendWorktrees: 'ask',
+  chatClaude: 'everyone',
   shellLogin: true,
   shellArgs: [],
 };
@@ -870,6 +873,9 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'net_summary':
     case 'net_message':
     case 'net_messages':
+    case 'net_files':
+    case 'net_live':
+    case 'net_main':
     case 'net_off':
       return { ...state, ...reduceNetwork(state, action) };
     case 'earnings':

@@ -62,7 +62,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item(app, "invite", "Invite…", Some("CmdOrCtrl+Shift+I"))?,
             &PredefinedMenuItem::separator(app)?,
             &item(app, "add-friend", "Add a Friend…", None)?,
-            &item(app, "new-group", "New Group…", None)?,
+            &item(app, "new-group", "New Channel…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::close_window(app, None)?,
         ],

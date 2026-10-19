@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from '../components/ui.js';
-import { useKlaud } from '../lib/klaud.js';
-import { Group, Row, Switch } from '../dialogs/settings-controls.js';
+import { useApp, useKlaud } from '../lib/klaud.js';
+import { Group, Row, Select, Switch } from '../dialogs/settings-controls.js';
 import { openNet } from './net-sheets.js';
 import { errorText, quietly, useNetwork } from './use-net.js';
 
@@ -24,6 +24,7 @@ export function NetworkSettings() {
   };
   const friends = net.friends.length;
   const groups = net.groups.filter((g) => g.active).length;
+  const chatClaude = useApp((st) => st.prefs.chatClaude);
   return (
     <Group title="Friends">
       <Row
@@ -34,9 +35,9 @@ export function NetworkSettings() {
           ) : busy ? (
             'Turning it on…'
           ) : net.enabled ? (
-            `Your Mac connects straight to your friends’ Macs, end-to-end encrypted. ${friends} friend${friends === 1 ? '' : 's'}, ${groups} group${groups === 1 ? '' : 's'}.`
+            `Your Mac connects straight to your friends’ Macs, end-to-end encrypted. ${friends} friend${friends === 1 ? '' : 's'}, ${groups} channel${groups === 1 ? '' : 's'}.`
           ) : (
-            'Messages and groups go from Mac to Mac, end-to-end encrypted. No server, no account.'
+            'Messages, channels and files go from Mac to Mac, end-to-end encrypted. No server, no account.'
           )
         }
       >
@@ -52,6 +53,20 @@ export function NetworkSettings() {
           >
             Add a Friend…
           </Button>
+        </Row>
+      ) : null}
+      {net.enabled ? (
+        <Row label="Who can ask your Claude in chats" detail="Your Claude answers only messages that ask for it, on your Claude login, from that chat’s history. You can always ask it yourself; people who aren’t your friends need your trust.">
+          <Select<'everyone' | 'trusted' | 'off'>
+            label="Who can ask your Claude in chats"
+            value={chatClaude}
+            options={[
+              { value: 'everyone', label: 'Friends in the chat' },
+              { value: 'trusted', label: 'People I trust' },
+              { value: 'off', label: 'Only me' },
+            ]}
+            onChange={(v) => void client.api.session.setPrefs({ chatClaude: v })}
+          />
         </Row>
       ) : null}
     </Group>

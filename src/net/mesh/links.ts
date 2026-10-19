@@ -58,6 +58,8 @@ export interface LinkManagerOptions {
   readonly onLink: (link: MeshLink) => void;
   readonly onUnlink: (peerId: string) => void;
   readonly onMessage: (link: MeshLink, msg: LinkMessage) => void;
+  /** Are you pulling a chat file from this person now (see MeshLink)? */
+  readonly wantsFiles?: (peerId: string) => boolean;
 }
 
 interface DialState {
@@ -244,7 +246,8 @@ export class LinkManager {
 
   private adopt(socket: MessageSocket, peerId: string, outgoing: boolean, via: 'direct' | 'relay'): boolean {
     if (this.closed || !this.opts.contacts.allows(peerId)) return false;
-    const link = new MeshLink(peerId, socket, outgoing, via, this.opts.timing.pingMs);
+    const wants = this.opts.wantsFiles;
+    const link = new MeshLink(peerId, socket, outgoing, via, this.opts.timing.pingMs, wants ? () => wants(peerId) : undefined);
     const existing = this.get(peerId);
     if (existing && this.preferred(link, existing) === existing) {
       link.close(CLOSE.duplicate, 'duplicate');

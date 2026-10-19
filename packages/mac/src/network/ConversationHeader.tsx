@@ -8,6 +8,7 @@ import { MembersButton } from './GroupInfo.js';
 import { conversationOf, membersLine, openGroupInvitation, presenceLine, shownState } from './net-model.js';
 import { openNet } from './net-sheets.js';
 import { useSay } from './use-net.js';
+import { channelName } from './chat-model.js';
 import s from './network.module.css';
 
 export interface HeaderParts {
@@ -27,7 +28,7 @@ export function useConversationHeader(id: string): HeaderParts {
     if (!f) return { title: 'Conversation' };
     const state = shownState(f);
     const items: ActionItem[] = [
-      { label: `New Group with ${f.name}…`, icon: 'people', onSelect: () => openNet({ kind: 'new_group', with: [f.peerId] }) },
+      { label: `New Channel with ${f.name}…`, icon: 'people', onSelect: () => openNet({ kind: 'new_group', with: [f.peerId] }) },
       { label: 'Copy Name', icon: 'copy', onSelect: () => void copyText(f.name).then(() => say(`Copied “${f.name}”`)) },
       { label: `Remove ${f.name}…`, danger: true, separate: true, onSelect: () => openNet({ kind: 'remove_friend', peerId: f.peerId }) },
     ];
@@ -54,7 +55,7 @@ export function useConversationHeader(id: string): HeaderParts {
   }
   if (target?.kind === 'group') {
     const g = net.groups.find((x) => x.id === target.groupId);
-    if (!g) return { title: 'Group' };
+    if (!g) return { title: 'Channel' };
     const copyLink = async (): Promise<void> => {
       const open = openGroupInvitation(net.invitations, g.id) ?? (await client.api.network['groups.invite'](g.id));
       await copyText(open.link);
@@ -62,25 +63,25 @@ export function useConversationHeader(id: string): HeaderParts {
     };
     const items: ActionItem[] = g.active
       ? [
-          { label: 'Group Info', icon: 'people', onSelect: () => openNet({ kind: 'group_info', groupId: g.id }) },
+          { label: 'Channel Info', icon: 'people', onSelect: () => openNet({ kind: 'group_info', groupId: g.id }) },
           ...(g.admin
             ? [
                 { label: 'Add People…', icon: 'plus' as const, onSelect: () => openNet({ kind: 'add_people', groupId: g.id }) },
                 { label: 'Copy Invite Link', icon: 'link' as const, onSelect: () => void copyLink().catch(() => undefined) },
               ]
             : []),
-          { label: 'Leave Group…', danger: true, separate: true, onSelect: () => openNet({ kind: 'leave_group', groupId: g.id }) },
+          { label: 'Leave Channel…', danger: true, separate: true, onSelect: () => openNet({ kind: 'leave_group', groupId: g.id }) },
         ]
-      : [{ label: 'Group Info', icon: 'people', onSelect: () => openNet({ kind: 'group_info', groupId: g.id }) }];
+      : [{ label: 'Channel Info', icon: 'people', onSelect: () => openNet({ kind: 'group_info', groupId: g.id }) }];
     const online = g.members.filter((m) => !m.self && m.online).length;
     return {
       title: (
         <span className={s.titleRow}>
           <GroupAvatar name={g.name} id={g.id} size={20} muted={!g.active} />
-          <span>{g.name}</span>
+          <span>{channelName(net, g)}</span>
         </span>
       ),
-      subtitle: <span>{g.active ? `${membersLine(g.members)}${online ? ` · ${online} online` : ''}` : 'You’re no longer in this group'}</span>,
+      subtitle: <span>{g.active ? `${membersLine(g.members)}${online ? ` · ${online} online` : ''}` : 'You’re no longer in this channel'}</span>,
       right: (
         <>
           <MembersButton g={g} />

@@ -9,10 +9,15 @@ import { usePrefs } from '../lib/prefs.js';
 import { Markdown } from '../chat/Markdown.js';
 import { plainText } from '../chat/message-menu.js';
 import { GroupAvatar, PersonAvatar } from './Avatars.js';
-import { NetComposer, QUOTE_EVENT } from './NetComposer.js';
+import { ASK_EVENT, NetComposer, type Outgoing, QUOTE_EVENT } from './NetComposer.js';
+import { MessageFiles } from './ChatFiles.js';
+import { ChatTabs } from './ChatTabs.js';
+import { addBlobs, addPaths } from './attachments.js';
+import { askedLine, authorLabel, channelName, isMain, liveIn, liveLine } from './chat-model.js';
 import { continues, conversationOf, dayLabel, membersLine, mergeMessages, presenceLine, sameDay, shownState } from './net-model.js';
 import { openNet } from './net-sheets.js';
 import { errorText, quietly, useNetwork, useSay } from './use-net.js';
+import { inApp } from '../lib/boot.js';
 import chat from '../chat/chat.module.css';
 import s from './network.module.css';
 
@@ -26,28 +31,43 @@ const fullTime = (ts: number): string => new Date(ts).toLocaleString([], { weekd
 function messageItems(m: MessageView, ctx: { say: (t: string) => void; resend?: () => void }): ActionItem[] {
   if (m.status === 'locked') return [];
   const copy = (text: string, what: string): void => void copyText(text).then(() => ctx.say(`Copied ${what}`));
+  const quote = (): void => void document.dispatchEvent(new CustomEvent(QUOTE_EVENT, { detail: m.text }));
   return [
     ...(ctx.resend ? [{ label: 'Send Again', icon: 'refresh' as const, onSelect: ctx.resend }] : []),
-    { label: 'Copy', icon: 'copy', separate: Boolean(ctx.resend), onSelect: () => copy(plainText(m.text), 'the message') },
-    { label: 'Copy as Markdown', onSelect: () => copy(m.text, 'as Markdown') },
-    { label: 'Quote in Reply', icon: 'chat', separate: true, onSelect: () => document.dispatchEvent(new CustomEvent(QUOTE_EVENT, { detail: m.text })) },
+    ...(m.text.trim()
+      ? [
+          { label: 'Copy', icon: 'copy' as const, separate: Boolean(ctx.resend), onSelect: () => copy(plainText(m.text), 'the message') },
+          { label: 'Copy as Markdown', onSelect: () => copy(m.text, 'as Markdown') },
+          { label: 'Quote in Reply', icon: 'chat' as const, separate: true, onSelect: quote },
+          {
+            label: 'Ask Claude About This',
+            icon: 'claude' as const,
+            onSelect: () => {
+              quote();
+              document.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: { kind: 'me' } }));
+            },
+          },
+        ]
+      : []),
   ];
 }
 
 /** One message: the room chat's look; your own say whether they're waiting to be delivered. */
-const Message = memo(function Message({ m, continued, dm, last, resend, me }: { m: MessageView; continued: boolean; dm: boolean; last: boolean; resend: (m: MessageView) => void; me?: { name: string; peerId: string } }) {
+const Message = memo(function Message({ m, continued, dm, last, resend, me, nameOf }: { m: MessageView; continued: boolean; dm: boolean; last: boolean; resend: (m: MessageView) => void; me?: { name: string; peerId: string }; nameOf: (peerId: string) => string }) {
   const prefs = usePrefs();
   const say = useSay();
   const locked = m.status === 'locked';
   const expired = m.mine && m.status === 'expired';
+  const asked = askedLine(m, nameOf, me?.peerId);
   return (
     <ActionsContext items={() => messageItems(m, { say, ...(expired ? { resend: () => resend(m) } : {}) })}>
-      <div className={cx(chat.message, continued && chat.continued, m.mine && s.mine, m.status === 'waiting' && s.waiting)} data-message={m.id}>
-        <div className={chat.gutter}>{continued ? null : <Avatar name={m.mine && me ? me.name : m.name} id={m.mine && me ? me.peerId : m.from} size={26} />}</div>
+      <div className={cx(chat.message, continued && chat.continued, m.mine && s.mine, m.claude && s.claudeMsg, m.status === 'waiting' && s.waiting)} data-message={m.id} data-claude={m.claude ? 'true' : undefined}>
+        <div className={chat.gutter}>{continued ? null : <Avatar name={m.mine && me ? me.name : m.name} id={m.mine && me ? me.peerId : m.from} size={26} claude={Boolean(m.claude)} />}</div>
         <div className={chat.body} title={fullTime(m.ts)}>
           {continued ? null : (
             <div className={chat.meta}>
-              <span className={chat.author}>{m.mine ? 'You' : m.name}</span>
+              <span className={cx(chat.author, m.claude && s.claudeAuthor)}>{authorLabel(m)}</span>
+              {m.claude ? <span className={s.claudeTag}>on {m.mine ? 'your' : `${m.name}’s`} Mac</span> : null}
               {prefs.timestamps ? <span className={chat.time}>{time(m.ts)}</span> : null}
             </div>
           )}
@@ -57,7 +77,16 @@ const Message = memo(function Message({ m, continued, dm, last, resend, me }: { 
               Can’t be read on this Mac
             </div>
           ) : (
-            <Markdown text={m.text} />
+            <>
+              {m.text.trim() ? <Markdown text={m.text} /> : null}
+              {m.files?.length ? <MessageFiles files={m.files} conversation={m.conversation} mine={m.mine} /> : null}
+              {asked ? (
+                <div className={s.asked}>
+                  <Icon name="claude" size={11} />
+                  {asked}
+                </div>
+              ) : null}
+            </>
           )}
           {m.mine && m.status === 'waiting' ? (
             <div className={s.state}>
@@ -83,6 +112,7 @@ const Message = memo(function Message({ m, continued, dm, last, resend, me }: { 
 
 /** The start of a conversation: who it's with, and that it stays between you. */
 function Intro({ friend, group }: { friend?: FriendView; group?: GroupView }) {
+  const net = useNetwork();
   if (friend) {
     return (
       <div className={s.intro}>
@@ -100,11 +130,14 @@ function Intro({ friend, group }: { friend?: FriendView; group?: GroupView }) {
   return (
     <div className={s.intro}>
       <GroupAvatar name={group.name} id={group.id} size={64} />
-      <div className={s.introName}>{group.name}</div>
-      <div className={s.introLine}>{membersLine(group.members)}</div>
+      <div className={s.introName}>{channelName(net, group)}</div>
+      <div className={s.introLine}>{isMain(net, group) ? `Your main channel: all your friends, and everyone you add later · ${membersLine(group.members)}` : membersLine(group.members)}</div>
       <div className={s.introPrivacy}>
         <Icon name="lock" size={12} />
         End-to-end encrypted, kept on each member’s Mac
+      </div>
+      <div className={s.introHint}>
+        Drop files here to share them straight from your Mac. Claude answers only when you ask: pick <b>Ask Claude</b> under the message box.
       </div>
       {group.admin && group.active ? (
         <div className={s.introActions}>
@@ -135,8 +168,100 @@ function useStickToBottom(dep: unknown, key: string) {
   return { ref, onScroll };
 }
 
-/** A conversation with a friend (`dm:<peerId>`) or a group (`group:<id>`). */
+/** Claudes answering right now: "bob’s Claude is answering…" with the typing dots. */
+function LiveRow({ id, me }: { id: string; me?: string }) {
+  const net = useNetwork();
+  const [, tick] = useState(0);
+  const live = liveIn(net, id);
+  // Stale ones drop out by themselves (a Claude that went quiet).
+  useEffect(() => {
+    if (!live.length) return;
+    const t = setInterval(() => tick((n) => n + 1), 15_000);
+    return () => clearInterval(t);
+  }, [live.length]);
+  if (!live.length) return null;
+  return (
+    <div className={s.live} role="status" aria-live="polite">
+      <span className={s.liveAvatars}>
+        {live.slice(0, 3).map((l) => (
+          <Avatar key={`${l.peerId}:${l.for}`} name={l.name} id={l.peerId} size={18} claude />
+        ))}
+      </span>
+      <span>{liveLine(live, me)}</span>
+      <span className={s.dots} aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+    </div>
+  );
+}
+
+/** Files dropped anywhere on the conversation go in the message box (Finder files by path; a browser's by bytes). */
+function useFileDrop(id: string, enabled: boolean) {
+  const { client } = useKlaud();
+  const ref = useRef<HTMLDivElement>(null);
+  const [over, setOver] = useState(false);
+  useEffect(() => {
+    if (!inApp() || !enabled) return;
+    let off: (() => void) | undefined;
+    let alive = true;
+    const inside = (x: number, y: number): boolean => {
+      const r = ref.current?.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      return !!r && x / scale >= r.left && x / scale <= r.right && y / scale >= r.top && y / scale <= r.bottom;
+    };
+    void import('@tauri-apps/api/webview').then(async ({ getCurrentWebview }) => {
+      const un = await getCurrentWebview().onDragDropEvent((e) => {
+        const p = e.payload;
+        if (p.type === 'leave') return setOver(false);
+        const here = inside(p.position.x, p.position.y);
+        if (p.type === 'drop') {
+          setOver(false);
+          if (here && p.paths.length) void addPaths(client, id, p.paths);
+        } else setOver(here);
+      });
+      if (alive) off = un;
+      else un();
+    });
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, [id, enabled]);
+  const html = {
+    onDragOver: (e: React.DragEvent) => {
+      if (inApp() || !enabled || ![...e.dataTransfer.types].includes('Files')) return;
+      e.preventDefault();
+      setOver(true);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+    },
+    onDrop: (e: React.DragEvent) => {
+      if (inApp() || !enabled) return;
+      e.preventDefault();
+      setOver(false);
+      const files = [...e.dataTransfer.files];
+      if (files.length) void addBlobs(client, id, files);
+    },
+  };
+  return { ref, over, html };
+}
+
+/** A conversation with a friend (`dm:<peerId>`) or a group (`group:<id>`), with the chat tabs above it. */
 export function ConversationView({ id }: { id: string }) {
+  const net = useNetwork();
+  if (!net.enabled) return <Conversation id={id} />;
+  return (
+    <div className={s.chatArea}>
+      <ChatTabs shown={id} />
+      <Conversation id={id} />
+    </div>
+  );
+}
+
+function Conversation({ id }: { id: string }) {
   const { client } = useKlaud();
   const net = useNetwork();
   const target = conversationOf(id);
@@ -148,6 +273,8 @@ export function ConversationView({ id }: { id: string }) {
   const messages = useMemo(() => mergeMessages(older.list, latest), [older.list, latest]);
   const more = latest.length >= KEPT && older.more;
   const { ref, onScroll } = useStickToBottom(messages, id);
+  const writable = Boolean(friend || group?.active);
+  const drop = useFileDrop(id, writable);
 
   if (!net.enabled) {
     return (
@@ -164,7 +291,7 @@ export function ConversationView({ id }: { id: string }) {
     );
   }
   if (!target || (!friend && !group)) {
-    return <Empty icon="people" title={target?.kind === 'group' ? 'This group isn’t here any more' : 'Not a friend any more'} detail="Its messages stay on this Mac, but you can’t write here." />;
+    return <Empty icon="people" title={target?.kind === 'group' ? 'This channel isn’t here any more' : 'Not a friend any more'} detail="Its messages stay on this Mac, but you can’t write here." />;
   }
 
   const loadEarlier = async (): Promise<void> => {
@@ -177,13 +304,17 @@ export function ConversationView({ id }: { id: string }) {
       client.store.dispatch({ type: 'toast', text: `Couldn’t load earlier messages: ${errorText(err)}`, level: 'error' });
     }
   };
-  const send = (text: string): Promise<unknown> => (target.kind === 'dm' ? client.api.network['dm.send'](target.peerId, text) : client.api.network['groups.send'](target.groupId, text));
-  const resend = (m: MessageView): void => void send(m.text).catch(() => undefined);
+  const send = (out: Outgoing): Promise<unknown> => client.api.network.post(id, { text: out.text, ...(out.files.length ? { files: [...out.files] } : {}), ...(out.ask ? { ask: out.ask === 'all' ? 'all' : [...out.ask] } : {}) });
+  const resend = (m: MessageView): void => void send({ text: m.text, files: m.files ?? [] }).catch(() => undefined);
   const lastMine = [...messages].reverse().find((m) => m.mine)?.id;
+  const me = net.self ? { peerId: net.self.peerId, name: net.self.name } : undefined;
+  const people = friend ? [{ peerId: friend.peerId, name: friend.name }] : (group?.members.filter((m) => !m.self).map((m) => ({ peerId: m.peerId, name: m.name })) ?? []);
+  const nameOf = (peerId: string): string => net.friends.find((f) => f.peerId === peerId)?.name ?? group?.members.find((m) => m.peerId === peerId)?.name ?? 'someone';
+  const title = group ? channelName(net, group) : (friend?.name ?? '');
 
   return (
-    <div className={s.conversation}>
-      <div ref={ref} className={s.log} onScroll={onScroll} role="log" aria-label={friend ? `Conversation with ${friend.name}` : `Group ${group?.name ?? ''}`}>
+    <div ref={drop.ref} className={cx(s.conversation, drop.over && s.dropping)} {...drop.html}>
+      <div ref={ref} className={s.log} onScroll={onScroll} role="log" aria-label={friend ? `Conversation with ${friend.name}` : `Channel ${title}`}>
         {more ? (
           <div className={s.earlier}>
             <button type="button" onClick={() => void loadEarlier()}>
@@ -199,11 +330,18 @@ export function ConversationView({ id }: { id: string }) {
           return (
             <div key={m.id}>
               {newDay ? <div className={s.day}>{dayLabel(m.ts)}</div> : null}
-              <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} {...(net.self ? { me: net.self } : {})} />
+              <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} {...(me ? { me } : {})} />
             </div>
           );
         })}
+        <LiveRow id={id} {...(me ? { me: me.peerId } : {})} />
       </div>
+      {drop.over ? (
+        <div className={s.dropHint} aria-hidden="true">
+          <Icon name="clip" size={18} />
+          Drop to send to {title}
+        </div>
+      ) : null}
       {group && !group.active ? (
         <div className={s.closed}>
           <div className={s.closedBox}>
@@ -212,7 +350,7 @@ export function ConversationView({ id }: { id: string }) {
           </div>
         </div>
       ) : (
-        <NetComposer id={id} placeholder={friend ? `Message ${friend.name}` : `Message ${group?.name ?? 'the group'}`} send={send} />
+        <NetComposer id={id} placeholder={friend ? `Message ${friend.name}` : `Message ${title}`} people={people} send={send} {...(me ? { me } : {})} />
       )}
     </div>
   );

@@ -1,3 +1,4 @@
+import type { ChatAnswerRequest } from '../core/chat/claude-prompt.js';
 import type { ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
 import type { StepRecord } from '../shared/steps.js';
 
@@ -104,6 +105,8 @@ export interface AgentBackend {
   refreshUsage?(): Promise<Usage | undefined>;
   /** A short worktree name for a task (a small model names it). */
   nameTask?(prompt: string): Promise<string>;
+  /** Answer in a friends' chat from its history (one turn, no tools; core/chat/claude.ts). */
+  answerChat?(req: ChatAnswerRequest): Promise<string>;
   /** Models this Claude Code offers, for the model picker. */
   listModels?(): Promise<ReadonlyArray<{ value: string; label: string; description: string; efforts?: readonly string[] }> | undefined>;
 }

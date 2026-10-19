@@ -29,7 +29,7 @@ function Name({ g }: { g: GroupView }) {
   return (
     <input
       className={s.rename}
-      aria-label="Group name"
+      aria-label="Channel name"
       value={name}
       maxLength={64}
       disabled={!g.active}
@@ -225,7 +225,7 @@ export function GroupInfo({ g, children }: { g: GroupView; children: ReactNode }
   return (
     <>
       <Popover.Root open={open} onOpenChange={(v) => (v ? openNet({ kind: 'group_info', groupId: g.id }) : closeNet())}>
-        <Tip label="Group info: members, invite link">
+        <Tip label="Channel info: members, invite link">
           <Popover.Trigger asChild>{children}</Popover.Trigger>
         </Tip>
         <Popover.Portal>
@@ -241,7 +241,7 @@ export function GroupInfo({ g, children }: { g: GroupView; children: ReactNode }
             {g.active ? (
               <div className={s.infoFooter}>
                 <button type="button" className={s.leave} onClick={() => openNet({ kind: 'leave_group', groupId: g.id })}>
-                  Leave Group…
+                  Leave Channel…
                 </button>
               </div>
             ) : null}

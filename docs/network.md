@@ -138,6 +138,60 @@ offline.
   from the admin whose invite you used; at most 500 groups and 100 people per group.
 - One Mac per identity: a second klaud process with the same `~/.klaud` doesn't start the network.
 
+## Chats: channels, files and Claudes
+
+Code: `src/core/chat/` (files, Claudes, the main channel, `launch.ts`), `src/net/mesh/extras.ts` (what a
+message carries), the Mac app's `src/network/` (`ChatTabs`, `ChatFiles`, `NetComposer`). The daemon runs it
+whenever the network is on.
+
+**What a message carries.** Inside the encryption (a group message's sealed JSON, a direct message's Noise
+link) a message is `{ text, files?, ask?, claude? }`: `files` are `{ sha, name, size, mime?, image? }` (the
+bytes travel separately), `ask: { to: 'all' | peerIds }` calls Claudes in, `claude: { for }` marks a Claude's
+answer to message `for`. Older Macs read only `text`. Names are cleaned (no folders, control or bidi
+characters); malformed extras are dropped.
+
+**Channels.** Groups are shown as channels, as tabs above the conversation (`chatTabs` in the window's
+preferences). Your **main channel** ("All Friends" to you, "kay’s friends" to the others) is a group with all
+your friends, made the first time you open it (nobody gets a group they didn't expect before that); every
+friend you add later joins it (you're its admin). Its id is `mainChannel` in settings.
+
+**Files.** Attaching a file takes it into `~/.klaud/chat-files/<sha>/<name>` (an APFS clone: instant, no space;
+a copy elsewhere), so Send is instant and later edits to the original don't change what friends get. Folders
+are refused (compress them first); 4 GB at most, 20 per message; pasted bytes 5.5 MB (they ride one daemon
+frame). Friends pull a file straight from a Mac that has it over the same Noise links as messages:
+`f_get { rid, sha, off, len }` → `f_data { rid, off, d }` (base64, 256 KB pieces) or `f_err`, with 12 pieces
+in flight. Any Mac that has the file serves it, but only to someone in a conversation it was shared in (who
+isn't gets the same "not here" as for a file that isn't there); if the one asked stops answering, the rest
+comes from the next (the sharer first, then the others in the conversation), and a file nobody online has
+waits until one of them is back. The SHA-256 is checked before the file is kept. A Mac only serves a file
+to someone if *somebody else* shared it in a conversation they're both in (claiming you shared a checksum
+yourself gets you nothing), at most 48 pieces at once and 48 MB/s per person (more is answered "busy" and
+asked again shortly). Files up to 50 MB that a friend shares come by themselves; the rest (and anything from
+someone who isn't your friend) when you click Download. While you pull from a Mac, its `f_data` frames have
+their own allowance on the link (64 MB/s, bursts of 128 MB), so a transfer doesn't starve messages; at
+other times they count like anything else. On a local link a 128 MB file takes about 2 s. A direct message
+with only files carries "📎 name" as its text for Macs that don't know about files yet.
+
+**Claudes, only when asked.** Nobody's Claude reads along. The Ask Claude menu under the message box asks
+your Claude, everyone's, or one person's, for that one message. Each Mac whose owner's Claude was asked
+answers on that owner's Claude login: one turn, no tools, no saved session (`AgentBackend.answerChat`),
+reading the conversation as every member's Mac holds it (the last 60 messages, 30 000 characters, with
+who wrote what), the ask's text files (200 KB each, 120 000 characters in all) and pictures (4, 3.75 MB
+each). The answer goes back into the chat as "<owner>’s Claude" (split into up to four messages when long),
+so every Claude shares one history and each answer is part of what the next one reads; there is no
+per-Claude session to drift. While it works the others see "bob’s Claude is answering…" (`live` frames,
+repeated every minute, forgotten after three; only for an ask that called that person's Claude, four at
+most per person). The history and files are marked as context from several
+people: only the asker's message is a request.
+
+Who may call your Claude: you always; others as **Settings › People & access › Who can ask your Claude in
+chats** says (`chatClaude`: friends in the chat (default), people you trust, only you; someone in a channel
+who isn't your friend needs your trust either way), never someone you blocked; 20 asks per person an hour
+and 60 from everyone together, two answers at a time, 20 waiting. Chat text and files can't open or close
+the prompt's own sections (`<chat>`, `<message>`, `<file>` in them are defused). An ask older than 10 minutes when
+it reaches you (you were offline) isn't answered, and each is answered once (`~/.klaud/chat-claude.json`).
+If your Claude can't answer, you get a notification; the others just see it stop.
+
 ## Tasks between Claudes (the gateway)
 
 Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `src/agent/gateway-tools.ts`

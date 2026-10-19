@@ -50,6 +50,7 @@ export const PrefsPatch = z
     subagents: z.enum(['full', 'compact', 'hidden']),
     hiddenButtons: z.array(z.string().max(40)).max(40),
     friendWorktrees: z.enum(['ask', 'off']),
+    chatClaude: z.enum(['everyone', 'trusted', 'off']),
     shell: z.string().max(200).optional(),
     shellLogin: bool,
     shellArgs: z.array(z.string().max(200)).max(20),
