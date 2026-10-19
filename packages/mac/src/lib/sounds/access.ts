@@ -33,11 +33,6 @@ export async function notificationAccess(): Promise<NotificationAccess> {
   return shell<NotificationAccess>('notification_access', UNKNOWN_ACCESS).catch(() => UNKNOWN_ACCESS);
 }
 
-/** Ask macOS (its "Allow notifications?" prompt, the first time), then what it says. */
-export async function requestNotificationAccess(): Promise<NotificationAccess> {
-  return shell<NotificationAccess>('notification_request', browserAccess()).catch(() => UNKNOWN_ACCESS);
-}
-
 /** Open System Settings › Notifications, at Klaud. */
 export async function openNotificationSettings(): Promise<void> {
   await shell('open_notification_settings', undefined);
@@ -50,14 +45,13 @@ export async function openFocusSettings(): Promise<void> {
 
 /** Do what a guide's button says; resolves with the access afterwards. */
 export async function runAccessAction(action: AccessAction): Promise<NotificationAccess | undefined> {
-  if (action === 'ask') return requestNotificationAccess();
   await (action === 'focus' ? openFocusSettings() : openNotificationSettings());
   return undefined;
 }
 
 /**
  * The current access, checked again whenever the window comes back (you may have just changed
- * it in System Settings), and on `recheck` (after a test, or answering macOS's prompt).
+ * it in System Settings), and on `recheck` (after a test).
  */
 export function useNotificationAccess(): { readonly access: NotificationAccess | undefined; readonly recheck: (known?: NotificationAccess) => void } {
   const [access, setAccess] = useState<NotificationAccess>();
