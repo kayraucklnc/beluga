@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      mac_done: ${{ steps.version.outputs.mac_done }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,17 +48,21 @@ jobs:
           name=$(node -p "require('./package.json').name")
           published=$(npm view "$name" versions --json 2>/dev/null || echo '[]')
           bumped=false
-          # Also skip versions already released here (a Mac release can go out while npm can't).
+          # Also skip versions this workflow already tagged.
           git fetch --tags --quiet
-          taken() { node -e "process.exit([].concat($published).includes(require('./package.json').version) ? 0 : 1)" || git rev-parse -q --verify "refs/tags/v$(node -p "require('./package.json').version")" >/dev/null || git rev-parse -q --verify "refs/tags/v$(node -p "require('./package.json').version")-mac" >/dev/null; }
+          taken() { node -e "process.exit([].concat($published).includes(require('./package.json').version) ? 0 : 1)" || git rev-parse -q --verify "refs/tags/v$(node -p "require('./package.json').version")" >/dev/null; }
           while taken; do
             npm version patch --no-git-tag-version > /dev/null
             bumped=true
           done
           version=$(node -p "require('./package.json').version")
-          echo "Releasing $name@$version (bumped: $bumped)"
+          # Klaud for Mac released by hand already (scripts/release-mac.mjs, tag v<version>-mac): npm only.
+          mac_done=false
+          git rev-parse -q --verify "refs/tags/v$version-mac" >/dev/null && mac_done=true
+          echo "Releasing $name@$version (bumped: $bumped, Mac already released: $mac_done)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "bumped=$bumped" >> "$GITHUB_OUTPUT"
+          echo "mac_done=$mac_done" >> "$GITHUB_OUTPUT"
 
       # npm needs the trusted publisher set up on npmjs.com (see the top of this file). Until then
       # (or if npm is down) the Mac app still releases: the failure shows as a warning here.
@@ -92,6 +97,7 @@ jobs:
   # installed copies to pick up.
   mac:
     needs: publish
+    if: needs.publish.outputs.mac_done != 'true'
     runs-on: macos-latest
     permissions:
       contents: write
