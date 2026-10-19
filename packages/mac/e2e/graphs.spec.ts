@@ -1,0 +1,68 @@
+import { expect, test, type Page } from '@playwright/test';
+
+/** Graphs Claude draws (docs/graphs.md): /visualize in the demo, then point, click, walk through, open in full. */
+
+const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
+const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea)');
+
+async function openWorkspace(page: Page, name: string): Promise<void> {
+  const row = sidebar(page).getByRole('button', { name, exact: true });
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
+  await sidebar(page).getByRole('button', { name, exact: true }).click();
+}
+
+test('draws what Claude visualizes, and you can explore it', async ({ page }) => {
+  await page.goto('/');
+  await openWorkspace(page, 'webhook-retries');
+  await composer(page).fill('/visualize how a payment goes through');
+  await composer(page).press('Enter');
+  // Your words, not the command.
+  await expect(page.getByText('Visualize how a payment goes through').last()).toBeVisible();
+
+  const graph = page.getByRole('figure', { name: 'Graph: How a payment goes through' }).last();
+  await expect(graph.locator('[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
+  await expect(graph.getByText('9 parts · 5-step walkthrough')).toBeVisible();
+  const node = (label: string) => graph.locator('.react-flow__node').filter({ hasText: label });
+  await expect(node('Webhook handler')).toBeVisible();
+  await expect(node('orders')).toContainText('stripe_intent');
+
+  // A node's details: Claude's notes and what it's connected to; a connection goes there.
+  await node('Webhook handler').click();
+  const details = graph.getByRole('complementary', { name: 'About Webhook handler' });
+  await expect(details).toContainText('idempotent');
+  await expect(details).toContainText('Blocked');
+  await details.getByRole('button', { name: /Sends data to\s*orders/ }).click();
+  await expect(graph.getByRole('complementary', { name: 'About orders' })).toBeVisible();
+  await graph.getByRole('complementary', { name: 'About orders' }).getByRole('button', { name: 'Close' }).click();
+
+  // The walkthrough: Next, Back, Esc.
+  await graph.hover();
+  await graph.getByRole('button', { name: 'Walk Me Through It' }).click();
+  const walk = graph.getByRole('region', { name: 'Walkthrough' });
+  await expect(walk).toContainText('1 of 5');
+  await expect(walk).toContainText('The customer pays');
+  await walk.getByRole('button', { name: 'Next' }).click();
+  await expect(walk).toContainText('Who is asking?');
+  await page.keyboard.press('ArrowLeft');
+  await expect(walk).toContainText('1 of 5');
+  await page.keyboard.press('Escape');
+  await expect(walk).toBeHidden();
+
+  // The whole window, with a minimap; Esc closes it.
+  await graph.hover();
+  await graph.getByRole('button', { name: 'Open in Full Window' }).click();
+  const full = page.getByRole('dialog', { name: 'How a payment goes through' });
+  await expect(full.locator('[data-ready="true"]')).toBeVisible();
+  await expect(full.locator('.react-flow__minimap')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(full).toBeHidden();
+});
+
+test('a broken graph says what is wrong and shows its JSON', async ({ page }) => {
+  await page.goto('/');
+  await openWorkspace(page, 'webhook-retries');
+  // Your own message is Markdown too: a block with a mistake in it.
+  await composer(page).fill('```klaud-graph\n{"nodes": [{"id": "a"}]}\n```');
+  await composer(page).press('Enter');
+  await expect(page.getByText(/Can’t draw this graph: nodes\[0\]\.label/).last()).toBeVisible({ timeout: 10_000 });
+});

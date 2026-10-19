@@ -17,6 +17,8 @@ import { REHYPE_PLUGINS, REMARK_PLUGINS, TO_HTML } from './md-pipeline.js';
 import { findAnchor, scrollToElement } from './md-dom.js';
 import { metaRows, splitFrontMatter, type MetaRow } from './md-frontmatter.js';
 import { resolveLink } from './md-paths.js';
+import { GraphBlock } from '../graph/GraphBlock.js';
+import { GRAPH_FENCE } from '@klaud/shared/graph-spec.js';
 import m from './markdown.module.css';
 
 /**
@@ -145,6 +147,7 @@ function makeComponents(ctx: { current: Ctx }): Components {
         ?.slice('language-'.length);
       if (lang === 'math') return <MathTex tex={text} display />;
       if (lang === 'mermaid') return <Diagram code={text} />;
+      if (lang === GRAPH_FENCE) return <GraphBlock code={text} />;
       return <CodeBlock code={text} lang={lang} />;
     },
     code: ({ className, children }) =>

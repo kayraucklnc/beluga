@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { createContext, memo, useContext, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ATTACHMENT_SCHEME } from '@klaud/core/attachment-share.js';
@@ -15,6 +15,8 @@ import { useKlaud } from '../lib/klaud.js';
 import { MentionPill } from './Mention.js';
 import { type MentionWorld, linkMentions, parseMentionHref } from './mentions.js';
 import { quoteInBox } from './message-menu.js';
+import { GraphBlock } from '../components/graph/GraphBlock.js';
+import { GRAPH_FENCE } from '@klaud/shared/graph-spec.js';
 import s from './chat.module.css';
 
 /** Syntax colors load on demand (shiki is big), then stay. */
@@ -111,6 +113,21 @@ function MdImage({ src, alt, all, local }: { src: string; alt: string; all: read
   );
 }
 
+/** Whether the text is still being written (read by graph blocks; a context, so renderers stay put). */
+const LiveText = createContext(false);
+/** Every local image in the message, so the lightbox steps from one to the next (a context, as above). */
+const MessageImages = createContext<readonly ChatImage[]>([]);
+
+function MessageImage({ src, alt, local }: { src: string; alt: string; local: boolean }) {
+  return <MdImage src={src} alt={alt} all={useContext(MessageImages)} local={local} />;
+}
+
+/** A graph block in a message (its own component, so it stays mounted while the text grows). */
+function MessageGraph({ code, localImages }: { code: string; localImages: boolean }) {
+  const live = useContext(LiveText);
+  return <GraphBlock code={code} live={live} localImages={localImages} />;
+}
+
 type HastNode = { type: string; tagName?: string; value?: string; children?: HastNode[] };
 
 /** How many images a paragraph holds when it's nothing but images (0 otherwise). */
@@ -137,17 +154,22 @@ function linkifyPaths(text: string): string {
     .join('\n');
 }
 
+const keepUrl = (u: string): string => u;
+
 /**
  * `localImages`: pictures named by a path on this Mac are shown (your own messages and your own
  * Claude's only; anyone else's stay a chip). `mentions`: draw "@mia", "@bob-api", "@src/auth.ts"…
- * as pills when they name someone or something here.
+ * as pills when they name someone or something here. `live`: the text is still being written (a
+ * graph block that isn't finished yet says it's being drawn instead of failing).
  */
-export const Markdown = memo(function Markdown({ text, paths = false, localImages = false, mentions }: { text: string; paths?: boolean; localImages?: boolean; mentions?: MentionWorld }) {
+export const Markdown = memo(function Markdown({ text, paths = false, localImages = false, mentions, live = false }: { text: string; paths?: boolean; localImages?: boolean; mentions?: MentionWorld; live?: boolean }) {
   const actions = useActions();
   // Every local image in the message, so the lightbox steps from one to the next.
   const images = useMemo(() => (localImages ? messageImages(text) : []), [text, localImages]);
-  const components: Components = {
-    img: ({ src, alt }) => <MdImage src={typeof src === 'string' ? src : ''} alt={alt ?? ''} all={images} local={localImages} />,
+  // The same renderers from one render to the next: a new one would remount what it drew (a graph
+  // would lay itself out again on every streamed word).
+  const components = useMemo<Components>(() => ({
+    img: ({ src, alt }) => <MessageImage src={typeof src === 'string' ? src : ''} alt={alt ?? ''} local={localImages} />,
     // A paragraph of nothing but images: a row of them (several get smaller, side by side).
     p: ({ node, children }) => {
       const count = imagesOnly(node as HastNode | undefined);
@@ -192,9 +214,11 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       );
     },
     code: ({ className, children }) => {
-      const lang = /language-(\w+)/.exec(className ?? '')?.[1];
+      const lang = /language-([\w-]+)/.exec(className ?? '')?.[1];
       const code = String(children).replace(/\n$/, '');
       if (!className && !code.includes('\n')) return <code className={s.inlineCode}>{children}</code>;
+      // A diagram Claude drew (docs/graphs.md): only data, drawn with the window's own pieces.
+      if (lang === GRAPH_FENCE) return <MessageGraph code={code} localImages={localImages} />;
       return <Code code={code} {...(lang ? { lang } : {})} />;
     },
     pre: ({ children }) => <>{children}</>,
@@ -203,12 +227,16 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
         <table>{children}</table>
       </div>
     ),
-  };
+  }), [actions, localImages]);
   return (
-    <div className={`${s.markdown} selectable`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={(u) => u}>
-        {((t: string) => (paths ? linkifyPaths(t) : t))(mentions ? linkMentions(text, mentions) : text)}
-      </ReactMarkdown>
-    </div>
+    <LiveText.Provider value={live}>
+      <MessageImages.Provider value={images}>
+      <div className={`${s.markdown} selectable`}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={keepUrl}>
+          {((t: string) => (paths ? linkifyPaths(t) : t))(mentions ? linkMentions(text, mentions) : text)}
+        </ReactMarkdown>
+      </div>
+      </MessageImages.Provider>
+    </LiveText.Provider>
   );
 });

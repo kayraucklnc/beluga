@@ -3,6 +3,7 @@ import { demoAnswerFromPrompt } from '../core/chat/demo-answers.js';
 import { slugify } from './namer.js';
 import { MORE, MockStepper, splitLine } from './mock-steps.js';
 import { MockContext, withGrowingContext } from './mock-context.js';
+import { MOCK_GRAPH_ANSWER } from './mock-graphs.js';
 
 interface Script {
   readonly match: RegExp;
@@ -17,6 +18,12 @@ interface Script {
 
 /** Canned, fast replies so the demo (and README recordings) never wait on real Claude calls. */
 const SCRIPTS: readonly Script[] = [
+  {
+    // /visualize, or asking for a diagram: an interactive graph (docs/graphs.md).
+    match: /visuali[sz]e|diagram|\bdraw (it|this|me)\b|map (it|this) out/i,
+    steps: ['Glob src/**/*.ts', 'Read src/server.ts', 'Read src/payments.ts', 'Read src/webhooks.ts'],
+    answer: MOCK_GRAPH_ANSWER,
+  },
   {
     // A long task, so you can try queueing messages (and sending one now) while Claude works.
     match: /deep dive|take your time/i,

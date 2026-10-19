@@ -166,7 +166,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
             </div>
           ))}
           {item.text ? (
-            <Markdown text={item.text} paths localImages={mine} />
+            <Markdown text={item.text} paths localImages={mine} live={running} />
           ) : item.status === 'queued' ? (
             // Sending it now, editing or moving it: the queue above the box.
             <div className={s.idle}>Starts when the current task finishes.</div>

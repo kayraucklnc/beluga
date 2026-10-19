@@ -1,0 +1,1021 @@
+/*
+ * klaud-graph: diagrams drawn in the window's own greys. Cards are quiet, lines are thin, and
+ * color only means something (a status, the accent for what matters, the problem color for
+ * what blocks). Pointing at something lights it and fades the rest.
+ */
+
+/* ---------- The card in a conversation ---------- */
+
+.block {
+  margin: 0.55em 0 0.85em;
+  border-radius: var(--radius-l);
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--hairline-strong);
+  overflow: hidden;
+  /* Selecting text around it shouldn't select the graph's labels. */
+  user-select: none;
+}
+.blockHead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 12px 8px 13px;
+  border-bottom: 1px solid var(--hairline);
+}
+.blockTitles {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.blockTitle {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
+.blockSummary {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.blockMeta {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.inlineFrame {
+  position: relative;
+  background: var(--graph-bg);
+}
+.drawing {
+  height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 12px;
+  background: linear-gradient(100deg, var(--bg-sunken) 30%, var(--bg-hover) 50%, var(--bg-sunken) 70%) 0 0 / 300% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -150% 0;
+  }
+}
+.blockError {
+  margin: 0.5em 0 0.8em;
+  padding: 8px 10px 10px;
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--error) 30%, var(--hairline));
+}
+.blockError figcaption {
+  margin-bottom: 6px;
+  color: var(--error);
+  font-size: 12px;
+}
+
+/* ---------- The canvas ---------- */
+
+.block,
+.full {
+  --graph-bg: var(--bg-sunken);
+  --graph-line: color-mix(in srgb, var(--text-3) 78%, transparent);
+  --graph-block: color-mix(in srgb, var(--error) 75%, var(--text-3));
+  --graph-dot: color-mix(in srgb, var(--text-3) 34%, transparent);
+}
+.canvas {
+  position: absolute;
+  inset: 0;
+  outline: none;
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: var(--graph-dot);
+  --xy-minimap-background-color: var(--bg-raised);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--bg-sunken) 72%, transparent);
+  --xy-minimap-mask-stroke-color: var(--hairline-strong);
+  --xy-minimap-mask-stroke-width: 1;
+  --xy-minimap-node-background-color: var(--hairline-strong);
+}
+.canvas :global(.react-flow__viewport) {
+  transition: opacity 260ms var(--ease-out);
+}
+.canvas[data-phase='measuring'] :global(.react-flow__viewport),
+.canvas[data-phase='laying-out'] :global(.react-flow__viewport) {
+  opacity: 0;
+  transition: none;
+}
+.canvas :global(.react-flow__node) {
+  transition: opacity var(--dur) var(--ease-out);
+}
+.canvas :global(.react-flow__node-group) {
+  border: 0 !important;
+  outline: none;
+}
+.canvas :global(.react-flow__node):focus-visible {
+  outline: none;
+}
+.canvas :global(.react-flow__pane) {
+  cursor: default;
+}
+.canvas :global(.react-flow__pane.dragging) {
+  cursor: grabbing;
+}
+.canvas :global(.react-flow__node) {
+  cursor: pointer;
+}
+.canvas :global(.react-flow__attribution) {
+  padding: 1px 6px;
+  border-radius: 5px 0 0 0;
+  background: transparent;
+  font-size: 9px;
+  opacity: 0.55;
+}
+.canvas :global(.react-flow__attribution a) {
+  color: var(--text-3);
+}
+.markerDefs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.overlayNote {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  font-size: 12px;
+  pointer-events: none;
+}
+.handle {
+  opacity: 0;
+  width: 4px !important;
+  height: 4px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  pointer-events: none;
+}
+
+/* ---------- Nodes ---------- */
+
+.card {
+  position: relative;
+  min-width: 156px;
+  max-width: 260px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 12.5px;
+  box-shadow:
+    0 0 0 1px var(--hairline-strong),
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 3px 10px -4px rgba(0, 0, 0, 0.08);
+  transition:
+    box-shadow var(--dur) var(--ease-out),
+    transform var(--dur) var(--ease-out);
+}
+.nodeHot .card {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--text) 26%, transparent),
+    0 2px 4px rgba(0, 0, 0, 0.06),
+    0 8px 22px -6px rgba(0, 0, 0, 0.18);
+}
+.nodeDim {
+  opacity: 0.28;
+}
+:global(.react-flow__node.selected) .card,
+:global(.react-flow__node.selected) .group {
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    0 0 0 5px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 8px 22px -6px rgba(0, 0, 0, 0.18);
+}
+.emphasis {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--accent) 80%, transparent),
+    0 0 0 5px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 3px 10px -4px rgba(0, 0, 0, 0.1);
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.kindIcon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+}
+/* A hint of what family a node is, on its icon only. */
+.kindIcon[data-kind='client'] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
+}
+.kindIcon[data-kind='database'],
+.kindIcon[data-kind='storage'],
+.kindIcon[data-kind='queue'] {
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 9%, var(--bg-raised));
+}
+.kindIcon[data-kind='decision'] {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-raised));
+}
+.kindIcon[data-kind='milestone'],
+.kindIcon[data-kind='task'] {
+  color: var(--claude);
+  background: color-mix(in srgb, var(--claude) 10%, var(--bg-raised));
+}
+.kindIcon[data-kind='actor'],
+.kindIcon[data-kind='person'] {
+  border-radius: 50%;
+}
+.initial {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.titles {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.label {
+  font-weight: 600;
+  font-size: 12.5px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.sublabel {
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.3;
+  font-weight: 400;
+}
+.tag {
+  flex: none;
+  align-self: flex-start;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 15px;
+  color: var(--text-2);
+  background: var(--bg-hover);
+  white-space: nowrap;
+}
+.foot {
+  display: flex;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--hairline);
+}
+/* Kinds that look different. */
+.kind_external {
+  background: color-mix(in srgb, var(--bg-raised) 55%, transparent);
+  box-shadow: none;
+  outline: 1px dashed var(--hairline-strong);
+  outline-offset: -1px;
+}
+.kind_note {
+  max-width: 240px;
+  background: color-mix(in srgb, var(--warn) 6%, var(--bg-raised));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--warn) 18%, var(--hairline)),
+    0 2px 6px -3px rgba(0, 0, 0, 0.08);
+}
+.kind_note .label {
+  font-weight: 500;
+}
+.kind_note .kindIcon {
+  color: var(--warn);
+  background: transparent;
+  box-shadow: none;
+  width: 18px;
+}
+.kind_decision {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--warn) 34%, var(--hairline-strong)),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.kind_milestone {
+  padding: 11px 13px;
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--claude) 45%, var(--hairline-strong)),
+    0 3px 10px -4px rgba(0, 0, 0, 0.1);
+}
+.kind_milestone .label {
+  font-size: 13.5px;
+}
+.kind_actor,
+.kind_person {
+  min-width: 0;
+  padding: 5px 14px 5px 5px;
+  border-radius: 999px;
+}
+.kind_actor .kindIcon,
+.kind_person .kindIcon {
+  width: 28px;
+  height: 28px;
+}
+.kind_actor .foot,
+.kind_person .foot {
+  display: none;
+}
+.metric {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 2px 2px 1px;
+}
+.metricValue {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.metricLabel {
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+/* A database's fields. */
+.table {
+  padding: 0;
+  min-width: 210px;
+  overflow: hidden;
+}
+.table .head {
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--hairline);
+}
+.table .foot {
+  margin: 0;
+  padding: 7px 11px 8px;
+}
+.fields {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+.fieldRow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 6px;
+  padding: 2.5px 11px 2.5px 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.fieldKey {
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+}
+.fieldKey[data-key='pk'] {
+  color: var(--warn);
+}
+.fieldKey[data-key='fk'] {
+  color: var(--info);
+}
+.fieldName {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fieldType {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.fieldNote {
+  grid-column: 2 / -1;
+  font-family: var(--font);
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+/* A picture as proof. */
+.imageCard {
+  width: 232px;
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+}
+.picture {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: var(--bg-sunken);
+  cursor: zoom-in;
+}
+.picture img {
+  display: block;
+  width: 100%;
+  height: 138px;
+  object-fit: cover;
+  object-position: top;
+}
+.noPicture {
+  height: 84px;
+  display: grid;
+  place-items: center;
+  padding: 0 14px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 11px;
+  background: var(--bg-sunken);
+}
+.imageCaption {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 10px 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* A group: a labelled box around what belongs together. */
+.group {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 2.4%, transparent);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  transition: box-shadow var(--dur) var(--ease-out);
+}
+.group.emphasis {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 14px;
+}
+.groupName {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+/* Status. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.statusMark {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.status[data-status='todo'] .statusMark,
+.status[data-status='idle'] .statusMark {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.status[data-status='active'] .statusMark {
+  background: conic-gradient(currentColor 0 50%, transparent 50% 100%);
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  animation: pulse 1.8s var(--ease-out) infinite;
+}
+.status[data-status='review'] .statusMark {
+  background: radial-gradient(circle, currentColor 0 2px, transparent 2.5px);
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+.tone_muted {
+  color: var(--text-3);
+}
+.tone_claude {
+  color: var(--claude);
+}
+.tone_info {
+  color: var(--info);
+}
+.tone_ok {
+  color: var(--ok);
+}
+.tone_warn {
+  color: var(--warn);
+}
+.tone_error {
+  color: var(--error);
+}
+
+/* ---------- Lines ---------- */
+
+.canvas .edge {
+  fill: none;
+  stroke: var(--graph-line);
+  stroke-width: 1.4;
+  transition:
+    stroke var(--dur) var(--ease-out),
+    opacity var(--dur) var(--ease-out);
+}
+.canvas .edge_call {
+  stroke-width: 1.6;
+}
+.canvas .edge_async {
+  stroke-dasharray: 6 5;
+}
+.canvas .edgeFlowing {
+  animation: dash 1.1s linear infinite;
+}
+@keyframes dash {
+  to {
+    stroke-dashoffset: -22;
+  }
+}
+.canvas .edge_depends {
+  stroke-dasharray: 0.5 5;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+.canvas .edge_blocks {
+  stroke: var(--graph-block);
+  stroke-width: 1.6;
+}
+.canvas .edgeHot {
+  stroke: color-mix(in srgb, var(--text) 62%, transparent);
+  stroke-width: 2;
+}
+.canvas .edgeEmphasis {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.canvas .edgeDim {
+  opacity: 0.16;
+}
+.markPlain {
+  fill: var(--graph-line);
+}
+.markHot {
+  fill: color-mix(in srgb, var(--text) 62%, transparent);
+}
+.markAccent {
+  fill: var(--accent);
+}
+.markBlocks {
+  fill: var(--graph-block);
+}
+.edgeDot {
+  fill: color-mix(in srgb, var(--text) 55%, transparent);
+}
+.edgeDotAccent {
+  fill: var(--accent);
+}
+.edgeLabel {
+  position: absolute;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--text-2);
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  white-space: nowrap;
+  pointer-events: none;
+  transition:
+    opacity var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out);
+}
+.edgeLabelHot {
+  color: var(--text);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--text) 30%, transparent);
+}
+.edgeLabelDim {
+  opacity: 0.2;
+}
+
+/* ---------- Tools on the canvas ---------- */
+
+.tools,
+.zoom {
+  display: flex;
+  gap: 1px;
+  margin: 9px !important;
+  padding: 3px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-raised) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: var(--shadow-pop);
+}
+.tools {
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity var(--dur) var(--ease-out),
+    transform var(--dur) var(--ease-out),
+    margin var(--dur) var(--ease-out);
+}
+.canvas:hover .tools,
+.canvas:focus-within .tools,
+.canvas[data-mode='full'] .tools {
+  opacity: 1;
+  transform: none;
+}
+.canvas:has(.inspector) .tools {
+  margin-right: 300px !important;
+}
+.canvas:has(.inspector[data-wide='true']) .tools {
+  margin-right: 362px !important;
+}
+.minimap {
+  margin: 12px !important;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow-pop);
+}
+.miniNode {
+  fill: color-mix(in srgb, var(--text-3) 55%, transparent);
+}
+.miniGroup {
+  fill: transparent;
+  stroke: var(--hairline-strong);
+  stroke-width: 6;
+}
+
+/* ---------- Walkthrough ---------- */
+
+.walk {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 7;
+  width: min(680px, calc(100% - 24px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 10px 10px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow: var(--shadow-pop);
+  animation: rise var(--dur) var(--ease-out);
+}
+.canvas:has(.inspector) .walk {
+  width: min(680px, calc(100% - 320px));
+  left: calc((100% - 296px) / 2);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+.walkDots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: stretch;
+  justify-content: center;
+}
+.walkDot {
+  width: 5px;
+  height: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: var(--hairline-strong);
+  cursor: pointer;
+  transition:
+    height var(--dur) var(--ease-out),
+    background var(--dur) var(--ease-out);
+}
+.walkDot[data-on='past'] {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.walkDot[data-on='true'] {
+  height: 14px;
+  background: var(--accent);
+}
+.walkText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.walkCount {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.walkTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.walkBody {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.walkNav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.walkNext,
+.walkDone {
+  height: 26px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent);
+  cursor: pointer;
+}
+.walkNext:hover,
+.walkDone:hover {
+  filter: brightness(1.08);
+}
+
+/* ---------- Details ---------- */
+
+.inspector {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  bottom: 9px;
+  z-index: 8;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-raised) 95%, transparent);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  user-select: text;
+  animation: slideIn var(--dur) var(--ease-out);
+}
+.inspector[data-wide='true'] {
+  width: 340px;
+}
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+.inspectorHead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 8px 10px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.inspectorTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.inspectorBody {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 11px 12px 14px;
+  font-size: 12.5px;
+}
+.inspectorLead {
+  margin: 0;
+  color: var(--text-2);
+}
+.inspectorFacts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.inspectorValue {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.inspectorText {
+  font-size: 12.5px;
+}
+.inspectorText > :first-child > :first-child {
+  margin-top: 0;
+}
+.inspectorText > :first-child > :last-child {
+  margin-bottom: 0;
+}
+.inspectorSection {
+  margin: 0 0 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.inspector .fields {
+  padding: 2px 0 0;
+}
+.inspector .fieldRow {
+  padding-left: 0;
+  padding-right: 0;
+}
+.inspectorEmpty {
+  margin: 0;
+  color: var(--text-3);
+}
+.nodeLinks {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0 -6px;
+}
+.nodeLink,
+.nodeLinkOff {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+}
+.nodeLink span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nodeLink:hover {
+  background: var(--bg-hover);
+}
+.nodeLinkOff {
+  color: var(--text-2);
+  cursor: default;
+}
+.connections {
+  margin: 0 -6px;
+  padding: 0;
+  list-style: none;
+}
+.connection {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 1px 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.connection:hover {
+  background: var(--bg-hover);
+}
+.connectionVerb {
+  grid-column: 1 / -1;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.connectionName {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--text);
+}
+.connectionName svg {
+  color: var(--text-3);
+}
+.connectionLabel {
+  font-size: 11px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+}
+
+/* ---------- The whole window ---------- */
+
+.fullOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(10, 10, 12, 0.38);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: fadeIn var(--dur) var(--ease-out);
+}
+.full {
+  position: fixed;
+  inset: 26px;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 0.5px var(--hairline-strong),
+    0 30px 80px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  outline: none;
+  animation: grow 220ms var(--ease-out);
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes grow {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+.fullHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+.fullTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.grow {
+  flex: 1;
+}
+.fullFrame {
+  position: relative;
+  flex: 1;
+  background: var(--graph-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status[data-status='active'] .statusMark,
+  .drawing,
+  .canvas .edgeFlowing {
+    animation: none;
+  }
+}
+:global([data-motion='reduce']) .status[data-status='active'] .statusMark,
+:global([data-motion='reduce']) .drawing {
+  animation: none;
+}

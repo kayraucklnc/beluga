@@ -1,0 +1,126 @@
+import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { type Graph, parseGraph } from '@klaud/shared/graph-spec.js';
+import { ActionsContext, type ActionItem } from '../SpecMenu.js';
+import { CodeLines } from '../markdown/CodeLines.js';
+import { IconButton } from '../ui.js';
+import { copyText } from '../../lib/copy.js';
+import { toast, useKlaud } from '../../lib/klaud.js';
+import { type Size, fittedHeight, inlineHeight } from './graph-model.js';
+import { cachedLayout } from './layout-cache.js';
+import { KindIcon } from './marks.js';
+import g from './graph.module.css';
+
+/**
+ * A ```klaud-graph block wherever Markdown is drawn (answers, reports, documents): a card with
+ * the graph's title and the graph itself, which opens in the whole window. React Flow and ELK
+ * load the first time a graph shows. While Claude is still writing the block it says so; a
+ * block that's wrong says what's wrong and shows its JSON.
+ */
+
+const FlowGraph = lazy(() => import('./FlowGraph.js'));
+
+export const GraphBlock = memo(function GraphBlock({ code, live = false, localImages = false }: { code: string; live?: boolean; localImages?: boolean }) {
+  const parsed = useMemo(() => parseGraph(code), [code]);
+  if (!parsed.ok) {
+    if (parsed.incomplete && live) {
+      return (
+        <figure className={g.block} data-state="drawing" aria-label="Graph">
+          <div className={g.drawing}>
+            <KindIcon kind="group" size={14} />
+            Drawing a graph…
+          </div>
+        </figure>
+      );
+    }
+    return (
+      <figure className={g.blockError} data-state="error">
+        <figcaption>Can’t draw this graph: {parsed.error}</figcaption>
+        <CodeLines text={code} lang="json" />
+      </figure>
+    );
+  }
+  return <GraphCard graph={parsed.graph} code={code} warnings={parsed.warnings} localImages={localImages} />;
+});
+
+function useWidth(): [React.RefObject<HTMLElement | null>, number] {
+  const ref = useRef<HTMLElement>(null);
+  const [width, setWidth] = useState(760);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry?.contentRect.width ?? 0);
+      // Only a real change moves the height (the conversation measures rows again).
+      if (w) setWidth((now) => (Math.abs(now - w) > 24 ? w : now));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, width];
+}
+
+function GraphCard({ graph, code, warnings, localImages }: { graph: Graph; code: string; warnings: readonly string[]; localImages: boolean }) {
+  const { client } = useKlaud();
+  const [full, setFull] = useState(false);
+  const [ref, width] = useWidth();
+  const [laid, setLaid] = useState<Size | undefined>(() => cachedLayout(code, 'inline')?.bounds);
+  const height = laid ? fittedHeight(laid, width) : inlineHeight(graph, width);
+  const parts = graph.nodes.filter((n) => n.type !== 'group').length;
+  const copy = (): void => void copyText(JSON.stringify(JSON.parse(code), null, 2)).then(() => toast(client, 'Copied the graph as JSON', 'success'));
+  const items: ActionItem[] = [
+    { label: 'Open in Full Window', icon: 'expand', onSelect: () => setFull(true) },
+    { label: 'Copy as JSON', icon: 'copy', onSelect: copy },
+  ];
+  const meta = [`${parts} ${parts === 1 ? 'part' : 'parts'}`, graph.steps.length ? `${graph.steps.length}-step walkthrough` : ''].filter(Boolean).join(' · ');
+  return (
+    <>
+      <ActionsContext items={items}>
+      <figure ref={ref} className={g.block} data-state="ready" aria-label={graph.title ? `Graph: ${graph.title}` : 'Graph'}>
+        <figcaption className={g.blockHead}>
+          <span className={g.blockTitles}>
+            <span className={g.blockTitle}>{graph.title ?? 'Graph'}</span>
+            {graph.summary ? <span className={g.blockSummary}>{graph.summary}</span> : null}
+          </span>
+          <span className={g.blockMeta} title={warnings.length ? warnings.join('\n') : undefined}>
+            {meta}
+            {warnings.length ? ` · ${warnings.length} left out` : ''}
+          </span>
+        </figcaption>
+        <div className={g.inlineFrame} style={{ height }}>
+          <Suspense fallback={<div className={g.overlayNote}>Laying out…</div>}>
+            <FlowGraph graph={graph} mode="inline" localImages={localImages} onExpand={() => setFull(true)} onCopy={copy} onLaidOut={setLaid} cacheKey={code} />
+          </Suspense>
+        </div>
+      </figure>
+      </ActionsContext>
+      {full ? <FullWindow graph={graph} code={code} localImages={localImages} onClose={() => setFull(false)} onCopy={copy} /> : null}
+    </>
+  );
+}
+
+/** The graph in the whole window: a minimap, zoom buttons and room for its details. Esc closes. */
+function FullWindow({ graph, code, localImages, onClose, onCopy }: { graph: Graph; code: string; localImages: boolean; onClose: () => void; onCopy: () => void }) {
+  return (
+    <Dialog.Root open onOpenChange={(open) => (open ? undefined : onClose())}>
+      <Dialog.Portal>
+        <Dialog.Overlay className={g.fullOverlay} />
+        <Dialog.Content className={g.full} aria-describedby={undefined} onOpenAutoFocus={(e) => e.preventDefault()}>
+          <header className={g.fullHead}>
+            <Dialog.Title className={g.fullTitle}>{graph.title ?? 'Graph'}</Dialog.Title>
+            {graph.summary ? <span className={g.blockSummary}>{graph.summary}</span> : null}
+            <span className={g.grow} />
+            <Dialog.Close asChild>
+              <IconButton icon="x" label="Close" keys="esc" />
+            </Dialog.Close>
+          </header>
+          <div className={g.fullFrame}>
+            <Suspense fallback={<div className={g.overlayNote}>Laying out…</div>}>
+              <FlowGraph graph={graph} mode="full" localImages={localImages} onCopy={onCopy} cacheKey={code} />
+            </Suspense>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
