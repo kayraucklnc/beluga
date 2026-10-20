@@ -204,16 +204,41 @@ export interface CcOutputFile extends CcOutput {
   readonly truncated?: boolean;
 }
 
-export interface ClaudeCodeSlice {
-  readonly claudeCode: { readonly sessions: readonly CcSession[] };
+/**
+ * Who started a sub-agent's worktree, from Claude Code's files on disk: kept for as long as the
+ * worktree is there (Klaud follows an agent live only for a while after it finishes).
+ */
+export interface AgentOrigin {
+  /** The worktree. */
+  readonly path: string;
+  readonly agentId: string;
+  /** What it was asked to do. */
+  readonly description?: string;
+  readonly type?: string;
+  readonly branch?: string;
+  /** The session that started it, the folder it ran in, and what it's called. */
+  readonly sessionId: string;
+  readonly sessionCwd?: string;
+  readonly sessionTitle?: string;
+  /** That conversation in Klaud: the workspace whose chat it is (one of Klaud's own) or whose folder it ran in. */
+  readonly projectId?: string;
+  readonly workspaceId?: string;
+  readonly own?: true;
+  /** The agent's last write, ms. */
+  readonly lastAt: number;
+  readonly finished?: true;
 }
 
-export const initialClaudeCode: ClaudeCodeSlice = { claudeCode: { sessions: [] } };
+export interface ClaudeCodeSlice {
+  readonly claudeCode: { readonly sessions: readonly CcSession[]; readonly origins: readonly AgentOrigin[] };
+}
 
-export type ClaudeCodeAction = { type: 'claude_code'; sessions: readonly CcSession[] };
+export const initialClaudeCode: ClaudeCodeSlice = { claudeCode: { sessions: [], origins: [] } };
 
-export function reduceClaudeCode(_state: ClaudeCodeSlice, action: ClaudeCodeAction): ClaudeCodeSlice {
-  return { claudeCode: { sessions: action.sessions } };
+export type ClaudeCodeAction = { type: 'claude_code'; sessions: readonly CcSession[] } | { type: 'agent_origins'; origins: readonly AgentOrigin[] };
+
+export function reduceClaudeCode(state: ClaudeCodeSlice, action: ClaudeCodeAction): ClaudeCodeSlice {
+  return action.type === 'claude_code' ? { claudeCode: { ...state.claudeCode, sessions: action.sessions } } : { claudeCode: { ...state.claudeCode, origins: action.origins } };
 }
 
 const ENDED: ReadonlySet<CcAgentStatus> = new Set(['finished', 'failed', 'stopped']);

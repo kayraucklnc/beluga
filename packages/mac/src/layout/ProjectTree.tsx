@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef } from 'react';
+import { Fragment, useEffect, useMemo, useRef } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
 import type { UiAction } from '@klaud/ui/workspace-models.js';
@@ -20,7 +20,7 @@ import { useArrangeDrag } from './arrange-drag.js';
 import { GroupHeader, NewGroupRow, groupItems, isGroupOption, moveItems, moveKey } from './ProjectGroups.js';
 import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, useLayout } from './project-layout.js';
 import { OutsideWorktrees } from './OtherWorktrees.js';
-import { LooseSubAgents, SubAgentRows, useCcSessions } from './SubAgents.js';
+import { SubAgentRows, useAgentOrigins, useCcSessions } from './SubAgents.js';
 import { hasRowsInside } from './project-rows.js';
 import { outsideOf } from './outside-model.js';
 import { openSheet } from '../lib/sheets.js';
@@ -155,20 +155,22 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   // Not the main checkout (work happens in worktrees); questions asked in its folder stay, as chats.
   const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud');
   const main = live.find((w) => w.kind === 'main');
-  // Conversations whose rows show their sub-agents (so those agents' worktrees aren't listed again).
-  const shownUnder = useCallback((wsId: string) => live.some((w) => w.id === wsId && worktreeOrigin(w) !== 'agent'), [live]);
   const archived = p.workspaces.filter((w) => w.archived);
   const item: Target = { project: p.id };
   const githubItems = useGitHubMenuItems(p.id, Boolean(p.root));
   // Archived work stays out of the sidebar: the Overview's Archived list has it.
   const showArchivedItem: ActionItem[] = archived.length ? [{ label: `Show Archived (${archived.length})`, onSelect: () => showArchivedOf(actions.run, p.id) }] : [];
   // Worktrees made outside Klaud that can go, from any tool, ticked in one list.
-  const cleanUpItem: ActionItem[] = outsideOf(p).length ? [{ label: 'Clean Up Worktrees…', onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: p.id }) }] : [];
+  const cleanUpItem: ActionItem[] = [
+    ...(p.workspaces.some((w) => w.kind === 'worktree' && !w.archived) ? [{ label: 'Manage Worktrees…', onSelect: () => actions.run({ type: 'view', view: { kind: 'worktrees', projectId: p.id } }) }] : []),
+    ...(outsideOf(p).length ? [{ label: 'Clean Up Worktrees…', onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: p.id }) }] : []),
+  ];
   const extra: ActionItem[] = [...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, Boolean(state.earnings[p.root])), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, onSelect: () => hide(p) }];
   const kids = depth + 2;
   // Nothing to unfold: no arrow (its place kept, so the icons stay in line).
   const sessions = useCcSessions();
-  const foldable = useMemo(() => hasRowsInside(p, sessions), [p, sessions]);
+  const origins = useAgentOrigins();
+  const foldable = useMemo(() => hasRowsInside(p, sessions, origins), [p, sessions, origins]);
   return (
     <>
       <SpecContext menu={{ kind: 'project', id: p.id }} extra={extra} hide={ownWay}>
@@ -253,8 +255,6 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           ))}
           {/* Worktrees made outside Klaud: after Klaud's own, most recent first, each with where it is. */}
           <OutsideWorktrees p={p} indent={kids} />
-          {/* Sub-agents' own worktrees that no conversation above shows: one folded row. */}
-          <LooseSubAgents p={p} indent={kids} shownUnder={shownUnder} />
         </>
       )}
     </>

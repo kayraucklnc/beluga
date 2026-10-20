@@ -128,14 +128,16 @@ describe('worktree lifecycle', () => {
     mgr.rememberSession(fork.id, 'session-2');
     expect(mgr.find(fork.id)).toMatchObject({ sessionId: 'session-2', forkFromSession: undefined });
 
+    // Uncommitted work is kept by the archive (it used to be lost to "archive anyway").
     writeFileSync(path.join(ws.path, 'wip.txt'), 'x');
     await mgr.refresh();
-    await expect(mgr.archive(ws.id)).rejects.toThrow(/uncommitted/);
-    await mgr.archive(ws.id, true);
-    expect(mgr.find(ws.id)).toMatchObject({ archived: true });
+    const kept = await mgr.archive(ws.id);
+    expect(mgr.find(ws.id)).toMatchObject({ archived: true, archive: { keptBytes: kept!.keptBytes } });
     expect(existsSync(ws.path)).toBe(false);
-    await mgr.restore(ws.id);
+    expect(await mgr.restore(ws.id)).toMatchObject({ snapshot: kept!.snapshot });
     expect(existsSync(path.join(ws.path, 'idea.txt'))).toBe(true);
+    expect(readFileSync(path.join(ws.path, 'wip.txt'), 'utf8')).toBe('x');
+    expect(mgr.find(ws.id)?.archive).toBeUndefined();
 
     await mgr.remove(fork.id);
     expect(mgr.find(fork.id)).toBeUndefined();
@@ -145,6 +147,16 @@ describe('worktree lifecycle', () => {
     expect(again.name).toBe('idea');
     expect(path.basename(again.path)).toBe('idea-2');
     expect(again.id).not.toBe(ws.id);
+  });
+
+  it('deleting an archived worktree for good deletes its archive too', async () => {
+    const ws = await mgr.createWorktree(repos()[0]!.id, 'gone');
+    writeFileSync(path.join(ws.path, 'wip.txt'), 'x');
+    await mgr.archive(ws.id);
+    expect(existsSync(path.join(base, 'home', 'archives', ws.id))).toBe(true);
+    await mgr.remove(ws.id);
+    expect(existsSync(path.join(base, 'home', 'archives', ws.id))).toBe(false);
+    expect(sh(repo, 'for-each-ref', 'refs/klaud/')).toBe('');
   });
 
   it('creates chats in the main folder without a worktree', async () => {

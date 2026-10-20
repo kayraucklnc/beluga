@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
@@ -19,13 +21,14 @@ async function overview(page: Page): Promise<void> {
   await expect(page.getByRole('tablist', { name: 'Show' })).toBeVisible();
 }
 
-/** Archive from the row's right-click menu; uncommitted work is committed first (the default button). */
+/** Archive from the row's right-click menu (everything of yours is kept, uncommitted work too). */
 async function archive(page: Page, name: string): Promise<void> {
   await segment(page, 'All').click();
   await row(page, name).click({ button: 'right' });
   await page.getByRole('menuitem', { name: /^Archive/ }).click();
   const alert = page.getByRole('alertdialog', { name: new RegExp(`Archive “${name}”`) });
-  await alert.getByRole('button', { name: /Archive$/ }).last().click();
+  await expect(alert).toContainText('Everything of yours is kept');
+  await alert.getByRole('button', { name: 'Archive', exact: true }).click();
   await expect(alert).toBeHidden();
   await expect(row(page, name)).toHaveAccessibleName(`${name}, archived`, { timeout: 15_000 });
 }
@@ -36,14 +39,32 @@ test.beforeEach(async ({ page }) => {
   await overview(page);
 });
 
-test('an archived worktree is under Archived, and one click restores it', async ({ page }) => {
+/** A demo worktree's folder (the demo keeps its records beside its projects; a project row's tooltip is its folder). */
+async function folderOf(page: Page, name: string): Promise<string> {
+  const title = await sidebar(page).locator('[title$="/bob-api"], [title$="/landing"]').first().getAttribute('title');
+  const home = path.join(path.dirname(path.dirname(title!)), 'home');
+  const records = JSON.parse(readFileSync(path.join(home, 'workspaces.json'), 'utf8')) as { workspaces: Array<{ name: string; path: string }> };
+  return records.workspaces.find((w) => w.name === name)!.path;
+}
+
+test('an archived worktree is under Archived, and one click restores it as it was', async ({ page }) => {
+  // Work in progress, a secret file git ignores, and dependencies that can be installed again.
+  const dir = await folderOf(page, 'add-auth');
+  writeFileSync(path.join(dir, '.gitignore'), 'node_modules/\n.env.local\n');
+  writeFileSync(path.join(dir, 'package.json'), '{"name":"api"}');
+  writeFileSync(path.join(dir, 'wip.txt'), 'half done');
+  writeFileSync(path.join(dir, '.env.local'), 'TOKEN=1');
+  mkdirSync(path.join(dir, 'node_modules', 'left-pad'), { recursive: true });
+  writeFileSync(path.join(dir, 'node_modules', 'left-pad', 'index.js'), 'x'.repeat(200_000));
   await archive(page, 'add-auth');
+  expect(existsSync(dir)).toBe(false);
   await segment(page, 'Archived').click();
   await expect(segment(page, 'Archived')).toHaveAttribute('aria-selected', 'true');
   const archived = row(page, 'add-auth');
   await expect(archived).toBeVisible();
   await expect(archived).toContainText('klaud/add-auth');
-  await expect(archived).toContainText('Branch kept');
+  // Archived smartly: it says what it freed.
+  await expect(archived).toContainText(/Freed \d/);
   await expect(row(page, 'webhook-retries')).toBeHidden();
 
   // The segment is remembered.
@@ -56,6 +77,10 @@ test('an archived worktree is under Archived, and one click restores it', async 
   // Restoring opens it, and it's in the sidebar again.
   await expectOpened(page, 'add-auth');
   await expect(sidebar(page).getByRole('button', { name: 'add-auth', exact: true })).toBeVisible();
+  // As it was: the work in progress and the secret file; dependencies are made again, not kept.
+  expect(readFileSync(path.join(dir, 'wip.txt'), 'utf8')).toBe('half done');
+  expect(readFileSync(path.join(dir, '.env.local'), 'utf8')).toBe('TOKEN=1');
+  expect(existsSync(path.join(dir, 'node_modules'))).toBe(false);
   await overview(page);
   await expect(page.getByText('Nothing archived yet')).toBeVisible();
   await segment(page, 'All').click();

@@ -140,8 +140,8 @@ export function confirmMenu(state: AppState, action: 'archive' | 'delete', id: s
       ],
       options: [
         ...envOption,
-        ...(changed ? [{ id: 'confirm-commit-archive', label: 'Commit changes, then archive', hint: 'recommended' }] : []),
-        { id: changed ? 'confirm-archive-force' : 'confirm-archive', label: changed ? 'Archive and discard uncommitted changes' : 'Archive', hint: '' },
+        ...(changed ? [{ id: 'confirm-commit-archive', label: 'Commit changes, then archive', hint: '' }] : []),
+        { id: 'confirm-archive', label: changed ? 'Archive (uncommitted changes are kept)' : 'Archive', hint: '' },
         { id: 'close', label: 'Cancel', hint: 'Esc' },
       ],
     };

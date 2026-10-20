@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { CcAgent, CcSession } from '../src/core/claude-code/model.js';
-import { agentIdOfPath, agentOfToolUse, agentOfWorktree, agentTitle, effortLabel, isAgentWorktree, looseAgentWorktrees, modelLabel, steerPrompt, steerable, subAgentsUnder } from '../packages/mac/src/claude-code/subagents-model.js';
+import type { AgentOrigin, CcAgent, CcSession } from '../src/core/claude-code/model.js';
+import { agentIdOfPath, agentOfToolUse, agentOfWorktree, agentTitle, effortLabel, isAgentWorktree, modelLabel, steerPrompt, steerable, subAgentsUnder } from '../packages/mac/src/claude-code/subagents-model.js';
 
 const agent = (id: string, extra: Partial<CcAgent> = {}): CcAgent => ({ id, description: `Task ${id}`, type: 'general-purpose', background: true, status: 'finished', startedAt: 1, lastAt: 2, steps: 3, ...extra });
 const session = (id: string, agents: CcAgent[], extra: Partial<CcSession> = {}): CcSession => ({ id, title: id, cwd: '/r', status: 'idle', lastAt: 1, steps: 1, agents, ...extra });
@@ -29,10 +29,16 @@ describe('sub-agents in the Mac app', () => {
     expect(steerable({ agent: agent('x'), session: outside })).toBe(false);
   });
 
-  it('keeps sub-agent worktrees nobody shows under a conversation in their own place', () => {
-    const p = { workspaces: [{ id: 'a', kind: 'worktree', path: WT, archived: false, external: true }, { id: 'b', kind: 'worktree', path: '/r/.claude/worktrees/agent-old', archived: false, external: true }, { id: 'c', kind: 'worktree', path: '/r/wt/x', archived: false, external: true }] } as never;
-    expect(looseAgentWorktrees(p, [mine], (ws) => ws === 'ws1').map((w) => w.id)).toEqual(['b']);
-    expect(looseAgentWorktrees(p, [mine], () => false).map((w) => w.id)).toEqual(['a', 'b']);
+  it('keeps finished ones under what started them, from Claude Code’s files (the live one wins)', () => {
+    const origin = (agentId: string, extra: Partial<AgentOrigin> = {}): AgentOrigin => ({ path: `/r/.claude/worktrees/agent-${agentId}`, agentId, sessionId: 'old', sessionTitle: 'Split it up', lastAt: 1, workspaceId: 'ws1', finished: true, ...extra });
+    const list = subAgentsUnder([mine], 'ws1', [origin('past1', { description: 'Composer package', lastAt: 3 }), origin('a09dac5d30f83f08a'), origin('gone', { workspaceId: undefined }), origin('other', { workspaceId: 'ws2' })]);
+    expect(list.map((s) => s.agent.id)).toEqual(['live1', 'past1', 'a09dac5d30f83f08a']);
+    const past = list.find((s) => s.agent.id === 'past1')!;
+    expect(past.past).toBe(true);
+    expect(past.agent).toMatchObject({ description: 'Composer package', status: 'finished', worktree: { path: '/r/.claude/worktrees/agent-past1' } });
+    expect(past.session).toMatchObject({ id: 'old', title: 'Split it up', workspaceId: 'ws1' });
+    // Live, it's the watched one (not a second row).
+    expect(list.find((s) => s.agent.id === 'a09dac5d30f83f08a')?.past).toBeUndefined();
   });
 
   it('says models, effort and names plainly; steering goes through the lead Claude', () => {

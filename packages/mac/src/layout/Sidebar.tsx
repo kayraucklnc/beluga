@@ -22,6 +22,7 @@ import { Row, Section } from './sidebar-parts.js';
 import { ActivityRow } from '../claude-code/Live.js';
 import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
 import { RequestsNav } from '../gateway/RequestsNav.js';
+import { WorktreesNav } from '../views/worktrees/WorktreesNav.js';
 import { SelfBar } from '../network/StatusMenu.js';
 import { UpdatePill } from '../components/UpdatePill.js';
 import s from './Sidebar.module.css';
@@ -156,6 +157,7 @@ export function Sidebar() {
             );
           })}
           <ActivityRow />
+          <WorktreesNav />
           <RequestsNav />
         </section>
 

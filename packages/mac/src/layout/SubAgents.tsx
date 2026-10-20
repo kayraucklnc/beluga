@@ -1,14 +1,15 @@
 import { useMemo } from 'react';
-import type { CcSession } from '@klaud/core/claude-code/model.js';
-import type { Project, Workspace } from '@klaud/workspaces/types.js';
+import type { AgentOrigin, CcSession } from '@klaud/core/claude-code/model.js';
+import type { Workspace } from '@klaud/workspaces/types.js';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, cx } from '../components/ui.js';
 import { type Actions, useActions } from '../lib/actions.js';
 import { useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { agentElapsed, agentLabel, openActivity, typeLabel } from '../claude-code/cc-model.js';
-import { type SubAgent, agentIdOfPath, agentOfWorktree, agentTitle, isAgentWorktree, looseAgentWorktrees, modelLabel, subAgentsUnder } from '../claude-code/subagents-model.js';
+import { type SubAgent, agentTitle, isAgentWorktree, modelLabel, subAgentsUnder } from '../claude-code/subagents-model.js';
 import { useNow } from '../chat/Items.js';
+import { agoText } from '../views/project/home-model.js';
 import { Row } from './sidebar-parts.js';
 import s from './subagents.module.css';
 
@@ -16,7 +17,8 @@ import s from './subagents.module.css';
  * Sub-agents in the sidebar: Claude's helpers, not your work. They sit under the conversation
  * that started them (a small robot, quieter than a worktree), running ones first; a few show,
  * the rest behind "N more". Their own worktrees aren't listed as worktrees: they open as the
- * agent. Sub-agent worktrees nobody started from here wait in one folded "Sub-agents" row.
+ * agent. A sub-agent shows only under what started it, and only while Klaud follows it: old
+ * agent worktrees with nothing to tie them to aren't listed (Clean Up Worktrees… has them).
  */
 
 /** How many of a conversation's sub-agents show before "N more". */
@@ -24,6 +26,9 @@ const SHOWN = 3;
 
 /** The watched sessions, as the state has them (one array: no new one each render). */
 export const useCcSessions = (): readonly CcSession[] => useApp((st) => st.claudeCode.sessions);
+
+/** Who started each sub-agent worktree still on disk (from Claude Code's files). */
+export const useAgentOrigins = (): readonly AgentOrigin[] => useApp((st) => st.claudeCode.origins);
 
 /** Open a sub-agent: its worktree (with Changes, Files and Scratch beside it) when it has one, else its live page. */
 export function openSubAgent(client: SocketClient, actions: Actions, s: SubAgent): void {
@@ -52,7 +57,8 @@ function AgentRow({ s: sub, indent, worktree }: { s: SubAgent; indent: number; w
   const now = useNow(sub.agent.status === 'running');
   const a = sub.agent;
   const on = selected.agent === a.id || (worktree !== undefined && selected.ws === worktree.id);
-  const facts = [typeLabel(a.type), modelLabel(a.model), agentLabel(a), agentElapsed(a, now)].filter(Boolean).join(' · ');
+  // Finished a while ago: when, and who started it (Klaud no longer follows it live).
+  const facts = sub.past ? [typeLabel(a.type), `Finished ${agoText(a.lastAt, now)}`, `started by “${sub.session.title}”`].join(' · ') : [typeLabel(a.type), modelLabel(a.model), agentLabel(a), agentElapsed(a, now)].filter(Boolean).join(' · ');
   return (
     <Row
       data-subagent={a.id}
@@ -73,10 +79,11 @@ function AgentRow({ s: sub, indent, worktree }: { s: SubAgent; indent: number; w
 export function SubAgentRows({ ws, indent }: { ws: Workspace; indent: number }) {
   const actions = useActions();
   const sessions = useCcSessions();
+  const origins = useAgentOrigins();
   const projects = useApp((st) => st.projects);
   const key = `subagents-more:${ws.id}`;
   const expanded = useUi((u) => u.collapsed.includes(key));
-  const list = useMemo(() => subAgentsUnder(sessions, ws.id), [sessions, ws.id]);
+  const list = useMemo(() => subAgentsUnder(sessions, ws.id, origins), [sessions, ws.id, origins]);
   const selected = useSelectedAgent();
   if (!list.length) return null;
   const worktreeOf = (sub: SubAgent): Workspace | undefined => (sub.agent.worktree ? projects.flatMap((p) => p.workspaces).find((w) => w.path === sub.agent.worktree!.path) : undefined);
@@ -99,54 +106,6 @@ export function SubAgentRows({ ws, indent }: { ws: Workspace; indent: number }) 
           onClick={() => actions.run({ type: 'toggle_fold', key })}
         />
       ) : null}
-    </div>
-  );
-}
-
-/** A project's sub-agent worktrees that no conversation here shows (old ones, or from outside Klaud): one folded row. */
-export function LooseSubAgents({ p, indent, shownUnder }: { p: Project; indent: number; shownUnder: (wsId: string) => boolean }) {
-  const actions = useActions();
-  const sessions = useCcSessions();
-  const selected = useSelectedAgent();
-  const key = `subagents:${p.id}`;
-  const open = useUi((u) => u.collapsed.includes(key));
-  const list = useMemo(() => looseAgentWorktrees(p, sessions, shownUnder), [p, sessions, shownUnder]);
-  if (!list.length) return null;
-  const here = list.find((w) => w.id === selected.ws);
-  const shown = open ? list : here ? [here] : [];
-  return (
-    <div role="group" aria-label={`Sub-agent worktrees in ${p.name}`}>
-      <Row
-        indent={indent}
-        className={cx(s.row, s.folder)}
-        aria-expanded={open}
-        icon={<Icon name="chevronRight" size={9} className={cx(s.disclosure, open && s.disclosureOpen)} />}
-        label={
-          <span className={s.label}>
-            Sub-agents <span className={s.count}>{list.length}</span>
-          </span>
-        }
-        detail="Worktrees Claude’s sub-agents made for themselves. They’re Claude’s, not yours: open one to see what it did."
-        onClick={() => actions.run({ type: 'toggle_fold', key })}
-      />
-      {shown.map((w) => {
-        const sub = agentOfWorktree(sessions, w);
-        return sub ? (
-          <AgentRow key={w.id} s={sub} indent={indent + 1} worktree={w} />
-        ) : (
-          <Row
-            key={w.id}
-            data-subagent={agentIdOfPath(w.path)}
-            indent={indent + 1}
-            selected={selected.ws === w.id}
-            className={cx(s.row, s.quiet)}
-            icon={<Icon name="bot" size={13} className={s.bot} />}
-            label={<span className={s.label}>{`Agent ${(agentIdOfPath(w.path) ?? w.name).slice(0, 7)}`}</span>}
-            detail={`A sub-agent’s worktree (${w.branch ?? w.name}): open it to see what it did`}
-            onClick={() => actions.run({ type: 'open_ws', id: w.id })}
-          />
-        );
-      })}
     </div>
   );
 }

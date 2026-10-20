@@ -1,4 +1,6 @@
 import { existsSync } from 'node:fs';
+import type { ArchiveManifest, ArchivePhase, ArchivePreview } from '../workspaces/archive.js';
+import { formatBytes } from '../workspaces/disk.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import path from 'node:path';
 import { slugify } from '../agent/namer.js';
@@ -38,6 +40,8 @@ export interface ControllerDeps {
   readonly onWorktreeCreated?: (ws: Workspace) => void;
   /** Before a workspace is archived or deleted: stop what runs in its folder (shell, dev server). */
   readonly onWorkspaceGoing?: (id: string) => void;
+  /** An archived worktree is back; `remake` makes again what the archive threw away (npm install…). */
+  readonly onWorktreeRestored?: (ws: Workspace, remake: readonly string[]) => void;
   /** Claude Code's folder, where its sub-agents' worktrees are found (default: ~/.claude). */
   readonly claudeHome?: string;
 }
@@ -71,6 +75,14 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
  * Connects projects and workspaces to the room: views, conversations (one Claude
  * session per workspace, history saved to disk), and every workspace action.
  */
+/** What the archive did, in words. */
+export function archivedText(m: ArchiveManifest | undefined): string {
+  if (!m) return 'Archived. The branch and conversation are kept; restore it any time.';
+  const freed = m.freedBytes ? ` Freed ${formatBytes(m.freedBytes)} of dependencies, builds and caches (made again when you restore it).` : '';
+  const left = m.leftover ? ` Some of its folder couldn’t be removed (${m.dir}): it’s set aside when you restore it, and you can delete it.` : '';
+  return `Archived: everything of yours is kept, uncommitted work included.${freed}${left}`;
+}
+
 export class WorkspaceController {
   private readonly loaded = new Set<string>();
   private reviewToken = 0;
@@ -368,17 +380,27 @@ export class WorkspaceController {
     return ws;
   }
 
-  async archive(id: string, force = false): Promise<boolean> {
+  /**
+   * Archive smartly (see workspaces/archive.ts): nothing of yours is lost, so uncommitted work
+   * no longer stops it (`_force` is from when it did). How far along shows while it runs.
+   */
+  async archive(id: string, _force = false): Promise<boolean> {
     const agents = this.agentWorktreesOf(id);
+    const phase = (p?: ArchivePhase): void => void this.deps.store.dispatch({ type: 'archiving', id, ...(p ? { phase: p } : {}) });
+    let manifest: ArchiveManifest | undefined;
     const done = await this.act("Couldn't archive", async () => {
       this.deps.onWorkspaceGoing?.(id);
-      await this.deps.manager.archive(id, force);
+      try {
+        manifest = await this.deps.manager.archive(id, phase);
+      } finally {
+        phase();
+      }
       return true;
     });
     if (done) {
       this.deps.intend({ type: 'close_tab', id });
       const also = await this.removeAgentWorktrees(agents);
-      this.deps.toast(['Archived. The branch and conversation are kept; restore it any time.', also].filter(Boolean).join(' '), 'success');
+      this.deps.toast([archivedText(manifest), also].filter(Boolean).join(' '), 'success');
     }
     return Boolean(done);
   }
@@ -436,8 +458,29 @@ export class WorkspaceController {
     }
   }
 
+  archivePlan(id: string): Promise<ArchivePreview | undefined> {
+    return this.deps.manager.archivePlan(id).catch(() => undefined);
+  }
+
+  /** Free space in a worktree you keep (its dependencies, builds and caches) → bytes freed. */
+  async freeSpace(id: string): Promise<number> {
+    const freed = await this.act("Couldn't free space", () => this.deps.manager.freeSpace(id));
+    if (!freed) return 0;
+    this.deps.toast(`Freed ${formatBytes(freed.bytes)}.${freed.remake.length ? ` Run ${freed.remake.map((r) => `\`${r}\``).join(', then ')} to work in it again.` : ''}`, 'success');
+    return freed.bytes;
+  }
+
+  /** Bring it back as it was; what was thrown away is made again by the project's setup. */
   async restore(id: string): Promise<void> {
-    if (await this.act("Couldn't restore", () => this.deps.manager.restore(id).then(() => true))) this.open(id);
+    let manifest: ArchiveManifest | undefined;
+    const done = await this.act("Couldn't restore", async () => {
+      manifest = await this.deps.manager.restore(id);
+      return true;
+    });
+    if (!done) return;
+    this.open(id);
+    const ws = this.deps.manager.find(id);
+    if (ws && manifest?.dropped.length) this.deps.onWorktreeRestored?.(ws, manifest.remake);
   }
 
   async remove(id: string): Promise<void> {

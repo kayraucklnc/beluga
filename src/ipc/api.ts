@@ -178,6 +178,10 @@ export const API = {
   'workspaces.continueInWorktree': args(id, opt(z.object({ task: opt(str), base: opt(z.string().min(1).max(250)), name: opt(z.string().max(200)) }).strict())),
   'workspaces.archive': args(id, opt(bool)),
   'workspaces.restore': args(id),
+  // What archiving (or freeing space) would throw away and keep → ArchivePreview (none: not a worktree that's there).
+  'workspaces.archivePlan': args(id),
+  // Throw away a worktree's dependencies, builds and caches → bytes freed.
+  'workspaces.freeSpace': args(id),
   'workspaces.remove': args(id),
   'workspaces.commit': args(id, opt(z.string().max(2000))),
   'workspaces.merge': args(id),

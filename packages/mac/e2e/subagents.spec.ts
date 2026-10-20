@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
@@ -7,8 +7,8 @@ import { expect, test, type Page } from '@playwright/test';
  * Sub-agents are Claude's helpers, not your worktrees: a pretend Claude Code session in the demo's
  * bob-api project starts a sub-agent in its own worktree (one the demo made under
  * .claude/worktrees). The sidebar shows it under what started it, with a robot, not as a
- * worktree; its page follows it live with its model and effort; a sub-agent worktree nobody
- * started from here waits in a folded "Sub-agents" row.
+ * worktree; its page follows it live with its model and effort. An old sub-agent worktree with
+ * nothing to tie it to isn't listed at all (it would only jump away when clicked).
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -60,16 +60,46 @@ test('a sub-agent shows under what started it, as a robot, not as a worktree', a
   const agent = sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests, Running/ });
   await expect(agent).toBeVisible({ timeout: 20_000 });
   await expect(sidebar(page).getByRole('button', { name: new RegExp(`^agent-${AGENT}`) })).toHaveCount(0);
-  // The other agent worktree the demo has: tucked into one folded row.
-  const loose = sidebar(page).getByRole('group', { name: 'Sub-agent worktrees in bob-api' });
-  await expect(loose.getByRole('button', { name: /Sub-agents\s*1/ })).toHaveAttribute('aria-expanded', 'false');
+  // The other agent worktree the demo has, which no conversation here started: not listed at all.
+  await expect(sidebar(page).getByRole('button', { name: /^Sub-agents/ })).toHaveCount(0);
+  await expect(sidebar(page).locator(`[data-subagent]:not([data-subagent="${AGENT}"])`)).toHaveCount(0);
   await shot(page, 'subagents-sidebar');
 });
 
+test('a sub-agent that finished long ago stays under what started it, and stays put when opened', async ({ page }) => {
+  // The demo's other agent worktree: an old session in bob-api started it (Klaud no longer follows that session).
+  const other = readdirSync(path.join(root, '.claude', 'worktrees')).find((n) => n.startsWith('agent-') && n !== `agent-${AGENT}`)!;
+  const wt = path.join(root, '.claude', 'worktrees', other);
+  const folder = path.join(process.env.KLAUD_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
+  const old = '9b1c2d3e-4f50-4a6b-8c7d-8e9f00a1b2c4';
+  const then = Date.now() - 3 * 86_400_000;
+  mkdirSync(path.join(folder, old, 'subagents'), { recursive: true });
+  writeFileSync(path.join(folder, `${old}.jsonl`), line({ type: 'user', timestamp: iso(then), sessionId: old, cwd: root, message: { role: 'user', content: 'Split the API work into packages' } }));
+  const meta = path.join(folder, old, 'subagents', `${other}.meta.json`);
+  writeFileSync(meta, JSON.stringify({ agentType: 'general-purpose', description: 'Retry policy package', worktreePath: wt, finished: true }));
+  const transcript = path.join(folder, old, 'subagents', `${other}.jsonl`);
+  writeFileSync(transcript, line({ type: 'user', timestamp: iso(then), sessionId: old, agentId: other.slice('agent-'.length), isSidechain: true, cwd: wt, message: { role: 'user', content: 'Write the retry policy package' } }));
+  for (const f of [path.join(folder, `${old}.jsonl`), meta, transcript]) utimesSync(f, then / 1000, then / 1000);
+
+  const row = sidebar(page).getByRole('button', { name: /^Sub-agent Retry policy package, Finished/ });
+  await expect(row).toBeVisible({ timeout: 25_000 });
+  await expect(row).toHaveAttribute('title', /started by “Split the API work into packages”/);
+  await row.click();
+  await expect(page.locator('main')).toContainText('Retry policy package', { timeout: 15_000 });
+  // Opening it follows it live again: same place, same row.
+  await page.waitForTimeout(2500);
+  await expect(row).toBeVisible();
+  await expect(sidebar(page).getByRole('button', { name: /^Sub-agent Retry policy package/ })).toHaveCount(1);
+});
+
 test('its page follows it live: who started it, model, effort, thinking and tools', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests/ }).click();
+  const row = sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests/ });
+  await row.click();
   const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
   await expect(monitor).toBeVisible({ timeout: 15_000 });
+  // Clicking it doesn't move it: its row stays where it was, selected.
+  await page.waitForTimeout(1500);
+  await expect(row).toBeVisible();
   await expect(monitor).toContainText('a Claude Code session outside Klaud in bob-api');
   await expect(monitor).toContainText('Write the webhook tests');
   await expect(monitor).toContainText('Sonnet 5.5');

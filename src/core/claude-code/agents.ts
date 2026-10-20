@@ -49,6 +49,16 @@ export function readMeta(file: string): AgentMeta {
   }
 }
 
+/** Claude Code marks a sub-agent's side file `finished` once it's done. */
+export function finishedIn(metaFile: string): boolean {
+  try {
+    const text = readFileSync(metaFile, 'utf8');
+    return text.length <= MAX_META && (JSON.parse(text) as { finished?: unknown }).finished === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Claude Code's word for how a task ended → ours. */
 export function noticeStatus(status: string): Exclude<CcAgentStatus, 'running' | 'idle'> {
   const s = status.toLowerCase();
@@ -69,6 +79,8 @@ export interface StatusInput {
   readonly now: number;
   /** No writes for this long and no final answer: idle. */
   readonly idleMs: number;
+  /** Claude Code marked it finished in its side file. */
+  readonly marked?: boolean;
 }
 
 /** Writes this close after the session's word on it still count as before it (clocks, buffering). */
@@ -80,6 +92,6 @@ export function agentStatus(i: StatusInput): { status: CcAgentStatus; endedAt?: 
   if (i.notice && i.notice.ts + SLACK_MS >= i.lastAt) return { status: noticeStatus(i.notice.status), endedAt: i.notice.ts };
   if (i.result && !i.result.async && i.result.ts + SLACK_MS >= i.lastAt) return { status: i.result.error ? 'failed' : 'finished', endedAt: i.result.ts };
   if (i.final) return { status: 'finished', endedAt: i.lastAt };
-  if (i.now - i.lastAt > i.idleMs) return { status: 'idle' };
+  if (i.now - i.lastAt > i.idleMs) return i.marked ? { status: 'finished', endedAt: i.lastAt } : { status: 'idle' };
   return { status: 'running' };
 }

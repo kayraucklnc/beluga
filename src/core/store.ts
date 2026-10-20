@@ -239,7 +239,9 @@ export type View =
   /** A project's home (Mac app): start work in a new worktree or ask about it; its worktrees and chats. */
   | { readonly kind: 'project'; readonly id: string; readonly page?: 'history' }
   /** Tasks between Claudes (Mac app): what you and your Claude asked of others, and what they asked of you. */
-  | { readonly kind: 'requests' };
+  | { readonly kind: 'requests' }
+  /** Every worktree in your projects (Mac app): who made it, whether it's done, the space it takes; archive or clean them. */
+  | { readonly kind: 'worktrees'; readonly projectId?: string };
 
 /** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */
 export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';
@@ -860,6 +862,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'notice_clear':
     case 'models':
     case 'disk':
+    case 'archiving':
     case 'pr':
     case 'setup':
     case 'search':
@@ -886,6 +889,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, ...reduceEarnings(state, action) };
     case 'claude_code':
       return ccFinished(state, { ...state, ...reduceClaudeCode(state, action) });
+    case 'agent_origins':
+      return { ...state, ...reduceClaudeCode(state, action) };
     case 'gw_init':
     case 'gw_task':
     case 'gw_card':
