@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -68,6 +68,36 @@ describe('the scratch folder (.klaud/scratch/)', () => {
     symlinkSync(outside, path.join(b, '.klaud'));
     expect(await ensureScratch(b)).toBeUndefined();
     expect(await listScratch(b)).toEqual([]);
+  });
+
+  it('also lists .context/ (Claude saves there under other tools), mixed in newest first, without making it', async () => {
+    const dir = repo();
+    await ensureScratch(dir);
+    const at = (rel: string, secs: number): void => {
+      const file = path.join(dir, rel);
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, 'x');
+      utimesSync(file, secs, secs);
+    };
+    at(`${SCRATCH_DIR}/ours.png`, 1000);
+    at('.context/shots/theirs.png', 2000);
+    at('.context/notes.md', 500);
+    expect((await listScratch(dir)).map((f) => f.path)).toEqual(['.context/shots/theirs.png', `${SCRATCH_DIR}/ours.png`, '.context/notes.md']);
+    // Only looked at: never made, never added to the exclude file.
+    const fresh = repo();
+    await ensureScratch(fresh);
+    expect(existsSync(path.join(fresh, '.context'))).toBe(false);
+    expect(readFileSync(path.join(fresh, '.git', 'info', 'exclude'), 'utf8')).not.toContain('.context');
+  });
+
+  it('skips a .context that is a link to somewhere else, and still lists its own folder', async () => {
+    const outside = mkdtempSync(path.join(os.tmpdir(), 'klaud-scratch-outside-'));
+    writeFileSync(path.join(outside, 'secret.png'), 'x');
+    const dir = repo();
+    await ensureScratch(dir);
+    writeFileSync(path.join(dir, SCRATCH_DIR, 'mine.png'), 'x');
+    symlinkSync(outside, path.join(dir, '.context'));
+    expect((await listScratch(dir)).map((f) => f.path)).toEqual([`${SCRATCH_DIR}/mine.png`]);
   });
 
   it('is empty when there is no folder yet', async () => {

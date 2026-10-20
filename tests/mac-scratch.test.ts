@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FRESH_MS, fileKind, followed, isFresh, timeAgo } from '../packages/mac/src/layout/panel/scratch-model.js';
+import { FRESH_MS, fileKind, followed, foldersWithFiles, isFresh, scratchPlace, timeAgo } from '../packages/mac/src/layout/panel/scratch-model.js';
 
 /** The Scratch tab's small decisions: how long ago, what a file is, which one to show. */
 describe('Scratch tab model', () => {
@@ -31,5 +31,18 @@ describe('Scratch tab model', () => {
     expect(followed(files, false, 'a')).toBe('a');
     expect(followed(files, false, 'gone')).toBe('b');
     expect(followed([], true, undefined)).toBeUndefined();
+  });
+
+  const roots = ['.klaud/scratch', '.context'];
+  it('says which shown folder a file is in, the folders under it, and its name', () => {
+    expect(scratchPlace('.klaud/scratch/shots/a.png', roots)).toEqual({ root: '.klaud/scratch', dir: 'shots', name: 'a.png' });
+    expect(scratchPlace('.context/b.png', roots)).toEqual({ root: '.context', dir: '', name: 'b.png' });
+    expect(scratchPlace('.context/x/y/c.md', roots)).toEqual({ root: '.context', dir: 'x/y', name: 'c.md' });
+  });
+
+  it('names only the folders that have files, in their order', () => {
+    expect(foldersWithFiles([{ path: '.context/a', size: 1, mtime: 1 }], roots)).toEqual(['.context']);
+    expect(foldersWithFiles([{ path: '.context/a', size: 1, mtime: 2 }, { path: '.klaud/scratch/b', size: 1, mtime: 1 }], roots)).toEqual(roots);
+    expect(foldersWithFiles([], roots)).toEqual([]);
   });
 });

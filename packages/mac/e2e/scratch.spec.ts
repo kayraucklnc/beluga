@@ -60,3 +60,45 @@ test('Scratch: .klaud/scratch/ live, newest first, followed by the preview', asy
   await panel(page).getByRole('tab', { name: 'Latest' }).click();
   await expect(panel(page).getByRole('region', { name: 'notes.md' }).getByRole('heading', { name: 'Notes' })).toBeVisible();
 });
+
+const SHOTS = path.resolve(import.meta.dirname, '../../../.context/shots');
+
+test('Scratch: drawn in outline before anything lands, moving while Claude works; .context/ files show too', async ({ page }) => {
+  await page.goto('/');
+  await expect(sidebar(page).getByRole('button', { name: 'bob-api' }).first()).toBeVisible();
+  const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
+  await row.click();
+  await page.keyboard.press('Meta+Alt+6');
+  await expect(tab(page, 'Scratch')).toHaveAttribute('aria-selected', 'true');
+
+  // Nothing yet, Claude idle: the outline, still, and both folders named.
+  await expect(panel(page).getByText('Nothing saved yet')).toBeVisible();
+  await expect(panel(page)).toContainText('.klaud/scratch/');
+  await expect(panel(page)).toContainText('.context/');
+  await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-idle.png') });
+
+  // Claude starts: the outline moves and says so.
+  await composer(page).fill('Take a screenshot of the login page');
+  await page.keyboard.press('Enter');
+  await expect(panel(page).getByRole('status').filter({ hasText: 'Claude is working' })).toBeVisible();
+  await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-working.png') });
+
+  // A file lands in .context/ (another tool's folder Claude was told to use): it shows, tagged.
+  const dir = (await panel(page).getByRole('button', { name: 'Show in Finder' }).getAttribute('title'))!;
+  const root = path.dirname(path.dirname(dir));
+  mkdirSync(path.join(root, '.context'), { recursive: true });
+  writeFileSync(path.join(root, '.context', 'login.png'), RED);
+  const files = panel(page).getByRole('listbox', { name: 'Scratch files' });
+  const shot = files.getByRole('option', { name: /login\.png/ });
+  await expect(shot).toBeVisible();
+  await expect(shot).toContainText('.context');
+  await page.waitForTimeout(400);
+  await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-context-file.png') });
+
+  // Claude works again: a row on top of the list says so, where the next file will land.
+  await composer(page).fill('And the signup page');
+  await page.keyboard.press('Enter');
+  await expect(panel(page).getByRole('status').filter({ hasText: 'Claude is working' })).toBeVisible();
+  await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-list-working.png') });
+});
