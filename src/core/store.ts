@@ -239,7 +239,9 @@ export type View =
   /** A project's home (Mac app): start work in a new worktree or ask about it; its worktrees and chats. */
   | { readonly kind: 'project'; readonly id: string; readonly page?: 'history' }
   /** Tasks between Claudes (Mac app): what you and your Claude asked of others, and what they asked of you. */
-  | { readonly kind: 'requests' };
+  | { readonly kind: 'requests' }
+  /** Every worktree in your projects (Mac app): who made it, whether it's done, the space it takes; archive or clean them. */
+  | { readonly kind: 'worktrees'; readonly projectId?: string };
 
 /** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */
 export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';

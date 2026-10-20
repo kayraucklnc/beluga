@@ -23,7 +23,7 @@ import s from './Toolbar.module.css';
 const TITLE_MIN = 210;
 const RIGHT_FIXED = 4 * 30 + 16;
 
-const TITLES: Partial<Record<string, string>> = { overview: 'Overview', search: 'Search', usage: 'Usage', terminal: 'Terminal', files: 'Shared files', draft: 'New chat', draft_worktree: 'New worktree', claude_code: 'Activity', requests: 'Requests' };
+const TITLES: Partial<Record<string, string>> = { overview: 'Overview', search: 'Search', usage: 'Usage', terminal: 'Terminal', files: 'Shared files', draft: 'New chat', draft_worktree: 'New worktree', claude_code: 'Activity', requests: 'Requests', worktrees: 'Worktrees' };
 
 /** How wide the toolbar is (buttons that don't fit move under ⋯). */
 function useToolbarWidth(): [React.RefObject<HTMLElement | null>, number] {
