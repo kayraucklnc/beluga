@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import type { AgentOrigin } from '@klaud/core/claude-code/model.js';
 import type { WorktreeInfo } from '@klaud/core/other-worktrees.js';
 import { formatBytes } from '@klaud/shared/format.js';
 import { type WorktreeSource, sourceFromPath } from '@klaud/workspaces/origin.js';
@@ -141,8 +142,11 @@ function useSize(id: string): number | undefined {
   return size;
 }
 
-/** `agent`: a sub-agent's own worktree whose agent Claude Code no longer has (no conversation to start in it). */
-export function WorktreeInfoPage({ ws, agent }: { ws: Workspace; agent?: boolean }) {
+/**
+ * `agent`: a sub-agent's own worktree whose agent Claude Code no longer has (no conversation to
+ * start in it); `origin`, who started it, when Claude Code's files still say.
+ */
+export function WorktreeInfoPage({ ws, agent, origin }: { ws: Workspace; agent?: boolean; origin?: AgentOrigin }) {
   const actions = useActions();
   const api = useApi();
   const { client } = useKlaud();
@@ -165,8 +169,8 @@ export function WorktreeInfoPage({ ws, agent }: { ws: Workspace; agent?: boolean
             <Icon name={agent ? 'bot' : iconOf(source)} size={22} />
           </span>
           <div className={s.headText}>
-            <h1 className={s.title}>{ws.name}</h1>
-            <p className={s.origin}>{info?.origin.label ?? MADE_OUTSIDE}</p>
+            <h1 className={s.title}>{origin?.description ?? ws.name}</h1>
+            <p className={s.origin}>{origin ? `Sub-agent · started by “${origin.sessionTitle ?? 'a Claude Code session'}”${origin.sessionCwd ? ` in ${origin.sessionCwd.split('/').at(-1)}` : ''}` : (info?.origin.label ?? MADE_OUTSIDE)}</p>
           </div>
           {hasChat ? (
             <Button size="small" variant="quiet" icon="back" onClick={() => setWorktreeFlag('about', ws.id, false)}>

@@ -1,4 +1,4 @@
-import type { CcAgent, CcSession } from '../../../../src/core/claude-code/model.js';
+import type { AgentOrigin, CcAgent, CcSession } from '../../../../src/core/claude-code/model.js';
 import type { AppState } from '../../../../src/core/store.js';
 import type { Workspace } from '../../../../src/workspaces/types.js';
 import { worktreeOrigin } from '../../../../src/workspaces/origin.js';
@@ -14,6 +14,15 @@ import { worktreeOrigin } from '../../../../src/workspaces/origin.js';
 export interface SubAgent {
   readonly agent: CcAgent;
   readonly session: CcSession;
+  /** Finished a while ago: known from Claude Code's files (its worktree is still there), not followed live. */
+  readonly past?: true;
+}
+
+/** A finished sub-agent's worktree, as the sub-agent it was (what it was asked, who started it). */
+export function pastAgent(o: AgentOrigin): SubAgent {
+  const agent: CcAgent = { id: o.agentId, description: o.description ?? 'Sub-agent', type: o.type ?? 'general-purpose', background: true, status: 'finished', startedAt: o.lastAt, lastAt: o.lastAt, steps: 0, worktree: { path: o.path, ...(o.branch ? { branch: o.branch } : {}) } };
+  const session: CcSession = { id: o.sessionId, title: o.sessionTitle ?? 'Claude Code session', cwd: o.sessionCwd ?? '', status: 'idle', lastAt: o.lastAt, steps: 0, agents: [agent], ...(o.projectId ? { projectId: o.projectId } : {}), ...(o.workspaceId ? { workspaceId: o.workspaceId } : {}), ...(o.own ? { own: true as const } : {}) };
+  return { agent, session, past: true };
 }
 
 /** A sub-agent's worktree folder name → its agent id (`agent-a09dac5d30f83f08a` → `a09dac5d30f83f08a`). */
@@ -45,11 +54,15 @@ export function parentWorkspace(state: Pick<AppState, 'projects'>, s: SubAgent):
 /** Can you steer it (through the Claude that started it)? Only when that Claude is one of Klaud's conversations. */
 export const steerable = (s: SubAgent): boolean => Boolean(s.session.own && s.session.workspaceId);
 
-/** The rows nested under a workspace in the sidebar: the sub-agents its conversation started, running first. */
-export function subAgentsUnder(sessions: readonly CcSession[], workspaceId: string): SubAgent[] {
-  return allSubAgents(sessions)
-    .filter((s) => s.session.workspaceId === workspaceId && !s.agent.parentAgentId)
-    .sort((a, b) => Number(b.agent.status === 'running') - Number(a.agent.status === 'running') || b.agent.lastAt - a.agent.lastAt);
+/**
+ * The rows nested under a workspace in the sidebar: the sub-agents its conversation started,
+ * running first; finished ones whose worktree is still there stay (from Claude Code's files).
+ */
+export function subAgentsUnder(sessions: readonly CcSession[], workspaceId: string, origins: readonly AgentOrigin[] = []): SubAgent[] {
+  const live = allSubAgents(sessions).filter((s) => s.session.workspaceId === workspaceId && !s.agent.parentAgentId);
+  const followed = new Set(allSubAgents(sessions).flatMap((s) => [s.agent.id, ...(s.agent.worktree ? [s.agent.worktree.path] : [])]));
+  const past = origins.filter((o) => o.workspaceId === workspaceId && !followed.has(o.agentId) && !followed.has(o.path)).map(pastAgent);
+  return [...live, ...past].sort((a, b) => Number(b.agent.status === 'running') - Number(a.agent.status === 'running') || b.agent.lastAt - a.agent.lastAt);
 }
 
 /** "claude-opus-5-5" → "Opus 5.5", "sonnet" → "Sonnet", anything else as it is. */

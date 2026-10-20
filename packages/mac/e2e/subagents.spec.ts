@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
@@ -64,6 +64,32 @@ test('a sub-agent shows under what started it, as a robot, not as a worktree', a
   await expect(sidebar(page).getByRole('button', { name: /^Sub-agents/ })).toHaveCount(0);
   await expect(sidebar(page).locator(`[data-subagent]:not([data-subagent="${AGENT}"])`)).toHaveCount(0);
   await shot(page, 'subagents-sidebar');
+});
+
+test('a sub-agent that finished long ago stays under what started it, and stays put when opened', async ({ page }) => {
+  // The demo's other agent worktree: an old session in bob-api started it (Klaud no longer follows that session).
+  const other = readdirSync(path.join(root, '.claude', 'worktrees')).find((n) => n.startsWith('agent-') && n !== `agent-${AGENT}`)!;
+  const wt = path.join(root, '.claude', 'worktrees', other);
+  const folder = path.join(process.env.KLAUD_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
+  const old = '9b1c2d3e-4f50-4a6b-8c7d-8e9f00a1b2c4';
+  const then = Date.now() - 3 * 86_400_000;
+  mkdirSync(path.join(folder, old, 'subagents'), { recursive: true });
+  writeFileSync(path.join(folder, `${old}.jsonl`), line({ type: 'user', timestamp: iso(then), sessionId: old, cwd: root, message: { role: 'user', content: 'Split the API work into packages' } }));
+  const meta = path.join(folder, old, 'subagents', `${other}.meta.json`);
+  writeFileSync(meta, JSON.stringify({ agentType: 'general-purpose', description: 'Retry policy package', worktreePath: wt, finished: true }));
+  const transcript = path.join(folder, old, 'subagents', `${other}.jsonl`);
+  writeFileSync(transcript, line({ type: 'user', timestamp: iso(then), sessionId: old, agentId: other.slice('agent-'.length), isSidechain: true, cwd: wt, message: { role: 'user', content: 'Write the retry policy package' } }));
+  for (const f of [path.join(folder, `${old}.jsonl`), meta, transcript]) utimesSync(f, then / 1000, then / 1000);
+
+  const row = sidebar(page).getByRole('button', { name: /^Sub-agent Retry policy package, Finished/ });
+  await expect(row).toBeVisible({ timeout: 25_000 });
+  await expect(row).toHaveAttribute('title', /started by “Split the API work into packages”/);
+  await row.click();
+  await expect(page.locator('main')).toContainText('Retry policy package', { timeout: 15_000 });
+  // Opening it follows it live again: same place, same row.
+  await page.waitForTimeout(2500);
+  await expect(row).toBeVisible();
+  await expect(sidebar(page).getByRole('button', { name: /^Sub-agent Retry policy package/ })).toHaveCount(1);
 });
 
 test('its page follows it live: who started it, model, effort, thinking and tools', async ({ page }) => {

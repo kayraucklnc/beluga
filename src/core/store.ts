@@ -886,6 +886,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, ...reduceEarnings(state, action) };
     case 'claude_code':
       return ccFinished(state, { ...state, ...reduceClaudeCode(state, action) });
+    case 'agent_origins':
+      return { ...state, ...reduceClaudeCode(state, action) };
     case 'gw_init':
     case 'gw_task':
     case 'gw_card':

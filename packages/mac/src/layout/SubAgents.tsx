@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { CcSession } from '@klaud/core/claude-code/model.js';
+import type { AgentOrigin, CcSession } from '@klaud/core/claude-code/model.js';
 import type { Workspace } from '@klaud/workspaces/types.js';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { Icon } from '../components/Icon.js';
@@ -9,6 +9,7 @@ import { useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { agentElapsed, agentLabel, openActivity, typeLabel } from '../claude-code/cc-model.js';
 import { type SubAgent, agentTitle, isAgentWorktree, modelLabel, subAgentsUnder } from '../claude-code/subagents-model.js';
 import { useNow } from '../chat/Items.js';
+import { agoText } from '../views/project/home-model.js';
 import { Row } from './sidebar-parts.js';
 import s from './subagents.module.css';
 
@@ -25,6 +26,9 @@ const SHOWN = 3;
 
 /** The watched sessions, as the state has them (one array: no new one each render). */
 export const useCcSessions = (): readonly CcSession[] => useApp((st) => st.claudeCode.sessions);
+
+/** Who started each sub-agent worktree still on disk (from Claude Code's files). */
+export const useAgentOrigins = (): readonly AgentOrigin[] => useApp((st) => st.claudeCode.origins);
 
 /** Open a sub-agent: its worktree (with Changes, Files and Scratch beside it) when it has one, else its live page. */
 export function openSubAgent(client: SocketClient, actions: Actions, s: SubAgent): void {
@@ -53,7 +57,8 @@ function AgentRow({ s: sub, indent, worktree }: { s: SubAgent; indent: number; w
   const now = useNow(sub.agent.status === 'running');
   const a = sub.agent;
   const on = selected.agent === a.id || (worktree !== undefined && selected.ws === worktree.id);
-  const facts = [typeLabel(a.type), modelLabel(a.model), agentLabel(a), agentElapsed(a, now)].filter(Boolean).join(' · ');
+  // Finished a while ago: when, and who started it (Klaud no longer follows it live).
+  const facts = sub.past ? [typeLabel(a.type), `Finished ${agoText(a.lastAt, now)}`, `started by “${sub.session.title}”`].join(' · ') : [typeLabel(a.type), modelLabel(a.model), agentLabel(a), agentElapsed(a, now)].filter(Boolean).join(' · ');
   return (
     <Row
       data-subagent={a.id}
@@ -74,10 +79,11 @@ function AgentRow({ s: sub, indent, worktree }: { s: SubAgent; indent: number; w
 export function SubAgentRows({ ws, indent }: { ws: Workspace; indent: number }) {
   const actions = useActions();
   const sessions = useCcSessions();
+  const origins = useAgentOrigins();
   const projects = useApp((st) => st.projects);
   const key = `subagents-more:${ws.id}`;
   const expanded = useUi((u) => u.collapsed.includes(key));
-  const list = useMemo(() => subAgentsUnder(sessions, ws.id), [sessions, ws.id]);
+  const list = useMemo(() => subAgentsUnder(sessions, ws.id, origins), [sessions, ws.id, origins]);
   const selected = useSelectedAgent();
   if (!list.length) return null;
   const worktreeOf = (sub: SubAgent): Workspace | undefined => (sub.agent.worktree ? projects.flatMap((p) => p.workspaces).find((w) => w.path === sub.agent.worktree!.path) : undefined);

@@ -20,7 +20,7 @@ import { useArrangeDrag } from './arrange-drag.js';
 import { GroupHeader, NewGroupRow, groupItems, isGroupOption, moveItems, moveKey } from './ProjectGroups.js';
 import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, useLayout } from './project-layout.js';
 import { OutsideWorktrees } from './OtherWorktrees.js';
-import { SubAgentRows, useCcSessions } from './SubAgents.js';
+import { SubAgentRows, useAgentOrigins, useCcSessions } from './SubAgents.js';
 import { hasRowsInside } from './project-rows.js';
 import { outsideOf } from './outside-model.js';
 import { openSheet } from '../lib/sheets.js';
@@ -166,7 +166,8 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   const kids = depth + 2;
   // Nothing to unfold: no arrow (its place kept, so the icons stay in line).
   const sessions = useCcSessions();
-  const foldable = useMemo(() => hasRowsInside(p, sessions), [p, sessions]);
+  const origins = useAgentOrigins();
+  const foldable = useMemo(() => hasRowsInside(p, sessions, origins), [p, sessions, origins]);
   return (
     <>
       <SpecContext menu={{ kind: 'project', id: p.id }} extra={extra} hide={ownWay}>
