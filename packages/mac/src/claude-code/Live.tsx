@@ -165,11 +165,13 @@ export function ClaudeCodeInspector() {
 }
 
 /** The sidebar's Activity row: how many agents are running outside klaud right now. */
-export function ActivityRow() {
+/** `whenLive`: only while a session runs outside Klaud (or you're looking at Activity). */
+export function ActivityRow({ whenLive }: { whenLive?: boolean } = {}) {
   const { client } = useKlaud();
   const running = useApp((st) => runningAgents(outsideSessions(st.claudeCode.sessions)));
   const live = useApp((st) => outsideSessions(st.claudeCode.sessions).length > 0);
   const selected = useApp((st) => st.view.kind === 'claude_code');
+  if (whenLive && !live && !selected) return null;
   return (
     <Row
       icon={<Icon name="pulse" size={14} />}

@@ -39,6 +39,13 @@ function useToolbarWidth(): [React.RefObject<HTMLElement | null>, number] {
   return [ref, width];
 }
 
+/** Search every conversation, from any view (⇧⌘F; ⌘F finds in what's open). */
+function SearchButton() {
+  const actions = useActions();
+  const on = useApp((st) => st.view.kind === 'search');
+  return <IconButton icon="search" label="Search" keys={`⇧${mod()}F`} active={on} onClick={() => actions.run({ type: 'view', view: { kind: 'search' } })} />;
+}
+
 function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode; subtitle?: ReactNode; center?: ReactNode; right?: ReactNode; headerRef: React.RefObject<HTMLElement | null> }) {
   const prefs = usePrefs();
   const { client } = useKlaud();
@@ -72,6 +79,7 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
             onClick={() => void toggleTerminal(client.store.getState())}
           />
         ) : null}
+        <SearchButton />
         <NotificationBell />
         <IconButton icon="command" label="Everything you can do" keys={`${mod()}K`} onClick={() => document.dispatchEvent(new CustomEvent('klaud:palette'))} />
         <IconButton icon="panelRight" label={prefs.inspector ? 'Hide the panel' : 'Show the panel: changes, files, terminal, info'} keys={`⌥${mod()}0`} active={prefs.inspector} onClick={togglePanel} />
