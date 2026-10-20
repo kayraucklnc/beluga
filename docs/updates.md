@@ -49,45 +49,44 @@ That is why *Update When Idle* waits for Claude, the terminals and the room.
 
 ## Releasing
 
-Every merge to main releases the Mac app through CI (.github/workflows/publish.yml):
+Releases are made from the maintainer's Mac, not CI: there's no workflow that publishes anything.
+GitHub Actions only checks pull requests (`.github/workflows/ci.yml`, `mac.yml`).
 
-1. tauri-action builds the `.app`, `Klaud_<v>_aarch64.app.tar.gz`, its `.sig` and `latest.json`, and uploads them to the release `v<version>`.
-2. `packages/mac/scripts/make-dmg.mjs` makes the `.dmg`. If Finder can't be scripted on the runner, Tauri's own dmg is used instead, with the same layout.
-
-Installed copies read `https://github.com/kayraucklnc/klaud/releases/latest/download/latest.json`. The release marked *latest* must therefore carry `latest.json`.
-
-To release by hand (tags `v<version>-mac`, so they never collide with CI's `v<version>`):
+**Klaud for Mac** (tags `v<version>-mac`), from an up-to-date main:
 
 ```sh
 cd packages/mac
-npm run release -- --set-version 0.5.0          # tauri.conf.json + package.json; commit it
+npm run release -- --set-version 0.8.0          # tauri.conf.json + package.json; commit it (in the PR)
 npm run release -- --notes ../../notes.md --dry-run   # build and write latest.json, upload nothing
 npm run release -- --notes ../../notes.md       # build, then gh release create … --latest
 ```
 
+Installed copies read `https://github.com/kayraucklnc/klaud/releases/latest/download/latest.json`. The release marked *latest* must therefore carry `latest.json`.
+
 The script ([scripts/release-mac.mjs](../scripts/release-mac.mjs)) does the following:
 
 1. Refuses a version that isn't newer than GitHub's latest release.
-2. Builds with `npm run app:build`, signing the update.
+2. Builds with `npm run app:build`, signing the update, and makes the `.dmg` (`packages/mac/scripts/make-dmg.mjs`).
 3. Writes `latest.json` with the version, notes, `pub_date`, and `platforms["darwin-aarch64"]`. That entry holds the signature and the URL of the `.app.tar.gz` asset.
 4. Creates the release, or updates it if it exists, and marks it latest.
 
-The app's version is `version` in [packages/mac/src-tauri/tauri.conf.json](../packages/mac/src-tauri/tauri.conf.json); the window reads it from there. `packages/mac/package.json` must match, and a test checks that. CI sets both to the npm version it releases.
+The app's version is `version` in [packages/mac/src-tauri/tauri.conf.json](../packages/mac/src-tauri/tauri.conf.json); the window reads it from there. `packages/mac/package.json` must match, and a test checks that.
+
+**The terminal app on npm** (`klaudcode`, tags `v<version>`), from a clean main, logged in to npm (`npm login`, once):
+
+```sh
+npm run release:npm -- --dry-run   # typecheck, test, npm publish --dry-run
+npm run release:npm                # publish, tag v<version>, push
+```
+
+If the version in package.json is already on npm, [scripts/release-npm.mjs](../scripts/release-npm.mjs) bumps the patch number and commits that. For a minor or major release, set the version in package.json first.
 
 ## The signing key
 
 Updates are signed with a minisign key, separate from Apple's Developer ID.
 
 - **Public key:** `plugins.updater.pubkey` in tauri.conf.json. An update that doesn't verify against it is never installed. `requireSignedVersion` is on, so the version in `latest.json` must also match the version that was signed.
-- **Private key:** `~/.tauri/klaud-updater.key` on the maintainer's Mac (mode 0600, no password). Never commit it or paste it anywhere but the CI secret. If it is lost, installed copies can't be updated any more, so keep a backup in a password manager.
-- **CI secrets** (repository › Settings › Secrets and variables › Actions):
-
-  ```sh
-  gh secret set TAURI_SIGNING_PRIVATE_KEY --repo kayraucklnc/klaud < ~/.tauri/klaud-updater.key
-  gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --repo kayraucklnc/klaud --body ""
-  ```
-
-  Without `TAURI_SIGNING_PRIVATE_KEY`, CI still releases the app, but without an update for installed copies.
+- **Private key:** `~/.tauri/klaud-updater.key` on the maintainer's Mac (mode 0600, no password). Never commit it or paste it anywhere. If it is lost, installed copies can't be updated any more, so keep a backup in a password manager.
 
 ## Trying an update locally
 
