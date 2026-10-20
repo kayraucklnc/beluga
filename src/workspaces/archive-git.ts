@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -28,6 +29,8 @@ export function run(cmd: string, args: readonly string[], opts: { cwd: string; e
 }
 
 export const git = (cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv, timeoutMs?: number): Promise<string> => run('git', args, { cwd, ...(env ? { env } : {}), ...(timeoutMs ? { timeoutMs } : {}) });
+/** Paths given to git as they are (a "[" or "*" in a name is just a character). */
+export const gitLiteral = (cwd: string, args: readonly string[]): Promise<string> => git(cwd, ['--literal-pathspecs', ...args]);
 export const tryGit = (cwd: string, args: readonly string[]): Promise<string | undefined> => git(cwd, args).then((s) => s.trim(), () => undefined);
 
 /** Ignored files and folders (a folder git ignores whole is one entry, ending in "/"). */
@@ -91,19 +94,39 @@ async function gitlinks(dir: string, env?: NodeJS.ProcessEnv): Promise<string[]>
     .map((l) => l.slice(l.indexOf('\t') + 1));
 }
 
+/** The submodules checked out in a folder. */
+export async function submodulesIn(dir: string): Promise<string[]> {
+  return (await gitlinks(dir)).filter((p) => existsSync(path.join(dir, p, '.git')));
+}
+
 /**
- * Submodules keep their own git data in the worktree's git folder, which goes with it: refuse
- * when one has changes or commits that aren't pushed (a clean one comes back from its remote).
+ * What in a submodule only lives here (its git data is in the worktree's git folder, which goes
+ * with it): changes, a stash, a branch or commits no remote has. Fails closed: git can't tell → refuse.
  */
-export async function assertSubmodulesSafe(dir: string): Promise<boolean> {
-  const subs = (await gitlinks(dir)).filter((p) => existsSync(path.join(dir, p, '.git')));
-  for (const sub of subs) {
-    const at = path.join(dir, sub);
-    const dirty = await tryGit(at, ['status', '--porcelain']);
-    const unpushed = await tryGit(at, ['rev-list', '-n', '1', 'HEAD', '--not', '--remotes']);
-    if (dirty || unpushed) throw new ArchiveError(`The submodule ${sub} has ${dirty ? 'uncommitted changes' : 'commits that aren’t pushed'}. Commit and push them in it first, then archive.`);
-  }
-  return subs.length > 0;
+export async function submoduleOnlyHere(at: string): Promise<string | undefined> {
+  if ((await git(at, ['status', '--porcelain'])).trim()) return 'uncommitted changes';
+  if ((await git(at, ['stash', 'list'])).trim()) return 'a stash';
+  const branches = (await git(at, ['for-each-ref', '--format=%(refname)', 'refs/heads'])).split('\n').filter(Boolean);
+  for (const ref of ['HEAD', ...branches]) if ((await git(at, ['rev-list', '-n', '1', ref, '--not', '--remotes'])).trim()) return ref === 'HEAD' ? 'commits that aren’t pushed' : `the branch ${ref.replace('refs/heads/', '')}, which no remote has`;
+  return undefined;
+}
+
+/** Untracked folders git lists whole (folders ending in "/"), for empty ones and repos inside. */
+export async function untrackedDirs(dir: string): Promise<string[]> {
+  return (await git(dir, ['ls-files', '--others', '--exclude-standard', '--directory', '-z'], undefined, LONG_MS)).split('\0').filter((r) => r.endsWith('/'));
+}
+
+/** Files' sizes and times under these paths, as one hash (the same twice: nothing in them changed). */
+export function fingerprint(dir: string, rels: readonly string[]): string {
+  const h = createHash('sha1');
+  const walk = (rel: string): void => {
+    const st = lstatSync(path.join(dir, rel), { throwIfNoEntry: false });
+    if (!st) return void h.update(`${rel}\0gone\n`);
+    h.update(`${rel}\0${st.size}\0${st.mtimeMs}\0${st.mode}\n`);
+    if (st.isDirectory()) for (const name of readdirSync(path.join(dir, rel)).sort()) walk(path.join(rel, name));
+  };
+  for (const rel of [...rels].sort()) walk(rel.replace(/\/$/, ''));
+  return h.digest('hex');
 }
 
 /** Your name for the snapshot commit when git has one, else Klaud's. */

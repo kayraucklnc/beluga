@@ -246,6 +246,67 @@ describe('a smart archive', () => {
     expect(plan.keep).toContain('out/');
   });
 
+  it('a folder it can’t remove completely keeps its archive, and restoring sets what’s left aside', async () => {
+    const locked = path.join(wt, 'node_modules/locked');
+    put(path.join(locked, 'x.js'), 'x');
+    execFileSync('chmod', ['a-w', locked]);
+    try {
+      const m = await archiveWorktree({ repo, dir: wt, id: 'p1', archivesDir: archives });
+      expect(readManifest(archives, 'p1')?.snapshot).toBe(m.snapshot);
+      expect(sh(repo, 'rev-parse', 'refs/klaud/archive/p1').trim()).toBe(m.snapshot);
+    } finally {
+      if (existsSync(locked)) execFileSync('chmod', ['-R', 'u+w', wt]);
+    }
+    // Something left where it was (or not): restore brings it all back either way.
+    if (!existsSync(wt)) mkdirSync(path.join(wt, 'node_modules'), { recursive: true });
+    await restoreWorktree({ repo, dir: wt, id: 'p1', archivesDir: archives });
+    expect(readFileSync(path.join(wt, 'notes.md'), 'utf8')).toBe('mine\n');
+    expect(readFileSync(path.join(wt, '.env'), 'utf8')).toBe('SECRET=1\n');
+  });
+
+  it('a second archive never replaces one that’s there', async () => {
+    await archiveWorktree({ repo, dir: wt, id: 'd1', archivesDir: archives });
+    mkdirSync(wt);
+    await expect(archiveWorktree({ repo, dir: wt, id: 'd1', archivesDir: archives })).rejects.toThrow(/already archived/);
+  });
+
+  it('won’t archive a submodule with files of its own git ignores, a stash, or a branch only here', async () => {
+    const lib = path.join(base, 'lib2');
+    mkdirSync(lib);
+    sh(lib, 'init', '-q', '-b', 'main');
+    put(path.join(lib, '.gitignore'), '.env\n');
+    put(path.join(lib, 'x.txt'), 'lib\n');
+    sh(lib, 'add', '-A');
+    sh(lib, 'commit', '-qm', 'lib');
+    execFileSync('git', ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', lib, 'libs/two'], { cwd: wt });
+    const sub = path.join(wt, 'libs/two');
+    put(path.join(sub, '.env'), 'SUB_SECRET=1');
+    await expect(archiveWorktree({ repo, dir: wt, id: 's2', archivesDir: archives })).rejects.toThrow(/submodule libs\/two/);
+    rmSync(path.join(sub, '.env'));
+    // A commit on another branch, only here (the submodule is back on its pushed commit).
+    sh(sub, 'checkout', '-q', '-b', 'only-here');
+    put(path.join(sub, 'y.txt'), 'local\n');
+    sh(sub, 'add', '-A');
+    sh(sub, 'commit', '-qm', 'local');
+    sh(sub, 'checkout', '-q', '-');
+    await expect(archiveWorktree({ repo, dir: wt, id: 's2', archivesDir: archives })).rejects.toThrow(/submodule libs\/two/);
+    expect(existsSync(sub)).toBe(true);
+  });
+
+  it('a repo inside whose git data lives elsewhere (a .git file) isn’t archived', async () => {
+    put(path.join(wt, 'linked/.git'), 'gitdir: /somewhere/else\n');
+    put(path.join(wt, 'linked/a.txt'), 'a');
+    await expect(archiveWorktree({ repo, dir: wt, id: 'g1', archivesDir: archives })).rejects.toThrow(/linked/);
+    expect(existsSync(wt)).toBe(true);
+  });
+
+  it('keeps empty folders of yours', async () => {
+    mkdirSync(path.join(wt, 'uploads/empty'), { recursive: true });
+    await archiveWorktree({ repo, dir: wt, id: 'e1', archivesDir: archives });
+    await restoreWorktree({ repo, dir: wt, id: 'e1', archivesDir: archives });
+    expect(existsSync(path.join(wt, 'uploads/empty'))).toBe(true);
+  });
+
   it('frees space in a worktree you keep: only what’s made again', async () => {
     const freed = await freeSpace(wt);
     expect(freed.bytes).toBeGreaterThan(40_000);

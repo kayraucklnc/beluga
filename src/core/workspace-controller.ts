@@ -79,7 +79,8 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 export function archivedText(m: ArchiveManifest | undefined): string {
   if (!m) return 'Archived. The branch and conversation are kept; restore it any time.';
   const freed = m.freedBytes ? ` Freed ${formatBytes(m.freedBytes)} of dependencies, builds and caches (made again when you restore it).` : '';
-  return `Archived: everything of yours is kept, uncommitted work included.${freed}`;
+  const left = m.leftover ? ` Some of its folder couldn’t be removed (${m.dir}): it’s set aside when you restore it, and you can delete it.` : '';
+  return `Archived: everything of yours is kept, uncommitted work included.${freed}${left}`;
 }
 
 export class WorkspaceController {

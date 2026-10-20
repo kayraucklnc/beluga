@@ -1,7 +1,7 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { folderSize } from './disk.js';
-import { ArchiveError, LONG_MS, TAR_TIMEOUT_MS, assertSettled, assertSubmodulesSafe, git, ignoredByProject, ignoredIn, pack, run, snapshot, tryGit } from './archive-git.js';
+import { ArchiveError, LONG_MS, TAR_TIMEOUT_MS, assertSettled, fingerprint, git, gitLiteral, ignoredByProject, ignoredIn, pack, run, snapshot, submoduleOnlyHere, submodulesIn, tryGit, untrackedDirs } from './archive-git.js';
 import { type RegenRule, regenRule, remakeSteps } from './regenerable.js';
 
 /**
@@ -38,6 +38,8 @@ export interface ArchiveManifest {
   readonly freedBytes: number;
   readonly remake: readonly string[];
   readonly archivedAt: number;
+  /** Everything was saved, but some of the folder couldn't be removed (it's set aside on restore). */
+  readonly leftover?: true;
 }
 
 export interface ArchivePlan {
@@ -131,15 +133,69 @@ export interface ArchiveOptions {
   readonly onPhase?: (phase: ArchivePhase) => void;
 }
 
-/** What's saved of a folder: its snapshot and what's packed (the same twice in a row: nothing changed meanwhile). */
-const sameSave = (a: { tree: string; keep: readonly string[] }, b: { tree: string; keep: readonly string[] }): boolean => a.tree === b.tree && a.keep.join('\0') === b.keep.join('\0');
+/** What's saved of a folder: its snapshot, what's packed and how that was (the same twice in a row: nothing changed meanwhile). */
+interface Saved {
+  readonly tree: string;
+  readonly keep: readonly string[];
+  readonly print: string;
+}
+const sameSave = (a: Saved, b: Saved): boolean => a.tree === b.tree && a.keep.join('\0') === b.keep.join('\0') && a.print === b.print;
+
+/** Any file under a folder (only empty folders inside: git keeps none of them, so it's packed). */
+function hasFiles(dir: string): boolean {
+  return readdirSync(dir, { withFileTypes: true }).some((e) => !e.isDirectory() || hasFiles(path.join(dir, e.name)));
+}
+
+/**
+ * Refuse what an archive can't keep: a submodule with work only here (or files it ignores that
+ * aren't made again), a repo inside whose git data lives somewhere else (a .git file).
+ * → whether there are submodules (they're checked out again on restore), and empty folders to keep.
+ */
+async function checkKeepable(dir: string): Promise<{ submodules: boolean; empty: string[] }> {
+  const subs = await submodulesIn(dir);
+  for (const sub of subs) {
+    const at = path.join(dir, sub);
+    const only = (await submoduleOnlyHere(at)) ?? ((await planArchive(at)).keep.length ? 'files it ignores that aren’t made again (like .env)' : undefined);
+    if (only) throw new ArchiveError(`The submodule ${sub} has ${only}. Commit and push them in it (or move them out) first, then archive.`);
+  }
+  const empty: string[] = [];
+  for (const rel of await untrackedDirs(dir)) {
+    const at = path.join(dir, rel);
+    if (lstatSync(path.join(at, '.git'), { throwIfNoEntry: false })?.isFile()) throw new ArchiveError(`${rel.replace(/\/$/, '')} is a git checkout whose history lives somewhere else (its .git is a file). Move it out first, then archive.`);
+    if (!hasFiles(at)) empty.push(rel);
+  }
+  return { submodules: subs.length > 0, empty };
+}
+
+/**
+ * Remove the folder once everything's saved. Read-only folders inside (some package caches)
+ * are made writable first; whatever still can't go is left (and set aside on restore), the
+ * archive kept either way. → whether something was left.
+ */
+async function removeFolder(repo: string, dir: string): Promise<boolean> {
+  try {
+    await git(repo, ['worktree', 'remove', '--force', dir], undefined, LONG_MS);
+    return false;
+  } catch {
+    await run('chmod', ['-R', 'u+w', dir], { cwd: repo, timeoutMs: LONG_MS }).catch(() => undefined);
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // What's left stays; the archive has everything.
+    }
+    await tryGit(repo, ['worktree', 'prune']);
+    return existsSync(dir);
+  }
+}
 
 /** Archive a worktree: save what's yours, throw away what's made again, remove the folder (its branch stays). */
 export function archiveWorktree(o: ArchiveOptions): Promise<ArchiveManifest> {
   return exclusive(o.id, async () => {
     if (!existsSync(o.dir) || !lstatSync(o.dir).isDirectory()) throw new ArchiveError(`${o.dir} isn’t there`);
+    // One archive per worktree: a second would replace what the first kept.
+    if (readManifest(o.archivesDir, o.id)) throw new ArchiveError('It’s already archived. Restore it first.');
     await assertSettled(o.dir);
-    const submodules = await assertSubmodulesSafe(o.dir);
+    const { submodules, empty } = await checkKeepable(o.dir);
     const folder = folderOf(o.archivesDir, o.id);
     const work = `${folder}.partial`;
     for (let attempt = 1; ; attempt++) {
@@ -150,7 +206,8 @@ export function archiveWorktree(o: ArchiveOptions): Promise<ArchiveManifest> {
         const plan = await planArchive(o.dir);
         const branch = await tryGit(o.dir, ['symbolic-ref', '--short', '--quiet', 'HEAD']);
         const snap = await snapshot(o.dir, `Klaud archive of ${path.basename(o.dir)}`);
-        const keep = outermost([...plan.keep, ...snap.nested.map((n) => `${n}/`)]);
+        const keep = outermost([...plan.keep, ...snap.nested.map((n) => `${n}/`), ...empty]);
+        const print = fingerprint(o.dir, keep);
         o.onPhase?.('compressing');
         let keptBytes = 0;
         if (keep.length) {
@@ -160,7 +217,8 @@ export function archiveWorktree(o: ArchiveOptions): Promise<ArchiveManifest> {
         // Written to meanwhile (an agent, a dev server, you): save it again, so nothing new is lost.
         const again = await snapshot(o.dir, 'check');
         const againPlan = await planArchive(o.dir);
-        if (!sameSave({ tree: snap.tree, keep }, { tree: again.tree, keep: outermost([...againPlan.keep, ...again.nested.map((n) => `${n}/`)]) })) {
+        const keepAgain = outermost([...againPlan.keep, ...again.nested.map((n) => `${n}/`), ...empty]);
+        if (!sameSave({ tree: snap.tree, keep, print }, { tree: again.tree, keep: keepAgain, print: fingerprint(o.dir, keepAgain) })) {
           if (attempt < ATTEMPTS) continue;
           throw new ArchiveError('It kept changing while it was being archived. Try again when nothing is working in it.');
         }
@@ -180,11 +238,13 @@ export function archiveWorktree(o: ArchiveOptions): Promise<ArchiveManifest> {
         };
         await git(o.repo, ['update-ref', REF(o.id), snap.commit]);
         writeFileSync(path.join(work, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
-        rmSync(folder, { recursive: true, force: true });
         renameSync(work, folder);
+        // Saved: from here on, the archive is never taken back.
         o.onPhase?.('removing');
-        await git(o.repo, ['worktree', 'remove', '--force', o.dir], undefined, LONG_MS);
-        return manifest;
+        if (!(await removeFolder(o.repo, o.dir))) return manifest;
+        const left: ArchiveManifest = { ...manifest, leftover: true };
+        writeFileSync(path.join(folder, MANIFEST), `${JSON.stringify(left, null, 2)}\n`);
+        return left;
       } catch (err) {
         rmSync(work, { recursive: true, force: true });
         // The folder is still there: forget this snapshot (and its manifest) so nothing claims it's archived.
@@ -208,7 +268,12 @@ export function restoreWorktree(o: Omit<ArchiveOptions, 'onPhase'>): Promise<Arc
     const m = readManifest(o.archivesDir, o.id);
     if (!m) throw new ArchiveError('No archive for this worktree');
     const folder = folderOf(o.archivesDir, o.id);
-    if (existsSync(o.dir)) throw new ArchiveError(`${o.dir} is already there`);
+    if (existsSync(o.dir)) {
+      // What an archive couldn't remove (or something put there since): set aside, never deleted.
+      const registered = (await git(o.repo, ['worktree', 'list', '--porcelain'])).split('\n').some((l) => l === `worktree ${o.dir}`);
+      if (registered) throw new ArchiveError(`${o.dir} is already there`);
+      renameSync(o.dir, `${o.dir}.left-${Date.now()}`);
+    }
     mkdirSync(path.dirname(o.dir), { recursive: true });
     const tip = m.branch ? await tryGit(o.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${m.branch}`]) : undefined;
     // The branch is where it was: back on it. Moved on (or gone): at the commit it was on, so nothing of either is mixed up.
@@ -246,8 +311,8 @@ export async function freeSpace(dir: string): Promise<{ bytes: number; removed: 
   const removed: string[] = [];
   let bytes = 0;
   for (const d of plan.drop) {
-    const tracked = await git(dir, ['ls-files', '-z', '--', d.path]);
-    const fresh = await git(dir, ['ls-files', '-z', '--others', '--exclude-standard', '--', d.path]);
+    const tracked = await gitLiteral(dir, ['ls-files', '-z', '--', d.path]);
+    const fresh = await gitLiteral(dir, ['ls-files', '-z', '--others', '--exclude-standard', '--', d.path]);
     if (tracked || fresh) continue;
     rmSync(path.join(dir, d.path), { recursive: true, force: true });
     removed.push(d.path);
