@@ -1,4 +1,6 @@
 import { existsSync } from 'node:fs';
+import type { ArchiveManifest, ArchivePhase, ArchivePreview } from '../workspaces/archive.js';
+import { formatBytes } from '../workspaces/disk.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import path from 'node:path';
 import { slugify } from '../agent/namer.js';
@@ -38,6 +40,8 @@ export interface ControllerDeps {
   readonly onWorktreeCreated?: (ws: Workspace) => void;
   /** Before a workspace is archived or deleted: stop what runs in its folder (shell, dev server). */
   readonly onWorkspaceGoing?: (id: string) => void;
+  /** An archived worktree is back; `remake` makes again what the archive threw away (npm install…). */
+  readonly onWorktreeRestored?: (ws: Workspace, remake: readonly string[]) => void;
   /** Claude Code's folder, where its sub-agents' worktrees are found (default: ~/.claude). */
   readonly claudeHome?: string;
 }
@@ -68,10 +72,28 @@ import { SCRATCH_DIR, type ScratchFile, ensureScratch, listScratch } from '../wo
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
+ * What happened to a worktree, for whoever follows along (the board opens and closes tasks by
+ * these). `from`: the workspace it was forked or continued from. `about`: what it's for, when
+ * that's known as it opens (the task a conversation continued with).
+ */
+export type WorktreeEvent =
+  | { readonly kind: 'created'; readonly ws: Workspace; readonly from?: string; readonly about?: string }
+  | { readonly kind: 'merged' | 'archived' | 'removed' | 'restored'; readonly id: string };
+
+/**
  * Connects projects and workspaces to the room: views, conversations (one Claude
  * session per workspace, history saved to disk), and every workspace action.
  */
+/** What the archive did, in words. */
+export function archivedText(m: ArchiveManifest | undefined): string {
+  if (!m) return 'Archived. The branch and conversation are kept; restore it any time.';
+  const freed = m.freedBytes ? ` Freed ${formatBytes(m.freedBytes)} of dependencies, builds and caches (made again when you restore it).` : '';
+  const left = m.leftover ? ` Some of its folder couldn’t be removed (${m.dir}): it’s set aside when you restore it, and you can delete it.` : '';
+  return `Archived: everything of yours is kept, uncommitted work included.${freed}${left}`;
+}
+
 export class WorkspaceController {
+  private readonly worktreeListeners = new Set<(event: WorktreeEvent) => void>();
   private readonly loaded = new Set<string>();
   private reviewToken = 0;
   private saveTimer?: NodeJS.Timeout;
@@ -85,6 +107,28 @@ export class WorkspaceController {
   readonly mainSync: MainSync;
   /** Conversations whose next run may sync git in the main folder ("Let Claude handle it"), by workspace id. */
   private readonly syncRuns = new Map<string, { branch: string; upstream: string }>();
+
+  /** Hear about worktrees opening, merging, going and coming back. */
+  onWorktree(listener: (event: WorktreeEvent) => void): () => void {
+    this.worktreeListeners.add(listener);
+    return () => void this.worktreeListeners.delete(listener);
+  }
+
+  private emit(event: WorktreeEvent): void {
+    for (const l of this.worktreeListeners) {
+      try {
+        l(event);
+      } catch {
+        // A listener's problem is its own.
+      }
+    }
+  }
+
+  /** A worktree opened: the workbench (setup) and the listeners hear of it. */
+  private created(ws: Workspace, extra: { from?: string; about?: string } = {}): void {
+    this.deps.onWorktreeCreated?.(ws);
+    this.emit({ kind: 'created', ws, ...extra });
+  }
 
   constructor(private readonly deps: ControllerDeps) {
     this.unsubscribe = deps.store.subscribe(() => this.scheduleSave());
@@ -258,7 +302,7 @@ export class WorkspaceController {
     if (ws) {
       this.deps.toast(`Worktree ${ws.name} is ready on ${ws.branch}`, 'success');
       this.open(ws.id);
-      this.deps.onWorktreeCreated?.(ws);
+      this.created(ws);
     }
     return ws;
   }
@@ -343,7 +387,7 @@ export class WorkspaceController {
     this.deps.store.dispatch({ type: 'system', channel: to, text: `Continued from “${source.name}” in ${where}, on a new branch from ${ws.base ?? project.base}. Claude remembers the conversation.` });
     this.deps.store.dispatch({ type: 'system', channel: from, text: `Continued in the worktree ${ws.name} (${ws.branch}).${source.askOnly ? ' This chat stays here for questions.' : ''}` });
     this.deps.toast(`Continuing in ${ws.name}, with the conversation so far`, 'success');
-    this.deps.onWorktreeCreated?.(ws);
+    this.created(ws, { from: id, about });
     // The task is often word-for-word what you asked last, already in the carried-over chat: start
     // Claude with it without showing it a second time.
     const repeat = Boolean(task) && asked?.type === 'chat' && sameText(asked.text, task!);
@@ -363,22 +407,33 @@ export class WorkspaceController {
       this.deps.toast(`Forked into ${ws.name}, with the conversation so far`, 'success');
       this.loaded.delete(`${WS_PREFIX}${ws.id}`);
       this.open(ws.id);
-      this.deps.onWorktreeCreated?.(ws);
+      this.created(ws, { from: id });
     }
     return ws;
   }
 
-  async archive(id: string, force = false): Promise<boolean> {
+  /**
+   * Archive smartly (see workspaces/archive.ts): nothing of yours is lost, so uncommitted work
+   * no longer stops it (`_force` is from when it did). How far along shows while it runs.
+   */
+  async archive(id: string, _force = false): Promise<boolean> {
     const agents = this.agentWorktreesOf(id);
+    const phase = (p?: ArchivePhase): void => void this.deps.store.dispatch({ type: 'archiving', id, ...(p ? { phase: p } : {}) });
+    let manifest: ArchiveManifest | undefined;
     const done = await this.act("Couldn't archive", async () => {
       this.deps.onWorkspaceGoing?.(id);
-      await this.deps.manager.archive(id, force);
+      try {
+        manifest = await this.deps.manager.archive(id, phase);
+      } finally {
+        phase();
+      }
       return true;
     });
     if (done) {
       this.deps.intend({ type: 'close_tab', id });
       const also = await this.removeAgentWorktrees(agents);
-      this.deps.toast(['Archived. The branch and conversation are kept; restore it any time.', also].filter(Boolean).join(' '), 'success');
+      this.deps.toast([archivedText(manifest), also].filter(Boolean).join(' '), 'success');
+      this.emit({ kind: 'archived', id });
     }
     return Boolean(done);
   }
@@ -436,8 +491,30 @@ export class WorkspaceController {
     }
   }
 
+  archivePlan(id: string): Promise<ArchivePreview | undefined> {
+    return this.deps.manager.archivePlan(id).catch(() => undefined);
+  }
+
+  /** Free space in a worktree you keep (its dependencies, builds and caches) → bytes freed. */
+  async freeSpace(id: string): Promise<number> {
+    const freed = await this.act("Couldn't free space", () => this.deps.manager.freeSpace(id));
+    if (!freed) return 0;
+    this.deps.toast(`Freed ${formatBytes(freed.bytes)}.${freed.remake.length ? ` Run ${freed.remake.map((r) => `\`${r}\``).join(', then ')} to work in it again.` : ''}`, 'success');
+    return freed.bytes;
+  }
+
+  /** Bring it back as it was; what was thrown away is made again by the project's setup. */
   async restore(id: string): Promise<void> {
-    if (await this.act("Couldn't restore", () => this.deps.manager.restore(id).then(() => true))) this.open(id);
+    let manifest: ArchiveManifest | undefined;
+    const done = await this.act("Couldn't restore", async () => {
+      manifest = await this.deps.manager.restore(id);
+      return true;
+    });
+    if (!done) return;
+    this.open(id);
+    this.emit({ kind: 'restored', id });
+    const ws = this.deps.manager.find(id);
+    if (ws && manifest?.dropped.length) this.deps.onWorktreeRestored?.(ws, manifest.remake);
   }
 
   async remove(id: string): Promise<void> {
@@ -452,6 +529,7 @@ export class WorkspaceController {
       this.deps.intend({ type: 'close_tab', id });
       const also = await this.removeAgentWorktrees(agents);
       this.deps.toast(['Deleted.', also].filter(Boolean).join(' '), 'success');
+      this.emit({ kind: 'removed', id });
     }
   }
 
@@ -469,6 +547,7 @@ export class WorkspaceController {
     this.deps.store.dispatch({ type: 'conflicts', id, files: !result.ok && result.reason === 'conflict' ? result.files : [] });
     if (result.ok) {
       this.deps.toast(`Merged ${ws.branch} into the main folder`, 'success');
+      this.emit({ kind: 'merged', id });
       return;
     }
     if (result.reason === 'wrong_branch') {

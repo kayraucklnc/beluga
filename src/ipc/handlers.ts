@@ -14,6 +14,7 @@ import { STRIPE_HANDLERS } from './stripe-handlers.js';
 import { CLAUDE_CODE_HANDLERS } from './claude-code-handlers.js';
 import { STEPS_HANDLERS } from './steps-handlers.js';
 import { GATEWAY_HANDLERS } from './gateway-handlers.js';
+import { BOARD_HANDLERS } from './board-handlers.js';
 import { GIT_HANDLERS } from './git-handlers.js';
 
 /**
@@ -143,6 +144,8 @@ export const HANDLERS = {
     (await ctl(s)?.continueInWorktree(id, (prompt) => s.nameTask(prompt), { ...(opts?.task ? { task: opts.task } : {}), ...(opts?.base ? { base: opts.base } : {}), ...(opts?.name ? { name: opts.name } : {}), after: s.host.idle(`ws:${id}`) }))?.id,
   'workspaces.archive': (s, id, force) => ctl(s)?.archive(id, force),
   'workspaces.restore': (s, id) => ctl(s)?.restore(id),
+  'workspaces.archivePlan': (s, id) => ctl(s)?.archivePlan(id),
+  'workspaces.freeSpace': (s, id) => ctl(s)?.freeSpace(id),
   'workspaces.remove': (s, id) => ctl(s)?.remove(id),
   'workspaces.commit': (s, id, message) => ctl(s)?.commit(id, message),
   'workspaces.merge': (s, id) => ctl(s)?.merge(id),
@@ -256,6 +259,7 @@ export const HANDLERS = {
   ...CLAUDE_CODE_HANDLERS,
   ...STEPS_HANDLERS,
   ...GATEWAY_HANDLERS,
+  ...BOARD_HANDLERS,
   ...GIT_HANDLERS,
 } satisfies Handlers;
 

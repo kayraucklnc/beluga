@@ -398,6 +398,16 @@ export class Workbench {
     if (this.deps.store.getState().prefs.autoSetup) this.runSetup(ws.id, true);
   }
 
+  /**
+   * An archived worktree is back: its dependencies and builds were thrown away, so the project's
+   * setup makes them again; without one, say what to run.
+   */
+  onWorktreeRestored(ws: Workspace, remake: readonly string[]): void {
+    const project = this.manager.list.find((p) => p.id === ws.projectId);
+    if (project?.scripts?.setup?.command) return this.runSetup(ws.id, true);
+    if (remake.length) this.deps.toast(`Restored. Its dependencies and builds were cleared when it was archived: run ${remake.map((r) => `\`${r}\``).join(', then ')} to make them again`, 'info');
+  }
+
   /** Start (or restart) the project's run command, e.g. its dev server. */
   run(wsId: string): PtyProcess | undefined {
     const ws = this.manager.find(wsId);

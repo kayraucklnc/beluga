@@ -45,61 +45,71 @@ Spec and examples: [graphs.md](graphs.md). Code: `src/shared/graph-spec.ts` (bro
 
 ---
 
-## 2. Tasks — phase 2
+## 2. Tasks — phase 2, shipped
 
 ### The model (`src/core/board/`, browser-safe slice `board`)
 
-The gateway already uses the word "tasks" in code, so this feature's code says **board** and **issue**. The window says **Tasks**.
+The gateway already uses the word "tasks" in code, so this feature's code says **board** and **issue**. The window says **Tasks**. Everything lives in `~/.klaud/board.json` (only you can read it), written a moment after each change.
 
 | Field | Notes |
 |---|---|
-| `key` | `KLD-42`: a per-project prefix (settable) and a counter |
+| `key` | `BOB-12`: a per-project prefix (from the project's name, changeable with `board.setPrefix`) and a counter |
 | `title`, `status` | Backlog · Todo · In Progress · In Review · Done · Canceled (the board's columns) |
-| `priority`, `labels`, `estimate`, `due` | Linear's set |
+| `priority`, `labels`, `estimate`, `due` | Linear's set (estimates 1, 2, 3, 5, 8) |
 | `assignee` | you, a friend (peer id), **your Claude**, or **a friend's Claude** |
-| `parent`, `children` | sub-tasks |
-| `relations` | `blocks` / `blockedBy` / `relatedTo` / `duplicateOf` |
-| `links` | worktree id, branch, PR (number, url, checks, review), conversations, files |
+| `parent` | sub-tasks; a task can't sit under itself or its own sub-tasks |
+| `blockedBy`, `related` | what must be done first (its other side is "blocks"; a loop is refused), and related tasks |
+| `worktrees`, `branch`, `pr` | the worktrees doing it (the current one last), its branch, and its pull request as the workbench last saw it |
 | `brief` | the living definition (below), with revisions |
-| `proof` | screenshots, URLs, graphs, test output, attached by people or agents |
-| `activity` | an append-only feed: status changes, comments, agent notes, PR events |
+| `proof` | screenshots, pages, files, graphs and results, attached by people or Claude |
+| `activity` | an append-only feed: who changed what, comments, Claude's notes, pull request events (the last 200) |
 
-**The brief** is what later agents rely on. It's Markdown with fixed sections: **Goal**, **Context**, **Acceptance criteria** (checkboxes), **Decisions** (dated: what was decided and why), **Open questions** and **Notes for the next agent**. Each edit is a revision with its author (a person or a Claude) and a one-line reason. You can see the diff between revisions and restore an old one.
+**The brief** is what later agents rely on. It's Markdown in fixed sections: **Goal**, **Context**, **Acceptance criteria** (checkboxes you tick on the page), **Decisions** (what was decided and why), **Open questions** and **Notes for the next agent**. Each edit is a revision with its author (a person or a Claude) and a one-line reason. A section's history shows every version; **Restore This** puts one back (as a new revision).
 
 ### Worktree ↔ task (automatic)
 
-- **A worktree opens a task.** The `onWorktreeCreated` hook (`core/session-parts.ts`) creates a task for every new worktree. The first message becomes the brief's Goal, and the small model's name becomes the title. A worktree started *from* a task links to that task instead. `WorkspaceRecord.taskId` holds the link.
+- **A worktree opens a task.** `WorkspaceController.onWorktree` reports worktrees opening, merging, being archived, deleted or restored; the board listens (`core/board/work.ts`).
+  - A new worktree gets a task titled after it ("add-rate-limiting" → "Add rate limiting"), In Progress, for your Claude. The title follows the worktree's name until you rename the task. The first thing you say there becomes the Goal.
+  - A conversation carried into a worktree from main brings what it was asked as the Goal.
+  - A fork stays on the same task, as does a worktree started *from* a task (Start Worktree).
+  - Turn it off in Tasks › ⋯ › Open a Task for Every New Worktree.
 - **The task follows the work:**
 
   | When | Status |
   |---|---|
   | The worktree is created | In Progress |
-  | A PR opens (`refreshPrs`) | In Review |
+  | A pull request opens (not a draft) | In Review |
   | Changes are requested | back to In Progress, with a note |
-  | The PR merges or the worktree merges into main | Done |
-  | Archived without a merge | you're asked: Canceled, or back to Backlog |
+  | The pull request merges, or the worktree merges into main here | Done |
+  | Archived or deleted before it was done | a banner asks: Cancel Task, Back to Backlog, or Keep As Is |
 
-- **Claude knows its task.** Each run in a linked worktree gets a system-prompt append with the task's brief, its blockers, its parent and its milestone. The task tools are built for each run (a closure over the channel, like `continueInWorktree`), never from the global `currentChannel`.
-  - Reading is always allowed (`ALWAYS_OK`): `task_get`, `task_list`, `task_search`.
-  - Writing your own tasks: `task_update`, `task_brief_edit` (a section and a reason), `task_note`, `task_create` (a sub-task or a follow-up), `task_attach_proof`.
-  - Claude is told to keep the brief true: record decisions as they're made, and leave Notes for the next agent before ending its turn.
+- **Claude knows its task.** Your own runs in a task's worktree get its brief, parent, blockers and sub-tasks in their instructions (`core/board/prompt.ts`), and the task tools (server `klaud_board`), built for each run from its conversation:
+  - `task_get`, `task_list`, `task_create` (sub-tasks, follow-ups), `task_update`, `task_brief_edit` (a section, a reason, replace or append), `task_note`, `task_relate`, `task_attach_proof`.
+  - Claude is told to record decisions as it makes them, tick acceptance criteria, split off work as sub-tasks, attach proof, and rewrite the notes for the next agent before ending a turn that changed things. It doesn't mark tasks Done itself: the pull request does.
+  - Runs elsewhere get the tools and a short note that the board is there. Friends' runs, guests and main folders (questions only) get neither. The tools only touch your own board, so they never ask; files holding secrets are refused as proof.
 
-### Sharing with friends
+### Sharing with friends — phase 3
 
 - **A board belongs to a project.** It's shared with whoever can see that project (project invites), or with a Channel (a network group).
 - **How changes travel:** board ops ride inside encrypted group messages as a new `extras.board` field. That's option B in the network map: ordering, E2E encryption, offline catch-up and membership come for free, and older Macs show the short text note that goes with each op.
 - **How copies agree:** every field is last-writer-wins, ordered by Lamport time and then the author's id. Activity and comments only ever get added to, so every Mac ends up with the same board.
-- **Assigning:**
-  - Give a task to a friend and it appears in their *My Tasks* with a notification.
-  - Give it to *a friend's Claude* and klaud sends an `ask_person` with the task's brief. Their usual approval pop-up and trust rules apply, and the result comes back as proof and a note on the task.
+- **Assigning:** phase 2 already lets you give a task to a friend or their Claude (people from the room and your friends), but it stays on your Mac. In phase 3:
+  - a friend's task appears in their *My Tasks* with a notification;
+  - giving it to *a friend's Claude* sends an `ask_person` with the task's brief. Their usual approval pop-up and trust rules apply, and the result comes back as proof and a note on the task.
 - **What friends see:** shared tasks, briefs and proof. Proof files travel Mac to Mac like chat files, and secrets are never attached.
 
-### The window
+### The window (`packages/mac/src/tasks/`)
 
-- **Tasks** in the sidebar, with *My Tasks*, *Active*, *Backlog* and one entry per project.
-- **List** (grouped by status, ⌘-click to select many) and **Board** (columns, drag between them). **Graph** draws the dependency graph with the graph engine.
-- **The task page:** title and properties along the top (popovers, never typed commands), the brief with its sections, sub-tasks, relations, linked PR (checks and review), proof (a gallery), and activity. **Start Worktree** / **Open Worktree** is the main button.
-- **Shortcuts:** ⌘K palette entries, C new task, ⌘↩ to save. Everything is also clickable.
+- **One project at a time.** Tasks from different projects never share a screen. Tasks opens on the project you're in (the worktree, project home or task you came from; else the last one; else the busiest), and a switcher at its top (the project's icon and name) changes it. Claude's `task_list` stays in its run's project too, unless it names another.
+- **Tasks** in the sidebar, and ⌘K › New Task… / Go to Tasks.
+- **The bar:** the project switcher, Active · Backlog · All (each with its count), **whose tasks** (Everyone, You, Your Claude, each person and their Claude, No one yet), a filter (⌘F), List · Board · What Waits on What, ⋯, and **New Task** (⌘N, or C).
+- **Alone, no assignees.** On a project where you work alone (nobody else in the room, no friends, nothing assigned to anyone else), who a task is for isn't shown anywhere: not in rows, cards, a task's page or the New Task sheet. Every task is yours and your Claude's; Start with Claude is how it gets worked on.
+- **List:** grouped by status (groups fold; + adds a task there). A row's priority, status and assignee are menus of their own (1–9 pick); the rest of the row opens the task. ↑↓ and Return; right-click for Open, Start with Claude, Status ▸, Priority ▸, Add Sub-task…, Copy Key, Delete Task….
+- **Board:** a column per status; drag a card to another column or up and down (a line shows where it lands).
+- **What Waits on What:** the tasks tied to others as a graph (the graph engine): a task with sub-tasks is a box around them, blockers point at what they hold up, in the problem color until they're done. Double-click, or Open Task in its details, opens it.
+- **A task's page:** the title (renamed in place), the next step (Start with Claude / Start Worktree, or Open Worktree with its pull request), the brief, sub-tasks (add inline), Blocked by / Blocks / Related, proof (pictures open full size, graphs are drawn, links and files open), and the activity with a comment box (⌘↩). Its properties are down the right, each a menu.
+- **New Task:** title, goal, project, status, priority, assignee, labels; **Start with Claude** makes the worktree and puts Claude on it at once.
+- **Above a worktree's chat:** the task it's doing (status, key, title, criteria ticked), one click from its page.
 
 ---
 
@@ -163,8 +173,8 @@ The recap opens as a page, with a **walkthrough** that steps through the graph. 
 
 | # | What | Depends on |
 |---|---|---|
-| 1 | Graph engine: `klaud-graph` in chat and docs, `/visualize`, prompt, demo | — |
-| 2 | Tasks core: slice, saving, `board.*` API, Tasks view (list, board, task page), task per worktree, PR-driven status, agent task tools, brief revisions | 1 (dependency graph) |
+| 1 ✓ | Graph engine: `klaud-graph` in chat and docs, `/visualize`, prompt, demo | — |
+| 2 ✓ | Tasks: slice, saving, `board.*` API, Tasks view (list, board, graph, task page), a task per worktree, status from pull requests, Claude's task tools, brief revisions | 1 (the dependency graph) |
 | 3 | Sharing: board ops over groups, assign to friends and friends' Claudes, My Tasks | 2 |
 | 4 | Plans: planning styles, planner, `klaud-plan`, editable plan graph, approve → tasks | 1, 2 |
 | 5 | Head Claude: scheduler, orchestrator tools, autonomy, review gates, live plan view, milestone recaps with proof | 4 |

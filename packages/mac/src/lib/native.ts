@@ -12,10 +12,12 @@ import { COMMAND_IDS, type CommandId, commandState, runCommand } from './command
 import { openNetworkLink, runNetworkMenuItem } from '../network/net-native.js';
 import { runRequestMenuItem } from '../gateway/request-native.js';
 import { SHOW_WELCOME } from '../onboarding/onboarding-model.js';
+import type { PlaceKind } from './go.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
-const GO: Record<string, 'room' | 'files' | 'overview' | 'search' | 'usage' | 'terminal'> = {
+const GO: Record<string, PlaceKind> = {
+  'go-tasks': 'tasks',
   'go-room': 'room',
   'go-files': 'files',
   'go-overview': 'overview',

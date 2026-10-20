@@ -628,3 +628,32 @@ button.head:focus-visible {
   background: var(--bg-hover);
   color: var(--accent);
 }
+
+/* A finished answer's steps fold away (the height, then nothing) and open again from Show Steps. */
+.folding {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows calc(var(--dur) * 2) ease,
+    opacity var(--dur) ease;
+}
+.folding[data-folded='true'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+.folding[data-opening='true'] {
+  animation: unfold calc(var(--dur) * 2) ease;
+}
+.foldingInner {
+  min-height: 0;
+}
+.folding[data-folded='true'] > .foldingInner,
+.folding[data-opening='true'] > .foldingInner {
+  overflow: hidden;
+}
+@keyframes unfold {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}

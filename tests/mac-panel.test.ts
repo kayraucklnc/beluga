@@ -7,6 +7,13 @@ import {
   clampPanelWidth,
   clampShare,
   drawerFits,
+  DEFAULT_LAYOUT,
+  moveTab,
+  normalizeLayout,
+  paneKey,
+  paneOf,
+  paneTabs,
+  viewsOf,
   migratePrefs,
   panelDigit,
   panelKey,
@@ -18,6 +25,34 @@ import { ancestorsOf, filterLoads, treeRows, type Entry } from '../packages/mac/
 
 const ws: View = { kind: 'workspace', id: 'w1', tab: 'chat' };
 const room: View = { kind: 'room' };
+
+describe('the right panel’s two panes', () => {
+  it('starts with what Claude made on top and what runs below; History is Changes’ second view', () => {
+    const all = panelTabsFor(ws, 'worktree');
+    expect(paneTabs(DEFAULT_LAYOUT, 'top', all)).toEqual(['changes', 'files', 'scratch', 'info']);
+    expect(paneTabs(DEFAULT_LAYOUT, 'bottom', all)).toEqual(['terminal', 'background']);
+    expect(viewsOf('changes', all)).toEqual(['changes', 'history']);
+    expect(viewsOf('history', all)).toEqual(['changes', 'history']);
+    // A project's home has History where Changes would be; a chat has no Changes at all.
+    expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor({ kind: 'project', id: 'p' }))).toEqual(['history', 'info']);
+    expect(paneTabs(DEFAULT_LAYOUT, 'top', panelTabsFor(ws, 'chat'))).toEqual(['files', 'scratch', 'info']);
+  });
+
+  it('a tab dragged across stays there, before the tab it was dropped on', () => {
+    const moved = moveTab(DEFAULT_LAYOUT, 'info', 'bottom', 'background');
+    expect(moved).toEqual({ top: ['changes', 'files', 'scratch'], bottom: ['terminal', 'info', 'background'] });
+    expect(paneOf(moved, 'info')).toBe('bottom');
+    // History moves with Changes.
+    expect(moveTab(DEFAULT_LAYOUT, 'history', 'bottom').bottom).toEqual(['terminal', 'background', 'changes']);
+    expect(moveTab(DEFAULT_LAYOUT, 'files', 'top')).toEqual({ top: ['changes', 'scratch', 'info', 'files'], bottom: ['terminal', 'background'] });
+  });
+
+  it('a saved layout is made whole: every tab once, nothing unknown', () => {
+    expect(normalizeLayout(undefined)).toEqual(DEFAULT_LAYOUT);
+    expect(normalizeLayout({ top: ['terminal', 'nope', 'terminal'], bottom: ['terminal', 'files'] })).toEqual({ top: ['terminal', 'changes', 'scratch', 'info'], bottom: ['files', 'background'] });
+    expect(paneKey(ws, 'bottom')).toBe('ws:w1|bottom');
+  });
+});
 
 describe('the right panel’s tabs', () => {
   it('a workspace has every tab; a chat has no Changes; a friend’s workspace and the Terminal view only Info', () => {

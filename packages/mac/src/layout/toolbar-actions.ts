@@ -8,8 +8,9 @@ import { asksBeforeWork } from '../lib/work-confirm.js';
 
 /**
  * A workspace's toolbar, the Mac way: one prominent button for what this workspace needs next
- * (chosen from its state), its everyday actions as icons, and everything else under ⋯. The
- * actions are the shared `workspaceButtons` (the terminal app's top bar), so both agree.
+ * (chosen from its state), Run when the project has a run script, and everything else under ⋯,
+ * in sections (the git steps, the conversation, the folder, putting it away). The actions are
+ * the shared `workspaceButtons` (the terminal app's top bar), so both agree.
  */
 export interface ToolAction {
   readonly id: string;
@@ -30,7 +31,8 @@ export interface ToolbarActions {
   readonly primary?: ToolAction;
   /** Icon buttons, in order (some may move under ⋯ when the window is narrow). */
   readonly icons: readonly ToolAction[];
-  readonly more: readonly ToolAction[];
+  /** Under ⋯, section by section (a line between sections). */
+  readonly more: ReadonlyArray<readonly ToolAction[]>;
 }
 
 const ICON: Record<WorkspaceAction, IconName> = {
@@ -146,8 +148,17 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
   return run;
 }
 
-/** Icons on the toolbar, in this order (the rest are under ⋯). */
-const ICONS: readonly WorkspaceAction[] = ['run', 'stop_run', 'review_claude', 'commit', 'pr', 'merge', 'finder'];
+/** The only icon on the toolbar: Run (or Stop while it runs). The rest are under ⋯. */
+const ICONS: readonly WorkspaceAction[] = ['run', 'stop_run'];
+
+/** ⋯'s sections, in order: the git steps, the conversation, the folder, putting it away. */
+const SECTIONS: ReadonlyArray<readonly WorkspaceAction[]> = [
+  ['run'],
+  ['commit', 'pr', 'review_claude', 'merge', 'merge_claude'],
+  ['compact', 'handoff', 'share'],
+  ['finder', 'fork', 'setup'],
+  ['restore', 'archive', 'delete'],
+];
 
 export function toolbarActions(state: AppState, ws: Workspace): ToolbarActions {
   const pr = Boolean(state.prs[ws.id]);
@@ -159,6 +170,16 @@ export function toolbarActions(state: AppState, ws: Workspace): ToolbarActions {
   const primary = pickPrimary(state, ws, all);
   const shown = (a: ToolAction): boolean => a.action !== primary?.action || primary.id === 'fix_checks';
   const icons = ICONS.flatMap((id) => all.filter((a) => a.action === id && shown(a)));
-  const more = all.filter((a) => !icons.includes(a) && shown(a));
+  const more = inSections(all.filter((a) => !icons.includes(a) && shown(a)));
   return { ...(primary ? { primary } : {}), icons, more };
+}
+
+/** Actions in ⋯'s sections, in their order there (any section left empty is dropped). */
+export function inSections(list: readonly ToolAction[]): ToolAction[][] {
+  const at = (a: ToolAction): number => {
+    const i = SECTIONS.findIndex((ids) => ids.includes(a.action === 'stop_run' ? 'run' : (a.action as WorkspaceAction)));
+    return i < 0 ? SECTIONS.length : i;
+  };
+  const rank = (a: ToolAction): number => SECTIONS.flat().indexOf(a.action as WorkspaceAction);
+  return Array.from({ length: SECTIONS.length + 1 }, (_, k) => list.filter((a) => at(a) === k).sort((a, b) => rank(a) - rank(b))).filter((section) => section.length > 0);
 }

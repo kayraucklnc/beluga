@@ -21,13 +21,17 @@ test.beforeEach(async ({ page }) => {
   await expect(sidebar(page)).toBeVisible();
 });
 
-test("the toolbar's Review says what it does and starts only when you say so", async ({ page }) => {
+test("Review (under ⋯) says what it does and starts only when you say so", async ({ page }) => {
   // Other specs archive, fold or busy bob-api's worktrees: landing's new-hero is left as it was.
   await openWorkspace(page, 'landing', 'new-hero');
   const sent = await page.getByText(REVIEW_SENT).count();
-  const review = toolbar(page).getByRole('button', { name: 'Ask Claude to review this worktree…' });
-  await expect(review).toBeVisible();
-  await review.click();
+  // It's under ⋯ (the toolbar keeps only what's next); its question opens from there.
+  const more = toolbar(page).getByRole('button', { name: 'More for this workspace' });
+  const review = async (): Promise<void> => {
+    await more.click();
+    await page.getByRole('menuitem', { name: /Ask Claude to Review…/ }).click();
+  };
+  await review();
   const pop = page.getByRole('dialog', { name: 'Ask Claude to review this worktree?' });
   await expect(pop).toBeVisible();
   await expect(pop).toContainText('correctness, security, tests and quality');
@@ -37,19 +41,15 @@ test("the toolbar's Review says what it does and starts only when you say so", a
   await expect(pop).toBeHidden();
   await page.waitForTimeout(300);
   await expect(page.getByText(REVIEW_SENT)).toHaveCount(sent);
-  // Its button again closes it; Esc too.
-  await review.click();
-  await expect(pop).toBeVisible();
-  await review.click();
-  await expect(pop).toBeHidden();
-  // ⇧⌘R (the menu bar's item) asks the same way, anchored to the same button.
+  // ⇧⌘R (the menu bar's item) asks the same way.
   await page.keyboard.press('Meta+Shift+R');
   await expect(pop).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(pop).toBeHidden();
   await expect(page.getByText(REVIEW_SENT)).toHaveCount(sent);
   // Start Review (the default: Return) starts it.
-  await review.click();
+  await review();
+  await expect(pop).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(pop).toBeHidden();
   await expect(page.getByText(REVIEW_SENT).first()).toBeVisible();

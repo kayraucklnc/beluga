@@ -38,13 +38,35 @@ test.beforeEach(async ({ page }) => {
   await expect(sidebar(page)).toBeVisible();
 });
 
+test('once Claude answers, its steps fold away; Show Steps opens them, and Hide Steps folds them again', async ({ page }) => {
+  await openWorkspace(page, 'new-hero', 'landing');
+  await send(page, 'run the tests please');
+  const card = page.locator('[data-turn="done"]').last();
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  // The answer stands on its own: no steps, no "Done in 2m".
+  await expect(card.getByRole('list', { name: "Claude's steps" })).toHaveCount(0);
+  await expect(card).not.toContainText(/Done in|steps ·/);
+  await card.hover();
+  await card.getByRole('button', { name: 'Show Steps' }).click();
+  const steps = card.getByRole('list', { name: "Claude's steps" });
+  await expect(steps).toBeVisible();
+  await card.hover();
+  await card.getByRole('button', { name: 'Hide Steps' }).click();
+  await expect(steps).toHaveCount(0);
+});
+
 test('a Bash step opens to show its command and output, and thinking opens to show the thinking', async ({ page }) => {
   await openWorkspace(page, 'new-hero', 'landing');
   await send(page, 'run the tests please');
-  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 30_000 });
+  const card = page.locator('[data-turn="done"]').last();
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await card.hover();
+  await card.getByRole('button', { name: 'Show Steps' }).click();
   const steps = lastSteps(page);
+  // Shown again, its steps are read back (the whole record): then the earlier ones open.
   const earlier = steps.getByRole('button', { name: /earlier step/ });
-  if (await earlier.count()) await earlier.click();
+  await expect(earlier).toBeVisible();
+  await earlier.click();
 
   const bash = steps.locator('[data-step-kind="bash"]').last();
   // In words, never the tool's name.
@@ -65,14 +87,6 @@ test('a Bash step opens to show its command and output, and thinking opens to sh
   await expect(thinking).toContainText(/Thought/);
   await thinking.getByRole('button').first().click();
   await expect(thinking.locator('[data-step-detail="thinking"]')).toContainText('They asked');
-
-  // Collapse all, then Expand all (in the card's hover actions, next to Copy).
-  await steps.hover();
-  await page.getByRole('button', { name: 'Collapse all' }).last().click();
-  await expect(steps.locator('[data-step-detail]')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Expand all' }).last().click();
-  await expect(steps.locator('[data-step-detail="bash"]')).toBeVisible();
-  await expect(steps.locator('[data-step-detail="read"]')).toBeVisible();
 });
 
 test('a sent message flies from the box into the chat and lands in place', async ({ page }) => {
@@ -85,7 +99,7 @@ test('a sent message flies from the box into the chat and lands in place', async
   expect(await flights(page)).toBeGreaterThanOrEqual(1);
   // The copy is gone once it landed.
   await expect(page.locator('[data-send-flight]')).toHaveCount(0);
-  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 30_000 });
 });
 
 test('with reduced motion, a sent message just appears', async ({ page }) => {
@@ -96,7 +110,7 @@ test('with reduced motion, a sent message just appears', async ({ page }) => {
   const row = page.locator('[data-mine="true"]', { hasText: 'What does the hero say now?' }).last();
   await expect(row).toHaveAttribute('data-flown', 'instant');
   expect(await flights(page)).toBe(0);
-  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 30_000 });
 });
 
 test('while Claude works, a sent message flies into the queue above the box', async ({ page }) => {

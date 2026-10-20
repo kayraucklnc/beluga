@@ -60,6 +60,47 @@ export interface AgentRunInput {
   readonly continueInWorktree?: (task: string) => Promise<string>;
   /** A friend's task: the extra tools its owner allowed (the screen, device info). */
   readonly taskTools?: TaskTools;
+  /** Your own runs: the task board (Claude reads and keeps tasks true; see core/board). */
+  readonly board?: BoardTools;
+  /** The task this run's worktree is doing (its brief), or a note that the board is there: added to the instructions. */
+  readonly taskBrief?: string;
+}
+
+/**
+ * The task board as Claude's tools (agent/board-tools.ts): each answers in words for Claude.
+ * `key`: a task's key ("BOB-12"); left out, the task this run's worktree is doing.
+ */
+export interface BoardTools {
+  /** The task this run's worktree is doing, if any. */
+  readonly current?: string;
+  get(key?: string): string;
+  list(filter: { readonly scope?: 'open' | 'mine' | 'all'; readonly project?: string; readonly query?: string }): string;
+  create(input: {
+    readonly title: string;
+    readonly goal?: string;
+    readonly context?: string;
+    readonly acceptance?: string;
+    readonly project?: string;
+    readonly parent?: string;
+    readonly blockedBy?: readonly string[];
+    readonly status?: 'backlog' | 'todo';
+    readonly priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
+    readonly labels?: readonly string[];
+  }): string;
+  update(
+    key: string | undefined,
+    patch: {
+      readonly title?: string;
+      readonly status?: 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
+      readonly priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
+      readonly labels?: readonly string[];
+      readonly assign?: 'me' | 'claude' | 'nobody';
+    },
+  ): string;
+  editBrief(key: string | undefined, section: 'goal' | 'context' | 'acceptance' | 'decisions' | 'questions' | 'handoff', content: string, reason?: string, mode?: 'replace' | 'append'): string;
+  note(key: string | undefined, text: string): string;
+  relate(key: string | undefined, relation: 'blocked_by' | 'blocks' | 'related', other: string, remove?: boolean): string;
+  attachProof(key: string | undefined, proof: { readonly kind: 'image' | 'url' | 'file' | 'graph' | 'text'; readonly title: string; readonly path?: string; readonly url?: string; readonly body?: string }): string;
 }
 
 /** What a friend's task may look at on this Mac (see agent/task-tools.ts). */

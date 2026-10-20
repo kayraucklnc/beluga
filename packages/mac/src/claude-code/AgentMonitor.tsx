@@ -210,6 +210,7 @@ export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Work
 export function AgentWorktreePage({ ws }: { ws: Workspace }) {
   const { client } = useKlaud();
   const sessions = useApp((st) => st.claudeCode.sessions);
+  const origin = useApp((st) => st.claudeCode.origins.find((o) => o.path === ws.path));
   const sub = useMemo(() => agentOfWorktree(sessions, ws), [sessions, ws]);
   const [looked, setLooked] = useState(false);
   const id = agentIdOfPath(ws.path);
@@ -227,5 +228,5 @@ export function AgentWorktreePage({ ws }: { ws: Workspace }) {
   }, [id, Boolean(sub)]);
   if (sub) return <AgentMonitor sub={sub} worktree={ws} />;
   if (!looked) return <Empty icon="bot" title="Finding this sub-agent…" detail="Reading what Claude Code kept of it." />;
-  return <WorktreeInfoPage ws={ws} agent />;
+  return <WorktreeInfoPage ws={ws} agent {...(origin ? { origin } : {})} />;
 }

@@ -77,6 +77,34 @@ function useScratch(wsId: string): Listing | undefined | null {
   return list;
 }
 
+/** How often the Scratch tab's dot looks for something new (while the window is in front). */
+const NEWEST_MS = 4000;
+
+/** When Claude last saved something to this workspace's scratch folder (0: nothing there; undefined: not looked yet). */
+export function useScratchNewest(wsId: string | undefined): number | undefined {
+  const api = useApi();
+  const [newest, setNewest] = useState<number>();
+  useEffect(() => {
+    setNewest(undefined);
+    if (!wsId) return;
+    let alive = true;
+    const look = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      api.workspaces.scratch(wsId).then(
+        (res) => alive && setNewest(Math.max(0, ...(res?.files ?? []).map((f) => f.mtime))),
+        () => undefined,
+      );
+    };
+    look();
+    const timer = setInterval(look, NEWEST_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [wsId]);
+  return newest;
+}
+
 /** "now", "12s", "3m": kept current without a new listing. */
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());

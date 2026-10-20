@@ -50,11 +50,16 @@ test('the toolbar puts what the workspace needs next up front, the rest one clic
   await openWorkspace(page, 'add-auth');
   const primary = toolbar(page).locator('button[class*="primary"]');
   await expect(primary).toHaveText(/Merge|Commit|Create PR|PR #|Fix Checks|Solve Conflict|Run/);
-  await expect(toolbar(page).getByRole('group', { name: 'Workspace actions' }).getByRole('button', { name: /^Ask Claude to review/ })).toBeVisible();
+  // Calm: the one thing to do next, Run, and ⋯ (no row of git icons, no terminal or ⌘K buttons).
+  const tools = toolbar(page).getByRole('group', { name: 'Workspace actions' }).getByRole('button');
+  expect(await tools.count()).toBeLessThanOrEqual(2);
+  await expect(toolbar(page).getByRole('button', { name: /^(Show|Hide) the terminal|^Everything you can do/ })).toHaveCount(0);
   await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
+  await expect(page.getByRole('menuitem', { name: /Ask Claude to Review…/ })).toBeVisible();
   const archive = page.getByRole('menuitem', { name: /Archive…/ });
   await expect(archive).toContainText('⌃⌘A');
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
   // The workspace's right-click menu says the same things.
   await sidebar(page).getByRole('button', { name: 'add-auth', exact: true }).click({ button: 'right' });
   await expect(page.getByRole('menuitem', { name: /Show in Finder/ })).toBeVisible();
@@ -96,7 +101,7 @@ test('a new worktree: pick the branch, name it, Create Worktree; then one click 
   // An empty conversation offers a first task.
   await page.getByRole('button', { name: 'Explain This Project' }).click();
   await expect(page.getByText(/Explain how this project is organized/)).toBeVisible();
-  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 20_000 });
 });
 
 test('⌘F finds in this conversation; Return goes to the next match; Escape closes', async ({ page }) => {

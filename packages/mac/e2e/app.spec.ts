@@ -12,6 +12,16 @@ async function openWorkspace(page: Page, name = 'add-auth'): Promise<void> {
   await sidebar(page).getByRole('button', { name, exact: true }).click();
 }
 
+/** The full-page terminal (no sidebar row of its own: ⌥6, the Go menu, ⌘K). */
+async function openTerminalPage(page: Page): Promise<void> {
+  await expect(sidebar(page)).toBeVisible();
+  // (Right after a reload the window may not be listening yet: try again.)
+  await expect(async () => {
+    await page.keyboard.press('Alt+Digit6');
+    await expect(page.locator('header').first()).toContainText('Terminal', { timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
@@ -30,7 +40,7 @@ test("talks to Claude in a workspace and shows its run", async ({ page }) => {
   await composer(page).fill('Add a health check endpoint');
   await composer(page).press('Enter');
   await expect(page.getByText('Add a health check endpoint').last()).toBeVisible();
-  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 20_000 });
 });
 
 test('shows what changed, file by file: in the panel, then in full', async ({ page }) => {
@@ -94,7 +104,7 @@ test("opens a person's card beside their row", async ({ page }) => {
 });
 
 test('opens and closes shells without them coming back', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'Terminal', exact: true }).click();
+  await openTerminalPage(page);
   const shells = page.getByRole('tab', { name: /^Shell \d+/ });
   await expect(shells.first()).toBeVisible();
   await page.getByRole('button', { name: 'New shell' }).click();
@@ -116,7 +126,7 @@ test('opens and closes shells without them coming back', async ({ page }) => {
 });
 
 test('renames a shell, for every screen, and Escape cancels', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'Terminal', exact: true }).click();
+  await openTerminalPage(page);
   const first = page.getByRole('tab', { name: /^Shell \d+/ }).first();
   await expect(first).toBeVisible();
   await page.waitForTimeout(800); // it has started
@@ -133,7 +143,7 @@ test('renames a shell, for every screen, and Escape cancels', async ({ page }) =
   await expect(named).toBeVisible();
   // It's shared state: a fresh window sees it too.
   await page.reload();
-  await sidebar(page).getByRole('button', { name: 'Terminal', exact: true }).click();
+  await openTerminalPage(page);
   await expect(page.getByRole('tab', { name: /^build logs/ })).toBeVisible();
   // Empty goes back to its number.
   await page.getByRole('tab', { name: /^build logs/ }).dblclick();
@@ -158,7 +168,7 @@ test('sets an environment variable that new shells get', async ({ page }) => {
   await page.getByRole('button', { name: 'Show KLAUD_E2E_TOKEN' }).click();
   await expect(page.getByLabel('Value of KLAUD_E2E_TOKEN')).not.toHaveClass(/masked/);
   await page.keyboard.press('Escape');
-  await sidebar(page).getByRole('button', { name: 'Terminal', exact: true }).click();
+  await openTerminalPage(page);
   await page.getByRole('button', { name: 'New shell' }).first().click();
   await page.waitForTimeout(800);
   await page.locator('.xterm').click();
@@ -167,7 +177,7 @@ test('sets an environment variable that new shells get', async ({ page }) => {
 });
 
 test('picks how the shell starts and how terminals look', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: 'Terminal', exact: true }).click();
+  await openTerminalPage(page);
   await expect(page.locator('.xterm')).toBeVisible();
   await page.keyboard.press('Meta+,');
   await page.getByRole('dialog').getByRole('button', { name: 'Terminal', exact: true }).click();
@@ -297,7 +307,7 @@ test('queues messages while Claude works, reorders them, and sends one now', asy
   await rows.nth(0).getByRole('button', { name: 'Send now' }).click();
   await expect(tray).toBeHidden();
   await expect(page.getByText('Interrupted by a newer message').last()).toBeVisible();
-  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 20_000 });
 });
 
 // ---- the notification centre (the bell in the toolbar)

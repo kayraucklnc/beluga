@@ -1,9 +1,11 @@
 import { type FSWatcher, mkdirSync, readFileSync, readdirSync, renameSync, statSync, watch, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Project } from '../../workspaces/types.js';
+import { worktreeOrigin } from '../../workspaces/origin.js';
+import { AgentOrigins } from './agent-origins.js';
 import type { Store } from '../store.js';
-import { type AgentMeta, agentStatus, readMeta } from './agents.js';
-import type { CcAgent, CcAgentStatus, CcMessage, CcOutputFile, CcOutputs, CcSession, CcSteps, CcTask, CcTaskOutput, CcTeam } from './model.js';
+import { type AgentMeta, agentStatus, finishedIn, readMeta } from './agents.js';
+import type { AgentOrigin, CcAgent, CcAgentStatus, CcMessage, CcOutputFile, CcOutputs, CcSession, CcSteps, CcTask, CcTaskOutput, CcTeam } from './model.js';
 import { byLiveThenLatest, taskOutput, tasksOf } from './task-list.js';
 import { agentScratchDir, outputsOnDisk, readOutput } from './output-files.js';
 import { type PageOptions, TranscriptTracker } from './sessions.js';
@@ -130,6 +132,8 @@ export class ClaudeCodeWatcher {
   private publishTimer?: NodeJS.Timeout;
   private pollSoon?: NodeJS.Timeout;
   private lastPublished = '';
+  private lastOrigins = '';
+  private origins?: AgentOrigins;
   private lastPublishAt = 0;
   private offStore?: () => void;
   private stopped = false;
@@ -265,7 +269,26 @@ export class ClaudeCodeWatcher {
     }
     for (const id of [...this.sessions.keys()]) if (!found.has(id)) this.sessions.delete(id);
     for (const s of this.sessions.values()) this.scanAgents(s);
+    this.publishOrigins(own);
     this.schedulePublish();
+  }
+
+  /** Who started each sub-agent worktree in the projects (from Claude Code's files), when that changed. */
+  private publishOrigins(own: ReadonlySet<string>): void {
+    const projects = this.opts.store.getState().projects;
+    const paths = projects.flatMap((p) => p.workspaces.filter((w) => !w.archived && worktreeOrigin(w) === 'agent').map((w) => w.path));
+    this.origins ??= new AgentOrigins(this.opts.home, this.opts.now ? { now: this.opts.now } : {});
+    const origins: AgentOrigin[] = this.origins.find(paths).map((o) => {
+      const mine = own.has(o.sessionId);
+      const place = mine ? ownPlace(projects, o.sessionId, o.sessionCwd ?? '') : o.sessionCwd ? placeOf(projects, o.sessionCwd) : {};
+      // Never its own worktree's conversation (a session that ran there isn't what started it).
+      const workspaceId = place.workspaceId && projects.some((p) => p.workspaces.some((w) => w.id === place.workspaceId && w.path === o.path)) ? undefined : place.workspaceId;
+      return { ...o, ...(place.projectId ? { projectId: place.projectId } : {}), ...(workspaceId ? { workspaceId } : {}), ...(mine ? { own: true as const } : {}) };
+    });
+    const key = JSON.stringify(origins);
+    if (key === this.lastOrigins) return;
+    this.lastOrigins = key;
+    this.opts.store.dispatch({ type: 'agent_origins', origins });
   }
 
   /** A session's agents written lately (their transcripts are read; older ones are left alone). */
@@ -439,7 +462,9 @@ export class ClaudeCodeWatcher {
     const launch = toolUseId ? parent.launches.get(toolUseId) : undefined;
     const notice = parent.notices.get(a.id);
     const result = toolUseId ? parent.results.get(toolUseId) : undefined;
-    const { status, endedAt } = agentStatus({ lastAt: t.lastAt, final: t.final, ...(notice ? { notice } : {}), ...(result ? { result } : {}), now, idleMs });
+    // Quiet a while: did Claude Code mark it finished? (read only then: it's written once, at the end)
+    const marked = now - t.lastAt > idleMs && finishedIn(a.metaFile);
+    const { status, endedAt } = agentStatus({ lastAt: t.lastAt, final: t.final, ...(notice ? { notice } : {}), ...(result ? { result } : {}), now, idleMs, marked });
     const background = a.meta.requestShape === 'background' || launch?.background === true || result?.async === true;
     const description = a.meta.description ?? launch?.description ?? t.title ?? 'Sub-agent';
     t.labeler ??= (who) => this.labelOf(s, who);

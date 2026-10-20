@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { DRAWER_DEFAULT, PANEL_DEFAULT, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs } from './panel-model.js';
+import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
 
 /**
  * How this window looks and behaves: kept on this Mac only (klaud's shared settings, like the
@@ -17,8 +17,14 @@ export interface UiPrefs {
   readonly inspector: boolean;
   /** How wide the right panel is (px; never more than 60% of the window). */
   readonly panelWidth: number;
-  /** The tab you last picked in the panel, per workspace ('ws:<id>') and for everything else ('app'). */
+  /** The tab you last picked in the panel, per workspace ('ws:<id>') and for everything else ('app'); the bottom pane's end in '|bottom'. */
   readonly panelTabs: Readonly<Record<string, PanelTab>>;
+  /** Which tabs are in the panel's top pane and which in its bottom one (drag a tab across to change it). */
+  readonly panelLayout: PanelLayout;
+  /** How much of the panel's height the top pane takes (0.18–0.75). */
+  readonly paneSplit: number;
+  /** The bottom pane is open (closed, it's just its tabs along the bottom). */
+  readonly bottomOpen: boolean;
   /** In the Changes and Files tabs: how much of the height the list keeps above a diff or a preview (0.18–0.75). */
   readonly panelSplit: number;
   readonly sidebar: boolean;
@@ -30,8 +36,8 @@ export interface UiPrefs {
   /** Enter sends and Shift+Enter makes a new line, or the other way round with ⌘Enter. */
   readonly sendWith: 'enter' | 'cmd-enter';
   readonly timestamps: boolean;
-  /** Show Claude's tool steps in the chat, or just its answers. */
-  readonly steps: 'all' | 'summary';
+  /** A finished answer's steps: folded away once Claude answers (one click shows them), or left showing. */
+  readonly doneSteps: 'fold' | 'show';
   readonly reduceMotion: boolean;
   /** Where ⌘J (and Run) show the terminal: the drawer under the chat, or the right panel's Terminal tab. */
   readonly termIn: TerminalPlace;
@@ -81,6 +87,9 @@ export const DEFAULT_PREFS: UiPrefs = {
   inspector: true,
   panelWidth: PANEL_DEFAULT,
   panelTabs: {},
+  panelLayout: DEFAULT_LAYOUT,
+  paneSplit: PANES_DEFAULT,
+  bottomOpen: true,
   panelSplit: SPLIT_DEFAULT,
   sidebar: true,
   sidebarWidth: 248,
@@ -88,7 +97,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   unreadSection: true,
   sendWith: 'enter',
   timestamps: true,
-  steps: 'all',
+  doneSteps: 'fold',
   reduceMotion: false,
   termIn: 'panel',
   drawer: false,
@@ -112,7 +121,8 @@ const listeners = new Set<() => void>();
 function load(): UiPrefs {
   try {
     // Older versions docked the terminal beside or under the chat: see migratePrefs.
-    return { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
+    const saved = { ...DEFAULT_PREFS, ...(migratePrefs(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>) as Partial<UiPrefs>) };
+    return { ...saved, panelLayout: normalizeLayout(saved.panelLayout) };
   } catch {
     return DEFAULT_PREFS;
   }

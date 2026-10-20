@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { ArchivePreview } from '@klaud/workspaces/archive.js';
+import { formatBytes } from '@klaud/shared/format.js';
 import type { EnvChange } from '@klaud/workspaces/env.js';
 import { findWorkspace } from '@klaud/ui/workspace-models.js';
 import { Alert, Checkbox } from '../../components/Alert.js';
@@ -33,9 +35,28 @@ function EnvKeys({ change }: { change: EnvChange }) {
   );
 }
 
+/** What archiving a worktree would clear (asked once the dialog opens; undefined until then). */
+function useArchivePlan(id: string, worktree: boolean): ArchivePreview | undefined {
+  const api = useApi();
+  const [plan, setPlan] = useState<ArchivePreview | undefined>();
+  useEffect(() => {
+    if (!worktree) return;
+    let live = true;
+    api.workspaces.archivePlan(id).then(
+      (p) => live && setPlan(p ?? undefined),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [id, worktree]);
+  return plan;
+}
+
 /**
- * Archive or delete a workspace: what happens, in a sentence; uncommitted work offers to commit
- * first; env changes the main folder doesn't have are listed and copied back if you like.
+ * Archive or delete a workspace: what happens, in a sentence; archiving keeps everything of
+ * yours (uncommitted work too) and says how much space it frees; env changes the main folder
+ * doesn't have are listed and copied back if you like.
  */
 export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
   const api = useApi();
@@ -43,6 +64,7 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
   const ws = useApp((st) => findWorkspace(st.projects, menu.id));
   const env = useApp((st) => st.envChanges[menu.id] ?? NO_ENV);
   const [copyEnv, setCopyEnv] = useState(true);
+  const plan = useArchivePlan(menu.id, menu.action !== 'delete' && ws?.kind === 'worktree' && !ws.archived);
   if (!ws) return null;
   const changed = ws.status?.changed ?? 0;
   const table = env.length
@@ -86,26 +108,27 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
   }
 
   const worktree = ws.kind === 'worktree';
+  const freed = plan?.dropBytes ? ` (${formatBytes(plan.dropBytes)} here)` : '';
   const message = (
     <>
       <p>
         {worktree ? (
           <>
-            The worktree folder is removed. Its branch <code>{ws.branch ?? ''}</code> and the conversation are kept, so you can restore it later.
+            Everything of yours is kept: {changed ? <strong>{count(changed, 'uncommitted file')}</strong> : 'uncommitted changes'}, new files, and ignored files like <code>.env</code>. Its dependencies, builds and caches are cleared to save space{freed}, and the folder goes.
           </>
         ) : (
           'The chat leaves the sidebar. You can restore it from Overview.'
         )}
       </p>
-      {changed ? (
+      {worktree ? (
         <p>
-          <strong className={s.warn}>{count(changed, 'file')} {changed === 1 ? 'has' : 'have'} uncommitted changes.</strong> Commit them to keep them on the branch; archiving anyway discards them.
+          Its branch <code>{ws.branch ?? ''}</code> and the conversation stay. Restoring brings the folder back as it was{plan?.remake.length ? <> and runs the project’s setup to make the rest again</> : null}.
         </p>
       ) : null}
     </>
   );
   // With env changes, "copy them first" goes before whichever way you archive.
-  const archive = (force: boolean): void => void pick(withEnv ? 'confirm-archive-env' : force ? 'confirm-archive-force' : 'confirm-archive');
+  const archive = (): void => void pick(withEnv ? 'confirm-archive-env' : 'confirm-archive');
   const commitAndArchive = (): void => {
     if (withEnv) void api.workspaces.applyEnvBack(menu.id).then(() => pick('confirm-commit-archive'));
     else pick('confirm-commit-archive');
@@ -113,12 +136,12 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
   return (
     <Alert
       icon="archive"
-      tone={changed ? 'caution' : 'info'}
+      tone="info"
       title={`Archive “${ws.name}”?`}
       message={message}
       table={table}
-      confirm={changed ? { label: 'Commit & Archive', onClick: commitAndArchive } : { label: 'Archive', onClick: () => archive(false) }}
-      {...(changed ? { alternative: { label: 'Archive Anyway', destructive: true, onClick: () => archive(true) } } : {})}
+      confirm={{ label: 'Archive', onClick: archive }}
+      {...(changed ? { alternative: { label: 'Commit & Archive', onClick: commitAndArchive } } : {})}
       onCancel={close}
     >
       {envBox}

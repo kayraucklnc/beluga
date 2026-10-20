@@ -11,6 +11,7 @@ import { type SessionOptions, Session } from '../core/session.js';
 import { loadSettings, saveSettings } from '../core/settings.js';
 import { ShareService } from '../core/shares.js';
 import { networkSwitch } from '../core/network.js';
+import { launchBoard } from '../core/board/launch.js';
 import { launchChat } from '../core/chat/launch.js';
 import { launchGateway } from '../core/gateway/launch.js';
 import { launchEarnings } from '../core/stripe-launch.js';
@@ -297,6 +298,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopClaudeCode = (): void => undefined;
   let stopGateway = (): void => undefined;
   let stopChat = (): void => undefined;
+  let stopBoard = (): void => undefined;
   const start = (): void => {
     session.start();
     // The klaud network (friends, groups, presence): only the daemon runs it, and only when it's turned on.
@@ -309,6 +311,8 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopGateway = launchGateway({ session, store, demo: Boolean(demo) });
     // Chats: files shared Mac to Mac, Claudes called into a conversation, your main channel.
     if (opts.network) stopChat = launchChat({ session, store, demo: Boolean(demo) });
+    // Tasks (the board): opened by worktrees, moved by pull requests, kept true by Claude.
+    if (opts.network) stopBoard = launchBoard({ session, store, demo: Boolean(demo) });
     if (opts.network) stopClaudeCode = launchClaudeCode({ session, store, demo: Boolean(demo), notify: (e) => session.notifier.notify(e) });
     if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => closing);
     if (!demo) return;
@@ -338,6 +342,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     closeAllTunnels();
     stopGateway();
     stopChat();
+    stopBoard();
     await stopNetwork();
     stopEarnings();
     stopClaudeCode();

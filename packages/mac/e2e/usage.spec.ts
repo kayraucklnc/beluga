@@ -79,7 +79,8 @@ test('Archive on a row asks first, and Cancel keeps the worktree', async ({ page
   await row.getByRole('button', { name: 'Archive add-auth…' }).click();
   const alert = page.getByRole('alertdialog', { name: /Archive “add-auth”\?/ });
   await expect(alert).toBeVisible();
-  await expect(alert.getByText(/branch .* and the conversation are kept/)).toBeVisible();
+  await expect(alert.getByText(/Everything of yours is kept/)).toBeVisible();
+  await expect(alert.getByText(/branch .* and the conversation stay/)).toBeVisible();
   await alert.getByRole('button', { name: 'Cancel' }).click();
   await expect(alert).toBeHidden();
   await expect(row).toBeVisible();

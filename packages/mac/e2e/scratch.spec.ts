@@ -69,6 +69,7 @@ test('Scratch: drawn in outline before anything lands, moving while Claude works
   const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
   if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
   await row.click();
+  await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
   await page.keyboard.press('Meta+Alt+6');
   await expect(tab(page, 'Scratch')).toHaveAttribute('aria-selected', 'true');
 

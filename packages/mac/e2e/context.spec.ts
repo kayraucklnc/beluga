@@ -50,7 +50,7 @@ test('a conversation past the threshold compacts on its own after Claude answers
   expect(before).toBeGreaterThanOrEqual(80);
   await composer(page).fill('how do the deploy scripts work?');
   await composer(page).press('Enter');
-  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 30_000 });
   const divider = dividers(page).filter({ hasText: /compact/i }).last();
   await expect(divider).toHaveAttribute('data-compact-divider', 'done', { timeout: 15_000 });
   await expect(divider).toContainText(/Auto-compacted · \d+k → \d+k tokens/);

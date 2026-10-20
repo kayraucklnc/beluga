@@ -114,10 +114,13 @@ export function startWork(api: ReturnType<typeof useApi>, wsId: string, action: 
   }
 }
 
-/** The toolbar button for this action in this workspace, if it's on screen (not under ⋯). */
+/** The toolbar button for this action in this workspace, else its ⋯ (where the action is), if on screen. */
 function toolbarButton(wsId: string, action: AskedWork): HTMLElement | null {
-  const el = document.querySelector<HTMLElement>(`[data-tool="${action}"][data-tool-ws="${CSS.escape(wsId)}"]`);
-  return el && el.getClientRects().length ? el : null;
+  const find = (tool: string): HTMLElement | null => {
+    const el = document.querySelector<HTMLElement>(`[data-tool="${tool}"][data-tool-ws="${CSS.escape(wsId)}"]`);
+    return el && el.getClientRects().length ? el : null;
+  };
+  return find(action) ?? find('more');
 }
 
 export function WorkConfirm({ wsId, action, close }: { wsId: string; action: AskedWork; close: () => void }) {

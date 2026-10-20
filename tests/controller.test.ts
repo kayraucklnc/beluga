@@ -228,7 +228,7 @@ describe('WorkspaceController', () => {
     expect(existsSync(fresh)).toBe(true);
     expect(existsSync(theirs)).toBe(true);
     expect(branches()).toContain('worktree-agent-a1');
-    expect(toasts.at(-1)).toBe('Archived. The branch and conversation are kept; restore it any time. Removed its 1 sub-agent worktree too (branches kept). Kept 4 sub-agent worktrees: still working, uncommitted changes or no branch.');
+    expect(toasts.at(-1)).toBe('Archived: everything of yours is kept, uncommitted work included. Removed its 1 sub-agent worktree too (branches kept). Kept 4 sub-agent worktrees: still working, uncommitted changes or no branch.');
 
     await ctl.remove(other.id);
     expect(existsSync(theirs)).toBe(false);

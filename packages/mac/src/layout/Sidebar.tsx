@@ -22,17 +22,21 @@ import { Row, Section } from './sidebar-parts.js';
 import { ActivityRow } from '../claude-code/Live.js';
 import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
 import { RequestsNav } from '../gateway/RequestsNav.js';
+import { TasksNav } from '../tasks/TasksNav.js';
+import { WorktreesNav } from '../views/worktrees/WorktreesNav.js';
 import { SelfBar } from '../network/StatusMenu.js';
 import { UpdatePill } from '../components/UpdatePill.js';
 import s from './Sidebar.module.css';
 
-const NAV: ReadonlyArray<{ kind: 'room' | 'files' | 'overview' | 'search' | 'usage' | 'terminal'; icon: IconName }> = [
-  { kind: 'room', icon: 'chat' },
+/**
+ * The sidebar's top: three places, always. The rest are a click away without a row of their
+ * own: Search in the toolbar (⇧⌘F), Usage as an icon above, the terminal in the right panel (⌘J),
+ * shared folders under Shared with me; Activity and Requests show up only while there's something
+ * in them. Everything is also in ⌘K and the Go menu (⌥1…7).
+ */
+const NAV: ReadonlyArray<{ kind: 'overview' | 'room'; icon: IconName }> = [
   { kind: 'overview', icon: 'grid' },
-  { kind: 'files', icon: 'folder' },
-  { kind: 'search', icon: 'search' },
-  { kind: 'usage', icon: 'gauge' },
-  { kind: 'terminal', icon: 'terminal' },
+  { kind: 'room', icon: 'chat' },
 ];
 
 export { workspaceItems } from './workspace-row.js';
@@ -127,6 +131,9 @@ export function Sidebar() {
   const chats = state.projects.find((p) => !p.root);
   const liveChats = chats?.workspaces.filter((w) => !w.archived) ?? [];
   const news = overviewNews(state);
+  const files = tabs.find((t) => t.kind === 'files');
+  // Folders someone else shares with you (or that went away while you weren't looking).
+  const othersShare = state.peers.some((p) => p.peerId !== state.self?.peerId && p.shares.length > 0) || newShares(state) > 0;
   const badges: Partial<Record<string, { count: number; urgent?: boolean }>> = {
     room: { count: state.unread.room ?? 0, urgent: true },
     files: { count: newShares(state) },
@@ -136,14 +143,16 @@ export function Sidebar() {
     <nav ref={drop.ref} className={cx(s.sidebar, drop.over && s.dropping)} aria-label="Sidebar">
       <div className={s.titlebar} data-tauri-drag-region>
         <span className={s.trafficSpace} data-tauri-drag-region />
+        <UsageButton />
         <IconButton icon="sidebar" label="Hide sidebar" keys="⌃⌘S" onClick={() => setPrefs({ sidebar: false })} />
       </div>
       <div className={s.scroll}>
         <section className={s.section}>
           {NAV.map((n) => {
-            const tab = tabs.find((t) => t.kind === n.kind)!;
+            const tab = tabs.find((t) => t.kind === n.kind);
+            if (!tab) return null;
             const b = badges[n.kind];
-            return (
+            const row = (
               <Row
                 key={n.kind}
                 icon={<Icon name={n.icon} size={14} />}
@@ -154,9 +163,12 @@ export function Sidebar() {
                 trailing={b?.count ? <Badge count={b.count} urgent={b.urgent} /> : null}
               />
             );
+            // Overview, Tasks, then Chat.
+            return n.kind === 'overview' ? [row, <TasksNav key="tasks" />] : row;
           })}
-          <ActivityRow />
-          <RequestsNav />
+          <ActivityRow whenLive />
+          <WorktreesNav />
+          <RequestsNav whenAny />
         </section>
 
         <UnreadSection />
@@ -172,8 +184,18 @@ export function Sidebar() {
           <Projects />
         </Section>
 
-        {state.shared.length ? (
+        {state.shared.length || othersShare ? (
           <Section id="shared" title="Shared with me">
+            {othersShare ? (
+              <Row
+                icon={<Icon name="folder" size={14} />}
+                label={files?.label ?? 'Shared files'}
+                detail={files?.hint ?? 'Folders people share with you'}
+                selected={state.view.kind === 'files'}
+                onClick={() => actions.run({ type: 'view', view: { kind: 'files' } })}
+                trailing={badges.files?.count ? <Badge count={badges.files.count} /> : null}
+              />
+            ) : null}
             {state.shared.map((w) => {
               const owner = state.peers.find((p) => p.peerId === w.owner)?.name ?? 'someone';
               const selected = state.view.kind === 'shared' && state.view.id === w.id;
@@ -209,6 +231,18 @@ export function Sidebar() {
       <SidebarFooter />
       <SelfBar />
     </nav>
+  );
+}
+
+/** Usage as an icon above the sidebar: how much of this week's Claude you've used, and the Usage page. */
+function UsageButton() {
+  const actions = useActions();
+  const week = useApp((st) => st.self?.usage?.week?.pct);
+  const selected = useApp((st) => st.view.kind === 'usage');
+  return (
+    <span className={s.usage} data-level={week === undefined ? undefined : week >= 90 ? 'high' : week >= 70 ? 'mid' : 'low'}>
+      <IconButton icon="gauge" label="Usage" keys="⌥5" active={selected} onClick={() => actions.run({ type: 'view', view: { kind: 'usage' } })} />
+    </span>
   );
 }
 

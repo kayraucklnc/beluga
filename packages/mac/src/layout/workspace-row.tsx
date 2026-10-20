@@ -1,6 +1,6 @@
 import type { AppState } from '@klaud/core/store.js';
 import type { Workspace } from '@klaud/workspaces/types.js';
-import { stateOf, workspaceButtons } from '@klaud/ui/workspace-models.js';
+import { stateOf } from '@klaud/ui/workspace-models.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { cx } from '../components/ui.js';
@@ -8,7 +8,7 @@ import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/klaud.js';
 import { workspaceSignal } from './attention-model.js';
 import { DotMark, SignalMark, nameClass, signalClass } from './signal-marks.js';
-import { toolbarActions } from './toolbar-actions.js';
+import { inSections, toolbarActions } from './toolbar-actions.js';
 import { Row } from './sidebar-parts.js';
 import { outsideLocation } from './outside-model.js';
 import s from './Sidebar.module.css';
@@ -21,13 +21,11 @@ import o from './other-worktrees.module.css';
 export function workspaceItems(state: AppState, ws: Workspace, run: ReturnType<typeof useActions>['run']): ActionItem[] {
   const { primary, icons, more } = toolbarActions(state, ws);
   const here = state.view.kind === 'workspace' && state.view.id === ws.id;
-  const list = [...(primary && primary.action !== 'fix_checks' ? [primary] : []), ...icons, ...more];
-  const order = workspaceButtons(state, ws).map((b) => b.action as string);
+  const sections = inSections([...(primary && primary.action !== 'fix_checks' ? [primary] : []), ...icons, ...more.flat()]);
   return [
     { label: 'Open', icon: 'chevronRight', onSelect: () => run({ type: 'open_ws', id: ws.id }) },
-    ...[...list]
-      .sort((a, b) => order.indexOf(a.action === 'stop_run' ? 'run' : a.action) - order.indexOf(b.action === 'stop_run' ? 'run' : b.action))
-      .map((a, i) => ({
+    ...sections.flatMap((section) =>
+      section.map((a, i) => ({
         label: a.label,
         icon: a.icon,
         ...(a.disabled ? { hint: a.hint, disabled: true } : {}),
@@ -36,8 +34,16 @@ export function workspaceItems(state: AppState, ws: Workspace, run: ReturnType<t
         ...(i === 0 ? { separate: true } : {}),
         onSelect: () => (a.action === 'fix_checks' ? undefined : run({ type: 'ws', id: ws.id, action: a.action })),
       })),
+    ),
   ];
 }
+
+/** What archiving is doing now, in words. */
+const ARCHIVING: Record<NonNullable<AppState['archiving'][string]>, string> = {
+  saving: 'Archiving: saving everything of yours',
+  compressing: 'Archiving: compressing your ignored files',
+  removing: 'Archiving: removing the folder',
+};
 
 /**
  * A chat or worktree in the sidebar. What it waits on sits at the row's right edge: a hand
@@ -55,6 +61,8 @@ export function WorkspaceRow({ ws, indent }: { ws: Workspace; indent: number }) 
   const quiet = st.tone === 'warn' || st.tone === 'info' || st.tone === 'error' ? <DotMark tone={st.tone} /> : null;
   // Made outside Klaud: where it is, quietly after its name (the full path in the tooltip).
   const where = outsideLocation(state, ws);
+  // Being archived: how far along (it leaves the sidebar when done).
+  const archiving = state.archiving[ws.id];
   return (
     <ActionsContext items={workspaceItems(state, ws, actions.run)}>
       <Row
@@ -71,9 +79,9 @@ export function WorkspaceRow({ ws, indent }: { ws: Workspace; indent: number }) 
             {where ? <span className={o.where}>{where.folder}</span> : null}
           </>
         }
-        detail={`${ws.name}: ${signal.tip || st.label}${where ? `\n${where.path}` : ''}`}
+        detail={archiving ? `${ws.name}: ${ARCHIVING[archiving]}` : `${ws.name}: ${signal.tip || st.label}${where ? `\n${where.path}` : ''}`}
         onClick={() => actions.run({ type: 'open_ws', id: ws.id })}
-        trailing={<SignalMark signal={signal} fallback={quiet} />}
+        trailing={archiving ? <span className={s.archiving} data-archiving={archiving}>Archiving…</span> : <SignalMark signal={signal} fallback={quiet} />}
       />
     </ActionsContext>
   );
