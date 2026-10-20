@@ -11,13 +11,14 @@ import { inApp } from '../lib/boot.js';
 import { AssigneeMark, StatusIcon } from './marks.js';
 import { TaskPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
-import { useBoard, useSelfId, useTaskActions } from './use-tasks.js';
+import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /** A task page's lists: its sub-tasks, what waits on what, and the proof that it works. */
 
 function TaskLine({ issue, onRemove, removeLabel }: { issue: Issue; onRemove?: () => void; removeLabel?: string }) {
   const selfId = useSelfId();
+  const solo = useSolo(issue.projectId);
   const { open } = useTaskActions();
   return (
     <li className={t.line}>
@@ -26,7 +27,7 @@ function TaskLine({ issue, onRemove, removeLabel }: { issue: Issue; onRemove?: (
         <span className={t.key}>{issue.key}</span>
         <span className={cx(t.lineTitle, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</span>
       </button>
-      <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />
+      {solo ? null : <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />}
       {onRemove ? <IconButton icon="x" label={removeLabel ?? 'Remove'} className={t.lineRemove} onClick={onRemove} /> : null}
     </li>
   );

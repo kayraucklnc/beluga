@@ -13,7 +13,7 @@ import { useIssueMenu } from './parts.js';
 import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker } from './pickers.js';
 import { ProofList, Relations, SubTasks } from './TaskSections.js';
 import { ago, dueText } from './tasks-model.js';
-import { useBoard, useSelfId, useTaskActions } from './use-tasks.js';
+import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /**
@@ -57,7 +57,7 @@ function Header({ issue }: { issue: Issue }) {
   return (
     <header className={t.pageHead}>
       <nav className={t.crumbs} aria-label="Where this task is">
-        <button type="button" className={t.crumb} onClick={openList}>
+        <button type="button" className={t.crumb} onClick={() => openList(issue.projectId)}>
           Tasks
         </button>
         <Icon name="chevronRight" size={10} />
@@ -194,6 +194,7 @@ function NextStep({ issue }: { issue: Issue }) {
 /** The right column: every property, each one a menu. */
 function Properties({ issue }: { issue: Issue }) {
   const board = useBoard();
+  const solo = useSolo(issue.projectId);
   const selfId = useSelfId();
   const { api, act, open } = useTaskActions();
   const project = useApp((s) => s.projects.find((p) => p.id === issue.projectId));
@@ -218,14 +219,14 @@ function Properties({ issue }: { issue: Issue }) {
           </button>
         </PriorityPicker>
       </Prop>
-      <Prop label="Assignee">
+      {solo ? null : <Prop label="Assignee">
         <AssigneePicker value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
           <button type="button" className={t.propValue}>
             <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />
             {assigneeName(issue.assignee, selfId)}
           </button>
         </AssigneePicker>
-      </Prop>
+      </Prop>}
       <Prop label="Labels">
         <div className={t.propLabels}>
           {issue.labels.map((l) => (

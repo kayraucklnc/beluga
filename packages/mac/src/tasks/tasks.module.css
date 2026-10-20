@@ -254,8 +254,11 @@
   flex: 1;
 }
 .barGroup > .find {
-  flex: 0 1 190px;
+  flex: 0 1 170px;
   min-width: 90px;
+}
+.barActions {
+  flex-wrap: nowrap;
 }
 .find {
   display: flex;
@@ -1632,4 +1635,36 @@
     grid-template-columns: 1fr;
     gap: 8px;
   }
+}
+
+/* The project Tasks shows: its icon and name, a menu of the others. */
+.projectSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px 0 6px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.projectSwitch:hover,
+.projectSwitch[data-state='open'] {
+  background: var(--bg-hover);
+}
+.projectSwitch > svg {
+  color: var(--text-3);
+}
+.projectName {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -1,26 +1,27 @@
-import { isMine, isOpen } from '@klaud/core/board/model.js';
 import { Icon } from '../components/Icon.js';
-import { Badge } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/klaud.js';
 import { Row } from '../layout/sidebar-parts.js';
+import { useTasksPrefs } from './use-tasks.js';
 
-/** The sidebar's Tasks row: how many are yours (or your Claude's) and open. Only while the board runs. */
+/**
+ * The sidebar's Tasks row: the board of the project you're in (Tasks never mixes projects, so
+ * there's no count across them here). Only while the board runs.
+ */
 export function TasksNav() {
   const actions = useActions();
+  const prefs = useTasksPrefs();
   const enabled = useApp((s) => s.board.enabled);
   const selected = useApp((s) => s.view.kind === 'tasks' || s.view.kind === 'task');
-  const mine = useApp((s) => s.board.issues.filter((i) => isOpen(i.status) && i.status !== 'backlog' && isMine(i, s.selfId)).length);
-  const review = useApp((s) => s.board.issues.filter((i) => i.status === 'in_review' && isMine(i, s.selfId)).length);
+  const project = useApp((s) => s.projects.find((p) => p.id === prefs.project && p.root)?.name);
   if (!enabled) return null;
   return (
     <Row
       icon={<Icon name="task" size={14} />}
       label="Tasks"
-      detail={review ? `${review} in review` : mine ? `${mine} for you` : 'Plan and track the work'}
+      detail={project ? `${project}’s tasks` : 'Plan and track the work, project by project'}
       selected={selected}
       onClick={() => actions.run({ type: 'view', view: { kind: 'tasks' } })}
-      trailing={mine ? <Badge count={mine} /> : null}
     />
   );
 }

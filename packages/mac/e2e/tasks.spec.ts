@@ -104,3 +104,20 @@ test('a narrow window: the bar wraps and New Task stays in reach; a task’s pro
   expect((await props.boundingBox())!.y).toBeLessThan((await title.boundingBox())!.y);
   await expect(props.getByRole('button', { name: /In Review/ })).toBeInViewport();
 });
+
+test('Tasks is one project at a time: the one you came from, and the switcher changes it', async ({ page }) => {
+  await page.goto('/');
+  const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ position: { x: 60, y: 10 } });
+  await sidebar(page).getByRole('button', { name: 'new-hero', exact: true }).click();
+  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await expect(page.getByRole('button', { name: 'Project: landing' })).toBeVisible();
+  const list = page.getByRole('grid', { name: 'Tasks' });
+  await expect(list).toContainText('New hero for the launch');
+  await expect(list).not.toContainText('Add auth to the payment routes');
+  await page.getByRole('button', { name: 'Project: landing' }).click();
+  await page.getByRole('menuitem', { name: /bob-api/ }).click();
+  await expect(page.getByRole('button', { name: 'Project: bob-api' })).toBeVisible();
+  await expect(list).toContainText('Add auth to the payment routes');
+  await expect(list).not.toContainText('New hero for the launch');
+});

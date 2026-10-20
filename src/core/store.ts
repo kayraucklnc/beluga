@@ -241,8 +241,8 @@ export type View =
   | { readonly kind: 'project'; readonly id: string; readonly page?: 'history' }
   /** Tasks between Claudes (Mac app): what you and your Claude asked of others, and what they asked of you. */
   | { readonly kind: 'requests' }
-  /** Tasks (Mac app): the board, and one task's page. */
-  | { readonly kind: 'tasks' }
+  /** Tasks (Mac app): one project's board (the one you were last in when unset), and one task's page. */
+  | { readonly kind: 'tasks'; readonly projectId?: string }
   | { readonly kind: 'task'; readonly id: string };
 
 /** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */

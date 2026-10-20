@@ -7,22 +7,23 @@ import type { Graph, GraphNode, GraphEdge } from '../../../../src/shared/graph-s
  * people a task can be for, the dependency graph, and words for times and counts.
  */
 
-export type Scope = 'mine' | 'active' | 'backlog' | 'all';
+export type Scope = 'active' | 'backlog' | 'all';
 export type Display = 'list' | 'board' | 'graph';
 
 export interface TasksPrefs {
   readonly scope: Scope;
   readonly display: Display;
-  /** A project to narrow to ('' = every project). */
+  /** The project you were last in (Tasks opens on it). Tasks never mix projects. */
   readonly project: string;
+  /** Whose tasks ('' = everyone's): an assignee key (assigneeKey), or 'nobody'. */
+  readonly who: string;
   /** Status groups folded in the list. */
   readonly folded: readonly IssueStatus[];
 }
 
-export const DEFAULT_TASKS_PREFS: TasksPrefs = { scope: 'active', display: 'list', project: '', folded: ['canceled'] };
+export const DEFAULT_TASKS_PREFS: TasksPrefs = { scope: 'active', display: 'list', project: '', who: '', folded: ['canceled'] };
 
 export const SCOPES: ReadonlyArray<{ readonly value: Scope; readonly label: string; readonly hint: string }> = [
-  { value: 'mine', label: 'My Tasks', hint: 'For you and your Claude' },
   { value: 'active', label: 'Active', hint: 'Todo, In Progress and In Review' },
   { value: 'backlog', label: 'Backlog', hint: 'Not planned yet' },
   { value: 'all', label: 'All', hint: 'Everything open, and what finished this week' },
@@ -36,6 +37,7 @@ export function readTasksPrefs(raw: string | null): TasksPrefs {
       scope: SCOPES.some((s) => s.value === p.scope) ? p.scope! : DEFAULT_TASKS_PREFS.scope,
       display: p.display === 'board' || p.display === 'graph' || p.display === 'list' ? p.display : DEFAULT_TASKS_PREFS.display,
       project: typeof p.project === 'string' ? p.project : '',
+      who: typeof p.who === 'string' ? p.who : '',
       folded: Array.isArray(p.folded) ? p.folded.filter((s): s is IssueStatus => (ISSUE_STATUSES as readonly string[]).includes(s)) : DEFAULT_TASKS_PREFS.folded,
     };
   } catch {
@@ -55,14 +57,48 @@ export function statusesFor(scope: Scope): readonly IssueStatus[] {
   }
 }
 
-/** The tasks a scope shows, and how many in each scope (the segmented control's counts). */
-export function scoped(board: BoardState, prefs: Pick<TasksPrefs, 'scope' | 'project'>, selfId: string, query = '', now = Date.now()): Issue[] {
-  return filterIssues(board, { scope: prefs.scope, selfId, now, ...(prefs.project ? { projectId: prefs.project } : {}), ...(query.trim() ? { query } : {}) });
+/** Whether a task is for `who` ('' = anyone, 'nobody' = unassigned, else an assignee key). */
+export const isFor = (issue: Issue, who: string): boolean => (!who ? true : who === 'nobody' ? !issue.assignee : assigneeKey(issue.assignee) === who);
+
+/** One project's tasks in a scope, for someone, matching words, in list order. */
+export function scoped(board: BoardState, prefs: Pick<TasksPrefs, 'scope' | 'project' | 'who'>, selfId: string, query = '', now = Date.now()): Issue[] {
+  return filterIssues(board, { scope: prefs.scope, selfId, now, projectId: prefs.project, ...(query.trim() ? { query } : {}) }).filter((i) => isFor(i, prefs.who));
 }
 
-export function scopeCounts(board: BoardState, project: string, selfId: string, now = Date.now()): Readonly<Record<Scope, number>> {
-  const count = (scope: Scope): number => scoped(board, { scope, project }, selfId, '', now).filter((i) => isOpen(i.status)).length;
-  return { mine: count('mine'), active: count('active'), backlog: count('backlog'), all: count('all') };
+/** How many unfinished tasks each scope has in a project (for someone): the tabs' counts. */
+export function scopeCounts(board: BoardState, project: string, who: string, selfId: string, now = Date.now()): Readonly<Record<Scope, number>> {
+  const count = (scope: Scope): number => scoped(board, { scope, project, who }, selfId, '', now).filter((i) => isOpen(i.status)).length;
+  return { active: count('active'), backlog: count('backlog'), all: count('all') };
+}
+
+/**
+ * The project Tasks shows: the one asked for, else the one you were last in, else the one with
+ * the most unfinished tasks, else the first. Never all of them at once.
+ */
+export function projectToShow(board: BoardState, projects: ReadonlyArray<{ readonly id: string }>, asked: string | undefined, last: string): string | undefined {
+  const known = (id: string | undefined): id is string => Boolean(id && projects.some((p) => p.id === id));
+  if (known(asked)) return asked;
+  if (known(last)) return last;
+  const open = (id: string): number => board.issues.filter((i) => i.projectId === id && isOpen(i.status)).length;
+  return [...projects].sort((a, b) => open(b.id) - open(a.id))[0]?.id;
+}
+
+/**
+ * Whether you work alone on a project: nobody else around (no one in the room, no friends) and no
+ * task there for anyone but you or your Claude. Then who a task is for isn't shown at all.
+ */
+export function isSolo(board: BoardState, projectId: string | undefined, selfId: string, others: number): boolean {
+  if (others > 0) return false;
+  return !board.issues.some((i) => i.projectId === projectId && i.assignee && (i.assignee.kind === 'person' ? i.assignee.id !== selfId : i.assignee.owner !== selfId));
+}
+
+/** The people (and Claudes) a project's tasks are for, for the filter: you first, then the rest by name. */
+export function assigneesIn(board: BoardState, projectId: string | undefined, selfId: string): ReadonlyArray<{ readonly key: string; readonly label: string; readonly assignee: Assignee }> {
+  const seen = new Map<string, Assignee>();
+  for (const i of board.issues) if (i.projectId === projectId && i.assignee) seen.set(assigneeKey(i.assignee), i.assignee);
+  const label = (a: Assignee): string => (a.kind === 'person' ? (a.id === selfId ? 'You' : a.name) : a.owner === selfId ? 'Your Claude' : `${a.ownerName}’s Claude`);
+  const mine = (a: Assignee): number => ((a.kind === 'person' ? a.id : a.owner) === selfId ? 0 : 1);
+  return [...seen.entries()].map(([key, assignee]) => ({ key, label: label(assignee), assignee })).sort((x, y) => mine(x.assignee) - mine(y.assignee) || x.label.localeCompare(y.label));
 }
 
 export interface Person {

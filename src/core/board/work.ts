@@ -215,10 +215,12 @@ export class BoardWork {
       get: (key) => describeIssue(state(), pick(key), this.deps.selfId()),
       list: (f) => {
         // open (the default): every unfinished task; mine: yours and your Claude's; all: recently finished too.
+        // In this worktree's project unless another is named (tasks don't mix projects).
+        const projectId = f.project ? projectByName(f.project) : (current?.projectId ?? wsProject());
         const found = filterIssues(state(), {
           scope: f.scope === 'mine' ? 'mine' : 'all',
           selfId: this.deps.selfId(),
-          ...(f.project ? { projectId: projectByName(f.project) } : {}),
+          ...(projectId ? { projectId } : {}),
           ...(f.query ? { query: f.query } : {}),
         });
         return describeList(f.scope === 'all' || f.scope === 'mine' ? found : found.filter((i) => isOpen(i.status)));

@@ -5,7 +5,7 @@ import { Store, initialState } from '../src/core/store.js';
 import { createMockBackend } from '../src/agent/mock.js';
 import type { RoomBridge } from '../src/agent/types.js';
 import { BoardWork } from '../src/core/board/work.js';
-import { DEFAULT_TASKS_PREFS, assigneeChoices, assigneeKey, checklist, connected, dueText, readTasksPrefs, scopeCounts, statusesFor, taskGraph, toggleCheck } from '../packages/mac/src/tasks/tasks-model.js';
+import { DEFAULT_TASKS_PREFS, assigneeChoices, assigneeKey, assigneesIn, checklist, connected, dueText, isFor, isSolo, projectToShow, readTasksPrefs, scopeCounts, scoped, statusesFor, taskGraph, toggleCheck } from '../packages/mac/src/tasks/tasks-model.js';
 import { parseGraph } from '../src/shared/graph-spec.js';
 import type { Project } from '../src/workspaces/types.js';
 
@@ -17,7 +17,7 @@ function board() {
   const store = new Store(initialState('room'));
   const projects: Project[] = [{ id: 'api', name: 'bob-api', root: '/tmp/api', base: 'main', workspaces: [] }];
   store.dispatch({ type: 'projects', projects });
-  const b = new Board({ store, dir: null, projectName: (id) => projects.find((p) => p.id === id)?.name });
+  const b = new Board({ store, dir: null, projectName: (id) => store.getState().projects.find((p) => p.id === id)?.name });
   return { store, b };
 }
 
@@ -49,8 +49,9 @@ describe('the Tasks view', () => {
   it('reads saved prefs kindly', () => {
     expect(readTasksPrefs(null)).toEqual(DEFAULT_TASKS_PREFS);
     expect(readTasksPrefs('{oops')).toEqual(DEFAULT_TASKS_PREFS);
-    expect(readTasksPrefs(JSON.stringify({ scope: 'mine', display: 'board', project: 'api', folded: ['done', 'nope'] }))).toEqual({ scope: 'mine', display: 'board', project: 'api', folded: ['done'] });
-    expect(readTasksPrefs(JSON.stringify({ scope: 'weird', display: 1 }))).toMatchObject({ scope: 'active', display: 'list' });
+    expect(readTasksPrefs(JSON.stringify({ scope: 'backlog', display: 'board', project: 'api', who: 'claude:p-me', folded: ['done', 'nope'] }))).toEqual({ scope: 'backlog', display: 'board', project: 'api', who: 'claude:p-me', folded: ['done'] });
+    // "My Tasks" mixed projects: it's gone (an old window's choice reads as Active).
+    expect(readTasksPrefs(JSON.stringify({ scope: 'mine', display: 1 }))).toMatchObject({ scope: 'active', display: 'list', who: '' });
   });
 
   it('shows the statuses a scope is about', () => {
@@ -59,12 +60,55 @@ describe('the Tasks view', () => {
     expect(statusesFor('all')).toHaveLength(6);
   });
 
-  it('counts each scope’s open tasks', () => {
+  it('counts a project’s open tasks per scope, for everyone or someone', () => {
     const { store, b } = board();
     b.create({ projectId: 'api', title: 'A', assignee: { kind: 'claude', owner: 'p-me', ownerName: 'Kay' }, status: 'in_progress' }, me);
     b.create({ projectId: 'api', title: 'B', status: 'backlog' }, me);
     b.create({ projectId: 'api', title: 'C', status: 'done' }, me);
-    expect(scopeCounts(store.getState().board, '', 'p-me')).toEqual({ mine: 1, active: 1, backlog: 1, all: 2 });
+    const s = store.getState().board;
+    expect(scopeCounts(s, 'api', '', 'p-me')).toEqual({ active: 1, backlog: 1, all: 2 });
+    expect(scopeCounts(s, 'api', 'claude:p-me', 'p-me')).toEqual({ active: 1, backlog: 0, all: 1 });
+    expect(scopeCounts(s, 'api', 'nobody', 'p-me')).toEqual({ active: 0, backlog: 1, all: 1 });
+  });
+
+  it('never mixes projects', () => {
+    const { store, b } = board();
+    store.dispatch({ type: 'projects', projects: [...store.getState().projects, { id: 'land', name: 'landing', root: '/tmp/l', base: 'main', workspaces: [] }] });
+    b.create({ projectId: 'api', title: 'Api task' }, me);
+    b.create({ projectId: 'land', title: 'Landing task' }, me);
+    expect(scoped(store.getState().board, { scope: 'all', project: 'land', who: '' }, 'p-me').map((i) => i.title)).toEqual(['Landing task']);
+  });
+
+  it('opens on the project asked for, else the one you were in, else the busiest', () => {
+    const { store, b } = board();
+    const projects = [{ id: 'api' }, { id: 'land' }];
+    b.create({ projectId: 'api', title: 'x' }, me);
+    const s = store.getState().board;
+    expect(projectToShow(s, projects, 'land', 'api')).toBe('land');
+    expect(projectToShow(s, projects, 'gone', 'land')).toBe('land');
+    expect(projectToShow(s, projects, undefined, '')).toBe('api');
+    expect(projectToShow(s, [], undefined, '')).toBeUndefined();
+  });
+
+  it('alone on a project: no one else around and nothing for anyone else', () => {
+    const { store, b } = board();
+    b.create({ projectId: 'api', title: 'Mine', assignee: { kind: 'claude', owner: 'p-me', ownerName: 'Kay' } }, me);
+    expect(isSolo(store.getState().board, 'api', 'p-me', 0)).toBe(true);
+    expect(isSolo(store.getState().board, 'api', 'p-me', 2)).toBe(false);
+    b.create({ projectId: 'api', title: 'Theirs', assignee: { kind: 'person', id: 'p-bob', name: 'bob' } }, me);
+    expect(isSolo(store.getState().board, 'api', 'p-me', 0)).toBe(false);
+  });
+
+  it('the people a project’s tasks are for: you first', () => {
+    const { store, b } = board();
+    const bob = { kind: 'person' as const, id: 'p-bob', name: 'bob' };
+    const t1 = b.create({ projectId: 'api', title: 'A', assignee: bob }, me);
+    b.create({ projectId: 'api', title: 'B', assignee: { kind: 'claude', owner: 'p-me', ownerName: 'Kay' } }, me);
+    b.create({ projectId: 'api', title: 'C' }, me);
+    const s = store.getState().board;
+    expect(assigneesIn(s, 'api', 'p-me').map((p) => p.label)).toEqual(['Your Claude', 'bob']);
+    expect(isFor(b.need(t1.key), 'person:p-bob')).toBe(true);
+    expect(isFor(b.need(t1.key), 'nobody')).toBe(false);
   });
 
   it('offers you, your Claude, then people and their Claudes', () => {

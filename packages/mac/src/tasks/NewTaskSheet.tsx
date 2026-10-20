@@ -3,7 +3,7 @@ import { ISSUE_STATUSES, type IssueStatus, PRIORITIES, PRIORITY_INFO, type Prior
 import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
 import { toast, useApp, useKlaud } from '../lib/klaud.js';
 import { assigneeChoices } from './tasks-model.js';
-import { useBoard, usePeople, useSelf, useTaskActions, useTasksPrefs } from './use-tasks.js';
+import { useBoard, usePeople, useSelf, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 
 /**
  * A new task: its title, what it's for (the brief's goal), where it goes, and who it's for. Start
@@ -19,7 +19,8 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   const { client } = useKlaud();
   const { api, act, open } = useTaskActions();
   const parentIssue = parent ? issueById(board, parent) : undefined;
-  const firstProject = parentIssue?.projectId ?? projectId ?? (prefs.project || undefined) ?? projects[0]?.id ?? '';
+  // The project you're in (Tasks is always one project's).
+  const firstProject = parentIssue?.projectId ?? projectId ?? (projects.some((p) => p.id === prefs.project) ? prefs.project : undefined) ?? projects[0]?.id ?? '';
   const [title, setTitle] = useState('');
   const [goal, setGoal] = useState('');
   const [project, setProject] = useState(firstProject);
@@ -29,6 +30,7 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   const [assignee, setAssignee] = useState('');
   const [labels, setLabels] = useState('');
   const [start, setStart] = useState(false);
+  const solo = useSolo(project);
   if (!projects.length) {
     return <FormSheet title="New Task" intro="Tasks belong to a project. Add a project first (File › Add Project…)." submitLabel="OK" hideSubmit onSubmit={close} onCancel={close} />;
   }
@@ -84,9 +86,12 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
       <Field label="Priority">
         <Popup label="Priority" value={priority} options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_INFO[p].label }))} onChange={setPriority} />
       </Field>
-      <Field label="Assignee">
-        <Popup label="Assignee" value={assignee} options={[{ value: '', label: 'No one' }, ...choices.map((c) => ({ value: c.key, label: c.label }))]} onChange={setAssignee} />
-      </Field>
+      {/* Alone on a project, every task is yours and your Claude's: nothing to choose. */}
+      {solo ? null : (
+        <Field label="Assignee">
+          <Popup label="Assignee" value={assignee} options={[{ value: '', label: 'No one' }, ...choices.map((c) => ({ value: c.key, label: c.label }))]} onChange={setAssignee} />
+        </Field>
+      )}
       <Field label="Labels" htmlFor="task-labels" hint="Separated by commas">
         <TextInput id="task-labels" value={labels} onChange={setLabels} placeholder="security, api" />
       </Field>

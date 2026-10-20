@@ -100,8 +100,10 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
 
 ### The window (`packages/mac/src/tasks/`)
 
-- **Tasks** in the sidebar (how many are yours, or in review), and ⌘K › New Task… / Go to Tasks.
-- **The bar:** My Tasks · Active · Backlog · All (each with its count), a project pop-up, a filter (⌘F), List · Board · What Waits on What, ⋯, and **New Task** (⌘N, or C).
+- **One project at a time.** Tasks from different projects never share a screen. Tasks opens on the project you're in (the worktree, project home or task you came from; else the last one; else the busiest), and a switcher at its top (the project's icon and name) changes it. Claude's `task_list` stays in its run's project too, unless it names another.
+- **Tasks** in the sidebar, and ⌘K › New Task… / Go to Tasks.
+- **The bar:** the project switcher, Active · Backlog · All (each with its count), **whose tasks** (Everyone, You, Your Claude, each person and their Claude, No one yet), a filter (⌘F), List · Board · What Waits on What, ⋯, and **New Task** (⌘N, or C).
+- **Alone, no assignees.** On a project where you work alone (nobody else in the room, no friends, nothing assigned to anyone else), who a task is for isn't shown anywhere: not in rows, cards, a task's page or the New Task sheet. Every task is yours and your Claude's; Start with Claude is how it gets worked on.
 - **List:** grouped by status (groups fold; + adds a task there). A row's priority, status and assignee are menus of their own (1–9 pick); the rest of the row opens the task. ↑↓ and Return; right-click for Open, Start with Claude, Status ▸, Priority ▸, Add Sub-task…, Copy Key, Delete Task….
 - **Board:** a column per status; drag a card to another column or up and down (a line shows where it lands).
 - **What Waits on What:** the tasks tied to others as a graph (the graph engine): a task with sub-tasks is a box around them, blockers point at what they hold up, in the problem color until they're done. Double-click, or Open Task in its details, opens it.

@@ -5,7 +5,7 @@ import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
 import { IssueMeta, useIssueMenu } from './parts.js';
-import { useSelfId, useTaskActions } from './use-tasks.js';
+import { useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /**
@@ -158,6 +158,7 @@ function Column({
 
 const Card = memo(function Card({ issue, faded, folded, onDragStart, onDragEnd }: { issue: Issue; faded: boolean; folded?: boolean; onDragStart: () => void; onDragEnd: () => void }) {
   const selfId = useSelfId();
+  const solo = useSolo(issue.projectId);
   const { open } = useTaskActions();
   const menu = useIssueMenu();
   return (
@@ -187,7 +188,7 @@ const Card = memo(function Card({ issue, faded, folded, onDragStart, onDragEnd }
           <span className={t.key}>{issue.key}</span>
           <span className={t.grow} />
           <PriorityIcon priority={issue.priority} labelled />
-          <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />
+          {solo ? null : <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />}
         </div>
         <div className={cx(t.cardTitle, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</div>
         <IssueMeta issue={issue} compact />

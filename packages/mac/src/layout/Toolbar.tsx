@@ -244,6 +244,11 @@ export function Toolbar() {
     );
   }
 
+  if (view.kind === 'tasks') {
+    // One project's tasks (its name is the switcher at the top of the view).
+    return <Shell headerRef={headerRef} title={<span className={s.name}>Tasks</span>} />;
+  }
+
   if (view.kind === 'task') {
     const issue = state.board.issues.find((i) => i.id === view.id);
     const project = issue ? state.projects.find((p) => p.id === issue.projectId) : undefined;

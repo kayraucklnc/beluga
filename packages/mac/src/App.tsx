@@ -3,6 +3,7 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 import { useEffect } from 'react';
 import { channelOf } from '@klaud/core/store.js';
 import { placeForKey, stepPlace } from './lib/go.js';
+import { useRememberProject } from './tasks/use-tasks.js';
 import { inviteChoice } from '@klaud/ui/invite-menus.js';
 import { projectInView } from '@klaud/ui/invite-actions.js';
 import { Icon } from './components/Icon.js';
@@ -215,6 +216,7 @@ export function App() {
   const [joining, setJoining] = useState<string>();
   useOverlays();
   useShortcuts();
+  useRememberProject();
   useSettingsWindow();
   useNative(client, ui, actions, setJoining);
   useTrayStatus(client);

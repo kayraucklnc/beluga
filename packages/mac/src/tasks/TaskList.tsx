@@ -8,7 +8,7 @@ import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
 import { IssueMeta, useIssueMenu } from './parts.js';
 import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
-import { setTasksPrefs, useSelfId, useTaskActions, useTasksPrefs } from './use-tasks.js';
+import { setTasksPrefs, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /**
@@ -72,6 +72,7 @@ export function TaskList({ issues, statuses, projectId, emptyGroups }: { issues:
 
 const Row = memo(function Row({ issue, cursor, onCursor }: { issue: Issue; cursor: boolean; onCursor: () => void }) {
   const selfId = useSelfId();
+  const solo = useSolo(issue.projectId);
   const { api, act, open } = useTaskActions();
   const menu = useIssueMenu();
   const stop = (e: { stopPropagation: () => void }): void => e.stopPropagation();
@@ -103,13 +104,13 @@ const Row = memo(function Row({ issue, cursor, onCursor }: { issue: Issue; curso
         </span>
         <span className={cx(t.title, !STATUS_INFO[issue.status].open && t.titleClosed)}>{issue.title}</span>
         <IssueMeta issue={issue} />
-        <span className={t.rowCell} onClick={stop}>
+        {solo ? null : <span className={t.rowCell} onClick={stop}>
           <AssigneePicker value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
             <button type="button" className={t.iconHit}>
               <AssigneeMark assignee={issue.assignee} selfId={selfId} />
             </button>
           </AssigneePicker>
-        </span>
+        </span>}
         <span className={t.when}>{ago(issue.updatedAt)}</span>
       </div>
     </ActionsContext>
