@@ -199,7 +199,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `files.closeViewer` | ✓ | ✓ |
 | `files.readImage` | ✓ | ✓ |
 | `files.readImageFile` | – (the terminal shows Markdown as text) | ✓ images in the Markdown reader (`![](diagram.png)` next to the file); PDFs drawn page by page in Files, Changes and the reader |
-| `workspaces.scratch` | – | ✓ the panel's Scratch tab: the workspace's `.klaud/scratch/` folder, newest first, live |
+| `workspaces.scratch` | – | ✓ the panel's Scratch tab: the workspace's `.klaud/scratch/` and `.context/` folders, newest first, live; drawn in outline (moving while Claude works) until something lands |
 | `files.read` | – | ✓ a changed file as itself in Changes (Markdown formatted), without moving the Files tab's open file |
 | `workspaces.open` | ✓ | ✓ |
 | `workspaces.load` | — (opening a workspace loads it) | Overview › Archived › Read Conversation (read-only, stays in the Overview) |

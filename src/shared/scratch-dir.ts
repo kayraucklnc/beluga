@@ -4,6 +4,13 @@
  */
 export const SCRATCH_DIR = '.klaud/scratch';
 
+/**
+ * The folders the Scratch tab shows, from the workspace's root: klaud's own, then `.context/`, where
+ * Claude saves the same kind of files when another tool (Conductor) runs it in this worktree. That
+ * one is only looked at: klaud never makes it, writes to it or keeps it out of git.
+ */
+export const SHOWN_SCRATCH_DIRS = [SCRATCH_DIR, '.context'] as const;
+
 /** Each sub-agent's own folder in it: `.klaud/scratch/agents/<name>/`. */
 export const AGENT_SCRATCH_DIR = `${SCRATCH_DIR}/agents`;
 

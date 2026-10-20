@@ -2,16 +2,17 @@ import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { SCRATCH_DIR } from '../shared/scratch-dir.js';
+import { SCRATCH_DIR, SHOWN_SCRATCH_DIRS } from '../shared/scratch-dir.js';
 
 /**
  * A workspace's scratch folder: where Claude keeps the screenshots, logs and intermediate output it
  * makes while it works (not the work itself). It lives in the workspace as `.klaud/scratch/`, kept
  * out of git through the repo's own exclude file (never a change to .gitignore), and the Mac app
- * shows it live (the panel's Scratch tab).
+ * shows it live (the panel's Scratch tab), together with the `.context/` folder Claude saves to
+ * when another tool runs it in the same worktree (looked at, never written).
  */
 
-export { SCRATCH_DIR };
+export { SCRATCH_DIR, SHOWN_SCRATCH_DIRS };
 const EXCLUDE_LINE = `/${SCRATCH_DIR}/`;
 /** How many files the list shows, and how deep it looks. */
 const MAX_FILES = 300;
@@ -37,10 +38,10 @@ async function excludeFile(dir: string): Promise<string | undefined> {
   }
 }
 
-/** Each part of the folder's path inside the workspace is a real folder (or not there yet), never a link out. */
-async function noLinks(dir: string): Promise<boolean> {
+/** Each part of a folder's path inside the workspace is a real folder (or not there yet), never a link out. */
+async function noLinks(dir: string, rel: string = SCRATCH_DIR): Promise<boolean> {
   let at = dir;
-  for (const part of SCRATCH_DIR.split('/')) {
+  for (const part of rel.split('/')) {
     at = path.join(at, part);
     const st = await fs.lstat(at).catch(() => undefined);
     if (st && !st.isDirectory()) return false; // a link (or a file) where the folder goes
@@ -79,7 +80,7 @@ export async function ensureScratch(dir: string): Promise<string | undefined> {
   }
 }
 
-/** What's in the folder, newest first (no links followed). */
+/** What's in the shown folders (klaud's and `.context/`), newest first (no links followed). */
 export async function listScratch(dir: string): Promise<ScratchFile[]> {
   const files: ScratchFile[] = [];
   const walk = async (rel: string, depth: number): Promise<void> => {
@@ -93,7 +94,8 @@ export async function listScratch(dir: string): Promise<ScratchFile[]> {
       }
     }
   };
-  if (!(await noLinks(dir))) return [];
-  await walk(SCRATCH_DIR, 1);
+  for (const rel of SHOWN_SCRATCH_DIRS) {
+    if (await noLinks(dir, rel)) await walk(rel, 1);
+  }
   return files.sort((a, b) => b.mtime - a.mtime || a.path.localeCompare(b.path)).slice(0, MAX_FILES);
 }
