@@ -34,6 +34,11 @@ describe('what can be thrown away and made again', () => {
     expect(regenRule(root, 'target/')).toBeUndefined();
     expect(regenRule(root, 'vendor/')).toBeUndefined();
     expect(regenRule(root, 'crates/build/')).toBeUndefined();
+    // Local databases and links of yours, whatever tool keeps them.
+    expect(regenRule(root, '.wrangler/')).toBeUndefined();
+    expect(regenRule(root, '.vercel/')).toBeUndefined();
+    expect(regenRule(root, 'notebooks/.cache/')).toBeUndefined();
+    expect(regenRule(root, 'infra/.terraform/')).toBeUndefined();
     // Never a file of yours, whatever it's called.
     expect(regenRule(root, '.env')).toBeUndefined();
     expect(regenRule(root, 'thesis/Thesis.pdf')).toBeUndefined();
@@ -158,6 +163,87 @@ describe('a smart archive', () => {
     await expect(archiveWorktree({ repo, dir: path.join(base, 'nowhere'), id: 'w3', archivesDir: archives })).rejects.toThrow();
     expect(existsSync(wt)).toBe(true);
     expect(readManifest(archives, 'w3')).toBeUndefined();
+  });
+
+  it('a git repo of yours inside the worktree is kept whole, history and all', async () => {
+    const nested = path.join(wt, 'tools/mine');
+    mkdirSync(nested, { recursive: true });
+    sh(nested, 'init', '-q', '-b', 'main');
+    put(path.join(nested, 'a.txt'), 'nested work\n');
+    sh(nested, 'add', '-A');
+    sh(nested, 'commit', '-qm', 'nested');
+    const commit = sh(nested, 'rev-parse', 'HEAD').trim();
+    put(path.join(nested, 'b.txt'), 'uncommitted in nested\n');
+    await archiveWorktree({ repo, dir: wt, id: 'n1', archivesDir: archives });
+    await restoreWorktree({ repo, dir: wt, id: 'n1', archivesDir: archives });
+    expect(sh(nested, 'rev-parse', 'HEAD').trim()).toBe(commit);
+    expect(readFileSync(path.join(nested, 'b.txt'), 'utf8')).toBe('uncommitted in nested\n');
+  });
+
+  it('won’t archive a submodule’s local work (it lives in the worktree’s own git folder)', async () => {
+    const lib = path.join(base, 'lib');
+    mkdirSync(lib);
+    sh(lib, 'init', '-q', '-b', 'main');
+    put(path.join(lib, 'x.txt'), 'lib\n');
+    sh(lib, 'add', '-A');
+    sh(lib, 'commit', '-qm', 'lib');
+    execFileSync('git', ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', lib, 'vendor/lib'], { cwd: wt });
+    put(path.join(wt, 'vendor/lib/x.txt'), 'changed in the submodule\n');
+    await expect(archiveWorktree({ repo, dir: wt, id: 's1', archivesDir: archives })).rejects.toThrow(/submodule/);
+    expect(existsSync(path.join(wt, 'vendor/lib/x.txt'))).toBe(true);
+    expect(readManifest(archives, 's1')).toBeUndefined();
+  });
+
+  it('won’t archive in the middle of a merge, rebase or cherry-pick', async () => {
+    const gitDir = sh(wt, 'rev-parse', '--absolute-git-dir').trim();
+    writeFileSync(path.join(gitDir, 'MERGE_HEAD'), `${sh(wt, 'rev-parse', 'HEAD').trim()}\n`);
+    await expect(archiveWorktree({ repo, dir: wt, id: 'm1', archivesDir: archives })).rejects.toThrow(/merge/);
+    expect(existsSync(wt)).toBe(true);
+  });
+
+  it('one archive of a worktree at a time', async () => {
+    const first = archiveWorktree({ repo, dir: wt, id: 'c1', archivesDir: archives });
+    await expect(archiveWorktree({ repo, dir: wt, id: 'c1', archivesDir: archives })).rejects.toThrow(/already/);
+    await first;
+    expect(readManifest(archives, 'c1')).toBeDefined();
+  });
+
+  it('a restore that fails leaves no half-made folder, and the archive to try again', async () => {
+    await archiveWorktree({ repo, dir: wt, id: 'r1', archivesDir: archives });
+    const kept = path.join(archives, 'r1', 'kept.tar.xz');
+    const good = readFileSync(kept);
+    writeFileSync(kept, 'not an archive');
+    await expect(restoreWorktree({ repo, dir: wt, id: 'r1', archivesDir: archives })).rejects.toThrow();
+    expect(existsSync(wt)).toBe(false);
+    writeFileSync(kept, good);
+    await restoreWorktree({ repo, dir: wt, id: 'r1', archivesDir: archives });
+    expect(readFileSync(path.join(wt, '.env'), 'utf8')).toBe('SECRET=1\n');
+  });
+
+  it('only what git ignores goes: in a folder partly ignored, your files in it stay', async () => {
+    put(path.join(repo, '.gitignore'), 'build/*.map\n!build/index.html\nnode_modules/\n');
+    put(path.join(wt, '.gitignore'), 'build/*.map\n!build/index.html\nnode_modules/\n');
+    put(path.join(wt, 'build/index.html'), '<html>');
+    sh(wt, 'add', 'build/index.html');
+    put(path.join(wt, 'build/notes.txt'), 'mine');
+    put(path.join(wt, 'build/app.js.map'), 'map');
+    const plan = await planArchive(wt);
+    expect(plan.drop.map((d) => d.path)).toContain('build/app.js.map');
+    expect(plan.drop.map((d) => d.path)).not.toContain('build/');
+    await freeSpace(wt);
+    expect(existsSync(path.join(wt, 'build/index.html'))).toBe(true);
+    expect(existsSync(path.join(wt, 'build/notes.txt'))).toBe(true);
+    expect(existsSync(path.join(wt, 'build/app.js.map'))).toBe(false);
+  });
+
+  it('what only your own global ignore file hides is kept (the project never said it’s throwaway)', async () => {
+    const global = path.join(base, 'global-ignore');
+    writeFileSync(global, 'out/\n');
+    sh(repo, 'config', 'core.excludesFile', global);
+    put(path.join(wt, 'out/report.pdf'), 'hand made');
+    const plan = await planArchive(wt);
+    expect(plan.drop.map((d) => d.path)).not.toContain('out/');
+    expect(plan.keep).toContain('out/');
   });
 
   it('frees space in a worktree you keep: only what’s made again', async () => {

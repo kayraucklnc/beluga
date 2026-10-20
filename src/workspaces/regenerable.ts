@@ -27,21 +27,23 @@ const GRADLE = ['build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings
 export const RULES: readonly RegenRule[] = [
   { what: 'npm packages', names: ['node_modules', 'bower_components'], beside: JS, remake: 'npm install' },
   { what: 'JavaScript build output', names: ['dist', 'build', 'out', '.output', 'storybook-static'], beside: JS, remake: 'npm run build' },
-  { what: 'JavaScript build caches', names: ['.next', '.nuxt', '.svelte-kit', '.angular', '.expo', '.vite', '.turbo', '.parcel-cache', '.docusaurus', '.vercel', '.wrangler', '.eslintcache'] },
-  { what: 'test coverage', names: ['coverage', '.nyc_output'] },
+  // Not .wrangler (local databases and storage) or .vercel (the project's link): those are yours.
+  { what: 'JavaScript build caches', names: ['.next', '.nuxt', '.svelte-kit', '.angular', '.expo', '.vite', '.turbo', '.parcel-cache', '.docusaurus'] },
+  { what: 'test coverage', names: ['coverage', '.nyc_output'], beside: [...JS, ...PY] },
   { what: 'Rust and Maven build output', names: ['target'], beside: ['Cargo.toml', 'pom.xml'], remake: 'cargo build' },
   { what: 'Gradle and Android build output', names: ['build', '.gradle', '.cxx', '.externalNativeBuild', '.kotlin'], beside: GRADLE, remake: './gradlew build' },
   { what: 'CocoaPods', names: ['Pods'], beside: ['Podfile'], remake: 'pod install' },
-  { what: 'Xcode build output', names: ['DerivedData', '.build', '.swiftpm'] },
+  { what: 'Xcode build output', names: ['DerivedData'] },
+  { what: 'Swift package build output', names: ['.build', '.swiftpm'], beside: ['Package.swift'], remake: 'swift build' },
   { what: 'Python environments', names: ['.venv', 'venv'], beside: PY, remake: 'pip install' },
-  { what: 'Python caches', names: ['__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.tox', '.nox', '.ipynb_checkpoints', /\.egg-info$/] },
+  { what: 'Python caches', names: ['__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.tox', '.nox', /\.egg-info$/] },
   { what: 'Dart and Flutter build output', names: ['.dart_tool', 'build'], beside: ['pubspec.yaml'], remake: 'flutter pub get' },
   { what: 'PHP packages', names: ['vendor'], beside: ['composer.json'], remake: 'composer install' },
   { what: 'Elixir build output', names: ['_build', 'deps'], beside: ['mix.exs'], remake: 'mix deps.get' },
   { what: 'Haskell build output', names: ['.stack-work', 'dist-newstyle'] },
   { what: 'Zig caches', names: ['.zig-cache', 'zig-cache', 'zig-out'] },
-  { what: 'Terraform providers', names: ['.terraform'], remake: 'terraform init' },
-  { what: 'caches', names: ['.cache'] },
+  { what: 'Terraform providers', names: ['.terraform'], beside: ['.terraform.lock.hcl', 'main.tf', 'versions.tf', 'providers.tf', 'terraform.tf'], remake: 'terraform init' },
+  { what: 'tool caches', names: ['.cache'], beside: [...JS, ...PY] },
 ];
 
 /** Single files that are only ever made by a tool (never anything of yours). */

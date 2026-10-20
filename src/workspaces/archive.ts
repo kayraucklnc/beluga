@@ -1,19 +1,25 @@
-import { execFile } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { folderSize } from './disk.js';
-import { FILE_RULES, type RegenRule, regenRule, remakeSteps } from './regenerable.js';
+import { ArchiveError, LONG_MS, TAR_TIMEOUT_MS, assertSettled, assertSubmodulesSafe, git, ignoredByProject, ignoredIn, pack, run, snapshot, tryGit } from './archive-git.js';
+import { type RegenRule, regenRule, remakeSteps } from './regenerable.js';
 
 /**
  * A smart archive of a worktree: nothing of yours is lost, and what can be made again doesn't
  * take space. What git sees (changes, staged files, untracked files) goes into a snapshot
  * commit kept in the repo under refs/klaud/archive/<id>: git keeps it compressed and shares what
  * it already has. Of what git ignores, dependencies, build output and caches (see
- * regenerable.ts) are thrown away, and everything else (.env, local databases…) is packed into
- * one xz-compressed file. Then the folder goes; its branch stays. Restoring brings the folder
- * back exactly as it was, staging included; the thrown-away parts come back from `remake`.
+ * regenerable.ts, and only what the project's own .gitignore ignores) are thrown away;
+ * everything else (.env, local databases, git repos of yours inside it…) is packed into one
+ * xz-compressed file. Then the folder goes; its branch stays. Restoring brings the folder back
+ * exactly as it was, staging included; the thrown-away parts come back from `remake`.
+ *
+ * It refuses rather than lose anything git keeps in the worktree's own folder: a merge or rebase
+ * in progress, a submodule's unpushed work. The snapshot lives in the project's repo, so an
+ * archive comes back only while that repo is there.
  */
+
+export { ArchiveError } from './archive-git.js';
 
 export interface ArchiveManifest {
   readonly version: 1;
@@ -60,56 +66,20 @@ const REF = (id: string): string => `refs/klaud/archive/${id}`;
 const SAFE_ID = /^[\w.-]{1,128}$/;
 const KEPT = 'kept.tar.xz';
 const MANIFEST = 'manifest.json';
-/** Packing what's kept can take a while on a big folder. */
-const TAR_TIMEOUT_MS = 30 * 60_000;
-/** Commits need a name; yours when git has one. */
-const IDENTITY = { GIT_AUTHOR_NAME: 'Klaud', GIT_AUTHOR_EMAIL: 'klaud@localhost', GIT_COMMITTER_NAME: 'Klaud', GIT_COMMITTER_EMAIL: 'klaud@localhost' };
+/** A folder that keeps changing while it's archived: tries this many times, then gives up. */
+const ATTEMPTS = 2;
 
-function run(cmd: string, args: readonly string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; input?: string } ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = execFile(cmd, [...args], { cwd: opts.cwd, timeout: opts.timeoutMs ?? 120_000, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...opts.env } }, (err, stdout, stderr) => {
-      if (err) reject(new Error((stderr || err.message).trim()));
-      else resolve(stdout);
-    });
-    if (opts.input !== undefined) child.stdin?.end(opts.input);
-  });
-}
+/** Worktrees being archived or restored now (one at a time each). */
+const busy = new Set<string>();
 
-const git = (cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv): Promise<string> => run('git', args, { cwd, ...(env ? { env } : {}) });
-const tryGit = (cwd: string, args: readonly string[]): Promise<string | undefined> => git(cwd, args).then((s) => s.trim(), () => undefined);
-
-/** Your name for the snapshot commit when git has one, else Klaud's. */
-async function identity(dir: string): Promise<NodeJS.ProcessEnv> {
-  const name = await tryGit(dir, ['config', 'user.name']);
-  const email = await tryGit(dir, ['config', 'user.email']);
-  return name && email ? {} : IDENTITY;
-}
-
-/** Ignored files and folders (a folder git ignores whole is one entry, ending in "/"). */
-async function ignored(dir: string): Promise<string[]> {
-  const out = await git(dir, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z']);
-  return out.split('\0').filter(Boolean);
-}
-
-/** What an archive would throw away and keep, without touching anything. */
-export async function planArchive(dir: string): Promise<ArchivePlan> {
-  const drop: Array<{ path: string; rule: RegenRule; bytes: number }> = [];
-  const keep: string[] = [];
-  const dropped = new Set<string>();
-  for (const rel of await ignored(dir)) {
-    const rule = regenRule(dir, rel);
-    if (!rule) {
-      keep.push(rel);
-      continue;
-    }
-    // A file inside a thrown-away folder: the folder goes as one.
-    const top = topOf(rel, rule);
-    if (dropped.has(top)) continue;
-    dropped.add(top);
-    drop.push({ path: top, rule, bytes: 0 });
+async function exclusive<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  if (busy.has(id)) throw new ArchiveError('It’s already being archived or restored');
+  busy.add(id);
+  try {
+    return await fn();
+  } finally {
+    busy.delete(id);
   }
-  const sized = await Promise.all(drop.map(async (d) => ({ ...d, bytes: (await folderSize(path.join(dir, d.path))) ?? 0 })));
-  return { drop: sized, keep: outermost(keep), dropBytes: sized.reduce((n, d) => n + d.bytes, 0), remake: remakeSteps(sized.map((d) => d.rule)) };
 }
 
 /** Without what's inside another entry (a kept folder takes everything in it). */
@@ -118,17 +88,27 @@ function outermost(rels: readonly string[]): string[] {
   return rels.filter((r) => !dirs.some((d) => d !== r && r.startsWith(d)));
 }
 
-/** The folder a rule matched in a path ("node_modules/a/b.js" → "node_modules/"). */
-function topOf(rel: string, rule: RegenRule): string {
-  const parts = rel.split('/').filter(Boolean);
-  if (!rel.endsWith('/') && FILE_RULES.includes(rule)) return rel;
-  const i = parts.findIndex((p, k) => (k < parts.length - 1 || rel.endsWith('/')) && rule.names.some((n) => (typeof n === 'string' ? n === p : n.test(p))));
-  return i < 0 ? rel : `${parts.slice(0, i + 1).join('/')}/`;
+/**
+ * What an archive would throw away and keep, without touching anything. Only what git lists as
+ * ignored is ever thrown away, as git lists it: a folder only when git ignores all of it.
+ */
+export async function planArchive(dir: string): Promise<ArchivePlan> {
+  const entries = await ignoredIn(dir);
+  const candidates = entries.map((rel) => ({ rel, rule: regenRule(dir, rel) })).filter((c): c is { rel: string; rule: RegenRule } => Boolean(c.rule));
+  const theirs = await ignoredByProject(
+    dir,
+    candidates.map((c) => c.rel),
+  );
+  const drop = candidates.filter((c) => theirs.has(c.rel));
+  const dropped = new Set(drop.map((d) => d.rel));
+  const keep = outermost(entries.filter((rel) => !dropped.has(rel)));
+  const sized = await Promise.all(drop.map(async (d) => ({ path: d.rel, rule: d.rule, bytes: (await folderSize(path.join(dir, d.rel))) ?? 0 })));
+  return { drop: sized, keep, dropBytes: sized.reduce((n, d) => n + d.bytes, 0), remake: remakeSteps(sized.map((d) => d.rule)) };
 }
 
 /** The archive's folder (one per worktree id). */
 const folderOf = (archivesDir: string, id: string): string => {
-  if (!SAFE_ID.test(id)) throw new Error('Not an archive id');
+  if (!SAFE_ID.test(id)) throw new ArchiveError('Not an archive id');
   return path.join(archivesDir, id);
 };
 
@@ -138,43 +118,6 @@ export function readManifest(archivesDir: string, id: string): ArchiveManifest |
     return m.version === 1 && typeof m.snapshot === 'string' ? m : undefined;
   } catch {
     return undefined;
-  }
-}
-
-/**
- * The folder as it is, as a commit: its tree has every file git doesn't ignore (changed, new
- * or deleted), its second parent's tree is the staging. Nothing in the folder changes.
- */
-async function snapshot(dir: string, message: string): Promise<{ snapshot: string; head?: string }> {
-  const env = await identity(dir);
-  const head = await tryGit(dir, ['rev-parse', '--verify', '--quiet', 'HEAD']);
-  const parents = head ? ['-p', head] : [];
-  // Staging: unmerged files can't be written as a tree; then it's the same as the folder.
-  const staged = await tryGit(dir, ['write-tree']);
-  const index = path.join(os.tmpdir(), `klaud-archive-${process.pid}-${Date.now()}.index`);
-  try {
-    const temp = { ...env, GIT_INDEX_FILE: index };
-    await git(dir, head ? ['read-tree', head] : ['read-tree', '--empty'], temp);
-    await git(dir, ['add', '-A', '--', '.'], temp);
-    const tree = (await git(dir, ['write-tree'], temp)).trim();
-    const stagedCommit = (await git(dir, ['commit-tree', staged ?? tree, ...parents, '-m', `${message} (staged)`], env)).trim();
-    const commit = (await git(dir, ['commit-tree', tree, ...parents, '-p', stagedCommit, '-m', message], env)).trim();
-    return { snapshot: commit, ...(head ? { head } : {}) };
-  } finally {
-    rmSync(index, { force: true });
-  }
-}
-
-/** Pack these (relative) paths of `dir` into an xz file, as small as xz makes it. */
-async function pack(dir: string, rels: readonly string[], file: string): Promise<void> {
-  const list = `${file}.list`;
-  writeFileSync(list, rels.map((r) => r.replace(/\/$/, '')).join('\0'));
-  try {
-    await run('tar', ['-c', '-J', '--options', 'xz:compression-level=9', '-f', file, '-C', dir, '--null', '-T', list], { cwd: dir, timeoutMs: TAR_TIMEOUT_MS, env: { XZ_OPT: '-9e' } });
-    // Can it be read back? (before anything is removed)
-    await run('tar', ['-t', '-f', file], { cwd: dir, timeoutMs: TAR_TIMEOUT_MS });
-  } finally {
-    rmSync(list, { force: true });
   }
 }
 
@@ -188,74 +131,104 @@ export interface ArchiveOptions {
   readonly onPhase?: (phase: ArchivePhase) => void;
 }
 
+/** What's saved of a folder: its snapshot and what's packed (the same twice in a row: nothing changed meanwhile). */
+const sameSave = (a: { tree: string; keep: readonly string[] }, b: { tree: string; keep: readonly string[] }): boolean => a.tree === b.tree && a.keep.join('\0') === b.keep.join('\0');
+
 /** Archive a worktree: save what's yours, throw away what's made again, remove the folder (its branch stays). */
-export async function archiveWorktree(o: ArchiveOptions): Promise<ArchiveManifest> {
-  if (!existsSync(o.dir) || !lstatSync(o.dir).isDirectory()) throw new Error(`${o.dir} isn't there`);
-  const folder = folderOf(o.archivesDir, o.id);
-  const work = `${folder}.partial`;
-  rmSync(work, { recursive: true, force: true });
-  mkdirSync(work, { recursive: true });
-  try {
-    o.onPhase?.('saving');
-    const plan = await planArchive(o.dir);
-    const branch = await tryGit(o.dir, ['symbolic-ref', '--short', '--quiet', 'HEAD']);
-    const snap = await snapshot(o.dir, `Klaud archive of ${path.basename(o.dir)}`);
-    await git(o.repo, ['update-ref', REF(o.id), snap.snapshot]);
-    o.onPhase?.('compressing');
-    let keptBytes = 0;
-    if (plan.keep.length) {
-      await pack(o.dir, plan.keep, path.join(work, KEPT));
-      keptBytes = lstatSync(path.join(work, KEPT)).size;
+export function archiveWorktree(o: ArchiveOptions): Promise<ArchiveManifest> {
+  return exclusive(o.id, async () => {
+    if (!existsSync(o.dir) || !lstatSync(o.dir).isDirectory()) throw new ArchiveError(`${o.dir} isn’t there`);
+    await assertSettled(o.dir);
+    const submodules = await assertSubmodulesSafe(o.dir);
+    const folder = folderOf(o.archivesDir, o.id);
+    const work = `${folder}.partial`;
+    for (let attempt = 1; ; attempt++) {
+      rmSync(work, { recursive: true, force: true });
+      mkdirSync(work, { recursive: true });
+      try {
+        o.onPhase?.('saving');
+        const plan = await planArchive(o.dir);
+        const branch = await tryGit(o.dir, ['symbolic-ref', '--short', '--quiet', 'HEAD']);
+        const snap = await snapshot(o.dir, `Klaud archive of ${path.basename(o.dir)}`);
+        const keep = outermost([...plan.keep, ...snap.nested.map((n) => `${n}/`)]);
+        o.onPhase?.('compressing');
+        let keptBytes = 0;
+        if (keep.length) {
+          await pack(o.dir, keep, path.join(work, KEPT));
+          keptBytes = lstatSync(path.join(work, KEPT)).size;
+        }
+        // Written to meanwhile (an agent, a dev server, you): save it again, so nothing new is lost.
+        const again = await snapshot(o.dir, 'check');
+        const againPlan = await planArchive(o.dir);
+        if (!sameSave({ tree: snap.tree, keep }, { tree: again.tree, keep: outermost([...againPlan.keep, ...again.nested.map((n) => `${n}/`)]) })) {
+          if (attempt < ATTEMPTS) continue;
+          throw new ArchiveError('It kept changing while it was being archived. Try again when nothing is working in it.');
+        }
+        const manifest: ArchiveManifest = {
+          version: 1,
+          id: o.id,
+          dir: o.dir,
+          ...(branch ? { branch } : {}),
+          ...(snap.head ? { head: snap.head } : {}),
+          snapshot: snap.commit,
+          ...(keep.length ? { keptFile: KEPT } : {}),
+          keptBytes,
+          dropped: plan.drop.map((d) => ({ path: d.path, what: d.rule.what, bytes: d.bytes })),
+          freedBytes: plan.dropBytes,
+          remake: submodules ? ['git submodule update --init --recursive', ...plan.remake] : plan.remake,
+          archivedAt: Date.now(),
+        };
+        await git(o.repo, ['update-ref', REF(o.id), snap.commit]);
+        writeFileSync(path.join(work, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
+        rmSync(folder, { recursive: true, force: true });
+        renameSync(work, folder);
+        o.onPhase?.('removing');
+        await git(o.repo, ['worktree', 'remove', '--force', o.dir], undefined, LONG_MS);
+        return manifest;
+      } catch (err) {
+        rmSync(work, { recursive: true, force: true });
+        // The folder is still there: forget this snapshot (and its manifest) so nothing claims it's archived.
+        if (existsSync(o.dir)) {
+          rmSync(folder, { recursive: true, force: true });
+          await tryGit(o.repo, ['update-ref', '-d', REF(o.id)]);
+        }
+        throw err;
+      }
     }
-    const manifest: ArchiveManifest = {
-      version: 1,
-      id: o.id,
-      dir: o.dir,
-      ...(branch ? { branch } : {}),
-      ...(snap.head ? { head: snap.head } : {}),
-      snapshot: snap.snapshot,
-      ...(plan.keep.length ? { keptFile: KEPT } : {}),
-      keptBytes,
-      dropped: plan.drop.map((d) => ({ path: d.path, what: d.rule.what, bytes: d.bytes })),
-      freedBytes: plan.dropBytes,
-      remake: plan.remake,
-      archivedAt: Date.now(),
-    };
-    writeFileSync(path.join(work, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
-    rmSync(folder, { recursive: true, force: true });
-    renameSync(work, folder);
-    o.onPhase?.('removing');
-    await git(o.repo, ['worktree', 'remove', '--force', o.dir]);
-    return manifest;
-  } catch (err) {
-    rmSync(work, { recursive: true, force: true });
-    // Nothing was removed: forget the snapshot too, unless an earlier archive's manifest still needs it.
-    if (!readManifest(o.archivesDir, o.id)) await tryGit(o.repo, ['update-ref', '-d', REF(o.id)]);
-    throw err;
-  }
+  });
 }
 
 /**
  * Bring an archived worktree back where it was: its branch checked out, every file as it was
- * (staging too), the kept ignored files unpacked. Then the archive goes.
+ * (staging too), the kept ignored files unpacked. Then the archive goes. A restore that fails
+ * takes away what it made and leaves the archive, to try again.
  */
-export async function restoreWorktree(o: Omit<ArchiveOptions, 'onPhase'>): Promise<ArchiveManifest> {
-  const m = readManifest(o.archivesDir, o.id);
-  if (!m) throw new Error('No archive for this worktree');
-  const folder = folderOf(o.archivesDir, o.id);
-  if (existsSync(o.dir)) throw new Error(`${o.dir} is already there`);
-  mkdirSync(path.dirname(o.dir), { recursive: true });
-  const tip = m.branch ? await tryGit(o.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${m.branch}`]) : undefined;
-  // The branch is where it was: back on it. Moved on (or gone): at the commit it was on, so nothing of either is mixed up.
-  if (m.branch && tip && tip === m.head) await git(o.repo, ['worktree', 'add', o.dir, m.branch]);
-  else if (m.head) await git(o.repo, ['worktree', 'add', '--detach', o.dir, m.head]);
-  else await git(o.repo, ['worktree', 'add', '--orphan', o.dir]);
-  await git(o.dir, ['read-tree', '-u', '--reset', `${m.snapshot}^{tree}`]);
-  await git(o.dir, ['read-tree', `${m.snapshot}^2^{tree}`]);
-  if (m.keptFile) await run('tar', ['-x', '-p', '-f', path.join(folder, m.keptFile), '-C', o.dir], { cwd: o.dir, timeoutMs: TAR_TIMEOUT_MS });
-  await tryGit(o.repo, ['update-ref', '-d', REF(o.id)]);
-  rmSync(folder, { recursive: true, force: true });
-  return m;
+export function restoreWorktree(o: Omit<ArchiveOptions, 'onPhase'>): Promise<ArchiveManifest> {
+  return exclusive(o.id, async () => {
+    const m = readManifest(o.archivesDir, o.id);
+    if (!m) throw new ArchiveError('No archive for this worktree');
+    const folder = folderOf(o.archivesDir, o.id);
+    if (existsSync(o.dir)) throw new ArchiveError(`${o.dir} is already there`);
+    mkdirSync(path.dirname(o.dir), { recursive: true });
+    const tip = m.branch ? await tryGit(o.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${m.branch}`]) : undefined;
+    // The branch is where it was: back on it. Moved on (or gone): at the commit it was on, so nothing of either is mixed up.
+    if (m.branch && tip && tip === m.head) await git(o.repo, ['worktree', 'add', o.dir, m.branch], undefined, LONG_MS);
+    else if (m.head) await git(o.repo, ['worktree', 'add', '--detach', o.dir, m.head], undefined, LONG_MS);
+    else await git(o.repo, ['worktree', 'add', '--orphan', o.dir], undefined, LONG_MS);
+    try {
+      await git(o.dir, ['read-tree', '-u', '--reset', `${m.snapshot}^{tree}`], undefined, LONG_MS);
+      await git(o.dir, ['read-tree', `${m.snapshot}^2^{tree}`], undefined, LONG_MS);
+      if (m.keptFile) await run('tar', ['-x', '-k', '-p', '-f', path.join(folder, m.keptFile), '-C', o.dir], { cwd: o.dir, timeoutMs: TAR_TIMEOUT_MS });
+    } catch (err) {
+      await tryGit(o.repo, ['worktree', 'remove', '--force', o.dir]);
+      rmSync(o.dir, { recursive: true, force: true });
+      await tryGit(o.repo, ['worktree', 'prune']);
+      throw err;
+    }
+    await tryGit(o.repo, ['update-ref', '-d', REF(o.id)]);
+    rmSync(folder, { recursive: true, force: true });
+    return m;
+  });
 }
 
 /** Forget an archive (the worktree is deleted for good). */
@@ -264,9 +237,21 @@ export async function dropArchive(repo: string, archivesDir: string, id: string)
   rmSync(folderOf(archivesDir, id), { recursive: true, force: true });
 }
 
-/** Free space in a worktree you keep: throw away only what's made again. */
+/**
+ * Free space in a worktree you keep: throw away only what's made again. Each one is checked
+ * again just before it goes: nothing in it tracked or new to git (only ever ignored files).
+ */
 export async function freeSpace(dir: string): Promise<{ bytes: number; removed: readonly string[]; remake: readonly string[] }> {
   const plan = await planArchive(dir);
-  for (const d of plan.drop) rmSync(path.join(dir, d.path), { recursive: true, force: true });
-  return { bytes: plan.dropBytes, removed: plan.drop.map((d) => d.path), remake: plan.remake };
+  const removed: string[] = [];
+  let bytes = 0;
+  for (const d of plan.drop) {
+    const tracked = await git(dir, ['ls-files', '-z', '--', d.path]);
+    const fresh = await git(dir, ['ls-files', '-z', '--others', '--exclude-standard', '--', d.path]);
+    if (tracked || fresh) continue;
+    rmSync(path.join(dir, d.path), { recursive: true, force: true });
+    removed.push(d.path);
+    bytes += d.bytes;
+  }
+  return { bytes, removed, remake: plan.remake };
 }
