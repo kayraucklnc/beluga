@@ -178,13 +178,35 @@ export async function snapshot(dir: string, message: string): Promise<Snapshot> 
   }
 }
 
+/**
+ * Which tar this is: macOS's bsdtar (libarchive) or GNU tar (Linux). They differ in how xz's level
+ * is set and in what `-k` does with a file that's there (bsdtar skips it, GNU tar fails).
+ */
+let flavor: Promise<'bsd' | 'gnu'> | undefined;
+export function tarFlavor(): Promise<'bsd' | 'gnu'> {
+  flavor ??= run('tar', ['--version'], { cwd: os.tmpdir() }).then(
+    (v) => (/GNU tar/i.test(v) ? 'gnu' : 'bsd'),
+    () => 'bsd',
+  );
+  return flavor;
+}
+
+/** Unpack `file` into `dir`, keeping every file that's already there (both tars, the same way). */
+export async function unpackKeeping(file: string, dir: string): Promise<void> {
+  const keep = (await tarFlavor()) === 'gnu' ? '--skip-old-files' : '-k';
+  await run('tar', ['-x', keep, '-p', '-f', file, '-C', dir], { cwd: dir, timeoutMs: TAR_TIMEOUT_MS });
+}
+
 /** Pack these (relative) paths of `dir` into an xz file, as small as xz makes it, and check every one is in it. */
 export async function pack(dir: string, rels: readonly string[], file: string): Promise<void> {
   const names = rels.map((r) => r.replace(/\/$/, ''));
   const list = `${file}.list`;
   writeFileSync(list, names.join('\0'));
   try {
-    await run('tar', ['-c', '-J', '--options', 'xz:compression-level=9', '-f', file, '-C', dir, '--null', '-T', list], { cwd: dir, timeoutMs: TAR_TIMEOUT_MS });
+    // bsdtar takes xz's level as an option; GNU tar runs xz, which reads it from XZ_OPT.
+    const gnu = (await tarFlavor()) === 'gnu';
+    const level = gnu ? [] : ['--options', 'xz:compression-level=9'];
+    await run('tar', ['-c', '-J', ...level, '-f', file, '-C', dir, '--null', '-T', list], { cwd: dir, timeoutMs: TAR_TIMEOUT_MS, ...(gnu ? { env: { XZ_OPT: '-9' } } : {}) });
     const listed = new Set((await run('tar', ['-t', '-f', file], { cwd: dir, timeoutMs: TAR_TIMEOUT_MS })).split('\n').map((l) => l.replace(/\/$/, '')));
     const missing = names.find((n) => !listed.has(n));
     if (missing) throw new ArchiveError(`Couldn’t pack ${missing}`);

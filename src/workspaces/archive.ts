@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { folderSize } from './disk.js';
-import { ArchiveError, LONG_MS, RAW_ARGS, RAW_ENV, TAR_TIMEOUT_MS, assertSettled, fingerprint, git, gitLiteral, ignoredByProject, ignoredIn, pack, run, snapshot, submoduleOnlyHere, submodulesIn, tryGit, untrackedDirs } from './archive-git.js';
+import { ArchiveError, LONG_MS, RAW_ARGS, RAW_ENV, assertSettled, fingerprint, git, gitLiteral, ignoredByProject, ignoredIn, pack, run, snapshot, submoduleOnlyHere, submodulesIn, tryGit, unpackKeeping, untrackedDirs } from './archive-git.js';
 import { type RegenRule, regenRule, remakeSteps } from './regenerable.js';
 
 /**
@@ -290,7 +290,7 @@ export function restoreWorktree(o: Omit<ArchiveOptions, 'onPhase'>): Promise<Arc
     try {
       await git(o.dir, [...RAW_ARGS, 'read-tree', '-u', '--reset', `${m.snapshot}^{tree}`], RAW_ENV, LONG_MS);
       await git(o.dir, ['read-tree', `${m.snapshot}^2^{tree}`], undefined, LONG_MS);
-      if (m.keptFile) await run('tar', ['-x', '-k', '-p', '-f', path.join(folder, m.keptFile), '-C', o.dir], { cwd: o.dir, timeoutMs: TAR_TIMEOUT_MS });
+      if (m.keptFile) await unpackKeeping(path.join(folder, m.keptFile), o.dir);
     } catch (err) {
       await tryGit(o.repo, ['worktree', 'remove', '--force', o.dir]);
       rmSync(o.dir, { recursive: true, force: true });
