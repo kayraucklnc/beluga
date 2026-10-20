@@ -23,7 +23,7 @@ import s from './Toolbar.module.css';
 const TITLE_MIN = 210;
 const RIGHT_FIXED = 4 * 30 + 16;
 
-const TITLES: Partial<Record<string, string>> = { overview: 'Overview', search: 'Search', usage: 'Usage', terminal: 'Terminal', files: 'Shared files', draft: 'New chat', draft_worktree: 'New worktree', claude_code: 'Activity', requests: 'Requests' };
+const TITLES: Partial<Record<string, string>> = { overview: 'Overview', search: 'Search', usage: 'Usage', terminal: 'Terminal', files: 'Shared files', draft: 'New chat', draft_worktree: 'New worktree', claude_code: 'Activity', requests: 'Requests', tasks: 'Tasks' };
 
 /** How wide the toolbar is (buttons that don't fit move under ⋯). */
 function useToolbarWidth(): [React.RefObject<HTMLElement | null>, number] {
@@ -232,6 +232,23 @@ export function Toolbar() {
           </>
         }
         subtitle={<span className={s.meta}>{worktree ? 'Its own branch and folder; Claude starts on your task right away' : project ? `Claude works in ${project.name}’s main folder` : 'Nothing is created until you send the first message'}</span>}
+      />
+    );
+  }
+
+  if (view.kind === 'task') {
+    const issue = state.board.issues.find((i) => i.id === view.id);
+    const project = issue ? state.projects.find((p) => p.id === issue.projectId) : undefined;
+    return (
+      <Shell
+        headerRef={headerRef}
+        title={
+          <>
+            <span className={s.crumb}>{project?.name ?? 'Tasks'}</span>
+            <span className={s.name}>{issue?.key ?? 'Task'}</span>
+          </>
+        }
+        subtitle={issue ? <span className={s.meta}>{issue.title}</span> : undefined}
       />
     );
   }

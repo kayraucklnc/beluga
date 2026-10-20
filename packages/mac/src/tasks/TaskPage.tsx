@@ -1,0 +1,327 @@
+import { useEffect, useRef, useState } from 'react';
+import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, issueById } from '@klaud/core/board/model.js';
+import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { Icon } from '../components/Icon.js';
+import { ActionsDropdown } from '../components/SpecMenu.js';
+import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
+import { useActions } from '../lib/actions.js';
+import { useApp } from '../lib/klaud.js';
+import { ActivityFeed } from './Activity.js';
+import { Brief } from './Brief.js';
+import { AssigneeMark, LabelChip, PrChip, PriorityIcon, StatusIcon } from './marks.js';
+import { useIssueMenu } from './parts.js';
+import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker } from './pickers.js';
+import { ProofList, Relations, SubTasks } from './TaskSections.js';
+import { ago, dueText } from './tasks-model.js';
+import { useBoard, useSelfId, useTaskActions } from './use-tasks.js';
+import t from './tasks.module.css';
+
+/**
+ * One task: its title (click to rename), what to do next (start a worktree with Claude on it, or
+ * open the one doing it), the brief, sub-tasks, what waits on what, proof and everything that
+ * happened, with its properties down the right.
+ */
+export function TaskPage({ id }: { id: string }) {
+  const board = useBoard();
+  const issue = issueById(board, id);
+  if (!board.enabled) return <Empty icon="task" title="Tasks need the Klaud app" />;
+  if (!issue) return <Empty icon="task" title="This task isn’t here anymore" detail="It may have been deleted." />;
+  return (
+    <div className={t.page}>
+      <div className={t.pageMain}>
+        <Header issue={issue} />
+        <Brief issue={issue} />
+        <SubTasks issue={issue} />
+        <Relations issue={issue} />
+        <ProofList issue={issue} />
+        <section className={t.block} aria-label="Activity">
+          <header className={t.blockHead}>
+            <h3 className={t.sectionTitle}>Activity</h3>
+          </header>
+          <ActivityFeed issue={issue} />
+        </section>
+      </div>
+      <Properties issue={issue} />
+    </div>
+  );
+}
+
+function Header({ issue }: { issue: Issue }) {
+  const board = useBoard();
+  const project = useApp((s) => s.projects.find((p) => p.id === issue.projectId));
+  const parent = issue.parent ? issueById(board, issue.parent) : undefined;
+  const { open, openList } = useTaskActions();
+  const menu = useIssueMenu();
+  return (
+    <header className={t.pageHead}>
+      <nav className={t.crumbs} aria-label="Where this task is">
+        <button type="button" className={t.crumb} onClick={openList}>
+          Tasks
+        </button>
+        <Icon name="chevronRight" size={10} />
+        <span className={t.crumbPlain}>{project?.name ?? 'Project'}</span>
+        {parent ? (
+          <>
+            <Icon name="chevronRight" size={10} />
+            <button type="button" className={t.crumb} onClick={() => open(parent)}>
+              {parent.key} {parent.title}
+            </button>
+          </>
+        ) : null}
+        <span className={t.grow} />
+        <span className={t.pageKey}>{issue.key}</span>
+        <ActionsDropdown items={menu(issue).filter((i) => i.label !== 'Open')}>
+          <IconButton icon="more" label="More" />
+        </ActionsDropdown>
+      </nav>
+      <Title issue={issue} />
+      <GoneBanner issue={issue} />
+      <NextStep issue={issue} />
+    </header>
+  );
+}
+
+/** The title, renamed in place (Return saves, Esc puts it back). */
+function Title({ issue }: { issue: Issue }) {
+  const [draft, setDraft] = useState<string>();
+  const { api, act } = useTaskActions();
+  const input = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft, issue.title]);
+  const save = (): void => {
+    const next = draft?.replace(/\s+/g, ' ').trim();
+    setDraft(undefined);
+    if (next && next !== issue.title) void act(() => api.update(issue.id, { title: next }));
+  };
+  return (
+    <textarea
+      ref={input}
+      className={t.pageTitle}
+      value={draft ?? issue.title}
+      rows={1}
+      aria-label="Title"
+      spellCheck={false}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          (e.target as HTMLTextAreaElement).blur();
+        } else if (e.key === 'Escape') {
+          setDraft(undefined);
+          requestAnimationFrame(() => input.current?.blur());
+        }
+      }}
+    />
+  );
+}
+
+/** Its worktree was archived or deleted before it was done: what now? */
+function GoneBanner({ issue }: { issue: Issue }) {
+  const { api, act } = useTaskActions();
+  if (!issue.worktreeGone) return null;
+  return (
+    <div className={t.banner} role="status">
+      <Icon name="archive" size={14} />
+      <span className={t.bannerText}>Its worktree was put away before the task was done.</span>
+      <Button size="small" variant="quiet" onClick={() => void act(() => api.settleGone(issue.id, 'keep'))}>
+        Keep As Is
+      </Button>
+      <Button size="small" onClick={() => void act(() => api.settleGone(issue.id, 'backlog'))}>
+        Back to Backlog
+      </Button>
+      <Button size="small" onClick={() => void act(() => api.settleGone(issue.id, 'canceled'))}>
+        Cancel Task
+      </Button>
+    </div>
+  );
+}
+
+/** What to do next: open the worktree doing it (and its pull request), or start one. */
+function NextStep({ issue }: { issue: Issue }) {
+  const { api, act, openWorktree } = useTaskActions();
+  const workspaceId = issue.worktreeGone ? undefined : issue.worktrees.at(-1);
+  const ws = useApp((s) => (workspaceId ? findWorkspace(s.projects, workspaceId) : undefined));
+  const actions = useActions();
+  const [starting, setStarting] = useState(false);
+  const start = async (claude: boolean): Promise<void> => {
+    setStarting(true);
+    await act(() => api.start(issue.id, { claude }));
+    setStarting(false);
+  };
+  if (!STATUS_INFO[issue.status].open && !ws) return null;
+  return (
+    <div className={t.nextStep}>
+      {ws && !ws.archived ? (
+        <>
+          <Button variant="primary" size="small" icon="branch" onClick={() => openWorktree(ws.id)}>
+            Open Worktree
+          </Button>
+          <span className={t.nextInfo}>
+            <span className={t.mono}>{ws.name}</span>
+            {issue.branch ? <span className={t.nextBranch}>on {issue.branch}</span> : null}
+          </span>
+        </>
+      ) : (
+        <>
+          <Button variant="primary" size="small" icon="claude" disabled={starting} onClick={() => void start(true)}>
+            Start with Claude
+          </Button>
+          <Button size="small" icon="branch" disabled={starting} onClick={() => void start(false)}>
+            Start Worktree
+          </Button>
+          <span className={t.nextInfo}>A new worktree from the latest origin{issue.brief.goal ? ', and Claude reads this brief' : ''}</span>
+        </>
+      )}
+      <span className={t.grow} />
+      {issue.pr ? (
+        <button type="button" className={t.prLink} onClick={() => actions.openLink({ kind: 'url', url: issue.pr!.url })}>
+          <PrChip pr={issue.pr} />
+          <span className={t.prTitle}>{issue.pr.title}</span>
+          <Icon name="external" size={11} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** The right column: every property, each one a menu. */
+function Properties({ issue }: { issue: Issue }) {
+  const board = useBoard();
+  const selfId = useSelfId();
+  const { api, act, open } = useTaskActions();
+  const project = useApp((s) => s.projects.find((p) => p.id === issue.projectId));
+  const parent = issue.parent ? issueById(board, issue.parent) : undefined;
+  const due = issue.due ? dueText(issue.due) : undefined;
+  const parents = board.issues.filter((i) => i.id !== issue.id && i.projectId === issue.projectId && i.parent !== issue.id);
+  return (
+    <aside className={t.props} aria-label="Properties">
+      <Prop label="Status">
+        <StatusPicker issue={issue} align="end">
+          <button type="button" className={t.propValue}>
+            <StatusIcon status={issue.status} />
+            {STATUS_INFO[issue.status].label}
+          </button>
+        </StatusPicker>
+      </Prop>
+      <Prop label="Priority">
+        <PriorityPicker issue={issue} align="end">
+          <button type="button" className={t.propValue}>
+            <PriorityIcon priority={issue.priority} />
+            {PRIORITY_INFO[issue.priority].label}
+          </button>
+        </PriorityPicker>
+      </Prop>
+      <Prop label="Assignee">
+        <AssigneePicker value={issue.assignee} onChange={(a) => void act(() => api.update(issue.id, { assignee: a }))} align="end">
+          <button type="button" className={t.propValue}>
+            <AssigneeMark assignee={issue.assignee} selfId={selfId} size={16} />
+            {assigneeName(issue.assignee, selfId)}
+          </button>
+        </AssigneePicker>
+      </Prop>
+      <Prop label="Labels">
+        <div className={t.propLabels}>
+          {issue.labels.map((l) => (
+            <LabelChip key={l} label={l} onRemove={() => void act(() => api.update(issue.id, { labels: issue.labels.filter((x) => x !== l) }))} />
+          ))}
+          <LabelsPicker issue={issue} align="end">
+            <button type="button" className={cx(t.propValue, t.propAdd)}>
+              <Icon name="plus" size={11} />
+              {issue.labels.length ? '' : 'Add Label'}
+            </button>
+          </LabelsPicker>
+        </div>
+      </Prop>
+      <Prop label="Estimate">
+        <div className={t.estimates} role="radiogroup" aria-label="Estimate">
+          {[1, 2, 3, 5, 8].map((n) => (
+            <button key={n} type="button" role="radio" aria-checked={issue.estimate === n} className={cx(t.estimate, issue.estimate === n && t.estimateOn)} onClick={() => void act(() => api.update(issue.id, { estimate: issue.estimate === n ? null : n }))}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </Prop>
+      <Prop label="Due">
+        <DuePicker issue={issue} late={Boolean(due?.late && STATUS_INFO[issue.status].open)} text={due?.text} />
+      </Prop>
+      <Prop label="Parent">
+        {parent ? (
+          <div className={t.propRow}>
+            <button type="button" className={t.propValue} onClick={() => open(parent)}>
+              <StatusIcon status={parent.status} />
+              <span className={t.ellipsis}>
+                {parent.key} {parent.title}
+              </span>
+            </button>
+            <IconButton icon="x" label="Make It a Task of Its Own" onClick={() => void act(() => api.update(issue.id, { parent: null }))} />
+          </div>
+        ) : (
+          <TaskPicker label="Parent" candidates={parents} onPick={(p) => void act(() => api.update(issue.id, { parent: p.id }))} align="end">
+            <button type="button" className={cx(t.propValue, t.propAdd)}>
+              <Icon name="plus" size={11} />
+              Set Parent
+            </button>
+          </TaskPicker>
+        )}
+      </Prop>
+      <div className={t.propsRule} />
+      <Prop label="Project">
+        <span className={t.propStatic}>{project?.name ?? '—'}</span>
+      </Prop>
+      {issue.branch ? (
+        <Prop label="Branch">
+          <Tip label={issue.branch}>
+            <span className={cx(t.propStatic, t.mono, t.ellipsis)}>{issue.branch}</span>
+          </Tip>
+        </Prop>
+      ) : null}
+      <Prop label="Created">
+        <span className={t.propStatic}>
+          {ago(issue.createdAt)} by {actorName(issue.createdBy, selfId)}
+        </span>
+      </Prop>
+      <Prop label="Updated">
+        <span className={t.propStatic}>{ago(issue.updatedAt)}</span>
+      </Prop>
+    </aside>
+  );
+}
+
+/** A due date: the Mac's date picker from a plain button, and a way to clear it. */
+function DuePicker({ issue, late, text }: { issue: Issue; late: boolean; text: string | undefined }) {
+  const { api, act } = useTaskActions();
+  const input = useRef<HTMLInputElement>(null);
+  const pick = (): void => {
+    const el = input.current;
+    if (!el) return;
+    try {
+      el.showPicker();
+    } catch {
+      el.focus();
+    }
+  };
+  return (
+    <div className={t.propRow}>
+      <button type="button" className={cx(t.propValue, !issue.due && t.propAdd, late && t.dueLate)} onClick={pick}>
+        <Icon name="calendar" size={12} />
+        {issue.due ? `${new Date(`${issue.due}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} · ${text ?? ''}` : 'Set Due Date'}
+      </button>
+      {issue.due ? <IconButton icon="x" label="Remove the Due Date" onClick={() => void act(() => api.update(issue.id, { due: null }))} /> : null}
+      <input ref={input} type="date" className={t.dateHidden} tabIndex={-1} aria-hidden="true" value={issue.due ?? ''} onChange={(e) => void act(() => api.update(issue.id, { due: e.target.value || null }))} />
+    </div>
+  );
+}
+
+function Prop({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className={t.prop}>
+      <span className={t.propLabel}>{label}</span>
+      <div className={t.propControl}>{children}</div>
+    </div>
+  );
+}

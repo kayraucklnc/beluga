@@ -1,0 +1,362 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { Board } from '../src/core/board/board.js';
+import { type Actor, type Issue, filterIssues, issueForWorkspace } from '../src/core/board/model.js';
+import { Store, initialState } from '../src/core/store.js';
+import type { Project, Workspace } from '../src/workspaces/types.js';
+
+/** The board: tasks, their history and brief, what waits on what, and pull requests moving them. */
+
+const me: Actor = { kind: 'person', id: 'p-me', name: 'Kay' };
+const claude: Actor = { kind: 'claude', owner: 'p-me', ownerName: 'Kay' };
+
+const ws = (id: string, projectId: string, name: string): Workspace => ({ id, projectId, name, path: `/tmp/${name}`, kind: 'worktree', projectRoot: '/tmp/p', branch: `klaud/${name}`, createdAt: 0, external: false }) as unknown as Workspace;
+const project = (id: string, name: string, workspaces: Workspace[] = []): Project => ({ id, name, root: `/tmp/${name}`, base: 'main', workspaces });
+
+function setup(opts: { dir?: string; clock?: { t: number } } = {}) {
+  const store = new Store(initialState('room'));
+  store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [ws('w1', 'api', 'add-auth')]), project('land', 'landing')] });
+  const clock = opts.clock ?? { t: 1_000_000 };
+  const board = new Board({ store, dir: opts.dir ?? null, projectName: (id) => store.getState().projects.find((p) => p.id === id)?.name, now: () => clock.t, saveDelayMs: 0 });
+  return { store, board, clock };
+}
+
+const dirs: string[] = [];
+afterEach(() => {
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+
+describe('making tasks', () => {
+  it('keys them per project from its name, in order', () => {
+    const { board, store } = setup();
+    const a = board.create({ projectId: 'api', title: 'Add auth' }, me);
+    const b = board.create({ projectId: 'api', title: '  Webhook   retries ' }, me);
+    const c = board.create({ projectId: 'land', title: 'Hero' }, me);
+    expect([a.key, b.key, c.key]).toEqual(['BOB-1', 'BOB-2', 'LND-1']);
+    expect(b.title).toBe('Webhook retries');
+    expect(a).toMatchObject({ status: 'todo', priority: 'none', origin: 'manual', createdBy: me });
+    expect(a.activity.map((x) => x.text)).toEqual(['created this task']);
+    expect(store.getState().board.issues).toHaveLength(3);
+    expect(store.getState().board.projects.api).toEqual({ prefix: 'BOB', next: 3 });
+  });
+
+  it('refuses a task with no title, in an unknown project, or under a parent elsewhere', () => {
+    const { board } = setup();
+    expect(() => board.create({ projectId: 'api', title: '   ' }, me)).toThrow(/title/);
+    expect(() => board.create({ projectId: 'nope', title: 'x' }, me)).toThrow(/project/);
+    const p = board.create({ projectId: 'api', title: 'Parent' }, me);
+    expect(() => board.create({ projectId: 'land', title: 'x', parent: p.key }, me)).toThrow(/parent/);
+  });
+
+  it('a new prefix applies to new tasks only, and is unique', () => {
+    const { board } = setup();
+    board.create({ projectId: 'api', title: 'One' }, me);
+    board.setPrefix('api', 'pay');
+    expect(board.create({ projectId: 'api', title: 'Two' }, me).key).toBe('PAY-2');
+    board.create({ projectId: 'land', title: 'L' }, me);
+    expect(() => board.setPrefix('land', 'PAY')).toThrow(/already/);
+    expect(() => board.setPrefix('land', 'x')).toThrow(/2 to 6/);
+  });
+});
+
+describe('changing tasks', () => {
+  it('says what changed, in words, by whom', () => {
+    const { board, clock } = setup();
+    const t = board.create({ projectId: 'api', title: 'Add auth' }, me);
+    clock.t += 5000;
+    const next = board.update(t.key, { status: 'in_progress', priority: 'high', assignee: { kind: 'claude', owner: 'p-me', ownerName: 'Kay' }, labels: ['Security', 'security', 'api'] }, me);
+    expect(next.labels).toEqual(['security', 'api']);
+    expect(next.activity.slice(1).map((a) => a.text)).toEqual(['moved this from Todo to In Progress', 'set the priority to High', 'assigned this to Kay’s Claude', 'added security, api']);
+    expect(next.updatedAt).toBe(1_005_000);
+    // Nothing changed: nothing written.
+    expect(board.update(t.key, { status: 'in_progress' }, me).activity).toHaveLength(next.activity.length);
+  });
+
+  it('remembers when a task closed, and forgets it when it reopens', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x' }, me);
+    expect(board.update(t.id, { status: 'done' }, me).closedAt).toBeDefined();
+    expect(board.update(t.id, { status: 'todo' }, me).closedAt).toBeUndefined();
+  });
+
+  it('a renamed task stops following its worktree’s name', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'Add auth', autoTitle: true }, me);
+    expect(board.retitle(t.id, 'Add auth middleware').title).toBe('Add auth middleware');
+    const renamed = board.update(t.id, { title: 'Auth for payments' }, me);
+    expect(renamed.autoTitle).toBeUndefined();
+    expect(board.retitle(t.id, 'Something else').title).toBe('Auth for payments');
+  });
+
+  it('keeps sub-tasks in their tree (no loops)', () => {
+    const { board } = setup();
+    const a = board.create({ projectId: 'api', title: 'A' }, me);
+    const b = board.create({ projectId: 'api', title: 'B', parent: a.key }, me);
+    const c = board.create({ projectId: 'api', title: 'C', parent: b.key }, me);
+    expect(() => board.update(a.id, { parent: c.id }, me)).toThrow(/itself/);
+    expect(() => board.update(a.id, { parent: a.id }, me)).toThrow(/itself/);
+    expect(board.update(c.id, { parent: null }, me).parent).toBeUndefined();
+  });
+
+  it('drops a card between two others', () => {
+    const { board } = setup();
+    const a = board.create({ projectId: 'api', title: 'A' }, me);
+    const b = board.create({ projectId: 'api', title: 'B' }, me);
+    const c = board.create({ projectId: 'api', title: 'C', status: 'in_progress' }, me);
+    const moved = board.move(c.key, 'todo', { before: a.key, after: b.key }, me);
+    expect(moved.status).toBe('todo');
+    expect(moved.rank).toBeGreaterThan(a.rank);
+    expect(moved.rank).toBeLessThan(b.rank);
+  });
+});
+
+describe('the brief', () => {
+  it('keeps every version, with who and why, and puts one back', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', brief: { goal: 'First goal' } }, me);
+    board.editBrief(t.key, 'goal', 'Better goal', claude, { reason: 'clearer' });
+    board.editBrief(t.key, 'decisions', '- Signed cookies', claude);
+    const after = board.editBrief(t.key, 'decisions', '- 401 with no body', claude, { mode: 'append', reason: 'how to reject' });
+    expect(after.brief).toEqual({ goal: 'Better goal', decisions: '- Signed cookies\n- 401 with no body' });
+    expect(after.revisions.map((r) => [r.section, r.before, r.reason])).toEqual([
+      ['goal', 'First goal', 'clearer'],
+      ['decisions', '', undefined],
+      ['decisions', '- Signed cookies', 'how to reject'],
+    ]);
+    expect(after.activity.at(-1)?.text).toBe('updated Decisions — how to reject');
+    const restored = board.restoreRevision(t.key, after.revisions[0]!.id, me);
+    expect(restored.brief.goal).toBe('First goal');
+    expect(restored.revisions.at(-1)?.reason).toBe('restored an earlier version');
+  });
+
+  it('an emptied section is gone; the same text changes nothing', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', brief: { context: 'c' } }, me);
+    expect(board.editBrief(t.key, 'context', '', me).brief.context).toBeUndefined();
+    const again = board.editBrief(t.key, 'goal', 'g', me);
+    expect(board.editBrief(t.key, 'goal', 'g', me).revisions).toHaveLength(again.revisions.length);
+  });
+
+  it('comments are people’s, notes are Claude’s', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x' }, me);
+    board.comment(t.key, 'Looks good', me);
+    const after = board.comment(t.key, 'Wired it in. 27 tests pass.', claude);
+    expect(after.activity.slice(-2).map((a) => [a.kind, a.text, a.body])).toEqual([
+      ['comment', 'commented', 'Looks good'],
+      ['note', 'left a note', 'Wired it in. 27 tests pass.'],
+    ]);
+    expect(() => board.comment(t.key, '  ', me)).toThrow();
+  });
+});
+
+describe('what waits on what', () => {
+  it('blockers both ways, and never a loop', () => {
+    const { board } = setup();
+    const a = board.create({ projectId: 'api', title: 'A' }, me);
+    const b = board.create({ projectId: 'api', title: 'B' }, me);
+    const c = board.create({ projectId: 'api', title: 'C' }, me);
+    board.relate(b.key, 'blocked_by', a.key, true, me);
+    board.relate(b.key, 'blocks', c.key, true, me);
+    expect(board.need(c.key).blockedBy).toEqual([b.id]);
+    expect(() => board.relate(a.key, 'blocked_by', c.key, true, me)).toThrow(/loop/);
+    expect(board.need(a.key).activity.at(-1)?.text).toBe('marked this as blocking BOB-2');
+    board.relate(b.key, 'blocked_by', a.key, false, me);
+    expect(board.need(b.key).blockedBy).toEqual([]);
+  });
+
+  it('related goes both ways; deleting a task frees what pointed at it', () => {
+    const { board } = setup();
+    const a = board.create({ projectId: 'api', title: 'A' }, me);
+    const b = board.create({ projectId: 'api', title: 'B', parent: a.key, blockedBy: [a.key] }, me);
+    board.relate(a.key, 'related', b.key, true, me);
+    expect(board.need(b.key).related).toEqual([a.id]);
+    board.remove(a.key);
+    const freed = board.need(b.key);
+    expect(freed).toMatchObject({ blockedBy: [], related: [] });
+    expect('parent' in freed).toBe(false);
+    expect(board.get(a.key)).toBeUndefined();
+  });
+});
+
+describe('worktrees and pull requests', () => {
+  const pr = (over: Partial<Parameters<Board['prChanged']>[1] & object> = {}) => ({ number: 7, url: 'https://x/7', state: 'OPEN' as const, title: 'T', draft: false, checks: 'pending' as const, ...over });
+
+  it('a pull request opening moves the task to In Review; merging, to Done', () => {
+    const { board, store } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', status: 'in_progress' }, me);
+    board.linkWorktree(t.key, 'w1', { branch: 'klaud/add-auth', name: 'add-auth' }, me);
+    expect(issueForWorkspace(store.getState().board, 'w1')?.key).toBe(t.key);
+    board.prChanged('w1', pr());
+    expect(board.need(t.key)).toMatchObject({ status: 'in_review', pr: { number: 7 } });
+    // The same again: nothing new.
+    const seen = board.need(t.key).activity.length;
+    board.prChanged('w1', pr());
+    expect(board.need(t.key).activity).toHaveLength(seen);
+    board.prChanged('w1', pr({ review: 'CHANGES_REQUESTED' }));
+    expect(board.need(t.key).status).toBe('in_progress');
+    board.prChanged('w1', pr({ state: 'MERGED' }));
+    const done = board.need(t.key);
+    expect(done.status).toBe('done');
+    expect(done.activity.filter((a) => a.by.kind === 'klaud').map((a) => a.text)).toEqual([
+      'opened pull request #7',
+      'moved this from In Progress to In Review',
+      'changes were requested on the pull request',
+      'moved this from In Review to In Progress',
+      'pull request #7 was merged',
+      'moved this from In Progress to Done',
+    ]);
+  });
+
+  it('a draft stays In Progress; a canceled task stays canceled', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', status: 'in_progress' }, me);
+    board.linkWorktree(t.key, 'w1', {}, me);
+    board.prChanged('w1', pr({ draft: true }));
+    expect(board.need(t.key).status).toBe('in_progress');
+    board.update(t.key, { status: 'canceled' }, me);
+    board.prChanged('w1', pr({ state: 'MERGED', draft: true }));
+    expect(board.need(t.key).status).toBe('canceled');
+  });
+
+  it('a worktree merged here finishes its task; one archived asks what next', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', status: 'in_progress' }, me);
+    board.linkWorktree(t.key, 'w1', {}, me);
+    board.worktreeGone('w1', true, 'archived');
+    expect(board.need(t.key).worktreeGone).toBe(true);
+    expect(board.settleGone(t.key, 'backlog', me)).toMatchObject({ status: 'backlog' });
+    expect(board.need(t.key).worktreeGone).toBeUndefined();
+    board.worktreeMerged('w1');
+    expect(board.need(t.key).status).toBe('done');
+  });
+
+  it('one task per worktree', () => {
+    const { board } = setup();
+    const a = board.create({ projectId: 'api', title: 'A' }, me);
+    const b = board.create({ projectId: 'api', title: 'B' }, me);
+    board.linkWorktree(a.key, 'w1', {}, me);
+    board.linkWorktree(b.key, 'w1', {}, me);
+    expect(board.need(a.key).worktrees).toEqual([]);
+    expect(board.need(b.key).worktrees).toEqual(['w1']);
+  });
+});
+
+describe('saving', () => {
+  it('writes board.json and reads it back', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-board-'));
+    dirs.push(dir);
+    const first = setup({ dir });
+    const t = first.board.create({ projectId: 'api', title: 'Kept', brief: { goal: 'g' } }, me);
+    first.board.setAutoTasks(false);
+    first.board.flush();
+    const saved = JSON.parse(readFileSync(path.join(dir, 'board.json'), 'utf8')) as { issues: Issue[]; autoTasks: boolean };
+    expect(saved.autoTasks).toBe(false);
+    expect(saved.issues[0]?.key).toBe('BOB-1');
+    const again = setup({ dir });
+    expect(again.board.need(t.key).brief.goal).toBe('g');
+    expect(again.store.getState().board).toMatchObject({ enabled: true, autoTasks: false });
+    expect(again.board.create({ projectId: 'api', title: 'Next' }, me).key).toBe('BOB-2');
+  });
+});
+
+describe('what screens show', () => {
+  it('scopes: mine, active, backlog, and recently finished', () => {
+    const { board, store, clock } = setup();
+    board.create({ projectId: 'api', title: 'Mine', assignee: { kind: 'person', id: 'p-me', name: 'Kay' }, status: 'in_progress' }, me);
+    board.create({ projectId: 'api', title: 'Later', status: 'backlog' }, me);
+    const old = board.create({ projectId: 'api', title: 'Old', status: 'done' }, me);
+    clock.t += 8 * 24 * 60 * 60 * 1000;
+    board.create({ projectId: 'land', title: 'Theirs', assignee: { kind: 'person', id: 'p-bob', name: 'bob' } }, me);
+    const s = store.getState().board;
+    const titles = (f: Parameters<typeof filterIssues>[1]) => filterIssues(s, { now: clock.t, selfId: 'p-me', ...f }).map((i) => i.title);
+    expect(titles({ scope: 'mine' })).toEqual(['Mine']);
+    expect(titles({ scope: 'active' })).toEqual(['Theirs', 'Mine']);
+    expect(titles({ scope: 'backlog' })).toEqual(['Later']);
+    expect(titles({ scope: 'all' })).not.toContain(old.title);
+    expect(titles({ scope: 'all', projectId: 'land' })).toEqual(['Theirs']);
+    expect(titles({ query: 'lat' })).toEqual(['Later']);
+  });
+});
+
+describe('fixes that keep the board right', () => {
+  const pr = (number: number, state: 'OPEN' | 'MERGED' = 'OPEN') => ({ number, url: `https://x/${number}`, state, title: 'T', draft: false, checks: 'passing' as const });
+
+  it('only the worktree doing a task now moves it (an older one’s pull request is history)', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', status: 'in_progress' }, me);
+    board.linkWorktree(t.key, 'old', {}, me);
+    board.linkWorktree(t.key, 'new', {}, me);
+    board.prChanged('new', pr(2));
+    const seen = board.need(t.key).activity.length;
+    board.prChanged('old', pr(1, 'MERGED'));
+    expect(board.need(t.key)).toMatchObject({ status: 'in_review', pr: { number: 2 } });
+    expect(board.need(t.key).activity).toHaveLength(seen);
+  });
+
+  it('ranks are one order per status across projects, spread out again when two tie', () => {
+    const { board } = setup();
+    const a = board.create({ projectId: 'api', title: 'A' }, me);
+    const b = board.create({ projectId: 'land', title: 'B' }, me);
+    expect(b.rank).toBeGreaterThan(a.rank);
+    const c = board.create({ projectId: 'api', title: 'C' }, me);
+    // Force a tie, then drop between the tied two.
+    board.move(b.key, 'todo', { before: a.key, after: a.key }, me);
+    const moved = board.move(c.key, 'todo', { before: a.key, after: b.key }, me);
+    const [ra, rb] = [board.need(a.key).rank, board.need(b.key).rank];
+    expect(moved.rank).toBeGreaterThan(Math.min(ra, rb));
+    expect(moved.rank).toBeLessThan(Math.max(ra, rb));
+  });
+
+  it('a prefix an older task key still uses is taken', () => {
+    const { board } = setup();
+    board.setPrefix('api', 'ALP');
+    board.create({ projectId: 'api', title: 'kept key' }, me);
+    board.setPrefix('api', 'ZZ');
+    expect(() => board.setPrefix('land', 'ALP')).toThrow(/already/);
+  });
+
+  it('a deleted worktree is no longer the task’s; an archived one still is', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', status: 'in_progress' }, me);
+    board.linkWorktree(t.key, 'w1', {}, me);
+    board.worktreeGone('w1', true, 'archived');
+    expect(board.need(t.key).worktrees).toEqual(['w1']);
+    board.worktreeGone('w1', true, 'deleted');
+    expect(board.need(t.key)).toMatchObject({ worktrees: [], worktreeGone: true });
+  });
+
+  it('each brief section keeps its own versions', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', brief: { goal: 'g' } }, me);
+    board.editBrief(t.key, 'goal', 'g2', me);
+    for (let i = 0; i < 30; i++) board.editBrief(t.key, 'decisions', `- d${i}`, claude, { mode: 'append' });
+    const revs = board.need(t.key).revisions;
+    expect(revs.filter((r) => r.section === 'decisions')).toHaveLength(20);
+    expect(revs.filter((r) => r.section === 'goal')).toHaveLength(1);
+  });
+
+  it('a board.json it can’t read is set aside, never written over', async () => {
+    const { writeFileSync, readdirSync } = await import('node:fs');
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-board-'));
+    dirs.push(dir);
+    writeFileSync(path.join(dir, 'board.json'), JSON.stringify({ version: 9, issues: [{ id: 'x' }] }));
+    const { board } = setup({ dir });
+    board.create({ projectId: 'api', title: 'new' }, me);
+    board.flush();
+    const files = readdirSync(dir);
+    expect(files.some((f) => f.startsWith('board.json.unreadable-'))).toBe(true);
+    expect(JSON.parse(readFileSync(path.join(dir, 'board.json'), 'utf8')).issues).toHaveLength(1);
+  });
+
+  it('tasks that no longer read are kept beside the board', async () => {
+    const { writeFileSync, readdirSync } = await import('node:fs');
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-board-'));
+    dirs.push(dir);
+    writeFileSync(path.join(dir, 'board.json'), JSON.stringify({ version: 1, issues: [{ id: 'broken' }] }));
+    setup({ dir });
+    expect(readdirSync(dir).some((f) => f.startsWith('board.dropped-'))).toBe(true);
+  });
+});

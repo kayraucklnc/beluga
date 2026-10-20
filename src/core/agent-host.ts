@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import type { AgentBackend, FollowUp } from '../agent/types.js';
+import type { AgentBackend, BoardTools, FollowUp } from '../agent/types.js';
 import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
@@ -40,6 +40,8 @@ export interface AgentHostDeps {
   readonly steps?: StepBook;
   /** Guests invited into one project only (not the whole room). */
   readonly isGuest?: (peerId: string) => boolean;
+  /** The task board for a run in this conversation (your own runs): its tools and the task's brief. */
+  readonly board?: (channel: string, from: string) => { readonly tools?: BoardTools; readonly brief?: string } | undefined;
 }
 
 /** File tools an Edit guest may use without asking, and the input naming their file. */
@@ -620,8 +622,12 @@ export class AgentHost {
     try {
       // A workspace (not a main folder, where nothing may change) gets its scratch folder.
       const scratch = place && !place.askOnly && this.store.getState().prefs.scratchFolder && (await ensureScratch(place.cwd)) ? SCRATCH_DIR : undefined;
+      // Not in a main folder (questions only) nor for guests: a run doing a task gets it, and the tools to keep it true.
+      const board = place?.askOnly || from !== this.selfId ? undefined : this.deps.board?.(body.channel, from);
       const final = await agent.run({
         ...(scratch ? { scratchDir: scratch } : {}),
+        ...(board?.tools ? { board: board.tools } : {}),
+        ...(board?.brief ? { taskBrief: board.brief } : {}),
         prompt: body.prompt,
         requesterName,
         viaAgent: body.viaAgent,

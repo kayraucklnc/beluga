@@ -35,7 +35,7 @@ function NodeLink({ label, href }: { label: string; href: string }) {
   );
 }
 
-export function Inspector({ graph, node, onPick, onClose, wide }: { graph: Graph; node: GraphNode; onPick: (id: string) => void; onClose: () => void; wide: boolean }) {
+export function Inspector({ graph, node, onPick, onClose, wide, onOpen, openLabel }: { graph: Graph; node: GraphNode; onPick: (id: string) => void; onClose: () => void; wide: boolean; onOpen?: () => void; openLabel?: string }) {
   const links = node.links ?? [];
   const lines = connections(graph, node.id);
   return (
@@ -51,6 +51,12 @@ export function Inspector({ graph, node, onPick, onClose, wide }: { graph: Graph
         <IconButton icon="x" label="Close" onClick={onClose} />
       </header>
       <div className={g.inspectorBody}>
+        {onOpen ? (
+          <button type="button" className={g.inspectorOpen} onClick={onOpen}>
+            {openLabel ?? 'Open'}
+            <Icon name="arrowRight" size={12} />
+          </button>
+        ) : null}
         {node.sublabel ? <p className={g.inspectorLead}>{node.sublabel}</p> : null}
         {node.status || node.value ? (
           <div className={g.inspectorFacts}>

@@ -18,6 +18,8 @@ const ActivityView = lazy(() => import('../claude-code/ActivityView.js').then((m
 const ProjectHome = lazy(() => import('../views/ProjectHome.js').then((m) => ({ default: m.ProjectHome })));
 const HistoryView = lazy(() => import('../views/history/HistoryView.js').then((m) => ({ default: m.HistoryView })));
 const RequestsView = lazy(() => import('../gateway/RequestsView.js').then((m) => ({ default: m.RequestsView })));
+const TasksView = lazy(() => import('../tasks/TasksView.js').then((m) => ({ default: m.TasksView })));
+const TaskPage = lazy(() => import('../tasks/TaskPage.js').then((m) => ({ default: m.TaskPage })));
 
 function Route() {
   const view = useApp((st) => st.view);
@@ -48,6 +50,10 @@ function Route() {
       return <ActivityView />;
     case 'requests':
       return <RequestsView />;
+    case 'tasks':
+      return <TasksView />;
+    case 'task':
+      return <TaskPage key={view.id} id={view.id} />;
     case 'project':
       return view.page === 'history' ? <HistoryView projectId={view.id} /> : <ProjectHome id={view.id} />;
   }

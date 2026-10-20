@@ -45,6 +45,9 @@ export interface FlowGraphProps {
   readonly onLaidOut?: (size: Size) => void;
   /** The block's text: a graph laid out before is shown again at once (layout-cache.ts). */
   readonly cacheKey?: string;
+  /** Nodes stand for something that opens (a task): the details panel's main button, and double-click. */
+  readonly onOpen?: (nodeId: string) => void;
+  readonly openLabel?: string;
 }
 
 /** A fresh canvas for each graph (Claude rewrote the block, the file changed): nothing carries over. */
@@ -95,7 +98,7 @@ function placeNodes(nodes: readonly FlowNode[], places: ReadonlyMap<string, Plac
 /** Room for the walkthrough's caption along the bottom. */
 const STEP_PADDING = { top: '48px', left: '48px', right: '48px', bottom: '150px' } as const;
 
-function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidOut, cacheKey }: FlowGraphProps) {
+function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidOut, cacheKey, onOpen, openLabel }: FlowGraphProps) {
   const uid = useId().replace(/[^\w-]/g, '');
   const theme = useDocTheme();
   const motion = !reducedMotion();
@@ -322,6 +325,7 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
         onNodesChange={onNodesChange}
         onNodeDragStart={(_e, n) => setMoved((m) => new Set([...m, n.id, ...graph.nodes.filter((x) => x.group === n.id).map((x) => x.id)]))}
         onNodeClick={(_e, n) => setSelected((s) => (s === n.id ? undefined : n.id))}
+        {...(onOpen ? { onNodeDoubleClick: (_e: unknown, n: FlowNode) => onOpen(n.id) } : {})}
         onNodeMouseEnter={(_e, n) => setHover(n.data.node.type === 'group' ? undefined : n.id)}
         onNodeMouseLeave={() => setHover(undefined)}
         onPaneClick={() => setSelected(undefined)}
@@ -358,7 +362,7 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
       </ReactFlow>
       {phase === 'failed' ? <div className={g.overlayNote}>Couldn’t lay this graph out.</div> : phase !== 'ready' ? <div className={g.overlayNote}>Laying out…</div> : null}
       {current ? <Walkthrough steps={steps} index={step} onGo={goStep} /> : null}
-      {picked ? <Inspector graph={graph} node={picked} onPick={focusNode} onClose={() => setSelected(undefined)} wide={!inline} /> : null}
+      {picked ? <Inspector graph={graph} node={picked} onPick={focusNode} onClose={() => setSelected(undefined)} wide={!inline} {...(onOpen ? { onOpen: () => onOpen(picked.id), openLabel: openLabel ?? 'Open' } : {})} /> : null}
     </div>
   );
 }

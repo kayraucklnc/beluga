@@ -825,6 +825,25 @@
   padding: 11px 12px 14px;
   font-size: 12.5px;
 }
+.inspectorOpen {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent);
+  cursor: pointer;
+}
+.inspectorOpen:hover {
+  filter: brightness(1.08);
+}
 .inspectorLead {
   margin: 0;
   color: var(--text-2);

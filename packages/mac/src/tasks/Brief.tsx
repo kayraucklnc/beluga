@@ -1,0 +1,207 @@
+import * as Popover from '@radix-ui/react-popover';
+import { useEffect, useRef, useState } from 'react';
+import { BRIEF_SECTIONS, type BriefSection, type Issue, SECTION_INFO, actorName } from '@klaud/core/board/model.js';
+import { Markdown } from '../chat/Markdown.js';
+import { Icon } from '../components/Icon.js';
+import { Button, IconButton, Tip, cx } from '../components/ui.js';
+import { ago, checklist, toggleCheck } from './tasks-model.js';
+import { useSelfId, useTaskActions } from './use-tasks.js';
+import t from './tasks.module.css';
+
+/**
+ * A task's brief: what later agents and people rely on, in sections. Click a section to edit it
+ * (⌘↩ saves, Esc cancels); acceptance criteria tick on click; every section keeps its versions
+ * (who changed it, when, why) and an old one can be put back. Empty sections wait as one-click
+ * "Add" chips, so the page stays short.
+ */
+export function Brief({ issue }: { issue: Issue }) {
+  const [adding, setAdding] = useState<BriefSection>();
+  const filled = BRIEF_SECTIONS.filter((s) => issue.brief[s] || s === 'goal' || s === adding);
+  const missing = BRIEF_SECTIONS.filter((s) => !filled.includes(s));
+  return (
+    <div className={t.brief}>
+      {filled.map((s) => (
+        <Section key={s} issue={issue} section={s} startEditing={s === adding} onDone={() => setAdding(undefined)} />
+      ))}
+      {missing.length ? (
+        <div className={t.addSections}>
+          {missing.map((s) => (
+            <Tip key={s} label={SECTION_INFO[s].hint}>
+              <button type="button" className={t.addSection} onClick={() => setAdding(s)}>
+                <Icon name="plus" size={11} />
+                {SECTION_INFO[s].label}
+              </button>
+            </Tip>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Section({ issue, section, startEditing, onDone }: { issue: Issue; section: BriefSection; startEditing: boolean; onDone: () => void }) {
+  const text = issue.brief[section] ?? '';
+  const [draft, setDraft] = useState<string | undefined>(startEditing ? '' : undefined);
+  const { api, act } = useTaskActions();
+  const area = useRef<HTMLTextAreaElement>(null);
+  const editing = draft !== undefined;
+  const revisions = issue.revisions.filter((r) => r.section === section);
+  const info = SECTION_INFO[section];
+  const ticks = section === 'acceptance' ? checklist(text) : undefined;
+
+  useEffect(() => {
+    if (!editing || !area.current) return;
+    area.current.focus();
+    area.current.setSelectionRange(area.current.value.length, area.current.value.length);
+  }, [editing]);
+  // Grows with what's written.
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(520, el.scrollHeight + 2)}px`;
+  }, [draft]);
+
+  const save = async (): Promise<void> => {
+    if (draft === undefined) return;
+    // If it didn't save (the reason is in a toast), what you wrote stays open.
+    if (draft.trim() !== text.trim() && !(await act(() => api.editBrief(issue.id, section, draft)))) return;
+    setDraft(undefined);
+    onDone();
+  };
+  const cancel = (): void => {
+    setDraft(undefined);
+    onDone();
+  };
+
+  return (
+    <section className={cx(t.section, editing && t.sectionEditing)} aria-label={info.label}>
+      <header className={t.sectionHead}>
+        <h3 className={t.sectionTitle}>{info.label}</h3>
+        {ticks?.total ? (
+          <span className={cx(t.sectionCount, ticks.done === ticks.total && t.sectionCountDone)}>
+            {ticks.done} of {ticks.total}
+          </span>
+        ) : null}
+        <span className={t.grow} />
+        {revisions.length ? <History issue={issue} section={section} /> : null}
+        {editing ? null : <IconButton icon="pencil" label={`Edit ${info.label}`} onClick={() => setDraft(text)} />}
+      </header>
+      {editing ? (
+        <div className={t.editor}>
+          <textarea
+            ref={area}
+            className={t.editorArea}
+            value={draft}
+            maxLength={20_000}
+            placeholder={info.hint}
+            aria-label={info.label}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void save();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                cancel();
+              }
+            }}
+          />
+          <div className={t.editorBar}>
+            <span className={t.editorHint}>Markdown{section === 'acceptance' ? ' · “- [ ]” makes a checkbox' : ''}</span>
+            <span className={t.grow} />
+            <Button size="small" variant="quiet" onClick={cancel}>
+              Cancel
+            </Button>
+            <Button size="small" variant="primary" onClick={() => void save()}>
+              Save
+            </Button>
+          </div>
+        </div>
+      ) : text ? (
+        section === 'acceptance' ? (
+          <Checklist text={text} onToggle={(i) => void act(() => api.editBrief(issue.id, section, toggleCheck(text, i), 'ticked a criterion'))} onEdit={() => setDraft(text)} />
+        ) : (
+          <div className={t.sectionBody} onDoubleClick={() => setDraft(text)}>
+            <Markdown text={text} paths />
+          </div>
+        )
+      ) : (
+        <button type="button" className={t.sectionEmpty} onClick={() => setDraft('')}>
+          {info.hint}…
+        </button>
+      )}
+    </section>
+  );
+}
+
+/** Acceptance criteria: each "- [ ]" line a checkbox you click; other lines as they are. */
+function Checklist({ text, onToggle, onEdit }: { text: string; onToggle: (index: number) => void; onEdit: () => void }) {
+  let n = -1;
+  return (
+    <ul className={t.checklist} onDoubleClick={onEdit}>
+      {text.split('\n').map((line, i) => {
+        const m = /^\s*[-*]\s+\[([ xX])\]\s*(.*)$/.exec(line);
+        if (!m) return line.trim() ? <li key={i} className={t.checkNote}>{line.replace(/^\s*[-*]\s+/, '')}</li> : null;
+        n++;
+        const index = n;
+        const done = m[1] !== ' ';
+        return (
+          <li key={i} className={cx(t.check, done && t.checkDone)}>
+            <button type="button" role="checkbox" aria-checked={done} className={t.checkBox} onClick={() => onToggle(index)}>
+              {done ? <Icon name="check" size={10} /> : null}
+            </button>
+            <span className={t.checkText}>
+              <Markdown text={m[2] ?? ''} />
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** A section's versions, newest first: who, when, why, what it said; Restore puts one back. */
+function History({ issue, section }: { issue: Issue; section: BriefSection }) {
+  const selfId = useSelfId();
+  const { api, act } = useTaskActions();
+  const [open, setOpen] = useState(false);
+  const revisions = issue.revisions.filter((r) => r.section === section).slice().reverse();
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <IconButton icon="clock" label={`${SECTION_INFO[section].label}: ${revisions.length} ${revisions.length === 1 ? 'version' : 'versions'}`} />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className={t.history} align="end" sideOffset={6} collisionPadding={10} aria-label="Versions">
+          <div className={t.historyHead}>{SECTION_INFO[section].label} · history</div>
+          <ol className={t.historyList}>
+            {revisions.map((r, i) => (
+              <li key={r.id} className={t.historyItem}>
+                <div className={t.historyMeta}>
+                  <span className={t.historyWho}>{actorName(r.by, selfId)}</span>
+                  <span className={t.historyWhen}>{ago(r.at)}</span>
+                  {r.reason ? <span className={t.historyWhy}>{r.reason}</span> : null}
+                </div>
+                <div className={t.historyBefore}>{r.before.trim() ? r.before : <em>Empty before</em>}</div>
+                {r.before.trim() || i > 0 ? (
+                  <Button
+                    size="small"
+                    variant="quiet"
+                    onClick={() => {
+                      setOpen(false);
+                      void act(() => api.restoreRevision(issue.id, r.id), 'Restored that version');
+                    }}
+                  >
+                    Restore This
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}

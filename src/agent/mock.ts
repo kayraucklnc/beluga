@@ -288,10 +288,31 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       }
     }
     if (script.report) await bridge.writeReport(script.report.title, script.report.markdown);
+    // Doing a task: keep it true, as real Claude is told to (core/board/prompt.ts).
+    if (input.board?.current) keepTaskTrue(input, script);
     await sleep(400 * pace, input.signal);
     const contextUsed = context.finish(input);
     input.onEvent('usage', JSON.stringify({ input: 18_000 + script.steps.length * 6_000, output: 2_400, cacheRead: contextUsed, cacheWrite: 9_000, cost: 0.21 + script.steps.length * 0.04 }));
     return script.answer;
+  }
+}
+
+/** What the demo's Claude writes on the task its worktree is doing: a note, a decision, notes for the next agent. */
+function keepTaskTrue(input: AgentRunInput, script: Script): void {
+  const board = input.board!;
+  const key = board.current!;
+  const first = script.answer.replace(/\*\*/g, '').split(/(?<=\.)\s/)[0] ?? script.answer;
+  try {
+    input.onEvent('tool', `task_note ${key}`);
+    board.note(undefined, first);
+    if (script.match.test('implement')) {
+      input.onEvent('tool', `task_brief_edit ${key} decisions`);
+      board.editBrief(undefined, 'decisions', '- Put the check in a middleware (`requireUser()`), not in each route: one place to test.', 'how to wire it', 'append');
+    }
+    input.onEvent('tool', `task_brief_edit ${key} handoff`);
+    board.editBrief(undefined, 'handoff', `${first} Next: cover the edge cases with tests, then open the pull request.`, 'end of the turn');
+  } catch {
+    // The task went away meanwhile: nothing to keep.
   }
 }
 
