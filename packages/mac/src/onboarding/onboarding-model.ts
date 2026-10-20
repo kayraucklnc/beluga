@@ -2,7 +2,7 @@
  * The first time Klaud opens: a welcome, a short tour, a few settings, then the app. It shows
  * once per Mac. Updating the app never brings it back (the mark is kept with this window's own
  * storage, which an update leaves alone), and someone who used Klaud before it existed never
- * sees it either. Help › Welcome to Klaud shows it again on purpose.
+ * sees it either. File › Onboard Again (or Help › Welcome to Klaud, or the palette) shows it again.
  */
 
 /** Where the mark that you've been through it is kept. */
@@ -11,7 +11,7 @@ export const DONE_KEY = 'klaud.onboarding.v1';
 export const PREFS_KEY = 'klaud.prefs.v1';
 /** `?welcome` in the address shows it whatever the mark says (screenshots, development). */
 export const FORCE_PARAM = 'welcome';
-/** The document event Help › Welcome to Klaud (and the palette's command) send to show it again. */
+/** The document event File › Onboard Again, Help › Welcome to Klaud and the palette send to show it again. */
 export const SHOW_WELCOME = 'klaud:welcome';
 
 export const STEPS = ['hello', 'parallel', 'agents', 'friends', 'earnings', 'archive', 'look', 'setup', 'ready'] as const;

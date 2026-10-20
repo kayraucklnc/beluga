@@ -5,6 +5,7 @@ import { Select, Switch } from '../dialogs/settings-controls.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import { ACCENTS, type Accent, type UiPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EASE_OUT, Rise, SPRING, Words } from './fx.js';
+import { Glass } from './Glass.js';
 import s from './onboarding.module.css';
 
 type Appearance = UiPrefs['appearance'];
@@ -157,7 +158,7 @@ export function Setup() {
       <Rise delay={0.2} className={s.body}>
         Already set to what works best for most people. Change anything now, or later in Settings.
       </Rise>
-      <div className={s.rows}>
+      <Glass radius={16} width="100%" className={s.rows}>
         <SetupRow index={0} label="Your name" detail="What friends see when you work together.">
           <input className={s.input} aria-label="Your name" value={name} placeholder="Your name" maxLength={64} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => e.key === 'Enter' && saveName()} />
         </SetupRow>
@@ -195,7 +196,7 @@ export function Setup() {
             ]}
           />
         </SetupRow>
-      </div>
+      </Glass>
     </div>
   );
 }

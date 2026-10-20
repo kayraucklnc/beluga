@@ -87,7 +87,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
     stripeCommand(state),
     cmd('env', 'env', 'Environment Variables…', 'lock', () => openSettings(ui, 'environment'), 'For your shells, scripts and Claude'),
     cmd('shell', 'shell', 'Terminal Settings…', 'terminal', () => openSettings(ui, 'terminal'), 'Which shell, and how it starts'),
-    { id: 'cmd:welcome', label: 'Welcome to Klaud', icon: 'spark', hint: 'The tour and the first settings, again', keywords: ['onboarding', 'tour', 'intro'], run: () => void document.dispatchEvent(new CustomEvent(SHOW_WELCOME)) },
+    { id: 'cmd:welcome', label: 'Onboard Again', icon: 'spark', hint: 'The welcome, the tour and the first settings', keywords: ['onboarding', 'welcome', 'tour', 'intro'], run: () => void document.dispatchEvent(new CustomEvent(SHOW_WELCOME)) },
     ...(state.isHost
       ? [
           cmd('lock', 'lock', state.roomOpen ? 'Close the Room to New People' : 'Let New People Join', 'lock', () => void api.session.setRoomOpen(!state.roomOpen)),

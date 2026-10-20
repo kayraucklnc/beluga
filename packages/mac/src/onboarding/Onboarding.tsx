@@ -1,12 +1,13 @@
-import { AnimatePresence, MotionConfig, animate, motion, useMotionTemplate, useMotionValue, useReducedMotion } from 'motion/react';
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { APP_VERSION } from '../lib/boot.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { Backdrop } from './Backdrop.js';
-import { FINALE, Finale } from './Finale.js';
-import { playFinale } from './finale-sound.js';
+import { Glass, GlassBackdrop } from './Glass.js';
+import { type Prepared, prepareWormhole } from './finale-sound.js';
+import { WORMHOLE, WORMHOLE_TOTAL, Wormhole } from './Wormhole.js';
 import { EASE_OUT, SPRING } from './fx.js';
 import { SHOW_WELCOME, STEPS, type Step, afterTour, inTour, saveMark, shouldShow, stepBy, stepIndex, tourPlace } from './onboarding-model.js';
 import { Look, Setup } from './SetupSteps.js';
@@ -14,20 +15,27 @@ import { Hello, Ready, Tour } from './Steps.js';
 import s from './onboarding.module.css';
 
 /** How lit the backdrop is on each step: bright for the welcome and the end, calm behind settings. */
-const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.75, agents: 0.75, friends: 0.75, earnings: 0.75, archive: 0.75, look: 0.5, setup: 0.4, ready: 1 };
+const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.9, agents: 0.9, friends: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, setup: 0.65, ready: 1 };
+
+/** How long the app takes to settle into place as the wormhole clears (Shell.module.css, `arrive`). */
+const ARRIVE_S = 1.6;
 
 const systemDark = (): boolean => window.matchMedia('(prefers-color-scheme: dark)').matches;
 
 /** Whether it's showing, and the way to show it again on purpose. */
-export function useOnboarding(): { open: boolean; close: (how: 'finished' | 'skipped') => void; arriving: boolean; arrive: () => void } {
+/**
+ * The app settling into place as the wormhole clears to it (Shell.module.css, [data-arriving]).
+ * Set on the element itself: re-rendering the whole app for it would cost a frame mid-flight.
+ */
+function arrive(): void {
+  const app = document.querySelector<HTMLElement>('[data-app-root]');
+  if (!app) return;
+  app.dataset.arriving = '';
+  setTimeout(() => delete app.dataset.arriving, 2000);
+}
+
+export function useOnboarding(): { open: boolean; close: (how: 'finished' | 'skipped') => void; arrive: () => void } {
   const [open, setOpen] = useState(() => shouldShow(localStorage, window.location.search));
-  // The app settling into place as the welcome bursts open over it (Shell.module.css, [data-arriving]).
-  const [arriving, setArriving] = useState(false);
-  useEffect(() => {
-    if (!arriving) return;
-    const t = setTimeout(() => setArriving(false), 2400);
-    return () => clearTimeout(t);
-  }, [arriving]);
   useEffect(() => {
     // The first time only: quit halfway and it's back next launch. Seeing it again from Help
     // leaves the mark as it was, so a replay you leave never brings it back on its own.
@@ -40,8 +48,7 @@ export function useOnboarding(): { open: boolean; close: (how: 'finished' | 'ski
   }, []);
   return {
     open,
-    arriving,
-    arrive: () => setArriving(true),
+    arrive,
     close: (how) => {
       saveMark(localStorage, APP_VERSION, how);
       setOpen(false);
@@ -76,11 +83,16 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
   const [step, setStep] = useState<Step>('hello');
   const [dir, setDir] = useState(1);
   const [leaving, setLeaving] = useState<'finished' | 'skipped'>();
-  // Finishing (not skipping) ends with the bang: the welcome opens from the middle onto the app.
-  const [finale, setFinale] = useState(false);
-  const hole = useMotionValue(0);
-  const mask = useMotionTemplate`radial-gradient(circle at 50% 50%, transparent ${hole}px, #000 calc(${hole}px + 1.5px))`;
+  // Finishing (not skipping) ends in the wormhole: through it, out into the light, onto the app.
+  // When the warp began (performance.now()); the tunnel waits behind the last step until then.
+  const [warpAt, setWarpAt] = useState<number>();
+  const finale = warpAt !== undefined;
+  // In the tunnel: the welcome behind it is gone (and its backdrop stops drawing).
+  const [inside, setInside] = useState(false);
+  // Out in the light: the tunnel clears to the app.
+  const [out, setOut] = useState(false);
   const theme = prefs.appearance === 'system' ? (systemDark() ? 'dark' : 'light') : prefs.appearance;
+  const smoke = useRef<HTMLCanvasElement>(null);
 
   const go = (to: Step): void => {
     setDir(stepIndex(to) >= stepIndex(step) ? 1 : -1);
@@ -89,25 +101,48 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
   const next = (): void => (step === 'ready' ? finish('finished') : go(stepBy(step, 1)));
   const back = (): void => go(stepBy(step, -1));
   const exit = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(exit.current), []);
+  const beats = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  // The wormhole's sound, readied once the last step has settled (so the click doesn't wait on it).
+  const sound = useRef<Prepared>(undefined);
+  useEffect(() => {
+    if (step !== 'ready' || still) return;
+    const t = setTimeout(() => (sound.current ??= prepareWormhole()), 1600);
+    return () => clearTimeout(t);
+  }, [step, still]);
+  useEffect(() => () => sound.current?.discard(), []);
+  useEffect(
+    () => () => {
+      clearTimeout(exit.current);
+      beats.current.forEach(clearTimeout);
+    },
+    [],
+  );
   const finish = (how: 'finished' | 'skipped', then?: () => void): void => {
     if (leaving) return;
     setLeaving(how);
-    const bang = how === 'finished' && !still;
-    if (bang) {
-      setFinale(true);
-      playFinale();
-      setTimeout(() => onArrive?.(), FINALE.open * 1000);
-      void animate(hole, Math.hypot(window.innerWidth, window.innerHeight) / 2 + 60, { delay: FINALE.open, duration: FINALE.openFor, ease: [0.7, 0, 0.2, 1] });
+    const travel = how === 'finished' && !still;
+    if (travel) {
+      setWarpAt(performance.now());
+      (sound.current ?? prepareWormhole())?.play(WORMHOLE.whiteout, WORMHOLE_TOTAL);
+      sound.current = undefined;
+      beats.current = [
+        setTimeout(() => setInside(true), WORMHOLE.enter * 1000),
+        setTimeout(() => {
+          setOut(true);
+          onArrive?.();
+        }, WORMHOLE.whiteout * 1000),
+      ];
     }
-    // Skipping: the window lifts away. Finishing: the bang, then the app underneath is yours
-    // (and the next sheet opens on it).
+    // Skipping: the window lifts away. Finishing: the wormhole, then the app underneath is
+    // yours (and the next sheet opens on it).
     exit.current = setTimeout(
       () => {
         onClose(how);
         then?.();
       },
-      still ? 0 : bang ? FINALE.done * 1000 : 650,
+      // After a wormhole, only once the app has settled: taking the welcome down costs a frame or
+      // two, which nobody sees once nothing is moving.
+      still ? 0 : travel ? (WORMHOLE.whiteout + ARRIVE_S + 0.1) * 1000 : 650,
     );
   };
 
@@ -137,26 +172,21 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
   const place = tourPlace(step);
   const showNav = step !== 'hello' && step !== 'ready';
   return (
+    <GlassBackdrop.Provider value={smoke}>
     <MotionConfig reducedMotion={still ? 'always' : 'never'}>
       <motion.div
         className={s.overlay}
+        // On the last step the welcome goes see-through: the wormhole waits behind it.
+        data-clear={step === 'ready' && !still ? '' : undefined}
         role="dialog"
         aria-modal="true"
         aria-label="Welcome to Klaud"
         initial={{ opacity: 0 }}
-        style={finale ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
-        animate={
-          finale
-            ? // A jolt as it bursts.
-              { opacity: 1, x: [0, 0, -7, 6, -4, 3, 0], y: [0, 0, 5, -6, 3, -2, 0] }
-            : leaving
-              ? { opacity: 0, scale: 1.04, filter: 'blur(14px)' }
-              : { opacity: 1, scale: 1, filter: 'blur(0px)' }
-        }
-        transition={finale ? { duration: FINALE.bang + 0.3, times: [0, FINALE.bang / (FINALE.bang + 0.3), 0.8, 0.85, 0.9, 0.95, 1] } : { duration: leaving ? 0.6 : 0.8, ease: EASE_OUT }}
+        animate={finale ? { opacity: inside ? 0 : 1 } : leaving ? { opacity: 0, scale: 1.04, filter: 'blur(14px)' } : { opacity: 1, scale: 1, filter: 'blur(0px)' }}
+        transition={finale ? { duration: 0.12 } : { duration: leaving ? 0.6 : 0.8, ease: EASE_OUT }}
       >
         <div className={s.backdrop}>
-          <Backdrop theme={theme} energy={ENERGY[step]} still={still} />
+          <Backdrop theme={theme} energy={ENERGY[step]} still={still} paused={inside || (step === 'ready' && !still)} canvasRef={smoke} />
         </div>
         <div className={s.titlebar} data-tauri-drag-region />
         {step !== 'ready' ? (
@@ -165,7 +195,7 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
           </button>
         ) : null}
 
-        <motion.main className={s.content} animate={finale ? { scale: 0.88, opacity: 0, filter: 'blur(14px)' } : { scale: 1, opacity: 1, filter: 'blur(0px)' }} transition={{ duration: FINALE.bang, ease: [0.5, 0, 0.75, 0] }}>
+        <motion.main className={s.content} animate={finale ? { scale: 1.7, opacity: 0 } : { scale: 1, opacity: 1 }} transition={{ duration: WORMHOLE.enter, ease: [0.55, 0, 0.8, 0.3] }}>
           <AnimatePresence mode="wait" custom={dir} initial={false}>
             <motion.section
               key={step}
@@ -195,7 +225,8 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
 
         <AnimatePresence>
           {showNav ? (
-            <motion.footer className={s.footer} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }} transition={{ duration: 0.4, ease: EASE_OUT }}>
+            <motion.footer className={s.footer} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} transition={{ duration: 0.45, ease: EASE_OUT }}>
+              <Glass radius={28} className={s.navGlass}>
               <button type="button" className={s.navBack} onClick={back} aria-label="Back">
                 <Icon name="back" size={14} />
               </button>
@@ -211,11 +242,14 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
                   <Icon name="arrowRight" size={13} />
                 </motion.button>
               </div>
+              </Glass>
             </motion.footer>
           ) : null}
         </AnimatePresence>
       </motion.div>
-      {finale ? <Finale theme={theme} hole={hole} /> : null}
+      {/* Under the welcome while it waits; over the app once the welcome is gone. */}
+      {step === 'ready' && !still ? <Wormhole theme={theme} since={warpAt} out={out} /> : null}
     </MotionConfig>
+    </GlassBackdrop.Provider>
   );
 }

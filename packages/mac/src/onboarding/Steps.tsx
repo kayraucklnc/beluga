@@ -151,7 +151,7 @@ export function Ready({ projects, onAddProject, onOpen }: { readonly projects: n
         )}
       </Rise>
       <Rise delay={1.3} className={s.readyHint}>
-        Help › Welcome to Klaud shows this again.
+        File › Onboard Again shows this again.
       </Rise>
     </div>
   );

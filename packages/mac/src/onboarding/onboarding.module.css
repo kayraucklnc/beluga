@@ -484,15 +484,11 @@
 
 .rows {
   margin-top: 30px;
-  width: 100%;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--bg-raised) 72%, transparent);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  box-shadow:
-    0 0 0 0.5px var(--hairline-strong),
-    0 24px 60px -30px rgba(0, 0, 0, 0.35);
   text-align: left;
+}
+.rows :global(.glass-surface__content) {
+  display: block;
+  padding: 0;
 }
 .row {
   display: flex;
@@ -581,14 +577,16 @@
 .footer {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  height: 76px;
-  padding: 0 28px;
+  display: flex;
+  justify-content: center;
+  padding: 0 28px 26px;
+}
+/* The step controls: one pill of liquid glass floating over the smoke. */
+.navGlass :global(.glass-surface__content) {
+  gap: 18px;
+  padding: 6px 6px 6px 8px;
 }
 .navBack {
-  justify-self: start;
   width: 32px;
   height: 32px;
   border-radius: 16px;
@@ -629,7 +627,6 @@
   margin: 0 8px;
 }
 .navRight {
-  justify-self: end;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -684,60 +681,42 @@
   }
 }
 
-/* ── Finale ───────────────────────────────────────────────── */
+/* ── Finale: the wormhole (Wormhole.tsx) ─────────────────── */
 
-.finale {
+/* The last step: the welcome turns see-through, and the wormhole behind it shows. */
+.overlay[data-clear] {
+  background: transparent;
+}
+.backdrop {
+  transition: opacity 1s ease;
+}
+.overlay[data-clear] .backdrop {
+  opacity: 0;
+}
+.wormhole {
   position: fixed;
   inset: 0;
-  z-index: 86;
+  /* Under the welcome (85), over the app. */
+  z-index: 84;
   pointer-events: none;
-  overflow: hidden;
-  --spark: 255, 226, 208;
-  --spark-hot: 229, 140, 108;
+  background: radial-gradient(120% 90% at 50% 50%, #0b0b14, #040406);
+  will-change: opacity;
 }
-.finale[data-look='light'] {
-  --spark: 207, 106, 72;
-  --spark-hot: 229, 140, 108;
+.wormhole[data-look='light'] {
+  background: radial-gradient(120% 90% at 50% 50%, #fbfaf8, #ecebee);
 }
-.finaleCanvas {
+.tunnel {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
 }
-.core {
+.whiteout {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 120px;
-  height: 120px;
-  margin: -60px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #fff 0 6%, rgba(var(--spark), 0.95) 14%, rgba(var(--spark-hot), 0.45) 34%, transparent 70%);
-  filter: blur(1px);
+  inset: 0;
+  background: #fffaf6;
+  will-change: opacity;
 }
-.flash {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 140vmax;
-  height: 140vmax;
-  margin: -70vmax;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0, rgba(var(--spark), 0.55) 12%, rgba(var(--spark-hot), 0.18) 30%, transparent 55%);
-}
-.finale[data-look='light'] .flash {
-  background: radial-gradient(circle, rgba(255, 255, 255, 1) 0, rgba(255, 244, 236, 0.9) 14%, rgba(var(--spark-hot), 0.22) 32%, transparent 55%);
-}
-.rim {
-  /* The opening's edge: a thin bright line with copper light falling outward. */
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  translate: -50% -50%;
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 1.5px rgba(var(--spark), 0.9),
-    0 0 24px 6px rgba(var(--spark-hot), 0.55),
-    inset 0 0 30px 4px rgba(var(--spark-hot), 0.25);
+
+/* Ready to fly: the page is its own layer already, so rushing past costs no repaint. */
+.overlay[data-clear] .content {
+  will-change: transform, opacity;
 }

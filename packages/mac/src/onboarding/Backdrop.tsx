@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { type RefObject, useEffect, useRef } from 'react';
 
 /**
  * The onboarding's backdrop: slow folds of silk lit from above, a little copper in the light,
@@ -44,9 +44,9 @@ void main() {
   float folds = smoothstep(0.35, 0.95, f);
   float sheen = pow(smoothstep(0.55, 0.98, f), 3.0);
   // Light from the top; the bottom falls away into the base.
-  float fromTop = smoothstep(-0.15, 1.1, uv.y);
-  vec3 c = mix(base, lit, folds * 0.55 * fromTop * energy);
-  c = mix(c, tint, sheen * 0.22 * energy * fromTop);
+  float fromTop = smoothstep(-0.45, 1.0, uv.y);
+  vec3 c = mix(base, lit, folds * 0.85 * fromTop * energy);
+  c = mix(c, tint, sheen * 0.32 * energy * fromTop);
   float vignette = smoothstep(1.25, 0.2, length(q * vec2(0.9, 1.1)));
   c = mix(base, c, mix(0.6, 1.0, vignette));
   // Grain, so the gradient never bands on a wide-gamut display.
@@ -62,8 +62,8 @@ interface Palette {
 }
 
 const PALETTES: Record<'light' | 'dark', Palette> = {
-  dark: { base: [0.07, 0.07, 0.08], lit: [0.36, 0.36, 0.4], tint: [0.87, 0.58, 0.42] },
-  light: { base: [0.965, 0.965, 0.972], lit: [0.82, 0.82, 0.85], tint: [0.88, 0.62, 0.47] },
+  dark: { base: [0.06, 0.06, 0.07], lit: [0.5, 0.5, 0.56], tint: [0.87, 0.58, 0.42] },
+  light: { base: [0.97, 0.97, 0.975], lit: [0.72, 0.72, 0.77], tint: [0.88, 0.62, 0.47] },
 };
 
 const mixRgb = (a: Rgb, b: Rgb, k: number): Rgb => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
@@ -96,17 +96,22 @@ export interface BackdropProps {
   /** How much light is in the folds (0–1): brighter on the welcome, quieter behind settings. */
   readonly energy: number;
   readonly still: boolean;
+  /** Hidden behind something (the wormhole): stop drawing, but keep the GPU context (tearing it down stalls a frame). */
+  readonly paused?: boolean;
+  /** The canvas, for glass that bends what's behind it (Glass.tsx). */
+  readonly canvasRef?: RefObject<HTMLCanvasElement | null>;
 }
 
-export function Backdrop({ theme, energy, still }: BackdropProps) {
-  const canvas = useRef<HTMLCanvasElement>(null);
+export function Backdrop({ theme, energy, still, paused = false, canvasRef }: BackdropProps) {
+  const own = useRef<HTMLCanvasElement>(null);
+  const canvas = canvasRef ?? own;
   // What the next frame should ease toward (the effect below reads these without restarting).
-  const target = useRef({ theme, energy, still });
-  target.current = { theme, energy, still };
+  const target = useRef({ theme, energy, still, paused });
+  target.current = { theme, energy, still, paused };
 
   useEffect(() => {
     const el = canvas.current;
-    const gl = el?.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'low-power' });
+    const gl = el?.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'low-power', preserveDrawingBuffer: true });
     if (!el || !gl) return;
     const prog = program(gl);
     if (!prog) return;
@@ -148,6 +153,10 @@ export function Backdrop({ theme, energy, still }: BackdropProps) {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const want = target.current;
+      if (want.paused) {
+        frame = requestAnimationFrame(draw);
+        return;
+      }
       if (!want.still) time += dt;
       // Ease every input toward its target, frame-rate independent.
       const k = 1 - Math.exp(-dt * 3.2);

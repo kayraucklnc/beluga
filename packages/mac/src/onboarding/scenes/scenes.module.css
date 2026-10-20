@@ -361,47 +361,136 @@
 
 .friends {
   display: grid;
-  grid-template-columns: 120px 220px 200px;
+  grid-template-columns: 230px 90px 230px;
   align-items: start;
-  gap: 4px;
 }
-.person {
+.mac {
   composes: glass;
+  height: 296px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 18px 10px 14px;
-  border-radius: 16px;
+  overflow: hidden;
 }
-.avatar {
-  width: 46px;
-  height: 46px;
+.macHead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 12px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.macHead > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.macAvatar {
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 19px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 650;
   color: white;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
 }
-.theirClaude {
+.macClaude {
   display: inline-flex;
   gap: 4px;
   align-items: center;
   font-size: 10.5px;
   color: var(--claude);
 }
+.macBody {
+  position: relative;
+  flex: 1;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.task {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-2);
+}
+.waitIcon {
+  color: var(--text-3);
+}
+.errandAsk {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--claude) 45%, transparent);
+  background: color-mix(in srgb, var(--claude) 8%, transparent);
+}
+.askTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--claude);
+}
+.result {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--ok) 40%, transparent);
+}
+.result > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.result strong {
+  font-size: 11.5px;
+}
+.result .dim {
+  font-size: 10.5px;
+}
+.resultIcon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+}
+.idle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-3);
+}
 .wire {
   position: relative;
-  height: 120px;
-  margin-top: 4px;
+  height: 296px;
+}
+.macBody .step code {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 128px;
 }
 .wireSvg {
   position: absolute;
   left: 0;
   right: 0;
-  top: 32px;
+  top: 104px;
   width: 100%;
   height: 40px;
   overflow: visible;
@@ -415,59 +504,46 @@
 .lock {
   position: absolute;
   left: 50%;
-  top: 82px;
+  top: 152px;
   transform: translateX(-50%);
   display: inline-flex;
   gap: 4px;
   align-items: center;
-  white-space: nowrap;
-  font-size: 10.5px;
+  text-align: center;
+  width: 90px;
+  justify-content: center;
+  font-size: 9.5px;
+  line-height: 1.3;
   color: var(--text-3);
 }
 .packet {
   composes: glass;
   position: absolute;
-  top: 38px;
+  top: 124px;
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
   transform: translate(-50%, -50%);
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-  padding: 4px 8px;
-  border-radius: 8px;
-  white-space: nowrap;
-  font-size: 11px;
-}
-.packet code {
-  font-family: var(--font-mono);
+  display: grid;
+  place-items: center;
+  color: var(--claude);
 }
 .packet[data-tone='ok'] {
   color: var(--ok);
 }
-.youSide {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 200px;
-}
-.youSide > .person {
-  align-self: center;
-  width: 120px;
-}
 .request {
-  composes: glass;
-  position: absolute;
-  top: 150px;
-  left: 0;
-  right: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 12px;
-  border-radius: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  font-size: 11px;
 }
-.request code {
-  align-self: flex-start;
+.requestText {
+  font-size: 11.5px;
+  line-height: 1.4;
 }
 .requestButtons {
   display: flex;
@@ -491,18 +567,6 @@
   background: var(--accent);
   color: white;
   box-shadow: none;
-}
-.doneNote {
-  position: absolute;
-  top: 162px;
-  left: 0;
-  right: 0;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  justify-content: center;
-  color: var(--ok);
-  font-size: 11.5px;
 }
 
 /* ── Earnings ─────────────────────────────────────────────── */

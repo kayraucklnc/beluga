@@ -40,7 +40,7 @@ test('Skip Setup leaves at once, and the palette brings the welcome back', async
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('klaud.onboarding.v1') ?? '{}').how)).toBe('skipped');
 
   await page.keyboard.press('Meta+k');
-  await page.keyboard.type('Welcome to Klaud');
+  await page.keyboard.type('Onboard Again');
   await page.keyboard.press('Enter');
   await expect(welcome).toBeVisible();
 });

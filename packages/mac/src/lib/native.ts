@@ -43,6 +43,7 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'help-keys':
       return ui.patch({ palette: true });
     case 'help-welcome':
+    case 'onboarding':
       return void document.dispatchEvent(new CustomEvent(SHOW_WELCOME));
     case 'new-chat':
       return actions.run({ type: 'new_chat', projectId: 'chats' });

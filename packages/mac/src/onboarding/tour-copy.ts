@@ -28,9 +28,9 @@ export const TOUR_COPY: Readonly<Partial<Record<Step, TourCopy>>> = {
   friends: {
     eyebrow: 'Together',
     icon: 'people',
-    title: 'Bring your friends. And their Claudes.',
-    body: 'Add friends and work side by side. Ask their Claude for a hand, or let yours help them. Requests go Mac to Mac, end-to-end encrypted, and you decide what runs.',
-    points: ['Invite to one project, or to everything', 'They can watch, prompt or edit', 'A trust level for each friend’s Claude'],
+    title: 'Your Claude, and your friends’ Claudes.',
+    body: 'Add friends and your Claudes work together. Yours asks theirs for what only their Mac has: a file, an account, a page they’re signed in to. They allow it, the result comes back, and yours carries on. Mac to Mac, end-to-end encrypted.',
+    points: ['Files, screenshots and errands between Macs', 'You approve, or trust a friend once', 'Invite to one project, or to everything'],
   },
   earnings: {
     eyebrow: 'Earnings',

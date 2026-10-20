@@ -230,7 +230,7 @@ export function App() {
   return (
     <Tooltip.Provider delayDuration={450} skipDelayDuration={200}>
       {/* Behind the welcome the app can't be tabbed to or read out. */}
-      <div className={s.app} inert={welcome.open} data-arriving={welcome.arriving || undefined}>
+      <div className={s.app} inert={welcome.open} data-app-root>
         {prefs.sidebar ? <Sidebar /> : null}
         <Main />
         <RightPanel />
