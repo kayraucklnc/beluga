@@ -40,7 +40,7 @@ test("talks to Claude in a workspace and shows its run", async ({ page }) => {
   await composer(page).fill('Add a health check endpoint');
   await composer(page).press('Enter');
   await expect(page.getByText('Add a health check endpoint').last()).toBeVisible();
-  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 20_000 });
 });
 
 test('shows what changed, file by file: in the panel, then in full', async ({ page }) => {
@@ -307,7 +307,7 @@ test('queues messages while Claude works, reorders them, and sends one now', asy
   await rows.nth(0).getByRole('button', { name: 'Send now' }).click();
   await expect(tray).toBeHidden();
   await expect(page.getByText('Interrupted by a newer message').last()).toBeVisible();
-  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 20_000 });
 });
 
 // ---- the notification centre (the bell in the toolbar)

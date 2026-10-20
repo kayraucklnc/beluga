@@ -39,6 +39,77 @@
   border-bottom: 0.5px solid var(--hairline);
   background: var(--bg);
 }
+/* ---- the two panes (top: what Claude made; bottom: what runs) */
+.pane {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.paneClosed {
+  flex: none;
+}
+.paneHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 8px 0 12px;
+  border-top: 0.5px solid var(--hairline);
+  background: var(--bg);
+  container-type: inline-size;
+}
+.pane:not(.paneClosed) > .paneHead {
+  border-bottom: 0.5px solid var(--hairline);
+}
+.paneToggle {
+  flex: none;
+}
+/* A tab dragged over a strip: where it lands. */
+.tabs {
+  position: relative;
+}
+.dropBefore {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.dropEnd {
+  flex: none;
+  width: 2px;
+  margin-left: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.tab[draggable='true'] {
+  -webkit-user-drag: element;
+}
+
+/* Narrow: the four names stay whole; the icons go first, and each tab takes the room its name needs. */
+.head {
+  container-type: inline-size;
+}
+@container (max-width: 420px) {
+  .tabs .tab > svg {
+    display: none;
+  }
+  .tabs .tab {
+    flex: 1 1 auto;
+  }
+  .tabs .tabName > span {
+    padding-left: 0;
+  }
+}
+/* A tab's second view (Changes · History), switched just under the tabs. */
+.views {
+  flex: none;
+  display: flex;
+  padding: 8px 12px 0;
+}
+.views button {
+  height: 20px;
+  padding: 0 9px;
+  font-size: 0.86rem;
+}
 .tabs {
   display: flex;
   gap: 1px;

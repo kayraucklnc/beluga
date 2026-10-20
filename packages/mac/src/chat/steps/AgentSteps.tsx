@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LogItem, SubAgent } from '@klaud/core/store.js';
 import type { TaskView } from '@klaud/core/gateway/model.js';
 import { isFinal } from '@klaud/core/gateway/model.js';
@@ -11,6 +11,7 @@ import { Avatar, Button, Dot, cx } from '../../components/ui.js';
 import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
 import { usePrefs } from '../../lib/prefs.js';
 import { useDisclosure } from './step-memory.js';
+import { usePresence } from '../../layout/panel/ResizeHandle.js';
 import { StepRow, usePersonId } from './StepRow.js';
 import { useAgentSteps } from './use-steps.js';
 import { useActions } from '../../lib/actions.js';
@@ -26,6 +27,8 @@ type AgentItem = Extract<LogItem, { type: 'agent' }>;
 const LAUNCH = new Set(['Task', 'Agent']);
 /** Finished steps shown below the "3 steps · 12s" line (the rest fold into it). */
 const RECENT_LIVE = 2;
+/** How long folding a finished card's steps takes (twice --dur, see .fold). */
+const FOLD_MS = 380;
 
 function useTick(active: boolean): number {
   const [now, setNow] = useState(Date.now);
@@ -67,7 +70,6 @@ function spanOf(steps: readonly StepSummary[]): string | undefined {
  * a tool's name or an id; your own Claude's steps open to show what ran and what came back.
  */
 export const AgentSteps = memo(function AgentSteps({ item, running }: { item: AgentItem; running: boolean }) {
-  const prefs = usePrefs();
   const selfId = useApp((st) => st.selfId);
   const detail = useApp((st) => st.prefs.subagents);
   const tasks = useApp((st) => st.gateway.tasks);
@@ -87,8 +89,6 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
     return lines.map((line, i) => lineStep(line, i, item.ts, running && i === lines.length - 1));
   }, [rich, subIds, item.steps, item.ts, running]);
   const working = running && !item.text;
-  const showSteps = prefs.steps === 'all' || running;
-  if (!showSteps && !working) return null;
 
   // The step Claude is on: the last one, while it runs.
   const lastRow = rows.at(-1);
@@ -149,15 +149,53 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
 });
 
 /**
- * Expand all / Collapse all for a card's steps (in the card's hover actions, next to Copy).
- * Only your own Claude's steps open, so only its finished cards with steps have it.
+ * A finished answer's steps, in the card's hover actions (next to Copy). Folded away once Claude
+ * answers (Settings › Chat), it shows them again; kept showing, it opens or closes every step.
  */
 export function StepsToggle({ item }: { item: AgentItem }) {
+  const prefs = usePrefs();
   const open = useDisclosure(`${item.channel}/${item.id}`);
+  if (prefs.doneSteps === 'fold') {
+    return (
+      <Button size="small" variant="quiet" icon={open.shown ? 'chevronUp' : 'chevronDown'} onClick={() => open.setShown(!open.shown)}>
+        {open.shown ? 'Hide Steps' : 'Show Steps'}
+      </Button>
+    );
+  }
   return (
     <Button size="small" variant="quiet" icon={open.any ? 'chevronUp' : 'chevronDown'} onClick={() => open.setAllOpen(!open.any)}>
       {open.any ? 'Collapse all' : 'Expand all'}
     </Button>
+  );
+}
+
+/**
+ * Steps that fold away: once Claude has answered, they close (the height and then nothing, so the
+ * answer moves up under the name) and leave the chat; Show Steps opens them the same way back.
+ */
+export function StepsFold({ folded, children }: { folded: boolean; children: ReactNode }) {
+  const presence = usePresence(!folded, FOLD_MS);
+  const was = useRef(folded);
+  const [opening, setOpening] = useState(false);
+  useLayoutEffect(() => {
+    if (was.current && !folded) setOpening(true);
+    if (folded) setOpening(false);
+    was.current = folded;
+  }, [folded]);
+  if (!presence.mounted) return null;
+  return (
+    <div
+      className={s.folding}
+      data-folded={folded ? 'true' : undefined}
+      data-opening={opening ? 'true' : undefined}
+      // Folding away, it's on its way out: not something to tab into.
+      inert={folded}
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget) setOpening(false);
+      }}
+    >
+      <div className={s.foldingInner}>{children}</div>
+    </div>
   );
 }
 

@@ -6,7 +6,7 @@ export type PanelState = Pick<AppState, 'view' | 'projects'>;
 import { findWorkspace } from '@klaud/ui/workspace-models.js';
 import type { Workspace } from '@klaud/workspaces/types.js';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
-import { type PanelTab, drawerFits, panelKey, panelTabsFor, pickPanelTab, rememberTab } from './panel-model.js';
+import { DEFAULT_LAYOUT, PANES_DEFAULT, type PaneId, type PanelTab, drawerFits, moveTab, paneKey, paneOf, paneTabs, panelTabsFor, pickPanelTab, rememberTab, viewsOf } from './panel-model.js';
 import { type UiPrefs, getPrefs, setPrefs } from './prefs.js';
 
 /**
@@ -22,8 +22,8 @@ interface Runtime {
   readonly focus?: { readonly kind: FocusKind; readonly wsId: string };
   /** When the keyboard was last asked to go to the terminal (⌘J): the terminal that shows takes it. */
   readonly termFocus: number;
-  /** The tab the panel showed before ⌘J switched it to Terminal (⌘J again goes back), and where. */
-  readonly before?: { readonly key: string; readonly tab: PanelTab; readonly closed: boolean };
+  /** What the panel showed before ⌘J brought the terminal up (⌘J again goes back), and where. */
+  readonly before?: { readonly key: string; readonly tab: PanelTab; readonly closed: boolean; readonly bottomClosed: boolean };
   /**
    * The panel was open when a file or a diff took the center: it steps aside for the focus view
    * and comes back with Esc. Showing or hiding it yourself meanwhile forgets this (your choice stays).
@@ -55,15 +55,35 @@ export const hasChanges = (ws: Workspace | undefined): boolean => (ws?.status?.c
 
 export const tabsOf = (state: PanelState): PanelTab[] => panelTabsFor(state.view, workspaceOf(state)?.kind).filter((t) => t !== 'scratch' || getPrefs().scratchTab);
 
-/** The tab showing (or that would show, when the panel is hidden) for what's on screen. */
-export function currentTab(state: PanelState, prefs: UiPrefs = getPrefs()): PanelTab {
-  return pickPanelTab(tabsOf(state), prefs.panelTabs[panelKey(state.view)], hasChanges(workspaceOf(state)));
+/** A pane's tabs for what's on screen, in your order. */
+export const paneTabsOf = (state: PanelState, pane: PaneId, prefs: UiPrefs = getPrefs()): PanelTab[] => paneTabs(prefs.panelLayout, pane, tabsOf(state));
+
+/** The tab a pane shows (or would, while hidden): the one you last picked there, else Changes when there are changes, else Info. */
+export function currentTab(state: PanelState, prefs: UiPrefs = getPrefs(), pane: PaneId = 'top'): PanelTab | undefined {
+  const tabs = paneTabsOf(state, pane, prefs);
+  if (!tabs.length) return undefined;
+  // History is Changes' second view: a pane with Changes can show it.
+  const views = tabs.flatMap((t) => viewsOf(t, tabsOf(state)));
+  return pickPanelTab(views, prefs.panelTabs[paneKey(state.view, pane)], hasChanges(workspaceOf(state)));
 }
 
-/** Pick a tab (remembered for this workspace). */
+/** The pane is on screen: the panel is open, it has tabs here, and (the bottom one) it's open. */
+export function paneShowing(state: PanelState, pane: PaneId, prefs: UiPrefs = getPrefs()): boolean {
+  return prefs.inspector && paneTabsOf(state, pane, prefs).length > 0 && (pane === 'top' || prefs.bottomOpen || !paneTabsOf(state, 'top', prefs).length);
+}
+
+/** This tab is on screen right now. */
+export function tabShowing(state: PanelState, tab: PanelTab, prefs: UiPrefs = getPrefs()): boolean {
+  const pane = paneOf(prefs.panelLayout, tab);
+  return paneShowing(state, pane, prefs) && currentTab(state, prefs, pane) === tab;
+}
+
+/** Pick a tab (remembered for this workspace, in its pane). */
 export function setPanelTab(view: View, tab: PanelTab): void {
   patch({ before: undefined });
-  setPrefs({ panelTabs: rememberTab(getPrefs().panelTabs, panelKey(view), tab) });
+  const prefs = getPrefs();
+  const pane = paneOf(prefs.panelLayout, tab);
+  setPrefs({ panelTabs: rememberTab(prefs.panelTabs, paneKey(view, pane), tab), ...(pane === 'bottom' ? { bottomOpen: true } : {}) });
 }
 
 /** You showed or hid the panel yourself: during a focus view, that's what stays after it. */
@@ -71,14 +91,25 @@ const panelChosen = (): void => {
   if (runtime.focus && runtime.panelBack !== undefined) patch({ panelBack: undefined });
 };
 
-/** Show the panel on this tab. False when the view has no such tab. */
+/** Show the panel on this tab (opening its pane). False when the view has no such tab. */
 export function showPanelTab(state: PanelState, tab: PanelTab): boolean {
   if (!tabsOf(state).includes(tab)) return false;
   panelChosen();
   patch({ before: undefined });
-  setPrefs({ inspector: true, panelTabs: rememberTab(getPrefs().panelTabs, panelKey(state.view), tab) });
+  const prefs = getPrefs();
+  const pane = paneOf(prefs.panelLayout, tab);
+  setPrefs({ inspector: true, panelTabs: rememberTab(prefs.panelTabs, paneKey(state.view, pane), tab), ...(pane === 'bottom' ? { bottomOpen: true } : {}) });
   return true;
 }
+
+/** Drag a tab to the other pane (or along its own): it stays there, and shows. */
+export function placeTab(state: PanelState, tab: PanelTab, to: PaneId, before?: PanelTab): void {
+  const prefs = getPrefs();
+  const panelLayout = moveTab(prefs.panelLayout, tab, to, before);
+  setPrefs({ panelLayout, panelTabs: rememberTab(prefs.panelTabs, paneKey(state.view, to), tab), ...(to === 'bottom' ? { bottomOpen: true } : {}) });
+}
+
+export const resetPanelLayout = (): void => setPrefs({ panelLayout: DEFAULT_LAYOUT, paneSplit: PANES_DEFAULT, bottomOpen: true });
 
 /** A changed file the Changes tab should open when it next shows (asked from the Files tab). */
 let changeAsk: { readonly wsId: string; readonly path: string; readonly at: number } | undefined;
@@ -105,7 +136,7 @@ export const togglePanel = (): void => {
 
 /** The terminal is on screen: in the drawer, or as the panel's tab. */
 export function terminalShowing(state: PanelState, prefs: UiPrefs = getPrefs()): boolean {
-  return (prefs.drawer && drawerFits(state.view)) || (prefs.inspector && currentTab(state, prefs) === 'terminal');
+  return (prefs.drawer && drawerFits(state.view)) || tabShowing(state, 'terminal', prefs);
 }
 
 /** Put the keyboard in the terminal that's showing. */
@@ -121,11 +152,12 @@ export function revealTerminal(state: PanelState, focus: boolean): boolean {
   if (inDrawer) {
     if (!prefs.drawer) setPrefs({ drawer: true });
   } else if (tabsOf(state).includes('terminal')) {
-    const tab = currentTab(state, prefs);
-    if (!(prefs.inspector && tab === 'terminal')) {
-      const before = { key: panelKey(state.view), tab, closed: !prefs.inspector };
+    if (!tabShowing(state, 'terminal', prefs)) {
+      const pane = paneOf(prefs.panelLayout, 'terminal');
+      const tab = currentTab(state, prefs, pane) ?? 'terminal';
+      const before = { key: paneKey(state.view, pane), tab, closed: !prefs.inspector, bottomClosed: !prefs.bottomOpen };
       panelChosen();
-      setPrefs({ inspector: true, panelTabs: rememberTab(prefs.panelTabs, panelKey(state.view), 'terminal') });
+      setPrefs({ inspector: true, panelTabs: rememberTab(prefs.panelTabs, paneKey(state.view, pane), 'terminal'), ...(pane === 'bottom' ? { bottomOpen: true } : {}) });
       patch({ before });
     }
   } else return false;
@@ -136,14 +168,26 @@ export function revealTerminal(state: PanelState, focus: boolean): boolean {
 /** Put the terminal away: close the drawer, or give the panel back what it showed before. */
 export function hideTerminal(state: PanelState): void {
   const prefs = getPrefs();
-  const key = panelKey(state.view);
-  const inPanel = prefs.inspector && currentTab(state, prefs) === 'terminal';
+  const pane = paneOf(prefs.panelLayout, 'terminal');
+  const key = paneKey(state.view, pane);
   const inDrawer = prefs.drawer && drawerFits(state.view);
+  // With the drawer open, the panel's Terminal tab only points at it: closing the drawer is enough.
+  const inPanel = !inDrawer && tabShowing(state, 'terminal', prefs);
   if (!inPanel && !inDrawer) return;
   // The panel goes back to what it showed before ⌘J (here, not in another workspace).
   const before = runtime.before?.key === key ? runtime.before : undefined;
-  const back = before && before.tab !== 'terminal' ? before.tab : (tabsOf(state).find((t) => t !== 'terminal') ?? 'info');
   patch({ before: undefined });
+  if (inPanel && pane === 'bottom') {
+    // Below the rest: the bottom pane closes (back to what it showed, if ⌘J switched it).
+    const back = before && before.tab !== 'terminal' ? before.tab : undefined;
+    setPrefs({
+      ...(inDrawer ? { drawer: false } : {}),
+      ...(back ? { panelTabs: rememberTab(prefs.panelTabs, key, back), bottomOpen: !before?.bottomClosed } : { bottomOpen: false }),
+      ...(before?.closed ? { inspector: false } : {}),
+    });
+    return;
+  }
+  const back = before && before.tab !== 'terminal' ? before.tab : (paneTabsOf(state, pane, prefs).find((t) => t !== 'terminal') ?? 'info');
   setPrefs({
     ...(inDrawer ? { drawer: false } : {}),
     // Closing the drawer mustn't leave the terminal showing in the panel instead.
@@ -151,10 +195,20 @@ export function hideTerminal(state: PanelState): void {
   });
 }
 
-/** ⌘J: show the terminal (and type in it), or put it away. Returns why not, when it can't. */
+/** The keyboard is in a terminal. */
+const typingInTerminal = (): boolean => Boolean(document.activeElement?.closest('.xterm'));
+
+/**
+ * ⌘J: show the terminal and type in it; already showing, just type in it; already typing in it,
+ * put it away. Returns why not, when it can't.
+ */
 export function toggleTerminal(state: PanelState): string | undefined {
-  if (terminalShowing(state)) {
-    hideTerminal(state);
+  const prefs = getPrefs();
+  // Kept in the drawer: the drawer is the terminal ⌘J means (the panel's tab is just a tab then).
+  const showing = prefs.termIn === 'drawer' && drawerFits(state.view) ? prefs.drawer && drawerFits(state.view) : terminalShowing(state, prefs);
+  if (showing) {
+    if (typingInTerminal()) hideTerminal(state);
+    else focusTerminal();
     return undefined;
   }
   if (state.view.kind === 'shared') return 'A shared workspace’s terminal is its owner’s';
@@ -166,7 +220,7 @@ export function toggleTerminal(state: PanelState): string | undefined {
 export function moveTerminal(state: PanelState, to: 'drawer' | 'panel'): void {
   if (to === 'drawer') {
     const prefs = getPrefs();
-    const panelHadIt = prefs.inspector && currentTab(state, prefs) === 'terminal';
+    const panelHadIt = tabShowing(state, 'terminal', prefs);
     if (panelHadIt) hideTerminal(state);
     setPrefs({ termIn: 'drawer', drawer: true });
   } else {

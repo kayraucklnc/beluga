@@ -79,14 +79,14 @@ function General() {
         <Row label="Show times next to messages">
           <Switch label="Times" on={prefs.timestamps} onChange={(v) => setPrefs({ timestamps: v })} />
         </Row>
-        <Row label="Claude's steps in the chat" detail="Finished runs keep their last few steps either way.">
+        <Row label="Claude's steps once it answers" detail="Folded, the answer stands on its own; Show Steps on the answer opens them again.">
           <Select
             label="Steps"
-            value={prefs.steps}
-            onChange={(v) => setPrefs({ steps: v })}
+            value={prefs.doneSteps}
+            onChange={(v) => setPrefs({ doneSteps: v })}
             options={[
-              { value: 'all', label: 'Show them' },
-              { value: 'summary', label: 'Only while it works' },
+              { value: 'fold', label: 'Fold them away' },
+              { value: 'show', label: 'Keep them showing' },
             ]}
           />
         </Row>

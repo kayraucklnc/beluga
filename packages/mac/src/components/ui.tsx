@@ -57,14 +57,15 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
  * A row of mutually exclusive choices (like NSSegmentedControl). `iconOnly` (a narrow window):
  * just the icons, each named in its tooltip.
  */
-export function Segmented<T extends string>({ value, options, onChange, label, iconOnly }: { value: T; options: ReadonlyArray<{ value: T; label: string; hint?: string; icon?: IconName; keys?: string }>; onChange: (v: T) => void; label: string; iconOnly?: boolean }) {
+/** `radio`: a choice of how to show one thing (a radio group), not tabs of their own. */
+export function Segmented<T extends string>({ value, options, onChange, label, iconOnly, radio }: { value: T; options: ReadonlyArray<{ value: T; label: string; hint?: string; icon?: IconName; keys?: string }>; onChange: (v: T) => void; label: string; iconOnly?: boolean; radio?: boolean }) {
   return (
-    <div className={s.segmented} role="tablist" aria-label={label}>
+    <div className={s.segmented} role={radio ? 'radiogroup' : 'tablist'} aria-label={label}>
       {options.map((o) => {
         const bare = iconOnly && o.icon;
         return (
           <Tip key={o.value} label={bare ? `${o.label}${o.hint ? ` · ${o.hint}` : ''}` : (o.hint ?? o.label)} {...(o.keys ? { keys: o.keys } : {})}>
-            <button type="button" role="tab" aria-label={bare ? o.label : undefined} aria-selected={o.value === value} className={cx(s.segment, o.value === value && s.segmentOn, bare && s.segmentIcon)} onClick={() => onChange(o.value)}>
+            <button type="button" role={radio ? 'radio' : 'tab'} aria-label={bare ? o.label : undefined} {...(radio ? { 'aria-checked': o.value === value } : { 'aria-selected': o.value === value })} className={cx(s.segment, o.value === value && s.segmentOn, bare && s.segmentIcon)} onClick={() => onChange(o.value)}>
               {o.icon ? <Icon name={o.icon} size={13} /> : null}
               {bare ? null : o.label}
             </button>

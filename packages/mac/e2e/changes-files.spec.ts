@@ -29,19 +29,23 @@ test.beforeEach(async ({ page }) => {
   await expect(sidebar(page)).toBeVisible();
 });
 
-test('a narrow panel names only the tab you’re on, in full; the others are icons', async ({ page }) => {
+test('a narrow panel still names its tabs in full; History is a view inside Changes', async ({ page }) => {
   await openHero(page);
   await tab(page, 'Changes').click();
-  const width = async (name: string) => (await tab(page, name).locator('span').first().boundingBox())?.width ?? 0;
-  // Its name isn't cut short ("Ch…"), and the others have folded away.
-  await expect.poll(() => width('Changes')).toBeGreaterThan(40);
-  const name = tab(page, 'Changes').locator('span > span');
-  expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
-  await expect.poll(() => width('History')).toBeLessThan(1);
-  // Picking another one opens its name and folds this one.
-  await tab(page, 'History').click();
-  await expect.poll(() => width('History')).toBeGreaterThan(30);
-  await expect.poll(() => width('Changes')).toBeLessThan(1);
+  // Never "Ch…", never icons only.
+  for (const name of ['Changes', 'Files', 'Scratch', 'Info', 'Terminal', 'Background']) {
+    const label = tab(page, name).locator('span > span');
+    expect(await label.evaluate((el) => el.clientWidth > 10 && el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  }
+  const views = panel(page).getByRole('radiogroup', { name: 'Changes views' });
+  await views.getByRole('radio', { name: 'History' }).click();
+  await expect(tab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
+  await expect(views.getByRole('radio', { name: 'History' })).toHaveAttribute('aria-checked', 'true');
+  // Back to Files and to Changes again: History is where it left off.
+  await tab(page, 'Files').click();
+  await tab(page, 'Changes').click();
+  await expect(views.getByRole('radio', { name: 'History' })).toHaveAttribute('aria-checked', 'true');
+  await views.getByRole('radio', { name: 'Changes' }).click();
 });
 
 test('Changes shows a picture and a PDF as themselves, not as a binary diff', async ({ page }) => {

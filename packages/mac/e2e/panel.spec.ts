@@ -47,9 +47,10 @@ test.beforeEach(async ({ page }) => {
   await expect(sidebar(page)).toBeVisible();
 });
 
-test('a workspace has Changes, Files, Terminal, Info, History, Scratch and Background; the keys pick them and each workspace keeps its own', async ({ page }) => {
+test('a workspace has what Claude made on top and what runs below; the keys pick them and each workspace keeps its own', async ({ page }) => {
   await openWorkspace(page);
-  await expect(panel(page).getByRole('tablist', { name: 'Panel' }).getByRole('tab')).toHaveText(['Changes', 'Files', 'Terminal', 'Info', 'History', 'Scratch', 'Background']);
+  await expect(panel(page).getByRole('tablist', { name: 'Panel', exact: true }).getByRole('tab')).toHaveText(['Changes', 'Files', 'Scratch', 'Info']);
+  await expect(panel(page).getByRole('tablist', { name: 'Panel bottom' }).getByRole('tab')).toHaveText(['Terminal', 'Background']);
   // It has commits ahead: Changes is where it starts.
   await expect(tab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Meta+Alt+4');
@@ -65,9 +66,9 @@ test('a workspace has Changes, Files, Terminal, Info, History, Scratch and Backg
   await page.keyboard.press('Meta+Alt+4');
   await openWorkspace(page, 'add-auth');
   await expect(tab(page, 'Files')).toHaveAttribute('aria-selected', 'true');
-  // The group chat has no workspace: just Terminal and Info.
+  // The group chat has no workspace: just Info, and the terminal below.
   await sidebar(page).getByRole('button', { name: 'Group chat' }).click();
-  await expect(panel(page).getByRole('tablist', { name: 'Panel' }).getByRole('tab')).toHaveText(['Terminal', 'Info']);
+  await expect(panel(page).getByRole('tablist', { name: 'Panel' }).getByRole('tab')).toHaveText(['Info', 'Terminal']);
 });
 
 test('⌥⌘0 hides and shows the panel, and the toolbar button does too', async ({ page }) => {
@@ -175,6 +176,9 @@ test('⌘J opens a drawer under the chat when that’s your choice (Settings ›
   // The panel's Terminal tab says where the terminal is.
   await tab(page, 'Terminal').click();
   await expect(panel(page).getByText('The terminal is in the drawer')).toBeVisible();
+  // ⌘J puts the keyboard in it; typing there, ⌘J puts it away.
+  await page.keyboard.press('Meta+J');
+  await expect(drawer.locator('.xterm-helper-textarea')).toBeFocused();
   await page.keyboard.press('Meta+J');
   await expect(drawer).toBeHidden();
 });
@@ -213,4 +217,30 @@ test('Run shows the terminal without taking the keyboard from the message box', 
   // The center never left the conversation.
   await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
   await page.keyboard.press('Meta+R');
+});
+
+test('drag a tab to the other pane and it stays there; right-click moves it back; the bottom pane folds to its tabs', async ({ page }) => {
+  await openWorkspace(page);
+  const top = panel(page).getByRole('tablist', { name: 'Panel', exact: true });
+  const bottom = panel(page).getByRole('tablist', { name: 'Panel bottom' });
+  await top.getByRole('tab', { name: 'Info', exact: true }).dragTo(bottom);
+  await expect(bottom.getByRole('tab')).toHaveText(['Terminal', 'Info', 'Background']);
+  await expect(bottom.getByRole('tab', { name: 'Info' })).toHaveAttribute('aria-selected', 'true');
+  await expect(panel(page).locator('#panel-body-bottom').getByRole('complementary', { name: 'Inspector' })).toBeVisible();
+  // After a reload, it's still there.
+  await page.reload();
+  await openWorkspace(page);
+  await expect(bottom.getByRole('tab')).toHaveText(['Terminal', 'Info', 'Background']);
+  await bottom.getByRole('tab', { name: 'Info' }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Move to Top' }).click();
+  await expect(top.getByRole('tab')).toHaveText(['Changes', 'Files', 'Scratch', 'Info']);
+  // The bottom pane folds to its tabs, and opens again from any of them.
+  await panel(page).getByRole('button', { name: 'Hide the bottom of the panel' }).click();
+  await expect(panel(page).locator('#panel-body-bottom')).toHaveCount(0);
+  await bottom.getByRole('tab', { name: 'Terminal' }).click();
+  await expect(panel(page).locator('#panel-body-bottom')).toBeVisible();
+  // Reset Panel Layout puts everything back.
+  await top.getByRole('tab', { name: 'Files' }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Reset Panel Layout' }).click();
+  await expect(top.getByRole('tab')).toHaveText(['Changes', 'Files', 'Scratch', 'Info']);
 });

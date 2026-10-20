@@ -9,6 +9,8 @@ interface Memory {
   /** Expand all: every step open except those in `ids`; otherwise only those in `ids`. */
   readonly all: boolean;
   readonly ids: ReadonlySet<string>;
+  /** A finished card's steps, folded away once Claude answered, shown again on request. */
+  readonly shown?: boolean;
 }
 
 const EMPTY: Memory = { all: false, ids: new Set() };
@@ -29,6 +31,9 @@ export interface Disclosure {
   readonly all: boolean;
   /** Anything open. */
   readonly any: boolean;
+  /** A finished card's folded steps are showing (Show Steps). */
+  readonly shown: boolean;
+  readonly setShown: (shown: boolean) => void;
 }
 
 export function useDisclosure(scope: string): Disclosure {
@@ -50,11 +55,12 @@ export function useDisclosure(scope: string): Disclosure {
       const ids = new Set(cur.ids);
       if (ids.has(id)) ids.delete(id);
       else ids.add(id);
-      set(scope, { all: cur.all, ids });
+      set(scope, { ...cur, ids });
     },
     [scope],
   );
-  const setAllOpen = useCallback((open: boolean): void => set(scope, { all: open, ids: new Set() }), [scope]);
+  const setAllOpen = useCallback((open: boolean): void => set(scope, { ...(memory.get(scope) ?? EMPTY), all: open, ids: new Set() }), [scope]);
+  const setShown = useCallback((shown: boolean): void => set(scope, { ...(memory.get(scope) ?? EMPTY), shown }), [scope]);
   const isOpen = (id: string): boolean => (m.all ? !m.ids.has(id) : m.ids.has(id));
-  return { isOpen, toggle, setAllOpen, all: m.all, any: m.all || m.ids.size > 0 };
+  return { isOpen, toggle, setAllOpen, all: m.all, any: m.all || m.ids.size > 0, shown: Boolean(m.shown), setShown };
 }
