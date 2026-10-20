@@ -59,7 +59,7 @@ test('Continue in New Worktree carries the conversation to a new worktree', asyn
   await page.getByLabel('Question about bob-api').fill('Explain the billing flow');
   await page.getByLabel('Question about bob-api').press('Enter');
   await expect(page.getByRole('note', { name: 'Questions only' })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(/Done in/).last()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 20_000 });
   await page.getByRole('note', { name: 'Questions only' }).getByRole('button', { name: 'Continue in New Worktree…' }).click();
   const sheet = page.getByRole('dialog', { name: 'Continue in a New Worktree' });
   await expect(sheet.getByLabel('Task')).toHaveValue('Explain the billing flow');

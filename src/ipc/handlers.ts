@@ -14,6 +14,7 @@ import { STRIPE_HANDLERS } from './stripe-handlers.js';
 import { CLAUDE_CODE_HANDLERS } from './claude-code-handlers.js';
 import { STEPS_HANDLERS } from './steps-handlers.js';
 import { GATEWAY_HANDLERS } from './gateway-handlers.js';
+import { BOARD_HANDLERS } from './board-handlers.js';
 import { GIT_HANDLERS } from './git-handlers.js';
 
 /**
@@ -258,6 +259,7 @@ export const HANDLERS = {
   ...CLAUDE_CODE_HANDLERS,
   ...STEPS_HANDLERS,
   ...GATEWAY_HANDLERS,
+  ...BOARD_HANDLERS,
   ...GIT_HANDLERS,
 } satisfies Handlers;
 

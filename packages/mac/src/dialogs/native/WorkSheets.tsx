@@ -1,3 +1,4 @@
+import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
 import { useState } from 'react';
 import { channelOf } from '@klaud/core/store.js';
 import { canRunOn } from '@klaud/core/trust.js';
@@ -168,6 +169,8 @@ export function NativeSheets() {
       return <WorkConfirm key={`${sheet.wsId}:${sheet.action}`} wsId={sheet.wsId} action={sheet.action} close={close} />;
     case 'clean_up_worktrees':
       return <CleanUpWorktreesAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
+    case 'new_task':
+      return <NewTaskSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.status ? { status: sheet.status } : {})} {...(sheet.parent ? { parent: sheet.parent } : {})} close={close} />;
     case 'confirm':
       return (
         <Alert

@@ -10,6 +10,7 @@ import { OtherWorktreeBanner, WorktreeInfoPage } from './WorktreeInfo.js';
 import { AgentWorktreePage } from '../claude-code/AgentMonitor.js';
 import { isAgentWorktree } from '../claude-code/subagents-model.js';
 import { LiveStrip } from '../claude-code/Live.js';
+import { TaskStrip } from '../tasks/TaskStrip.js';
 import { useWorktreeFlag } from './worktree-info-state.js';
 import { AskBanner } from '../chat/AskBanner.js';
 
@@ -102,6 +103,7 @@ export function ChatView() {
   const chat = (
     <div className={s.chat}>
       {other ? <OtherWorktreeBanner ws={other} /> : null}
+      {view.kind === 'workspace' ? <TaskStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <LiveStrip workspaceId={view.id} /> : null}
       <ChatLog key={channel} channel={channel === 'draft' ? '__draft__' : channel} empty={empty} />
       {ws?.askOnly && !ws.archived ? <AskBanner wsId={ws.id} /> : null}

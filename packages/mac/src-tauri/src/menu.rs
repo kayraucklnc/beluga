@@ -146,13 +146,14 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "Go",
         true,
         &[
-            // The sidebar's order (⌥1…6 in the window too).
-            &item(app, "go-room", "Chat", Some("Alt+1"))?,
-            &item(app, "go-overview", "Overview", Some("Alt+2"))?,
-            &item(app, "go-files", "Shared Files", Some("Alt+3"))?,
+            // The places' order (⌥1…7 in the window too; see lib/go.ts).
+            &item(app, "go-overview", "Overview", Some("Alt+1"))?,
+            &item(app, "go-tasks", "Tasks", Some("Alt+2"))?,
+            &item(app, "go-room", "Chat", Some("Alt+3"))?,
             &item(app, "go-search", "Search", Some("Alt+4"))?,
             &item(app, "go-usage", "Usage", Some("Alt+5"))?,
             &item(app, "go-terminal", "Terminal", Some("Alt+6"))?,
+            &item(app, "go-files", "Shared Files", Some("Alt+7"))?,
             &PredefinedMenuItem::separator(app)?,
             &item(
                 app,

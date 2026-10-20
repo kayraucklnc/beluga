@@ -25,7 +25,7 @@ interface Item {
   readonly keywords?: string[];
 }
 
-const VIEW_ICONS: Record<string, IconName> = { room: 'chat', files: 'folder', overview: 'grid', search: 'search', usage: 'gauge', terminal: 'terminal' };
+const VIEW_ICONS: Record<string, IconName> = { room: 'chat', files: 'folder', overview: 'grid', search: 'search', usage: 'gauge', terminal: 'terminal', tasks: 'task' };
 
 /**
  * Everything you can do, one keystroke away: go anywhere, act on what's open, start something
@@ -44,7 +44,7 @@ export function Palette() {
     fn();
   };
 
-  const nav: Item[] = macTabs(state).map((t, i) => ({ id: `view:${t.kind}`, label: t.label, hint: t.hint.split(' · ')[0], keys: `⌥${i + 1}`, icon: VIEW_ICONS[t.kind] ?? 'grid', run: () => actions.run({ type: 'view', view: { kind: t.kind } }) }));
+  const nav: Item[] = macTabs(state).map((t) => ({ id: `view:${t.kind}`, label: t.label, hint: t.hint.split(' · ')[0], keys: `⌥${t.key}`, icon: VIEW_ICONS[t.kind] ?? 'grid', run: () => actions.run({ type: 'view', view: { kind: t.kind } }) }));
   const places: Item[] = [
     ...state.projects.flatMap((p) =>
       p.workspaces

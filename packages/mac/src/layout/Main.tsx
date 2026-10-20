@@ -19,6 +19,8 @@ const ProjectHome = lazy(() => import('../views/ProjectHome.js').then((m) => ({ 
 const HistoryView = lazy(() => import('../views/history/HistoryView.js').then((m) => ({ default: m.HistoryView })));
 const WorktreesView = lazy(() => import('../views/worktrees/WorktreesView.js').then((m) => ({ default: m.WorktreesView })));
 const RequestsView = lazy(() => import('../gateway/RequestsView.js').then((m) => ({ default: m.RequestsView })));
+const TasksView = lazy(() => import('../tasks/TasksView.js').then((m) => ({ default: m.TasksView })));
+const TaskPage = lazy(() => import('../tasks/TaskPage.js').then((m) => ({ default: m.TaskPage })));
 
 function Route() {
   const view = useApp((st) => st.view);
@@ -49,6 +51,10 @@ function Route() {
       return <ActivityView />;
     case 'requests':
       return <RequestsView />;
+    case 'tasks':
+      return <TasksView />;
+    case 'task':
+      return <TaskPage key={view.id} id={view.id} />;
     case 'worktrees':
       return <WorktreesView projectId={view.projectId} />;
     case 'project':

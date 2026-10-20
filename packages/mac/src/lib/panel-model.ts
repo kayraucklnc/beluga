@@ -12,10 +12,69 @@ export const PANEL_TABS: readonly PanelTab[] = ['changes', 'files', 'terminal', 
 
 export const PANEL_LABELS: Record<PanelTab, string> = { changes: 'Changes', files: 'Files', terminal: 'Terminal', info: 'Info', history: 'History', scratch: 'Scratch', background: 'Background' };
 
+/**
+ * The panel is two panes, one above the other, each with its own tabs: by default what Claude
+ * made on top (Changes, Files, Scratch, Info) and what runs below (Terminal, Background). Drag a
+ * tab to the other pane to keep it there. History is Changes' second view, not a tab of its own.
+ */
+export type PaneId = 'top' | 'bottom';
+export interface PanelLayout {
+  readonly top: readonly PanelTab[];
+  readonly bottom: readonly PanelTab[];
+}
+
+/** The tabs with a place of their own (every one of them is in exactly one pane). */
+export const SLOTS: readonly PanelTab[] = ['changes', 'files', 'scratch', 'info', 'terminal', 'background'];
+export const DEFAULT_LAYOUT: PanelLayout = { top: ['changes', 'files', 'scratch', 'info'], bottom: ['terminal', 'background'] };
+
+/** The tab a view lives in: History is inside Changes. */
+export const slotOf = (tab: PanelTab): PanelTab => (tab === 'history' ? 'changes' : tab);
+
+/** A saved layout made whole: each tab once, unknown ones dropped, missing ones back where they start. */
+export function normalizeLayout(raw: unknown): PanelLayout {
+  const read = (v: unknown): PanelTab[] => (Array.isArray(v) ? v.filter((t): t is PanelTab => SLOTS.includes(t as PanelTab)) : []);
+  const r = (raw ?? {}) as { top?: unknown; bottom?: unknown };
+  const top = [...new Set(read(r.top))];
+  const bottom = [...new Set(read(r.bottom))].filter((t) => !top.includes(t));
+  for (const slot of SLOTS) {
+    if (top.includes(slot) || bottom.includes(slot)) continue;
+    (DEFAULT_LAYOUT.bottom.includes(slot) ? bottom : top).push(slot);
+  }
+  return { top, bottom };
+}
+
+export const paneOf = (layout: PanelLayout, tab: PanelTab): PaneId => (layout.bottom.includes(slotOf(tab)) ? 'bottom' : 'top');
+
+/** Move a tab into a pane, before `before` there (at the end without one). */
+export function moveTab(layout: PanelLayout, tab: PanelTab, to: PaneId, before?: PanelTab): PanelLayout {
+  const slot = slotOf(tab);
+  const without = { top: layout.top.filter((t) => t !== slot), bottom: layout.bottom.filter((t) => t !== slot) };
+  const list = [...without[to]];
+  const at = before ? list.indexOf(slotOf(before)) : -1;
+  list.splice(at < 0 ? list.length : at, 0, slot);
+  return { ...without, [to]: list };
+}
+
+/** A pane's tabs for what's on screen (a project's home has History where Changes would be). */
+export function paneTabs(layout: PanelLayout, pane: PaneId, available: readonly PanelTab[]): PanelTab[] {
+  return layout[pane].flatMap((slot) => (available.includes(slot) ? [slot] : slot === 'changes' && available.includes('history') ? ['history' as const] : []));
+}
+
+/** The views a tab switches between at its top (Changes · History), or just itself. */
+export function viewsOf(tab: PanelTab, available: readonly PanelTab[]): PanelTab[] {
+  return slotOf(tab) === 'changes' ? (['changes', 'history'] as const).filter((t) => available.includes(t)) : [tab];
+}
+
+/** Where a pane's last tab is remembered: per workspace (and pane), one for everything else. */
+export const paneKey = (view: View, pane: PaneId): string => (pane === 'top' ? panelKey(view) : `${panelKey(view)}|bottom`);
+
 export const PANEL_MIN = 320;
 export const PANEL_DEFAULT = 384;
 /** The panel never takes more than this share of the window. */
 export const PANEL_MAX_SHARE = 0.6;
+
+/** How much of the panel's height the top pane takes, by default. */
+export const PANES_DEFAULT = 0.58;
 
 export const SPLIT_MIN = 0.18;
 export const SPLIT_MAX = 0.75;

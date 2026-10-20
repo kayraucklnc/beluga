@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -85,6 +86,15 @@ test('an archived worktree is under Archived, and one click restores it as it wa
   await expect(page.getByText('Nothing archived yet')).toBeVisible();
   await segment(page, 'All').click();
   await expect(row(page, 'add-auth')).not.toHaveAccessibleName(/archived/);
+  // Leave add-auth as the other specs know it (its two changed files, nothing else).
+  for (const f of ['.gitignore', 'package.json']) {
+    try {
+      execFileSync('git', ['-C', dir, 'checkout', 'HEAD', '--', f], { stdio: 'ignore' });
+    } catch {
+      rmSync(path.join(dir, f), { force: true });
+    }
+  }
+  for (const f of ['wip.txt', '.env.local', 'package-lock.json', 'node_modules']) rmSync(path.join(dir, f), { force: true, recursive: true });
 });
 
 test('search (⌘F) finds by name, branch and project; Esc clears it', async ({ page }) => {

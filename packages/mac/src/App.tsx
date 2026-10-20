@@ -2,7 +2,8 @@ import type { SettingsSection } from '@klaud/ui/settings-menus.js';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { useEffect } from 'react';
 import { channelOf } from '@klaud/core/store.js';
-import { macTabs, stepPlace } from './lib/go.js';
+import { placeForKey, stepPlace } from './lib/go.js';
+import { useRememberProject } from './tasks/use-tasks.js';
 import { inviteChoice } from '@klaud/ui/invite-menus.js';
 import { projectInView } from '@klaud/ui/invite-actions.js';
 import { Icon } from './components/Icon.js';
@@ -146,8 +147,8 @@ function useShortcuts() {
       } else if (e.ctrlKey && e.metaKey && e.code === 'KeyS') {
         e.preventDefault();
         setPrefs({ sidebar: !prefs.sidebar });
-      } else if (e.altKey && !cmd && /^Digit[1-6]$/.test(e.code)) {
-        const tab = macTabs(state)[Number(e.code.slice(5)) - 1];
+      } else if (e.altKey && !cmd && /^Digit[1-7]$/.test(e.code)) {
+        const tab = placeForKey(state, Number(e.code.slice(5)));
         if (tab) {
           e.preventDefault();
           actions.run({ type: 'view', view: { kind: tab.kind } });
@@ -215,6 +216,7 @@ export function App() {
   const [joining, setJoining] = useState<string>();
   useOverlays();
   useShortcuts();
+  useRememberProject();
   useSettingsWindow();
   useNative(client, ui, actions, setJoining);
   useTrayStatus(client);

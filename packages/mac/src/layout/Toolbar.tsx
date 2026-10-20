@@ -10,8 +10,7 @@ import { toast, useApp, useKlaud } from '../lib/klaud.js';
 import { type ToolAction, toolbarActions } from './toolbar-actions.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
-import { terminalShowing, togglePanel, toggleTerminal } from '../lib/panel.js';
-import { drawerFits } from '../lib/panel-model.js';
+import { togglePanel } from '../lib/panel.js';
 import { mod } from '../lib/system.js';
 import { NotificationBell } from './NotificationCenter.js';
 import { ContinueButton } from '../chat/AskBanner.js';
@@ -19,11 +18,11 @@ import { useConversationHeader } from '../network/ConversationHeader.js';
 import { ContextNote } from '../chat/ContextMeter.js';
 import s from './Toolbar.module.css';
 
-/** Room the title keeps, and the window buttons on the right (terminal, bell, palette, panel). */
+/** Room the title keeps, and the window buttons on the right (search, bell, panel). */
 const TITLE_MIN = 210;
-const RIGHT_FIXED = 4 * 30 + 16;
+const RIGHT_FIXED = 3 * 30 + 16;
 
-const TITLES: Partial<Record<string, string>> = { overview: 'Overview', search: 'Search', usage: 'Usage', terminal: 'Terminal', files: 'Shared files', draft: 'New chat', draft_worktree: 'New worktree', claude_code: 'Activity', requests: 'Requests', worktrees: 'Worktrees' };
+const TITLES: Partial<Record<string, string>> = { overview: 'Overview', search: 'Search', usage: 'Usage', terminal: 'Terminal', files: 'Shared files', draft: 'New chat', draft_worktree: 'New worktree', claude_code: 'Activity', requests: 'Requests', tasks: 'Tasks', worktrees: 'Worktrees' };
 
 /** How wide the toolbar is (buttons that don't fit move under ⋯). */
 function useToolbarWidth(): [React.RefObject<HTMLElement | null>, number] {
@@ -39,14 +38,17 @@ function useToolbarWidth(): [React.RefObject<HTMLElement | null>, number] {
   return [ref, width];
 }
 
+/** Search every conversation, from any view (⇧⌘F; ⌘F finds in what's open). */
+function SearchButton() {
+  const actions = useActions();
+  const on = useApp((st) => st.view.kind === 'search');
+  return <IconButton icon="search" label="Search" keys={`⇧${mod()}F`} active={on} onClick={() => actions.run({ type: 'view', view: { kind: 'search' } })} />;
+}
+
 function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode; subtitle?: ReactNode; center?: ReactNode; right?: ReactNode; headerRef: React.RefObject<HTMLElement | null> }) {
   const prefs = usePrefs();
-  const { client } = useKlaud();
-  const state = useApp((st) => st);
-  const view = state.view;
-  // The terminal goes where you keep it (the drawer or the panel); not over the Terminal view or a friend's workspace.
-  const terminal = drawerFits(view);
-  const termOn = terminal && terminalShowing(state, prefs);
+  // Only what every view needs: search, what's new, the panel. The terminal (⌘J) is a panel tab,
+  // and everything you can do is ⌘K and the menu bar.
   return (
     <header ref={headerRef} className={cx(s.toolbar, !prefs.sidebar && s.noSidebar)} data-tauri-drag-region>
       {prefs.sidebar ? null : (
@@ -63,17 +65,8 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
       </div>
       <div className={s.right}>
         {right}
-        {terminal ? (
-          <IconButton
-            icon={prefs.termIn === 'drawer' ? 'panelBottom' : 'terminal'}
-            label={termOn ? 'Hide the terminal' : prefs.termIn === 'drawer' ? 'Show the terminal under the chat' : 'Show the terminal in the panel'}
-            keys={`${mod()}J`}
-            active={termOn}
-            onClick={() => void toggleTerminal(client.store.getState())}
-          />
-        ) : null}
+        <SearchButton />
         <NotificationBell />
-        <IconButton icon="command" label="Everything you can do" keys={`${mod()}K`} onClick={() => document.dispatchEvent(new CustomEvent('klaud:palette'))} />
         <IconButton icon="panelRight" label={prefs.inspector ? 'Hide the panel' : 'Show the panel: changes, files, terminal, info'} keys={`⌥${mod()}0`} active={prefs.inspector} onClick={togglePanel} />
       </div>
     </header>
@@ -113,7 +106,9 @@ export function Toolbar() {
     // A narrow window: the icons that don't fit move under ⋯ (the everyday action keeps its place).
     const fixed = TITLE_MIN + RIGHT_FIXED + (primary ? primary.label.length * 7.4 + 48 : 0) + 34;
     const fit = Math.max(0, Math.min(icons.length, Math.floor((width - fixed) / 30)));
-    const overflow = [...icons.slice(fit), ...more];
+    // Icons that don't fit lead ⋯ as a section of their own.
+    const overflow = [...(fit < icons.length ? [icons.slice(fit)] : []), ...more];
+    const menu = overflow.flatMap((section, k) => section.map((a, i) => ({ a, separate: k > 0 && i === 0 })));
     const run = (a: ToolAction): void => {
       if (a.disabled) return toast(client, a.hint, 'info');
       if (a.action === 'fix_checks') return askBeforeWork(ws.id, 'fix_checks');
@@ -174,8 +169,8 @@ export function Toolbar() {
                 <IconButton key={a.id} icon={a.icon} label={a.disabled ? `${a.label}: ${a.hint}` : (a.tip ?? `${a.label} · ${a.hint}`)} keys={a.keys} aria-disabled={a.disabled} data-tool={a.action} data-tool-ws={ws.id} className={cx(a.disabled && s.off, a.tone === 'error' && s.toolError)} onClick={() => run(a)} />
               ))}
               {overflow.length ? (
-                <ActionsDropdown items={overflow.map((a, i) => ({ label: a.label, icon: a.icon, hint: a.disabled ? a.hint : undefined, keys: a.keys, disabled: a.disabled, danger: a.danger, separate: i > 0 && i === icons.length - fit, onSelect: () => run(a) }))}>
-                  <IconButton icon="more" label="More for this workspace" />
+                <ActionsDropdown items={menu.map(({ a, separate }) => ({ label: a.label, icon: a.icon, hint: a.disabled ? a.hint : undefined, keys: a.keys, disabled: a.disabled, danger: a.danger, separate, onSelect: () => requestAnimationFrame(() => run(a)) }))}>
+                  <IconButton icon="more" label="More for this workspace" data-tool="more" data-tool-ws={ws.id} />
                 </ActionsDropdown>
               ) : null}
             </span>
@@ -232,6 +227,28 @@ export function Toolbar() {
           </>
         }
         subtitle={<span className={s.meta}>{worktree ? 'Its own branch and folder; Claude starts on your task right away' : project ? `Claude works in ${project.name}’s main folder` : 'Nothing is created until you send the first message'}</span>}
+      />
+    );
+  }
+
+  if (view.kind === 'tasks') {
+    // One project's tasks (its name is the switcher at the top of the view).
+    return <Shell headerRef={headerRef} title={<span className={s.name}>Tasks</span>} />;
+  }
+
+  if (view.kind === 'task') {
+    const issue = state.board.issues.find((i) => i.id === view.id);
+    const project = issue ? state.projects.find((p) => p.id === issue.projectId) : undefined;
+    return (
+      <Shell
+        headerRef={headerRef}
+        title={
+          <>
+            <span className={s.crumb}>{project?.name ?? 'Tasks'}</span>
+            <span className={s.name}>{issue?.key ?? 'Task'}</span>
+          </>
+        }
+        subtitle={issue ? <span className={s.meta}>{issue.title}</span> : undefined}
       />
     );
   }

@@ -4,6 +4,7 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../core/attachments.js';
 import { buildAskOnlyAppend, buildPrompt, buildScratchAppend, buildSystemAppend, summarizeTool } from './prompt.js';
 import { buildGraphAppend } from './graph-prompt.js';
+import { createBoardTools } from './board-tools.js';
 import { decideTool, denyReason } from './policy.js';
 import { buildSyncMainAppend, syncProbes } from './sync-main.js';
 import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
@@ -54,6 +55,11 @@ export function toQuestion(input: Record<string, unknown>): ClaudeQuestion | und
 function taskServer(input: AgentRunInput): { klaud_task?: NonNullable<ReturnType<typeof createTaskTools>> } {
   const server = input.taskTools ? createTaskTools(input.taskTools) : undefined;
   return server ? { klaud_task: server } : {};
+}
+
+/** Your own runs get the task board (core/board): the task they're doing, and tools to keep it true. */
+function boardServer(input: AgentRunInput): { klaud_board?: ReturnType<typeof createBoardTools> } {
+  return input.board ? { klaud_board: createBoardTools(input.board) } : {};
 }
 
 /** Tokens and cost of a run, summed over every model it used (sub-agents included). */
@@ -136,7 +142,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { klaud: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input) },
+        mcpServers: { klaud: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input), ...boardServer(input) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -172,7 +178,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + (input.taskBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),

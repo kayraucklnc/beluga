@@ -86,6 +86,18 @@ const PATHS = {
   stopSign: 'M5.7 2.5h4.6l3.2 3.2v4.6l-3.2 3.2H5.7l-3.2-3.2V5.7z M8 5.3v3.2 M8 10.7v.01',
   /** A sub-agent: a small robot (Claude's helpers, as opposed to your own work). */
   bot: 'M4.5 6.5h7A1.5 1.5 0 0 1 13 8v3.5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 11.5V8a1.5 1.5 0 0 1 1.5-1.5z M8 6.5V4.2 M8 2.8v.01 M6.2 9.4v.8 M9.8 9.4v.8 M1.5 9.2v1.4 M14.5 9.2v1.4',
+  /** Tasks: a ring with a check (the board). */
+  task: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z M5.75 8.1l1.55 1.55 2.95-3.2',
+  /** A board's columns. */
+  columns: 'M2.5 3.5h3v9h-3z M6.5 3.5h3v6h-3z M10.5 3.5h3v7.5h-3z',
+  /** A list's rows. */
+  rows: 'M2.5 4h11 M2.5 8h11 M2.5 12h11',
+  /** What waits on what. */
+  graph: 'M4 4.5a1.5 1.5 0 1 0 0-.01 M12 8a1.5 1.5 0 1 0 0-.01 M4 11.5a1.5 1.5 0 1 0 0-.01 M5.4 5.2l5.2 2.3 M5.4 10.8l5.2-2.3',
+  /** A flag (a due date). */
+  calendar: 'M2.5 4h11v9.5h-11z M2.5 6.5h11 M5.5 2.5v3 M10.5 2.5v3',
+  /** A tag (labels). */
+  tag: 'M2.5 2.5h5.5l6 6-5.5 5.5-6-6z M5.25 5.25h.01',
 } as const;
 
 export type IconName = keyof typeof PATHS;

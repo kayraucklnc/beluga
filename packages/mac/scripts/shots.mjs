@@ -55,9 +55,9 @@ const STEPS = {
     await wait(1500);
   },
   overview: async () => side('Overview').click(),
-  usage: async () => side('Usage').click(),
+  usage: async () => page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: 'Usage', exact: true }).click(),
   search: async () => {
-    await side('Search').click();
+    await page.getByRole('button', { name: 'Search', exact: true }).first().click();
     await wait(200);
     await page.keyboard.type('auth');
   },

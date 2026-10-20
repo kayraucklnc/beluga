@@ -16,7 +16,8 @@ import { openLightbox } from './images.js';
 import { brandText } from '../lib/brand.js';
 import { messageItems } from './message-menu.js';
 import { Markdown } from './Markdown.js';
-import { AgentSteps, StepsToggle } from './steps/AgentSteps.js';
+import { AgentSteps, StepsFold, StepsToggle } from './steps/AgentSteps.js';
+import { useDisclosure } from './steps/step-memory.js';
 import { useFlightLanding } from './flight.js';
 import { useMentionWorld } from './Mention.js';
 import type { TaskView } from '@klaud/core/gateway/model.js';
@@ -98,7 +99,8 @@ function statusOf(item: AgentItem, now: number): { label: string; tone: 'claude'
     case 'queued':
       return { label: 'Queued', tone: 'muted' };
     case 'done':
-      return { label: item.endTs ? `Done in ${formatDuration(item.endTs - item.ts)}` : 'Done', tone: 'ok' };
+      // The answer itself says it's done: no "Done in 3m" on every message.
+      return { label: '', tone: 'ok' };
     case 'error':
       // Stopping or taking a message back is something you did, not a problem.
       if (/^(Taken out of the queue|Cancelled before it started)/.test(item.text)) return { label: 'Not sent', tone: 'muted' };
@@ -125,10 +127,20 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
   // Your own Claude, working now: it can be stopped from its card.
   const stoppable = mine && running && item.status !== 'awaiting_approval';
   const stop = (): void => stopClaude({ client, ui, actions }, item.channel);
-  const lead: ActionItem[] = stoppable ? [{ label: 'Stop Claude', icon: 'stop', keys: '⌘.', onSelect: stop }] : [];
+  // Once it has answered, its steps fold away (Settings › Chat); Show Steps opens them again.
+  const prefs = usePrefs();
+  const steps = useDisclosure(`${item.channel}/${item.id}`);
+  const answered = item.status === 'done' && Boolean(item.text);
+  const hasSteps = item.steps.length > 0 || item.subagents.length > 0;
+  const folded = answered && prefs.doneSteps === 'fold' && !steps.shown;
+  const lead: ActionItem[] = stoppable
+    ? [{ label: 'Stop Claude', icon: 'stop', keys: '⌘.', onSelect: stop }]
+    : answered && hasSteps && prefs.doneSteps === 'fold'
+      ? [{ label: steps.shown ? 'Hide Steps' : 'Show Steps', icon: 'rows', onSelect: () => steps.setShown(!steps.shown) }]
+      : [];
   return (
     <ActionsContext items={() => messageItems({ ...menu, text: item.text, lead })}>
-      <div className={cx(s.message, s.agent, running && s.agentLive)}>
+      <div className={cx(s.message, s.agent, running && s.agentLive)} data-turn={item.status}>
         <div className={s.gutter}>
           <Avatar name="Claude" id={item.owner} claude size={26} />
         </div>
@@ -140,7 +152,8 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
             {forSomeoneElse ? <span className={s.time}>for {item.requesterName}</span> : null}
             {!running && item.text && item.status === 'done' ? (
               <span className={s.hoverActions}>
-                {mine && item.steps.length ? <StepsToggle item={item} /> : null}
+                {/* Folded: anyone's steps show again; kept showing, only your own Claude's open further. */}
+                {hasSteps && (prefs.doneSteps === 'fold' || (mine && item.steps.length > 0)) ? <StepsToggle item={item} /> : null}
                 <Button size="small" variant="quiet" icon="copy" onClick={() => void copyText(item.text).then(() => menu.toast('Copied the answer'))}>
                   Copy
                 </Button>
@@ -152,13 +165,17 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
                 </Button>
               </span>
             ) : null}
-            <span className={cx(s.status, s[`tone_${st.tone}`])}>
-              {running ? <Dot tone="claude" live /> : null}
-              {st.label}
-            </span>
+            {st.label ? (
+              <span className={cx(s.status, s[`tone_${st.tone}`])}>
+                {running ? <Dot tone="claude" live /> : null}
+                {st.label}
+              </span>
+            ) : null}
           </div>
           {/* Steps open to show what ran and what came back (see steps/AgentSteps.tsx). */}
-          <AgentSteps item={item} running={running} />
+          <StepsFold folded={folded}>
+            <AgentSteps item={item} running={running} />
+          </StepsFold>
           {/* What it asked other people's Claudes, before its answer (which comes last). */}
           {tasks?.map((t) => (
             <div key={t.id} className={s.turnTask}>
