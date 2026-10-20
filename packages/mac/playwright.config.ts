@@ -20,6 +20,12 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   globalSetup: './e2e/daemon.ts',
-  use: { baseURL: `http://localhost:${port}`, viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' },
+  use: {
+    baseURL: `http://localhost:${port}`,
+    viewport: { width: 1440, height: 900 },
+    trace: 'retain-on-failure',
+    // Every spec starts past the first-run welcome (src/onboarding); e2e/onboarding.spec.ts clears this.
+    storageState: { cookies: [], origins: [{ origin: `http://localhost:${port}`, localStorage: [{ name: 'klaud.onboarding.v1', value: JSON.stringify({ version: 'e2e', at: 0, how: 'finished' }) }] }] },
+  },
   webServer: { command: `npx vite --port ${port} --strictPort`, url: `http://localhost:${port}`, reuseExistingServer: false, env: { KLAUD_HOME: process.env.KLAUD_HOME } },
 });

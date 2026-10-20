@@ -11,6 +11,7 @@ import { NOTIFICATION_TAP, macNoticeTarget, openNoticeTarget } from './notices.j
 import { COMMAND_IDS, type CommandId, commandState, runCommand } from './commands.js';
 import { openNetworkLink, runNetworkMenuItem } from '../network/net-native.js';
 import { runRequestMenuItem } from '../gateway/request-native.js';
+import { SHOW_WELCOME } from '../onboarding/onboarding-model.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
@@ -41,6 +42,8 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
       return ui.patch({ palette: true });
     case 'help-keys':
       return ui.patch({ palette: true });
+    case 'help-welcome':
+      return void document.dispatchEvent(new CustomEvent(SHOW_WELCOME));
     case 'new-chat':
       return actions.run({ type: 'new_chat', projectId: 'chats' });
     case 'new-worktree':

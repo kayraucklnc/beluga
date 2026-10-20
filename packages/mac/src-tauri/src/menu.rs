@@ -183,6 +183,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "Help",
         true,
         &[
+            &item(app, "help-welcome", "Welcome to Klaud", None)?,
+            &PredefinedMenuItem::separator(app)?,
             &item(app, "help-keys", "Keys and Commands", Some("CmdOrCtrl+/"))?,
             &item(app, "help-log", "Open the Log", None)?,
         ],
