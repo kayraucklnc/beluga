@@ -2,6 +2,21 @@
   display: flex;
   height: 100%;
 }
+/* Coming into view as the welcome's wormhole clears to it (onboarding/Wormhole.tsx). */
+.app[data-arriving] {
+  animation: arrive 1.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes arrive {
+  from {
+    transform: scale(1.08);
+  }
+  to {
+    transform: none;
+  }
+}
+:root[data-motion='reduce'] .app[data-arriving] {
+  animation: none;
+}
 .main {
   flex: 1;
   min-width: 0;

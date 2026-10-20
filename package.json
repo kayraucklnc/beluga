@@ -42,6 +42,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "release:npm": "node scripts/release-npm.mjs",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
   "publishConfig": {

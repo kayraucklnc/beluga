@@ -34,6 +34,7 @@ import { StripeSheet } from './dialogs/StripeSheet.js';
 import { useIdleAway, useTrayPresence } from './network/net-native.js';
 import { useUpdateActivity } from './lib/updates.js';
 import { useState } from 'react';
+import { Onboarding, useOnboarding } from './onboarding/Onboarding.js';
 import s from './layout/Shell.module.css';
 
 const TOAST_MS = 3500;
@@ -214,6 +215,7 @@ export function App() {
   const { client, ui } = useKlaud();
   const actions = useActions();
   const [joining, setJoining] = useState<string>();
+  const welcome = useOnboarding();
   useOverlays();
   useShortcuts();
   useRememberProject();
@@ -229,7 +231,8 @@ export function App() {
   useUpdateActivity(client, actions);
   return (
     <Tooltip.Provider delayDuration={450} skipDelayDuration={200}>
-      <div className={s.app}>
+      {/* Behind the welcome the app can't be tabbed to or read out. */}
+      <div className={s.app} inert={welcome.open} data-app-root>
         {prefs.sidebar ? <Sidebar /> : null}
         <Main />
         <RightPanel />
@@ -246,6 +249,7 @@ export function App() {
       {joining ? <JoinSheet invite={joining} onCancel={() => setJoining(undefined)} onJoin={() => void joinRoom(joining)} /> : null}
       <Toasts />
       <UndoToast />
+      {welcome.open ? <Onboarding onClose={welcome.close} onArrive={welcome.arrive} /> : null}
     </Tooltip.Provider>
   );
 }
