@@ -39,6 +39,13 @@ export function workspaceItems(state: AppState, ws: Workspace, run: ReturnType<t
   ];
 }
 
+/** What archiving is doing now, in words. */
+const ARCHIVING: Record<NonNullable<AppState['archiving'][string]>, string> = {
+  saving: 'Archiving: saving everything of yours',
+  compressing: 'Archiving: compressing your ignored files',
+  removing: 'Archiving: removing the folder',
+};
+
 /**
  * A chat or worktree in the sidebar. What it waits on sits at the row's right edge: a hand
  * when it needs you (the row faintly tinted), a count and a bold name when Claude finished or
@@ -55,6 +62,8 @@ export function WorkspaceRow({ ws, indent }: { ws: Workspace; indent: number }) 
   const quiet = st.tone === 'warn' || st.tone === 'info' || st.tone === 'error' ? <DotMark tone={st.tone} /> : null;
   // Made outside Klaud: where it is, quietly after its name (the full path in the tooltip).
   const where = outsideLocation(state, ws);
+  // Being archived: how far along (it leaves the sidebar when done).
+  const archiving = state.archiving[ws.id];
   return (
     <ActionsContext items={workspaceItems(state, ws, actions.run)}>
       <Row
@@ -71,9 +80,9 @@ export function WorkspaceRow({ ws, indent }: { ws: Workspace; indent: number }) 
             {where ? <span className={o.where}>{where.folder}</span> : null}
           </>
         }
-        detail={`${ws.name}: ${signal.tip || st.label}${where ? `\n${where.path}` : ''}`}
+        detail={archiving ? `${ws.name}: ${ARCHIVING[archiving]}` : `${ws.name}: ${signal.tip || st.label}${where ? `\n${where.path}` : ''}`}
         onClick={() => actions.run({ type: 'open_ws', id: ws.id })}
-        trailing={<SignalMark signal={signal} fallback={quiet} />}
+        trailing={archiving ? <span className={s.archiving} data-archiving={archiving}>Archiving…</span> : <SignalMark signal={signal} fallback={quiet} />}
       />
     </ActionsContext>
   );

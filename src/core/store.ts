@@ -860,6 +860,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'notice_clear':
     case 'models':
     case 'disk':
+    case 'archiving':
     case 'pr':
     case 'setup':
     case 'search':

@@ -39,6 +39,8 @@ export interface WorkspaceRecord {
   readonly base?: string;
   readonly createdAt: number;
   readonly archived?: boolean;
+  /** Archived smartly: how much space it freed, what it kept, and what makes the rest again. */
+  readonly archive?: { readonly freedBytes: number; readonly keptBytes: number; readonly remake: readonly string[]; readonly at: number };
   /** Claude conversation to resume in this workspace. */
   readonly sessionId?: string;
   /** Set on forks until their first run, so Claude branches the parent's conversation. */

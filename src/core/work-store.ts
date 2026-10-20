@@ -1,4 +1,5 @@
 import type { NoticeKind, NoticeTag } from './notify.js';
+import type { ArchivePhase } from '../workspaces/archive.js';
 import type { Settings } from './settings.js';
 import { type EnvKeys, NO_ENV_KEYS } from '../shared/env-vars.js';
 import type { ShellChoice } from '../shared/shells.js';
@@ -77,6 +78,8 @@ export interface WorkState {
   readonly models: readonly ModelChoice[];
   /** Folder size in bytes per workspace (worktrees and chats). */
   readonly disk: Readonly<Record<string, number>>;
+  /** Worktrees being archived now, and how far along (see workspaces/archive.ts). */
+  readonly archiving: Readonly<Record<string, ArchivePhase>>;
   readonly prs: Readonly<Record<string, PullRequest>>;
   readonly setup: Readonly<Record<string, SetupRun>>;
   readonly search: SearchState;
@@ -109,6 +112,8 @@ export type WorkAction =
   | { type: 'notice_clear'; id?: number }
   | { type: 'models'; models: readonly ModelChoice[] }
   | { type: 'disk'; sizes: Readonly<Record<string, number>> }
+  /** No phase: done (or it failed). */
+  | { type: 'archiving'; id: string; phase?: ArchivePhase }
   | { type: 'pr'; id: string; pr?: PullRequest }
   | { type: 'setup'; id: string; run?: SetupRun }
   | { type: 'search'; search: Partial<SearchState> }
@@ -134,6 +139,7 @@ export const initialWork: WorkState = {
   inbox: [],
   models: FALLBACK_MODELS,
   disk: {},
+  archiving: {},
   prs: {},
   setup: {},
   search: { query: '', hits: [], searched: 0 },
@@ -174,6 +180,8 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
       return { ...state, models: action.models.length ? action.models : FALLBACK_MODELS };
     case 'disk':
       return { ...state, disk: { ...state.disk, ...action.sizes } };
+    case 'archiving':
+      return { ...state, archiving: action.phase ? { ...state.archiving, [action.id]: action.phase } : without(state.archiving, action.id) };
     case 'pr':
       return { ...state, prs: action.pr ? { ...state.prs, [action.id]: action.pr } : without(state.prs, action.id) };
     case 'setup':

@@ -213,6 +213,8 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `workspaces.continueInWorktree` | — (asking Claude for a change in a main-folder chat moves it; the core runs the same `continueInWorktree`) | Continue in New Worktree… (toolbar and the ask banner) › sheet: Task, Based on, Name |
 | `workspaces.archive` | ✓ | ✓ |
 | `workspaces.restore` | ✓ | ✓ |
+| `workspaces.archivePlan` | – | ✓ the Archive dialog says how much space it frees |
+| `workspaces.freeSpace` | – | ✓ Free Up Space on a worktree: clears its dependencies, builds and caches |
 | `workspaces.remove` | ✓ | ✓ |
 | `workspaces.commit` | ✓ | ✓ |
 | `workspaces.merge` | ✓ | ✓ |

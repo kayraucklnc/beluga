@@ -31,6 +31,11 @@ export class WorkspaceStore {
     return path.join(this.home, 'workspaces');
   }
 
+  /** Smart archives of worktrees: what's kept of each (see archive.ts). */
+  get archivesDir(): string {
+    return path.join(this.home, 'archives');
+  }
+
   loadConfig(): ProjectsConfig {
     const raw = readJson<Partial<ProjectsConfig>>(path.join(this.home, 'projects.json'), {});
     return { roots: raw.roots ?? DEFAULT_ROOTS, projects: raw.projects ?? [], hidden: raw.hidden ?? [], groups: raw.groups ?? [], scripts: raw.scripts ?? {}, approvedScripts: raw.approvedScripts ?? {}, ...(Array.isArray(raw.order) ? { order: raw.order.filter((k): k is string => typeof k === 'string') } : {}) };

@@ -97,7 +97,7 @@ export interface ArchivedActions {
 /** The archived row's menu: right-click, or its ⋯ button. */
 export function archivedItems(item: OverviewItem, act: ArchivedActions): ActionItem[] {
   return [
-    { label: 'Restore', icon: 'refresh', hint: item.ws.kind === 'worktree' ? 'Make the worktree again from its branch' : 'Show it in the sidebar again', onSelect: () => act.restore(item) },
+    { label: 'Restore', icon: 'refresh', hint: item.ws.kind === 'worktree' ? (item.ws.archive ? 'Bring the worktree back as it was' : 'Make the worktree again from its branch') : 'Show it in the sidebar again', onSelect: () => act.restore(item) },
     { label: 'Read Conversation', icon: 'eye', keys: 'Space', onSelect: () => act.read(item) },
     ...(item.project.root ? [{ label: 'Show Project in Finder', icon: 'folder' as const, onSelect: () => act.finder(item) }] : []),
     { label: 'Delete Permanently…', danger: true, keys: '⌘⌫', onSelect: () => act.remove(item) },
@@ -113,8 +113,14 @@ export function ArchivedRow(props: RowBase & { act: ArchivedActions }) {
   const w = item.ws;
   const worktree = w.kind === 'worktree';
   const busy = act.restoring === w.id;
-  const kept = worktree && w.branch ? 'Branch kept' : 'Conversation kept';
-  const keptLong = worktree && w.branch ? `The folder was removed. Branch ${w.branch} and the conversation are kept.` : 'The conversation is kept.';
+  // Archived smartly: everything of yours is kept, and it says what it freed.
+  const smart = w.archive;
+  const kept = smart ? (smart.freedBytes ? `Freed ${formatBytes(smart.freedBytes)}` : 'Everything kept') : worktree && w.branch ? 'Branch kept' : 'Conversation kept';
+  const keptLong = smart
+    ? `Everything of yours is kept: uncommitted work, new files and ignored files (${formatBytes(smart.keptBytes)} compressed). ${smart.freedBytes ? `Dependencies, builds and caches (${formatBytes(smart.freedBytes)}) were cleared; restoring makes them again${smart.remake.length ? ` (${smart.remake.join(', ')})` : ''}.` : ''}`
+    : worktree && w.branch
+      ? `The folder was removed. Branch ${w.branch} and the conversation are kept.`
+      : 'The conversation is kept.';
   const items = archivedItems(item, act);
   return (
     <ActionsContext items={items}>
@@ -131,9 +137,9 @@ export function ArchivedRow(props: RowBase & { act: ArchivedActions }) {
         <span className={s.extra} title={keptLong}>
           {kept}
         </span>
-        <span className={s.when}>{item.size !== undefined ? formatBytes(item.size) : ''}</span>
+        <span className={s.when}>{smart ? formatBytes(smart.keptBytes) : item.size !== undefined ? formatBytes(item.size) : ''}</span>
         <span className={cx(s.hoverActions, busy && s.hoverBusy)}>
-          <Tip label={worktree ? 'Make the worktree again from its branch, and open it' : 'Show it in the sidebar again, and open it'}>
+          <Tip label={worktree ? (smart ? 'Bring the worktree back as it was, and open it' : 'Make the worktree again from its branch, and open it') : 'Show it in the sidebar again, and open it'}>
             <Button size="small" variant="plain" disabled={busy} onClick={() => act.restore(item)}>
               {busy ? 'Restoring…' : 'Restore'}
             </Button>
