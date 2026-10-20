@@ -62,7 +62,9 @@ test('a sub-agent shows under what started it, as a robot, not as a worktree', a
   await expect(sidebar(page).getByRole('button', { name: new RegExp(`^agent-${AGENT}`) })).toHaveCount(0);
   // The other agent worktree the demo has, which no conversation here started: not listed at all.
   await expect(sidebar(page).getByRole('button', { name: /^Sub-agents/ })).toHaveCount(0);
-  await expect(sidebar(page).locator(`[data-subagent]:not([data-subagent="${AGENT}"])`)).toHaveCount(0);
+  // (Sub-agents earlier specs' conversations started may be listed under those; that worktree isn't.)
+  const other = readdirSync(path.join(root, '.claude', 'worktrees')).find((n) => n.startsWith('agent-') && n !== `agent-${AGENT}`)!;
+  await expect(sidebar(page).locator(`[data-subagent="${other.slice('agent-'.length)}"]`)).toHaveCount(0);
   await shot(page, 'subagents-sidebar');
 });
 

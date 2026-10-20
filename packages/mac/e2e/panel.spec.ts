@@ -49,7 +49,7 @@ test.beforeEach(async ({ page }) => {
 
 test('a workspace has what Claude made on top and what runs below; the keys pick them and each workspace keeps its own', async ({ page }) => {
   await openWorkspace(page);
-  await expect(panel(page).getByRole('tablist', { name: 'Panel', exact: true }).getByRole('tab')).toHaveText(['Changes', 'Files', 'Scratch', 'Info']);
+  await expect(panel(page).getByRole('tablist', { name: 'Panel', exact: true }).getByRole('tab')).toHaveText([/^Changes/, 'Files', 'Scratch', 'Info']);
   await expect(panel(page).getByRole('tablist', { name: 'Panel bottom' }).getByRole('tab')).toHaveText(['Terminal', 'Background']);
   // It has commits ahead: Changes is where it starts.
   await expect(tab(page, 'Changes')).toHaveAttribute('aria-selected', 'true');
@@ -233,7 +233,7 @@ test('drag a tab to the other pane and it stays there; right-click moves it back
   await expect(bottom.getByRole('tab')).toHaveText(['Terminal', 'Info', 'Background']);
   await bottom.getByRole('tab', { name: 'Info' }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Move to Top' }).click();
-  await expect(top.getByRole('tab')).toHaveText(['Changes', 'Files', 'Scratch', 'Info']);
+  await expect(top.getByRole('tab')).toHaveText([/^Changes/, 'Files', 'Scratch', 'Info']);
   // The bottom pane folds to its tabs, and opens again from any of them.
   await panel(page).getByRole('button', { name: 'Hide the bottom of the panel' }).click();
   await expect(panel(page).locator('#panel-body-bottom')).toHaveCount(0);
@@ -242,5 +242,5 @@ test('drag a tab to the other pane and it stays there; right-click moves it back
   // Reset Panel Layout puts everything back.
   await top.getByRole('tab', { name: 'Files' }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Reset Panel Layout' }).click();
-  await expect(top.getByRole('tab')).toHaveText(['Changes', 'Files', 'Scratch', 'Info']);
+  await expect(top.getByRole('tab')).toHaveText([/^Changes/, 'Files', 'Scratch', 'Info']);
 });
