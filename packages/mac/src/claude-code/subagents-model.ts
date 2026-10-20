@@ -1,6 +1,6 @@
 import type { CcAgent, CcSession } from '../../../../src/core/claude-code/model.js';
 import type { AppState } from '../../../../src/core/store.js';
-import type { Project, Workspace } from '../../../../src/workspaces/types.js';
+import type { Workspace } from '../../../../src/workspaces/types.js';
 import { worktreeOrigin } from '../../../../src/workspaces/origin.js';
 
 /**
@@ -50,14 +50,6 @@ export function subAgentsUnder(sessions: readonly CcSession[], workspaceId: stri
   return allSubAgents(sessions)
     .filter((s) => s.session.workspaceId === workspaceId && !s.agent.parentAgentId)
     .sort((a, b) => Number(b.agent.status === 'running') - Number(a.agent.status === 'running') || b.agent.lastAt - a.agent.lastAt);
-}
-
-/** A project's sub-agent worktrees whose agent isn't shown under a conversation (finished long ago, or started outside Klaud). */
-export function looseAgentWorktrees(p: Pick<Project, 'workspaces'>, sessions: readonly CcSession[], shownUnder: (wsId: string) => boolean): Workspace[] {
-  return p.workspaces.filter((w) => !w.archived && isAgentWorktree(w)).filter((w) => {
-    const s = agentOfWorktree(sessions, w);
-    return !s || !s.session.workspaceId || !shownUnder(s.session.workspaceId);
-  });
 }
 
 /** "claude-opus-5-5" → "Opus 5.5", "sonnet" → "Sonnet", anything else as it is. */

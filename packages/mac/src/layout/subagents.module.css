@@ -33,21 +33,3 @@
   display: inline-block;
   width: 13px;
 }
-.folder .label {
-  color: var(--text-3);
-  font-weight: 500;
-}
-.count {
-  margin-left: 4px;
-  padding: 0 5px;
-  border-radius: 7px;
-  background: var(--bg-hover);
-  font-size: 0.86em;
-}
-.disclosure {
-  color: var(--text-3);
-  transition: transform var(--dur-fast);
-}
-.disclosureOpen {
-  transform: rotate(90deg);
-}

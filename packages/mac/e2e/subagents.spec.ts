@@ -7,8 +7,8 @@ import { expect, test, type Page } from '@playwright/test';
  * Sub-agents are Claude's helpers, not your worktrees: a pretend Claude Code session in the demo's
  * bob-api project starts a sub-agent in its own worktree (one the demo made under
  * .claude/worktrees). The sidebar shows it under what started it, with a robot, not as a
- * worktree; its page follows it live with its model and effort; a sub-agent worktree nobody
- * started from here waits in a folded "Sub-agents" row.
+ * worktree; its page follows it live with its model and effort. An old sub-agent worktree with
+ * nothing to tie it to isn't listed at all (it would only jump away when clicked).
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -60,16 +60,20 @@ test('a sub-agent shows under what started it, as a robot, not as a worktree', a
   const agent = sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests, Running/ });
   await expect(agent).toBeVisible({ timeout: 20_000 });
   await expect(sidebar(page).getByRole('button', { name: new RegExp(`^agent-${AGENT}`) })).toHaveCount(0);
-  // The other agent worktree the demo has: tucked into one folded row.
-  const loose = sidebar(page).getByRole('group', { name: 'Sub-agent worktrees in bob-api' });
-  await expect(loose.getByRole('button', { name: /Sub-agents\s*1/ })).toHaveAttribute('aria-expanded', 'false');
+  // The other agent worktree the demo has, which no conversation here started: not listed at all.
+  await expect(sidebar(page).getByRole('button', { name: /^Sub-agents/ })).toHaveCount(0);
+  await expect(sidebar(page).locator(`[data-subagent]:not([data-subagent="${AGENT}"])`)).toHaveCount(0);
   await shot(page, 'subagents-sidebar');
 });
 
 test('its page follows it live: who started it, model, effort, thinking and tools', async ({ page }) => {
-  await sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests/ }).click();
+  const row = sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests/ });
+  await row.click();
   const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
   await expect(monitor).toBeVisible({ timeout: 15_000 });
+  // Clicking it doesn't move it: its row stays where it was, selected.
+  await page.waitForTimeout(1500);
+  await expect(row).toBeVisible();
   await expect(monitor).toContainText('a Claude Code session outside Klaud in bob-api');
   await expect(monitor).toContainText('Write the webhook tests');
   await expect(monitor).toContainText('Sonnet 5.5');

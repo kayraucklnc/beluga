@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CcAgent, CcSession } from '../src/core/claude-code/model.js';
-import { agentIdOfPath, agentOfToolUse, agentOfWorktree, agentTitle, effortLabel, isAgentWorktree, looseAgentWorktrees, modelLabel, steerPrompt, steerable, subAgentsUnder } from '../packages/mac/src/claude-code/subagents-model.js';
+import { agentIdOfPath, agentOfToolUse, agentOfWorktree, agentTitle, effortLabel, isAgentWorktree, modelLabel, steerPrompt, steerable, subAgentsUnder } from '../packages/mac/src/claude-code/subagents-model.js';
 
 const agent = (id: string, extra: Partial<CcAgent> = {}): CcAgent => ({ id, description: `Task ${id}`, type: 'general-purpose', background: true, status: 'finished', startedAt: 1, lastAt: 2, steps: 3, ...extra });
 const session = (id: string, agents: CcAgent[], extra: Partial<CcSession> = {}): CcSession => ({ id, title: id, cwd: '/r', status: 'idle', lastAt: 1, steps: 1, agents, ...extra });
@@ -27,12 +27,6 @@ describe('sub-agents in the Mac app', () => {
     expect(subAgentsUnder([mine, outside], 'ws1').map((s) => s.agent.id)).toEqual(['live1', 'x', 'a09dac5d30f83f08a']);
     expect(steerable({ agent: live, session: mine })).toBe(true);
     expect(steerable({ agent: agent('x'), session: outside })).toBe(false);
-  });
-
-  it('keeps sub-agent worktrees nobody shows under a conversation in their own place', () => {
-    const p = { workspaces: [{ id: 'a', kind: 'worktree', path: WT, archived: false, external: true }, { id: 'b', kind: 'worktree', path: '/r/.claude/worktrees/agent-old', archived: false, external: true }, { id: 'c', kind: 'worktree', path: '/r/wt/x', archived: false, external: true }] } as never;
-    expect(looseAgentWorktrees(p, [mine], (ws) => ws === 'ws1').map((w) => w.id)).toEqual(['b']);
-    expect(looseAgentWorktrees(p, [mine], () => false).map((w) => w.id)).toEqual(['a', 'b']);
   });
 
   it('says models, effort and names plainly; steering goes through the lead Claude', () => {

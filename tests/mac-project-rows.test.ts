@@ -22,8 +22,8 @@ describe('what a project has inside', () => {
     expect(hasRowsInside(project(ws('theirs', { external: true, path: '/elsewhere/theirs' })), [])).toBe(true);
   });
 
-  it('sub-agents started in the main folder, and sub-agent worktrees on their own', () => {
+  it('sub-agents started in the main folder; an old sub-agent worktree on its own is nothing to show', () => {
     expect(hasRowsInside(project(), [session([agent('a1')], 'main')])).toBe(true);
-    expect(hasRowsInside(project(ws('agent-x', { external: true, path: '/r/.claude/worktrees/agent-x' })), [])).toBe(true);
+    expect(hasRowsInside(project(ws('agent-x', { external: true, path: '/r/.claude/worktrees/agent-x' })), [])).toBe(false);
   });
 });
