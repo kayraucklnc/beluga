@@ -161,7 +161,10 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   // Archived work stays out of the sidebar: the Overview's Archived list has it.
   const showArchivedItem: ActionItem[] = archived.length ? [{ label: `Show Archived (${archived.length})`, onSelect: () => showArchivedOf(actions.run, p.id) }] : [];
   // Worktrees made outside Klaud that can go, from any tool, ticked in one list.
-  const cleanUpItem: ActionItem[] = outsideOf(p).length ? [{ label: 'Clean Up Worktrees…', onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: p.id }) }] : [];
+  const cleanUpItem: ActionItem[] = [
+    ...(p.workspaces.some((w) => w.kind === 'worktree' && !w.archived) ? [{ label: 'Manage Worktrees…', onSelect: () => actions.run({ type: 'view', view: { kind: 'worktrees', projectId: p.id } }) }] : []),
+    ...(outsideOf(p).length ? [{ label: 'Clean Up Worktrees…', onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: p.id }) }] : []),
+  ];
   const extra: ActionItem[] = [...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, Boolean(state.earnings[p.root])), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, onSelect: () => hide(p) }];
   const kids = depth + 2;
   // Nothing to unfold: no arrow (its place kept, so the icons stay in line).
