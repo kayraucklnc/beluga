@@ -27,6 +27,7 @@ export function TaskPage({ id }: { id: string }) {
   if (!board.enabled) return <Empty icon="task" title="Tasks need the Klaud app" />;
   if (!issue) return <Empty icon="task" title="This task isn’t here anymore" detail="It may have been deleted." />;
   return (
+    <div className={t.pageWrap}>
     <div className={t.page}>
       <div className={t.pageMain}>
         <Header issue={issue} />
@@ -42,6 +43,7 @@ export function TaskPage({ id }: { id: string }) {
         </section>
       </div>
       <Properties issue={issue} />
+    </div>
     </div>
   );
 }
@@ -270,22 +272,22 @@ function Properties({ issue }: { issue: Issue }) {
         )}
       </Prop>
       <div className={t.propsRule} />
-      <Prop label="Project">
+      <Prop label="Project" quiet>
         <span className={t.propStatic}>{project?.name ?? '—'}</span>
       </Prop>
       {issue.branch ? (
-        <Prop label="Branch">
+        <Prop label="Branch" quiet>
           <Tip label={issue.branch}>
             <span className={cx(t.propStatic, t.mono, t.ellipsis)}>{issue.branch}</span>
           </Tip>
         </Prop>
       ) : null}
-      <Prop label="Created">
+      <Prop label="Created" quiet>
         <span className={t.propStatic}>
           {ago(issue.createdAt)} by {actorName(issue.createdBy, selfId)}
         </span>
       </Prop>
-      <Prop label="Updated">
+      <Prop label="Updated" quiet>
         <span className={t.propStatic}>{ago(issue.updatedAt)}</span>
       </Prop>
     </aside>
@@ -317,9 +319,9 @@ function DuePicker({ issue, late, text }: { issue: Issue; late: boolean; text: s
   );
 }
 
-function Prop({ label, children }: { label: string; children: React.ReactNode }) {
+function Prop({ label, children, quiet }: { label: string; children: React.ReactNode; quiet?: boolean }) {
   return (
-    <div className={t.prop}>
+    <div className={cx(t.prop, quiet && t.propStaticRow)}>
       <span className={t.propLabel}>{label}</span>
       <div className={t.propControl}>{children}</div>
     </div>

@@ -222,22 +222,38 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  container: tasks / inline-size;
 }
 .bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--hairline);
   min-width: 0;
 }
-.bar > * {
+/* Filters on the left, actions on the right; in a narrow column the actions go under, still on the right. */
+.barGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.barGroup > * {
   flex-shrink: 0;
+}
+.barActions {
+  margin-left: auto;
 }
 .grow {
   flex: 1;
 }
-.bar > .find {
+.barGroup > .find {
   flex: 0 1 190px;
   min-width: 90px;
 }
@@ -396,7 +412,7 @@
 }
 .title {
   flex: 1 1 auto;
-  min-width: 80px;
+  min-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -420,8 +436,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex: none;
+  flex: 0 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
 .metaCompact {
   flex-wrap: wrap;
@@ -1540,6 +1557,76 @@
 @media (max-width: 1100px) {
   .props {
     flex-basis: 252px;
+  }
+  .relations {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+/* Narrower columns (the panel open, a small window): rows keep the title and drop the details first. */
+@container tasks (max-width: 760px) {
+  .row .when {
+    display: none;
+  }
+  .row .meta .label:nth-of-type(n + 2) {
+    display: none;
+  }
+}
+@container tasks (max-width: 600px) {
+  .row .meta .label,
+  .row .key {
+    display: none;
+  }
+  .row .blocked {
+    font-size: 0;
+    gap: 0;
+    padding: 0 5px;
+  }
+  .row {
+    padding: 0 10px 0 12px;
+    gap: 8px;
+  }
+  .bar {
+    padding: 8px 12px;
+  }
+}
+
+/* A task's page in a narrow column: its properties go above the content, two to a row. */
+.pageWrap {
+  height: 100%;
+  min-width: 0;
+  container: taskpage / inline-size;
+}
+@container taskpage (max-width: 780px) {
+  .page {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .pageMain {
+    overflow: visible;
+    padding: 16px 20px 48px;
+  }
+  .props {
+    order: -1;
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+    column-gap: 14px;
+    row-gap: 0;
+    padding: 8px 20px;
+    border-left: 0;
+    border-bottom: 1px solid var(--hairline);
+    overflow: visible;
+  }
+  /* Only what you change: where it lives and when are on the full page. */
+  .propsRule,
+  .propStaticRow {
+    display: none;
+  }
+  .prop {
+    grid-template-columns: 62px minmax(0, 1fr);
+    min-height: 30px;
   }
   .relations {
     grid-template-columns: 1fr;

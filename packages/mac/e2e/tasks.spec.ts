@@ -90,3 +90,17 @@ test('a worktree shows the task it’s doing, and opens it', async ({ page }) =>
   await expect(page.getByRole('button', { name: 'Open Worktree' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Proof' })).toContainText('Hero, desktop');
 });
+
+test('a narrow window: the bar wraps and New Task stays in reach; a task’s properties go on top', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 760 });
+  await openTasks(page);
+  await page.getByRole('button', { name: 'New Task', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'New Task' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('row', { name: /Add auth to the payment routes/ }).first().click();
+  const props = page.getByRole('complementary', { name: 'Properties' });
+  const title = page.getByRole('textbox', { name: 'Title' });
+  // Stacked: the properties above the title, both within the column.
+  expect((await props.boundingBox())!.y).toBeLessThan((await title.boundingBox())!.y);
+  await expect(props.getByRole('button', { name: /In Review/ })).toBeInViewport();
+});

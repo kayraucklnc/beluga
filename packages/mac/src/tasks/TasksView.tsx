@@ -66,6 +66,7 @@ export function TasksView() {
   return (
     <div className={t.view}>
       <div className={t.bar}>
+        <div className={t.barGroup}>
         <Segmented<Scope>
           label="Show"
           value={prefs.scope}
@@ -88,7 +89,8 @@ export function TasksView() {
             </button>
           ) : null}
         </label>
-        <span className={t.grow} />
+        </div>
+        <div className={cx(t.barGroup, t.barActions)}>
         <Segmented<Display>
           label="Display"
           iconOnly
@@ -111,6 +113,7 @@ export function TasksView() {
         <Button variant="primary" size="small" icon="plus" onClick={() => openSheet({ kind: 'new_task', ...(project ? { projectId: project } : {}) })} title="New Task (⌘N)">
           New Task
         </Button>
+        </div>
       </div>
       <div className={cx(t.body, prefs.display === 'board' && t.bodyBoard, prefs.display === 'graph' && t.bodyGraph)}>
         {none ? (
