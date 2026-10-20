@@ -300,6 +300,14 @@ describe('a smart archive', () => {
     expect(existsSync(wt)).toBe(true);
   });
 
+  it('brings files back byte for byte, whatever git would do to their line endings', async () => {
+    sh(repo, 'config', 'core.autocrlf', 'input');
+    writeFileSync(path.join(wt, 'crlf.txt'), 'one\r\ntwo\r\n');
+    await archiveWorktree({ repo, dir: wt, id: 'l1', archivesDir: archives });
+    await restoreWorktree({ repo, dir: wt, id: 'l1', archivesDir: archives });
+    expect(readFileSync(path.join(wt, 'crlf.txt'), 'utf8')).toBe('one\r\ntwo\r\n');
+  });
+
   it('keeps empty folders of yours', async () => {
     mkdirSync(path.join(wt, 'uploads/empty'), { recursive: true });
     await archiveWorktree({ repo, dir: wt, id: 'e1', archivesDir: archives });

@@ -18,6 +18,13 @@ const IDENTITY = { GIT_AUTHOR_NAME: 'Klaud', GIT_AUTHOR_EMAIL: 'klaud@localhost'
 
 export class ArchiveError extends Error {}
 
+/**
+ * Files byte for byte: no .gitattributes (line endings, filters like LFS) and no autocrlf, both
+ * when the snapshot is made and when it's written back (attributes from git's empty tree).
+ */
+export const RAW_ENV: NodeJS.ProcessEnv = { GIT_ATTR_SOURCE: '4b825dc642cb6eb9a060e54bf8d69288fbee4904' };
+export const RAW_ARGS = ['-c', 'core.autocrlf=false', '-c', 'core.safecrlf=false'] as const;
+
 export function run(cmd: string, args: readonly string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; input?: string }): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = execFile(cmd, [...args], { cwd: opts.cwd, timeout: opts.timeoutMs ?? 120_000, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...opts.env } }, (err, stdout, stderr) => {
@@ -157,9 +164,9 @@ export async function snapshot(dir: string, message: string): Promise<Snapshot> 
   const staged = await tryGit(dir, ['write-tree']);
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'klaud-archive-'));
   try {
-    const temp = { ...env, GIT_INDEX_FILE: path.join(tmp, 'index') };
+    const temp = { ...env, ...RAW_ENV, GIT_INDEX_FILE: path.join(tmp, 'index') };
     await git(dir, head ? ['read-tree', head] : ['read-tree', '--empty'], temp, LONG_MS);
-    await git(dir, ['-c', 'advice.addEmbeddedRepo=false', 'add', '-A', '--', '.'], temp, LONG_MS);
+    await git(dir, [...RAW_ARGS, '-c', 'advice.addEmbeddedRepo=false', 'add', '-A', '--', '.'], temp, LONG_MS);
     const tree = (await git(dir, ['write-tree'], temp, LONG_MS)).trim();
     // A repo inside that isn't a submodule: git only notes it's there, so it's packed whole.
     const nested = (await gitlinks(dir, temp)).filter((p) => !submodules.has(p));

@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { folderSize } from './disk.js';
-import { ArchiveError, LONG_MS, TAR_TIMEOUT_MS, assertSettled, fingerprint, git, gitLiteral, ignoredByProject, ignoredIn, pack, run, snapshot, submoduleOnlyHere, submodulesIn, tryGit, untrackedDirs } from './archive-git.js';
+import { ArchiveError, LONG_MS, RAW_ARGS, RAW_ENV, TAR_TIMEOUT_MS, assertSettled, fingerprint, git, gitLiteral, ignoredByProject, ignoredIn, pack, run, snapshot, submoduleOnlyHere, submodulesIn, tryGit, untrackedDirs } from './archive-git.js';
 import { type RegenRule, regenRule, remakeSteps } from './regenerable.js';
 
 /**
@@ -199,6 +199,8 @@ export function archiveWorktree(o: ArchiveOptions): Promise<ArchiveManifest> {
     const folder = folderOf(o.archivesDir, o.id);
     const work = `${folder}.partial`;
     for (let attempt = 1; ; attempt++) {
+      // Past this, the archive is saved: nothing undoes it, whatever fails after.
+      let saved = false;
       rmSync(work, { recursive: true, force: true });
       mkdirSync(work, { recursive: true });
       try {
@@ -239,13 +241,18 @@ export function archiveWorktree(o: ArchiveOptions): Promise<ArchiveManifest> {
         await git(o.repo, ['update-ref', REF(o.id), snap.commit]);
         writeFileSync(path.join(work, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
         renameSync(work, folder);
-        // Saved: from here on, the archive is never taken back.
+        saved = true;
         o.onPhase?.('removing');
         if (!(await removeFolder(o.repo, o.dir))) return manifest;
         const left: ArchiveManifest = { ...manifest, leftover: true };
-        writeFileSync(path.join(folder, MANIFEST), `${JSON.stringify(left, null, 2)}\n`);
+        try {
+          writeFileSync(path.join(folder, MANIFEST), `${JSON.stringify(left, null, 2)}\n`);
+        } catch {
+          // The manifest there is good: restore sets a leftover aside all the same.
+        }
         return left;
       } catch (err) {
+        if (saved) throw err;
         rmSync(work, { recursive: true, force: true });
         // The folder is still there: forget this snapshot (and its manifest) so nothing claims it's archived.
         if (existsSync(o.dir)) {
@@ -281,7 +288,7 @@ export function restoreWorktree(o: Omit<ArchiveOptions, 'onPhase'>): Promise<Arc
     else if (m.head) await git(o.repo, ['worktree', 'add', '--detach', o.dir, m.head], undefined, LONG_MS);
     else await git(o.repo, ['worktree', 'add', '--orphan', o.dir], undefined, LONG_MS);
     try {
-      await git(o.dir, ['read-tree', '-u', '--reset', `${m.snapshot}^{tree}`], undefined, LONG_MS);
+      await git(o.dir, [...RAW_ARGS, 'read-tree', '-u', '--reset', `${m.snapshot}^{tree}`], RAW_ENV, LONG_MS);
       await git(o.dir, ['read-tree', `${m.snapshot}^2^{tree}`], undefined, LONG_MS);
       if (m.keptFile) await run('tar', ['-x', '-k', '-p', '-f', path.join(folder, m.keptFile), '-C', o.dir], { cwd: o.dir, timeoutMs: TAR_TIMEOUT_MS });
     } catch (err) {
