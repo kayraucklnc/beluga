@@ -250,3 +250,9 @@
 .usage[data-level='high'] button {
   color: var(--error);
 }
+/* A worktree being archived: quiet words where its state would be. */
+.archiving {
+  color: var(--text-3);
+  font-size: 0.86em;
+  white-space: nowrap;
+}

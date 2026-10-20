@@ -1,6 +1,6 @@
 /**
- * The Scratch tab, as plain data: how long ago a file was written, what kind of file it is, and
- * which one the preview shows. No DOM here, so it's tested on its own.
+ * The Scratch tab, as plain data: how long ago a file was written, what kind of file it is, where
+ * it sits, and which one the preview shows. No DOM here, so it's tested on its own.
  */
 
 export interface ScratchEntry {
@@ -38,3 +38,24 @@ export function followed(files: readonly ScratchEntry[], follow: boolean, picked
   if (!follow && picked && files.some((f) => f.path === picked)) return picked;
   return files[0]?.path;
 }
+
+/** Where a listed file sits: which shown folder (`root`), the folders under it, and its name. */
+export interface ScratchPlace {
+  readonly root: string;
+  readonly dir: string;
+  readonly name: string;
+}
+
+export function scratchPlace(path: string, roots: readonly string[]): ScratchPlace {
+  const name = path.split('/').pop() ?? path;
+  const root = roots.find((r) => path.startsWith(`${r}/`)) ?? '';
+  const dir = path.slice(root ? root.length + 1 : 0, path.length - name.length).replace(/\/$/, '');
+  return { root, dir, name };
+}
+
+/** The shown folders that have something in them, in the order they're shown. */
+export const foldersWithFiles = (files: readonly ScratchEntry[], roots: readonly string[]): string[] =>
+  roots.filter((r) => files.some((f) => f.path.startsWith(`${r}/`)));
+
+/** The placeholder rows' name widths (%), so the skeleton reads as a list of different files. */
+export const GHOST_WIDTHS = [62, 44, 71, 38] as const;

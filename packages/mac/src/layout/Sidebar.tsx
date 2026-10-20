@@ -23,6 +23,7 @@ import { ActivityRow } from '../claude-code/Live.js';
 import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
 import { RequestsNav } from '../gateway/RequestsNav.js';
 import { TasksNav } from '../tasks/TasksNav.js';
+import { WorktreesNav } from '../views/worktrees/WorktreesNav.js';
 import { SelfBar } from '../network/StatusMenu.js';
 import { UpdatePill } from '../components/UpdatePill.js';
 import s from './Sidebar.module.css';
@@ -166,6 +167,7 @@ export function Sidebar() {
             return n.kind === 'overview' ? [row, <TasksNav key="tasks" />] : row;
           })}
           <ActivityRow whenLive />
+          <WorktreesNav />
           <RequestsNav whenAny />
         </section>
 

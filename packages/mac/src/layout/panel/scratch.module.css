@@ -1,0 +1,155 @@
+/* The Scratch tab's placeholders: a list and a preview drawn in outline, softly moving while Claude works. */
+
+.skeleton {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 16px 16px;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  color: var(--text-3);
+}
+.statusTitle {
+  color: var(--text);
+  font-weight: 600;
+}
+.statusWorking {
+  color: var(--claude);
+}
+.ghosts {
+  display: flex;
+  flex-direction: column;
+}
+.ghost {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row);
+  padding: 0 8px;
+}
+.bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--hairline);
+}
+.icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: var(--hairline);
+}
+.name {
+  flex: none;
+}
+.meta {
+  flex: none;
+  width: 26px;
+  margin-left: auto;
+}
+.tile {
+  flex: 1;
+  min-height: 90px;
+  max-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--hairline-strong);
+  border-radius: var(--radius);
+  color: var(--text-3);
+}
+.tile svg {
+  opacity: 0.5;
+}
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+.flex {
+  flex: 1;
+}
+
+/* Working: a light sweeps across the bars, and the tile breathes. */
+.live .bar,
+.live .icon {
+  background: linear-gradient(90deg, var(--hairline) 0%, var(--hairline-strong) 45%, var(--hairline) 90%) 0 0 / 300% 100%;
+  animation: sweep 1.6s linear infinite;
+}
+.live .tile {
+  border-color: color-mix(in srgb, var(--claude) 40%, transparent);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+@keyframes sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+@keyframes breathe {
+  50% {
+    background: color-mix(in srgb, var(--claude) 5%, transparent);
+  }
+}
+
+/* The row on top of a list while Claude works: where the next file will land. */
+.next {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row);
+  padding: 0 16px;
+  color: var(--claude);
+  font-size: 0.86rem;
+}
+.next .bar {
+  flex: 1;
+  max-width: 40%;
+}
+
+/* A file that just arrived slides in. */
+.arrived {
+  animation: arrive 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+}
+
+.folder {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-3);
+  font-size: 0.76rem;
+  line-height: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live .bar,
+  .live .icon,
+  .live .tile,
+  .arrived {
+    animation: none;
+  }
+}
+:root[data-motion='reduce'] .live .bar,
+:root[data-motion='reduce'] .live .icon,
+:root[data-motion='reduce'] .live .tile,
+:root[data-motion='reduce'] .arrived {
+  animation: none;
+}

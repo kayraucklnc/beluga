@@ -8,6 +8,7 @@ import * as g from './git.js';
 import * as sync from './sync.js';
 import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
 import { WorkspaceStore } from './store.js';
+import { type ArchiveManifest, type ArchivePhase, type ArchivePreview, archiveWorktree, dropArchive, freeSpace, planArchive, previewOf, readManifest, restoreWorktree } from './archive.js';
 import { worktreeOrigin } from './origin.js';
 import { addDay, dayKey } from './usage-days.js';
 import type { Project, ProjectGroup, ProjectSync, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
@@ -596,28 +597,54 @@ export class WorkspaceManager {
     return this.require(record.id);
   }
 
-  /** Remove the worktree folder but keep its branch and conversation, so it can be revisited. */
-  async archive(id: string, force = false): Promise<void> {
+  /**
+   * Archive smartly: everything of yours in the worktree is kept (uncommitted changes, new files,
+   * .env and other ignored files of yours), dependencies, builds and caches are thrown away, and
+   * the folder goes. Its branch and conversation stay; `restore` brings it all back.
+   */
+  async archive(id: string, onPhase?: (phase: ArchivePhase) => void): Promise<ArchiveManifest | undefined> {
     const ws = this.require(id);
     if (ws.kind === 'main') throw new WorkspaceError("The main folder can't be archived");
+    let manifest: ArchiveManifest | undefined;
     if (ws.kind === 'worktree') {
-      if (!force && (ws.status?.changed ?? 0) > 0) throw new WorkspaceError(`${ws.name} has ${ws.status?.changed} uncommitted file(s). Commit them or archive anyway.`);
-      await g.removeWorktree(ws.projectRoot, ws.path, force);
+      // Deleted by hand already: nothing to keep; forget it in git.
+      if (!existsSync(ws.path)) await g.git(ws.projectRoot, ['worktree', 'prune']).catch(() => undefined);
+      else manifest = await archiveWorktree({ repo: ws.projectRoot, dir: ws.path, id, archivesDir: this.store.archivesDir, ...(onPhase ? { onPhase } : {}) });
     }
-    this.patchRecord(id, { archived: true });
+    this.patchRecord(id, { archived: true, ...(manifest ? { archive: { freedBytes: manifest.freedBytes, keptBytes: manifest.keptBytes, remake: manifest.remake, at: manifest.archivedAt } } : {}) });
     await this.refresh();
+    return manifest;
   }
 
-  /** Bring an archived worktree back from its branch. */
-  async restore(id: string): Promise<void> {
+  /** What archiving (or freeing space in) a worktree would throw away and keep. */
+  async archivePlan(id: string): Promise<ArchivePreview | undefined> {
     const ws = this.require(id);
-    if (!ws.archived) return;
-    if (ws.kind === 'worktree' && ws.branch) {
+    if (ws.kind !== 'worktree' || ws.archived || !existsSync(ws.path)) return undefined;
+    return previewOf(await planArchive(ws.path));
+  }
+
+  /** Throw away a worktree's dependencies, builds and caches (it stays; they're made again by its setup). */
+  async freeSpace(id: string): Promise<{ bytes: number; remake: readonly string[] }> {
+    const ws = this.require(id);
+    if (ws.kind !== 'worktree' || ws.archived || !existsSync(ws.path)) throw new WorkspaceError('Only a worktree that’s there can be cleaned');
+    const freed = await freeSpace(ws.path);
+    return { bytes: freed.bytes, remake: freed.remake };
+  }
+
+  /** Bring an archived worktree back: as it was when archived smartly, else from its branch. */
+  async restore(id: string): Promise<ArchiveManifest | undefined> {
+    const ws = this.require(id);
+    if (!ws.archived) return undefined;
+    let manifest: ArchiveManifest | undefined;
+    if (ws.kind === 'worktree' && readManifest(this.store.archivesDir, id)) {
+      manifest = await restoreWorktree({ repo: ws.projectRoot, dir: ws.path, id, archivesDir: this.store.archivesDir });
+    } else if (ws.kind === 'worktree' && ws.branch) {
       mkdirSync(path.dirname(ws.path), { recursive: true });
       await g.git(ws.projectRoot, ['worktree', 'add', ws.path, ws.branch]);
     }
-    this.patchRecord(id, { archived: false });
+    this.patchRecord(id, { archived: false, archive: undefined });
     await this.refresh();
+    return manifest;
   }
 
   /** Permanently delete: worktree folder, its branch, and its conversation. */
@@ -634,6 +661,7 @@ export class WorkspaceManager {
       if (ws.branch && !foreign) await g.deleteBranch(ws.projectRoot, ws.branch).catch(() => undefined);
     }
     rmSync(this.store.historyFile(id), { force: true });
+    if (ws.archived) await dropArchive(ws.projectRoot, this.store.archivesDir, id).catch(() => undefined);
     // Only ever delete klaud's own scratch folders, never a folder you started a chat in.
     if (ws.projectRoot === '' && real(ws.path).startsWith(real(this.chatsDir) + path.sep)) rmSync(ws.path, { recursive: true, force: true });
     this.records = this.records.filter((r) => r.id !== id);

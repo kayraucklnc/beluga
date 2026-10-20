@@ -130,6 +130,9 @@ describe('agent status', () => {
     expect(agentStatus({ ...base, lastAt: T0, final: false, result: { toolUseId: 't', error: true, async: false, ts: T0 + 1 } })).toEqual({ status: 'failed', endedAt: T0 + 1 });
     expect(agentStatus({ ...base, lastAt: T0, final: false, result: { toolUseId: 't', error: false, async: true, ts: T0 + 1 } })).toEqual({ status: 'running' });
     expect(agentStatus({ ...base, now: T0 + 10 * 60_000, lastAt: T0, final: false })).toEqual({ status: 'idle' });
+    // Quiet, and Claude Code marked it finished: finished, not idle.
+    expect(agentStatus({ ...base, now: T0 + 10 * 60_000, lastAt: T0, final: false, marked: true })).toEqual({ status: 'finished', endedAt: T0 });
+    expect(agentStatus({ ...base, lastAt: T0, final: false, marked: true })).toEqual({ status: 'running' });
   });
 });
 
@@ -523,5 +526,33 @@ describe('klaud’s own conversations stay out of Activity', () => {
     await new Promise((r) => setTimeout(r, 400));
     expect((store.getState().claudeCode?.sessions ?? []).map((s: { id: string }) => s.id)).not.toContain(sid);
     second.stop();
+  });
+});
+
+describe('sub-agent worktrees keep who started them', () => {
+  it('places each under the conversation that started it, long after it finished', async () => {
+    const { ClaudeCodeWatcher } = await import('../src/core/claude-code/watch.js');
+    const { Store, initialState } = await import('../src/core/store.js');
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+    const os = await import('node:os');
+    const pathMod = await import('node:path');
+    const home = mkdtempSync(pathMod.join(os.tmpdir(), 'cc-origins-'));
+    const sid = '11111111-2222-3333-4444-666666666666';
+    const dir = pathMod.join(home, 'projects', '-tmp-proj');
+    mkdirSync(pathMod.join(dir, sid, 'subagents'), { recursive: true });
+    // Months old: the watcher itself no longer follows this session.
+    const old = new Date(Date.now() - 90 * 86_400_000).toISOString();
+    writeFileSync(pathMod.join(dir, `${sid}.jsonl`), JSON.stringify({ type: 'user', timestamp: old, sessionId: sid, cwd: '/tmp/proj', message: { role: 'user', content: 'Split it up' } }) + '\n');
+    const wt = '/tmp/proj/.claude/worktrees/agent-abc123';
+    writeFileSync(pathMod.join(dir, sid, 'subagents', 'agent-abc123.meta.json'), JSON.stringify({ worktreePath: wt, description: 'Composer package', finished: true }));
+    const store = new Store(initialState('test', 'ask'));
+    const main = { id: 'main', projectId: 'p1', name: 'proj', path: '/tmp/proj', kind: 'main', createdAt: 0, external: false };
+    const agentWs = { id: 'agent', projectId: 'p1', name: 'agent-abc123', path: wt, kind: 'worktree', createdAt: 0, external: true };
+    store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'proj', root: '/tmp/proj', base: 'main', workspaces: [main, agentWs] }] } as never);
+    const w = new ClaudeCodeWatcher({ home, store, watch: false });
+    w.scan();
+    expect(store.getState().claudeCode.sessions).toHaveLength(0);
+    expect(store.getState().claudeCode.origins).toEqual([expect.objectContaining({ path: wt, agentId: 'abc123', description: 'Composer package', sessionTitle: 'Split it up', projectId: 'p1', workspaceId: 'main', finished: true })]);
+    w.stop();
   });
 });

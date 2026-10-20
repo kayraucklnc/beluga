@@ -243,7 +243,10 @@ export type View =
   | { readonly kind: 'requests' }
   /** Tasks (Mac app): one project's board (the one you were last in when unset), and one task's page. */
   | { readonly kind: 'tasks'; readonly projectId?: string }
-  | { readonly kind: 'task'; readonly id: string };
+  | { readonly kind: 'task'; readonly id: string }
+
+  /** Every worktree in your projects (Mac app): who made it, whether it's done, the space it takes; archive or clean them. */
+  | { readonly kind: 'worktrees'; readonly projectId?: string };
 
 /** Tabs of a workspace someone shared with you: the chat, its files, a read-only shell over them, and what changed. */
 export type SharedTab = 'chat' | 'files' | 'terminal' | 'diff';
@@ -866,6 +869,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'notice_clear':
     case 'models':
     case 'disk':
+    case 'archiving':
     case 'pr':
     case 'setup':
     case 'search':
@@ -892,6 +896,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, ...reduceEarnings(state, action) };
     case 'claude_code':
       return ccFinished(state, { ...state, ...reduceClaudeCode(state, action) });
+    case 'agent_origins':
+      return { ...state, ...reduceClaudeCode(state, action) };
     case 'gw_init':
     case 'gw_task':
     case 'gw_card':

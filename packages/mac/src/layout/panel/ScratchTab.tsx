@@ -1,10 +1,10 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { Location } from '@klaud/core/store.js';
 import { shareNameOf } from '@klaud/shared/share-names.js';
-import { SCRATCH_DIR } from '@klaud/shared/scratch-dir.js';
+import { SHOWN_SCRATCH_DIRS } from '@klaud/shared/scratch-dir.js';
 import { formatBytes } from '@klaud/shared/format.js';
 import { Icon, type IconName } from '../../components/Icon.js';
-import { Button, Empty, EmptyActions, IconButton, Segmented, cx } from '../../components/ui.js';
+import { Empty, IconButton, Segmented, cx } from '../../components/ui.js';
 import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
 import { openWithDefaultApp, revealInFinder } from '../../lib/files.js';
 import { openFocus } from '../../lib/panel.js';
@@ -12,14 +12,18 @@ import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { mod } from '../../lib/system.js';
 import { ChangedFileView } from '../../views/ChangedFile.js';
+import { signalOf } from '../attention-model.js';
 import { ResizeHandle } from './ResizeHandle.js';
-import { type ScratchEntry, type ScratchKind, fileKind, followed, isFresh, timeAgo } from './scratch-model.js';
+import { NextFileRow, ScratchSkeleton } from './ScratchSkeleton.js';
+import { type ScratchEntry, type ScratchKind, fileKind, followed, foldersWithFiles, isFresh, scratchPlace, timeAgo } from './scratch-model.js';
 import s from './panel.module.css';
+import k from './scratch.module.css';
 
 /**
- * The right panel's Scratch: what Claude saves to the workspace's `.klaud/scratch/` while it works
- * (screenshots, JSON, logs, notes), newest first and live. Following, the preview shows the
- * newest file as it lands; pick one to stay on it.
+ * The right panel's Scratch: what Claude saves to the workspace's `.klaud/scratch/` (or `.context/`,
+ * when another tool runs it there) while it works: screenshots, JSON, logs, notes, newest first and
+ * live. Following, the preview shows the newest file as it lands; pick one to stay on it. Before
+ * anything lands it's drawn in outline, moving while Claude works.
  */
 
 const POLL_MS = 1200;
@@ -143,6 +147,7 @@ export function ScratchTab({ wsId }: { wsId: string }) {
   const { client } = useKlaud();
   const prefs = usePrefs();
   const on = useApp((st) => st.prefs.scratchFolder);
+  const working = useApp((st) => signalOf(st, `ws:${wsId}`, wsId).working);
   const list = useScratch(wsId);
   const now = useNow();
   const [follow, setFollow] = useState(true);
@@ -184,22 +189,7 @@ export function ScratchTab({ wsId }: { wsId: string }) {
   if (list === undefined) return <div className={s.dimPad}>Looking in the scratch folder…</div>;
   if (list === null) return <Empty icon="alert" title="No folder to look in" detail="This workspace’s folder is missing." />;
   if (!files.length) {
-    return (
-      <div className={s.emptyTab}>
-        <Empty
-          icon="pulse"
-          title="Nothing here yet"
-          detail={on ? 'While Claude works, the screenshots, JSON, logs and notes it saves to its scratch folder (.klaud/scratch/) show up here, newest first.' : 'Claude isn’t given a scratch folder (Settings › Claude). Files you put in .klaud/scratch/ still show here.'}
-          action={
-            <EmptyActions>
-              <Button icon="folder" title={list.dir} onClick={() => void revealInFinder(client, list.dir)}>
-                Show in Finder
-              </Button>
-            </EmptyActions>
-          }
-        />
-      </div>
-    );
+    return <ScratchSkeleton working={working} folders={SHOWN_SCRATCH_DIRS} off={!on} dir={list.dir} onReveal={() => void revealInFinder(client, list.dir)} />;
   }
   const split = clampShare(prefs.panelSplit, SPLIT_MIN, SPLIT_MAX);
   return (
@@ -210,7 +200,7 @@ export function ScratchTab({ wsId }: { wsId: string }) {
             <span className={s.summaryTitle}>
               {files.length} file{files.length === 1 ? '' : 's'}
             </span>
-            <span className={s.dim}>{SCRATCH_DIR}</span>
+            <span className={s.dim}>{foldersWithFiles(files, SHOWN_SCRATCH_DIRS).join(' · ')}</span>
             <span className={s.flex} />
             <Segmented
               label="Preview"
@@ -227,17 +217,18 @@ export function ScratchTab({ wsId }: { wsId: string }) {
             <IconButton icon="folder" label="Show in Finder" onClick={() => void revealInFinder(client, list.dir)} />
           </div>
         </div>
+        {working ? <NextFileRow /> : null}
         <div ref={listRef} className={s.list} role="listbox" aria-label="Scratch files" tabIndex={0} onKeyDown={onKey}>
           {files.map((f) => {
-            const name = f.path.split('/').pop() ?? f.path;
-            const dir = f.path.slice(SCRATCH_DIR.length + 1, f.path.length - name.length).replace(/\/$/, '');
+            const { root: folder, dir, name } = scratchPlace(f.path, SHOWN_SCRATCH_DIRS);
             const sel = f.path === shown;
+            const fresh = isFresh(f.mtime, Math.max(now, Date.now()));
             return (
               <div
-                key={f.path}
+                key={`${f.path}:${f.mtime}`}
                 role="option"
                 aria-selected={sel}
-                className={cx(s.row, sel && s.rowOn)}
+                className={cx(s.row, sel && s.rowOn, fresh && k.arrived)}
                 title={f.path}
                 onClick={() => {
                   pick(f.path);
@@ -249,7 +240,8 @@ export function ScratchTab({ wsId }: { wsId: string }) {
                   {name}
                   {dir ? <span className={s.rowDir}>{dir}</span> : null}
                 </span>
-                {isFresh(f.mtime, Math.max(now, Date.now())) ? <span className={s.freshDot} aria-label="new" /> : null}
+                {folder !== SHOWN_SCRATCH_DIRS[0] ? <span className={k.folder}>{folder}</span> : null}
+                {fresh ? <span className={s.freshDot} aria-label="new" /> : null}
                 <span className={s.size}>{f.size < 1024 ? `${f.size} B` : formatBytes(f.size)}</span>
                 <span className={s.ago}>{timeAgo(f.mtime, Math.max(now, Date.now()))}</span>
               </div>

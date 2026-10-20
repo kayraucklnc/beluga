@@ -300,7 +300,7 @@ describe('confirm dialogs', () => {
     const archive = confirmMenu(s, 'archive', 'w1')!;
     expect(archive.intro.join('\n')).toContain('.env  +NEW  ~API  −OLD');
     expect(archive.intro.join('\n')).toContain('.aws/config  (file differs)');
-    expect(archive.options.map((o) => o.id)).toEqual(['confirm-archive-env', 'confirm-commit-archive', 'confirm-archive-force', 'close']);
+    expect(archive.options.map((o) => o.id)).toEqual(['confirm-archive-env', 'confirm-commit-archive', 'confirm-archive', 'close']);
     expect(confirmMenu(s, 'delete', 'w1')!.options.map((o) => o.id)).toEqual(['confirm-delete-env', 'confirm-delete', 'close']);
     expect(confirmMenu(base(), 'archive', 'main')!.options.map((o) => o.id)).toEqual(['confirm-archive', 'close']);
     expect(confirmMenu(base(), 'archive', 'nope')).toBeUndefined();
