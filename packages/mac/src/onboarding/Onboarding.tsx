@@ -1,10 +1,12 @@
-import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, MotionConfig, animate, motion, useMotionTemplate, useMotionValue, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { APP_VERSION } from '../lib/boot.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { Backdrop } from './Backdrop.js';
+import { FINALE, Finale } from './Finale.js';
+import { playFinale } from './finale-sound.js';
 import { EASE_OUT, SPRING } from './fx.js';
 import { SHOW_WELCOME, STEPS, type Step, afterTour, inTour, saveMark, shouldShow, stepBy, stepIndex, tourPlace } from './onboarding-model.js';
 import { Look, Setup } from './SetupSteps.js';
@@ -17,8 +19,15 @@ const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.75, agents: 0.75, f
 const systemDark = (): boolean => window.matchMedia('(prefers-color-scheme: dark)').matches;
 
 /** Whether it's showing, and the way to show it again on purpose. */
-export function useOnboarding(): { open: boolean; close: (how: 'finished' | 'skipped') => void } {
+export function useOnboarding(): { open: boolean; close: (how: 'finished' | 'skipped') => void; arriving: boolean; arrive: () => void } {
   const [open, setOpen] = useState(() => shouldShow(localStorage, window.location.search));
+  // The app settling into place as the welcome bursts open over it (Shell.module.css, [data-arriving]).
+  const [arriving, setArriving] = useState(false);
+  useEffect(() => {
+    if (!arriving) return;
+    const t = setTimeout(() => setArriving(false), 2400);
+    return () => clearTimeout(t);
+  }, [arriving]);
   useEffect(() => {
     // The first time only: quit halfway and it's back next launch. Seeing it again from Help
     // leaves the mark as it was, so a replay you leave never brings it back on its own.
@@ -31,6 +40,8 @@ export function useOnboarding(): { open: boolean; close: (how: 'finished' | 'ski
   }, []);
   return {
     open,
+    arriving,
+    arrive: () => setArriving(true),
     close: (how) => {
       saveMark(localStorage, APP_VERSION, how);
       setOpen(false);
@@ -57,7 +68,7 @@ function Progress({ step, go }: { readonly step: Step; readonly go: (to: Step) =
  * settings, then the app. A full window of its own over the app (which is already there
  * underneath, so finishing simply lifts this away).
  */
-export function Onboarding({ onClose }: { readonly onClose: (how: 'finished' | 'skipped') => void }) {
+export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'finished' | 'skipped') => void; readonly onArrive?: () => void }) {
   const { ui } = useKlaud();
   const prefs = usePrefs();
   const projects = useApp((st) => st.projects.filter((p) => p.root).length);
@@ -65,6 +76,10 @@ export function Onboarding({ onClose }: { readonly onClose: (how: 'finished' | '
   const [step, setStep] = useState<Step>('hello');
   const [dir, setDir] = useState(1);
   const [leaving, setLeaving] = useState<'finished' | 'skipped'>();
+  // Finishing (not skipping) ends with the bang: the welcome opens from the middle onto the app.
+  const [finale, setFinale] = useState(false);
+  const hole = useMotionValue(0);
+  const mask = useMotionTemplate`radial-gradient(circle at 50% 50%, transparent ${hole}px, #000 calc(${hole}px + 1.5px))`;
   const theme = prefs.appearance === 'system' ? (systemDark() ? 'dark' : 'light') : prefs.appearance;
 
   const go = (to: Step): void => {
@@ -78,13 +93,21 @@ export function Onboarding({ onClose }: { readonly onClose: (how: 'finished' | '
   const finish = (how: 'finished' | 'skipped', then?: () => void): void => {
     if (leaving) return;
     setLeaving(how);
-    // The window lifts away, then the app underneath is yours (and the next sheet opens on it).
+    const bang = how === 'finished' && !still;
+    if (bang) {
+      setFinale(true);
+      playFinale();
+      setTimeout(() => onArrive?.(), FINALE.open * 1000);
+      void animate(hole, Math.hypot(window.innerWidth, window.innerHeight) / 2 + 60, { delay: FINALE.open, duration: FINALE.openFor, ease: [0.7, 0, 0.2, 1] });
+    }
+    // Skipping: the window lifts away. Finishing: the bang, then the app underneath is yours
+    // (and the next sheet opens on it).
     exit.current = setTimeout(
       () => {
         onClose(how);
         then?.();
       },
-      still ? 0 : 650,
+      still ? 0 : bang ? FINALE.done * 1000 : 650,
     );
   };
 
@@ -121,8 +144,16 @@ export function Onboarding({ onClose }: { readonly onClose: (how: 'finished' | '
         aria-modal="true"
         aria-label="Welcome to Klaud"
         initial={{ opacity: 0 }}
-        animate={leaving ? { opacity: 0, scale: 1.04, filter: 'blur(14px)' } : { opacity: 1, scale: 1, filter: 'blur(0px)' }}
-        transition={{ duration: leaving ? 0.6 : 0.8, ease: EASE_OUT }}
+        style={finale ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
+        animate={
+          finale
+            ? // A jolt as it bursts.
+              { opacity: 1, x: [0, 0, -7, 6, -4, 3, 0], y: [0, 0, 5, -6, 3, -2, 0] }
+            : leaving
+              ? { opacity: 0, scale: 1.04, filter: 'blur(14px)' }
+              : { opacity: 1, scale: 1, filter: 'blur(0px)' }
+        }
+        transition={finale ? { duration: FINALE.bang + 0.3, times: [0, FINALE.bang / (FINALE.bang + 0.3), 0.8, 0.85, 0.9, 0.95, 1] } : { duration: leaving ? 0.6 : 0.8, ease: EASE_OUT }}
       >
         <div className={s.backdrop}>
           <Backdrop theme={theme} energy={ENERGY[step]} still={still} />
@@ -134,7 +165,7 @@ export function Onboarding({ onClose }: { readonly onClose: (how: 'finished' | '
           </button>
         ) : null}
 
-        <main className={s.content}>
+        <motion.main className={s.content} animate={finale ? { scale: 0.88, opacity: 0, filter: 'blur(14px)' } : { scale: 1, opacity: 1, filter: 'blur(0px)' }} transition={{ duration: FINALE.bang, ease: [0.5, 0, 0.75, 0] }}>
           <AnimatePresence mode="wait" custom={dir} initial={false}>
             <motion.section
               key={step}
@@ -160,7 +191,7 @@ export function Onboarding({ onClose }: { readonly onClose: (how: 'finished' | '
               {step === 'ready' ? <Ready projects={projects} onOpen={() => finish('finished')} onAddProject={() => finish('finished', () => ui.patch({ addProject: true }))} /> : null}
             </motion.section>
           </AnimatePresence>
-        </main>
+        </motion.main>
 
         <AnimatePresence>
           {showNav ? (
@@ -184,6 +215,7 @@ export function Onboarding({ onClose }: { readonly onClose: (how: 'finished' | '
           ) : null}
         </AnimatePresence>
       </motion.div>
+      {finale ? <Finale theme={theme} hole={hole} /> : null}
     </MotionConfig>
   );
 }

@@ -230,7 +230,7 @@ export function App() {
   return (
     <Tooltip.Provider delayDuration={450} skipDelayDuration={200}>
       {/* Behind the welcome the app can't be tabbed to or read out. */}
-      <div className={s.app} inert={welcome.open}>
+      <div className={s.app} inert={welcome.open} data-arriving={welcome.arriving || undefined}>
         {prefs.sidebar ? <Sidebar /> : null}
         <Main />
         <RightPanel />
@@ -247,7 +247,7 @@ export function App() {
       {joining ? <JoinSheet invite={joining} onCancel={() => setJoining(undefined)} onJoin={() => void joinRoom(joining)} /> : null}
       <Toasts />
       <UndoToast />
-      {welcome.open ? <Onboarding onClose={welcome.close} /> : null}
+      {welcome.open ? <Onboarding onClose={welcome.close} onArrive={welcome.arrive} /> : null}
     </Tooltip.Provider>
   );
 }

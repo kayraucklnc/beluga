@@ -683,3 +683,61 @@
     padding-top: 48px;
   }
 }
+
+/* ── Finale ───────────────────────────────────────────────── */
+
+.finale {
+  position: fixed;
+  inset: 0;
+  z-index: 86;
+  pointer-events: none;
+  overflow: hidden;
+  --spark: 255, 226, 208;
+  --spark-hot: 229, 140, 108;
+}
+.finale[data-look='light'] {
+  --spark: 207, 106, 72;
+  --spark-hot: 229, 140, 108;
+}
+.finaleCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 120px;
+  height: 120px;
+  margin: -60px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 6%, rgba(var(--spark), 0.95) 14%, rgba(var(--spark-hot), 0.45) 34%, transparent 70%);
+  filter: blur(1px);
+}
+.flash {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 140vmax;
+  height: 140vmax;
+  margin: -70vmax;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0, rgba(var(--spark), 0.55) 12%, rgba(var(--spark-hot), 0.18) 30%, transparent 55%);
+}
+.finale[data-look='light'] .flash {
+  background: radial-gradient(circle, rgba(255, 255, 255, 1) 0, rgba(255, 244, 236, 0.9) 14%, rgba(var(--spark-hot), 0.22) 32%, transparent 55%);
+}
+.rim {
+  /* The opening's edge: a thin bright line with copper light falling outward. */
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1.5px rgba(var(--spark), 0.9),
+    0 0 24px 6px rgba(var(--spark-hot), 0.55),
+    inset 0 0 30px 4px rgba(var(--spark-hot), 0.25);
+}
