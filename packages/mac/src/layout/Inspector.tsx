@@ -4,6 +4,7 @@ import { formatTokens } from '@klaud/ui/work-models.js';
 import { formatBytes } from '@klaud/shared/format.js';
 import { contextPct, contextTone, formatTokenCount } from '@klaud/shared/context-usage.js';
 import { unreadCount } from '@klaud/core/work-store.js';
+import { AUTONOMY_INFO, planTitle } from '@klaud/core/plans/model.js';
 import { noticeAgo, noticeLook } from '@klaud/ui/notice-models.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, Tip } from '../components/ui.js';
@@ -16,6 +17,8 @@ import r from '../dialogs/native/room.module.css';
 import { ConversationDetails } from '../network/ConversationInspector.js';
 import { EarningsPanel } from './EarningsPanel.js';
 import { ClaudeCodeInspector } from '../claude-code/Live.js';
+import { planStatus } from '../plans/plans-model.js';
+import { usePlanView } from '../plans/use-plans.js';
 import s from './Inspector.module.css';
 
 function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
@@ -237,6 +240,36 @@ function Room() {
   );
 }
 
+/** On a plan's page: the plan (where it runs, how, and how far along), not the room. */
+function PlanInspector({ id }: { id: string }) {
+  const plan = useApp((st) => st.plans.plans.find((x) => x.id === id));
+  const view = usePlanView(plan);
+  const project = useApp((st) => (plan ? st.projects.find((x) => x.id === plan.projectId) : undefined));
+  const home = useApp((st) => (plan?.home.startsWith('ws:') ? findWorkspace(st.projects, plan.home.slice(3)) : undefined));
+  if (!plan || !view) return <Room />;
+  const writing = !plan.body && !view.milestones.length;
+  const passed = view.milestones.filter((m) => m.state === 'passed').length;
+  const status = planStatus(view);
+  return (
+    <Panel title="This plan">
+      <Field label="Plan">{planTitle(plan)}</Field>
+      <Field label="Project">{project?.name ?? 'Gone'}</Field>
+      <Field label="Branch">{home?.branch ?? project?.base ?? '—'}</Field>
+      <Field label="Runs">{AUTONOMY_INFO[plan.autonomy].label}</Field>
+      <Field label="Progress">
+        {writing ? (
+          <span className={s.dim}>Claude is writing it</span>
+        ) : plan.body ? (
+          `${passed} of ${view.milestones.length} milestones · ${view.done} of ${view.total} tasks done`
+        ) : (
+          `${view.milestones.length} milestones · ${view.total} tasks, not approved yet`
+        )}
+      </Field>
+      {writing ? null : <Field label="Status">{status.label}</Field>}
+    </Panel>
+  );
+}
+
 /** The newest unread notification; the rest are under the bell in the toolbar. */
 function Inbox() {
   const { ui } = useKlaud();
@@ -274,7 +307,7 @@ export function Inspector() {
       <div className={s.scroll}>
         <NeedsYou />
         <ClaudeCodeInspector />
-        {view.kind === 'workspace' ? <WorkspaceDetails id={view.id} /> : view.kind === 'conversation' ? <ConversationDetails id={view.id} /> : <Room />}
+        {view.kind === 'workspace' ? <WorkspaceDetails id={view.id} /> : view.kind === 'conversation' ? <ConversationDetails id={view.id} /> : view.kind === 'plan' ? <PlanInspector id={view.id} /> : <Room />}
         <Inbox />
       </div>
     </aside>

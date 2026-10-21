@@ -1,5 +1,4 @@
 import { expect, test, type Page } from '@playwright/test';
-import { pick } from './helpers.js';
 
 /** Plans (docs/tasks-and-plans.md): the demo's plan as a graph and an outline, a new plan drafted with Claude and approved onto the board, and the composer's Plan with Tasks. */
 
@@ -34,20 +33,98 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await expect(details).toContainText('Idempotent webhook retries');
   await details.getByRole('button', { name: 'Close' }).click();
   // The outline: the same plan, milestone by milestone.
-  await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'Outline' }).click();
+  await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'List' }).click();
   await expect(page.getByRole('region', { name: 'Safe payments' })).toContainText('Add auth to the payment routes');
   await expect(page.getByRole('region', { name: 'Refunds and launch' })).toContainText('Launch checklist');
-  await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'Graph' }).click();
+  await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'Canvas' }).click();
   // The conversation with the plan's Claude is beside it.
   await expect(page.getByRole('complementary', { name: 'Conversation' })).toBeVisible();
+});
+
+test('the plan stays sharp zoomed in, and its name never clips (KLD-25)', async ({ page }, info) => {
+  await openPlans(page);
+  await main(page).getByRole('button', { name: /^Card checkout for launch,/ }).click();
+  await expect(main(page).locator('[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
+  const name = page.getByRole('textbox', { name: 'Plan name' });
+  const fits = () => name.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
+  // Descenders show whole: the box is as tall as its line.
+  await name.fill('Typography query');
+  await name.press('Enter');
+  await expect(name).not.toBeFocused();
+  await expect(name).toHaveValue('Typography query');
+  const one = await fits();
+  expect(one.scroll).toBeLessThanOrEqual(one.client);
+  expect(one.client).toBeGreaterThanOrEqual(Math.ceil(19 * 1.3));
+  // A long name wraps onto a second line instead of being cut, and Enter still saves it.
+  const long = 'Typography query for every plan page, pill, outline heading, and the sidebar groups that hold them all';
+  await name.fill(long);
+  await name.press('Enter');
+  await expect(name).toHaveValue(long);
+  const two = await fits();
+  expect(two.scroll).toBeLessThanOrEqual(two.client);
+  expect(two.client).toBeGreaterThan(one.client * 1.5);
+  await name.fill('Card checkout for launch');
+  await name.press('Enter');
+  await expect(name).toHaveValue('Card checkout for launch');
+
+  // Zoomed in, the view is redrawn once it settles, with nothing blurred inside it.
+  const viewport = main(page).locator('.react-flow__viewport');
+  const scale = async () => Number(/scale\(([\d.]+)\)/.exec((await viewport.getAttribute('style')) ?? '')?.[1] ?? 0);
+  for (let i = 0; i < 12 && (await scale()) < 1.5; i++) {
+    await main(page).getByRole('button', { name: 'Zoom In' }).click();
+    await page.waitForTimeout(260);
+  }
+  expect(await scale()).toBeGreaterThanOrEqual(1.5);
+  await expect(viewport).toHaveAttribute('data-sharpened', /\d+/);
+  await expect.poll(async () => (await viewport.getAttribute('style')) ?? '').not.toContain('translateZ');
+  const blurred = await viewport.evaluate((root) =>
+    [root, ...root.querySelectorAll('*')].filter((el) => {
+      const css = getComputedStyle(el);
+      return css.filter !== 'none' || (css.backdropFilter ?? 'none') !== 'none' || css.willChange !== 'auto';
+    }).length,
+  );
+  expect(blurred).toBe(0);
+  const shot = info.outputPath('zoomed-canvas.png');
+  await main(page).locator('.react-flow').screenshot({ path: shot });
+  await info.attach('zoomed canvas', { path: shot, contentType: 'image/png' });
+});
+
+test('New Plan with no project known (⌘K) asks which project, and the title follows it', async ({ page }) => {
+  await page.goto('/');
+  await expect(sidebar(page)).toBeVisible();
+  await page.keyboard.press('Meta+K');
+  await page.getByPlaceholder('Go to, do, or start anything…').fill('New Plan');
+  await page.getByRole('option', { name: /^New Plan/ }).first().click();
+  const sheet = page.getByRole('dialog', { name: /^Plan in / });
+  const picker = sheet.getByRole('combobox', { name: 'Project' });
+  await expect(picker).toBeVisible();
+  await expect(sheet.getByRole('heading', { name: `Plan in ${(await picker.textContent())!.trim()}` })).toBeVisible();
+  await expect(sheet.getByLabel('Goal')).toBeFocused();
+  await expect(sheet.getByRole('button', { name: 'Plan with Claude' })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
 });
 
 test('a new plan: Claude drafts it in its own conversation, nothing is on the board until it’s approved', async ({ page }) => {
   await openPlans(page);
   await page.getByRole('button', { name: 'New Plan', exact: true }).click();
-  const sheet = page.getByRole('dialog', { name: 'New Plan' });
-  await sheet.getByLabel('Goal').fill('Export orders as CSV for accounting');
-  await pick(sheet, 'Runs', 'Step by Step');
+  // Opened from a project: it's in the title, and there's no picker.
+  const sheet = page.getByRole('dialog', { name: /^Plan in / });
+  await expect(sheet.getByRole('combobox', { name: 'Project' })).toHaveCount(0);
+  // How it runs: three cards you read without hovering; Check-ins to start with.
+  const runs = sheet.getByRole('radiogroup', { name: 'How it runs' });
+  await expect(runs.getByRole('radio')).toHaveCount(3);
+  await expect(runs.getByRole('radio', { name: /Check-ins/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(runs).toContainText('Runs, then waits for you at each milestone');
+  // The goal box starts six lines tall and grows with the text.
+  const goal = sheet.getByLabel('Goal');
+  const start = (await goal.boundingBox())!.height;
+  expect(start).toBeGreaterThanOrEqual(100);
+  await goal.fill(Array.from({ length: 14 }, (_, i) => `Line ${i + 1}`).join('\n'));
+  expect((await goal.boundingBox())!.height).toBeGreaterThan(start + 40);
+  await goal.fill('Export orders as CSV for accounting');
+  await runs.getByRole('radio', { name: /Step by Step/ }).click();
+  await expect(runs.getByRole('radio', { name: /Step by Step/ })).toHaveAttribute('aria-checked', 'true');
   await sheet.getByRole('button', { name: 'Plan with Claude' }).click();
   // Its page, then Claude's draft.
   const approve = page.getByRole('button', { name: 'Approve Plan' }).first();

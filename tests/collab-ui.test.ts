@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanName, slugify } from '../src/agent/namer.js';
+import { cleanName, cleanPlanTitle, slugify } from '../src/agent/namer.js';
 import { toQuestion } from '../src/agent/runner.js';
 import type { PendingQuestion } from '../src/core/collab-store.js';
 import { cleanQuestion } from '../src/core/questions.js';
@@ -36,6 +36,16 @@ describe('worktree names', () => {
     expect(cleanName('!!')).toBeUndefined();
     expect(slugify('Please add a dark mode toggle to the settings page')).toBe('add-dark-mode-toggle');
     expect(slugify('???')).toMatch(/^task-/);
+  });
+});
+
+describe('plan names (KLD-28)', () => {
+  it('keeps a short name out of what the model says', () => {
+    expect(cleanPlanTitle('"Calmer plan drafting screen."')).toBe('Calmer plan drafting screen');
+    expect(cleanPlanTitle('Title: card checkout for launch\nBecause…')).toBe('Card checkout for launch');
+    expect(cleanPlanTitle('one two three four five six seven eight')).toBe('One two three four five six');
+    expect(cleanPlanTitle('Here is a name for this plan that I think captures what you are trying to do overall')).toBeUndefined();
+    expect(cleanPlanTitle('  ')).toBeUndefined();
   });
 });
 

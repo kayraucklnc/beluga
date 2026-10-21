@@ -18,7 +18,7 @@ const ws = (id: string, projectId: string, name: string, kind: Workspace['kind']
 const project = (id: string, name: string, workspaces: Workspace[] = []): Project => ({ id, name, root: `/tmp/${name}`, base: 'main', workspaces });
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function setup() {
+function setup(opts: { titlePlan?: (goal: string) => Promise<string | undefined> } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [ws('main', 'api', 'bob-api', 'chat', { askOnly: true } as Partial<Workspace>)])] });
   const listeners: Array<(e: WorktreeEvent) => void> = [];
@@ -45,18 +45,58 @@ function setup() {
       add(w);
       return w;
     },
+    renameChat: async (id: string, name: string) => {
+      store.dispatch({ type: 'projects', projects: store.getState().projects.map((p) => ({ ...p, workspaces: p.workspaces.map((w) => (w.id === id ? { ...w, name } : w)) })) });
+    },
   } as unknown as WorkspaceController;
   const board = new Board({ store, dir: null, projectName: (id) => store.getState().projects.find((p) => p.id === id)?.name });
   const boardWork = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: (prompt, channel) => void asked.push({ prompt, channel, echo: true }) });
   const plans = new Plans({ store, dir: null });
   const intents: unknown[] = [];
-  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => void asked.push({ prompt, channel, echo }), intend: (i) => void intents.push(i), delayMs: 0 });
+  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => void asked.push({ prompt, channel, echo }), intend: (i) => void intents.push(i), delayMs: 0, ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}) });
   const claude = boardWork.myClaude();
   const me = boardWork.me();
   /** Claude in a worktree finishes its run, or works. */
   const run = (channel: string, status: 'started' | 'done', id = `r-${Math.random()}`): void => store.dispatch({ type: 'agent_event', owner: 'p-me', requestId: id, requester: 'p-me', event: status, text: '', ts: Date.now(), channel });
   return { store, board, boardWork, plans, work, asked, made, intents, claude, me, run };
 }
+
+describe('a new plan’s name (KLD-28)', () => {
+  const chatName = (t: ReturnType<typeof setup>, home: string): string | undefined => t.store.getState().projects.flatMap((p) => p.workspaces).find((w) => `ws:${w.id}` === home)?.name;
+  const goal = 'A couple of things that we should improve because they look unfinished while Claude drafts the plan';
+
+  it('is never your message: "New plan", then the quick model’s name, in the sidebar too', async () => {
+    let name!: (title: string | undefined) => void;
+    const t = setup({ titlePlan: () => new Promise((r) => (name = r)) });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    expect(plan.draft!.title).toBe('New plan');
+    expect(plan.draft!.goal).toBe(goal);
+    expect(chatName(t, plan.home)).toBe('New plan');
+    name('Calmer plan drafting screen');
+    await tick();
+    expect(t.plans.need(plan.id).draft!.title).toBe('Calmer plan drafting screen');
+    expect(chatName(t, plan.home)).toBe('Calmer plan drafting screen');
+  });
+
+  it('Claude’s plan_write names it after that, and a late quick name doesn’t win', async () => {
+    let name!: (title: string | undefined) => void;
+    const t = setup({ titlePlan: () => new Promise((r) => (name = r)) });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    t.work.forRun(plan.home, 'p-me')!.tools!.write(BODY);
+    expect(t.plans.need(plan.id).draft!.title).toBe('Payments');
+    expect(chatName(t, plan.home)).toBe('Payments');
+    name('Too late');
+    await tick();
+    expect(t.plans.need(plan.id).draft!.title).toBe('Payments');
+  });
+
+  it('stays "New plan" when the model can’t name it', async () => {
+    const t = setup({ titlePlan: async () => undefined });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    await tick();
+    expect(t.plans.need(plan.id).draft!.title).toBe('New plan');
+  });
+});
 
 const BODY: BodyInput = {
   title: 'Payments',

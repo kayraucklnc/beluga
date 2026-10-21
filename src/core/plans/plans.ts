@@ -9,6 +9,7 @@ import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from 
 import {
   AUTONOMIES,
   type Autonomy,
+  DEFAULT_AUTONOMY,
   DEFAULT_PARALLEL,
   type GateCheck,
   KEEP_PLAN_ACTIVITY,
@@ -38,6 +39,8 @@ export interface PlansDeps {
 }
 
 const MAX_STYLE = 8000;
+/** A plan's name until it has one. */
+export const UNTITLED = 'New plan';
 /** A run of drafting by one author this close together is one line in the activity. */
 const DRAFT_NOTE_MS = 3 * 60 * 1000;
 
@@ -116,10 +119,10 @@ export class Plans {
 
   // ------------------------------------------------------------------ drafting
 
-  /** A new plan: an empty draft in its conversation (Claude writes it there). */
+  /** A new plan: an empty draft in its conversation (Claude writes it there). Your goal is never its title: a quick model names it (autoTitle), and Claude's plan_write after that. */
   create(input: { readonly projectId: string; readonly home: string; readonly title?: string; readonly goal?: string; readonly autonomy?: Autonomy }, by: Actor): Plan {
     const at = this.now();
-    const title = (input.title ?? input.goal ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'New plan';
+    const title = (input.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || UNTITLED;
     const plan: Plan = {
       id: short('pl'),
       projectId: input.projectId,
@@ -127,7 +130,7 @@ export class Plans {
       status: 'draft',
       draft: { title, goal: input.goal?.trim().slice(0, 4000) ?? '', milestones: [] },
       draftRev: 1,
-      autonomy: input.autonomy ?? 'gated',
+      autonomy: input.autonomy ?? DEFAULT_AUTONOMY,
       maxParallel: DEFAULT_PARALLEL,
       paused: false,
       runs: {},
@@ -172,6 +175,14 @@ export class Plans {
     const clean = title.replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!clean) throw new PlanError('A plan needs a title');
     return this.change(plan, { ...(plan.draft ? { draft: { ...plan.draft, title: clean } } : {}), ...(plan.body ? { body: { ...plan.body, title: clean } } : {}) }, [event(by, 'note', `renamed the plan to “${clean}”`, this.now())]);
+  }
+
+  /** The quick name for a new plan: only while it has none (Claude's plan_write, or you, named it first otherwise). */
+  autoTitle(id: string, title: string): Plan | undefined {
+    const plan = this.get(id);
+    const clean = title.replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!plan || !clean || plan.body || plan.draft?.title !== UNTITLED) return undefined;
+    return this.change(plan, { draft: { ...plan.draft, title: clean } }, []);
   }
 
   /** Throw the draft away (a plan never approved goes with it). */

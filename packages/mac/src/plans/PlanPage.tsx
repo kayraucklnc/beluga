@@ -1,10 +1,14 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
-import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, MAX_PARALLEL, shownBody } from '@klaud/core/plans/model.js';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AUTONOMIES, AUTONOMY_INFO, MAX_PARALLEL, type Plan, shownBody } from '@klaud/core/plans/model.js';
 import type { PlanView } from '@klaud/core/plans/progress.js';
+import { formatDuration } from '@klaud/shared/text.js';
+import { activityOf } from '@klaud/ui/workspace-models.js';
+import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
+import { useApp } from '../lib/klaud.js';
 import { openSheet } from '../lib/sheets.js';
 import { MilestoneBar, TonePill } from './marks.js';
 import { PlanChat } from './PlanChat.js';
@@ -74,6 +78,8 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   const start = useCallback((taskId: string) => void act(() => api.startTask(plan.id, taskId)), [plan.id, act, api]);
   const next = view.next;
   const words = nextWords(next);
+  // Claude is writing the first plan: one placeholder and one line say so, nothing else.
+  const drafting = !plan.body && !body?.milestones.length;
 
   const primary = ((): { label: string; run: () => void; icon?: 'check' | 'play' } | undefined => {
     switch (next.kind) {
@@ -123,17 +129,29 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           </button>
           <div className={p.titleRow}>
             <TitleField value={titleOf(plan)} onSave={(title) => void act(() => api.edit(plan.id, [{ op: 'retitle', title }]))} />
-            <TonePill tone={status.tone} live={status.tone === 'claude'}>
-              {status.label}
-            </TonePill>
+            {drafting ? null : (
+              <TonePill tone={status.tone} live={status.tone === 'claude'}>
+                {status.label}
+              </TonePill>
+            )}
           </div>
-          <div className={p.subRow}>
-            {view.milestones.length && plan.body ? <MilestoneBar items={bars(view)} /> : null}
-            <span className={p.nextLine}>{plan.body ? (words.detail ? `${words.title} · ${words.detail}` : words.title) : body?.milestones.length ? `${view.milestones.length} milestones · ${view.total} tasks · a draft, not on the board yet` : 'Claude is writing the plan…'}</span>
-          </div>
+          {drafting ? null : (
+            <div className={p.subRow}>
+              {view.milestones.length && plan.body ? <MilestoneBar items={bars(view)} /> : null}
+              <span className={p.nextLine}>{plan.body ? (words.detail ? `${words.title} · ${words.detail}` : words.title) : `${view.milestones.length} milestones · ${view.total} tasks · a draft, not on the board yet`}</span>
+            </div>
+          )}
         </div>
         <div className={p.headActions}>
-          <Segmented<Autonomy> label="Runs" value={plan.autonomy} onChange={(a) => void act(() => api.setAutonomy(plan.id, a))} options={AUTONOMIES.map((a) => ({ value: a, label: AUTONOMY_INFO[a].label, hint: AUTONOMY_INFO[a].hint }))} />
+          {/* How it runs: nothing to run while Claude writes it. */}
+          {drafting ? null : (
+            <ActionsDropdown items={AUTONOMIES.map((a) => ({ label: AUTONOMY_INFO[a].label, hint: AUTONOMY_INFO[a].summary, checked: plan.autonomy === a, onSelect: () => void act(() => api.setAutonomy(plan.id, a)) }))}>
+              <Button size="small" variant="quiet" icon="play" title={AUTONOMY_INFO[plan.autonomy].hint} aria-label={`How it runs: ${AUTONOMY_INFO[plan.autonomy].label}`}>
+                {AUTONOMY_INFO[plan.autonomy].label}
+                <Icon name="chevronDown" size={10} className={p.modeChevron} />
+              </Button>
+            </ActionsDropdown>
+          )}
           <ActionsDropdown items={more}>
             <IconButton icon="more" label="Plan Options" />
           </ActionsDropdown>
@@ -165,16 +183,17 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
       <div className={cx(p.split, prefs.chat && p.splitChat)}>
         <div className={p.stage}>
           <div className={p.stageTools}>
-            <Segmented<Display>
-              label="Show"
-              iconOnly
-              value={prefs.display}
-              onChange={(display) => setPrefs({ display })}
-              options={[
-                { value: 'graph', label: 'Graph', icon: 'graph' },
-                { value: 'outline', label: 'Outline', icon: 'outline' },
-              ]}
-            />
+            {drafting ? null : (
+              <Segmented<Display>
+                label="Show"
+                value={prefs.display}
+                onChange={(display) => setPrefs({ display })}
+                options={[
+                  { value: 'graph', label: 'Canvas', hint: 'The plan as a graph' },
+                  { value: 'outline', label: 'List', hint: 'Milestone by milestone' },
+                ]}
+              />
+            )}
             {!prefs.chat ? (
               <Button size="small" variant="quiet" icon="claude" onClick={() => setPrefs({ chat: true })}>
                 Talk to Claude
@@ -182,10 +201,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
             ) : null}
           </div>
           {!body?.milestones.length ? (
-            <div className={p.writing}>
-              <WritingSkeleton />
-              <p>Claude is reading the code and writing the plan. It shows up here as it’s written.</p>
-            </div>
+            <Drafting plan={plan} />
           ) : prefs.display === 'graph' ? (
             <Suspense fallback={<div className={p.canvasNote}>Laying out…</div>}>
               <PlanCanvas view={view} keys={keys} selected={picked} onSelect={setPicked} onStart={start} startable={startable} />
@@ -195,50 +211,93 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           )}
           {picked ? <PlanDetails view={view} picked={picked} canStart={startable.has(picked)} onClose={() => setPicked(undefined)} /> : null}
         </div>
-        {prefs.chat ? <PlanChat channel={plan.home} draft={!plan.body || Boolean(plan.draft)} onClose={() => setPrefs({ chat: false })} /> : null}
+        {prefs.chat ? <PlanChat channel={plan.home} draft={!plan.body || Boolean(plan.draft)} drafting={drafting} onClose={() => setPrefs({ chat: false })} /> : null}
       </div>
     </div>
   );
 }
 
-/** The plan's name, changed in place. */
+/** The plan's name, changed in place: wraps instead of clipping (descenders and long names show whole); Enter saves. */
 function TitleField({ value, onSave }: { value: string; onSave: (title: string) => void }) {
   const [text, setText] = useState(value);
+  const box = useRef<HTMLTextAreaElement>(null);
   useEffect(() => setText(value), [value]);
+  // As tall as its lines: on every change and whenever a new width changes the wrapping.
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = (): void => {
+      el.style.height = '0px';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    fit();
+    let width = el.clientWidth;
+    const watch = new ResizeObserver(() => {
+      // Next frame: resizing the box inside its own observer's callback is a ResizeObserver loop.
+      if (el.clientWidth !== width) (width = el.clientWidth), cancelAnimationFrame(frame), (frame = requestAnimationFrame(fit));
+    });
+    let frame = 0;
+    watch.observe(el);
+    return () => (watch.disconnect(), cancelAnimationFrame(frame));
+  }, [text]);
   const save = (): void => {
     if (text.trim() && text.trim() !== value) onSave(text.trim());
     else setText(value);
   };
   return (
-    <input
+    <textarea
+      ref={box}
       className={cx(p.title, 'selectable')}
       aria-label="Plan name"
+      rows={1}
+      spellCheck={false}
       value={text}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => setText(e.target.value.replace(/\s*\n\s*/g, ' '))}
       onBlur={save}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
         if (e.key === 'Escape') {
           setText(value);
-          (e.target as HTMLInputElement).blur();
+          e.currentTarget.blur();
         }
       }}
     />
   );
 }
 
-/** While Claude writes the first plan: milestone boxes that shimmer. */
-function WritingSkeleton() {
+/**
+ * While Claude writes the first plan: the outline of three milestone columns, drawn softly inside
+ * the canvas, and the one line that says what's going on (how long it's been at it).
+ */
+function Drafting({ plan }: { plan: Plan }) {
+  const project = useApp((s) => s.projects.find((x) => x.id === plan.projectId)?.name);
+  const activity = useApp((s) => activityOf(s.log, plan.home));
+  const now = useNow(true);
+  const since = activity.startedAt ?? plan.createdAt;
+  const fresh = now - plan.createdAt < 20_000;
+  const line = activity.running
+    ? `Claude is reading ${project ?? 'the code'} and writing the plan · ${formatDuration(Math.max(0, now - since))}`
+    : fresh
+      ? 'Claude is starting on the plan…'
+      : 'Claude isn’t writing the plan right now. Tell it what to plan in the conversation.';
   return (
-    <div className={p.skeleton} aria-hidden="true">
-      {[3, 2, 2].map((n, i) => (
-        <div key={i} className={p.skMilestone} style={{ animationDelay: `${i * 140}ms` }}>
-          <div className={p.skHead} />
-          {Array.from({ length: n }, (_, j) => (
-            <div key={j} className={p.skTask} />
-          ))}
-        </div>
-      ))}
+    <div className={p.writing}>
+      <div className={p.skeleton} data-live={activity.running || fresh ? 'true' : undefined} aria-hidden="true">
+        {[3, 2, 2].map((n, i) => (
+          <div key={i} className={p.skMilestone} style={{ animationDelay: `${i * 220}ms` }}>
+            <div className={p.skHead} />
+            {Array.from({ length: n }, (_, j) => (
+              <div key={j} className={p.skTask} />
+            ))}
+          </div>
+        ))}
+      </div>
+      <p className={p.writingLine} role="status">
+        {line}
+      </p>
     </div>
   );
 }

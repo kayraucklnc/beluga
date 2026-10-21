@@ -125,7 +125,7 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
 
 ### Planning with Claude
 
-- **New Plan** (Plans, ⌘K): a goal, the project, how it runs. It opens a conversation of its own in the project's main folder (Claude only reads there) and the plan's page. Claude reads the code and writes the plan with its tools (`klaud_plan`: `plan_get`, `plan_write`, `plan_update`); the graph fills in as it writes, and you talk it through in the conversation beside it.
+- **New Plan** (Plans, ⌘K): “Plan in {project}”, a big goal box that grows as you write (⌘↩ starts), and how it runs as three cards (names and sentences from `AUTONOMY_INFO`). Opened from a project it asks no project; `goal` prefills the box. It opens a conversation of its own in the project's main folder (Claude only reads there) and the plan's page. Claude reads the code and writes the plan with its tools (`klaud_plan`: `plan_get`, `plan_write`, `plan_update`); the graph fills in as it writes, and you talk it through in the conversation beside it.
 - **Plan with Tasks** in any conversation in a project (the composer's mode menu, or ⇧⇥: Act → Plan First → Plan with Tasks): that conversation becomes the plan's home. A strip above it shows the plan and its next step.
 - A plan task can adopt a task already on the board (`issue: "BOB-12"`).
 
@@ -135,9 +135,9 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
 
 | Autonomy | What happens |
 |---|---|
-| **Step by Step** | ready tasks line up with a Start button; nothing starts by itself |
-| **Gated** (default) | ready tasks start by themselves (up to *Run at Once*, 3 by default); each milestone waits for you to pass it |
-| **Autopilot** | milestone to milestone: a passing check moves on by itself; a failed one stops there, and the head Claude adds fix tasks (applied at once) |
+| **Step by Step** (you start each task) | ready tasks line up with a Start button; nothing starts by itself |
+| **Check-ins** (`gated`, the default: runs, then waits for you at each milestone) | ready tasks start by themselves (up to *Run at Once*, 3 by default); each milestone waits for you to pass it |
+| **Autopilot** (runs to the end, stops only if something fails) | milestone to milestone: a passing check moves on by itself; a failed one stops there, and the head Claude adds fix tasks (applied at once) |
 
 - **Starting** a task makes its worktree quietly (it doesn't take you there) with Claude on it. A task that builds on one still in review starts from that one's branch; two unmerged blockers wait for a merge. A task already being worked on in a worktree is never started again (`BoardWork.start` refuses).
 - **Finished** means In Review or Done. The task's Claude is told to commit, rewrite the handoff and move its task to In Review when every acceptance criterion holds. On Autopilot, a task whose Claude stopped without finishing is nudged once.
@@ -148,7 +148,7 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
 ### In the window (`packages/mac/src/plans/`)
 
 - **Plans** in the sidebar (under Tasks): one project's plans with a milestone progress bar, their status and what they wait for.
-- **A plan's page:** the name (renamed in place), its status, Step by Step · Gated · Autopilot, ⋯ (Pause, Run at Once ▸, Copy as Markdown, Planning Style…, Discard, Delete), and one main button for what it waits for (Approve Plan, Apply Changes, Start, Pass Milestone, Not Yet…).
+- **A plan's page:** the name (renamed in place), its status, Step by Step · Check-ins · Autopilot, ⋯ (Pause, Run at Once ▸, Copy as Markdown, Planning Style…, Discard, Delete), and one main button for what it waits for (Approve Plan, Apply Changes, Start, Pass Milestone, Not Yet…).
   - **Graph:** milestones as lanes, top to bottom; tasks inside left to right by what waits on what (what can start at once lines up on the left); a gate at the end of each lane that opens the next. Tasks Claude is working on have a copper light going round them and say what Claude is doing; finished ones tick; a gate waiting for you is the one thing in the accent. The layout depends only on the plan's shape, so work moving on never moves anything; a re-cut plan glides to its new shape. Blockers from an earlier milestone show for the task you pick.
   - **Outline:** the same, milestone by milestone, with names changed in place and a task's ⋯ (Start, Move to ▸, I'll Do It Myself, Take Out of the Plan).
   - Picking a task or gate opens its details (goal, done when, waits on, the files it changes, Claude's check).

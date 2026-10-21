@@ -553,6 +553,11 @@ export class Session {
     return this.agent?.nameTask ? this.agent.nameTask(prompt).catch(() => slugify(prompt)) : slugify(prompt);
   }
 
+  /** A short name for a new plan (undefined without your Claude, or when the model couldn't). */
+  async titlePlan(goal: string): Promise<string | undefined> {
+    return this.agent?.titlePlan ? this.agent.titlePlan(goal).catch(() => undefined) : undefined;
+  }
+
   /** What a project's setup should be after it failed in a worktree (undefined without your Claude). */
   async fixSetup(dir: string, failed: string, output: string): Promise<SetupFix | undefined> {
     return this.agent?.fixSetup ? this.agent.fixSetup(dir, failed, output).catch(() => undefined) : undefined;

@@ -1,12 +1,14 @@
 import '@xyflow/react/dist/base.css';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Background, BackgroundVariant, BaseEdge, type Edge, type EdgeProps, Handle, type Node, type NodeProps, Panel, Position, ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react';
+import { AUTONOMY_INFO } from '@klaud/core/plans/model.js';
 import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progress.js';
 import { IconButton, cx } from '../components/ui.js';
 import { Icon } from '../components/Icon.js';
 import { reducedMotion, useDocTheme } from '../components/markdown/use-doc-theme.js';
 import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
 import { layout } from '../components/graph/layout.js';
+import { useSharpZoom } from '../components/graph/sharp-zoom.js';
 import { MILESTONE_STATE, TASK_STATE, changeMarks, gateId, graphShape, groupId, taskNodeId } from './plans-model.js';
 import { TaskStateIcon } from './marks.js';
 import p from './plans.module.css';
@@ -78,6 +80,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
   const theme = useDocTheme();
   const motion = !reducedMotion();
   const flow = useReactFlow<PlanNode, PlanEdge>();
+  useSharpZoom();
   const shape = useMemo(() => graphShape(view.plan), [view.plan]);
   const [laid, setLaid] = useState<Laid>();
   const [failed, setFailed] = useState(false);
@@ -321,7 +324,7 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
             ) : (
               <span className={p.msCount}>{m.milestone.tasks.length} tasks</span>
             )}
-            {m.milestone.autonomy ? <span className={p.msAuto}>{m.autonomy === 'autopilot' ? 'Autopilot' : m.autonomy === 'step' ? 'Step by step' : 'Gated'}</span> : null}
+            {m.milestone.autonomy ? <span className={p.msAuto}>{AUTONOMY_INFO[m.autonomy].label}</span> : null}
           </span>
         </span>
       </div>
