@@ -15,6 +15,11 @@ export interface Notice {
   readonly title: string;
   readonly body: string;
   readonly channel?: string;
+  /** The plan it's about (and its task there, by id): the bell groups a plan's quiet notices under it. */
+  readonly plan?: string;
+  readonly planTask?: string;
+  /** What happened, once (see NoticeEvent.key). */
+  readonly key?: string;
   readonly ts: number;
   readonly read: boolean;
 }
@@ -104,7 +109,7 @@ export interface WorkState {
 
 export type WorkAction =
   /** `ts` is stamped before reducing (see stampAction in store.ts). */
-  | { type: 'notice_add'; notice: Omit<Notice, 'id' | 'ts' | 'read'>; ts?: number }
+  | { type: 'notice_add'; notice: Omit<Notice, 'id' | 'ts' | 'read'>; ts?: number; read?: boolean }
   | { type: 'notice_read'; channel?: string; id?: number }
   /** Mark one notice unread again. */
   | { type: 'notice_unread'; id: number }
@@ -164,7 +169,7 @@ export function reduceWork(state: WorkState, action: WorkAction): WorkState {
   switch (action.type) {
     case 'notice_add': {
       const id = (state.inbox[0]?.id ?? 0) + 1;
-      return { ...state, inbox: [{ ...action.notice, id, ts: action.ts ?? 0, read: false }, ...state.inbox].slice(0, INBOX_LIMIT) };
+      return { ...state, inbox: [{ ...action.notice, id, ts: action.ts ?? 0, read: action.read ?? false }, ...state.inbox].slice(0, INBOX_LIMIT) };
     }
     case 'notice_read':
       return {

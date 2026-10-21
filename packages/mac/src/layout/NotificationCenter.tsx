@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import type { Notice } from '@klaud/core/work-store.js';
 import { unreadCount } from '@klaud/core/work-store.js';
 import { dndActive, dndLabel } from '@klaud/shared/quiet.js';
-import { type NoticeFilter, type NoticeLook, NOTICE_FILTERS, filterNotices, groupNotices, noticeAgo, noticeLook } from '@klaud/ui/notice-models.js';
+import { type NoticeFilter, type NoticeLook, NOTICE_FILTERS, filterNotices, foldPlanNotices, groupNotices, noticeAgo, noticeLook } from '@klaud/ui/notice-models.js';
+import { planTitle } from '@klaud/core/plans/model.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -100,6 +101,34 @@ function Row({ n, now, onOpen }: { n: Notice; now: number; onOpen: (n: Notice) =
   );
 }
 
+/** A plan's task news, folded under the plan: one line, opened to see each. */
+function PlanFold({ plan, notices, now, onOpen }: { plan: string; notices: readonly Notice[]; now: number; onOpen: (n: Notice) => void }) {
+  const [open, setOpen] = useState(false);
+  const found = useApp((st) => st.plans.plans.find((p) => p.id === plan));
+  const unread = notices.some((n) => !n.read);
+  return (
+    <li className={cx(s.row, unread && s.unread)}>
+      <button type="button" className={s.rowMain} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span className={s.tile}>
+          <Icon name="flag" size={14} />
+        </span>
+        <span className={s.text}>
+          <span className={s.title}>{found ? planTitle(found) : 'A plan'}</span>
+          <span className={s.body}>{`${notices.length} updates from its tasks`}</span>
+        </span>
+        <span className={s.time}>{noticeAgo(notices[0]!.ts, now)}</span>
+      </button>
+      {open ? (
+        <ul className={s.list}>
+          {notices.map((n) => (
+            <Row key={n.id} n={n} now={now} onOpen={onOpen} />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
 function Empty({ filter, any }: { filter: NoticeFilter; any: boolean }) {
   const title = !any ? 'You’re all caught up' : filter === 'unread' ? 'Nothing unread' : filter === 'needsYou' ? 'Nothing waiting for you' : 'No mentions';
   const detail = !any ? 'Klaud lists here when Claude finishes or needs you, and when friends come and go.' : 'The rest are under All.';
@@ -127,7 +156,7 @@ function Center({ close }: { close: () => void }) {
   const quiet = dndActive(notify, now);
 
   const open = (n: Notice): void => {
-    const target = macNoticeTarget(places, n.channel);
+    const target = macNoticeTarget(places, n.channel, n.plan ? { id: n.plan, ...(n.planTask ? { task: n.planTask } : {}) } : undefined);
     if (!n.read) void api.inbox.read({ id: n.id });
     if (!target) return;
     openNoticeTarget(actions, target, (id) => client.store.dispatch({ type: 'view', view: { kind: 'conversation', id } }));
@@ -176,9 +205,9 @@ function Center({ close }: { close: () => void }) {
             <section key={g.label} className={s.group} aria-label={g.label}>
               <h3 className={s.groupTitle}>{g.label}</h3>
               <ul className={s.list}>
-                {g.notices.map((n) => (
-                  <Row key={n.id} n={n} now={now} onOpen={open} />
-                ))}
+                {foldPlanNotices(g.notices).map((e) =>
+                  e.kind === 'one' ? <Row key={e.notice.id} n={e.notice} now={now} onOpen={open} /> : <PlanFold key={`plan:${e.plan}`} plan={e.plan} notices={e.notices} now={now} onOpen={open} />,
+                )}
               </ul>
             </section>
           ))
