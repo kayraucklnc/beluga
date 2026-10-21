@@ -72,7 +72,10 @@ export function useConversationHeader(id: string): HeaderParts {
             : []),
           { label: 'Leave Channel…', danger: true, separate: true, onSelect: () => openNet({ kind: 'leave_group', groupId: g.id }) },
         ]
-      : [{ label: 'Channel Info', icon: 'people', onSelect: () => openNet({ kind: 'group_info', groupId: g.id }) }];
+      : [
+          { label: 'Channel Info', icon: 'people', onSelect: () => openNet({ kind: 'group_info', groupId: g.id }) },
+          { label: 'Delete Channel…', danger: true, separate: true, onSelect: () => openNet({ kind: 'delete_group', groupId: g.id }) },
+        ];
     const online = g.members.filter((m) => !m.self && m.online).length;
     return {
       title: (

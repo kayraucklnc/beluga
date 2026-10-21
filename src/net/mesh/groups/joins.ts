@@ -46,6 +46,11 @@ export class Joins {
     this.save(this.asked, [...others, r]);
   }
 
+  /** Drop everything about a group (it was deleted from this Mac). */
+  forget(groupId: string): void {
+    if (this.askedFor(groupId) || this.requestsFor(groupId).length) this.save(this.asked.filter((a) => a.groupId !== groupId), this.requests.filter((r) => r.groupId !== groupId));
+  }
+
   /** Take someone's request off the list (let in or turned away). */
   settle(groupId: string, peerId: string): JoinRequest | undefined {
     const found = this.requests.find((r) => r.groupId === groupId && r.profile.card.peerId === peerId);

@@ -60,6 +60,7 @@ export const NETWORK_HANDLERS = {
   'network.groups.removeMember': (s, groupId, peerId) => net(s).removeMember(groupId, peerId),
   'network.groups.setAdmin': (s, groupId, peerId, admin) => net(s).setAdmin(groupId, peerId, admin),
   'network.groups.leave': (s, groupId) => net(s).leaveGroup(groupId),
+  'network.groups.delete': (s, groupId) => net(s).deleteGroup(groupId),
   'network.groups.rename': (s, groupId, name) => net(s).renameGroup(groupId, name),
   'network.groups.invite': (s, groupId, opts) => net(s).groupInvite(groupId, opts?.auto ? { auto: true } : {}),
   'network.groups.join': (s, text) => net(s).accept(text),

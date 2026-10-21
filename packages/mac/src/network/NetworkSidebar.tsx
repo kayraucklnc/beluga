@@ -175,7 +175,7 @@ function groupItems(g: GroupView, ctx: { open: () => void; rename: () => void; c
             : []),
           { label: 'Leave Channel…', danger: true, separate: true, onSelect: () => openNet({ kind: 'leave_group', groupId: g.id }) },
         ]
-      : []),
+      : [{ label: 'Delete Channel…', danger: true, separate: true, onSelect: () => openNet({ kind: 'delete_group', groupId: g.id }) }]),
   ];
 }
 

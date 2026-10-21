@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import type { FriendView } from '@klaud/net/mesh/views.js';
-import { Alert } from '../components/Alert.js';
+import { Alert, Checkbox } from '../components/Alert.js';
 import { Button } from '../components/ui.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { Sheet } from '../dialogs/native/parts.js';
 import { AddFriendSheet, JoinGroupSheet } from './AddFriendSheet.js';
+import { closeChat } from './ChatTabs.js';
 import { PersonAvatar } from './Avatars.js';
-import { addableFriends, presenceLine, shownState, sortFriends } from './net-model.js';
+import { addableFriends, groupId, presenceLine, shownState, sortFriends } from './net-model.js';
 import { closeNet, openNet, useNetSheet } from './net-sheets.js';
 import { StatusSheet } from './StatusMenu.js';
-import { errorText, openGroup, quietly, useShownConversation } from './use-net.js';
+import { errorText, openGroup, quietly, useSay, useShownConversation } from './use-net.js';
 import s from './network.module.css';
 
 /** Friends with checkboxes (a new group, adding people). */
@@ -153,6 +154,71 @@ function AddPeopleSheet({ groupId }: { groupId: string }) {
   );
 }
 
+/** Leave a channel, and maybe delete what was said from this Mac in the same go. */
+function LeaveGroupAlert({ groupId: id }: { groupId: string }) {
+  const { client } = useKlaud();
+  const g = useApp((st) => st.network.groups.find((x) => x.id === id));
+  const shown = useShownConversation();
+  const say = useSay();
+  const [remove, setRemove] = useState(false);
+  if (!g) return null;
+  const api = client.api.network;
+  const lastAdmin = g.admin && g.members.filter((m) => m.admin).length === 1 && g.members.length > 1;
+  const leave = async (): Promise<void> => {
+    if (remove) closeChat(client, groupId(g.id), shown);
+    await api['groups.leave'](g.id);
+    if (!remove) return;
+    await api['groups.delete'](g.id);
+    say(`Left ${g.name} and deleted it from this Mac`);
+  };
+  return (
+    <Alert
+      title={`Leave ${g.name}?`}
+      message={`You stop getting its messages.${remove ? '' : ' What was said stays on this Mac, read-only.'}${lastAdmin ? ' You’re its only admin, so the person who’s been in it longest becomes admin.' : ''}`}
+      tone="danger"
+      icon="people"
+      confirm={{
+        label: remove ? 'Leave and Delete' : 'Leave',
+        destructive: true,
+        onClick: () => {
+          closeNet();
+          void leave().catch(() => undefined);
+        },
+      }}
+      onCancel={closeNet}
+    >
+      <Checkbox checked={remove} onChange={setRemove} label="Also delete its messages from this Mac" detail="The others keep their copies." />
+    </Alert>
+  );
+}
+
+/** Delete a channel you're no longer in from this Mac (the others keep theirs). */
+function DeleteGroupAlert({ groupId: id }: { groupId: string }) {
+  const { client } = useKlaud();
+  const g = useApp((st) => st.network.groups.find((x) => x.id === id));
+  const shown = useShownConversation();
+  const say = useSay();
+  if (!g) return null;
+  return (
+    <Alert
+      title={`Delete ${g.name}?`}
+      message={`Its messages are removed from this Mac. The people still in ${g.name} keep their copies, and if someone adds you again it comes back.`}
+      tone="danger"
+      icon="people"
+      confirm={{
+        label: 'Delete',
+        destructive: true,
+        onClick: () => {
+          closeNet();
+          closeChat(client, groupId(g.id), shown);
+          void client.api.network['groups.delete'](g.id).then(() => say(`Deleted ${g.name} from this Mac`), () => undefined);
+        },
+      }}
+      onCancel={closeNet}
+    />
+  );
+}
+
 /** Remove a friend, leave a group, remove someone from a group: an alert each. */
 function Confirmations() {
   const { client } = useKlaud();
@@ -185,28 +251,8 @@ function Confirmations() {
       />
     );
   }
-  if (sheet?.kind === 'leave_group') {
-    const g = net.groups.find((x) => x.id === sheet.groupId);
-    if (!g) return null;
-    const lastAdmin = g.admin && g.members.filter((m) => m.admin).length === 1 && g.members.length > 1;
-    return (
-      <Alert
-        title={`Leave ${g.name}?`}
-        message={`You stop getting its messages. What was said stays on this Mac, read-only.${lastAdmin ? ' You’re its only admin, so the person who’s been in it longest becomes admin.' : ''}`}
-        tone="danger"
-        icon="people"
-        confirm={{
-          label: 'Leave',
-          destructive: true,
-          onClick: () => {
-            closeNet();
-            void api['groups.leave'](g.id);
-          },
-        }}
-        onCancel={closeNet}
-      />
-    );
-  }
+  if (sheet?.kind === 'leave_group') return <LeaveGroupAlert groupId={sheet.groupId} />;
+  if (sheet?.kind === 'delete_group') return <DeleteGroupAlert groupId={sheet.groupId} />;
   if (sheet?.kind === 'remove_member') {
     const g = net.groups.find((x) => x.id === sheet.groupId);
     const m = g?.members.find((x) => x.peerId === sheet.peerId);

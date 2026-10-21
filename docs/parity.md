@@ -296,6 +296,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `network.groups.removeMember` | — (Mac only, see below) | ✓ group info › a member’s menu › Remove… (alert) |
 | `network.groups.setAdmin` | — (Mac only, see below) | ✓ group info › a member’s menu › Make Admin / Remove as Admin |
 | `network.groups.leave` | — (Mac only, see below) | ✓ Leave Group… (alert) from the sidebar, the header ⋯ or the group info |
+| `network.groups.delete` | — (Mac only, see below) | ✓ Delete Channel… (alert) for a channel you've left: the ⋯ menus, the group info, the read-only banner, or ticked in the Leave alert |
 | `network.groups.rename` | — (Mac only, see below) | ✓ rename in place in the group info, or the sidebar (double-click, Rename…) |
 | `network.groups.invite` | — (Mac only, see below) | ✓ group info › Invite with a Link (Approve Each Request / Anyone with the Link), Copy Invite Link |
 | `network.groups.join` | — (Mac only, see below) | ✓ Join a Group sheet (`klaud://join#…` links) |
