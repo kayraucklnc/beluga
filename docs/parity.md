@@ -240,6 +240,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `workspaces.staleOthers` | — (Mac only) | a project's Clean Up Worktrees… (its right-click menu and its home) |
 | `workspaces.cleanUpOthers` | — (Mac only) | Clean Up Worktrees… › Remove (only what you ticked; branches kept) |
 | `workspaces.addProject` | ✓ | ✓ |
+| `workspaces.removeProject` | — (Mac only) | a project's ⋯ / right-click menu › Delete Project… (out of Klaud; its folder goes to the Trash only if ticked) |
 | `workspaces.addFolder` | ✓ | ✓ |
 | `workspaces.selectFile` | ✓ | ✓ |
 | `workspaces.review` | — (Mac only: the terminal loads it by opening the Diff tab) | the right panel's Changes tab (loads and refreshes the changes while you stay in the chat) |
