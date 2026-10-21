@@ -105,14 +105,109 @@ async function mockPlan(input: AgentRunInput, pace: number): Promise<string> {
     await sleep(450 * pace, input.signal);
     input.onEvent('tool', step);
   }
+  // The plan is for a task: written up in Claude's words (it goes on the board once approved).
+  if (input.board && input.planTask?.needsDefinition()) {
+    input.onEvent('tool', 'task_define Protect the payment routes');
+    input.board.define({
+      title: 'Protect the payment routes',
+      goal: 'Only signed-in users can reach `/api/payments/*`; everyone else gets a 401.',
+      context: '`src/server.ts` has a `TODO: add auth` and no middleware. Sessions are signed cookies set by the login route.',
+      acceptance: ['`requireUser()` rejects a missing session with 401', 'Expired sessions are rejected too', 'Tests cover missing, expired and valid sessions'],
+      decisions: ['Signed cookies, no server-side session store: the API runs on one box'],
+      questions: ['Should admins bypass the check for support tools?'],
+      estimate: 2,
+      priority: 'high',
+    });
+  }
   input.onEvent('text', MOCK_PLAN);
   const answer = input.askUser ? await input.askUser({ kind: 'plan', plan: MOCK_PLAN }) : ({ kind: 'skip' } as const);
+  if (answer.kind === 'plan' && answer.approve) input.planTask?.approved();
   if (answer.kind !== 'plan' || !answer.approve) return answer.kind === 'plan' && answer.feedback ? `Got it. I'll revise the plan: ${answer.feedback}` : 'Okay, I left everything as it was.';
   for (const step of ['Write src/auth.ts', 'Edit src/server.ts', 'Bash npm test']) {
     await sleep(450 * pace, input.signal);
     input.onEvent('tool', step);
   }
   return 'Done. `requireUser()` protects `/api/payments/*` and all **27 tests** pass.';
+}
+
+/** The demo's planner: a first plan from what you asked, a revision for what you say next, and milestone checks. */
+async function mockPlanning(input: AgentRunInput, plan: NonNullable<AgentRunInput['planTools']>, pace: number): Promise<string> {
+  const check = /milestone “([^”]+)” is finished/i.exec(input.prompt) ?? /Every task of milestone “([^”]+)”/i.exec(input.prompt);
+  if (check) {
+    for (const step of ['task_get', 'Bash git diff main...HEAD --stat', 'Bash npm test']) {
+      await sleep(400 * pace, input.signal);
+      input.onEvent('tool', step);
+    }
+    input.onEvent('tool', `plan_gate ${check[1]}`);
+    plan.gate(check[1]!, 'pass', '1. ✓ Checked the tasks’ pull requests and handoffs.\n2. ✓ `npm test` passes (27 tests).');
+    return `Checked **${check[1]}**: every pass criterion holds. ${/autopilot/i.test(plan.get()) ? 'Moving on.' : 'It’s yours to pass.'}`;
+  }
+  for (const step of ['Glob src/**/*.ts', 'Read src/server.ts', 'Read src/payments.ts', 'Grep "TODO"', 'task_list']) {
+    await sleep(350 * pace, input.signal);
+    input.onEvent('tool', step);
+  }
+  const empty = /The plan is empty|no milestones/i.test(plan.get()) || !/## 1\./.test(plan.get());
+  if (empty) {
+    const what = input.prompt.replace(/\s+/g, ' ').trim().replace(/[.!?]$/, '');
+    const topic = what.length > 60 ? `${what.slice(0, 57)}…` : what;
+    input.onEvent('tool', 'plan_write');
+    plan.write({
+      title: topic.charAt(0).toUpperCase() + topic.slice(1),
+      goal: `${what}. Shipped in small pull requests, each one tested.`,
+      milestones: [
+        {
+          id: 'groundwork',
+          title: 'Groundwork',
+          goal: 'The pieces everything else builds on.',
+          criteria: ['The new data model is migrated and tested', 'CI is green'],
+          tasks: [
+            { id: 'model', title: 'Data model and migration', goal: 'Store what the feature needs.', context: 'Postgres via `src/db.ts`.', acceptance: ['Migration runs up and down', 'Model has tests'], estimate: 2, touches: ['src/db', 'migrations'] },
+            { id: 'api-shape', title: 'API shape', goal: 'Agree the endpoints and their errors.', acceptance: ['Routes and payloads written down in docs/api.md'], estimate: 1, touches: ['docs/api.md'] },
+          ],
+        },
+        {
+          id: 'build',
+          title: 'Build it',
+          goal: 'The feature works end to end.',
+          criteria: ['The happy path works end to end in the demo', 'Errors are handled and tested'],
+          tasks: [
+            { id: 'endpoints', title: 'Endpoints', goal: 'The API from the agreed shape.', acceptance: ['Every route has tests', 'Errors match docs/api.md'], blockedBy: ['model', 'api-shape'], estimate: 3, touches: ['src/routes'] },
+            { id: 'ui', title: 'Screens', goal: 'The admin screens for it.', acceptance: ['Works on narrow windows', 'Empty and error states'], blockedBy: ['api-shape'], estimate: 3, touches: ['admin'] },
+            { id: 'e2e', title: 'End-to-end test', acceptance: ['One test walks the whole flow'], blockedBy: ['endpoints', 'ui'], estimate: 2, touches: ['e2e'] },
+          ],
+        },
+        {
+          id: 'ship',
+          title: 'Ship',
+          goal: 'Out to everyone, safely.',
+          criteria: ['Docs updated', 'Released behind no flag'],
+          tasks: [
+            { id: 'docs', title: 'Docs and changelog', acceptance: ['README and CHANGELOG say what changed'], estimate: 1, touches: ['README.md', 'CHANGELOG.md'] },
+            { id: 'release', title: 'Release', goal: 'Tag and deploy.', acceptance: ['Deployed', 'Smoke test passes'], assignee: 'me', estimate: 1 },
+          ],
+        },
+      ],
+    });
+    return [
+      'Here’s a plan in **3 milestones**:',
+      '',
+      '1. **Groundwork** — the data model and the API shape, side by side.',
+      '2. **Build it** — endpoints and screens in parallel, then an end-to-end test.',
+      '3. **Ship** — docs, then the release (yours).',
+      '',
+      '**Risk:** the migration touches a busy table; it runs before anything else. Approve it, or tell me what to change.',
+    ].join('\n');
+  }
+  input.onEvent('tool', 'plan_update');
+  const added = input.prompt.replace(/\s+/g, ' ').trim().slice(0, 60) || 'Follow-up';
+  const milestone = /\[id ([\w-]+)\][^\n]*(?:in progress|not started|draft)/.exec(plan.get())?.[1] ?? /\[id ([\w-]+)\]/.exec(plan.get())?.[1] ?? 'build';
+  let result: string;
+  try {
+    result = plan.update([{ op: 'add_task', milestone, task: { title: added.charAt(0).toUpperCase() + added.slice(1), goal: input.prompt.trim().slice(0, 400), acceptance: ['Covered by a test'], estimate: 2 } }], 'what you asked for');
+  } catch (err) {
+    return `I couldn’t change the plan: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  return `Added **${added}** to the plan. ${result}`;
 }
 
 /** "run the tests on bob's computer" / "check my machine": whose computer, and which command. */
@@ -229,6 +324,8 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     if (/^\/compact/.test(input.prompt.trim())) return context.compact(input, (ms) => sleep(ms * pace, input.signal));
     // Updating main (the one thing a main-folder run may change): what real Claude would report.
     if (input.place?.syncMain) return mockSyncMain(input, input.place.syncMain, pace);
+    // A plan's conversation: Claude writes, revises and checks the plan with its tools.
+    if (input.planTools && !/^\/compact/.test(input.prompt.trim())) return mockPlanning(input, input.planTools, pace);
     // A main folder is questions only: a change request moves to a new worktree, as real Claude is told to.
     if (input.place?.askOnly && WANTS_CHANGE.test(input.prompt)) {
       if (!input.continueInWorktree) return "This is the project's main folder, which is read-only. Ask the owner to continue in a new worktree.";

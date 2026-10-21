@@ -1,0 +1,1325 @@
+/*
+ * Plans: the window's quiet greys. Color only means something: Claude's copper where work goes on,
+ * the info blue in review, the done green, the problem red for a failed check, and your accent for
+ * the one thing that waits for you (a gate to pass, a task to start, changes to apply).
+ */
+
+.grow {
+  flex: 1;
+}
+.muted {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+/* ---------- Tones ---------- */
+
+.tone_muted {
+  --tone: var(--text-3);
+}
+.tone_neutral {
+  --tone: var(--text-2);
+}
+.tone_claude {
+  --tone: var(--claude);
+}
+.tone_info {
+  --tone: var(--info);
+}
+.tone_ok {
+  --tone: var(--ok);
+}
+.tone_warn {
+  --tone: var(--warn);
+}
+.tone_error {
+  --tone: var(--error);
+}
+.tone_accent {
+  --tone: var(--accent);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 8px 0 7px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--tone, var(--text-2));
+  background: color-mix(in srgb, var(--tone, var(--text-3)) 11%, transparent);
+}
+.pillDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.pillLive {
+  animation: breathe 1.6s ease-in-out infinite;
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+/* ---------- State icon ---------- */
+
+.stateIcon {
+  flex: none;
+  display: block;
+  color: var(--tone, var(--text-3));
+}
+.iconRing {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.iconTrack {
+  fill: none;
+  stroke: color-mix(in srgb, currentColor 25%, transparent);
+  stroke-width: 1.5;
+}
+.iconFill {
+  fill: currentColor;
+}
+.iconMark {
+  fill: none;
+  stroke: var(--bg);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dashed {
+  stroke-dasharray: 2.2 2.2;
+}
+.spinning {
+  animation: spin 1.1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Milestone bar ---------- */
+
+.bar {
+  display: inline-flex;
+  gap: 3px;
+  width: 132px;
+  flex: none;
+}
+.barSegment {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--hairline-strong);
+}
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--claude);
+  transition: width 600ms var(--ease-out);
+}
+.seg_passed .barFill {
+  background: var(--ok);
+}
+.seg_gate .barFill,
+.seg_checking .barFill {
+  background: var(--accent);
+}
+.seg_failed .barFill {
+  background: var(--error);
+}
+
+/* ---------- Plans list ---------- */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.listBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.projectSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 9px 0 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+.projectSwitch:hover,
+.projectSwitch[data-state='open'] {
+  background: var(--bg-hover);
+}
+.projectSwitch > svg {
+  color: var(--text-3);
+}
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease-out);
+}
+.row:hover {
+  background: var(--bg-hover);
+}
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rowTitle {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowSub {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowWhen {
+  width: 72px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* ---------- A plan's page ---------- */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.pageHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.headMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: -5px;
+  padding: 2px 6px 2px 3px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.back:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.title {
+  flex: 0 1 auto;
+  min-width: 120px;
+  width: 100%;
+  max-width: 640px;
+  margin-left: -5px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  font: inherit;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  outline: none;
+  text-overflow: ellipsis;
+}
+.title:hover {
+  background: var(--bg-hover);
+}
+.title:focus {
+  background: var(--bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.subRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.nextLine {
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.headActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding-top: 22px;
+}
+
+.changes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.changes > svg {
+  color: var(--accent);
+}
+.changes strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.split {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+}
+.splitChat {
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 30vw, 420px);
+}
+.stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sunken);
+}
+.stageTools {
+  position: absolute;
+  z-index: 5;
+  top: 12px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.writing {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.skeleton {
+  display: flex;
+  gap: 18px;
+}
+.skMilestone {
+  width: 180px;
+  padding: 12px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+.skHead {
+  width: 60%;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--hairline-strong);
+  margin-bottom: 4px;
+}
+.skTask {
+  height: 34px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+}
+@keyframes shimmer {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ---------- The graph ---------- */
+
+.canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.canvas :global(.react-flow) {
+  --xy-background-color: transparent;
+}
+/* Work moving on never moves anything; a re-cut plan glides to its new shape. */
+.canvas[data-ready='true'] :global(.react-flow__node) {
+  transition: transform 520ms var(--ease-out);
+}
+.dots {
+  color: var(--hairline-strong);
+}
+.canvasNote {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.zoom {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop);
+}
+.handle {
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  opacity: 0;
+}
+
+.milestone {
+  width: 100%;
+  height: 100%;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  transition: box-shadow 300ms var(--ease-out), background 300ms var(--ease-out), opacity 300ms var(--ease-out);
+}
+.msCurrent {
+  background: var(--bg);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 16%, transparent),
+    0 12px 32px -18px rgba(0, 0, 0, 0.28);
+}
+.ms_later {
+  opacity: 0.78;
+}
+.ms_passed {
+  background: color-mix(in srgb, var(--ok) 4%, var(--bg));
+}
+.msHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 8px;
+}
+.msIndex {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1.5px var(--hairline-strong);
+}
+.msCurrent .msIndex {
+  color: var(--bg);
+  background: var(--text);
+  box-shadow: none;
+}
+.ms_passed .msIndex {
+  color: var(--bg);
+  background: var(--ok);
+  box-shadow: none;
+}
+.msTitles {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.msTitle {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msSub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+}
+.msState {
+  color: var(--tone, var(--text-3));
+  font-weight: 500;
+}
+.msCount {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.msAuto {
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+.msProgress {
+  height: 2px;
+  margin: 0 16px;
+  border-radius: 1px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.msProgressFill {
+  display: block;
+  height: 100%;
+  background: var(--claude);
+  transition: width 600ms var(--ease-out);
+}
+.ms_passed .msProgressFill {
+  background: var(--ok);
+}
+
+.task {
+  position: relative;
+  width: 252px;
+  height: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--hairline-strong),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  transition: box-shadow 220ms var(--ease-out), opacity 300ms var(--ease-out), transform 220ms var(--ease-out);
+}
+.task:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--text) 24%, transparent),
+    0 8px 22px -12px rgba(0, 0, 0, 0.28);
+  transform: translateY(-1px);
+}
+.taskSelected,
+.taskSelected:hover {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 8px 22px -12px rgba(0, 0, 0, 0.28);
+}
+.task_later,
+.task_blocked,
+.task_draft {
+  background: color-mix(in srgb, var(--bg-raised) 75%, var(--bg-sunken));
+}
+.task_later .taskTitle,
+.task_blocked .taskTitle {
+  color: var(--text-2);
+}
+.task_done .taskTitle,
+.task_canceled .taskTitle {
+  color: var(--text-3);
+}
+.task_canceled .taskTitle {
+  text-decoration: line-through;
+}
+.task_ready {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.task_asking {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--warn) 70%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.task_running {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--claude) 55%, transparent),
+    0 10px 28px -14px color-mix(in srgb, var(--claude) 70%, transparent);
+}
+/* Claude at work: a slow copper light that goes round the card's edge. */
+.glow {
+  position: absolute;
+  inset: -1px;
+  border-radius: 12px;
+  padding: 1.5px;
+  background: conic-gradient(from var(--angle, 0deg), transparent 0 70%, var(--claude) 85%, transparent 100%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: orbit 2.6s linear infinite;
+  pointer-events: none;
+}
+@property --angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes orbit {
+  to {
+    --angle: 360deg;
+  }
+}
+.taskMarked::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.taskTop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.taskKey {
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.points {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  background: var(--bg-hover);
+}
+.forYou {
+  color: var(--text-2);
+}
+.markChip {
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.taskTitle {
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.3;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.taskFoot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 11.5px;
+}
+.taskState {
+  flex: none;
+  font-weight: 550;
+  color: var(--tone, var(--text-3));
+}
+.taskSub {
+  min-width: 0;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task_running .taskSub {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+.startButton {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px 0 7px;
+  border: 0;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  cursor: pointer;
+  transition: filter 150ms;
+}
+.startButton:hover {
+  filter: brightness(1.08);
+}
+
+.gate {
+  width: 150px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 8px;
+  border-radius: 22px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 1px var(--hairline-strong);
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: box-shadow 220ms var(--ease-out), background 220ms var(--ease-out);
+}
+.gateMark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--text-3);
+  background: var(--bg-hover);
+}
+.gateLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gateCheck {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tone);
+}
+.gate_gate {
+  color: var(--accent);
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    0 0 0 6px color-mix(in srgb, var(--accent) 14%, transparent);
+  animation: beckon 2.4s ease-in-out infinite;
+}
+.gate_gate .gateMark {
+  color: var(--bg);
+  background: var(--accent);
+}
+@keyframes beckon {
+  50% {
+    box-shadow:
+      0 0 0 1.5px var(--accent),
+      0 0 0 9px color-mix(in srgb, var(--accent) 6%, transparent);
+  }
+}
+.gate_checking .gateMark {
+  color: var(--claude);
+  background: color-mix(in srgb, var(--claude) 14%, transparent);
+}
+.gate_failed {
+  color: var(--error);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--error) 70%, transparent);
+}
+.gate_failed .gateMark {
+  color: var(--bg);
+  background: var(--error);
+}
+.gate_passed {
+  color: var(--ok);
+}
+.gate_passed .gateMark {
+  color: var(--bg);
+  background: var(--ok);
+}
+.gateSelected {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.line {
+  fill: none;
+  stroke: var(--hairline-strong);
+  stroke-width: 1.5;
+  transition: stroke 400ms var(--ease-out);
+}
+.line_finish {
+  stroke-dasharray: 3 4;
+}
+.line_next {
+  stroke-width: 2;
+}
+.line_done {
+  stroke: color-mix(in srgb, var(--ok) 55%, var(--hairline-strong));
+}
+.line_live {
+  stroke: color-mix(in srgb, var(--claude) 60%, transparent);
+}
+.lineDot {
+  fill: var(--claude);
+}
+
+/* ---------- Details (what you picked) ---------- */
+
+.details {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(330px, calc(100% - 64px));
+  overflow-y: auto;
+  padding: 16px 18px 20px;
+  border-radius: 14px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop);
+  animation: slideIn 260ms var(--ease-out);
+}
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+.detailsClose {
+  position: absolute !important;
+  top: 10px;
+  right: 10px;
+}
+.detailsKind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.detailsTitle {
+  margin: 6px 26px 8px 0;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--text);
+}
+.detailsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.detailsStep {
+  margin: 10px 0 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.detailsActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+.detailsSection {
+  margin-top: 18px;
+  font-size: 13px;
+  color: var(--text);
+}
+.detailsSection h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.checks,
+.plainList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.checks li,
+.plainList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.4;
+}
+.checkBox {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1.5px var(--hairline-strong);
+}
+.checkDone {
+  color: var(--text-2);
+}
+.checkDone .checkBox {
+  background: var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13'%3E%3Cpath d='M3.5 6.8l2 2 4-4.4' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 13px no-repeat;
+  box-shadow: none;
+}
+.touches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.touches code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-hover);
+}
+
+/* ---------- Outline ---------- */
+
+.outline {
+  flex: 1;
+  overflow-y: auto;
+  padding: 56px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+.outlineGoal {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.oMilestone {
+  border-radius: 14px;
+  padding: 12px 10px 10px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.oHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px 0 6px;
+}
+.oTitle {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text);
+}
+.oGoal {
+  margin: 6px 6px 2px 38px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.oTasks {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.oTask {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 4px;
+  border-radius: 8px;
+}
+.oTask:hover {
+  background: var(--bg-hover);
+}
+.oTaskSelected,
+.oTaskSelected:hover {
+  background: var(--bg-selected);
+}
+.oTaskMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  outline: none;
+}
+.oTaskMain:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.oTaskTitle {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task_done .oTaskTitle,
+.task_canceled .oTaskTitle {
+  color: var(--text-3);
+}
+.oTaskMeta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  max-width: 50%;
+}
+.oStep {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oGate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 8px);
+  margin: 8px 4px 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--bg-sunken);
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.oGate:hover {
+  color: var(--text);
+}
+.oGateSelected {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.oGateLabel {
+  flex: none;
+  font-weight: 600;
+}
+.oCriteria {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.renameInput {
+  min-width: 160px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  background: var(--bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+  outline: none;
+}
+
+/* ---------- The conversation ---------- */
+
+.chat {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--hairline);
+  background: var(--bg);
+}
+.chatHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.chatTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.chatTitle > svg {
+  color: var(--claude);
+}
+.chatBusy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--claude);
+}
+.chatBusy .pillDot {
+  animation: breathe 1.6s ease-in-out infinite;
+}
+.chatLog {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chatAsk {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 10px 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 11%, transparent);
+  cursor: pointer;
+}
+.chatBox {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  margin: 0 10px 10px;
+  padding: 7px 7px 7px 11px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  transition: box-shadow 150ms;
+}
+.chatBox:focus-within {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.chatInput {
+  flex: 1;
+  min-height: 22px;
+  max-height: 160px;
+  padding: 2px 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.chatSend {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--bg);
+  background: var(--accent);
+  cursor: pointer;
+}
+.chatSend:disabled {
+  color: var(--text-3);
+  background: var(--bg-hover);
+  cursor: default;
+}
+
+/* ---------- Strip above a conversation ---------- */
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.stripMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+.stripMain:hover {
+  background: var(--bg-hover);
+}
+.stripMain > svg {
+  color: var(--text-3);
+}
+.stripTitle {
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stripNext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow,
+  .spinning,
+  .pillLive,
+  .gate_gate,
+  .skMilestone {
+    animation: none;
+  }
+  .canvas[data-ready='true'] :global(.react-flow__node) {
+    transition: none;
+  }
+}
+:global(html[data-motion='reduce']) .glow,
+:global(html[data-motion='reduce']) .spinning,
+:global(html[data-motion='reduce']) .gate_gate {
+  animation: none;
+}
+
+/* The outline in a narrow column: names keep their room, side notes shorten. */
+.oTaskMain .taskKey {
+  flex: none;
+}
+.oTaskMeta {
+  max-width: none;
+  min-width: 0;
+  flex-shrink: 1;
+}
+.oTaskMeta .muted,
+.oStep {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oTaskMain {
+  flex: 1 1 60%;
+}
+.oTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gateCheck,
+.msState,
+.msCount,
+.taskState {
+  white-space: nowrap;
+}

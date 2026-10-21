@@ -1,0 +1,319 @@
+import { type BoardState, type Issue, issueById } from '../board/model.js';
+import { type Autonomy, type MilestoneRun, type Plan, type PlanBody, type PlanMilestone, type PlanTask, autonomyOf, shownBody } from './model.js';
+
+/**
+ * Where a plan stands, worked out from the plan and the board (and what Claude is doing right
+ * now): each task's state, each milestone's, what can start, and the one thing the plan waits
+ * for. The scheduler (pilot.ts) acts on this; screens draw it. Pure and browser-safe.
+ */
+
+export type TaskState =
+  /** Not approved yet: only in the draft. */
+  | 'draft'
+  /** In a milestone that hasn't started. */
+  | 'later'
+  /** Waits on tasks that aren't finished. */
+  | 'blocked'
+  /** Can start now. */
+  | 'ready'
+  /** Claude is working on it in its worktree. */
+  | 'running'
+  /** Claude asked something there and waits for an answer. */
+  | 'asking'
+  /** In progress, but nobody is working on it right now. */
+  | 'idle'
+  | 'review'
+  | 'done'
+  | 'canceled'
+  /** Its board task was deleted. */
+  | 'missing';
+
+export const FINISHED: ReadonlySet<TaskState> = new Set(['review', 'done', 'canceled', 'missing']);
+export const ACTIVE: ReadonlySet<TaskState> = new Set(['running', 'asking', 'idle']);
+
+export interface TaskView {
+  readonly task: PlanTask;
+  readonly milestoneId: string;
+  readonly issue?: Issue;
+  readonly state: TaskState;
+  /** The worktree doing it (workspace id). */
+  readonly worktree?: string;
+  /** Tasks of the plan it still waits on (ids). */
+  readonly waitsOn: readonly string[];
+  /** Why it can't start yet, in words. */
+  readonly why?: string;
+  /** The branch it starts from: the one task it builds on that's in review (not merged yet). */
+  readonly base?: string;
+  /** What Claude is doing there now. */
+  readonly step?: string;
+  /** Assigned to you: it never starts by itself. */
+  readonly forYou: boolean;
+}
+
+export type MilestoneState = 'draft' | 'later' | 'running' | 'checking' | 'gate' | 'failed' | 'passed';
+
+export interface MilestoneView {
+  readonly milestone: PlanMilestone;
+  readonly index: number;
+  readonly state: MilestoneState;
+  readonly tasks: readonly TaskView[];
+  readonly finished: number;
+  readonly total: number;
+  readonly autonomy: Autonomy;
+  readonly run: MilestoneRun;
+}
+
+/** The one thing a plan waits for (the page's main button). */
+export type NextStep =
+  | { readonly kind: 'approve' }
+  | { readonly kind: 'review_changes' }
+  | { readonly kind: 'resume' }
+  | { readonly kind: 'start'; readonly tasks: readonly TaskView[] }
+  | { readonly kind: 'pass'; readonly milestone: MilestoneView }
+  | { readonly kind: 'checking'; readonly milestone: MilestoneView }
+  | { readonly kind: 'failed'; readonly milestone: MilestoneView }
+  | { readonly kind: 'answer'; readonly tasks: readonly TaskView[] }
+  | { readonly kind: 'working'; readonly tasks: readonly TaskView[] }
+  | { readonly kind: 'waiting'; readonly why: string }
+  | { readonly kind: 'done' };
+
+export interface PlanView {
+  readonly plan: Plan;
+  readonly body?: PlanBody;
+  readonly milestones: readonly MilestoneView[];
+  /** The milestone being worked on (the first not passed), once approved. */
+  readonly current?: MilestoneView;
+  /** Tasks that can start now (in order), and those in progress. */
+  readonly ready: readonly TaskView[];
+  readonly active: readonly TaskView[];
+  readonly next: NextStep;
+  readonly done: number;
+  readonly total: number;
+}
+
+/** What's happening in a conversation right now (from the store's log, questions and approvals). */
+export interface Live {
+  readonly busy: (channel: string) => boolean;
+  readonly asking: (channel: string) => boolean;
+  /** The step Claude is on there. */
+  readonly step?: (channel: string) => string | undefined;
+}
+
+export const NOBODY_LIVE: Live = { busy: () => false, asking: () => false };
+
+function taskState(board: BoardState, issue: Issue | undefined, live: Live): { readonly state: TaskState; readonly worktree?: string; readonly step?: string } {
+  if (!issue) return { state: 'missing' };
+  const worktree = issue.worktrees.at(-1);
+  switch (issue.status) {
+    case 'done':
+      return { state: 'done', ...(worktree ? { worktree } : {}) };
+    case 'canceled':
+      return { state: 'canceled' };
+    case 'in_review':
+      return { state: 'review', ...(worktree ? { worktree } : {}) };
+    case 'in_progress': {
+      if (!worktree || issue.worktreeGone) return { state: 'idle', ...(worktree ? { worktree } : {}) };
+      const channel = `ws:${worktree}`;
+      if (live.asking(channel)) return { state: 'asking', worktree };
+      if (live.busy(channel)) {
+        const step = live.step?.(channel);
+        return { state: 'running', worktree, ...(step ? { step } : {}) };
+      }
+      return { state: 'idle', worktree };
+    }
+    default:
+      void board;
+      return { state: 'ready' };
+  }
+}
+
+/** A plan where it stands. */
+export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE): PlanView {
+  // A draft (or a plan never approved) is drawn as it's written: nothing runs yet.
+  if (!plan.body) {
+    const body = shownBody(plan);
+    const milestones: MilestoneView[] = (body?.milestones ?? []).map((m, index) => ({
+      milestone: m,
+      index,
+      state: 'draft',
+      tasks: m.tasks.map((task) => ({ task, milestoneId: m.id, state: 'draft' as const, waitsOn: task.blockedBy, forYou: task.assignee === 'me' })),
+      finished: 0,
+      total: m.tasks.length,
+      autonomy: autonomyOf(plan, m),
+      run: {},
+    }));
+    const total = milestones.reduce((n, m) => n + m.total, 0);
+    return { plan, ...(body ? { body } : {}), milestones, ready: [], active: [], next: { kind: 'approve' }, done: 0, total };
+  }
+
+  const body = plan.body;
+  const views = new Map<string, TaskView>();
+  const firstOpen = body.milestones.findIndex((m) => !plan.runs[m.id]?.passedAt);
+  const currentIndex = plan.status === 'done' ? -1 : firstOpen;
+
+  // Pass one: each task's own state from its board task.
+  const base = new Map<string, { readonly state: TaskState; readonly worktree?: string; readonly step?: string; readonly issue?: Issue }>();
+  for (const m of body.milestones) {
+    for (const t of m.tasks) {
+      const issue = t.issueId ? issueById(board, t.issueId) : undefined;
+      base.set(t.id, { ...taskState(board, issue, live), ...(issue ? { issue } : {}) });
+    }
+  }
+  const finished = (id: string): boolean => FINISHED.has(base.get(id)?.state ?? 'missing');
+  const merged = (id: string): boolean => {
+    const s = base.get(id)?.state;
+    return s === 'done' || s === 'canceled' || s === 'missing';
+  };
+  const titleOf = new Map(body.milestones.flatMap((m) => m.tasks.map((t) => [t.id, t.title] as const)));
+
+  // Pass two: what can start.
+  body.milestones.forEach((m, index) => {
+    for (const t of m.tasks) {
+      const own = base.get(t.id)!;
+      const waitsOn = t.blockedBy.filter((b) => !finished(b));
+      const forYou = t.assignee === 'me' || (own.issue?.assignee?.kind === 'person' && own.issue.assignee !== undefined);
+      let state = own.state;
+      let why: string | undefined;
+      let from: string | undefined;
+      if (state === 'ready') {
+        // Board blockers from outside the plan count too.
+        const outside = (own.issue?.blockedBy ?? []).map((id) => issueById(board, id)).filter((i): i is Issue => Boolean(i && i.status !== 'done' && i.status !== 'canceled' && i.status !== 'in_review' && !body.milestones.some((x) => x.tasks.some((y) => y.issueId === i.id))));
+        const unmerged = t.blockedBy.filter((b) => finished(b) && !merged(b));
+        if (index > currentIndex || currentIndex < 0) {
+          state = 'later';
+          why = 'Starts with its milestone';
+        } else if (waitsOn.length || outside.length) {
+          state = 'blocked';
+          why = `Waits on ${[...waitsOn.map((b) => `“${titleOf.get(b) ?? b}”`), ...outside.map((i) => i.key)].join(', ')}`;
+        } else if (unmerged.length > 1) {
+          // Two unmerged branches can't both be its start: one of them has to be merged first.
+          state = 'blocked';
+          why = `Builds on ${unmerged.map((b) => `“${titleOf.get(b) ?? b}”`).join(' and ')}: merge one first`;
+        } else if (unmerged.length === 1) {
+          from = base.get(unmerged[0]!)?.issue?.branch;
+        }
+      }
+      views.set(t.id, {
+        task: t,
+        milestoneId: m.id,
+        ...(own.issue ? { issue: own.issue } : {}),
+        state,
+        ...(own.worktree ? { worktree: own.worktree } : {}),
+        waitsOn,
+        ...(why ? { why } : {}),
+        ...(from ? { base: from } : {}),
+        ...(own.step ? { step: own.step } : {}),
+        forYou,
+      });
+    }
+  });
+
+  const milestones: MilestoneView[] = body.milestones.map((m, index) => {
+    const tasks = m.tasks.map((t) => views.get(t.id)!);
+    const counted = tasks.filter((t) => t.state !== 'canceled' && t.state !== 'missing');
+    const done = counted.filter((t) => FINISHED.has(t.state)).length;
+    const run = plan.runs[m.id] ?? {};
+    const autonomy = autonomyOf(plan, m);
+    let state: MilestoneState;
+    if (run.passedAt) state = 'passed';
+    else if (index !== currentIndex) state = 'later';
+    else if (done < counted.length) state = 'running';
+    else if (run.check && run.checkAsked !== undefined && run.check.at >= run.checkAsked) state = run.check.verdict === 'fail' ? 'failed' : 'gate';
+    else if (run.checkAsked !== undefined) state = 'checking';
+    else state = 'gate';
+    return { milestone: m, index, state, tasks, finished: done, total: counted.length, autonomy, run };
+  });
+
+  const current = currentIndex >= 0 ? milestones[currentIndex] : undefined;
+  const all = milestones.flatMap((m) => m.tasks);
+  const ready = (current?.tasks ?? []).filter((t) => t.state === 'ready');
+  const active = all.filter((t) => ACTIVE.has(t.state));
+  const counted = all.filter((t) => t.state !== 'canceled' && t.state !== 'missing');
+  const view = { plan, body, milestones, ...(current ? { current } : {}), ready, active, done: counted.filter((t) => FINISHED.has(t.state)).length, total: counted.length };
+  return { ...view, next: nextStep(plan, view) };
+}
+
+function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
+  if (plan.status === 'done') return plan.draft ? { kind: 'review_changes' } : { kind: 'done' };
+  if (plan.draft) return { kind: 'review_changes' };
+  if (plan.paused) return { kind: 'resume' };
+  const m = v.current;
+  if (!m) return { kind: 'done' };
+  const asking = v.active.filter((t) => t.state === 'asking');
+  if (asking.length) return { kind: 'answer', tasks: asking };
+  if (m.state === 'failed') return { kind: 'failed', milestone: m };
+  if (m.state === 'checking') return m.autonomy === 'autopilot' ? { kind: 'checking', milestone: m } : { kind: 'pass', milestone: m };
+  if (m.state === 'gate') return m.autonomy === 'autopilot' && m.milestone.criteria.length ? { kind: 'checking', milestone: m } : { kind: 'pass', milestone: m };
+  // Tasks for you, or (step by step) every task, wait for your click.
+  const yours = v.ready.filter((t) => t.forYou || m.autonomy === 'step');
+  if (yours.length && v.active.length < plan.maxParallel) return { kind: 'start', tasks: yours };
+  const running = v.active.filter((t) => t.state === 'running');
+  if (v.active.length) return { kind: 'working', tasks: running.length ? running : v.active };
+  if (v.ready.length) return { kind: 'working', tasks: [] };
+  const blocked = m.tasks.find((t) => t.state === 'blocked');
+  return { kind: 'waiting', why: blocked?.why ?? 'Waiting on its tasks' };
+}
+
+/**
+ * Tasks the scheduler may start now, within the plan's limit (none when paused, a draft, at a gate,
+ * or step by step). `skip`: board tasks not to start (failed before); `starting`: how many are
+ * being started right now (they count against the limit).
+ */
+export function startable(view: PlanView, skip: ReadonlySet<string> = new Set(), starting = 0): readonly TaskView[] {
+  const { plan, current } = view;
+  if (!current || plan.paused || plan.status !== 'active' || plan.draft || current.state !== 'running') return [];
+  if (current.autonomy === 'step') return [];
+  const room = Math.max(0, plan.maxParallel - view.active.length - starting);
+  return view.ready.filter((t) => !t.forYou && !(t.issue && skip.has(t.issue.id))).slice(0, room);
+}
+
+/** Tasks running side by side right now that touch the same files (a likely conflict), by pairs. */
+export function overlaps(view: PlanView): ReadonlyArray<readonly [TaskView, TaskView, readonly string[]]> {
+  const busy = view.active;
+  const out: Array<readonly [TaskView, TaskView, readonly string[]]> = [];
+  for (let i = 0; i < busy.length; i++) {
+    for (let j = i + 1; j < busy.length; j++) {
+      const a = busy[i]!;
+      const b = busy[j]!;
+      const shared = (a.task.touches ?? []).filter((x) => (b.task.touches ?? []).some((y) => x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`)));
+      if (shared.length) out.push([a, b, shared]);
+    }
+  }
+  return out;
+}
+
+/** Topological waves inside a milestone: tasks in the same wave can run side by side. */
+export function waves(milestone: PlanMilestone): ReadonlyArray<readonly PlanTask[]> {
+  const inside = new Map(milestone.tasks.map((t) => [t.id, t]));
+  const level = new Map<string, number>();
+  const depth = (t: PlanTask, seen: Set<string>): number => {
+    const known = level.get(t.id);
+    if (known !== undefined) return known;
+    if (seen.has(t.id)) return 0;
+    seen.add(t.id);
+    const d = Math.max(-1, ...t.blockedBy.flatMap((b) => (inside.has(b) ? [depth(inside.get(b)!, seen)] : []))) + 1;
+    level.set(t.id, d);
+    return d;
+  };
+  for (const t of milestone.tasks) depth(t, new Set());
+  const out: PlanTask[][] = [];
+  for (const t of milestone.tasks) (out[level.get(t.id) ?? 0] ??= []).push(t);
+  return out.filter(Boolean);
+}
+
+/** Who's working in a conversation now, read from the shared state. */
+export function liveFrom(state: {
+  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[] }>;
+  readonly questions: ReadonlyArray<{ readonly channel: string }>;
+  readonly approvals: ReadonlyArray<{ readonly channel?: string }>;
+}): Live {
+  const last = new Map<string, { readonly status?: string; readonly steps?: readonly string[] }>();
+  for (const l of state.log) if (l.type === 'agent') last.set(l.channel, l);
+  const asking = new Set([...state.questions.map((q) => q.channel), ...state.approvals.flatMap((a) => (a.channel ? [a.channel] : []))]);
+  const RUNNING = new Set(['queued', 'awaiting_approval', 'started', 'answered']);
+  return {
+    busy: (channel) => RUNNING.has(last.get(channel)?.status ?? ''),
+    asking: (channel) => asking.has(channel),
+    step: (channel) => last.get(channel)?.steps?.at(-1),
+  };
+}

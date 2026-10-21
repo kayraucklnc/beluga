@@ -13,6 +13,7 @@ import { type EarningsAction, type EarningsSlice, initialEarnings, reduceEarning
 import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceClaudeCode } from './claude-code/model.js';
 import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
+import { type PlansAction, type PlansSlice, initialPlans, reducePlans } from './plans/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
 import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
 
@@ -244,6 +245,9 @@ export type View =
   /** Tasks (Mac app): one project's board (the one you were last in when unset), and one task's page. */
   | { readonly kind: 'tasks'; readonly projectId?: string }
   | { readonly kind: 'task'; readonly id: string }
+  /** Plans (Mac app): one project's plans, and one plan's page (its graph, outline and conversation). */
+  | { readonly kind: 'plans'; readonly projectId?: string }
+  | { readonly kind: 'plan'; readonly id: string }
 
   /** Every worktree in your projects (Mac app): who made it, whether it's done, the space it takes; archive or clean them. */
   | { readonly kind: 'worktrees'; readonly projectId?: string };
@@ -309,7 +313,7 @@ export interface MyShare {
  * Everything klaud knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
-export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice {
+export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice {
   readonly room: string;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
@@ -443,7 +447,8 @@ export type Action =
   | EarningsAction
   | ClaudeCodeAction
   | GatewayAction
-  | BoardAction;
+  | BoardAction
+  | PlansAction;
 
 const LOG_LIMIT = 1000;
 const TRANSFER_LIMIT = 20;
@@ -516,6 +521,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialClaudeCode,
     ...initialGateway,
     ...initialBoard,
+    ...initialPlans,
   };
 }
 
@@ -912,6 +918,12 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'board_meta':
     case 'board_off':
       return { ...state, ...reduceBoard(state, action) };
+    case 'plans_init':
+    case 'plan_put':
+    case 'plan_remove':
+    case 'plans_style':
+    case 'plans_off':
+      return { ...state, ...reducePlans(state, action) };
     case 'context_reset': {
       const { [action.channel]: _gone, ...context } = state.context;
       return { ...state, context };

@@ -17,7 +17,7 @@ const bob: Assignee & Actor = { kind: 'person', id: 'demo-bob', name: 'bob' };
 const mia: Assignee & Actor = { kind: 'person', id: 'demo-mia', name: 'mia' };
 
 /** Seed once the demo's projects are there (they arrive a moment after the daemon starts). */
-export function seedDemoBoard(store: Store, work: BoardWork, travel: (msAgo: number) => void, tries = 60): () => void {
+export function seedDemoBoard(store: Store, work: BoardWork, travel: (msAgo: number) => void, after?: () => void, tries = 60): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const attempt = (left: number): void => {
     const projects = store.getState().projects;
@@ -33,6 +33,7 @@ export function seedDemoBoard(store: Store, work: BoardWork, travel: (msAgo: num
     }
     try {
       seed(work, travel, { api: api.id, landing: landing.id, auth: ws('add-auth')!, retries: ws('webhook-retries')!, hero: ws('new-hero')! });
+      after?.();
     } finally {
       travel(0);
     }

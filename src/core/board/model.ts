@@ -72,7 +72,7 @@ export interface BriefRevision {
   readonly reason?: string;
 }
 
-export type ActivityKind = 'created' | 'title' | 'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'due' | 'parent' | 'relation' | 'brief' | 'comment' | 'note' | 'worktree' | 'pr' | 'proof' | 'project';
+export type ActivityKind = 'created' | 'title' | 'status' | 'priority' | 'assignee' | 'labels' | 'estimate' | 'due' | 'parent' | 'relation' | 'brief' | 'comment' | 'note' | 'worktree' | 'pr' | 'proof' | 'project' | 'plan';
 
 export interface Activity {
   readonly id: string;
@@ -84,6 +84,13 @@ export interface Activity {
   readonly body?: string;
   /** Who it was assigned to (screens say "you" and "your Claude" from where they look). */
   readonly assignee?: Assignee | null;
+  /**
+   * What the field was before this run of changes (quick changes to one field by one person
+   * become one line: clicking through estimates leaves "estimated this at 5 points", once).
+   */
+  readonly was?: string;
+  /** What it is now (in the same words as `was`). */
+  readonly now?: string;
 }
 
 /** Something that shows the work: a screenshot, a page, a file, a graph, a result. */
@@ -149,8 +156,16 @@ export interface Issue {
   readonly createdBy: Actor;
   /** When it reached Done or Canceled. */
   readonly closedAt?: number;
-  /** How it started: by hand, a worktree opening, or Claude. */
-  readonly origin: 'manual' | 'worktree' | 'claude';
+  /** How it started: by hand, a worktree opening, Claude, or an approved plan. */
+  readonly origin: 'manual' | 'worktree' | 'claude' | 'plan';
+  /** The plan it's part of: the plan, its milestone and its task there (ids). */
+  readonly plan?: IssuePlan;
+}
+
+export interface IssuePlan {
+  readonly id: string;
+  readonly milestone: string;
+  readonly task: string;
 }
 
 /** A project's board settings. */
@@ -166,7 +181,7 @@ export interface BoardState {
   readonly enabled: boolean;
   readonly issues: readonly Issue[];
   readonly projects: Readonly<Record<string, BoardProject>>;
-  /** Open a task for every new worktree. */
+  /** Open a task for every new worktree (off by default: tasks come from plans). */
   readonly autoTasks: boolean;
 }
 
@@ -178,8 +193,10 @@ export const KEEP_ACTIVITY = 200;
 /** Versions kept per brief section. */
 export const KEEP_REVISIONS = 20;
 export const KEEP_PROOF = 40;
+/** Changes to one field by one person this close together are one change in the activity. */
+export const COALESCE_MS = 2 * 60 * 1000;
 
-export const NO_BOARD: BoardState = { enabled: false, issues: [], projects: {}, autoTasks: true };
+export const NO_BOARD: BoardState = { enabled: false, issues: [], projects: {}, autoTasks: false };
 export const initialBoard: BoardSlice = { board: NO_BOARD };
 
 export type BoardAction =

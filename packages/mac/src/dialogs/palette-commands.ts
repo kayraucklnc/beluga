@@ -80,6 +80,8 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
     ...(state.board.enabled
       ? [
           { id: 'tasks:new', label: 'New Task…', icon: 'task' as const, hint: 'Plan a piece of work', keywords: ['task', 'issue', 'todo', 'ticket'], run: () => openSheet({ kind: 'new_task' }) },
+          { id: 'plans:new', label: 'New Plan…', icon: 'flag' as const, hint: 'Plan big work with Claude: milestones, tasks, what runs side by side', keywords: ['plan', 'milestone', 'roadmap', 'project'], run: () => openSheet({ kind: 'new_plan' }) },
+          { id: 'plans:open', label: 'Go to Plans', icon: 'flag' as const, hint: 'Your plans, project by project', keywords: ['plans', 'milestones', 'roadmap'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'plans' } }) },
           { id: 'tasks:open', label: 'Go to Tasks', icon: 'task' as const, hint: 'Every project’s board', keywords: ['tasks', 'board', 'issues', 'backlog', 'kanban'], run: () => ctx.actions.run({ type: 'view', view: { kind: 'tasks' } }) },
         ]
       : []),

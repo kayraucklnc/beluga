@@ -16,8 +16,10 @@ import {
   type BriefSection,
   ISSUE_STATUSES,
   type Issue,
+  type IssuePlan,
   type IssuePr,
   type IssueStatus,
+  COALESCE_MS,
   KEEP_ACTIVITY,
   KEEP_PROOF,
   KEEP_REVISIONS,
@@ -64,6 +66,7 @@ export interface NewIssue {
   readonly blockedBy?: readonly string[];
   readonly brief?: Partial<Record<BriefSection, string>>;
   readonly autoTitle?: boolean;
+  readonly plan?: IssuePlan;
 }
 
 export interface IssuePatch {
@@ -88,7 +91,8 @@ const MAX_LABELS = 12;
 
 const BoardFile = z.object({
   version: z.literal(1),
-  autoTasks: z.boolean().default(true),
+  // Renamed from autoTasks when it turned off by default (tasks come from plans now): the old key is ignored.
+  worktreeTasks: z.boolean().default(false),
   projects: z.record(z.string(), z.object({ prefix: z.string().min(1).max(8), next: z.number().int().positive() })).default({}),
   issues: z.array(z.unknown()).default([]),
 });
@@ -114,7 +118,7 @@ const SavedIssue = z
     activity: z.array(z.unknown()).default([]),
     createdAt: z.number(),
     updatedAt: z.number(),
-    origin: z.enum(['manual', 'worktree', 'claude']).default('manual'),
+    origin: z.enum(['manual', 'worktree', 'claude', 'plan']).default('manual'),
   })
   .passthrough();
 
@@ -124,11 +128,23 @@ const cleanLabels = (labels: readonly string[]): string[] => [...new Set(labels.
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const actorWords = (a: Assignee): string => (a.kind === 'person' ? a.name : `${a.ownerName}’s Claude`);
+const assigneeId = (a: Assignee | undefined): string => (!a ? '' : a.kind === 'person' ? `person:${a.id}` : `claude:${a.owner}`);
+const statusText = (from: string, to: string): string => `moved this from ${from} to ${to}`;
+const sameActor = (a: Actor, b: Actor): boolean => a.kind === b.kind && (a.kind === 'person' ? a.id === (b as typeof a).id : a.kind === 'claude' ? a.owner === (b as typeof a).owner : true);
+
+/** A change to note in the activity; `was`/`now` let quick changes to one field become one line. */
+interface Note {
+  readonly kind: ActivityKind;
+  readonly text: string;
+  readonly assignee?: Assignee | null;
+  readonly was?: string;
+  readonly now?: string;
+}
 
 export class Board {
   private issues: Issue[] = [];
   private projects: Record<string, BoardProject> = {};
-  private autoTasks = true;
+  private autoTasks = false;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
   /** board.json couldn't be read nor moved aside: changes stay in memory rather than overwrite it. */
   private readOnly = false;
@@ -194,6 +210,7 @@ export class Board {
       ...(input.due && DAY.test(input.due) ? { due: input.due } : {}),
       ...(input.assignee ? { assignee: input.assignee } : {}),
       ...(parent ? { parent: parent.id } : {}),
+      ...(input.plan ? { plan: input.plan } : {}),
       blockedBy: [...new Set(blockers)],
       related: [],
       rank: this.lastRank(status),
@@ -201,7 +218,7 @@ export class Board {
       revisions: [],
       worktrees: [],
       proof: [],
-      activity: [this.entry(by, 'created', origin === 'worktree' ? 'opened this task for a new worktree' : 'created this task', undefined, at)],
+      activity: [this.entry(by, 'created', origin === 'worktree' ? 'opened this task for a new worktree' : origin === 'plan' ? 'created this task from a plan' : 'created this task', undefined, at)],
       createdAt: at,
       updatedAt: at,
       createdBy: by,
@@ -218,28 +235,28 @@ export class Board {
 
   update(ref: string, patch: IssuePatch, by: Actor): Issue {
     let issue = this.need(ref);
-    const notes: Array<[ActivityKind, string, (Assignee | null)?]> = [];
+    const notes: Note[] = [];
     const next: { -readonly [K in keyof Issue]?: Issue[K] } = {};
     if (patch.title !== undefined) {
       const title = oneLine(patch.title, MAX_TITLE);
       if (!title) throw new Error('A task needs a title');
       if (title !== issue.title) {
         next.title = title;
-        notes.push(['title', `renamed this to “${title}”`]);
+        notes.push({ kind: 'title', text: `renamed this to “${title}”`, was: issue.title, now: title });
       }
     }
     if (patch.status && patch.status !== issue.status) {
-      notes.push(['status', `moved this from ${STATUS_INFO[issue.status].label} to ${STATUS_INFO[patch.status].label}`]);
+      notes.push({ kind: 'status', text: statusText(STATUS_INFO[issue.status].label, STATUS_INFO[patch.status].label), was: STATUS_INFO[issue.status].label, now: STATUS_INFO[patch.status].label });
       next.status = patch.status;
       next.rank = this.lastRank(patch.status);
     }
     if (patch.priority && patch.priority !== issue.priority) {
       next.priority = patch.priority;
-      notes.push(['priority', patch.priority === 'none' ? 'removed the priority' : `set the priority to ${PRIORITY_INFO[patch.priority].label}`]);
+      notes.push({ kind: 'priority', text: patch.priority === 'none' ? 'removed the priority' : `set the priority to ${PRIORITY_INFO[patch.priority].label}`, was: issue.priority, now: patch.priority });
     }
     if (patch.assignee !== undefined && !sameAssignee(patch.assignee ?? undefined, issue.assignee)) {
       next.assignee = patch.assignee ?? undefined;
-      notes.push(['assignee', patch.assignee ? `assigned this to ${actorWords(patch.assignee)}` : 'unassigned this', patch.assignee ?? null]);
+      notes.push({ kind: 'assignee', text: patch.assignee ? `assigned this to ${actorWords(patch.assignee)}` : 'unassigned this', assignee: patch.assignee ?? null, was: assigneeId(issue.assignee), now: assigneeId(patch.assignee ?? undefined) });
     }
     if (patch.labels) {
       const labels = cleanLabels(patch.labels);
@@ -247,17 +264,17 @@ export class Board {
         const added = labels.filter((l) => !issue.labels.includes(l));
         const removed = issue.labels.filter((l) => !labels.includes(l));
         next.labels = labels;
-        notes.push(['labels', [added.length ? `added ${added.join(', ')}` : '', removed.length ? `removed ${removed.join(', ')}` : ''].filter(Boolean).join(' and ')]);
+        notes.push({ kind: 'labels', text: [added.length ? `added ${added.join(', ')}` : '', removed.length ? `removed ${removed.join(', ')}` : ''].filter(Boolean).join(' and ') });
       }
     }
     if (patch.estimate !== undefined && (patch.estimate ?? undefined) !== issue.estimate) {
       next.estimate = patch.estimate ?? undefined;
-      notes.push(['estimate', patch.estimate ? `estimated this at ${patch.estimate} ${patch.estimate === 1 ? 'point' : 'points'}` : 'removed the estimate']);
+      notes.push({ kind: 'estimate', text: patch.estimate ? `estimated this at ${patch.estimate} ${patch.estimate === 1 ? 'point' : 'points'}` : 'removed the estimate', was: String(issue.estimate ?? ''), now: String(patch.estimate ?? '') });
     }
     if (patch.due !== undefined && (patch.due ?? undefined) !== issue.due) {
       if (patch.due && !DAY.test(patch.due)) throw new Error('A due date looks like 2026-11-03');
       next.due = patch.due ?? undefined;
-      notes.push(['due', patch.due ? `set it due ${patch.due}` : 'removed the due date']);
+      notes.push({ kind: 'due', text: patch.due ? `set it due ${patch.due}` : 'removed the due date', was: issue.due ?? '', now: patch.due ?? '' });
     }
     if (patch.parent !== undefined && (patch.parent ?? undefined) !== issue.parent) {
       if (patch.parent) {
@@ -265,15 +282,34 @@ export class Board {
         if (parent.id === issue.id || this.isAncestor(issue.id, parent.id)) throw new Error('A task can’t be a sub-task of itself or of its own sub-tasks');
         if (parent.projectId !== issue.projectId) throw new Error('A sub-task belongs to its parent’s project');
         next.parent = parent.id;
-        notes.push(['parent', `made this a sub-task of ${parent.key}`]);
+        notes.push({ kind: 'parent', text: `made this a sub-task of ${parent.key}` });
       } else {
         next.parent = undefined;
-        notes.push(['parent', 'made this a task of its own']);
+        notes.push({ kind: 'parent', text: 'made this a task of its own' });
       }
     }
     if (!notes.length) return issue;
-    issue = this.change(issue, next, notes.map(([kind, text, assignee]) => this.entry(by, kind, text, undefined, this.now(), assignee)));
+    const at = this.now();
+    // One field changed again by the same person moments later: one line, from where it started.
+    const last = issue.activity.at(-1);
+    const only = notes.length === 1 ? notes[0]! : undefined;
+    if (only?.was !== undefined && last && last.kind === only.kind && last.was !== undefined && sameActor(last.by, by) && at - last.at < COALESCE_MS) {
+      const was = last.was;
+      const back = was === only.now;
+      const text = only.kind === 'status' ? statusText(was, only.now!) : only.text;
+      const entries = back ? [] : [this.entry(by, only.kind, text, undefined, at, only.assignee, { was, now: only.now! })];
+      return this.change(issue, next, entries, true, true);
+    }
+    issue = this.change(issue, next, notes.map((n) => this.entry(by, n.kind, n.text, undefined, at, n.assignee, n.was !== undefined ? { was: n.was, now: n.now! } : undefined)));
     return issue;
+  }
+
+  /** The plan (and milestone) a task belongs to; undefined: none any more. */
+  setPlan(ref: string, link: IssuePlan | undefined, by: Actor, text?: string): Issue {
+    const issue = this.need(ref);
+    const same = issue.plan?.id === link?.id && issue.plan?.milestone === link?.milestone && issue.plan?.task === link?.task;
+    if (same) return issue;
+    return this.change(issue, { plan: link }, text ? [this.entry(by, 'plan', text)] : [], Boolean(text));
   }
 
   /** Drop a card in a column, between two others (the board): its status and its place. */
@@ -492,12 +528,12 @@ export class Board {
     return { prefix: prefixFor(name, taken), next: 1 };
   }
 
-  private entry(by: Actor, kind: ActivityKind, text: string, body?: string, at = this.now(), assignee?: Assignee | null): Activity {
-    return { id: short('a'), at, by, kind, text, ...(body ? { body } : {}), ...(assignee !== undefined ? { assignee } : {}) };
+  private entry(by: Actor, kind: ActivityKind, text: string, body?: string, at = this.now(), assignee?: Assignee | null, change?: { readonly was: string; readonly now: string }): Activity {
+    return { id: short('a'), at, by, kind, text, ...(body ? { body } : {}), ...(assignee !== undefined ? { assignee } : {}), ...(change ?? {}) };
   }
 
-  /** Replace a task with changes and activity, tell every screen, and save. */
-  private change(issue: Issue, patch: Partial<{ -readonly [K in keyof Issue]: Issue[K] }>, activity: readonly Activity[], touch = true): Issue {
+  /** Replace a task with changes and activity (`replaceLast`: instead of its last line), tell every screen, and save. */
+  private change(issue: Issue, patch: Partial<{ -readonly [K in keyof Issue]: Issue[K] }>, activity: readonly Activity[], touch = true, replaceLast = false): Issue {
     const at = this.now();
     const merged: Record<string, unknown> = { ...issue, ...patch };
     // undefined in a patch removes the field (no "key": undefined in the file).
@@ -508,7 +544,7 @@ export class Board {
       else merged.closedAt = at;
     }
     if (patch.title !== undefined && issue.autoTitle && !('autoTitle' in patch)) delete merged.autoTitle;
-    const next = { ...(merged as unknown as Issue), activity: [...issue.activity, ...activity].slice(-KEEP_ACTIVITY), updatedAt: touch ? at : issue.updatedAt };
+    const next = { ...(merged as unknown as Issue), activity: [...(replaceLast ? issue.activity.slice(0, -1) : issue.activity), ...activity].slice(-KEEP_ACTIVITY), updatedAt: touch ? at : issue.updatedAt };
     this.issues = this.issues.map((i) => (i.id === issue.id ? next : i));
     this.deps.store.dispatch({ type: 'board_issue', issue: next });
     this.save();
@@ -557,7 +593,7 @@ export class Board {
       this.setAside(file, 'unreadable');
       return;
     }
-    this.autoTasks = parsed.data.autoTasks;
+    this.autoTasks = parsed.data.worktreeTasks;
     this.projects = parsed.data.projects;
     const dropped: unknown[] = [];
     this.issues = parsed.data.issues.flatMap((item) => {
@@ -596,7 +632,7 @@ export class Board {
   private write(): void {
     if (!this.deps.dir) return;
     try {
-      writeJson(path.join(this.deps.dir, 'board.json'), { version: 1, autoTasks: this.autoTasks, projects: this.projects, issues: this.issues });
+      writeJson(path.join(this.deps.dir, 'board.json'), { version: 1, worktreeTasks: this.autoTasks, projects: this.projects, issues: this.issues });
     } catch {
       // A full disk or a permission problem: the next change tries again.
     }

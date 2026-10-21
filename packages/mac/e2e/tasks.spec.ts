@@ -121,3 +121,36 @@ test('Tasks is one project at a time: the one you came from, and the switcher ch
   await expect(list).toContainText('Add auth to the payment routes');
   await expect(list).not.toContainText('New hero for the launch');
 });
+
+test('the board: a card picked up lifts, the column makes room, and it lands where it was dropped', async ({ page }) => {
+  await openTasks(page);
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
+    await page.getByRole('button', { name: /^Project: / }).click();
+    await page.getByRole('menuitem', { name: /bob-api/ }).click();
+  }
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();
+  const board = page.getByRole('list', { name: 'Board' });
+  const card = board.getByRole('button', { name: /Rate-limit the login endpoint/ });
+  const from = (await card.boundingBox())!;
+  const review = board.getByRole('listitem', { name: /^In Review/ });
+  const to = (await review.boundingBox())!;
+  await page.mouse.move(from.x + 30, from.y + 15);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 60, from.y + 30, { steps: 4 });
+  await page.mouse.move(to.x + 60, to.y + 70, { steps: 12 });
+  // Lifted: a gap opens where it would land.
+  await expect(review.locator('[data-gap]')).toBeVisible();
+  await page.mouse.up();
+  await expect(review).toContainText('Rate-limit the login endpoint');
+  await expect(review.locator('[data-gap]')).toHaveCount(0);
+  // Esc puts a lifted card back.
+  const back = (await review.getByRole('button', { name: /Rate-limit the login endpoint/ }).boundingBox())!;
+  await page.mouse.move(back.x + 30, back.y + 15);
+  await page.mouse.down();
+  await page.mouse.move(back.x - 300, back.y + 30, { steps: 10 });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(review).toContainText('Rate-limit the login endpoint');
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
+});

@@ -1,0 +1,259 @@
+import type { PlanTools } from '../../agent/types.js';
+import type { Actor, Issue } from '../board/model.js';
+import type { BoardWork } from '../board/work.js';
+import type { Intent } from '../intents.js';
+import type { Store } from '../store.js';
+import type { WorkspaceController } from '../workspace-controller.js';
+import { ApplyError, applyDraft } from './apply.js';
+import type { BodyInput, PlanOp, TaskInput } from './edit.js';
+import { type Autonomy, type Plan, allTasks, planForHome, planTaskOfIssue } from './model.js';
+import { PlanPilot } from './pilot.js';
+import type { Plans } from './plans.js';
+import { describePlan, headBrief, planningBrief, sizeWords, workerNote } from './prompt.js';
+
+/**
+ * Plans at work: making a plan (its own conversation, in the project's main folder where Claude
+ * only reads), approving it onto the board, running it (the pilot), and what Claude gets: the
+ * plan's tools in its home conversation, and the plan a task belongs to in that task's worktree.
+ */
+
+export interface PlansWorkDeps {
+  readonly store: Store;
+  readonly plans: Plans;
+  readonly board: BoardWork;
+  readonly controller?: WorkspaceController;
+  readonly askClaude: (prompt: string, channel: string, echo: boolean) => void;
+  readonly intend: (intent: Intent) => void;
+  readonly delayMs?: number;
+}
+
+const WS = 'ws:';
+
+export class PlansWork {
+  readonly plans: Plans;
+  readonly pilot: PlanPilot;
+
+  constructor(private readonly deps: PlansWorkDeps) {
+    this.plans = deps.plans;
+    this.pilot = new PlanPilot({
+      store: deps.store,
+      plans: deps.plans,
+      work: deps.board,
+      askClaude: deps.askClaude,
+      system: (channel, text) => deps.store.dispatch({ type: 'system', channel, text, level: 'info' }),
+      ...(deps.delayMs !== undefined ? { delayMs: deps.delayMs } : {}),
+    });
+    // A task of a plan: its worktree's Claude knows the plan and what runs beside it.
+    deps.board.setBriefExtra((issue) => this.workerBrief(issue));
+  }
+
+  stop(): void {
+    this.pilot.stop();
+    this.plans.flush();
+  }
+
+  private me = (): Actor => this.deps.board.me();
+  private claude = (): Actor => this.deps.board.myClaude();
+
+  // ------------------------------------------------------------------ for you (the API)
+
+  /**
+   * A new plan with Claude: a conversation of its own in the project's main folder (Claude reads
+   * the code there and changes nothing), and the plan's page. Claude starts planning from `goal`.
+   */
+  async create(input: { readonly projectId: string; readonly goal: string; readonly autonomy?: Autonomy }): Promise<Plan> {
+    const controller = this.deps.controller;
+    if (!controller) throw new Error('Plans need a project folder');
+    const goal = input.goal.trim();
+    if (!goal) throw new Error('Say what the plan is for');
+    const title = goal.replace(/\s+/g, ' ').slice(0, 48);
+    const chat = await controller.newChat(input.projectId, `Plan: ${title}`, undefined, { quiet: true });
+    if (!chat) throw new Error('Couldn’t start the plan’s conversation');
+    const home = `${WS}${chat.id}`;
+    const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}) }, this.me());
+    this.deps.intend({ type: 'navigate', view: { kind: 'plan', id: plan.id } });
+    this.deps.askClaude(goal, home, true);
+    return plan;
+  }
+
+  /** A plan's own conversation, made quietly (the demo's plan). */
+  async homeFor(projectId: string, title: string): Promise<string | undefined> {
+    const chat = await this.deps.controller?.newChat(projectId, `Plan: ${title}`, undefined, { quiet: true });
+    return chat ? `${WS}${chat.id}` : undefined;
+  }
+
+  /** Plan in the conversation you're in (the composer's Plan with Tasks): an empty draft, written from what you say next. */
+  here(channel: string, autonomy?: Autonomy): Plan {
+    const existing = planForHome(this.plans.state(), channel);
+    if (existing && existing.status !== 'done') return existing;
+    const ws = channel.startsWith(WS) ? this.deps.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === channel.slice(WS.length)) : undefined;
+    const project = ws ? this.deps.store.getState().projects.find((p) => p.id === ws.projectId && p.root) : undefined;
+    if (!ws || !project) throw new Error('Plans belong to a project: start one from a conversation in a project');
+    return this.plans.create({ projectId: project.id, home: channel, ...(autonomy ? { autonomy } : {}) }, this.me());
+  }
+
+  /** Approve the draft: its tasks go on the board, and the plan runs (or carries on with the changes). */
+  approve(id: string, by: Actor = this.me()): Plan {
+    const plan = this.plans.need(id);
+    let applied: ReturnType<typeof applyDraft>;
+    try {
+      applied = applyDraft(plan, this.deps.board.board, { by, me: this.deps.board.me(), claude: this.deps.board.myClaude() });
+    } catch (err) {
+      // What was made stays linked to the draft, so approving again doesn't make it twice.
+      if (err instanceof ApplyError) this.plans.linkDraft(id, err.linked);
+      throw err;
+    }
+    const { body, summary } = applied;
+    const done = this.plans.approved(id, body, by, summary);
+    this.deps.store.dispatch({ type: 'system', channel: plan.home, text: plan.body ? `Changes applied: ${summary}.` : `Plan approved: ${summary} are on the board now.`, level: 'info' });
+    this.pilot.schedule();
+    return done;
+  }
+
+  discard(id: string): Plan | undefined {
+    return this.plans.discard(id, this.me());
+  }
+
+  /** Your changes: an approved plan without waiting changes takes them at once (you're the one approving). */
+  edit(id: string, ops: readonly PlanOp[]): Plan {
+    const plan = this.plans.need(id);
+    const retitle = ops.length === 1 && ops[0]!.op === 'retitle' && ops[0]!.goal === undefined && ops[0]!.title !== undefined;
+    if (retitle) return this.plans.retitle(id, ops[0]!.op === 'retitle' ? ops[0]!.title! : '', this.me());
+    const direct = Boolean(plan.body) && !plan.draft;
+    const next = this.plans.editDraft(id, ops, this.me());
+    return direct && next.draft ? this.approve(id) : next;
+  }
+
+  setAutonomy(id: string, autonomy: Autonomy, milestone?: string): Plan {
+    const plan = this.plans.setAutonomy(id, autonomy, this.me(), milestone);
+    this.pilot.schedule();
+    return plan;
+  }
+
+  setPaused(id: string, paused: boolean): Plan {
+    const plan = this.plans.setPaused(id, paused, this.me());
+    this.pilot.schedule();
+    return plan;
+  }
+
+  setParallel(id: string, n: number): Plan {
+    const plan = this.plans.setMaxParallel(id, n, this.me());
+    this.pilot.schedule();
+    return plan;
+  }
+
+  pass(id: string, milestone: string): Plan {
+    return this.pilot.pass(id, milestone, this.me());
+  }
+
+  /** Not yet: what's missing goes to the head Claude, which adds the work to the plan. */
+  sendBack(id: string, milestone: string, note: string): Plan {
+    const plan = this.plans.need(id);
+    const m = plan.body?.milestones.find((x) => x.id === milestone);
+    if (!m) throw new Error('That milestone isn’t in the approved plan');
+    const text = note.trim();
+    if (!text) throw new Error('Say what’s missing');
+    this.plans.note(id, 'failed', `sent “${m.title}” back: ${text}`, this.me());
+    this.deps.askClaude(`Milestone “${m.title}” isn't done yet: ${text}\n\nAdd the tasks that fix it to this milestone with plan_update (the user approves them), or tell me what you need.`, plan.home, true);
+    return this.plans.need(id);
+  }
+
+  /** Ask the head Claude to check a milestone again. */
+  recheck(id: string, milestone: string): Plan {
+    this.pilot.recheck(id, milestone);
+    return this.plans.need(id);
+  }
+
+  startTask(id: string, task: string): Promise<string> {
+    return this.pilot.startNow(id, task, this.me());
+  }
+
+  remove(id: string): void {
+    this.plans.remove(id);
+  }
+
+  setStyle(text: string): void {
+    this.plans.setStyle(text);
+  }
+
+  // ------------------------------------------------------------------ for Claude
+
+  /** A run in a plan's home conversation (yours): the plan's tools, and how to plan or run it. */
+  forRun(channel: string, from: string): { readonly tools?: PlanTools; readonly brief?: string } | undefined {
+    const me = this.deps.board.me();
+    if (me.kind !== 'person' || from !== me.id) return undefined;
+    const plan = planForHome(this.plans.state(), channel);
+    if (!plan) return undefined;
+    const board = this.deps.store.getState().board;
+    const view = this.pilot.view(plan);
+    const brief = plan.body ? headBrief(view) + planningBrief(plan, board, this.plans.planningStyle) : planningBrief(plan, board, this.plans.planningStyle);
+    return { tools: this.toolsFor(plan.id), brief };
+  }
+
+  /** In a task's worktree: the plan it's part of. */
+  private workerBrief(issue: Issue): string {
+    const hit = planTaskOfIssue(this.plans.state(), issue.id);
+    if (!hit || hit.plan.status !== 'active') return '';
+    return workerNote(this.pilot.view(hit.plan), hit.task.id);
+  }
+
+  /** A task Claude says is an existing board task (its key): that task, adopted into the plan. */
+  private adopt<T extends Partial<TaskInput> & { readonly issue?: string }>(t: T, planId: string): T {
+    if (!t.issue) return t;
+    const { issue: key, ...rest } = t;
+    const issue = this.deps.board.board.get(key);
+    const plan = this.plans.need(planId);
+    if (!issue) throw new Error(`There's no task ${key} on the board`);
+    if (issue.projectId !== plan.projectId) throw new Error(`${issue.key} belongs to another project`);
+    if (issue.plan && issue.plan.id !== planId) throw new Error(`${issue.key} is already part of another plan`);
+    return { ...rest, issueId: issue.id } as T;
+  }
+
+  private toolsFor(planId: string): PlanTools {
+    const plans = this.plans;
+    const after = (plan: Plan): string => {
+      if (!plan.draft) return 'The plan is unchanged.';
+      // On autopilot, the head Claude's changes to a running plan apply at once.
+      if (plan.body && plan.autonomy === 'autopilot') {
+        const applied = this.approve(plan.id, this.claude());
+        return `Applied at once (the plan runs on autopilot): ${sizeWords(applied.body)}.`;
+      }
+      return plan.body ? `Proposed (${sizeWords(plan.draft)}): the user reviews the changes and applies them.` : `Saved the draft (${sizeWords(plan.draft)}). The user reviews it and clicks Approve; nothing is on the board until then.`;
+    };
+    return {
+      get: () => describePlan(this.pilot.view(plans.need(planId))),
+      write: (body: BodyInput) => after(plans.writeDraft(planId, { ...body, milestones: body.milestones.map((m) => ({ ...m, tasks: (m.tasks ?? []).map((t) => this.adopt(t, planId)) })) }, this.claude())),
+      update: (ops: readonly PlanOp[], reason?: string) =>
+        after(
+          plans.editDraft(
+            planId,
+            ops.map((o) => (o.op === 'add_task' ? { ...o, task: this.adopt(o.task, planId) } : o.op === 'update_task' ? { ...o, patch: this.adopt(o.patch, planId) } : o.op === 'add_milestone' ? { ...o, milestone: { ...o.milestone, tasks: (o.milestone.tasks ?? []).map((t) => this.adopt(t, planId)) } } : o)),
+            this.claude(),
+            reason,
+          ),
+        ),
+      gate: (milestone, verdict, notes) => {
+        const plan = plans.need(planId);
+        const m = plan.body?.milestones.find((x) => x.id === milestone || x.title.toLowerCase() === milestone.toLowerCase());
+        if (!m) throw new Error(`There's no milestone "${milestone}" in the approved plan (milestones: ${(plan.body?.milestones ?? []).map((x) => x.id).join(', ')})`);
+        plans.recordCheck(planId, m.id, { by: this.claude(), verdict, notes });
+        this.pilot.schedule();
+        const auto = (m.autonomy ?? plan.autonomy) === 'autopilot';
+        return verdict === 'pass' ? (auto ? 'Recorded: the milestone passes and the plan moves on.' : 'Recorded: the user passes the milestone.') : 'Recorded as failed. Add the fix tasks with plan_update.';
+      },
+      start: (task) => this.pilot.startNow(planId, task, this.claude()),
+      message: (task, text) => {
+        const plan = plans.need(planId);
+        const hit = allTasks(plan.body).find((t) => t.task.id === task || (t.task.issueId && this.deps.board.board.get(t.task.issueId)?.key === task.toUpperCase()));
+        if (!hit?.task.issueId) throw new Error(`There's no task "${task}" on the board from this plan`);
+        const issue = this.deps.board.board.need(hit.task.issueId);
+        const w = issue.worktrees.at(-1);
+        if (!w || issue.worktreeGone) throw new Error(`${issue.key} hasn't started: nothing to tell yet (start it, or change its brief)`);
+        // Shown there as the plan's message, not as yours.
+        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: `From the plan’s Claude: ${text.trim().slice(0, 2000)}`, level: 'info' });
+        this.deps.askClaude(`A message from the head of the plan “${plan.body?.title ?? ''}” (another Claude coordinating the plan, not the user):\n\n${text.trim()}`, `${WS}${w}`, false);
+        return `Sent to the Claude working on ${issue.key}`;
+      },
+    };
+  }
+}

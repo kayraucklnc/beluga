@@ -42,7 +42,9 @@ export interface AgentHostDeps {
   /** Guests invited into one project only (not the whole room). */
   readonly isGuest?: (peerId: string) => boolean;
   /** The task board for a run in this conversation (your own runs): its tools and the task's brief. */
-  readonly board?: (channel: string, from: string) => { readonly tools?: BoardTools; readonly brief?: string } | undefined;
+  readonly board?: (channel: string, from: string, opts: { readonly plan: boolean }) => import('./board/work.js').RunBoard | undefined;
+  /** A plan's home conversation (your own runs): its plan tools and what Claude is told about the plan (core/plans). */
+  readonly plans?: (channel: string, from: string) => { readonly tools?: import('../agent/types.js').PlanTools; readonly brief?: string } | undefined;
 }
 
 /** File tools an Edit guest may use without asking, and the input naming their file. */
@@ -661,12 +663,19 @@ export class AgentHost {
     try {
       // A workspace (not a main folder, where nothing may change) gets its scratch folder.
       const scratch = place && !place.askOnly && this.store.getState().prefs.scratchFolder && (await ensureScratch(place.cwd)) ? SCRATCH_DIR : undefined;
-      // Not in a main folder (questions only) nor for guests: a run doing a task gets it, and the tools to keep it true.
-      const board = place?.askOnly || from !== this.selfId ? undefined : this.deps.board?.(body.channel, from);
+      // A plan's home conversation (a main folder's chat, often): the plan's tools.
+      const plans = from !== this.selfId || place?.syncMain ? undefined : this.deps.plans?.(body.channel, from);
+      // Not for guests, nor in a main folder (questions only) unless planning there: a run doing a task gets it, and the tools to keep it true.
+      // (In a plan's conversation, planning is the plan's: no single task to define.)
+      const planFirst = body.plan && !plans?.tools;
+      const board = (place?.askOnly && (!planFirst || place.syncMain)) || from !== this.selfId ? undefined : this.deps.board?.(body.channel, from, { plan: planFirst });
       const final = await agent.run({
         ...(scratch ? { scratchDir: scratch } : {}),
         ...(board?.tools ? { board: board.tools } : {}),
         ...(board?.brief ? { taskBrief: board.brief } : {}),
+        ...(board?.needsDefinition && board.planApproved ? { planTask: { needsDefinition: board.needsDefinition, approved: board.planApproved } } : {}),
+        ...(plans?.tools ? { planTools: plans.tools } : {}),
+        ...(plans?.brief ? { planBrief: plans.brief } : {}),
         prompt: body.prompt,
         requesterName,
         viaAgent: body.viaAgent,
@@ -686,7 +695,8 @@ export class AgentHost {
         canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input, body.channel, place?.cwd),
         askUser: (question) => this.deps.questions.ask(askTo, body.requestId, body.channel, question),
         plan: body.plan,
-        ...(move ? { continueInWorktree: move } : {}),
+        // A plan's conversation plans; it doesn't move to a worktree.
+        ...(move && !plans?.tools ? { continueInWorktree: move } : {}),
         onSteer: (steer) => {
           if (lane.current === controller) lane.steer = steer;
         },

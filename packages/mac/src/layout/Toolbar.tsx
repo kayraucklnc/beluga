@@ -1,3 +1,4 @@
+import { planForHome } from '@klaud/core/plans/model.js';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { agentOfWorktree, agentTitle, isAgentWorktree } from '../claude-code/subagents-model.js';
 import { findWorkspace, stateOf } from '@klaud/ui/workspace-models.js';
@@ -151,7 +152,7 @@ export function Toolbar() {
         right={
           <>
             {/* A main folder is questions only: what it needs next is a worktree to work in. */}
-            {ws.askOnly ? (
+            {ws.askOnly && !planForHome(state.plans, `ws:${ws.id}`) ? (
               <span className={s.primaryWrap}>
                 <ContinueButton wsId={ws.id} className={s.primary} />
               </span>
@@ -234,6 +235,24 @@ export function Toolbar() {
   if (view.kind === 'tasks') {
     // One project's tasks (its name is the switcher at the top of the view).
     return <Shell headerRef={headerRef} title={<span className={s.name}>Tasks</span>} />;
+  }
+
+  if (view.kind === 'plans') return <Shell headerRef={headerRef} title={<span className={s.name}>Plans</span>} />;
+
+  if (view.kind === 'plan') {
+    const plan = state.plans.plans.find((x) => x.id === view.id);
+    const project = plan ? state.projects.find((p) => p.id === plan.projectId) : undefined;
+    return (
+      <Shell
+        headerRef={headerRef}
+        title={
+          <>
+            <span className={s.crumb}>{project?.name ?? 'Plans'}</span>
+            <span className={s.name}>Plan</span>
+          </>
+        }
+      />
+    );
   }
 
   if (view.kind === 'task') {

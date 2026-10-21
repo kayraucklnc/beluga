@@ -8,12 +8,14 @@ import type { BoardTools } from './types.js';
  * sub-tasks and mark what waits on what. Every change shows in the task's activity as Claude's.
  */
 
-export const BOARD_TOOL_NAMES = ['task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__klaud_board__${n}`);
+export const BOARD_TOOL_NAMES = ['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__klaud_board__${n}`);
 
 const key = z.string().min(2).max(40).optional().describe('The task’s key, like BOB-12. Leave out for the task this worktree is doing');
 const STATUS = z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled']);
 const PRIORITY = z.enum(['urgent', 'high', 'medium', 'low', 'none']);
 const SECTION = z.enum(['goal', 'context', 'acceptance', 'decisions', 'questions', 'handoff']);
+const ESTIMATE = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(5), z.literal(8)]).describe('Points: 1 an hour or so, 2 half a day, 3 a day, 5 a few days, 8 a week (split it)');
+const items = (max: number) => z.array(z.string().min(1).max(400)).max(max);
 
 function guarded(fn: () => string): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
   try {
@@ -25,6 +27,35 @@ function guarded(fn: () => string): Promise<{ content: Array<{ type: 'text'; tex
 
 export function createBoardToolDefs(board: BoardTools) {
   return [
+    tool(
+      'task_define',
+      'Define the work this conversation is for, as a task: a short title and, in your own words (never the user’s message pasted in), its goal, the context someone new needs, acceptance criteria, the decisions made and why, open questions, an estimate and a priority. In plan mode it goes on the board when the user approves your plan; call it right before ExitPlanMode.',
+      {
+        title: z.string().min(1).max(120),
+        goal: z.string().min(1).max(4000).describe('What it’s for and what done looks like, in a sentence or three'),
+        context: z.string().max(8000).optional().describe('Where the code is and how it works today'),
+        acceptance: items(15).optional().describe('Checkable statements: done means all are true'),
+        decisions: items(15).optional().describe('What was decided and why, one per line'),
+        questions: items(10).optional().describe('What is still unclear'),
+        estimate: ESTIMATE.optional(),
+        priority: PRIORITY.optional(),
+        labels: z.array(z.string().max(32)).max(6).optional(),
+      },
+      (a) =>
+        guarded(() =>
+          board.define({
+            title: a.title,
+            goal: a.goal,
+            ...(a.context ? { context: a.context } : {}),
+            ...(a.acceptance ? { acceptance: a.acceptance } : {}),
+            ...(a.decisions ? { decisions: a.decisions } : {}),
+            ...(a.questions ? { questions: a.questions } : {}),
+            ...(a.estimate ? { estimate: a.estimate } : {}),
+            ...(a.priority ? { priority: a.priority } : {}),
+            ...(a.labels ? { labels: a.labels } : {}),
+          }),
+        ),
+    ),
     tool('task_get', 'A task in full: status, priority, who it’s for, its parent, sub-tasks, blockers, pull request, its brief and recent activity.', { key }, (a) => guarded(() => board.get(a.key))),
     tool(
       'task_list',
@@ -34,12 +65,15 @@ export function createBoardToolDefs(board: BoardTools) {
     ),
     tool(
       'task_create',
-      'Create a task (a sub-task with parent). It goes in this worktree’s project unless you name one. Give it a goal and, when you can, acceptance criteria as a "- [ ]" checklist.',
+      'Create a task (a sub-task with parent). It goes in this worktree’s project unless you name one. Write its goal in your own words, with acceptance criteria as a "- [ ]" checklist, and an estimate.',
       {
         title: z.string().min(1).max(200),
         goal: z.string().max(4000).optional(),
         context: z.string().max(8000).optional(),
         acceptance: z.string().max(4000).optional(),
+        decisions: z.string().max(4000).optional(),
+        questions: z.string().max(4000).optional(),
+        estimate: ESTIMATE.optional(),
         project: z.string().max(80).optional(),
         parent: z.string().max(40).optional().describe('The parent task’s key'),
         blocked_by: z.array(z.string().max(40)).max(10).optional().describe('Keys of tasks that must be done first'),
@@ -54,6 +88,9 @@ export function createBoardToolDefs(board: BoardTools) {
             ...(a.goal ? { goal: a.goal } : {}),
             ...(a.context ? { context: a.context } : {}),
             ...(a.acceptance ? { acceptance: a.acceptance } : {}),
+            ...(a.decisions ? { decisions: a.decisions } : {}),
+            ...(a.questions ? { questions: a.questions } : {}),
+            ...(a.estimate ? { estimate: a.estimate } : {}),
             ...(a.project ? { project: a.project } : {}),
             ...(a.parent ? { parent: a.parent } : {}),
             ...(a.blocked_by ? { blockedBy: a.blocked_by } : {}),
@@ -65,8 +102,8 @@ export function createBoardToolDefs(board: BoardTools) {
     ),
     tool(
       'task_update',
-      'Change a task: its title, status, priority, labels (the full list), or who it’s for (me: the user; claude: their Claude; nobody). Only mark a task done or canceled when the user asked.',
-      { key, title: z.string().min(1).max(200).optional(), status: STATUS.optional(), priority: PRIORITY.optional(), labels: z.array(z.string().max(32)).max(12).optional(), assign: z.enum(['me', 'claude', 'nobody']).optional() },
+      'Change a task: its title, status, priority, estimate, labels (the full list), or who it’s for (me: the user; claude: their Claude; nobody). Only mark a task done or canceled when the user asked.',
+      { key, title: z.string().min(1).max(200).optional(), status: STATUS.optional(), priority: PRIORITY.optional(), estimate: ESTIMATE.optional(), labels: z.array(z.string().max(32)).max(12).optional(), assign: z.enum(['me', 'claude', 'nobody']).optional() },
       (a) =>
         guarded(() =>
           board.update(a.key, {
@@ -74,6 +111,7 @@ export function createBoardToolDefs(board: BoardTools) {
             ...(a.status ? { status: a.status } : {}),
             ...(a.priority ? { priority: a.priority } : {}),
             ...(a.labels ? { labels: a.labels } : {}),
+            ...(a.estimate ? { estimate: a.estimate } : {}),
             ...(a.assign ? { assign: a.assign } : {}),
           }),
         ),

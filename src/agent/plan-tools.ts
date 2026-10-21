@@ -1,0 +1,136 @@
+import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { z } from 'zod';
+import type { BodyInput, PlanOp, TaskInput } from '../core/plans/edit.js';
+import type { PlanTools } from './types.js';
+
+/**
+ * A plan as Claude's tools (server `klaud_plan`), in the plan's home conversation: write the plan
+ * and change it (a draft the user approves), see where it stands, check a milestone, start a ready
+ * task, and talk to a task's Claude. Starting and passing go through klaud's scheduler.
+ */
+
+export const PLAN_TOOL_NAMES = ['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task'].map((n) => `mcp__klaud_plan__${n}`);
+
+const id = z.string().min(1).max(40).describe('A short stable id, like "auth-api" (letters, digits, dashes)');
+const lines = (max: number) => z.array(z.string().min(1).max(400)).max(max);
+const PRIORITY = z.enum(['urgent', 'high', 'medium', 'low', 'none']);
+const ESTIMATE = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(5), z.literal(8)]);
+const AUTONOMY = z.enum(['step', 'gated', 'autopilot']);
+
+const TASK = z.object({
+  id: id.optional(),
+  title: z.string().min(1).max(200),
+  goal: z.string().max(4000).optional().describe('What it’s for, in your own words'),
+  context: z.string().max(8000).optional().describe('What someone new needs: files, how it works today'),
+  acceptance: lines(20).optional().describe('Checkable statements: done means all are true'),
+  blocked_by: z.array(z.string().max(40)).max(12).optional().describe('Ids of tasks whose code this one builds on (same or earlier milestone)'),
+  parent: z.string().max(40).optional().describe('A sub-task’s parent (id, same milestone)'),
+  priority: PRIORITY.optional(),
+  estimate: ESTIMATE.optional().describe('1 an hour, 2 half a day, 3 a day, 5 a few days, 8 a week (split it)'),
+  labels: z.array(z.string().max(32)).max(6).optional(),
+  touches: z.array(z.string().max(200)).max(20).optional().describe('Files or folders it changes (parallel tasks shouldn’t share them)'),
+  assignee: z.enum(['claude', 'me']).optional().describe('claude (default), or me: only the user can do it'),
+  issue: z.string().max(40).optional().describe('An existing board task this is (its key, like BOB-12): adopted into the plan'),
+});
+
+const MILESTONE = z.object({
+  id: id.optional(),
+  title: z.string().min(1).max(200),
+  goal: z.string().max(4000).optional(),
+  criteria: lines(12).describe('Pass criteria: concrete, checkable'),
+  autonomy: AUTONOMY.optional(),
+  tasks: z.array(TASK).max(40),
+});
+
+type Task = z.infer<typeof TASK>;
+
+/** A tool's task → the plan's (blocked_by → blockedBy; the board key stays for the plan to find). */
+export function taskInput(t: Partial<Task>): Partial<TaskInput> & { readonly issue?: string } {
+  return {
+    ...(t.id ? { id: t.id } : {}),
+    ...(t.title ? { title: t.title } : {}),
+    ...(t.goal !== undefined ? { goal: t.goal } : {}),
+    ...(t.context !== undefined ? { context: t.context } : {}),
+    ...(t.acceptance ? { acceptance: t.acceptance } : {}),
+    ...(t.blocked_by ? { blockedBy: t.blocked_by } : {}),
+    ...(t.parent !== undefined ? { parent: t.parent || null } : {}),
+    ...(t.priority ? { priority: t.priority } : {}),
+    ...(t.estimate ? { estimate: t.estimate } : {}),
+    ...(t.labels ? { labels: t.labels } : {}),
+    ...(t.touches ? { touches: t.touches } : {}),
+    ...(t.assignee ? { assignee: t.assignee } : {}),
+    ...(t.issue ? { issue: t.issue } : {}),
+  };
+}
+
+const OP = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('retitle'), title: z.string().max(200).optional(), goal: z.string().max(4000).optional() }),
+  z.object({ op: z.literal('add_milestone'), milestone: MILESTONE.partial({ tasks: true, criteria: true }), after: z.string().max(40).optional() }),
+  z.object({ op: z.literal('update_milestone'), id: z.string().max(40), title: z.string().max(200).optional(), goal: z.string().max(4000).optional(), criteria: lines(12).optional(), autonomy: AUTONOMY.optional() }),
+  z.object({ op: z.literal('remove_milestone'), id: z.string().max(40) }),
+  z.object({ op: z.literal('add_task'), milestone: z.string().max(40), task: TASK, after: z.string().max(40).optional() }),
+  z.object({ op: z.literal('update_task'), id: z.string().max(40), patch: TASK.partial() }),
+  z.object({ op: z.literal('remove_task'), id: z.string().max(40) }),
+  z.object({ op: z.literal('move_task'), id: z.string().max(40), milestone: z.string().max(40), before: z.string().max(40).optional() }),
+  z.object({ op: z.literal('block'), id: z.string().max(40), by: z.string().max(40), on: z.boolean() }),
+]);
+
+/** Tool ops → the plan's ops. */
+export function toOps(ops: ReadonlyArray<z.infer<typeof OP>>): PlanOp[] {
+  return ops.map((o): PlanOp => {
+    switch (o.op) {
+      case 'add_milestone':
+        return { op: 'add_milestone', milestone: { title: o.milestone.title ?? '', ...(o.milestone.id ? { id: o.milestone.id } : {}), ...(o.milestone.goal ? { goal: o.milestone.goal } : {}), criteria: o.milestone.criteria ?? [], ...(o.milestone.autonomy ? { autonomy: o.milestone.autonomy } : {}), tasks: (o.milestone.tasks ?? []).map((t) => taskInput(t) as TaskInput) }, ...(o.after ? { after: o.after } : {}) };
+      case 'add_task':
+        return { op: 'add_task', milestone: o.milestone, task: taskInput(o.task) as TaskInput, ...(o.after ? { after: o.after } : {}) };
+      case 'update_task':
+        return { op: 'update_task', id: o.id, patch: taskInput(o.patch) };
+      default:
+        return o as PlanOp;
+    }
+  });
+}
+
+function guarded(fn: () => string | Promise<string>): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+  return Promise.resolve()
+    .then(fn)
+    .then(
+      (text) => ({ content: [{ type: 'text' as const, text }] }),
+      (err: unknown) => ({ content: [{ type: 'text' as const, text: err instanceof Error ? err.message : String(err) }], isError: true }),
+    );
+}
+
+export function createPlanToolDefs(plan: PlanTools) {
+  return [
+    tool('plan_get', 'The plan: milestones with their pass criteria, tasks with ids, what waits on what, and (once approved) each task’s state: who’s working, in review, done.', {}, () => guarded(() => plan.get())),
+    tool(
+      'plan_write',
+      'Write the whole plan (replaces the draft). Milestones in order, each with pass criteria and its tasks. Keep ids you used before. Nothing reaches the board until the user approves.',
+      { title: z.string().min(1).max(200), goal: z.string().max(4000), milestones: z.array(MILESTONE).min(1).max(12) },
+      (a) => guarded(() => plan.write({ title: a.title, goal: a.goal, milestones: a.milestones.map((m) => ({ ...m, tasks: m.tasks.map((t) => taskInput(t) as TaskInput) })) } as BodyInput)),
+    ),
+    tool(
+      'plan_update',
+      'Change the plan with ops, applied in order: retitle, add_milestone, update_milestone, remove_milestone, add_task, update_task (patch), remove_task, move_task, block (id waits on by; on false removes it). On an approved plan the changes are proposed for the user to approve (applied at once on autopilot).',
+      { ops: z.array(OP).min(1).max(40), reason: z.string().max(200).optional().describe('Why, in a few words (shown in the plan’s history)') },
+      (a) => guarded(() => plan.update(toOps(a.ops), a.reason)),
+    ),
+    tool(
+      'plan_gate',
+      'Record your check of a milestone whose tasks are finished: pass or fail, with notes saying per criterion what you checked and found.',
+      { milestone: z.string().min(1).max(200), verdict: z.enum(['pass', 'fail']), notes: z.string().min(1).max(8000) },
+      (a) => guarded(() => plan.gate(a.milestone, a.verdict, a.notes)),
+    ),
+    tool('plan_start_task', 'Start a ready task now (a worktree with Claude on it). Only when the user asks: klaud starts ready tasks by itself unless the plan goes step by step.', { task: z.string().min(1).max(40).describe('Its id in the plan, or its board key') }, (a) => guarded(() => plan.start(a.task))),
+    tool(
+      'plan_message_task',
+      'Tell the Claude working on a started task something: a decision, a heads-up about another task, a correction.',
+      { task: z.string().min(1).max(40), text: z.string().min(1).max(8000) },
+      (a) => guarded(() => plan.message(a.task, a.text)),
+    ),
+  ];
+}
+
+export function createPlanTools(plan: PlanTools) {
+  return createSdkMcpServer({ name: 'klaud_plan', version: '0.1.0', tools: createPlanToolDefs(plan) });
+}

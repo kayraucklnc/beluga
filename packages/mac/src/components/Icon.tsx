@@ -98,6 +98,8 @@ const PATHS = {
   calendar: 'M2.5 4h11v9.5h-11z M2.5 6.5h11 M5.5 2.5v3 M10.5 2.5v3',
   /** A tag (labels). */
   tag: 'M2.5 2.5h5.5l6 6-5.5 5.5-6-6z M5.25 5.25h.01',
+  flag: 'M4 13.5V2.5 M4 3h8l-2 2.5 2 2.5H4',
+  diamond: 'M8 2.5l5.5 5.5L8 13.5 2.5 8z',
 } as const;
 
 export type IconName = keyof typeof PATHS;
