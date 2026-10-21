@@ -267,12 +267,14 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `env.get` | — (`/env` lists the names from `envKeys`) | ✓ Settings › Environment (values only go to the screen that asks) |
 | `env.set` | via `/env` | ✓ Settings › Environment |
 | `attachments.add` | ✓ | ✓ |
+| `attachments.addFile` | — (the terminal reads a pasted path itself: `droppedImagePaths`) | ✓ a pasted path of an image becomes a waiting thumbnail |
 | `attachments.expand` | ✓ | ✓ |
 | `attachments.read` | — (images open in the viewer, drawn as text) | ✓ images shown in messages |
 | `attachments.open` | — | ✓ image full size › Open (in Preview) |
 | `daemon.stop` | ✓ | ✓ |
 | `local.listDirs` | ✓ | ✓ |
 | `local.openFolder` | ✓ | ✓ |
+| `local.statFiles` | — | ✓ ⌘V of file paths attaches the files (⌘⇧V keeps the words) |
 | `projects.add` | `/project add <path>` (adds a folder of projects too) | ✓ Add projects sheet, Choose Folders…, drop folders on the sidebar |
 | `projects.addFolder` | `/project folder <path>` | ✓ (a dropped folder of projects is watched) |
 | `projects.suggest` | — | ✓ "On this Mac" in the Add projects sheet |

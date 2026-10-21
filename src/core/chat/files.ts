@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { FileFrame, Mesh } from '../../net/mesh/mesh.js';
 import type { ChatFile, ChatFileState, MessageView } from '../../net/mesh/views.js';
-import { FileStore } from './file-store.js';
+import { FileStore, kindOf } from './file-store.js';
 import { FileServer, type FileLinks, Pull } from './file-transfer.js';
 
 /**
@@ -146,7 +146,8 @@ export class ChatFiles {
     const s = this.shared.get(sha);
     const stat = await fs.stat(at);
     if (stat.size > MAX_PREVIEW) throw new Error('Too big to preview');
-    const mime = s ? first(s).mime : undefined;
+    // Not posted yet (waiting in your message box): its type from its name.
+    const mime = s ? first(s).mime : kindOf(at).mime;
     if (!mime?.startsWith('image/')) throw new Error('Not a picture');
     return { mime, b64: (await fs.readFile(at)).toString('base64') };
   }

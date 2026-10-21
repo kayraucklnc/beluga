@@ -12,6 +12,7 @@ import { COMMAND_IDS, type CommandId, commandState, runCommand } from './command
 import { openNetworkLink, runNetworkMenuItem } from '../network/net-native.js';
 import { runRequestMenuItem } from '../gateway/request-native.js';
 import { SHOW_WELCOME } from '../onboarding/onboarding-model.js';
+import { pastePlain } from '../chat/paste-paths.js';
 import type { PlaceKind } from './go.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
@@ -42,6 +43,8 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
       return ui.patch({ settings: 'general' });
     case 'palette':
       return ui.patch({ palette: true });
+    case 'paste-plain':
+      return void pastePlain();
     case 'help-keys':
       return ui.patch({ palette: true });
     case 'help-welcome':
