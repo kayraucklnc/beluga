@@ -6,9 +6,9 @@ import type { Store } from '../store.js';
 import type { WorkspaceController } from '../workspace-controller.js';
 import { ApplyError, applyDraft } from './apply.js';
 import type { BodyInput, PlanOp, TaskInput } from './edit.js';
-import { type Autonomy, type Plan, allTasks, planForHome, planTaskOfIssue } from './model.js';
+import { type Autonomy, type Plan, allTasks, planForHome, planTaskOfIssue, planTitle } from './model.js';
 import { PlanPilot } from './pilot.js';
-import type { Plans } from './plans.js';
+import { type Plans, UNTITLED } from './plans.js';
 import { describePlan, headBrief, planningBrief, sizeWords, workerNote } from './prompt.js';
 
 /**
@@ -24,6 +24,8 @@ export interface PlansWorkDeps {
   readonly controller?: WorkspaceController;
   readonly askClaude: (prompt: string, channel: string, echo: boolean) => void;
   readonly intend: (intent: Intent) => void;
+  /** A short name for a new plan from its goal (a quick model call; undefined when there's none). */
+  readonly titlePlan?: (goal: string) => Promise<string | undefined>;
   readonly delayMs?: number;
 }
 
@@ -66,14 +68,29 @@ export class PlansWork {
     if (!controller) throw new Error('Plans need a project folder');
     const goal = input.goal.trim();
     if (!goal) throw new Error('Say what the plan is for');
-    const title = goal.replace(/\s+/g, ' ').slice(0, 48);
-    const chat = await controller.newChat(input.projectId, `Plan: ${title}`, undefined, { quiet: true });
+    const chat = await controller.newChat(input.projectId, UNTITLED, undefined, { quiet: true });
     if (!chat) throw new Error('Couldn’t start the plan’s conversation');
     const home = `${WS}${chat.id}`;
     const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}) }, this.me());
     this.deps.intend({ type: 'navigate', view: { kind: 'plan', id: plan.id } });
     this.deps.askClaude(goal, home, true);
+    // Named in a moment by a quick model (your message is never its name); Claude's plan_write names it after that.
+    void this.deps
+      .titlePlan?.(goal)
+      .then((title) => {
+        const named = title ? this.plans.autoTitle(plan.id, title) : undefined;
+        if (named) this.nameHome(named, UNTITLED);
+      })
+      .catch(() => undefined);
     return plan;
+  }
+
+  /** A plan's own conversation goes by the plan's name (in the sidebar too), unless you renamed it. */
+  private nameHome(plan: Plan, was: string): void {
+    const title = planTitle(plan);
+    if (title === was || !plan.home.startsWith(WS)) return;
+    const ws = this.deps.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === plan.home.slice(WS.length));
+    if (ws?.kind === 'chat' && (ws.name === UNTITLED || ws.name === was.slice(0, 40))) void this.deps.controller?.renameChat(ws.id, title);
   }
 
   /** A plan's own conversation, made quietly (the demo's plan). */
@@ -118,7 +135,11 @@ export class PlansWork {
   edit(id: string, ops: readonly PlanOp[]): Plan {
     const plan = this.plans.need(id);
     const retitle = ops.length === 1 && ops[0]!.op === 'retitle' && ops[0]!.goal === undefined && ops[0]!.title !== undefined;
-    if (retitle) return this.plans.retitle(id, ops[0]!.op === 'retitle' ? ops[0]!.title! : '', this.me());
+    if (retitle) {
+      const named = this.plans.retitle(id, ops[0]!.op === 'retitle' ? ops[0]!.title! : '', this.me());
+      this.nameHome(named, planTitle(plan));
+      return named;
+    }
     const direct = Boolean(plan.body) && !plan.draft;
     const next = this.plans.editDraft(id, ops, this.me());
     return direct && next.draft ? this.approve(id) : next;
@@ -211,7 +232,10 @@ export class PlansWork {
 
   private toolsFor(planId: string): PlanTools {
     const plans = this.plans;
-    const after = (plan: Plan): string => {
+    const after = (change: () => Plan): string => {
+      const was = planTitle(plans.need(planId));
+      const plan = change();
+      this.nameHome(plan, was);
       if (!plan.draft) return 'The plan is unchanged.';
       // On autopilot, the head Claude's changes to a running plan apply at once.
       if (plan.body && plan.autonomy === 'autopilot') {
@@ -222,9 +246,9 @@ export class PlansWork {
     };
     return {
       get: () => describePlan(this.pilot.view(plans.need(planId))),
-      write: (body: BodyInput) => after(plans.writeDraft(planId, { ...body, milestones: body.milestones.map((m) => ({ ...m, tasks: (m.tasks ?? []).map((t) => this.adopt(t, planId)) })) }, this.claude())),
+      write: (body: BodyInput) => after(() => plans.writeDraft(planId, { ...body, milestones: body.milestones.map((m) => ({ ...m, tasks: (m.tasks ?? []).map((t) => this.adopt(t, planId)) })) }, this.claude())),
       update: (ops: readonly PlanOp[], reason?: string) =>
-        after(
+        after(() =>
           plans.editDraft(
             planId,
             ops.map((o) => (o.op === 'add_task' ? { ...o, task: this.adopt(o.task, planId) } : o.op === 'update_task' ? { ...o, patch: this.adopt(o.patch, planId) } : o.op === 'add_milestone' ? { ...o, milestone: { ...o.milestone, tasks: (o.milestone.tasks ?? []).map((t) => this.adopt(t, planId)) } } : o)),

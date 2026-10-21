@@ -317,6 +317,16 @@ export class WorkspaceController {
     return ws;
   }
 
+  /** A chat's name changed for you (a plan's conversation follows the plan's name). */
+  async renameChat(id: string, name: string): Promise<void> {
+    try {
+      this.deps.manager.rename(id, name);
+      await this.refresh();
+    } catch {
+      // Keeps its name.
+    }
+  }
+
   /** Turn a draft into a real chat with your first message, then send it to Claude. */
   async startChat(projectId: string, firstMessage: string, inDir?: string): Promise<void> {
     const title = firstMessage.replace(/\s+/g, ' ').trim().slice(0, 40);

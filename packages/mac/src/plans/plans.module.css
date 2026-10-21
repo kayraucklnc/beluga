@@ -345,6 +345,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.modeChevron {
+  margin-left: 4px;
+  vertical-align: -1px;
+  color: var(--text-3);
+}
 .headActions {
   display: flex;
   align-items: center;
@@ -384,6 +389,8 @@
   position: relative;
   min-width: 0;
   min-height: 0;
+  /* Nothing drawn in the plan's area ever spills over the sidebar or the conversation. */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg-sunken);
@@ -399,45 +406,68 @@
 }
 .writing {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  color: var(--text-2);
-  font-size: 13px;
+  gap: 20px;
+  padding: 56px 24px 32px;
 }
+/* Three milestone columns, only outlined: what's coming, not pretend content. */
 .skeleton {
-  display: flex;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 168px));
+  gap: 16px;
+  width: 100%;
+  max-width: 536px;
+  justify-content: center;
 }
 .skMilestone {
-  width: 180px;
+  min-width: 0;
   padding: 12px;
-  border-radius: 14px;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--hairline);
-  animation: shimmer 1.6s ease-in-out infinite;
+  border: 1px dashed var(--hairline-strong);
+  opacity: 0.55;
 }
 .skHead {
-  width: 60%;
-  height: 10px;
-  border-radius: 5px;
+  width: 55%;
+  height: 8px;
+  border-radius: 4px;
   background: var(--hairline-strong);
   margin-bottom: 4px;
 }
 .skTask {
-  height: 34px;
-  border-radius: 8px;
-  background: var(--bg-hover);
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--hairline);
 }
-@keyframes shimmer {
+.skeleton[data-live='true'] .skMilestone {
+  animation: drafting 2.4s ease-in-out infinite;
+}
+@keyframes drafting {
   50% {
-    opacity: 0.45;
+    opacity: 1;
+    border-color: color-mix(in srgb, var(--claude) 45%, var(--hairline-strong));
   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton[data-live='true'] .skMilestone {
+    animation: none;
+  }
+}
+.writingLine {
+  margin: 0;
+  max-width: 100%;
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- The graph ---------- */

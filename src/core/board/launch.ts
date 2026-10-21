@@ -54,6 +54,7 @@ export function launchBoard(host: BoardHost): () => void {
     ...(session.workspaces ? { controller: session.workspaces } : {}),
     askClaude: (prompt, channel, echo) => session.askOwnClaude(prompt, channel, false, echo),
     intend: (intent) => session.intend(intent),
+    titlePlan: (goal) => session.titlePlan(goal),
   });
   attachPlans(session, planWork);
   let stopSeed = (): void => undefined;

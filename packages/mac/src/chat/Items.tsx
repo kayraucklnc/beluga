@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LogItem, ShellItem } from '@klaud/core/store.js';
 import { isRunning } from '@klaud/ui/format.js';
 import { formatDuration } from '@klaud/shared/text.js';
@@ -50,6 +50,38 @@ function useMenuContext() {
   return { ui, ...(group ? { askPrefix: '@claude ' } : {}), toast: (text: string) => client.store.dispatch({ type: 'toast', text, level: 'success' }) };
 }
 
+/**
+ * How a conversation shown beside something else (a plan's) reads: `fold`, a person's long message
+ * shows its first lines with Show all; `quietWorking`, Claude's card doesn't repeat a status the
+ * page already shows ("Working · 26s").
+ */
+export const PaneLook = createContext<{ readonly fold?: boolean; readonly quietWorking?: boolean }>({});
+
+/** A long message folded to three lines until you open it (only where FoldLongMessages is on). */
+function Folding({ children }: { children: ReactNode }) {
+  const { fold } = useContext(PaneLook);
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (fold && el && !open) setLong(el.scrollHeight > el.clientHeight + 2);
+  }, [fold, open, children]);
+  if (!fold) return <>{children}</>;
+  return (
+    <>
+      <div ref={box} className={cx(!open && s.folded)}>
+        {children}
+      </div>
+      {long || open ? (
+        <button type="button" className={s.showAll} aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? 'Show less' : 'Show all'}
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 /** A message from a person (or a Claude speaking in the chat). `continued`: same author, shortly after. */
 export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: ChatItem; continued: boolean; mine: boolean }) {
   const prefs = usePrefs();
@@ -73,7 +105,15 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
               {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
             </div>
           )}
-          {text ? <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} /> : null}
+          {text ? (
+            item.byAgent ? (
+              <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} />
+            ) : (
+              <Folding>
+                <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} />
+              </Folding>
+            )
+          ) : null}
           <ImageGrid images={images} />
         </div>
       </div>
@@ -120,6 +160,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
   const running = isRunning(item.status) && item.status !== 'queued';
   const now = useNow(running);
   const st = statusOf(item, now);
+  const { quietWorking } = useContext(PaneLook);
   const forSomeoneElse = item.requesterName !== item.ownerName;
   const mine = item.owner === selfId;
   const { client, ui } = useKlaud();
@@ -174,7 +215,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
                 </Button>
               </span>
             ) : null}
-            {st.label ? (
+            {st.label && !(running && quietWorking) ? (
               <span className={cx(s.status, s[`tone_${st.tone}`])}>
                 {running ? <Dot tone="claude" live /> : null}
                 {st.label}

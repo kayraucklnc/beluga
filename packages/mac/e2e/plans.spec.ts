@@ -33,10 +33,10 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await expect(details).toContainText('Idempotent webhook retries');
   await details.getByRole('button', { name: 'Close' }).click();
   // The outline: the same plan, milestone by milestone.
-  await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'Outline' }).click();
+  await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'List' }).click();
   await expect(page.getByRole('region', { name: 'Safe payments' })).toContainText('Add auth to the payment routes');
   await expect(page.getByRole('region', { name: 'Refunds and launch' })).toContainText('Launch checklist');
-  await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'Graph' }).click();
+  await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'Canvas' }).click();
   // The conversation with the plan's Claude is beside it.
   await expect(page.getByRole('complementary', { name: 'Conversation' })).toBeVisible();
 });

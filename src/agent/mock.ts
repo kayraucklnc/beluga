@@ -1,6 +1,6 @@
 import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
 import { demoAnswerFromPrompt } from '../core/chat/demo-answers.js';
-import { slugify } from './namer.js';
+import { cleanPlanTitle, slugify } from './namer.js';
 import { MORE, MockStepper, splitLine } from './mock-steps.js';
 import { MockContext, withGrowingContext } from './mock-context.js';
 import { MOCK_GRAPH_ANSWER } from './mock-graphs.js';
@@ -149,10 +149,10 @@ async function mockPlanning(input: AgentRunInput, plan: NonNullable<AgentRunInpu
   const empty = /The plan is empty|no milestones/i.test(plan.get()) || !/## 1\./.test(plan.get());
   if (empty) {
     const what = input.prompt.replace(/\s+/g, ' ').trim().replace(/[.!?]$/, '');
-    const topic = what.length > 60 ? `${what.slice(0, 57)}…` : what;
     input.onEvent('tool', 'plan_write');
     plan.write({
-      title: topic.charAt(0).toUpperCase() + topic.slice(1),
+      // A name, as Claude would give it: never your message cut off.
+      title: cleanPlanTitle(what.split(/[.!?]/)[0]!.split(' ').slice(0, 6).join(' ')) ?? 'New plan',
       goal: `${what}. Shipped in small pull requests, each one tested.`,
       milestones: [
         {
@@ -302,6 +302,11 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     nameTask: async (prompt) => {
       await new Promise((r) => setTimeout(r, 600 * pace));
       return slugify(prompt);
+    },
+    // The goal's first words, a moment later (as Haiku would name it).
+    titlePlan: async (goal) => {
+      await new Promise((r) => setTimeout(r, 400 * pace));
+      return cleanPlanTitle((goal.split(/[.\n]/)[0] ?? '').split(/\s+/).slice(0, 6).join(' '));
     },
     answerChat: async (req) => {
       await sleep(1800 * pace, req.signal);
