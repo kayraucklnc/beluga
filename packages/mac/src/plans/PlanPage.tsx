@@ -213,10 +213,12 @@ function TitleField({ value, onSave }: { value: string; onSave: (title: string) 
     fit();
     let width = el.clientWidth;
     const watch = new ResizeObserver(() => {
-      if (el.clientWidth !== width) (width = el.clientWidth), fit();
+      // Next frame: resizing the box inside its own observer's callback is a ResizeObserver loop.
+      if (el.clientWidth !== width) (width = el.clientWidth), cancelAnimationFrame(frame), (frame = requestAnimationFrame(fit));
     });
+    let frame = 0;
     watch.observe(el);
-    return () => watch.disconnect();
+    return () => (watch.disconnect(), cancelAnimationFrame(frame));
   }, [text]);
   const save = (): void => {
     if (text.trim() && text.trim() !== value) onSave(text.trim());
