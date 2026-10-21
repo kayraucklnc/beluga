@@ -8,6 +8,9 @@ test('a folded project shows Claude working inside it', async ({ page }) => {
   await page.goto('/');
   const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
   await expect(sidebar.getByRole('button', { name: 'bob-api' }).first()).toBeVisible();
+  // Projects start folded: show what's in bob-api first.
+  const show = sidebar.getByRole('button', { name: /^Show what's in bob-api/ });
+  if (await show.isVisible()) await show.click();
   await sidebar.getByRole('button', { name: 'webhook-retries', exact: true }).click();
   const box = page.locator('textarea:not(.xterm-helper-textarea)');
   await expect(box).toHaveAttribute('placeholder', /webhook-retries/);

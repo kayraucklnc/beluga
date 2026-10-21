@@ -261,13 +261,16 @@ test('shows pasted images before sending, and in the message after', async ({ pa
   await pasteImage(page);
   const pending = page.getByLabel('Images to send');
   await expect(pending.getByRole('img')).toHaveCount(1);
-  // The image waits above the box as a thumbnail; the text stays yours (no "[image 1]" in it).
-  await expect(composer(page)).toHaveValue('');
+  // The image waits above the box as a thumbnail, with an "[image N]" in the words where the cursor was.
+  await expect(composer(page)).toHaveValue(/^\[image \d+\] $/);
+  // Removing it takes its "[image N]" out of the words too.
   await pending.getByRole('button', { name: /^Remove image/ }).click();
   await expect(pending).toBeHidden();
+  await expect(composer(page)).not.toHaveValue(/\[image/);
+  await composer(page).fill('');
   await pasteImage(page);
   await expect(pending.getByRole('img')).toHaveCount(1);
-  await expect(composer(page)).toHaveValue('');
+  await expect(composer(page)).toHaveValue(/^\[image \d+\] $/);
   const words = `pixel check ${Date.now()}`;
   await composer(page).pressSequentially(words);
   await composer(page).press('Enter');

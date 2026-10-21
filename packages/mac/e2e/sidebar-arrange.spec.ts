@@ -10,6 +10,13 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
+
+/** Projects start folded (what you unfold is remembered): show what's in one, if it's folded. */
+async function unfold(page: Page, name: string): Promise<void> {
+  const toggle = page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: new RegExp(`^(Show what's in|Fold) ${name}$`) }).first();
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-label'))!.startsWith('Show')) await toggle.click();
+}
 /** A project's own row (not its worktrees'). */
 const project = (page: Page, name: string) => sidebar(page).locator('[data-drag^="project:"]').filter({ has: page.getByText(name, { exact: true }) }).first();
 const inGroup = (group: Locator, name: string) => group.locator('[data-drag^="project:"]').filter({ has: group.page().getByText(name, { exact: true }) });
@@ -68,6 +75,7 @@ test.beforeEach(async ({ page }) => {
 
 test('a project folds; folded, it keeps only the item you are in, until you go elsewhere', async ({ page }) => {
   const row = project(page, 'bob-api');
+  await unfold(page, 'bob-api');
   const addAuth = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
   const webhook = sidebar(page).getByRole('button', { name: 'webhook-retries', exact: true });
   await expect(row).toHaveAttribute('aria-expanded', 'true');
