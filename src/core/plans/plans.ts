@@ -9,6 +9,7 @@ import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from 
 import {
   AUTONOMIES,
   type Autonomy,
+  DEFAULT_AUTONOMY,
   DEFAULT_PARALLEL,
   type GateCheck,
   KEEP_PLAN_ACTIVITY,
@@ -127,7 +128,7 @@ export class Plans {
       status: 'draft',
       draft: { title, goal: input.goal?.trim().slice(0, 4000) ?? '', milestones: [] },
       draftRev: 1,
-      autonomy: input.autonomy ?? 'gated',
+      autonomy: input.autonomy ?? DEFAULT_AUTONOMY,
       maxParallel: DEFAULT_PARALLEL,
       paused: false,
       runs: {},

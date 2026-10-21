@@ -1,5 +1,4 @@
 import { expect, test, type Page } from '@playwright/test';
-import { pick } from './helpers.js';
 
 /** Plans (docs/tasks-and-plans.md): the demo's plan as a graph and an outline, a new plan drafted with Claude and approved onto the board, and the composer's Plan with Tasks. */
 
@@ -42,12 +41,42 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await expect(page.getByRole('complementary', { name: 'Conversation' })).toBeVisible();
 });
 
+test('New Plan with no project known (⌘K) asks which project, and the title follows it', async ({ page }) => {
+  await page.goto('/');
+  await expect(sidebar(page)).toBeVisible();
+  await page.keyboard.press('Meta+K');
+  await page.getByPlaceholder('Go to, do, or start anything…').fill('New Plan');
+  await page.getByRole('option', { name: /^New Plan/ }).first().click();
+  const sheet = page.getByRole('dialog', { name: /^Plan in / });
+  const picker = sheet.getByRole('combobox', { name: 'Project' });
+  await expect(picker).toBeVisible();
+  await expect(sheet.getByRole('heading', { name: `Plan in ${(await picker.textContent())!.trim()}` })).toBeVisible();
+  await expect(sheet.getByLabel('Goal')).toBeFocused();
+  await expect(sheet.getByRole('button', { name: 'Plan with Claude' })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+});
+
 test('a new plan: Claude drafts it in its own conversation, nothing is on the board until it’s approved', async ({ page }) => {
   await openPlans(page);
   await page.getByRole('button', { name: 'New Plan', exact: true }).click();
-  const sheet = page.getByRole('dialog', { name: 'New Plan' });
-  await sheet.getByLabel('Goal').fill('Export orders as CSV for accounting');
-  await pick(sheet, 'Runs', 'Step by Step');
+  // Opened from a project: it's in the title, and there's no picker.
+  const sheet = page.getByRole('dialog', { name: /^Plan in / });
+  await expect(sheet.getByRole('combobox', { name: 'Project' })).toHaveCount(0);
+  // How it runs: three cards you read without hovering; Check-ins to start with.
+  const runs = sheet.getByRole('radiogroup', { name: 'How it runs' });
+  await expect(runs.getByRole('radio')).toHaveCount(3);
+  await expect(runs.getByRole('radio', { name: /Check-ins/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(runs).toContainText('Runs, then waits for you at each milestone');
+  // The goal box starts six lines tall and grows with the text.
+  const goal = sheet.getByLabel('Goal');
+  const start = (await goal.boundingBox())!.height;
+  expect(start).toBeGreaterThanOrEqual(100);
+  await goal.fill(Array.from({ length: 14 }, (_, i) => `Line ${i + 1}`).join('\n'));
+  expect((await goal.boundingBox())!.height).toBeGreaterThan(start + 40);
+  await goal.fill('Export orders as CSV for accounting');
+  await runs.getByRole('radio', { name: /Step by Step/ }).click();
+  await expect(runs.getByRole('radio', { name: /Step by Step/ })).toHaveAttribute('aria-checked', 'true');
   await sheet.getByRole('button', { name: 'Plan with Claude' }).click();
   // Its page, then Claude's draft.
   const approve = page.getByRole('button', { name: 'Approve Plan' }).first();
