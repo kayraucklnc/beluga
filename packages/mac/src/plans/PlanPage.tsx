@@ -67,9 +67,9 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   const status = planStatus(view);
   const keys = useMemo(() => new Map(view.milestones.flatMap((m) => m.tasks.flatMap((t) => (t.issue ? [[t.task.id, t.issue.key] as const] : [])))), [view]);
   const startable = useMemo(() => {
-    if (!plan.body || plan.draft || view.active.length >= plan.maxParallel || !view.current) return new Set<string>();
-    const manual = view.current.autonomy === 'step' || plan.paused;
-    return new Set(view.ready.filter((t) => t.forYou || manual).map((t) => t.task.id));
+    if (!plan.body || plan.draft || view.active.length >= plan.maxParallel || !view.open.length) return new Set<string>();
+    const step = new Set(view.open.filter((m) => m.autonomy === 'step').map((m) => m.milestone.id));
+    return new Set(view.ready.filter((t) => t.forYou || plan.paused || step.has(t.milestoneId)).map((t) => t.task.id));
   }, [view, plan]);
   const start = useCallback((taskId: string) => void act(() => api.startTask(plan.id, taskId)), [plan.id, act, api]);
   const next = view.next;

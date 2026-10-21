@@ -4,7 +4,8 @@ import type { Actor, Priority } from '../board/model.js';
  * Plans: a goal cut into milestones, each with tasks and the criteria that say it's passed.
  * Claude writes a plan in a conversation (its home); until you approve it, the plan is only a
  * draft there and never touches Tasks. Approving puts its tasks on the board, and the plan then
- * runs milestone by milestone, as far on its own as its autonomy allows.
+ * runs its milestones (side by side where none builds on another), as far on its own as its
+ * autonomy allows.
  * Browser-safe: the Mac app runs it. See docs/tasks-and-plans.md.
  */
 
@@ -50,6 +51,11 @@ export interface PlanMilestone {
   readonly tasks: readonly PlanTask[];
   /** This milestone's own autonomy (else the plan's). */
   readonly autonomy?: Autonomy;
+  /**
+   * Earlier milestones it builds on (ids): it opens once they've passed. Left out, it's inferred
+   * from its tasks' blockers in other milestones; empty, it runs alongside from the start.
+   */
+  readonly dependsOn?: readonly string[];
 }
 
 /** What a plan says: the part Claude writes and you approve. */
@@ -194,6 +200,32 @@ export function planTaskOfIssue(state: PlansState, issueId: string): { readonly 
 /** A milestone's own autonomy, else its plan's. */
 export const autonomyOf = (plan: Plan, milestone: PlanMilestone | undefined): Autonomy => milestone?.autonomy ?? plan.autonomy;
 
+/**
+ * The milestones a milestone waits on (ids): what it says, else the milestones its tasks' blockers
+ * are in (none: it runs alongside the others).
+ */
+export function milestoneDeps(body: PlanBody | undefined, milestone: PlanMilestone): readonly string[] {
+  const ids = new Set((body?.milestones ?? []).map((m) => m.id));
+  if (milestone.dependsOn) return milestone.dependsOn.filter((d) => d !== milestone.id && ids.has(d));
+  const home = new Map(allTasks(body).map((t) => [t.task.id, t.milestone.id]));
+  const out = new Set<string>();
+  for (const t of milestone.tasks) {
+    for (const b of t.blockedBy) {
+      const m = home.get(b);
+      if (m && m !== milestone.id) out.add(m);
+    }
+  }
+  return (body?.milestones ?? []).map((m) => m.id).filter((id) => out.has(id));
+}
+
+/** Milestones being worked on now: not passed, and every one they wait on has passed (ids, in order). */
+export function openMilestones(plan: Plan): readonly string[] {
+  const body = plan.body;
+  if (!body || plan.status === 'done') return [];
+  const passed = (id: string): boolean => Boolean(plan.runs[id]?.passedAt);
+  return body.milestones.filter((m) => !passed(m.id) && milestoneDeps(body, m).every(passed)).map((m) => m.id);
+}
+
 /** How a draft differs from what was approved: tasks added, changed and removed (by id). */
 export interface PlanDiff {
   readonly added: readonly string[];
@@ -212,7 +244,7 @@ export function diffBodies(before: PlanBody | undefined, after: PlanBody | undef
     const b = now.get(id)!;
     return a && (a.milestone.id !== b.milestone.id || taskSignature(a.task) !== taskSignature(b.task));
   });
-  const ms = (b: PlanBody | undefined): string => (b?.milestones ?? []).map((m) => `${m.id}\0${m.title}\0${m.goal ?? ''}\0${m.criteria.join('\0')}`).join('\n');
+  const ms = (b: PlanBody | undefined): string => (b?.milestones ?? []).map((m) => `${m.id}\0${m.title}\0${m.goal ?? ''}\0${m.criteria.join('\0')}\0${m.dependsOn?.join(',') ?? '-'}`).join('\n');
   const milestones = ms(before) === ms(after) ? 0 : Math.max(1, Math.abs((after?.milestones.length ?? 0) - (before?.milestones.length ?? 0)));
   return { added, changed, removed, milestones };
 }
