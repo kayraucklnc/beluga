@@ -2,16 +2,17 @@ import type { Actor } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
 import type { Action, Store } from '../store.js';
 import { openMilestone } from './apply.js';
-import type { Plan } from './model.js';
+import { type Plan, openMilestones } from './model.js';
 import type { Plans } from './plans.js';
-import { type PlanView, type TaskView, liveFrom, planView, startable } from './progress.js';
+import { type MilestoneView, type PlanView, type TaskView, liveFrom, planView, startable } from './progress.js';
 import { checkPrompt, recapPrompt } from './prompt.js';
 
 /**
  * The scheduler: runs approved plans as far as their autonomy allows. It starts what's ready
  * (never more than the plan's limit, never a blocked task, never twice), asks the head Claude to
  * check a milestone once its tasks are finished, passes it on autopilot when the check passed,
- * opens the next milestone, and asks for a recap at the end. Claude can't get around it: starting
+ * opens every milestone whose dependencies have passed (independent ones run side by side, each
+ * with its own check and pass), and asks for a recap at the end. Claude can't get around it: starting
  * and passing go through here. It acts a moment after whatever changed (the board, a run, a plan).
  */
 
@@ -38,6 +39,8 @@ export class PlanPilot {
   /** Board tasks whose Claude was nudged to finish (once each). */
   private readonly nudged = new Set<string>();
   private readonly recapped = new Set<string>();
+  /** Milestones whose tasks were taken out of the Backlog (`plan:milestone`), once each. */
+  private readonly opened = new Set<string>();
   private readonly off: () => void;
   private stopped = false;
 
@@ -90,24 +93,30 @@ export class PlanPilot {
     const t = view.milestones.flatMap((m) => m.tasks).find((x) => x.task.id === taskId || x.issue?.key === taskId.toUpperCase());
     if (!t) throw new Error(`There's no task "${taskId}" in this plan`);
     // Claude starts nothing on a paused plan, nor on one you run step by step (you do).
-    if (by.kind === 'claude' && (plan.paused || view.current?.autonomy === 'step')) throw new Error(plan.paused ? 'The plan is paused: the user resumes it' : 'This plan runs step by step: the user starts each task');
+    const autonomy = view.milestones.find((m) => m.milestone.id === t.milestoneId)?.autonomy ?? plan.autonomy;
+    if (by.kind === 'claude' && (plan.paused || autonomy === 'step')) throw new Error(plan.paused ? 'The plan is paused: the user resumes it' : 'This plan runs step by step: the user starts each task');
     if (t.state !== 'ready') throw new Error(`“${t.task.title}” can’t start: ${t.why ?? t.state}`);
     if (view.active.length + this.startingIn(plan) >= plan.maxParallel) throw new Error(`${plan.maxParallel} tasks are already running (the plan’s limit)`);
     this.failed.delete(t.issue!.id);
     return this.start(plan, t, by);
   }
 
-  /** Pass a milestone: the next one opens (its tasks come out of the Backlog), or the plan is done. */
+  /** Pass a milestone: those that waited on it open (their tasks come out of the Backlog), or the plan is done. */
   pass(planId: string, milestoneId: string, by: Actor): Plan {
     const before = this.deps.plans.need(planId);
-    const at = before.body?.milestones.findIndex((m) => m.id === milestoneId) ?? -1;
-    if (at < 0) throw new Error('That milestone isn’t in the approved plan');
+    const passed = before.body?.milestones.find((m) => m.id === milestoneId);
+    if (!passed) throw new Error('That milestone isn’t in the approved plan');
+    const wasOpen = new Set(openMilestones(before));
     const after = this.deps.plans.pass(planId, milestoneId, by);
-    const next = after.body?.milestones[at + 1];
-    if (next) {
-      openMilestone(after, next.id, this.deps.work.board, { kind: 'klaud' });
-      this.deps.system(after.home, `“${before.body!.milestones[at]!.title}” passed. Next: “${next.title}”.`);
-    } else if (after.status === 'done' && !this.recapped.has(after.id)) {
+    const next = openMilestones(after)
+      .filter((id) => !wasOpen.has(id))
+      .map((id) => after.body!.milestones.find((m) => m.id === id)!);
+    for (const m of next) this.open(after, m.id);
+    if (next.length) {
+      this.deps.system(after.home, `“${passed.title}” passed. Next: ${next.map((m) => `“${m.title}”`).join(', ')}${next.length > 1 ? ', side by side' : ''}.`);
+    } else if (after.status !== 'done') {
+      this.deps.system(after.home, `“${passed.title}” passed.`);
+    } else if (!this.recapped.has(after.id)) {
       // The last one: the head Claude writes the recap.
       this.recapped.add(after.id);
       this.deps.askClaude(recapPrompt(this.view(after)), after.home, false);
@@ -116,17 +125,28 @@ export class PlanPilot {
     return after;
   }
 
+  /** A milestone's tasks come out of the Backlog (once a session: you can put one back). */
+  private open(plan: Plan, milestoneId: string): void {
+    const key = `${plan.id}:${milestoneId}`;
+    if (this.opened.has(key)) return;
+    this.opened.add(key);
+    openMilestone(plan, milestoneId, this.deps.work.board, { kind: 'klaud' });
+  }
+
   private step(plan: Plan): void {
     const view = this.view(plan);
-    const m = view.current;
-    if (!m) return;
+    if (!view.open.length) return;
+    // Every open milestone runs side by side; the limit on tasks at once is the whole plan's.
+    for (const m of view.open) this.open(plan, m.milestone.id);
+    for (const t of startable(view, this.failed, this.startingIn(plan))) void this.start(plan, t, { kind: 'klaud' }).catch(() => undefined);
+    if (view.open.some((m) => m.state === 'running' && m.autonomy === 'autopilot')) this.nudge(plan, view);
+    for (const m of view.open) this.stepMilestone(plan, view, m);
+  }
+
+  /** One open milestone: a new round when work came back, its check when it's finished, its pass on autopilot. */
+  private stepMilestone(plan: Plan, view: PlanView, m: MilestoneView): void {
     // Work came back to a milestone that was being checked: the next check is a new one.
     if (m.state === 'running' && m.run.checkAsked !== undefined) this.deps.plans.newRound(plan.id, m.milestone.id);
-    if (m.state === 'running') {
-      for (const t of startable(view, this.failed, this.startingIn(plan))) void this.start(plan, t, { kind: 'klaud' }).catch(() => undefined);
-      if (m.autonomy === 'autopilot') this.nudge(plan, view);
-      return;
-    }
     if (m.state !== 'gate' && m.state !== 'checking') return;
     // Nothing to check: autopilot moves on, otherwise it's yours to pass.
     if (!m.milestone.criteria.length) {
@@ -179,8 +199,9 @@ export class PlanPilot {
   /** On autopilot, a task whose Claude stopped without finishing gets one nudge to go on. */
   private nudge(plan: Plan, view: PlanView): void {
     const log = this.deps.store.getState().log;
+    const autopilot = new Set(view.open.filter((m) => m.autonomy === 'autopilot').map((m) => m.milestone.id));
     for (const t of view.active) {
-      if (t.state !== 'idle' || !t.worktree || !t.issue || this.nudged.has(t.issue.id)) continue;
+      if (!autopilot.has(t.milestoneId) || t.state !== 'idle' || !t.worktree || !t.issue || this.nudged.has(t.issue.id)) continue;
       const channel = `ws:${t.worktree}`;
       const last = [...log].reverse().find((l) => l.type === 'agent' && l.channel === channel);
       // Only after a run that ended normally (not stopped by you, not failed).

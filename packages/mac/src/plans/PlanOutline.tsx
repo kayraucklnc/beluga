@@ -5,7 +5,7 @@ import { Icon } from '../components/Icon.js';
 import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
-import { MILESTONE_STATE, TASK_STATE, changeMarks } from './plans-model.js';
+import { MILESTONE_STATE, TASK_STATE, changeMarks, milestoneLabel } from './plans-model.js';
 import { TaskStateIcon } from './marks.js';
 import { usePlanActions } from './use-plans.js';
 
@@ -24,13 +24,13 @@ export function PlanOutline({ view, keys, selected, onSelect, startable }: { vie
     <div className={p.outline}>
       {view.body?.goal ? <p className={p.outlineGoal}>{view.body.goal}</p> : null}
       {view.milestones.map((m) => (
-        <Milestone key={m.milestone.id} plan={view.plan} m={m} keys={keys} marks={marks} selected={selected} onSelect={onSelect} startable={startable} />
+        <Milestone key={m.milestone.id} view={view} plan={view.plan} m={m} keys={keys} marks={marks} selected={selected} onSelect={onSelect} startable={startable} />
       ))}
     </div>
   );
 }
 
-function Milestone({ plan, m, keys, marks, selected, onSelect, startable }: { plan: Plan; m: MilestoneView; keys: ReadonlyMap<string, string>; marks: ReadonlyMap<string, string>; selected?: string; onSelect: (id: string) => void; startable: ReadonlySet<string> }) {
+function Milestone({ view, plan, m, keys, marks, selected, onSelect, startable }: { view: PlanView; plan: Plan; m: MilestoneView; keys: ReadonlyMap<string, string>; marks: ReadonlyMap<string, string>; selected?: string; onSelect: (id: string) => void; startable: ReadonlySet<string> }) {
   const { api, act } = usePlanActions();
   const edit = (ops: PlanOp[]): void => void act(() => api.edit(plan.id, ops));
   const info = MILESTONE_STATE[m.state];
@@ -44,7 +44,7 @@ function Milestone({ plan, m, keys, marks, selected, onSelect, startable }: { pl
       <header className={p.oHead}>
         <span className={p.msIndex}>{m.state === 'passed' ? <Icon name="check" size={11} /> : m.index + 1}</span>
         <Rename value={m.milestone.title} className={p.oTitle} label="Milestone name" onDone={(title) => edit([{ op: 'update_milestone', id: m.milestone.id, title }])} />
-        <span className={cx(p.msState, p[`tone_${info.tone}`])}>{info.label}</span>
+        <span className={cx(p.msState, p[`tone_${info.tone}`])}>{milestoneLabel(view, m)}</span>
         {m.autonomy !== plan.autonomy ? <span className={p.msAuto}>{AUTONOMY_INFO[m.autonomy].label}</span> : null}
         <span className={p.grow} />
         <span className={p.msCount}>

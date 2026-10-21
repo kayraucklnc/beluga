@@ -1,6 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { BodyInput, PlanOp, TaskInput } from '../core/plans/edit.js';
+import type { BodyInput, MilestoneInput, PlanOp, TaskInput } from '../core/plans/edit.js';
 import type { PlanTools } from './types.js';
 
 /**
@@ -33,16 +33,29 @@ const TASK = z.object({
   issue: z.string().max(40).optional().describe('An existing board task this is (its key, like BOB-12): adopted into the plan'),
 });
 
+const DEPENDS_ON = z
+  .array(z.string().max(40))
+  .max(12)
+  .describe('Ids of earlier milestones this one really builds on: it opens once they pass. Leave out to infer it from tasks’ blocked_by; [] runs it alongside from the start');
+
 const MILESTONE = z.object({
   id: id.optional(),
   title: z.string().min(1).max(200),
   goal: z.string().max(4000).optional(),
   criteria: lines(12).describe('Pass criteria: concrete, checkable'),
   autonomy: AUTONOMY.optional(),
+  depends_on: DEPENDS_ON.optional(),
   tasks: z.array(TASK).max(40),
 });
 
 type Task = z.infer<typeof TASK>;
+type Milestone = z.infer<typeof MILESTONE>;
+
+/** A tool's milestone → the plan's (depends_on → dependsOn, tasks converted). */
+export function milestoneInput(m: Partial<Milestone>): MilestoneInput {
+  const { depends_on, tasks, ...rest } = m;
+  return { ...rest, title: m.title ?? '', ...(depends_on ? { dependsOn: depends_on } : {}), tasks: (tasks ?? []).map((t) => taskInput(t) as TaskInput) } as MilestoneInput;
+}
 
 /** A tool's task → the plan's (blocked_by → blockedBy; the board key stays for the plan to find). */
 export function taskInput(t: Partial<Task>): Partial<TaskInput> & { readonly issue?: string } {
@@ -66,7 +79,7 @@ export function taskInput(t: Partial<Task>): Partial<TaskInput> & { readonly iss
 const OP = z.discriminatedUnion('op', [
   z.object({ op: z.literal('retitle'), title: z.string().max(200).optional(), goal: z.string().max(4000).optional() }),
   z.object({ op: z.literal('add_milestone'), milestone: MILESTONE.partial({ tasks: true, criteria: true }), after: z.string().max(40).optional() }),
-  z.object({ op: z.literal('update_milestone'), id: z.string().max(40), title: z.string().max(200).optional(), goal: z.string().max(4000).optional(), criteria: lines(12).optional(), autonomy: AUTONOMY.optional() }),
+  z.object({ op: z.literal('update_milestone'), id: z.string().max(40), title: z.string().max(200).optional(), goal: z.string().max(4000).optional(), criteria: lines(12).optional(), autonomy: AUTONOMY.optional(), depends_on: DEPENDS_ON.optional() }),
   z.object({ op: z.literal('remove_milestone'), id: z.string().max(40) }),
   z.object({ op: z.literal('add_task'), milestone: z.string().max(40), task: TASK, after: z.string().max(40).optional() }),
   z.object({ op: z.literal('update_task'), id: z.string().max(40), patch: TASK.partial() }),
@@ -80,7 +93,11 @@ export function toOps(ops: ReadonlyArray<z.infer<typeof OP>>): PlanOp[] {
   return ops.map((o): PlanOp => {
     switch (o.op) {
       case 'add_milestone':
-        return { op: 'add_milestone', milestone: { title: o.milestone.title ?? '', ...(o.milestone.id ? { id: o.milestone.id } : {}), ...(o.milestone.goal ? { goal: o.milestone.goal } : {}), criteria: o.milestone.criteria ?? [], ...(o.milestone.autonomy ? { autonomy: o.milestone.autonomy } : {}), tasks: (o.milestone.tasks ?? []).map((t) => taskInput(t) as TaskInput) }, ...(o.after ? { after: o.after } : {}) };
+        return { op: 'add_milestone', milestone: { ...milestoneInput(o.milestone), criteria: o.milestone.criteria ?? [] }, ...(o.after ? { after: o.after } : {}) };
+      case 'update_milestone': {
+        const { depends_on, ...rest } = o;
+        return { ...rest, ...(depends_on ? { dependsOn: depends_on } : {}) };
+      }
       case 'add_task':
         return { op: 'add_task', milestone: o.milestone, task: taskInput(o.task) as TaskInput, ...(o.after ? { after: o.after } : {}) };
       case 'update_task':
@@ -105,9 +122,9 @@ export function createPlanToolDefs(plan: PlanTools) {
     tool('plan_get', 'The plan: milestones with their pass criteria, tasks with ids, what waits on what, and (once approved) each task’s state: who’s working, in review, done.', {}, () => guarded(() => plan.get())),
     tool(
       'plan_write',
-      'Write the whole plan (replaces the draft). Milestones in order, each with pass criteria and its tasks. Keep ids you used before. Nothing reaches the board until the user approves.',
+      'Write the whole plan (replaces the draft). Milestones in order, each with pass criteria and its tasks; milestones run side by side unless depends_on (or a task’s blocked_by) ties them to an earlier one. Keep ids you used before. Nothing reaches the board until the user approves.',
       { title: z.string().min(1).max(200), goal: z.string().max(4000), milestones: z.array(MILESTONE).min(1).max(12) },
-      (a) => guarded(() => plan.write({ title: a.title, goal: a.goal, milestones: a.milestones.map((m) => ({ ...m, tasks: m.tasks.map((t) => taskInput(t) as TaskInput) })) } as BodyInput)),
+      (a) => guarded(() => plan.write({ title: a.title, goal: a.goal, milestones: a.milestones.map(milestoneInput) } as BodyInput)),
     ),
     tool(
       'plan_update',

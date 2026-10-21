@@ -4,8 +4,8 @@ import { AUTONOMIES, type Autonomy, MAX_MILESTONES, MAX_PLAN_TASKS, type PlanBod
 /**
  * Writing a plan: a whole one (Claude's plan_write), or a change at a time (Claude's plan_update,
  * and you on the plan's page). Input is read kindly (ids made from titles, a checklist as text);
- * the result is checked: ids unique, blockers that exist and never wait on a later milestone, no
- * loops. Ids Claude used before keep their board task. Browser-safe.
+ * the result is checked: ids unique, blockers and milestone dependencies that exist and never wait
+ * on a later milestone, no loops. Ids Claude used before keep their board task. Browser-safe.
  */
 
 export class PlanError extends Error {}
@@ -42,6 +42,8 @@ export interface MilestoneInput {
   readonly criteria?: readonly string[] | string;
   readonly tasks?: readonly TaskInput[];
   readonly autonomy?: Autonomy;
+  /** Earlier milestones it builds on (ids); left out, inferred from its tasks' blockers. */
+  readonly dependsOn?: readonly string[];
 }
 
 export interface BodyInput {
@@ -53,7 +55,7 @@ export interface BodyInput {
 export type PlanOp =
   | { readonly op: 'retitle'; readonly title?: string; readonly goal?: string }
   | { readonly op: 'add_milestone'; readonly milestone: MilestoneInput; readonly after?: string }
-  | { readonly op: 'update_milestone'; readonly id: string; readonly title?: string; readonly goal?: string; readonly criteria?: readonly string[] | string; readonly autonomy?: Autonomy | null }
+  | { readonly op: 'update_milestone'; readonly id: string; readonly title?: string; readonly goal?: string; readonly criteria?: readonly string[] | string; readonly autonomy?: Autonomy | null; readonly dependsOn?: readonly string[] | null }
   | { readonly op: 'remove_milestone'; readonly id: string }
   | { readonly op: 'add_task'; readonly milestone: string; readonly task: TaskInput; readonly after?: string }
   | { readonly op: 'update_task'; readonly id: string; readonly patch: Partial<TaskInput> }
@@ -134,6 +136,7 @@ function milestone(input: MilestoneInput, id: string, tasks: readonly PlanTask[]
     criteria: lines(input.criteria),
     tasks,
     ...(input.autonomy && AUTONOMIES.includes(input.autonomy) ? { autonomy: input.autonomy } : {}),
+    ...(input.dependsOn ? { dependsOn: [...new Set(input.dependsOn.map((d) => d.trim()).filter(Boolean))] } : {}),
   };
 }
 
@@ -209,6 +212,7 @@ function applyOp(body: PlanBody, op: PlanOp): PlanBody {
           ...((op.goal ?? m.goal) !== undefined ? { goal: op.goal ?? m.goal } : {}),
           criteria: op.criteria ?? m.criteria,
           ...(op.autonomy === null ? {} : (op.autonomy ?? m.autonomy) ? { autonomy: (op.autonomy ?? m.autonomy)! } : {}),
+          ...(op.dependsOn === null ? {} : (op.dependsOn ?? m.dependsOn) ? { dependsOn: (op.dependsOn ?? m.dependsOn)! } : {}),
         },
         m.id,
         m.tasks,
@@ -219,7 +223,7 @@ function applyOp(body: PlanBody, op: PlanOp): PlanBody {
       const m = needMilestone(op.id);
       const gone = new Set(m.tasks.map((t) => t.id));
       const rest = body.milestones.filter((x) => x.id !== m.id);
-      return { ...body, milestones: rest.map((x) => ({ ...x, tasks: x.tasks.map((t) => withoutRefs(t, gone)) })) };
+      return { ...body, milestones: rest.map((x) => ({ ...x, ...(x.dependsOn ? { dependsOn: x.dependsOn.filter((d) => d !== m.id) } : {}), tasks: x.tasks.map((t) => withoutRefs(t, gone)) })) };
     }
     case 'add_task': {
       const m = needMilestone(op.milestone);
@@ -314,6 +318,11 @@ export function checkBody(body: PlanBody): PlanBody {
   const mids = new Set<string>();
   for (const m of body.milestones) {
     if (mids.has(m.id)) throw new PlanError(`Two milestones are called "${m.id}"`);
+    // What it builds on comes before it (so milestones never wait on each other in a loop).
+    for (const d of m.dependsOn ?? []) {
+      if (d === m.id) throw new PlanError(`Milestone "${m.id}" can't depend on itself`);
+      if (!mids.has(d)) throw new PlanError(body.milestones.some((x) => x.id === d) ? `Milestone "${m.id}" depends on "${d}", which comes after it: move one of them, or drop it from depends_on` : `Milestone "${m.id}" depends on "${d}", which isn't in the plan (milestones: ${body.milestones.map((x) => x.id).join(', ')})`);
+    }
     mids.add(m.id);
   }
   const where = new Map<string, number>();

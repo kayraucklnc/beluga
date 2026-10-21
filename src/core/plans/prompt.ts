@@ -1,5 +1,5 @@
 import { type BoardState, STATUS_INFO, filterIssues } from '../board/model.js';
-import { AUTONOMY_INFO, type Plan, type PlanBody, diffBodies, shownBody } from './model.js';
+import { AUTONOMY_INFO, type Plan, type PlanBody, diffBodies, milestoneDeps, shownBody } from './model.js';
 import { type MilestoneView, type PlanView, type TaskView, overlaps } from './progress.js';
 
 /**
@@ -24,7 +24,7 @@ const STATE_WORDS: Readonly<Record<TaskView['state'], string>> = {
 
 const MILESTONE_WORDS: Readonly<Record<MilestoneView['state'], string>> = {
   draft: 'draft',
-  later: 'not started',
+  later: 'waiting on earlier milestones',
   running: 'in progress',
   checking: 'being checked',
   gate: 'finished, waiting to be passed',
@@ -36,8 +36,13 @@ const MILESTONE_WORDS: Readonly<Record<MilestoneView['state'], string>> = {
 const HOW_TO_PLAN = [
   'How to cut a good plan:',
   '- Read the code first (it\'s read-only here): plan from how things really are, and name real files in context.',
+  '- Plan only what the work needs: as few milestones and tasks as it takes, not more. One milestone is fine for',
+  '  small work, and one task per milestone is fine. Don\'t split for the sake of it: a split must buy something',
+  '  (work that really runs in parallel, a checkpoint the user wants to see).',
   '- Milestones are steps that each leave something working and checkable. Each has pass criteria: concrete,',
   '  verifiable statements (a command that passes, a behaviour you can see), not vague goals.',
+  '- Milestones run side by side unless one really builds on another: set depends_on (earlier milestone ids)',
+  '  only then. Left out, it\'s inferred from tasks\' blocked_by into other milestones; [] means no dependency.',
   '- Tasks are sized for one worktree and one pull request: an estimate of 1, 2, 3 or 5 points (8 means split it).',
   '- Make work parallel: tasks only wait on (blocked_by) tasks whose code they really build on, even across',
   '  milestones. Tasks without blockers run side by side in their own worktrees, so give each task its `touches`',
@@ -64,7 +69,7 @@ export function planningBrief(plan: Plan, board: BoardState, style: string): str
     plan.body && plan.autonomy === 'autopilot' ? 'This plan runs on autopilot: changes you make to it now apply at once and can start work, so change only what the plan needs.' : '',
     'Don\'t move to a worktree or change code here: this conversation is for planning.',
     body?.milestones.length ? 'The plan already has content: revise it with plan_update unless the user wants it rewritten.' : 'The plan is empty: understand what the user wants (ask only what you can\'t find out), read the code, then plan_write.',
-    'After writing, answer briefly: the milestones in a line each, what runs in parallel, risks and open questions. Then the user',
+    'After writing, answer briefly: the milestones in a line each, which run side by side and which wait, risks and open questions. Then the user',
     'approves, or tells you what to change.',
     '',
     HOW_TO_PLAN,
@@ -80,13 +85,15 @@ export function planningBrief(plan: Plan, board: BoardState, style: string): str
 export function headBrief(view: PlanView): string {
   const plan = view.plan;
   const m = view.current;
+  const now = view.open.map((x) => `“${x.milestone.title}” (${MILESTONE_WORDS[x.state]}, ${x.finished}/${x.total} tasks finished)`);
   const warnings = overlaps(view).map(([a, b, files]) => `- “${a.task.title}” and “${b.task.title}” both touch ${files.join(', ')}`);
   return [
     '',
     '<klaud_plan_head>',
     `You are the head of the plan “${shownBody(plan)?.title ?? 'plan'}” in klaud's Plans (${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].label}: ${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].hint.toLowerCase()}).`,
     'Each task runs in its own worktree with its own Claude; klaud starts what\'s ready (up to the plan\'s limit) and',
-    'moves to the next milestone when one passes. You coordinate:',
+    'opens every milestone whose dependencies have passed, so independent milestones run side by side, each with',
+    'its own check. You coordinate:',
     '- plan_get: the plan and the state of every task (who\'s working, what waits on what).',
     '- plan_message_task: tell a task\'s Claude something (a decision, a heads-up about another task).',
     '- plan_start_task: start a ready task now (when the user asks).',
@@ -95,7 +102,7 @@ export function headBrief(view: PlanView): string {
     '- plan_update: change the plan (new tasks to fix what failed, a re-cut). The user approves changes',
     '  unless the plan runs on autopilot.',
     plan.paused ? 'The plan is paused: nothing starts until the user resumes it.' : '',
-    m ? `Now: milestone “${m.milestone.title}” (${MILESTONE_WORDS[m.state]}), ${m.finished}/${m.total} tasks finished; ${view.active.length} in progress, ${view.ready.length} ready.` : 'Every milestone has passed.',
+    now.length ? `Now: ${now.length > 1 ? 'milestones' : 'milestone'} ${now.join(', ')}${now.length > 1 ? ', side by side' : ''}; ${view.active.length} tasks in progress, ${view.ready.length} ready.` : 'Every milestone has passed.',
     warnings.length ? `Running side by side and touching the same files (watch for conflicts):\n${warnings.join('\n')}` : '',
     '</klaud_plan_head>',
   ]
@@ -114,9 +121,11 @@ export function describePlan(view: PlanView): string {
     const d = diffBodies(plan.body, plan.draft);
     lines.push(`Changes waiting for the user's approval: ${d.added.length} new, ${d.changed.length} changed, ${d.removed.length} removed (shown below as proposed).`);
   } else if (!plan.body) lines.push('Draft: not approved yet.');
+  const titleOf = new Map(body.milestones.map((m) => [m.id, m.title]));
   body.milestones.forEach((m, i) => {
     const mv = view.milestones.find((x) => x.milestone.id === m.id);
     lines.push('', `## ${i + 1}. ${m.title} [id ${m.id}]${mv && plan.body ? ` — ${MILESTONE_WORDS[mv.state]}` : ''}${m.autonomy ? ` · ${m.autonomy}` : ''}`);
+    lines.push(runsWith(body, m.id, titleOf));
     if (m.goal) lines.push(m.goal);
     if (m.criteria.length) lines.push('Pass criteria:', ...m.criteria.map((c) => `- ${c}`));
     if (mv?.run.check) lines.push(`Last check (${mv.run.check.verdict}): ${mv.run.check.notes.slice(0, 600)}`);
@@ -136,6 +145,27 @@ export function describePlan(view: PlanView): string {
     }
   });
   return lines.filter((l) => l !== '').join('\n');
+}
+
+/** When a milestone runs: "after …" what it depends on, or "runs alongside …" the others (said or inferred). */
+function runsWith(body: PlanBody, id: string, titleOf: ReadonlyMap<string, string>): string {
+  const m = body.milestones.find((x) => x.id === id)!;
+  const deps = milestoneDeps(body, m);
+  const how = m.dependsOn ? '' : ' (inferred from blocked_by)';
+  const name = (d: string): string => `${d} “${titleOf.get(d) ?? d}”`;
+  // Every milestone it waits on, directly or not.
+  const before = (from: string): Set<string> => {
+    const out = new Set<string>();
+    const walk = (at: string): void => {
+      for (const d of milestoneDeps(body, body.milestones.find((x) => x.id === at)!)) if (!out.has(d)) (out.add(d), walk(d));
+    };
+    walk(from);
+    return out;
+  };
+  const mine = before(id);
+  const beside = body.milestones.filter((x) => x.id !== id && !mine.has(x.id) && !before(x.id).has(id)).map((x) => x.id);
+  const after = deps.length ? `Runs after ${deps.map(name).join(', ')}${how}` : 'Depends on no other milestone';
+  return `${after}${beside.length ? `; runs alongside ${beside.map(name).join(', ')}` : ''}.`;
 }
 
 /** Ask the head Claude to check a finished milestone. */
