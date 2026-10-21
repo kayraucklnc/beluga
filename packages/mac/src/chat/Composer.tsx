@@ -19,6 +19,7 @@ import { type WorktreeChoice, WorktreeDraft } from './WorktreeDraft.js';
 import { stopClaude } from '../lib/commands.js';
 import { keepPreview, previewOf } from './images.js';
 import { MentionHighlighter } from './MentionHighlighter.js';
+import { useSuggestions } from './Suggestions.js';
 import { useMentionWorld, worktreeOf } from './Mention.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { openSheet } from '../lib/sheets.js';
@@ -27,9 +28,6 @@ import { planForHome } from '@klaud/core/plans/model.js';
 import s from './composer.module.css';
 import img from './images.module.css';
 import d from './draft.module.css';
-
-/** Suggestions listed under / and @ at most. */
-const MAX_LISTED = 50;
 
 /** Images waiting to be sent, per conversation (so switching away and back keeps them). */
 const waitingImages = new Map<string, readonly number[]>();
@@ -77,8 +75,6 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const pending = useUi((u) => u.pending);
   // Addressed to someone (a person's card › Message / Ask Claude): the chip says who; sending says it to them.
   const to = useUi((u) => u.to);
-  const [selected, setSelected] = useState(0);
-  const [hidden, setHidden] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const channel = channelOf(state.view);
   const shared = state.view.kind === 'shared';
@@ -136,7 +132,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   // Suggestions as you type: commands, people and Claudes, workspaces, folders.
   const suggestions: Suggestion[] = useMemo(
     () =>
-      hidden || !buffer
+      !buffer
         ? []
         : suggest(buffer, {
             peers: state.peers,
@@ -148,19 +144,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             projects: state.projects.filter((p) => p.root),
             ...(wsId ? { entries: (dir: string) => state.dirCache[`${state.selfId}:${shareNameOf(wsId)}/${dir}`] } : {}),
           }),
-    [buffer, hidden, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.network.friends, wsId],
+    [buffer, state.peers, state.selfId, state.dirCache, state.view.kind, state.projects, state.network.friends, wsId],
   );
-  /** Only the first 50 are listed, so the arrows move within those. */
-  const listed = Math.min(suggestions.length, MAX_LISTED);
-  const pick = Math.min(selected, Math.max(0, listed - 1));
-  const list = useRef<HTMLDivElement>(null);
-  /** The arrow keys moved the highlight (the pointer hovering an item doesn't scroll the list). */
-  const byKeys = useRef(false);
-  // The highlighted item stays in view as the arrows move it through a long list.
-  useLayoutEffect(() => {
-    if (!byKeys.current) return;
-    list.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
-  }, [pick, listed]);
+  const sug = useSuggestions(suggestions, buffer, (picked) => accept(picked));
 
   // Folders to suggest for "/project add …", and shared files for "/open …".
   const localDir = localDirOf(buffer);
@@ -191,8 +177,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
 
   const set = (text: string): void => {
     ui.patch({ buffer: text, cursor: text.length });
-    setHidden(false);
-    setSelected(0);
+    sug.reset();
   };
   /** The first message of a new worktree starts it (on the chosen branch, with the chosen name). */
   const createWorktree = (projectId: string, text: string): void => {
@@ -289,14 +274,14 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     ref.current?.focus();
   };
   const sendKeys = prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`;
-  const accept = (sug: Suggestion): void => {
-    if (sug.enter === 'submit') {
+  function accept(picked: Suggestion): void {
+    if (picked.enter === 'submit') {
       ui.patch({ buffer: '', cursor: 0 });
-      actions.submit(sug.value);
+      actions.submit(picked.value);
       return;
     }
-    set(sug.value);
-  };
+    set(picked.value);
+  }
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     // Enter while an input method is composing (Japanese, Chinese…) picks the characters.
@@ -308,24 +293,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       return;
     }
     const modKey = e.metaKey || e.ctrlKey;
-    if (suggestions.length) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        byKeys.current = true;
-        setSelected((n) => (Math.min(n, listed - 1) + (e.key === 'ArrowDown' ? 1 : -1) + listed) % listed);
-        return;
-      }
-      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !modKey && suggestions[pick]?.value !== buffer)) {
-        e.preventDefault();
-        accept(suggestions[pick]!);
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setHidden(true);
-        return;
-      }
-    }
+    if (sug.onKeyDown(e)) return;
     if (e.key === 'Escape') {
       if (pending) ui.patch({ pending: undefined, buffer: '' });
       else if (to) ui.patch({ to: undefined });
@@ -366,24 +334,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
 
   return (
     <div className={s.wrap}>
-      {suggestions.length ? (
-        <div ref={list} className={s.suggestions} role="listbox" aria-label="Suggestions">
-          {suggestions.slice(0, MAX_LISTED).map((sug, i) => (
-            <div
-              key={`${sug.value}:${i}`}
-              role="option"
-              aria-selected={i === pick}
-              className={cx(s.suggestion, i === pick && s.suggestionOn)}
-              onMouseEnter={() => {
-                byKeys.current = false;
-                setSelected(i);
-              }} onMouseDown={(e) => (e.preventDefault(), accept(sug))}>
-              <span className={s.sugLabel}>{sug.label}</span>
-              <span className={s.sugHint}>{sug.hint}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      {sug.list}
       <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={editQueued} />
       <div
         className={cx(s.box, pending && s.asking, readOnly && s.readOnly, dropping && s.dropping, (plan || tasksMode) && s.planning)}

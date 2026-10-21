@@ -58,10 +58,12 @@ test('Claude answers only when asked: everyone’s Claude answers from their own
   await expect(log).toContainText('Sounds good 👍', { timeout: 15_000 });
   await expect(log.locator('[data-claude="true"]')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Ask Claude' }).click();
-  await expect(page.getByRole('menuitem', { name: /Ask bob’s Claude/ })).toBeVisible();
+  // With others here: Add Claude is yours; the chevron picks everyone's or one person's.
+  await page.getByRole('button', { name: 'Add Someone Else’s Claude' }).click();
+  await expect(page.getByRole('menuitem', { name: /^bob’s Claude/ })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /^mia’s Claude/ })).toBeVisible();
   await shot(page, 'chat-ask-menu');
-  await page.getByRole('menuitem', { name: /Ask Everyone’s Claude/ }).click();
+  await page.getByRole('menuitem', { name: /^Everyone’s Claude/ }).click();
   await expect(page.getByText('Asking everyone’s Claude')).toBeVisible();
   await box.fill('Are we ready to ship on Friday?');
   await page.getByRole('button', { name: 'Send and asking everyone’s claude' }).click();
@@ -72,11 +74,69 @@ test('Claude answers only when asked: everyone’s Claude answers from their own
   await expect(log.locator('[data-claude="true"]')).toHaveCount(3);
 
   // No words needed: your Claude reads the conversation and answers.
-  await page.getByRole('button', { name: 'Ask Claude' }).click();
-  await page.getByRole('menuitem', { name: /Ask Your Claude/ }).click();
+  await page.getByRole('button', { name: 'Add Claude', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Add Claude', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Send and asking your claude' }).click();
   await expect(log.locator('[data-claude="true"]')).toHaveCount(4, { timeout: 20_000 });
   await shot(page, 'chat-claudes');
+});
+
+test('@claude in the words asks your Claude; the mention shows as a pill', async ({ page }) => {
+  await channel(page, 'launch').click();
+  const log = page.getByRole('log', { name: 'Channel launch' });
+  const box = page.getByRole('textbox', { name: 'Message launch' });
+  await expect(log).toContainText('Checklist for Friday', { timeout: 20_000 });
+  const before = await log.locator('[data-claude="true"]').count();
+  await box.fill('');
+  await box.pressSequentially('@cl');
+  const list = page.getByRole('listbox', { name: 'Suggestions' });
+  await expect(list.getByRole('option', { name: /^Claude \(yours\)/ })).toBeVisible();
+  await expect(list.getByRole('option', { name: /^bob’s Claude/ })).toBeVisible();
+  await expect(list.getByRole('option', { name: /^Everyone’s Claude/ })).toBeVisible();
+  await shot(page, 'chat-mention-menu');
+  await list.getByRole('option', { name: /^Claude \(yours\)/ }).click();
+  await expect(box).toHaveValue('@claude ');
+  await box.pressSequentially('what’s left before Friday?');
+  await box.press('Enter');
+  // The post carries ask [you]: it says so under it, and your Claude answers.
+  const mine = log.locator('[data-message]').filter({ hasText: 'what’s left before Friday?' }).last();
+  await expect(mine).toContainText('Asked your Claude');
+  await expect(mine.getByRole('button', { name: 'Claude claude' })).toBeVisible();
+  await expect(log.locator('[data-claude="true"]')).toHaveCount(before + 1, { timeout: 20_000 });
+
+  // Plain @bob is the person: no Claude.
+  await box.pressSequentially('@bo');
+  await expect(list.getByRole('option', { name: /^bob.*the person/ })).toBeVisible();
+  await box.press('Escape');
+  await box.fill('');
+
+  // / at the start: the channel's commands.
+  await box.pressSequentially('/');
+  await expect(list.getByRole('option', { name: /^\/claude\s*Your Claude answers/ })).toBeVisible();
+  await expect(list.getByRole('option', { name: /^\/files/ })).toBeVisible();
+  await shot(page, 'chat-commands');
+  await list.getByRole('option', { name: /^\/claudes/ }).click();
+  await expect(page.getByText('Asking everyone’s Claude')).toBeVisible();
+  await expect(box).toHaveValue('');
+  await page.getByRole('button', { name: 'Don’t ask Claude' }).click();
+});
+
+test('alone in a channel: Add Claude is one toggle, no menu', async ({ page }) => {
+  await channel(page, 'launch').click();
+  await tabs(page).getByRole('button', { name: 'New chat' }).click();
+  await page.getByRole('menuitem', { name: 'New Channel…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'New Channel' });
+  await sheet.getByLabel('Name').fill('solo');
+  await sheet.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByRole('textbox', { name: 'Message solo' })).toBeVisible({ timeout: 15_000 });
+  const add = page.getByRole('button', { name: 'Add Claude', exact: true });
+  await expect(add).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('button', { name: 'Add Someone Else’s Claude' })).toHaveCount(0);
+  await add.click();
+  await expect(page.getByText('Asking your Claude')).toBeVisible();
+  await shot(page, 'chat-alone');
+  await add.click();
+  await expect(page.getByText('Asking your Claude')).toHaveCount(0);
 });
 
 test('files you add wait in the box, then go with the message', async ({ page }) => {

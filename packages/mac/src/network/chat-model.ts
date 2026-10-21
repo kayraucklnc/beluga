@@ -1,4 +1,6 @@
 import type { ChatFile, GroupView, LiveClaude, MessageView, NetworkState } from '../../../../src/net/mesh/views.js';
+import { type Suggestion, friendMention, typedMention } from '../../../../src/ui/suggest.js';
+import { MENTION, type MentionWorld } from '../chat/mentions.js';
 
 /**
  * What the chats say and decide, as plain functions (no React, no daemon): whose Claude a
@@ -17,6 +19,88 @@ export function askLabel(ask: Ask, short = false): string {
 
 /** What the message tells the network: everyone, or these people's Claudes. */
 export const askTo = (ask: Ask, me: string): 'all' | readonly string[] => (ask.kind === 'all' ? 'all' : ask.kind === 'me' ? [me] : [ask.peerId]);
+
+// ---- @ and / in a channel's message box
+
+/** Someone in the conversation (you, or another member). */
+export interface Member {
+  readonly peerId: string;
+  readonly name: string;
+}
+
+/** How a person is written after @: "Mia Chen" → "MiaChen". */
+const handle = (name: string): string => friendMention(name).slice(1);
+
+/** What / at the start of a channel's message box offers. */
+export type ChannelCommand = 'claude' | 'claudes' | 'files' | 'add-people';
+
+/** One row of the @ / list: what it shows, the box's words after picking it, and (for /) what it does. */
+export interface ChannelSuggestion extends Suggestion {
+  readonly command?: ChannelCommand;
+}
+
+const COMMANDS: ReadonlyArray<{ name: ChannelCommand; hint: string; when?: 'others' | 'admin' }> = [
+  { name: 'claude', hint: 'Your Claude answers this message' },
+  { name: 'claudes', hint: 'Everyone’s Claude answers, each from their own Mac', when: 'others' },
+  { name: 'files', hint: 'Send files from your Mac…' },
+  { name: 'add-people', hint: 'Add people to this channel…', when: 'admin' },
+];
+
+/**
+ * What to list for the words in a channel's box: "/" at the start → the channel's commands;
+ * "@…" → your Claude, each member's Claude, everyone's, then the people themselves.
+ */
+export function channelSuggestions(text: string, ctx: { people: readonly Member[]; admin?: boolean }): ChannelSuggestion[] {
+  if (/^\/[\w-]*$/.test(text)) {
+    const typed = text.slice(1).toLowerCase();
+    return COMMANDS.filter((c) => c.name.startsWith(typed) && (c.when !== 'others' || ctx.people.length > 0) && (c.when !== 'admin' || ctx.admin)).map((c) => ({ label: `/${c.name}`, hint: c.hint, value: '', enter: 'complete', command: c.name }));
+  }
+  const typed = typedMention(text);
+  if (typed === undefined) return [];
+  const before = text.slice(0, text.length - typed.length - 1);
+  const options = [
+    { label: 'Claude (yours)', insert: '@claude', hint: 'answers here, from your Mac' },
+    ...ctx.people.map((p) => ({ label: `${p.name}’s Claude`, insert: `@claude:${handle(p.name)}`, hint: `answers from ${p.name}’s Mac` })),
+    ...(ctx.people.length ? [{ label: 'Everyone’s Claude', insert: '@claudes', hint: 'each answers from their own Mac' }] : []),
+    ...ctx.people.filter((p) => handle(p.name)).map((p) => ({ label: p.name, insert: `@${handle(p.name)}`, hint: 'the person, not their Claude' })),
+  ];
+  const t = typed.toLowerCase();
+  return options
+    .filter((o) => o.insert.slice(1).toLowerCase().startsWith(t) || o.label.toLowerCase().startsWith(t))
+    .map((o) => ({ label: o.label, hint: `${o.insert} · ${o.hint}`, value: `${before}${o.insert} `, enter: 'complete' }));
+}
+
+/** Code (fenced or `inline`) isn't asking anyone. */
+const withoutCode = (text: string): string => text.replace(/```[\s\S]*?(```|$)/g, ' ').replace(/`[^`\n]*`/g, ' ');
+
+/** Whose Claudes the words call: "@claude" → yours, "@claude:mia" → mia's, "@claudes" → everyone's. Plain "@mia" is the person. */
+export function mentionedAsk(text: string, me: string, people: readonly Member[]): 'all' | readonly string[] | undefined {
+  const to = new Set<string>();
+  for (const m of withoutCode(text).matchAll(MENTION)) {
+    const token = (m[2] ?? '').replace(/[.,;:!?)\]}"'”]+$/u, '').toLowerCase();
+    if (token === 'claudes') return 'all';
+    if (token === 'claude') to.add(me);
+    const named = /^claude:(.+)$/.exec(token)?.[1];
+    const peer = named ? people.find((p) => handle(p.name).toLowerCase() === named) : undefined;
+    if (peer) to.add(peer.peerId);
+  }
+  return to.size ? [...to] : undefined;
+}
+
+/** The button's choice and the words' mentions together: everyone wins; otherwise each named Claude once. */
+export function mergeAsk(a: 'all' | readonly string[] | undefined, b: 'all' | readonly string[] | undefined): 'all' | readonly string[] | undefined {
+  if (a === 'all' || b === 'all') return 'all';
+  if (!a?.length && !b?.length) return undefined;
+  return [...new Set([...(a ?? []), ...(b ?? [])])];
+}
+
+/** What "@…" in a channel's messages names, for the pills: its members (you too, for "@claude:you"). */
+export const channelWorld = (me: Member | undefined, people: readonly Member[]): MentionWorld => ({
+  friends: people,
+  peers: me ? [me, ...people] : people,
+  projects: [],
+  workspaces: [],
+});
 
 /** Under a message that asked: "Asked everyone’s Claude", "Asked bob’s Claude", "Asked your Claude". */
 export function askedLine(m: Pick<MessageView, 'ask' | 'mine' | 'from'>, nameOf: (peerId: string) => string, me: string | undefined): string | undefined {

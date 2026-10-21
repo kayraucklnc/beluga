@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { channelSuggestions, mentionedAsk, mergeAsk } from '../packages/mac/src/network/chat-model.js';
 import type { FriendView, MemberView, MessageView } from '../src/net/mesh/views.js';
 import {
   acceptError,
@@ -164,5 +165,48 @@ describe('lists', () => {
     const group = { members: [member('bob')] };
     expect(addableFriends([friend('bob'), friend('mia')], group).map((f) => f.name)).toEqual(['mia']);
     expect(totalUnread({ friends: [friend('bob', { unread: 2 })], groups: [{ unread: 3, active: true }, { unread: 9, active: false }] as never })).toBe(5);
+  });
+});
+
+describe('@ and / in a channel', () => {
+  const people = [
+    { peerId: 'p-mia', name: 'Mia' },
+    { peerId: 'p-bob', name: 'Bob Stone' },
+  ];
+
+  it('lists your Claude, each member’s Claude, everyone’s, then the people', () => {
+    const list = channelSuggestions('hi @', { people });
+    expect(list.map((s) => s.label)).toEqual(['Claude (yours)', 'Mia’s Claude', 'Bob Stone’s Claude', 'Everyone’s Claude', 'Mia', 'Bob Stone']);
+    expect(list.find((s) => s.label === 'Mia’s Claude')?.value).toBe('hi @claude:Mia ');
+    expect(list.find((s) => s.label === 'Bob Stone')?.value).toBe('hi @BobStone ');
+    expect(channelSuggestions('@cl', { people }).map((s) => s.label)).toEqual(['Claude (yours)', 'Mia’s Claude', 'Bob Stone’s Claude', 'Everyone’s Claude']);
+    expect(channelSuggestions('@mi', { people }).map((s) => s.label)).toEqual(['Mia’s Claude', 'Mia']);
+    // Alone: only your Claude.
+    expect(channelSuggestions('@', { people: [] }).map((s) => s.label)).toEqual(['Claude (yours)']);
+    expect(channelSuggestions('no mention', { people })).toEqual([]);
+  });
+
+  it('lists the channel’s commands for / at the start', () => {
+    expect(channelSuggestions('/', { people }).map((s) => s.command)).toEqual(['claude', 'claudes', 'files']);
+    expect(channelSuggestions('/', { people, admin: true }).map((s) => s.command)).toContain('add-people');
+    expect(channelSuggestions('/', { people: [] }).map((s) => s.command)).toEqual(['claude', 'files']);
+    expect(channelSuggestions('/f', { people }).map((s) => s.label)).toEqual(['/files']);
+    expect(channelSuggestions('/files now', { people })).toEqual([]);
+  });
+
+  it('turns mentions into whose Claude is asked; plain @name is the person', () => {
+    expect(mentionedAsk('@claude what’s up?', 'me', people)).toEqual(['me']);
+    expect(mentionedAsk('hey @claude:mia, and @claude:BobStone.', 'me', people)).toEqual(['p-mia', 'p-bob']);
+    expect(mentionedAsk('@claudes ship it?', 'me', people)).toBe('all');
+    expect(mentionedAsk('@Mia lunch?', 'me', people)).toBeUndefined();
+    expect(mentionedAsk('see `@claude` and\n```\n@claudes\n```', 'me', people)).toBeUndefined();
+    expect(mentionedAsk('mail@claude.ai', 'me', people)).toBeUndefined();
+  });
+
+  it('merges the button with the mentions', () => {
+    expect(mergeAsk(['me'], ['p-mia', 'me'])).toEqual(['me', 'p-mia']);
+    expect(mergeAsk(undefined, 'all')).toBe('all');
+    expect(mergeAsk(['me'], undefined)).toEqual(['me']);
+    expect(mergeAsk(undefined, undefined)).toBeUndefined();
   });
 });
