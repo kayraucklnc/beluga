@@ -1,10 +1,11 @@
 import type { BoardTools, TaskDefinition } from '../../agent/types.js';
+import { type DraftContext, type TaskDraft, firstLineTitle } from '../../agent/task-drafter.js';
 import { slugify } from '../../agent/namer.js';
 import { isSecretPath } from '../shares.js';
 import type { Action, LogItem, Store } from '../store.js';
 import type { Workspace } from '../../workspaces/types.js';
 import type { WorkspaceController, WorktreeEvent } from '../workspace-controller.js';
-import { Board, type IssuePatch } from './board.js';
+import { Board, type IssuePatch, type NewIssue } from './board.js';
 import { briefPrompt, boardNote, definePrompt, describeIssue, describeList } from './prompt.js';
 import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, filterIssues, isOpen, issueForWorkspace, titleFromName } from './model.js';
 
@@ -22,6 +23,8 @@ export interface BoardWorkDeps {
   readonly selfName: () => string;
   /** Ask your Claude in a conversation (`ws:<id>`). */
   readonly askClaude: (prompt: string, channel: string) => void;
+  /** Your Claude writes a task from a description (none: the first line is the title). */
+  readonly draftTask?: (text: string, ctx: DraftContext) => Promise<TaskDraft | undefined>;
 }
 
 const WS = 'ws:';
@@ -38,6 +41,8 @@ export class BoardWork {
   private readonly offs: Array<() => void> = [];
   /** More for a run doing a task (the plan it's part of): see setBriefExtra. */
   private briefExtra: (issue: Issue) => string = () => '';
+  /** Tasks Claude is writing from a description (by id): starting one waits for its words. */
+  private readonly drafts = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: BoardWorkDeps) {
     this.board = deps.board;
@@ -76,12 +81,42 @@ export class BoardWork {
   }
 
   /**
+   * A task from a description: on the board at once under its first line, while your Claude writes
+   * its title, goal and criteria (labels only from the board's own); they fill in when it's done.
+   */
+  createDescribed(input: Omit<NewIssue, 'title' | 'brief' | 'drafting'>, describe: string): Issue {
+    const text = describe.trim();
+    if (!text) throw new Error('Say what the task is');
+    const draft = this.deps.draftTask;
+    const title = firstLineTitle(text);
+    // Without your Claude: the first line, and what was said as the goal if it says more.
+    if (!draft) return this.board.create({ ...input, title, ...(text.replace(/\s+/g, ' ') !== title ? { brief: { goal: text } } : {}) }, this.me());
+    const issue = this.board.create({ ...input, title, drafting: true }, this.me());
+    const labels = [...new Set(this.board.list().flatMap((i) => i.labels))].sort();
+    const project = this.deps.store.getState().projects.find((p) => p.id === issue.projectId)?.name;
+    const done = draft(text, { labels, ...(project ? { project } : {}) })
+      .catch(() => undefined)
+      .then((d) => {
+        try {
+          this.board.finishDraft(issue.id, d, this.myClaude(), text);
+        } catch {
+          // Deleted meanwhile.
+        }
+      })
+      .finally(() => this.drafts.delete(issue.id));
+    this.drafts.set(issue.id, done);
+    return issue;
+  }
+
+  /**
    * Start a worktree for a task (from the latest origin, or `base`), named after it, and open it;
    * with `claude`, your Claude starts on the task there with its brief. → the workspace's id.
    */
   async start(ref: string, opts: { readonly claude?: boolean; readonly base?: string; readonly quiet?: boolean } = {}): Promise<string> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Worktrees need a project folder');
+    // Claude still writing it: its worktree is named after, and Claude starts with, the real words.
+    await this.drafts.get(this.board.need(ref).id);
     const issue = this.board.need(ref);
     // One worktree per task at a time: another one already doing it is where to go.
     const doing = issue.worktrees.at(-1);

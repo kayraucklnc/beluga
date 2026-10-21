@@ -1,0 +1,119 @@
+/* New Task: one box to describe it, a priority scale, label chips. */
+
+.describe {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.box {
+  min-height: 96px;
+  max-height: 320px;
+  padding: 9px 10px;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  resize: none;
+  overflow-y: auto;
+}
+.hint {
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+
+.disclosure {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: -4px 0 2px;
+  padding: 2px 4px 2px 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: default;
+}
+.disclosure:hover {
+  color: var(--text);
+}
+.disclosure:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+/* The scale: five steps in one segmented control. */
+.scale {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+}
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: default;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.step:hover {
+  color: var(--text);
+}
+.step:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.stepOn {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.18), inset 0 0 0 0.5px var(--hairline-strong);
+}
+:global([data-theme='dark']) .stepOn {
+  background: color-mix(in srgb, var(--bg-raised) 80%, white 8%);
+}
+
+/* Labels the board already uses: click to put one on. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 2px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px 0 7px;
+  border: 0;
+  border-radius: 11px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  cursor: default;
+}
+.chip:hover {
+  color: var(--text);
+}
+.chipOn {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}

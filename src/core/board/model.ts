@@ -127,6 +127,8 @@ export interface Issue {
   readonly title: string;
   /** The title came from a worktree's name and follows it until someone renames the task. */
   readonly autoTitle?: boolean;
+  /** Made from a description: Claude is writing its title and goal (the first line stands in meanwhile). */
+  readonly drafting?: boolean;
   readonly status: IssueStatus;
   readonly priority: Priority;
   readonly labels: readonly string[];
