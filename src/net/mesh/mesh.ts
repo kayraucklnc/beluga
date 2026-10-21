@@ -351,7 +351,7 @@ export class Mesh extends EventEmitter<MeshEvents> {
   }
 
   leaveGroup(groupId: string): void {
-    this.groups.apply(groupId, (e) => e.removeMember(this.peerId));
+    this.groups.leave(groupId);
   }
 
   /** Delete a group you left (or were removed from) from this Mac; the others keep theirs. */
