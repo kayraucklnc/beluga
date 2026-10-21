@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { groupConversation } from '../../src/net/mesh/views.js';
 import type { MeshLink } from '../../src/net/mesh/link.js';
@@ -147,12 +147,16 @@ describe('groups without a host', () => {
     await settle(() => texts(sue, groupId).includes('welcome back'));
   }, 60_000);
 
-  it('a channel deleted while nobody heard you leave stays deleted when they come back', async () => {
+  it('a channel deleted while nobody heard you leave (and the goodbye given up on) stays deleted when they come back', async () => {
     const { people, groupId } = await team(['tom', 'uma']);
     const [tom, uma] = people as [Person, Person];
     await tom.stop();
     uma.mesh.leaveGroup(groupId);
     uma.mesh.deleteGroup(groupId);
+    // As if the goodbye had expired before tom came back.
+    await uma.stop();
+    rmSync(path.join(uma.dir, 'groups', 'goodbyes.json'));
+    await uma.start();
     // tom still has uma in it, and offers it back on every catch-up.
     await tom.start();
     await settle(() => tom.friend(id(uma))?.online);
@@ -162,6 +166,26 @@ describe('groups without a host', () => {
     const invite = await tom.mesh.groupInvite(groupId);
     expect(await uma.mesh.accept(invite.link)).toMatchObject({ kind: 'group', groupId, status: 'joined' });
     await settle(() => uma.group(groupId)?.active);
+  }, 60_000);
+
+  it('leaving while nobody is online: the first member you meet hears it, and passes it on', async () => {
+    const { people, groupId } = await team(['vic', 'wes', 'xia']);
+    const [vic, wes, xia] = people as [Person, Person, Person];
+    // wes and xia aren't friends: only the group links them.
+    expect(wes.friend(id(xia))).toBeUndefined();
+    await vic.stop();
+    await xia.stop();
+    wes.mesh.leaveGroup(groupId);
+    wes.mesh.deleteGroup(groupId);
+    expect(JSON.parse(readFileSync(path.join(wes.dir, 'groups', 'goodbyes.json'), 'utf8'))).toHaveLength(1);
+    // xia comes back first: wes dials her to say goodbye.
+    await xia.start();
+    await settle(() => xia.group(groupId)?.members.length === 2);
+    expect(JSON.parse(readFileSync(path.join(wes.dir, 'groups', 'goodbyes.json'), 'utf8'))).toEqual([]);
+    // vic learns it from xia.
+    await vic.start();
+    await settle(() => vic.group(groupId)?.members.length === 2);
+    expect(wes.group(groupId)).toBeUndefined();
   }, 60_000);
 
   it('joins by invite link: automatically, or once an admin approves', async () => {

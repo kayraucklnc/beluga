@@ -9,6 +9,7 @@ import type { Entry, Profile } from '../schemas.js';
 import type { LinkMessage } from '../wire.js';
 import { GroupEngine } from './engine.js';
 import { Forgotten } from './forgotten.js';
+import { Goodbyes, goodbyeEntries } from './goodbyes.js';
 import { JOIN_TTL_MS, Joins } from './joins.js';
 import { GroupLog, PROBE_PENDING_BYTES } from './log.js';
 
@@ -64,12 +65,14 @@ export class GroupHub {
   private readonly probes = new Map<string, Probe>();
   readonly joins: Joins;
   private readonly forgotten: Forgotten;
+  private readonly goodbyes: Goodbyes;
   private readonly syncBudget = new Map<string, Bucket>();
   private readonly rejectedBy = new Map<string, number>();
 
   constructor(private readonly opts: GroupHubOptions) {
     this.joins = new Joins(path.join(opts.dir, 'joins.json'));
     this.forgotten = new Forgotten(path.join(opts.dir, 'forgotten.json'));
+    this.goodbyes = new Goodbyes(path.join(opts.dir, 'goodbyes.json'));
     let files: string[] = [];
     try {
       files = readdirSync(opts.dir).filter((f) => /^[0-9a-f]{32}\.jsonl$/.test(f));
@@ -111,6 +114,16 @@ export class GroupHub {
     return entries;
   }
 
+  /** Leave a group. Nobody in it online: the goodbye waits for the first of them you meet. */
+  leave(id: string): void {
+    const engine = this.need(id);
+    const me = this.opts.keys.identity.peerId;
+    const others = [...(engine.model?.members.values() ?? [])].filter((m) => m.card.peerId !== me).map((m) => ({ card: m.card, name: m.name }));
+    const heard = others.some((m) => this.opts.linkOf(m.card.peerId)?.isOpen);
+    const [removal] = this.apply(id, (e) => e.removeMember(me));
+    if (!heard && removal) this.goodbyes.add(id, goodbyeEntries(engine.log.ordered(), removal), others);
+  }
+
   /**
    * Delete a group you're no longer in from this Mac: its log, its join requests, and a note so
    * the others' copies don't bring it back (unless someone adds you again).
@@ -145,6 +158,7 @@ export class GroupHub {
       }
     }
     for (const a of this.joins.allAsked()) wanted.set(a.inviter.card.peerId, a.inviter);
+    for (const g of this.goodbyes.all()) for (const p of g.to) if (p.card.peerId !== me) wanted.set(p.card.peerId, p);
     for (const [k, v] of wanted) allowed.set(k, v);
     return { wanted, allowed };
   }
@@ -187,6 +201,13 @@ export class GroupHub {
 
   /** A link came up: compare notes on every group you share. */
   linkUp(link: MeshLink): void {
+    // Groups you left while nobody was there: tell the first of them you meet (they pass it on).
+    for (const g of this.goodbyes.all()) {
+      if (!g.to.some((p) => p.card.peerId === link.peerId)) continue;
+      link.send({ t: 'g_entries', group: g.groupId, entries: [...g.entries] });
+      this.goodbyes.drop(g.groupId);
+      this.opts.onChange();
+    }
     for (const engine of this.engines.values()) if (this.mayHear(engine, link.peerId)) this.sendHeads(engine, link);
     // Groups you asked to join: ask the admin for everything, in case you're in now.
     for (const a of this.joins.allAsked()) if (a.inviter.card.peerId === link.peerId) link.send({ t: 'g_sync', group: a.groupId, heads: [] });
@@ -301,6 +322,7 @@ export class GroupHub {
     }
     this.probes.delete(probe.id);
     this.forgotten.drop(probe.id);
+    this.goodbyes.drop(probe.id);
     const engine = new GroupEngine(this.opts.keys, probe.log.persistTo(this.file(probe.id)));
     this.engines.set(engine.id, engine);
     this.joins.joined(engine.id);
