@@ -1,5 +1,5 @@
 import { type BoardState, type Issue, issueById } from '../board/model.js';
-import { type Autonomy, type MilestoneRun, type Plan, type PlanBody, type PlanMilestone, type PlanTask, autonomyOf, shownBody } from './model.js';
+import { type Autonomy, type MilestoneRun, type Plan, type PlanBody, type PlanMilestone, type PlanTask, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
 
 /**
  * Where a plan stands, worked out from the plan and the board (and what Claude is doing right
@@ -61,6 +61,8 @@ export interface MilestoneView {
   readonly total: number;
   readonly autonomy: Autonomy;
   readonly run: MilestoneRun;
+  /** Milestones it waits on (ids: what it says, or inferred from its tasks' blockers). */
+  readonly dependsOn: readonly string[];
 }
 
 /** The one thing a plan waits for (the page's main button). */
@@ -81,9 +83,11 @@ export interface PlanView {
   readonly plan: Plan;
   readonly body?: PlanBody;
   readonly milestones: readonly MilestoneView[];
-  /** The milestone being worked on (the first not passed), once approved. */
+  /** Milestones being worked on side by side: not passed, and what they build on has passed. */
+  readonly open: readonly MilestoneView[];
+  /** The first of them (once approved). */
   readonly current?: MilestoneView;
-  /** Tasks that can start now (in order), and those in progress. */
+  /** Tasks that can start now (in order, across open milestones), and those in progress. */
   readonly ready: readonly TaskView[];
   readonly active: readonly TaskView[];
   readonly next: NextStep;
@@ -141,15 +145,16 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
       total: m.tasks.length,
       autonomy: autonomyOf(plan, m),
       run: {},
+      dependsOn: milestoneDeps(body, m),
     }));
     const total = milestones.reduce((n, m) => n + m.total, 0);
-    return { plan, ...(body ? { body } : {}), milestones, ready: [], active: [], next: { kind: 'approve' }, done: 0, total };
+    return { plan, ...(body ? { body } : {}), milestones, open: [], ready: [], active: [], next: { kind: 'approve' }, done: 0, total };
   }
 
   const body = plan.body;
   const views = new Map<string, TaskView>();
-  const firstOpen = body.milestones.findIndex((m) => !plan.runs[m.id]?.passedAt);
-  const currentIndex = plan.status === 'done' ? -1 : firstOpen;
+  const openIds = new Set(openMilestones(plan));
+  const milestoneTitle = new Map(body.milestones.map((m) => [m.id, m.title]));
 
   // Pass one: each task's own state from its board task.
   const base = new Map<string, { readonly state: TaskState; readonly worktree?: string; readonly step?: string; readonly issue?: Issue }>();
@@ -167,7 +172,7 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
   const titleOf = new Map(body.milestones.flatMap((m) => m.tasks.map((t) => [t.id, t.title] as const)));
 
   // Pass two: what can start.
-  body.milestones.forEach((m, index) => {
+  body.milestones.forEach((m) => {
     for (const t of m.tasks) {
       const own = base.get(t.id)!;
       const waitsOn = t.blockedBy.filter((b) => !finished(b));
@@ -179,9 +184,10 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
         // Board blockers from outside the plan count too.
         const outside = (own.issue?.blockedBy ?? []).map((id) => issueById(board, id)).filter((i): i is Issue => Boolean(i && i.status !== 'done' && i.status !== 'canceled' && i.status !== 'in_review' && !body.milestones.some((x) => x.tasks.some((y) => y.issueId === i.id))));
         const unmerged = t.blockedBy.filter((b) => finished(b) && !merged(b));
-        if (index > currentIndex || currentIndex < 0) {
+        if (!openIds.has(m.id) && !plan.runs[m.id]?.passedAt) {
           state = 'later';
-          why = 'Starts with its milestone';
+          const waits = milestoneDeps(body, m).filter((d) => !plan.runs[d]?.passedAt);
+          why = waits.length ? `Starts after “${waits.map((d) => milestoneTitle.get(d) ?? d).join('” and “')}”` : 'Starts with its milestone';
         } else if (waitsOn.length || outside.length) {
           state = 'blocked';
           why = `Waits on ${[...waitsOn.map((b) => `“${titleOf.get(b) ?? b}”`), ...outside.map((i) => i.key)].join(', ')}`;
@@ -216,20 +222,21 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
     const autonomy = autonomyOf(plan, m);
     let state: MilestoneState;
     if (run.passedAt) state = 'passed';
-    else if (index !== currentIndex) state = 'later';
+    else if (!openIds.has(m.id)) state = 'later';
     else if (done < counted.length) state = 'running';
     else if (run.check && run.checkAsked !== undefined && run.check.at >= run.checkAsked) state = run.check.verdict === 'fail' ? 'failed' : 'gate';
     else if (run.checkAsked !== undefined) state = 'checking';
     else state = 'gate';
-    return { milestone: m, index, state, tasks, finished: done, total: counted.length, autonomy, run };
+    return { milestone: m, index, state, tasks, finished: done, total: counted.length, autonomy, run, dependsOn: milestoneDeps(body, m) };
   });
 
-  const current = currentIndex >= 0 ? milestones[currentIndex] : undefined;
+  const open = milestones.filter((m) => openIds.has(m.milestone.id));
+  const current = open[0];
   const all = milestones.flatMap((m) => m.tasks);
-  const ready = (current?.tasks ?? []).filter((t) => t.state === 'ready');
+  const ready = open.flatMap((m) => m.tasks).filter((t) => t.state === 'ready');
   const active = all.filter((t) => ACTIVE.has(t.state));
   const counted = all.filter((t) => t.state !== 'canceled' && t.state !== 'missing');
-  const view = { plan, body, milestones, ...(current ? { current } : {}), ready, active, done: counted.filter((t) => FINISHED.has(t.state)).length, total: counted.length };
+  const view = { plan, body, milestones, open, ...(current ? { current } : {}), ready, active, done: counted.filter((t) => FINISHED.has(t.state)).length, total: counted.length };
   return { ...view, next: nextStep(plan, view) };
 }
 
@@ -237,34 +244,39 @@ function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
   if (plan.status === 'done') return plan.draft ? { kind: 'review_changes' } : { kind: 'done' };
   if (plan.draft) return { kind: 'review_changes' };
   if (plan.paused) return { kind: 'resume' };
-  const m = v.current;
-  if (!m) return { kind: 'done' };
+  if (!v.open.length) return { kind: 'done' };
   const asking = v.active.filter((t) => t.state === 'asking');
   if (asking.length) return { kind: 'answer', tasks: asking };
-  if (m.state === 'failed') return { kind: 'failed', milestone: m };
-  if (m.state === 'checking') return m.autonomy === 'autopilot' ? { kind: 'checking', milestone: m } : { kind: 'pass', milestone: m };
-  if (m.state === 'gate') return m.autonomy === 'autopilot' && m.milestone.criteria.length ? { kind: 'checking', milestone: m } : { kind: 'pass', milestone: m };
+  // Milestones running side by side: what's yours to do in any of them comes first.
+  const failed = v.open.find((m) => m.state === 'failed');
+  if (failed) return { kind: 'failed', milestone: failed };
+  const yoursToPass = v.open.find((m) => (m.state === 'checking' || m.state === 'gate') && !(m.autonomy === 'autopilot' && m.milestone.criteria.length));
+  if (yoursToPass) return { kind: 'pass', milestone: yoursToPass };
+  const autonomyOfTask = new Map(v.open.map((m) => [m.milestone.id, m.autonomy]));
   // Tasks for you, or (step by step) every task, wait for your click.
-  const yours = v.ready.filter((t) => t.forYou || m.autonomy === 'step');
+  const yours = v.ready.filter((t) => t.forYou || autonomyOfTask.get(t.milestoneId) === 'step');
   if (yours.length && v.active.length < plan.maxParallel) return { kind: 'start', tasks: yours };
   const running = v.active.filter((t) => t.state === 'running');
   if (v.active.length) return { kind: 'working', tasks: running.length ? running : v.active };
   if (v.ready.length) return { kind: 'working', tasks: [] };
-  const blocked = m.tasks.find((t) => t.state === 'blocked');
+  const checking = v.open.find((m) => m.state === 'checking' || m.state === 'gate');
+  if (checking) return { kind: 'checking', milestone: checking };
+  const blocked = v.open.flatMap((m) => m.tasks).find((t) => t.state === 'blocked');
   return { kind: 'waiting', why: blocked?.why ?? 'Waiting on its tasks' };
 }
 
 /**
- * Tasks the scheduler may start now, within the plan's limit (none when paused, a draft, at a gate,
- * or step by step). `skip`: board tasks not to start (failed before); `starting`: how many are
- * being started right now (they count against the limit).
+ * Tasks the scheduler may start now, across every open milestone, within the plan's limit (none
+ * when paused or a draft; none of a milestone at a gate or run step by step). `skip`: board tasks
+ * not to start (failed before); `starting`: how many are being started right now (they count
+ * against the limit, which is the whole plan's).
  */
 export function startable(view: PlanView, skip: ReadonlySet<string> = new Set(), starting = 0): readonly TaskView[] {
-  const { plan, current } = view;
-  if (!current || plan.paused || plan.status !== 'active' || plan.draft || current.state !== 'running') return [];
-  if (current.autonomy === 'step') return [];
+  const { plan } = view;
+  if (plan.paused || plan.status !== 'active' || plan.draft) return [];
+  const auto = new Set(view.open.filter((m) => m.state === 'running' && m.autonomy !== 'step').map((m) => m.milestone.id));
   const room = Math.max(0, plan.maxParallel - view.active.length - starting);
-  return view.ready.filter((t) => !t.forYou && !(t.issue && skip.has(t.issue.id))).slice(0, room);
+  return view.ready.filter((t) => auto.has(t.milestoneId) && !t.forYou && !(t.issue && skip.has(t.issue.id))).slice(0, room);
 }
 
 /** Tasks running side by side right now that touch the same files (a likely conflict), by pairs. */

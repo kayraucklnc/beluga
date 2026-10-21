@@ -517,6 +517,34 @@
   color: var(--error);
 }
 
+/* "Add Claude" with others here: your Claude on the left, the chevron for anyone else's. */
+.askSplit {
+  display: inline-flex;
+  align-items: center;
+}
+.askMain {
+  padding-right: 6px;
+  border-radius: 11px 0 0 11px;
+}
+.askMore {
+  position: relative;
+  padding: 0 7px 0 6px;
+  border-radius: 0 11px 11px 0;
+}
+.askMore::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  background: var(--hairline);
+}
+.askSplit:hover .askMain:not(:hover),
+.askSplit:hover .askMore:not(:hover) {
+  background: color-mix(in srgb, var(--bg-hover) 50%, transparent);
+}
+
 /* The toolbar's title for a conversation. */
 .titleRow {
   display: inline-flex;

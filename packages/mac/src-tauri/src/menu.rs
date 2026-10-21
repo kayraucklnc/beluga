@@ -80,6 +80,13 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::cut(app, None)?,
             &PredefinedMenuItem::copy(app, None)?,
             &PredefinedMenuItem::paste(app, None)?,
+            // ⌘V attaches a pasted file path as the file (paste-paths.ts); this keeps it as text.
+            &item(
+                app,
+                "paste-plain",
+                "Paste as Plain Text",
+                Some("CmdOrCtrl+Shift+V"),
+            )?,
             &PredefinedMenuItem::select_all(app, None)?,
             &PredefinedMenuItem::separator(app)?,
             &item(

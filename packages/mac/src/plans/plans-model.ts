@@ -34,6 +34,22 @@ export const MILESTONE_STATE: Readonly<Record<MilestoneState, { readonly label: 
   passed: { label: 'Passed', tone: 'ok' },
 };
 
+/**
+ * A milestone's status text in the plan's list: its state, plus when it runs. Open milestones say
+ * they run side by side with the others open now; a waiting one says what it waits on.
+ */
+export function milestoneLabel(view: Pick<PlanView, 'milestones' | 'open'>, m: MilestoneView): string {
+  const base = MILESTONE_STATE[m.state].label;
+  const title = (id: string): string => `“${view.milestones.find((x) => x.milestone.id === id)?.milestone.title ?? id}”`;
+  if (m.state === 'later') {
+    const waits = m.dependsOn.filter((d) => view.milestones.find((x) => x.milestone.id === d)?.state !== 'passed');
+    return waits.length ? `After ${waits.map(title).join(' and ')}` : base;
+  }
+  const beside = view.open.filter((x) => x.milestone.id !== m.milestone.id);
+  if (!view.open.some((x) => x.milestone.id === m.milestone.id) || !beside.length) return base;
+  return `${base} · alongside ${beside.length > 2 ? `${beside.length} others` : beside.map((x) => title(x.milestone.id)).join(' and ')}`;
+}
+
 /** How a plan is, in one word, for lists and the page's header. */
 export function planStatus(view: Pick<PlanView, 'plan' | 'next'>): { readonly label: string; readonly tone: Tone } {
   const { plan, next } = view;

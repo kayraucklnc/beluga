@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
 import { BoardWork } from '../src/core/board/work.js';
 import { type BodyInput, PlanError, applyOps, normalizeBody } from '../src/core/plans/edit.js';
-import { diffBodies, planForHome } from '../src/core/plans/model.js';
+import { diffBodies, milestoneDeps, planForHome } from '../src/core/plans/model.js';
 import { Plans } from '../src/core/plans/plans.js';
 import { overlaps, planView, waves } from '../src/core/plans/progress.js';
 import { PlansWork } from '../src/core/plans/work.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
-import { PLAN_TOOL_NAMES, createPlanToolDefs } from '../src/agent/plan-tools.js';
+import { PLAN_TOOL_NAMES, createPlanToolDefs, milestoneInput, toOps } from '../src/agent/plan-tools.js';
 import { decideTool } from '../src/agent/policy.js';
 
 /** Plans: drafts that stay off the board, approving onto it, and the scheduler running them. */
@@ -420,5 +420,110 @@ describe('review fixes', () => {
     const sent = t.asked.at(-1)!;
     expect(sent.echo).toBe(false);
     expect(sent.prompt).toContain('not the user');
+  });
+});
+
+describe('milestones run side by side unless one builds on another', () => {
+  /** Two milestones that share nothing, and one that builds on the first. */
+  const SIDE: BodyInput = {
+    title: 'Polish',
+    goal: '',
+    milestones: [
+      { id: 'channels', title: 'Channels', criteria: ['@ works'], tasks: [{ id: 'mentions', title: 'Mentions' }] },
+      { id: 'pilot', title: 'Parallel milestones', criteria: ['both open'], tasks: [{ id: 'runner', title: 'Runner' }] },
+      { id: 'header', title: 'Plan header', criteria: ['drawn'], dependsOn: ['pilot'], tasks: [{ id: 'canvas', title: 'Canvas' }] },
+    ],
+  };
+
+  async function running(body: BodyInput, autonomy: 'step' | 'gated' | 'autopilot' = 'gated', maxParallel = 3) {
+    const t = setup();
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main', autonomy }, t.claude);
+    t.plans.setMaxParallel(plan.id, maxParallel, t.me);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(body);
+    t.work.approve(plan.id);
+    await tick(5);
+    const issue = (title: string) => t.store.getState().board.issues.find((i) => i.title === title)!;
+    const view = () => planView(t.plans.need(plan.id), t.store.getState().board);
+    return { ...t, plan, issue, view };
+  }
+
+  it('infers dependencies from blocked_by into other milestones; none without such links', () => {
+    const body = normalizeBody(BODY);
+    expect(milestoneDeps(body, body.milestones[1]!)).toEqual(['safe']);
+    expect(milestoneDeps(body, body.milestones[0]!)).toEqual([]);
+    const side = normalizeBody(SIDE);
+    expect(side.milestones.map((m) => milestoneDeps(side, m))).toEqual([[], [], ['pilot']]);
+    // Said outright, it wins over what blockers would say ([]: alongside from the start).
+    const said = normalizeBody({ ...BODY, milestones: [BODY.milestones[0]!, { ...BODY.milestones[1]!, dependsOn: [] }] });
+    expect(milestoneDeps(said, said.milestones[1]!)).toEqual([]);
+  });
+
+  it('refuses depends_on a later or unknown milestone', () => {
+    expect(() => normalizeBody({ title: 'P', goal: '', milestones: [{ id: 'a', title: 'A', dependsOn: ['b'] }, { id: 'b', title: 'B' }] })).toThrow(/comes after it/);
+    expect(() => normalizeBody({ title: 'P', goal: '', milestones: [{ id: 'a', title: 'A', dependsOn: ['zz'] }] })).toThrow(/isn't in the plan/);
+  });
+
+  it('two independent milestones both open and start; a dependent one waits in the Backlog', async () => {
+    const t = await running(SIDE);
+    expect(t.view().open.map((m) => m.milestone.id)).toEqual(['channels', 'pilot']);
+    expect(t.issue('Mentions').status).toBe('in_progress');
+    expect(t.issue('Runner').status).toBe('in_progress');
+    expect(t.issue('Canvas').status).toBe('backlog');
+    expect(t.view().milestones[2]).toMatchObject({ state: 'later', dependsOn: ['pilot'] });
+    expect(t.view().milestones[2]!.tasks[0]).toMatchObject({ state: 'later', why: 'Starts after “Parallel milestones”' });
+  });
+
+  it('each milestone has its own check and pass; passing one opens what waited on it', async () => {
+    const t = await running(SIDE);
+    t.board.update(t.issue('Runner').id, { status: 'in_review' }, t.claude);
+    await tick(5);
+    const checks = t.asked.filter((a) => a.prompt.includes('Check its pass criteria'));
+    expect(checks).toHaveLength(1);
+    expect(checks[0]!.prompt).toContain('Parallel milestones');
+    expect(t.view().milestones.map((m) => m.state)).toEqual(['running', 'checking', 'later']);
+    expect(t.view().next.kind).toBe('pass');
+    t.work.pass(t.plan.id, 'pilot');
+    await tick(5);
+    expect(t.view().open.map((m) => m.milestone.id)).toEqual(['channels', 'header']);
+    expect(t.issue('Canvas').status).toBe('in_progress');
+    expect(t.plans.need(t.plan.id).status).toBe('active');
+  });
+
+  it('the limit on tasks at once is the whole plan’s', async () => {
+    const t = await running(SIDE, 'gated', 1);
+    expect(t.made).toHaveLength(1);
+  });
+
+  it('autopilot passes an independent milestone on its own check while the other still runs', async () => {
+    const t = await running(SIDE, 'autopilot');
+    t.board.update(t.issue('Mentions').id, { status: 'done' }, t.me);
+    await tick(5);
+    t.work.forRun('ws:main', 'p-me')!.tools!.gate('channels', 'pass', '@ ✓');
+    await tick(5);
+    expect(t.plans.need(t.plan.id).runs.channels?.passedAt).toBeDefined();
+    expect(t.view().milestones.map((m) => m.state)).toEqual(['passed', 'running', 'later']);
+  });
+
+  it('step by step applies per milestone: Claude starts nothing there, but the other milestone runs', async () => {
+    const t = await running({ ...SIDE, milestones: [{ ...SIDE.milestones[0]!, autonomy: 'step' }, ...SIDE.milestones.slice(1)] });
+    expect(t.issue('Mentions').status).toBe('todo');
+    expect(t.issue('Runner').status).toBe('in_progress');
+    expect(t.view().next).toMatchObject({ kind: 'start', tasks: [{ task: { id: 'mentions' } }] });
+    await expect(t.work.forRun('ws:main', 'p-me')!.tools!.start('mentions')).rejects.toThrow(/step by step/);
+  });
+
+  it('plan_write / plan_update take depends_on; plan_get says what runs alongside and after what', async () => {
+    const write = milestoneInput({ id: 'b', title: 'B', criteria: [], depends_on: ['a'], tasks: [{ title: 'T', blocked_by: ['x'] }] });
+    expect(write).toMatchObject({ dependsOn: ['a'], tasks: [{ title: 'T', blockedBy: ['x'] }] });
+    expect(toOps([{ op: 'update_milestone', id: 'b', depends_on: [] }])).toEqual([{ op: 'update_milestone', id: 'b', dependsOn: [] }]);
+    expect(toOps([{ op: 'add_milestone', milestone: { title: 'C', depends_on: ['b'] } }])[0]).toMatchObject({ op: 'add_milestone', milestone: { title: 'C', dependsOn: ['b'] } });
+    const t = await running(SIDE);
+    const tools = t.work.forRun('ws:main', 'p-me')!.tools!;
+    tools.update(toOps([{ op: 'update_milestone', id: 'header', depends_on: [] }]));
+    expect(t.plans.need(t.plan.id).draft!.milestones[2]!.dependsOn).toEqual([]);
+    const got = tools.get();
+    expect(got).toContain('Depends on no other milestone; runs alongside channels “Channels”, pilot “Parallel milestones”');
+    t.work.discard(t.plan.id);
+    expect(tools.get()).toContain('Runs after pilot “Parallel milestones”; runs alongside channels “Channels”.');
   });
 });

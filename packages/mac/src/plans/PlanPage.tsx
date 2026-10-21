@@ -33,7 +33,7 @@ function readPrefs(): { display: Display; chat: boolean } {
  * (or an outline) in the middle; and the conversation with Claude beside it, where the plan is
  * talked through and changed. Everything else is a click away (⋯, a task, a gate).
  */
-export function PlanPage({ id }: { id: string }) {
+export function PlanPage({ id, task }: { id: string; task?: string }) {
   const plan = usePlans().plans.find((x) => x.id === id);
   const view = usePlanView(plan);
   const [prefs, setPrefsState] = useState(readPrefs);
@@ -46,7 +46,11 @@ export function PlanPage({ id }: { id: string }) {
       // Kept for now.
     }
   };
-  const [picked, setPicked] = useState<string>();
+  const [picked, setPicked] = useState<string | undefined>(task);
+  // Opened at a task (a notification about it): that task is picked.
+  useEffect(() => {
+    if (task) setPicked(task);
+  }, [task]);
   const { openList } = usePlanActions();
   // A task taken out of the plan isn't picked any more.
   useEffect(() => {
@@ -63,9 +67,9 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   const status = planStatus(view);
   const keys = useMemo(() => new Map(view.milestones.flatMap((m) => m.tasks.flatMap((t) => (t.issue ? [[t.task.id, t.issue.key] as const] : [])))), [view]);
   const startable = useMemo(() => {
-    if (!plan.body || plan.draft || view.active.length >= plan.maxParallel || !view.current) return new Set<string>();
-    const manual = view.current.autonomy === 'step' || plan.paused;
-    return new Set(view.ready.filter((t) => t.forYou || manual).map((t) => t.task.id));
+    if (!plan.body || plan.draft || view.active.length >= plan.maxParallel || !view.open.length) return new Set<string>();
+    const step = new Set(view.open.filter((m) => m.autonomy === 'step').map((m) => m.milestone.id));
+    return new Set(view.ready.filter((t) => t.forYou || plan.paused || step.has(t.milestoneId)).map((t) => t.task.id));
   }, [view, plan]);
   const start = useCallback((taskId: string) => void act(() => api.startTask(plan.id, taskId)), [plan.id, act, api]);
   const next = view.next;

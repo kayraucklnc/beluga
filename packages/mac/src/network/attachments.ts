@@ -62,6 +62,13 @@ export async function addPaths(client: SocketClient, id: string, paths: readonly
       try {
         const [file] = await client.api.network['files.add']([paths[i]!]);
         update(id, key, { state: 'ready', file: file!, name: file!.name });
+        // A picture shows as a thumbnail, as a pasted one does.
+        if (file!.mime?.startsWith('image/')) {
+          const shown = await client.api.network['files.preview'](file!.sha).catch(() => undefined);
+          if (shown && (lists.get(id) ?? EMPTY).some((p) => p.key === key)) {
+            update(id, key, { thumb: URL.createObjectURL(new Blob([Uint8Array.from(atob(shown.b64), (c) => c.charCodeAt(0))], { type: shown.mime })) });
+          }
+        }
       } catch (err) {
         update(id, key, { state: 'failed', error: message(err) });
       }

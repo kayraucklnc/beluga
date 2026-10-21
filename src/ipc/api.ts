@@ -253,6 +253,8 @@ export const API = {
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),
+  // An image file on this Mac (its path was pasted), copied in and made smaller if it's too big. → { n, chip, file }
+  'attachments.addFile': args(path),
   'attachments.expand': args(str, channel),
   // An image linked in a message (owner peer id, file name): its bytes to show, or opened in Preview.
   'attachments.read': args(id, z.string().min(1).max(255)),
@@ -273,6 +275,8 @@ export const API = {
   // ---- this computer
   'local.listDirs': args(path),
   'local.openFolder': args(path),
+  // Pasted paths: is each a file, a folder, or nothing? (Read-only.) → [{ path, name, kind, size, image }]
+  'local.statFiles': args(z.array(path).min(1).max(20)),
 
   // ---- the klaud network: friends, direct messages, groups, your status (network-api.ts)
   ...NETWORK_API,
