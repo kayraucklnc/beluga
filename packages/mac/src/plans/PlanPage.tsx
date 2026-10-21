@@ -221,7 +221,11 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
 function TitleField({ value, onSave }: { value: string; onSave: (title: string) => void }) {
   const [text, setText] = useState(value);
   const box = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => setText(value), [value]);
+  // What you typed and haven't saved: a name arriving meanwhile (your last rename coming back) never overwrites it.
+  const typed = useRef(false);
+  useEffect(() => {
+    if (!typed.current) setText(value);
+  }, [value]);
   // As tall as its lines: on every change and whenever a new width changes the wrapping.
   useLayoutEffect(() => {
     const el = box.current;
@@ -241,8 +245,9 @@ function TitleField({ value, onSave }: { value: string; onSave: (title: string) 
     return () => (watch.disconnect(), cancelAnimationFrame(frame));
   }, [text]);
   const save = (): void => {
-    if (text.trim() && text.trim() !== value) onSave(text.trim());
+    if (typed.current && text.trim() && text.trim() !== value) onSave(text.trim());
     else setText(value);
+    typed.current = false;
   };
   return (
     <textarea
@@ -252,7 +257,7 @@ function TitleField({ value, onSave }: { value: string; onSave: (title: string) 
       rows={1}
       spellCheck={false}
       value={text}
-      onChange={(e) => setText(e.target.value.replace(/\s*\n\s*/g, ' '))}
+      onChange={(e) => ((typed.current = true), setText(e.target.value.replace(/\s*\n\s*/g, ' ')))}
       onBlur={save}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -260,6 +265,7 @@ function TitleField({ value, onSave }: { value: string; onSave: (title: string) 
           e.currentTarget.blur();
         }
         if (e.key === 'Escape') {
+          typed.current = false;
           setText(value);
           e.currentTarget.blur();
         }

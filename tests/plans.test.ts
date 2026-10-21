@@ -12,6 +12,7 @@ import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-c
 import type { Project, Workspace } from '../src/workspaces/types.js';
 import { PLAN_TOOL_NAMES, createPlanToolDefs, milestoneInput, toOps } from '../src/agent/plan-tools.js';
 import { decideTool } from '../src/agent/policy.js';
+import { createMockBackend } from '../src/agent/mock.js';
 
 /** Plans: drafts that stay off the board, approving onto it, and the scheduler running them. */
 
@@ -89,6 +90,18 @@ describe('a new plan’s name (KLD-28)', () => {
     name('Too late');
     await tick();
     expect(t.plans.need(plan.id).draft!.title).toBe('Payments');
+  });
+
+  it('the mock agent’s quick call writes a short title, not your first words (KLD-36)', async () => {
+    const agent = createMockBackend({} as never, 0);
+    const t = setup({ titlePlan: (g) => agent.titlePlan!(g) });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    await tick(5);
+    const title = t.plans.need(plan.id).draft!.title;
+    expect(title).toBe('Improve unfinished drafts');
+    expect(title.split(' ').length).toBeLessThanOrEqual(6);
+    expect(goal.toLowerCase().startsWith(title.toLowerCase())).toBe(false);
+    expect(chatName(t, plan.home)).toBe(title);
   });
 
   it('stays "New plan" when the model can’t name it', async () => {

@@ -138,5 +138,5 @@ test('New Plan from the home: with no goal the sheet opens in this project; with
   await expect(home(page).locator('.react-flow__node').filter({ hasText: 'Data model and migration' })).toBeVisible({ timeout: 20_000 });
   // Back home, it's in the project's plans.
   await openHome(page);
-  await expect(page.getByRole('region', { name: 'Plans' }).getByRole('button', { name: /^Export orders as CSV for the accountants/ })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Plans' }).getByRole('button', { name: /^Export orders accountants/ })).toBeVisible();
 });

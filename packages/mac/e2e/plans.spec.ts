@@ -75,8 +75,13 @@ test('the plan stays sharp zoomed in, and its name never clips (KLD-25)', async 
     await page.waitForTimeout(260);
   }
   expect(await scale()).toBeGreaterThanOrEqual(1.5);
-  await expect(viewport).toHaveAttribute('data-sharpened', /\d+/);
-  await expect.poll(async () => (await viewport.getAttribute('style')) ?? '').not.toContain('translateZ');
+  // What matters once the zoom settles: the view was redrawn at its scale, and it's left a plain 2D
+  // transform (no 3D layer kept around), whatever frames the zoom's own animation took (KLD-36).
+  const settled = async () => {
+    const style = (await viewport.getAttribute('style')) ?? '';
+    return { sharpened: /^\d+$/.test((await viewport.getAttribute('data-sharpened')) ?? ''), nudged: style.includes('translateZ'), zoomed: (await scale()) >= 1.5 };
+  };
+  await expect.poll(settled, { timeout: 5_000 }).toEqual({ sharpened: true, nudged: false, zoomed: true });
   const blurred = await viewport.evaluate((root) =>
     [root, ...root.querySelectorAll('*')].filter((el) => {
       const css = getComputedStyle(el);
@@ -130,6 +135,11 @@ test('a new plan: Claude drafts it in its own conversation, nothing is on the bo
   const approve = page.getByRole('button', { name: 'Approve Plan' }).first();
   await expect(approve).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('a draft, not on the board yet')).toBeVisible();
+  // A short name written for it, not the goal's first words (KLD-36).
+  await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Export orders accounting');
+  // Written, the canvas lays it out: never left on "Laying out…" (KLD-36).
+  await expect(main(page).locator('[data-ready]')).toHaveAttribute('data-ready', 'true', { timeout: 20_000 });
+  await expect(main(page).getByText('Laying out…')).toHaveCount(0);
   await expect(main(page).locator('.react-flow__node').filter({ hasText: 'Data model and migration' })).toBeVisible({ timeout: 20_000 });
   // Talk it through: Claude changes the draft.
   const chat = page.getByRole('complementary', { name: 'Conversation' });
@@ -141,7 +151,7 @@ test('a new plan: Claude drafts it in its own conversation, nothing is on the bo
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
   await expect(page.getByRole('grid', { name: 'Tasks' })).not.toContainText('Data model and migration');
   await sidebar(page).getByRole('button', { name: /^Plans/ }).click();
-  await main(page).getByRole('button', { name: /^Export orders as CSV for accounting,/ }).click();
+  await main(page).getByRole('button', { name: /^Export orders accounting,/ }).click();
   await page.getByRole('button', { name: 'Approve Plan' }).first().click();
   await expect(page.getByRole('button', { name: 'Approve Plan' })).toHaveCount(0);
   // On the board now, each with its plan.

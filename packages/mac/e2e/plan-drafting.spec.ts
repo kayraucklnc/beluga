@@ -59,8 +59,10 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
   const name = page.getByRole('textbox', { name: 'Plan name' });
   // Never your message: "New plan", then a short name from a quick model.
   await expect(name).not.toHaveValue(/A couple of things that we should improve because/);
-  await expect(name).toHaveValue('A couple of things that we');
+  // The demo Claude's quick namer, like Haiku: what it's about in a few words, not the first ones.
+  await expect(name).toHaveValue('Improve unfinished title');
   expect((await name.inputValue()).split(' ').length).toBeLessThanOrEqual(6);
+  await expect(name).not.toHaveValue(/^A couple of/);
   await expect(sidebar(page)).not.toContainText('A couple of things that we should');
 
   // No Draft pill, no "working" in the conversation's header, no run-mode control, no view toggle yet.
@@ -114,6 +116,12 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
   const show = main(page).getByRole('tablist', { name: 'Show' });
   await expect(show.getByRole('tab')).toHaveText(['Canvas', 'List']);
   await expect(line).toHaveCount(0);
+  // The canvas lays the written plan out: never left on "Laying out…" (KLD-36).
+  const canvas = main(page).locator('[data-ready]');
+  await expect(canvas).toHaveAttribute('data-ready', 'true', { timeout: 10_000 });
+  await expect(main(page).getByText('Laying out…')).toHaveCount(0);
+  await expect(canvas.locator('.react-flow__node-milestone')).toHaveCount(3);
+  await expect(canvas.locator('.react-flow__node-task').first()).toBeVisible();
   if (dir) await page.screenshot({ path: `${dir}/kld-28-written-light.png` });
   // Show all opens your whole message.
   await chat.getByRole('button', { name: 'Show all' }).click();
