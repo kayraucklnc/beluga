@@ -10,6 +10,7 @@ import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot 
 import { WorkspaceStore } from './store.js';
 import { type ArchiveManifest, type ArchivePhase, type ArchivePreview, archiveWorktree, dropArchive, freeSpace, planArchive, previewOf, readManifest, restoreWorktree } from './archive.js';
 import { worktreeOrigin } from './origin.js';
+import { moveToTrash } from './trash.js';
 import { addDay, dayKey } from './usage-days.js';
 import type { Project, ProjectGroup, ProjectSync, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
 import { ArrangeError, type Item, type Layout, MAX_GROUP_NAME, arrangedOrder, groupKey, groupOfKey, isGroupKey, keyOf, move, settle } from './arrange.js';
@@ -116,7 +117,8 @@ export class WorkspaceManager {
   addProject(dir: string): string {
     const root = path.resolve(dir);
     if (!isMainCheckout(root)) throw new WorkspaceError(`${root} is not a git project (no .git folder)`);
-    this.config = { ...this.config, projects: [...new Set([...this.config.projects, root])], hidden: this.config.hidden.filter((h) => h !== root) };
+    const removed = this.config.removed?.filter((r) => real(r) !== real(root));
+    this.config = { ...this.config, projects: [...new Set([...this.config.projects, root])], hidden: this.config.hidden.filter((h) => h !== root), ...(removed ? { removed } : {}) };
     this.store.saveConfig(this.config);
     return projectId(root);
   }
@@ -283,10 +285,52 @@ export class WorkspaceManager {
     this.store.saveConfig(this.config);
   }
 
+  /**
+   * Remove a project from Klaud (Delete Project): Klaud's own worktrees of it are archived first
+   * (losslessly, restorable if you add it back), then it leaves the project list, the hidden
+   * ones, its group and the sidebar's order. One a scanned root would find again is kept out.
+   * The folder itself stays unless `trash`: then it goes to the Trash (never deleted outright).
+   */
+  async removeProject(id: string, opts: { trash?: boolean; toTrash?: (dir: string) => Promise<void>; onPhase?: (wsId: string, phase?: ArchivePhase) => void } = {}): Promise<{ root: string; archived: number; trashed: boolean }> {
+    const project = this.projects.find((p) => p.id === id && p.root);
+    if (!project) throw new WorkspaceError('Project not found');
+    const root = project.root;
+    let archived = 0;
+    for (const w of project.workspaces.filter((x) => x.kind === 'worktree' && !x.archived && worktreeOrigin(x) === 'klaud')) {
+      try {
+        await this.archive(w.id, opts.onPhase ? (phase) => opts.onPhase!(w.id, phase) : undefined);
+      } finally {
+        opts.onPhase?.(w.id);
+      }
+      archived++;
+    }
+    // The config may hold it as added (/var/…) or resolved (/private/var/…): either is this project.
+    const other = (r: string): boolean => real(r) !== real(root);
+    const scanned = findProjects(this.config.roots).some((r) => !other(r));
+    const groups = this.config.groups?.map((g) => ({ ...g, projects: g.projects.filter(other) }));
+    const order = this.config.order?.filter((k) => isGroupKey(k) || other(k));
+    this.config = {
+      ...this.config,
+      projects: this.config.projects.filter(other),
+      hidden: this.config.hidden.filter(other),
+      ...(groups ? { groups } : {}),
+      ...(order ? { order } : {}),
+      ...(scanned && !opts.trash ? { removed: [...new Set([...(this.config.removed ?? []), root])] } : {}),
+    };
+    this.store.saveConfig(this.config);
+    let trashed = false;
+    if (opts.trash) {
+      await (opts.toTrash ?? moveToTrash)(root);
+      trashed = true;
+    }
+    await this.refresh();
+    return { root, archived, trashed };
+  }
+
   /** Re-scan projects and worktrees and refresh git status for every workspace. */
   async refresh(): Promise<readonly Project[]> {
     const roots = [...new Set([...findProjects(this.config.roots), ...this.config.projects].map(real))].filter(
-      (r) => !this.config.hidden.includes(r) && existsSync(r),
+      (r) => !this.config.hidden.includes(r) && !this.config.removed?.includes(r) && existsSync(r),
     );
     const gen = ++this.refreshGen;
     const loaded = await Promise.all(roots.map((root) => this.loadProject(root)));

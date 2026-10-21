@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
 import type { UiAction } from '@klaud/ui/workspace-models.js';
@@ -14,6 +14,7 @@ import { inApp } from '../lib/boot.js';
 import { newEmptyGroup, useGroupEdit } from '../lib/group-edit.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { openProjectHome } from '../lib/project-home.js';
+import { openSheet } from '../lib/sheets.js';
 import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { pickImage, reloadProjectIcon } from '../lib/projects.js';
 import { showUndo } from '../lib/undo-toast.js';
@@ -23,7 +24,7 @@ import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, us
 import { OutsideWorktrees } from './OtherWorktrees.js';
 import { ProjectAgents, SubAgentRows, useAgentOrigins, useCcSessions } from './SubAgents.js';
 import { hasRowsInside } from './project-rows.js';
-import { groupTally, groupWorking, projectTally, projectWorking, tallyTip } from './attention-model.js';
+import { type Tally, groupTally, groupWorking, projectTally, projectWorking, tallyTip } from './attention-model.js';
 import { TallyMark } from './signal-marks.js';
 import { Row } from './sidebar-parts.js';
 import { WorkspaceRow } from './workspace-row.js';
@@ -131,26 +132,39 @@ function useProjectFold(projectId: string): { folded: boolean; toggle: (all: boo
   return { folded, toggle, peek };
 }
 
-/** A project and its worktrees and chats (folded: only the one you're in). `depth` 1: inside a group. */
-function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1; entries: readonly Entry[]; arrange: Arrange }) {
+/**
+ * A project and its worktrees and chats (folded: only the one you're in). `depth` 1: inside a group.
+ * It reads only what it draws from the store (and is memo'd), so an open menu on it isn't rebuilt
+ * on every unrelated change.
+ */
+const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1; entries: readonly Entry[]; arrange: Arrange }) {
   const actions = useActions();
-  const state = useApp((st) => st);
-  const collapsed = useUi((u) => u.collapsed);
+  const { client } = useKlaud();
+  const view = useApp((st) => st.view);
+  const plans = useApp((st) => st.plans.plans);
+  const earning = useApp((st) => Boolean(st.earnings[p.root]));
+  const busy = useApp((st) => projectWorking(st, p));
+  // What's inside: how many conversations have news, and whether one needs you (folded, it's how you notice).
+  const tallyKey = useApp((st) => {
+    const t = projectTally(st, p);
+    return `${t.unread}:${t.needs}:${t.working ? 1 : 0}`;
+  });
+  const inside = useMemo((): Tally => {
+    const [unread, needs, working] = tallyKey.split(':').map(Number);
+    return { unread: unread ?? 0, needs: needs ?? 0, working: working === 1 };
+  }, [tallyKey]);
   const fold = useProjectFold(p.id);
-  const here = state.view.kind === 'workspace' ? state.view.id : undefined;
+  const here = view.kind === 'workspace' ? view.id : undefined;
   // You're in this project: on its home page, or in one of its worktrees or chats.
-  const onHome = state.view.kind === 'project' && state.view.id === p.id;
+  const onHome = view.kind === 'project' && view.id === p.id;
   const current = onHome || (here !== undefined && p.workspaces.some((w) => w.id === here));
   const hide = useHide();
   const iconItems = useIconItems(p);
-  const busy = projectWorking(state, p);
-  // What's inside: how many conversations have news, and whether one needs you (folded, it's how you notice).
-  const inside = projectTally(state, p);
   const insideTip = tallyTip(inside);
   const live = p.workspaces.filter((w) => !w.archived);
   // Not the main checkout (work happens in worktrees); questions asked in its folder stay, as chats.
   // A plan's own conversation lives on the plan's page (Plans), not in the tree — unless you're in it.
-  const planHomes = new Set(state.plans.plans.map((x) => x.home));
+  const planHomes = new Set(plans.map((x) => x.home));
   const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud' && (!planHomes.has(`ws:${w.id}`) || w.id === here));
   const main = live.find((w) => w.kind === 'main');
   const archived = p.workspaces.filter((w) => w.archived);
@@ -160,7 +174,7 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   const showArchivedItem: ActionItem[] = archived.length ? [{ label: `Show Archived (${archived.length})`, onSelect: () => showArchivedOf(actions.run, p.id) }] : [];
   // Everything about its worktrees (archiving, restoring, cleaning up those made outside Klaud) is on the Worktrees page.
   const cleanUpItem: ActionItem[] = p.workspaces.some((w) => w.kind === 'worktree') ? [{ label: 'Manage Worktrees…', onSelect: () => actions.run({ type: 'view', view: { kind: 'worktrees', projectId: p.id } }) }] : [];
-  const extra: ActionItem[] = [...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, Boolean(state.earnings[p.root])), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, onSelect: () => hide(p) }];
+  const extra: ActionItem[] = [...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, earning), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, onSelect: () => hide(p) }, { label: 'Delete Project…', danger: true, onSelect: () => openSheet({ kind: 'delete_project', projectId: p.id }) }];
   const kids = depth + 2;
   // Nothing to unfold: no arrow (its place kept, so the icons stay in line).
   const sessions = useCcSessions();
@@ -198,7 +212,7 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           label={p.name}
           detail={insideTip ? `${p.name}: ${insideTip}` : p.root}
           onClick={() => {
-            openProjectHome(actions.run, state, p.id);
+            openProjectHome(actions.run, client.store.getState(), p.id);
             fold.peek();
           }}
           onKeyDown={(e) => {
@@ -254,7 +268,7 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
       )}
     </>
   );
-}
+});
 
 /** Projects you hid, folded at the bottom: each with Show. */
 function HiddenProjects() {

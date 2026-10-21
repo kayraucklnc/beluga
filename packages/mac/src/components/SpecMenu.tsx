@@ -1,6 +1,6 @@
 import * as Context from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { type MenuKind, menuSpec } from '@klaud/ui/menus.js';
 import { useActions } from '../lib/actions.js';
 import { useKlaud } from '../lib/klaud.js';
@@ -23,6 +23,12 @@ function useItems(menu: MenuKind, hide?: (id: string) => boolean) {
  * field in the sidebar, a sheet) keeps it instead of the row the menu came from.
  */
 const keepFocus = (e: Event): void => e.preventDefault();
+
+/**
+ * A menu is portaled out of the DOM, but React still bubbles its clicks to what it came from:
+ * choosing from a row's ⋯ would also click the row (open the project's home). It stops here.
+ */
+const stayInMenu = (e: MouseEvent): void => e.stopPropagation();
 
 /** A hint that is a shortcut (⌘J) sits at the right like a menu bar's; a description is a tooltip. */
 const isKeys = (hint: string | undefined): hint is string => !!hint && /^[⌘⌥⇧⌃↩⌫]+.{0,3}$/.test(hint);
@@ -60,7 +66,7 @@ export function SpecDropdown({ menu, children, align = 'start', extra, hide }: {
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>{children}</Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content className={s.menu} onCloseAutoFocus={keepFocus} align={align} sideOffset={4} collisionPadding={8}>
+        <Dropdown.Content className={s.menu} onClick={stayInMenu} onCloseAutoFocus={keepFocus} align={align} sideOffset={4} collisionPadding={8}>
           <Items menu={menu} Item={Dropdown.Item} Separator={Dropdown.Separator} kit={DROPDOWN_SUB} {...(extra ? { extra } : {})} {...(hide ? { hide } : {})} />
         </Dropdown.Content>
       </Dropdown.Portal>
@@ -75,7 +81,7 @@ export function SpecContext({ menu, children, extra, hide }: { menu: MenuKind | 
     <Context.Root modal={false}>
       <Context.Trigger asChild>{children}</Context.Trigger>
       <Context.Portal>
-        <Context.Content className={s.menu} onCloseAutoFocus={keepFocus} collisionPadding={8}>
+        <Context.Content className={s.menu} onClick={stayInMenu} onCloseAutoFocus={keepFocus} collisionPadding={8}>
           <Items menu={menu} Item={Context.Item as unknown as typeof Dropdown.Item} Separator={Context.Separator as unknown as typeof Dropdown.Separator} kit={CONTEXT_SUB} {...(extra ? { extra } : {})} {...(hide ? { hide } : {})} />
         </Context.Content>
       </Context.Portal>
@@ -164,7 +170,7 @@ export function ActionsContext({ items, children }: { items: readonly ActionItem
     <Context.Root modal={false}>
       <Context.Trigger asChild>{children}</Context.Trigger>
       <Context.Portal>
-        <Context.Content className={s.menu} onCloseAutoFocus={keepFocus} collisionPadding={8}>
+        <Context.Content className={s.menu} onClick={stayInMenu} onCloseAutoFocus={keepFocus} collisionPadding={8}>
           <LazyRows items={items} />
         </Context.Content>
       </Context.Portal>
@@ -183,7 +189,7 @@ export function ActionsDropdown({ items, children, align = 'end' }: { items: rea
     <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>{children}</Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content className={s.menu} onCloseAutoFocus={keepFocus} align={align} sideOffset={4} collisionPadding={8}>
+        <Dropdown.Content className={s.menu} onClick={stayInMenu} onCloseAutoFocus={keepFocus} align={align} sideOffset={4} collisionPadding={8}>
           <ActionRows items={items} Item={Dropdown.Item} Separator={Dropdown.Separator} />
         </Dropdown.Content>
       </Dropdown.Portal>

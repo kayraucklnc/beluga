@@ -202,6 +202,8 @@ export const API = {
   'workspaces.newGroup': args(z.string().min(1).max(80), opt(z.object({ before: opt(ArrangeTarget.nullable()), project: opt(id) }).strict())),
   'workspaces.showProject': args(path),
   'workspaces.hideProject': args(id),
+  // Delete Project: out of Klaud (worktrees archived losslessly); `trash`: its folder to the Trash too.
+  'workspaces.removeProject': args(id, opt(z.object({ trash: opt(bool) }).strict())),
   'workspaces.cleanAgentWorktrees': args(id),
   // Worktrees klaud didn't make (Conductor's, Claude Code's, a script's): who made them, their info page, tidying up.
   'workspaces.otherOrigins': args(id),

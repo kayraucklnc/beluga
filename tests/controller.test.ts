@@ -20,6 +20,7 @@ let screen: ClientStore;
 let shares: ShareService;
 let ctl: WorkspaceController;
 let toasts: string[];
+let trashed: string[];
 let asked: Array<{ prompt: string; channel: string }>;
 let repo: string;
 let claude: string;
@@ -44,6 +45,7 @@ beforeEach(async () => {
   store = new Store(initialState('room'));
   shares = new ShareService([]);
   toasts = [];
+  trashed = [];
   asked = [];
   const shown = screenOver(store);
   screen = shown.screen;
@@ -56,6 +58,7 @@ beforeEach(async () => {
     intend: shown.intend,
     askClaude: (prompt, channel) => void asked.push({ prompt, channel }),
     claudeHome: claude,
+    moveToTrash: async (dir) => void trashed.push(dir),
   });
   await ctl.refresh();
 });
@@ -284,6 +287,33 @@ describe('WorkspaceController', () => {
     expect(store.getState().hiddenProjects).toEqual([]);
     expect(store.getState().projectGroups).toEqual([{ name: 'Work', projects: [repo] }]);
     expect(await ctl.showProject('/not/hidden')).toBe(false);
+  });
+
+  it('deletes a project: its worktrees archived losslessly, out of the sidebar, the folder kept or trashed', async () => {
+    const ws = (await ctl.newWorktree(projectId(), 'tidy'))!;
+    writeFileSync(path.join(ws.path, 'notes.txt'), 'mine\n');
+    await ctl.setGroup(projectId(), 'work');
+    expect(await ctl.removeProject(projectId())).toBe(true);
+    expect(store.getState().projects.filter((p) => p.root)).toEqual([]);
+    expect(store.getState().hiddenProjects).toEqual([]);
+    expect(store.getState().projectGroups).toEqual([{ name: 'work', projects: [] }]);
+    expect(toasts.at(-1)).toMatch(/Removed app from Klaud\. 1 worktree archived/);
+    expect(existsSync(repo)).toBe(true); // the folder stays without the checkbox
+    expect(existsSync(ws.path)).toBe(false); // archived, its work kept in the archive
+    expect(trashed).toEqual([]);
+    // Its scanned root doesn't bring it back; adding it again does, with the worktree to restore.
+    await ctl.refresh();
+    expect(store.getState().projects.filter((p) => p.root)).toEqual([]);
+    await ctl.addProject(repo);
+    expect(store.getState().projects.find((p) => p.root)?.workspaces.find((w) => w.id === ws.id)?.archived).toBe(true);
+    await ctl.restore(ws.id);
+    expect(readFileSync(path.join(ws.path, 'notes.txt'), 'utf8')).toBe('mine\n');
+    // With the checkbox: the folder goes to the Trash (never rm).
+    expect(await ctl.removeProject(projectId(), true)).toBe(true);
+    expect(trashed).toEqual([repo]);
+    expect(toasts.at(-1)).toMatch(/in the Trash/);
+    expect(await ctl.removeProject('nope')).toBe(false);
+    expect(toasts.at(-1)).toMatch(/Project not found/);
   });
 
   it('starts chats and adds projects or folders', async () => {
