@@ -8,14 +8,18 @@ import { useApp, useKlaud, toast } from '../lib/klaud.js';
 import { openSheet } from '../lib/sheets.js';
 import { LabelChip, PrChip } from './marks.js';
 import { dueText } from './tasks-model.js';
-import { useBoard, useTaskActions } from './use-tasks.js';
+import { useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /** What a row and a card show besides the title: sub-tasks done, what blocks it, its worktree, labels, due date, pull request. */
 export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; compact?: boolean; labels?: boolean }) {
-  const board = useBoard();
-  const progress = progressOf(board, issue);
-  const blockers = openBlockers(board, issue);
+  // Only what this issue shows, as plain values: a change elsewhere on the board doesn't render every card again.
+  const done = useApp((s) => progressOf(s.board, issue).done);
+  const total = useApp((s) => progressOf(s.board, issue).total);
+  const progress = { done, total };
+  const blocked = useApp((s) => openBlockers(s.board, issue).length);
+  const waitsOn = useApp((s) => openBlockers(s.board, issue).map((b) => `${b.key} ${b.title}`).join(', '));
+  const blockedBy = useApp((s) => openBlockers(s.board, issue).map((b) => b.key).join(', '));
   const last = issue.worktrees.at(-1);
   const worktree = useApp((s) => (last && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
@@ -33,11 +37,11 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
           </span>
         </Tip>
       ) : null}
-      {blockers.length && STATUS_INFO[issue.status].open ? (
-        <Tip label={`Waits on ${blockers.map((b) => `${b.key} ${b.title}`).join(', ')}`}>
+      {blocked && STATUS_INFO[issue.status].open ? (
+        <Tip label={`Waits on ${waitsOn}`}>
           <span className={t.blocked}>
             <Icon name="stopSign" size={11} />
-            {compact ? blockers.length : `Blocked by ${blockers.map((b) => b.key).join(', ')}`}
+            {compact ? blocked : `Blocked by ${blockedBy}`}
           </span>
         </Tip>
       ) : null}

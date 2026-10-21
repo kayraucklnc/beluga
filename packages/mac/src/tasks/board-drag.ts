@@ -11,8 +11,14 @@ export interface Box {
   readonly right: number;
 }
 
+/** A card's place top to bottom (screen or layout coordinates). */
+export interface Span {
+  readonly top: number;
+  readonly bottom: number;
+}
+
 /** Where a card dropped at `y` goes among the column's other cards (their boxes, top to bottom). */
-export function landingIndex(y: number, cards: readonly Box[]): number {
+export function landingIndex(y: number, cards: readonly Span[]): number {
   const i = cards.findIndex((c) => y < c.top + (c.bottom - c.top) / 2);
   return i < 0 ? cards.length : i;
 }
@@ -56,4 +62,41 @@ export function neighbours<T extends { readonly id: string }>(cards: readonly T[
   const before = rest[index - 1];
   const after = rest[index];
   return { ...(before ? { before: before.id } : {}), ...(after ? { after: after.id } : {}) };
+}
+
+/** A card's slot in its column's layout: how far down the column's content it sits, and how tall it is. */
+export interface Slot {
+  readonly id: string;
+  readonly top: number;
+  readonly height: number;
+}
+
+/** A column's slots with `lifted` taken out: the ones below it move up into its room (its height and the `gap` between cards). */
+export function closeUp(slots: readonly Slot[], lifted: string, gap: number): Span[] {
+  const out = slots.find((s) => s.id === lifted);
+  const shift = out ? out.height + gap : 0;
+  return slots
+    .filter((s) => s.id !== lifted)
+    .map((s) => {
+      const top = out && s.top > out.top ? s.top - shift : s.top;
+      return { top, bottom: top + s.height };
+    });
+}
+
+/** The board as measured once when a drag starts (and again when it scrolls): what spotIn needs, so a pointer move only does arithmetic. */
+export interface ColumnGeometry<K> {
+  readonly key: K;
+  /** The column on screen. */
+  readonly box: Box;
+  /** Where its content starts on screen (the stack's top, less how far it's scrolled). */
+  readonly origin: number;
+  /** Its cards in content coordinates, the lifted one taken out. */
+  readonly cards: readonly Span[];
+}
+
+/** Where a pointer at (x, y) would drop the card: the column under it, and the place among its cards. */
+export function spotIn<K>(x: number, y: number, columns: readonly ColumnGeometry<K>[]): { readonly key: K; readonly index: number } | undefined {
+  const key = columnAt(x, columns);
+  const col = key === undefined ? undefined : columns.find((c) => c.key === key);
+  return col ? { key: col.key, index: landingIndex(y - col.origin, col.cards) } : undefined;
 }
