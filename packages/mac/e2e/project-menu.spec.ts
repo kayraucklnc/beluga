@@ -96,3 +96,18 @@ test('Delete Project… asks first; by default it leaves Klaud and the folder st
   await expect(project(page, 'del-one')).toHaveCount(0);
   expect(existsSync(path.join(dir, 'README.md'))).toBe(true);
 });
+
+test('a long folder path wraps inside the Delete Project alert', async ({ page }) => {
+  const name = 'a-project-whose-folder-name-goes-on-and-on-well-past-the-alert-edge';
+  await addRepo(page, name);
+  await project(page, name).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Delete Project…' }).click();
+  const alert = page.getByRole('alertdialog');
+  const code = alert.locator('code').first();
+  await expect(code).toContainText(name);
+  const box = (await alert.boundingBox())!;
+  const rect = (await code.boundingBox())!;
+  expect(rect.x + rect.width).toBeLessThanOrEqual(box.x + box.width);
+  await alert.screenshot({ path: '../../.klaud/scratch/03-delete-alert-long-path.png' });
+  await alert.getByRole('button', { name: 'Cancel' }).click();
+});
