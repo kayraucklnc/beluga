@@ -44,6 +44,8 @@ export interface ControllerDeps {
   readonly onWorktreeRestored?: (ws: Workspace, remake: readonly string[]) => void;
   /** Claude Code's folder, where its sub-agents' worktrees are found (default: ~/.claude). */
   readonly claudeHome?: string;
+  /** Move a folder to the Trash (Delete Project; default: the system's Trash, see workspaces/trash.ts). */
+  readonly moveToTrash?: (dir: string) => Promise<void>;
 }
 
 const HISTORY_SAVE_MS = 400;
@@ -641,6 +643,27 @@ export class WorkspaceController {
     this.deps.manager.hideProject(projectId);
     await this.refresh();
     this.deps.toast('Project hidden. Add it back with /project add <path>', 'success');
+  }
+
+  /**
+   * Delete Project: it leaves Klaud (its worktrees archived first, losslessly); with `trash`, its
+   * folder goes to the Trash too. False: it couldn't (and says why).
+   */
+  async removeProject(projectId: string, trash = false): Promise<boolean> {
+    const project = this.deps.manager.list.find((p) => p.id === projectId);
+    // Stop what runs in its folders (shells, dev servers) and close their tabs first.
+    for (const w of project?.workspaces.filter((x) => !x.archived) ?? []) {
+      this.deps.onWorkspaceGoing?.(w.id);
+      this.deps.intend({ type: 'close_tab', id: w.id });
+    }
+    const phase = (id: string, p?: ArchivePhase): void => void this.deps.store.dispatch({ type: 'archiving', id, ...(p ? { phase: p } : {}) });
+    const res = await this.act("Couldn't delete the project", () =>
+      this.deps.manager.removeProject(projectId, { trash, onPhase: phase, ...(this.deps.moveToTrash ? { toTrash: this.deps.moveToTrash } : {}) }),
+    );
+    if (!res) return false;
+    const kept = res.archived ? ` ${res.archived} worktree${res.archived === 1 ? '' : 's'} archived (nothing lost).` : '';
+    this.deps.toast(`Removed ${project?.name ?? 'the project'} from Klaud.${res.trashed ? ' Its folder is in the Trash.' : ''}${kept}`, 'success');
+    return true;
   }
 
   askClaudeToMerge(id: string, conflicts: readonly string[] = this.deps.store.getState().conflicts[id] ?? []): void {

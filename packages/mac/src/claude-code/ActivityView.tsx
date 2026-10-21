@@ -1,33 +1,40 @@
 import { useMemo } from 'react';
-import { type CcAgent, type CcSession, outsideSessions } from '@klaud/core/claude-code/model.js';
+import { type CcSession, outsideSessions } from '@klaud/core/claude-code/model.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
-import { Button, Dot, Empty, cx } from '../components/ui.js';
+import { Button, Dot, Empty } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { AgentCard, SessionChip } from './Cards.js';
 import { chatOf } from './chat-of.js';
 import { LiveTranscript } from './LiveTranscript.js';
 import { AgentMonitor } from './AgentMonitor.js';
+import { openSubAgent } from '../layout/SubAgents.js';
 import { TeamBlock, teamMembers } from './Team.js';
-import { activitySummary, agentElapsed, agentLabel, agentTone, groupByProject, openActivity, placeLabel, plural, sessionLabel, tokens, typeLabel } from './cc-model.js';
+import { activitySummary, groupByProject, openActivity, placeLabel, plural, sessionLabel } from './cc-model.js';
 import s from './claude-code.module.css';
 
 /**
  * Activity: every Claude Code session running outside klaud (a terminal, another app), by project,
- * with its sub-agents as cards. A session in one of Klaud's worktrees opens that worktree's chat
- * (where it's followed and continued); one Klaud has no chat for opens as a live transcript.
+ * with its sub-agents as cards. Everything opens where it lives: a session the chat of its folder
+ * (with the session live in a strip at the top), an agent its worktree's chat or its own page. Only
+ * a session in a folder Klaud doesn't know opens as a live transcript.
  */
 
 export const OUTSIDE = 'Running in Claude Code, outside Klaud';
 
-/** Open where a session is followed: its worktree's chat when Klaud has one, else its transcript here. */
+/** Open where a session lives (its folder's chat, else its transcript here), or one of its agents (openSubAgent). */
 function useOpenSession(session: CcSession): (agentId?: string) => void {
   const { client } = useKlaud();
   const actions = useActions();
   const chat = useApp((st) => chatOf(st, session));
-  return (agentId) => (chat ? actions.run({ type: 'open_ws', id: chat }) : openActivity(client, session.id, agentId));
+  return (agentId) => {
+    const agent = agentId ? session.agents.find((a) => a.id === agentId) : undefined;
+    if (agent) openSubAgent(client, actions, { session, agent });
+    else if (chat) actions.run({ type: 'open_ws', id: chat });
+    else openActivity(client, session.id);
+  };
 }
 
 function SessionRow({ session }: { session: CcSession }) {
@@ -52,7 +59,7 @@ function SessionRow({ session }: { session: CcSession }) {
           </span>
         </span>
         <span className={s.sessionOpen}>
-          {chat ? 'Open Chat' : 'Watch'}
+          {chat ? 'Open Chat' : 'Open'}
           <Icon name="chevronRight" size={10} />
         </span>
       </button>
@@ -87,7 +94,7 @@ function ActivityList() {
       <div className={s.inner}>
         <header className={s.summary}>
           <h1 className={s.summaryTitle}>{activitySummary(sessions)}</h1>
-          <p className={s.summaryText}>Claude Code sessions running outside Klaud, and the agents they started. You can watch them here; they keep running where they are.</p>
+          <p className={s.summaryText}>Claude Code sessions running outside Klaud, and the agents they started. Open one to follow it where it lives; they keep running where they are.</p>
         </header>
         {groups.map((g) => (
           <section key={g.key} className={s.group} aria-label={g.name}>
@@ -106,33 +113,19 @@ function ActivityList() {
   );
 }
 
-function AgentLine({ agent }: { agent: CcAgent }) {
-  const now = useNow(agent.status === 'running');
-  return (
-    <div className={s.focusMeta}>
-      <span className={s.typeBadge}>{typeLabel(agent.type)}</span>
-      <span className={cx(s.cardStatus, s[`tone_${agentTone(agent)}`])}>
-        {agent.status === 'running' ? <Dot tone="claude" live /> : null}
-        {agentLabel(agent)}
-      </span>
-      <span>{agentElapsed(agent, now)}</span>
-      <span>{plural(agent.steps, 'step')}</span>
-      {agent.tokens ? <span>{tokens(agent.tokens)} context</span> : null}
-    </div>
-  );
-}
-
-/** One session: its agents in a row (the main conversation first) and the chosen one's transcript. */
+/**
+ * One session's transcript (the chat's live strip opens it; Activity does for a session in a folder
+ * Klaud doesn't know), titled by its folder, with its agents in a row. An agent that went quiet
+ * lands here too.
+ */
 export function SessionPage({ session, agentId }: { session: CcSession; agentId?: string }) {
   const { client } = useKlaud();
+  const open = useOpenSession(session);
   const actions = useActions();
   const chat = useApp((st) => chatOf(st, session));
   const place = useApp((st) => placeLabel(st, session));
   const now = useNow(session.status === 'working', 5000);
   const st = sessionLabel(session, now);
-  const agent = agentId ? session.agents.find((a) => a.id === agentId) : undefined;
-  const version = agent ? `${agent.lastAt}:${agent.steps}:${agent.status}` : `${session.lastAt}:${session.steps}:${session.status}`;
-  const live = agent ? agent.status === 'running' : session.status === 'working';
   return (
     <div className={s.sessionPage}>
       <header className={s.focusHead}>
@@ -140,11 +133,11 @@ export function SessionPage({ session, agentId }: { session: CcSession; agentId?
           Activity
         </Button>
         <div className={s.focusTitles}>
-          <h1 className={s.focusTitle}>{agent ? agent.description : session.title}</h1>
+          <h1 className={s.focusTitle}>{place}</h1>
           <div className={s.focusMeta}>
-            {agent ? <span>{session.title}</span> : <span className={s[`tone_${st.tone}`]}>{st.label}</span>}
-            <span>{place}</span>
-            {!agent && session.model ? <span>{session.model}</span> : null}
+            <span className={s[`tone_${st.tone}`]}>{st.label}</span>
+            <span>{session.title}</span>
+            {session.model ? <span>{session.model}</span> : null}
           </div>
         </div>
         {chat ? (
@@ -162,15 +155,14 @@ export function SessionPage({ session, agentId }: { session: CcSession; agentId?
         <div className={s.strip} role="group" aria-label="Agents in this session">
           <SessionChip session={session} selected={!agentId} onOpen={() => openActivity(client, session.id)} />
           {session.agents.map((a) => (
-            <AgentCard key={a.id} agent={a} compact selected={a.id === agentId} onOpen={() => openActivity(client, session.id, a.id)} />
+            <AgentCard key={a.id} agent={a} compact onOpen={() => open(a.id)} />
           ))}
         </div>
       ) : null}
-      {agent ? <AgentLine agent={agent} /> : null}
-      {agentId && !agent ? (
+      {agentId ? (
         <Empty icon="clock" title="This agent went quiet" detail="Klaud stops watching agents a while after they finish." action={<Button onClick={() => openActivity(client, session.id)}>Show the Conversation</Button>} />
       ) : (
-        <LiveTranscript key={`${session.id}/${agentId ?? ''}`} sessionId={session.id} {...(agentId ? { agentId } : {})} version={version} live={live} label={agent ? `Agent ${agent.description}` : `Claude Code session ${session.title}`} />
+        <LiveTranscript key={session.id} sessionId={session.id} version={`${session.lastAt}:${session.steps}:${session.status}`} live={session.status === 'working'} label={`Claude Code session ${session.title}`} />
       )}
     </div>
   );
@@ -190,8 +182,8 @@ export function ActivityView() {
       </div>
     );
   }
-  // One of Klaud's own conversations' sub-agents: followed on its own page (the conversation is in its chat).
+  // A sub-agent: followed on its own page (gone quiet: the session's page says so).
   const agent = agentId ? session.agents.find((a) => a.id === agentId) : undefined;
-  if (session.own && agent) return <AgentMonitor sub={{ session, agent }} />;
+  if (agent) return <AgentMonitor sub={{ session, agent }} />;
   return <SessionPage session={session} {...(agentId ? { agentId } : {})} />;
 }

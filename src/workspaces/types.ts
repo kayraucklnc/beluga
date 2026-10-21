@@ -106,6 +106,11 @@ export interface ProjectsConfig {
   readonly projects: readonly string[];
   /** Projects you chose to hide. */
   readonly hidden: readonly string[];
+  /**
+   * Projects you removed from Klaud (Delete Project) that a scanned root would otherwise find
+   * again. Unlike hidden ones they aren't offered back; adding the project again clears it.
+   */
+  readonly removed?: readonly string[];
   /** Your own grouping of projects in the sidebar. */
   readonly groups?: readonly ProjectGroup[];
   /**

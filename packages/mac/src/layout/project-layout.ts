@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { AppState } from '@klaud/core/store.js';
 import type { Project } from '@klaud/workspaces/types.js';
 import { type Item, type Layout, groupKey, groupOfKey, isGroupKey, move, topLevel } from '@klaud/workspaces/arrange.js';
@@ -123,15 +123,18 @@ export function useLayout(): { layout: Required<Layout>; entries: Entry[] } {
   );
   // The daemon answered (or something else changed them): draw what it says.
   useEffect(() => setPending(undefined), [projects, groups, order]);
-  const layout = local ?? publishedLayout({ projects, projectGroups: groups, projectOrder: order });
-  return { layout, entries: entriesOf(layout, projects) };
+  // The same entries until something in them changes (each project's block is memo'd on them).
+  return useMemo(() => {
+    const layout = local ?? publishedLayout({ projects, projectGroups: groups, projectOrder: order });
+    return { layout, entries: entriesOf(layout, projects) };
+  }, [local, projects, groups, order]);
 }
 
 /** Arrange the sidebar: shows at once, then asks the daemon (which has the last word). */
 export function useArrange(): (item: Target, place: Place) => void {
   const api = useApi();
   const { client } = useKlaud();
-  return (item, place) => {
+  return useCallback((item, place) => {
     const state = client.store.getState();
     const layout = pending ?? publishedLayout(state);
     const rootOf = (t: Target): Item => ('project' in t ? { project: state.projects.find((p) => p.id === t.project)?.root ?? '' } : t);
@@ -144,6 +147,6 @@ export function useArrange(): (item: Target, place: Place) => void {
       (ok) => (ok ? undefined : setPending(undefined)),
       () => setPending(undefined),
     );
-  };
+  }, [api, client]);
 }
 

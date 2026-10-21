@@ -26,6 +26,8 @@ export type NativeSheet =
   | { readonly kind: 'work'; readonly wsId: string; readonly action: AskedWork }
   /** A project's worktrees made outside Klaud that can go, ticked, before removing them. */
   | { readonly kind: 'clean_up_worktrees'; readonly projectId: string }
+  /** Delete Project…: out of Klaud (worktrees archived), the folder to the Trash only if ticked. */
+  | { readonly kind: 'delete_project'; readonly projectId: string }
   /** A new task (in a project, a status, under a parent). */
   | { readonly kind: 'new_task'; readonly projectId?: string; readonly status?: import('@klaud/core/board/model.js').IssueStatus; readonly parent?: string }
   /** A new plan with Claude: what it's for, the project, how far it runs on its own. */

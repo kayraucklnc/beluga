@@ -163,6 +163,7 @@ export const HANDLERS = {
   'workspaces.newGroup': (s, name, opts) => ctl(s)?.newGroup(name, opts ?? {}),
   'workspaces.showProject': (s, root) => ctl(s)?.showProject(root) ?? false,
   'workspaces.hideProject': (s, projectId) => ctl(s)?.hideProject(projectId),
+  'workspaces.removeProject': (s, projectId, opts) => ctl(s)?.removeProject(projectId, opts?.trash ?? false) ?? false,
   'workspaces.cleanAgentWorktrees': (s, projectId) => ctl(s)?.cleanAgentWorktrees(projectId),
   'workspaces.otherOrigins': (s, projectId) => ctl(s)?.others.origins(projectId) ?? {},
   'workspaces.otherActivity': (s, projectId) => ctl(s)?.others.activity(projectId) ?? {},

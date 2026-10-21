@@ -611,13 +611,13 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 10px 11px;
+  /* The ring as a border (the padding gives the pixel back) so one shadow is all it paints. */
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
   border-radius: 9px;
   background: var(--bg-raised);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--text) 18%, transparent),
-    0 18px 38px -12px rgba(0, 0, 0, 0.32),
-    0 6px 14px -6px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 14px 30px -12px rgba(0, 0, 0, 0.3);
   transform-origin: 50% 30%;
   will-change: transform;
 }
@@ -630,6 +630,11 @@
 :global(html[data-dragging='card']) * {
   cursor: grabbing !important;
   user-select: none !important;
+}
+/* While a card is up nothing on the board eases on its own: motion moves the cards, and only those. */
+:global(html[data-dragging='card']) .card,
+:global(html[data-dragging='card']) .column {
+  transition: none;
 }
 .cards {
   position: relative;

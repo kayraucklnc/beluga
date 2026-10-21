@@ -5,8 +5,9 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * Claude Code running outside klaud, live and read-only: a pretend session with background agents
  * is written where the demo daemon looks (KLAUD_CLAUDE_HOME, see playwright.config.ts), in the
- * demo's "landing" project. Activity lists it with its agents, an agent's transcript follows new
- * lines as they're written, and the agent turns Finished when the session hears it's done.
+ * demo's "landing" project. Activity lists it with its agents; an agent opens its own page, which
+ * follows new lines as they're written, and turns Finished when the session hears it's done; the
+ * session opens the landing chat, with itself live in a strip at the top.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -60,10 +61,11 @@ test('a Claude Code session and its agents show in Activity, live', async ({ pag
   await expect(card).toBeVisible();
   await expect(session.getByRole('button', { name: /^Review the CSS, Running/ })).toContainText('TypeScript reviewer');
 
-  // Its transcript, read-only, following new lines.
+  // An agent opens its own page (it has no worktree of its own), following new lines.
+  await expect(session).not.toContainText('Watch');
   await card.click();
-  await expect(page.getByText('Running in Claude Code, outside Klaud')).toBeVisible();
-  const log = page.getByRole('log', { name: 'Agent Tighten the hero copy' });
+  await expect(page.locator('[data-agent-monitor="a1e2e"]')).toBeVisible();
+  const log = page.getByRole('log', { name: 'Sub-agent Tighten the hero copy' });
   await expect(log).toContainText('Task: Tighten the hero copy');
   await expect(log).toContainText('Reading index.html');
   appendFileSync(path.join(agents, 'agent-a1e2e.jsonl'), assistant([tool('a1e2e-2', 'Edit', { file_path: `${cwd}/index.html` })]));
@@ -76,19 +78,24 @@ test('a Claude Code session and its agents show in Activity, live', async ({ pag
     line({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(Date.now() + 500), sessionId: SID, content: '<task-notification>\n<task-id>a1e2e</task-id>\n<tool-use-id>toolu_A</tool-use-id>\n<status>completed</status>\n<summary>Agent "Tighten the hero copy" finished</summary>\n</task-notification>' }),
   );
   await expect(log).toContainText('The hero now says one thing.', { timeout: 15_000 });
-  await expect(page.getByRole('button', { name: /^Tighten the hero copy, Finished/ })).toBeVisible({ timeout: 15_000 });
-  await expect(activity).toContainText('1');
+  await expect(activity).toContainText('1', { timeout: 15_000 });
+  await activity.click();
+  await expect(session.getByRole('button', { name: /^Tighten the hero copy, Finished/ })).toBeVisible({ timeout: 15_000 });
 
-  // The main conversation is a card too.
-  await page.getByRole('button', { name: /^Main conversation/ }).click();
+  // The session opens the chat of its folder, with the session live in a strip at the top; the strip opens its transcript.
+  await session.getByRole('button', { name: /^Polish the landing page.*Open Chat/ }).click();
+  const strip = page.getByRole('region', { name: 'Claude Code in this folder' });
+  await expect(strip).toContainText('Polish the landing page');
+  await strip.getByRole('button', { name: /Polish the landing page/ }).click();
   await expect(page.getByRole('log', { name: 'Claude Code session Polish the landing page' })).toContainText('Polish the landing page, and review it');
 });
 
-test('the Inspector shows the session you watch, and Activity goes back to the list', async ({ page }) => {
+test('the Inspector shows the session in the chat it opens, and Activity goes back to the list', async ({ page }) => {
   await sidebar(page).getByRole('button', { name: /^Activity/ }).click();
   await page.getByRole('region', { name: 'Claude Code session Polish the landing page' }).getByRole('button', { name: /^Polish the landing page/ }).click();
+  await expect(page.getByRole('region', { name: 'Claude Code in this folder' })).toBeVisible();
   const inspector = page.getByRole('complementary', { name: 'Inspector' });
   if (await inspector.isVisible()) await expect(inspector).toContainText('Claude Code');
-  await page.getByRole('main').getByRole('button', { name: 'Activity', exact: true }).click();
+  await sidebar(page).getByRole('button', { name: /^Activity/ }).click();
   await expect(page.getByRole('heading', { name: /agent.* running|working|Nothing running/ })).toBeVisible();
 });
