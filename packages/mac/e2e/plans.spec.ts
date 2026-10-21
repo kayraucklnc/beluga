@@ -75,7 +75,10 @@ test('a new plan: Claude drafts it in its own conversation, nothing is on the bo
 
 test('the composer: Plan with Tasks makes the conversation a plan', async ({ page }) => {
   await page.goto('/');
-  await sidebar(page).getByRole('button', { name: 'How do deploys work?' }).click();
+  // The demo's chat in bob-api (unfold the project when it's folded).
+  const chat = sidebar(page).getByRole('button', { name: 'How do deploys work?' });
+  if (!(await chat.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
+  await chat.click();
   await page.getByRole('button', { name: /^Mode: / }).click();
   await page.getByRole('menuitem', { name: /Plan with Tasks/ }).click();
   await expect(page.getByRole('button', { name: 'Mode: Plan with Tasks' })).toBeVisible();

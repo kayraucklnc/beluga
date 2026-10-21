@@ -467,7 +467,7 @@ export const DEFAULT_PREFS: Prefs = {
   notify: NotifySchema.parse({}),
   autoSetup: true,
   contextMeter: true,
-  autoCompact: true,
+  autoCompact: false,
   autoCompactAt: AUTO_COMPACT_DEFAULT,
   scratchFolder: true,
   subagents: 'full',

@@ -729,6 +729,46 @@ describe('Session hardening', () => {
     expect(kay.runs.map((r) => r.prompt)).toEqual(['start jobs', 'hi']);
   });
 
+  it('steers your running Claude with urgent messages instead of stopping it', async () => {
+    hub = await startHub({ keys });
+    let finish!: () => void;
+    const steered: string[] = [];
+    const kay = peer('kay', {
+      script: (input) =>
+        input.prompt === 'slow'
+          ? new Promise((resolve, reject) => {
+              input.signal.addEventListener('abort', () => reject(new Error('aborted')));
+              // Claude takes the first message in mid-turn; the second gets a turn of its own.
+              input.onSteer?.((f) => {
+                steered.push(f.prompt);
+                setTimeout(() => (steered.length === 1 ? f.onFolded?.() : (f.onStart?.(), f.onDone(`did ${f.prompt}`))), 10);
+                return true;
+              });
+              finish = () => {
+                input.onSteer?.(undefined);
+                resolve('slow done');
+              };
+            })
+          : Promise.resolve(`did ${input.prompt}`),
+    });
+    await room(kay);
+    kay.session.submit('@claude slow');
+    await waitFor(() => kay.runs.length === 1);
+    kay.session.submit('@claude use pnpm', { urgent: true });
+    await waitFor(() => steered.length === 1);
+    kay.session.submit('@claude later');
+    const queued = () => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.status === 'queued') as Array<{ requestId: string }>;
+    await waitFor(() => queued().length === 1);
+    expect(kay.session.host.promote(queued()[0]!.requestId)).toBe(true);
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'did later'));
+    finish();
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'slow done'));
+    expect(steered).toEqual(['use pnpm', 'later']);
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['slow']);
+    // Taken in mid-turn: no card of its own, and nothing was interrupted.
+    expect(agentItems(kay.state()).filter((a) => a.type === 'agent').map((a) => a.text)).toEqual(['slow done', 'did later']);
+  });
+
   it('shares folders at runtime and opens invites on demand', async () => {
     hub = await startHub({ keys });
     const kay = peer('kay');

@@ -54,6 +54,12 @@ export interface AgentRunInput {
    */
   readonly onFollowUps?: (send: ((followUp: FollowUp) => boolean) | undefined) => void;
   /**
+   * Called when the run starts with a way to steer it: a message sent in while Claude works,
+   * which Claude Code takes in at its next step (between tool calls) without stopping the turn,
+   * or answers in a turn of its own right after. Undefined once the run ends.
+   */
+  readonly onSteer?: (steer: ((followUp: FollowUp) => boolean) | undefined) => void;
+  /**
    * In a project's main folder (ask-only): carry this conversation into a new worktree and do
    * `task` there (Claude's continue_in_worktree tool). Resolves with what to tell Claude.
    */
@@ -146,10 +152,14 @@ export interface TaskTools {
   readonly deviceInfo?: () => Promise<string>;
 }
 
-/** A message sent into a run that is still waiting on its background agents. */
+/** A message sent into a live run: while it waits on its background agents, or steering it. */
 export interface FollowUp extends Pick<AgentRunInput, 'prompt' | 'requesterName' | 'viaAgent' | 'context' | 'onEvent' | 'onStep'> {
   readonly onDone: (final: string) => void;
   readonly onError: (reason: string) => void;
+  /** Its own turn begins (see TurnRoute.onStart). */
+  readonly onStart?: () => void;
+  /** Claude took it into the turn it was working on (see TurnRoute.onFolded). */
+  readonly onFolded?: () => void;
 }
 
 export interface AgentPlace {

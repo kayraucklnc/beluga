@@ -1,10 +1,19 @@
 // How full a conversation's context window is, and when to compact it. Pure (no Node), so the
 // core, the agent runner and both clients count the same way.
 
-/** Claude's context window when nothing better is known. */
+/** Claude's context window when nothing better is known (older models). */
 export const DEFAULT_CONTEXT_WINDOW = 200_000;
-/** The long-context window (models picked with a `[1m]` suffix, or reported as such). */
+/** The long-context window: the Claude 5 family, Opus 4.6+, Sonnet 4.6, and any `[1m]` pick. */
 export const LONG_CONTEXT_WINDOW = 1_000_000;
+
+/**
+ * Models whose window is 1M without a `[1m]` suffix: every Claude 5 model (Fable, Mythos, Opus,
+ * Sonnet, Haiku 5.x), Opus 4.6–4.8 and Sonnet 4.6, by id or by Claude Code's alias (`opus`,
+ * `sonnet`, `haiku`, `fable` pick the current 5.x model). Provider prefixes and suffixes
+ * (`us.anthropic.…`, `…-v1:0`, `…@date`) don't matter. Haiku 4.5 and older stay at 200k.
+ */
+const LONG_CONTEXT_MODEL = /claude-(?:(?:fable|mythos|opus|sonnet|haiku)-5|opus-4-[678]|sonnet-4-6)(?!\d)/i;
+const LONG_CONTEXT_ALIAS = /^(?:opus|sonnet|haiku|fable|opusplan)$/i;
 
 /** Auto-compact threshold: the range the setting allows, and where it starts. */
 export const AUTO_COMPACT_MIN = 70;
@@ -53,12 +62,13 @@ export function contextTokens(u: ResponseUsage | undefined): number {
 
 /**
  * A model's context window: what Claude Code reported for it when it did, else from its id
- * (`…[1m]` or `…-1m` picks the 1M window), else 200k.
+ * (`…[1m]` or `…-1m` picks the 1M window, as do the 1M models above), else 200k.
  */
 export function contextWindowFor(model?: string, reported?: number): number {
   if (reported && reported > 0) return reported;
-  if (model && /(\[1m\]|-1m\b)/i.test(model)) return LONG_CONTEXT_WINDOW;
-  return DEFAULT_CONTEXT_WINDOW;
+  if (!model) return DEFAULT_CONTEXT_WINDOW;
+  if (/(\[1m\]|-1m\b)/i.test(model)) return LONG_CONTEXT_WINDOW;
+  return LONG_CONTEXT_MODEL.test(model) || LONG_CONTEXT_ALIAS.test(model.trim()) ? LONG_CONTEXT_WINDOW : DEFAULT_CONTEXT_WINDOW;
 }
 
 /** The window of the main model among a run's per-model usage (the largest: helpers are smaller or equal). */

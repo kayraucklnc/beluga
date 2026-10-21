@@ -24,6 +24,14 @@ const shot = async (page: Page, name: string): Promise<void> => {
   await page.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
 };
 
+/** bob-api unfolded (projects start folded) and its "Agents" row open: the main folder's sub-agents. */
+async function showAgents(page: Page): Promise<void> {
+  await sidebar(page).getByText('bob-api', { exact: true }).first().click();
+  const agents = sidebar(page).getByRole('group', { name: 'Sub-agents in bob-api' }).getByRole('button', { name: /^Agents/ });
+  await expect(agents).toBeVisible({ timeout: 25_000 });
+  if ((await agents.getAttribute('aria-expanded')) !== 'true') await agents.click();
+}
+
 let root = '';
 let agentFile = '';
 
@@ -56,7 +64,9 @@ test('a sub-agent shows under what started it, as a robot, not as a worktree', a
       said([{ type: 'thinking', thinking: 'The retry logic lives in src/webhooks.ts; start by reading it.' }, { type: 'tool_use', id: 'r1', name: 'Read', input: { file_path: `${worktree}/src/webhooks.ts` } }], now - 2000),
   );
 
-  // Under bob-api, as a sub-agent (robot, running), not among the worktrees.
+  // Under bob-api, as a sub-agent (robot, running), not among the worktrees: behind the project's
+  // one "Agents" row (it started from the main folder), with projects folded until opened.
+  await showAgents(page);
   const agent = sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests, Running/ });
   await expect(agent).toBeVisible({ timeout: 20_000 });
   await expect(sidebar(page).getByRole('button', { name: new RegExp(`^agent-${AGENT}`) })).toHaveCount(0);
@@ -83,6 +93,7 @@ test('a sub-agent that finished long ago stays under what started it, and stays 
   writeFileSync(transcript, line({ type: 'user', timestamp: iso(then), sessionId: old, agentId: other.slice('agent-'.length), isSidechain: true, cwd: wt, message: { role: 'user', content: 'Write the retry policy package' } }));
   for (const f of [path.join(folder, `${old}.jsonl`), meta, transcript]) utimesSync(f, then / 1000, then / 1000);
 
+  await showAgents(page);
   const row = sidebar(page).getByRole('button', { name: /^Sub-agent Retry policy package, Finished/ });
   await expect(row).toBeVisible({ timeout: 25_000 });
   await expect(row).toHaveAttribute('title', /started by “Split the API work into packages”/);
@@ -95,6 +106,7 @@ test('a sub-agent that finished long ago stays under what started it, and stays 
 });
 
 test('its page follows it live: who started it, model, effort, thinking and tools', async ({ page }) => {
+  await showAgents(page);
   const row = sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests/ });
   await row.click();
   const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
@@ -121,6 +133,7 @@ test('its page follows it live: who started it, model, effort, thinking and tool
 });
 
 test('its Outputs: the screenshot and test log it made, wherever it put them, to look at', async ({ page }) => {
+  await showAgents(page);
   await sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests/ }).click();
   const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
   await expect(monitor).toBeVisible({ timeout: 15_000 });
@@ -149,6 +162,7 @@ test('its Outputs: the screenshot and test log it made, wherever it put them, to
 });
 
 test('its background commands: listed with how they run, and their output followed live (on its page and in the panel)', async ({ page }) => {
+  await showAgents(page);
   await sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests/ }).click();
   const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
   await expect(monitor).toBeVisible({ timeout: 15_000 });

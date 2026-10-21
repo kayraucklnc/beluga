@@ -15,6 +15,7 @@ import { Compactor } from './compactor.js';
 import { SCRATCH_DIR, ensureScratch } from '../workspaces/scratch.js';
 import { isImportedItem } from '../agent/transcript.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
+import { STEERED_IN } from '../shared/claude-notices.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -108,6 +109,8 @@ interface Lane {
   runFrom?: string;
   /** Set while the run has answered but waits on background agents: messages go straight in. */
   followUps?: (followUp: FollowUp) => boolean;
+  /** Set while a run of Claude's works here: your urgent messages steer it (see steer). */
+  steer?: (followUp: FollowUp) => boolean;
 }
 
 /** Conversations whose Claude may work at the same time (keeps your plan's limits in mind). */
@@ -385,12 +388,16 @@ export class AgentHost {
     return { stopped: true, returned: mine.filter((w) => !w.compact).map((w) => w.body.prompt) };
   }
 
-  /** Run one of your waiting requests now: it goes next and interrupts the current run. */
+  /**
+   * Send one of your waiting requests now: into the current run, which takes it in at its next
+   * step (see steer); when that run can't take it, it goes next and interrupts the current run.
+   */
   promote(requestId: string): boolean {
     for (const lane of this.lanes.values()) {
       const i = lane.waiting.findIndex((w) => w.body.requestId === requestId && w.from === this.selfId);
       if (i < 0) continue;
       const [item] = lane.waiting.splice(i, 1);
+      if (!item!.compact && this.steer(lane, item!.from, item!.body, true)) return true;
       const at = lane.waiting.findIndex((w) => !w.urgent);
       lane.waiting.splice(at === -1 ? lane.waiting.length : at, 0, { ...item!, urgent: true });
       if (lane.current) {
@@ -473,13 +480,15 @@ export class AgentHost {
   }
 
   /**
-   * Queue a request. Normal requests wait their turn (and say so); urgent ones from you
-   * interrupt the current run and go next, continuing the same conversation.
+   * Queue a request. Normal requests wait their turn (and say so); urgent ones from you steer
+   * the current run (Claude reads them at its next step), or, when it can't take them,
+   * interrupt it and go next, continuing the same conversation.
    */
   private enqueue(from: string, body: BodyOf<'agent_request'>, askTo?: string): void {
     const lane = this.lane(body.channel);
     if (this.sendFollowUp(lane, from, body)) return;
     const urgent = body.urgent && from === this.selfId;
+    if (urgent && this.steer(lane, from, body, false)) return;
     if (urgent) {
       // After earlier urgent messages (keeping your order), ahead of everything else in this conversation.
       const at = lane.waiting.findIndex((w) => !w.urgent);
@@ -517,6 +526,8 @@ export class AgentHost {
       context: this.recentChat(body.channel),
       onEvent: (kind, text) => emit(kind, text),
       onStep: (record) => this.steps.put(runKey(body.requestId), record),
+      // Sent close behind another, Claude Code may answer both in one turn.
+      onFolded: () => emit('done', STEERED_IN),
       onDone: (final) => {
         this.steps.flush(runKey(body.requestId));
         emit('done', final || '(done)');
@@ -525,6 +536,34 @@ export class AgentHost {
     });
     if (sent) emit('started');
     return sent;
+  }
+
+  /**
+   * Steer the run working in this conversation: the message goes into its live session and
+   * Claude reads it at its next step (between tool calls), without stopping what it's doing.
+   * Taken in mid-turn, it gets no card of its own (the turn's answer covers it; a card it
+   * already had as a queued message says so); else it's answered in a turn of its own right
+   * after. Only your own messages into your own run: approvals are judged for its requester.
+   */
+  private steer(lane: Lane, from: string, body: BodyOf<'agent_request'>, queued: boolean): boolean {
+    if (!lane.steer || lane.runFrom !== from || body.plan || body.project) return false;
+    const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
+    return lane.steer({
+      prompt: body.prompt,
+      requesterName: peerName(this.store.getState(), from),
+      viaAgent: body.viaAgent,
+      // The conversation is the run's own: what's said in the chat it has already.
+      context: [],
+      onEvent: (kind, text) => emit(kind, text),
+      onStep: (record) => this.steps.put(runKey(body.requestId), record),
+      onStart: () => emit('started'),
+      onFolded: () => (queued ? emit('done', STEERED_IN) : undefined),
+      onDone: (final) => {
+        this.steps.flush(runKey(body.requestId));
+        emit('done', final || '(done)');
+      },
+      onError: (reason) => emit('error', reason),
+    });
   }
 
   private async pump(lane: Lane): Promise<void> {
@@ -658,6 +697,9 @@ export class AgentHost {
         plan: body.plan,
         // A plan's conversation plans; it doesn't move to a worktree.
         ...(move && !plans?.tools ? { continueInWorktree: move } : {}),
+        onSteer: (steer) => {
+          if (lane.current === controller) lane.steer = steer;
+        },
         onFollowUps: (send) => {
           lane.followUps = send;
           // Anything that queued up behind this run from the same person can go in now.
@@ -680,6 +722,7 @@ export class AgentHost {
       if (lane.current === controller) {
         lane.current = undefined;
         lane.followUps = undefined;
+        lane.steer = undefined;
         lane.runFrom = undefined;
       }
       lane.interruptedBy = undefined; // never carry an interrupt label into the next run

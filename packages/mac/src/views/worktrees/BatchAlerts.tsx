@@ -3,12 +3,12 @@ import { Alert } from '../../components/Alert.js';
 import type { WorktreeRow } from './worktrees-model.js';
 
 /**
- * Before archiving or cleaning several worktrees at once: what happens to them, and what it
- * frees. Archiving keeps everything of yours; cleaning keeps the worktrees and clears only what's
- * made again.
+ * Before archiving, removing build files from or deleting several worktrees at once: what
+ * happens to them, and what it frees or loses. Archiving keeps everything of yours; removing
+ * build files keeps the worktrees and clears only what's made again; deleting is for good.
  */
 
-export type Batch = 'archive' | 'free';
+export type Batch = 'archive' | 'free' | 'delete';
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -21,14 +21,38 @@ export function BatchAlert({ batch, rows, rebuildable, onConfirm, onCancel }: { 
       <Alert
         icon="archive"
         tone="info"
-        title={`Free up space in ${plural(n, 'worktree')}?`}
+        title={`Remove build files from ${plural(n, 'worktree')}?`}
         message={
           <>
-            <p>Their dependencies, builds and caches are cleared ({freed}). Your files, changes and ignored files like .env stay, and so do the worktrees.</p>
-            <p>To work in one again, run its setup (npm install and the like).</p>
+            <p>Deletes what the project makes again by itself: node_modules, build output and caches ({freed}).</p>
+            <p>Your work stays: files, commits, uncommitted changes, ignored files like .env, and the worktrees themselves. To work in one again, run its setup (npm install and the like).</p>
           </>
         }
-        confirm={{ label: 'Free Up Space', onClick: onConfirm }}
+        confirm={{ label: 'Remove Build Files', onClick: onConfirm }}
+        onCancel={onCancel}
+      />
+    );
+  }
+  if (batch === 'delete') {
+    const branches = rows.filter((r) => r.madeBy.kind === 'klaud' && r.ws.branch).length;
+    const saved = rows.filter((r) => r.ws.archive).length;
+    return (
+      <Alert
+        icon="alert"
+        tone="danger"
+        title={`Delete ${plural(n, 'archived worktree')} permanently?`}
+        message={
+          <>
+            <p>
+              {saved ? `${saved === n ? 'Their archives' : plural(saved, 'archive')} (uncommitted work and files of yours kept when archived) ` : ''}
+              {saved && branches ? 'and ' : ''}
+              {branches ? `${branches === 1 ? 'the branch' : `${branches} branches`} Klaud made (commits only there) ` : ''}
+              {saved || branches ? 'go, with their conversations.' : 'Their conversations go.'} Branches other tools made are kept.
+            </p>
+            <p>You can’t undo this.</p>
+          </>
+        }
+        confirm={{ label: `Delete ${plural(n, 'Worktree')}`, destructive: true, onClick: onConfirm }}
         onCancel={onCancel}
       />
     );
@@ -40,8 +64,8 @@ export function BatchAlert({ batch, rows, rebuildable, onConfirm, onCancel }: { 
       title={`Archive ${plural(n, 'worktree')}?`}
       message={
         <>
-          <p>Everything of yours in them is kept: uncommitted work, new files and ignored files like .env. Their dependencies, builds and caches are cleared ({freed}), and the folders go.</p>
-          <p>Their branches and conversations stay. Restore any of them from Overview › Archived, as it was.</p>
+          <p>Everything of yours in them is kept: uncommitted work, new files and ignored files like .env. Their build files are removed ({freed}), and the folders go.</p>
+          <p>Their branches and conversations stay. Restore any of them from Archived on this page, as it was.</p>
           {outside ? <p>{outside === 1 ? 'One was' : `${outside} were`} made outside Klaud: the app that made {outside === 1 ? 'it' : 'them'} may still have {outside === 1 ? 'it' : 'them'} open.</p> : null}
         </>
       }

@@ -70,8 +70,10 @@ export const Settings = z.object({
   autoSetup: z.boolean().default(true),
   /** Show how full each conversation's context is. */
   contextMeter: z.boolean().default(true),
-  /** Compact a conversation on its own when its context is nearly full (the chat stays on screen). */
-  autoCompact: z.boolean().default(true),
+  /** Compact a conversation on its own when its context is nearly full (the chat stays on screen). Off until you turn it on. */
+  autoCompact: z.boolean().default(false),
+  /** You chose auto-compact yourself. Older files saved `autoCompact: true` as a default nobody picked, so without this it reads as off. */
+  autoCompactChosen: z.boolean().optional(),
   /** How full (percent) a conversation gets before it's compacted. */
   autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX).catch(AUTO_COMPACT_DEFAULT),
   /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.klaud/scratch/` folder. */

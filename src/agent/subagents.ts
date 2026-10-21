@@ -34,11 +34,15 @@ interface Block {
 /**
  * Follows sub-agents through the SDK message stream: a top-level Task/Agent tool
  * call starts one, messages tagged with its id are its steps, and the matching
- * tool_result ends it.
+ * tool_result ends it. One started in the background answers its call right away
+ * ("launched"): it ends when Claude Code reports its task finished.
  */
 export class SubAgentTracker {
   private readonly open = new Set<string>();
   private readonly tasks = new Set<string>();
+  /** Sub-agents launched in the background (by their call), and their tasks → that call. */
+  private readonly background = new Set<string>();
+  private readonly taskCall = new Map<string, string>();
 
   constructor(private readonly cwd?: string) {}
 
@@ -54,6 +58,7 @@ export class SubAgentTracker {
       const input = (block.input ?? {}) as Record<string, unknown>;
       if (parentToolUseId === null && this.isLaunch(block) && block.id) {
         this.open.add(block.id);
+        if (input.run_in_background === true) this.background.add(block.id);
         const title = [input.subagent_type, input.description].filter((v): v is string => typeof v === 'string' && v.length > 0).join(' · ');
         events.push({ id: block.id, phase: 'start', title: title || 'sub-agent' });
       } else if (parentToolUseId && this.open.has(parentToolUseId)) {
@@ -69,7 +74,19 @@ export class SubAgentTracker {
    */
   task(msg: { subtype?: string; task_id?: string; tool_use_id?: string; description?: string; patch?: { status?: string; description?: string }; status?: string; summary?: string }): SubAgentEvent[] {
     const id = msg.task_id;
-    if (!id || (msg.tool_use_id && this.open.has(msg.tool_use_id))) return [];
+    if (!id) return [];
+    // A background sub-agent's task: it ends that sub-agent's row.
+    const call = msg.tool_use_id && this.background.has(msg.tool_use_id) ? msg.tool_use_id : this.taskCall.get(id);
+    if (call) {
+      this.taskCall.set(id, call);
+      const status = msg.subtype === 'task_updated' ? msg.patch?.status : msg.subtype === 'task_notification' ? msg.status : undefined;
+      if (!status || !['completed', 'failed', 'killed', 'stopped'].includes(status)) return [];
+      this.taskCall.delete(id);
+      this.background.delete(call);
+      this.open.delete(call);
+      return [{ id: call, phase: 'done', failed: status !== 'completed' }];
+    }
+    if (msg.tool_use_id && this.open.has(msg.tool_use_id)) return [];
     if (msg.subtype === 'task_started') {
       this.tasks.add(id);
       return [{ id, phase: 'start', title: msg.description || 'background task', kind: 'background' }];
@@ -88,7 +105,8 @@ export class SubAgentTracker {
     if (typeof blocks === 'string') return [];
     const events: SubAgentEvent[] = [];
     for (const block of blocks) {
-      if (block.type === 'tool_result' && block.tool_use_id && this.open.delete(block.tool_use_id)) {
+      // Launched in the background: its call answers at once, but it works on.
+      if (block.type === 'tool_result' && block.tool_use_id && !this.background.has(block.tool_use_id) && this.open.delete(block.tool_use_id)) {
         events.push({ id: block.tool_use_id, phase: 'done' });
       }
     }

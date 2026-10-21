@@ -33,6 +33,8 @@ const MAX_LISTED = 50;
 
 /** Images waiting to be sent, per conversation (so switching away and back keeps them). */
 const waitingImages = new Map<string, readonly number[]>();
+/** How the words refer to a waiting image (it becomes a link to it when sent). */
+const imageRef = (n: number): string => `[image ${n}]`;
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -82,8 +84,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const shared = state.view.kind === 'shared';
   const compose = composeState(state, ui.get(), state.selfId, channel, shared);
   const queue = useMemo(() => queueIn(state, channel, state.selfId), [state.log, channel, state.selfId]);
-  // Images pasted or dropped here wait as thumbnails above the text (never as text you could
-  // half-delete), and go with the message when it's sent. Kept per conversation.
+  // Images pasted or dropped here wait as thumbnails above the text, with an "[image N]" where
+  // the cursor was so the words can point at them, and go with the message. Kept per conversation.
   const [images, setImagesState] = useState<readonly number[]>(() => waitingImages.get(channel) ?? []);
   useEffect(() => setImagesState(waitingImages.get(channel) ?? []), [channel]);
   const setImages = (next: readonly number[]): void => {
@@ -91,7 +93,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     setImagesState(next);
   };
   const pendingImages = images.filter((n) => previewOf(n));
-  // While Claude works, sending queues the message; "Send now" interrupts it.
+  // While Claude works, sending queues the message; "Steer" gives it to Claude at its next step.
   const queueing = compose.busy && (compose.typing || !buffer.trim());
   const plan = state.planMode[channel] === true;
   // Plan with Tasks: this conversation is a plan's home (milestones and tasks, approved onto the board).
@@ -208,8 +210,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const send = (urgent = false): void => {
     const typed = buffer.trim();
     const pictures = pendingImages;
-    // The images go after the words, as links Klaud keeps (expanded from their chips below).
-    const text = pictures.length && !typed.startsWith('/') ? [typed, pictures.map((n) => `[image ${n}]`).join(' ')].filter(Boolean).join('\n\n') : typed;
+    // Images stay where you referenced them in the words; any you took the reference out of go after them.
+    const unplaced = pictures.filter((n) => !typed.includes(imageRef(n)));
+    const text = pictures.length && !typed.startsWith('/') ? [typed, unplaced.map(imageRef).join(' ')].filter(Boolean).join('\n\n') : typed;
     if (pictures.length && text !== typed) setImages([]);
     if (!text && !(draftProject && worktree.name.trim())) {
       if (draftProject) toast(client, 'Describe the task, or give the worktree a name', 'info');
@@ -219,7 +222,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     // The words fly from the box into the chat (or into the queue while Claude works): see flight.ts.
     if (typed && !typed.startsWith('/') && !draftProject && !pending) {
       launchFlight({ channel, target: compose.busy && compose.typing && !urgent ? 'queue' : 'chat', text: typed, from: ref.current });
-      if (compose.typing && (!compose.busy || urgent)) expectClaude(channel, state.log.filter((l) => l.type === 'agent' && l.channel === channel).length);
+      // Steering joins the turn Claude is on (no new card to wait for).
+      if (compose.typing && !compose.busy) expectClaude(channel, state.log.filter((l) => l.type === 'agent' && l.channel === channel).length);
     }
     ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, typed].slice(-200), historyIndex: -1 });
     // Image chips become links to the images (klaud keeps them) before the message goes.
@@ -252,7 +256,20 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
         continue;
       }
       setImages([...(waitingImages.get(channel) ?? []), added.n]);
+      placeRef(added.n);
     }
+  };
+  /** "[image N]" goes in the words where the cursor is, so you can say what it shows. */
+  const placeRef = (n: number): void => {
+    const now = ui.get().buffer;
+    const el = ref.current;
+    const at = el && document.activeElement === el ? el.selectionStart : now.length;
+    const before = now.slice(0, at);
+    const after = now.slice(at);
+    const chip = `${before && !/\s$/.test(before) ? ' ' : ''}${imageRef(n)}${after && !/^\s/.test(after) ? ' ' : after ? '' : ' '}`;
+    const next = before + chip + after;
+    ui.patch({ buffer: next, cursor: before.length + chip.length });
+    requestAnimationFrame(() => el?.setSelectionRange(before.length + chip.length, before.length + chip.length));
   };
   const imagesOf = (items: DataTransferItemList | undefined): File[] =>
     [...(items ?? [])].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => Boolean(f));
@@ -260,6 +277,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   /** Take an image out of the message. */
   const removeImage = (n: number): void => {
     setImages(images.filter((x) => x !== n));
+    const now = ui.get().buffer;
+    if (now.includes(imageRef(n))) ui.patch({ buffer: now.replace(` ${imageRef(n)}`, '').replace(imageRef(n), '') });
     ref.current?.focus();
   };
   /** A queued message pulled back to edit: into the box, ahead of anything already there. */
@@ -490,9 +509,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
                   Queue
                 </button>
               </Tip>
-              <Tip label="Stop Claude's current task and send this now" keys="⌥↩">
+              <Tip label="Steer: Claude reads this at its next step, without stopping" keys="⌥↩">
                 <button type="button" className={s.splitAlt} onClick={() => send(true)} disabled={!buffer.trim()}>
-                  Send now
+                  Steer
                 </button>
               </Tip>
             </div>
@@ -510,7 +529,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       <div className={s.legend}>
         {queueing ? (
           <>
-            <Kbd>{sendKeys}</Kbd> queue · <Kbd>⌥↩</Kbd> send now · <Kbd>{mod()}.</Kbd> stop
+            <Kbd>{sendKeys}</Kbd> queue · <Kbd>⌥↩</Kbd> steer ·<Kbd>{mod()}.</Kbd> stop
           </>
         ) : (
           <>

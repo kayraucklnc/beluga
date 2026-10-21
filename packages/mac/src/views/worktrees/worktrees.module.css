@@ -44,7 +44,7 @@
 .headRow,
 .row {
   display: grid;
-  grid-template-columns: 24px minmax(170px, 2.2fr) minmax(110px, 1.5fr) minmax(96px, 1fr) 64px 72px 28px;
+  grid-template-columns: 24px minmax(170px, 2.4fr) minmax(104px, 0.9fr) minmax(80px, 0.8fr) 64px 72px 28px;
   align-items: center;
   gap: 0 12px;
   padding: 0 8px;
@@ -82,6 +82,11 @@
 .busy {
   opacity: 0.6;
 }
+/* Archived: when, whether it comes back, then Restore and Delete right there. */
+.headRow.archivedRow,
+.row.archivedRow {
+  grid-template-columns: 24px minmax(170px, 2.4fr) minmax(104px, 0.9fr) 84px minmax(96px, 1fr) auto;
+}
 .tick {
   display: flex;
   justify-content: center;
@@ -92,9 +97,12 @@
   gap: 8px;
   min-width: 0;
 }
-.icon {
+.project {
   flex: none;
-  color: var(--text-3);
+  display: inline-flex;
+}
+.archivedRow .project {
+  opacity: 0.7;
 }
 .nameText {
   display: flex;
@@ -103,7 +111,7 @@
 }
 .name,
 .sub,
-.madeBy {
+.madeByText {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -115,17 +123,71 @@
   color: var(--text-3);
   font-size: 0.86em;
 }
+/* Who made it: a small tag, lightly tinted (Klaud green, a sub-agent Claude's colour, another tool blue). */
+.madeByCell {
+  min-width: 0;
+}
 .madeBy {
-  color: var(--text-2);
+  --tint: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 7px 1px 5px;
+  border-radius: 999px;
+  font-size: 0.86em;
+  color: color-mix(in srgb, var(--tint) 80%, var(--text));
+  background: color-mix(in srgb, var(--tint) 11%, transparent);
+}
+.madeBy svg {
+  flex: none;
+  color: var(--tint);
+}
+.by_klaud {
+  --tint: var(--ok);
+}
+.by_agent {
+  --tint: var(--claude);
+}
+.by_outside {
+  --tint: var(--info);
 }
 .orphan {
-  color: var(--warn);
+  --tint: var(--warn);
 }
+/* What's in it: icons and numbers (the words on hover). */
 .work {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.count svg {
+  color: var(--text-3);
 }
 .done {
+  gap: 4px;
   color: var(--ok);
+}
+.comesBack {
+  color: var(--text-2);
+}
+.cannot {
+  color: var(--text-3);
+}
+.archivedActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
 }
 .num,
 .size {

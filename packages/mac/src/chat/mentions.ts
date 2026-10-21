@@ -7,7 +7,8 @@ import { friendMention } from '../../../../src/ui/suggest.js';
  * conversation) and does something when clicked; anything else stays text. Plain data.
  */
 
-export type MentionKind = 'friend' | 'claude' | 'project' | 'workspace' | 'folder' | 'file';
+/** 'image' only marks "[image N]" in the message box (an image waiting to be sent). */
+export type MentionKind = 'friend' | 'claude' | 'project' | 'workspace' | 'folder' | 'file' | 'image';
 
 export interface MentionRef {
   readonly kind: MentionKind;

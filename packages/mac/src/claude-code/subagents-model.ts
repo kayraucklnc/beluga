@@ -65,6 +65,43 @@ export function subAgentsUnder(sessions: readonly CcSession[], workspaceId: stri
   return [...live, ...past].sort((a, b) => Number(b.agent.status === 'running') - Number(a.agent.status === 'running') || b.agent.lastAt - a.agent.lastAt);
 }
 
+/**
+ * What a sub-agent left behind, in words. One started in its own worktree leaves that worktree
+ * (Claude Code removes it only when the agent changed nothing): its commits and uncommitted
+ * files are what's left. One without a worktree worked in the folder of the conversation that
+ * started it: whatever it changed is among that folder's changes, nothing of its own.
+ */
+export interface Residue {
+  /** 'none': nothing left; 'some': commits or uncommitted files; 'shared': worked in its parent's folder; 'unknown': not checked yet. */
+  readonly kind: 'none' | 'some' | 'shared' | 'unknown';
+  readonly commits: number;
+  readonly files: number;
+  /** Short, for the row ("2 commits · 1 file", "Nothing left"). */
+  readonly short: string;
+  /** The whole sentence (a tooltip). */
+  readonly long: string;
+  /** Done, and clearing it loses nothing (its worktree has no commits or changes, or it never had one). */
+  readonly clearable: boolean;
+}
+
+const count = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** What `s` left: from its worktree's git status (`worktree`: the workspace at its worktree's path, if Klaud has it). */
+export function agentResidue(s: SubAgent, worktree?: Pick<Workspace, 'status'>): Residue {
+  const done = s.agent.status !== 'running' && s.agent.status !== 'idle';
+  if (!s.agent.worktree) {
+    return { kind: 'shared', commits: 0, files: 0, short: done ? 'Nothing of its own' : '', long: 'Worked in the folder of the conversation that started it: anything it changed is in that folder’s changes, nothing separate to clean up.', clearable: done };
+  }
+  // Its worktree is gone already (removed or archived): nothing left here.
+  if (!worktree) return { kind: 'none', commits: 0, files: 0, short: 'Nothing left', long: 'Its worktree is gone: nothing left behind.', clearable: done };
+  const st = worktree.status;
+  if (!st) return { kind: 'unknown', commits: 0, files: 0, short: 'Checking…', long: 'Its worktree hasn’t been looked at yet.', clearable: false };
+  const parts = [st.ahead ? count(st.ahead, 'commit') : '', st.changed ? count(st.changed, 'file') : ''].filter(Boolean);
+  if (!parts.length) return { kind: 'none', commits: 0, files: 0, short: 'Nothing left', long: 'Its worktree has no commits that aren’t in main and no uncommitted files: safe to clear.', clearable: done };
+  const long = [st.ahead ? `${count(st.ahead, 'commit')} not in main` : '', st.changed ? count(st.changed, 'uncommitted file') : ''].filter(Boolean).join(' and ');
+  return { kind: 'some', commits: st.ahead, files: st.changed, short: parts.join(' · '), long: `Left ${long} in its worktree${s.agent.worktree.branch ? ` (branch ${s.agent.worktree.branch})` : ''}. Archiving it keeps them.`, clearable: false };
+}
+
 /** "claude-opus-5-5" → "Opus 5.5", "sonnet" → "Sonnet", anything else as it is. */
 export function modelLabel(model: string | undefined): string | undefined {
   if (!model) return undefined;

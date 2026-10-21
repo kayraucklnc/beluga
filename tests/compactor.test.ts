@@ -52,7 +52,8 @@ function backend(script: { fill?: number[]; compactTo?: number; failCompact?: bo
 
 function host(agent: AgentBackend, prefs: { autoCompact?: boolean; autoCompactAt?: number } = {}) {
   const store = new Store(initialState('room', 'auto'));
-  store.dispatch({ type: 'prefs', prefs });
+  // Auto-compact is off by default; these tests are about it on unless they say otherwise.
+  store.dispatch({ type: 'prefs', prefs: { autoCompact: true, ...prefs } });
   const toasts: string[] = [];
   // Events go to yourself, as the room would deliver them.
   const send = (body: { kind: string } & Record<string, unknown>): boolean => {
