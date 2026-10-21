@@ -15,6 +15,7 @@ import { CLAUDE_CODE_HANDLERS } from './claude-code-handlers.js';
 import { STEPS_HANDLERS } from './steps-handlers.js';
 import { GATEWAY_HANDLERS } from './gateway-handlers.js';
 import { BOARD_HANDLERS } from './board-handlers.js';
+import { PLANS_HANDLERS } from './plans-handlers.js';
 import { GIT_HANDLERS } from './git-handlers.js';
 
 /**
@@ -260,6 +261,7 @@ export const HANDLERS = {
   ...STEPS_HANDLERS,
   ...GATEWAY_HANDLERS,
   ...BOARD_HANDLERS,
+  ...PLANS_HANDLERS,
   ...GIT_HANDLERS,
 } satisfies Handlers;
 

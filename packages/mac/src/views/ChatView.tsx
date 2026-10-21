@@ -1,4 +1,5 @@
 import { channelOf } from '@klaud/core/store.js';
+import { planForHome } from '@klaud/core/plans/model.js';
 import { Attention } from '../chat/Attention.js';
 import { ChatLog } from '../chat/ChatLog.js';
 import { Composer } from '../chat/Composer.js';
@@ -11,6 +12,7 @@ import { AgentWorktreePage } from '../claude-code/AgentMonitor.js';
 import { isAgentWorktree } from '../claude-code/subagents-model.js';
 import { LiveStrip } from '../claude-code/Live.js';
 import { TaskStrip } from '../tasks/TaskStrip.js';
+import { PlanStrip } from '../plans/PlanStrip.js';
 import { useWorktreeFlag } from './worktree-info-state.js';
 import { AskBanner } from '../chat/AskBanner.js';
 
@@ -95,6 +97,8 @@ export function ChatView() {
   // A worktree made outside Klaud: its info page until there's a conversation (or you start one).
   const other = ws?.kind === 'worktree' && ws.external && !ws.archived ? ws : undefined;
   const hasItems = useApp((st) => st.log.some((l) => l.channel === channel));
+  // A plan's own conversation plans: it never moves to a worktree.
+  const planHome = useApp((st) => Boolean(planForHome(st.plans, channel)));
   const started = useWorktreeFlag('started', other?.id ?? '');
   const about = useWorktreeFlag('about', other?.id ?? '');
   // A sub-agent's own worktree is the agent, followed live (never a place to start a conversation).
@@ -103,10 +107,11 @@ export function ChatView() {
   const chat = (
     <div className={s.chat}>
       {other ? <OtherWorktreeBanner ws={other} /> : null}
+      {view.kind === 'workspace' ? <PlanStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <TaskStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <LiveStrip workspaceId={view.id} /> : null}
       <ChatLog key={channel} channel={channel === 'draft' ? '__draft__' : channel} empty={empty} />
-      {ws?.askOnly && !ws.archived ? <AskBanner wsId={ws.id} /> : null}
+      {ws?.askOnly && !ws.archived && !planHome ? <AskBanner wsId={ws.id} /> : null}
       <Attention />
       <Composer />
     </div>

@@ -20,8 +20,19 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
   const worktree = useApp((s) => (last && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
   const due = issue.due ? dueText(issue.due) : undefined;
+  // The plan (and milestone) it's part of.
+  const plan = useApp((s) => (issue.plan ? s.plans.plans.find((x) => x.id === issue.plan!.id) : undefined));
+  const milestone = plan && issue.plan ? (plan.body ?? plan.draft)?.milestones.find((m) => m.id === issue.plan!.milestone)?.title : undefined;
   return (
     <span className={cx(t.meta, compact && t.metaCompact)}>
+      {plan && milestone ? (
+        <Tip label={`Part of the plan “${(plan.body ?? plan.draft)?.title ?? ''}”, milestone “${milestone}”`}>
+          <span className={t.planMark}>
+            <Icon name="flag" size={11} />
+            {compact ? null : milestone}
+          </span>
+        </Tip>
+      ) : null}
       {blockers.length && STATUS_INFO[issue.status].open ? (
         <Tip label={`Waits on ${blockers.map((b) => `${b.key} ${b.title}`).join(', ')}`}>
           <span className={t.blocked}>

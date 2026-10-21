@@ -16,7 +16,7 @@ const project = (id: string, name: string, workspaces: Workspace[] = []): Projec
 
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
-function setup() {
+function setup(opts: { readonly autoTasks?: boolean } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api'), project('land', 'landing')] });
   const listeners: Array<(e: WorktreeEvent) => void> = [];
@@ -41,44 +41,47 @@ function setup() {
   } as unknown as WorkspaceController;
   const board = new Board({ store, dir: null, projectName: (id) => store.getState().projects.find((p) => p.id === id)?.name });
   const work = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: (prompt, channel) => void asked.push([prompt, channel]) });
+  if (opts.autoTasks) board.setAutoTasks(true);
   return { store, board, work, open, emit, asked };
 }
 
 describe('worktrees open tasks', () => {
-  it('a new worktree opens a task for it, with Claude on it; what you first say there is its goal', async () => {
-    const { store, board, open } = setup();
+  it('by default a new worktree opens no task: tasks come from plans', () => {
+    const { store, open } = setup();
+    open(ws('w1', 'api', 'add-rate-limiting'));
+    expect(store.getState().board.issues).toHaveLength(0);
+  });
+
+  it('asked to, a new worktree opens a task for it, with Claude on it; what you say there is not pasted in as its goal', async () => {
+    const { store, board, open } = setup({ autoTasks: true });
     open(ws('w1', 'api', 'add-rate-limiting'));
     const issue = issueForWorkspace(store.getState().board, 'w1')!;
     expect(issue).toMatchObject({ key: 'BOB-1', title: 'Add rate limiting', autoTitle: true, status: 'in_progress', origin: 'worktree', assignee: { kind: 'claude', owner: 'p-me' }, branch: 'klaud/add-rate-limiting' });
-    store.dispatch({ type: 'chat', id: 'c1', from: 'p-me', text: 'Add rate limiting to /login: 10 a minute', ts: 1, byAgent: false, channel: 'ws:w1' });
+    store.dispatch({ type: 'chat', id: 'c1', from: 'p-me', text: 'what is this made out of?', ts: 1, byAgent: false, channel: 'ws:w1' });
     await tick();
-    expect(board.need('BOB-1').brief.goal).toBe('Add rate limiting to /login: 10 a minute');
-    // Only the first thing said.
-    store.dispatch({ type: 'chat', id: 'c2', from: 'p-me', text: 'also tests', ts: 2, byAgent: false, channel: 'ws:w1' });
-    await tick();
-    expect(board.need('BOB-1').brief.goal).toBe('Add rate limiting to /login: 10 a minute');
+    expect(board.need('BOB-1').brief.goal).toBeUndefined();
   });
 
   it('follows the worktree’s new name until you rename the task', async () => {
-    const { store, board, open } = setup();
+    const { store, board, open } = setup({ autoTasks: true });
     open(ws('w1', 'api', 'quick-name'));
     store.dispatch({ type: 'projects', projects: store.getState().projects.map((p) => ({ ...p, workspaces: p.workspaces.map((w) => (w.id === 'w1' ? { ...w, name: 'login-rate-limit' } : w)) })) });
     await tick();
     expect(board.need('BOB-1').title).toBe('Login rate limit');
   });
 
-  it('a conversation carried into a worktree brings its task’s goal; a fork stays on the same task', () => {
-    const { store, open } = setup();
+  it('a fork stays on the same task', () => {
+    const { store, open } = setup({ autoTasks: true });
     open(ws('w1', 'api', 'fix-login'), { from: 'main-chat', about: 'Fix the login redirect loop' });
     const first = issueForWorkspace(store.getState().board, 'w1')!;
-    expect(first.brief.goal).toBe('Fix the login redirect loop');
+    expect(first.brief.goal).toBeUndefined();
     open(ws('w2', 'api', 'fix-login-2'), { from: 'w1' });
     expect(issueForWorkspace(store.getState().board, 'w2')?.id).toBe(first.id);
     expect(store.getState().board.issues).toHaveLength(1);
   });
 
   it('chats get no task, and none when automatic tasks are off', () => {
-    const { store, board, open } = setup();
+    const { store, board, open } = setup({ autoTasks: true });
     open(ws('c1', 'api', 'question', 'chat'));
     board.setAutoTasks(false);
     open(ws('w1', 'api', 'thing'));
@@ -86,7 +89,7 @@ describe('worktrees open tasks', () => {
   });
 
   it('merging finishes the task; archiving asks what next', () => {
-    const { store, board, open, emit } = setup();
+    const { store, board, open, emit } = setup({ autoTasks: true });
     open(ws('w1', 'api', 'a'));
     open(ws('w2', 'api', 'b'));
     emit({ kind: 'merged', id: 'w1' });
@@ -99,7 +102,7 @@ describe('worktrees open tasks', () => {
   });
 
   it('a pull request seen by the workbench moves its task', async () => {
-    const { store, board, open } = setup();
+    const { store, board, open } = setup({ autoTasks: true });
     open(ws('w1', 'api', 'a'));
     store.dispatch({ type: 'pr', id: 'w1', pr: { number: 3, url: 'u', state: 'OPEN', title: 't', draft: false, checks: 'passing' } });
     await tick();
@@ -124,7 +127,7 @@ describe('starting a task’s worktree', () => {
 
 describe('Claude and the board', () => {
   it('a run in a task’s worktree gets the task in its instructions, and tools that default to it', () => {
-    const { board, work, open } = setup();
+    const { board, work, open } = setup({ autoTasks: true });
     const parent = board.create({ projectId: 'api', title: 'Payments v1' }, work.me());
     open(ws('w1', 'api', 'add-auth'));
     board.update('BOB-2', { parent: parent.key }, work.me());
@@ -164,6 +167,64 @@ describe('Claude and the board', () => {
     for (const name of BOARD_TOOL_NAMES) expect(decideTool(name, {}, { cwd: '/tmp', roots: [], autoEdit: false })).toBe('allow');
     const call = defs.find((d) => d.name === 'task_get')!.handler as (a: unknown, e: unknown) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
     expect(await call({ key: 'NOPE-1' }, {})).toMatchObject({ isError: true, content: [{ text: "There's no task NOPE-1" }] });
+  });
+});
+
+describe('plan mode defines the task', () => {
+  const def = { title: 'Rate-limit login', goal: 'Stop password guessing on /login.', context: 'Express, `src/routes/login.ts`.', acceptance: ['10 tries a minute per IP', 'Then 429'], decisions: ['In-memory counter: one box'], questions: ['Per account too?'], estimate: 2 as const, priority: 'high' as const };
+
+  it('planning in a worktree: nothing is on the board until the plan is approved, then the task is Claude’s write-up', () => {
+    const { store, board, work, open } = setup();
+    open(ws('w1', 'api', 'login-limit'));
+    const run = work.forRun('ws:w1', 'p-me', { plan: true })!;
+    expect(run.brief).toContain('call mcp__klaud_board__task_define');
+    expect(run.needsDefinition!()).toBe(true);
+    expect(run.tools!.define(def)).toContain('when the user approves your plan');
+    expect(store.getState().board.issues).toHaveLength(0);
+    expect(run.needsDefinition!()).toBe(false);
+    run.planApproved!();
+    const issue = issueForWorkspace(store.getState().board, 'w1')!;
+    expect(issue).toMatchObject({ title: 'Rate-limit login', status: 'in_progress', priority: 'high', estimate: 2, origin: 'claude' });
+    expect(issue.brief).toMatchObject({ goal: 'Stop password guessing on /login.', acceptance: '- [ ] 10 tries a minute per IP\n- [ ] Then 429', decisions: '- In-memory counter: one box', questions: '- Per account too?' });
+    void board;
+  });
+
+  it('a plan approved in a main folder’s chat: the task waits, and the worktree it continues in does it', () => {
+    const { store, work, open } = setup();
+    open({ ...ws('m1', 'api', 'bob-api', 'chat'), askOnly: true } as Workspace);
+    const run = work.forRun('ws:m1', 'p-me', { plan: true })!;
+    run.tools!.define(def);
+    run.planApproved!();
+    const made = store.getState().board.issues[0]!;
+    expect(made.status).toBe('todo');
+    open(ws('w9', 'api', 'rate-limit-login'), { from: 'm1' });
+    expect(issueForWorkspace(store.getState().board, 'w9')).toMatchObject({ id: made.id, status: 'in_progress' });
+  });
+
+  it('a plan never approved leaves no task', () => {
+    const { store, work, open } = setup();
+    open(ws('w1', 'api', 'x'));
+    work.forRun('ws:w1', 'p-me', { plan: true })!.tools!.define(def);
+    work.forRun('ws:w1', 'p-me', { plan: true });
+    expect(store.getState().board.issues).toHaveLength(0);
+  });
+
+  it('runs see what other worktrees in the project are doing right now', () => {
+    const { board, work, open, store } = setup({ autoTasks: true });
+    open(ws('w1', 'api', 'auth'));
+    open(ws('w2', 'api', 'retries'));
+    store.dispatch({ type: 'agent_event', owner: 'p-me', requestId: 'r1', requester: 'p-me', event: 'started', text: '', ts: 1, channel: 'ws:w2' });
+    const brief = work.forRun('ws:w1', 'p-me')!.brief!;
+    expect(brief).toContain('BOB-2 “Retries” (in progress) in worktree retries on klaud/retries, its Claude is working now');
+    expect(work.forRun('ws:w1', 'p-me')!.tools!.get('BOB-2')).toContain('Being worked on in worktree retries (klaud/retries), its Claude is working there now');
+    void board;
+  });
+
+  it('a task already being worked on in a worktree isn’t started again', async () => {
+    const { board, work } = setup();
+    const t = board.create({ projectId: 'api', title: 'Once' }, work.me());
+    await work.start(t.key);
+    await expect(work.start(t.key)).rejects.toThrow(/already being worked on/);
   });
 });
 

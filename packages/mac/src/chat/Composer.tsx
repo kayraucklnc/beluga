@@ -20,6 +20,10 @@ import { stopClaude } from '../lib/commands.js';
 import { keepPreview, previewOf } from './images.js';
 import { MentionHighlighter } from './MentionHighlighter.js';
 import { useMentionWorld, worktreeOf } from './Mention.js';
+import { ActionsDropdown } from '../components/SpecMenu.js';
+import { openSheet } from '../lib/sheets.js';
+import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
+import { planForHome } from '@klaud/core/plans/model.js';
 import s from './composer.module.css';
 import img from './images.module.css';
 import d from './draft.module.css';
@@ -90,6 +94,28 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   // While Claude works, sending queues the message; "Send now" interrupts it.
   const queueing = compose.busy && (compose.typing || !buffer.trim());
   const plan = state.planMode[channel] === true;
+  // Plan with Tasks: this conversation is a plan's home (milestones and tasks, approved onto the board).
+  const homePlan = planForHome(state.plans, channel);
+  // While it's being planned (once approved, the conversation is the plan's head and the box is as usual).
+  const tasksMode = Boolean(homePlan && !homePlan.body);
+  const canPlanTasks = state.plans.enabled && channel.startsWith('ws:') && state.projects.some((p) => p.root && p.workspaces.some((w) => `ws:${w.id}` === channel));
+  const mode: ComposeMode = tasksMode ? 'tasks' : plan ? 'plan' : 'act';
+  const setMode = (next: ComposeMode): void => {
+    const leave = (): void => {
+      if ((next === 'plan') !== plan) void api.session.setPlanMode(channel, next === 'plan');
+    };
+    // Leaving a draft plan: an empty one just goes; one with something in it is thrown away only if you say so.
+    if (next !== 'tasks' && tasksMode && homePlan) {
+      if (!homePlan.draft?.milestones.length) {
+        void api.plans.discard(homePlan.id);
+        return leave();
+      }
+      openSheet({ kind: 'confirm', title: 'Throw away the draft plan?', message: 'Nothing of it is on the board. To keep it, approve it on its page instead.', confirm: 'Throw Away', destructive: true, run: () => (void api.plans.discard(homePlan.id), leave()) });
+      return;
+    }
+    leave();
+    if (next === 'tasks' && !tasksMode) void api.plans.here(channel).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+  };
   const readOnly = state.view.kind === 'shared' && state.view.tab === 'chat' && state.shared.find((w) => w.id === (state.view as { id: string }).id)?.role === 'view';
   // A new worktree: the branch it starts from and its name (empty: named from the task).
   const draftProject = state.view.kind === 'draft_worktree' ? state.view.projectId : undefined;
@@ -259,7 +285,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     // Shift-Tab switches between acting and planning first, as in Claude Code (not focus).
     if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && channel !== 'draft' && !shared) {
       e.preventDefault();
-      void api.session.setPlanMode(channel, !plan);
+      setMode(nextMode(mode));
       return;
     }
     const modKey = e.metaKey || e.ctrlKey;
@@ -341,8 +367,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       ) : null}
       <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={editQueued} />
       <div
-        className={cx(s.box, pending && s.asking, readOnly && s.readOnly, dropping && s.dropping, plan && s.planning)}
-        data-plan={plan || undefined}
+        className={cx(s.box, pending && s.asking, readOnly && s.readOnly, dropping && s.dropping, (plan || tasksMode) && s.planning)}
+        data-plan={plan || tasksMode || undefined}
         onDragOver={(e) => {
           if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) {
             e.preventDefault();
@@ -358,13 +384,19 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           void attach(files);
         }}
       >
-        {plan ? (
+        {mode !== 'act' ? (
           <div className={s.planBanner} role="status">
-            <Icon name="wand" size={11} />
-            <strong>Plan mode</strong>
-            <span>Claude looks around and proposes a plan before changing anything</span>
+            <Icon name={mode === 'tasks' ? 'graph' : 'wand'} size={11} />
+            <strong>{mode === 'plan' ? 'Plan mode' : MODE_INFO[mode].label}</strong>
+            <span>{MODE_INFO[mode].banner}</span>
             <span className={s.flex} />
-            <span className={s.planKeys}>⇧⇥ to act</span>
+            {mode === 'tasks' && homePlan ? (
+              <button type="button" className={s.planLink} onClick={() => actions.run({ type: 'view', view: { kind: 'plan', id: homePlan.id } })}>
+                Open Plan
+              </button>
+            ) : (
+              <span className={s.planKeys}>⇧⇥ to act</span>
+            )}
           </div>
         ) : null}
         {draftProject ? <WorktreeDraft projectId={draftProject} choice={worktree} onChange={setWorktree} /> : null}
@@ -405,7 +437,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             rows={1}
             value={buffer}
             disabled={readOnly}
-            placeholder={to ? `Message ${recipientLabel(to)}` : placeholderOf(state, pending ? { pending } : {})}
+            placeholder={to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && homePlan && !homePlan.body && !homePlan.draft?.milestones.length ? 'Describe what to build: Claude plans it into milestones and tasks' : placeholderOf(state, pending ? { pending } : {})}
             onChange={(e) => set(e.target.value)}
             onKeyDown={onKey}
             onPaste={(e) => {
@@ -419,12 +451,18 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
         </div>
         <div className={s.bar}>
           {channel !== 'draft' && !shared ? (
-            <Tip label={plan ? 'Plan mode: Claude looks first and asks you to approve a plan' : 'Act right away (click for plan mode)'} keys="⇧Tab">
-              <button type="button" className={cx(s.chip, plan && s.chipOn)} onClick={() => void api.session.setPlanMode(channel, !plan)}>
-                <Icon name="wand" size={12} />
-                {plan ? 'Plan first' : 'Act'}
+            <ActionsDropdown
+              align="start"
+              items={(['act', 'plan', 'tasks'] as const)
+                .filter((m) => m !== 'tasks' || canPlanTasks || tasksMode)
+                .map((m) => ({ label: MODE_INFO[m].label, hint: MODE_INFO[m].hint, checked: mode === m, onSelect: () => setMode(m) }))}
+            >
+              <button type="button" className={cx(s.chip, mode !== 'act' && s.chipOn)} title={mode === 'tasks' ? MODE_INFO[mode].hint : `${MODE_INFO[mode].hint} (⇧⇥ switches acting and planning first)`} aria-label={`Mode: ${MODE_INFO[mode].label}`}>
+                <Icon name={mode === 'tasks' ? 'graph' : 'wand'} size={12} />
+                {MODE_INFO[mode].label}
+                <Icon name="chevronDown" size={9} />
               </button>
-            </Tip>
+            </ActionsDropdown>
           ) : null}
           {!shared ? <ModelPicker channel={channel} /> : null}
           <span className={s.flex} />

@@ -296,20 +296,24 @@ export class WorkspaceController {
   }
 
   /** New worktree from the latest origin default branch, or from `opts.base` (one of `branches`). */
-  async newWorktree(projectId: string, name: string, opts: { base?: string } = {}): Promise<Workspace | undefined> {
-    this.deps.toast(`Creating worktree "${name}" from ${opts.base ?? 'the latest origin'}…`);
+  /** `quiet`: made by a plan running on its own, so it doesn't take you there (nor toast). */
+  async newWorktree(projectId: string, name: string, opts: { base?: string; quiet?: boolean } = {}): Promise<Workspace | undefined> {
+    if (!opts.quiet) this.deps.toast(`Creating worktree "${name}" from ${opts.base ?? 'the latest origin'}…`);
     const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.createWorktree(projectId, name, opts.base));
     if (ws) {
-      this.deps.toast(`Worktree ${ws.name} is ready on ${ws.branch}`, 'success');
-      this.open(ws.id);
+      if (!opts.quiet) {
+        this.deps.toast(`Worktree ${ws.name} is ready on ${ws.branch}`, 'success');
+        this.open(ws.id);
+      }
       this.created(ws);
     }
     return ws;
   }
 
-  async newChat(projectId: string, title: string, inDir?: string): Promise<Workspace | undefined> {
+  /** `quiet`: made for something else's page (a plan's conversation), so it doesn't take you there. */
+  async newChat(projectId: string, title: string, inDir?: string, opts: { readonly quiet?: boolean } = {}): Promise<Workspace | undefined> {
     const ws = await this.act("Couldn't start the chat", () => this.deps.manager.createChat(projectId, title, inDir));
-    if (ws) this.open(ws.id);
+    if (ws && !opts.quiet) this.open(ws.id);
     return ws;
   }
 

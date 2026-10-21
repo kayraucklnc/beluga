@@ -1,0 +1,162 @@
+import type { Board } from '../board/board.js';
+import { type Actor, type Assignee, type BriefSection, type Issue, isOpen } from '../board/model.js';
+import { PlanError } from './edit.js';
+import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, taskById } from './model.js';
+
+/**
+ * Approving a plan: its draft goes on the board. New tasks are made (in the plan's milestone, its
+ * sub-tasks and blockers wired up), tasks that changed are rewritten (ticks kept), and tasks taken
+ * out are canceled. Tasks of the milestone being worked on are Todo, later ones wait in the
+ * Backlog. Started work keeps its status. → the plan as approved, each task with its board task.
+ */
+
+export interface ApplyActors {
+  readonly by: Actor;
+  readonly me: Assignee;
+  readonly claude: Assignee;
+}
+
+export interface Applied {
+  readonly body: PlanBody;
+  readonly summary: string;
+}
+
+/** Approving failed partway: the board tasks made so far (plan task id → board task id), so a retry doesn't make them again. */
+export class ApplyError extends Error {
+  constructor(
+    message: string,
+    readonly linked: ReadonlyMap<string, string>,
+  ) {
+    super(message);
+  }
+}
+
+export function applyDraft(plan: Plan, board: Board, actors: ApplyActors): Applied {
+  const linked = new Map<string, string>();
+  try {
+    return applyInto(plan, board, actors, linked);
+  } catch (err) {
+    throw new ApplyError(err instanceof Error ? err.message : String(err), linked);
+  }
+}
+
+function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<string, string>): Applied {
+  const draft = plan.draft;
+  if (!draft) throw new PlanError('There are no changes to approve');
+  if (!draft.milestones.length || !allTasks(draft).length) throw new PlanError('The plan has no tasks yet: ask Claude to write it first');
+  const diff = diffBodies(plan.body, draft);
+  const current = draft.milestones.findIndex((m) => !plan.runs[m.id]?.passedAt);
+  const issueOf = new Map<string, Issue>();
+  // Tasks already on the board (still there) keep their board task.
+  for (const { task } of allTasks(draft)) {
+    const issue = task.issueId ? board.get(task.issueId) : undefined;
+    if (issue) issueOf.set(task.id, issue);
+  }
+
+  // 1. Make or rewrite every task.
+  for (const { task, milestone, index } of allTasks(draft)) {
+    const link = { id: plan.id, milestone: milestone.id, task: task.id };
+    const fresh = index <= current || current < 0 ? 'todo' : 'backlog';
+    const assignee = task.assignee === 'me' ? actors.me : actors.claude;
+    const existing = issueOf.get(task.id);
+    if (!existing) {
+      const made = board.create(
+        {
+          projectId: plan.projectId,
+          title: task.title,
+          status: fresh,
+          assignee,
+          ...(task.priority ? { priority: task.priority } : {}),
+          ...(task.estimate ? { estimate: task.estimate } : {}),
+          ...(task.labels?.length ? { labels: task.labels } : {}),
+          brief: briefOf(task),
+          plan: link,
+        },
+        actors.by,
+        'plan',
+      );
+      issueOf.set(task.id, made);
+      linked.set(task.id, made.id);
+      continue;
+    }
+    // Only what the plan itself changed is written: edits made on the board (by you or a task's Claude) stay.
+    const old = taskById(plan.body, task.id);
+    const moved = !old || allTasks(plan.body).find((t) => t.task.id === task.id)?.milestone.id !== milestone.id;
+    const notStarted = existing.status === 'todo' || existing.status === 'backlog';
+    // Canceled on the board stays canceled, unless the plan takes it back in.
+    const revived = existing.status === 'canceled' && diff.added.includes(task.id);
+    const differs = <K extends keyof PlanTask>(key: K): boolean => !old || JSON.stringify(old[key]) !== JSON.stringify(task[key]);
+    board.update(
+      existing.id,
+      {
+        ...(old && differs('title') ? { title: task.title } : {}),
+        ...(task.priority && differs('priority') ? { priority: task.priority } : {}),
+        ...(task.estimate && differs('estimate') ? { estimate: task.estimate } : {}),
+        ...(task.labels && old && differs('labels') ? { labels: task.labels } : {}),
+        ...((notStarted && moved && existing.status !== fresh) || revived ? { status: fresh } : {}),
+      },
+      actors.by,
+    );
+    board.setPlan(existing.id, link, actors.by);
+    const now = board.need(existing.id);
+    const brief = briefOf(task, now.brief.acceptance);
+    const was = old ? briefOf(old, now.brief.acceptance) : {};
+    for (const section of ['goal', 'context', 'acceptance'] as const) {
+      const text = brief[section] ?? '';
+      // A task taken in from the board keeps its own brief where it has one.
+      const changed = old ? text !== (was[section] ?? '') : !now.brief[section];
+      if (text && changed && text !== (now.brief[section] ?? '')) board.editBrief(existing.id, section, text, actors.by, { reason: 'the plan changed' });
+    }
+  }
+
+  // 2. Sub-tasks and blockers (all tasks exist now). Blockers from outside the plan are left alone.
+  const planIssues = new Set([...issueOf.values()].map((i) => i.id));
+  for (const { task } of allTasks(draft)) {
+    const issue = board.need(issueOf.get(task.id)!.id);
+    const parent = task.parent ? issueOf.get(task.parent)?.id : undefined;
+    if ((parent ?? undefined) !== issue.parent && (parent || (issue.parent && planIssues.has(issue.parent)))) board.update(issue.id, { parent: parent ?? null }, actors.by);
+    const want = new Set(task.blockedBy.map((b) => issueOf.get(b)?.id).filter((x): x is string => Boolean(x)));
+    for (const id of want) if (!issue.blockedBy.includes(id)) board.relate(issue.id, 'blocked_by', id, true, actors.by);
+    for (const id of issue.blockedBy) if (planIssues.has(id) && !want.has(id)) board.relate(issue.id, 'blocked_by', id, false, actors.by);
+  }
+
+  // 3. Taken out of the plan: canceled if unfinished, and no longer the plan's.
+  const kept = new Set(allTasks(draft).map((t) => t.task.id));
+  for (const { task } of allTasks(plan.body)) {
+    if (kept.has(task.id) || !task.issueId) continue;
+    const issue = board.get(task.issueId);
+    if (!issue) continue;
+    if (isOpen(issue.status) && issue.status !== 'in_review') board.update(issue.id, { status: 'canceled' }, actors.by);
+    board.setPlan(issue.id, undefined, actors.by, 'took this out of the plan');
+  }
+
+  const body: PlanBody = {
+    ...draft,
+    milestones: draft.milestones.map((m) => ({ ...m, tasks: m.tasks.map((t) => ({ ...t, issueId: issueOf.get(t.id)!.id })) })),
+  };
+  const n = allTasks(body).length;
+  const summary = plan.body
+    ? [diff.added.length ? `${diff.added.length} new` : '', diff.changed.length ? `${diff.changed.length} changed` : '', diff.removed.length ? `${diff.removed.length} taken out` : ''].filter(Boolean).join(', ') || 'milestones changed'
+    : `${body.milestones.length} ${body.milestones.length === 1 ? 'milestone' : 'milestones'}, ${n} ${n === 1 ? 'task' : 'tasks'}`;
+  return { body, summary };
+}
+
+/** A plan task's brief on the board (`ticked`: the board's checklist now, whose ticks stay). */
+export function briefOf(task: PlanTask, ticked?: string): Partial<Record<BriefSection, string>> {
+  const done = new Set((ticked ?? '').split('\n').flatMap((l) => (/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)?.[1] ? [/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)![1]!.trim()] : [])));
+  const acceptance = task.acceptance.map((a) => `- [${done.has(a) ? 'x' : ' '}] ${a}`).join('\n');
+  return {
+    ...(task.goal ? { goal: task.goal } : {}),
+    ...(task.context ? { context: task.context } : {}),
+    ...(acceptance ? { acceptance } : {}),
+  };
+}
+
+/** The next milestone's tasks come out of the Backlog (the one before it passed). */
+export function openMilestone(plan: Plan, milestoneId: string, board: Board, by: Actor): void {
+  const m = plan.body?.milestones.find((x) => x.id === milestoneId);
+  for (const t of m?.tasks ?? []) {
+    const issue = t.issueId ? board.get(t.issueId) : undefined;
+    if (issue?.status === 'backlog') board.update(issue.id, { status: 'todo' }, by);
+  }
+}

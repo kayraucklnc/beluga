@@ -27,7 +27,13 @@ export type NativeSheet =
   /** A project's worktrees made outside Klaud that can go, ticked, before removing them. */
   | { readonly kind: 'clean_up_worktrees'; readonly projectId: string }
   /** A new task (in a project, a status, under a parent). */
-  | { readonly kind: 'new_task'; readonly projectId?: string; readonly status?: import('@klaud/core/board/model.js').IssueStatus; readonly parent?: string };
+  | { readonly kind: 'new_task'; readonly projectId?: string; readonly status?: import('@klaud/core/board/model.js').IssueStatus; readonly parent?: string }
+  /** A new plan with Claude: what it's for, the project, how far it runs on its own. */
+  | { readonly kind: 'new_plan'; readonly projectId?: string }
+  /** Your planning style (how you like plans cut). */
+  | { readonly kind: 'plan_style' }
+  /** Not yet: what a milestone still needs, for the plan's head Claude. */
+  | { readonly kind: 'plan_send_back'; readonly planId: string; readonly milestone: string };
 
 type Listener = () => void;
 

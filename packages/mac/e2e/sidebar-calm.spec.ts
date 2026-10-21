@@ -9,11 +9,12 @@ test.beforeEach(async ({ page }) => {
   await expect(sidebar(page)).toBeVisible();
 });
 
-test('the top of the sidebar is Overview, Tasks and the chat', async ({ page }) => {
+test('the top of the sidebar is Overview, Tasks, Plans and the chat', async ({ page }) => {
   const top = sidebar(page).locator('section').first().getByRole('button');
   await expect(top.nth(0)).toHaveAccessibleName(/^Overview/);
   await expect(top.nth(1)).toHaveAccessibleName(/^Tasks/);
-  await expect(top.nth(2)).toHaveAccessibleName(/^Group chat/);
+  await expect(top.nth(2)).toHaveAccessibleName(/^Plans/);
+  await expect(top.nth(3)).toHaveAccessibleName(/^Group chat/);
   for (const gone of ['Search', 'Usage', 'Terminal']) await expect(sidebar(page).locator('section').first().getByRole('button', { name: gone, exact: true })).toHaveCount(0);
 });
 

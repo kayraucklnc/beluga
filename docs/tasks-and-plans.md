@@ -62,17 +62,18 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
 | `worktrees`, `branch`, `pr` | the worktrees doing it (the current one last), its branch, and its pull request as the workbench last saw it |
 | `brief` | the living definition (below), with revisions |
 | `proof` | screenshots, pages, files, graphs and results, attached by people or Claude |
-| `activity` | an append-only feed: who changed what, comments, Claude's notes, pull request events (the last 200) |
+| `activity` | an append-only feed: who changed what, comments, Claude's notes, pull request events (the last 200). One field changed again by the same person within two minutes is one line ("estimated this at 5 points", from where it started; back where it was, no line) |
+| `plan` | the plan, milestone and plan task it came from |
 
 **The brief** is what later agents rely on. It's Markdown in fixed sections: **Goal**, **Context**, **Acceptance criteria** (checkboxes you tick on the page), **Decisions** (what was decided and why), **Open questions** and **Notes for the next agent**. Each edit is a revision with its author (a person or a Claude) and a one-line reason. A section's history shows every version; **Restore This** puts one back (as a new revision).
 
 ### Worktree ↔ task (automatic)
 
-- **A worktree opens a task.** `WorkspaceController.onWorktree` reports worktrees opening, merging, being archived, deleted or restored; the board listens (`core/board/work.ts`).
-  - A new worktree gets a task titled after it ("add-rate-limiting" → "Add rate limiting"), In Progress, for your Claude. The title follows the worktree's name until you rename the task. The first thing you say there becomes the Goal.
-  - A conversation carried into a worktree from main brings what it was asked as the Goal.
+- **Tasks come from plans, not from every worktree.** A question or a quick ask is not a task.
+  - **Plan First** (Claude Code's plan mode): before Claude asks you to approve its plan, it calls `task_define` with the task the plan is for — a title, the goal *in its own words* (never your message pasted in), context, acceptance criteria, decisions, open questions, an estimate and a priority. It goes on the board only when you approve the plan (`planTask` in `agent/runner.ts`); a plan Claude asks you to approve without one goes back to it once. Approved in a main folder's chat, the task waits and the worktree the conversation continues in does it.
+  - **Plan with Tasks** (Plans, below): every task of an approved plan.
   - A fork stays on the same task, as does a worktree started *from* a task (Start Worktree).
-  - Turn it off in Tasks › ⋯ › Open a Task for Every New Worktree.
+  - Tasks › ⋯ › Open a Task for Every New Worktree brings back a task per worktree (off by default; saved as `worktreeTasks`). Its brief is Claude's to write.
 - **The task follows the work:**
 
   | When | Status |
@@ -113,53 +114,53 @@ The gateway already uses the word "tasks" in code, so this feature's code says *
 
 ---
 
-## 3. Plans and the head Claude — phases 3–5
+## 3. Plans and the head Claude — phase 4 and 5, shipped
 
-### Plans (`src/core/plans/`)
+### The model (`src/core/plans/`, browser-safe slice `plans`)
 
-- **A plan** is a goal broken into milestones, each with phases, each with tasks.
-- **Dependencies:** milestones depend on milestones and tasks block tasks.
-- **Phases:**
-  - A **build** phase's tasks run in parallel unless one blocks another.
-  - A **review** phase is a gate. It passes when a person approves, a reviewer Claude passes it with its notes, CI is green, or all three.
+- **A plan** is a goal cut into **milestones**, run in order. Each milestone has a goal, **pass criteria** (checkable statements) and **tasks**. A task has a stable id Claude picks (`auth-api`), a goal, context, acceptance criteria, an estimate, `touches` (the files it changes, so parallel tasks keep apart), **blockers** (tasks of the same or an earlier milestone whose code it builds on — never a later one, never a loop) and sub-tasks. A task is Claude's unless it's marked as yours (accounts, secrets, decisions).
+- **Draft and approved.** A plan keeps a `draft` (Claude's and your working copy) and a `body` (what was approved). The draft lives with the plan in `~/.klaud/plans.json`, *never on the board*. **Approve** puts it there (`apply.ts`): new tasks are made with their sub-tasks and blockers wired up, changed ones rewritten (ticked criteria stay ticked), and tasks taken out are canceled. The milestone being worked on is Todo; later ones wait in the Backlog. Discarding a never-approved draft deletes the plan; the board never knew.
+- **Changing an approved plan** makes a new draft: the page shows "Claude proposes changes: 2 new · 1 changed · 1 taken out" with Apply / Discard. Your own edits apply at once (you're the approver). On **Autopilot**, the head Claude's changes apply at once too.
+- **Your planning style** (`~/.klaud/planning.md`, Plans › ⋯ › Planning Style…) is added to Claude's planning instructions every time.
 
-**Planning with Claude:**
-1. In the **New Plan** sheet you set the goal, the projects, how much autonomy, and a **planning style**.
-2. A planning style is your own instructions for how plans should be cut: task size, when to add review gates, testing expectations. You keep them in `~/.klaud/prompts/planning/*.md`, and a project can add its own in `klaud.json` `planning`.
-3. Claude plans in Plan mode, reading the code. It returns a `klaud-plan` block, which zod validates.
-4. The plan opens as a graph you can edit: drag to add or remove blockers, split or merge tasks, move tasks between phases. An outline view sits beside it, and every task has its brief written.
-5. **Approve** turns the plan into tasks, a milestone at a time or all at once.
+### Planning with Claude
 
-**Autonomy**, set per milestone and changeable at any time:
+- **New Plan** (Plans, ⌘K): a goal, the project, how it runs. It opens a conversation of its own in the project's main folder (Claude only reads there) and the plan's page. Claude reads the code and writes the plan with its tools (`klaud_plan`: `plan_get`, `plan_write`, `plan_update`); the graph fills in as it writes, and you talk it through in the conversation beside it.
+- **Plan with Tasks** in any conversation in a project (the composer's mode menu, or ⇧⇥: Act → Plan First → Plan with Tasks): that conversation becomes the plan's home. A strip above it shows the plan and its next step.
+- A plan task can adopt a task already on the board (`issue: "BOB-12"`).
 
-| Level | What the head Claude does |
+### Running it (`pilot.ts`, `progress.ts`)
+
+`planView` works out, from the plan, the board and what each worktree's Claude is doing right now, every task's state (later · waiting · ready · Claude working · needs you · in progress · in review · done), each milestone's (up next · in progress · Claude is checking · ready to pass · check failed · passed) and **the one thing the plan waits for** (the page's main button). The pilot acts on it a moment after anything changes:
+
+| Autonomy | What happens |
 |---|---|
-| **Step** | proposes each start; you click Start |
-| **Gated** (default) | starts whatever is ready inside a phase by itself and waits for you at review gates and at the end of each milestone |
-| **Autopilot** | runs through; stops only when something fails or a question needs you |
+| **Step by Step** | ready tasks line up with a Start button; nothing starts by itself |
+| **Gated** (default) | ready tasks start by themselves (up to *Run at Once*, 3 by default); each milestone waits for you to pass it |
+| **Autopilot** | milestone to milestone: a passing check moves on by itself; a failed one stops there, and the head Claude adds fix tasks (applied at once) |
 
-### The head Claude (orchestrator)
+- **Starting** a task makes its worktree quietly (it doesn't take you there) with Claude on it. A task that builds on one still in review starts from that one's branch; two unmerged blockers wait for a merge. A task already being worked on in a worktree is never started again (`BoardWork.start` refuses).
+- **Finished** means In Review or Done. The task's Claude is told to commit, rewrite the handoff and move its task to In Review when every acceptance criterion holds. On Autopilot, a task whose Claude stopped without finishing is nudged once.
+- **Gates:** when a milestone's tasks are finished, the head Claude is asked to check its pass criteria for real (briefs, handoffs, proof, diffs) and records `plan_gate` pass or fail with notes per criterion. Pass Milestone / Not Yet… are yours (Not Yet sends what's missing to the head Claude, which adds the tasks). When the last milestone passes, the head Claude writes a recap.
+- **Parallel Claudes know about each other.** Every run doing a task gets what else in the project is being worked on right now (which task, which worktree, whether its Claude is working); `task_get` says where a task is being worked on. A plan task's worktree also gets its plan, milestone, pass criteria and the tasks running beside it (with their `touches`). The head Claude is warned when tasks running side by side touch the same files, and can message a task's Claude (`plan_message_task`).
+- Pause stops starts; the scheduler, not Claude, enforces limits, blockers and gates.
 
-**Where it runs:** in the plan's own conversation (`plan:<id>`), with per-run tools:
-- `plan_status`: the ready set, computed by a deterministic scheduler in the core from the graph, the gates and the autonomy setting
-- `start_task`: starts a worktree with the task's brief, via `controller.startWorktree`
-- `message_task` / `wait_tasks` / `check_task` / `stop_task`: non-blocking, modelled on the gateway's ask, wait and check
-- `request_review`: a reviewer Claude in its own read-only run, or a person
-- `pass_gate` / `fail_gate`: only at Autopilot, or with your approval
-- `update_plan`: re-plan with a reason, shown as a diff of the graph
+### In the window (`packages/mac/src/plans/`)
 
-**Limits and safety:**
-- The scheduler, not Claude, enforces concurrency (a setting; `MAX_PARALLEL_RUNS` becomes configurable) and gates. Claude can't start a blocked task.
-- Every start, gate and re-plan goes into the plan's activity. You can pause the whole plan at any time.
+- **Plans** in the sidebar (under Tasks): one project's plans with a milestone progress bar, their status and what they wait for.
+- **A plan's page:** the name (renamed in place), its status, Step by Step · Gated · Autopilot, ⋯ (Pause, Run at Once ▸, Copy as Markdown, Planning Style…, Discard, Delete), and one main button for what it waits for (Approve Plan, Apply Changes, Start, Pass Milestone, Not Yet…).
+  - **Graph:** milestones as lanes, top to bottom; tasks inside left to right by what waits on what (what can start at once lines up on the left); a gate at the end of each lane that opens the next. Tasks Claude is working on have a copper light going round them and say what Claude is doing; finished ones tick; a gate waiting for you is the one thing in the accent. The layout depends only on the plan's shape, so work moving on never moves anything; a re-cut plan glides to its new shape. Blockers from an earlier milestone show for the task you pick.
+  - **Outline:** the same, milestone by milestone, with names changed in place and a task's ⋯ (Start, Move to ▸, I'll Do It Myself, Take Out of the Plan).
+  - Picking a task or gate opens its details (goal, done when, waits on, the files it changes, Claude's check).
+  - **The conversation** with the plan's Claude docks on the right.
 
-**In the window:**
-- The live plan graph: running tasks pulse, done ones tick, a gate waiting for you is the one thing in accent color.
-- A lane per running worktree, showing its Claude's current step (from `SubAgentTracker` / `live-run`).
-- An approvals tray.
+### Kanban drag
 
-### Milestone recaps (phase 5)
+The board's cards are picked up with the pointer (`TaskBoard.tsx`, pure parts in `board-drag.ts`): the card lifts and leans with the way you move it, the cards where it would land slide apart (motion layout springs), and it settles into place on release. Esc puts it back; the board scrolls near its edges; ⌥←/→ and ⌥↑/↓ move a focused card.
 
-When a milestone ends, the head Claude writes a recap:
+### Milestone recaps (next)
+
+Today the head Claude writes a recap in the plan's conversation when the plan is done. Next, a recap per milestone, as a page:
 - what changed and why
 - a **graph** of the architecture or flow that changed
 - **proof**: screenshots of web pages (via Playwright, into the worktree's scratch folder), test results, PR links and diff stats
@@ -176,7 +177,7 @@ The recap opens as a page, with a **walkthrough** that steps through the graph. 
 | 1 ✓ | Graph engine: `klaud-graph` in chat and docs, `/visualize`, prompt, demo | — |
 | 2 ✓ | Tasks: slice, saving, `board.*` API, Tasks view (list, board, graph, task page), a task per worktree, status from pull requests, Claude's task tools, brief revisions | 1 (the dependency graph) |
 | 3 | Sharing: board ops over groups, assign to friends and friends' Claudes, My Tasks | 2 |
-| 4 | Plans: planning styles, planner, `klaud-plan`, editable plan graph, approve → tasks | 1, 2 |
-| 5 | Head Claude: scheduler, orchestrator tools, autonomy, review gates, live plan view, milestone recaps with proof | 4 |
+| 4 ✓ | Plans: planning style, Claude's plan tools, drafts off the board, plan graph and outline, approve → tasks | 1, 2 |
+| 5 ✓ (recaps in words) | Head Claude: scheduler, orchestrator tools, autonomy, gates checked by Claude, live plan view, a recap when it's done | 4 |
 
 Each phase is its own PR with tests (core contract tests, Mac model tests, an e2e spec and screenshots in light and dark).

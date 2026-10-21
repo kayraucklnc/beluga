@@ -153,7 +153,9 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   const insideTip = tallyTip(inside);
   const live = p.workspaces.filter((w) => !w.archived);
   // Not the main checkout (work happens in worktrees); questions asked in its folder stay, as chats.
-  const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud');
+  // A plan's own conversation lives on the plan's page (Plans), not in the tree — unless you're in it.
+  const planHomes = new Set(state.plans.plans.map((x) => x.home));
+  const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud' && (!planHomes.has(`ws:${w.id}`) || w.id === here));
   const main = live.find((w) => w.kind === 'main');
   const archived = p.workspaces.filter((w) => w.archived);
   const item: Target = { project: p.id };

@@ -29,7 +29,9 @@ const ALWAYS_OK = new Set([
   // The gateway's look-and-wait tools (core/gateway); ask_person and run_on ask, and the gateway checks trust itself.
   ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__klaud__${n}`),
   // The task board: only your own runs have it, and it only changes your tasks (each change is in their activity).
-  ...['task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__klaud_board__${n}`),
+  ...['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__klaud_board__${n}`),
+  // A plan's tools: only its home conversation has them (core/plans); changes to an approved plan wait for you.
+  ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task'].map((n) => `mcp__klaud_plan__${n}`),
   // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).
   ...['screenshot', 'device_info'].map((n) => `mcp__klaud_task__${n}`),
 ]);

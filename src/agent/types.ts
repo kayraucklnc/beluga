@@ -64,6 +64,37 @@ export interface AgentRunInput {
   readonly board?: BoardTools;
   /** The task this run's worktree is doing (its brief), or a note that the board is there: added to the instructions. */
   readonly taskBrief?: string;
+  /**
+   * Plan mode with the board: whether the plan's task still has to be defined (task_define) before
+   * the plan goes to you, and what to do when you approve it (its task goes on the board).
+   */
+  readonly planTask?: { readonly needsDefinition: () => boolean; readonly approved: () => void };
+  /** A plan (Plans): its tools for this run (its home conversation), and what Claude is told about it. */
+  readonly planTools?: PlanTools;
+  readonly planBrief?: string;
+}
+
+/** What Claude writes down about a piece of work: the task in its own words, never the request pasted in. */
+export interface TaskDefinition {
+  readonly title: string;
+  readonly goal: string;
+  readonly context?: string;
+  readonly acceptance?: readonly string[];
+  readonly decisions?: readonly string[];
+  readonly questions?: readonly string[];
+  readonly estimate?: 1 | 2 | 3 | 5 | 8;
+  readonly priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
+  readonly labels?: readonly string[];
+}
+
+/** A plan as Claude's tools (agent/plan-tools.ts, server `klaud_plan`): each answers in words. */
+export interface PlanTools {
+  get(): string;
+  write(body: import('../core/plans/edit.js').BodyInput): string;
+  update(ops: readonly import('../core/plans/edit.js').PlanOp[], reason?: string): string;
+  gate(milestone: string, verdict: 'pass' | 'fail', notes: string): string;
+  start(task: string): Promise<string>;
+  message(task: string, text: string): string;
 }
 
 /**
@@ -73,6 +104,8 @@ export interface AgentRunInput {
 export interface BoardTools {
   /** The task this run's worktree is doing, if any. */
   readonly current?: string;
+  /** Define the work this conversation is for (planning: once you approve the plan). */
+  define(def: TaskDefinition): string;
   get(key?: string): string;
   list(filter: { readonly scope?: 'open' | 'mine' | 'all'; readonly project?: string; readonly query?: string }): string;
   create(input: {
@@ -80,6 +113,9 @@ export interface BoardTools {
     readonly goal?: string;
     readonly context?: string;
     readonly acceptance?: string;
+    readonly decisions?: string;
+    readonly questions?: string;
+    readonly estimate?: number;
     readonly project?: string;
     readonly parent?: string;
     readonly blockedBy?: readonly string[];
@@ -94,6 +130,7 @@ export interface BoardTools {
       readonly status?: 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled';
       readonly priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
       readonly labels?: readonly string[];
+      readonly estimate?: number | null;
       readonly assign?: 'me' | 'claude' | 'nobody';
     },
   ): string;

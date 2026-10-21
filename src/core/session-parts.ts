@@ -17,6 +17,7 @@ import { GuestShell } from './guest-shell.js';
 import { SharedDiff } from './shared-diff.js';
 import { EnvVars } from './env-vars.js';
 import { boardOf } from './board/registry.js';
+import { plansOf } from './plans/registry.js';
 
 /** Everything a session is made of, wired to each other and to the session. */
 export interface SessionParts {
@@ -139,7 +140,8 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       nameTask: (prompt) => session.nameTask(prompt),
       steps: new StepBook(opts.stepsDir),
       isGuest: (peerId) => invites.isRestricted(peerId),
-      board: (channel, from) => boardOf(session)?.forRun(channel, from),
+      board: (channel, from, o) => boardOf(session)?.forRun(channel, from, o),
+      plans: (channel, from) => plansOf(session)?.forRun(channel, from),
     });
     const remote = new RemoteWork({
       store: opts.store,

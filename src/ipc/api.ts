@@ -9,6 +9,7 @@ import { CLAUDE_CODE_API } from './claude-code-api.js';
 import { STEPS_API } from './steps-api.js';
 import { GATEWAY_API } from './gateway-api.js';
 import { BOARD_API } from './board-api.js';
+import { PLANS_API } from './plans-api.js';
 import { GIT_API } from './git-api.js';
 
 /**
@@ -281,6 +282,7 @@ export const API = {
   ...GATEWAY_API,
   // ---- tasks: the board, its tasks and their briefs (board-api.ts)
   ...BOARD_API,
+  ...PLANS_API,
   // ---- git: keeping main current, GitHub, history (git-api.ts)
   ...GIT_API,
 } as const;

@@ -60,7 +60,23 @@ export function boardNote(): string {
     '',
     'Tasks: klaud has a task board per project (mcp__klaud_board__*: task_list, task_get, task_create, task_update,',
     'task_brief_edit, task_note, task_relate, task_attach_proof). Use it when the user talks about tasks, issues,',
-    'a backlog or what to do next, or asks you to track or plan work.',
+    'a backlog or what to do next, or asks you to track or plan work. Don\'t make tasks for questions or quick asks.',
+    'When you do write one, write it in your own words: never paste the user\'s message in as its goal.',
+  ].join('\n');
+}
+
+/** Plan mode with the board: the plan is for a task, which Claude defines before asking for approval. */
+export function definePrompt(hasTask: boolean): string {
+  return [
+    '',
+    'You are planning (plan mode). In klaud, an approved plan is tracked as a task on the board.',
+    hasTask
+      ? 'This worktree already has its task: before ExitPlanMode, call mcp__klaud_board__task_define to rewrite it from your plan.'
+      : 'Before you call ExitPlanMode, call mcp__klaud_board__task_define once with the task this plan is for.',
+    'Understand the request and write it up yourself: a short title; the goal in your own words (never the user\'s',
+    'message pasted in); the context someone new needs (where the code is, how it works today); acceptance criteria',
+    'as checkable statements; the decisions you made and why; open questions; an estimate (1 an hour, 2 half a day,',
+    '3 a day, 5 a few days, 8 a week) and a priority. Nothing goes on the board until the user approves the plan.',
   ].join('\n');
 }
 

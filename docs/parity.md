@@ -342,6 +342,20 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `board.settleGone` | — (Mac only, see below) | ✓ the banner on a task whose worktree was archived or deleted (Cancel Task / Back to Backlog / Keep) |
 | `board.setAutoTasks` | — (Mac only, see below) | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
 | `board.setPrefix` | — (Mac only, see below) | ✓ Tasks › ⋯ › Task Keys… |
+| `plans.create` | — (Mac only, see below) | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder) |
+| `plans.here` | — (Mac only, see below) | ✓ the composer's mode menu › Plan with Tasks (Claude plans in the conversation you're in) |
+| `plans.approve` | — (Mac only, see below) | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation |
+| `plans.discard` | — (Mac only, see below) | ✓ Discard Draft / Discard Changes on a plan's page |
+| `plans.edit` | — (Mac only, see below) | ✓ editing a plan's outline (rename, criteria, move, remove, what waits on what) |
+| `plans.setAutonomy` | — (Mac only, see below) | ✓ Step by Step · Gated · Autopilot on a plan's page (a milestone's own from its menu) |
+| `plans.setPaused` | — (Mac only, see below) | ✓ Pause / Resume on a plan's page |
+| `plans.setParallel` | — (Mac only, see below) | ✓ a plan's ⋯ › Run at Once ▸ |
+| `plans.pass` | — (Mac only, see below) | ✓ Pass Milestone on a plan's page |
+| `plans.recheck` | — (Mac only, see below) | ✓ Check Again on a milestone Claude is checking or that failed its check |
+| `plans.sendBack` | — (Mac only, see below) | ✓ Not Yet… on a milestone waiting for you |
+| `plans.startTask` | — (Mac only, see below) | ✓ Start on a ready task (step by step, or a task for you) |
+| `plans.remove` | — (Mac only, see below) | ✓ a plan's ⋯ › Delete Plan… (its tasks stay on the board) |
+| `plans.setStyle` | — (Mac only, see below) | ✓ Plans › ⋯ › Planning Style… |
 | `claudeCode.steps` | — (Mac only, see below) | ✓ a Claude Code session's or agent's live, read-only transcript (Activity, the strip above a workspace's chat, the Inspector's Claude Code panel) |
 | `claudeCode.step` | — (Mac only, see below) | ✓ opening a tool call or thinking line in that transcript: the command and its output, the file, the diff, the thinking |
 | `claudeCode.findAgent` | — (Mac only, see below) | ✓ opening a sub-agent's own worktree whose agent finished a while ago: it's found again and followed live |
@@ -427,6 +441,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | The Worktrees page: every worktree in your projects (Klaud's, sub-agents', made outside Klaud) with who made it (a sub-agent's conversation, or that it's gone), whether its work is done, its size and what can be cleared; tick some, then Free Up Space (they stay) or Archive (everything of yours kept); the sidebar's Worktrees row, a project's Manage Worktrees… | Mac (`src/views/worktrees/`) | on purpose: the terminal app stays as it is |
 | Tasks between Claudes (the gateway): your Claude finds who can help (`who_can`), asks their Claude (`ask_person`) or runs one command on their Mac (`run_on`), waits (`wait_for`) or ends its turn and continues when the answer comes back; you're asked first for people you don't trust (a card in the conversation), their side approves with today's approval cards unless they trust you; results go only to the requester, as data. Task cards in conversations, the Requests view (Sent / Received) — the `gateway.*` API and the shared state's `gateway` | Mac (`src/core/gateway/`, the daemon runs it; `src/gateway/*` in the app) | on purpose: the terminal app stays as it is; the tools exist for every Claude but say the klaud app is needed where no daemon runs the gateway |
 | Tasks (the board): a Tasks place in the sidebar with My Tasks, Active, Backlog and All, by project; a list grouped by status, a board you drag cards across, and a graph of what waits on what (the graph engine); a task's page (its title, properties, a brief in sections that Claude and you keep true with every version kept, sub-tasks, blockers, its worktree and pull request, proof, activity and comments); a task opens with every new worktree and follows its pull request (In Review when it opens, Done when it merges); Start Worktree / Start with Claude on a task; your Claude's runs in a task's worktree get its brief and the task tools (`mcp__klaud_board__*`) — the `board.*` API and the shared state's `board` | Mac (`src/core/board/`, the daemon runs it; `src/tasks/*` in the app) | on purpose (docs/tasks-and-plans.md): the terminal app keeps its worktrees as they are; tasks, their pages and dragging cards are the Mac app's job |
+| Plans: milestones with pass criteria and parallel tasks, drafted by Claude in a conversation and kept off the board until approved; a live plan graph and outline; Step by Step · Gated · Autopilot run by a scheduler that starts worktrees and asks Claude to check each milestone; the composer's Plan with Tasks — the `plans.*` API, Claude's `mcp__klaud_plan__*` tools and the shared state's `plans` | Mac (`src/core/plans/`, the daemon runs it; `src/plans/*` in the app) | on purpose (docs/tasks-and-plans.md), like Tasks |
 | Graphs Claude draws (`klaud-graph` blocks: interactive diagrams laid out by ELK and drawn with React Flow, in answers, reports and Markdown files; hover, details, walkthrough, full window) | Mac (`components/graph/*`; the format is `src/shared/graph-spec.ts`, Claude learns it from `agent/graph-prompt.ts`) | the terminal app shows the block's JSON as code; drawing diagrams is the Mac app's job (docs/graphs.md) |
 
 ## Adding a feature

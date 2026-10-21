@@ -283,3 +283,15 @@
   z-index: 1;
   background: transparent;
 }
+.planLink {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+.planLink:hover {
+  text-decoration: underline;
+}

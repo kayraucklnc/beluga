@@ -5,6 +5,7 @@ import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../core/attachm
 import { buildAskOnlyAppend, buildPrompt, buildScratchAppend, buildSystemAppend, summarizeTool } from './prompt.js';
 import { buildGraphAppend } from './graph-prompt.js';
 import { createBoardTools } from './board-tools.js';
+import { createPlanTools } from './plan-tools.js';
 import { decideTool, denyReason } from './policy.js';
 import { buildSyncMainAppend, syncProbes } from './sync-main.js';
 import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
@@ -60,6 +61,11 @@ function taskServer(input: AgentRunInput): { klaud_task?: NonNullable<ReturnType
 /** Your own runs get the task board (core/board): the task they're doing, and tools to keep it true. */
 function boardServer(input: AgentRunInput): { klaud_board?: ReturnType<typeof createBoardTools> } {
   return input.board ? { klaud_board: createBoardTools(input.board) } : {};
+}
+
+/** A plan's home conversation gets the plan's tools (core/plans). */
+function planServer(input: AgentRunInput): { klaud_plan?: ReturnType<typeof createPlanTools> } {
+  return input.planTools ? { klaud_plan: createPlanTools(input.planTools) } : {};
 }
 
 /** Tokens and cost of a run, summed over every model it used (sub-agents included). */
@@ -142,7 +148,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { klaud: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input), ...boardServer(input) },
+        mcpServers: { klaud: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input), ...boardServer(input), ...planServer(input) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -178,7 +184,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + (input.taskBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
@@ -207,10 +213,17 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         if (answer.kind === 'answers') return { behavior: 'allow' as const, updatedInput: { ...toolInput, answers: answer.answers } };
         return { behavior: 'deny' as const, message: 'The user skipped this question. Continue with your best judgment and say what you assumed.' };
       };
+      let askedToDefine = false;
       const reviewPlan = async (toolInput: Record<string, unknown>) => {
+        // The plan is for a task: Claude defines it (in its own words) before the plan comes to you. Asked once.
+        if (input.planTask?.needsDefinition() && !askedToDefine) {
+          askedToDefine = true;
+          return { behavior: 'deny' as const, message: 'Before asking for approval, call mcp__klaud_board__task_define with the task this plan is for (title, goal in your own words, context, acceptance criteria, decisions, open questions, estimate, priority). Then call ExitPlanMode again.' };
+        }
         const plan = typeof toolInput.plan === 'string' && toolInput.plan.trim() ? toolInput.plan : lastText || '(Claude proposed a plan)';
         const answer = await ask({ kind: 'plan', plan: plan.slice(0, 60_000) });
         if (answer.kind === 'plan' && answer.approve) {
+          input.planTask?.approved();
           // Approved: leave plan mode so Claude can do the work.
           await q.setPermissionMode(autoEdit ? 'acceptEdits' : 'default').catch(() => undefined);
           return { behavior: 'allow' as const, updatedInput: toolInput };

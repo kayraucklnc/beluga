@@ -53,6 +53,8 @@ async function newGroup(page: Page, name: string): Promise<Locator> {
   await field.press('Enter');
   const head = sidebar(page).getByRole('button', { name: `Group ${name}` });
   await expect(head).toBeVisible();
+  // The menu has finished closing (a drag started on it as it fades goes nowhere).
+  await expect(page.getByRole('menu')).toHaveCount(0);
   return head;
 }
 

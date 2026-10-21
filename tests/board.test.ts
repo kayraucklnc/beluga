@@ -244,6 +244,31 @@ describe('worktrees and pull requests', () => {
   });
 });
 
+describe('quick changes are one line in the activity', () => {
+  it('clicking through estimates leaves one line; back to where it was leaves none', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'T' }, me);
+    const before = board.need(t.key).activity.length;
+    for (const e of [1, 2, 3, 5]) board.update(t.key, { estimate: e }, me);
+    const after = board.need(t.key).activity;
+    expect(after).toHaveLength(before + 1);
+    expect(after.at(-1)?.text).toBe('estimated this at 5 points');
+    board.update(t.key, { estimate: null }, me);
+    expect(board.need(t.key).activity).toHaveLength(before);
+  });
+
+  it('status moves read from where it started; someone else’s change starts a new line', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'T', status: 'todo' }, me);
+    board.update(t.key, { status: 'in_progress' }, me);
+    board.update(t.key, { status: 'in_review' }, me);
+    expect(board.need(t.key).activity.at(-1)?.text).toBe('moved this from Todo to In Review');
+    board.update(t.key, { status: 'done' }, { kind: 'person', id: 'p-bob', name: 'bob' });
+    expect(board.need(t.key).activity.at(-1)?.text).toBe('moved this from In Review to Done');
+    expect(board.need(t.key).activity.filter((a) => a.kind === 'status')).toHaveLength(2);
+  });
+});
+
 describe('saving', () => {
   it('writes board.json and reads it back', () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-board-'));
@@ -252,8 +277,8 @@ describe('saving', () => {
     const t = first.board.create({ projectId: 'api', title: 'Kept', brief: { goal: 'g' } }, me);
     first.board.setAutoTasks(false);
     first.board.flush();
-    const saved = JSON.parse(readFileSync(path.join(dir, 'board.json'), 'utf8')) as { issues: Issue[]; autoTasks: boolean };
-    expect(saved.autoTasks).toBe(false);
+    const saved = JSON.parse(readFileSync(path.join(dir, 'board.json'), 'utf8')) as { issues: Issue[]; worktreeTasks: boolean };
+    expect(saved.worktreeTasks).toBe(false);
     expect(saved.issues[0]?.key).toBe('BOB-1');
     const again = setup({ dir });
     expect(again.board.need(t.key).brief.goal).toBe('g');
