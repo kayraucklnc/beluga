@@ -4,6 +4,7 @@ import type { AppState } from '@klaud/core/store.js';
 import { type MenuKind, menuSpec } from '@klaud/ui/menus.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Button, cx } from '../../components/ui.js';
+import { tildePath } from '../../lib/brand.js';
 import s from './sharing.module.css';
 
 /**
@@ -188,7 +189,7 @@ export function optionIndex(state: AppState, menu: MenuKind, id: string): number
 }
 
 /** `/Users/kay/x` → `~/x`. */
-export const tilde = (home: string, p: string): string => (home && (p === home || p.startsWith(`${home}/`)) ? `~${p.slice(home.length)}` : p);
+export const tilde = tildePath;
 
 /** A small pill: "can prompt", "Host", "Guest". */
 export function Tag({ children, tone }: { children: ReactNode; tone?: 'accent' | 'claude' | 'warn' | 'muted' }) {

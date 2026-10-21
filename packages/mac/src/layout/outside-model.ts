@@ -1,6 +1,7 @@
 import type { AppState } from '../../../../src/core/store.js';
 import { activityOf } from '../../../../src/ui/workspace-models.js';
 import type { Project, Workspace } from '../../../../src/workspaces/types.js';
+import { tildePath } from '../lib/brand.js';
 
 /**
  * Worktrees made outside Klaud, as the sidebar lists them: after Klaud's own, most recently
@@ -18,8 +19,7 @@ export const isOutside = (w: Workspace): boolean => w.kind === 'worktree' && w.e
 
 export const outsideOf = (p: Project): Workspace[] => p.workspaces.filter(isOutside);
 
-/** "~/code/klaude/madrid" for a path under your home folder. */
-export const tildePath = (home: string, p: string): string => (home && (p === home || p.startsWith(`${home}/`)) ? `~${p.slice(home.length)}` : p);
+export { tildePath };
 
 export interface OutsideLocation {
   /** The folder it's in (its parent), shortened to its tail: shown quietly after its name. */
@@ -28,7 +28,7 @@ export interface OutsideLocation {
   readonly path: string;
 }
 
-/** A long folder by its last two parts ("…/workspaces/klaude"): the part that tells worktrees apart. */
+/** A long folder by its last two parts ("…/workspaces/api"): the part that tells worktrees apart. */
 export function folderTail(folder: string): string {
   const parts = folder.split('/').filter(Boolean);
   return parts.length > 3 ? `…/${parts.slice(-2).join('/')}` : folder;

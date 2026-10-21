@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentOrigin } from '../src/core/claude-code/model.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
-import { type WorktreeFilter, filterRows, totals, worktreeRows } from '../packages/mac/src/views/worktrees/worktrees-model.js';
+import { type WorktreeFilter, archivedRows, archivedText, filterRows, totals, worktreeRows } from '../packages/mac/src/views/worktrees/worktrees-model.js';
 
 /** Every worktree on this Mac in one list: who made it, whether its work is done, what it takes. */
 describe('the Worktrees page', () => {
@@ -62,6 +62,35 @@ describe('the Worktrees page', () => {
     expect(ids('orphaned')).toEqual(['agent-b2', 'agent-c3']);
     expect(ids('outside')).toEqual(['agent-a1', 'agent-b2', 'agent-c3', 'berlin']);
     expect(filterRows(rows, 'all', 'nope')).toEqual([]);
+  });
+
+  it('says what’s in each that isn’t in main, as numbers (unknown until git was asked)', () => {
+    expect(by('wip').left).toEqual({ commits: 0, files: 5 });
+    expect(by('add-auth').left).toEqual({ commits: 2, files: 0 });
+    expect(worktreeRows({ ...state, projects: [{ ...project, workspaces: [ws('new', { status: undefined })] }] } as never)[0]!.left).toBeUndefined();
+  });
+
+  it('lists archived ones apart: whether each comes back, and what deleting it loses', () => {
+    const smart = ws('smart', { archived: true, archive: { freedBytes: 9, keptBytes: 2048, remake: [], at: 5 } });
+    const oldOne = ws('old', { archived: true, createdAt: 1 });
+    const lost = ws('lost', { archived: true, branch: undefined, createdAt: 2 });
+    const theirs = ws('theirs', { archived: true, external: true, path: '/elsewhere/theirs', branch: 'theirs', createdAt: 3 });
+    const put = archivedRows({ ...state, projects: [{ ...project, workspaces: [mine, smart, oldOne, lost, theirs] }] } as never);
+    expect(put.map((r) => r.ws.id)).toEqual(['smart', 'theirs', 'lost', 'old']);
+    const of = (id: string) => put.find((r) => r.ws.id === id)!;
+    expect(of('smart').archived).toMatchObject({ keptBytes: 2048, restorable: true });
+    expect(of('lost').archived?.restorable).toBe(false);
+    const fmt = (n: number) => `${n} B`;
+    expect(archivedText(of('smart'), fmt).restore).toMatch(/as it was/);
+    expect(archivedText(of('smart'), fmt).remove).toBe('Deleting loses its archive (uncommitted work and files of yours, 2048 B), its branch klaud/smart (commits only there) and its conversation.');
+    expect(archivedText(of('old'), fmt).restore).toBe('Restore makes it again from its branch klaud/old');
+    // Another tool's branch is never deleted.
+    expect(archivedText(of('theirs'), fmt).remove).toBe('Deleting loses its conversation.');
+    expect(archivedText(of('lost'), fmt).restore).toMatch(/Can’t come back/);
+    // Only under Archived, and only they are.
+    const both = [...rows, ...put];
+    expect(filterRows(both, 'archived').map((r) => r.ws.id).sort()).toEqual(['lost', 'old', 'smart', 'theirs']);
+    expect(filterRows(both, 'all').some((r) => r.archived)).toBe(false);
   });
 
   it('adds up what they take, and what clearing dependencies and caches would free', () => {

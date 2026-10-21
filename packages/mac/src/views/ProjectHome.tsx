@@ -13,6 +13,7 @@ import { mod } from '../lib/system.js';
 import { type OverviewFilter, readOverviewPrefs } from './overview/overview-model.js';
 import { type HomeModel, agoText, homeModel, lastActive } from './project/home-model.js';
 import { branchOptions } from '../chat/WorktreeDraft.js';
+import { useBoxSuggestions } from '../chat/BoxSuggestions.js';
 import { HomeHistory } from './history/HomeHistory.js';
 import { GitHubRow } from './project/GitHubRow.js';
 import { MainSyncBar } from './project/MainSyncBar.js';
@@ -132,6 +133,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
  */
 function HomeComposer({ project }: { project: Project }) {
   const api = useApi();
+  const actions = useActions();
   const { client } = useKlaud();
   const prefs = usePrefs();
   const [mode, setMode] = useState<Mode>('worktree');
@@ -160,8 +162,16 @@ function HomeComposer({ project }: { project: Project }) {
   const chosen = base ?? branches?.base ?? project.base;
   const options = branches?.branches.length ? branches.branches : chosen ? [chosen] : [];
   const sendKeys = prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`;
+  // "@src/…" offers the main folder's files (the new worktree starts with the same ones), "/" the commands.
+  const mainId = project.workspaces.find((w) => w.kind === 'main')?.id;
+  const box = useBoxSuggestions({ text, setText, filesOf: mainId });
 
   const send = async (): Promise<void> => {
+    if (task.startsWith('/')) {
+      setText('');
+      actions.submit(task);
+      return;
+    }
     if (!ready || busy) {
       if (!ready) toast(client, worktree ? 'Describe the task, or give the worktree a name' : 'Type your question first', 'info');
       return;
@@ -187,6 +197,7 @@ function HomeComposer({ project }: { project: Project }) {
   };
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (box.onKey(e)) return;
     if (e.key !== 'Enter') return;
     const modKey = e.metaKey || e.ctrlKey;
     const sends = prefs.sendWith === 'enter' ? !e.shiftKey && !modKey : modKey;
@@ -213,6 +224,7 @@ function HomeComposer({ project }: { project: Project }) {
         />
       </div>
       <div className={cx(s.box, busy && s.busy)}>
+        {box.list}
         <textarea
           ref={ref}
           className={`${s.input} selectable`}

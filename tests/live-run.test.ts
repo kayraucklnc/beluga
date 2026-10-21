@@ -147,6 +147,66 @@ describe('live runs', () => {
   });
 });
 
+describe('steering', () => {
+  const route = (got: string[], name: string) => ({ onEvent: () => undefined, onStart: () => void got.push(`${name} started`), onFolded: () => void got.push(`${name} folded`), onDone: (t: string) => void got.push(`${name}:${t}`), onError: (r: string) => void got.push(`${name}!${r}`) });
+
+  it('tags prompts with ids, and steered ones to be taken in at the next step', async () => {
+    const q = new PromptQueue();
+    const first = q.push('a');
+    const steered = q.push('b', { steer: true });
+    q.close();
+    const seen: Array<{ uuid?: string; priority?: string }> = [];
+    for await (const m of q) seen.push({ uuid: m.uuid, priority: m.priority });
+    expect(seen).toEqual([{ uuid: first, priority: undefined }, { uuid: steered, priority: 'next' }]);
+  });
+
+  it('a message the turn took in gets no turn of its own; one it did not, the next', () => {
+    const got: string[] = [];
+    const turns = new TurnRouter({ onEvent: () => undefined });
+    turns.current();
+    turns.queue(route(got, 'a'), 'ua', true);
+    turns.queue(route(got, 'b'), 'ub', true);
+    turns.end(true, 'did it', ['u0', 'ua']);
+    expect(got).toEqual(['a folded']);
+    expect(turns.waiting).toBe(true);
+    turns.current();
+    turns.end(true, 'for b', ['ub']);
+    expect(got).toEqual(['a folded', 'b started', 'b:for b']);
+    expect(turns.waiting).toBe(false);
+  });
+
+  it('without word from Claude Code, steered messages count as taken in (follow-ups still get turns)', () => {
+    const got: string[] = [];
+    const turns = new TurnRouter({ onEvent: () => undefined });
+    turns.current();
+    turns.queue(route(got, 'a'), 'ua', true);
+    turns.queue(route(got, 'f'), 'uf', false);
+    turns.end(true, 'did it');
+    expect(got).toEqual(['a folded']);
+    turns.current();
+    expect(got).toEqual(['a folded', 'f started']);
+  });
+
+  it('offers steering while the run works, without stopping the turn', async () => {
+    let steer: ((f: FollowUp) => boolean) | undefined;
+    const got: string[] = [];
+    script.prompts = [];
+    script.turns = [
+      () => {
+        // Sent while Claude works; Claude Code says the turn took nothing of ours in, so it gets a turn next.
+        expect(steer!({ prompt: 'use pnpm', requesterName: 'kay', viaAgent: false, context: [], ...route(got, 'steer') })).toBe(true);
+        return [text('done'), { ...result('done'), user_message_uuids: [] }];
+      },
+      () => [text('switched to pnpm'), result('switched to pnpm')],
+    ];
+    const out = await createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(runInput({ onSteer: (s) => void (steer = s) }));
+    expect(out).toBe('done');
+    expect(got).toEqual(['steer started', 'steer:switched to pnpm']);
+    expect(script.prompts[1]).toContain('use pnpm');
+    expect(steer).toBeUndefined(); // withdrawn once the run ended
+  });
+});
+
 describe('sub-agents get a scratch folder of their own', () => {
   const preToolUse = (): HookCallback => script.options!.hooks!.PreToolUse![0]!.hooks[0]!;
   const call = async (tool_name: string, tool_input: object): Promise<unknown> => preToolUse()({ hook_event_name: 'PreToolUse', tool_name, tool_input, tool_use_id: 'toolu_01xyz0123456789', session_id: 's1', transcript_path: '', cwd: '' } as never, 'toolu_01xyz0123456789', { signal: new AbortController().signal });

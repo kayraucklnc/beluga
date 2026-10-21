@@ -4,6 +4,10 @@ import { type ContextBreakdown, MAX_SUMMARY_CHARS, type ResponseUsage, breakdown
 const SUMMARY_LEAD = /^This session is being continued from a previous conversation/;
 const BREAKDOWN_TIMEOUT_MS = 1500;
 
+/** Windows Claude Code reported at the end of a run, by model: the next run starts from the real size. */
+const reportedWindows = new Map<string, number>();
+const knownWindow = (model?: string): number => contextWindowFor(model, model ? reportedWindows.get(model) : undefined);
+
 type Emit = (kind: 'context' | 'compact', text: string) => void;
 
 /** A message from Claude Code, as far as the context report needs it. */
@@ -36,7 +40,7 @@ export class ContextReport {
     model?: string,
   ) {
     this.model = model;
-    this.window = contextWindowFor(model);
+    this.window = knownWindow(model);
   }
 
   /** Tokens in the window now (after the last response or compaction). */
@@ -48,7 +52,7 @@ export class ContextReport {
     if (msg.type === 'system' && 'subtype' in msg) {
       if (msg.subtype === 'init' && 'model' in msg && msg.model) {
         this.model = msg.model;
-        this.window = contextWindowFor(msg.model);
+        this.window = knownWindow(msg.model);
       }
       if (msg.subtype === 'status' && 'status' in msg) this.status(msg.status ?? null, msg.compact_result);
       if (msg.subtype === 'compact_boundary' && 'compact_metadata' in msg) this.compacted(msg.compact_metadata, msg.uuid);
@@ -82,6 +86,7 @@ export class ContextReport {
   /** The run ended: its window as Claude Code reported it, and (when it can say) where the tokens come from. */
   async result(modelUsage: Readonly<Record<string, { readonly contextWindow?: number }>> | undefined, read?: () => Promise<unknown>): Promise<void> {
     this.window = windowOfRun(modelUsage, this.model);
+    if (this.model && Object.values(modelUsage ?? {}).some((u) => (u.contextWindow ?? 0) > 0)) reportedWindows.set(this.model, this.window);
     const breakdown = read ? await readBreakdown(read, this.used) : undefined;
     if (!this.used) return;
     this.sent = -1;

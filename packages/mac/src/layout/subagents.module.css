@@ -33,3 +33,28 @@
   display: inline-block;
   width: 13px;
 }
+/* A project's loose sub-agents behind one row: "Agents · 3". */
+.group .label {
+  color: var(--text-2);
+}
+.count {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.disclosure {
+  color: var(--text-3);
+  transition: transform 0.12s ease;
+}
+.disclosureOpen {
+  transform: rotate(90deg);
+}
+/* What a done agent left: quiet when nothing, a little stronger when there's work in it. */
+.left {
+  color: var(--text-3);
+  font-size: 0.9em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.leftSome {
+  color: var(--text-2);
+}

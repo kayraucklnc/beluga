@@ -178,7 +178,7 @@ function AcceptHalf({ preset, group }: { preset?: string; group?: boolean }) {
   const found = findInvitation(text);
   const submit = async (): Promise<void> => {
     if (!text.trim() || busy) return;
-    if (!found) return setError(acceptError('isn’t a klaud invitation'));
+    if (!found) return setError(acceptError('isn’t a Klaud invitation'));
     setBusy(true);
     setError(undefined);
     try {

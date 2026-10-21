@@ -238,15 +238,21 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         clearTimeout(limit);
         clearTimeout(quiet);
         if (limit) input.onFollowUps?.(undefined); // only if follow-ups were offered
+        input.onSteer?.(undefined);
         turns.failPending('Claude finished before getting to this message');
         prompts.close();
       };
-      const send = (followUp: FollowUp): boolean => {
+      /** A message into the live session. `steer`: Claude works on a turn, and takes it in at its next step. */
+      const deliver = (followUp: FollowUp, steer: boolean): boolean => {
         if (prompts.closed) return false;
-        turns.queue(followUp);
-        recorder.begin();
-        return prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)));
+        // Between turns it starts one now: thinking before its first step counts from here.
+        if (turns.between) recorder.begin();
+        const uuid = prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)), { steer: steer && !turns.between });
+        if (uuid === false) return false;
+        turns.queue(followUp, uuid, steer && !turns.between);
+        return true;
       };
+      const send = (followUp: FollowUp): boolean => deliver(followUp, false);
       /** After an answer: end the run, or keep it open (taking follow-ups) while agents work. */
       const settle = (): void => {
         if (!background.busy && !turns.waiting) return finish();
@@ -263,6 +269,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         quiet.unref();
       };
       abortController.signal.addEventListener('abort', finish, { once: true });
+      input.onSteer?.((followUp) => deliver(followUp, true));
 
       const q = query({ prompt: prompts, options });
       showThinking(q);
@@ -310,8 +317,10 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             const turn = turns.current();
             turn.onEvent('usage', JSON.stringify(usageOf(msg.modelUsage ?? {}, msg.total_cost_usd ?? 0, msg.session_id)));
             const stopped = `Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`;
+            // The prompts this turn took in: a message steered in mid-turn is answered by it.
+            const took = msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : undefined);
             // A later turn failing (e.g. reporting a finished agent) doesn't throw away answers already given.
-            if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped) && !turns.answers.length) throw new Error(stopped);
+            if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped, took) && !turns.answers.length) throw new Error(stopped);
             settle();
           }
         }

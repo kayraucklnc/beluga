@@ -140,8 +140,9 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
             ) : null}
           </div>
         ) : null}
-        {recent.map((step) => row(step, false))}
-        {current ? row(current, true) : working ? <LiveIdle started={rows.length > 0} since={item.ts} /> : null}
+        {/* One keyed list with the step Claude is on: when it finishes it stays the same row
+            (no remount, so nothing blinks or restarts) and only changes how it reads. */}
+        {[...recent.map((step) => row(step, false)), current ? row(current, true) : working ? <LiveIdle key="idle" started={rows.length > 0} since={item.ts} /> : null]}
         <SubAgents item={item} rich={richOnes} detail={detail} stepsOf={stepsOf} open={open} load={load} live={running} now={now} />
       </div>
     </>

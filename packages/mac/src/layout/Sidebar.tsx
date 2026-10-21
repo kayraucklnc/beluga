@@ -167,7 +167,6 @@ export function Sidebar() {
             return n.kind === 'overview' ? [row, <TasksNav key="tasks" />] : row;
           })}
           <ActivityRow whenLive />
-          <WorktreesNav />
           <RequestsNav whenAny />
         </section>
 
@@ -182,6 +181,8 @@ export function Sidebar() {
 
         <Section id="projects" title="Projects" action={<ProjectsAddMenu />}>
           <Projects />
+          {/* Housekeeping for every project's worktrees: after the projects, out of the daily places above. */}
+          <WorktreesNav />
         </Section>
 
         {state.shared.length || othersShare ? (

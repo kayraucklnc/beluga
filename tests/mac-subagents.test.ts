@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentOrigin, CcAgent, CcSession } from '../src/core/claude-code/model.js';
-import { agentIdOfPath, agentOfToolUse, agentOfWorktree, agentTitle, effortLabel, isAgentWorktree, modelLabel, steerPrompt, steerable, subAgentsUnder } from '../packages/mac/src/claude-code/subagents-model.js';
+import { agentIdOfPath, agentResidue, agentOfToolUse, agentOfWorktree, agentTitle, effortLabel, isAgentWorktree, modelLabel, steerPrompt, steerable, subAgentsUnder } from '../packages/mac/src/claude-code/subagents-model.js';
 
 const agent = (id: string, extra: Partial<CcAgent> = {}): CcAgent => ({ id, description: `Task ${id}`, type: 'general-purpose', background: true, status: 'finished', startedAt: 1, lastAt: 2, steps: 3, ...extra });
 const session = (id: string, agents: CcAgent[], extra: Partial<CcSession> = {}): CcSession => ({ id, title: id, cwd: '/r', status: 'idle', lastAt: 1, steps: 1, agents, ...extra });
@@ -39,6 +39,22 @@ describe('sub-agents in the Mac app', () => {
     expect(past.session).toMatchObject({ id: 'old', title: 'Split it up', workspaceId: 'ws1' });
     // Live, it's the watched one (not a second row).
     expect(list.find((s) => s.agent.id === 'a09dac5d30f83f08a')?.past).toBeUndefined();
+  });
+
+  it('says plainly what a sub-agent left, and only clears what has nothing to lose', () => {
+    const wt = { path: WT, branch: 'worktree-agent-x' };
+    const done = { agent: agent('d', { worktree: wt }), session: mine };
+    expect(agentResidue(done, { status: { changed: 1, ahead: 2, behind: 0 } })).toMatchObject({ kind: 'some', short: '2 commits · 1 file', clearable: false });
+    expect(agentResidue(done, { status: { changed: 1, ahead: 2, behind: 0 } }).long).toBe('Left 2 commits not in main and 1 uncommitted file in its worktree (branch worktree-agent-x). Archiving it keeps them.');
+    expect(agentResidue(done, { status: { changed: 0, ahead: 0, behind: 3 } })).toMatchObject({ kind: 'none', short: 'Nothing left', clearable: true });
+    expect(agentResidue(done, {})).toMatchObject({ kind: 'unknown', clearable: false });
+    // Its worktree is gone already.
+    expect(agentResidue(done)).toMatchObject({ kind: 'none', clearable: true });
+    // No worktree of its own: it worked in its parent's folder.
+    expect(agentResidue({ agent: agent('s'), session: mine })).toMatchObject({ kind: 'shared', clearable: true });
+    // Still working: never cleared.
+    expect(agentResidue({ agent: agent('r', { status: 'running' }), session: mine }).clearable).toBe(false);
+    expect(agentResidue({ agent: agent('r', { status: 'running', worktree: wt }), session: mine }, { status: { changed: 0, ahead: 0, behind: 0 } }).clearable).toBe(false);
   });
 
   it('says models, effort and names plainly; steering goes through the lead Claude', () => {

@@ -14,16 +14,15 @@ import { inApp } from '../lib/boot.js';
 import { newEmptyGroup, useGroupEdit } from '../lib/group-edit.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { openProjectHome } from '../lib/project-home.js';
+import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { pickImage, reloadProjectIcon } from '../lib/projects.js';
 import { showUndo } from '../lib/undo-toast.js';
 import { useArrangeDrag } from './arrange-drag.js';
 import { GroupHeader, NewGroupRow, groupItems, isGroupOption, moveItems, moveKey } from './ProjectGroups.js';
 import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, useLayout } from './project-layout.js';
 import { OutsideWorktrees } from './OtherWorktrees.js';
-import { SubAgentRows, useAgentOrigins, useCcSessions } from './SubAgents.js';
+import { ProjectAgents, SubAgentRows, useAgentOrigins, useCcSessions } from './SubAgents.js';
 import { hasRowsInside } from './project-rows.js';
-import { outsideOf } from './outside-model.js';
-import { openSheet } from '../lib/sheets.js';
 import { groupTally, groupWorking, projectTally, projectWorking, tallyTip } from './attention-model.js';
 import { TallyMark } from './signal-marks.js';
 import { Row } from './sidebar-parts.js';
@@ -94,34 +93,31 @@ function showArchivedOf(run: (a: UiAction) => void, projectId: string): void {
   run({ type: 'view', view: { kind: 'overview' } });
 }
 
-/** Folding a project: its key in the window's folded list (folded when present). */
-const foldKey = (projectId: string): string => `folded:${projectId}`;
-
 /**
  * Fold or unfold a project; with Option, every project (as Finder's Option-click does).
- * Folding keeps the item you're in visible under it until you go somewhere else.
+ * Projects start folded; the ones you unfold stay unfolded (kept on this Mac). Folding keeps
+ * the item you're in visible under it until you go somewhere else.
  */
 function useProjectFold(projectId: string): { folded: boolean; toggle: (all: boolean) => void; peek: () => void } {
   const { ui } = useKlaud();
-  const folded = useUi((u) => u.collapsed.includes(foldKey(projectId)));
+  const open = usePrefs().openProjects.includes(projectId);
   const peeked = useUi((u) => u.peek === projectId);
+  const folded = !open && !peeked;
   const projects = useApp((st) => st.projects);
   const view = useApp((st) => st.view);
   const project = projects.find((x) => x.id === projectId);
-  const setFolded = (fold: boolean, keys = [foldKey(projectId)]): void => {
-    const rest = ui.get().collapsed.filter((k) => !keys.includes(k));
-    ui.patch({ collapsed: fold ? [...rest, ...keys] : rest });
+  const setOpen = (on: boolean, ids = [projectId]): void => {
+    const rest = getPrefs().openProjects.filter((k) => !ids.includes(k));
+    setPrefs({ openProjects: on ? [...rest, ...ids] : rest });
   };
   const toggle = (all: boolean): void => {
     // Folding or unfolding by hand: it stays the way you put it.
     if (ui.get().peek === projectId) ui.patch({ peek: undefined });
-    setFolded(!folded, all ? projects.filter((x) => x.root).map((x) => foldKey(x.id)) : undefined);
+    setOpen(folded, all ? projects.filter((x) => x.root).map((x) => x.id) : undefined);
   };
   // Clicking the project's row: it unfolds (only until you go somewhere else, unless you open what's in it).
   const peek = (): void => {
-    if (!folded) return;
-    setFolded(false);
-    ui.patch({ peek: projectId });
+    if (folded) ui.patch({ peek: projectId });
   };
   const at = view.kind === 'workspace' ? `ws:${view.id}` : view.kind === 'project' ? `project:${view.id}` : view.kind;
   useEffect(() => {
@@ -130,7 +126,7 @@ function useProjectFold(projectId: string): { folded: boolean; toggle: (all: boo
     ui.patch({ peek: undefined });
     // You opened one of its worktrees or chats: it stays open. Anywhere else: it folds again.
     const inside = at.startsWith('ws:') && project?.workspaces.some((w) => `ws:${w.id}` === at);
-    if (!inside) setFolded(true);
+    if (inside) setOpen(true);
   }, [at, peeked]);
   return { folded, toggle, peek };
 }
@@ -160,11 +156,8 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   const githubItems = useGitHubMenuItems(p.id, Boolean(p.root));
   // Archived work stays out of the sidebar: the Overview's Archived list has it.
   const showArchivedItem: ActionItem[] = archived.length ? [{ label: `Show Archived (${archived.length})`, onSelect: () => showArchivedOf(actions.run, p.id) }] : [];
-  // Worktrees made outside Klaud that can go, from any tool, ticked in one list.
-  const cleanUpItem: ActionItem[] = [
-    ...(p.workspaces.some((w) => w.kind === 'worktree' && !w.archived) ? [{ label: 'Manage Worktrees…', onSelect: () => actions.run({ type: 'view', view: { kind: 'worktrees', projectId: p.id } }) }] : []),
-    ...(outsideOf(p).length ? [{ label: 'Clean Up Worktrees…', onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: p.id }) }] : []),
-  ];
+  // Everything about its worktrees (archiving, restoring, cleaning up those made outside Klaud) is on the Worktrees page.
+  const cleanUpItem: ActionItem[] = p.workspaces.some((w) => w.kind === 'worktree') ? [{ label: 'Manage Worktrees…', onSelect: () => actions.run({ type: 'view', view: { kind: 'worktrees', projectId: p.id } }) }] : [];
   const extra: ActionItem[] = [...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, Boolean(state.earnings[p.root])), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, onSelect: () => hide(p) }];
   const kids = depth + 2;
   // Nothing to unfold: no arrow (its place kept, so the icons stay in line).
@@ -245,8 +238,6 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
         live.filter((w) => w.id === here && w.kind !== 'main').map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)
       ) : (
         <>
-          {/* Sub-agents the project's main folder conversation started (Claude's helpers, not worktrees). */}
-          {main ? <SubAgentRows ws={main} indent={kids} /> : null}
           {mine.map((w) => (
             <Fragment key={w.id}>
               <WorkspaceRow ws={w} indent={kids} />
@@ -255,6 +246,8 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
           ))}
           {/* Worktrees made outside Klaud: after Klaud's own, most recent first, each with where it is. */}
           <OutsideWorktrees p={p} indent={kids} />
+          {/* Sub-agents the main folder's conversations started (Claude's helpers, none of your worktrees or chats): behind one row. */}
+          {main ? <ProjectAgents p={p} ws={main} indent={kids} /> : null}
         </>
       )}
     </>

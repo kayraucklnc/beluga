@@ -14,7 +14,7 @@ import o from './other-worktrees.module.css';
 /**
  * A project's worktrees made outside Klaud, listed after Klaud's own as ordinary rows: each
  * with its name and, quietly, where it is; most recently active first. With many, the most
- * recent few show, then "Show N more". Clean Up Worktrees… is on the project itself.
+ * recent few show, then "Show N more". Cleaning them up is on the Worktrees page.
  */
 export function OutsideWorktrees({ p, indent }: { p: Project; indent: number }) {
   const actions = useActions();

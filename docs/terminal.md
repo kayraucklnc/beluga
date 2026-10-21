@@ -35,7 +35,7 @@ The lightweight Klaud: everything in your terminal, clickable, no shortcuts to m
   { "scripts": { "setup": "npm install", "run": "npm run dev" }, "prPrompt": "Link the Linear issue." }
   ```
 
-  Scripts get `KLAUDE_WORKSPACE_PATH`, `KLAUDE_ROOT_PATH` (the main checkout, e.g. to copy files from) and `KLAUDE_WORKSPACE_NAME`.
+  Scripts get `KLAUD_WORKSPACE_PATH`, `KLAUD_ROOT_PATH` (the main checkout, e.g. to copy files from) and `KLAUD_WORKSPACE_NAME`.
 - **Run** starts the run command in the Terminal tab; **Stop** and **Restart** are right above it.
 
 ## Pull requests

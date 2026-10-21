@@ -28,6 +28,24 @@ describe('settings', () => {
     expect(() => saveSettings({ name: 'bad name!' }, file)).toThrow();
   });
 
+  it('keeps auto-compact off unless you turned it on yourself', () => {
+    const file = tmpFile();
+    expect(loadSettings(file).autoCompact).toBe(false);
+    // An older file saved the old default (on) without anyone choosing it: it reads as off.
+    writeFileSync(file, JSON.stringify({ name: 'kay', autoCompact: true, autoCompactAt: 85 }));
+    expect(loadSettings(file).autoCompact).toBe(false);
+    // Saving something else writes the migration through.
+    saveSettings({ theme: 'mono' }, file);
+    expect(JSON.parse(readFileSync(file, 'utf8')).autoCompact).toBe(false);
+    // Turning it on is a choice, and it sticks.
+    expect(saveSettings({ autoCompact: true }, file)).toMatchObject({ autoCompact: true, autoCompactChosen: true });
+    expect(loadSettings(file).autoCompact).toBe(true);
+    saveSettings({ theme: 'calm' }, file);
+    expect(loadSettings(file).autoCompact).toBe(true);
+    saveSettings({ autoCompact: false }, file);
+    expect(loadSettings(file).autoCompact).toBe(false);
+  });
+
   it('respects KLAUD_HOME', () => {
     const before = process.env.KLAUD_HOME;
     process.env.KLAUD_HOME = '/tmp/kh';

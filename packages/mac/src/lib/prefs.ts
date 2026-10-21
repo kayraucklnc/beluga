@@ -31,6 +31,8 @@ export interface UiPrefs {
   readonly sidebarWidth: number;
   /** Sidebar sections you've folded. */
   readonly folded: readonly string[];
+  /** Projects you unfolded in the sidebar (by id): the rest start folded. */
+  readonly openProjects: readonly string[];
   /** The sidebar's Unread section: conversations that finished or need you, at the top (only while there are some). */
   readonly unreadSection: boolean;
   /** Enter sends and Shift+Enter makes a new line, or the other way round with ⌘Enter. */
@@ -94,6 +96,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   sidebar: true,
   sidebarWidth: 248,
   folded: [],
+  openProjects: [],
   unreadSection: true,
   sendWith: 'enter',
   timestamps: true,

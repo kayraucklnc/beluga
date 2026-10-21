@@ -77,7 +77,7 @@ export const AgentRequestBody = z.object({
   prompt: z.string().min(1).max(MAX_TEXT),
   viaAgent: z.boolean().default(false),
   channel: Channel,
-  /** Interrupt whatever the agent is doing and handle this now (instead of queueing). */
+  /** Now, not after the current task: your own steer the run working (read at its next step), else interrupt it. */
   urgent: z.boolean().default(false),
   /** Plan first: Claude investigates read-only and proposes a plan for you to approve. */
   plan: z.boolean().default(false),

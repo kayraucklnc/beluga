@@ -34,6 +34,9 @@ describe('worktrees made outside Klaud', () => {
     expect(outsideLocation({ home }, ws({ external: false }))).toBeUndefined();
     expect(tildePath(home, '/Users/kay/x')).toBe('/Users/kay/x');
     expect(tildePath('', '/Users/k/x')).toBe('/Users/k/x');
+    // Klaud's folder by its name, even where it's really the old ~/.klaude.
+    expect(tildePath(home, '/Users/k/.klaude/workspaces/api-1/fix')).toBe('~/.klaud/workspaces/api-1/fix');
+    expect(tildePath(home, '/Users/k/.klauder/x')).toBe('~/.klauder/x');
     expect(folderTail('/private/var/folders/x')).toBe('…/folders/x');
   });
 
