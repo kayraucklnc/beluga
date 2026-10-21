@@ -321,7 +321,10 @@ export class WorkspaceManager {
       const trees = await g.listWorktrees(root);
       const records = this.records.filter((r) => r.projectRoot === root);
       const workspaces: Workspace[] = [];
+      const bases = real(this.basesDir) + path.sep;
       for (const tree of trees) {
+        // Hidden worktrees (combining branches for a task's start) aren't the project's.
+        if (real(tree.path).startsWith(bases) || tree.path.startsWith(this.basesDir + path.sep)) continue;
         const isMain = real(tree.path) === real(root);
         const rec = isMain ? records.find((r) => r.kind === 'main') : records.find((r) => r.kind === 'worktree' && real(r.path) === real(tree.path));
         const record: WorkspaceRecord = rec ?? {
@@ -365,6 +368,26 @@ export class WorkspaceManager {
     const project = this.projects.find((p) => p.id === projectId && p.root);
     if (!project) throw new WorkspaceError('Project not found');
     return project;
+  }
+
+  /** Where hidden worktrees go (combining branches for a task's start): never listed as a project's worktrees. */
+  get basesDir(): string {
+    return path.join(this.store.workspacesDir, '.bases');
+  }
+
+  /**
+   * A task that builds on several unmerged branches starts from them all: what it needs of them
+   * (none already in another, nor in the default branch), combined into `klaud/<key>-base` in a
+   * hidden worktree. One left: that branch itself. A conflict is left there to fix (run again after).
+   */
+  async combineBase(projectId: string, key: string, branches: readonly string[]): Promise<g.CombineResult> {
+    const project = this.repoProject(projectId);
+    const needed = await g.neededBranches(project.root, branches, await this.baseOf(project.root));
+    const name = `${slug(key)}-base`;
+    if (needed.length < 2) return { ok: true, branch: needed[0] ?? (await this.baseOf(project.root)) };
+    const dir = path.join(this.basesDir, `${slug(project.name)}-${project.id.slice(0, 4)}`, name);
+    mkdirSync(path.dirname(dir), { recursive: true });
+    return g.combineBranches(project.root, dir, `klaud/${name}`, needed);
   }
 
   /** Mark a project as fetching (or record how its last fetch went), shown right away. */

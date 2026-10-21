@@ -107,6 +107,8 @@ export class WorkspaceController {
   readonly mainSync: MainSync;
   /** Conversations whose next run may sync git in the main folder ("Let Claude handle it"), by workspace id. */
   private readonly syncRuns = new Map<string, { branch: string; upstream: string }>();
+  /** Main-folder conversations that may edit one hidden worktree (a plan's Claude fixing a conflict there), by workspace id. */
+  private readonly fixups = new Map<string, string>();
 
   /** Hear about worktrees opening, merging, going and coming back. */
   onWorktree(listener: (event: WorktreeEvent) => void): () => void {
@@ -279,7 +281,16 @@ export class WorkspaceController {
       onSession: (sessionId) => this.deps.manager.rememberSession(ws.id, sessionId),
       ...(ws.model ? { model: ws.model } : {}),
       ...(syncMain ? { syncMain } : {}),
+      ...(ws.askOnly && this.fixups.has(ws.id) ? { fixup: this.fixups.get(ws.id)! } : {}),
     };
+  }
+
+  /** Let a main-folder conversation's runs edit `dir` (a hidden worktree with a conflict to fix), until it's lifted (undefined). */
+  allowFixup(channel: string, dir: string | undefined): void {
+    const id = workspaceIdOf(channel);
+    if (!id) return;
+    if (dir) this.fixups.set(id, dir);
+    else this.fixups.delete(id);
   }
 
   // ------------------------------------------------------------- actions

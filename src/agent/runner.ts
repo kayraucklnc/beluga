@@ -137,13 +137,14 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const subagents = new SubAgentTracker(cwd);
       const scratchRoot = input.scratchDir ? path.resolve(cwd, input.scratchDir) : undefined;
       const syncMain = askOnly ? place?.syncMain : undefined;
-      const policy = { cwd, roots: [cwd, ...extraDirs], autoEdit, scope: input.scope, guest: input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}) };
+      const fixup = askOnly ? place?.fixup : undefined;
+      const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}) };
       const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
         hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: reason },
       });
       const options: Options = {
         cwd,
-        additionalDirectories: [...extraDirs],
+        additionalDirectories: [...extraDirs, ...(fixup ? [fixup] : [])],
         resume: place ? place.resume : sessionId,
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,

@@ -184,6 +184,21 @@ export function checkPrompt(view: PlanView, m: MilestoneView): string {
   ].join('\n');
 }
 
+/** A task's start couldn't be combined from the branches it builds on: the head Claude fixes the conflict. */
+export function fixupPrompt(key: string, title: string, from: readonly string[], c: { readonly dir: string; readonly merging: string; readonly files: readonly string[] }): string {
+  return [
+    `${key} “${title}” builds on ${from.join(' and ')}, which aren't merged yet, so klaud is combining their branches into its start. Merging ${c.merging} conflicted, in a hidden worktree only for this:`,
+    '',
+    c.dir,
+    '',
+    'Conflicted files (paths in that folder):',
+    ...c.files.map((f) => `- ${f}`),
+    '',
+    'Fix each conflict there with Read and Edit, by its full path: keep what both tasks meant (read their briefs with task_get if you need to), and remove every conflict marker.',
+    "Change nothing else, and don't run git: when no markers are left, klaud commits the merge, finishes combining and starts the task by itself. End your turn with one short line.",
+  ].join('\n');
+}
+
 /** The plan is done: a short recap in its conversation. */
 export function recapPrompt(view: PlanView): string {
   return [

@@ -1,6 +1,7 @@
 import type { PlanTools } from '../../agent/types.js';
 import type { Actor, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
+import type { CombineResult } from '../../workspaces/git.js';
 import type { Intent } from '../intents.js';
 import type { Store } from '../store.js';
 import type { WorkspaceController } from '../workspace-controller.js';
@@ -24,6 +25,8 @@ export interface PlansWorkDeps {
   readonly controller?: WorkspaceController;
   readonly askClaude: (prompt: string, channel: string, echo: boolean) => void;
   readonly intend: (intent: Intent) => void;
+  /** Combining a task's start from several branches (default: the project's folder, through the controller). */
+  readonly combine?: (projectId: string, key: string, branches: readonly string[]) => Promise<CombineResult>;
   readonly delayMs?: number;
 }
 
@@ -41,6 +44,8 @@ export class PlansWork {
       work: deps.board,
       askClaude: deps.askClaude,
       system: (channel, text) => deps.store.dispatch({ type: 'system', channel, text, level: 'info' }),
+      ...(deps.combine ? { combine: deps.combine } : deps.controller ? { combine: (projectId, key, branches) => deps.controller!.manager.combineBase(projectId, key, branches) } : {}),
+      ...(deps.controller ? { allowFixup: (channel, dir) => deps.controller!.allowFixup?.(channel, dir) } : {}),
       ...(deps.delayMs !== undefined ? { delayMs: deps.delayMs } : {}),
     });
     // A task of a plan: its worktree's Claude knows the plan and what runs beside it.
