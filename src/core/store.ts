@@ -247,7 +247,7 @@ export type View =
   | { readonly kind: 'task'; readonly id: string }
   /** Plans (Mac app): one project's plans, and one plan's page (its graph, outline and conversation). */
   | { readonly kind: 'plans'; readonly projectId?: string }
-  | { readonly kind: 'plan'; readonly id: string }
+  | { readonly kind: 'plan'; readonly id: string; readonly task?: string }
 
   /** Every worktree in your projects (Mac app): who made it, whether it's done, the space it takes; archive or clean them. */
   | { readonly kind: 'worktrees'; readonly projectId?: string };

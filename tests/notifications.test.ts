@@ -10,7 +10,7 @@ import type { Session } from '../src/core/session.js';
 import { NotifySettings } from '../src/shared/settings-schema.js';
 import { dndActive, dndFor, dndLabel, nextDnd } from '../src/shared/quiet.js';
 import { FrontTracker } from '../src/ui/tty/front.js';
-import { badgeCount, filterNotices, groupNotices, noticeAgo, noticeLook, noticeTarget } from '../src/ui/notice-models.js';
+import { badgeCount, filterNotices, foldPlanNotices, groupNotices, noticeAgo, noticeLook, noticeTarget } from '../src/ui/notice-models.js';
 import type { PeerInfo } from '../src/protocol.js';
 import type { Project } from '../src/workspaces/types.js';
 import type { Notice } from '../src/core/work-store.js';
@@ -438,5 +438,18 @@ describe('notice models', () => {
     expect(badgeCount(s)).toBe(2);
     s = apply(s, { type: 'notice_read' });
     expect(badgeCount(s)).toBe(1);
+  });
+});
+
+describe('foldPlanNotices', () => {
+  const n = (id: number, over: Partial<Notice> = {}): Notice => ({ id, kind: 'done', title: `n${id}`, body: '', ts: id, read: true, ...over });
+
+  it("folds a plan's task news under the plan where the newest is; its milestones and questions stay rows", () => {
+    const list = [n(5, { plan: 'p' }), n(4), n(3, { plan: 'p', kind: 'pr' }), n(2, { plan: 'p', tag: 'milestone' }), n(1, { plan: 'p', kind: 'needsYou', tag: 'question' })];
+    expect(foldPlanNotices(list).map((e) => (e.kind === 'one' ? e.notice.id : `plan:${e.notices.map((x) => x.id).join(',')}`))).toEqual(['plan:5,3', 4, 2, 1]);
+  });
+
+  it('leaves one lone notice from a plan as a row', () => {
+    expect(foldPlanNotices([n(1, { plan: 'p' })])).toEqual([{ kind: 'one', notice: n(1, { plan: 'p' }) }]);
   });
 });

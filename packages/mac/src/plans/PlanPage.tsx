@@ -37,7 +37,7 @@ function readPrefs(): { display: Display; chat: boolean } {
  * (or an outline) in the middle; and the conversation with Claude beside it, where the plan is
  * talked through and changed. Everything else is a click away (⋯, a task, a gate).
  */
-export function PlanPage({ id }: { id: string }) {
+export function PlanPage({ id, task }: { id: string; task?: string }) {
   const plan = usePlans().plans.find((x) => x.id === id);
   const view = usePlanView(plan);
   const [prefs, setPrefsState] = useState(readPrefs);
@@ -50,7 +50,11 @@ export function PlanPage({ id }: { id: string }) {
       // Kept for now.
     }
   };
-  const [picked, setPicked] = useState<string>();
+  const [picked, setPicked] = useState<string | undefined>(task);
+  // Opened at a task (a notification about it): that task is picked.
+  useEffect(() => {
+    if (task) setPicked(task);
+  }, [task]);
   const { openList } = usePlanActions();
   // A task taken out of the plan isn't picked any more.
   useEffect(() => {

@@ -60,7 +60,7 @@ function Route() {
     case 'plans':
       return <PlansView />;
     case 'plan':
-      return <PlanPage key={view.id} id={view.id} />;
+      return <PlanPage key={view.id} id={view.id} task={view.task} />;
     case 'worktrees':
       return <WorktreesView projectId={view.projectId} />;
     case 'project':
