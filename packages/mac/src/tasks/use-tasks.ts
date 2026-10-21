@@ -45,7 +45,7 @@ export function useSolo(projectId: string | undefined): boolean {
   return isSolo(board, projectId, selfId, others);
 }
 
-/** The project a view is about, if it's about one (a worktree, a project's home, a task, its board). */
+/** The project a view is about, if it's about one (a worktree, a project's home, a task, its board, a plan). */
 export function projectOfView(state: AppState): string | undefined {
   const view = state.view;
   const id =
@@ -57,9 +57,11 @@ export function projectOfView(state: AppState): string | undefined {
           : view.projectId
         : view.kind === 'task'
           ? state.board.issues.find((i) => i.id === view.id)?.projectId
-          : view.kind === 'tasks'
+          : view.kind === 'tasks' || view.kind === 'plans'
             ? view.projectId
-            : undefined;
+            : view.kind === 'plan'
+              ? state.plans.plans.find((p) => p.id === view.id)?.projectId
+              : undefined;
   // Only real projects (chats not tied to one don't have tasks).
   return id && state.projects.some((p) => p.id === id && p.root) ? id : undefined;
 }

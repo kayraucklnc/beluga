@@ -165,3 +165,33 @@ test('the composer: Plan with Tasks makes the conversation a plan', async ({ pag
   await page.getByRole('menuitem', { name: /^Act/ }).click();
   await expect(page.getByRole('button', { name: 'Mode: Act' })).toBeVisible();
 });
+
+test('a running plan sits under Plans in the sidebar: progress, what it waits for, one click to it', async ({ page }) => {
+  await page.goto('/');
+  const row = sidebar(page).getByRole('button', { name: 'Card checkout for launch', exact: true });
+  await expect(row).toBeVisible();
+  // How far it got, and why it needs you, in the tooltip.
+  await expect(row).toHaveAttribute('title', /^Card checkout for launch: .+ · \d+ of \d+ tasks done$/);
+  await expect(row.locator('svg circle')).toHaveCount(2);
+  await row.click();
+  await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Card checkout for launch');
+  await expect(row).toHaveClass(/selected/);
+});
+
+test('Plans opens on the project you’re in, and says so when it has none', async ({ page }) => {
+  await page.goto('/');
+  await sidebar(page).getByText('landing', { exact: true }).first().click();
+  await expect(page.getByRole('heading', { level: 1, name: 'landing' })).toBeVisible();
+  await sidebar(page).getByRole('button', { name: /^Plans/ }).first().click();
+  const project = page.getByRole('button', { name: 'Project: landing' });
+  await expect(project).toBeVisible();
+  await expect(project).toHaveAttribute('title', 'Switch Project');
+  await expect(main(page).getByText('No plans in landing yet')).toBeVisible();
+  await main(page).getByRole('button', { name: 'Plan in landing' }).click();
+  await expect(page.getByRole('dialog', { name: /Plan/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+  // Switching shows that project's plans.
+  await project.click();
+  await page.getByRole('menuitem', { name: /bob-api/ }).click();
+  await expect(main(page).getByRole('button', { name: /^Card checkout for launch,/ })).toBeVisible();
+});

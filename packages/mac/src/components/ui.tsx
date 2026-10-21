@@ -125,10 +125,10 @@ export function Kbd({ children }: { children: ReactNode }) {
 }
 
 /** What to do when there's nothing here yet: one line saying what this is, and the action that fills it. */
-export function Empty({ icon, title, detail, action }: { icon: IconName; title: string; detail?: string; action?: ReactNode }) {
+export function Empty({ icon, mark, title, detail, action }: { icon: IconName; mark?: ReactNode; title: string; detail?: string; action?: ReactNode }) {
   return (
     <div className={s.empty}>
-      <Icon name={icon} size={22} />
+      {mark ?? <Icon name={icon} size={22} />}
       <div className={s.emptyTitle}>{title}</div>
       {detail ? <div className={s.emptyDetail}>{detail}</div> : null}
       {action}
