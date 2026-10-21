@@ -244,7 +244,13 @@ export function GroupInfo({ g, children }: { g: GroupView; children: ReactNode }
                   Leave Channel…
                 </button>
               </div>
-            ) : null}
+            ) : (
+              <div className={s.infoFooter}>
+                <button type="button" className={s.leave} onClick={() => openNet({ kind: 'delete_group', groupId: g.id })}>
+                  Delete Channel…
+                </button>
+              </div>
+            )}
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>

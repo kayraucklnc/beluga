@@ -41,6 +41,8 @@ export const NETWORK_API = {
   'network.groups.removeMember': { args: z.tuple([groupId, peerId]) },
   'network.groups.setAdmin': { args: z.tuple([groupId, peerId, z.boolean()]) },
   'network.groups.leave': { args: z.tuple([groupId]) },
+  // Delete a channel you've left from this Mac (the others keep their copies).
+  'network.groups.delete': { args: z.tuple([groupId]) },
   'network.groups.rename': { args: z.tuple([groupId, name]) },
   // An invite link and code for a group (admins); `auto`: no approval needed.
   'network.groups.invite': { args: z.tuple([groupId, z.object({ auto: z.boolean().optional() }).optional()]) },

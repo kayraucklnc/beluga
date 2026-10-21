@@ -354,6 +354,18 @@ export class Mesh extends EventEmitter<MeshEvents> {
     this.groups.apply(groupId, (e) => e.removeMember(this.peerId));
   }
 
+  /** Delete a group you left (or were removed from) from this Mac; the others keep theirs. */
+  deleteGroup(groupId: string): void {
+    this.groups.forget(groupId);
+    const conversation = groupConversation(groupId);
+    if (conversation in this.reads) {
+      const { [conversation]: _gone, ...rest } = this.reads;
+      this.reads = rest;
+      writeJson(this.file('reads.json'), this.reads);
+    }
+    this.contactsChanged();
+  }
+
   renameGroup(groupId: string, name: string): void {
     const valid = NameSchema.parse(name);
     this.groups.apply(groupId, (e) => e.rename(valid));

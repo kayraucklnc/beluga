@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { groupConversation } from '../../src/net/mesh/views.js';
 import type { MeshLink } from '../../src/net/mesh/link.js';
@@ -113,6 +113,55 @@ describe('groups without a host', () => {
     // jon and kim weren't friends: once she's out they're no longer linked.
     await settle(() => !jon.mesh.summary().groups.find((g) => g.id === groupId)?.members.some((m) => m.peerId === id(kim)));
     expect(() => kim.mesh.sendGroup(groupId, 'hello?')).toThrow(/not in this group/);
+  }, 60_000);
+
+  it('deleting a channel you left: gone from this Mac, not handed back by the others, back only if added again', async () => {
+    const { people, groupId } = await team(['ray', 'sue']);
+    const [ray, sue] = people as [Person, Person];
+    ray.mesh.sendGroup(groupId, 'before');
+    await settle(() => texts(sue, groupId).includes('before'));
+    const conversation = groupConversation(groupId);
+    sue.mesh.markRead(conversation);
+    expect(() => sue.mesh.deleteGroup(groupId)).toThrow(/Leave the channel/);
+
+    sue.mesh.leaveGroup(groupId);
+    await settle(() => ray.group(groupId)?.members.length === 1);
+    sue.mesh.deleteGroup(groupId);
+    expect(sue.group(groupId)).toBeUndefined();
+    expect(existsSync(path.join(sue.dir, 'groups', `${groupId}.jsonl`))).toBe(false);
+    expect(Object.keys(sue.mesh.recent())).not.toContain(conversation);
+    expect(JSON.parse(readFileSync(path.join(sue.dir, 'reads.json'), 'utf8'))).not.toHaveProperty(conversation);
+    expect(() => sue.mesh.deleteGroup(groupId)).toThrow(/No such group/);
+
+    // ray (a friend, who still has it) keeps talking and catching up: it doesn't come back.
+    ray.mesh.sendGroup(groupId, 'after');
+    await sue.stop();
+    await sue.start();
+    await new Promise((r) => setTimeout(r, 2_000));
+    expect(sue.group(groupId)).toBeUndefined();
+
+    // Added back by an admin: the channel returns, with what's said from then on.
+    ray.mesh.addMember(groupId, id(sue));
+    await settle(() => sue.group(groupId)?.active);
+    ray.mesh.sendGroup(groupId, 'welcome back');
+    await settle(() => texts(sue, groupId).includes('welcome back'));
+  }, 60_000);
+
+  it('a channel deleted while nobody heard you leave stays deleted when they come back', async () => {
+    const { people, groupId } = await team(['tom', 'uma']);
+    const [tom, uma] = people as [Person, Person];
+    await tom.stop();
+    uma.mesh.leaveGroup(groupId);
+    uma.mesh.deleteGroup(groupId);
+    // tom still has uma in it, and offers it back on every catch-up.
+    await tom.start();
+    await settle(() => tom.friend(id(uma))?.online);
+    await new Promise((r) => setTimeout(r, 2_000));
+    expect(uma.group(groupId)).toBeUndefined();
+    // Using tom's invite link brings it back from his copy (he never heard she left).
+    const invite = await tom.mesh.groupInvite(groupId);
+    expect(await uma.mesh.accept(invite.link)).toMatchObject({ kind: 'group', groupId, status: 'joined' });
+    await settle(() => uma.group(groupId)?.active);
   }, 60_000);
 
   it('joins by invite link: automatically, or once an admin approves', async () => {

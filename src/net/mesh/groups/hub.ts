@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { canonical } from '../files.js';
 import type { InvitationRecord } from '../invitations.js';
@@ -8,6 +8,7 @@ import type { PairResult, PairingDecision } from '../pairing.js';
 import type { Entry, Profile } from '../schemas.js';
 import type { LinkMessage } from '../wire.js';
 import { GroupEngine } from './engine.js';
+import { Forgotten } from './forgotten.js';
 import { JOIN_TTL_MS, Joins } from './joins.js';
 import { GroupLog, PROBE_PENDING_BYTES } from './log.js';
 
@@ -39,6 +40,8 @@ interface Probe {
   readonly engine: GroupEngine;
   readonly from: string;
   readonly at: number;
+  /** A group you deleted, offered back by someone whose copy doesn't know you left: not fetched again from them for a while. */
+  readonly refused?: boolean;
 }
 
 export interface GroupHubOptions {
@@ -60,11 +63,13 @@ export class GroupHub {
   /** Groups someone says you're in, being fetched before they're kept. */
   private readonly probes = new Map<string, Probe>();
   readonly joins: Joins;
+  private readonly forgotten: Forgotten;
   private readonly syncBudget = new Map<string, Bucket>();
   private readonly rejectedBy = new Map<string, number>();
 
   constructor(private readonly opts: GroupHubOptions) {
     this.joins = new Joins(path.join(opts.dir, 'joins.json'));
+    this.forgotten = new Forgotten(path.join(opts.dir, 'forgotten.json'));
     let files: string[] = [];
     try {
       files = readdirSync(opts.dir).filter((f) => /^[0-9a-f]{32}\.jsonl$/.test(f));
@@ -104,6 +109,22 @@ export class GroupHub {
     this.gossip(engine, entries);
     this.settled(engine, entries);
     return entries;
+  }
+
+  /**
+   * Delete a group you're no longer in from this Mac: its log, its join requests, and a note so
+   * the others' copies don't bring it back (unless someone adds you again).
+   */
+  forget(id: string): void {
+    const engine = this.need(id);
+    const removal = engine.model?.removed.get(this.opts.keys.identity.peerId);
+    if (engine.isMember() || !removal) throw new Error('Leave the channel before deleting it');
+    this.forgotten.add({ groupId: id, removal: removal.id, at: Date.now() });
+    this.engines.delete(id);
+    this.probes.delete(id);
+    this.joins.forget(id);
+    rmSync(this.file(id), { force: true });
+    this.opts.onChange();
   }
 
   /**
@@ -214,8 +235,10 @@ export class GroupHub {
    */
   private probe(groupId: string, from: string): GroupEngine | undefined {
     const known = this.probes.get(groupId);
-    if (known) return known.from === from ? known.engine : undefined;
     const asked = this.joins.askedFor(groupId)?.inviter.card.peerId === from;
+    if (known && !known.refused) return known.from === from ? known.engine : undefined;
+    // Refused from them a moment ago: not again, unless you've since used their invitation.
+    if (known?.from === from && !asked) return undefined;
     if (!asked && !this.opts.trusted(from)) return undefined;
     const fromPeer = [...this.probes.values()].filter((p) => p.from === from).length;
     if (this.probes.size >= MAX_PROBES || fromPeer >= MAX_PROBES_PER_PEER || this.engines.size >= MAX_GROUPS) return undefined;
@@ -268,7 +291,16 @@ export class GroupHub {
   /** A fetched group you turn out to be in is kept from now on. */
   private adoptProbe(probe: GroupEngine): void {
     if (!probe.model || !probe.isMember() || probe.log.missing().length) return;
+    // Deleted here: only a copy that knows you left and has you back in it brings it back (or
+    // the copy of the admin whose invitation you used since).
+    const forgot = this.forgotten.get(probe.id);
+    const from = this.probes.get(probe.id)?.from;
+    if (forgot && !probe.log.has(forgot.removal) && this.joins.askedFor(probe.id)?.inviter.card.peerId !== from) {
+      if (from) this.probes.set(probe.id, { engine: probe, from, at: Date.now(), refused: true });
+      return;
+    }
     this.probes.delete(probe.id);
+    this.forgotten.drop(probe.id);
     const engine = new GroupEngine(this.opts.keys, probe.log.persistTo(this.file(probe.id)));
     this.engines.set(engine.id, engine);
     this.joins.joined(engine.id);

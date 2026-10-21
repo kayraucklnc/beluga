@@ -349,6 +349,9 @@ function Conversation({ id }: { id: string }) {
           <div className={s.closedBox}>
             <Icon name="lock" size={13} />
             <span>You’re no longer in {group.name}. Its messages stay here, read-only.</span>
+            <Button size="small" onClick={() => openNet({ kind: 'delete_group', groupId: group.id })}>
+              Delete from This Mac…
+            </Button>
           </div>
         </div>
       ) : (

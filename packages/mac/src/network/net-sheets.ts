@@ -15,6 +15,8 @@ export type NetSheet =
   | { readonly kind: 'add_people'; readonly groupId: string }
   | { readonly kind: 'remove_friend'; readonly peerId: string }
   | { readonly kind: 'leave_group'; readonly groupId: string }
+  /** Delete a channel you're no longer in from this Mac. */
+  | { readonly kind: 'delete_group'; readonly groupId: string }
   | { readonly kind: 'remove_member'; readonly groupId: string; readonly peerId: string }
   /** Your status with a note and how long it lasts. */
   | { readonly kind: 'status' }

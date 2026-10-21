@@ -103,6 +103,7 @@ export function ChatTabs({ shown }: { shown: string }) {
           ]
         : []),
       ...(g?.active ? [{ label: 'Leave Channel…', danger: true, separate: true, onSelect: () => openNet({ kind: 'leave_group', groupId: g.id }) }] : []),
+      ...(g && !g.active ? [{ label: 'Delete Channel…', danger: true, separate: true, onSelect: () => openNet({ kind: 'delete_group', groupId: g.id }) }] : []),
     ];
   };
 
