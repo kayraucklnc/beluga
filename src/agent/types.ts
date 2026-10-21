@@ -178,6 +178,8 @@ export interface AgentPlace {
   readonly askOnly?: { readonly project: string };
   /** With askOnly, for one run: Claude brings the default branch up to date (git syncing only; see sync-main.ts). */
   readonly syncMain?: { readonly branch: string; readonly upstream: string };
+  /** With askOnly: a hidden worktree Claude may edit to fix a conflict there (see policy.ts). */
+  readonly fixup?: string;
 }
 
 export interface SubAgentEvent {

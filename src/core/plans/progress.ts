@@ -1,5 +1,5 @@
 import { type BoardState, type Issue, issueById } from '../board/model.js';
-import { type Autonomy, type MilestoneRun, type Plan, type PlanBody, type PlanMilestone, type PlanTask, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
+import { type Autonomy, type Combining, type MilestoneRun, type Plan, type PlanBody, type PlanMilestone, type PlanTask, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
 
 /**
  * Where a plan stands, worked out from the plan and the board (and what Claude is doing right
@@ -44,6 +44,10 @@ export interface TaskView {
   readonly why?: string;
   /** The branch it starts from: the one task it builds on that's in review (not merged yet). */
   readonly base?: string;
+  /** Builds on several tasks in review: their branches, combined into its start (in its order of blockers). */
+  readonly bases?: readonly string[];
+  /** Its start is being combined from `bases` right now (or stopped at a conflict). */
+  readonly combining?: Combining;
   /** What Claude is doing there now. */
   readonly step?: string;
   /** Assigned to you: it never starts by itself. */
@@ -131,6 +135,15 @@ function taskState(board: BoardState, issue: Issue | undefined, live: Live): { r
   }
 }
 
+/** What a task being combined shows: “Combining KLD-9 and KLD-27 …”, or the conflict being fixed. */
+export function combiningStep(c: Combining): string {
+  const names = c.from.length > 1 ? `${c.from.slice(0, -1).join(', ')} and ${c.from.at(-1)}` : (c.from[0] ?? 'its branches');
+  if (!c.conflict) return `Combining ${names} …`;
+  if (c.conflict.stuck) return `Combining ${names}: fix the conflict in ${c.conflict.files.slice(0, 3).join(', ')} (in ${c.conflict.dir}): it starts once no markers are left`;
+  const files = c.conflict.files.slice(0, 3).join(', ') + (c.conflict.files.length > 3 ? ` and ${c.conflict.files.length - 3} more` : '');
+  return `Combining ${names}: Claude is fixing a conflict in ${files}`;
+}
+
 /** A plan where it stands. */
 export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE): PlanView {
   // A draft (or a plan never approved) is drawn as it's written: nothing runs yet.
@@ -180,6 +193,9 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
       let state = own.state;
       let why: string | undefined;
       let from: string | undefined;
+      let froms: readonly string[] | undefined;
+      let step = own.step;
+      let combining: Combining | undefined;
       if (state === 'ready') {
         // Board blockers from outside the plan count too.
         const outside = (own.issue?.blockedBy ?? []).map((id) => issueById(board, id)).filter((i): i is Issue => Boolean(i && i.status !== 'done' && i.status !== 'canceled' && i.status !== 'in_review' && !body.milestones.some((x) => x.tasks.some((y) => y.issueId === i.id))));
@@ -192,11 +208,19 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
           state = 'blocked';
           why = `Waits on ${[...waitsOn.map((b) => `“${titleOf.get(b) ?? b}”`), ...outside.map((i) => i.key)].join(', ')}`;
         } else if (unmerged.length > 1) {
-          // Two unmerged branches can't both be its start: one of them has to be merged first.
-          state = 'blocked';
-          why = `Builds on ${unmerged.map((b) => `“${titleOf.get(b) ?? b}”`).join(' and ')}: merge one first`;
+          // Several unmerged branches: it starts from them combined (the pilot makes that base).
+          froms = unmerged.flatMap((b) => base.get(b)?.issue?.branch ?? []);
+          if (froms.length < 2) [from, froms] = [froms[0], undefined];
         } else if (unmerged.length === 1) {
           from = base.get(unmerged[0]!)?.issue?.branch;
+        }
+        // Being combined right now: shown as under way, never as waiting in silence.
+        combining = state === 'ready' ? plan.combining?.[t.id] : undefined;
+        if (combining) {
+          // A conflict nobody could fix yet waits for you (it says where); otherwise it's under way.
+          state = combining.conflict?.stuck ? 'blocked' : 'running';
+          if (combining.conflict?.stuck) why = combiningStep(combining);
+          else step = combiningStep(combining);
         }
       }
       views.set(t.id, {
@@ -208,7 +232,9 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
         waitsOn,
         ...(why ? { why } : {}),
         ...(from ? { base: from } : {}),
-        ...(own.step ? { step: own.step } : {}),
+        ...(froms ? { bases: froms } : {}),
+        ...(combining ? { combining } : {}),
+        ...(step ? { step } : {}),
         forYou,
       });
     }

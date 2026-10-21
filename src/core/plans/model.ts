@@ -90,6 +90,22 @@ export interface MilestoneRun {
   readonly checkAsked?: number;
 }
 
+/** A task that builds on several unmerged tasks: their branches are being combined into its start. */
+export interface Combining {
+  readonly at: number;
+  /** The tasks it builds on (their keys, e.g. KLD-9). */
+  readonly from: readonly string[];
+  /** It stopped at a conflict, left in a hidden worktree for the head Claude to fix. */
+  readonly conflict?: {
+    readonly at: number;
+    readonly dir: string;
+    readonly merging: string;
+    readonly files: readonly string[];
+    /** Claude was asked and it's still there: it waits for you. */
+    readonly stuck?: boolean;
+  };
+}
+
 export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'gate' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
 
 export interface PlanEvent {
@@ -119,6 +135,8 @@ export interface Plan {
   readonly maxParallel: number;
   readonly paused: boolean;
   readonly runs: Readonly<Record<string, MilestoneRun>>;
+  /** Tasks whose start is being combined from several branches (by plan task id). */
+  readonly combining?: Readonly<Record<string, Combining>>;
   readonly activity: readonly PlanEvent[];
   readonly createdAt: number;
   readonly updatedAt: number;

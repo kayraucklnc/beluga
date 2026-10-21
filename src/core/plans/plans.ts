@@ -9,6 +9,7 @@ import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from 
 import {
   AUTONOMIES,
   type Autonomy,
+  type Combining,
   DEFAULT_AUTONOMY,
   DEFAULT_PARALLEL,
   type GateCheck,
@@ -281,6 +282,14 @@ export class Plans {
     if (!run?.passedAt) return plan;
     const { passedAt: _p, passedBy: _b, check: _c, checkAsked: _a, ...rest } = run;
     return this.change(plan, { runs: { ...plan.runs, [milestone]: rest }, status: 'active', doneAt: undefined }, [event(by, 'note', `reopened ${milestoneName(plan, milestone)}`, this.now())]);
+  }
+
+  /** A task's start being combined from several branches (undefined: no longer). */
+  setCombining(id: string, task: string, combining: Combining | undefined): Plan {
+    const plan = this.need(id);
+    const { [task]: _was, ...rest } = plan.combining ?? {};
+    const next = combining ? { ...rest, [task]: combining } : rest;
+    return this.change(plan, { combining: Object.keys(next).length ? next : undefined }, []);
   }
 
   note(id: string, kind: PlanEventKind, text: string, by: Actor): Plan {
