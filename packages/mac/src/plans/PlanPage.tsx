@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, MAX_PARALLEL, shownBody } from '@klaud/core/plans/model.js';
 import type { PlanView } from '@klaud/core/plans/progress.js';
 import { Icon } from '../components/Icon.js';
@@ -197,26 +197,49 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   );
 }
 
-/** The plan's name, changed in place. */
+/** The plan's name, changed in place: wraps instead of clipping (descenders and long names show whole); Enter saves. */
 function TitleField({ value, onSave }: { value: string; onSave: (title: string) => void }) {
   const [text, setText] = useState(value);
+  const box = useRef<HTMLTextAreaElement>(null);
   useEffect(() => setText(value), [value]);
+  // As tall as its lines: on every change and whenever a new width changes the wrapping.
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = (): void => {
+      el.style.height = '0px';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    fit();
+    let width = el.clientWidth;
+    const watch = new ResizeObserver(() => {
+      if (el.clientWidth !== width) (width = el.clientWidth), fit();
+    });
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [text]);
   const save = (): void => {
     if (text.trim() && text.trim() !== value) onSave(text.trim());
     else setText(value);
   };
   return (
-    <input
+    <textarea
+      ref={box}
       className={cx(p.title, 'selectable')}
       aria-label="Plan name"
+      rows={1}
+      spellCheck={false}
       value={text}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => setText(e.target.value.replace(/\s*\n\s*/g, ' '))}
       onBlur={save}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
         if (e.key === 'Escape') {
           setText(value);
-          (e.target as HTMLInputElement).blur();
+          e.currentTarget.blur();
         }
       }}
     />

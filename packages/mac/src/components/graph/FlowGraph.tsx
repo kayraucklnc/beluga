@@ -19,6 +19,7 @@ import { reducedMotion, useDocTheme } from '../markdown/use-doc-theme.js';
 import { type ElkOutput, type Focus, type Placed, type Route, type Size, elkGraph, handleSides, inlineAspect, neighborhood, parentsFirst, placesOf, routesOf, stepFocus } from './graph-model.js';
 import { cachedLayout, rememberLayout } from './layout-cache.js';
 import { layout } from './layout.js';
+import { useSharpZoom } from './sharp-zoom.js';
 import { NODE_TYPES, type FlowNode, drawingOf } from './nodes.js';
 import { EDGE_TYPES, EdgeMarkers, type EdgeState, type FlowEdge } from './edges.js';
 import { Inspector } from './Inspector.js';
@@ -103,6 +104,7 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
   const theme = useDocTheme();
   const motion = !reducedMotion();
   const flow = useReactFlow<FlowNode, FlowEdge>();
+  useSharpZoom();
   const updateInternals = useUpdateNodeInternals();
   const initialized = useNodesInitialized();
   // Laid out before (this graph scrolled out of the conversation and back): show it at once.

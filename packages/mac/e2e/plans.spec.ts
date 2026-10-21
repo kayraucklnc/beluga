@@ -41,6 +41,54 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await expect(page.getByRole('complementary', { name: 'Conversation' })).toBeVisible();
 });
 
+test('the plan stays sharp zoomed in, and its name never clips (KLD-25)', async ({ page }, info) => {
+  await openPlans(page);
+  await main(page).getByRole('button', { name: /^Card checkout for launch,/ }).click();
+  await expect(main(page).locator('[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
+  const name = page.getByRole('textbox', { name: 'Plan name' });
+  const fits = () => name.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
+  // Descenders show whole: the box is as tall as its line.
+  await name.fill('Typography query');
+  await name.press('Enter');
+  await expect(name).not.toBeFocused();
+  await expect(name).toHaveValue('Typography query');
+  const one = await fits();
+  expect(one.scroll).toBeLessThanOrEqual(one.client);
+  expect(one.client).toBeGreaterThanOrEqual(Math.ceil(19 * 1.3));
+  // A long name wraps onto a second line instead of being cut, and Enter still saves it.
+  const long = 'Typography query for every plan page, pill, outline heading, and the sidebar groups that hold them all';
+  await name.fill(long);
+  await name.press('Enter');
+  await expect(name).toHaveValue(long);
+  const two = await fits();
+  expect(two.scroll).toBeLessThanOrEqual(two.client);
+  expect(two.client).toBeGreaterThan(one.client * 1.5);
+  await name.fill('Card checkout for launch');
+  await name.press('Enter');
+  await expect(name).toHaveValue('Card checkout for launch');
+
+  // Zoomed in, the view is redrawn once it settles, with nothing blurred inside it.
+  const viewport = main(page).locator('.react-flow__viewport');
+  const scale = async () => Number(/scale\(([\d.]+)\)/.exec((await viewport.getAttribute('style')) ?? '')?.[1] ?? 0);
+  for (let i = 0; i < 12 && (await scale()) < 1.5; i++) {
+    await main(page).getByRole('button', { name: 'Zoom In' }).click();
+    await page.waitForTimeout(260);
+  }
+  expect(await scale()).toBeGreaterThanOrEqual(1.5);
+  await expect(viewport).toHaveAttribute('data-sharpened', /\d+/);
+  await expect.poll(async () => (await viewport.getAttribute('style')) ?? '').not.toContain('translateZ');
+  const blurred = await viewport.evaluate((root) =>
+    [root, ...root.querySelectorAll('*')].filter((el) => {
+      const css = getComputedStyle(el);
+      return css.filter !== 'none' || (css.backdropFilter ?? 'none') !== 'none' || css.willChange !== 'auto';
+    }).length,
+  );
+  expect(blurred).toBe(0);
+  const shot = info.outputPath('zoomed-canvas.png');
+  await main(page).locator('.react-flow').screenshot({ path: shot });
+  await info.attach('zoomed canvas', { path: shot, contentType: 'image/png' });
+});
+
 test('New Plan with no project known (⌘K) asks which project, and the title follows it', async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();

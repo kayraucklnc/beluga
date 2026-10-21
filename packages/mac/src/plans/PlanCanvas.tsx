@@ -8,6 +8,7 @@ import { Icon } from '../components/Icon.js';
 import { reducedMotion, useDocTheme } from '../components/markdown/use-doc-theme.js';
 import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
 import { layout } from '../components/graph/layout.js';
+import { useSharpZoom } from '../components/graph/sharp-zoom.js';
 import { MILESTONE_STATE, TASK_STATE, changeMarks, gateId, graphShape, groupId, taskNodeId } from './plans-model.js';
 import { TaskStateIcon } from './marks.js';
 import p from './plans.module.css';
@@ -79,6 +80,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
   const theme = useDocTheme();
   const motion = !reducedMotion();
   const flow = useReactFlow<PlanNode, PlanEdge>();
+  useSharpZoom();
   const shape = useMemo(() => graphShape(view.plan), [view.plan]);
   const [laid, setLaid] = useState<Laid>();
   const [failed, setFailed] = useState(false);
