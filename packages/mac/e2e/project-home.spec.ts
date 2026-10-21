@@ -105,3 +105,38 @@ test('clicking a folded project unfolds it until you go elsewhere; opening one o
   await expect(project).toHaveAttribute('aria-expanded', 'true');
   await expect(row('new-hero')).toBeVisible();
 });
+
+test('the home lists the project’s plans, each opening its page', async ({ page }) => {
+  await openHome(page);
+  const plans = page.getByRole('region', { name: 'Plans' });
+  await plans.getByRole('button', { name: /^Card checkout for launch:/ }).click();
+  await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Card checkout for launch');
+});
+
+test('New Plan from the home: with no goal the sheet opens in this project; with one, Claude starts planning', async ({ page }) => {
+  await openHome(page);
+  await page.getByRole('tab', { name: 'New Plan' }).click();
+  const goal = page.getByLabel('Goal for a plan in bob-api');
+  const start = page.getByRole('button', { name: /^Plan with Claude/ });
+  // Nothing typed: the New Plan sheet, already in bob-api (no project picker).
+  await start.click();
+  const sheet = page.getByRole('dialog', { name: 'Plan in bob-api' });
+  await expect(sheet.getByRole('combobox', { name: 'Project' })).toHaveCount(0);
+  await expect(sheet.getByLabel('Goal')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  // A goal and a mode beside the button: the plan's page opens and Claude drafts it.
+  const runs = page.getByRole('combobox', { name: 'How it runs' });
+  await expect(runs).toContainText('Check-ins');
+  await runs.click();
+  await page.getByRole('option', { name: /Step by Step/ }).click();
+  await expect(runs).toContainText('Step by Step');
+  await goal.fill('Export orders as CSV for the accountants');
+  await goal.press('Enter');
+  await expect(page.getByRole('button', { name: 'Approve Plan' }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('a draft, not on the board yet')).toBeVisible();
+  await expect(home(page).locator('.react-flow__node').filter({ hasText: 'Data model and migration' })).toBeVisible({ timeout: 20_000 });
+  // Back home, it's in the project's plans.
+  await openHome(page);
+  await expect(page.getByRole('region', { name: 'Plans' }).getByRole('button', { name: /^Export orders as CSV for the accountants/ })).toBeVisible();
+});
