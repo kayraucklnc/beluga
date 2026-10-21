@@ -1,0 +1,10 @@
+/* The Plans list's bar (PlansView.tsx): which project's plans these are, as a visible control. */
+
+.caption {
+  color: var(--text-3);
+  font-size: 13px;
+}
+/* The project switcher reads as a pop-up button, not a heading. */
+.switch {
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
