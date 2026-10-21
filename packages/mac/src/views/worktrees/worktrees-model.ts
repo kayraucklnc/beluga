@@ -22,12 +22,16 @@ export interface WorktreeRow {
   readonly madeBy: MadeBy;
   /** Its work is done (merged, or nothing that isn't in main yet), in words. */
   readonly work: { readonly done: boolean; readonly label: string };
+  /** What's in it that isn't in main: commits ahead and uncommitted files (unknown until git was asked). */
+  readonly left?: { readonly commits: number; readonly files: number };
+  /** Archived: what was kept of yours, and whether it can come back (from its archive or its branch). */
+  readonly archived?: { readonly keptBytes: number; readonly freedBytes: number; readonly at?: number; readonly restorable: boolean };
   /** Bytes on disk, when measured. */
   readonly size?: number;
   readonly archiving?: ArchivePhase;
 }
 
-export type WorktreeFilter = 'all' | 'done' | 'agents' | 'orphaned' | 'outside';
+export type WorktreeFilter = 'all' | 'done' | 'agents' | 'orphaned' | 'outside' | 'archived';
 
 export const FILTERS: ReadonlyArray<{ readonly id: WorktreeFilter; readonly label: string; readonly hint: string }> = [
   { id: 'all', label: 'All', hint: 'Every worktree in your projects' },
@@ -35,6 +39,7 @@ export const FILTERS: ReadonlyArray<{ readonly id: WorktreeFilter; readonly labe
   { id: 'agents', label: 'Sub-agents', hint: 'Worktrees Claude Code’s sub-agents made for themselves' },
   { id: 'orphaned', label: 'Orphaned', hint: 'Sub-agent worktrees whose conversation is gone' },
   { id: 'outside', label: 'Made Outside Klaud', hint: 'By sub-agents, other apps, scripts or by hand' },
+  { id: 'archived', label: 'Archived', hint: 'Put away: restore them as they were, or delete them for good' },
 ];
 
 type State = Pick<AppState, 'projects' | 'disk' | 'prs' | 'claudeCode' | 'archiving'>;
@@ -72,16 +77,54 @@ export function worktreeRows(state: State): WorktreeRow[] {
       .map((ws): WorktreeRow => {
         const size = state.disk[ws.id];
         const archiving = state.archiving[ws.id];
-        return { ws, project, madeBy: madeBy(state, ws, origins.get(ws.path)), work: work(state, ws), ...(size !== undefined ? { size } : {}), ...(archiving ? { archiving } : {}) };
+        const left = ws.status ? { left: { commits: ws.status.ahead, files: ws.status.changed } } : {};
+        return { ws, project, madeBy: madeBy(state, ws, origins.get(ws.path)), work: work(state, ws), ...left, ...(size !== undefined ? { size } : {}), ...(archiving ? { archiving } : {}) };
       }),
   );
   return rows.sort((a, b) => (b.size ?? -1) - (a.size ?? -1) || a.ws.name.localeCompare(b.ws.name));
+}
+
+/**
+ * Archived worktrees, most recently archived first. One archived smartly comes back as it was
+ * (from its archive); an older one from its branch; one with neither can't come back, only go.
+ */
+export function archivedRows(state: State): WorktreeRow[] {
+  const rows = state.projects.flatMap((project) =>
+    project.workspaces
+      .filter((ws) => ws.kind === 'worktree' && ws.archived)
+      .map((ws): WorktreeRow => {
+        const a = ws.archive;
+        const kept = a ? { keptBytes: a.keptBytes, freedBytes: a.freedBytes, at: a.at } : { keptBytes: 0, freedBytes: 0 };
+        // Who made it still matters (deleting another tool's keeps its branch); not the sub-agent's conversation.
+        const by = worktreeOrigin(ws);
+        const made: MadeBy = by === 'klaud' ? { kind: 'klaud', label: 'Klaud' } : by === 'agent' ? { kind: 'agent', label: 'Sub-agent' } : { kind: 'outside', label: 'Made outside Klaud' };
+        return { ws, project, madeBy: made, work: { done: true, label: 'Archived' }, archived: { ...kept, restorable: Boolean(a || ws.branch) } };
+      }),
+  );
+  return rows.sort((a, b) => (b.archived?.at ?? b.ws.createdAt) - (a.archived?.at ?? a.ws.createdAt) || a.ws.name.localeCompare(b.ws.name));
+}
+
+/**
+ * For an archived worktree: whether it can come back and how, and what deleting it for good
+ * loses (its archive holds what was uncommitted, new or ignored of yours; Klaud's own branches go
+ * too, another tool's stay).
+ */
+export function archivedText(r: WorktreeRow, format: (bytes: number) => string): { restore: string; remove: string } {
+  const a = r.archived;
+  if (!a) return { restore: '', remove: '' };
+  const restore = !a.restorable ? 'Can’t come back: there’s no archive and no branch to make it from' : r.ws.archive ? 'Restore brings it back as it was, uncommitted work included' : `Restore makes it again from its branch ${r.ws.branch ?? ''}`.trim();
+  const saved = r.ws.archive ? `its archive (uncommitted work and files of yours${a.keptBytes ? `, ${format(a.keptBytes)}` : ''})` : '';
+  const branch = r.ws.branch && r.madeBy.kind === 'klaud' ? `its branch ${r.ws.branch} (commits only there)` : '';
+  const lost = [saved, branch, 'its conversation'].filter(Boolean);
+  return { restore, remove: `Deleting loses ${lost.length > 1 ? `${lost.slice(0, -1).join(', ')} and ${lost.at(-1)}` : lost[0]}.` };
 }
 
 /** The rows a filter (and a project, when one is picked) shows. */
 export function filterRows(rows: readonly WorktreeRow[], filter: WorktreeFilter, projectId?: string): WorktreeRow[] {
   return rows.filter((r) => {
     if (projectId && r.project.id !== projectId) return false;
+    // Archived ones show only under Archived (and only they do).
+    if ((filter === 'archived') !== Boolean(r.archived)) return false;
     if (filter === 'done') return r.work.done;
     if (filter === 'agents') return r.madeBy.kind === 'agent';
     if (filter === 'orphaned') return r.madeBy.kind === 'agent' && Boolean(r.madeBy.orphan);

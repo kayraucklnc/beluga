@@ -1,11 +1,12 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { asChatRow } from '../lib/said.js';
+import { backgroundWait } from '@klaud/shared/claude-notices.js';
 import type { LogItem } from '@klaud/core/store.js';
 import { type TaskView, tasksIn } from '@klaud/core/gateway/model.js';
 import { LogTaskCard } from '../gateway/TaskCard.js';
 import { Icon } from '../components/Icon.js';
-import { Avatar, Empty, Working } from '../components/ui.js';
+import { Avatar, Dot, Empty, Working } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
 import { Lightbox } from './ChatImages.js';
 import { FindBar } from './FindBar.js';
@@ -64,17 +65,32 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   const parent = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
   const stick = useRef(true);
+  const height = useRef(0);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parent.current,
     estimateSize: (i) => (rows[i]?.type === 'agent' ? 140 : rows[i]?.type === 'task' ? 160 : rows[i]?.type === 'system' ? 28 : 52),
     overscan: 8,
     getItemKey: (i) => rows[i]?.id ?? i,
+    // A row that grows or shrinks (a new step under Claude, its answer streaming in) moves the
+    // rows below it and the list's height in the same frame, straight from the resize: waiting
+    // for a React render painted one frame with the old layout (the new line overlapping the
+    // next row, or below the bottom and then jumping up), which flickered.
+    directDomUpdates: true,
+    // In that same frame, stay at the bottom if that's where you were.
+    onChange: (v) => {
+      const total = v.getTotalSize();
+      if (total === height.current) return;
+      height.current = total;
+      const el = parent.current;
+      if (stick.current && el) el.scrollTop = el.scrollHeight;
+    },
   });
 
   // Until Claude's card for the message you just sent appears.
   const cards = useMemo(() => items.filter((l) => l.type === 'agent').length, [items]);
   const starting = useClaudeStarting(channel, cards);
+  const waiting = useMemo(() => backgroundWait(items), [items]);
 
   // New messages (and Claude's streaming text) keep you at the bottom if that's where you were.
   useLayoutEffect(() => {
@@ -82,14 +98,8 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   }, [rows, virtualizer]);
   useLayoutEffect(() => {
     const el = parent.current;
-    if (starting && stick.current && el) el.scrollTop = el.scrollHeight;
-  }, [starting]);
-  // A row grew after it was drawn (a graph laid out, a picture loaded): still at the bottom.
-  const total = virtualizer.getTotalSize();
-  useLayoutEffect(() => {
-    const el = parent.current;
-    if (stick.current && el) el.scrollTop = el.scrollHeight;
-  }, [total]);
+    if ((starting || waiting) && stick.current && el) el.scrollTop = el.scrollHeight;
+  }, [starting, waiting]);
   // You sent a message: back to the newest, where it lands (see flight.ts).
   useEffect(() => {
     const toBottom = (): void => {
@@ -148,11 +158,12 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
     <div className={s.logWrap} data-flight-layer="">
       <FindBar items={items} logRef={parent} onGo={go} />
       <div ref={parent} className={s.log} onScroll={onScroll} onWheel={markScroll} onTouchMove={markScroll} onPointerDown={markScroll} onKeyDown={markScroll}>
-        <div className={s.logInner} style={{ height: virtualizer.getTotalSize() }}>
+        {/* The virtualizer sets the list's height and each row's position itself (see above). */}
+        <div ref={virtualizer.containerRef} className={s.logInner}>
           {virtualizer.getVirtualItems().map((v) => {
             const item = rows[v.index] as Row;
             return (
-              <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className={s.logRow} style={{ transform: `translateY(${v.start}px)` }}>
+              <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className={s.logRow}>
                 {item.type === 'task' ? (
                   <LogTaskCard task={item.task} />
                 ) : item.type === 'chat' ? (
@@ -177,6 +188,14 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
             </span>
             <Working />
             <span>Claude is starting…</span>
+          </div>
+        ) : waiting ? (
+          // Its results come back to Claude, which then goes on here.
+          <div className={f.starting} data-background-wait="true" role="status" title={waiting}>
+            <span className={f.startingAvatar}>
+              <Dot tone="claude" live />
+            </span>
+            <span className={f.waitText}>{waiting}</span>
           </div>
         ) : null}
       </div>

@@ -7,20 +7,25 @@ import { useApp } from '../../lib/klaud.js';
 import { Row } from '../../layout/sidebar-parts.js';
 import s from '../../layout/Sidebar.module.css';
 
-const liveWorktrees = (st: AppState): Workspace[] => st.projects.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && !w.archived);
+const worktrees = (st: AppState): Workspace[] => st.projects.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree');
 
-/** The sidebar's Worktrees row: every worktree in your projects, and the space they take. */
+/**
+ * The Worktrees row, quietly at the end of Projects (it's housekeeping for them, not a place you
+ * work in): every worktree in your projects, archived ones too, and the space they take.
+ */
 export function WorktreesNav() {
   const actions = useActions();
   const selected = useApp((st) => st.view.kind === 'worktrees');
-  const count = useApp((st) => liveWorktrees(st).length);
-  const bytes = useApp((st) => liveWorktrees(st).reduce((n, w) => n + (st.disk[w.id] ?? 0), 0));
-  if (!count) return null;
+  const count = useApp((st) => worktrees(st).filter((w) => !w.archived).length);
+  const archived = useApp((st) => worktrees(st).filter((w) => w.archived).length);
+  const bytes = useApp((st) => worktrees(st).reduce((n, w) => n + (w.archived ? 0 : (st.disk[w.id] ?? 0)), 0));
+  if (!count && !archived) return null;
   return (
     <Row
-      icon={<Icon name="branch" size={14} />}
+      className={s.fold}
+      icon={<Icon name="branch" size={13} />}
       label="Worktrees"
-      detail={`${count} worktree${count === 1 ? '' : 's'}${bytes ? `, ${formatBytes(bytes)} on disk` : ''}: who made them, which are done, and the space they take`}
+      detail={`${count} worktree${count === 1 ? '' : 's'}${bytes ? `, ${formatBytes(bytes)} on disk` : ''}${archived ? `, ${archived} archived` : ''}: who made them, what's left in them, and what to archive, restore or delete`}
       selected={selected}
       onClick={() => actions.run({ type: 'view', view: { kind: 'worktrees' } })}
       trailing={bytes ? <span className={s.archiving}>{formatBytes(bytes)}</span> : null}

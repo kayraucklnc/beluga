@@ -10,6 +10,13 @@
  */
 
 const WORD = /\bklaud\b/g;
+
+/**
+ * "~/code/api" for a path under your home folder. Klaud's own folder reads ~/.klaud even where it
+ * really is the old ~/.klaude (from before the rename, linked in place so nothing moved).
+ */
+export const tildePath = (home: string, p: string): string =>
+  (home && (p === home || p.startsWith(`${home}/`)) ? `~${p.slice(home.length)}` : p).replace(/^~\/\.klaude(?=\/|$)/, '~/.klaud');
 /** Right before the word: part of a path, a file name or an identifier. */
 const NAME_BEFORE = /[/~.\-@_]/;
 /** Right after the word: a link, a file name, a branch or an identifier (klaud://, klaud.json, klaud/x, klaud-x). */

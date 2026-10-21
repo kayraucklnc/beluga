@@ -85,3 +85,8 @@
   background: var(--bg-press);
   box-shadow: 0 0 0 2px var(--bg-press);
 }
+
+.mark[data-kind='image'] {
+  background: var(--bg-press);
+  box-shadow: 0 0 0 2px var(--bg-press);
+}

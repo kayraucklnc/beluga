@@ -2,6 +2,7 @@ import type { AppState } from '@klaud/core/store.js';
 import type { CcAgent, CcAgentStatus, CcSession } from '@klaud/core/claude-code/model.js';
 import { sessionLive } from '@klaud/core/claude-code/model.js';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import { tildePath } from '../lib/brand.js';
 
 /**
  * Words, tones and groupings for Claude Code sessions running outside klaud (the Activity place,
@@ -48,8 +49,8 @@ export function activitySummary(sessions: readonly CcSession[]): string {
   return sessions.length ? 'Nothing running right now' : 'No Claude Code sessions lately';
 }
 
-/** "~/code/klaude/madrid" for a path under your home folder. */
-export const tildify = (state: Pick<AppState, 'home'>, p: string): string => (state.home && (p === state.home || p.startsWith(`${state.home}/`)) ? `~${p.slice(state.home.length)}` : p);
+/** "~/code/api/madrid" for a path under your home folder. */
+export const tildify = (state: Pick<AppState, 'home'>, p: string): string => tildePath(state.home, p);
 
 /** Where it runs, in klaud's words: the workspace's name, else the folder. */
 export function placeLabel(state: Pick<AppState, 'projects' | 'home'>, s: CcSession): string {

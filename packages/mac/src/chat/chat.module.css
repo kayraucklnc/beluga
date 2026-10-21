@@ -184,6 +184,11 @@
 .idle {
   color: var(--text-3);
 }
+/* Under Claude Code's limit notice: one quiet way to go on. */
+.limitActions {
+  display: flex;
+  margin-top: 6px;
+}
 /* Sits in the header row, just left of the status, so the two never overlap. */
 .hoverActions {
   display: inline-flex;

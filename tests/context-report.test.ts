@@ -23,8 +23,8 @@ describe('the live context report', () => {
     r.observe(assistant(800, 50_000, 1_200));
     r.observe(assistant(5_000, 0, 0, 'toolu_sub')); // a sub-agent's turn isn't this conversation's window
     expect(sent).toEqual([
-      { kind: 'context', data: { used: 43_000, window: 200_000, model: 'claude-opus-5-5' } },
-      { kind: 'context', data: { used: 52_000, window: 200_000, model: 'claude-opus-5-5' } },
+      { kind: 'context', data: { used: 43_000, window: 1_000_000, model: 'claude-opus-5-5' } },
+      { kind: 'context', data: { used: 52_000, window: 1_000_000, model: 'claude-opus-5-5' } },
     ]);
     expect(r.tokens).toBe(52_000);
   });
@@ -36,6 +36,18 @@ describe('the live context report', () => {
     expect(sent.at(-1)!.data).toMatchObject({ used: 302_000, window: 1_000_000 });
     await r.result({ 'claude-opus-5-5': { contextWindow: 1_000_000 }, 'claude-haiku-5-5': { contextWindow: 200_000 } });
     expect(sent.at(-1)!.data).toMatchObject({ used: 302_000, window: 1_000_000 });
+  });
+
+  it('starts the next run with the window Claude Code reported for that model', async () => {
+    const first = report();
+    first.r.observe({ type: 'system', subtype: 'init', model: 'claude-test-model' });
+    first.r.observe(assistant(0, 10_000, 0));
+    expect(first.sent.at(-1)!.data).toMatchObject({ window: 200_000 });
+    await first.r.result({ 'claude-test-model': { contextWindow: 500_000 } });
+    expect(first.sent.at(-1)!.data).toMatchObject({ window: 500_000 });
+    const next = report('claude-test-model');
+    next.r.observe(assistant(0, 20_000, 0));
+    expect(next.sent.at(-1)!.data).toMatchObject({ used: 20_000, window: 500_000 });
   });
 
   it('adds where the tokens come from when the run ends, if Claude Code can say', async () => {

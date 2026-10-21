@@ -281,7 +281,7 @@ test('queues messages while Claude works, reorders them, and sends one now', asy
   await expect(composer(page)).toHaveAttribute('placeholder', /webhook-retries/);
   await composer(page).fill('Take a deep dive into the codebase');
   await composer(page).press('Enter');
-  // While Claude works, the send button splits into Queue and Send now.
+  // While Claude works, the send button splits into Queue and Steer.
   const split = page.getByRole('group', { name: 'Claude is working' });
   await expect(split).toBeVisible();
   for (const text of ['first in line', 'second in line', 'third in line']) {
@@ -304,8 +304,9 @@ test('queues messages while Claude works, reorders them, and sends one now', asy
   await expect(rows).toHaveCount(1);
   await composer(page).fill('');
   await rows.nth(0).hover();
-  await rows.nth(0).getByRole('button', { name: 'Send now' }).click();
+  await rows.nth(0).getByRole('button', { name: 'Steer' }).click();
   await expect(tray).toBeHidden();
+  // The demo Claude can't take a message mid-turn, so it stops and runs this next.
   await expect(page.getByText('Interrupted by a newer message').last()).toBeVisible();
   await expect(page.locator('[data-turn="done"]').last()).toBeVisible({ timeout: 20_000 });
 });

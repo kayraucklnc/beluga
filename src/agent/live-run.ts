@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StepRecord } from '../shared/steps.js';
 
@@ -13,7 +14,7 @@ const FINISHED = new Set(['completed', 'failed', 'killed', 'stopped']);
 export type PromptContent = SDKUserMessage['message']['content'];
 
 export class PromptQueue implements AsyncIterable<SDKUserMessage> {
-  private readonly items: PromptContent[] = [];
+  private readonly items: Array<{ content: PromptContent; uuid: SDKUserMessage['uuid']; priority?: 'next' }> = [];
   private wake?: () => void;
   private ended = false;
 
@@ -21,11 +22,16 @@ export class PromptQueue implements AsyncIterable<SDKUserMessage> {
     return this.ended;
   }
 
-  push(content: PromptContent): boolean {
+  /**
+   * Returns the prompt's id (Claude Code says which prompts each turn took in), or false once
+   * closed. `steer`: sent while Claude works, it's folded into the running turn at its next step.
+   */
+  push(content: PromptContent, { steer = false }: { steer?: boolean } = {}): string | false {
     if (this.ended) return false;
-    this.items.push(content);
+    const uuid = randomUUID();
+    this.items.push({ content, uuid, ...(steer ? { priority: 'next' as const } : {}) });
     this.wake?.();
-    return true;
+    return uuid;
   }
 
   close(): void {
@@ -35,9 +41,9 @@ export class PromptQueue implements AsyncIterable<SDKUserMessage> {
 
   async *[Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {
     for (;;) {
-      const content = this.items.shift();
-      if (content !== undefined) {
-        yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null };
+      const item = this.items.shift();
+      if (item !== undefined) {
+        yield { type: 'user', message: { role: 'user', content: item.content }, parent_tool_use_id: null, uuid: item.uuid, ...(item.priority ? { priority: item.priority } : {}) };
         continue;
       }
       if (this.ended) return;
@@ -93,15 +99,20 @@ export interface TurnRoute {
   readonly onStep?: (record: StepRecord) => void;
   readonly onDone?: (final: string) => void;
   readonly onError?: (reason: string) => void;
+  /** Its own turn begins (a message steered in that Claude didn't take in mid-turn). */
+  readonly onStart?: () => void;
+  /** Claude took it into another turn, between two steps: that turn's answer covers it. */
+  readonly onFolded?: () => void;
 }
 
 /**
  * Sends each turn of a live session to the right request. Follow-ups take the next turns in
  * the order they were sent; turns Claude starts by itself (a background agent finished)
- * belong to the original request.
+ * belong to the original request. A message Claude Code folds into a running turn (steering)
+ * gets no turn of its own: the turn's result lists it among the prompts it took in.
  */
 export class TurnRouter {
-  private readonly pending: TurnRoute[] = [];
+  private readonly pending: Array<{ route: TurnRoute; uuid?: string; steer: boolean }> = [];
   private active: TurnRoute;
   private inTurn = true;
   /** The original request's answers, one per turn of its own. */
@@ -114,16 +125,29 @@ export class TurnRouter {
   /** The route for a main-thread message, opening a new turn after a result. */
   current(): TurnRoute {
     if (!this.inTurn) {
-      this.active = this.pending.shift() ?? this.original;
+      const next = this.pending.shift()?.route;
+      this.active = next ?? this.original;
       this.inTurn = true;
+      next?.onStart?.();
     }
     return this.active;
   }
 
-  /** A turn ended. Returns false when the original request's own turn failed. */
-  end(ok: boolean, text: string): boolean {
+  /**
+   * A turn ended. Returns false when the original request's own turn failed. `took`: the ids
+   * of the prompts the turn took in (Claude Code's user_message_uuids); undefined from a Claude
+   * Code too old to say, when steered messages are taken as folded in (they were sent to be).
+   */
+  end(ok: boolean, text: string, took?: readonly string[]): boolean {
     const route = this.current();
     this.inTurn = false;
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      const p = this.pending[i]!;
+      if (took ? p.uuid !== undefined && took.includes(p.uuid) : p.steer) {
+        this.pending.splice(i, 1);
+        p.route.onFolded?.();
+      }
+    }
     if (route === this.original) {
       if (ok && text) {
         this.answers.push(text);
@@ -137,8 +161,9 @@ export class TurnRouter {
     return true;
   }
 
-  queue(route: TurnRoute): void {
-    this.pending.push(route);
+  /** `uuid`: the prompt's id (see PromptQueue.push); `steer`: sent while Claude works, to be folded in. */
+  queue(route: TurnRoute, uuid?: string, steer = false): void {
+    this.pending.push({ route, ...(uuid ? { uuid } : {}), steer });
   }
 
   /** Follow-ups sent but not answered yet. */
@@ -152,7 +177,7 @@ export class TurnRouter {
   }
 
   failPending(reason: string): void {
-    const open = [...(this.inTurn && this.active !== this.original ? [this.active] : []), ...this.pending.splice(0)];
+    const open = [...(this.inTurn && this.active !== this.original ? [this.active] : []), ...this.pending.splice(0).map((p) => p.route)];
     for (const route of open) route.onError?.(reason);
   }
 }

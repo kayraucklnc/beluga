@@ -3,7 +3,7 @@ import { Icon } from '../components/Icon.js';
 import s from './undo-toast.module.css';
 
 /**
- * "Hidden klaude — Undo": something you did that's easy to take back says so for a few
+ * "Hidden api — Undo": something you did that's easy to take back says so for a few
  * seconds, with Undo (and ⌘Z) instead of an alert asking first.
  */
 interface Undoable {

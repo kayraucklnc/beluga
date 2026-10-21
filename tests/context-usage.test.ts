@@ -24,8 +24,14 @@ describe('context accounting', () => {
     expect(contextTokens(undefined)).toBe(0);
   });
 
-  it('knows each model’s window: what Claude Code reported, else 1M for [1m] models, else 200k', () => {
-    expect(contextWindowFor('claude-opus-5-5')).toBe(200_000);
+  it('knows each model’s window: what Claude Code reported, else 1M for 1M models and [1m] picks, else 200k', () => {
+    for (const m of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1', 'claude-opus-5', 'claude-sonnet-5', 'claude-opus-4-8', 'claude-opus-4-6', 'claude-sonnet-4-6', 'opus', 'sonnet', 'haiku', 'fable', 'us.anthropic.claude-opus-5-5', 'anthropic.claude-sonnet-5-5-v1:0']) {
+      expect(contextWindowFor(m), m).toBe(1_000_000);
+    }
+    for (const m of ['claude-haiku-4-5', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-5-sonnet-20241022', 'something-else']) {
+      expect(contextWindowFor(m), m).toBe(200_000);
+    }
+    expect(contextWindowFor('claude-opus-5-5', 200_000)).toBe(200_000);
     expect(contextWindowFor('claude-opus-5-5[1m]')).toBe(1_000_000);
     expect(contextWindowFor('sonnet[1m]')).toBe(1_000_000);
     expect(contextWindowFor('claude-sonnet-5-1m')).toBe(1_000_000);
@@ -85,9 +91,9 @@ describe('auto-compact threshold', () => {
     expect(compactEnv(false, 80)).toEqual({});
   });
 
-  it('is a saved setting: on at 85% by default, a bad saved value falls back to 85', () => {
-    expect(DEFAULT_PREFS).toMatchObject({ autoCompact: true, autoCompactAt: 85 });
-    expect(Settings.parse({})).toMatchObject({ autoCompact: true, autoCompactAt: 85 });
+  it('is a saved setting: off by default (85% once on), a bad saved value falls back to 85', () => {
+    expect(DEFAULT_PREFS).toMatchObject({ autoCompact: false, autoCompactAt: 85 });
+    expect(Settings.parse({})).toMatchObject({ autoCompact: false, autoCompactAt: 85 });
     expect(Settings.parse({ autoCompactAt: 400 }).autoCompactAt).toBe(85);
     expect(prefsFrom(Settings.parse({ autoCompact: false, autoCompactAt: 72 }))).toMatchObject({ autoCompact: false, autoCompactAt: 72 });
   });

@@ -165,6 +165,11 @@ export function ScratchTab({ wsId }: { wsId: string }) {
     if (follow) listRef.current?.scrollTo({ top: 0 });
   }, [follow, files[0]?.path, files[0]?.mtime]);
 
+  // The arrows move the highlight; the list scrolls to keep it in sight.
+  useEffect(() => {
+    listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [shown]);
+
   const pick = (path: string): void => {
     setClosed(false);
     setPicked(path);

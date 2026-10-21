@@ -51,6 +51,15 @@ describe('sub-agent tracking', () => {
     t.task({ subtype: 'task_started', task_id: 'b2', description: 'watch' });
     expect(t.task({ subtype: 'task_updated', task_id: 'b2', patch: { status: 'completed' } })).toEqual([{ id: 'b2', phase: 'done', failed: false }]);
   });
+
+  it('keeps a sub-agent launched in the background running until its task finishes', () => {
+    const t = new SubAgentTracker();
+    t.assistant(null, [{ type: 'tool_use', id: 'bg', name: 'Agent', input: { description: 'run tests', run_in_background: true } }]);
+    expect(t.user([{ type: 'tool_result', tool_use_id: 'bg' }])).toEqual([]); // "launched", still working
+    expect(t.task({ subtype: 'task_started', task_id: 'k', tool_use_id: 'bg', description: 'run tests' })).toEqual([]);
+    expect(t.task({ subtype: 'task_progress', task_id: 'k', description: 'Ran npm test' })).toEqual([]);
+    expect(t.task({ subtype: 'task_notification', task_id: 'k', status: 'completed' })).toEqual([{ id: 'bg', phase: 'done', failed: false }]);
+  });
 });
 
 describe('store: channels, views and sub-agents', () => {

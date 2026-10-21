@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { modelLabel, modelOf } from '@klaud/ui/menus.js';
-import { clampThreshold, formatTokenCount } from '@klaud/shared/context-usage.js';
+import { clampThreshold, contextWindowFor, formatTokenCount } from '@klaud/shared/context-usage.js';
 import { cx } from '../components/ui.js';
 import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
 import { type MeterModel, breakdownRows, meterModel, usageLine, whenText } from './context-model.js';
@@ -87,7 +87,8 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
   const api = useApi();
   const { client } = useKlaud();
   const prefs = useApp((st) => st.prefs);
-  const modelName = useApp((st) => modelLabel(st, modelOf(st, channel)));
+  const picked = useApp((st) => modelOf(st, channel));
+  const modelName = useApp((st) => modelLabel(st, picked));
   // A workspace someone shared with you: their Claude, so only they can compact it.
   const theirs = useApp((st) => st.view.kind === 'shared');
   const info = model.info;
@@ -133,7 +134,7 @@ function MeterDetails({ channel, model }: { channel: string; model: MeterModel }
       <dl className={cx(s.rows, s.facts)}>
         <dt>Model window</dt>
         <dd>
-          {formatTokenCount(info?.window ?? 200_000)}
+          {formatTokenCount(info?.window ?? contextWindowFor(picked))}
           {modelName ? ` · ${modelName}` : ''}
         </dd>
         <dt>Last compacted</dt>

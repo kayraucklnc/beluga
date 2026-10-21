@@ -48,7 +48,8 @@
   border-radius: 4px;
   opacity: 0;
 }
-.tab:hover .closeTab {
+/* Any terminal tab (here, the panel's, the drawer's): the × shows on hover and on the open one. */
+[role='tab']:hover > .closeTab {
   opacity: 1;
 }
 .closeTab:hover {
@@ -80,7 +81,7 @@
   place-items: center;
 }
 .closeTab:focus-visible,
-.tabOn .closeTab {
+[aria-selected='true'] > .closeTab {
   opacity: 1;
 }
 .rename {

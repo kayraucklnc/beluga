@@ -238,6 +238,11 @@ export function ChangesTab({ wsId }: { wsId: string }) {
     setOpen(f.path);
     void api.workspaces.selectFile(i);
   };
+  // The arrows move the highlight; the list scrolls to keep it in sight.
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [open]);
   const answered = useRef(false);
   useEffect(() => {
     if (!asked || answered.current || !data || reviewLoading) return;
@@ -280,7 +285,7 @@ export function ChangesTab({ wsId }: { wsId: string }) {
     <div ref={box} className={s.stack}>
       <div className={s.top} style={shown ? { flex: `0 0 ${Math.round(split * 100)}%` } : undefined}>
         <Summary data={data} loading={loading} onReload={reload} />
-        <div className={s.list} role="listbox" aria-label="Changed files" tabIndex={0} onKeyDown={onKey}>
+        <div ref={listRef} className={s.list} role="listbox" aria-label="Changed files" tabIndex={0} onKeyDown={onKey}>
           {files.map((f, i) => {
             const st = STATE[f.state];
             const name = f.path.split('/').pop() ?? f.path;

@@ -3,13 +3,14 @@ import type { LogItem, ShellItem } from '@klaud/core/store.js';
 import { isRunning } from '@klaud/ui/format.js';
 import { formatDuration } from '@klaud/shared/text.js';
 import { splitImages } from '@klaud/shared/attachment-links.js';
+import { STEERED_IN, isLimitNotice } from '@klaud/shared/claude-notices.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, claudeColor, cx } from '../components/ui.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { stopClaude } from '../lib/commands.js';
 import { copyText } from '../lib/copy.js';
 import { useActions } from '../lib/actions.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApp, useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { ImageGrid } from './ChatImages.js';
 import { openLightbox } from './images.js';
@@ -131,6 +132,14 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
   const prefs = usePrefs();
   const steps = useDisclosure(`${item.channel}/${item.id}`);
   const answered = item.status === 'done' && Boolean(item.text);
+  // A queued message Claude read mid-turn: its answer is the card above's.
+  const steeredIn = item.status === 'done' && item.text === STEERED_IN;
+  // Claude Code stopped at a plan limit: the newest card here offers to go on, in one click.
+  const latest = useApp((st) => st.log.findLast((l) => l.type === 'agent' && l.channel === item.channel)?.id === item.id);
+  const group = useApp((st) => st.peers.length > 1);
+  const limited = mine && latest && !running && isLimitNotice(item.text);
+  const resume = (): void =>
+    void client.api.session.submit(`${item.channel === 'room' && group ? '@claude ' : ''}continue`, { channel: item.channel }).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
   const hasSteps = item.steps.length > 0 || item.subagents.length > 0;
   const folded = answered && prefs.doneSteps === 'fold' && !steps.shown;
   const lead: ActionItem[] = stoppable
@@ -150,7 +159,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
               {mine ? 'Claude' : `${item.ownerName}'s Claude`}
             </span>
             {forSomeoneElse ? <span className={s.time}>for {item.requesterName}</span> : null}
-            {!running && item.text && item.status === 'done' ? (
+            {!running && item.text && item.status === 'done' && !steeredIn ? (
               <span className={s.hoverActions}>
                 {/* Folded: anyone's steps show again; kept showing, only your own Claude's open further. */}
                 {hasSteps && (prefs.doneSteps === 'fold' || (mine && item.steps.length > 0)) ? <StepsToggle item={item} /> : null}
@@ -182,11 +191,20 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
               <TaskCard task={t} />
             </div>
           ))}
-          {item.text ? (
+          {steeredIn ? (
+            <div className={s.idle}>{item.text}</div>
+          ) : item.text ? (
             <Markdown text={item.text} paths localImages={mine} live={running} />
           ) : item.status === 'queued' ? (
             // Sending it now, editing or moving it: the queue above the box.
             <div className={s.idle}>Starts when the current task finishes.</div>
+          ) : null}
+          {limited ? (
+            <div className={s.limitActions}>
+              <Button size="small" icon="play" onClick={resume} title="Send “continue”: Claude picks up where it stopped">
+                Continue
+              </Button>
+            </div>
           ) : null}
         </div>
       </div>

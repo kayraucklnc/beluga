@@ -31,8 +31,8 @@ function Row({ channel, prompt, mine, className, children }: { channel: string; 
 }
 
 /**
- * What waits for Claude in this conversation, above the box you type in: send one now
- * (interrupting the current task), pull it back to edit, drop it, or change the order.
+ * What waits for Claude in this conversation, above the box you type in: steer with one now
+ * (Claude reads it at its next step), pull it back to edit, drop it, or change the order.
  */
 export function QueueTray({ queue, selfName, onEdit }: { queue: readonly QueuedMessage[]; selfName: string; onEdit: (text: string) => void }) {
   const { client } = useKlaud();
@@ -80,9 +80,9 @@ export function QueueTray({ queue, selfName, onEdit }: { queue: readonly QueuedM
                     }
                   />
                   <Act icon="x" label="Remove from the queue" onClick={() => call(api.host.cancelQueued(q.requestId))} />
-                  <Tip label="Stop the current task and send this now" keys="⌥↩">
+                  <Tip label="Steer: Claude reads this at its next step, without stopping" keys="⌥↩">
                     <button type="button" className={s.now} onClick={() => call(api.host.promote(q.requestId))}>
-                      Send now
+                      Steer
                     </button>
                   </Tip>
                 </span>
