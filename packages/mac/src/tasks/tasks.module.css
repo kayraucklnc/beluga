@@ -492,6 +492,15 @@
 .working {
   display: inline-flex;
 }
+/* Claude is writing a new task's title and goal. */
+.writing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .worktreeMark {
   display: inline-flex;
   color: var(--text-3);

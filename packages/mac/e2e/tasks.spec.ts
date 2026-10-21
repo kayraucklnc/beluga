@@ -35,6 +35,7 @@ test('makes a task, then works on its page', async ({ page }) => {
   await openTasks(page);
   await page.getByRole('button', { name: 'New Task', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: 'New Task' });
+  await sheet.getByRole('button', { name: 'Write title and goal myself' }).click();
   await sheet.getByLabel('Title').fill('Cache the exchange rates');
   await sheet.getByLabel('Goal').fill('Fetch once an hour instead of on every request.');
   await sheet.getByRole('button', { name: 'Create Task' }).click();
@@ -76,6 +77,45 @@ test('makes a task, then works on its page', async ({ page }) => {
   await page.getByLabel('Comment').fill('ECB updates once a day anyway.');
   await page.getByRole('button', { name: 'Comment', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Activity' })).toContainText('ECB updates once a day anyway.');
+});
+
+test('a column’s +: describe it, pick a priority, Create; the card lands there and Claude writes its title', async ({ page }) => {
+  await openTasks(page);
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'Board' }).click();
+  const column = page.getByRole('list', { name: 'Board' }).getByRole('listitem', { name: /^In Progress/ });
+  await column.getByRole('button', { name: 'New Task in In Progress' }).click();
+  const sheet = page.getByRole('dialog', { name: 'New Task' });
+  // One box, focused; where it goes is a quiet line, not fields.
+  const box = sheet.getByRole('textbox', { name: 'Describe the task' });
+  await expect(box).toBeFocused();
+  await expect(sheet).toContainText('In Progress');
+  await expect(sheet.getByText('Status', { exact: true })).toHaveCount(0);
+  await expect(sheet.getByText('Project', { exact: true })).toHaveCount(0);
+  // The box grows with what you write.
+  const before = (await box.boundingBox())!.height;
+  await box.fill('please make the login page remember me\nso people stay signed in for a week\n\nthey keep complaining\nabout typing passwords\nevery morning\nand on every device');
+  await box.dispatchEvent('input');
+  expect((await box.boundingBox())!.height).toBeGreaterThan(before);
+  // Priority on a scale: a click, or 0 to 4 on it.
+  const scale = sheet.getByRole('radiogroup', { name: 'Priority' });
+  await scale.getByRole('radio', { name: /Low/ }).click();
+  await page.keyboard.press('3');
+  await expect(scale.getByRole('radio', { name: /High/ })).toHaveAttribute('aria-checked', 'true');
+  // Labels: the board's own, as chips.
+  const labels = sheet.getByRole('group', { name: 'Labels' });
+  await expect(labels.getByRole('textbox')).toHaveCount(0);
+  await labels.getByRole('button', { name: 'security' }).click();
+  await expect(labels.getByRole('button', { name: 'security' })).toHaveAttribute('aria-pressed', 'true');
+  await sheet.getByRole('button', { name: 'Create Task' }).click();
+  await expect(sheet).toBeHidden();
+  // At once: under its first line, Claude writing; then Claude's title.
+  await expect(column.getByRole('button', { name: /please make the login page remember me/ })).toContainText('Claude is writing…');
+  const card = column.getByRole('button', { name: /Make the login page remember me$/ });
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(card).not.toContainText('Claude is writing…');
+  await expect(card).toContainText('security');
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
 });
 
 test('a worktree shows the task it’s doing, and opens it', async ({ page }) => {

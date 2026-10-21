@@ -1,6 +1,7 @@
 import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
 import { demoAnswerFromPrompt } from '../core/chat/demo-answers.js';
 import { slugify } from './namer.js';
+import { type DraftContext, type TaskDraft, firstLineTitle } from './task-drafter.js';
 import { MORE, MockStepper, splitLine } from './mock-steps.js';
 import { MockContext, withGrowingContext } from './mock-context.js';
 import { MOCK_GRAPH_ANSWER } from './mock-graphs.js';
@@ -296,12 +297,34 @@ async function mockSyncMain(input: AgentRunInput, target: { branch: string; upst
   return `${target.branch} is up to date with ${target.upstream}. I set your uncommitted changes aside, merged the new commits (no conflicts), and put your changes back. Nothing was pushed.`;
 }
 
+const FILLER = /^(?:(?:please|pls|can you|could you|we should|we need to|i want to|i'd like to|let's|lets|make it so)\s+)+/i;
+
+/** The demo's task writer: a tidy title from the first line, a goal and criteria, labels the words name. */
+export function mockDraft(text: string, ctx: DraftContext): TaskDraft {
+  const words = firstLineTitle(text).replace(FILLER, '').replace(/[.!?]+$/, '').split(' ').slice(0, 8).join(' ');
+  const title = words.charAt(0).toUpperCase() + words.slice(1);
+  const said = text.toLowerCase();
+  const labels = ctx.labels.filter((l) => said.includes(l.toLowerCase()));
+  const priority = /\b(urgent|asap|right now)\b/.test(said) ? 'urgent' : /\b(important|soon)\b/.test(said) ? 'high' : undefined;
+  return {
+    title,
+    goal: `${title}, so it works the way it was described. Done when it does, and nothing around it changes.`,
+    acceptance: [`${title}: works as described`, 'Nothing else changes', 'Tests cover it'],
+    labels,
+    ...(priority ? { priority } : {}),
+  };
+}
+
 export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   const context = new MockContext();
   return {
     nameTask: async (prompt) => {
       await new Promise((r) => setTimeout(r, 600 * pace));
       return slugify(prompt);
+    },
+    draftTask: async (text, ctx) => {
+      await new Promise((r) => setTimeout(r, 1500 * pace));
+      return mockDraft(text, ctx);
     },
     answerChat: async (req) => {
       await sleep(1800 * pace, req.signal);

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { klaudHome } from '../home.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
+import type { DraftContext } from '../../agent/task-drafter.js';
 import { Board } from './board.js';
 import { seedDemoBoard } from './demo.js';
 import { attachBoard, detachBoard } from './registry.js';
@@ -43,6 +44,7 @@ export function launchBoard(host: BoardHost): () => void {
     selfId: () => session.selfId,
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'You',
     askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
+    ...(session.draftsTasks ? { draftTask: (text: string, ctx: DraftContext) => session.draftTask(text, ctx) } : {}),
   });
   attachBoard(session, work);
   // Plans: drafted in a conversation, approved onto the board, run milestone by milestone.

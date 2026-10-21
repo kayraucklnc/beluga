@@ -11,8 +11,9 @@ type BoardHandlers = { readonly [M in BoardMethod]: (s: Session, ...args: Args<M
 export const BOARD_HANDLERS = {
   'board.create': (s, input) => {
     const work = needBoard(s);
-    const { goal, ...rest } = input;
-    return work.board.create({ ...rest, ...(goal?.trim() ? { brief: { goal } } : {}) }, work.me());
+    const { goal, describe, title, ...rest } = input;
+    if (!title?.trim() && describe) return work.createDescribed(rest, describe);
+    return work.board.create({ ...rest, title: title ?? '', ...(goal?.trim() ? { brief: { goal } } : {}) }, work.me());
   },
   'board.update': (s, ref, patch) => {
     const work = needBoard(s);

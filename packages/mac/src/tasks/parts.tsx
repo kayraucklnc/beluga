@@ -29,6 +29,12 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
   const milestone = plan && issue.plan ? (plan.body ?? plan.draft)?.milestones.find((m) => m.id === issue.plan!.milestone)?.title : undefined;
   return (
     <span className={cx(t.meta, compact && t.metaCompact)}>
+      {issue.drafting ? (
+        <span className={t.writing} aria-live="polite">
+          <Dot tone="claude" live />
+          Claude is writing…
+        </span>
+      ) : null}
       {plan && milestone ? (
         <Tip label={`Part of the plan “${(plan.body ?? plan.draft)?.title ?? ''}”, milestone “${milestone}”`}>
           <span className={t.planMark}>

@@ -16,12 +16,14 @@ const assignee = z.union([z.object({ kind: z.literal('person'), id: peer, name: 
 const labels = z.array(z.string().min(1).max(32)).max(12);
 
 export const BOARD_API = {
-  // A new task (a sub-task with parent) → the task.
+  // A new task (a sub-task with parent) → the task. With describe instead of a title, your Claude
+  // writes its title, goal and criteria (the first line stands in until it has).
   'board.create': {
     args: z.tuple([
       z.object({
         projectId,
-        title: z.string().min(1).max(200),
+        title: z.string().min(1).max(200).optional(),
+        describe: z.string().min(1).max(8000).optional(),
         status: status.optional(),
         priority: priority.optional(),
         assignee: assignee.optional(),
@@ -31,7 +33,7 @@ export const BOARD_API = {
         parent: ref.optional(),
         blockedBy: z.array(ref).max(20).optional(),
         goal: z.string().max(20_000).optional(),
-      }),
+      }).refine((t) => Boolean(t.title?.trim() || t.describe?.trim()), 'A task needs a title or a description'),
     ]),
   },
   // Change a task's title, status, priority, assignee (null: no one), labels, estimate, due date or parent (null: none).

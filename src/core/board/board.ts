@@ -66,7 +66,17 @@ export interface NewIssue {
   readonly blockedBy?: readonly string[];
   readonly brief?: Partial<Record<BriefSection, string>>;
   readonly autoTitle?: boolean;
+  readonly drafting?: boolean;
   readonly plan?: IssuePlan;
+}
+
+/** What Claude wrote for a task made from a description (agent/task-drafter.ts). */
+export interface IssueDraft {
+  readonly title: string;
+  readonly goal: string;
+  readonly acceptance: readonly string[];
+  readonly labels: readonly string[];
+  readonly priority?: Priority;
 }
 
 export interface IssuePatch {
@@ -203,6 +213,7 @@ export class Board {
       projectId: input.projectId,
       title,
       ...(input.autoTitle ? { autoTitle: true } : {}),
+      ...(input.drafting ? { drafting: true } : {}),
       status,
       priority: input.priority ?? 'none',
       labels: cleanLabels(input.labels ?? []),
@@ -302,6 +313,37 @@ export class Board {
     }
     issue = this.change(issue, next, notes.map((n) => this.entry(by, n.kind, n.text, undefined, at, n.assignee, n.was !== undefined ? { was: n.was, now: n.now! } : undefined)));
     return issue;
+  }
+
+  /**
+   * Claude's draft for a task made from a description: its title (unless someone renamed it
+   * meanwhile), goal and criteria where they're empty, labels added, a priority if it had none.
+   * No draft: the first line stays the title, and what was said becomes the goal if it says more.
+   */
+  finishDraft(ref: string, draft: IssueDraft | undefined, by: Actor, said = ''): Issue {
+    const issue = this.need(ref);
+    if (!issue.drafting) return issue;
+    if (!draft) {
+      const text = said.trim().slice(0, MAX_SECTION);
+      const more = text && text.replace(/\s+/g, ' ') !== issue.title && !issue.brief.goal;
+      return this.change(issue, { drafting: undefined, ...(more ? { brief: { ...issue.brief, goal: text } } : {}) }, []);
+    }
+    const renamed = issue.activity.some((a) => a.kind === 'title');
+    const title = oneLine(draft.title, MAX_TITLE);
+    const brief = { ...issue.brief };
+    if (!brief.goal && draft.goal.trim()) brief.goal = draft.goal.trim().slice(0, MAX_SECTION);
+    if (!brief.acceptance && draft.acceptance.length) brief.acceptance = draft.acceptance.map((a) => `- [ ] ${oneLine(a, 300)}`).join('\n');
+    return this.change(
+      issue,
+      {
+        drafting: undefined,
+        ...(title && !renamed ? { title } : {}),
+        brief,
+        labels: cleanLabels([...issue.labels, ...draft.labels]),
+        ...(draft.priority && issue.priority === 'none' ? { priority: draft.priority } : {}),
+      },
+      [this.entry(by, 'brief', 'wrote the title and goal')],
+    );
   }
 
   /** The plan (and milestone) a task belongs to; undefined: none any more. */
@@ -599,7 +641,10 @@ export class Board {
     this.issues = parsed.data.issues.flatMap((item) => {
       const r = SavedIssue.safeParse(item);
       if (!r.success) dropped.push(item);
-      return r.success ? [r.data as unknown as Issue] : [];
+      if (!r.success) return [];
+      // A draft cut short by a restart: the first line stays the title.
+      const { drafting: _, ...issue } = r.data as unknown as Issue;
+      return [issue as Issue];
     });
     // Tasks that don't read any more are kept beside it, not lost.
     if (dropped.length) {
