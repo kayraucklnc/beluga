@@ -23,6 +23,7 @@ export const AgentCard = memo(function AgentCard({ agent, selected, compact, onO
       className={cx(s.card, compact && s.cardCompact, selected && s.cardSelected, running && s.cardLive)}
       onClick={onOpen}
       aria-pressed={selected}
+      title="Open Agent"
       aria-label={`${agent.description}, ${agentLabel(agent)}${agent.step ? `, ${agent.step}` : ''}`}
     >
       <span className={s.cardTop}>
