@@ -58,6 +58,39 @@
 .askChip button:hover {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
+.fileChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+.fileChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  height: 26px;
+  padding: 0 4px 0 8px;
+  border-radius: 13px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: 0.86rem;
+}
+.fileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fileChip button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 8px;
+}
+.fileChip button:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
 .bar {
   display: flex;
   align-items: center;

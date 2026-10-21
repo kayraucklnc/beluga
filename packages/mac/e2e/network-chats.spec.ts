@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
@@ -149,6 +152,36 @@ test('files you add wait in the box, then go with the message', async ({ page })
   await expect(tray).toHaveCount(0);
   const log = page.getByRole('log', { name: 'Channel launch' });
   await expect(log.getByRole('group', { name: /^notes\.txt, TXT · / }).last()).toBeVisible({ timeout: 10_000 });
+});
+
+test('pasted paths of files on this Mac go as the files; other words stay words', async ({ page }) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud paste-'));
+  writeFileSync(path.join(dir, 'plan notes.txt'), 'Pasted by its path.');
+  // A 2×2 red PNG.
+  writeFileSync(path.join(dir, 'shot.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==', 'base64'));
+  await channel(page, 'launch').click();
+  const box = page.locator('main textarea').last();
+  const paste = (text: string) =>
+    box.evaluate((el, t) => {
+      const data = new DataTransfer();
+      data.setData('text/plain', t);
+      if (el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))) document.execCommand('insertText', false, t);
+    }, text);
+  await box.fill('');
+  await paste(`${dir}/plan\\ notes.txt\n'${dir}/shot.png'`);
+  const tray = page.getByRole('list', { name: 'Files to send' });
+  await expect(tray).toContainText('plan notes.txt');
+  await expect(tray).toContainText('shot.png');
+  await expect(tray.locator('img')).toHaveCount(1);
+  await expect(box).toHaveValue('');
+  // A folder is words.
+  await paste(dir);
+  await expect(box).toHaveValue(dir);
+  await box.fill('');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(tray).toHaveCount(0);
+  const log = page.getByRole('log', { name: 'Channel launch' });
+  await expect(log.getByRole('group', { name: /^plan notes\.txt, TXT · / }).last()).toBeVisible({ timeout: 10_000 });
 });
 
 test('chats open as tabs; closing one keeps the conversation in the sidebar', async ({ page }) => {

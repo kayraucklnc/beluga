@@ -10,6 +10,7 @@ import { mod } from '../lib/system.js';
 import { quoted } from '../chat/message-menu.js';
 import { MentionHighlighter } from '../chat/MentionHighlighter.js';
 import { useSuggestions } from '../chat/Suggestions.js';
+import { usePastePaths } from '../chat/paste-paths.js';
 import { PendingTray } from './ChatFiles.js';
 import { addBlobs, addPaths, restorePending, takePending, usePending } from './attachments.js';
 import { type Ask, type ChannelSuggestion, askLabel, askTo, channelSuggestions, channelWorld, mentionedAsk, mergeAsk } from './chat-model.js';
@@ -108,6 +109,8 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople }: { 
     else addPeople?.();
   };
   const sug = useSuggestions(items, text, run);
+  // A pasted path of a file on this Mac: the file goes, as if dropped.
+  const pastePaths = usePastePaths(ref, (files) => void addPaths(client, id, files.map((f) => f.path)));
   useEffect(() => {
     setText(drafts.get(id) ?? '');
     setAsk(undefined);
@@ -192,7 +195,7 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople }: { 
             onChange={(e) => write(e.target.value)}
             onPaste={(e) => {
               const files = [...e.clipboardData.items].flatMap((it) => (it.kind === 'file' ? [it.getAsFile()].filter((f): f is File => Boolean(f)) : []));
-              if (!files.length) return;
+              if (!files.length) return void pastePaths(e);
               e.preventDefault();
               void addBlobs(client, id, files);
             }}

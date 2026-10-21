@@ -2,8 +2,9 @@ import type { Session } from '../core/session.js';
 import type { WorkspaceController } from '../core/workspace-controller.js';
 import type { Workbench } from '../core/workbench.js';
 import { listLocalDirs, localDirKey, openWithSystem } from '../core/local.js';
-import { ATTACHMENT_SHARE, type FetchShared, attachmentOnDisk, chipText, expandChips, mediaTypeOf, publishForRoom, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
+import { ATTACHMENT_SHARE, type FetchShared, attachmentOnDisk, chipText, expandChips, importImageFitting, mediaTypeOf, pathInfo, publishForRoom, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
 import { fetchBytes } from '../core/downloads.js';
+import { statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { findProjects, isMainCheckout } from '../workspaces/discovery.js';
@@ -210,6 +211,13 @@ export const HANDLERS = {
     const a = registerAttachment(file, bytes.byteLength);
     return { n: a.n, chip: chipText(a.n) };
   },
+  'attachments.addFile': async (_s, file) => {
+    const info = pathInfo(file);
+    if (info.kind !== 'file' || !info.image) throw new Error(`${info.name} isn't an image file here`);
+    const saved = await importImageFitting(info.path);
+    const a = registerAttachment(saved, statSync(saved).size);
+    return { n: a.n, chip: chipText(a.n), file: path.basename(saved) };
+  },
   'attachments.expand': (s, text, channel) => {
     if (!text.includes('[image ') || text.startsWith('/')) return text;
     const state = s.store.getState();
@@ -255,6 +263,7 @@ export const HANDLERS = {
     return entries;
   },
   'local.openFolder': (_s, dir) => openWithSystem(dir),
+  'local.statFiles': (_s, paths) => paths.map(pathInfo),
   ...NETWORK_HANDLERS,
   ...STRIPE_HANDLERS,
   ...CLAUDE_CODE_HANDLERS,
