@@ -274,6 +274,30 @@ export class AgentHost {
     return new Promise((resolve) => this.idleWaiters.set(channel, [...(this.idleWaiters.get(channel) ?? []), resolve]));
   }
 
+  /** Whether a run of your Claude is under way in this conversation: its Claude Code process is there. */
+  runningIn(channel: string): boolean {
+    return Boolean(this.lanes.get(channel)?.current);
+  }
+
+  /**
+   * Klaud takes over a stalled conversation (a plan's watchdog waking its Claude): the current run
+   * stops, and your messages waiting there come out of the queue to go with the wake (returned in
+   * order). Quiet: no toast. Resolves once nothing runs there.
+   */
+  async takeOver(channel: string): Promise<string[]> {
+    const lane = this.lanes.get(channel);
+    if (!lane) return [];
+    const mine = lane.waiting.filter((w) => w.from === this.selfId && !w.compact);
+    lane.waiting = lane.waiting.filter((w) => !mine.includes(w));
+    for (const { from, body } of mine) this.emitAgent(body.requestId, from, 'done', 'Sent along with Klaud’s wake-up', body.channel);
+    if (lane.current) {
+      lane.interruptedBy = 'watchdog';
+      lane.current.abort();
+    }
+    await this.idle(channel);
+    return mine.map((w) => w.body.prompt);
+  }
+
   /**
    * Claude in a main folder (questions only) was asked for a change: carry the conversation into
    * a new worktree and go on there. Your own requests move right away (you asked for the change);

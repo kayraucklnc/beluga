@@ -251,3 +251,17 @@ describe('isReadOnlyCommand: what the shell would really run', () => {
     expect(isReadOnlyCommand('GIT_PAGER=cat git log -3')).toBe(true);
   });
 });
+
+describe('a plan’s Claude fixing a conflict in a hidden worktree', () => {
+  const fixing = { ...main, roots: ['/work/app', '/k/workspaces/.bases/app/kld-10-base'], fixup: '/k/workspaces/.bases/app/kld-10-base' };
+
+  it('may edit there (and only there); the main folder stays read-only, and git still can’t run', () => {
+    expect(decideTool('Edit', { file_path: '/k/workspaces/.bases/app/kld-10-base/src/a.ts' }, fixing)).toBe('allow');
+    expect(decideTool('Read', { file_path: '/k/workspaces/.bases/app/kld-10-base/src/a.ts' }, fixing)).toBe('allow');
+    expect(decideTool('Edit', { file_path: '/work/app/src/a.ts' }, fixing)).toBe('deny');
+    expect(decideTool('Edit', { file_path: '/k/workspaces/.bases/app/kld-11-base/a.ts' }, fixing)).toBe('deny');
+    expect(decideTool('Write', { file_path: '/k/workspaces/.bases/app/kld-10-base/.env' }, fixing)).toBe('deny');
+    expect(decideTool('Bash', { command: 'git -C /k/workspaces/.bases/app/kld-10-base commit -am x' }, fixing)).toBe('deny');
+    expect(decideTool('Edit', { file_path: '/k/workspaces/.bases/app/kld-10-base/src/a.ts' }, main)).toBe('deny');
+  });
+});

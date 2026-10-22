@@ -365,7 +365,10 @@ export class WorkspaceManager {
       const trees = await g.listWorktrees(root);
       const records = this.records.filter((r) => r.projectRoot === root);
       const workspaces: Workspace[] = [];
+      const bases = real(this.basesDir) + path.sep;
       for (const tree of trees) {
+        // Hidden worktrees (combining branches for a task's start) aren't the project's.
+        if (real(tree.path).startsWith(bases) || tree.path.startsWith(this.basesDir + path.sep)) continue;
         const isMain = real(tree.path) === real(root);
         const rec = isMain ? records.find((r) => r.kind === 'main') : records.find((r) => r.kind === 'worktree' && real(r.path) === real(tree.path));
         const record: WorkspaceRecord = rec ?? {
@@ -398,7 +401,7 @@ export class WorkspaceManager {
   }
 
   /** origin's default branch ("origin/main"), or the one learned from the remote when origin/HEAD isn't set. */
-  private async baseOf(root: string): Promise<string> {
+  async baseOf(root: string): Promise<string> {
     const learned = this.remoteDefaults.get(root);
     if (learned && (await g.isCommit(root, `origin/${learned}`))) return `origin/${learned}`;
     return g.defaultBase(root);
@@ -409,6 +412,90 @@ export class WorkspaceManager {
     const project = this.projects.find((p) => p.id === projectId && p.root);
     if (!project) throw new WorkspaceError('Project not found');
     return project;
+  }
+
+  /** Where hidden worktrees go (combining branches for a task's start): never listed as a project's worktrees. */
+  get basesDir(): string {
+    return path.join(this.store.workspacesDir, '.bases');
+  }
+
+  /**
+   * A task that builds on several unmerged branches starts from them all: what it needs of them
+   * (none already in another, nor in the default branch), combined into `klaud/<key>-base` in a
+   * hidden worktree. One left: that branch itself. A conflict is left there to fix (run again after).
+   */
+  async combineBase(projectId: string, key: string, branches: readonly string[], into?: string): Promise<g.CombineResult> {
+    const project = this.repoProject(projectId);
+    // In a plan: what's already in the plan's branch isn't needed again.
+    const main = into ?? (await this.baseOf(project.root));
+    const needed = await g.neededBranches(project.root, branches, main);
+    const name = `${slug(key)}-base`;
+    if (needed.length < 2) return { ok: true, branch: needed[0] ?? main };
+    const dir = path.join(this.basesDir, `${slug(project.name)}-${project.id.slice(0, 4)}`, name);
+    mkdirSync(path.dirname(dir), { recursive: true });
+    return g.combineBranches(project.root, dir, `klaud/${name}`, needed);
+  }
+
+  // ------------------------------------------------------------- a plan's branch
+
+  /** A plan's branch: made from the latest default branch unless it's there (here, or on origin) → whether it was made. */
+  async planBranch(projectId: string, branch: string): Promise<{ made: boolean }> {
+    const { root } = this.repoProject(projectId);
+    if (!/^plan\/[\w.-]+$/.test(branch)) throw new WorkspaceError(`“${branch}” isn’t a plan branch name`);
+    if (await g.isCommit(root, `refs/heads/${branch}`)) return { made: false };
+    if (await g.hasRemote(root)) await g.tryGit(root, ['fetch', 'origin', '--prune']);
+    if (await g.isCommit(root, `refs/remotes/origin/${branch}`)) {
+      await g.git(root, ['branch', '--track', branch, `origin/${branch}`]);
+      return { made: false };
+    }
+    await g.git(root, ['branch', '--no-track', branch, await this.baseOf(root)]);
+    return { made: true };
+  }
+
+  /**
+   * Merge task branches (--no-ff) into a plan's branch, those already in it skipped: in a hidden
+   * worktree, or where the branch is checked out already (kept there; it must be clean). A conflict
+   * is left there to fix (run again after).
+   */
+  async mergeIntoPlan(projectId: string, branch: string, branches: readonly string[]): Promise<g.CombineResult> {
+    const project = this.repoProject(projectId);
+    const hidden = path.join(this.basesDir, `${slug(project.name)}-${project.id.slice(0, 4)}`, slug(branch));
+    const out = (await g.listWorktrees(project.root)).find((w) => w.branch === branch && real(w.path) !== real(hidden));
+    if (out) {
+      const dirty = (await g.git(out.path, ['status', '--porcelain', '--untracked-files=no'])).split('\n').filter(Boolean);
+      const merging = await g.tryGit(out.path, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']);
+      if (dirty.length && !merging) throw new WorkspaceError(`${branch} is checked out in ${out.path} with uncommitted changes: commit them, and the merge goes on`);
+      return g.combineBranches(project.root, out.path, branch, branches, { keep: true });
+    }
+    mkdirSync(path.dirname(hidden), { recursive: true });
+    return g.combineBranches(project.root, hidden, branch, branches);
+  }
+
+  /** Whether a branch is already in the project's default branch. */
+  async inDefaultBranch(projectId: string, branch: string): Promise<boolean> {
+    const { root } = this.repoProject(projectId);
+    return g.isAncestor(root, branch, await this.baseOf(root));
+  }
+
+  /** Delete a branch whose work is merged elsewhere (git refuses while it's checked out). */
+  async dropBranch(projectId: string, branch: string): Promise<void> {
+    await g.deleteBranch(this.repoProject(projectId).root, branch);
+  }
+
+  /** Merge a branch into the main folder, which must be on the default branch. */
+  async mergeBranchIntoMain(projectId: string, branch: string): Promise<g.MergeResult> {
+    const { root } = this.repoProject(projectId);
+    const base = await this.baseOf(root);
+    const target = base.startsWith('origin/') ? base.slice('origin/'.length) : base === 'HEAD' ? undefined : base;
+    const res = await g.mergeInto(root, branch, target);
+    await this.refresh();
+    return res;
+  }
+
+  /** The default branch's name, without the remote ("main"). */
+  async defaultBranchName(projectId: string): Promise<string> {
+    const base = await this.baseOf(this.repoProject(projectId).root);
+    return base.replace(/^origin\//, '');
   }
 
   /** Mark a project as fetching (or record how its last fetch went), shown right away. */

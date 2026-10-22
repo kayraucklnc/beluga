@@ -1,6 +1,7 @@
 import type { BoardState } from '../../../../src/core/board/model.js';
 import { type Plan, type PlansState, diffBodies, planTitle, shownBody } from '../../../../src/core/plans/model.js';
-import type { MilestoneState, MilestoneView, NextStep, PlanView, TaskState } from '../../../../src/core/plans/progress.js';
+import type { MilestoneState, MilestoneView, NextStep, PlanView, TaskState, TaskView } from '../../../../src/core/plans/progress.js';
+import { pulseWords } from '../../../../src/core/plans/watchdog.js';
 
 /**
  * The Plans screens' pure parts (no DOM): words and tones for states, what a plan waits for as a
@@ -15,10 +16,12 @@ export const TASK_STATE: Readonly<Record<TaskState, { readonly label: string; re
   later: { label: 'Later', tone: 'muted' },
   blocked: { label: 'Waiting', tone: 'muted' },
   ready: { label: 'Ready', tone: 'accent' },
-  running: { label: 'Claude working', tone: 'claude' },
-  asking: { label: 'Needs you', tone: 'warn' },
-  idle: { label: 'In progress', tone: 'claude' },
+  running: { label: 'Working', tone: 'claude' },
+  asking: { label: 'Waiting for you', tone: 'warn' },
+  idle: { label: 'Stopped without finishing', tone: 'warn' },
+  stalled: { label: 'Needs you', tone: 'warn' },
   review: { label: 'In review', tone: 'info' },
+  planned: { label: 'In plan', tone: 'info' },
   done: { label: 'Done', tone: 'ok' },
   canceled: { label: 'Canceled', tone: 'muted' },
   missing: { label: 'Deleted', tone: 'muted' },
@@ -31,6 +34,7 @@ export const MILESTONE_STATE: Readonly<Record<MilestoneState, { readonly label: 
   checking: { label: 'Claude is checking', tone: 'claude' },
   gate: { label: 'Ready to pass', tone: 'accent' },
   failed: { label: 'Check failed', tone: 'error' },
+  merging: { label: 'Merging into the plan', tone: 'claude' },
   passed: { label: 'Passed', tone: 'ok' },
 };
 
@@ -54,23 +58,40 @@ export function milestoneLabel(view: Pick<PlanView, 'milestones' | 'open'>, m: M
 export function planStatus(view: Pick<PlanView, 'plan' | 'next'>): { readonly label: string; readonly tone: Tone } {
   const { plan, next } = view;
   if (!plan.body) return { label: 'Draft', tone: 'muted' };
-  if (plan.status === 'done' && !plan.draft) return { label: 'Done', tone: 'ok' };
+  if (plan.status === 'done' && !plan.draft) return next.kind === 'ship' ? { label: plan.pr?.state === 'CLOSED' ? 'PR closed' : plan.pr ? 'PR open' : 'Ready to ship', tone: plan.pr?.state === 'CLOSED' ? 'warn' : 'accent' } : { label: 'Done', tone: 'ok' };
   if (plan.draft) return { label: 'Changes proposed', tone: 'accent' };
   if (plan.paused) return { label: 'Paused', tone: 'muted' };
   switch (next.kind) {
     case 'pass':
     case 'start':
     case 'answer':
+    case 'stalled':
       return { label: 'Waiting for you', tone: 'accent' };
     case 'failed':
       return { label: 'Needs a fix', tone: 'error' };
     case 'checking':
       return { label: 'Checking', tone: 'claude' };
+    case 'merging':
+      return next.milestone.merging?.conflict?.stuck ? { label: 'Waiting for you', tone: 'accent' } : { label: 'Merging', tone: 'claude' };
     case 'working':
       return { label: 'Running', tone: 'claude' };
     default:
       return { label: 'Waiting', tone: 'muted' };
   }
+}
+
+/**
+ * A task's state in words for its card: a started task says how it's doing right now (“Working”
+ * with its step and how long, “Running a long command · 12m”, “Stopped without finishing”), never
+ * “working” when no turn runs.
+ */
+export function taskWords(t: TaskView, now: number): { readonly label: string; readonly tone: Tone; readonly sub?: string } {
+  const base = TASK_STATE[t.state];
+  if (!t.pulse || t.combining) return { ...base, ...(t.state === 'running' && t.step ? { sub: t.step } : t.state === 'blocked' || t.state === 'later' ? (t.why ? { sub: t.why } : {}) : {}) };
+  const w = pulseWords(t.pulse, now);
+  // Woken: the card says so while it works again.
+  const sub = t.watch && !t.watch.needsYou && t.pulse.kind !== 'stopped' && t.pulse.kind !== 'waiting' ? `${w.sub ?? ''}${w.sub ? ' · ' : ''}${t.watch.line}` : w.sub;
+  return { label: w.label, tone: w.tone, ...(sub ? { sub } : {}) };
 }
 
 /** The one thing to do next, in words (the page's main button and its line). */
@@ -92,10 +113,18 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
       return { title: 'Needs a fix', detail: `“${next.milestone.milestone.title}” didn’t pass Claude’s check` };
     case 'answer':
       return { title: 'Claude asked something', detail: next.tasks.map((t) => t.issue?.key ?? t.task.title).join(', ') };
+    case 'stalled':
+      return { title: next.tasks.length === 1 ? `Resume ${next.tasks[0]!.issue?.key ?? `“${next.tasks[0]!.task.title}”`}` : `Resume ${next.tasks.length} Tasks`, detail: next.tasks.map((t) => t.watch?.line ?? `${t.issue?.key ?? t.task.title} stopped again`).join(' · ') };
     case 'working':
-      return { title: next.tasks.length ? `${next.tasks.length} ${next.tasks.length === 1 ? 'task' : 'tasks'} in progress` : 'Starting…' };
+      return { title: next.tasks.length ? `${next.tasks.length} ${next.tasks.length === 1 ? 'task' : 'tasks'} in progress` : 'Starting…', ...(next.note ? { detail: next.note } : {}) };
     case 'waiting':
       return { title: 'Waiting', detail: next.why };
+    case 'merging':
+      return { title: next.text, detail: `“${next.milestone.milestone.title}” passes once its work is merged into the plan’s branch` };
+    case 'ship':
+      if (next.pr?.state === 'OPEN') return { title: `Pull request #${next.pr.number} is open`, detail: `${next.branch} → main: its tasks are Done once it merges` };
+      if (next.pr?.state === 'CLOSED') return { title: `Pull request #${next.pr.number} was closed`, detail: 'Closed without merging: the plan’s tasks stay In Plan' };
+      return { title: 'Open PR', detail: `Every milestone passed: ${next.branch} has all the plan’s work` };
     case 'done':
       return { title: 'Done', detail: 'Every milestone passed' };
   }

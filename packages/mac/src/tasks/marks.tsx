@@ -31,6 +31,7 @@ export function StatusIcon({ status, size = 14, labelled }: { status: IssueStatu
           <circle cx="7" cy="7" r={r} className={t.statusRing} strokeDasharray={status === 'backlog' ? '1.6 1.7' : undefined} />
           {status === 'in_progress' ? <path d={pie(0.5)} className={t.statusPie} /> : null}
           {status === 'in_review' ? <path d={pie(0.75)} className={t.statusPie} /> : null}
+          {status === 'in_plan' ? <path d={pie(0.9)} className={t.statusPie} /> : null}
         </>
       )}
     </svg>

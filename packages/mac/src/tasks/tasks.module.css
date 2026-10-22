@@ -40,6 +40,9 @@
 .status_in_review {
   color: var(--info);
 }
+.status_in_plan {
+  color: var(--ok);
+}
 .status_done {
   color: var(--ok);
 }
@@ -491,6 +494,19 @@
 }
 .working {
   display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+/* What Claude is doing now: "Running npx playwright test · 137/215 · 12m". */
+.nowStep {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-2);
 }
 /* Claude is writing a new task's title and goal. */
 .writing {
@@ -1719,4 +1735,19 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The In Plan column: the plans' pull requests its tasks wait for. */
+.columnPr {
+  font-size: 12px;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.columnPr:hover {
+  color: var(--text-1);
+  text-decoration: underline;
 }

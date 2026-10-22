@@ -132,3 +132,21 @@ export async function findPr(dir: string, branch: string): Promise<PullRequest |
     throw err;
   }
 }
+
+/** Push `head` and open a pull request for it into `base` (a plan's branch → main) → the pull request. */
+export async function createPr(dir: string, pr: { readonly base: string; readonly head: string; readonly title: string; readonly body: string }): Promise<PullRequest> {
+  if (!(await hasGh())) throw new Error('Opening a pull request needs the GitHub CLI (gh), signed in');
+  await run('git', ['push', '-u', 'origin', `${pr.head}:${pr.head}`], dir, 120_000);
+  const existing = await findPr(dir, pr.head).catch(() => undefined);
+  if (existing?.state === 'OPEN') return existing;
+  await run('gh', ['pr', 'create', '--base', pr.base, '--head', pr.head, '--title', pr.title, '--body', pr.body], dir, 60_000);
+  const made = await findPr(dir, pr.head);
+  if (!made) throw new Error('GitHub didn’t show the new pull request');
+  return made;
+}
+
+/** Merge a pull request on GitHub (a merge commit, keeping each milestone's merges). */
+export async function mergePrOnGitHub(dir: string, number: number): Promise<void> {
+  if (!(await hasGh())) throw new Error('Merging on GitHub needs the GitHub CLI (gh), signed in');
+  await run('gh', ['pr', 'merge', String(number), '--merge'], dir, 60_000);
+}

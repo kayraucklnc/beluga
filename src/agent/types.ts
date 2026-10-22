@@ -19,7 +19,7 @@ export interface AgentRunInput {
   /** Asked by a guest invited into one project: the room tools (other people, their files, the room chat) are off. */
   readonly guest?: boolean;
   readonly signal: AbortSignal;
-  readonly onEvent: (kind: 'text' | 'tool' | 'sub' | 'context' | 'compact' | 'usage', text: string) => void;
+  readonly onEvent: (kind: 'text' | 'tool' | 'progress' | 'sub' | 'context' | 'compact' | 'usage', text: string) => void;
   /**
    * Each step in detail as it happens (the tool's input and output, thinking), for the screens on
    * this computer only: kept beside the chat, never sent anywhere (see core/step-book.ts).
@@ -101,7 +101,8 @@ export interface PlanTools {
   update(ops: readonly import('../core/plans/edit.js').PlanOp[], reason?: string): string;
   gate(milestone: string, verdict: 'pass' | 'fail', notes: string): string;
   start(task: string): Promise<string>;
-  message(task: string, text: string): string;
+  /** `queue` (default): read when its current turn ends. `steer`: now, interrupting a long command or a dead run. */
+  message(task: string, text: string, mode?: 'queue' | 'steer'): string;
 }
 
 /**
@@ -178,6 +179,8 @@ export interface AgentPlace {
   readonly askOnly?: { readonly project: string };
   /** With askOnly, for one run: Claude brings the default branch up to date (git syncing only; see sync-main.ts). */
   readonly syncMain?: { readonly branch: string; readonly upstream: string };
+  /** With askOnly: a hidden worktree Claude may edit to fix a conflict there (see policy.ts). */
+  readonly fixup?: string;
 }
 
 export interface SubAgentEvent {

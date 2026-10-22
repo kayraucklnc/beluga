@@ -58,8 +58,14 @@ export const PLANS_API = {
   // Ask the plan's Claude to check a milestone again.
   'plans.recheck': { args: z.tuple([id, ref]) },
   'plans.sendBack': { args: z.tuple([id, ref, z.string().min(1).max(4000)]) },
+  // The plan's one pull request (plan/<slug> → main), merging it on GitHub, or merging the branch into main here → the plan.
+  'plans.openPr': { args: z.tuple([id]) },
+  'plans.mergePr': { args: z.tuple([id]) },
+  'plans.mergeLocal': { args: z.tuple([id]) },
   // Start a ready task now → what happened.
   'plans.startTask': { args: z.tuple([id, ref]) },
+  // Wake a started task whose Claude stopped without finishing (it waits for you) → what happened.
+  'plans.resumeTask': { args: z.tuple([id, ref]) },
   'plans.remove': { args: z.tuple([id]) },
   // Your planning style (how you like plans cut), added to Claude's planning instructions.
   'plans.setStyle': { args: z.tuple([z.string().max(8000)]) },

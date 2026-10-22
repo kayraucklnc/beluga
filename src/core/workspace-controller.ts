@@ -109,6 +109,8 @@ export class WorkspaceController {
   readonly mainSync: MainSync;
   /** Conversations whose next run may sync git in the main folder ("Let Claude handle it"), by workspace id. */
   private readonly syncRuns = new Map<string, { branch: string; upstream: string }>();
+  /** Main-folder conversations that may edit one hidden worktree (a plan's Claude fixing a conflict there), by workspace id. */
+  private readonly fixups = new Map<string, string>();
 
   /** Hear about worktrees opening, merging, going and coming back. */
   onWorktree(listener: (event: WorktreeEvent) => void): () => void {
@@ -281,7 +283,16 @@ export class WorkspaceController {
       onSession: (sessionId) => this.deps.manager.rememberSession(ws.id, sessionId),
       ...(ws.model ? { model: ws.model } : {}),
       ...(syncMain ? { syncMain } : {}),
+      ...(ws.askOnly && this.fixups.has(ws.id) ? { fixup: this.fixups.get(ws.id)! } : {}),
     };
+  }
+
+  /** Let a main-folder conversation's runs edit `dir` (a hidden worktree with a conflict to fix), until it's lifted (undefined). */
+  allowFixup(channel: string, dir: string | undefined): void {
+    const id = workspaceIdOf(channel);
+    if (!id) return;
+    if (dir) this.fixups.set(id, dir);
+    else this.fixups.delete(id);
   }
 
   // ------------------------------------------------------------- actions
@@ -421,8 +432,9 @@ export class WorkspaceController {
   /**
    * Archive smartly (see workspaces/archive.ts): nothing of yours is lost, so uncommitted work
    * no longer stops it (`_force` is from when it did). How far along shows while it runs.
+   * `quiet`: a plan clearing away merged work (no toast).
    */
-  async archive(id: string, _force = false): Promise<boolean> {
+  async archive(id: string, _force = false, opts: { readonly quiet?: boolean } = {}): Promise<boolean> {
     const agents = this.agentWorktreesOf(id);
     const phase = (p?: ArchivePhase): void => void this.deps.store.dispatch({ type: 'archiving', id, ...(p ? { phase: p } : {}) });
     let manifest: ArchiveManifest | undefined;
@@ -438,7 +450,7 @@ export class WorkspaceController {
     if (done) {
       this.deps.intend({ type: 'close_tab', id });
       const also = await this.removeAgentWorktrees(agents);
-      this.deps.toast([archivedText(manifest), also].filter(Boolean).join(' '), 'success');
+      if (!opts.quiet) this.deps.toast([archivedText(manifest), also].filter(Boolean).join(' '), 'success');
       this.emit({ kind: 'archived', id });
     }
     return Boolean(done);
