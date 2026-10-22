@@ -270,6 +270,7 @@ describe('running a plan', () => {
     expect(check?.echo).toBe(false);
     expect(check?.prompt).toContain('401 without a session');
     expect(planView(t.plans.need(t.plan.id), t.store.getState().board).current?.state).toBe('checking');
+    expect(planView(t.plans.need(t.plan.id), t.store.getState().board).next.kind).toBe('checking');
     t.work.forRun('ws:main', 'p-me')!.tools!.gate('safe', 'pass', '1 ✓ 2 ✓');
     await tick(5);
     const v = planView(t.plans.need(t.plan.id), t.store.getState().board);
@@ -280,6 +281,30 @@ describe('running a plan', () => {
     expect(issue(t, 'Refund endpoint').status).toBe('in_progress');
     // "Live keys" is yours: it waits for you.
     expect(issue(t, 'Live keys').status).toBe('todo');
+  });
+
+  it.each(['step', 'gated', 'autopilot'] as const)('%s: while the head Claude checks, the plan waits on Claude; it’s yours to pass only once the check is back (KLD-22)', async (autonomy) => {
+    const t = await running(autonomy);
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(issue(t, title).id, { status: 'in_review' }, t.claude);
+    await tick(5);
+    await tick(5);
+    const view = () => planView(t.plans.need(t.plan.id), t.store.getState().board);
+    expect(view().next).toMatchObject({ kind: 'checking', milestone: { milestone: { id: 'safe' } } });
+    t.work.forRun('ws:main', 'p-me')!.tools!.gate('safe', 'pass', '1 ✓ 2 ✓');
+    await tick(5);
+    if (autonomy === 'autopilot') expect(t.plans.need(t.plan.id).runs.safe?.passedAt).toBeDefined();
+    else expect(view().next).toMatchObject({ kind: 'pass', milestone: { milestone: { id: 'safe' } } });
+  });
+
+  it('the pilot writes what happened: started, finished, checked, passed, the mode changed (KLD-22)', async () => {
+    const t = await running('gated');
+    t.board.update(issue(t, 'Idempotent webhooks').id, { status: 'in_review' }, t.claude);
+    await tick(5);
+    t.work.setAutonomy(t.plan.id, 'autopilot');
+    const kinds = t.plans.need(t.plan.id).activity.map((e) => `${e.kind}: ${e.text}`);
+    expect(kinds.filter((k) => k.startsWith('started:')).length).toBeGreaterThanOrEqual(2);
+    expect(kinds).toContainEqual(expect.stringMatching(/^finished: finished [A-Z]+-\d+ “Idempotent webhooks”$/));
+    expect(kinds.at(-1)).toBe('autonomy: switched the plan to Autopilot');
   });
 
   it('autopilot: a passing check moves on by itself; a failing one stops there', async () => {
@@ -521,7 +546,8 @@ describe('milestones run side by side unless one builds on another', () => {
     expect(checks).toHaveLength(1);
     expect(checks[0]!.prompt).toContain('Parallel milestones');
     expect(t.view().milestones.map((m) => m.state)).toEqual(['running', 'checking', 'later']);
-    expect(t.view().next.kind).toBe('pass');
+    // While the head Claude checks, the plan waits on Claude, not on you.
+    expect(t.view().next).toMatchObject({ kind: 'checking', milestone: { milestone: { id: 'pilot' } } });
     t.work.pass(t.plan.id, 'pilot');
     await tick(5);
     expect(t.view().open.map((m) => m.milestone.id)).toEqual(['channels', 'header']);

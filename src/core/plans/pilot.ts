@@ -4,7 +4,7 @@ import type { Action, Store } from '../store.js';
 import { openMilestone } from './apply.js';
 import { type Plan, openMilestones } from './model.js';
 import type { Plans } from './plans.js';
-import { type MilestoneView, type PlanView, type TaskView, liveFrom, planView, startable } from './progress.js';
+import { FINISHED, type MilestoneView, type PlanView, type TaskState, type TaskView, liveFrom, planView, startable } from './progress.js';
 import { checkPrompt, recapPrompt } from './prompt.js';
 
 /**
@@ -41,6 +41,8 @@ export class PlanPilot {
   private readonly recapped = new Set<string>();
   /** Milestones whose tasks were taken out of the Backlog (`plan:milestone`), once each. */
   private readonly opened = new Set<string>();
+  /** Each plan's tasks as last seen (by plan task id): a task that comes back finished is written down once. */
+  private readonly seen = new Map<string, ReadonlyMap<string, TaskState>>();
   private readonly off: () => void;
   private stopped = false;
 
@@ -135,6 +137,7 @@ export class PlanPilot {
 
   private step(plan: Plan): void {
     const view = this.view(plan);
+    this.noteFinished(plan, view);
     if (!view.open.length) return;
     // Every open milestone runs side by side; the limit on tasks at once is the whole plan's.
     for (const m of view.open) this.open(plan, m.milestone.id);
@@ -162,6 +165,20 @@ export class PlanPilot {
     }
     const check = m.run.check;
     if (m.autonomy === 'autopilot' && check?.verdict === 'pass' && check.at >= m.run.checkAsked) this.pass(plan.id, m.milestone.id, check.by);
+  }
+
+  /** Tasks that came back finished since the last look go in the plan's activity (what was there at the first look doesn't). */
+  private noteFinished(plan: Plan, view: PlanView): void {
+    const tasks = view.milestones.flatMap((m) => m.tasks);
+    const before = this.seen.get(plan.id);
+    this.seen.set(plan.id, new Map(tasks.map((t) => [t.task.id, t.state])));
+    if (!before) return;
+    for (const t of tasks) {
+      const was = before.get(t.task.id);
+      if (!t.issue || (t.state !== 'review' && t.state !== 'done') || !was || FINISHED.has(was)) continue;
+      const by = [...t.issue.activity].reverse().find((a) => a.kind === 'status')?.by ?? { kind: 'klaud' };
+      this.deps.plans.note(plan.id, 'finished', `finished ${t.issue.key} “${t.task.title}”`, by);
+    }
   }
 
   /** Board tasks of this plan being started right now. */

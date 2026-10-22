@@ -8,6 +8,7 @@ import type { Store } from '../store.js';
 import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from './edit.js';
 import {
   AUTONOMIES,
+  AUTONOMY_INFO,
   type Autonomy,
   DEFAULT_AUTONOMY,
   DEFAULT_PARALLEL,
@@ -218,12 +219,12 @@ export class Plans {
     const plan = this.need(id);
     if (milestone) {
       const patchBody = (b: PlanBody | undefined): PlanBody | undefined => (b ? { ...b, milestones: b.milestones.map((m) => (m.id === milestone ? { ...m, autonomy } : m)) } : b);
-      return this.change(plan, { body: patchBody(plan.body), draft: patchBody(plan.draft) }, [event(by, 'autonomy', `set a milestone to ${autonomy}`, this.now())]);
+      return this.change(plan, { body: patchBody(plan.body), draft: patchBody(plan.draft) }, [event(by, 'autonomy', `set ${milestoneName(plan, milestone)} to ${AUTONOMY_INFO[autonomy].label}`, this.now())]);
     }
-    if (autonomy === plan.autonomy) return plan;
+    if (autonomy === plan.autonomy && !(plan.body ?? plan.draft)?.milestones.some((m) => m.autonomy)) return plan;
     // A plan-wide choice wins over every milestone's own.
     const clear = (b: PlanBody | undefined): PlanBody | undefined => (b ? { ...b, milestones: b.milestones.map(({ autonomy: _a, ...m }) => m) } : b);
-    return this.change(plan, { autonomy, body: clear(plan.body), draft: clear(plan.draft) }, [event(by, 'autonomy', `switched to ${autonomy === 'step' ? 'step by step' : autonomy}`, this.now())]);
+    return this.change(plan, { autonomy, body: clear(plan.body), draft: clear(plan.draft) }, [event(by, 'autonomy', `switched the plan to ${AUTONOMY_INFO[autonomy].label}`, this.now())]);
   }
 
   setPaused(id: string, paused: boolean, by: Actor, why?: string): Plan {
@@ -262,7 +263,7 @@ export class Plans {
     // Checked without being asked (the user asked in the conversation): it's this round's check.
     const asked = plan.runs[milestone]?.checkAsked ?? at;
     const notes = check.notes.trim().slice(0, 8000);
-    return this.change(plan, { runs: withRun(plan, milestone, { check: { ...check, notes, at }, checkAsked: asked }) }, [event(check.by, check.verdict === 'pass' ? 'gate' : 'failed', `${check.verdict === 'pass' ? 'checked' : 'didn’t pass'} ${milestoneName(plan, milestone)}${notes ? `: ${notes.split('\n')[0]!.slice(0, 160)}` : ''}`, at)]);
+    return this.change(plan, { runs: withRun(plan, milestone, { check: { ...check, notes, at }, checkAsked: asked }) }, [event(check.by, check.verdict === 'pass' ? 'checked' : 'failed', `${check.verdict === 'pass' ? 'checked' : 'didn’t pass'} ${milestoneName(plan, milestone)}${notes ? `: ${notes.split('\n')[0]!.slice(0, 160)}` : ''}`, at)]);
   }
 
   pass(id: string, milestone: string, by: Actor): Plan {

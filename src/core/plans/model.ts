@@ -90,7 +90,12 @@ export interface MilestoneRun {
   readonly checkAsked?: number;
 }
 
-export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'gate' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
+/**
+ * What a plan's activity records. `started`/`finished`: a task began / came back for review;
+ * `gate`: Claude was asked to check a milestone, `checked`: its check passed (`failed`: it didn't);
+ * `merged`: a milestone's work went into the plan's branch; `autonomy`: the run mode changed.
+ */
+export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'finished' | 'gate' | 'checked' | 'merged' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
 
 export interface PlanEvent {
   readonly id: string;
