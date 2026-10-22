@@ -17,7 +17,7 @@ import { isImportedItem } from '../agent/transcript.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
 import { STEERED_IN } from '../shared/claude-notices.js';
 import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
-import { e2eLockedIn, mayStartTests } from '../workspaces/test-procs.js';
+import { e2eLockedIn, mayLeaveProcesses } from '../workspaces/test-procs.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -948,7 +948,7 @@ export class AgentHost {
           this.emitAgent(body.requestId, from, kind, text, body.channel);
         },
         onStep: (record) => {
-          if (worktree && record.tool === 'Bash' && mayStartTests(record.input?.command, record.input?.run_in_background)) this.testRuns.add(worktree);
+          if (worktree && record.tool === 'Bash' && mayLeaveProcesses(record.input?.command, record.input?.run_in_background)) this.testRuns.add(worktree);
           this.steps.put(runKey(body.requestId), record);
         },
         // Another Claude asked: give it the answer now rather than after every background agent.

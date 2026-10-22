@@ -1,5 +1,5 @@
 import type { Intent } from '../core/intents.js';
-import type { AppState, Attention, DomainState, ScreenState } from '../core/store.js';
+import type { AppState, Attention, DomainState, ScreenState, WorkspaceTab } from '../core/store.js';
 import { type ScreenAction, attentionOf, compose, initialScreen, intentToScreen, reconcileScreen, reduceScreen } from './screen.js';
 
 /** Where a client's copy of the shared state comes from (the core's own store, or a replica fed by the daemon). */
@@ -7,6 +7,10 @@ export interface DomainSource {
   getState(): DomainState;
   subscribe(listener: () => void): () => void;
 }
+
+/** How long an open made ahead waits for the core's answer before that answer counts as new. */
+const AHEAD_MS = 10_000;
+const aheadKey = (id: string, tab: WorkspaceTab = 'chat'): string => `${id}\n${tab}`;
 
 const sameAttention = (a: Attention, b: Attention): boolean =>
   a.files === b.files && a.front === b.front && a.shown.join('\n') === b.shown.join('\n') && a.visible.join('\n') === b.visible.join('\n');
@@ -23,6 +27,8 @@ export class ClientStore {
   private readonly listeners = new Set<() => void>();
   private readonly unsubscribe: () => void;
   private attention: Attention;
+  /** Workspaces this screen opened itself, ahead of the core's answer (see openAhead): when each was. */
+  private readonly ahead = new Map<string, number>();
 
   constructor(
     private readonly source: DomainSource,
@@ -57,8 +63,23 @@ export class ClientStore {
 
   /** Show what the core asked for. */
   applyIntent = (intent: Intent): void => {
+    // The core's answer to an open this screen already showed: not again (a later click may have moved on since).
+    if (intent.type === 'navigate' && intent.view.kind === 'workspace' && this.ahead.delete(aheadKey(intent.view.id, intent.view.tab))) return;
     const action = intentToScreen(intent, this.screen);
     if (action) this.dispatch(action);
+  };
+
+  /**
+   * Show a workspace now, ahead of the core (asked to open it too, it answers with the same
+   * navigation once it has caught up with everything else it's sending, which can be a while
+   * when many Claudes stream). Its answer is then dropped, not shown again.
+   */
+  openAhead = (id: string, tab: WorkspaceTab): void => {
+    const now = Date.now();
+    // An answer that never came (the workspace went meanwhile) doesn't swallow a later one.
+    for (const [key, at] of this.ahead) if (now - at > AHEAD_MS) this.ahead.delete(key);
+    this.ahead.set(aheadKey(id, tab), now);
+    this.dispatch({ type: 'view', view: { kind: 'workspace', id, tab } });
   };
 
   close(): void {

@@ -21,12 +21,32 @@ describe('which processes are a worktree’s test runs', () => {
       row(100, 1, `node ${W}/node_modules/.bin/vitest run${tag} PATH=/bin`),
       row(101, 100, 'node worker.js'), // its worker
       row(200, 1, `node ${W}/node_modules/.bin/vitest run`), // yours, in a terminal
-      row(300, 1, `node ${W}/node_modules/.bin/vite --port 5173${tag}`), // a dev server Claude started
+      row(300, 1, `node ${W}/node_modules/.bin/vite --port 5173${tag}`), // a dev server Claude started and left
       row(400, 1, `node ${W}/node_modules/.bin/vite --port 14321${tag} KLAUD_E2E_RUN=1-a`), // an e2e's vite
       row(500, 1, `node /w/other/node_modules/.bin/vitest KLAUD_WORKTREE=/w/other`), // another worktree
       row(600, 1, `node /x/vitest KLAUD_WORKTREE=${W}-2`), // a worktree whose name starts the same
     ];
-    expect(testProcessesIn(rows, W).sort()).toEqual([100, 101, 400]);
+    expect(testProcessesIn(rows, W).sort()).toEqual([100, 101, 300, 400]);
+  });
+
+  it("stops what Claude's Bash left running, whatever it's called; never Claude Code or what it runs itself", () => {
+    const tag = ` KLAUD_WORKTREE=${W}`;
+    const shell = (cmd: string) => `/bin/zsh -c source /Users/me/.claude/shell-snapshots/snapshot-zsh-1-abc.sh 2>/dev/null || true && eval '${cmd}' < /dev/null${tag}`;
+    const rows = [
+      row(10, 9, `/Applications/Klaud.app/Contents/Resources/daemon/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude --output-format stream-json${tag}`),
+      row(11, 10, `node /Users/me/mcp/server.js${tag}`), // an MCP server Claude Code runs
+      row(20, 10, shell('npm run dev')), // run_in_background: its shell is still there
+      row(21, 20, `npm run dev${tag}`),
+      row(22, 21, `node ${W}/node_modules/.bin/next dev${tag}`),
+      row(12, 9, `node /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js --output-format stream-json${tag}`),
+      row(30, 1, `node server.js${tag} CLAUDE_CODE_EXECPATH=/x/claude-agent-sdk-darwin-arm64/claude`), // `node server.js &`: orphaned once the shell exited
+      row(31, 30, 'node worker.js'),
+      row(41, 1, `node /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js${tag}`),
+      row(40, 1, `/Applications/Klaud.app/Contents/Resources/daemon/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude --output-format stream-json${tag}`), // a Claude Code a crash orphaned
+      row(50, 1, `node server.js KLAUD_WORKTREE=/w/other`), // another worktree's
+      row(60, 1, 'npm run dev'), // yours, in a terminal
+    ];
+    expect(testProcessesIn(rows, W).sort((a, b) => a - b)).toEqual([20, 21, 22, 30, 31]);
   });
 
   it('stops every test runner installed there when the worktree goes away', () => {
@@ -86,5 +106,35 @@ describe.runIf(process.platform === 'darwin')('stopping them for real', () => {
     await gone;
     expect(yours.exitCode).toBeNull();
     delete process.env.KLAUD_E2E_DIR;
+  });
+
+  it('stops a server a Bash command left in the background (`node server.js &`), whatever its name', async () => {
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-procs-')));
+    const server = path.join(dir, 'server.js');
+    writeFileSync(server, 'setInterval(() => {}, 1000);\n');
+    const pidFile = path.join(dir, 'pid');
+    // The shell exits at once; the server is orphaned (its parent becomes launchd), as after Claude's `cmd &`.
+    const sh = spawn('/bin/sh', ['-c', `"${process.execPath}" "${server}" > /dev/null 2>&1 & echo $! > "${pidFile}"`], { env: { ...process.env, KLAUD_WORKTREE: dir }, stdio: 'ignore' });
+    await new Promise((r) => sh.on('exit', r));
+    const pid = Number((await import('node:fs')).readFileSync(pidFile, 'utf8'));
+    const alive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    try {
+      await new Promise((r) => setTimeout(r, 300));
+      expect(alive()).toBe(true);
+      process.env.KLAUD_E2E_DIR = dir;
+      expect(await stopTestProcesses(dir, { graceMs: 1000 })).toBeGreaterThanOrEqual(1);
+      for (let i = 0; i < 20 && alive(); i++) await new Promise((r) => setTimeout(r, 50));
+      expect(alive()).toBe(false);
+    } finally {
+      if (alive()) process.kill(pid, 'SIGKILL');
+      delete process.env.KLAUD_E2E_DIR;
+    }
   });
 });

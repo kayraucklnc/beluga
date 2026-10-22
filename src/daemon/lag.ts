@@ -7,6 +7,8 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
  */
 
 export const LAG_EVERY_MS = 30_000;
+/** How often the loop is sampled. Each sample is the time between two ticks, so this much is subtracted from it. */
+const RESOLUTION_MS = 20;
 
 export interface LagStats {
   readonly p50: number;
@@ -19,9 +21,10 @@ export const lagLine = (s: LagStats): string => `event loop delay: p50 ${s.p50.t
 
 /** Measure the event loop and log it every `everyMs`; returns a stop. */
 export function watchEventLoop(log: (line: string) => void, everyMs = LAG_EVERY_MS): () => void {
-  const h = monitorEventLoopDelay({ resolution: 20 });
+  const h = monitorEventLoopDelay({ resolution: RESOLUTION_MS });
   h.enable();
-  const ms = (ns: number): number => ns / 1e6;
+  // How late a tick ran, not the tick's own interval (an idle loop reads 0, not 20 ms).
+  const ms = (ns: number): number => Math.max(0, ns / 1e6 - RESOLUTION_MS);
   const timer = setInterval(() => {
     if (h.count) log(lagLine({ p50: ms(h.percentile(50)), p95: ms(h.percentile(95)), max: ms(h.max) }));
     h.reset();
