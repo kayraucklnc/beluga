@@ -599,10 +599,12 @@
   color: var(--text-2);
   box-shadow: inset 0 0 0 1px var(--hairline-strong);
 }
+/* Progress sits in the head, beside its count: nothing is ruled across the lane. */
 .msProgress {
-  height: 2px;
-  margin: 0 16px;
-  border-radius: 1px;
+  flex: none;
+  width: 48px;
+  height: 3px;
+  border-radius: 2px;
   background: var(--hairline);
   overflow: hidden;
 }
@@ -674,6 +676,12 @@
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--claude) 55%, transparent),
     0 10px 28px -14px color-mix(in srgb, var(--claude) 70%, transparent);
+}
+/* In another milestone, linked to the task you picked (its line would cross the lanes). */
+.taskLinked {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.05);
 }
 /* Claude at work: a slow copper light that goes round the card's edge. */
 .glow {
@@ -903,9 +911,6 @@
 .line_live {
   stroke: color-mix(in srgb, var(--claude) 60%, transparent);
 }
-.lineDot {
-  fill: var(--claude);
-}
 
 /* ---------- Details (what you picked) ---------- */
 
@@ -916,8 +921,9 @@
   right: 12px;
   bottom: 12px;
   width: min(330px, calc(100% - 64px));
-  overflow-y: auto;
-  padding: 16px 18px 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-radius: 14px;
   background: var(--bg-raised);
   box-shadow: var(--shadow-pop);
@@ -929,10 +935,48 @@
     transform: translateX(12px);
   }
 }
+/* What it is, its state and Close: always in reach; a hairline under it once the body scrolls. */
+.detailsHead {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px 10px 12px 18px;
+  border-bottom: 1px solid transparent;
+  transition: border-color 150ms;
+}
+.detailsHead[data-scrolled='true'] {
+  border-bottom-color: var(--hairline);
+}
+.detailsHeadText {
+  flex: 1;
+  min-width: 0;
+}
 .detailsClose {
-  position: absolute !important;
-  top: 10px;
-  right: 10px;
+  flex: none;
+  margin-top: -6px;
+}
+.detailsBody {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 18px 20px;
+  overflow-wrap: anywhere;
+}
+/* Nothing runs off the right edge: long words, paths and code wrap. */
+.detailsBody :global(pre),
+.detailsBody :global(pre code) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.detailsBody :global(pre),
+.detailsBody :global(table),
+.detailsBody :global(img) {
+  max-width: 100%;
+}
+.detailsBody > :first-child {
+  margin-top: 2px;
 }
 .detailsKind {
   display: flex;
@@ -943,7 +987,8 @@
   color: var(--text-3);
 }
 .detailsTitle {
-  margin: 6px 26px 8px 0;
+  margin: 6px 0 8px;
+  overflow-wrap: anywhere;
   font-size: 16px;
   font-weight: 650;
   line-height: 1.3;
@@ -1016,6 +1061,9 @@
   gap: 5px;
 }
 .touches code {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: 1px 6px;
   border-radius: 5px;
   font-size: 11px;

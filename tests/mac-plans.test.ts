@@ -32,6 +32,12 @@ describe('the plan graph’s shape', () => {
     expect(ids).toContain(`blocks:${taskNodeId('b')}>${taskNodeId('d')}`);
   });
 
+  it('a gate leads only to the milestones that wait on it (side by side ones get no line)', () => {
+    const three = normalizeBody({ ...body, milestones: [...body.milestones, { id: 'three', title: 'Three', tasks: [{ id: 'f', title: 'F' }] }, { id: 'four', title: 'Four', dependsOn: ['one'], tasks: [{ id: 'g', title: 'G' }] }] });
+    const next = graphShape(plan({ draft: three })).edges.filter((e) => e.kind === 'next').map((e) => `${e.from}>${e.to}`);
+    expect(next).toEqual([`${gateId('one')}>${groupId('two')}`, `${gateId('one')}>${groupId('four')}`]);
+  });
+
   it('its key changes with the shape only (status moving on never re-lays it out)', () => {
     const a = graphShape(plan());
     expect(graphShape(plan({ draft: { ...body, title: 'Renamed' } })).key).toBe(a.key);

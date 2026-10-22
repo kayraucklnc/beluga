@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { Plan } from '@klaud/core/plans/model.js';
 import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progress.js';
 import { Markdown } from '../chat/Markdown.js';
@@ -8,24 +9,45 @@ import { TaskStateIcon, TonePill } from './marks.js';
 import { usePlanActions } from './use-plans.js';
 import p from './plans.module.css';
 
-/** What you picked on the plan: a task (its goal, criteria, what it waits on, where it runs) or a milestone's gate. */
+/**
+ * What you picked on the plan: a task (its goal, criteria, what it waits on, where it runs) or a
+ * milestone's gate. Its head (what it is, its state, Close) stays put while the rest scrolls under it.
+ */
 export function PlanDetails({ view, picked, canStart, onClose }: { view: PlanView; picked: string; canStart: boolean; onClose: () => void }) {
   const gate = picked.startsWith('gate:') ? view.milestones.find((m) => `gate:${m.milestone.id}` === picked) : undefined;
   const task = gate ? undefined : view.milestones.flatMap((m) => m.tasks).find((t) => t.task.id === picked);
+  const [scrolled, setScrolled] = useState(false);
+  const shown = Boolean(gate || task);
+  // Another pick starts at its top (the body is keyed by it).
+  useEffect(() => setScrolled(false), [picked]);
+  // Esc closes it, unless you're typing or a sheet is open (those take Esc first).
+  useEffect(() => {
+    if (!shown) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const el = e.target instanceof HTMLElement ? e.target : undefined;
+      if (el?.closest('input, textarea, select, [contenteditable="true"]') || document.querySelector('[role="dialog"], [role="menu"]')) return;
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [shown, onClose]);
   if (!gate && !task) return null;
   return (
     <aside className={p.details} aria-label="Details">
-      <IconButton icon="x" label="Close" className={p.detailsClose} onClick={onClose} />
-      {gate ? <GateDetails plan={view.plan} m={gate} /> : <TaskDetails view={view} t={task!} canStart={canStart} />}
+      <header className={p.detailsHead} data-scrolled={scrolled ? 'true' : 'false'}>
+        <div className={p.detailsHeadText}>{gate ? <GateHead m={gate} /> : <TaskHead t={task!} />}</div>
+        <IconButton icon="x" label="Close" className={p.detailsClose} onClick={onClose} />
+      </header>
+      <div key={picked} className={p.detailsBody} onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}>
+        {gate ? <GateDetails plan={view.plan} m={gate} /> : <TaskDetails view={view} t={task!} canStart={canStart} />}
+      </div>
     </aside>
   );
 }
 
-function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canStart: boolean }) {
-  const { api, act, openTask, openWorktree } = usePlanActions();
-  const all = view.milestones.flatMap((m) => m.tasks);
+function TaskHead({ t }: { t: TaskView }) {
   const info = TASK_STATE[t.state];
-  const ticked = new Set((t.issue?.brief.acceptance ?? '').split('\n').flatMap((l) => (/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)?.[1] ? [/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)![1]!.trim()] : [])));
   return (
     <>
       <div className={p.detailsKind}>
@@ -40,6 +62,16 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
         </TonePill>
         {t.forYou ? <span className={p.muted}>For you</span> : null}
       </div>
+    </>
+  );
+}
+
+function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canStart: boolean }) {
+  const { api, act, openTask, openWorktree } = usePlanActions();
+  const all = view.milestones.flatMap((m) => m.tasks);
+  const ticked = new Set((t.issue?.brief.acceptance ?? '').split('\n').flatMap((l) => (/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)?.[1] ? [/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)![1]!.trim()] : [])));
+  return (
+    <>
       {t.step && t.state === 'running' ? <p className={p.detailsStep}>Now: {t.step}</p> : null}
       {t.why && (t.state === 'blocked' || t.state === 'later') ? <p className={p.muted}>{t.why}</p> : null}
       <div className={p.detailsActions}>
@@ -114,11 +146,8 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
   );
 }
 
-function GateDetails({ plan, m }: { plan: Plan; m: MilestoneView }) {
-  const { api, act } = usePlanActions();
+function GateHead({ m }: { m: MilestoneView }) {
   const info = MILESTONE_STATE[m.state];
-  const check = m.run.check;
-  const yours = plan.body && !plan.draft && (m.state === 'gate' || m.state === 'checking' || m.state === 'failed');
   return (
     <>
       <div className={p.detailsKind}>Milestone {m.index + 1}</div>
@@ -131,6 +160,16 @@ function GateDetails({ plan, m }: { plan: Plan; m: MilestoneView }) {
           {m.finished}/{m.total} tasks finished
         </span>
       </div>
+    </>
+  );
+}
+
+function GateDetails({ plan, m }: { plan: Plan; m: MilestoneView }) {
+  const { api, act } = usePlanActions();
+  const check = m.run.check;
+  const yours = plan.body && !plan.draft && (m.state === 'gate' || m.state === 'checking' || m.state === 'failed');
+  return (
+    <>
       {yours ? (
         <div className={p.detailsActions}>
           <Button size="small" variant="primary" icon="check" onClick={() => void act(() => api.pass(plan.id, m.milestone.id))}>

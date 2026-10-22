@@ -5,7 +5,7 @@ import { AUTONOMY_INFO } from '@klaud/core/plans/model.js';
 import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progress.js';
 import { IconButton, cx } from '../components/ui.js';
 import { Icon } from '../components/Icon.js';
-import { reducedMotion, useDocTheme } from '../components/markdown/use-doc-theme.js';
+import { useDocTheme } from '../components/markdown/use-doc-theme.js';
 import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
 import { layout } from '../components/graph/layout.js';
 import { useSharpZoom } from '../components/graph/sharp-zoom.js';
@@ -23,8 +23,13 @@ import p from './plans.module.css';
 const TASK = { width: 252, height: 92 };
 const GATE = { width: 150, height: 44 };
 const HEAD = 62;
-/** Room between milestones (the gate's line runs through it). */
+/** Room between milestones. */
 const LANE_GAP = 40;
+/** A milestone's line to one that waits on it runs down the right of the lanes, never across them. */
+const GUTTER = 22;
+const GUTTER_STEP = 10;
+/** A task's line to its gate is drawn only from the column next to it (not across empty columns). */
+const NEAR_GATE = 80;
 
 interface TaskData extends Record<string, unknown> {
   readonly view: TaskView;
@@ -33,6 +38,8 @@ interface TaskData extends Record<string, unknown> {
   readonly canStart: boolean;
   readonly onStart: (taskId: string) => void;
   readonly selected: boolean;
+  /** In another milestone, waiting on or waited on by the task you picked. */
+  readonly linked: boolean;
 }
 interface MilestoneData extends Record<string, unknown> {
   readonly view: MilestoneView;
@@ -49,7 +56,6 @@ interface LineData extends Record<string, unknown> {
   readonly kind: 'blocks' | 'finish' | 'next';
   readonly state: 'done' | 'live' | 'waiting';
   readonly route?: Route;
-  readonly motion: boolean;
 }
 type PlanEdge = Edge<LineData, 'line'>;
 
@@ -74,11 +80,12 @@ interface Laid {
   readonly key: string;
   readonly places: ReadonlyMap<string, Placed>;
   readonly routes: ReadonlyMap<string, Route>;
+  /** Width the milestone lines take right of the lanes. */
+  readonly gutter: number;
 }
 
 function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanvasProps) {
   const theme = useDocTheme();
-  const motion = !reducedMotion();
   const flow = useReactFlow<PlanNode, PlanEdge>();
   useSharpZoom();
   const shape = useMemo(() => graphShape(view.plan), [view.plan]);
@@ -132,7 +139,28 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
           for (const [id, r] of routesOf(out)) routes.set(id, { ...r, points: r.points.map((pt) => ({ x: pt.x + 24, y: pt.y + y })) });
           y += height + LANE_GAP;
         });
-        setLaid({ key: shape.key, places, routes });
+        // A milestone → each milestone that waits on it: head to head, down the gutter right of the
+        // lanes (a track per milestone), so no line crosses a lane, its head or its tasks.
+        const right = 24 + wide;
+        const gates = [...new Set(shape.edges.filter((e) => e.kind === 'next').map((e) => e.from))];
+        for (const e of shape.edges) {
+          if (e.kind !== 'next') continue;
+          const from = places.get(groupId(e.from.replace(/^gate:/, '')));
+          const to = places.get(e.to);
+          if (!from || !to) continue;
+          const x = right + GUTTER + gates.indexOf(e.from) * GUTTER_STEP;
+          const fy = from.y + HEAD / 2;
+          const ty = to.y + HEAD / 2;
+          routes.set(e.id, {
+            points: [
+              { x: right, y: fy },
+              { x, y: fy },
+              { x, y: ty },
+              { x: right, y: ty },
+            ],
+          });
+        }
+        setLaid({ key: shape.key, places, routes, gutter: gates.length ? GUTTER + gates.length * GUTTER_STEP : 0 });
         setFailed(false);
       })
       .catch(() => live && setFailed(true));
@@ -142,6 +170,13 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
   }, [shape.key]);
 
   const byTask = useMemo(() => new Map(view.milestones.flatMap((m) => m.tasks.map((t) => [t.task.id, t] as const))), [view]);
+  const lane = useMemo(() => new Map(shape.milestones.flatMap((m) => m.tasks.map((t) => [taskNodeId(t), m.id] as const))), [shape]);
+  // What the picked task waits on, or is waited on by, in other milestones: ringed, not wired across the lanes.
+  const linked = useMemo(() => {
+    if (!selected) return new Set<string>();
+    const me = taskNodeId(selected);
+    return new Set(shape.edges.filter((e) => e.kind === 'blocks' && (e.from === me || e.to === me) && lane.get(e.from) !== lane.get(e.to)).map((e) => (e.from === me ? e.to : e.from)));
+  }, [shape, lane, selected]);
   const nodes = useMemo<PlanNode[]>(() => {
     if (!laid) return [];
     const out: PlanNode[] = [];
@@ -163,14 +198,14 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
           width: TASK.width,
           height: TASK.height,
           draggable: false,
-          data: { view: t, ...(key ? { key } : {}), ...(mark ? { mark } : {}), canStart: startable.has(t.task.id), onStart, selected: selected === t.task.id },
+          data: { view: t, ...(key ? { key } : {}), ...(mark ? { mark } : {}), canStart: startable.has(t.task.id), onStart, selected: selected === t.task.id, linked: linked.has(taskNodeId(t.task.id)) },
         });
       }
       const gate = laid.places.get(gateId(m.milestone.id));
       if (gate) out.push({ id: gateId(m.milestone.id), type: 'gate', parentId: groupId(m.milestone.id), position: { x: gate.x, y: gate.y }, width: GATE.width, height: GATE.height, draggable: false, data: { view: m, current, selected: selected === gateId(m.milestone.id) } });
     }
     return out;
-  }, [laid, view, keys, marks, selected, startable, onStart]);
+  }, [laid, view, keys, marks, selected, linked, startable, onStart]);
 
   const edges = useMemo<PlanEdge[]>(() => {
     if (!laid) return [];
@@ -183,18 +218,23 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
       const s = byTask.get(id.replace(/^t:/, ''))?.state;
       return s === 'running' || s === 'asking' || s === 'idle';
     };
-    const lane = new Map(shape.milestones.flatMap((m) => m.tasks.map((t) => [taskNodeId(t), m.id] as const)));
-    // A blocker in an earlier milestone is drawn only for the task you picked (the gates already say what comes first).
-    const shown = shape.edges.filter((e) => e.kind !== 'blocks' || lane.get(e.from) === lane.get(e.to) || (selected && (e.from === taskNodeId(selected) || e.to === taskNodeId(selected))));
+    const nearGate = (e: (typeof shape.edges)[number]): boolean => {
+      const task = laid.places.get(e.from);
+      const gate = laid.places.get(e.to);
+      return Boolean(task && gate && gate.x - (task.x + task.width) <= NEAR_GATE);
+    };
+    // Only real lines: blockers inside a milestone (across milestones the gates say what comes first),
+    // the last column of tasks into the gate, and a gate into the milestones that wait on it.
+    const shown = shape.edges.filter((e) => (e.kind === 'blocks' ? lane.get(e.from) === lane.get(e.to) : e.kind === 'finish' ? nearGate(e) : laid.routes.has(e.id)));
     return shown.map((e) => {
       const done = e.kind === 'next' ? passed(e.from) : finished(e.from);
       const state: LineData['state'] = done ? 'done' : e.kind !== 'next' && working(e.from) ? 'live' : 'waiting';
       const route = laid.routes.get(e.id);
-      const handles = e.kind === 'next' ? { sourceHandle: 'down', targetHandle: 'top' } : {};
-      const across = e.kind === 'blocks' && lane.get(e.from) !== lane.get(e.to);
-      return { id: e.id, source: e.from, target: e.to, type: 'line', ...handles, zIndex: across ? 10 : 0, data: { kind: e.kind, state, motion, ...(route ? { route } : {}) } };
+      // Drawn from the milestone's head (its gate is what it waits on, so the line keeps its state).
+      const ends = e.kind === 'next' ? { source: groupId(e.from.replace(/^gate:/, '')), sourceHandle: 'out', targetHandle: 'in' } : { source: e.from };
+      return { id: e.id, ...ends, target: e.to, type: 'line', data: { kind: e.kind, state, ...(route ? { route } : {}) } };
     });
-  }, [laid, shape, byTask, view, motion, selected]);
+  }, [laid, shape, lane, byTask, view]);
 
   // Framed once laid out (and when the frame changes size a lot: the conversation folded away).
   const wrap = useRef<HTMLDivElement>(null);
@@ -203,7 +243,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     const box = wrap.current;
     if (!laid || !box) return;
     const groups = [...laid.places].filter(([id]) => id.startsWith('m:')).map(([, at]) => at);
-    const width = Math.max(...groups.map((g) => g.x + g.width)) + 24;
+    const width = Math.max(...groups.map((g) => g.x + g.width)) + laid.gutter + 24;
     const height = Math.max(...groups.map((g) => g.y + g.height)) + 24;
     const zoom = Math.max(0.55, Math.min(1, box.clientWidth / width, Math.max(box.clientHeight / height, box.clientWidth / width)));
     const current = view.current ? laid.places.get(groupId(view.current.milestone.id)) : undefined;
@@ -254,10 +294,11 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
 
 // ---------------------------------------------------------------- nodes
 
-const Ends = ({ hidden }: { hidden?: boolean }) => (
+/** Where lines meet a card: never drawn (a line shows itself). */
+const Ends = () => (
   <>
-    <Handle type="target" position={Position.Left} className={p.handle} isConnectable={false} style={hidden ? { opacity: 0 } : undefined} />
-    <Handle type="source" position={Position.Right} className={p.handle} isConnectable={false} style={hidden ? { opacity: 0 } : undefined} />
+    <Handle type="target" position={Position.Left} className={p.handle} isConnectable={false} />
+    <Handle type="source" position={Position.Right} className={p.handle} isConnectable={false} />
   </>
 );
 
@@ -267,11 +308,12 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task
   const sub = t.state === 'running' && t.step ? t.step : t.state === 'blocked' || t.state === 'later' ? t.why : t.state === 'asking' ? 'Claude asked you something' : t.forYou && t.state === 'ready' ? 'For you' : undefined;
   return (
     <div
-      className={cx(p.task, p[`task_${t.state}`], data.selected && p.taskSelected, data.mark && p.taskMarked)}
+      className={cx(p.task, p[`task_${t.state}`], data.selected && p.taskSelected, data.linked && p.taskLinked, data.mark && p.taskMarked)}
       data-state={t.state}
+      data-linked={data.linked ? 'true' : undefined}
       aria-label={`${t.task.title}, ${info.label}`}
     >
-      <Ends hidden />
+      <Ends />
       {t.state === 'running' ? <span className={p.glow} aria-hidden="true" /> : null}
       <div className={p.taskTop}>
         <TaskStateIcon state={t.state} />
@@ -310,7 +352,8 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
   const share = m.state === 'passed' ? 1 : m.total ? m.finished / m.total : 0;
   return (
     <div className={cx(p.milestone, p[`ms_${m.state}`], data.current && p.msCurrent)}>
-      <Handle id="top" type="target" position={Position.Top} className={p.handle} isConnectable={false} style={{ left: 27 }} />
+      <Handle id="in" type="target" position={Position.Right} className={p.handle} isConnectable={false} style={{ top: HEAD / 2 }} />
+      <Handle id="out" type="source" position={Position.Right} className={p.handle} isConnectable={false} style={{ top: HEAD / 2 }} />
       <div className={p.msHead}>
         <span className={p.msIndex}>{m.state === 'passed' ? <Icon name="check" size={11} /> : m.index + 1}</span>
         <span className={p.msTitles}>
@@ -324,12 +367,14 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
             ) : (
               <span className={p.msCount}>{m.milestone.tasks.length} tasks</span>
             )}
+            {m.state !== 'draft' ? (
+              <span className={p.msProgress} aria-hidden="true">
+                <span className={p.msProgressFill} style={{ width: `${Math.round(share * 100)}%` }} />
+              </span>
+            ) : null}
             {m.milestone.autonomy ? <span className={p.msAuto}>{AUTONOMY_INFO[m.autonomy].label}</span> : null}
           </span>
         </span>
-      </div>
-      <div className={p.msProgress} aria-hidden="true">
-        <span className={p.msProgressFill} style={{ width: `${Math.round(share * 100)}%` }} />
       </div>
     </div>
   );
@@ -342,8 +387,7 @@ const GateNode = memo(function GateNode({ data }: NodeProps<Node<GateData, 'gate
   const label = m.state === 'passed' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? 'Pass it' : n ? `${n} ${n === 1 ? 'criterion' : 'criteria'}` : 'Milestone';
   return (
     <div className={cx(p.gate, p[`gate_${m.state}`], data.selected && p.gateSelected)} aria-label={`Gate of ${m.milestone.title}: ${label}`}>
-      <Ends hidden />
-      <Handle id="down" type="source" position={Position.Bottom} className={p.handle} isConnectable={false} />
+      <Ends />
       <span className={p.gateMark}>
         <Icon name={m.state === 'passed' ? 'check' : m.state === 'failed' ? 'x' : 'flag'} size={11} />
       </span>
@@ -380,14 +424,7 @@ const PlanLine = memo(function PlanLine({ id, sourceX, sourceY, targetX, targetY
   const kind = data?.kind ?? 'blocks';
   const state = data?.state ?? 'waiting';
   return (
-    <>
       <BaseEdge id={id} path={path} className={cx(p.line, p[`line_${kind}`], p[`line_${state}`])} interactionWidth={0} />
-      {state === 'live' && data?.motion ? (
-        <circle r={2.6} className={p.lineDot}>
-          <animateMotion dur="1.8s" repeatCount="indefinite" path={path} />
-        </circle>
-      ) : null}
-    </>
   );
 });
 

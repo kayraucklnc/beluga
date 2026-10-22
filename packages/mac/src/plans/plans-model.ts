@@ -1,5 +1,5 @@
 import type { BoardState } from '../../../../src/core/board/model.js';
-import { type Plan, type PlansState, diffBodies, planTitle, shownBody } from '../../../../src/core/plans/model.js';
+import { type Plan, type PlansState, diffBodies, milestoneDeps, planTitle, shownBody } from '../../../../src/core/plans/model.js';
 import type { MilestoneState, MilestoneView, NextStep, PlanView, TaskState } from '../../../../src/core/plans/progress.js';
 
 /**
@@ -132,7 +132,7 @@ export function changeWords(plan: Plan): string {
 export interface PlanGraphShape {
   /** Milestones as boxes (in order), each with its tasks and a gate at its end. */
   readonly milestones: ReadonlyArray<{ readonly id: string; readonly tasks: readonly string[] }>;
-  /** Lines: task → task (waits on), task → gate (finishes the milestone), gate → the next milestone. */
+  /** Lines: task → task (waits on), task → gate (finishes the milestone), gate → a milestone that waits on it. */
   readonly edges: ReadonlyArray<{ readonly id: string; readonly from: string; readonly to: string; readonly kind: 'blocks' | 'finish' | 'next' }>;
   /** Changes when (and only when) the layout must: its JSON. */
   readonly key: string;
@@ -147,7 +147,7 @@ export function graphShape(plan: Plan): PlanGraphShape {
   const body = shownBody(plan);
   const milestones = (body?.milestones ?? []).map((m) => ({ id: m.id, tasks: m.tasks.map((t) => t.id) }));
   const edges: Array<PlanGraphShape['edges'][number]> = [];
-  for (const [i, m] of (body?.milestones ?? []).entries()) {
+  for (const m of body?.milestones ?? []) {
     const inside = new Set(m.tasks.map((t) => t.id));
     const needed = new Set(m.tasks.flatMap((t) => t.blockedBy.filter((b) => inside.has(b))));
     for (const t of m.tasks) {
@@ -155,9 +155,10 @@ export function graphShape(plan: Plan): PlanGraphShape {
       // The last tasks of a milestone lead to its gate.
       if (!needed.has(t.id)) edges.push({ id: `${t.id}->gate`, from: taskNodeId(t.id), to: gateId(m.id), kind: 'finish' });
     }
-    const next = body!.milestones[i + 1];
-    // The gate opens the next milestone.
-    if (next) edges.push({ id: `${m.id}->${next.id}`, from: gateId(m.id), to: groupId(next.id), kind: 'next' });
+  }
+  // A milestone's gate opens the milestones that wait on it (only those: the others run alongside).
+  for (const m of body?.milestones ?? []) {
+    for (const d of milestoneDeps(body, m)) edges.push({ id: `ms:${d}->${m.id}`, from: gateId(d), to: groupId(m.id), kind: 'next' });
   }
   return { milestones, edges, key: JSON.stringify({ milestones, edges: edges.map((e) => e.id) }) };
 }

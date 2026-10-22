@@ -41,6 +41,48 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await expect(page.getByRole('complementary', { name: 'Conversation' })).toBeVisible();
 });
 
+test('a task’s panel keeps its head and Close in reach while its brief scrolls, and nothing runs off its edge (KLD-32)', async ({ page }, info) => {
+  // Short enough that the brief has to scroll.
+  await page.setViewportSize({ width: 1180, height: 560 });
+  await openPlans(page);
+  await main(page).getByRole('button', { name: /^Card checkout for launch,/ }).click();
+  await expect(main(page).locator('[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
+  // Only real lines: a gate leads to a milestone only when it waits on it, and no card is wired across milestones.
+  const edge = (from: string, to: string) => main(page).getByRole('group', { name: `Edge from ${from} to ${to}`, exact: true });
+  await expect(edge('gate:safe-payments', 'm:refunds')).toHaveCount(1);
+  await expect(edge('gate:foundations', 'm:safe-payments')).toHaveCount(0);
+  await main(page).locator('.react-flow__node').filter({ hasText: 'Refund endpoint' }).click();
+  await expect(edge('t:retries', 't:refund-api')).toHaveCount(0);
+  await expect(main(page).locator('.react-flow__node').filter({ hasText: 'Idempotent webhook retries' }).locator('[data-linked="true"]')).toHaveCount(1);
+  await main(page).locator('.react-flow__node').filter({ hasText: 'Receipt emails sent once' }).click();
+  const details = page.getByRole('complementary', { name: 'Details' });
+  await expect(details).toContainText('Waits on');
+  const body = details.locator('header + div');
+  const close = details.getByRole('button', { name: 'Close' });
+  const sizes = () => body.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight, wide: el.scrollWidth, width: el.clientWidth }));
+  expect((await sizes()).scroll).toBeGreaterThan((await sizes()).client);
+  await expect(details.locator('header')).toHaveAttribute('data-scrolled', 'false');
+  await body.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+  await expect(details.locator('header')).toHaveAttribute('data-scrolled', 'true');
+  // At the bottom: the key, the title, the state and Close are all still on screen.
+  await expect(details.getByRole('heading', { name: 'Receipt emails sent once' })).toBeInViewport();
+  await expect(close).toBeInViewport();
+  await expect(details.getByText('src/webhooks/paid.ts').first()).toBeInViewport();
+  // Nothing wider than the panel: paths and words wrap.
+  const s = await sizes();
+  expect(s.wide).toBeLessThanOrEqual(s.width);
+  const shot = info.outputPath('panel-scrolled.png');
+  await details.screenshot({ path: shot });
+  await info.attach('panel scrolled to the bottom', { path: shot, contentType: 'image/png' });
+  await close.click();
+  await expect(details).toHaveCount(0);
+  // Esc closes it too.
+  await main(page).locator('.react-flow__node').filter({ hasText: 'Receipt emails sent once' }).click();
+  await expect(details).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(details).toHaveCount(0);
+});
+
 test('the plan stays sharp zoomed in, and its name never clips (KLD-25)', async ({ page }, info) => {
   await openPlans(page);
   await main(page).getByRole('button', { name: /^Card checkout for launch,/ }).click();
