@@ -41,6 +41,19 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await expect(page.getByRole('complementary', { name: 'Conversation' })).toBeVisible();
 });
 
+test('the plan’s chat shows what was said there when the plan opens, after a reload too, without sending anything (KLD-53)', async ({ page }) => {
+  // The demo saved how its plan began without loading it, as a restarted daemon has it: only on disk.
+  await openPlans(page);
+  await main(page).getByRole('button', { name: /^Card checkout for launch,/ }).click();
+  const chat = page.getByRole('complementary', { name: 'Conversation' });
+  await expect(chat).toContainText('drafted the plan in three milestones', { timeout: 15_000 });
+  await expect(chat).not.toContainText('Plan it together');
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Card checkout for launch', { timeout: 20_000 });
+  await expect(chat).toContainText('drafted the plan in three milestones', { timeout: 15_000 });
+  await expect(chat.getByRole('textbox', { name: 'Message Claude about the plan' })).toHaveValue('');
+});
+
 test('a task’s panel keeps its head and Close in reach while its brief scrolls, and nothing runs off its edge (KLD-32)', async ({ page }, info) => {
   // Short enough that the brief has to scroll.
   await page.setViewportSize({ width: 1180, height: 560 });

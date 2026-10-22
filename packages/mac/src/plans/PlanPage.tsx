@@ -22,7 +22,7 @@ import { FEED, PlanDetails } from './PlanDetails.js';
 import { PlanOutline } from './PlanOutline.js';
 import { CHAT_DEFAULT, DEFAULT_PLAN_LAYOUT, type Display, PLAN_LAYOUT_KEY, type PlanLayout, chatOpen, clampChatWidth, readPlanLayout, setChatOpen } from './plan-layout.js';
 import { barColumns, changeWords, headline, nextWords, titleOf } from './plans-model.js';
-import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
+import { useConversationLoaded, usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
 
 const PlanCanvas = lazy(() => import('./PlanCanvas.js'));
@@ -114,6 +114,8 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
     return () => document.removeEventListener(PLAN_CHAT_TOGGLE, toggle);
   }, [plan.id, setPrefs]);
   const { api, act, openList, openWorktree } = usePlanActions();
+  // The plan's conversation (its chat, the head Claude's last turn) loads with the page, the chat shown or not.
+  useConversationLoaded(plan.home);
   const uiPrefs = usePrefs();
   const body = shownBody(plan);
   const keys = useMemo(() => new Map(view.milestones.flatMap((m) => m.tasks.flatMap((t) => (t.issue ? [[t.task.id, t.issue.key] as const] : [])))), [view]);

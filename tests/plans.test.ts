@@ -114,6 +114,26 @@ describe('a new plan’s name (KLD-28)', () => {
   });
 });
 
+describe('the demo plan’s own conversation (KLD-53)', () => {
+  it('is saved, not loaded: as after a restart, it shows once the plan page loads it', async () => {
+    const store = new Store(initialState('room'));
+    store.dispatch({ type: 'projects', projects: [project('api', 'bob-api')] });
+    const saved = new Map<string, readonly unknown[]>();
+    const controller = {
+      onWorktree: () => () => undefined,
+      newChat: async (projectId: string, title: string) => ws('c1', projectId, title, 'chat'),
+      manager: { saveHistory: (id: string, items: readonly unknown[]) => void saved.set(id, items) },
+    } as unknown as WorkspaceController;
+    const board = new Board({ store, dir: null, projectName: () => 'bob-api' });
+    const boardWork = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: () => undefined });
+    const work = new PlansWork({ store, plans: new Plans({ store, dir: null }), board: boardWork, controller, git: null, askClaude: () => undefined, intend: () => undefined, delayMs: 0 });
+    const home = await work.homeFor('api', 'Card checkout', (channel) => [{ id: 'a', type: 'chat', channel, from: 'p-me', name: 'Kay', text: 'Plan it', ts: 1, byAgent: false }]);
+    expect(home).toBe('ws:c1');
+    expect(saved.get('c1')).toEqual([expect.objectContaining({ channel: 'ws:c1', text: 'Plan it' })]);
+    expect(store.getState().log.filter((l) => l.channel === home)).toEqual([]);
+  });
+});
+
 const BODY: BodyInput = {
   title: 'Payments',
   goal: 'Take payments',

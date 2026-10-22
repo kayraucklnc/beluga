@@ -1,4 +1,4 @@
-import { useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { Plan, PlansState } from '@klaud/core/plans/model.js';
 import { type PlanView, liveFrom, planView } from '@klaud/core/plans/progress.js';
 import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
@@ -43,6 +43,28 @@ const noClock = (): (() => void) => () => undefined;
 /** Now, for a card showing elapsed time (`on`: it shows some); it moves every few seconds while on. */
 export function useClock(on: boolean): number {
   return useSyncExternalStore(on ? subscribeClock : noClock, () => (on ? clockNow : 0));
+}
+
+/**
+ * The plan's own conversation, loaded: after a restart it's only on disk until something asks for
+ * it (workspaces.load). False until that answered for this channel; true for one that isn't a workspace's.
+ */
+export function useConversationLoaded(channel: string): boolean {
+  const api = useApi();
+  const wsId = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  const [loadedFor, setLoadedFor] = useState<string>();
+  useEffect(() => {
+    if (!wsId) return;
+    let alive = true;
+    void api.workspaces
+      .load(wsId)
+      .catch(() => undefined)
+      .then(() => alive && setLoadedFor(wsId));
+    return () => {
+      alive = false;
+    };
+  }, [api, wsId]);
+  return !wsId || loadedFor === wsId;
 }
 
 const message = (err: unknown): string => (err instanceof Error ? err.message.replace(/^Error: /, '') : String(err));
