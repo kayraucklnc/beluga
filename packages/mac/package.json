@@ -1,7 +1,7 @@
 {
   "name": "@klaud/mac",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "klaud for macOS: the same klaud as the terminal UI, as a native app.",
   "type": "module",
   "scripts": {
