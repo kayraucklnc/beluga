@@ -10,7 +10,7 @@ import type { AgentPlace } from '../agent/types.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import type { ShareService } from './shares.js';
-import { type LogItem, type Store, type WorkspaceTab } from './store.js';
+import { type LogItem, type Store, type WorkspaceTab, settleRun } from './store.js';
 import { type Conversation, isImportedItem } from '../agent/transcript.js';
 import type { Intent } from './intents.js';
 import { type OtherTools, OtherWorktrees } from './other-worktrees.js';
@@ -221,8 +221,10 @@ export class WorkspaceController {
     this.loaded.add(channel);
     const saved = this.deps.manager.loadHistory<LogItem>(id);
     const live = this.deps.store.getState().log.filter((l) => l.channel === channel);
+    // A run saved mid-way (a crash, a quit) has nothing behind it now unless it's live here: it was interrupted.
+    const liveById = new Map(live.map((l) => [l.id, l]));
     const known = new Set(saved.map((l) => l.id));
-    this.deps.store.dispatch({ type: 'history', channel, items: [...saved, ...live.filter((l) => !known.has(l.id))] });
+    this.deps.store.dispatch({ type: 'history', channel, items: [...saved.map((l) => liveById.get(l.id) ?? settleRun(l)), ...live.filter((l) => !known.has(l.id))] });
     if (live.length) this.saver.changed();
     else this.saver.loaded(channel);
     return { saved: saved.length + live.length };

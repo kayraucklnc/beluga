@@ -213,6 +213,15 @@ export function unreadEntries(state: ListSource): UnreadEntry[] {
 }
 
 /**
+ * The menu bar's "working" count: conversations where your own Claude is at work, read the way
+ * the sidebar reads them (activityOf), so the two never disagree about what runs.
+ */
+export function workingCount(state: Pick<AppState, 'log' | 'selfId'>): number {
+  const mine = new Set(state.log.flatMap((l) => (l.type === 'agent' && l.owner === state.selfId ? [l.channel] : [])));
+  return [...mine].filter((channel) => activityOf(state.log, channel).running).length;
+}
+
+/**
  * The Dock badge and the menu-bar count: one per conversation in the Unread section (however
  * many messages or questions it holds), plus unread notifications and waiting approvals that
  * aren't about one of those, plus people at the door. Nothing is counted twice.

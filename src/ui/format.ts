@@ -1,4 +1,4 @@
-import type { LogItem } from '../core/store.js';
+import { type LogItem, isRunning } from '../core/store.js';
 import { renderMarkdown } from './markdown.js';
 import { type Line, type Seg, formatDuration, lineWidth, pad, plain, truncate, wrapText } from './text.js';
 import { SPINNER, colorFor, glyph, theme } from './theme.js';
@@ -34,8 +34,7 @@ export const DONE_STEPS = 3;
 
 const time = (ts: number): string => new Date(ts).toTimeString().slice(0, 5);
 
-export const isRunning = (status: AgentItem['status']): boolean =>
-  status === 'started' || status === 'text' || status === 'tool' || status === 'sub' || status === 'awaiting_approval' || status === 'queued';
+export { isRunning };
 
 interface StatusStyle {
   readonly label: string;
@@ -55,6 +54,8 @@ function statusOf(item: AgentItem, opts: RenderOptions): StatusStyle {
       return { label: `${glyph.fail} failed`, color: theme.error };
     case 'denied':
       return { label: `${glyph.denied} declined`, color: theme.warn };
+    case 'interrupted':
+      return { label: 'interrupted', color: theme.muted };
     default:
       return { label: `${spin} working · ${formatDuration((opts.now ?? Date.now()) - item.ts)}`, color: theme.claude };
   }

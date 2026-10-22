@@ -254,7 +254,9 @@ export class Session {
   }
 
   async stop(): Promise<void> {
-    this.host.abort();
+    await this.host.abort();
+    // A run that didn't end in time (or whose end never came back) won't now: not saved as running.
+    this.store.dispatch({ type: 'runs_interrupted', owner: this.selfId });
     this.opts.client.close();
     await this.opts.shares.close();
     clearInterval(this.usageTimer);

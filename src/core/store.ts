@@ -32,6 +32,22 @@ export interface SubAgent {
   readonly startedAt?: number;
 }
 
+/**
+ * A run's card: what its last event said, or 'interrupted': klaud stopped (quit, crashed) while it
+ * ran and no end came, so it's not running any more (see settleRun). Never sent; only ever local.
+ */
+export type AgentItemStatus = AgentEventKind | 'interrupted';
+
+/** A card whose run is still going: waiting its turn or for approval, or working. */
+export const isRunning = (status: AgentItemStatus): boolean =>
+  status === 'started' || status === 'text' || status === 'tool' || status === 'sub' || status === 'awaiting_approval' || status === 'queued';
+
+/** A card that says it's running but has no live run behind it any more: interrupted, its sub-agents done. */
+export function settleRun(item: LogItem): LogItem {
+  if (item.type !== 'agent' || !isRunning(item.status)) return item;
+  return { ...item, status: 'interrupted', endTs: item.endTs ?? item.lastAt ?? item.ts, subagents: item.subagents.map((s) => (s.status === 'running' ? { ...s, status: 'done' as const } : s)) };
+}
+
 export type LogItem =
   | { readonly id: string; readonly type: 'chat'; readonly channel: string; readonly from: string; readonly name: string; readonly text: string; readonly ts: number; readonly byAgent: boolean }
   | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error'; readonly said?: SaidBy; readonly compact?: CompactMark }
@@ -48,7 +64,7 @@ export type LogItem =
       readonly requester?: string;
       /** What was asked, once known (sent with the "queued" event, for the queue). */
       readonly prompt?: string;
-      readonly status: AgentEventKind;
+      readonly status: AgentItemStatus;
       readonly text: string;
       readonly steps: readonly string[];
       readonly ts: number;
@@ -441,6 +457,8 @@ export type Action =
   | { type: 'conflicts'; id: string; files: readonly string[] }
   | { type: 'review'; review?: ReviewDomain }
   | { type: 'history'; channel: string; items: readonly LogItem[] }
+  /** klaud is stopping: `owner`'s runs that haven't ended (their end won't come now) are interrupted. */
+  | { type: 'runs_interrupted'; owner: string }
   | { type: 'env_changes'; id: string; changes: readonly EnvChange[] }
   | { type: 'approval_add'; approval: Approval }
   | { type: 'approval_remove'; id: string }
@@ -796,6 +814,10 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, review: action.review };
     case 'env_changes':
       return { ...state, envChanges: { ...state.envChanges, [action.id]: action.changes } };
+    case 'runs_interrupted': {
+      const log = state.log.map((l) => (l.type === 'agent' && l.owner === action.owner ? settleRun(l) : l));
+      return log.every((l, i) => l === state.log[i]) ? state : { ...state, log };
+    }
     case 'history': {
       const others = state.log.filter((l) => l.channel !== action.channel);
       return { ...state, log: [...action.items.slice(-LOG_LIMIT).map((i) => ({ ...i, channel: action.channel })), ...others] };
