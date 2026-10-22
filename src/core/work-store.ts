@@ -28,6 +28,20 @@ export interface ModelChoice {
   readonly efforts?: readonly string[];
 }
 
+/** One CI check on a pull request (a GitHub Actions job or an external status). */
+export interface PrCheck {
+  readonly name: string;
+  /** The workflow it belongs to, when it's an Actions job. */
+  readonly workflow?: string;
+  readonly state: 'queued' | 'in_progress' | 'completed';
+  /** How it ended (once completed): success, failure, cancelled, skipped, neutral, timed_out, error… */
+  readonly conclusion?: string;
+  readonly url?: string;
+  /** ISO times from GitHub. */
+  readonly startedAt?: string;
+  readonly completedAt?: string;
+}
+
 /** A pull request for a worktree's branch, as `gh` reports it. */
 export interface PullRequest {
   readonly number: number;
@@ -37,6 +51,8 @@ export interface PullRequest {
   readonly draft: boolean;
   /** Combined CI state. */
   readonly checks: 'passing' | 'failing' | 'pending' | 'none';
+  /** Each check behind `checks` (missing in PRs saved before they were kept). */
+  readonly checkRuns?: readonly PrCheck[];
   readonly review?: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED';
 }
 

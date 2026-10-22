@@ -186,7 +186,7 @@ export const HANDLERS = {
   'workbench.createPr': (s, id, extra) => bench(s)?.createPr(id, extra),
   'workbench.fixChecks': (s, id) => bench(s)?.fixChecks(id),
   'workbench.openPr': (s, id) => bench(s)?.openPr(id),
-  'workbench.refreshPrs': (s, only, recheckGh) => bench(s)?.refreshPrs(only, recheckGh),
+  'workbench.refreshPrs': (s, only, recheckGh) => (typeof only === 'object' ? bench(s)?.pollPrs(only.reason, only.id) : bench(s)?.refreshPrs(only, recheckGh)),
   'workbench.editPrPrompt': (s) => bench(s)?.editPrPrompt(),
   'workbench.resetPrPrompt': (s) => bench(s)?.resetPrPrompt(),
   'workbench.measureDisk': (s) => bench(s)?.measureDisk(),

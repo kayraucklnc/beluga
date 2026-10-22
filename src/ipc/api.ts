@@ -230,7 +230,9 @@ export const API = {
   'workbench.createPr': args(id, opt(str)),
   'workbench.fixChecks': args(id),
   'workbench.openPr': args(id),
-  'workbench.refreshPrs': args(opt(id), opt(bool)),
+  // A worktree's PR now (or all of them; true: check gh again), or { reason } to look at what's due:
+  // 'focus' (the window came forward) or 'push' (a branch was pushed; id: which worktree).
+  'workbench.refreshPrs': args(opt(z.union([id, z.object({ reason: z.enum(['focus', 'push']), id: opt(id) }).strict()])), opt(bool)),
   'workbench.editPrPrompt': args(),
   'workbench.resetPrPrompt': args(),
   'workbench.measureDisk': args(),
