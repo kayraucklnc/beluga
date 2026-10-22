@@ -152,6 +152,8 @@ export class Session {
   private workspaceTimer?: NodeJS.Timeout;
   private readonly agent?: AgentBackend;
   private readonly agentWaiters = new Map<string, AgentWaiter>();
+  /** Messages a screen sent with an id (a plan chat's), and the request each went as: a Retry of one that went doesn't go twice. */
+  private readonly sentById = new Map<string, string>();
   private usageTimer?: NodeJS.Timeout;
   private usageFetched = false;
   /** The room welcomed you at least once (a later outage is "lost", not "can’t reach yet"). */
@@ -304,9 +306,10 @@ export class Session {
   /**
    * Handle a line from the composer, typed in `channel` (the conversation on screen). `urgent`
    * (Alt/Ctrl+Enter) interrupts your Claude instead of queueing. False when a message for a
-   * conversation's Claude couldn't go (why is said in a toast), so the box can keep it.
+   * conversation's Claude couldn't go (why is said in a toast), so the box can keep it. `id`: the
+   * same for every Retry of one message, so it's said in the chat and asked of Claude once.
    */
-  submit(raw: string, { channel = 'room', urgent = false }: { channel?: string; urgent?: boolean } = {}): boolean {
+  submit(raw: string, { channel = 'room', urgent = false, id }: { channel?: string; urgent?: boolean; id?: string } = {}): boolean {
     const state = this.store.getState();
     // "/run @bob <command>": the command exactly as typed (spacing and quotes kept).
     const peerRun = /^\/run\s+@([\w.-]+)\s+([\s\S]+)$/.exec(raw.trim());
@@ -317,7 +320,14 @@ export class Session {
     const parsed = parseInput(raw, this.selfId, state.peers);
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
-      return this.askOwnClaude(parsed.kind === 'agent' ? parsed.prompt : parsed.text, channel, urgent) !== undefined;
+      const prompt = parsed.kind === 'agent' ? parsed.prompt : parsed.text;
+      if (!id) return this.askOwnClaude(prompt, channel, urgent) !== undefined;
+      if (this.sentById.has(id)) return true;
+      const requestId = this.askOwnClaude(prompt, channel, urgent);
+      if (requestId === undefined) return false;
+      this.sentById.set(id, requestId);
+      if (this.sentById.size > 200) this.sentById.delete(this.sentById.keys().next().value!);
+      return true;
     }
     // "@add-auth fix the test" from the main chat goes to the Claude working in that workspace.
     const toWorkspace = parsed.kind !== 'command' ? parseWorkspaceMention(raw, workspaceMentions(state.projects)) : undefined;

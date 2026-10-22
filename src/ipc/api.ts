@@ -75,7 +75,7 @@ const TermSize = z.object({ cols: z.number().int().min(1).max(1000), rows: z.num
 
 export const API = {
   // ---- the room, chat and your preferences
-  'session.submit': args(str, opt(z.object({ channel: opt(channel), urgent: opt(bool) }))),
+  'session.submit': args(str, opt(z.object({ channel: opt(channel), urgent: opt(bool), id: opt(id) }))),
   'session.copyInvite': args(),
   'session.copyLastAnswer': args(),
   'session.copyText': args(str, z.string().max(500)),
