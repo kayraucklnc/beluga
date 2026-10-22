@@ -14,8 +14,6 @@ import { candidatePaths, imagePathsIn, pathsInPaste, pickPaths } from './paste-p
 
 export type { PathInfo };
 
-export { pathsInPaste };
-
 // ---- ⌘⇧V: the text, as it is. The key can reach the page (a paste event follows) and the menu
 // bar (its item runs pastePlain) in either order: whichever is second within a moment does nothing.
 

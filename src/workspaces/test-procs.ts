@@ -17,7 +17,7 @@ import path from 'node:path';
  */
 
 /** The machine-wide e2e lock (scripts/e2e-lock.mjs keeps it there). */
-export const e2eLockFile = (): string => path.join(process.env.KLAUD_E2E_DIR || path.join(os.homedir(), '.klaud', 'e2e'), 'lock.json');
+const e2eLockFile = (): string => path.join(process.env.KLAUD_E2E_DIR || path.join(os.homedir(), '.klaud', 'e2e'), 'lock.json');
 
 export interface ProcRow {
   readonly pid: number;
@@ -96,7 +96,7 @@ function ps(args: readonly string[]): Promise<string> {
 }
 
 /** Every process with its command and environment (yours only: the OS shows no one else's). */
-export async function processRows(): Promise<ProcRow[]> {
+async function processRows(): Promise<ProcRow[]> {
   if (process.platform === 'win32') return [];
   const out = await ps(process.platform === 'darwin' ? ['-axwwE', '-o', 'pid=,ppid=,command='] : ['axeww', '-o', 'pid=,ppid=,command=']);
   return out

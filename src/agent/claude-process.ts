@@ -4,7 +4,7 @@ import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sd
 import type { RunProcess } from './types.js';
 
 /** How long Claude Code gets to exit on SIGTERM before it's killed outright. */
-export const KILL_GRACE_MS = 3_000;
+const KILL_GRACE_MS = 3_000;
 
 /** Whether a child process still runs. */
 const running = (child: ChildProcess): boolean => child.exitCode === null && child.signalCode === null;
@@ -35,7 +35,7 @@ export async function endProcess(child: ChildProcess, graceMs = KILL_GRACE_MS): 
 }
 
 /** A run's handle on its Claude Code process. */
-export function runProcess(child: ChildProcess & { pid: number }, graceMs = KILL_GRACE_MS): RunProcess {
+function runProcess(child: ChildProcess & { pid: number }, graceMs = KILL_GRACE_MS): RunProcess {
   const exited = running(child) ? new Promise<void>((resolve) => child.once('exit', () => resolve())) : Promise.resolve();
   return { pid: child.pid, alive: () => running(child), kill: () => endProcess(child, graceMs), exited };
 }

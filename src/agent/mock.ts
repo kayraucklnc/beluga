@@ -324,7 +324,7 @@ const PLAN_TITLE_STOP = new Set(
  * most-said words, in the order it says them), never its first words cut off. Undefined when the
  * goal says too little: the plan stays "New plan" until Claude's plan_write names it.
  */
-export function mockPlanTitle(goal: string): string | undefined {
+function mockPlanTitle(goal: string): string | undefined {
   const words = (goal.toLowerCase().match(/[a-z][a-z-]*/g) ?? []).filter((w) => w.length > 3 && !PLAN_TITLE_STOP.has(w));
   const seen = new Map<string, { n: number; at: number }>();
   words.forEach((w, at) => seen.set(w, { n: (seen.get(w)?.n ?? 0) + 1, at: seen.get(w)?.at ?? at }));

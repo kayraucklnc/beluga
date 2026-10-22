@@ -25,6 +25,7 @@ import { FriendsSection, GroupsSection } from '../network/NetworkSidebar.js';
 import { RequestsNav } from '../gateway/RequestsNav.js';
 import { TasksNav } from '../tasks/TasksNav.js';
 import { PlansNav } from '../plans/PlansNav.js';
+import { footerStatus } from '../views/room/connection-model.js';
 import { WorktreesNav } from '../views/worktrees/WorktreesNav.js';
 import { SelfBar } from '../network/StatusMenu.js';
 import { UpdatePill } from '../components/UpdatePill.js';
@@ -258,19 +259,8 @@ function SidebarFooter() {
   const people = useApp((st) => st.peers.length);
   const room = useApp((st) => st.room);
   const ready = useApp((st) => st.hosting?.phase === 'ready');
-  const label =
-    status === 'connected'
-      ? people > 1
-        ? `${people} people in ${room}`
-        : ready
-          ? 'Invite ready'
-          : 'Just you'
-      : state.connection?.state === 'reconnecting'
-        ? 'Reconnecting…'
-        : status === 'connecting'
-          ? 'Connecting…'
-          : 'Offline';
-  const tone = status === 'connected' ? 'ok' : label === 'Offline' ? 'error' : 'warn';
+  const reconnecting = useApp((st) => st.connection?.state === 'reconnecting');
+  const { label, tone } = footerStatus({ status, room, people, ready, reconnecting });
   return (
     <div className={s.footer}>
       <RoomStatus label={label} tone={tone} />

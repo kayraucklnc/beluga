@@ -127,8 +127,8 @@ describe('planSteer', () => {
   });
 
   it('a quiet spell spent thinking says so, and is never taken for dead', () => {
-    expect(planSteer({ lastEventAt: now - 90_000, between: false, thinking: true }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was thinking for 2m; reading your message' });
-    expect(planSteer({ lastEventAt: now - 90_000, between: false }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was quiet for 2m; reading your message' });
+    expect(planSteer({ lastEventAt: now - 90_000, between: false, thinking: true }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was thinking for 1m; reading your message' });
+    expect(planSteer({ lastEventAt: now - 90_000, between: false }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was quiet for 1m; reading your message' });
     expect(planSteer({ lastEventAt: now - 8 * MIN, between: false, thinking: true }, now).kind).toBe('interrupt');
   });
 });

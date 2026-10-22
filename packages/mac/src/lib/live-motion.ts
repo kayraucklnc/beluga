@@ -13,7 +13,7 @@ import { onWindowActive, windowActive } from './window-active.js';
 /** Paints a mark at `t` ms (a shared clock: marks that look alike move together). `t` null: rest, still. */
 export type LivePaint = (t: number | null) => void;
 
-export const LIVE_FPS = 15;
+const LIVE_FPS = 15;
 
 const marks = new Map<Element, LivePaint>();
 const seen = new Set<Element>();
@@ -21,7 +21,7 @@ let timer: ReturnType<typeof setInterval> | undefined;
 let watching = false;
 let observer: IntersectionObserver | undefined;
 
-export const still = (): boolean => document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const still = (): boolean => document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function tick(): void {
   const t = performance.now();

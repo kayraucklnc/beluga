@@ -16,6 +16,7 @@ import { SCRATCH_DIR, ensureScratch } from '../workspaces/scratch.js';
 import { isImportedItem } from '../agent/transcript.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
 import { STEERED_IN } from '../shared/claude-notices.js';
+import { span } from '../shared/clock.js';
 import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
 import { e2eLockedIn, mayLeaveProcesses } from '../workspaces/test-procs.js';
 
@@ -154,14 +155,6 @@ const STOPPED_FOR_YOU = 'Claude didn’t stop when asked, so its run was stopped
 
 /** What Claude reads a steered message after, said on its card. */
 export const READS_AFTER_STEP = 'Claude reads this after its current step';
-
-/** "45s", "12m", "1h 5m". */
-const span = (ms: number): string => {
-  const s = Math.max(1, Math.round(ms / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.round(s / 60);
-  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
-};
 
 /**
  * How a steer reaches Claude now, from what its run is doing: into the running turn when Claude

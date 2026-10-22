@@ -106,7 +106,7 @@ export const planMilestonesOnly = (prefs: NotifySettings): boolean => prefs.plan
  * The plan's home counts while the plan runs (its head Claude checking milestones). People talking
  * to you are never the plan's.
  */
-export function scopeToPlan(state: Pick<DomainState, 'plans' | 'board' | 'prefs'>, e: NoticeEvent): NoticeEvent {
+function scopeToPlan(state: Pick<DomainState, 'plans' | 'board' | 'prefs'>, e: NoticeEvent): NoticeEvent {
   if (e.plan || e.kind === 'mentions' || e.kind === 'people' || e.tag === 'test') return e;
   const place = planOfChannel(state, e.channel);
   if (!place || place.plan.status === 'draft' || (!place.issue && place.plan.status !== 'active')) return e;
