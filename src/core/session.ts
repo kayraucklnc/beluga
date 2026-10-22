@@ -154,6 +154,8 @@ export class Session {
   private readonly agentWaiters = new Map<string, AgentWaiter>();
   private usageTimer?: NodeJS.Timeout;
   private usageFetched = false;
+  /** The room welcomed you at least once (a later outage is "lost", not "can’t reach yet"). */
+  private everConnected = false;
   readonly questions: QuestionBroker;
   readonly sharing: WorkspaceSharing;
   readonly people: People;
@@ -670,6 +672,13 @@ export class Session {
     void this.copyInvite();
   }
 
+  /** Dial the room now instead of waiting for the next try. */
+  retryConnection(): void {
+    if (!this.opts.client.retryNow()) return;
+    const trouble = this.store.getState().connection;
+    if (trouble?.state === 'reconnecting') this.store.dispatch({ type: 'connection', connection: { ...trouble, retryAt: Date.now() } });
+  }
+
   /** Host only: stop (or start again) letting new people in. */
   setRoomOpen(open: boolean): void {
     if (!this.opts.room) return this.toast('Only the host can close the room', 'warn');
@@ -741,8 +750,20 @@ export class Session {
 
   private wire(): void {
     const { client, store } = this.opts;
-    client.on('status', (status) => store.dispatch({ type: 'status', status }));
+    client.on('status', (status) => {
+      store.dispatch({ type: 'status', status });
+      if (status !== 'connected' || !store.getState().connection) return;
+      store.dispatch({ type: 'connection' });
+      this.system('Back online');
+    });
+    // Failed dials update one status (see ConnectionTrouble); the chat gets one line per outage.
+    client.on('retrying', ({ attempt, retryAt, reason }) => {
+      const before = store.getState().connection;
+      store.dispatch({ type: 'connection', connection: { state: 'reconnecting', attempt, retryAt, reason, since: before?.since ?? Date.now() } });
+      if (!before) this.system(this.everConnected ? 'Lost connection to the room. Retrying in the background' : 'Can’t reach the room yet. Retrying in the background', 'warn');
+    });
     client.on('welcome', (self, room) => {
+      this.everConnected = true;
       store.dispatch({ type: 'welcome', self });
       if (room) store.dispatch({ type: 'room', room });
       if (self.guest && !store.getState().shared.length) this.system(`You came in with a link to ${room ?? 'a project'}. Waiting for them to let you in…`);
@@ -771,6 +792,8 @@ export class Session {
       if (invite && /#[\w-]+$/.test(invite)) store.dispatch({ type: 'invite', invite: invite.replace(/#[\w-]+$/, `#${secret}`) });
     });
     client.on('ended', (why) => {
+      const before = store.getState().connection;
+      store.dispatch({ type: 'connection', connection: { state: 'offline', attempt: before?.attempt ?? 0, reason: why, since: before?.since ?? Date.now() } });
       this.system(`${why}. You can keep working on your own; restart klaud to join a room again.`, 'warn');
       this.toast(why, 'warn');
       store.dispatch({ type: 'shared_clear' });

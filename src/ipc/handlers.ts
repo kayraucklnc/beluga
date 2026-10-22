@@ -56,6 +56,7 @@ export const HANDLERS = {
   'session.removePerson': (s, peerId) => s.removePerson(peerId),
   'session.newInviteLink': (s) => s.newInviteLink(),
   'session.setRoomOpen': (s, open) => s.setRoomOpen(open),
+  'session.retryConnection': (s) => s.retryConnection(),
   'session.setFriendWorktrees': (s, value) => s.setFriendWorktrees(value),
   'session.setAccess': (s, peerId, scope) => s.setAccess(peerId, scope),
   'session.runOnPeerByHand': (s, name, command, channel) => s.runOnPeerByHand(name, command, channel),

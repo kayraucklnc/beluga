@@ -357,6 +357,8 @@ export interface DomainState extends CollabState, WorkState, NetworkSlice, Earni
   readonly myShares: readonly MyShare[];
   readonly attention: Attention;
   readonly status: ConnectionStatus;
+  /** While the room can't be reached: what's happening and when the next try is (never in the log). */
+  readonly connection?: ConnectionTrouble;
   readonly self?: PeerInfo;
   readonly peers: readonly PeerInfo[];
   readonly log: readonly LogItem[];
@@ -406,8 +408,22 @@ export interface AppState extends Omit<DomainState, 'browser' | 'viewer' | 'revi
   readonly search: SearchState & { readonly cursor: number };
 }
 
+/** The room is out of reach: retrying (attempt and next try) or offline for good. */
+export interface ConnectionTrouble {
+  readonly state: 'reconnecting' | 'offline';
+  /** Failed tries in a row. */
+  readonly attempt: number;
+  /** When the next try starts (ms since the epoch); none when offline. */
+  readonly retryAt?: number;
+  readonly reason: string;
+  /** When this outage began. */
+  readonly since: number;
+}
+
 export type Action =
   | { type: 'status'; status: ConnectionStatus }
+  /** Leave out `connection` when you're connected again. */
+  | { type: 'connection'; connection?: ConnectionTrouble }
   | { type: 'invite'; invite: string }
   | { type: 'room'; room: string }
   | { type: 'hosting'; hosting: Hosting }
@@ -724,6 +740,10 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
   switch (action.type) {
     case 'status':
       return { ...state, status: action.status };
+    case 'connection': {
+      const { connection: _gone, ...rest } = state;
+      return action.connection ? { ...state, connection: action.connection } : rest;
+    }
     case 'invite':
       return { ...state, invite: action.invite };
     case 'room':

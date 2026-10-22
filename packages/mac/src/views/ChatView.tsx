@@ -15,6 +15,7 @@ import { TaskStrip } from '../tasks/TaskStrip.js';
 import { PlanStrip } from '../plans/PlanStrip.js';
 import { useWorktreeFlag } from './worktree-info-state.js';
 import { AskBanner } from '../chat/AskBanner.js';
+import { ConnectionStatus } from './room/ConnectionStatus.js';
 
 /** A conversation and the box to add to it: the room, a workspace, a shared workspace, a draft. */
 /** One-click ways to begin, under an empty conversation. */
@@ -107,6 +108,7 @@ export function ChatView() {
   const chat = (
     <div className={s.chat}>
       {other ? <OtherWorktreeBanner ws={other} /> : null}
+      {view.kind === 'room' ? <ConnectionStatus /> : null}
       {view.kind === 'workspace' ? <PlanStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <TaskStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <LiveStrip workspaceId={view.id} /> : null}

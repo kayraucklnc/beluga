@@ -91,6 +91,7 @@ export const API = {
   'session.removePerson': args(id),
   'session.newInviteLink': args(),
   'session.setRoomOpen': args(bool),
+  'session.retryConnection': args(),
   'session.setFriendWorktrees': args(z.enum(['ask', 'off'])),
   'session.setAccess': args(id, z.enum(['folder', 'full'])),
   'session.runOnPeerByHand': args(z.string().max(64), str, opt(channel)),
