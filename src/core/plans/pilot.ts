@@ -1,9 +1,9 @@
 import type { CombineResult } from '../../workspaces/git.js';
-import type { Actor, Issue } from '../board/model.js';
+import type { Actor, BoardState, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
 import type { Action, Store } from '../store.js';
 import { openMilestone } from './apply.js';
-import { type Plan, type PlanMerge, openMilestones, planBranchName } from './model.js';
+import { type Plan, type PlanMerge, allTasks, openMilestones, planBranchName } from './model.js';
 import type { PlanGit } from './plan-git.js';
 import type { Plans } from './plans.js';
 import { FINISHED, type MilestoneView, type PlanView, type TaskState, type TaskView, liveFrom, planView, startable, tidyOffer } from './progress.js';
@@ -50,6 +50,8 @@ export interface PilotDeps {
   readonly takeOver?: (channel: string) => Promise<readonly string[]>;
   readonly now?: () => number;
   readonly delayMs?: number;
+  /** A run's events re-check its plans at most this often (they stream all the time): default 1 s, or delayMs when that's given. */
+  readonly eventMs?: number;
 }
 
 /** How many times the head Claude is asked to fix one task's combining conflict before it waits for you. */
@@ -76,6 +78,22 @@ export class StillWorkingError extends Error {}
 
 /** What changes can move a plan along. */
 const WAKES = new Set(['board_issue', 'board_remove', 'plan_put', 'agent_event', 'question_add', 'question_remove', 'approval_add', 'approval_remove', 'projects']);
+const EVENT_MS = 1000;
+const WS_PREFIX = 'ws:';
+
+/** The plans each conversation belongs to: a plan's home, and its tasks' worktrees. */
+export function plansByChannel(plans: readonly Plan[], board: BoardState): Map<string, Set<string>> {
+  const planOfIssue = new Map<string, string>();
+  for (const plan of plans) for (const { task } of allTasks(plan.body)) if (task.issueId) planOfIssue.set(task.issueId, plan.id);
+  const out = new Map<string, Set<string>>();
+  const add = (channel: string, planId: string): void => void (out.get(channel) ?? out.set(channel, new Set()).get(channel)!).add(planId);
+  for (const plan of plans) add(plan.home, plan.id);
+  for (const issue of board.issues) {
+    const planId = planOfIssue.get(issue.id);
+    if (planId) for (const ws of issue.worktrees) add(`${WS_PREFIX}${ws}`, planId);
+  }
+  return out;
+}
 
 export class PlanPilot {
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -105,6 +123,12 @@ export class PlanPilot {
   private readonly seen = new Map<string, ReadonlyMap<string, TaskState>>();
   private readonly off: () => void;
   private stopped = false;
+  /** What the next tick looks at: every plan, or only those whose conversations had run events. */
+  private dueAll = false;
+  private readonly duePlans = new Set<string>();
+  private dueAt = 0;
+  private lastTick = -Infinity;
+  private channels?: { readonly plans: readonly Plan[]; readonly board: BoardState; readonly map: Map<string, Set<string>> };
 
   constructor(private readonly deps: PilotDeps) {
     this.watchdog = new TaskWatchdog({
@@ -118,7 +142,8 @@ export class PlanPilot {
       ...(deps.now ? { now: deps.now } : {}),
     });
     this.off = deps.store.onAction((a: Action) => {
-      if (WAKES.has(a.type)) this.schedule();
+      if (a.type === 'agent_event') this.onRunEvent(a.channel);
+      else if (WAKES.has(a.type)) this.schedule();
     });
     this.schedule();
     this.heartbeat = setInterval(() => this.schedule(), HEARTBEAT_MS);
@@ -138,12 +163,49 @@ export class PlanPilot {
     clearInterval(this.heartbeat);
   }
 
+  /** Look at every plan a moment from now. */
   schedule(): void {
-    if (this.stopped || this.timer) return;
+    this.dueAll = true;
+    this.arm(this.deps.delayMs ?? 300);
+  }
+
+  /** A run's event: its plans are looked at, at most once every eventMs (none, when it's no plan's). */
+  private onRunEvent(channel: string | undefined): void {
+    if (this.stopped) return;
+    if (channel === undefined) this.dueAll = true;
+    else {
+      const ids = this.plansOf(channel);
+      if (!ids?.size) return;
+      for (const id of ids) this.duePlans.add(id);
+    }
+    const delay = this.deps.delayMs ?? 300;
+    this.arm(Math.max(delay, this.lastTick + (this.deps.eventMs ?? this.deps.delayMs ?? EVENT_MS) - Date.now()));
+  }
+
+  private plansOf(channel: string): ReadonlySet<string> | undefined {
+    const plans = this.deps.plans.list();
+    const board = this.deps.store.getState().board;
+    if (this.channels?.plans !== plans || this.channels.board !== board) this.channels = { plans, board, map: plansByChannel(plans, board) };
+    return this.channels.map.get(channel);
+  }
+
+  /** Tick after `wait` (sooner if a tick is already due sooner). */
+  private arm(wait: number): void {
+    if (this.stopped) return;
+    const at = Date.now() + wait;
+    if (this.timer) {
+      if (this.dueAt <= at) return;
+      clearTimeout(this.timer);
+    }
+    this.dueAt = at;
     this.timer = setTimeout(() => {
       this.timer = undefined;
-      this.tick();
-    }, this.deps.delayMs ?? 300);
+      this.lastTick = Date.now();
+      const only = this.dueAll ? undefined : new Set(this.duePlans);
+      this.dueAll = false;
+      this.duePlans.clear();
+      this.tick(only);
+    }, wait);
     this.timer.unref?.();
   }
 
@@ -153,8 +215,10 @@ export class PlanPilot {
     return planView(plan, state.board, liveFrom(state));
   }
 
-  tick(): void {
+  /** Move the plans along (only those in `only`, when given). */
+  tick(only?: ReadonlySet<string>): void {
     for (const plan of this.deps.plans.list()) {
+      if (only && !only.has(plan.id)) continue;
       try {
         // Its branch, catching up, merges: paused or done, they go on (nothing new starts).
         if (plan.body && plan.status !== 'draft') this.tend(plan);

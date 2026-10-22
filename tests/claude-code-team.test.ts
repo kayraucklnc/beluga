@@ -61,8 +61,8 @@ describe('a team in the watcher', () => {
   const add = (file: string, ...lines: string[]): void => appendFileSync(file, lines.map((l) => `${l}\n`).join(''));
   const touch = (file: string, at = now): void => utimesSync(file, at / 1000, at / 1000);
   const sessions = (): readonly CcSession[] => store.getState().claudeCode.sessions;
-  const tick = (): void => {
-    w.scan();
+  const tick = async (): Promise<void> => {
+    await w.scan();
     w.poll();
     w.publish();
   };
@@ -89,7 +89,7 @@ describe('a team in the watcher', () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it('wakes an agent with a message, names whom messages went to, and shows the team with its timeline', () => {
+  it('wakes an agent with a message, names whom messages went to, and shows the team with its timeline', async () => {
     add(
       session,
       user('Review and fix the auth module', T0),
@@ -105,7 +105,7 @@ describe('a team in the watcher', () => {
     add(a2, user('fix', T0 + 2000, { isSidechain: true, agentId: 'a2' }), assistant([tool('r1', 'Read', { file_path: `${CWD}/src/auth.ts` })], T0 + 3000));
     for (const f of [session, a1, a2]) touch(f, T0 + 5000);
     now = T0 + 6000;
-    tick();
+    await tick();
     expect(sessions()[0]!.agents.find((a) => a.id === 'a1')).toMatchObject({ name: 'reviewer', status: 'finished' });
 
     // …then the lead sends it a message: it shows in its transcript and the reviewer is working again.
@@ -113,14 +113,14 @@ describe('a team in the watcher', () => {
     add(a1, user('The coordinator sent a message while you were working:\nReview the commit diff, not the working tree.', T0 + 8200, { isMeta: true, origin: { kind: 'coordinator' }, isSidechain: true }));
     for (const f of [session, a1]) touch(f, T0 + 8200);
     now = T0 + 8500;
-    tick();
+    await tick();
     expect(sessions()[0]!.agents.find((a) => a.id === 'a1')).toMatchObject({ status: 'running', step: 'Message from the lead session: Review the commit diff, not the working tree.' });
     // The reviewer tells the fixer what it found; the fixer gets it while working.
     add(a1, assistant([tool('m2', 'SendMessage', { to: 'fixer', summary: 'Found 2 bugs in auth.ts', message: 'Line 12 and 40.' })], T0 + 9000));
     add(a2, line({ type: 'attachment', isSidechain: true, attachment: { type: 'queued_command', prompt: '<agent-message from="a1">\nLine 12 and 40.\n</agent-message>' } }, T0 + 9100));
     for (const f of [session, a1, a2]) touch(f, T0 + 9100);
     now = T0 + 10_000;
-    tick();
+    await tick();
 
     const s = sessions()[0]!;
     const reviewer = s.agents.find((a) => a.id === 'a1')!;
@@ -143,17 +143,17 @@ describe('a team in the watcher', () => {
     add(session, user(`Another Claude session sent a message:\n<agent-message from="a2">\n${HANDBACK}\n</agent-message>`, T0 + 12_000, { isMeta: true, origin: { kind: 'peer', from: 'a2', name: 'fixer' } }));
     touch(session, T0 + 12_000);
     now = T0 + 13_000;
-    tick();
+    await tick();
     expect(w.steps(SID).steps.at(-1)).toMatchObject({ kind: 'message', report: true, who: 'fixer', text: 'Fixed both bugs.\nTests pass.' });
   });
 
-  it('shows no team for agents the lead only started', () => {
+  it('shows no team for agents the lead only started', async () => {
     add(session, user('go', T0), assistant([tool('toolu_A', 'Agent', { description: 'Explore', prompt: 'look' })], T0 + 1000));
     const a1 = agent('a1', { toolUseId: 'toolu_A', description: 'Explore' });
     add(a1, user('look', T0 + 2000, { isSidechain: true }), assistant([tool('r', 'Read', { file_path: 'x' })], T0 + 3000));
     for (const f of [session, a1]) touch(f, T0 + 3000);
     now = T0 + 4000;
-    tick();
+    await tick();
     expect(sessions()[0]!.agents).toHaveLength(1);
     expect(sessions()[0]!.team).toBeUndefined();
   });

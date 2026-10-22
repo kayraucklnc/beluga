@@ -256,8 +256,8 @@ describe('the watcher', () => {
   let notes: Array<{ title: string; body: string; failed: boolean }>;
   let w: ClaudeCodeWatcher;
   const sessions = (): readonly CcSession[] => store.getState().claudeCode.sessions;
-  const tick = (): void => {
-    w.scan();
+  const tick = async (): Promise<void> => {
+    await w.scan();
     w.poll();
     w.publish();
   };
@@ -278,29 +278,29 @@ describe('the watcher', () => {
   /** Files' times follow the fake clock. */
   const touch = (file: string, at = now): void => utimesSync(file, at / 1000, at / 1000);
 
-  it('finds a live session, where it runs, its title and step; follows it as lines are added', () => {
+  it('finds a live session, where it runs, its title and step; follows it as lines are added', async () => {
     fake.add(fake.session, JSON.stringify({ type: 'ai-title', aiTitle: 'Klaud plan' }), user('Make the sidebar draggable', T0), assistant([toolUse('t1', 'Read', { file_path: `${CWD}/src/core/store.ts` })], T0 + 1000));
     touch(fake.session, T0 + 1000);
-    tick();
+    await tick();
     expect(sessions()).toHaveLength(1);
     const s = sessions()[0]!;
     expect(s).toMatchObject({ id: SID, title: 'Klaud plan', cwd: CWD, projectId: 'p1', workspaceId: 'w-madrid', status: 'working', step: 'Reading src/core/store.ts', steps: 2, startedAt: T0 });
     expect(sessionLive(s)).toBe(true);
     fake.add(fake.session, toolResult('t1', T0 + 2000), assistant([{ type: 'text', text: 'Done.' }], T0 + 3000, {}, 'end_turn'));
     touch(fake.session, T0 + 3000);
-    tick();
+    await tick();
     expect(sessions()[0]).toMatchObject({ status: 'waiting', step: 'Done.', steps: 3 });
     const page = w.steps(SID);
     expect(page.steps.map((x) => x.kind)).toEqual(['user', 'tool', 'text']);
     expect(page.steps[1]!.status).toBe('done');
     // Quiet for a long time: gone from the list.
     now = T0 + 2 * 60 * 60_000;
-    tick();
+    await tick();
     expect(sessions()).toEqual([]);
     expect(w.steps(SID).missing).toBe(true);
   });
 
-  it('shows sub-agents with their meta, steps and status, and tells you when a background one finishes', () => {
+  it('shows sub-agents with their meta, steps and status, and tells you when a background one finishes', async () => {
     fake.add(fake.session, user('Fix three things', T0), assistant([toolUse('toolu_A', 'Agent', { description: 'Fix worktrees', subagent_type: 'general-purpose' }), toolUse('toolu_B', 'Agent', { description: 'Review', subagent_type: 'typescript-reviewer' })], T0 + 100));
     fake.add(fake.session, toolResult('toolu_A', T0 + 200, { text: 'Async agent launched successfully.', tur: { isAsync: true, status: 'async_launched', agentId: 'a1' } }));
     fake.add(fake.session, toolResult('toolu_B', T0 + 200, { text: 'Async agent launched successfully.', tur: { isAsync: true, status: 'async_launched', agentId: 'b2' } }));
@@ -313,7 +313,7 @@ describe('the watcher', () => {
     fake.add(b2, user('Review the code', T0 + 300), assistant([toolUse('y1', 'Read', { file_path: `${CWD}/a.ts` })], T0 + 400));
     touch(a1, T0 + 400);
     touch(b2, T0 + 400);
-    tick();
+    await tick();
     const s = sessions()[0]!;
     expect(s.agents.map((a) => [a.id, a.description, a.type, a.background, a.status, a.step, a.steps])).toEqual([
       ['a1', 'Fix worktrees', 'general-purpose', true, 'running', 'Searching for worktree', 2],
@@ -329,7 +329,7 @@ describe('the watcher', () => {
     fake.add(fake.session, JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(now), content: notice('a1', 'toolu_A', 'completed', 'Agent "Fix worktrees" finished') }));
     fake.add(fake.session, JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(now), content: notice('b2', 'toolu_B', 'killed', 'Agent "Review" was stopped') }));
     touch(fake.session);
-    tick();
+    await tick();
     const after = sessions()[0]!.agents;
     expect(after.find((a) => a.id === 'a1')).toMatchObject({ status: 'finished', step: 'Fixed it.', endedAt: now });
     expect(after.find((a) => a.id === 'b2')).toMatchObject({ status: 'stopped' });
@@ -343,11 +343,11 @@ describe('the watcher', () => {
     expect(w.steps(SID, 'nope').missing).toBe(true);
     // Nothing changes: nothing is published again.
     const before = store.getState();
-    tick();
+    await tick();
     expect(store.getState()).toBe(before);
   });
 
-  it('keeps a quiet session while one of its agents works, and drops old agents', () => {
+  it('keeps a quiet session while one of its agents works, and drops old agents', async () => {
     fake.add(fake.session, user('Go', T0 - 60 * 60_000));
     touch(fake.session, T0 - 60 * 60_000);
     const old = path.join(fake.agentsDir, 'agent-old1.jsonl');
@@ -356,27 +356,27 @@ describe('the watcher', () => {
     const live = path.join(fake.agentsDir, 'agent-live1.jsonl');
     fake.add(live, user('Long task', now - 5000), assistant([toolUse('z', 'Bash', { command: 'npm test' })], now - 1000));
     touch(live, now - 1000);
-    tick();
+    await tick();
     expect(sessions()).toHaveLength(1);
     expect(sessions()[0]!.status).toBe('idle');
     expect(sessions()[0]!.agents.map((a) => [a.id, a.description, a.background, a.status])).toEqual([['live1', 'Long task', false, 'running']]);
   });
 
-  it("leaves out klaud's own conversations, and maps folders outside any project to none", () => {
+  it("leaves out klaud's own conversations, and maps folders outside any project to none", async () => {
     const folder = path.dirname(fake.session);
     writeFileSync(path.join(folder, 'aaaaaaaa-0000-0000-0000-000000000000.jsonl'), `${user('mine', now)}\n`);
     const other = path.join(fake.home, 'projects', '-tmp-x');
     mkdirSync(other);
     writeFileSync(path.join(other, 'bbbbbbbb-1111-1111-1111-111111111111.jsonl'), `${JSON.stringify({ type: 'user', timestamp: iso(now), cwd: '/tmp/x', message: { content: 'elsewhere' } })}\n`);
     writeFileSync(path.join(other, 'notes.txt'), 'not a transcript');
-    tick();
+    await tick();
     // klaud's own conversation is watched (for its sub-agents) but marked, so Activity leaves it out.
     expect(outsideSessions(sessions()).map((s) => s.id)).toEqual(['bbbbbbbb-1111-1111-1111-111111111111']);
     expect(sessions().find((s) => s.id.startsWith('aaaa'))).toMatchObject({ own: true });
     expect(outsideSessions(sessions())[0]).not.toHaveProperty('workspaceId');
   });
 
-  it("follows klaud's own conversations' sub-agents: where they started, model, effort, own worktree", () => {
+  it("follows klaud's own conversations' sub-agents: where they started, model, effort, own worktree", async () => {
     const OWN = 'aaaaaaaa-0000-0000-0000-000000000000';
     const folder = path.dirname(fake.session);
     const ownFile = path.join(folder, `${OWN}.jsonl`);
@@ -389,7 +389,7 @@ describe('the watcher', () => {
     writeFileSync(path.join(agents, 'agent-bad.meta.json'), JSON.stringify({ description: 'Elsewhere', worktreePath: '/etc' }));
     writeFileSync(path.join(agents, 'agent-b0b1.jsonl'), `${assistant([toolUse('r', 'Read', { file_path: `${wt}/a.ts` })], now - 1000, { sessionId: OWN, cwd: wt, effort: 'high' })}\n`);
     writeFileSync(path.join(agents, 'agent-bad.jsonl'), `${user('x', now - 1000)}\n`);
-    tick();
+    await tick();
     const own = sessions().find((x) => x.id === OWN)!;
     expect(own).toMatchObject({ own: true, workspaceId: 'w-own', projectId: 'p1' });
     const agent = own.agents.find((a) => a.id === 'b0b1')!;
@@ -398,23 +398,23 @@ describe('the watcher', () => {
     expect(outsideSessions(sessions()).some((x) => x.id === OWN)).toBe(false);
   });
 
-  it('finds an old sub-agent by its id and keeps it watched while you look', () => {
+  it('finds an old sub-agent by its id and keeps it watched while you look', async () => {
     const old = T0 - 5 * 60 * 60_000;
     const agentFile = path.join(fake.agentsDir, 'agent-ancient1.jsonl');
     fake.add(fake.session, user('Long ago', old));
     touch(fake.session, old);
     fake.add(agentFile, user('Old task', old));
     touch(agentFile, old);
-    tick();
+    await tick();
     expect(sessions()).toEqual([]);
     expect(w.adopt('nope-nothing')).toBeUndefined();
     expect(w.adopt('ancient1')).toBe(SID);
-    tick();
+    await tick();
     expect(sessions()[0]!.agents.map((a) => a.id)).toEqual(['ancient1']);
     expect(w.steps(SID, 'ancient1').steps.map((x) => x.text)).toContain('Old task');
     // Once nobody looks for a while, it's let go again.
     now += 11 * 60_000;
-    tick();
+    await tick();
     expect(sessions()).toEqual([]);
   });
 
@@ -425,7 +425,11 @@ describe('the watcher', () => {
       fake.add(fake.session, user('Hello', now));
       touch(fake.session);
       live.start();
-      await vi.advanceTimersByTimeAsync(200);
+      // The scan reads the disk for real (async): time moves on while it does.
+      for (let i = 0; i < 100 && !sessions().length; i++) {
+        await vi.advanceTimersByTimeAsync(20);
+        await new Promise((r) => setImmediate(r));
+      }
       expect(sessions()).toHaveLength(1);
       // Projects change: sessions map again.
       store.dispatch({ type: 'projects', projects: [project({ workspaces: [] })] });
@@ -433,7 +437,7 @@ describe('the watcher', () => {
       expect(sessions()[0]).not.toHaveProperty('workspaceId');
       expect(sessions()[0]!.projectId).toBeUndefined();
       live.stop();
-      live.scan();
+      await live.scan();
       live.poll();
       live.publish();
     } finally {
@@ -516,13 +520,13 @@ describe('klaud’s own conversations stay out of Activity', () => {
     const ws = { id: 'w1', projectId: 'p1', name: 'chat', path: '/tmp/proj', kind: 'chat', createdAt: 0, sessionId: sid, external: false };
     store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'proj', root: '/tmp/proj', base: 'main', workspaces: [ws] }] } as never);
     const first = new ClaudeCodeWatcher({ home, store, watch: false, ownFile: own });
-    first.scan();
+    await first.scan();
     expect(store.getState().claudeCode?.sessions ?? []).toHaveLength(0);
     first.stop();
     // The conversation is deleted; a new klaud (restarted) still keeps its session out.
     store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'proj', root: '/tmp/proj', base: 'main', workspaces: [] }] } as never);
     const second = new ClaudeCodeWatcher({ home, store, watch: false, ownFile: own });
-    second.scan();
+    await second.scan();
     await new Promise((r) => setTimeout(r, 400));
     expect((store.getState().claudeCode?.sessions ?? []).map((s: { id: string }) => s.id)).not.toContain(sid);
     second.stop();
@@ -550,7 +554,7 @@ describe('sub-agent worktrees keep who started them', () => {
     const agentWs = { id: 'agent', projectId: 'p1', name: 'agent-abc123', path: wt, kind: 'worktree', createdAt: 0, external: true };
     store.dispatch({ type: 'projects', projects: [{ id: 'p1', name: 'proj', root: '/tmp/proj', base: 'main', workspaces: [main, agentWs] }] } as never);
     const w = new ClaudeCodeWatcher({ home, store, watch: false });
-    w.scan();
+    await w.scan();
     expect(store.getState().claudeCode.sessions).toHaveLength(0);
     expect(store.getState().claudeCode.origins).toEqual([expect.objectContaining({ path: wt, agentId: 'abc123', description: 'Composer package', sessionTitle: 'Split it up', projectId: 'p1', workspaceId: 'main', finished: true })]);
     w.stop();
