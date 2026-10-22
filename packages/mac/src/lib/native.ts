@@ -14,6 +14,8 @@ import { runRequestMenuItem } from '../gateway/request-native.js';
 import { SHOW_WELCOME } from '../onboarding/onboarding-model.js';
 import { pastePlain } from '../chat/paste-paths.js';
 import type { PlaceKind } from './go.js';
+import { throttle } from './throttle.js';
+import { windowActive } from './window-active.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
@@ -154,13 +156,23 @@ export async function joinRoom(invite: string): Promise<void> {
  * Keep the Dock icon's badge and the menu-bar icon in step with what's new for you: the
  * sidebar's Unread conversations (one each), plus other unread notifications and anything
  * still waiting on you (see dockCount).
+ *
+ * The store changes many times a second while Claudes stream, and counting is a walk over every
+ * conversation: at most once a second in front, once every 5 s behind other windows (KLD-48),
+ * nothing counted when the state hasn't changed, and nothing sent when the counts haven't.
  */
+export const TRAY_GAP_MS = 1000;
+export const TRAY_GAP_AWAY_MS = 5000;
+
 export function useTrayStatus(client: SocketClient): void {
   useEffect(() => {
     if (!inApp()) return;
     let last = '';
+    let seen: unknown;
     const update = (): void => {
       const st = client.store.getState();
+      if (st === seen) return;
+      seen = st;
       const waiting = st.approvals.length + st.questions.length + st.knocks.length;
       const working = new Set(st.log.filter((l) => l.type === 'agent' && l.owner === st.selfId && ['started', 'text', 'tool', 'sub'].includes(l.status)).map((l) => l.channel)).size;
       const unread = dockCount(st);
@@ -169,8 +181,13 @@ export function useTrayStatus(client: SocketClient): void {
       last = key;
       void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_tray_status', { waiting, working, unread })).catch(() => undefined);
     };
-    update();
-    return client.store.subscribe(update);
+    const tick = throttle(update, () => (windowActive() ? TRAY_GAP_MS : TRAY_GAP_AWAY_MS));
+    tick.request();
+    const off = client.store.subscribe(tick.request);
+    return () => {
+      off();
+      tick.stop();
+    };
   }, [client]);
 }
 

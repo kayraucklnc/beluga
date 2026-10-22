@@ -9,6 +9,7 @@ import { Avatar, Badge, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { inApp } from '../lib/boot.js';
 import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { sameDeep } from '../lib/stable.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { openPerson } from '../dialogs/native/PersonPopover.js';
 import { PersonContextMenu } from '../dialogs/native/PersonMenu.js';
@@ -44,17 +45,16 @@ export { workspaceItems } from './workspace-row.js';
 
 function People() {
   const { ui } = useKlaud();
-  const state = useApp((st) => st);
-  const people = state.peers;
+  const people = useApp(
+    (state) => state.peers.map((p) => ({ p, me: p.peerId === state.self?.peerId, trust: p.peerId === state.self?.peerId ? undefined : trustOf(state, p.peerId), following: state.follow === p.peerId })),
+    sameDeep,
+  );
   if (people.length <= 1) {
     return <Row className={s.hintRow} icon={<Icon name="link" size={13} />} label="Invite someone…" onClick={() => document.dispatchEvent(new CustomEvent('klaud:invite'))} />;
   }
   return (
     <>
-      {people.map((p, index) => {
-        const me = p.peerId === state.self?.peerId;
-        const trust = me ? undefined : trustOf(state, p.peerId);
-        const following = state.follow === p.peerId;
+      {people.map(({ p, me, trust, following }, index) => {
         return (
           <PersonContextMenu key={p.peerId} index={index}>
             <Row
@@ -127,19 +127,26 @@ function useFolderDrop(): { ref: React.RefObject<HTMLElement | null>; over: bool
 export function Sidebar() {
   const actions = useActions();
   const drop = useFolderDrop();
-  const state = useApp((st) => st);
-  const tabs = macTabs(state);
-  const chats = state.projects.find((p) => !p.root);
-  const liveChats = chats?.workspaces.filter((w) => !w.archived) ?? [];
-  const news = overviewNews(state);
+  // Only what the sidebar itself shows: drawn again when that changes, not on every streamed event (KLD-48).
+  const { tabs, liveChats, view, othersShare, badges, shared } = useApp((state) => {
+    const news = overviewNews(state);
+    const fresh = newShares(state);
+    const badges: Partial<Record<string, { count: number; urgent?: boolean }>> = {
+      room: { count: state.unread.room ?? 0, urgent: true },
+      files: { count: fresh },
+      overview: { count: state.view.kind === 'overview' ? 0 : news.count, urgent: news.urgent },
+    };
+    return {
+      tabs: macTabs(state),
+      liveChats: state.projects.find((p) => !p.root)?.workspaces.filter((w) => !w.archived) ?? [],
+      view: state.view,
+      // Folders someone else shares with you (or that went away while you weren't looking).
+      othersShare: state.peers.some((p) => p.peerId !== state.self?.peerId && p.shares.length > 0) || fresh > 0,
+      badges,
+      shared: state.shared.map((w) => ({ w, owner: state.peers.find((p) => p.peerId === w.owner)?.name ?? 'someone', signal: signalOf(state, `ws:${w.id}`) })),
+    };
+  }, sameDeep);
   const files = tabs.find((t) => t.kind === 'files');
-  // Folders someone else shares with you (or that went away while you weren't looking).
-  const othersShare = state.peers.some((p) => p.peerId !== state.self?.peerId && p.shares.length > 0) || newShares(state) > 0;
-  const badges: Partial<Record<string, { count: number; urgent?: boolean }>> = {
-    room: { count: state.unread.room ?? 0, urgent: true },
-    files: { count: newShares(state) },
-    overview: { count: state.view.kind === 'overview' ? 0 : news.count, urgent: news.urgent },
-  };
   return (
     <nav ref={drop.ref} className={cx(s.sidebar, drop.over && s.dropping)} aria-label="Sidebar">
       <div className={s.titlebar} data-tauri-drag-region>
@@ -159,7 +166,7 @@ export function Sidebar() {
                 icon={<Icon name={n.icon} size={14} />}
                 label={tab.label}
                 detail={tab.hint}
-                selected={state.view.kind === n.kind}
+                selected={view.kind === n.kind}
                 onClick={() => actions.run({ type: 'view', view: { kind: n.kind } })}
                 trailing={b?.count ? <Badge count={b.count} urgent={b.urgent} /> : null}
               />
@@ -186,22 +193,20 @@ export function Sidebar() {
           <WorktreesNav />
         </Section>
 
-        {state.shared.length || othersShare ? (
+        {shared.length || othersShare ? (
           <Section id="shared" title="Shared with me">
             {othersShare ? (
               <Row
                 icon={<Icon name="folder" size={14} />}
                 label={files?.label ?? 'Shared files'}
                 detail={files?.hint ?? 'Folders people share with you'}
-                selected={state.view.kind === 'files'}
+                selected={view.kind === 'files'}
                 onClick={() => actions.run({ type: 'view', view: { kind: 'files' } })}
                 trailing={badges.files?.count ? <Badge count={badges.files.count} /> : null}
               />
             ) : null}
-            {state.shared.map((w) => {
-              const owner = state.peers.find((p) => p.peerId === w.owner)?.name ?? 'someone';
-              const selected = state.view.kind === 'shared' && state.view.id === w.id;
-              const signal = signalOf(state, `ws:${w.id}`);
+            {shared.map(({ w, owner, signal }) => {
+              const selected = view.kind === 'shared' && view.id === w.id;
               return (
                 <SpecContext key={`${w.owner}:${w.id}`} menu={{ kind: 'shared', owner: w.owner, id: w.id }}>
                   <Row
@@ -249,14 +254,15 @@ function UsageButton() {
 }
 
 function SidebarFooter() {
-  const state = useApp((st) => st);
-  const status = state.status;
-  const hosting = state.hosting;
+  const status = useApp((st) => st.status);
+  const people = useApp((st) => st.peers.length);
+  const room = useApp((st) => st.room);
+  const ready = useApp((st) => st.hosting?.phase === 'ready');
   const label =
     status === 'connected'
-      ? state.peers.length > 1
-        ? `${state.peers.length} people in ${state.room}`
-        : hosting?.phase === 'ready'
+      ? people > 1
+        ? `${people} people in ${room}`
+        : ready
           ? 'Invite ready'
           : 'Just you'
       : status === 'connecting'
