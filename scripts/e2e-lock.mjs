@@ -204,6 +204,25 @@ export function listeners(port) {
   }
 }
 
+/** A command line, for saying who holds a port ("node …/vite --port 14321"). */
+function commandOf(pid) {
+  try {
+    return execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().slice(0, 160);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Why the run's port can't be used, or undefined when it's free. Checked before playwright starts:
+ * playwright starts its web server (vite, on this port) before the global setup runs.
+ */
+export function portProblem(port) {
+  const pids = listeners(port);
+  if (!pids.length) return undefined;
+  return `Port ${port} is in use by ${pids.map((p) => `pid ${p}${commandOf(p) ? ` (${commandOf(p)})` : ''}`).join(', ')}. Stop it, or set E2E_PORT to another port.`;
+}
+
 const signal = (target, sig) => {
   try {
     process.kill(target, sig);
@@ -366,6 +385,11 @@ async function main(argv) {
     process.exit(1);
   }
   console.log(`e2e for ${run.name} on port ${port} (demo home ${run.home})`);
+  const busy = portProblem(port);
+  if (busy) {
+    console.error(`The e2e can't start: ${busy}`);
+    return void finish(1);
+  }
 
   const [cmd, ...args] = argv;
   let { code, peak } = await runOnce(cmd, args, env, run);

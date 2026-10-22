@@ -31,6 +31,8 @@ export function processTable(): Array<{ pid: number; ppid: number; pgid: number 
 export function groupsUnder(root: number, table: ReadonlyArray<{ pid: number; ppid: number; pgid: number }>): Set<number>;
 export function processesTagged(key: string, value: string): Array<{ pid: number; pgid: number }>;
 export function listeners(port: number): number[];
+/** Why the run's port can't be used, or undefined when it's free (checked before playwright starts). */
+export function portProblem(port: number): string | undefined;
 export function stopGroups(targets: { groups?: readonly number[]; pids?: readonly number[] }, opts?: { graceMs?: number }): Promise<void>;
 export function processesOf(run: E2eRun, rows?: ReadonlyArray<{ pid: number; pgid: number; line: string }>): Array<{ pid: number; pgid: number }>;
 export function stopRun(run: E2eRun, opts?: { graceMs?: number }): Promise<void>;

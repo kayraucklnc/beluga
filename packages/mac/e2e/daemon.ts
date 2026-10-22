@@ -1,7 +1,10 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { alive, listeners, stopGroups } from '../../../scripts/e2e-lock.mjs';
+import { alive, stopGroups } from '../../../scripts/e2e-lock.mjs';
+
+// The port is checked by the lock before playwright starts (its web server is up by the time setup runs).
+export { portProblem } from '../../../scripts/e2e-lock.mjs';
 
 /** Marks a folder as an e2e demo home: only such a folder is ever wiped. */
 export const MARK = '.klaud-e2e';
@@ -49,13 +52,6 @@ export async function freshHome(home: string): Promise<string[]> {
   return cleaned;
 }
 
-/** Why the port can't be used, or undefined when it's free. */
-export function portProblem(port: number): string | undefined {
-  const pids = listeners(port);
-  if (!pids.length) return undefined;
-  return `Port ${port} is in use by ${pids.map((p) => `pid ${p}${commandOf(p) ? ` (${commandOf(p)})` : ''}`).join(', ')}. Stop it, or set E2E_PORT to another port.`;
-}
-
 /** The last lines of a log, for an error message. */
 const tail = (file: string, lines = 15): string => {
   try {
@@ -76,8 +72,6 @@ export default async function setup(): Promise<() => Promise<void>> {
     rmSync(claudeHome, { recursive: true, force: true });
     mkdirSync(claudeHome, { recursive: true });
   }
-  const busy = portProblem(port);
-  if (busy) throw new Error(`The demo can't start: ${busy}`);
 
   const log = path.join(home, 'e2e-daemon.log');
   const out = openSync(log, 'a');
