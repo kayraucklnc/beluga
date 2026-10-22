@@ -4,6 +4,8 @@ import { useOnViewportChange, useStoreApi } from '@xyflow/react';
 /** How long the view must sit still before it's redrawn sharp. */
 export const SETTLE_MS = 120;
 const NUDGE = ' translateZ(0)';
+/** The nudge as the browser may give it back (Chromium says `translateZ(0px)`). */
+const NUDGED = /\s*translateZ\(0(px)?\)$/;
 
 /**
  * Text stays sharp at every zoom (KLD-25). React Flow zooms with `transform: scale()` on `.react-flow__viewport`.
@@ -30,14 +32,14 @@ export function useSharpZoom(): void {
 
 /** Re-rasterize a scaled layer at its current scale. */
 export function sharpen(el: HTMLElement): void {
-  if (!el.style.transform || el.style.transform.endsWith(NUDGE)) return;
+  if (!el.style.transform || NUDGED.test(el.style.transform)) return;
   el.style.transform += NUDGE;
   el.dataset.sharpened = String(Date.now());
   // Two frames: the first commits the 3D layer, the second drops it. React Flow may have moved the view
   // meanwhile (its own transform then has no nudge), so only strip what we added.
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      if (el.style.transform.endsWith(NUDGE)) el.style.transform = el.style.transform.slice(0, -NUDGE.length);
+      if (NUDGED.test(el.style.transform)) el.style.transform = el.style.transform.replace(NUDGED, '');
     }),
   );
 }

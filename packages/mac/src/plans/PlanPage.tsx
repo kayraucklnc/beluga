@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AUTONOMIES, AUTONOMY_INFO, MAX_PARALLEL, type Plan, shownBody } from '@klaud/core/plans/model.js';
+import { AUTONOMY_INFO, MAX_PARALLEL, type Plan, shownBody } from '@klaud/core/plans/model.js';
 import type { PlanView } from '@klaud/core/plans/progress.js';
 import { formatDuration } from '@klaud/shared/text.js';
 import { activityOf } from '@klaud/ui/workspace-models.js';
@@ -10,11 +10,11 @@ import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useApp } from '../lib/klaud.js';
 import { openSheet } from '../lib/sheets.js';
-import { MilestoneBar, TonePill } from './marks.js';
+import { PlanProgress, Said } from './marks.js';
 import { PlanChat } from './PlanChat.js';
-import { PlanDetails } from './PlanDetails.js';
+import { FEED, PlanDetails } from './PlanDetails.js';
 import { PlanOutline } from './PlanOutline.js';
-import { bars, changeWords, nextWords, planStatus, titleOf } from './plans-model.js';
+import { barColumns, changeWords, headline, nextWords, titleOf } from './plans-model.js';
 import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
 
@@ -54,7 +54,7 @@ export function PlanPage({ id }: { id: string }) {
   const { openList } = usePlanActions();
   // A task taken out of the plan isn't picked any more.
   useEffect(() => {
-    if (picked && view && !picked.startsWith('gate:') && !view.milestones.some((m) => m.tasks.some((t) => t.task.id === picked))) setPicked(undefined);
+    if (picked && view && picked !== FEED && !picked.startsWith('gate:') && !view.milestones.some((m) => m.tasks.some((t) => t.task.id === picked))) setPicked(undefined);
   }, [view, picked]);
   if (!plan || !view) return <Empty icon="flag" title="This plan is gone" detail="It was deleted. Its tasks stay on the board." action={<Button onClick={() => openList()}>Back to Plans</Button>} />;
   return <Page view={view} prefs={prefs} setPrefs={setPrefs} picked={picked} setPicked={setPicked} />;
@@ -64,7 +64,6 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   const { plan } = view;
   const { api, act, openList, openWorktree } = usePlanActions();
   const body = shownBody(plan);
-  const status = planStatus(view);
   const keys = useMemo(() => new Map(view.milestones.flatMap((m) => m.tasks.flatMap((t) => (t.issue ? [[t.task.id, t.issue.key] as const] : [])))), [view]);
   const startable = useMemo(() => {
     if (!plan.body || plan.draft || view.active.length >= plan.maxParallel || !view.open.length) return new Set<string>();
@@ -74,6 +73,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   const start = useCallback((taskId: string) => void act(() => api.startTask(plan.id, taskId)), [plan.id, act, api]);
   const next = view.next;
   const words = nextWords(next);
+  const line = headline(view);
   // Claude is writing the first plan: one placeholder and one line say so, nothing else.
   const drafting = !plan.body && !body?.milestones.length;
 
@@ -119,34 +119,26 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
     <div className={p.page}>
       <header className={p.pageHead}>
         <div className={p.headMain}>
-          <button type="button" className={p.back} onClick={() => openList(plan.projectId)} aria-label="All Plans">
-            <Icon name="back" size={12} />
-            Plans
-          </button>
           <div className={p.titleRow}>
+            <IconButton icon="back" label="All Plans" className={p.back} onClick={() => openList(plan.projectId)} />
             <TitleField value={titleOf(plan)} onSave={(title) => void act(() => api.edit(plan.id, [{ op: 'retitle', title }]))} />
-            {drafting ? null : (
-              <TonePill tone={status.tone} live={status.tone === 'claude'}>
-                {status.label}
-              </TonePill>
-            )}
           </div>
           {drafting ? null : (
-            <div className={p.subRow}>
-              {view.milestones.length && plan.body ? <MilestoneBar items={bars(view)} /> : null}
-              <span className={p.nextLine}>{plan.body ? (words.detail ? `${words.title} · ${words.detail}` : words.title) : `${view.milestones.length} milestones · ${view.total} tasks · a draft, not on the board yet`}</span>
-            </div>
+            <>
+              {view.milestones.length && plan.body ? <PlanProgress columns={barColumns(view)} /> : null}
+              <button type="button" className={p.saidButton} onClick={() => setPicked(picked === FEED ? undefined : FEED)} aria-label={`${line.who === 'you' ? 'You: ' : ''}${line.text}. Show what happened`}>
+                <Said line={line} />
+              </button>
+            </>
           )}
         </div>
         <div className={p.headActions}>
-          {/* How it runs: nothing to run while Claude writes it. */}
+          {/* How it runs: nothing to run while Claude writes it. A real decision: its sheet says what changes. */}
           {drafting ? null : (
-            <ActionsDropdown items={AUTONOMIES.map((a) => ({ label: AUTONOMY_INFO[a].label, hint: AUTONOMY_INFO[a].summary, checked: plan.autonomy === a, onSelect: () => void act(() => api.setAutonomy(plan.id, a)) }))}>
-              <Button size="small" variant="quiet" icon="play" title={AUTONOMY_INFO[plan.autonomy].hint} aria-label={`How it runs: ${AUTONOMY_INFO[plan.autonomy].label}`}>
-                {AUTONOMY_INFO[plan.autonomy].label}
-                <Icon name="chevronDown" size={10} className={p.modeChevron} />
-              </Button>
-            </ActionsDropdown>
+            <Button size="small" variant="quiet" icon="gauge" title={AUTONOMY_INFO[plan.autonomy].hint} onClick={() => openSheet({ kind: 'plan_mode', planId: plan.id })}>
+              Runs on {AUTONOMY_INFO[plan.autonomy].label}
+              {view.milestones.some((m) => m.milestone.autonomy && m.milestone.autonomy !== plan.autonomy) ? ' (mixed)' : ''}
+            </Button>
           )}
           <ActionsDropdown items={more}>
             <IconButton icon="more" label="Plan Options" />
@@ -154,10 +146,6 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           {primary ? (
             <Button variant="primary" size="small" {...(primary.icon ? { icon: primary.icon } : {})} onClick={primary.run}>
               {primary.label}
-            </Button>
-          ) : next.kind === 'checking' ? (
-            <Button size="small" disabled>
-              Claude is checking…
             </Button>
           ) : null}
         </div>
@@ -189,6 +177,11 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
                   { value: 'outline', label: 'List', hint: 'Milestone by milestone' },
                 ]}
               />
+            )}
+            {drafting ? null : (
+              <Button size="small" variant="quiet" icon="clock" onClick={() => setPicked(picked === FEED ? undefined : FEED)} aria-pressed={picked === FEED}>
+                What Happened
+              </Button>
             )}
             {!prefs.chat ? (
               <Button size="small" variant="quiet" icon="claude" onClick={() => setPrefs({ chat: true })}>

@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { AUTONOMIES, AUTONOMY_INFO, type Plan } from '@klaud/core/plans/model.js';
 import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progress.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
-import { MILESTONE_STATE, TASK_STATE, changeMarks, milestoneLabel } from './plans-model.js';
+import { MILESTONE_STATE, TASK_STATE, changeMarks, milestoneLabel, milestoneRows } from './plans-model.js';
 import { TaskStateIcon } from './marks.js';
 import { usePlanActions } from './use-plans.js';
 
@@ -20,12 +20,30 @@ import p from './plans.module.css';
  */
 export function PlanOutline({ view, keys, selected, onSelect, startable }: { view: PlanView; keys: ReadonlyMap<string, string>; selected?: string; onSelect: (id: string) => void; startable: ReadonlySet<string> }) {
   const marks = changeMarks(view.plan);
+  // Milestones that run side by side share a row; a row starts once what it waits on has passed.
+  const rows = milestoneRows(view.body ?? view.plan.draft);
   return (
     <div className={p.outline}>
       {view.body?.goal ? <p className={p.outlineGoal}>{view.body.goal}</p> : null}
-      {view.milestones.map((m) => (
-        <Milestone key={m.milestone.id} view={view} plan={view.plan} m={m} keys={keys} marks={marks} selected={selected} onSelect={onSelect} startable={startable} />
-      ))}
+      {rows.map((row, i) => {
+        const ms = row.flatMap((id) => view.milestones.find((m) => m.milestone.id === id) ?? []);
+        const after = [...new Set(ms.flatMap((m) => m.dependsOn))].flatMap((id) => view.milestones.find((m) => m.milestone.id === id) ?? []);
+        return (
+          <Fragment key={row.join()}>
+            {i > 0 ? (
+              <div className={p.oAfter} aria-label={`Then, once ${after.map((m) => m.milestone.title).join(' and ')} ${after.length === 1 ? 'passes' : 'pass'}`}>
+                <Icon name="arrowRight" size={11} className={p.oAfterArrow} />
+                {after.length ? `Once ${after.map((m) => `“${m.milestone.title}”`).join(' and ')} ${after.length === 1 ? 'passes' : 'pass'}` : 'Then'}
+              </div>
+            ) : null}
+            <div className={p.oRow} data-parallel={ms.length > 1 ? ms.length : undefined} style={{ '--cols': ms.length } as React.CSSProperties}>
+              {ms.map((m) => (
+                <Milestone key={m.milestone.id} view={view} plan={view.plan} m={m} keys={keys} marks={marks} selected={selected} onSelect={onSelect} startable={startable} />
+              ))}
+            </div>
+          </Fragment>
+        );
+      })}
     </div>
   );
 }

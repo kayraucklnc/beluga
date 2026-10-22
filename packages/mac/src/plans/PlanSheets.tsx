@@ -5,7 +5,8 @@ import { Icon, type IconName } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
 import { useTasksPrefs } from '../tasks/use-tasks.js';
-import { usePlanActions, usePlans } from './use-plans.js';
+import { modeChange } from './plans-model.js';
+import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
 
 const AUTONOMY_ICON: Record<Autonomy, IconName> = { step: 'hand', gated: 'flag', autopilot: 'wand' };
@@ -84,7 +85,7 @@ function GoalBox({ value, onChange }: { value: string; onChange: (v: string) => 
 }
 
 /** Step by Step, Check-ins, Autopilot: three cards you can read without hovering (a radio group; the arrows move). */
-function AutonomyCards({ value, onChange }: { value: Autonomy; onChange: (a: Autonomy) => void }) {
+function AutonomyCards({ value, onChange, current }: { value: Autonomy; onChange: (a: Autonomy) => void; current?: Autonomy }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
@@ -114,10 +115,55 @@ function AutonomyCards({ value, onChange }: { value: Autonomy; onChange: (a: Aut
             </span>
             <span className={p.modeName}>{AUTONOMY_INFO[a].label}</span>
             <span className={p.modeSummary}>{AUTONOMY_INFO[a].summary}</span>
+            {a === current ? <span className={p.modeNow}>Now</span> : null}
           </button>
         );
       })}
     </div>
+  );
+}
+
+/**
+ * How a running plan runs: the same three cards as a new plan. Picking another one says, in plain
+ * words, what changes from now on (and what happens at once); Switch applies it and it's in the feed.
+ */
+export function PlanModeSheet({ planId, close }: { planId: string; close: () => void }) {
+  const plan = usePlans().plans.find((x) => x.id === planId);
+  const view = usePlanView(plan);
+  const { api, act } = usePlanActions();
+  const [mode, setMode] = useState<Autonomy>(plan?.autonomy ?? DEFAULT_AUTONOMY);
+  if (!plan || !view) return <FormSheet title="How It Runs" intro="This plan is gone." submitLabel="OK" hideSubmit onSubmit={close} onCancel={close} />;
+  const mixed = plan.body?.milestones.some((m) => m.autonomy && m.autonomy !== plan.autonomy);
+  const change = mode !== plan.autonomy || mixed ? modeChange(view, mode) : undefined;
+  return (
+    <FormSheet
+      title="How It Runs"
+      icon="flag"
+      intro={`“${plan.body?.title ?? plan.draft?.title ?? 'This plan'}” runs on ${AUTONOMY_INFO[plan.autonomy].label} now. Pick how it runs from here on.`}
+      submitLabel={change?.title ?? 'Switch'}
+      canSubmit={Boolean(change)}
+      width={600}
+      onCancel={close}
+      onSubmit={async () => {
+        close();
+        await act(() => api.setAutonomy(plan.id, mode), `Runs on ${AUTONOMY_INFO[mode].label} now`);
+      }}
+    >
+      <div className={p.newPlan}>
+        <div className={p.newPlanLabel} id="plan-runs">
+          How it runs
+        </div>
+        <AutonomyCards value={mode} onChange={setMode} current={plan.autonomy} />
+        {change ? (
+          <div className={p.modeConfirm} role="status" aria-label="What changes">
+            <p>{change.from}</p>
+            {change.now ? <p className={p.modeConfirmNow}>{change.now}</p> : null}
+          </div>
+        ) : (
+          <p className={p.newPlanHint}>{AUTONOMY_INFO[plan.autonomy].hint}.</p>
+        )}
+      </div>
+    </FormSheet>
   );
 }
 

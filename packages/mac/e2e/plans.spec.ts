@@ -49,11 +49,18 @@ test('a task’s panel keeps its head and Close in reach while its brief scrolls
   await expect(main(page).locator('[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
   // Only real lines: a gate leads to a milestone only when it waits on it, and no card is wired across milestones.
   const edge = (from: string, to: string) => main(page).getByRole('group', { name: `Edge from ${from} to ${to}`, exact: true });
-  await expect(edge('gate:safe-payments', 'm:refunds')).toHaveCount(1);
-  await expect(edge('gate:foundations', 'm:safe-payments')).toHaveCount(0);
+  await expect(main(page).getByRole('group', { name: '“Safe payments” leads to “Refunds and launch”', exact: true })).toHaveCount(1);
+  await expect(main(page).getByRole('group', { name: /^“Test-mode foundations” leads to/ })).toHaveCount(0);
+  // Milestones that run side by side make the plan wide: room for it (the conversation folded away), all of it in view.
+  await main(page).getByRole('button', { name: 'Plan Options' }).click();
+  await page.getByRole('menuitem', { name: 'Hide the Conversation' }).click();
+  await main(page).getByRole('button', { name: 'Fit to View' }).click();
+  await page.waitForTimeout(400);
   await main(page).locator('.react-flow__node').filter({ hasText: 'Refund endpoint' }).click();
   await expect(edge('t:retries', 't:refund-api')).toHaveCount(0);
   await expect(main(page).locator('.react-flow__node').filter({ hasText: 'Idempotent webhook retries' }).locator('[data-linked="true"]')).toHaveCount(1);
+  // The panel covers part of the plan: closed before picking another card.
+  await page.keyboard.press('Escape');
   await main(page).locator('.react-flow__node').filter({ hasText: 'Receipt emails sent once' }).click();
   const details = page.getByRole('complementary', { name: 'Details' });
   await expect(details).toContainText('Waits on');
@@ -206,4 +213,78 @@ test('the composer: Plan with Tasks makes the conversation a plan', async ({ pag
   await page.getByRole('button', { name: /^Mode: / }).click();
   await page.getByRole('menuitem', { name: /^Act/ }).click();
   await expect(page.getByRole('button', { name: 'Mode: Act' })).toBeVisible();
+});
+
+test('the header says who the plan waits for; the run mode says what changes; the feed says what happened (KLD-22)', async ({ page }, info) => {
+  await openPlans(page);
+  await main(page).getByRole('button', { name: /^Card checkout for launch,/ }).click();
+  await expect(main(page).locator('[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
+  const head = main(page).locator('header').filter({ has: page.getByRole('textbox', { name: 'Plan name' }) });
+  // Everything the header ever says from here on, to prove it never claimed to wait for you while Claude checked.
+  await page.evaluate(() => {
+    const w = window as unknown as { __said: string[] };
+    w.__said = [];
+    const read = () => {
+      const text = [...document.querySelectorAll('main header')].find((h) => h.querySelector('[aria-label="Plan name"]'))?.textContent ?? '';
+      if (w.__said.at(-1) !== text) w.__said.push(text);
+    };
+    read();
+    new MutationObserver(read).observe(document.querySelector('main')!, { subtree: true, childList: true, characterData: true });
+  });
+
+  // The run mode is a button that says how it runs; Autopilot says in plain words what changes, then Cancel.
+  await head.getByRole('button', { name: 'Runs on Step by Step' }).click();
+  const sheet = page.getByRole('dialog', { name: 'How It Runs' });
+  await sheet.getByRole('radio', { name: /Autopilot/ }).click();
+  const changes = sheet.getByRole('status', { name: 'What changes' });
+  await expect(changes).toContainText('From now on Claude passes milestones itself');
+  await expect(changes).toContainText('It stops only if a check fails.');
+  const shot = info.outputPath('mode-autopilot.png');
+  await sheet.screenshot({ path: shot });
+  await info.attach('switching to Autopilot', { path: shot, contentType: 'image/png' });
+  await sheet.getByRole('button', { name: 'Cancel' }).click();
+  await expect(head.getByRole('button', { name: 'Runs on Step by Step' })).toBeVisible();
+  // Check-ins, applied at once and in the feed.
+  await head.getByRole('button', { name: 'Runs on Step by Step' }).click();
+  await sheet.getByRole('radio', { name: /Check-ins/ }).click();
+  await expect(changes).toContainText('each milestone waits for you to pass it');
+  await sheet.getByRole('button', { name: 'Switch to Check-ins' }).click();
+  await expect(head.getByRole('button', { name: 'Runs on Check-ins' })).toBeVisible();
+  await main(page).getByRole('button', { name: 'What Happened', exact: true }).click();
+  const feed = page.getByRole('complementary', { name: 'What happened' });
+  await expect(feed.getByRole('list', { name: 'What happened' }).locator('li').first()).toContainText('switched the plan to Check-ins');
+
+  await page.keyboard.press('Escape');
+  await expect(feed).toHaveCount(0);
+
+  // The gated check: every task of “Safe payments” finished (the other two move to the next milestone), Claude checks it.
+  await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'List' }).click();
+  const move = async (title: string, to: string) => {
+    await main(page).getByRole('button', { name: new RegExp(`^${title},`) }).click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Move to' }).click();
+    await page.getByRole('menuitem', { name: to }).click();
+    await expect(page.getByRole('region', { name: to })).toContainText(title);
+  };
+  await move('Receipt emails sent once', 'Refunds and launch');
+  await move('Idempotent webhook retries', 'Refunds and launch');
+  // Claude checked: now (and only now) it's yours to pass.
+  await expect(head).toContainText('You: pass “Safe payments” — Claude checked all 3 criteria', { timeout: 20_000 });
+  await head.getByRole('button', { name: /Show what happened$/ }).click();
+  await expect(feed).toContainText('Claude is checking its pass criteria');
+  await expect(feed).toContainText('checked “Safe payments”');
+  const said = await page.evaluate(() => (window as unknown as { __said: string[] }).__said);
+  expect(said.filter((t) => t.includes('Waiting for you'))).toEqual([]);
+  const shot2 = info.outputPath('header-pass.png');
+  await main(page).screenshot({ path: shot2 });
+  await info.attach('header after the check', { path: shot2, contentType: 'image/png' });
+
+  // Put the demo back as it was: the tasks home again, step by step.
+  await page.keyboard.press('Escape');
+  await move('Idempotent webhook retries', 'Safe payments');
+  await move('Receipt emails sent once', 'Safe payments');
+  await head.getByRole('button', { name: 'Runs on Check-ins' }).click();
+  await sheet.getByRole('radio', { name: /Step by Step/ }).click();
+  await sheet.getByRole('button', { name: 'Switch to Step by Step' }).click();
+  await expect(head.getByRole('button', { name: 'Runs on Step by Step' })).toBeVisible();
+  await main(page).getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: 'Canvas' }).click();
 });

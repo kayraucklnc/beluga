@@ -1,6 +1,9 @@
+import type { Actor } from '@klaud/core/board/model.js';
 import type { TaskState } from '@klaud/core/plans/progress.js';
-import { cx } from '../components/ui.js';
-import { type Tone, TASK_STATE } from './plans-model.js';
+import { Icon } from '../components/Icon.js';
+import { Avatar, cx } from '../components/ui.js';
+import { useApp } from '../lib/klaud.js';
+import { type Headline, type Tone, type Who, TASK_STATE } from './plans-model.js';
 import p from './plans.module.css';
 
 /** Small marks shared by the plan's graph, outline and lists: a task's state, a tone pill, progress. */
@@ -72,6 +75,62 @@ export function MilestoneBar({ items }: { items: ReadonlyArray<{ readonly id: st
           <span className={p.barFill} style={{ width: `${Math.round(m.share * 100)}%` }} />
         </span>
       ))}
+    </span>
+  );
+}
+
+type Bar = { readonly id: string; readonly title: string; readonly state: string; readonly share: number };
+
+/**
+ * A plan's one progress bar: a column per row of milestones, left to right in the order they
+ * run; milestones that run side by side share a column, stacked as thin parallel tracks.
+ */
+export function PlanProgress({ columns }: { columns: ReadonlyArray<readonly Bar[]> }) {
+  const all = columns.flat();
+  return (
+    <span className={p.progress} role="img" aria-label={all.map((m) => `${m.title}: ${Math.round(m.share * 100)}%`).join(', ')}>
+      {columns.map((col) => (
+        <span key={col.map((m) => m.id).join()} className={p.progressCol} data-parallel={col.length > 1 ? col.length : undefined}>
+          {col.map((m) => (
+            <span key={m.id} className={cx(p.barSegment, p[`seg_${m.state}`])} title={m.title}>
+              <span className={p.barFill} style={{ width: `${Math.round(m.share * 100)}%` }} />
+            </span>
+          ))}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Whose turn a sentence is: your initial, Claude's mark, or Klaud's (the plan itself). */
+export function WhoMark({ who, size = 20 }: { who: Who; size?: number }) {
+  const id = useApp((s) => s.selfId);
+  const name = useApp((s) => s.self?.name ?? s.network.self?.name ?? 'You');
+  if (who === 'you') return <Avatar name={name} id={id} size={size} />;
+  if (who === 'claude') return <Avatar name="Claude" id={id} claude size={size} />;
+  return (
+    <span className={p.klaudMark} style={{ width: size, height: size }} aria-hidden="true">
+      <Icon name="claude" size={Math.round(size * 0.55)} />
+    </span>
+  );
+}
+
+/** An actor as a mark (for the feed). */
+export function ActorMark({ by, size = 18 }: { by: Actor; size?: number }) {
+  if (by.kind === 'person') return <Avatar name={by.name} id={by.id} size={size} />;
+  if (by.kind === 'claude') return <Avatar name={by.ownerName} id={by.owner} claude size={size} />;
+  return <WhoMark who="klaud" size={size} />;
+}
+
+/** The plan's sentence: who, then what (“You: pass “API” — Claude checked all 4 criteria”). */
+export function Said({ line, className }: { line: Headline; className?: string }) {
+  return (
+    <span className={cx(p.said, className)} data-who={line.who}>
+      <WhoMark who={line.who} />
+      <span className={p.saidText}>
+        {line.who === 'you' ? <strong className={p.saidYou}>You: </strong> : null}
+        {line.who === 'you' ? line.text.charAt(0).toLowerCase() + line.text.slice(1) : line.text}
+      </span>
     </span>
   );
 }

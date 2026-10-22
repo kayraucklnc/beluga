@@ -3,7 +3,9 @@ import { normalizeBody } from '../src/core/plans/edit.js';
 import type { Plan } from '../src/core/plans/model.js';
 import { planView } from '../src/core/plans/progress.js';
 import { NO_BOARD } from '../src/core/board/model.js';
-import { changeMarks, changeWords, gateId, graphShape, groupId, nextWords, planStatus, plansOf, taskNodeId } from '../packages/mac/src/plans/plans-model.js';
+import { barColumns, changeMarks, changeWords, feedOf, gateId, graphShape, groupId, headline, milestoneRows, modeChange, nextWords, planStatus, plansOf, taskHeadline, taskNodeId } from '../packages/mac/src/plans/plans-model.js';
+import type { PlanEvent } from '../src/core/plans/model.js';
+import type { PlanView } from '../src/core/plans/progress.js';
 import { columnAt, edgeSpeed, isDrag, landingIndex, leanFor, neighbours, withGap } from '../packages/mac/src/tasks/board-drag.js';
 import { nextMode } from '../packages/mac/src/chat/compose-mode.js';
 
@@ -64,6 +66,76 @@ describe('words for a plan', () => {
   it('a project’s plans: running, then drafts, then done', () => {
     const list = plansOf({ enabled: true, style: '', plans: [plan({ id: 'd', status: 'done', updatedAt: 9 }), plan({ id: 'r', status: 'draft', updatedAt: 5 }), plan({ id: 'a', status: 'active', updatedAt: 1 }), plan({ id: 'o', projectId: 'other' })] }, 'x');
     expect(list.map((p) => p.id)).toEqual(['a', 'r', 'd']);
+  });
+});
+
+describe('the plan’s one sentence, its bar and its feed (KLD-22)', () => {
+  const claude = { kind: 'claude', owner: 'p-me', ownerName: 'Kay' } as const;
+  const single = normalizeBody({ title: 'P', goal: 'g', milestones: [{ id: 'api', title: 'API', criteria: ['a', 'b', 'c', 'd'], tasks: [{ id: 'a', title: 'A' }] }, { id: 'ui', title: 'UI', dependsOn: [], tasks: [{ id: 'u', title: 'U' }] }, { id: 'ship', title: 'Ship', dependsOn: ['api', 'ui'], tasks: [{ id: 's', title: 'S' }] }] });
+  // Tasks with no board task count as finished: API's tasks are all done.
+  const active = (over: Partial<Plan> = {}): Plan => plan({ status: 'active', body: single, draft: undefined, ...over });
+
+  it.each(['step', 'gated', 'autopilot'] as const)('%s: while Claude checks it says so, never “Waiting for you”', (autonomy) => {
+    const v = planView(active({ autonomy, runs: { api: { checkAsked: 1 }, ui: { passedAt: 1 } } }), NO_BOARD);
+    expect(v.next.kind).toBe('checking');
+    expect(planStatus(v).label).not.toBe('Waiting for you');
+    expect(headline(v)).toEqual({ who: 'claude', text: 'Claude is checking “API”' });
+  });
+
+  it('once the check is back, it’s yours to pass, saying what Claude checked', () => {
+    const v = planView(active({ runs: { api: { checkAsked: 1, check: { at: 2, by: claude, verdict: 'pass', notes: '' } }, ui: { passedAt: 1 } } }), NO_BOARD);
+    expect(headline(v)).toEqual({ who: 'you', text: 'Pass “API” — Claude checked all 4 criteria' });
+  });
+
+  it('tasks at work across milestones; a merge conflict, when the plan carries one', () => {
+    const v = planView(active(), NO_BOARD);
+    const running = (id: string, milestoneId: string) => ({ task: { id, title: id }, milestoneId, state: 'running', waitsOn: [], forYou: false });
+    const working = { ...v, active: [running('a', 'api'), running('b', 'api'), running('u', 'ui')], next: { kind: 'working', tasks: [] } } as unknown as PlanView;
+    expect(headline(working)).toEqual({ who: 'claude', text: '3 tasks running in 2 milestones' });
+    const merging = active({ runs: { api: { passedAt: 1 } }, ...({ branch: 'plan/x', merging: { api: { at: 1, by: claude, conflict: { at: 1, dir: '/tmp', merging: 'klaud/kld-9', key: 'KLD-9', files: ['a.ts'] } } } } as object) });
+    expect(headline(planView(merging, NO_BOARD))).toEqual({ who: 'claude', text: 'Fixing a merge conflict in KLD-9' });
+  });
+
+  it('from a task’s worktree: done, and what the milestone waits on', () => {
+    const v = planView(active({ runs: { api: { checkAsked: 1 } } }), NO_BOARD);
+    const asReview = { ...v, milestones: v.milestones.map((m) => ({ ...m, tasks: m.tasks.map((t) => ({ ...t, state: 'review' as const })) })) };
+    expect(taskHeadline(asReview, 'a')).toEqual({ who: 'claude', text: 'Done. Claude is checking “API”; Klaud merges this into the plan' });
+  });
+
+  it('switching to Autopilot says what changes from now on, and what happens at once', () => {
+    const v = planView(active({ autonomy: 'gated', runs: { api: { checkAsked: 1, check: { at: 2, by: claude, verdict: 'pass', notes: '' } }, ui: { passedAt: 1 } }, ...({ branch: 'plan/x' } as object) }), NO_BOARD);
+    expect(modeChange(v, 'autopilot')).toEqual({ title: 'Switch to Autopilot', from: 'From now on Claude passes milestones itself and merges them into plan/x. It stops only if a check fails.', now: '“API” passes now.' });
+    expect(modeChange(v, 'step').from).toMatch(/^From now on nothing starts by itself/);
+  });
+
+  it('parallel milestones share a row (and a column of the bar)', () => {
+    expect(milestoneRows(single)).toEqual([['api', 'ui'], ['ship']]);
+    expect(barColumns(planView(active(), NO_BOARD)).map((c) => c.map((b) => b.id))).toEqual([['api', 'ui'], ['ship']]);
+    expect(graphShape(active({ draft: single })).rows).toEqual([['api', 'ui'], ['ship']]);
+  });
+
+  it('the feed: newest first, the same thing in a row folded into one line', () => {
+    const klaud = { kind: 'klaud' } as const;
+    const e = (id: string, at: number, kind: PlanEvent['kind'], text: string, by: PlanEvent['by'] = klaud): PlanEvent => ({ id, at, by, kind, text });
+    const feed = feedOf([
+      e('1', 1, 'started', 'started KLD-1 “A”'),
+      e('2', 2, 'started', 'started KLD-2 “B”'),
+      e('3', 3, 'drafted', 'wrote the plan'),
+      e('4', 4, 'gate', '“API”: every task is finished, Claude is checking its pass criteria'),
+      e('5', 5, 'checked', 'checked “API”: all good', claude),
+      e('6', 6, 'passed', 'merged KLD-1, KLD-2 into plan/x'),
+      e('7', 7, 'problem', 'couldn’t start KLD-3'),
+      e('8', 8, 'problem', 'couldn’t start KLD-3'),
+      e('9', 9, 'autonomy', 'switched the plan to Autopilot'),
+    ]);
+    expect(feed.map((f) => [f.kind, f.text, f.count])).toEqual([
+      ['mode', 'switched the plan to Autopilot', 1],
+      ['problem', 'couldn’t start KLD-3', 2],
+      ['merged', 'merged KLD-1, KLD-2 into plan/x', 1],
+      ['checked', 'checked “API”: all good', 1],
+      ['checking', '“API”: every task is finished, Claude is checking its pass criteria', 1],
+      ['started', 'started 2 tasks: KLD-1, KLD-2', 2],
+    ]);
   });
 });
 

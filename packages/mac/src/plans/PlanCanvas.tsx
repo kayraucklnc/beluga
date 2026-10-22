@@ -14,8 +14,9 @@ import { TaskStateIcon } from './marks.js';
 import p from './plans.module.css';
 
 /**
- * A plan as a living graph: each milestone a box, left to right, its tasks inside laid out by what
- * waits on what, and a gate at its end that opens the next. Tasks Claude is working on glow and
+ * A plan as a living graph: each milestone a box, its tasks inside laid out by what waits on what,
+ * and a gate at its end. Milestones that run side by side sit side by side in a row; a line runs
+ * from each milestone down to the ones that wait on it. Tasks Claude is working on glow and
  * say what it's doing; finished ones tick; a gate waiting for you is the one thing in the accent.
  * The layout (ELK) depends only on the plan's shape, so work moving on never moves anything.
  */
@@ -25,7 +26,7 @@ const GATE = { width: 150, height: 44 };
 const HEAD = 62;
 /** Room between milestones. */
 const LANE_GAP = 40;
-/** A milestone's line to one that waits on it runs down the right of the lanes, never across them. */
+/** A milestone's line to one two or more rows down runs down the right of the lanes, never across them. */
 const GUTTER = 22;
 const GUTTER_STEP = 10;
 /** A task's line to its gate is drawn only from the column next to it (not across empty columns). */
@@ -127,40 +128,47 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
         if (!live) return;
         const places = new Map<string, Placed>();
         const routes = new Map<string, Route>();
+        const out = new Map(shape.milestones.map((m, i) => [m.id, outs[i]!] as const));
+        const rowOf = new Map(shape.rows.flatMap((row, r) => row.map((id) => [id, r] as const)));
+        // Rows top to bottom; the milestones of a row (they run side by side) left to right, each as
+        // wide as its tasks need, all as tall as the row's tallest.
         let y = 24;
-        // Lanes as wide as the widest, so the plan reads as one column of steps.
-        const wide = Math.max(420, ...outs.map((o) => o.width ?? 0));
-        outs.forEach((out, i) => {
-          const m = shape.milestones[i]!;
-          const width = wide;
-          const height = out.height ?? 0;
-          places.set(groupId(m.id), { x: 24, y, width, height });
-          for (const [id, at] of placesOf(out)) places.set(id, at);
-          for (const [id, r] of routesOf(out)) routes.set(id, { ...r, points: r.points.map((pt) => ({ x: pt.x + 24, y: pt.y + y })) });
+        for (const row of shape.rows) {
+          const height = Math.max(...row.map((id) => out.get(id)?.height ?? 0));
+          let x = 24;
+          for (const id of row) {
+            const o = out.get(id);
+            if (!o) continue;
+            const width = Math.max(row.length > 1 ? 340 : 420, o.width ?? 0);
+            places.set(groupId(id), { x, y, width, height });
+            for (const [nid, at] of placesOf(o)) places.set(nid, at);
+            for (const [eid, r] of routesOf(o)) routes.set(eid, { ...r, points: r.points.map((pt) => ({ x: pt.x + x, y: pt.y + y })) });
+            x += width + LANE_GAP;
+          }
           y += height + LANE_GAP;
-        });
-        // A milestone → each milestone that waits on it: head to head, down the gutter right of the
-        // lanes (a track per milestone), so no line crosses a lane, its head or its tasks.
-        const right = 24 + wide;
-        const gates = [...new Set(shape.edges.filter((e) => e.kind === 'next').map((e) => e.from))];
+        }
+        // A milestone → each one that waits on it: bottom to top through the gap between the rows;
+        // past a row in between, down a track right of every lane (never across a lane or its tasks).
+        const boxes = [...places].filter(([id]) => id.startsWith('m:')).map(([, at]) => at);
+        const right = Math.max(...boxes.map((b) => b.x + b.width));
+        const far = shape.edges.filter((e) => e.kind === 'next' && (rowOf.get(e.to.replace(/^m:/, '')) ?? 0) - (rowOf.get(e.from.replace(/^gate:/, '')) ?? 0) > 1);
         for (const e of shape.edges) {
           if (e.kind !== 'next') continue;
           const from = places.get(groupId(e.from.replace(/^gate:/, '')));
           const to = places.get(e.to);
           if (!from || !to) continue;
-          const x = right + GUTTER + gates.indexOf(e.from) * GUTTER_STEP;
-          const fy = from.y + HEAD / 2;
-          const ty = to.y + HEAD / 2;
-          routes.set(e.id, {
-            points: [
-              { x: right, y: fy },
-              { x, y: fy },
-              { x, y: ty },
-              { x: right, y: ty },
-            ],
-          });
+          const s = { x: from.x + from.width / 2, y: from.y + from.height };
+          const t = { x: to.x + to.width / 2, y: to.y };
+          const below = s.y + LANE_GAP / 2;
+          const above = t.y - LANE_GAP / 2;
+          const track = far.indexOf(e);
+          const points =
+            track < 0
+              ? [s, { x: s.x, y: above }, { x: t.x, y: above }, t]
+              : [s, { x: s.x, y: below }, { x: right + GUTTER + track * GUTTER_STEP, y: below }, { x: right + GUTTER + track * GUTTER_STEP, y: above }, { x: t.x, y: above }, t];
+          routes.set(e.id, { points });
         }
-        setLaid({ key: shape.key, places, routes, gutter: gates.length ? GUTTER + gates.length * GUTTER_STEP : 0 });
+        setLaid({ key: shape.key, places, routes, gutter: far.length ? GUTTER + far.length * GUTTER_STEP : 0 });
         setFailed(false);
       })
       .catch(() => live && setFailed(true));
@@ -213,6 +221,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
       const s = byTask.get(id.replace(/^t:/, ''))?.state;
       return s === 'done' || s === 'review' || s === 'canceled';
     };
+    const titleOf = (id: string): string => `“${view.milestones.find((m) => m.milestone.id === id.replace(/^(gate|m):/, ''))?.milestone.title ?? id}”`;
     const passed = (gate: string): boolean => view.milestones.find((m) => gateId(m.milestone.id) === gate)?.state === 'passed';
     const working = (id: string): boolean => {
       const s = byTask.get(id.replace(/^t:/, ''))?.state;
@@ -231,7 +240,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
       const state: LineData['state'] = done ? 'done' : e.kind !== 'next' && working(e.from) ? 'live' : 'waiting';
       const route = laid.routes.get(e.id);
       // Drawn from the milestone's head (its gate is what it waits on, so the line keeps its state).
-      const ends = e.kind === 'next' ? { source: groupId(e.from.replace(/^gate:/, '')), sourceHandle: 'out', targetHandle: 'in' } : { source: e.from };
+      const ends = e.kind === 'next' ? { source: groupId(e.from.replace(/^gate:/, '')), sourceHandle: 'out', targetHandle: 'in', ariaLabel: `${titleOf(e.from)} leads to ${titleOf(e.to)}` } : { source: e.from };
       return { id: e.id, ...ends, target: e.to, type: 'line', data: { kind: e.kind, state, ...(route ? { route } : {}) } };
     });
   }, [laid, shape, lane, byTask, view]);
@@ -249,7 +258,8 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     const current = view.current ? laid.places.get(groupId(view.current.milestone.id)) : undefined;
     // From the top (below the view switch), unless the current milestone would be out of sight.
     const top = current && (current.y + current.height) * zoom + 52 > box.clientHeight ? -(current.y - 24) * zoom + 52 : 40;
-    const left = width * zoom <= box.clientWidth ? (box.clientWidth - width * zoom) / 2 : 0;
+    // Wider than the view (milestones side by side): from the left, unless the current milestone would be out of sight.
+    const left = width * zoom <= box.clientWidth ? (box.clientWidth - width * zoom) / 2 : current && (current.x + current.width) * zoom > box.clientWidth ? -(current.x - 24) * zoom + 16 : 0;
     void flow.setViewport({ x: left, y: top, zoom }, { duration: ms });
   };
   useEffect(() => {
@@ -352,8 +362,8 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
   const share = m.state === 'passed' ? 1 : m.total ? m.finished / m.total : 0;
   return (
     <div className={cx(p.milestone, p[`ms_${m.state}`], data.current && p.msCurrent)}>
-      <Handle id="in" type="target" position={Position.Right} className={p.handle} isConnectable={false} style={{ top: HEAD / 2 }} />
-      <Handle id="out" type="source" position={Position.Right} className={p.handle} isConnectable={false} style={{ top: HEAD / 2 }} />
+      <Handle id="in" type="target" position={Position.Top} className={p.handle} isConnectable={false} />
+      <Handle id="out" type="source" position={Position.Bottom} className={p.handle} isConnectable={false} />
       <div className={p.msHead}>
         <span className={p.msIndex}>{m.state === 'passed' ? <Icon name="check" size={11} /> : m.index + 1}</span>
         <span className={p.msTitles}>
