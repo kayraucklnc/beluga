@@ -1,8 +1,10 @@
 import type { Actor } from '@klaud/core/board/model.js';
 import type { TaskState } from '@klaud/core/plans/progress.js';
+import { useRef } from 'react';
 import { Icon } from '../components/Icon.js';
 import { Avatar, cx } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
+import { breath, turn, useLive } from '../lib/live-motion.js';
 import { type Need, type Signal, signalOf } from '../layout/attention-model.js';
 import { SignalMark } from '../layout/signal-marks.js';
 import { type Headline, type Tone, type Who, TASK_STATE } from './plans-model.js';
@@ -14,8 +16,11 @@ export function TaskStateIcon({ state, size = 14 }: { state: TaskState; size?: n
   const tone = TASK_STATE[state].tone;
   const c = 8;
   const r = 5.6;
+  const icon = useRef<SVGSVGElement>(null);
+  // Running: the ring turns with the live clock (lib/live-motion.ts), not a CSS animation.
+  useLive(icon, (t) => icon.current?.style.setProperty('--turn', `${turn(t, 1100)}deg`), state === 'running');
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" className={cx(p.stateIcon, p[`tone_${tone}`], state === 'running' && p.spinning)} aria-hidden="true">
+    <svg ref={icon} width={size} height={size} viewBox="0 0 16 16" className={cx(p.stateIcon, p[`tone_${tone}`], state === 'running' && p.spinning)} aria-hidden="true">
       {state === 'done' ? (
         <>
           <circle cx={c} cy={c} r={6.5} className={p.iconFill} />
@@ -62,10 +67,17 @@ export function TaskStateIcon({ state, size = 14 }: { state: TaskState; size?: n
 export function TonePill({ tone, children, live }: { tone: Tone; children: React.ReactNode; live?: boolean }) {
   return (
     <span className={cx(p.pill, p[`tone_${tone}`])}>
-      <span className={cx(p.pillDot, live && p.pillLive)} aria-hidden="true" />
+      {live ? <LiveDot /> : <span className={p.pillDot} aria-hidden="true" />}
       {children}
     </span>
   );
+}
+
+/** A dot that breathes while Claude works (with the live clock, lib/live-motion.ts). */
+export function LiveDot() {
+  const dot = useRef<HTMLSpanElement>(null);
+  useLive(dot, (t) => dot.current?.style.setProperty('--breath', breath(t, 1600).toFixed(3)));
+  return <span ref={dot} className={cx(p.pillDot, p.pillLive)} aria-hidden="true" />;
 }
 
 /** A plan's milestones as a row of segments, each filled as far as it got. */

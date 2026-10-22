@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { StepRecord, StepSummary } from '@klaud/shared/steps.js';
 import { useApi } from '../../lib/klaud.js';
+import { useWindowActive } from '../../lib/window-active.js';
 
 /**
  * A Claude card's steps in detail (`agent.steps`): fetched when the card shows, then every
- * second while Claude works (only what changed comes back), and once more when it ends.
+ * second while Claude works and you're looking at Klaud (only what changed comes back), right
+ * away when you look back, and once more when it ends.
  * `undefined` steps: not loaded yet, or this computer has no details (someone else's Claude).
  */
 export function useAgentSteps(channel: string, itemId: string, running: boolean, change: string, enabled = true): { steps: readonly StepSummary[] | undefined; missing: boolean } {
@@ -14,6 +16,7 @@ export function useAgentSteps(channel: string, itemId: string, running: boolean,
   const version = useRef<number | undefined>(undefined);
   const busy = useRef(false);
   const again = useRef(false);
+  const looking = useWindowActive();
 
   const load = useCallback(async (): Promise<void> => {
     if (!enabled) return;
@@ -44,16 +47,16 @@ export function useAgentSteps(channel: string, itemId: string, running: boolean,
     setState({ key, missing: false });
   }, [key]);
 
-  // When the card changes (a new step line, a status), and when Claude stops.
+  // When the card changes (a new step line, a status), when Claude stops, and when you look back.
   useEffect(() => {
-    void load();
-  }, [load, change, running]);
+    if (looking) void load();
+  }, [load, change, running, looking]);
 
   useEffect(() => {
-    if (!running || !enabled) return;
+    if (!running || !enabled || !looking) return;
     const t = setInterval(() => void load(), 1000);
     return () => clearInterval(t);
-  }, [load, running, enabled]);
+  }, [load, running, enabled, looking]);
 
   return state.key === key ? { steps: state.steps, missing: state.missing } : { steps: undefined, missing: false };
 }

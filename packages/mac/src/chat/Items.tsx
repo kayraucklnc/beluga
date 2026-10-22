@@ -12,6 +12,7 @@ import { copyText } from '../lib/copy.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
+import { useClock } from '../lib/window-active.js';
 import { ImageGrid } from './ChatImages.js';
 import { openLightbox } from './images.js';
 import { brandText } from '../lib/brand.js';
@@ -29,16 +30,8 @@ type AgentItem = Extract<LogItem, { type: 'agent' }>;
 type ChatItem = Extract<LogItem, { type: 'chat' }>;
 type SystemItem = Extract<LogItem, { type: 'system' }>;
 
-/** A clock that ticks while something is running (for "working · 12s"). */
-export function useNow(active: boolean, every = 1000): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setNow(Date.now()), every);
-    return () => clearInterval(t);
-  }, [active, every]);
-  return now;
-}
+/** A clock that ticks while something is running (for "working · 12s"), and you're looking at Klaud. */
+export const useNow = useClock;
 
 const time = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 

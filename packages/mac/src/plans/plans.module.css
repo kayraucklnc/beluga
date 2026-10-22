@@ -58,8 +58,10 @@
   border-radius: 50%;
   background: currentColor;
 }
-/* Motion inside the zoomed canvas animates custom properties, never transform or opacity directly: those would
-   make WebKit composite the whole viewport and blur it when zoomed in (KLD-25, components/graph/sharp-zoom.ts). */
+/* Motion inside the zoomed canvas moves custom properties, never transform or opacity directly: those would
+   make WebKit composite the whole viewport and blur it when zoomed in (KLD-25, components/graph/sharp-zoom.ts).
+   They're written by the live clock (lib/live-motion.ts) about 15 times a second, not by CSS animations: one
+   of those makes WebKit draw the whole window 60 times a second while a task runs (KLD-40). */
 @property --breath {
   syntax: '<number>';
   inherits: false;
@@ -68,12 +70,6 @@
 .pillLive {
   opacity: calc(0.35 + 0.65 * var(--breath));
   transform: scale(calc(0.8 + 0.2 * var(--breath)));
-  animation: breathe 1.6s ease-in-out infinite;
-}
-@keyframes breathe {
-  50% {
-    --breath: 0;
-  }
 }
 
 /* ---------- State icon ---------- */
@@ -114,12 +110,6 @@
 }
 .spinning {
   transform: rotate(var(--turn));
-  animation: spin 1.1s linear infinite;
-}
-@keyframes spin {
-  to {
-    --turn: 360deg;
-  }
 }
 
 /* ---------- Milestone bar ---------- */
@@ -695,18 +685,12 @@
     linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  animation: orbit 2.6s linear infinite;
   pointer-events: none;
 }
 @property --angle {
   syntax: '<angle>';
   inherits: false;
   initial-value: 0deg;
-}
-@keyframes orbit {
-  to {
-    --angle: 360deg;
-  }
 }
 .taskMarked::after {
   content: '';
@@ -852,23 +836,20 @@
   font-weight: 700;
   color: var(--tone);
 }
+@property --beckon {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
 .gate_gate {
   color: var(--accent);
   box-shadow:
     0 0 0 1.5px var(--accent),
-    0 0 0 6px color-mix(in srgb, var(--accent) 14%, transparent);
-  animation: beckon 2.4s ease-in-out infinite;
+    0 0 0 calc(6px + 3px * var(--beckon)) color-mix(in srgb, var(--accent) 11%, transparent);
 }
 .gate_gate .gateMark {
   color: var(--bg);
   background: var(--accent);
-}
-@keyframes beckon {
-  50% {
-    box-shadow:
-      0 0 0 1.5px var(--accent),
-      0 0 0 9px color-mix(in srgb, var(--accent) 6%, transparent);
-  }
 }
 .gate_checking .gateMark {
   color: var(--claude);
@@ -1257,9 +1238,6 @@
   font-size: 11.5px;
   color: var(--claude);
 }
-.chatBusy .pillDot {
-  animation: breathe 1.6s ease-in-out infinite;
-}
 .chatLog {
   flex: 1;
   min-height: 0;
@@ -1376,21 +1354,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .glow,
-  .spinning,
-  .pillLive,
-  .gate_gate,
   .skMilestone {
     animation: none;
   }
   .canvas[data-ready='true'] :global(.react-flow__node) {
     transition: none;
   }
-}
-:global(html[data-motion='reduce']) .glow,
-:global(html[data-motion='reduce']) .spinning,
-:global(html[data-motion='reduce']) .gate_gate {
-  animation: none;
 }
 
 /* The outline in a narrow column: names keep their room, side notes shorten. */

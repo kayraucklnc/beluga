@@ -9,6 +9,7 @@ import { useDocTheme } from '../components/markdown/use-doc-theme.js';
 import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
 import { layout } from '../components/graph/layout.js';
 import { useSharpZoom } from '../components/graph/sharp-zoom.js';
+import { breath, turn, useLive } from '../lib/live-motion.js';
 import { MILESTONE_STATE, TASK_STATE, changeMarks, gateId, graphShape, groupId, taskNodeId } from './plans-model.js';
 import { TaskChatMark, TaskStateIcon } from './marks.js';
 import p from './plans.module.css';
@@ -312,6 +313,13 @@ const Ends = () => (
   </>
 );
 
+/** Claude at work on a card: a copper light going round its edge (with the live clock, lib/live-motion.ts). */
+function Glow() {
+  const glow = useRef<HTMLSpanElement>(null);
+  useLive(glow, (t) => glow.current?.style.setProperty('--angle', `${turn(t, 2600)}deg`));
+  return <span ref={glow} className={p.glow} aria-hidden="true" />;
+}
+
 const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task'>>) {
   const { view: t } = data;
   const info = TASK_STATE[t.state];
@@ -324,7 +332,7 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task
       aria-label={`${t.task.title}, ${info.label}`}
     >
       <Ends />
-      {t.state === 'running' ? <span className={p.glow} aria-hidden="true" /> : null}
+      {t.state === 'running' ? <Glow /> : null}
       <div className={p.taskTop}>
         <TaskStateIcon state={t.state} />
         <span className={p.taskKey}>{data.key ?? t.task.id}</span>
@@ -396,8 +404,11 @@ const GateNode = memo(function GateNode({ data }: NodeProps<Node<GateData, 'gate
   const n = m.milestone.criteria.length;
   const check = m.run.check;
   const label = m.state === 'passed' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? 'Pass it' : n ? `${n} ${n === 1 ? 'criterion' : 'criteria'}` : 'Milestone';
+  // Waiting for you: a soft ring that breathes out (with the live clock, lib/live-motion.ts).
+  const gate = useRef<HTMLDivElement>(null);
+  useLive(gate, (t) => gate.current?.style.setProperty('--beckon', (1 - breath(t, 2400)).toFixed(3)), m.state === 'gate');
   return (
-    <div className={cx(p.gate, p[`gate_${m.state}`], data.selected && p.gateSelected)} aria-label={`Gate of ${m.milestone.title}: ${label}`}>
+    <div ref={gate} className={cx(p.gate, p[`gate_${m.state}`], data.selected && p.gateSelected)} aria-label={`Gate of ${m.milestone.title}: ${label}`}>
       <Ends />
       <span className={p.gateMark}>
         <Icon name={m.state === 'passed' ? 'check' : m.state === 'failed' ? 'x' : 'flag'} size={11} />
