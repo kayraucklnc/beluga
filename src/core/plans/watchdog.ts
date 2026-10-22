@@ -128,6 +128,7 @@ export function endedWhy(run: RunInfo | undefined): string {
   if (failure && failure.kind !== 'stopped') return failureText(run.text).split('\n')[0]!;
   if (run.status === 'error') return BY_YOU.test(run.text) ? 'you stopped it' : `its run failed: ${run.text.replace(/\s+/g, ' ').slice(0, 120)}`;
   if (run.status === 'denied') return 'its run was declined';
+  if (run.status === 'interrupted') return 'klaud stopped while it ran';
   return 'it ended its turn without handing off';
 }
 

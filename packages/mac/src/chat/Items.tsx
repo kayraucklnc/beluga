@@ -144,6 +144,9 @@ function statusOf(item: AgentItem, now: number): { label: string; tone: 'claude'
       return { label: 'Stopped', tone: 'error' };
     case 'denied':
       return { label: 'Declined', tone: 'warn' };
+    case 'interrupted':
+      // klaud stopped while it ran (quit, a crash): not a problem to flag, just where it was left.
+      return { label: 'Interrupted', tone: 'muted' };
     default:
       return { label: `Working · ${formatDuration(now - item.ts)}`, tone: 'claude' };
   }

@@ -6,7 +6,7 @@ import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { setPrefs, getPrefs, zoom } from './prefs.js';
 import { byMenu, showPanelTab, togglePanel, toggleTerminal } from './panel.js';
 import { PANEL_LABELS, PANEL_TABS, type PanelTab } from './panel-model.js';
-import { dockCount } from '../layout/attention-model.js';
+import { dockCount, workingCount } from '../layout/attention-model.js';
 import { NOTIFICATION_TAP, macNoticeTarget, openNoticeTarget } from './notices.js';
 import { COMMAND_IDS, type CommandId, commandState, runCommand } from './commands.js';
 import { openNetworkLink, runNetworkMenuItem } from '../network/net-native.js';
@@ -162,7 +162,7 @@ export function useTrayStatus(client: SocketClient): void {
     const update = (): void => {
       const st = client.store.getState();
       const waiting = st.approvals.length + st.questions.length + st.knocks.length;
-      const working = new Set(st.log.filter((l) => l.type === 'agent' && l.owner === st.selfId && ['started', 'text', 'tool', 'sub'].includes(l.status)).map((l) => l.channel)).size;
+      const working = workingCount(st);
       const unread = dockCount(st);
       const key = `${waiting}:${working}:${unread}`;
       if (key === last) return;
