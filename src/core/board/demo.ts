@@ -182,6 +182,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
   board.update(hero.id, { status: 'in_progress' }, me);
   when(DAY + 2 * HOUR);
   board.addProof(hero.id, { kind: 'image', title: 'Hero, desktop', path: path.join(at.hero.path, 'public', 'hero-shot.png') }, claude);
+  board.addProof(hero.id, { kind: 'file', title: 'Hero copy', path: path.join(at.hero.path, 'content', 'hero.md') }, claude);
   when(20 * HOUR);
   board.comment(hero.id, 'Love the screenshot. “Build together” might undersell the Claude part, though?', mia);
   when(3 * HOUR);

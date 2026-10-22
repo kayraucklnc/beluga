@@ -4,6 +4,7 @@ import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progre
 import { Markdown } from '../chat/Markdown.js';
 import { Button, IconButton } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
+import { ProofItems } from '../tasks/TaskSections.js';
 import { MILESTONE_STATE, taskWords } from './plans-model.js';
 import { TaskChatMark, TaskStateIcon, TonePill } from './marks.js';
 import { PlanFeed } from './PlanFeed.js';
@@ -165,6 +166,12 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
               <code key={f}>{f}</code>
             ))}
           </div>
+        </section>
+      ) : null}
+      {t.issue?.proof.length ? (
+        <section className={p.detailsSection} aria-label="Proof">
+          <h4>Proof</h4>
+          <ProofItems issue={t.issue} />
         </section>
       ) : null}
       {t.task.context ? (
