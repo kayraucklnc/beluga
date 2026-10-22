@@ -161,6 +161,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `session.testNotification` | ✓ | ✓ |
 | `host.answerApproval` | ✓ | ✓ |
 | `host.promote` | ✓ | ✓ |
+| `host.sendNext` | — (Mac only: the terminal has Steer) | ✓ Send Now on a queued message (runs it next, never interrupting) |
 | `host.stopRun` | — (Mac only, see below; the terminal has `/stop`) | ■ Stop beside Queue/Steer · ⌘. · Conversation › Stop Claude · Stop on a running answer |
 | `host.cancelQueued` | ✓ | ✓ |
 | `host.reorderQueued` | — (no reordering; see below) | ✓ queue tray ↑ ↓ |
@@ -254,6 +255,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `workbench.fixChecks` | ✓ | ✓ |
 | `workbench.openPr` | ✓ | ✓ |
 | `workbench.refreshPrs` | ✓ | ✓ |
+| `workbench.mergePr` | — (Mac only; the terminal opens the PR on GitHub) | ✓ the PR sheet › Merge on GitHub (squash, merge or rebase; Merge When Checks Pass) |
 | `workbench.editPrPrompt` | ✓ | ✓ |
 | `workbench.resetPrPrompt` | ✓ | ✓ |
 | `workbench.measureDisk` | ✓ | ✓ |
@@ -354,6 +356,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `plans.setAutonomy` | — (Mac only, see below) | ✓ Step by Step · Check-ins · Autopilot on a plan's page (a milestone's own from its menu) |
 | `plans.setPaused` | — (Mac only, see below) | ✓ Pause / Resume on a plan's page |
 | `plans.setParallel` | — (Mac only, see below) | ✓ a plan's ⋯ › Run at Once ▸ |
+| `plans.setTestsAt` | — (Mac only, see below) | ✓ a plan's ⋯ › When to Run Tests ▸ (each milestone, or once at the end) |
 | `plans.pass` | — (Mac only, see below) | ✓ Pass Milestone on a plan's page |
 | `plans.recheck` | — (Mac only, see below) | ✓ Check Again on a milestone Claude is checking or that failed its check |
 | `plans.openPr` | — (Mac only, see below) | ✓ Open PR on a plan whose every milestone passed (plan/<slug> → main) |
@@ -361,7 +364,9 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `plans.mergeLocal` | — (Mac only, see below) | ✓ ⋯ › Merge into Main Locally on a plan ready to ship |
 | `plans.sendBack` | — (Mac only, see below) | ✓ Not Yet… on a milestone waiting for you |
 | `plans.startTask` | — (Mac only, see below) | ✓ Start on a ready task (step by step, or a task for you) |
+| `plans.resumeTask` | — (Mac only, see below) | ✓ Resume on a task that stopped (Claude ran out of usage or crashed) |
 | `plans.remove` | — (Mac only, see below) | ✓ a plan's ⋯ › Delete Plan… (its tasks stay on the board) |
+| `plans.tidyUp` | — (Mac only, see below) | ✓ Tidy Up / No on a plan's leftover task worktrees (merged into its branch, then archived) |
 | `plans.setStyle` | — (Mac only, see below) | ✓ Plans › ⋯ › Planning Style… |
 | `claudeCode.steps` | — (Mac only, see below) | ✓ a Claude Code session's or agent's live, read-only transcript (Activity, the strip above a workspace's chat, the Inspector's Claude Code panel) |
 | `claudeCode.step` | — (Mac only, see below) | ✓ opening a tool call or thinking line in that transcript: the command and its output, the file, the diff, the thinking |
