@@ -8,6 +8,9 @@ import type { Project, Workspace } from '../src/workspaces/types.js';
 import { dockCount, planSignal, projectTally, unreadEntries } from '../packages/mac/src/layout/attention-model.js';
 import { overviewItems } from '../packages/mac/src/views/overview/overview-model.js';
 import { confirmMerge, mergeNeedsWarning } from '../packages/mac/src/lib/plan-merge.js';
+import { runPlanAction } from '../packages/mac/src/lib/plan-task.js';
+import { closeSheet, currentSheet } from '../packages/mac/src/lib/sheets.js';
+import type { UiAction } from '../src/ui/workspace-models.js';
 
 /** A running plan is one thing at the top level: one Unread entry, one tally, one Overview item (KLD-29). */
 
@@ -86,5 +89,19 @@ describe('merging a plan task’s worktree locally always warns first (⌘K, ⇧
     confirmMerge('t1');
     expect(mergeNeedsWarning(s, 't1')).toBe(false);
     expect(mergeNeedsWarning(s, 't1')).toBe(true);
+  });
+
+  it('Solve Conflict warns the same way, and Merge Anyway then solves (not a plain merge)', () => {
+    const s = base();
+    const ran: UiAction[] = [];
+    runPlanAction(s, 't1', 'merge_anyway', (a) => void ran.push(a), 'merge_claude');
+    const sheet = currentSheet();
+    expect(sheet).toMatchObject({ kind: 'confirm', confirm: 'Merge Anyway' });
+    if (sheet?.kind !== 'confirm') throw new Error('no sheet');
+    sheet.run();
+    closeSheet();
+    expect(ran).toEqual([{ type: 'ws', id: 't1', action: 'merge_claude' }]);
+    // The solve you confirmed goes through once.
+    expect(mergeNeedsWarning(s, 't1')).toBe(false);
   });
 });

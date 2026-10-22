@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import type { MenuKind } from '@klaud/ui/menus.js';
+import type { MenuKind } from '../../../../src/ui/menus.js';
 import type { AskedWork } from './work-asked.js';
 
 /**
@@ -29,7 +29,7 @@ export type NativeSheet =
   /** Delete Project…: out of Klaud (worktrees archived), the folder to the Trash only if ticked. */
   | { readonly kind: 'delete_project'; readonly projectId: string }
   /** A new task (in a project, a status, under a parent). */
-  | { readonly kind: 'new_task'; readonly projectId?: string; readonly status?: import('@klaud/core/board/model.js').IssueStatus; readonly parent?: string }
+  | { readonly kind: 'new_task'; readonly projectId?: string; readonly status?: import('../../../../src/core/board/model.js').IssueStatus; readonly parent?: string }
   /** A new plan with Claude: what it's for (`goal` prefills it), the project (unset: pick one), how far it runs on its own. */
   | { readonly kind: 'new_plan'; readonly projectId?: string; readonly goal?: string }
   /** Your planning style (how you like plans cut). */

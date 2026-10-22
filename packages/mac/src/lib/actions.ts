@@ -123,7 +123,8 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
       if (action.type === 'ws' && action.action === 'fork') return openSheet({ kind: 'fork', wsId: action.id });
       // A plan's task: merging it locally warns first (Merge Anyway), however it was asked for.
       if (action.type === 'ws' && isPlanAction(action.action)) return runPlanAction(client.store.getState(), action.id, action.action, actions.run);
-      if (action.type === 'ws' && action.action === 'merge' && mergeNeedsWarning(client.store.getState(), action.id)) return runPlanAction(client.store.getState(), action.id, 'merge_anyway', actions.run);
+      // Solve Conflict finishes a local merge too, so it warns the same way.
+      if (action.type === 'ws' && (action.action === 'merge' || action.action === 'merge_claude') && mergeNeedsWarning(client.store.getState(), action.id)) return runPlanAction(client.store.getState(), action.id, 'merge_anyway', actions.run, action.action);
       // Starting Claude or changing git says what it will do first, however it was asked for.
       if (action.type === 'ws' && asksBeforeWork(action.action)) return askBeforeWork(action.id, action.action);
       runUiActionWith(uiCtx, action);

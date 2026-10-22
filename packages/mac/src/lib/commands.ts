@@ -7,8 +7,6 @@ import type { Workspace } from '@klaud/workspaces/types.js';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import type { Actions } from './actions.js';
 import type { UiStore } from './klaud.js';
-import { planOwnerOf } from '@klaud/core/plans/owner.js';
-import { runPlanAction } from './plan-task.js';
 
 /**
  * The window's commands that the menu bar, the keyboard and the buttons share: what each does,
@@ -239,8 +237,7 @@ export function runCommand(ctx: CommandCtx, id: CommandId): void {
       if (id === 'ws-run' && runRunning(state, ws.id)) return actions.run({ type: 'ws', id: ws.id, action: 'stop_run' });
       // A conflict turns Merge into "Solve conflict" (Claude finishes the merge).
       const solve = action === 'merge' && state.conflicts[ws.id]?.length;
-      // Part of a plan: Klaud merges it into the plan, so merging by hand asks first.
-      if (action === 'merge' && !solve && planOwnerOf(state.plans, state.board, ws.id)) return runPlanAction(state, ws.id, 'merge_anyway', actions.run);
+      // Part of a plan: merging (or solving) by hand asks first, in actions.run (lib/plan-merge.ts).
       actions.run({ type: 'ws', id: ws.id, action: solve ? 'merge_claude' : action });
     }
   }

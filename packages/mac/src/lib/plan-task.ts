@@ -1,7 +1,8 @@
-import type { AppState } from '@klaud/core/store.js';
-import { planTitle } from '@klaud/core/plans/model.js';
-import { planOwnerOf } from '@klaud/core/plans/owner.js';
-import type { UiAction } from '@klaud/ui/workspace-models.js';
+import type { AppState } from '../../../../src/core/store.js';
+// Relative (not @klaud/…), so the root's unit tests can load it (as lib/plan-merge.ts and sheets.ts).
+import { planTitle } from '../../../../src/core/plans/model.js';
+import { planOwnerOf } from '../../../../src/core/plans/owner.js';
+import type { UiAction } from '../../../../src/ui/workspace-models.js';
 import { confirmMerge } from './plan-merge.js';
 import { openSheet } from './sheets.js';
 
@@ -10,8 +11,11 @@ export type PlanAction = 'open_task' | 'open_plan' | 'merge_anyway';
 
 export const isPlanAction = (a: string): a is PlanAction => a === 'open_task' || a === 'open_plan' || a === 'merge_anyway';
 
-/** Opening a plan task's task or plan; merging one by hand asks first (the plan merges it itself). */
-export function runPlanAction(state: AppState, wsId: string, action: PlanAction, run: (a: UiAction) => void): void {
+/**
+ * Opening a plan task's task or plan; merging one by hand asks first (the plan merges it itself).
+ * `merge` is what runs once you say Merge Anyway: a plain merge, or Solve Conflict (Claude finishes it).
+ */
+export function runPlanAction(state: AppState, wsId: string, action: PlanAction, run: (a: UiAction) => void, merge: 'merge' | 'merge_claude' = 'merge'): void {
   const owner = planOwnerOf(state.plans, state.board, wsId);
   if (!owner) return;
   if (action === 'open_plan') return run({ type: 'view', view: { kind: 'plan', id: owner.plan.id } });
@@ -24,7 +28,7 @@ export function runPlanAction(state: AppState, wsId: string, action: PlanAction,
     confirm: 'Merge Anyway',
     run: () => {
       confirmMerge(wsId);
-      run({ type: 'ws', id: wsId, action: 'merge' });
+      run({ type: 'ws', id: wsId, action: merge });
     },
   });
 }

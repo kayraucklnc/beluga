@@ -71,6 +71,9 @@ export function stillWorking(m: MilestoneView): string | undefined {
   return `“${m.milestone.title}” can’t be merged yet: ${who}. Merging retires each task’s worktree and branch, so only tasks In Review are merged: let them finish (or stop them), then pass it.`;
 }
 
+/** pass() said no because a task is still being worked on: Autopilot waits for it instead of reporting a problem. */
+export class StillWorkingError extends Error {}
+
 /** What changes can move a plan along. */
 const WAKES = new Set(['board_issue', 'board_remove', 'plan_put', 'agent_event', 'question_add', 'question_remove', 'approval_add', 'approval_remove', 'projects']);
 
@@ -200,7 +203,7 @@ export class PlanPilot {
     // Merging retires its tasks' worktrees and branches: never while a Claude still works in one.
     const m = this.view(plan).milestones.find((x) => x.milestone.id === milestoneId);
     const busy = m ? stillWorking(m) : undefined;
-    if (busy) throw new Error(busy);
+    if (busy) throw new StillWorkingError(busy);
     const next = this.deps.plans.setMerging(planId, milestoneId, { at: Date.now(), by });
     this.schedule();
     return next;
@@ -278,8 +281,13 @@ export class PlanPilot {
   private autoPass(planId: string, milestoneId: string, by: Actor): void {
     try {
       this.pass(planId, milestoneId, by);
-    } catch {
+    } catch (err) {
       // Not merged under a working Claude: tried again once it's In Review.
+      if (err instanceof StillWorkingError) return;
+      // Anything else is a real problem: said once in the plan's activity, not swallowed.
+      const text = `couldn’t pass the milestone on Autopilot: ${err instanceof Error ? err.message : String(err)}`;
+      const plan = this.deps.plans.get(planId);
+      if (plan && plan.activity.at(-1)?.text !== text) this.deps.plans.note(planId, 'problem', text, { kind: 'klaud' });
     }
   }
 

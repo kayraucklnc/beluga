@@ -209,6 +209,8 @@ function asPlanTask(all: readonly ToolAction[], owner: PlanOwner, pr: boolean): 
   ];
   const rest = all.flatMap((a): ToolAction[] => {
     if (a.action === 'pr' && !pr) return [];
+    // Solving a conflict finishes a local merge: it stays, but says so and warns first (actions.run).
+    if (a.action === 'merge_claude') return [{ ...a, hint: `Claude finishes this merge by hand, which skips “${name}”: Klaud merges it into the plan itself` }];
     if (a.action !== 'merge') return [a];
     return [{ ...a, id: 'merge_anyway', label: 'Merge Anyway…', action: 'merge_anyway', hint: `Klaud merges this into “${name}” itself; merging it by hand skips the plan` }];
   });

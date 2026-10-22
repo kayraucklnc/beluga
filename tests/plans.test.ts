@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Board } from '../src/core/board/board.js';
 import { BoardWork } from '../src/core/board/work.js';
 import { type BodyInput, PlanError, applyOps, normalizeBody } from '../src/core/plans/edit.js';
@@ -321,6 +321,24 @@ describe('running a plan', () => {
     expect(kinds.filter((k) => k.startsWith('started:')).length).toBeGreaterThanOrEqual(2);
     expect(kinds).toContainEqual(expect.stringMatching(/^finished: finished [A-Z]+-\d+ “Idempotent webhooks”$/));
     expect(kinds.at(-1)).toBe('autonomy: switched the plan to Autopilot');
+  });
+
+  it('autopilot: a pass that fails for a real reason is said in the plan’s activity, once (still working: not)', async () => {
+    const t = await running('autopilot');
+    const pass = vi.spyOn(t.work.pilot, 'pass').mockImplementation(() => {
+      throw new Error('the plan file couldn’t be written');
+    });
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(issue(t, title).id, { status: 'done' }, t.me);
+    await tick(5);
+    await tick(5);
+    t.work.forRun('ws:main', 'p-me')!.tools!.gate('safe', 'pass', 'all good');
+    await tick(5);
+    await tick(5);
+    expect(pass).toHaveBeenCalled();
+    const problems = () => t.plans.need(t.plan.id).activity.filter((a) => a.kind === 'problem' && a.text.includes('couldn’t pass the milestone on Autopilot'));
+    expect(problems()).toHaveLength(1);
+    expect(problems()[0]!.text).toContain('the plan file couldn’t be written');
+    pass.mockRestore();
   });
 
   it('autopilot: a passing check moves on by itself; a failing one stops there', async () => {
