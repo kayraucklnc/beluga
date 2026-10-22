@@ -31,7 +31,30 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   const criteria = main(page).locator('[data-criteria]');
   await expect(criteria).toHaveCount(3);
   await expect(main(page).locator('[data-criteria="foundations"]')).toContainText('Passed');
-  await expect(main(page).locator('[data-criteria="foundations"] [data-met="true"]').first()).toBeVisible();
+  // No criterion is ticked on its own (Claude's check judges them together): plain bullets, and one state on the node.
+  // An unchecked milestone says "Not yet" and claims none of its criteria are met (KLD-67).
+  const refunds = main(page).locator('[data-criteria="refunds"]');
+  await expect(refunds).toHaveAttribute('aria-label', /: Not yet$/);
+  await expect(refunds.locator('li')).toHaveCount(2);
+  await expect(main(page).locator('[data-criteria] li svg, [data-criteria] li [aria-label="Met"]')).toHaveCount(0);
+  // Every card's title shows whole lines (two at most, then an ellipsis), clear of its state line, and all of it in its tooltip.
+  const titles = await main(page)
+    .locator('.react-flow__node-task [class*="taskTitle"]')
+    .evaluateAll((els) =>
+      els.map((el) => {
+        const line = parseFloat(getComputedStyle(el).lineHeight);
+        const foot = el.nextElementSibling!.getBoundingClientRect();
+        const zoom = el.getBoundingClientRect().height / el.clientHeight;
+        return { full: el.getAttribute('title') === el.textContent, lines: el.clientHeight / line, clear: el.getBoundingClientRect().bottom <= foot.top + 0.5 * zoom };
+      }),
+    );
+  expect(titles.length).toBeGreaterThan(5);
+  for (const t of titles) {
+    expect(t.full).toBe(true);
+    expect([1, 2]).toContain(Math.round(t.lines));
+    expect(Math.abs(t.lines - Math.round(t.lines))).toBeLessThan(0.1);
+    expect(t.clear).toBe(true);
+  }
   const next = main(page).getByRole('group', { name: '“Safe payments” leads to “Refunds and launch”', exact: true }).locator('[data-kind="next"]');
   await expect(next).toHaveAttribute('data-from', 'gate:safe-payments');
   await expect(next).toHaveAttribute('data-to', 'm:refunds');
@@ -80,6 +103,15 @@ test('a task’s panel keeps its head and Close in reach while its brief scrolls
   await page.getByRole('menuitem', { name: 'Hide the Conversation' }).click();
   await main(page).getByRole('button', { name: 'Fit to View' }).click();
   await page.waitForTimeout(400);
+  // Fit frames every milestone tightly: 48 px above (the view switch sits there), and no more than that on the side that limits it (KLD-67).
+  const gaps = await main(page).evaluate((root) => {
+    const pane = root.querySelector('.react-flow')!.getBoundingClientRect();
+    const boxes = [...root.querySelectorAll('.react-flow__node-milestone')].map((n) => n.getBoundingClientRect());
+    return { top: Math.min(...boxes.map((b) => b.top)) - pane.top, left: Math.min(...boxes.map((b) => b.left)) - pane.left, right: pane.right - Math.max(...boxes.map((b) => b.right)), bottom: pane.bottom - Math.max(...boxes.map((b) => b.bottom)) };
+  });
+  for (const gap of Object.values(gaps)) expect(gap).toBeGreaterThanOrEqual(-1);
+  expect(gaps.top).toBeLessThanOrEqual(49);
+  expect((gaps.left <= 49 && gaps.right <= 49) || gaps.bottom <= 49).toBe(true);
   await main(page).locator('.react-flow__node').filter({ hasText: 'Refund endpoint' }).click();
   await expect(edge('t:retries', 't:refund-api')).toHaveCount(0);
   await expect(main(page).locator('.react-flow__node').filter({ hasText: 'Idempotent webhook retries' }).locator('[data-linked="true"]')).toHaveCount(1);

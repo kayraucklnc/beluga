@@ -24,7 +24,8 @@ import c from './PlanCanvas.module.css';
  * The layout (ELK) depends only on the plan's shape, so work moving on never moves anything.
  */
 
-const TASK = { width: 252, height: 92 };
+/** A task card: its head, a title of up to two lines (then an ellipsis) and its state line (.task in plans.module.css). */
+const TASK = { width: 252, height: 100 };
 const HEAD = 62;
 /** The criteria node at a milestone's end: its head, then one row per criterion (up to two lines each). */
 const CRITERIA = { width: 264, head: 38, line: 15.5, row: 7, foot: 12, chars: 36 };
@@ -33,6 +34,10 @@ const SIDE_GAP = 48;
 const ROW_GAP = 64;
 /** Where a line comes into a milestone: above its number. */
 const IN_AT = 27;
+/** Empty room left around the plan when it's framed: above it the view switch sits over the canvas. */
+const MARGIN = { top: 48, side: 24 };
+/** Opened, the plan is framed whole when it reads at this zoom; smaller, its current milestones are. */
+const READABLE = 0.55;
 
 /** How tall a criteria node is: from its criteria's words (the shape), never from their state. */
 function criteriaHeight(criteria: readonly string[]): number {
@@ -275,27 +280,37 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     });
   }, [laid, shape, lane, byTask, view]);
 
-  // Framed once laid out (and when the frame changes size a lot: the conversation folded away).
+  // Framed once laid out: the whole plan if it reads, else the milestones being worked on (else the current one).
   const wrap = useRef<HTMLDivElement>(null);
-  /** The plan framed so it reads: as wide as fits (never tiny), from the top, the current milestone in view. */
-  const frame = (ms: number): void => {
+  /** The viewport that shows these milestones as large as fits (never past 1:1), from the top, centred across. */
+  const framing = (ids: readonly string[], least = 0): { x: number; y: number; zoom: number } | undefined => {
     const box = wrap.current;
-    if (!laid || !box) return;
-    const groups = [...laid.places].filter(([id]) => id.startsWith('m:')).map(([, at]) => at);
-    const width = Math.max(...groups.map((g) => g.x + g.width)) + 24;
-    const height = Math.max(...groups.map((g) => g.y + g.height)) + 24;
-    const zoom = Math.max(0.55, Math.min(1, box.clientWidth / width, Math.max(box.clientHeight / height, box.clientWidth / width)));
-    const current = view.current ? laid.places.get(groupId(view.current.milestone.id)) : undefined;
-    // From the top (below the view switch), unless the current milestone would be out of sight.
-    const top = current && (current.y + current.height) * zoom + 52 > box.clientHeight ? -(current.y - 24) * zoom + 52 : 40;
-    // Wider than the view (milestones side by side): from the left, unless the current milestone would be out of sight.
-    const left = width * zoom <= box.clientWidth ? (box.clientWidth - width * zoom) / 2 : current && (current.x + current.width) * zoom > box.clientWidth ? -(current.x - 24) * zoom + 16 : 0;
-    void flow.setViewport({ x: left, y: top, zoom }, { duration: ms });
+    const groups = ids.map((id) => laid?.places.get(groupId(id))).filter((g): g is Placed => !!g);
+    if (!box || !groups.length) return undefined;
+    const x0 = Math.min(...groups.map((g) => g.x));
+    const y0 = Math.min(...groups.map((g) => g.y));
+    const width = Math.max(...groups.map((g) => g.x + g.width)) - x0;
+    const height = Math.max(...groups.map((g) => g.y + g.height)) - y0;
+    const zoom = Math.min(1, (box.clientWidth - 2 * MARGIN.side) / width, (box.clientHeight - MARGIN.top - MARGIN.side) / height);
+    if (zoom < least) return undefined;
+    return { x: (box.clientWidth - width * zoom) / 2 - x0 * zoom, y: MARGIN.top - y0 * zoom, zoom };
+  };
+  const fit = (ms: number): void => {
+    const at = framing(shape.milestones.map((m) => m.id));
+    if (at) void flow.setViewport(at, { duration: ms });
   };
   useEffect(() => {
     if (!laid || framed.current) return;
     framed.current = true;
-    requestAnimationFrame(() => frame(0));
+    requestAnimationFrame(() => {
+      const open = view.open.map((m) => m.milestone.id);
+      const at =
+        framing(shape.milestones.map((m) => m.id), READABLE) ??
+        framing(open, READABLE) ??
+        framing(view.current ? [view.current.milestone.id] : open.slice(0, 1)) ??
+        framing(shape.milestones.map((m) => m.id));
+      if (at) void flow.setViewport(at, { duration: 0 });
+    });
   }, [laid]);
 
   return (
@@ -324,7 +339,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
         <Panel position="bottom-left" className={p.zoom}>
           <IconButton icon="minus" label="Zoom Out" onClick={() => void flow.zoomOut({ duration: 200 })} />
           <IconButton icon="plus" label="Zoom In" onClick={() => void flow.zoomIn({ duration: 200 })} />
-          <IconButton icon="outline" label="Fit to View" onClick={() => void flow.fitView({ padding: 0.06, maxZoom: 1, duration: 350 })} />
+          <IconButton icon="outline" label="Fit to View" onClick={() => fit(350)} />
         </Panel>
       </ReactFlow>
       {failed ? <div className={p.canvasNote}>Couldn’t lay this plan out.</div> : !laid ? <div className={p.canvasNote}>Laying out…</div> : null}
@@ -373,7 +388,9 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task
         {t.task.estimate ? <span className={p.points}>{t.task.estimate}</span> : null}
         {t.forYou ? <Icon name="person" size={12} className={p.forYou} /> : null}
       </div>
-      <div className={p.taskTitle}>{t.task.title}</div>
+      <div className={p.taskTitle} title={t.task.title}>
+        {t.task.title}
+      </div>
       <div className={p.taskFoot}>
         {data.canStart ? (
           <button
@@ -431,20 +448,20 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
 });
 
 /**
- * The criteria at a milestone's end (its gate): what must be true to pass it, each ticked once it's
- * met (Claude's check found them all met, or it passed). Picked, the details say more.
+ * The criteria at a milestone's end (its gate): what must be true to pass it. Claude's check judges them
+ * together (its notes are prose), so no criterion is ticked on its own: each is a plain bullet, and the
+ * node says once where the milestone stands. Picked, the details say more.
  */
 const GateNode = memo(function GateNode({ data }: NodeProps<Node<GateData, 'gate'>>) {
   const m = data.view;
   const criteria = m.milestone.criteria;
-  const check = m.run.check;
-  const met = m.state === 'passed' || (check?.verdict === 'pass' && m.state !== 'failed');
-  const label = m.state === 'passed' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? 'Pass it' : met ? 'All met' : `${criteria.length} to meet`;
+  const checked = m.run.check?.verdict === 'pass';
+  const label = m.state === 'passed' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? (checked ? 'Checked · pass it' : 'Pass it') : 'Not yet';
   // Waiting for you: a soft ring that breathes out (with the live clock, lib/live-motion.ts).
   const gate = useRef<HTMLDivElement>(null);
   useLive(gate, (t) => gate.current?.style.setProperty('--beckon', (1 - breath(t, 2400)).toFixed(3)), m.state === 'gate');
   return (
-    <div ref={gate} className={cx(c.criteria, c[`criteria_${m.state}`], data.current && c.criteriaCurrent, data.selected && c.criteriaSelected)} data-criteria={m.milestone.id} aria-label={`Criteria of ${m.milestone.title}: ${label}`}>
+    <div ref={gate} className={cx(c.criteria, c[`criteria_${m.state}`], data.current && c.criteriaCurrent, data.selected && c.criteriaSelected)} data-criteria={m.milestone.id} data-state={m.state} aria-label={`Criteria of ${m.milestone.title}: ${label}`}>
       <Ends />
       <div className={c.criteriaHead}>
         <span className={c.criteriaMark}>
@@ -456,10 +473,8 @@ const GateNode = memo(function GateNode({ data }: NodeProps<Node<GateData, 'gate
       {criteria.length ? (
         <ul className={c.criteriaList}>
           {criteria.map((text, i) => (
-            <li key={i} className={c.criterion} data-met={met ? 'true' : 'false'} title={text}>
-              <span className={c.criterionMark} aria-label={met ? 'Met' : 'Pending'}>
-                {met ? <Icon name="check" size={8} /> : null}
-              </span>
+            <li key={i} className={c.criterion} title={text}>
+              <span className={c.criterionMark} aria-hidden="true" />
               <span className={c.criterionText}>{text}</span>
             </li>
           ))}
