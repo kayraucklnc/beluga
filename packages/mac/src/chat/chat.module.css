@@ -6,7 +6,10 @@
 }
 .log {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
+  /* Never sideways: long words wrap, code and tables scroll inside their own block (KLD-64). */
+  overflow-x: hidden;
   overflow-anchor: none;
   padding: 12px 0 18px;
 }
@@ -19,6 +22,7 @@
   top: 0;
   left: 0;
   width: 100%;
+  overflow-wrap: anywhere;
 }
 .logEmpty {
   flex: 1;
@@ -27,7 +31,7 @@
 
 .message {
   display: grid;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: 34px minmax(0, 1fr);
   gap: 10px;
   max-width: var(--chat-max);
   margin: 0 auto;
@@ -327,7 +331,11 @@
 }
 .codeBlock {
   position: relative;
+  max-width: 100%;
   margin: 0.4em 0 0.7em;
+}
+.codeBlock pre {
+  overflow-wrap: normal;
 }
 .codeBlock pre,
 .shiki :global(pre) {
@@ -360,6 +368,7 @@
   opacity: 1;
 }
 .tableWrap {
+  max-width: 100%;
   overflow-x: auto;
   margin: 0.4em 0 0.7em;
 }
