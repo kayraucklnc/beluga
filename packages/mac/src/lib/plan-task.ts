@@ -2,6 +2,7 @@ import type { AppState } from '@klaud/core/store.js';
 import { planTitle } from '@klaud/core/plans/model.js';
 import { planOwnerOf } from '@klaud/core/plans/owner.js';
 import type { UiAction } from '@klaud/ui/workspace-models.js';
+import { confirmMerge } from './plan-merge.js';
 import { openSheet } from './sheets.js';
 
 /** A plan's task worktree: open its task or its plan, or merge it by hand after a warning. */
@@ -21,6 +22,9 @@ export function runPlanAction(state: AppState, wsId: string, action: PlanAction,
     title: `Merge ${owner.issue.key} by hand?`,
     message: `It’s part of “${name}”: when “${owner.milestone.title}” passes, Klaud merges it into the plan’s branch, and the plan opens one PR at the end. Merging it yourself skips the plan’s checks.`,
     confirm: 'Merge Anyway',
-    run: () => run({ type: 'ws', id: wsId, action: 'merge' }),
+    run: () => {
+      confirmMerge(wsId);
+      run({ type: 'ws', id: wsId, action: 'merge' });
+    },
   });
 }

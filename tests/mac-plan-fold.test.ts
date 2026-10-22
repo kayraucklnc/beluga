@@ -7,6 +7,7 @@ import { type ScreenAction, initialAppState, reduceApp } from '../src/client/scr
 import type { Project, Workspace } from '../src/workspaces/types.js';
 import { dockCount, planSignal, projectTally, unreadEntries } from '../packages/mac/src/layout/attention-model.js';
 import { overviewItems } from '../packages/mac/src/views/overview/overview-model.js';
+import { confirmMerge, mergeNeedsWarning } from '../packages/mac/src/lib/plan-merge.js';
 
 /** A running plan is one thing at the top level: one Unread entry, one tally, one Overview item (KLD-29). */
 
@@ -73,5 +74,17 @@ describe('a running plan in tallies and Overview', () => {
     const s = { ...answered(), plans: { enabled: true, plans: [{ ...plan, status: 'done' as const }], style: '' } };
     expect(unreadEntries(s)).toHaveLength(3);
     expect(overviewItems(s).some((i) => i.plan)).toBe(false);
+  });
+});
+
+describe('merging a plan task’s worktree locally always warns first (⌘K, ⇧⌘M, toolbar, menus)', () => {
+  it('a plan task asks (Merge Anyway); only the merge you confirmed goes through, once', () => {
+    const s = base();
+    expect(mergeNeedsWarning(s, 'solo')).toBe(false);
+    expect(mergeNeedsWarning(s, 't1')).toBe(true);
+    // Merge Anyway in the sheet (runPlanAction) confirms it, then dispatches the merge.
+    confirmMerge('t1');
+    expect(mergeNeedsWarning(s, 't1')).toBe(false);
+    expect(mergeNeedsWarning(s, 't1')).toBe(true);
   });
 });
