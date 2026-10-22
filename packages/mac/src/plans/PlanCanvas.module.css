@@ -71,22 +71,16 @@
   line-height: 15.5px;
   color: var(--text-2);
 }
+/* A plain bullet: whether each criterion holds isn't known on its own (the head says how the milestone stands). */
 .criterionMark {
   flex: none;
-  display: grid;
-  place-items: center;
-  width: 12px;
-  height: 12px;
-  margin-top: 2px;
+  width: 4px;
+  height: 4px;
+  margin: 6px 4px 0 2px;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1.25px var(--hairline-strong);
+  background: var(--text-3);
 }
-.criterion[data-met='true'] .criterionMark {
-  color: var(--bg);
-  background: var(--ok);
-  box-shadow: none;
-}
-.criterion[data-met='true'] .criterionText {
+.criterionText {
   color: var(--text-3);
 }
 .criterionText {

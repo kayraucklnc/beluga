@@ -611,7 +611,8 @@
 .task {
   position: relative;
   width: 252px;
-  height: 92px;
+  /* TASK in PlanCanvas.tsx: its head, a two-line title and its state line, never cut. */
+  height: 100px;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -743,6 +744,7 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .taskTitle {
+  flex: none;
   font-size: 13px;
   font-weight: 550;
   line-height: 1.3;
