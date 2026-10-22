@@ -1,4 +1,7 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 export class GitError extends Error {}
 
@@ -100,6 +103,15 @@ export async function removeWorktree(repo: string, path: string, force = false):
 
 export async function deleteBranch(repo: string, branch: string): Promise<void> {
   await git(repo, ['branch', '-D', branch]);
+}
+
+/**
+ * Delete a branch only if its work is in `into` (`git branch -d`, never -D): `into` stands in as
+ * its upstream for this one command, so git itself refuses a branch with commits not merged there.
+ */
+export async function deleteMergedBranch(repo: string, branch: string, into: string): Promise<void> {
+  if (!branch || branch.startsWith('-') || !into || into.startsWith('-')) throw new Error(`Not a branch: ${branch}`);
+  await git(repo, ['-c', `branch.${branch}.remote=.`, '-c', `branch.${branch}.merge=refs/heads/${into}`, 'branch', '-d', branch]);
 }
 
 export interface Status {
@@ -223,6 +235,81 @@ export async function mergeInto(mainDir: string, branch: string, target?: string
     if (!conflicts.length) throw err;
     return { ok: false, reason: 'conflict', files: conflicts };
   }
+}
+
+export const isAncestor = async (cwd: string, a: string, b: string): Promise<boolean> => (await tryGit(cwd, ['merge-base', '--is-ancestor', a, b])) !== undefined;
+
+/**
+ * The branches still needed to have them all: a branch already in another one of them (KLD-27 in
+ * KLD-31) goes, and so does one already in `main`. Order is kept; of two equal ones the first stays.
+ */
+export async function neededBranches(repo: string, branches: readonly string[], main?: string): Promise<string[]> {
+  const unique = [...new Set(branches)];
+  const out: string[] = [];
+  for (const [i, b] of unique.entries()) {
+    if (main && (await isAncestor(repo, b, main))) continue;
+    let inside = false;
+    for (const [j, other] of unique.entries()) {
+      if (i === j || !(await isAncestor(repo, b, other))) continue;
+      // Equal branches contain each other: the first one counts.
+      if (j > i && (await isAncestor(repo, other, b))) continue;
+      inside = true;
+      break;
+    }
+    if (!inside) out.push(b);
+  }
+  return out;
+}
+
+export type CombineResult =
+  | { readonly ok: true; readonly branch: string }
+  /** `merging` conflicted: the merge is left in `dir` to fix (conflict markers in `files`). */
+  | { readonly ok: false; readonly branch: string; readonly dir: string; readonly merging: string; readonly files: readonly string[] };
+
+const MARKER = /^(<{7}|>{7})( |$)|^={7}$/m;
+
+/**
+ * `branch`: the first of `branches` with the others merged in (--no-ff), made in the worktree `dir`
+ * (removed again once it's made, unless `keep`: a checkout that was there before). An existing
+ * `branch` gets them merged in. Safe to run again: what's already in is skipped, and a conflict
+ * someone fixed since (no markers left) is committed and the rest merged.
+ */
+export async function combineBranches(repo: string, dir: string, branch: string, branches: readonly string[], opts: { readonly keep?: boolean } = {}): Promise<CombineResult> {
+  if (!branches.length) throw new GitError('Nothing to combine');
+  if (!existsSync(dir)) {
+    await tryGit(repo, ['worktree', 'prune']);
+    const exists = await tryGit(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]);
+    await git(repo, exists ? ['worktree', 'add', dir, branch] : ['worktree', 'add', '-b', branch, dir, branches[0]!]);
+  }
+  const conflicted = async (): Promise<string[]> => ((await tryGit(dir, ['diff', '--name-only', '--diff-filter=U'])) ?? '').split('\n').filter(Boolean);
+  // A merge left to fix: committed once no conflict markers are left.
+  if (await tryGit(dir, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'])) {
+    const files = await conflicted();
+    const marked: string[] = [];
+    for (const f of files) if (MARKER.test(await readFile(path.join(dir, f), 'utf8').catch(() => ''))) marked.push(f);
+    if (marked.length) {
+      const msg = await readFile(path.join((await git(dir, ['rev-parse', '--path-format=absolute', '--git-dir'])).trim(), 'MERGE_MSG'), 'utf8').catch(() => '');
+      return { ok: false, branch, dir, merging: /'([^']+)'/.exec(msg)?.[1] ?? 'a branch', files: marked };
+    }
+    if (files.length) await git(dir, ['add', '--', ...files]);
+    await git(dir, ['commit', '--no-edit']);
+  }
+  for (const b of branches) {
+    if (await isAncestor(dir, b, 'HEAD')) continue;
+    try {
+      await git(dir, ['merge', '--no-ff', '--no-edit', b]);
+    } catch (err) {
+      const files = await conflicted();
+      // Not a conflict (no git identity, a hook said no): nothing is left half-merged.
+      if (!files.length) {
+        await tryGit(dir, ['merge', '--abort']);
+        throw err;
+      }
+      return { ok: false, branch, dir, merging: b, files };
+    }
+  }
+  if (!opts.keep) await tryGit(repo, ['worktree', 'remove', '--force', dir]);
+  return { ok: true, branch };
 }
 
 export async function currentBranch(dir: string): Promise<string | undefined> {

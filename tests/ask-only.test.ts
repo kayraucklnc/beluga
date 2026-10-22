@@ -221,12 +221,19 @@ describe('the project home (Mac)', () => {
   };
 
   it('lists worktrees, questions and archived, with counts', () => {
-    const m = homeModel({ log: [], conflicts: {} }, project);
+    const m = homeModel({ log: [], conflicts: {}, prs: {} }, project);
     expect(m.worktrees.map((w) => w.id)).toEqual(['hooks', 'auth']);
     expect(m.asks.map((w) => w.id)).toEqual(['q']);
     expect(m.archived.map((w) => w.id)).toEqual(['old']);
     expect(m.stats).toEqual({ active: 2, ready: 1, archived: 1 });
     expect(m.mainLine).toEqual({ label: '2 behind origin/main', tone: 'info' });
+  });
+
+  it("doesn't count a worktree whose PR is merged or closed as ready to merge", () => {
+    const pr = { number: 7, url: 'u', title: 'T', draft: false, checks: 'passing' as const };
+    expect(homeModel({ log: [], conflicts: {}, prs: { auth: { ...pr, state: 'OPEN' } } }, project).stats.ready).toBe(1);
+    expect(homeModel({ log: [], conflicts: {}, prs: { auth: { ...pr, state: 'MERGED' } } }, project).stats.ready).toBe(0);
+    expect(homeModel({ log: [], conflicts: {}, prs: { auth: { ...pr, state: 'CLOSED' } } }, project).stats.ready).toBe(0);
   });
 
   it('says how main compares with origin', () => {
@@ -249,5 +256,19 @@ describe('isReadOnlyCommand: what the shell would really run', () => {
     expect(isReadOnlyCommand('A=--output=/tmp/x; git diff $A')).toBe(false);
     expect(isReadOnlyCommand('GIT_EXTERNAL_DIFF=/tmp/evil git diff')).toBe(false);
     expect(isReadOnlyCommand('GIT_PAGER=cat git log -3')).toBe(true);
+  });
+});
+
+describe('a plan’s Claude fixing a conflict in a hidden worktree', () => {
+  const fixing = { ...main, roots: ['/work/app', '/k/workspaces/.bases/app/kld-10-base'], fixup: '/k/workspaces/.bases/app/kld-10-base' };
+
+  it('may edit there (and only there); the main folder stays read-only, and git still can’t run', () => {
+    expect(decideTool('Edit', { file_path: '/k/workspaces/.bases/app/kld-10-base/src/a.ts' }, fixing)).toBe('allow');
+    expect(decideTool('Read', { file_path: '/k/workspaces/.bases/app/kld-10-base/src/a.ts' }, fixing)).toBe('allow');
+    expect(decideTool('Edit', { file_path: '/work/app/src/a.ts' }, fixing)).toBe('deny');
+    expect(decideTool('Edit', { file_path: '/k/workspaces/.bases/app/kld-11-base/a.ts' }, fixing)).toBe('deny');
+    expect(decideTool('Write', { file_path: '/k/workspaces/.bases/app/kld-10-base/.env' }, fixing)).toBe('deny');
+    expect(decideTool('Bash', { command: 'git -C /k/workspaces/.bases/app/kld-10-base commit -am x' }, fixing)).toBe('deny');
+    expect(decideTool('Edit', { file_path: '/k/workspaces/.bases/app/kld-10-base/src/a.ts' }, main)).toBe('deny');
   });
 });

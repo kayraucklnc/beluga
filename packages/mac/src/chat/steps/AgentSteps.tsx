@@ -12,9 +12,11 @@ import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
 import { usePrefs } from '../../lib/prefs.js';
 import { useDisclosure } from './step-memory.js';
 import { usePresence } from '../../layout/panel/ResizeHandle.js';
-import { StepRow, usePersonId } from './StepRow.js';
+import { Shimmer, StepRow, usePersonId } from './StepRow.js';
 import { useAgentSteps } from './use-steps.js';
 import { useActions } from '../../lib/actions.js';
+import { useClock } from '../../lib/window-active.js';
+import { useLive } from '../../lib/live-motion.js';
 import { agentOfToolUse, allSubAgents } from '../../claude-code/subagents-model.js';
 import { openSubAgent } from '../../layout/SubAgents.js';
 import { waitState, waitTone, waitedLabel, waitingFor } from './waiting.js';
@@ -30,14 +32,15 @@ const RECENT_LIVE = 2;
 /** How long folding a finished card's steps takes (twice --dur, see .fold). */
 const FOLD_MS = 380;
 
-function useTick(active: boolean): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [active]);
-  return now;
+/** The hairline under a working card's header, a soft light travelling along it (moved by the live clock, lib/live-motion.ts). */
+function Progress() {
+  const line = useRef<HTMLDivElement>(null);
+  useLive(line, (t) => {
+    // Eased in and out, from just off the left to just off the right, every 1.8s.
+    const f = t === null ? 0.5 : (t % 1800) / 1800;
+    line.current?.style.setProperty('--travel', `${-100 + 400 * (0.5 - 0.5 * Math.cos(Math.PI * f))}%`);
+  });
+  return <div ref={line} className={s.progress} role="progressbar" aria-label="Claude is working" />;
 }
 
 /** A one-line step (someone else's Claude, or a card from before details were kept) as a row. */
@@ -76,7 +79,7 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
   const mine = item.owner === selfId;
   const change = `${item.status}:${item.steps.length}:${item.steps.at(-1) ?? ''}:${item.subagents.map((x) => `${x.steps.length}${x.status}`).join(',')}`;
   const { steps: rich } = useAgentSteps(item.channel, item.id, running, change, mine);
-  const now = useTick(running);
+  const now = useClock(running);
   const open = useDisclosure(`${item.channel}/${item.id}`);
   const [earlier, setEarlier] = useState(false);
   const api = useApi();
@@ -123,7 +126,7 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
 
   return (
     <>
-      {working ? <div className={s.progress} role="progressbar" aria-label="Claude is working" /> : null}
+      {working ? <Progress /> : null}
       <div className={s.list} role="list" aria-label="Claude's steps">
         {older.length ? (
           <div className={s.bar}>
@@ -208,7 +211,7 @@ function LiveIdle({ started, since }: { started: boolean; since: number }) {
         <span className={cx(s.chev, s.chevNone)} />
         <span className={cx(s.icon, s.iconThink)}>{started ? <Icon name="bulb" size={12} /> : <Dot tone="claude" live />}</span>
         <span className={s.title}>
-          <span className={s.shimmer}>{started ? 'Thinking' : 'Claude is starting'}</span>
+          <Shimmer>{started ? 'Thinking' : 'Claude is starting'}</Shimmer>
         </span>
         <span className={s.end} data-since={since} />
       </div>
@@ -321,7 +324,7 @@ function SubAgents({ item, rich, detail, stepsOf, open, load, live, now }: { ite
               </div>
             ) : running && detail === 'full' && sub.steps.length ? (
               <div className={cx(c.step, c.subStep, s.subNow)}>
-                <span className={s.shimmer}>{humanizeLine(sub.steps.at(-1)!).doing}</span>
+                <Shimmer>{humanizeLine(sub.steps.at(-1)!).doing}</Shimmer>
               </div>
             ) : null}
           </div>

@@ -3,7 +3,7 @@ import type { Plan } from '@klaud/core/plans/model.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
-import { Button, Empty, EmptyActions, IconButton } from '../components/ui.js';
+import { Button, Empty, EmptyActions, IconButton, cx } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
 import { currentSheet, openSheet } from '../lib/sheets.js';
 import { PickMenu } from '../tasks/PickMenu.js';
@@ -13,6 +13,7 @@ import { MilestoneBar, TonePill } from './marks.js';
 import { bars, nextWords, planStatus, plansOf, titleOf } from './plans-model.js';
 import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
+import v from './PlansView.module.css';
 
 /**
  * Plans: one project's at a time (the one you're in, like Tasks). Each is a row with how far it
@@ -49,8 +50,11 @@ export function PlansView() {
   return (
     <div className={p.list}>
       <div className={p.listBar}>
+        <span className={v.caption}>
+          Plans in
+        </span>
         <PickMenu<string> label="Project" choices={projects.map((x) => ({ value: x.id, label: x.name, mark: <ProjectIcon id={x.id} name={x.name} size={16} /> }))} chosen={[here.id]} onPick={(id) => openList(id)}>
-          <button type="button" className={p.projectSwitch} aria-label={`Project: ${here.name}`}>
+          <button type="button" className={cx(p.projectSwitch, v.switch)} aria-label={`Project: ${here.name}`} title="Switch Project">
             <ProjectIcon id={here.id} name={here.name} size={18} />
             <span>{here.name}</span>
             <Icon name="chevronDown" size={11} />
@@ -73,12 +77,13 @@ export function PlansView() {
       ) : (
         <Empty
           icon="flag"
-          title="Plan big work with Claude"
+          mark={<ProjectIcon id={here.id} name={here.name} size={28} />}
+          title={`No plans in ${here.name} yet`}
           detail="Say what you want built. Claude reads the code and cuts it into milestones and tasks that run side by side, each with what proves it’s done. You talk it through; nothing reaches the board until you approve."
           action={
             <EmptyActions>
               <Button variant="primary" icon="plus" onClick={() => openSheet({ kind: 'new_plan', projectId: here.id })}>
-                New Plan
+                {`Plan in ${here.name}`}
               </Button>
             </EmptyActions>
           }

@@ -8,8 +8,10 @@ import * as g from './git.js';
 import * as sync from './sync.js';
 import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
 import { WorkspaceStore } from './store.js';
+import { stopTestProcesses } from './test-procs.js';
 import { type ArchiveManifest, type ArchivePhase, type ArchivePreview, archiveWorktree, dropArchive, freeSpace, planArchive, previewOf, readManifest, restoreWorktree } from './archive.js';
 import { worktreeOrigin } from './origin.js';
+import { moveToTrash } from './trash.js';
 import { addDay, dayKey } from './usage-days.js';
 import type { Project, ProjectGroup, ProjectSync, ProjectsConfig, Workspace, WorkspaceRecord, WorkspaceUsage } from './types.js';
 import { ArrangeError, type Item, type Layout, MAX_GROUP_NAME, arrangedOrder, groupKey, groupOfKey, isGroupKey, keyOf, move, settle } from './arrange.js';
@@ -116,7 +118,8 @@ export class WorkspaceManager {
   addProject(dir: string): string {
     const root = path.resolve(dir);
     if (!isMainCheckout(root)) throw new WorkspaceError(`${root} is not a git project (no .git folder)`);
-    this.config = { ...this.config, projects: [...new Set([...this.config.projects, root])], hidden: this.config.hidden.filter((h) => h !== root) };
+    const removed = this.config.removed?.filter((r) => real(r) !== real(root));
+    this.config = { ...this.config, projects: [...new Set([...this.config.projects, root])], hidden: this.config.hidden.filter((h) => h !== root), ...(removed ? { removed } : {}) };
     this.store.saveConfig(this.config);
     return projectId(root);
   }
@@ -283,10 +286,52 @@ export class WorkspaceManager {
     this.store.saveConfig(this.config);
   }
 
+  /**
+   * Remove a project from Klaud (Delete Project): Klaud's own worktrees of it are archived first
+   * (losslessly, restorable if you add it back), then it leaves the project list, the hidden
+   * ones, its group and the sidebar's order. One a scanned root would find again is kept out.
+   * The folder itself stays unless `trash`: then it goes to the Trash (never deleted outright).
+   */
+  async removeProject(id: string, opts: { trash?: boolean; toTrash?: (dir: string) => Promise<void>; onPhase?: (wsId: string, phase?: ArchivePhase) => void } = {}): Promise<{ root: string; archived: number; trashed: boolean }> {
+    const project = this.projects.find((p) => p.id === id && p.root);
+    if (!project) throw new WorkspaceError('Project not found');
+    const root = project.root;
+    let archived = 0;
+    for (const w of project.workspaces.filter((x) => x.kind === 'worktree' && !x.archived && worktreeOrigin(x) === 'klaud')) {
+      try {
+        await this.archive(w.id, opts.onPhase ? (phase) => opts.onPhase!(w.id, phase) : undefined);
+      } finally {
+        opts.onPhase?.(w.id);
+      }
+      archived++;
+    }
+    // The config may hold it as added (/var/…) or resolved (/private/var/…): either is this project.
+    const other = (r: string): boolean => real(r) !== real(root);
+    const scanned = findProjects(this.config.roots).some((r) => !other(r));
+    const groups = this.config.groups?.map((g) => ({ ...g, projects: g.projects.filter(other) }));
+    const order = this.config.order?.filter((k) => isGroupKey(k) || other(k));
+    this.config = {
+      ...this.config,
+      projects: this.config.projects.filter(other),
+      hidden: this.config.hidden.filter(other),
+      ...(groups ? { groups } : {}),
+      ...(order ? { order } : {}),
+      ...(scanned && !opts.trash ? { removed: [...new Set([...(this.config.removed ?? []), root])] } : {}),
+    };
+    this.store.saveConfig(this.config);
+    let trashed = false;
+    if (opts.trash) {
+      await (opts.toTrash ?? moveToTrash)(root);
+      trashed = true;
+    }
+    await this.refresh();
+    return { root, archived, trashed };
+  }
+
   /** Re-scan projects and worktrees and refresh git status for every workspace. */
   async refresh(): Promise<readonly Project[]> {
     const roots = [...new Set([...findProjects(this.config.roots), ...this.config.projects].map(real))].filter(
-      (r) => !this.config.hidden.includes(r) && existsSync(r),
+      (r) => !this.config.hidden.includes(r) && !this.config.removed?.includes(r) && existsSync(r),
     );
     const gen = ++this.refreshGen;
     const loaded = await Promise.all(roots.map((root) => this.loadProject(root)));
@@ -321,7 +366,10 @@ export class WorkspaceManager {
       const trees = await g.listWorktrees(root);
       const records = this.records.filter((r) => r.projectRoot === root);
       const workspaces: Workspace[] = [];
+      const bases = real(this.basesDir) + path.sep;
       for (const tree of trees) {
+        // Hidden worktrees (combining branches for a task's start) aren't the project's.
+        if (real(tree.path).startsWith(bases) || tree.path.startsWith(this.basesDir + path.sep)) continue;
         const isMain = real(tree.path) === real(root);
         const rec = isMain ? records.find((r) => r.kind === 'main') : records.find((r) => r.kind === 'worktree' && real(r.path) === real(tree.path));
         const record: WorkspaceRecord = rec ?? {
@@ -354,7 +402,7 @@ export class WorkspaceManager {
   }
 
   /** origin's default branch ("origin/main"), or the one learned from the remote when origin/HEAD isn't set. */
-  private async baseOf(root: string): Promise<string> {
+  async baseOf(root: string): Promise<string> {
     const learned = this.remoteDefaults.get(root);
     if (learned && (await g.isCommit(root, `origin/${learned}`))) return `origin/${learned}`;
     return g.defaultBase(root);
@@ -365,6 +413,90 @@ export class WorkspaceManager {
     const project = this.projects.find((p) => p.id === projectId && p.root);
     if (!project) throw new WorkspaceError('Project not found');
     return project;
+  }
+
+  /** Where hidden worktrees go (combining branches for a task's start): never listed as a project's worktrees. */
+  get basesDir(): string {
+    return path.join(this.store.workspacesDir, '.bases');
+  }
+
+  /**
+   * A task that builds on several unmerged branches starts from them all: what it needs of them
+   * (none already in another, nor in the default branch), combined into `klaud/<key>-base` in a
+   * hidden worktree. One left: that branch itself. A conflict is left there to fix (run again after).
+   */
+  async combineBase(projectId: string, key: string, branches: readonly string[], into?: string): Promise<g.CombineResult> {
+    const project = this.repoProject(projectId);
+    // In a plan: what's already in the plan's branch isn't needed again.
+    const main = into ?? (await this.baseOf(project.root));
+    const needed = await g.neededBranches(project.root, branches, main);
+    const name = `${slug(key)}-base`;
+    if (needed.length < 2) return { ok: true, branch: needed[0] ?? main };
+    const dir = path.join(this.basesDir, `${slug(project.name)}-${project.id.slice(0, 4)}`, name);
+    mkdirSync(path.dirname(dir), { recursive: true });
+    return g.combineBranches(project.root, dir, `klaud/${name}`, needed);
+  }
+
+  // ------------------------------------------------------------- a plan's branch
+
+  /** A plan's branch: made from the latest default branch unless it's there (here, or on origin) → whether it was made. */
+  async planBranch(projectId: string, branch: string): Promise<{ made: boolean }> {
+    const { root } = this.repoProject(projectId);
+    if (!/^plan\/[\w.-]+$/.test(branch)) throw new WorkspaceError(`“${branch}” isn’t a plan branch name`);
+    if (await g.isCommit(root, `refs/heads/${branch}`)) return { made: false };
+    if (await g.hasRemote(root)) await g.tryGit(root, ['fetch', 'origin', '--prune']);
+    if (await g.isCommit(root, `refs/remotes/origin/${branch}`)) {
+      await g.git(root, ['branch', '--track', branch, `origin/${branch}`]);
+      return { made: false };
+    }
+    await g.git(root, ['branch', '--no-track', branch, await this.baseOf(root)]);
+    return { made: true };
+  }
+
+  /**
+   * Merge task branches (--no-ff) into a plan's branch, those already in it skipped: in a hidden
+   * worktree, or where the branch is checked out already (kept there; it must be clean). A conflict
+   * is left there to fix (run again after).
+   */
+  async mergeIntoPlan(projectId: string, branch: string, branches: readonly string[]): Promise<g.CombineResult> {
+    const project = this.repoProject(projectId);
+    const hidden = path.join(this.basesDir, `${slug(project.name)}-${project.id.slice(0, 4)}`, slug(branch));
+    const out = (await g.listWorktrees(project.root)).find((w) => w.branch === branch && real(w.path) !== real(hidden));
+    if (out) {
+      const dirty = (await g.git(out.path, ['status', '--porcelain', '--untracked-files=no'])).split('\n').filter(Boolean);
+      const merging = await g.tryGit(out.path, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']);
+      if (dirty.length && !merging) throw new WorkspaceError(`${branch} is checked out in ${out.path} with uncommitted changes: commit them, and the merge goes on`);
+      return g.combineBranches(project.root, out.path, branch, branches, { keep: true });
+    }
+    mkdirSync(path.dirname(hidden), { recursive: true });
+    return g.combineBranches(project.root, hidden, branch, branches);
+  }
+
+  /** Whether a branch is already in the project's default branch. */
+  async inDefaultBranch(projectId: string, branch: string): Promise<boolean> {
+    const { root } = this.repoProject(projectId);
+    return g.isAncestor(root, branch, await this.baseOf(root));
+  }
+
+  /** Delete a branch whose work is merged into `into` (git refuses one that isn't, or that's checked out). */
+  async dropBranch(projectId: string, branch: string, into: string): Promise<void> {
+    await g.deleteMergedBranch(this.repoProject(projectId).root, branch, into);
+  }
+
+  /** Merge a branch into the main folder, which must be on the default branch. */
+  async mergeBranchIntoMain(projectId: string, branch: string): Promise<g.MergeResult> {
+    const { root } = this.repoProject(projectId);
+    const base = await this.baseOf(root);
+    const target = base.startsWith('origin/') ? base.slice('origin/'.length) : base === 'HEAD' ? undefined : base;
+    const res = await g.mergeInto(root, branch, target);
+    await this.refresh();
+    return res;
+  }
+
+  /** The default branch's name, without the remote ("main"). */
+  async defaultBranchName(projectId: string): Promise<string> {
+    const base = await this.baseOf(this.repoProject(projectId).root);
+    return base.replace(/^origin\//, '');
   }
 
   /** Mark a project as fetching (or record how its last fetch went), shown right away. */
@@ -606,6 +738,8 @@ export class WorkspaceManager {
     const ws = this.require(id);
     if (ws.kind === 'main') throw new WorkspaceError("The main folder can't be archived");
     let manifest: ArchiveManifest | undefined;
+    // Its test runs (an e2e's daemon, vite, browser) go first: nothing keeps running for a folder that's gone.
+    if (ws.kind === 'worktree') await stopTestProcesses(ws.path, { leaving: true }).catch(() => 0);
     if (ws.kind === 'worktree') {
       // Deleted by hand already: nothing to keep; forget it in git.
       if (!existsSync(ws.path)) await g.git(ws.projectRoot, ['worktree', 'prune']).catch(() => undefined);
@@ -655,6 +789,7 @@ export class WorkspaceManager {
       // Made by another tool (Conductor, Claude Code), even if you've talked in it here: never force-remove it
       // (its uncommitted work isn't ours to discard) and keep its branch.
       const foreign = ws.external || !real(ws.path).startsWith(real(this.store.workspacesDir) + path.sep);
+      if (!ws.archived) await stopTestProcesses(ws.path, { leaving: true }).catch(() => 0);
       if (!ws.archived && existsSync(ws.path)) await g.removeWorktree(ws.projectRoot, ws.path, !foreign);
       // Folder deleted by hand: forget it in git too, or the branch stays "checked out" and the worktree comes back.
       else if (!ws.archived) await g.git(ws.projectRoot, ['worktree', 'prune']).catch(() => undefined);

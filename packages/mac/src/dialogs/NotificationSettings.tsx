@@ -9,7 +9,7 @@ import { NotifyStatusLine } from './sound/NotifyStatus.js';
 import { SoundSettings } from './sound/SoundSettings.js';
 import { TestNotification } from './sound/TestNotification.js';
 
-type Toggle = 'desktop' | 'onlyAway' | 'needsYou' | 'done' | 'mentions' | 'people' | 'background' | 'problems' | 'pr';
+type Toggle = 'desktop' | 'onlyAway' | 'planMilestones' | 'needsYou' | 'done' | 'mentions' | 'people' | 'background' | 'problems' | 'pr';
 
 const KINDS: ReadonlyArray<readonly [Toggle, string, string]> = [
   ['needsYou', 'Claude needs you', 'A question, a plan, or an approval'],
@@ -19,6 +19,7 @@ const KINDS: ReadonlyArray<readonly [Toggle, string, string]> = [
   ['background', 'Background tasks', 'Something Claude runs in the background, or a new worktree’s setup, finishes'],
   ['problems', 'Problems', 'Errors, merge conflicts, failed setups'],
   ['pr', 'Pull requests', 'Opened, checks finished, reviewed'],
+  ['planMilestones', 'Plans: milestones only', 'A plan tells you when a milestone passes, fails or waits for you, and when its Claude asks you something. Its tasks finishing go quietly into the bell'],
 ];
 
 /**

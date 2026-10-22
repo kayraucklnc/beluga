@@ -2,12 +2,15 @@ import type { NotifySettings } from './settings.js';
 import { type DomainState, type LogItem, type Store } from './store.js';
 import { dndActive } from '../shared/quiet.js';
 import { loudestKind, type SoundChoice, type SoundPrefs, soundFor, volumeOf } from '../shared/notify-sound.js';
+import { type Issue, issueForWorkspace } from './board/model.js';
+import { type Plan, planById, planForHome, planTitle } from './plans/model.js';
+import { type MilestoneView, planView } from './plans/progress.js';
 
 /** The groups you can switch on or off in Settings → Notifications. */
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background';
 
 /** What exactly happened, when the kind alone doesn't say (screens pick an icon by it). */
-export type NoticeTag = 'approval' | 'question' | 'plan' | 'conflict' | 'joined' | 'left' | 'invited' | 'mention' | 'message' | 'task' | 'test';
+export type NoticeTag = 'approval' | 'question' | 'plan' | 'milestone' | 'conflict' | 'joined' | 'left' | 'invited' | 'mention' | 'message' | 'task' | 'test';
 
 export interface NoticeEvent {
   readonly kind: NoticeKind;
@@ -22,6 +25,11 @@ export interface NoticeEvent {
   readonly quiet?: boolean;
   /** A friend's request (the gateway) this approval is about. */
   readonly task?: string;
+  /** The plan it's about (its id), and the plan's task (its id there): opening it goes to the plan at that task. */
+  readonly plan?: string;
+  readonly planTask?: string;
+  /** What happened, once: a notice with the same key is never raised again (a plan's milestone passing…). */
+  readonly key?: string;
 }
 
 /** A desktop notification: what it says, and where clicking it goes (when it's about one place). */
@@ -67,6 +75,106 @@ export function placeName(state: DomainState, channel: string): string {
   const id = channel.slice(3);
   const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) ?? state.shared.find((w) => w.id === id);
   return ws?.name ?? 'a workspace';
+}
+
+/** A conversation a plan owns: one of its tasks' worktrees (with that task), or its home. */
+export interface PlanPlace {
+  readonly plan: Plan;
+  /** The board task working there (none: the plan's home). */
+  readonly issue?: Issue;
+  /** Its task's id in the plan. */
+  readonly task?: string;
+}
+
+/** The plan a conversation belongs to: a task worktree's chat (the board task's plan), or the plan's home chat. */
+export function planOfChannel(state: Pick<DomainState, 'plans' | 'board'>, channel: string | undefined): PlanPlace | undefined {
+  if (!channel?.startsWith('ws:')) return undefined;
+  const issue = issueForWorkspace(state.board, channel.slice(3));
+  const plan = issue?.plan ? planById(state.plans, issue.plan.id) : undefined;
+  if (issue?.plan && plan) return { plan, issue, task: issue.plan.task };
+  const home = planForHome(state.plans, channel);
+  return home ? { plan: home } : undefined;
+}
+
+/** Plans speak for their tasks (Settings › Notifications › Plans: milestones only; missing: on). */
+export const planMilestonesOnly = (prefs: NotifySettings): boolean => prefs.planMilestones !== false;
+
+/**
+ * A notice about a plan's task, as the plan tells it. Its Claude asking you something, or a merge
+ * conflict, still reaches you (titled by the plan); the rest (finished, stopped, its pull request,
+ * background work) goes quietly into the inbox under the plan: you hear from the plan at milestones.
+ * The plan's home counts while the plan runs (its head Claude checking milestones). People talking
+ * to you are never the plan's.
+ */
+export function scopeToPlan(state: Pick<DomainState, 'plans' | 'board' | 'prefs'>, e: NoticeEvent): NoticeEvent {
+  if (e.plan || e.kind === 'mentions' || e.kind === 'people' || e.tag === 'test') return e;
+  const place = planOfChannel(state, e.channel);
+  if (!place || place.plan.status === 'draft' || (!place.issue && place.plan.status !== 'active')) return e;
+  const who = place.issue ? `${planTitle(place.plan)} · ${place.issue.key}` : planTitle(place.plan);
+  const at = { plan: place.plan.id, ...(place.task ? { planTask: place.task } : {}) };
+  if (e.kind === 'needsYou') {
+    if (e.tag === 'question') return { ...e, ...at, title: `${who} asks: ${e.body}`, body: 'Answer it to keep the plan going' };
+    if (e.tag === 'plan') return { ...e, ...at, title: `${who} has a plan`, body: e.body };
+    return { ...e, ...at, title: `${who} asks: ${e.title}` };
+  }
+  if (e.tag === 'conflict') return { ...e, ...at, title: `${who}: ${e.title}` };
+  if (!planMilestonesOnly(state.prefs.notify)) return e;
+  return { ...e, ...at, title: `${who}: ${e.title}`, quiet: true };
+}
+
+/** A milestone you pass yourself: its tasks are finished and it waits for your click (Step by step, Check-ins; autopilot passes its own). */
+const yoursToPass = (m: MilestoneView | undefined): boolean => Boolean(m && (m.state === 'gate' || m.state === 'checking') && m.autonomy !== 'autopilot');
+
+/** Milestones being worked on (open, not passed). */
+const OPEN_STATES: ReadonlySet<MilestoneView['state']> = new Set(['running', 'checking', 'gate', 'failed']);
+
+/**
+ * What a running plan has to tell you, from how it changed: a milestone passed (and what's next),
+ * its check failed, it waits for you to pass it, or the plan is done. Plans that weren't there
+ * before (the first state after a start) aren't news.
+ */
+function planNews(prev: DomainState, next: DomainState): NoticeEvent[] {
+  if (prev.plans === next.plans && prev.board === next.board) return [];
+  const out: NoticeEvent[] = [];
+  for (const plan of next.plans.plans) {
+    const old = prev.plans.plans.find((p) => p.id === plan.id);
+    if (!old?.body || !plan.body || plan.status === 'draft') continue;
+    const name = planTitle(plan);
+    const at = { plan: plan.id, channel: plan.home };
+    const prs = (): number => next.board.issues.filter((i) => i.plan?.id === plan.id && i.pr?.state === 'OPEN').length;
+    if (plan.status === 'done' && old.status !== 'done') {
+      const n = prs();
+      const body = n ? `${n === 1 ? 'Its pull request is' : `${n} pull requests are`} ready to merge` : `All ${plan.body.milestones.length} milestones passed`;
+      out.push({ kind: 'done', tag: 'milestone', title: `${name} is done`, body, ...at, key: `plan:${plan.id}:done:${plan.doneAt ?? 0}` });
+      continue;
+    }
+    if (plan.status !== 'active') continue;
+    const before = planView(old, prev.board);
+    const after = planView(plan, next.board);
+    const was = new Map(before.milestones.map((m) => [m.milestone.id, m]));
+    const opened = after.milestones.filter((m) => OPEN_STATES.has(m.state) && !OPEN_STATES.has(was.get(m.milestone.id)?.state ?? 'later'));
+    const open = after.milestones.filter((m) => OPEN_STATES.has(m.state));
+    for (const m of after.milestones) {
+      const id = m.milestone.id;
+      const run = m.run;
+      const oldRun = old.runs[id];
+      if (run.passedAt && !oldRun?.passedAt) {
+        const body =
+          opened.length > 1 ? `${opened.length} milestones now running` : opened[0] ? `Next: “${opened[0].milestone.title}”` : open.length ? `Still running: ${open.map((o) => `“${o.milestone.title}”`).join(', ')}` : 'Waiting on what comes next';
+        out.push({ kind: 'done', tag: 'milestone', title: `${name}: “${m.milestone.title}” passed`, body, ...at, key: `plan:${plan.id}:${id}:passed:${run.passedAt}` });
+        continue;
+      }
+      if (run.check?.verdict === 'fail' && run.check.at !== oldRun?.check?.at) {
+        out.push({ kind: 'problems', tag: 'milestone', title: `${name}: “${m.milestone.title}” didn’t pass its check`, body: firstLine(run.check.notes) || 'See what Claude found', ...at, key: `plan:${plan.id}:${id}:failed:${run.check.at}` });
+        continue;
+      }
+      if (yoursToPass(m) && !yoursToPass(was.get(id))) {
+        const body = run.check?.verdict === 'pass' ? 'Claude checked it: pass it to go on' : 'Its tasks are finished: pass it to go on';
+        out.push({ kind: 'needsYou', tag: 'milestone', title: `${name}: “${m.milestone.title}” is ready for you`, body, ...at, key: `plan:${plan.id}:${id}:yours:${run.checkAsked ?? 0}:${run.check?.at ?? 0}` });
+      }
+    }
+  }
+  return out;
 }
 
 function finishedRuns(prev: DomainState, next: DomainState): NoticeEvent[] {
@@ -176,12 +284,17 @@ function networkMessages(prev: DomainState, next: DomainState, now: number): Not
  * stopped, needs an answer or approval, a merge conflict, someone joined or invited you.
  */
 export function detectNotices(prev: DomainState, next: DomainState, now = Date.now()): NoticeEvent[] {
-  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...networkMessages(prev, next, now)];
+  const out = [...finishedRuns(prev, next), ...finishedSetups(prev, next), ...messagesForYou(prev, next), ...networkMessages(prev, next, now), ...planNews(prev, next)];
   if (prev.approvals !== next.approvals) {
     const seen = new Set(prev.approvals.map((a) => a.id));
     // Someone else's request waits for you either way; on Do Not Disturb it just doesn't make a sound.
     const quiet = presenceQuiet(next);
-    for (const a of next.approvals) if (!seen.has(a.id)) out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...(a.task ? { task: a.task } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
+    for (const a of next.approvals) {
+      if (seen.has(a.id)) continue;
+      // An approval a plan's task asks for opens the plan there.
+      const inPlan = a.channel !== undefined && planOfChannel(next, a.channel) ? { channel: a.channel } : {};
+      out.push({ kind: 'needsYou', tag: 'approval', ref: a.id, title: a.title, body: firstLine(a.detail), ...inPlan, ...(a.task ? { task: a.task } : {}), ...(a.peer && quiet ? { quiet: true } : {}) });
+    }
   }
   if (prev.questions !== next.questions) {
     const seen = new Set(prev.questions.map((q) => q.qid));
@@ -220,7 +333,7 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
       out.push({ kind: 'people', tag: 'invited', title: `${owner} invited you to ${w.name}`, body: w.role === 'contribute' ? 'You can work there with their Claude' : 'You can follow along', channel: `ws:${w.id}` });
     }
   }
-  return out;
+  return next.plans.plans.length ? out.map((e) => scopeToPlan(next, e)) : out;
 }
 
 export interface NotifierDeps {
@@ -252,6 +365,8 @@ export class Notifier {
   private queue: NoticeEvent[] = [];
   private timer?: NodeJS.Timeout;
   private lastSent = 0;
+  /** Keys of what was already announced (a plan's milestone passing…): never twice. */
+  private readonly told = new Set<string>();
 
   constructor(private readonly deps: NotifierDeps) {
     this.prev = deps.store.getState();
@@ -302,15 +417,22 @@ export class Notifier {
   private handle(events: readonly NoticeEvent[], state: DomainState, direct = false): void {
     const prefs = state.prefs.notify;
     const desktop = desktopAllowed(state, this.now());
-    for (const e of events) {
+    for (const raw of events) {
+      const e = direct ? scopeToPlan(state, raw) : raw;
       if (!enabled(prefs, e.kind)) continue;
+      if (e.key !== undefined) {
+        if (this.told.has(e.key) || state.inbox.some((n) => n.key === e.key)) continue;
+        this.told.add(e.key);
+      }
       // A screen in front shows it: a direct notice (it isn't in the chat) still shows as a toast.
       if (e.channel !== undefined && state.attention.visible.includes(e.channel)) {
         if (direct) this.deps.toast?.(`${e.title}${e.body ? `: ${e.body}` : ''}`, e.kind === 'problems' ? 'warn' : 'info');
         continue;
       }
-      const { kind, tag, ref, title, body, channel } = e;
-      this.deps.store.dispatch({ type: 'notice_add', notice: { kind, ...(tag ? { tag } : {}), ...(ref ? { ref } : {}), title, body, channel } });
+      const { kind, tag, ref, title, body, channel, plan, planTask, key } = e;
+      // A plan's task speaking quietly: it's in the inbox under the plan, already read.
+      const read = Boolean(e.quiet && plan);
+      this.deps.store.dispatch({ type: 'notice_add', notice: { kind, ...(tag ? { tag } : {}), ...(ref ? { ref } : {}), title, body, channel, ...(plan ? { plan } : {}), ...(planTask ? { planTask } : {}), ...(key ? { key } : {}) }, ...(read ? { read } : {}) });
       if (desktop && !e.quiet) this.queue.push(e);
     }
     this.flush();

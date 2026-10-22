@@ -261,13 +261,16 @@ test('shows pasted images before sending, and in the message after', async ({ pa
   await pasteImage(page);
   const pending = page.getByLabel('Images to send');
   await expect(pending.getByRole('img')).toHaveCount(1);
-  // The image waits above the box as a thumbnail; the text stays yours (no "[image 1]" in it).
-  await expect(composer(page)).toHaveValue('');
+  // The image waits above the box as a thumbnail, with an "[image N]" in the words where the cursor was.
+  await expect(composer(page)).toHaveValue(/^\[image \d+\] $/);
+  // Removing it takes its "[image N]" out of the words too.
   await pending.getByRole('button', { name: /^Remove image/ }).click();
   await expect(pending).toBeHidden();
+  await expect(composer(page)).not.toHaveValue(/\[image/);
+  await composer(page).fill('');
   await pasteImage(page);
   await expect(pending.getByRole('img')).toHaveCount(1);
-  await expect(composer(page)).toHaveValue('');
+  await expect(composer(page)).toHaveValue(/^\[image \d+\] $/);
   const words = `pixel check ${Date.now()}`;
   await composer(page).pressSequentially(words);
   await composer(page).press('Enter');
@@ -383,8 +386,9 @@ test('clicking a notification goes where it happened', async ({ page }) => {
   await expect(finished).toBeVisible({ timeout: 30_000 });
   await finished.click();
   await expect(centre(page)).toBeHidden();
+  // add-auth is a worktree of its own (the demo plan's tasks run in checkout-*, KLD-23): its news opens it.
+  // A plan task's news opening the plan is plan-black-box.spec.ts's.
   await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
-  await expect(page.getByText('Add a readiness probe').last()).toBeVisible();
 });
 
 test('effort goes back to Auto, and Shift-Tab switches plan mode on and off', async ({ page }) => {

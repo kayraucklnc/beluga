@@ -15,6 +15,8 @@ import { asksFirst, routeOption, routeTyped } from './native-routes.js';
 import { newGroupFor } from './group-edit.js';
 import { openSheet } from './sheets.js';
 import { askBeforeWork, asksBeforeWork } from './work-confirm.js';
+import { mergeNeedsWarning } from './plan-merge.js';
+import { isPlanAction, runPlanAction } from './plan-task.js';
 
 export interface Actions {
   /** Do what a clicked row, button or card means (the same actions as the terminal UI). */
@@ -119,6 +121,10 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
       // Things a window does its own way (the terminal UI types a command for them).
       if (action.type === 'add_project') return ui.patch({ addProject: true });
       if (action.type === 'ws' && action.action === 'fork') return openSheet({ kind: 'fork', wsId: action.id });
+      // A plan's task: merging it locally warns first (Merge Anyway), however it was asked for.
+      if (action.type === 'ws' && isPlanAction(action.action)) return runPlanAction(client.store.getState(), action.id, action.action, actions.run);
+      // Solve Conflict finishes a local merge too, so it warns the same way.
+      if (action.type === 'ws' && (action.action === 'merge' || action.action === 'merge_claude') && mergeNeedsWarning(client.store.getState(), action.id)) return runPlanAction(client.store.getState(), action.id, 'merge_anyway', actions.run, action.action);
       // Starting Claude or changing git says what it will do first, however it was asked for.
       if (action.type === 'ws' && asksBeforeWork(action.action)) return askBeforeWork(action.id, action.action);
       runUiActionWith(uiCtx, action);

@@ -43,6 +43,8 @@ export const NotifySettings = z.object({
   mentions: z.boolean().default(true),
   /** Background work finishes: a task Claude runs in the background, a new worktree's setup. */
   background: z.boolean().default(true),
+  /** A plan speaks for its tasks: you hear at milestones and when it needs you; its tasks' news goes quietly into the inbox. */
+  planMilestones: z.boolean().default(true),
   /** Desktop notifications only while no klaud window is in front. */
   onlyAway: z.boolean().default(false),
   /** Do Not Disturb: no desktop notifications (the inbox still fills). Ends at `until` (ms), or when you turn it off. */

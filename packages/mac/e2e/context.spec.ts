@@ -44,7 +44,20 @@ test('the meter shows how full the conversation is, with the details on hover', 
   await expect(page.locator('header').getByText(/\d+% context/)).toBeVisible();
 });
 
+/** Auto-compact is off by default (Claude 5 has a 1M window); Settings › Claude turns it on or off. */
+async function setAutoCompact(page: Page, on: boolean): Promise<void> {
+  await page.keyboard.press('Meta+,');
+  const settings = page.getByRole('dialog');
+  await settings.getByRole('button', { name: 'Claude' }).click();
+  const auto = settings.getByRole('switch', { name: 'Auto-compact' });
+  if ((await auto.getAttribute('aria-checked')) !== String(on)) await auto.click();
+  await expect(auto).toHaveAttribute('aria-checked', String(on));
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
+}
+
 test('a conversation past the threshold compacts on its own after Claude answers', async ({ page }) => {
+  await setAutoCompact(page, true);
   await open(page, 'How do deploys work?');
   const before = Number((await meter(page).textContent())!.replace('%', ''));
   expect(before).toBeGreaterThanOrEqual(80);
@@ -57,6 +70,7 @@ test('a conversation past the threshold compacts on its own after Claude answers
   // Claude's working memory is small again; the conversation is all still there.
   await expect.poll(async () => Number((await meter(page).textContent())!.replace('%', ''))).toBeLessThan(30);
   await expect(page.getByText('how do the deploy scripts work?')).toBeVisible();
+  await setAutoCompact(page, false);
 });
 
 test('Compact now leaves a divider that opens to show what Claude kept', async ({ page }) => {
@@ -86,12 +100,14 @@ test('Settings › Claude has auto-compact with its threshold', async ({ page })
   const settings = page.getByRole('dialog');
   await settings.getByRole('button', { name: 'Claude' }).click();
   const auto = settings.getByRole('switch', { name: 'Auto-compact' });
-  await expect(auto).toHaveAttribute('aria-checked', 'true');
+  // Off by default: Claude 5 models have a 1M context window.
+  await expect(auto).toHaveAttribute('aria-checked', 'false');
   const slider = settings.getByRole('slider', { name: 'Compact at' });
   await expect(slider).toHaveValue('85');
-  await expect(settings.getByText('When a conversation is 85% full')).toBeVisible();
-  await auto.click();
   await expect(slider).toBeDisabled();
   await auto.click();
   await expect(slider).toBeEnabled();
+  await expect(settings.getByText('When a conversation is 85% full')).toBeVisible();
+  await auto.click();
+  await expect(slider).toBeDisabled();
 });

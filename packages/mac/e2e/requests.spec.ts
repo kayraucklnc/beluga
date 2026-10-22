@@ -10,6 +10,13 @@ import { expect, test, type Page } from '@playwright/test';
 test.describe.configure({ mode: 'serial' });
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
+
+/** Projects start folded (what you unfold is remembered): show what's in one, if it's folded. */
+async function unfold(page: Page, name: string): Promise<void> {
+  const toggle = page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: new RegExp(`^(Show what's in|Fold) ${name}$`) }).first();
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-label'))!.startsWith('Show')) await toggle.click();
+}
 const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea)');
 const task = (page: Page, title: RegExp) => page.getByRole('region', { name: title });
 
@@ -22,6 +29,7 @@ test('your Claude asks bob’s Claude and mia’s (after you say yes); answers c
   const card = sidebar(page).getByRole('group', { name: 'Talk with friends' });
   if (await card.isVisible().catch(() => false)) await card.getByRole('button', { name: 'Turn On' }).click();
   await expect(sidebar(page).getByRole('button', { name: /^bob, Online/ })).toBeVisible({ timeout: 30_000 });
+  await unfold(page, 'bob-api');
   await sidebar(page).getByRole('button', { name: /^webhook-retries/ }).first().click();
   await expect(composer(page)).toHaveAttribute('placeholder', /webhook-retries/);
   await composer(page).fill('ask bob to run the tests in bob-api');
@@ -50,6 +58,7 @@ test('your Claude asks bob’s Claude and mia’s (after you say yes); answers c
 });
 
 test('Requests lists what you sent, and Not now never sends', async ({ page }) => {
+  await unfold(page, 'bob-api');
   await sidebar(page).getByRole('button', { name: /^webhook-retries/ }).first().click();
   await expect(composer(page)).toHaveAttribute('placeholder', /webhook-retries/);
   await composer(page).fill('ask mia whether the hero image is final');

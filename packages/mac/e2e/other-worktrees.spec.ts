@@ -7,6 +7,14 @@ import { expect, test, type Page } from '@playwright/test';
 /** Worktrees made outside Klaud: plain rows after Klaud's own (name, then where), an info page instead of an empty chat, and nothing removed without asking. */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
+
+/** Projects start folded (what you unfold is remembered): show what's in one, if it's folded. */
+async function unfold(page: Page, name: string): Promise<void> {
+  // Two projects with one name are told apart by their parent folder, "name (parent)"; the newest is last.
+  const toggle = page.getByRole('navigation', { name: 'Sidebar' }).getByRole('button', { name: new RegExp(`^(Show what's in|Fold) ${name}( \\(.+\\))?$`) }).last();
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-label'))!.startsWith('Show')) await toggle.click();
+}
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
 
 /** A project with two worktrees a script made: one with a commit of its own, one with nothing new (stale). */
@@ -37,6 +45,7 @@ async function addProject(page: Page, repo: string): Promise<void> {
   await sheet.getByRole('button', { name: 'Add', exact: true }).last().click();
   await sheet.getByRole('button', { name: 'Done' }).click();
   await expect(sheet).toBeHidden();
+  await unfold(page, path.basename(repo));
 }
 
 test.beforeEach(async ({ page }) => {
@@ -99,9 +108,9 @@ test('a worktree made outside Klaud is a plain row with where it is; its page sa
   expect(git(repo, 'branch', '--list', 'pr-154')).toContain('pr-154');
   await expect(sidebar(page).getByRole('button', { name: 'review-154', exact: true })).toBeHidden();
 
-  // Clean Up Worktrees… is the project's: it lists the stale one, ticked, without saying what made it, and removes it only when asked.
-  await sidebar(page).getByRole('button', { name: 'outside-app', exact: true }).click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'Clean Up Worktrees…' }).click();
+  // Clean Up Worktrees… is the project's (on its home; its menu's Manage Worktrees… opens the Worktrees page): it lists the stale one, ticked, without saying what made it, and removes it only when asked.
+  await sidebar(page).getByRole('button', { name: 'outside-app', exact: true }).click();
+  await page.getByRole('region', { name: 'Worktrees' }).getByRole('button', { name: 'Clean Up Worktrees…' }).click();
   const clean = page.getByRole('alertdialog', { name: 'Clean up worktrees in outside-app?' });
   await expect(clean).toBeVisible();
   await expect(clean.getByRole('checkbox', { name: /old-spike/ })).toBeChecked();

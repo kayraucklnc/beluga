@@ -473,8 +473,10 @@ export function App({ client, onboarding = false, subscribeMouse, setRawInput, s
       case 'queued-now':
       case 'queued-cancel': {
         const next = view(latest, current).queuedIds[0];
-        const asked = next === undefined ? Promise.resolve(false) : id === 'queued-now' ? api.host.promote(next) : api.host.cancelQueued(next);
-        void asked.then((ok) => {
+        if (next === undefined) return toast('Nothing of yours is waiting here');
+        // Steering says itself why when it can't (see AgentHost.promote).
+        if (id === 'queued-now') return void api.host.promote(next);
+        void api.host.cancelQueued(next).then((ok) => {
           if (!ok) toast('Nothing of yours is waiting here');
         });
         return;

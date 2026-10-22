@@ -9,6 +9,7 @@ import { useApp } from '../lib/klaud.js';
 import { workspaceSignal } from './attention-model.js';
 import { DotMark, SignalMark, nameClass, signalClass } from './signal-marks.js';
 import { inSections, toolbarActions } from './toolbar-actions.js';
+import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { Row } from './sidebar-parts.js';
 import { outsideLocation } from './outside-model.js';
 import s from './Sidebar.module.css';
@@ -32,7 +33,7 @@ export function workspaceItems(state: AppState, ws: Workspace, run: ReturnType<t
         ...(here && a.keys ? { keys: a.keys } : {}),
         ...(a.danger ? { danger: true } : {}),
         ...(i === 0 ? { separate: true } : {}),
-        onSelect: () => (a.action === 'fix_checks' ? undefined : run({ type: 'ws', id: ws.id, action: a.action })),
+        onSelect: () => (a.action === 'fix_checks' ? undefined : isPlanAction(a.action) ? runPlanAction(state, ws.id, a.action, run) : run({ type: 'ws', id: ws.id, action: a.action })),
       })),
     ),
   ];

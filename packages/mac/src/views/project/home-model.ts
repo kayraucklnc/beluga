@@ -75,12 +75,17 @@ export function mainLineOf(main: Workspace | undefined, sync?: ProjectSync): Mai
 /** When something last happened in a workspace: its last message, else when it was made. */
 export const lastActive = (state: Pick<AppState, 'log'>, ws: Workspace): number => activityOf(state.log, `ws:${ws.id}`).lastTs ?? ws.createdAt;
 
-/** Committed work not in its base yet, nothing uncommitted, no conflict, Claude not working. */
-export function isReady(state: Pick<AppState, 'log' | 'conflicts'>, ws: Workspace): boolean {
+/**
+ * Committed work not in its base yet, nothing uncommitted, no conflict, Claude not working, and
+ * no PR that's already merged or closed (its work is done with, even if main hasn't caught up).
+ */
+export function isReady(state: Pick<AppState, 'log' | 'conflicts' | 'prs'>, ws: Workspace): boolean {
+  const pr = state.prs[ws.id];
+  if (pr && pr.state !== 'OPEN') return false;
   return ws.kind === 'worktree' && !ws.archived && !state.conflicts[ws.id]?.length && !activityOf(state.log, `ws:${ws.id}`).running && !ws.status?.changed && (ws.status?.ahead ?? 0) > 0;
 }
 
-export function homeModel(state: Pick<AppState, 'log' | 'conflicts'>, project: Project): HomeModel {
+export function homeModel(state: Pick<AppState, 'log' | 'conflicts' | 'prs'>, project: Project): HomeModel {
   const recent = (a: Workspace, b: Workspace): number => lastActive(state, b) - lastActive(state, a);
   const live = project.workspaces.filter((w) => !w.archived);
   const main = project.workspaces.find((w) => w.kind === 'main');

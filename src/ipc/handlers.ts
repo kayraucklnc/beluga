@@ -2,8 +2,9 @@ import type { Session } from '../core/session.js';
 import type { WorkspaceController } from '../core/workspace-controller.js';
 import type { Workbench } from '../core/workbench.js';
 import { listLocalDirs, localDirKey, openWithSystem } from '../core/local.js';
-import { ATTACHMENT_SHARE, type FetchShared, attachmentOnDisk, chipText, expandChips, mediaTypeOf, publishForRoom, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
+import { ATTACHMENT_SHARE, type FetchShared, attachmentOnDisk, chipText, expandChips, importImageFitting, mediaTypeOf, pathInfo, publishForRoom, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
 import { fetchBytes } from '../core/downloads.js';
+import { statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { findProjects, isMainCheckout } from '../workspaces/discovery.js';
@@ -70,6 +71,7 @@ export const HANDLERS = {
 
   'host.answerApproval': (s, answer, id) => s.answerApproval(answer, id),
   'host.promote': (s, requestId) => s.host.promote(requestId),
+  'host.sendNext': (s, requestId) => s.host.sendNext(requestId),
   'host.stopRun': (s, channel) => s.host.stopRun(channel),
   'host.cancelQueued': (s, requestId) => s.host.cancelQueued(requestId),
   'host.reorderQueued': (s, requestId, index) => s.host.reorderQueued(requestId, index),
@@ -163,6 +165,7 @@ export const HANDLERS = {
   'workspaces.newGroup': (s, name, opts) => ctl(s)?.newGroup(name, opts ?? {}),
   'workspaces.showProject': (s, root) => ctl(s)?.showProject(root) ?? false,
   'workspaces.hideProject': (s, projectId) => ctl(s)?.hideProject(projectId),
+  'workspaces.removeProject': (s, projectId, opts) => ctl(s)?.removeProject(projectId, opts?.trash ?? false) ?? false,
   'workspaces.cleanAgentWorktrees': (s, projectId) => ctl(s)?.cleanAgentWorktrees(projectId),
   'workspaces.otherOrigins': (s, projectId) => ctl(s)?.others.origins(projectId) ?? {},
   'workspaces.otherActivity': (s, projectId) => ctl(s)?.others.activity(projectId) ?? {},
@@ -186,7 +189,8 @@ export const HANDLERS = {
   'workbench.createPr': (s, id, extra) => bench(s)?.createPr(id, extra),
   'workbench.fixChecks': (s, id) => bench(s)?.fixChecks(id),
   'workbench.openPr': (s, id) => bench(s)?.openPr(id),
-  'workbench.refreshPrs': (s, only, recheckGh) => bench(s)?.refreshPrs(only, recheckGh),
+  'workbench.mergePr': (s, id, opts) => bench(s)?.mergePr(id, opts),
+  'workbench.refreshPrs': (s, only, recheckGh) => (typeof only === 'object' ? bench(s)?.pollPrs(only.reason, only.id) : bench(s)?.refreshPrs(only, recheckGh)),
   'workbench.editPrPrompt': (s) => bench(s)?.editPrPrompt(),
   'workbench.resetPrPrompt': (s) => bench(s)?.resetPrPrompt(),
   'workbench.measureDisk': (s) => bench(s)?.measureDisk(),
@@ -209,6 +213,13 @@ export const HANDLERS = {
     const file = await saveImageBytes(bytes, ext);
     const a = registerAttachment(file, bytes.byteLength);
     return { n: a.n, chip: chipText(a.n) };
+  },
+  'attachments.addFile': async (_s, file) => {
+    const info = pathInfo(file);
+    if (info.kind !== 'file' || !info.image) throw new Error(`${info.name} isn't an image file here`);
+    const saved = await importImageFitting(info.path);
+    const a = registerAttachment(saved, statSync(saved).size);
+    return { n: a.n, chip: chipText(a.n), file: path.basename(saved) };
   },
   'attachments.expand': (s, text, channel) => {
     if (!text.includes('[image ') || text.startsWith('/')) return text;
@@ -255,6 +266,7 @@ export const HANDLERS = {
     return entries;
   },
   'local.openFolder': (_s, dir) => openWithSystem(dir),
+  'local.statFiles': (_s, paths) => paths.map(pathInfo),
   ...NETWORK_HANDLERS,
   ...STRIPE_HANDLERS,
   ...CLAUDE_CODE_HANDLERS,

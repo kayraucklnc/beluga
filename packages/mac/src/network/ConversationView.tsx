@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FriendView, GroupView, MessageView } from '@klaud/net/mesh/views.js';
+import type { MentionWorld } from '../chat/mentions.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
 import { Avatar, Button, Empty, claudeColor, cx } from '../components/ui.js';
@@ -13,7 +14,7 @@ import { ASK_EVENT, NetComposer, type Outgoing, QUOTE_EVENT } from './NetCompose
 import { MessageFiles } from './ChatFiles.js';
 import { ChatTabs } from './ChatTabs.js';
 import { addBlobs, addPaths } from './attachments.js';
-import { askedLine, authorLabel, channelName, isMain, liveIn, liveLine } from './chat-model.js';
+import { askedLine, authorLabel, channelName, channelWorld, isMain, liveIn, liveLine } from './chat-model.js';
 import { continues, conversationOf, dayLabel, membersLine, mergeMessages, presenceLine, sameDay, shownState } from './net-model.js';
 import { openNet } from './net-sheets.js';
 import { errorText, quietly, useNetwork, useSay } from './use-net.js';
@@ -53,7 +54,7 @@ function messageItems(m: MessageView, ctx: { say: (t: string) => void; resend?: 
 }
 
 /** One message: the room chat's look; your own say whether they're waiting to be delivered. */
-const Message = memo(function Message({ m, continued, dm, last, resend, me, nameOf }: { m: MessageView; continued: boolean; dm: boolean; last: boolean; resend: (m: MessageView) => void; me?: { name: string; peerId: string }; nameOf: (peerId: string) => string }) {
+const Message = memo(function Message({ m, continued, dm, last, resend, me, nameOf, world }: { m: MessageView; continued: boolean; dm: boolean; last: boolean; resend: (m: MessageView) => void; me?: { name: string; peerId: string }; nameOf: (peerId: string) => string; world: MentionWorld }) {
   const prefs = usePrefs();
   const say = useSay();
   const locked = m.status === 'locked';
@@ -80,7 +81,7 @@ const Message = memo(function Message({ m, continued, dm, last, resend, me, name
             </div>
           ) : (
             <>
-              {m.text.trim() ? <Markdown text={m.text} /> : null}
+              {m.text.trim() ? <Markdown text={m.text} mentions={world} /> : null}
               {m.files?.length ? <MessageFiles files={m.files} conversation={m.conversation} mine={m.mine} /> : null}
               {asked ? (
                 <div className={s.asked}>
@@ -139,7 +140,7 @@ function Intro({ friend, group }: { friend?: FriendView; group?: GroupView }) {
         End-to-end encrypted, kept on each member’s Mac
       </div>
       <div className={s.introHint}>
-        Drop files here to share them straight from your Mac. Claude answers only when you ask: pick <b>Ask Claude</b> under the message box.
+        Drop files here to share them straight from your Mac. Claude answers only when you ask: type <b>@claude</b>, or click <b>Add Claude</b> under the message box.
       </div>
       {group.admin && group.active ? (
         <div className={s.introActions}>
@@ -277,6 +278,13 @@ function Conversation({ id }: { id: string }) {
   const { ref, onScroll } = useStickToBottom(messages, id);
   const writable = Boolean(friend || group?.active);
   const drop = useFileDrop(id, writable);
+  const me = useMemo(() => (net.self ? { peerId: net.self.peerId, name: net.self.name } : undefined), [net.self?.peerId, net.self?.name]);
+  // Who's here besides you: the friend, or the channel's members (for the Claude button, @ and the pills).
+  const people = useMemo(
+    () => (friend ? [{ peerId: friend.peerId, name: friend.name }] : (group?.members.filter((m) => !m.self).map((m) => ({ peerId: m.peerId, name: m.name })) ?? [])),
+    [friend?.peerId, friend?.name, group?.members],
+  );
+  const world = useMemo(() => channelWorld(me, people), [me, people]);
 
   if (!net.enabled) {
     return (
@@ -309,8 +317,6 @@ function Conversation({ id }: { id: string }) {
   const send = (out: Outgoing): Promise<unknown> => client.api.network.post(id, { text: out.text, ...(out.files.length ? { files: [...out.files] } : {}), ...(out.ask ? { ask: out.ask === 'all' ? 'all' : [...out.ask] } : {}) });
   const resend = (m: MessageView): void => void send({ text: m.text, files: m.files ?? [] }).catch(() => undefined);
   const lastMine = [...messages].reverse().find((m) => m.mine)?.id;
-  const me = net.self ? { peerId: net.self.peerId, name: net.self.name } : undefined;
-  const people = friend ? [{ peerId: friend.peerId, name: friend.name }] : (group?.members.filter((m) => !m.self).map((m) => ({ peerId: m.peerId, name: m.name })) ?? []);
   const nameOf = (peerId: string): string => net.friends.find((f) => f.peerId === peerId)?.name ?? group?.members.find((m) => m.peerId === peerId)?.name ?? 'someone';
   const title = group ? channelName(net, group) : (friend?.name ?? '');
 
@@ -332,7 +338,7 @@ function Conversation({ id }: { id: string }) {
           return (
             <div key={m.id}>
               {newDay ? <div className={s.day}>{dayLabel(m.ts)}</div> : null}
-              <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} {...(me ? { me } : {})} />
+              <Message m={m} continued={!newDay && continues(prev, m)} dm={target.kind === 'dm'} last={m.id === lastMine} resend={resend} nameOf={nameOf} world={world} {...(me ? { me } : {})} />
             </div>
           );
         })}
@@ -355,7 +361,7 @@ function Conversation({ id }: { id: string }) {
           </div>
         </div>
       ) : (
-        <NetComposer id={id} placeholder={friend ? `Message ${friend.name}` : `Message ${title}`} people={people} send={send} {...(me ? { me } : {})} />
+        <NetComposer id={id} placeholder={friend ? `Message ${friend.name}` : `Message ${title}`} people={people} send={send} {...(me ? { me } : {})} {...(group?.admin ? { addPeople: () => openNet({ kind: 'add_people', groupId: group.id }) } : {})} />
       )}
     </div>
   );

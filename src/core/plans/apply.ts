@@ -1,13 +1,13 @@
 import type { Board } from '../board/board.js';
 import { type Actor, type Assignee, type BriefSection, type Issue, isOpen } from '../board/model.js';
 import { PlanError } from './edit.js';
-import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, taskById } from './model.js';
+import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, milestoneDeps, taskById } from './model.js';
 
 /**
  * Approving a plan: its draft goes on the board. New tasks are made (in the plan's milestone, its
  * sub-tasks and blockers wired up), tasks that changed are rewritten (ticks kept), and tasks taken
- * out are canceled. Tasks of the milestone being worked on are Todo, later ones wait in the
- * Backlog. Started work keeps its status. → the plan as approved, each task with its board task.
+ * out are canceled. Tasks of milestones that can be worked on now (what they build on has passed)
+ * are Todo; the others wait in the Backlog. Started work keeps its status. → the plan as approved, each task with its board task.
  */
 
 export interface ApplyActors {
@@ -45,7 +45,8 @@ function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<st
   if (!draft) throw new PlanError('There are no changes to approve');
   if (!draft.milestones.length || !allTasks(draft).length) throw new PlanError('The plan has no tasks yet: ask Claude to write it first');
   const diff = diffBodies(plan.body, draft);
-  const current = draft.milestones.findIndex((m) => !plan.runs[m.id]?.passedAt);
+  const passed = (id: string): boolean => Boolean(plan.runs[id]?.passedAt);
+  const waiting = new Set(draft.milestones.filter((m) => !passed(m.id) && !milestoneDeps(draft, m).every(passed)).map((m) => m.id));
   const issueOf = new Map<string, Issue>();
   // Tasks already on the board (still there) keep their board task.
   for (const { task } of allTasks(draft)) {
@@ -54,9 +55,9 @@ function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<st
   }
 
   // 1. Make or rewrite every task.
-  for (const { task, milestone, index } of allTasks(draft)) {
+  for (const { task, milestone } of allTasks(draft)) {
     const link = { id: plan.id, milestone: milestone.id, task: task.id };
-    const fresh = index <= current || current < 0 ? 'todo' : 'backlog';
+    const fresh = waiting.has(milestone.id) ? 'backlog' : 'todo';
     const assignee = task.assignee === 'me' ? actors.me : actors.claude;
     const existing = issueOf.get(task.id);
     if (!existing) {
@@ -152,7 +153,7 @@ export function briefOf(task: PlanTask, ticked?: string): Partial<Record<BriefSe
   };
 }
 
-/** The next milestone's tasks come out of the Backlog (the one before it passed). */
+/** A milestone's tasks come out of the Backlog (what it builds on passed). */
 export function openMilestone(plan: Plan, milestoneId: string, board: Board, by: Actor): void {
   const m = plan.body?.milestones.find((x) => x.id === milestoneId);
   for (const t of m?.tasks ?? []) {

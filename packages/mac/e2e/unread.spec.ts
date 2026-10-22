@@ -7,7 +7,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
-const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea)');
+// A conversation's message box (not a plan page's name or chat, which may still be leaving the screen).
+const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea):not([aria-label="Plan name"]):not([aria-label="Message Claude about the plan"])');
 const unreadSection = (page: Page) => sidebar(page).getByRole('region', { name: 'Unread' });
 const row = (page: Page, name: string): Locator => sidebar(page).getByRole('button', { name, exact: true });
 const projectRow = (page: Page, name: string): Locator => sidebar(page).getByRole('button', { name, exact: true }).and(page.locator('[aria-expanded]'));

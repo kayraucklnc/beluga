@@ -1,5 +1,6 @@
 import type { ChatAnswerRequest } from '../core/chat/claude-prompt.js';
 import type { SetupFix } from './setup-fixer.js';
+import type { DraftContext, TaskDraft } from './task-drafter.js';
 import type { ClaudeAnswer, ClaudeQuestion, FsEntry, PeerInfo, Usage } from '../protocol.js';
 import type { StepRecord } from '../shared/steps.js';
 
@@ -18,7 +19,7 @@ export interface AgentRunInput {
   /** Asked by a guest invited into one project: the room tools (other people, their files, the room chat) are off. */
   readonly guest?: boolean;
   readonly signal: AbortSignal;
-  readonly onEvent: (kind: 'text' | 'tool' | 'sub' | 'context' | 'compact' | 'usage', text: string) => void;
+  readonly onEvent: (kind: 'text' | 'tool' | 'progress' | 'sub' | 'context' | 'compact' | 'usage', text: string) => void;
   /**
    * Each step in detail as it happens (the tool's input and output, thinking), for the screens on
    * this computer only: kept beside the chat, never sent anywhere (see core/step-book.ts).
@@ -58,7 +59,9 @@ export interface AgentRunInput {
    * which Claude Code takes in at its next step (between tool calls) without stopping the turn,
    * or answers in a turn of its own right after. Undefined once the run ends.
    */
-  readonly onSteer?: (steer: ((followUp: FollowUp) => boolean) | undefined) => void;
+  readonly onSteer?: (steer: Steer | undefined) => void;
+  /** Called once Claude Code's process for this run is up: whether it still lives, and a way to end it for sure. */
+  readonly onProcess?: (proc: RunProcess) => void;
   /**
    * In a project's main folder (ask-only): carry this conversation into a new worktree and do
    * `task` there (Claude's continue_in_worktree tool). Resolves with what to tell Claude.
@@ -100,7 +103,8 @@ export interface PlanTools {
   update(ops: readonly import('../core/plans/edit.js').PlanOp[], reason?: string): string;
   gate(milestone: string, verdict: 'pass' | 'fail', notes: string): string;
   start(task: string): Promise<string>;
-  message(task: string, text: string): string;
+  /** `queue` (default): read when its current turn ends. `steer`: now, interrupting a long command or a dead run. */
+  message(task: string, text: string, mode?: 'queue' | 'steer'): string;
 }
 
 /**
@@ -162,6 +166,42 @@ export interface FollowUp extends Pick<AgentRunInput, 'prompt' | 'requesterName'
   readonly onFolded?: () => void;
 }
 
+/** What a live run is doing right now, so a steer can tell whether Claude would read it soon. */
+export interface LiveStatus {
+  /** The oldest tool still running in the main conversation: what it is and since when (ms). */
+  readonly tool?: { readonly label: string; readonly since: number };
+  /** When the run last said anything (any message from Claude Code). */
+  readonly lastEventAt: number;
+  /** Claude has answered and waits between turns (a message starts a turn at once). */
+  readonly between: boolean;
+  /** Claude's last word was thinking (a quiet spell is Claude thinking, not a stuck step). */
+  readonly thinking?: boolean;
+  /** False once Claude Code's process is gone (the run is dead whatever else it says). */
+  readonly alive?: boolean;
+}
+
+/** Claude Code's process behind a run (see AgentRunInput.onProcess). */
+export interface RunProcess {
+  readonly pid: number;
+  alive(): boolean;
+  /** SIGTERM, then SIGKILL if it's still there after a moment; resolves once it's gone. */
+  kill(): Promise<void>;
+}
+
+/**
+ * A way into a live run (see AgentRunInput.onSteer). Called: the message goes in and Claude reads
+ * it at its next step. `status` and `interrupt` are there when the backend can tell and stop.
+ */
+export interface Steer {
+  (followUp: FollowUp): boolean;
+  readonly status?: () => LiveStatus;
+  /**
+   * Stop the running tool and turn (Claude Code's interrupt), the interrupted turn ending with
+   * `note`, and answer `followUp` in the next turn. Resolves false when the run couldn't be interrupted.
+   */
+  readonly interrupt?: (followUp: FollowUp, note: string) => Promise<boolean>;
+}
+
 export interface AgentPlace {
   readonly cwd: string;
   readonly additionalDirectories: readonly string[];
@@ -177,6 +217,8 @@ export interface AgentPlace {
   readonly askOnly?: { readonly project: string };
   /** With askOnly, for one run: Claude brings the default branch up to date (git syncing only; see sync-main.ts). */
   readonly syncMain?: { readonly branch: string; readonly upstream: string };
+  /** With askOnly: a hidden worktree Claude may edit to fix a conflict there (see policy.ts). */
+  readonly fixup?: string;
 }
 
 export interface SubAgentEvent {
@@ -196,10 +238,14 @@ export interface AgentBackend {
   refreshUsage?(): Promise<Usage | undefined>;
   /** A short worktree name for a task (a small model names it). */
   nameTask?(prompt: string): Promise<string>;
+  /** A short name for a new plan from its goal (a small model names it; undefined when it couldn't). */
+  titlePlan?(goal: string): Promise<string | undefined>;
   /** Answer in a friends' chat from its history (one turn, no tools; core/chat/claude.ts). */
   answerChat?(req: ChatAnswerRequest): Promise<string>;
   /** What a project's setup should be after `failed` failed in `dir` (a small model looks). */
   fixSetup?(dir: string, failed: string, output: string): Promise<SetupFix | undefined>;
+  /** A task written from a description: title, goal, criteria, labels from the board's own (Sonnet). */
+  draftTask?(text: string, ctx: DraftContext): Promise<TaskDraft | undefined>;
   /** Models this Claude Code offers, for the model picker. */
   listModels?(): Promise<ReadonlyArray<{ value: string; label: string; description: string; efforts?: readonly string[] }> | undefined>;
 }

@@ -237,6 +237,7 @@ export function runCommand(ctx: CommandCtx, id: CommandId): void {
       if (id === 'ws-run' && runRunning(state, ws.id)) return actions.run({ type: 'ws', id: ws.id, action: 'stop_run' });
       // A conflict turns Merge into "Solve conflict" (Claude finishes the merge).
       const solve = action === 'merge' && state.conflicts[ws.id]?.length;
+      // Part of a plan: merging (or solving) by hand asks first, in actions.run (lib/plan-merge.ts).
       actions.run({ type: 'ws', id: ws.id, action: solve ? 'merge_claude' : action });
     }
   }

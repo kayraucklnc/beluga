@@ -1,13 +1,21 @@
-import { useMemo, useState } from 'react';
-import { ISSUE_STATUSES, type IssueStatus, PRIORITIES, PRIORITY_INFO, type Priority, STATUS_INFO, issueById } from '@klaud/core/board/model.js';
+import { type KeyboardEvent, useMemo, useState } from 'react';
+import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, issueById } from '@klaud/core/board/model.js';
 import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
+import { Icon } from '../components/Icon.js';
+import { cx } from '../components/ui.js';
 import { toast, useApp, useKlaud } from '../lib/klaud.js';
+import { LabelDot, PriorityIcon } from './marks.js';
 import { assigneeChoices } from './tasks-model.js';
 import { useBoard, usePeople, useSelf, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
+import n from './NewTaskSheet.module.css';
+
+/** The priority scale, left to right: its keys are 0 to 4. */
+const SCALE: readonly Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
 
 /**
- * A new task: its title, what it's for (the brief's goal), where it goes, and who it's for. Start
- * with Claude makes the worktree and puts Claude on it at once.
+ * A new task: say what you want in one box and Claude writes its title and goal (or write them
+ * yourself), how much it matters on a scale, labels the board already uses. It goes in the
+ * project and column you opened it from. Start with Claude makes the worktree and puts Claude on it.
  */
 export function NewTaskSheet({ projectId, status, parent, close }: { projectId?: string; status?: IssueStatus; parent?: string; close: () => void }) {
   const board = useBoard();
@@ -21,42 +29,45 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   const parentIssue = parent ? issueById(board, parent) : undefined;
   // The project you're in (Tasks is always one project's).
   const firstProject = parentIssue?.projectId ?? projectId ?? (projects.some((p) => p.id === prefs.project) ? prefs.project : undefined) ?? projects[0]?.id ?? '';
+  const [describe, setDescribe] = useState('');
+  const [mine, setMine] = useState(false);
   const [title, setTitle] = useState('');
   const [goal, setGoal] = useState('');
   const [project, setProject] = useState(firstProject);
-  const [state, setState] = useState<IssueStatus>(status ?? (prefs.scope === 'backlog' ? 'backlog' : 'todo'));
+  const column: IssueStatus = status ?? parentIssue?.status ?? (prefs.scope === 'backlog' ? 'backlog' : 'todo');
   const [priority, setPriority] = useState<Priority>('none');
   const choices = assigneeChoices(self, people);
   const [assignee, setAssignee] = useState('');
-  const [labels, setLabels] = useState('');
+  const known = useMemo(() => [...new Set(board.issues.flatMap((i) => i.labels))].sort(), [board.issues]);
+  const [labels, setLabels] = useState<readonly string[]>([]);
   const [start, setStart] = useState(false);
   const solo = useSolo(project);
   if (!projects.length) {
     return <FormSheet title="New Task" intro="Tasks belong to a project. Add a project first (File › Add Project…)." submitLabel="OK" hideSubmit onSubmit={close} onCancel={close} />;
   }
+  // Where it goes, quietly: the project (unless you pick it below) and the column.
+  const pickProject = !projectId && !parentIssue;
+  const where = [pickProject ? '' : projects.find((p) => p.id === project)?.name, STATUS_INFO[start ? 'todo' : column].label].filter(Boolean).join(' · ');
   return (
     <FormSheet
       title={parentIssue ? `New Sub-task of ${parentIssue.key}` : 'New Task'}
       icon="task"
-      intro={parentIssue ? `Under “${parentIssue.title}”.` : 'What needs doing, and why. Claude reads the goal when it works on it.'}
+      intro={parentIssue ? `Under “${parentIssue.title}” · ${where}` : where}
       submitLabel={start ? 'Create and Start' : 'Create Task'}
-      canSubmit={Boolean(title.trim() && project)}
+      canSubmit={Boolean((mine ? title.trim() : describe.trim()) && project)}
+      width={560}
       onCancel={close}
       footer={<Checkbox checked={start} onChange={setStart} label="Start with Claude" detail="A new worktree, with Claude working on it" />}
       onSubmit={async () => {
         const who = choices.find((c) => c.key === assignee)?.assignee;
         const created = await api.create({
           projectId: project,
-          title: title.trim(),
-          status: start ? 'todo' : state,
+          ...(mine ? { title: title.trim(), ...(goal.trim() ? { goal: goal.trim() } : {}) } : { describe: describe.trim() }),
+          status: start ? 'todo' : column,
           priority,
           ...(who ? { assignee: who } : {}),
-          labels: labels
-            .split(',')
-            .map((l) => l.trim())
-            .filter(Boolean),
+          labels: [...labels],
           ...(parentIssue ? { parent: parentIssue.id } : {}),
-          ...(goal.trim() ? { goal: goal.trim() } : {}),
         });
         close();
         // (The sheet is gone: a problem starting shows as a toast, and the task is there to start again.)
@@ -67,24 +78,42 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
         }
       }}
     >
-      <Field label="Title" htmlFor="task-title">
-        <TextInput id="task-title" value={title} onChange={setTitle} maxLength={200} placeholder="Rate-limit the login endpoint" data-autofocus />
-      </Field>
-      <Field label="Goal" htmlFor="task-goal" hint="What it’s for and what done looks like. Markdown; ⌘↩ creates it.">
-        <TextArea id="task-goal" value={goal} onChange={setGoal} rows={4} placeholder="10 tries a minute per IP, then 429. Logins from the app keep working." />
-      </Field>
-      {parentIssue ? null : (
+      {mine ? (
+        <>
+          <Field label="Title" htmlFor="task-title">
+            <TextInput id="task-title" value={title} onChange={setTitle} maxLength={200} placeholder="Rate-limit the login endpoint" data-autofocus />
+          </Field>
+          <Field label="Goal" htmlFor="task-goal" hint="What it’s for and what done looks like. Markdown; ⌘↩ creates it.">
+            <TextArea id="task-goal" value={goal} onChange={setGoal} rows={4} placeholder="10 tries a minute per IP, then 429. Logins from the app keep working." />
+          </Field>
+        </>
+      ) : (
+        <div className={n.describe}>
+          <TextArea
+            aria-label="Describe the task"
+            className={n.box}
+            value={describe}
+            onChange={setDescribe}
+            rows={4}
+            maxLength={8000}
+            placeholder="Describe the task: what you want, and why. Claude writes the title and goal."
+            onInput={(e) => grow(e.currentTarget)}
+            data-autofocus
+          />
+          <div className={n.hint}>Claude writes the title, goal and what done looks like. ⌘↩ creates it.</div>
+        </div>
+      )}
+      <button type="button" className={n.disclosure} aria-expanded={mine} onClick={() => setMine(!mine)}>
+        <Icon name={mine ? 'chevronDown' : 'chevronRight'} size={10} />
+        {mine ? 'Let Claude write the title and goal' : 'Write title and goal myself'}
+      </button>
+      {pickProject ? (
         <Field label="Project">
           <Popup label="Project" value={project} options={projects.map((p) => ({ value: p.id, label: p.name }))} onChange={setProject} />
         </Field>
-      )}
-      {start ? null : (
-        <Field label="Status">
-          <Popup label="Status" value={state} options={ISSUE_STATUSES.map((s) => ({ value: s, label: STATUS_INFO[s].label }))} onChange={setState} />
-        </Field>
-      )}
+      ) : null}
       <Field label="Priority">
-        <Popup label="Priority" value={priority} options={PRIORITIES.map((p) => ({ value: p, label: PRIORITY_INFO[p].label }))} onChange={setPriority} />
+        <PriorityScale value={priority} onChange={setPriority} />
       </Field>
       {/* Alone on a project, every task is yours and your Claude's: nothing to choose. */}
       {solo ? null : (
@@ -92,9 +121,51 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
           <Popup label="Assignee" value={assignee} options={[{ value: '', label: 'No one' }, ...choices.map((c) => ({ value: c.key, label: c.label }))]} onChange={setAssignee} />
         </Field>
       )}
-      <Field label="Labels" htmlFor="task-labels" hint="Separated by commas">
-        <TextInput id="task-labels" value={labels} onChange={setLabels} placeholder="security, api" />
-      </Field>
+      {known.length ? (
+        <Field label="Labels">
+          <div className={n.chips} role="group" aria-label="Labels">
+            {known.map((l) => {
+              const on = labels.includes(l);
+              return (
+                <button key={l} type="button" className={cx(n.chip, on && n.chipOn)} aria-pressed={on} onClick={() => setLabels(on ? labels.filter((x) => x !== l) : [...labels, l])}>
+                  <LabelDot label={l} />
+                  {l}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+      ) : null}
     </FormSheet>
+  );
+}
+
+/** The describe box grows with what you write (up to a point; then it scrolls). */
+function grow(el: HTMLTextAreaElement): void {
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight + 2, 320)}px`;
+}
+
+/** None · Low · Medium · High · Urgent in one click; on the scale, 0 to 4 and the arrows pick. */
+function PriorityScale({ value, onChange }: { value: Priority; onChange: (p: Priority) => void }) {
+  const at = SCALE.indexOf(value);
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    const digit = /^[0-4]$/.test(e.key) ? Number(e.key) : undefined;
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    const next = digit ?? (step ? Math.max(0, Math.min(SCALE.length - 1, at + step)) : undefined);
+    if (next === undefined) return;
+    e.preventDefault();
+    onChange(SCALE[next]!);
+    (e.currentTarget.children[next] as HTMLElement | undefined)?.focus();
+  };
+  return (
+    <div className={n.scale} role="radiogroup" aria-label="Priority" onKeyDown={onKeyDown}>
+      {SCALE.map((p, i) => (
+        <button key={p} type="button" role="radio" aria-checked={p === value} tabIndex={p === value ? 0 : -1} className={cx(n.step, p === value && n.stepOn)} title={`${PRIORITY_INFO[p].label} (${i})`} onClick={() => onChange(p)}>
+          <PriorityIcon priority={p} size={12} />
+          {p === 'none' ? 'None' : PRIORITY_INFO[p].label}
+        </button>
+      ))}
+    </div>
   );
 }

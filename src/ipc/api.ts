@@ -104,6 +104,8 @@ export const API = {
   // ---- your Claude's queue and approvals
   'host.answerApproval': args(Answer, id),
   'host.promote': args(id),
+  // Send a waiting message next, never interrupting (Send Now).
+  'host.sendNext': args(id),
   // Stop your Claude in one conversation: → { stopped, returned: your queued prompts, in order }.
   'host.stopRun': args(channel),
   'host.cancelQueued': args(id),
@@ -202,6 +204,8 @@ export const API = {
   'workspaces.newGroup': args(z.string().min(1).max(80), opt(z.object({ before: opt(ArrangeTarget.nullable()), project: opt(id) }).strict())),
   'workspaces.showProject': args(path),
   'workspaces.hideProject': args(id),
+  // Delete Project: out of Klaud (worktrees archived losslessly); `trash`: its folder to the Trash too.
+  'workspaces.removeProject': args(id, opt(z.object({ trash: opt(bool) }).strict())),
   'workspaces.cleanAgentWorktrees': args(id),
   // Worktrees klaud didn't make (Conductor's, Claude Code's, a script's): who made them, their info page, tidying up.
   'workspaces.otherOrigins': args(id),
@@ -230,7 +234,11 @@ export const API = {
   'workbench.createPr': args(id, opt(str)),
   'workbench.fixChecks': args(id),
   'workbench.openPr': args(id),
-  'workbench.refreshPrs': args(opt(id), opt(bool)),
+  // Merge a worktree's PR on GitHub (gh pr merge); auto: once its checks pass. → { ok, result | reason, message }
+  'workbench.mergePr': args(id, z.object({ method: z.enum(['squash', 'merge', 'rebase']), auto: opt(bool), deleteBranch: opt(bool) }).strict()),
+  // A worktree's PR now (or all of them; true: check gh again), or { reason } to look at what's due:
+  // 'focus' (the window came forward) or 'push' (a branch was pushed; id: which worktree).
+  'workbench.refreshPrs': args(opt(z.union([id, z.object({ reason: z.enum(['focus', 'push']), id: opt(id) }).strict()])), opt(bool)),
   'workbench.editPrPrompt': args(),
   'workbench.resetPrPrompt': args(),
   'workbench.measureDisk': args(),
@@ -251,6 +259,8 @@ export const API = {
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),
+  // An image file on this Mac (its path was pasted), copied in and made smaller if it's too big. → { n, chip, file }
+  'attachments.addFile': args(path),
   'attachments.expand': args(str, channel),
   // An image linked in a message (owner peer id, file name): its bytes to show, or opened in Preview.
   'attachments.read': args(id, z.string().min(1).max(255)),
@@ -271,6 +281,8 @@ export const API = {
   // ---- this computer
   'local.listDirs': args(path),
   'local.openFolder': args(path),
+  // Pasted paths: is each a file, a folder, or nothing? (Read-only.) → [{ path, name, kind, size, image }]
+  'local.statFiles': args(z.array(path).min(1).max(20)),
 
   // ---- the klaud network: friends, direct messages, groups, your status (network-api.ts)
   ...NETWORK_API,

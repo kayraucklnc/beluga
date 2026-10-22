@@ -1,5 +1,5 @@
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
-import { NewPlanSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
+import { NewPlanSheet, PlanModeSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
 import { useState } from 'react';
 import { channelOf } from '@klaud/core/store.js';
 import { canRunOn } from '@klaud/core/trust.js';
@@ -14,6 +14,7 @@ import { RemoteWorktreeForm } from './RemoteWorktreeSheet.js';
 import { TemplateEditorSheet } from './TemplatesSheet.js';
 import { ContinueSheet } from './ContinueSheet.js';
 import { CleanUpWorktreesAlert } from './CleanUpWorktrees.js';
+import { DeleteProjectAlert } from './DeleteProjectAlert.js';
 import { WorkConfirm } from './WorkConfirm.js';
 
 /** The folder and branch name klaud makes from a name (as the core's `slug` does). */
@@ -170,14 +171,18 @@ export function NativeSheets() {
       return <WorkConfirm key={`${sheet.wsId}:${sheet.action}`} wsId={sheet.wsId} action={sheet.action} close={close} />;
     case 'clean_up_worktrees':
       return <CleanUpWorktreesAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
+    case 'delete_project':
+      return <DeleteProjectAlert key={sheet.projectId} projectId={sheet.projectId} close={close} />;
     case 'new_task':
       return <NewTaskSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.status ? { status: sheet.status } : {})} {...(sheet.parent ? { parent: sheet.parent } : {})} close={close} />;
     case 'new_plan':
-      return <NewPlanSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} close={close} />;
+      return <NewPlanSheet {...(sheet.projectId ? { projectId: sheet.projectId } : {})} {...(sheet.goal ? { goal: sheet.goal } : {})} close={close} />;
     case 'plan_style':
       return <PlanStyleSheet close={close} />;
     case 'plan_send_back':
       return <SendBackSheet planId={sheet.planId} milestone={sheet.milestone} close={close} />;
+    case 'plan_mode':
+      return <PlanModeSheet key={sheet.planId} planId={sheet.planId} close={close} />;
     case 'confirm':
       return (
         <Alert

@@ -1,6 +1,13 @@
+import type { Actor } from '@klaud/core/board/model.js';
 import type { TaskState } from '@klaud/core/plans/progress.js';
-import { cx } from '../components/ui.js';
-import { type Tone, TASK_STATE } from './plans-model.js';
+import { useRef } from 'react';
+import { Icon } from '../components/Icon.js';
+import { Avatar, cx } from '../components/ui.js';
+import { useApp } from '../lib/klaud.js';
+import { breath, turn, useLive } from '../lib/live-motion.js';
+import { type Need, type Signal, signalOf } from '../layout/attention-model.js';
+import { SignalMark } from '../layout/signal-marks.js';
+import { type Headline, type Tone, type Who, TASK_STATE } from './plans-model.js';
 import p from './plans.module.css';
 
 /** Small marks shared by the plan's graph, outline and lists: a task's state, a tone pill, progress. */
@@ -9,8 +16,11 @@ export function TaskStateIcon({ state, size = 14 }: { state: TaskState; size?: n
   const tone = TASK_STATE[state].tone;
   const c = 8;
   const r = 5.6;
+  const icon = useRef<SVGSVGElement>(null);
+  // Running: the ring turns with the live clock (lib/live-motion.ts), not a CSS animation.
+  useLive(icon, (t) => icon.current?.style.setProperty('--turn', `${turn(t, 1100)}deg`), state === 'running');
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" className={cx(p.stateIcon, p[`tone_${tone}`], state === 'running' && p.spinning)} aria-hidden="true">
+    <svg ref={icon} width={size} height={size} viewBox="0 0 16 16" className={cx(p.stateIcon, p[`tone_${tone}`], state === 'running' && p.spinning)} aria-hidden="true">
       {state === 'done' ? (
         <>
           <circle cx={c} cy={c} r={6.5} className={p.iconFill} />
@@ -26,7 +36,7 @@ export function TaskStateIcon({ state, size = 14 }: { state: TaskState; size?: n
           <rect x={4.5} y={7.2} width={7} height={5.3} rx={1.2} className={p.iconFill} />
           <path d="M6 7.2V5.6a2 2 0 0 1 4 0v1.6" className={p.iconRing} />
         </>
-      ) : state === 'asking' ? (
+      ) : state === 'asking' || state === 'stalled' ? (
         <>
           <circle cx={c} cy={c} r={6.5} className={p.iconFill} />
           <path d="M8 4.8v4 M8 11.1v.01" className={p.iconMark} />
@@ -57,10 +67,17 @@ export function TaskStateIcon({ state, size = 14 }: { state: TaskState; size?: n
 export function TonePill({ tone, children, live }: { tone: Tone; children: React.ReactNode; live?: boolean }) {
   return (
     <span className={cx(p.pill, p[`tone_${tone}`])}>
-      <span className={cx(p.pillDot, live && p.pillLive)} aria-hidden="true" />
+      {live ? <LiveDot /> : <span className={p.pillDot} aria-hidden="true" />}
       {children}
     </span>
   );
+}
+
+/** A dot that breathes while Claude works (with the live clock, lib/live-motion.ts). */
+export function LiveDot() {
+  const dot = useRef<HTMLSpanElement>(null);
+  useLive(dot, (t) => dot.current?.style.setProperty('--breath', breath(t, 1600).toFixed(3)));
+  return <span ref={dot} className={cx(p.pillDot, p.pillLive)} aria-hidden="true" />;
 }
 
 /** A plan's milestones as a row of segments, each filled as far as it got. */
@@ -72,6 +89,83 @@ export function MilestoneBar({ items }: { items: ReadonlyArray<{ readonly id: st
           <span className={p.barFill} style={{ width: `${Math.round(m.share * 100)}%` }} />
         </span>
       ))}
+    </span>
+  );
+}
+
+type Bar = { readonly id: string; readonly title: string; readonly state: string; readonly share: number };
+
+/**
+ * A plan's one progress bar: a column per row of milestones, left to right in the order they
+ * run; milestones that run side by side share a column, stacked as thin parallel tracks.
+ */
+export function PlanProgress({ columns }: { columns: ReadonlyArray<readonly Bar[]> }) {
+  const all = columns.flat();
+  return (
+    <span className={p.progress} role="img" aria-label={all.map((m) => `${m.title}: ${Math.round(m.share * 100)}%`).join(', ')}>
+      {columns.map((col) => (
+        <span key={col.map((m) => m.id).join()} className={p.progressCol} data-parallel={col.length > 1 ? col.length : undefined}>
+          {col.map((m) => (
+            <span key={m.id} className={cx(p.barSegment, p[`seg_${m.state}`])} title={m.title}>
+              <span className={p.barFill} style={{ width: `${Math.round(m.share * 100)}%` }} />
+            </span>
+          ))}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Whose turn a sentence is: your initial, Claude's mark, or Klaud's (the plan itself). */
+export function WhoMark({ who, size = 20 }: { who: Who; size?: number }) {
+  const id = useApp((s) => s.selfId);
+  const name = useApp((s) => s.self?.name ?? s.network.self?.name ?? 'You');
+  if (who === 'you') return <Avatar name={name} id={id} size={size} />;
+  if (who === 'claude') return <Avatar name="Claude" id={id} claude size={size} />;
+  return (
+    <span className={p.klaudMark} style={{ width: size, height: size }} aria-hidden="true">
+      <Icon name="claude" size={Math.round(size * 0.55)} />
+    </span>
+  );
+}
+
+/** An actor as a mark (for the feed). */
+export function ActorMark({ by, size = 18 }: { by: Actor; size?: number }) {
+  if (by.kind === 'person') return <Avatar name={by.name} id={by.id} size={size} />;
+  if (by.kind === 'claude') return <Avatar name={by.ownerName} id={by.owner} claude size={size} />;
+  return <WhoMark who="klaud" size={size} />;
+}
+
+/** The plan's sentence: who, then what (“You: pass “API” — Claude checked all 4 criteria”). */
+export function Said({ line, className }: { line: Headline; className?: string }) {
+  return (
+    <span className={cx(p.said, className)} data-who={line.who}>
+      <WhoMark who={line.who} />
+      <span className={p.saidText}>
+        {line.who === 'you' ? <strong className={p.saidYou}>You: </strong> : null}
+        {line.who === 'you' ? line.text.charAt(0).toLowerCase() + line.text.slice(1) : line.text}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A task's chat, as the sidebar would mark it (a plan keeps its tasks off the sidebar): a dot when
+ * its Claude waits on you, else how many new messages. Nothing when there's nothing new.
+ */
+export function TaskChatMark({ worktree }: { worktree?: string }) {
+  // A plain string, so the graph and the outline only redraw when the mark changes.
+  const mark = useApp((st) => {
+    if (!worktree) return '';
+    const x = signalOf(st, `ws:${worktree}`, worktree);
+    return x.level === 'needs' ? `needs|${x.need ?? ''}|${x.tip}` : x.unread ? `unread|${x.unread}|${x.tip}` : '';
+  });
+  if (!mark) return null;
+  const [level, value, tip] = mark.split('|') as [string, string, string];
+  const signal: Signal = level === 'needs' ? { level: 'needs', unread: 0, working: false, tip, ...(value ? { need: value as Need } : {}) } : { level: 'unread', unread: Number(value), working: false, tip };
+  return (
+    <span className={p.taskChatMark} title={tip} data-task-chat={level}>
+      <SignalMark signal={signal} />
     </span>
   );
 }

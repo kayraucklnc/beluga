@@ -9,6 +9,7 @@ import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useKlaud } from '../lib/klaud.js';
 import { type ToolAction, toolbarActions } from './toolbar-actions.js';
+import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { togglePanel } from '../lib/panel.js';
@@ -113,6 +114,7 @@ export function Toolbar() {
     const run = (a: ToolAction): void => {
       if (a.disabled) return toast(client, a.hint, 'info');
       if (a.action === 'fix_checks') return askBeforeWork(ws.id, 'fix_checks');
+      if (isPlanAction(a.action)) return runPlanAction(state, ws.id, a.action, actions.run);
       actions.run({ type: 'ws', id: ws.id, action: a.action });
     };
     const pr = state.prs[ws.id];
@@ -142,9 +144,9 @@ export function Toolbar() {
               <span className={s.meta}>{ws.askOnly ? 'Questions only · main folder' : 'Claude chat'}</span>
             ) : null}
             {pr ? (
-              <span className={cx(s.meta, s.metaPr)} title={describePr(pr)}>
-                <Icon name="pr" size={11} />
-                <span className={s.ellipsis}>{describePr(pr)}</span>
+              <span className={cx(s.meta, s.metaPr, pr.state === 'MERGED' && s.metaMerged)} title={describePr(pr)} data-pr-state={pr.state}>
+                <Icon name={pr.state === 'MERGED' ? 'merge' : 'pr'} size={11} />
+                <span className={s.ellipsis}>{pr.state === 'MERGED' ? `PR #${pr.number}` : describePr(pr)}</span>
               </span>
             ) : null}
           </>

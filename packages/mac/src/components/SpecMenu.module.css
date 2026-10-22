@@ -27,11 +27,14 @@
   border-radius: 5px;
   outline: none;
 }
-.item[data-highlighted] {
+/* Hover too, not only Radix's focus: the row under the pointer lights up even when focus didn't land there. */
+.item[data-highlighted],
+.item:not([data-disabled]):hover {
   background: var(--accent);
   color: white;
 }
-.item[data-highlighted] .hint {
+.item[data-highlighted] .hint,
+.item:not([data-disabled]):hover .hint {
   color: rgba(255, 255, 255, 0.78);
 }
 .item[data-disabled] {
@@ -53,7 +56,9 @@
   color: var(--text-2);
 }
 .item[data-highlighted] .icon,
-.item[data-highlighted] .keys {
+.item[data-highlighted] .keys,
+.item:not([data-disabled]):hover .icon,
+.item:not([data-disabled]):hover .keys {
   color: rgba(255, 255, 255, 0.85);
 }
 .keys {
@@ -74,10 +79,12 @@
 .danger .label {
   color: var(--error);
 }
-.danger[data-highlighted] {
+.danger[data-highlighted],
+.danger:not([data-disabled]):hover {
   background: var(--error);
 }
-.danger[data-highlighted] .label {
+.danger[data-highlighted] .label,
+.danger:not([data-disabled]):hover .label {
   color: white;
 }
 .separator {
@@ -91,10 +98,11 @@
   color: var(--text-3);
 }
 .item[data-highlighted] .subArrow,
+.item:not([data-disabled]):hover .subArrow,
 .item[data-state='open'] .subArrow {
   color: rgba(255, 255, 255, 0.85);
 }
-.item[data-state='open']:not([data-highlighted]) {
+.item[data-state='open']:not([data-highlighted]):not(:hover) {
   background: var(--bg-hover);
 }
 

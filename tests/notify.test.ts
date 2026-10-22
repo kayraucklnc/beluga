@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Store, initialState, reduce, type Action, type DomainState } from '../src/core/store.js';
 import { AttentionRegistry } from '../src/core/attention.js';
 import { ClientStore } from '../src/client/client-store.js';
-import { Notifier, detectNotices, enabled, placeName, type NoticeEvent } from '../src/core/notify.js';
+import { Notifier, detectNotices, enabled, placeName, planOfChannel, type NoticeEvent } from '../src/core/notify.js';
+import type { Issue } from '../src/core/board/model.js';
+import type { Plan, PlanBody } from '../src/core/plans/model.js';
 import { pickRoute, plan, type RouteEnv } from '../src/ui/tty/desktop-notify.js';
 import type { PeerInfo } from '../src/protocol.js';
 import type { Project } from '../src/workspaces/types.js';
@@ -475,5 +477,156 @@ describe('the klaud network: messages from friends and groups', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('plans: you hear from the plan, not each task', () => {
+  const issue = (over: Partial<Issue> = {}): Issue => ({
+    id: 'i12',
+    key: 'KLD-12',
+    number: 12,
+    projectId: 'p1',
+    title: 'Login form',
+    status: 'in_progress',
+    priority: 'medium',
+    labels: [],
+    blockedBy: [],
+    related: [],
+    rank: 0,
+    brief: {},
+    revisions: [],
+    worktrees: ['w1'],
+    proof: [],
+    activity: [],
+    createdAt: 0,
+    updatedAt: 0,
+    createdBy: { kind: 'klaud' },
+    origin: 'plan',
+    plan: { id: 'pl1', milestone: 'm1', task: 't1' },
+    ...over,
+  });
+  const body: PlanBody = {
+    title: 'Auth',
+    goal: 'Sign in',
+    milestones: [
+      { id: 'm1', title: 'API', criteria: ['tests pass'], tasks: [{ id: 't1', title: 'Login form', acceptance: [], blockedBy: [], issueId: 'i12' }] },
+      { id: 'm2', title: 'UI', criteria: [], tasks: [{ id: 't2', title: 'Screen', acceptance: [], blockedBy: ['t1'] }] },
+    ],
+  };
+  const plan = (over: Partial<Plan> = {}): Plan => ({
+    id: 'pl1',
+    projectId: 'p1',
+    home: 'ws:home',
+    status: 'active',
+    body,
+    draftRev: 1,
+    autonomy: 'autopilot',
+    maxParallel: 3,
+    paused: false,
+    testsAt: 'end',
+    runs: {},
+    activity: [],
+    createdAt: 0,
+    updatedAt: 0,
+    ...over,
+  });
+  const inPlan = (p: Plan = plan(), i: Issue = issue()): DomainState =>
+    apply(base(), { type: 'board_init', state: { enabled: true, issues: [i], projects: {}, autoTasks: false } }, { type: 'plans_init', state: { enabled: true, plans: [p], style: '' } });
+
+  it('planOfChannel finds the plan of a task worktree, and of its home', () => {
+    const s = inPlan();
+    expect(planOfChannel(s, 'ws:w1')).toMatchObject({ plan: { id: 'pl1' }, issue: { key: 'KLD-12' }, task: 't1' });
+    expect(planOfChannel(s, 'ws:home')).toMatchObject({ plan: { id: 'pl1' } });
+    expect(planOfChannel(s, 'ws:home')?.issue).toBeUndefined();
+    expect(planOfChannel(s, 'ws:other')).toBeUndefined();
+    expect(planOfChannel(s, 'room')).toBeUndefined();
+  });
+
+  it('a task finishing inside a plan goes quietly into the inbox, under the plan', () => {
+    const running = apply(inPlan(), ev('me', 'me', 'started'));
+    expect(detectNotices(running, apply(running, ev('me', 'me', 'done', 'shipped')))).toEqual([
+      { kind: 'done', title: 'Auth · KLD-12: Claude finished in add-auth', body: 'shipped', channel: 'ws:w1', plan: 'pl1', planTask: 't1', quiet: true },
+    ]);
+  });
+
+  it('outside plans nothing changes, and turning the setting off brings per-task notices back', () => {
+    const running = apply(inPlan(), ev('me', 'me', 'started', '', 'ws:w2'));
+    expect(detectNotices(running, apply(running, ev('me', 'me', 'done', 'ok', 'ws:w2')))).toEqual([{ kind: 'done', title: 'Claude finished in a workspace', body: 'ok', channel: 'ws:w2' }]);
+    const off = apply(inPlan(), { type: 'prefs', prefs: { notify: { ...inPlan().prefs.notify, planMilestones: false } } });
+    const run2 = apply(off, ev('me', 'me', 'started'));
+    expect(detectNotices(run2, apply(run2, ev('me', 'me', 'done', 'ok')))).toEqual([{ kind: 'done', title: 'Claude finished in add-auth', body: 'ok', channel: 'ws:w1' }]);
+  });
+
+  it("a task's Claude asking is still news, titled by the plan", () => {
+    const s = inPlan();
+    expect(detectNotices(s, apply(s, { type: 'question_add', question: question('q1', 'question') }))).toEqual([
+      { kind: 'needsYou', tag: 'question', ref: 'q1', title: 'Auth · KLD-12 asks: Which db?', body: 'Answer it to keep the plan going', channel: 'ws:w1', plan: 'pl1', planTask: 't1' },
+    ]);
+  });
+
+  it('a milestone passing is one notice that says what is next', () => {
+    const before = inPlan();
+    const after = apply(before, { type: 'plan_put', plan: plan({ runs: { m1: { passedAt: 5, passedBy: { kind: 'klaud' } } } }) });
+    expect(detectNotices(before, after)).toEqual([{ kind: 'done', tag: 'milestone', title: 'Auth: “API” passed', body: 'Next: “UI”', channel: 'ws:home', plan: 'pl1', key: 'plan:pl1:m1:passed:5' }]);
+  });
+
+  it('a failed check, a milestone waiting for you, and the plan finishing each notify', () => {
+    const done = issue({ status: 'in_review' });
+    const gated = plan({ autonomy: 'gated' });
+    const before = inPlan(gated);
+    const waiting = apply(before, { type: 'board_issue', issue: done });
+    expect(detectNotices(before, waiting)).toMatchObject([{ kind: 'needsYou', tag: 'milestone', title: 'Auth: “API” is ready for you' }]);
+    const failed = apply(waiting, { type: 'plan_put', plan: plan({ autonomy: 'gated', runs: { m1: { checkAsked: 1, check: { at: 2, by: { kind: 'klaud' }, verdict: 'fail', notes: 'Two tests fail' } } } }) });
+    expect(detectNotices(waiting, failed)).toMatchObject([{ kind: 'problems', tag: 'milestone', title: 'Auth: “API” didn’t pass its check', body: 'Two tests fail' }]);
+    const finished = apply(failed, { type: 'plan_put', plan: plan({ status: 'done', doneAt: 9 }) }, { type: 'board_issue', issue: issue({ status: 'in_review', pr: { number: 3, url: '', state: 'OPEN', title: 'x', draft: false, checks: 'passing' } }) });
+    expect(detectNotices(failed, finished)).toEqual([{ kind: 'done', tag: 'milestone', title: 'Auth is done', body: 'Its pull request is ready to merge', channel: 'ws:home', plan: 'pl1', key: 'plan:pl1:done:9' }]);
+  });
+
+  it('plans already there when you start are not news', () => {
+    const s = base();
+    expect(detectNotices(s, inPlan(plan({ runs: { m1: { passedAt: 5 } } })))).toEqual([]);
+  });
+
+  describe('Notifier', () => {
+    beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));
+    afterEach(() => vi.useRealTimers());
+
+    it('no desktop note for a task finishing; one for a milestone passing, and never twice', () => {
+      const store = new Store(inPlan());
+      const desktop = vi.fn();
+      const notifier = new Notifier({ store, desktop, burstMs: 0 });
+      store.dispatch(ev('me', 'me', 'started'));
+      store.dispatch(ev('me', 'me', 'done', 'shipped'));
+      vi.advanceTimersByTime(10);
+      expect(desktop).not.toHaveBeenCalled();
+      expect(store.getState().inbox).toMatchObject([{ title: 'Auth · KLD-12: Claude finished in add-auth', plan: 'pl1', read: true }]);
+
+      const passed = plan({ runs: { m1: { passedAt: 5 } } });
+      store.dispatch({ type: 'plan_put', plan: passed });
+      vi.advanceTimersByTime(10);
+      expect(desktop).toHaveBeenCalledTimes(1);
+      expect(desktop.mock.calls[0]?.[0]).toMatchObject({ title: 'Auth: “API” passed', body: 'Next: “UI”', sound: true });
+      // The same state sent again (a restart, a re-sent plan) says nothing new.
+      store.dispatch({ type: 'plan_put', plan: plan() });
+      store.dispatch({ type: 'plan_put', plan: passed });
+      vi.advanceTimersByTime(10);
+      expect(desktop).toHaveBeenCalledTimes(1);
+      expect(store.getState().inbox.filter((n) => n.tag === 'milestone')).toHaveLength(1);
+      notifier.stop();
+    });
+
+    it("a direct notice about a plan task's pull request is quiet; a question in it rings, titled by the plan", () => {
+      const store = new Store(inPlan());
+      const desktop = vi.fn();
+      const notifier = new Notifier({ store, desktop, burstMs: 0 });
+      notifier.notify({ kind: 'pr', title: 'PR #3 was merged', body: 'add-auth', channel: 'ws:w1' });
+      vi.advanceTimersByTime(10);
+      expect(desktop).not.toHaveBeenCalled();
+      store.dispatch({ type: 'question_add', question: question('q1', 'question') });
+      vi.advanceTimersByTime(10);
+      expect(desktop).toHaveBeenCalledTimes(1);
+      expect(desktop.mock.calls[0]?.[0]).toMatchObject({ title: 'Auth · KLD-12 asks: Which db?', channel: 'ws:w1' });
+      notifier.stop();
+    });
   });
 });

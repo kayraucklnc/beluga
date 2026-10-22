@@ -1,21 +1,38 @@
-import type { Actor, Priority } from '../board/model.js';
+import type { Actor, IssuePr, Priority } from '../board/model.js';
 
 /**
  * Plans: a goal cut into milestones, each with tasks and the criteria that say it's passed.
  * Claude writes a plan in a conversation (its home); until you approve it, the plan is only a
  * draft there and never touches Tasks. Approving puts its tasks on the board, and the plan then
- * runs milestone by milestone, as far on its own as its autonomy allows.
+ * runs its milestones (side by side where none builds on another), as far on its own as its
+ * autonomy allows.
  * Browser-safe: the Mac app runs it. See docs/tasks-and-plans.md.
  */
 
 export const AUTONOMIES = ['step', 'gated', 'autopilot'] as const;
 export type Autonomy = (typeof AUTONOMIES)[number];
 
-export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; readonly hint: string }>> = {
-  step: { label: 'Step by Step', hint: 'Claude lines up what can start; you start each task' },
-  gated: { label: 'Gated', hint: 'Tasks start by themselves; each milestone waits for you to pass it' },
-  autopilot: { label: 'Autopilot', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
+/**
+ * What each autonomy is called everywhere (the Mac app, Claude's prompt): `label` its name,
+ * `summary` the one sentence a choice of it shows, `hint` the longer how-it-runs.
+ */
+export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; readonly summary: string; readonly hint: string }>> = {
+  step: { label: 'Step by Step', summary: 'You start each task', hint: 'Claude lines up what can start; you start each task' },
+  gated: { label: 'Check-ins', summary: 'Runs, then waits for you at each milestone', hint: 'Tasks start by themselves; each milestone waits for you to pass it' },
+  autopilot: { label: 'Autopilot', summary: 'Runs to the end, stops only if something fails', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
 };
+
+/** When a plan runs its e2e and full test suites: once per milestone at its check, or only at the end. */
+export const TESTS_AT = ['milestone', 'end'] as const;
+export type TestsAt = (typeof TESTS_AT)[number];
+
+export const TESTS_AT_INFO: Readonly<Record<TestsAt, { readonly label: string; readonly hint: string }>> = {
+  milestone: { label: 'Each Milestone', hint: 'Tasks run typecheck and the tests they touched; each milestone’s check runs the full suites once' },
+  end: { label: 'Only at the End', hint: 'Milestone checks read the code and diffs; the full suites run once, in the final step' },
+};
+
+/** A new plan's autonomy. */
+export const DEFAULT_AUTONOMY: Autonomy = 'gated';
 
 /** One task of a plan, before and after it's on the board. */
 export interface PlanTask {
@@ -50,6 +67,11 @@ export interface PlanMilestone {
   readonly tasks: readonly PlanTask[];
   /** This milestone's own autonomy (else the plan's). */
   readonly autonomy?: Autonomy;
+  /**
+   * Earlier milestones it builds on (ids): it opens once they've passed. Left out, it's inferred
+   * from its tasks' blockers in other milestones; empty, it runs alongside from the start.
+   */
+  readonly dependsOn?: readonly string[];
 }
 
 /** What a plan says: the part Claude writes and you approve. */
@@ -77,7 +99,79 @@ export interface MilestoneRun {
   readonly checkAsked?: number;
 }
 
-export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'gate' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
+/** A task that builds on several unmerged tasks: their branches are being combined into its start. */
+export interface Combining {
+  readonly at: number;
+  /** The tasks it builds on (their keys, e.g. KLD-9). */
+  readonly from: readonly string[];
+  /** It stopped at a conflict, left in a hidden worktree for the head Claude to fix. */
+  readonly conflict?: {
+    readonly at: number;
+    readonly dir: string;
+    readonly merging: string;
+    readonly files: readonly string[];
+    /** Claude was asked and it's still there: it waits for you. */
+    readonly stuck?: boolean;
+  };
+}
+
+/**
+ * A passed milestone's task branches being merged (--no-ff) into the plan's branch, in a hidden
+ * worktree. The milestone counts as passed once that's done; a conflict goes to the head Claude.
+ */
+export interface PlanMerge {
+  readonly at: number;
+  /** Who passed it. */
+  readonly by: Actor;
+  /** It had passed before the plan had a branch (catching up): it isn't passed again. */
+  readonly catchUp?: boolean;
+  readonly conflict?: {
+    readonly at: number;
+    readonly dir: string;
+    /** The branch that conflicted, and its task's key. */
+    readonly merging: string;
+    readonly key?: string;
+    readonly files: readonly string[];
+    /** Claude was asked and it's still there: it waits for you. */
+    readonly stuck?: boolean;
+  };
+}
+
+/**
+ * A started task whose Claude stopped without finishing (see watchdog.ts): the latest stall, and
+ * what Klaud did about it. Woken once; stalling again soon after, it waits for you.
+ */
+export interface TaskWatch {
+  /** When it was last seen stalled, and why (“it ended its turn without handing off”). */
+  readonly at: number;
+  readonly reason: string;
+  /** The run it stalled on (its request id): one run is one stall. */
+  readonly run?: string;
+  /** When Klaud woke it (or you resumed it). */
+  readonly wokeAt?: number;
+  /** It stalled again soon after a wake: it waits for you (Resume, or Open Chat). */
+  readonly needsYou?: boolean;
+  /** The one line it's shown with: “KLD-36 stopped, woke it at 11:13”. */
+  readonly line: string;
+  /** Stopped by your usage limit: when it goes on by itself (see shared/run-failure.ts). */
+  readonly limitUntil?: number;
+  /** The run it was resumed from after the limit reset (so it's resumed once). */
+  readonly resumed?: string;
+}
+
+/** The plan reached main: through its pull request, or merged here. */
+export interface PlanShipped {
+  readonly at: number;
+  readonly how: 'pr' | 'local';
+  readonly number?: number;
+}
+
+/**
+ * What a plan's activity records. `started`/`finished`: a task began / came back for review;
+ * `gate`: Claude was asked to check a milestone, `checked`: its check passed (`failed`: it didn't);
+ * `merged`: a milestone's work went into the plan's branch; `autonomy`: the run mode changed.
+ */
+export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'finished' | 'gate' | 'checked' | 'merged' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
 
 export interface PlanEvent {
   readonly id: string;
@@ -104,8 +198,23 @@ export interface Plan {
   readonly autonomy: Autonomy;
   /** How many of its tasks may run at once. */
   readonly maxParallel: number;
+  /** When the e2e and full test suites run (tasks only run typecheck and the tests they touched). */
+  readonly testsAt: TestsAt;
   readonly paused: boolean;
   readonly runs: Readonly<Record<string, MilestoneRun>>;
+  /** Tasks whose start is being combined from several branches (by plan task id). */
+  readonly combining?: Readonly<Record<string, Combining>>;
+  /** Started tasks that stalled, and the wake or the stop that followed (by plan task id). */
+  readonly watch?: Readonly<Record<string, TaskWatch>>;
+  /** Its branch (plan/<slug>, from main): every task starts from it, passed milestones merge into it, and it ends as one PR. */
+  readonly branch?: string;
+  /** Passed milestones being merged into the branch (by milestone id). */
+  readonly merging?: Readonly<Record<string, PlanMerge>>;
+  /** The branch's pull request into main, as last seen. */
+  readonly pr?: IssuePr;
+  readonly shipped?: PlanShipped;
+  /** Plans that ran before they had a branch were caught up once (passed milestones merged into one). */
+  readonly caughtUp?: boolean;
   readonly activity: readonly PlanEvent[];
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -194,6 +303,50 @@ export function planTaskOfIssue(state: PlansState, issueId: string): { readonly 
 /** A milestone's own autonomy, else its plan's. */
 export const autonomyOf = (plan: Plan, milestone: PlanMilestone | undefined): Autonomy => milestone?.autonomy ?? plan.autonomy;
 
+/**
+ * The milestones a milestone waits on (ids): what it says, else the milestones its tasks' blockers
+ * are in (none: it runs alongside the others).
+ */
+export function milestoneDeps(body: PlanBody | undefined, milestone: PlanMilestone): readonly string[] {
+  const ids = new Set((body?.milestones ?? []).map((m) => m.id));
+  if (milestone.dependsOn) return milestone.dependsOn.filter((d) => d !== milestone.id && ids.has(d));
+  const home = new Map(allTasks(body).map((t) => [t.task.id, t.milestone.id]));
+  const out = new Set<string>();
+  for (const t of milestone.tasks) {
+    for (const b of t.blockedBy) {
+      const m = home.get(b);
+      if (m && m !== milestone.id) out.add(m);
+    }
+  }
+  return (body?.milestones ?? []).map((m) => m.id).filter((id) => out.has(id));
+}
+
+/** Milestones being worked on now: not passed, and every one they wait on has passed (ids, in order). */
+export function openMilestones(plan: Plan): readonly string[] {
+  const body = plan.body;
+  if (!body || plan.status === 'done') return [];
+  const passed = (id: string): boolean => Boolean(plan.runs[id]?.passedAt);
+  return body.milestones.filter((m) => !passed(m.id) && milestoneDeps(body, m).every(passed)).map((m) => m.id);
+}
+
+/**
+ * The branch a plan's work collects on: a plan/<name> its text names (one kept by hand before),
+ * else plan/ and its title up to a colon ("Klaud polish round: menus…" → plan/klaud-polish-round).
+ */
+export function planBranchName(plan: Plan): string {
+  const body = plan.body ?? plan.draft;
+  const named = /\bplan\/[A-Za-z0-9][\w.-]*[A-Za-z0-9]/.exec([body?.goal ?? '', ...(body?.milestones ?? []).flatMap((m) => [m.goal ?? '', ...m.criteria])].join('\n'))?.[0];
+  if (named) return named;
+  const title = (body?.title ?? '').split(':')[0]!;
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/, '');
+  return `plan/${slug || plan.id.replace(/^pl_/, '').slice(0, 8)}`;
+}
+
 /** How a draft differs from what was approved: tasks added, changed and removed (by id). */
 export interface PlanDiff {
   readonly added: readonly string[];
@@ -212,7 +365,7 @@ export function diffBodies(before: PlanBody | undefined, after: PlanBody | undef
     const b = now.get(id)!;
     return a && (a.milestone.id !== b.milestone.id || taskSignature(a.task) !== taskSignature(b.task));
   });
-  const ms = (b: PlanBody | undefined): string => (b?.milestones ?? []).map((m) => `${m.id}\0${m.title}\0${m.goal ?? ''}\0${m.criteria.join('\0')}`).join('\n');
+  const ms = (b: PlanBody | undefined): string => (b?.milestones ?? []).map((m) => `${m.id}\0${m.title}\0${m.goal ?? ''}\0${m.criteria.join('\0')}\0${m.dependsOn?.join(',') ?? '-'}`).join('\n');
   const milestones = ms(before) === ms(after) ? 0 : Math.max(1, Math.abs((after?.milestones.length ?? 0) - (before?.milestones.length ?? 0)));
   return { added, changed, removed, milestones };
 }

@@ -58,14 +58,18 @@
   border-radius: 50%;
   background: currentColor;
 }
-.pillLive {
-  animation: breathe 1.6s ease-in-out infinite;
+/* Motion inside the zoomed canvas moves custom properties, never transform or opacity directly: those would
+   make WebKit composite the whole viewport and blur it when zoomed in (KLD-25, components/graph/sharp-zoom.ts).
+   They're written by the live clock (lib/live-motion.ts) about 15 times a second, not by CSS animations: one
+   of those makes WebKit draw the whole window 60 times a second while a task runs (KLD-40). */
+@property --breath {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
 }
-@keyframes breathe {
-  50% {
-    opacity: 0.35;
-    transform: scale(0.8);
-  }
+.pillLive {
+  opacity: calc(0.35 + 0.65 * var(--breath));
+  transform: scale(calc(0.8 + 0.2 * var(--breath)));
 }
 
 /* ---------- State icon ---------- */
@@ -99,13 +103,13 @@
 .dashed {
   stroke-dasharray: 2.2 2.2;
 }
-.spinning {
-  animation: spin 1.1s linear infinite;
+@property --turn {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
 }
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.spinning {
+  transform: rotate(var(--turn));
 }
 
 /* ---------- Milestone bar ---------- */
@@ -280,27 +284,36 @@
 }
 .titleRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   min-width: 0;
 }
+/* The pill sits on the title's first line (19px × 1.3 + 8px padding ≈ 33px tall). */
+.titleRow > :not(textarea) {
+  flex: none;
+  margin-top: 6.5px;
+}
+/* A textarea that grows with its lines (PlanPage TitleField): a one-font-size-tall input clipped g, p and y. */
 .title {
   flex: 0 1 auto;
   min-width: 120px;
   width: 100%;
   max-width: 640px;
   margin-left: -5px;
-  padding: 2px 5px;
+  padding: 4px 5px;
   border: 0;
   border-radius: var(--radius-s);
   background: none;
   font: inherit;
   font-size: 19px;
   font-weight: 650;
+  line-height: 1.3;
   letter-spacing: -0.01em;
   color: var(--text);
   outline: none;
-  text-overflow: ellipsis;
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: break-word;
 }
 .title:hover {
   background: var(--bg-hover);
@@ -322,12 +335,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.modeChevron {
+  margin-left: 4px;
+  vertical-align: -1px;
+  color: var(--text-3);
+}
 .headActions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: none;
-  padding-top: 22px;
+  padding-top: 4px;
 }
 
 .changes {
@@ -361,6 +379,8 @@
   position: relative;
   min-width: 0;
   min-height: 0;
+  /* Nothing drawn in the plan's area ever spills over the sidebar or the conversation. */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg-sunken);
@@ -376,45 +396,68 @@
 }
 .writing {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  color: var(--text-2);
-  font-size: 13px;
+  gap: 20px;
+  padding: 56px 24px 32px;
 }
+/* Three milestone columns, only outlined: what's coming, not pretend content. */
 .skeleton {
-  display: flex;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 168px));
+  gap: 16px;
+  width: 100%;
+  max-width: 536px;
+  justify-content: center;
 }
 .skMilestone {
-  width: 180px;
+  min-width: 0;
   padding: 12px;
-  border-radius: 14px;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--hairline);
-  animation: shimmer 1.6s ease-in-out infinite;
+  border: 1px dashed var(--hairline-strong);
+  opacity: 0.55;
 }
 .skHead {
-  width: 60%;
-  height: 10px;
-  border-radius: 5px;
+  width: 55%;
+  height: 8px;
+  border-radius: 4px;
   background: var(--hairline-strong);
   margin-bottom: 4px;
 }
 .skTask {
-  height: 34px;
-  border-radius: 8px;
-  background: var(--bg-hover);
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--hairline);
 }
-@keyframes shimmer {
+.skeleton[data-live='true'] .skMilestone {
+  animation: drafting 2.4s ease-in-out infinite;
+}
+@keyframes drafting {
   50% {
-    opacity: 0.45;
+    opacity: 1;
+    border-color: color-mix(in srgb, var(--claude) 45%, var(--hairline-strong));
   }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton[data-live='true'] .skMilestone {
+    animation: none;
+  }
+}
+.writingLine {
+  margin: 0;
+  max-width: 100%;
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- The graph ---------- */
@@ -546,10 +589,12 @@
   color: var(--text-2);
   box-shadow: inset 0 0 0 1px var(--hairline-strong);
 }
+/* Progress sits in the head, beside its count: nothing is ruled across the lane. */
 .msProgress {
-  height: 2px;
-  margin: 0 16px;
-  border-radius: 1px;
+  flex: none;
+  width: 48px;
+  height: 3px;
+  border-radius: 2px;
   background: var(--hairline);
   overflow: hidden;
 }
@@ -622,6 +667,12 @@
     0 0 0 1px color-mix(in srgb, var(--claude) 55%, transparent),
     0 10px 28px -14px color-mix(in srgb, var(--claude) 70%, transparent);
 }
+/* In another milestone, linked to the task you picked (its line would cross the lanes). */
+.taskLinked {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+}
 /* Claude at work: a slow copper light that goes round the card's edge. */
 .glow {
   position: absolute;
@@ -634,18 +685,12 @@
     linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  animation: orbit 2.6s linear infinite;
   pointer-events: none;
 }
 @property --angle {
   syntax: '<angle>';
   inherits: false;
   initial-value: 0deg;
-}
-@keyframes orbit {
-  to {
-    --angle: 360deg;
-  }
 }
 .taskMarked::after {
   content: '';
@@ -747,10 +792,10 @@
   color: var(--bg);
   background: var(--accent);
   cursor: pointer;
-  transition: filter 150ms;
+  transition: background-color 150ms;
 }
 .startButton:hover {
-  filter: brightness(1.08);
+  background: color-mix(in srgb, var(--accent) 90%, white);
 }
 
 .gate {
@@ -791,23 +836,20 @@
   font-weight: 700;
   color: var(--tone);
 }
+@property --beckon {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
 .gate_gate {
   color: var(--accent);
   box-shadow:
     0 0 0 1.5px var(--accent),
-    0 0 0 6px color-mix(in srgb, var(--accent) 14%, transparent);
-  animation: beckon 2.4s ease-in-out infinite;
+    0 0 0 calc(6px + 3px * var(--beckon)) color-mix(in srgb, var(--accent) 11%, transparent);
 }
 .gate_gate .gateMark {
   color: var(--bg);
   background: var(--accent);
-}
-@keyframes beckon {
-  50% {
-    box-shadow:
-      0 0 0 1.5px var(--accent),
-      0 0 0 9px color-mix(in srgb, var(--accent) 6%, transparent);
-  }
 }
 .gate_checking .gateMark {
   color: var(--claude);
@@ -850,9 +892,6 @@
 .line_live {
   stroke: color-mix(in srgb, var(--claude) 60%, transparent);
 }
-.lineDot {
-  fill: var(--claude);
-}
 
 /* ---------- Details (what you picked) ---------- */
 
@@ -863,8 +902,9 @@
   right: 12px;
   bottom: 12px;
   width: min(330px, calc(100% - 64px));
-  overflow-y: auto;
-  padding: 16px 18px 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-radius: 14px;
   background: var(--bg-raised);
   box-shadow: var(--shadow-pop);
@@ -876,10 +916,48 @@
     transform: translateX(12px);
   }
 }
+/* What it is, its state and Close: always in reach; a hairline under it once the body scrolls. */
+.detailsHead {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px 10px 12px 18px;
+  border-bottom: 1px solid transparent;
+  transition: border-color 150ms;
+}
+.detailsHead[data-scrolled='true'] {
+  border-bottom-color: var(--hairline);
+}
+.detailsHeadText {
+  flex: 1;
+  min-width: 0;
+}
 .detailsClose {
-  position: absolute !important;
-  top: 10px;
-  right: 10px;
+  flex: none;
+  margin-top: -6px;
+}
+.detailsBody {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 18px 20px;
+  overflow-wrap: anywhere;
+}
+/* Nothing runs off the right edge: long words, paths and code wrap. */
+.detailsBody :global(pre),
+.detailsBody :global(pre code) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.detailsBody :global(pre),
+.detailsBody :global(table),
+.detailsBody :global(img) {
+  max-width: 100%;
+}
+.detailsBody > :first-child {
+  margin-top: 2px;
 }
 .detailsKind {
   display: flex;
@@ -890,7 +968,8 @@
   color: var(--text-3);
 }
 .detailsTitle {
-  margin: 6px 26px 8px 0;
+  margin: 6px 0 8px;
+  overflow-wrap: anywhere;
   font-size: 16px;
   font-weight: 650;
   line-height: 1.3;
@@ -963,6 +1042,9 @@
   gap: 5px;
 }
 .touches code {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: 1px 6px;
   border-radius: 5px;
   font-size: 11px;
@@ -979,7 +1061,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 900px;
+  max-width: 1100px;
   width: 100%;
   margin: 0 auto;
 }
@@ -1156,9 +1238,6 @@
   font-size: 11.5px;
   color: var(--claude);
 }
-.chatBusy .pillDot {
-  animation: breathe 1.6s ease-in-out infinite;
-}
 .chatLog {
   flex: 1;
   min-height: 0;
@@ -1275,21 +1354,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .glow,
-  .spinning,
-  .pillLive,
-  .gate_gate,
   .skMilestone {
     animation: none;
   }
   .canvas[data-ready='true'] :global(.react-flow__node) {
     transition: none;
   }
-}
-:global(html[data-motion='reduce']) .glow,
-:global(html[data-motion='reduce']) .spinning,
-:global(html[data-motion='reduce']) .gate_gate {
-  animation: none;
 }
 
 /* The outline in a narrow column: names keep their room, side notes shorten. */
@@ -1322,4 +1392,345 @@
 .msCount,
 .taskState {
   white-space: nowrap;
+}
+
+/* ---------- Messages waiting for a task's Claude (WaitingLine) ---------- */
+
+.waitingLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.waitingWords {
+  white-space: nowrap;
+}
+.waitingList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.waitingList .waitingWords {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.steerNow {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: default;
+  white-space: nowrap;
+}
+.steerNow:hover {
+  text-decoration: underline;
+}
+.detailsWaiting {
+  margin: 8px 0 0;
+}
+
+/* ---------- New Plan sheet ---------- */
+
+/* Full-width rows (not the form's label column): the goal is the sheet. */
+.newPlan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.newPlanLabel {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.newPlanHint {
+  margin-bottom: 8px;
+  color: var(--text-3);
+  font-size: 0.88rem;
+}
+.newPlanRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+/* Six lines to start; it grows with the text (set from its scrollHeight) to ~60% of the sheet (72vh at most),
+   never so far that the buttons scroll away (the rest of the sheet is under 400px). */
+textarea.goalBox {
+  flex: none;
+  min-height: calc(6 * 1.45em + 12px);
+  max-height: max(calc(6 * 1.45em + 12px), min(43vh, calc(72vh - 400px)));
+  overflow-y: auto;
+  resize: none;
+  font-size: 13.5px;
+}
+.modeCards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.modeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 12px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: default;
+  transition: box-shadow var(--dur-fast), background var(--dur-fast);
+}
+.modeCard:hover {
+  background: var(--bg-hover);
+}
+.modeCard:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.modeCardOn,
+.modeCardOn:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.modeCardOn:focus-visible {
+  box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.modeIcon {
+  display: flex;
+  margin-bottom: 3px;
+  color: var(--text-3);
+}
+.modeCardOn .modeIcon {
+  color: var(--accent);
+}
+.modeName {
+  font-weight: 600;
+}
+.modeSummary {
+  color: var(--text-2);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+/* ---------- The plan's header: title, one progress bar, one sentence (KLD-22) ---------- */
+
+.titleRow > .back {
+  margin: 4px 0 0 -6px;
+}
+.progress {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  width: min(360px, 100%);
+  margin-top: 2px;
+}
+/* A row of milestones: those that run side by side stack as thin parallel tracks. */
+.progressCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+.progressCol .barSegment {
+  flex: none;
+}
+.progressCol[data-parallel] .barSegment {
+  height: 3px;
+}
+.saidButton {
+  align-self: flex-start;
+  max-width: 100%;
+  margin: 2px 0 0 -4px;
+  padding: 2px 8px 2px 4px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+.saidButton:hover {
+  background: var(--bg-hover);
+}
+.said {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.said > :first-child {
+  flex: none;
+}
+.saidText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.said[data-who='you'] .saidText {
+  color: var(--text);
+}
+.saidYou {
+  font-weight: 600;
+}
+.klaudMark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  color: var(--text-2);
+}
+.stripMilestone {
+  flex: none;
+  color: var(--text-3);
+}
+.stripMilestone::after {
+  content: '·';
+  margin-left: 8px;
+}
+.strip .said {
+  font-size: 12.5px;
+}
+.strip .said > :first-child {
+  transform: scale(0.85);
+}
+
+/* ---------- How it runs (the mode sheet) ---------- */
+
+.modeCard {
+  position: relative;
+}
+.modeNow {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+.modeConfirm {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--accent) 40%, transparent);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.modeConfirm p {
+  margin: 0;
+}
+.modeConfirmNow {
+  margin-top: 4px !important;
+  color: var(--text-2);
+}
+
+/* ---------- What happened (the feed) ---------- */
+
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.feedItem {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 9px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.feedItem > :first-child {
+  grid-row: span 2;
+  margin-top: 1px;
+}
+.feedText {
+  min-width: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.feedWho {
+  font-weight: 600;
+  color: var(--text);
+}
+.feedCount {
+  color: var(--text-3);
+}
+.feedWhen {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.feed_problem .feedText,
+.feed_failed .feedText {
+  color: var(--error);
+}
+.feedMore {
+  margin-top: 8px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: default;
+}
+
+/* ---------- Outline rows: milestones that run side by side ---------- */
+
+.outline {
+  container-type: inline-size;
+}
+.oRow {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+/* Side by side only where each milestone keeps room for its name and tasks; else one under the other. */
+@container (max-width: 820px) {
+  .oRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.oRow[data-parallel] .oTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.oAfter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 -4px 14px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.oAfterArrow {
+  transform: rotate(90deg);
+}
+
+/* A task's chat has news or waits on you (its row and card, inside the plan). */
+.taskChatMark {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
 }

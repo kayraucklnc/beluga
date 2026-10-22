@@ -13,6 +13,7 @@ import { QuestionBroker } from './questions.js';
 import type { Conversation } from '../agent/transcript.js';
 import { slugify } from '../agent/namer.js';
 import type { SetupFix } from '../agent/setup-fixer.js';
+import type { DraftContext, TaskDraft } from '../agent/task-drafter.js';
 import { WorkspaceSharing } from './workspace-sharing.js';
 import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Settings } from './settings.js';
@@ -416,17 +417,18 @@ export class Session {
   /**
    * Send a message to the Claude of a workspace conversation: yours, or (in a workspace
    * someone shared with you) theirs. `echo: false` leaves the prompt out of the chat (it's there already).
+   * Returns the request's id (undefined when you can't ask there).
    */
-  askOwnClaude(prompt: string, channel: string, urgent = false, echo = true): void {
+  askOwnClaude(prompt: string, channel: string, urgent = false, echo = true): string | undefined {
     const shared = this.sharing.sharedFor(channel);
     if (shared && shared.role !== 'contribute') {
       this.toast(`You can follow ${shared.name}, but not ask its Claude. Ask the owner to let you contribute`, 'warn');
-      return;
+      return undefined;
     }
     // Load the saved conversation first, so what's said now is kept with it.
     if (!shared && channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
     if (echo) this.sendChat(prompt, false, channel);
-    this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent);
+    return this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent);
   }
 
   /** Run your Claude for someone else in one of your workspaces (they were invited to work there). */
@@ -552,9 +554,24 @@ export class Session {
     return this.agent?.nameTask ? this.agent.nameTask(prompt).catch(() => slugify(prompt)) : slugify(prompt);
   }
 
+  /** A short name for a new plan (undefined without your Claude, or when the model couldn't). */
+  async titlePlan(goal: string): Promise<string | undefined> {
+    return this.agent?.titlePlan ? this.agent.titlePlan(goal).catch(() => undefined) : undefined;
+  }
+
   /** What a project's setup should be after it failed in a worktree (undefined without your Claude). */
   async fixSetup(dir: string, failed: string, output: string): Promise<SetupFix | undefined> {
     return this.agent?.fixSetup ? this.agent.fixSetup(dir, failed, output).catch(() => undefined) : undefined;
+  }
+
+  /** Your Claude can write a task from a description (Tasks' New Task). */
+  get draftsTasks(): boolean {
+    return Boolean(this.agent?.draftTask);
+  }
+
+  /** A task written from a description by your Claude (undefined on any trouble, or without it). */
+  async draftTask(text: string, ctx: DraftContext): Promise<TaskDraft | undefined> {
+    return this.agent?.draftTask ? this.agent.draftTask(text, ctx).catch(() => undefined) : undefined;
   }
 
   /** Plan first in this conversation: Claude investigates read-only, then proposes a plan. */

@@ -1,4 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -35,6 +37,28 @@ function addDependencies(dir: string): void {
   writeFileSync(path.join(dir, 'node_modules', 'left-pad', 'index.js'), 'x'.repeat(300_000));
 }
 
+/**
+ * A project with a worktree a Claude Code sub-agent left (in .claude/worktrees), added to Klaud.
+ * Its own, since usage.spec's Clean Up… removes the demo's finished sub-agent worktrees.
+ */
+async function addAgentProject(page: Page): Promise<void> {
+  const repo = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-agents-')), 'agents-app');
+  const git = (...args: string[]): void => void execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd: repo, stdio: 'pipe' });
+  mkdirSync(repo, { recursive: true });
+  git('init', '-q', '-b', 'main');
+  writeFileSync(path.join(repo, 'README.md'), '# agents\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'init');
+  git('worktree', 'add', '-q', '-b', 'agent-e2e0wt', path.join(repo, '.claude', 'worktrees', 'agent-e2e0wt'));
+  await sidebar(page).getByRole('button', { name: /Add a project/ }).first().click();
+  await page.getByRole('menuitem', { name: 'Add Projects…' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Add projects' });
+  await sheet.getByRole('textbox', { name: 'Folder path' }).fill(repo);
+  await sheet.getByRole('button', { name: 'Add', exact: true }).last().click();
+  await sheet.getByRole('button', { name: 'Done' }).click();
+  await expect(sheet).toBeHidden();
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
@@ -42,11 +66,12 @@ test.beforeEach(async ({ page }) => {
 
 test('lists every worktree with who made it and whether it’s done; filters narrow it', async ({ page }) => {
   addDependencies(await folderOf(page, 'webhook-retries'));
+  await addAgentProject(page);
   await sidebar(page).getByRole('button', { name: 'Worktrees' }).click();
   await expect(page.getByRole('heading', { name: 'Worktrees' })).toBeVisible();
   await expect(row(page, 'add-auth')).toBeVisible();
   await expect(row(page, 'add-auth')).toContainText('Klaud');
-  // The demo's sub-agent worktrees: Claude's, with who started them (or that nothing says).
+  // Sub-agent worktrees: Claude's, with who started them (or that nothing says).
   await page.getByRole('tab', { name: /^Sub-agents/ }).click();
   await expect(grid(page).getByRole('row').filter({ hasText: 'Sub-agent' }).first()).toBeVisible();
   await expect(row(page, 'add-auth')).toHaveCount(0);
@@ -56,16 +81,16 @@ test('lists every worktree with who made it and whether it’s done; filters nar
   await shot(page, 'worktrees-page');
 });
 
-test('Free Up Space clears dependencies and keeps the worktree', async ({ page }) => {
+test('Remove Build Files clears dependencies and keeps the worktree', async ({ page }) => {
   const dir = await folderOf(page, 'webhook-retries');
   await sidebar(page).getByRole('button', { name: 'Worktrees' }).click();
   await row(page, 'webhook-retries').getByRole('checkbox').check();
   const bar = page.getByRole('toolbar', { name: 'Selected worktrees' });
   await expect(bar).toContainText('1 selected');
-  await bar.getByRole('button', { name: 'Free Up Space…' }).click();
-  const alert = page.getByRole('alertdialog', { name: /Free up space in 1 worktree\?/ });
-  await expect(alert).toContainText('Your files, changes and ignored files like .env stay');
-  await alert.getByRole('button', { name: 'Free Up Space' }).click();
+  await bar.getByRole('button', { name: 'Remove Build Files…' }).click();
+  const alert = page.getByRole('alertdialog', { name: /Remove build files from 1 worktree\?/ });
+  await expect(alert).toContainText('Your work stays: files, commits, uncommitted changes, ignored files like .env');
+  await alert.getByRole('button', { name: 'Remove Build Files' }).click();
   await expect.poll(() => existsSync(path.join(dir, 'node_modules')), { timeout: 15_000 }).toBe(false);
   expect(existsSync(path.join(dir, 'package.json'))).toBe(true);
   await expect(row(page, 'webhook-retries')).toBeVisible();

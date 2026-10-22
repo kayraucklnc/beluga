@@ -5,11 +5,11 @@ describe('Activity opens the chat a session belongs to', () => {
   const ws = (id: string, extra: object) => ({ id, kind: 'worktree', external: true, archived: false, ...extra });
   const projects = [{ workspaces: [ws('conductor', {}), ws('old', { archived: true }), ws('mine', { external: false }), ws('main', { kind: 'main', external: false })] }] as never;
 
-  it('a worktree made outside Klaud opens its chat; anything else stays a live transcript', () => {
+  it('a session in any folder Klaud knows opens its chat; archived or unknown stays a transcript', () => {
     expect(chatOf({ projects }, { workspaceId: 'conductor' })).toBe('conductor');
     expect(chatOf({ projects }, { workspaceId: 'old' })).toBeUndefined();
-    expect(chatOf({ projects }, { workspaceId: 'mine' })).toBeUndefined();
-    expect(chatOf({ projects }, { workspaceId: 'main' })).toBeUndefined();
+    expect(chatOf({ projects }, { workspaceId: 'mine' })).toBe('mine');
+    expect(chatOf({ projects }, { workspaceId: 'main' })).toBe('main');
     expect(chatOf({ projects }, { workspaceId: 'gone' })).toBeUndefined();
     expect(chatOf({ projects }, {})).toBeUndefined();
   });

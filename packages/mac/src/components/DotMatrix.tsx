@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
+import { joinLive } from '../lib/live-motion.js';
 import s from './dot-matrix.module.css';
 
 /**
  * Claude at work: a tiny 5×5 dot matrix (corners off, so it reads round) whose dots brighten in
- * turning petals and rings, after dotmatrix's "circular 7" loader. Every one on screen shares one
- * animation frame and writes its dots' opacity directly (no React renders). With Reduce Motion it
- * holds still, half lit.
+ * turning petals and rings, after dotmatrix's "circular 7" loader. Every one on screen moves with
+ * the live clock (lib/live-motion.ts), writing its dots' opacity directly (no React renders). With
+ * Reduce Motion it holds still, half lit; while you're not looking at Klaud it rests where it is.
  */
 
 const N = 5;
@@ -27,56 +28,15 @@ export function dotOpacity(row: number, col: number, t: number): number {
   return BASE + (PEAK - BASE) * (0.68 * petal + 0.22 * ringWave + 0.1 * chord);
 }
 
-type Painter = (t: number) => void;
-const painters = new Set<Painter>();
-let frame = 0;
-
-const still = (): boolean => document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-function loop(now: number): void {
-  frame = 0;
-  // Reduce Motion turned on meanwhile: every matrix rests at the same still frame.
-  if (still()) return void painters.forEach((paint) => paint(0));
-  const t = ((now % CYCLE_MS) / CYCLE_MS) * Math.PI * 2;
-  for (const paint of painters) paint(t);
-  if (painters.size) frame = requestAnimationFrame(loop);
-}
-
-/** Start (or settle) every matrix on screen: when one appears, and when Reduce Motion changes. */
-function wake(): void {
-  if (!painters.size) return;
-  if (still()) painters.forEach((paint) => paint(0));
-  else if (!frame) frame = requestAnimationFrame(loop);
-}
-
-let watching = false;
-function watchMotion(): void {
-  if (watching) return;
-  watching = true;
-  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', wake);
-  // Settings › Appearance › Reduce motion sets data-motion on the document.
-  new MutationObserver(wake).observe(document.documentElement, { attributes: true, attributeFilter: ['data-motion'] });
-}
-
-function join(paint: Painter): () => void {
-  watchMotion();
-  painters.add(paint);
-  wake();
-  return () => {
-    painters.delete(paint);
-    if (!painters.size && frame) {
-      cancelAnimationFrame(frame);
-      frame = 0;
-    }
-  };
-}
-
 /** `label` unset: decorative (it sits in a row that already says what's going on). */
 export function DotMatrix({ size = 13, label, className }: { size?: number; label?: string; className?: string }) {
   const box = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    const dots = [...(box.current?.children ?? [])] as HTMLElement[];
-    return join((t) => {
+    const el = box.current;
+    if (!el) return;
+    const dots = [...el.children] as HTMLElement[];
+    return joinLive(el, (now) => {
+      const t = now === null ? 0 : ((now % CYCLE_MS) / CYCLE_MS) * Math.PI * 2;
       CELLS.forEach((c, i) => {
         const el = dots[i];
         if (el) el.style.opacity = dotOpacity(c.row, c.col, t).toFixed(3);

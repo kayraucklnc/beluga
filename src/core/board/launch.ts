@@ -4,6 +4,7 @@ import path from 'node:path';
 import { klaudHome } from '../home.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
+import type { DraftContext } from '../../agent/task-drafter.js';
 import { Board } from './board.js';
 import { seedDemoBoard } from './demo.js';
 import { attachBoard, detachBoard } from './registry.js';
@@ -43,6 +44,7 @@ export function launchBoard(host: BoardHost): () => void {
     selfId: () => session.selfId,
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'You',
     askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
+    ...(session.draftsTasks ? { draftTask: (text: string, ctx: DraftContext) => session.draftTask(text, ctx) } : {}),
   });
   attachBoard(session, work);
   // Plans: drafted in a conversation, approved onto the board, run milestone by milestone.
@@ -54,6 +56,12 @@ export function launchBoard(host: BoardHost): () => void {
     ...(session.workspaces ? { controller: session.workspaces } : {}),
     askClaude: (prompt, channel, echo) => session.askOwnClaude(prompt, channel, false, echo),
     intend: (intent) => session.intend(intent),
+    // A task whose Claude stopped: is its process there, and taking over to wake it.
+    alive: (channel) => session.host.runningIn(channel),
+    takeOver: (channel) => session.host.takeOver(channel),
+    // The head Claude's steered messages go in the way Steer Now does (interrupting a long command or a dead run).
+    promote: (requestId) => session.host.promote(requestId),
+    titlePlan: (goal) => session.titlePlan(goal),
   });
   attachPlans(session, planWork);
   let stopSeed = (): void => undefined;

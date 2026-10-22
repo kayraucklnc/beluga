@@ -170,7 +170,7 @@ async function macClipboardPng(dir: string): Promise<string | undefined> {
  * scales images down to about 1568 pixels on the long side anyway.
  */
 async function shrinkImage(file: string): Promise<string> {
-  const out = file.replace(/\.png$/, '.jpg');
+  const out = /\.png$/i.test(file) ? file.replace(/\.png$/i, '.jpg') : file.replace(/(\.\w+)?$/, '.small.jpg');
   try {
     for (const [edge, quality] of [['2000', '80'], ['1568', '60']] as const) {
       await run('sips', ['-s', 'format', 'jpeg', '-s', 'formatOptions', quality, '-Z', edge, file, '--out', out]);
@@ -226,6 +226,36 @@ export async function importImage(src: string, dir = attachmentsDir()): Promise<
   const file = path.join(dir, `${stamp()}${path.extname(src).toLowerCase()}`);
   await fs.copyFile(src, file);
   return file;
+}
+
+/** Copy an image file in, made smaller when it's too big (a Retina screenshot whose path was pasted). */
+export async function importImageFitting(src: string, dir = attachmentsDir()): Promise<string> {
+  await fs.mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${stamp()}${path.extname(src).toLowerCase()}`);
+  await fs.copyFile(src, file);
+  return statSync(file).size > MAX_ATTACHMENT_BYTES ? shrinkImage(file) : file;
+}
+
+/** What a pasted path is on this Mac, so the box can attach it (it only looks). */
+export interface PathInfo {
+  /** Absolute, with "~" expanded. */
+  readonly path: string;
+  readonly name: string;
+  readonly kind: 'file' | 'folder' | 'missing';
+  readonly size: number;
+  readonly image: boolean;
+}
+
+export function pathInfo(p: string): PathInfo {
+  const abs = p.replace(/^~(?=$|\/)/, os.homedir());
+  const base = { path: abs, name: path.basename(abs), size: 0, image: IMAGE_EXT.test(abs) };
+  if (!path.isAbsolute(abs)) return { ...base, kind: 'missing' };
+  try {
+    const st = statSync(abs);
+    return { ...base, kind: st.isFile() ? 'file' : st.isDirectory() ? 'folder' : 'missing', size: st.size };
+  } catch {
+    return { ...base, kind: 'missing' };
+  }
 }
 
 /** Save image bytes a screen sent (a paste or a drop in the Mac app) into the attachments folder. */

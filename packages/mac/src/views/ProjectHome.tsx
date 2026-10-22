@@ -1,6 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { PullRequest } from '@klaud/core/work-store.js';
+import { describePr } from '@klaud/shared/format.js';
+import { isPlanOwned } from '@klaud/core/plans/owner.js';
 import { activityOf, stateOf } from '@klaud/ui/workspace-models.js';
 import type { Project, Workspace } from '@klaud/workspaces/types.js';
+import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, type Plan } from '@klaud/core/plans/model.js';
 import { EarningsPill } from '../components/EarningsPill.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
@@ -19,20 +23,28 @@ import { GitHubRow } from './project/GitHubRow.js';
 import { MainSyncBar } from './project/MainSyncBar.js';
 import { outsideOf } from '../layout/outside-model.js';
 import { openSheet } from '../lib/sheets.js';
+import { TonePill } from '../plans/marks.js';
+import { planStatus, plansOf, titleOf } from '../plans/plans-model.js';
+import { usePlanActions, usePlanView, usePlans } from '../plans/use-plans.js';
 import d from '../chat/draft.module.css';
 import s from './project-home.module.css';
 
 /**
  * A project's home: what you see when you click a project. Its main folder is never worked in,
- * so the big box starts work in a new worktree (or just asks a question about the project),
- * and below are its worktrees, the questions asked in main, and what was put away.
+ * so the big box starts work in a new worktree (or just asks a question about the project, or
+ * plans big work with Claude), and below are its plans, worktrees, the questions asked in main,
+ * and what was put away.
  */
 export function ProjectHome({ id }: { id: string }) {
   const project = useApp((st) => st.projects.find((p) => p.id === id && p.root));
   const log = useApp((st) => st.log);
   const conflicts = useApp((st) => st.conflicts);
+  const prs = useApp((st) => st.prs);
+  const plansState = useApp((st) => st.plans);
+  const board = useApp((st) => st.board);
   if (!project) return <Empty icon="folder" title="This project isn’t here anymore" detail="It may have been hidden or moved. Pick another one in the sidebar." />;
-  const model = homeModel({ log, conflicts }, project);
+  // A plan is one row: its conversation and its tasks' worktrees aren't counted or listed on their own.
+  const model = homeModel({ log, conflicts, prs }, { ...project, workspaces: project.workspaces.filter((w) => !isPlanOwned({ plans: plansState, board }, w.id)) });
   return (
     <div className={s.page} aria-label={`${project.name} home`}>
       <div className={s.column}>
@@ -104,7 +116,7 @@ function Header({ model }: { model: HomeModel }) {
   );
 }
 
-type Mode = 'worktree' | 'ask';
+type Mode = 'worktree' | 'ask' | 'plan';
 
 /** The branches a new worktree can start from (the default first). */
 function useBranches(projectId: string): { base: string; branches: readonly string[] } | undefined {
@@ -128,8 +140,9 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 
 /**
  * "What do you want to do in <project>?": New Worktree (the default: Return makes a worktree
- * from the latest origin, named after the task, and Claude starts there) or Just Ask (a
- * questions-only chat in the main folder).
+ * from the latest origin, named after the task, and Claude starts there), Just Ask (a
+ * questions-only chat in the main folder) or New Plan (the text is the goal: the plan's chat
+ * opens and Claude starts planning; with no text, the New Plan sheet).
  */
 function HomeComposer({ project }: { project: Project }) {
   const api = useApi();
@@ -141,6 +154,9 @@ function HomeComposer({ project }: { project: Project }) {
   const [base, setBase] = useState<string>();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [autonomy, setAutonomy] = useState<Autonomy>(DEFAULT_AUTONOMY);
+  const plans = usePlanActions();
+  const plansOn = usePlans().enabled;
   const branches = useBranches(project.id);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -148,6 +164,7 @@ function HomeComposer({ project }: { project: Project }) {
     setName('');
     setBase(undefined);
     setMode('worktree');
+    setAutonomy(DEFAULT_AUTONOMY);
     ref.current?.focus();
   }, [project.id]);
   useLayoutEffect(() => {
@@ -157,8 +174,10 @@ function HomeComposer({ project }: { project: Project }) {
     el.style.height = `${Math.min(Math.max(el.scrollHeight, 60), 10 * 20 + 20)}px`;
   }, [text]);
   const worktree = mode === 'worktree';
+  const plan = mode === 'plan';
   const task = text.trim();
-  const ready = worktree ? Boolean(task || name.trim()) : Boolean(task);
+  // A plan with no goal yet opens the sheet, so the button is always ready.
+  const ready = worktree ? Boolean(task || name.trim()) : plan || Boolean(task);
   const chosen = base ?? branches?.base ?? project.base;
   const options = branches?.branches.length ? branches.branches : chosen ? [chosen] : [];
   const sendKeys = prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`;
@@ -174,6 +193,18 @@ function HomeComposer({ project }: { project: Project }) {
     }
     if (!ready || busy) {
       if (!ready) toast(client, worktree ? 'Describe the task, or give the worktree a name' : 'Type your question first', 'info');
+      return;
+    }
+    if (plan) {
+      if (!task) {
+        openSheet({ kind: 'new_plan', projectId: project.id });
+        return;
+      }
+      // The plan's page and chat open on their own; Claude starts planning from the text.
+      setBusy(true);
+      const made = await plans.act(() => plans.api.create({ projectId: project.id, goal: task, autonomy }));
+      setBusy(false);
+      if (made) setText('');
       return;
     }
     if (worktree) {
@@ -220,6 +251,8 @@ function HomeComposer({ project }: { project: Project }) {
           options={[
             { value: 'worktree', label: 'New Worktree', icon: 'branch', hint: 'Claude works on its own branch and folder, made from the latest origin' },
             { value: 'ask', label: 'Just Ask', icon: 'chat', hint: 'A question about the project: Claude reads the main folder and changes nothing' },
+            // Plans run in the Klaud app only.
+            ...(plansOn ? [{ value: 'plan' as const, label: 'New Plan', icon: 'flag' as const, hint: 'Big work: Claude cuts it into milestones and tasks; nothing reaches the board until you approve' }] : []),
           ]}
         />
       </div>
@@ -228,8 +261,8 @@ function HomeComposer({ project }: { project: Project }) {
         <textarea
           ref={ref}
           className={`${s.input} selectable`}
-          aria-label={worktree ? 'Task for the new worktree' : `Question about ${project.name}`}
-          placeholder={worktree ? 'Describe a task: “Add a health check endpoint with a test”' : `Ask about ${project.name}…`}
+          aria-label={worktree ? 'Task for the new worktree' : plan ? `Goal for a plan in ${project.name}` : `Question about ${project.name}`}
+          placeholder={worktree ? 'Describe a task: “Add a health check endpoint with a test”' : plan ? 'What should be built, and what done looks like: “Let customers pay by card, with refunds from the admin”' : `Ask about ${project.name}…`}
           value={text}
           rows={3}
           onChange={(e) => setText(e.target.value)}
@@ -250,6 +283,11 @@ function HomeComposer({ project }: { project: Project }) {
                 <input className={`${d.name} ${s.nameInput} selectable`} aria-label="Worktree name" placeholder="from the task" value={name} maxLength={60} spellCheck={false} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), void send())} />
               </label>
             </>
+          ) : plan ? (
+            <span className={s.note}>
+              <Icon name="flag" size={12} />
+              Nothing reaches the board until you approve the plan.
+            </span>
           ) : (
             <span className={s.note}>
               <Icon name="eye" size={12} />
@@ -257,10 +295,16 @@ function HomeComposer({ project }: { project: Project }) {
             </span>
           )}
           <span className={s.flex} />
-          <Tip label={worktree ? 'Make the branch and folder, then Claude starts on the task' : 'Start a questions-only chat in the main folder'} keys={sendKeys}>
+          {plan ? (
+            <label className={d.field}>
+              <span className={d.fieldLabel}>Runs</span>
+              <Select<Autonomy> className={d.select} size="small" label="How it runs" value={autonomy} onChange={setAutonomy} options={AUTONOMIES.map((a) => ({ value: a, label: AUTONOMY_INFO[a].label, description: AUTONOMY_INFO[a].summary }))} />
+            </label>
+          ) : null}
+          <Tip label={worktree ? 'Make the branch and folder, then Claude starts on the task' : plan ? (task ? 'Claude reads the code and drafts milestones and tasks with you' : 'Write the goal in the New Plan sheet') : 'Start a questions-only chat in the main folder'} keys={sendKeys}>
             <button type="button" className={cx(d.create, ready && d.createReady)} aria-disabled={!ready || busy} onClick={() => void send()}>
-              <Icon name={worktree ? 'branch' : 'chat'} size={12} />
-              {worktree ? 'Create Worktree' : 'Ask'}
+              <Icon name={worktree ? 'branch' : plan ? 'flag' : 'chat'} size={12} />
+              {worktree ? 'Create Worktree' : plan ? 'Plan with Claude' : 'Ask'}
               <span className={d.createKey}>{sendKeys}</span>
             </button>
           </Tip>
@@ -272,9 +316,13 @@ function HomeComposer({ project }: { project: Project }) {
 
 function Lists({ model }: { model: HomeModel }) {
   const overview = useOpenOverview();
-  const { project, worktrees, asks, archived } = model;
+  const { project, worktrees, archived } = model;
+  // A plan's own conversation is listed under Plans, not as a question.
+  const planHomes = new Set(usePlans().plans.map((p) => p.home));
+  const asks = model.asks.filter((w) => !planHomes.has(`ws:${w.id}`));
   return (
     <div className={s.lists}>
+      <HomePlans projectId={project.id} />
       <Section
         title="Worktrees"
         count={worktrees.length}
@@ -316,6 +364,61 @@ function Lists({ model }: { model: HomeModel }) {
   );
 }
 
+/** How many plans Project Home lists before "Show All". */
+const HOME_PLANS = 3;
+
+/** The project's plans (running first), a few rows each opening its plan; none: nothing shown. */
+function HomePlans({ projectId }: { projectId: string }) {
+  const state = usePlans();
+  const { openList } = usePlanActions();
+  const plans = plansOf(state, projectId);
+  if (!plans.length) return null;
+  return (
+    <Section
+      title="Plans"
+      count={plans.length}
+      action={
+        plans.length > HOME_PLANS ? (
+          <Button size="small" variant="quiet" onClick={() => openList(projectId)}>
+            Show All Plans
+          </Button>
+        ) : null
+      }
+    >
+      {plans.slice(0, HOME_PLANS).map((p) => (
+        <PlanRow key={p.id} plan={p} />
+      ))}
+    </Section>
+  );
+}
+
+function PlanRow({ plan }: { plan: Plan }) {
+  const view = usePlanView(plan)!;
+  const { open } = usePlanActions();
+  const status = planStatus(view);
+  const title = titleOf(plan);
+  return (
+    <div role="listitem">
+      <button type="button" className={s.row} onClick={() => open(plan.id)} aria-label={`${title}: ${status.label}`}>
+        <span className={s.rowIcon}>
+          <Icon name="flag" size={13} />
+        </span>
+        <span className={s.rowMain}>
+          <span className={s.rowTitle}>
+            <span className={s.rowName}>{title}</span>
+          </span>
+          <span className={s.rowLast}>{plan.body ? `${view.done} of ${view.total} tasks done` : `${view.milestones.length} milestones · ${view.total} tasks · draft`}</span>
+        </span>
+        <TonePill tone={status.tone} live={status.tone === 'claude'}>
+          {status.label}
+        </TonePill>
+        <span className={s.rowWhen}>{agoText(plan.updatedAt)}</span>
+        <Icon name="chevronRight" size={11} className={s.rowChevron} />
+      </button>
+    </div>
+  );
+}
+
 function Section({ title, count, hint, action, children }: { title: string; count: number; hint?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className={s.section} aria-label={title}>
@@ -334,28 +437,86 @@ function Section({ title, count, hint, action, children }: { title: string; coun
   );
 }
 
-/** One worktree or question: its state, name, last line and when; a click opens it. */
+const PR_STATE: Record<PullRequest['state'], string> = { OPEN: 'Open', MERGED: 'Merged', CLOSED: 'Closed' };
+
+/** A worktree's PR on its row: #n, its state, and a mark for its checks (✓ ✗ or running). A button: it opens the PR sheet. */
+function PrChip({ pr, onOpen }: { pr: PullRequest; onOpen?: () => void }) {
+  const open = pr.state === 'OPEN';
+  const tone = pr.state === 'MERGED' ? 'merged' : !open ? 'closed' : pr.checks === 'failing' || pr.conflicts ? 'failing' : pr.checks;
+  const Tag = onOpen ? 'button' : 'span';
+  return (
+    <Tag
+      {...(onOpen ? { type: 'button' as const, onClick: onOpen, 'aria-label': `${describePr(pr)}: show its checks and merge` } : {})}
+      className={cx(s.rowPr, s[`pr_${tone}`])}
+      data-pr-chip={pr.number}
+      data-pr-state={pr.state}
+      data-pr-checks={pr.checks}
+      title={onOpen ? `${describePr(pr)}: click for its checks and to merge` : describePr(pr)}
+    >
+      <Icon name={pr.state === 'MERGED' ? 'merge' : 'pr'} size={11} />
+      <span>#{pr.number}</span>
+      <span className={s.rowPrState}>{pr.draft && open ? 'Draft' : PR_STATE[pr.state]}</span>
+      {open && pr.checks !== 'none' ? (
+        <span className={s.rowPrChecks} aria-label={`checks ${pr.checks}`}>
+          {pr.checks === 'pending' ? <span className={s.rowPrRunning} /> : <Icon name={pr.checks === 'passing' ? 'check' : 'x'} size={10} />}
+        </span>
+      ) : null}
+    </Tag>
+  );
+}
+
+/** One worktree or question: its state, name, last line and when; a click opens it (its PR: the PR sheet). */
 function Row({ ws, ask }: { ws: Workspace; ask?: boolean }) {
   const actions = useActions();
   const state = useApp((st) => st);
   const st = stateOf(state, ws, 0);
   const act = activityOf(state.log, `ws:${ws.id}`);
   const title = ws.kind === 'main' ? 'Main folder conversation' : ws.name;
-  return (
-    <div role="listitem">
-      <button type="button" className={cx(s.row, ws.archived && s.rowArchived)} onClick={() => actions.run(ws.archived ? { type: 'archived_menu', id: ws.id } : { type: 'open_ws', id: ws.id })} aria-label={`${title}: ${st.label}`}>
-        <span className={s.rowIcon}>{ask ? <Icon name="chat" size={13} /> : <Dot tone={st.tone === 'claude' ? 'claude' : st.tone} live={st.tone === 'claude'} />}</span>
-        <span className={s.rowMain}>
-          <span className={s.rowTitle}>
-            <span className={s.rowName}>{title}</span>
-            {ws.branch && !ask ? <span className={s.rowBranch}>{ws.branch}</span> : null}
-          </span>
-          {act.last ? <span className={s.rowLast}>{act.last}</span> : null}
+  const pr = ws.kind === 'worktree' && !ask ? state.prs[ws.id] : undefined;
+  const open = (): void => actions.run(ws.archived ? { type: 'archived_menu', id: ws.id } : { type: 'open_ws', id: ws.id });
+  // The PR chip is its own button (a button can't hold another): it opens the PR sheet, right here.
+  const chip = pr ? <PrChip pr={pr} {...(ws.archived ? {} : { onOpen: () => actions.run({ type: 'ws', id: ws.id, action: 'pr' }) })} /> : null;
+  const label = `${title}: ${st.label}${pr ? `, ${describePr(pr)}` : ''}`;
+  const parts = (
+    <>
+      <span className={s.rowIcon}>{ask ? <Icon name="chat" size={13} /> : <Dot tone={st.tone === 'claude' ? 'claude' : st.tone} live={st.tone === 'claude'} />}</span>
+      <span className={s.rowMain}>
+        <span className={s.rowTitle}>
+          <span className={s.rowName}>{title}</span>
+          {ws.branch && !ask ? <span className={s.rowBranch}>{ws.branch}</span> : null}
         </span>
-        <span className={cx(s.rowState, s[`tone_${st.tone}`])}>{ask ? '' : st.label}</span>
-        <span className={s.rowWhen}>{agoText(lastActive(state, ws))}</span>
-        <Icon name="chevronRight" size={11} className={s.rowChevron} />
+        {act.last ? <span className={s.rowLast}>{act.last}</span> : null}
+      </span>
+    </>
+  );
+  const tail = (
+    <>
+      <span className={cx(s.rowState, s[`tone_${st.tone}`])}>{ask ? '' : st.label}</span>
+      <span className={s.rowWhen}>{agoText(lastActive(state, ws))}</span>
+      <Icon name="chevronRight" size={11} className={s.rowChevron} />
+    </>
+  );
+  if (!pr) {
+    return (
+      <div role="listitem">
+        <button type="button" className={cx(s.row, ws.archived && s.rowArchived)} onClick={open} aria-label={label}>
+          {parts}
+          {tail}
+        </button>
+      </div>
+    );
+  }
+  // With a PR the chip sits beside the open button; a click anywhere else on the row (or Return on the button) bubbles up and opens it.
+  const click = (e: React.MouseEvent): void => {
+    if (!(e.target as Element).closest('button[data-pr-chip]')) open();
+  };
+  return (
+    <div role="listitem" className={cx(s.row, s.rowSplit, ws.archived && s.rowArchived)} onClick={click}>
+      <button type="button" className={s.rowOpen} aria-label={label}>
+        {parts}
       </button>
+      {chip}
+      {tail}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { shownChannel } from '@klaud/core/store.js';
+import { planOf } from '@klaud/core/plans/owner.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { Avatar } from '../components/ui.js';
@@ -7,7 +8,7 @@ import { useActions } from '../lib/actions.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { openDm, openGroup } from '../network/use-net.js';
-import { IDLE_SIGNAL, type UnreadEntry, unreadEntries, workspaceSignal } from './attention-model.js';
+import { IDLE_SIGNAL, type Signal, type UnreadEntry, planSignal, unreadEntries, workspaceSignal } from './attention-model.js';
 import { SignalMark, nameClass, signalClass } from './signal-marks.js';
 import { Row, Section } from './sidebar-parts.js';
 import m from './signal.module.css';
@@ -28,6 +29,8 @@ function EntryIcon({ e }: { e: UnreadEntry }) {
       return <Avatar name={e.name} id={e.peerId} size={16} />;
     case 'group':
       return <Icon name="people" size={14} />;
+    case 'plan':
+      return <Icon name="flag" size={14} />;
   }
 }
 
@@ -42,7 +45,16 @@ function whereOf(e: UnreadEntry, ownerName: (id: string) => string): string {
       return 'Message';
     case 'group':
       return 'Group';
+    case 'plan':
+      return e.project?.name ?? 'Plan';
   }
+}
+
+/** A row kept while you're in it: as it is now (read, it's plain). */
+function nowOf(state: Parameters<typeof planSignal>[0], e: UnreadEntry): Signal {
+  if (e.kind === 'workspace') return workspaceSignal(state, e.ws);
+  if (e.kind === 'plan') return planSignal(state, e.plan);
+  return IDLE_SIGNAL;
 }
 
 export function UnreadSection() {
@@ -50,7 +62,9 @@ export function UnreadSection() {
   const { client } = useKlaud();
   const prefs = usePrefs();
   const state = useApp((st) => st);
-  const here = shownChannel(state.view);
+  // Where you are: a plan counts as one place (its page, its conversation and its tasks' worktrees).
+  const inPlan = state.view.kind === 'plan' ? state.view.id : state.view.kind === 'workspace' ? planOf(state, state.view.id)?.id : undefined;
+  const here = inPlan ? `plan:${inPlan}` : shownChannel(state.view);
   // The one you opened from here, and whether you've got there yet (opening it takes a moment).
   const [kept, setKept] = useState<{ entry: UnreadEntry; at: number; arrived: boolean } | undefined>();
   // Leaving it lets it go.
@@ -64,12 +78,14 @@ export function UnreadSection() {
   const entries = unreadEntries(state);
   const stay = kept && kept.entry.channel === here && !entries.some((e) => e.channel === here) ? kept.entry : undefined;
   // In the place it had, so nothing moves under the pointer.
-  const list = stay && kept ? [...entries.slice(0, kept.at), { ...stay, signal: stay.kind === 'workspace' ? workspaceSignal(state, stay.ws) : IDLE_SIGNAL }, ...entries.slice(kept.at)] : entries;
+  const list = stay && kept ? [...entries.slice(0, kept.at), { ...stay, signal: nowOf(state, stay) }, ...entries.slice(kept.at)] : entries;
   if (!list.length) return null;
   const ownerName = (id: string): string => state.peers.find((p) => p.peerId === id)?.name ?? 'Shared';
   const open = (e: UnreadEntry, at: number): void => {
     setKept({ entry: e, at, arrived: e.channel === here });
     if (e.kind === 'workspace') actions.run({ type: 'open_ws', id: e.ws.id });
+    // The plan, with its conversation; at the task that waits on you, so answering is one click on.
+    else if (e.kind === 'plan') actions.run({ type: 'view', view: { kind: 'plan', id: e.plan.id, ...(e.at?.task ? { task: e.at.task } : {}) } });
     else if (e.kind === 'shared') actions.run({ type: 'open_shared', owner: e.owner, id: e.id, tab: 'chat' });
     else if (e.kind === 'dm') openDm(client, e.peerId);
     else openGroup(client, e.groupId);

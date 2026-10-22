@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChatFile } from '@klaud/net/mesh/views.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
@@ -8,9 +8,12 @@ import { useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { quoted } from '../chat/message-menu.js';
+import { MentionHighlighter } from '../chat/MentionHighlighter.js';
+import { useSuggestions } from '../chat/Suggestions.js';
+import { usePastePaths } from '../chat/paste-paths.js';
 import { PendingTray } from './ChatFiles.js';
 import { addBlobs, addPaths, restorePending, takePending, usePending } from './attachments.js';
-import { type Ask, askLabel, askTo } from './chat-model.js';
+import { type Ask, type ChannelSuggestion, askLabel, askTo, channelSuggestions, channelWorld, mentionedAsk, mergeAsk } from './chat-model.js';
 import c from '../chat/composer.module.css';
 import s from './network.module.css';
 
@@ -44,22 +47,36 @@ async function pickFiles(client: ReturnType<typeof useKlaud>['client'], id: stri
   if (paths.length) await addPaths(client, id, paths);
 }
 
-/** The Claude button: nobody's (the default), yours, everyone's, or one person's, for the next message only. */
+/**
+ * The Claude button, for the next message only. Alone with your Claude: one toggle, "Add Claude".
+ * With others: the same toggle (yours), and beside it a chevron for everyone's or one person's.
+ */
 function AskButton({ ask, setAsk, people, me }: { ask: Ask | undefined; setAsk: (a: Ask | undefined) => void; people: readonly Person[]; me?: Person }) {
+  const mine = ask?.kind === 'me';
+  const toggle = (
+    <Tip label={mine ? 'Your Claude answers this message · click to just send it' : 'Your Claude answers this message, from this conversation · or type @claude'}>
+      <button type="button" className={cx(c.chip, people.length > 0 && s.askMain, mine && c.chipOn)} aria-pressed={mine} disabled={!me} onClick={() => setAsk(mine ? undefined : { kind: 'me' })}>
+        <Icon name="claude" size={13} />
+        Add Claude
+      </button>
+    </Tip>
+  );
+  if (!people.length) return toggle;
   const items: ActionItem[] = [
-    { label: 'Ask Your Claude', icon: 'claude', checked: ask?.kind === 'me', hint: 'It answers here, from this conversation', onSelect: () => setAsk({ kind: 'me' }) },
-    ...(people.length ? [{ label: people.length === 1 ? 'Ask Both Claudes' : 'Ask Everyone’s Claude', icon: 'people' as const, checked: ask?.kind === 'all', hint: 'Each answers from their own Mac', onSelect: () => setAsk({ kind: 'all' }) }] : []),
-    ...people.map((p, i) => ({ label: `Ask ${p.name}’s Claude`, separate: i === 0, checked: ask?.kind === 'person' && ask.peerId === p.peerId, onSelect: () => setAsk({ kind: 'person', peerId: p.peerId, name: p.name }) })),
-    ...(ask ? [{ label: 'Just Send the Message', separate: true, onSelect: () => setAsk(undefined) }] : []),
+    { label: 'Your Claude', icon: 'claude', checked: mine, hint: 'It answers here, from your Mac', onSelect: () => setAsk({ kind: 'me' }) },
+    { label: people.length === 1 ? 'Both Claudes' : 'Everyone’s Claude', icon: 'people', checked: ask?.kind === 'all', hint: 'Each answers from their own Mac', onSelect: () => setAsk({ kind: 'all' }) },
+    ...people.map((p, i) => ({ label: `${p.name}’s Claude`, separate: i === 0, checked: ask?.kind === 'person' && ask.peerId === p.peerId, hint: `From ${p.name}’s Mac`, onSelect: () => setAsk({ kind: 'person', peerId: p.peerId, name: p.name }) })),
+    ...(ask ? [{ label: 'Don’t Add a Claude', separate: true, onSelect: () => setAsk(undefined) }] : []),
   ];
   return (
-    <ActionsDropdown items={items} align="start">
-      <button type="button" className={cx(c.chip, ask && c.chipOn)} aria-label={ask ? `${askLabel(ask)} (change)` : 'Ask Claude'} disabled={!me}>
-        <Icon name="claude" size={13} />
-        {ask ? askLabel(ask, true) : 'Ask Claude'}
-        <Icon name="chevronDown" size={9} />
-      </button>
-    </ActionsDropdown>
+    <span className={s.askSplit} role="group" aria-label="Add Claude">
+      {toggle}
+      <ActionsDropdown items={items} align="start">
+        <button type="button" className={cx(c.chip, s.askMore, ask && !mine && c.chipOn)} aria-label="Add Someone Else’s Claude" disabled={!me}>
+          <Icon name="chevronDown" size={9} />
+        </button>
+      </ActionsDropdown>
+    </span>
   );
 }
 
@@ -68,7 +85,7 @@ function AskButton({ ask, setAsk, people, me }: { ask: Ask | undefined; setAsk: 
  * anywhere on the conversation) and, only when you choose, a Claude to answer. Return sends
  * (or ⌘Return, as in Settings); a failed send puts everything back.
  */
-export function NetComposer({ id, placeholder, people, me, send }: { id: string; placeholder: string; people: readonly Person[]; me?: Person; send: (out: Outgoing) => Promise<unknown> }) {
+export function NetComposer({ id, placeholder, people, me, send, addPeople }: { id: string; placeholder: string; people: readonly Person[]; me?: Person; send: (out: Outgoing) => Promise<unknown>; addPeople?: () => void }) {
   const { client } = useKlaud();
   const prefs = usePrefs();
   const [text, setText] = useState(() => drafts.get(id) ?? '');
@@ -76,6 +93,24 @@ export function NetComposer({ id, placeholder, people, me, send }: { id: string;
   const pending = usePending(id);
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  // @ and / as you type: the Claudes and people here, and the channel's commands.
+  const items = useMemo(() => (text ? channelSuggestions(text, { people, admin: Boolean(addPeople) }) : []), [text, people, addPeople]);
+  const world = useMemo(() => channelWorld(me, people), [me, people]);
+  const write = (next: string): void => {
+    setText(next);
+    sug.reset();
+  };
+  const run = (picked: ChannelSuggestion): void => {
+    if (!picked.command) return write(picked.value);
+    write('');
+    if (picked.command === 'claude') setAsk({ kind: 'me' });
+    else if (picked.command === 'claudes') setAsk({ kind: 'all' });
+    else if (picked.command === 'files') void pickFiles(client, id, picker.current);
+    else addPeople?.();
+  };
+  const sug = useSuggestions(items, text, run);
+  // A pasted path of a file on this Mac: the file goes, as if dropped.
+  const pastePaths = usePastePaths(ref, (files) => void addPaths(client, id, files.map((f) => f.path)));
   useEffect(() => {
     setText(drafts.get(id) ?? '');
     setAsk(undefined);
@@ -120,7 +155,8 @@ export function NetComposer({ id, placeholder, people, me, send }: { id: string;
     if (!canSend) return;
     const body = text.trim();
     const files = takePending(id);
-    const to = ask && me ? askTo(ask, me.peerId) : undefined;
+    // The button and the words' mentions ("@claude", "@claude:mia", "@claudes") together; the words stay as typed.
+    const to = me ? mergeAsk(ask ? askTo(ask, me.peerId) : undefined, mentionedAsk(body, me.peerId, people)) : undefined;
     setText('');
     setAsk(undefined);
     send({ text: body, files, ...(to ? { ask: to } : {}) }).catch(() => {
@@ -134,6 +170,7 @@ export function NetComposer({ id, placeholder, people, me, send }: { id: string;
   const label = ask ? `${askLabel(ask)} · ` : '';
   return (
     <div className={c.wrap}>
+      {sug.list}
       <div className={cx(c.box, ask && c.asking)}>
         {ask ? (
           <span className={c.askChip}>
@@ -145,36 +182,40 @@ export function NetComposer({ id, placeholder, people, me, send }: { id: string;
           </span>
         ) : null}
         <PendingTray id={id} items={pending} />
-        <textarea
-          ref={ref}
-          className={`${c.input} selectable`}
-          rows={1}
-          value={text}
-          placeholder={ask ? `${askLabel(ask)}: write a question, or just send and it reads the conversation` : placeholder}
-          aria-label={placeholder}
-          spellCheck
-          onChange={(e) => setText(e.target.value)}
-          onPaste={(e) => {
-            const files = [...e.clipboardData.items].flatMap((it) => (it.kind === 'file' ? [it.getAsFile()].filter((f): f is File => Boolean(f)) : []));
-            if (!files.length) return;
-            e.preventDefault();
-            void addBlobs(client, id, files);
-          }}
-          onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-            if (e.key === 'Escape' && ask) {
+        <div className={c.inputWrap}>
+          <MentionHighlighter text={text} world={world} input={ref} className={c.input ?? ''} />
+          <textarea
+            ref={ref}
+            className={`${c.input} ${c.overHighlight} selectable`}
+            rows={1}
+            value={text}
+            placeholder={ask ? `${askLabel(ask)}: write a question, or just send and it reads the conversation` : placeholder}
+            aria-label={placeholder}
+            spellCheck
+            onChange={(e) => write(e.target.value)}
+            onPaste={(e) => {
+              const files = [...e.clipboardData.items].flatMap((it) => (it.kind === 'file' ? [it.getAsFile()].filter((f): f is File => Boolean(f)) : []));
+              if (!files.length) return void pastePaths(e);
               e.preventDefault();
-              setAsk(undefined);
-              return;
-            }
-            if (e.key !== 'Enter') return;
-            const modKey = e.metaKey || e.ctrlKey;
-            const sends = prefs.sendWith === 'enter' ? !e.shiftKey && !modKey : modKey;
-            if (!sends) return;
-            e.preventDefault();
-            submit();
-          }}
-        />
+              void addBlobs(client, id, files);
+            }}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (sug.onKeyDown(e)) return;
+              if (e.key === 'Escape' && ask) {
+                e.preventDefault();
+                setAsk(undefined);
+                return;
+              }
+              if (e.key !== 'Enter') return;
+              const modKey = e.metaKey || e.ctrlKey;
+              const sends = prefs.sendWith === 'enter' ? !e.shiftKey && !modKey : modKey;
+              if (!sends) return;
+              e.preventDefault();
+              submit();
+            }}
+          />
+        </div>
         <div className={c.bar}>
           <IconButton icon="clip" label="Send Files…" onClick={() => void pickFiles(client, id, picker.current)} />
           <input

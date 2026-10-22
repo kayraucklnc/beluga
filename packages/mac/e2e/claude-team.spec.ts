@@ -67,12 +67,16 @@ test('a team of agents shows its members, its messages, and messages in transcri
   await expect(message.locator('strong', { hasText: 'check the copy' })).toBeVisible();
   await expect(log).toContainText('→ sent to writer: "Synergy" in the hero is jargon');
 
-  // The writer heard from the critic.
-  await page.getByRole('group', { name: 'Agents in this session' }).getByRole('button', { name: /^Write the pricing page/ }).click();
-  await expect(page.getByRole('log', { name: 'Agent Write the pricing page' }).locator('[data-received-message]')).toContainText('Message from critic');
+  // The writer heard from the critic (each agent opens its own page, back in Activity's team).
+  await sidebar(page).getByRole('button', { name: /^Activity/ }).click();
+  await team.getByRole('button', { name: /^Write the pricing page/ }).click();
+  await expect(page.getByRole('log', { name: 'Sub-agent Write the pricing page' }).locator('[data-received-message]')).toContainText('Message from critic');
 
-  // The lead's transcript says whom it messaged, by name.
-  await page.getByRole('group', { name: 'Agents in this session' }).getByRole('button', { name: /^Main conversation/ }).click();
+  // The lead's transcript says whom it messaged, by name: the session opens its folder's chat, whose strip opens it.
+  await sidebar(page).getByRole('button', { name: /^Activity/ }).click();
+  await session.getByRole('button', { name: /^Ship the pricing page.*Open Chat/ }).click();
+  const strip = page.getByRole('region', { name: 'Claude Code in this folder' });
+  await strip.getByRole('button', { name: /Ship the pricing page/ }).click();
   await expect(page.getByRole('log', { name: 'Claude Code session Ship the pricing page' })).toContainText('→ sent to critic: Check the copy for jargon');
 
   // Done: both answer, so they stop counting as running for the specs after this one.

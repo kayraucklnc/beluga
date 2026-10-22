@@ -62,7 +62,7 @@ export function LiveStrip({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-/** A worktree's info page: what's running in it right now, with a way to watch. */
+/** A worktree's info page: what's running in it right now, with a way to open it. */
 export function LivePanel({ workspaceId }: { workspaceId: string }) {
   const { client } = useKlaud();
   const sessions = useSessionsIn(workspaceId);
@@ -81,8 +81,8 @@ export function LivePanel({ workspaceId }: { workspaceId: string }) {
                 <span className={s.sessionTitle}>{x.title}</span>
               </span>
               <span className={cx(s.liveState, s[`tone_${st.tone}`])}>{st.label}</span>
-              <Button size="small" variant="primary" icon="eye" onClick={() => openActivity(client, x.id)}>
-                Watch Live
+              <Button size="small" variant="primary" icon="chevronRight" onClick={() => openActivity(client, x.id)}>
+                Open
               </Button>
             </div>
             {x.step ? <div className={s.livePanelStep}>{x.step}</div> : null}

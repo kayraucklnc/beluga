@@ -43,6 +43,25 @@ export function groupNotices(inbox: readonly Notice[], now = Date.now()): readon
   return groups.filter((g) => g.notices.length);
 }
 
+/** One row of the bell: a notice, or a plan's task news folded together under the plan. */
+export type NoticeEntry = { readonly kind: 'one'; readonly notice: Notice } | { readonly kind: 'plan'; readonly plan: string; readonly notices: readonly Notice[] };
+
+/** News from a plan's tasks (finished, stopped, pull requests): the plan's own notices and its questions stay rows. */
+const taskNews = (n: Notice): boolean => Boolean(n.plan) && n.tag !== 'milestone' && n.tag !== 'conflict' && n.kind !== 'needsYou';
+
+/** A plan's task news folds into one entry where its newest is (two or more; one alone stays a row). Order kept. */
+export function foldPlanNotices(list: readonly Notice[]): readonly NoticeEntry[] {
+  const byPlan = new Map<string, Notice[]>();
+  for (const n of list) if (taskNews(n)) (byPlan.get(n.plan!) ?? byPlan.set(n.plan!, []).get(n.plan!)!).push(n);
+  const out: NoticeEntry[] = [];
+  for (const n of list) {
+    const group = taskNews(n) ? byPlan.get(n.plan!) : undefined;
+    if (!group || group.length < 2) out.push({ kind: 'one', notice: n });
+    else if (group[0] === n) out.push({ kind: 'plan', plan: n.plan!, notices: group });
+  }
+  return out;
+}
+
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

@@ -1,14 +1,16 @@
 import type { PlanTools } from '../../agent/types.js';
 import type { Actor, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
+import type { CombineResult } from '../../workspaces/git.js';
 import type { Intent } from '../intents.js';
 import type { Store } from '../store.js';
 import type { WorkspaceController } from '../workspace-controller.js';
 import { ApplyError, applyDraft } from './apply.js';
 import type { BodyInput, PlanOp, TaskInput } from './edit.js';
-import { type Autonomy, type Plan, allTasks, planForHome, planTaskOfIssue } from './model.js';
+import { type Autonomy, type Plan, type TestsAt, allTasks, planForHome, planTaskOfIssue, planTitle } from './model.js';
 import { PlanPilot } from './pilot.js';
-import type { Plans } from './plans.js';
+import { type PlanGit, planGitOf } from './plan-git.js';
+import { type Plans, UNTITLED } from './plans.js';
 import { describePlan, headBrief, planningBrief, sizeWords, workerNote } from './prompt.js';
 
 /**
@@ -22,8 +24,21 @@ export interface PlansWorkDeps {
   readonly plans: Plans;
   readonly board: BoardWork;
   readonly controller?: WorkspaceController;
-  readonly askClaude: (prompt: string, channel: string, echo: boolean) => void;
+  /** Ask your Claude in a conversation; returns the request's id, when it can (to follow a steered message). */
+  readonly askClaude: (prompt: string, channel: string, echo: boolean) => string | void;
+  /** Steer a waiting message in now: the agent host's Steer Now (AgentHost.promote). */
+  readonly promote?: (requestId: string) => boolean;
   readonly intend: (intent: Intent) => void;
+  /** Combining a task's start from several branches (default: the project's folder, through the controller). */
+  readonly combine?: (projectId: string, key: string, branches: readonly string[], into?: string) => Promise<CombineResult>;
+  /** The plan's branch and pull request (default: the project's folder, through the controller; null: none). */
+  readonly git?: PlanGit | null;
+  /** The agent runner's run state, and taking over a stalled conversation (see watchdog.ts). */
+  readonly alive?: (channel: string) => boolean;
+  readonly takeOver?: (channel: string) => Promise<readonly string[]>;
+  readonly now?: () => number;
+  /** A short name for a new plan from its goal (a quick model call; undefined when there's none). */
+  readonly titlePlan?: (goal: string) => Promise<string | undefined>;
   readonly delayMs?: number;
 }
 
@@ -35,12 +50,20 @@ export class PlansWork {
 
   constructor(private readonly deps: PlansWorkDeps) {
     this.plans = deps.plans;
+    const git = deps.git === null ? undefined : (deps.git ?? (deps.controller?.manager ? planGitOf(deps.controller) : undefined));
     this.pilot = new PlanPilot({
       store: deps.store,
       plans: deps.plans,
       work: deps.board,
       askClaude: deps.askClaude,
       system: (channel, text) => deps.store.dispatch({ type: 'system', channel, text, level: 'info' }),
+      ...(deps.combine ? { combine: deps.combine } : deps.controller ? { combine: (projectId, key, branches, into) => deps.controller!.manager.combineBase(projectId, key, branches, into) } : {}),
+      ...(git ? { git } : {}),
+      ...(deps.controller ? { allowFixup: (channel, dir) => deps.controller!.allowFixup?.(channel, dir) } : {}),
+      ...(deps.alive ? { alive: deps.alive } : {}),
+      ...(deps.takeOver ? { takeOver: deps.takeOver } : {}),
+      ...(deps.promote ? { promote: deps.promote } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
       ...(deps.delayMs !== undefined ? { delayMs: deps.delayMs } : {}),
     });
     // A task of a plan: its worktree's Claude knows the plan and what runs beside it.
@@ -61,19 +84,34 @@ export class PlansWork {
    * A new plan with Claude: a conversation of its own in the project's main folder (Claude reads
    * the code there and changes nothing), and the plan's page. Claude starts planning from `goal`.
    */
-  async create(input: { readonly projectId: string; readonly goal: string; readonly autonomy?: Autonomy }): Promise<Plan> {
+  async create(input: { readonly projectId: string; readonly goal: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt }): Promise<Plan> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Plans need a project folder');
     const goal = input.goal.trim();
     if (!goal) throw new Error('Say what the plan is for');
-    const title = goal.replace(/\s+/g, ' ').slice(0, 48);
-    const chat = await controller.newChat(input.projectId, `Plan: ${title}`, undefined, { quiet: true });
+    const chat = await controller.newChat(input.projectId, UNTITLED, undefined, { quiet: true });
     if (!chat) throw new Error('Couldn’t start the plan’s conversation');
     const home = `${WS}${chat.id}`;
-    const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}) }, this.me());
+    const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}), ...(input.testsAt ? { testsAt: input.testsAt } : {}) }, this.me());
     this.deps.intend({ type: 'navigate', view: { kind: 'plan', id: plan.id } });
     this.deps.askClaude(goal, home, true);
+    // Named in a moment by a quick model (your message is never its name); Claude's plan_write names it after that.
+    void this.deps
+      .titlePlan?.(goal)
+      .then((title) => {
+        const named = title ? this.plans.autoTitle(plan.id, title) : undefined;
+        if (named) this.nameHome(named, UNTITLED);
+      })
+      .catch(() => undefined);
     return plan;
+  }
+
+  /** A plan's own conversation goes by the plan's name (in the sidebar too), unless you renamed it. */
+  private nameHome(plan: Plan, was: string): void {
+    const title = planTitle(plan);
+    if (title === was || !plan.home.startsWith(WS)) return;
+    const ws = this.deps.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === plan.home.slice(WS.length));
+    if (ws?.kind === 'chat' && (ws.name === UNTITLED || ws.name === was.slice(0, 40))) void this.deps.controller?.renameChat(ws.id, title);
   }
 
   /** A plan's own conversation, made quietly (the demo's plan). */
@@ -118,7 +156,11 @@ export class PlansWork {
   edit(id: string, ops: readonly PlanOp[]): Plan {
     const plan = this.plans.need(id);
     const retitle = ops.length === 1 && ops[0]!.op === 'retitle' && ops[0]!.goal === undefined && ops[0]!.title !== undefined;
-    if (retitle) return this.plans.retitle(id, ops[0]!.op === 'retitle' ? ops[0]!.title! : '', this.me());
+    if (retitle) {
+      const named = this.plans.retitle(id, ops[0]!.op === 'retitle' ? ops[0]!.title! : '', this.me());
+      this.nameHome(named, planTitle(plan));
+      return named;
+    }
     const direct = Boolean(plan.body) && !plan.draft;
     const next = this.plans.editDraft(id, ops, this.me());
     return direct && next.draft ? this.approve(id) : next;
@@ -142,8 +184,18 @@ export class PlansWork {
     return plan;
   }
 
+  /** When the plan runs its test suites: each milestone's check, or only the final step. */
+  setTestsAt(id: string, testsAt: TestsAt): Plan {
+    return this.plans.setTestsAt(id, testsAt, this.me());
+  }
+
   pass(id: string, milestone: string): Plan {
     return this.pilot.pass(id, milestone, this.me());
+  }
+
+  /** “Tidy up N merged task worktrees?”: only Yes merges and clears them away (see PlanPilot.tidyUp). */
+  tidyUp(id: string, yes: boolean): Plan {
+    return this.pilot.tidyUp(id, yes, this.me());
   }
 
   /** Not yet: what's missing goes to the head Claude, which adds the work to the plan. */
@@ -164,8 +216,26 @@ export class PlansWork {
     return this.plans.need(id);
   }
 
+  /** The plan's pull request (its branch → main), merging it on GitHub, or merging the branch here. */
+  openPr(id: string): Promise<Plan> {
+    return this.pilot.openPr(id);
+  }
+
+  mergePr(id: string): Promise<Plan> {
+    return this.pilot.mergePr(id);
+  }
+
+  mergeLocal(id: string): Promise<Plan> {
+    return this.pilot.mergeLocal(id);
+  }
+
   startTask(id: string, task: string): Promise<string> {
     return this.pilot.startNow(id, task, this.me());
+  }
+
+  /** Wake a task whose Claude stopped without finishing (Resume on its card). */
+  resumeTask(id: string, task: string): string {
+    return this.pilot.resume(id, task);
   }
 
   remove(id: string): void {
@@ -211,7 +281,10 @@ export class PlansWork {
 
   private toolsFor(planId: string): PlanTools {
     const plans = this.plans;
-    const after = (plan: Plan): string => {
+    const after = (change: () => Plan): string => {
+      const was = planTitle(plans.need(planId));
+      const plan = change();
+      this.nameHome(plan, was);
       if (!plan.draft) return 'The plan is unchanged.';
       // On autopilot, the head Claude's changes to a running plan apply at once.
       if (plan.body && plan.autonomy === 'autopilot') {
@@ -222,9 +295,9 @@ export class PlansWork {
     };
     return {
       get: () => describePlan(this.pilot.view(plans.need(planId))),
-      write: (body: BodyInput) => after(plans.writeDraft(planId, { ...body, milestones: body.milestones.map((m) => ({ ...m, tasks: (m.tasks ?? []).map((t) => this.adopt(t, planId)) })) }, this.claude())),
+      write: (body: BodyInput) => after(() => plans.writeDraft(planId, { ...body, milestones: body.milestones.map((m) => ({ ...m, tasks: (m.tasks ?? []).map((t) => this.adopt(t, planId)) })) }, this.claude())),
       update: (ops: readonly PlanOp[], reason?: string) =>
-        after(
+        after(() =>
           plans.editDraft(
             planId,
             ops.map((o) => (o.op === 'add_task' ? { ...o, task: this.adopt(o.task, planId) } : o.op === 'update_task' ? { ...o, patch: this.adopt(o.patch, planId) } : o.op === 'add_milestone' ? { ...o, milestone: { ...o.milestone, tasks: (o.milestone.tasks ?? []).map((t) => this.adopt(t, planId)) } } : o)),
@@ -242,17 +315,22 @@ export class PlansWork {
         return verdict === 'pass' ? (auto ? 'Recorded: the milestone passes and the plan moves on.' : 'Recorded: the user passes the milestone.') : 'Recorded as failed. Add the fix tasks with plan_update.';
       },
       start: (task) => this.pilot.startNow(planId, task, this.claude()),
-      message: (task, text) => {
+      message: (task, text, mode = 'queue') => {
         const plan = plans.need(planId);
         const hit = allTasks(plan.body).find((t) => t.task.id === task || (t.task.issueId && this.deps.board.board.get(t.task.issueId)?.key === task.toUpperCase()));
         if (!hit?.task.issueId) throw new Error(`There's no task "${task}" on the board from this plan`);
         const issue = this.deps.board.board.need(hit.task.issueId);
         const w = issue.worktrees.at(-1);
         if (!w || issue.worktreeGone) throw new Error(`${issue.key} hasn't started: nothing to tell yet (start it, or change its brief)`);
+        const steer = mode === 'steer';
         // Shown there as the plan's message, not as yours.
-        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: `From the plan’s Claude: ${text.trim().slice(0, 2000)}`, level: 'info' });
-        this.deps.askClaude(`A message from the head of the plan “${plan.body?.title ?? ''}” (another Claude coordinating the plan, not the user):\n\n${text.trim()}`, `${WS}${w}`, false);
-        return `Sent to the Claude working on ${issue.key}`;
+        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: `${steer ? 'Urgent, from' : 'From'} the plan’s Claude: ${text.trim().slice(0, 2000)}`, level: 'info' });
+        const prompt = `${steer ? 'An urgent message' : 'A message'} from the head of the plan “${plan.body?.title ?? ''}” (another Claude coordinating the plan, not the user):\n\n${text.trim()}`;
+        const id = this.deps.askClaude(prompt, `${WS}${w}`, false);
+        if (!steer) return `Queued for the Claude working on ${issue.key}: it reads it when its current turn ends (its card shows it waiting; use mode "steer" if it can't wait)`;
+        // Steered: in now (interrupting a long command or a dead run), and followed until it's read.
+        if (id) this.pilot.steer(planId, hit.task.id, id, prompt);
+        return `Steered into ${issue.key}: its Claude gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Klaud delivers it again`;
       },
     };
   }

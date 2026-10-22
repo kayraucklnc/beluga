@@ -120,3 +120,14 @@
 .now:hover {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+.now.nowOff {
+  color: var(--text-3);
+  cursor: default;
+}
+.now.nowOff:hover {
+  background: none;
+}
+/* Steering: the row keeps its actions in view until the message leaves for the chat. */
+.row:has(.steering) .acts {
+  opacity: 1;
+}

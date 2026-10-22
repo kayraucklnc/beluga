@@ -3,12 +3,15 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { readJson, writeJson } from '../../net/mesh/files.js';
-import type { Actor } from '../board/model.js';
+import type { Actor, IssuePr } from '../board/model.js';
 import type { Store } from '../store.js';
 import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from './edit.js';
 import {
   AUTONOMIES,
+  AUTONOMY_INFO,
   type Autonomy,
+  type Combining,
+  DEFAULT_AUTONOMY,
   DEFAULT_PARALLEL,
   type GateCheck,
   KEEP_PLAN_ACTIVITY,
@@ -18,7 +21,12 @@ import {
   type PlanBody,
   type PlanEvent,
   type PlanEventKind,
+  type PlanMerge,
+  type PlanShipped,
   type PlansState,
+  type TaskWatch,
+  TESTS_AT,
+  type TestsAt,
   diffBodies,
   isEmptyDiff,
   planById,
@@ -38,6 +46,8 @@ export interface PlansDeps {
 }
 
 const MAX_STYLE = 8000;
+/** A plan's name until it has one. */
+export const UNTITLED = 'New plan';
 /** A run of drafting by one author this close together is one line in the activity. */
 const DRAFT_NOTE_MS = 3 * 60 * 1000;
 
@@ -71,6 +81,7 @@ const SavedPlan = z
     draftRev: z.number().default(0),
     autonomy: z.enum(AUTONOMIES).default('gated'),
     maxParallel: z.number().int().min(1).max(MAX_PARALLEL).catch(DEFAULT_PARALLEL),
+    testsAt: z.enum(TESTS_AT).catch('milestone'),
     body: Body.optional().catch(undefined),
     draft: Body.optional().catch(undefined),
     paused: z.boolean().default(false),
@@ -116,10 +127,10 @@ export class Plans {
 
   // ------------------------------------------------------------------ drafting
 
-  /** A new plan: an empty draft in its conversation (Claude writes it there). */
-  create(input: { readonly projectId: string; readonly home: string; readonly title?: string; readonly goal?: string; readonly autonomy?: Autonomy }, by: Actor): Plan {
+  /** A new plan: an empty draft in its conversation (Claude writes it there). Your goal is never its title: a quick model names it (autoTitle), and Claude's plan_write after that. */
+  create(input: { readonly projectId: string; readonly home: string; readonly title?: string; readonly goal?: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt }, by: Actor): Plan {
     const at = this.now();
-    const title = (input.title ?? input.goal ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'New plan';
+    const title = (input.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || UNTITLED;
     const plan: Plan = {
       id: short('pl'),
       projectId: input.projectId,
@@ -127,8 +138,9 @@ export class Plans {
       status: 'draft',
       draft: { title, goal: input.goal?.trim().slice(0, 4000) ?? '', milestones: [] },
       draftRev: 1,
-      autonomy: input.autonomy ?? 'gated',
+      autonomy: input.autonomy ?? DEFAULT_AUTONOMY,
       maxParallel: DEFAULT_PARALLEL,
+      testsAt: input.testsAt ?? 'milestone',
       paused: false,
       runs: {},
       activity: [event(by, 'created', 'started this plan', at)],
@@ -174,6 +186,14 @@ export class Plans {
     return this.change(plan, { ...(plan.draft ? { draft: { ...plan.draft, title: clean } } : {}), ...(plan.body ? { body: { ...plan.body, title: clean } } : {}) }, [event(by, 'note', `renamed the plan to “${clean}”`, this.now())]);
   }
 
+  /** The quick name for a new plan: only while it has none (Claude's plan_write, or you, named it first otherwise). */
+  autoTitle(id: string, title: string): Plan | undefined {
+    const plan = this.get(id);
+    const clean = title.replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!plan || !clean || plan.body || plan.draft?.title !== UNTITLED) return undefined;
+    return this.change(plan, { draft: { ...plan.draft, title: clean } }, []);
+  }
+
   /** Throw the draft away (a plan never approved goes with it). */
   discard(id: string, by: Actor): Plan | undefined {
     const plan = this.need(id);
@@ -207,12 +227,12 @@ export class Plans {
     const plan = this.need(id);
     if (milestone) {
       const patchBody = (b: PlanBody | undefined): PlanBody | undefined => (b ? { ...b, milestones: b.milestones.map((m) => (m.id === milestone ? { ...m, autonomy } : m)) } : b);
-      return this.change(plan, { body: patchBody(plan.body), draft: patchBody(plan.draft) }, [event(by, 'autonomy', `set a milestone to ${autonomy}`, this.now())]);
+      return this.change(plan, { body: patchBody(plan.body), draft: patchBody(plan.draft) }, [event(by, 'autonomy', `set ${milestoneName(plan, milestone)} to ${AUTONOMY_INFO[autonomy].label}`, this.now())]);
     }
-    if (autonomy === plan.autonomy) return plan;
+    if (autonomy === plan.autonomy && !(plan.body ?? plan.draft)?.milestones.some((m) => m.autonomy)) return plan;
     // A plan-wide choice wins over every milestone's own.
     const clear = (b: PlanBody | undefined): PlanBody | undefined => (b ? { ...b, milestones: b.milestones.map(({ autonomy: _a, ...m }) => m) } : b);
-    return this.change(plan, { autonomy, body: clear(plan.body), draft: clear(plan.draft) }, [event(by, 'autonomy', `switched to ${autonomy === 'step' ? 'step by step' : autonomy}`, this.now())]);
+    return this.change(plan, { autonomy, body: clear(plan.body), draft: clear(plan.draft) }, [event(by, 'autonomy', `switched the plan to ${AUTONOMY_INFO[autonomy].label}`, this.now())]);
   }
 
   setPaused(id: string, paused: boolean, by: Actor, why?: string): Plan {
@@ -226,6 +246,12 @@ export class Plans {
     const max = Math.max(1, Math.min(MAX_PARALLEL, Math.round(n)));
     if (max === plan.maxParallel) return plan;
     return this.change(plan, { maxParallel: max }, [event(by, 'note', `lets ${max} ${max === 1 ? 'task' : 'tasks'} run at once`, this.now())]);
+  }
+
+  setTestsAt(id: string, testsAt: TestsAt, by: Actor): Plan {
+    const plan = this.need(id);
+    if (plan.testsAt === testsAt) return plan;
+    return this.change(plan, { testsAt }, [event(by, 'note', testsAt === 'end' ? 'runs the test suites only at the end, in the final step' : 'runs the test suites once per milestone, at its check', this.now())]);
   }
 
   /** The head Claude was asked to check a milestone (a new round of checking). */
@@ -251,7 +277,7 @@ export class Plans {
     // Checked without being asked (the user asked in the conversation): it's this round's check.
     const asked = plan.runs[milestone]?.checkAsked ?? at;
     const notes = check.notes.trim().slice(0, 8000);
-    return this.change(plan, { runs: withRun(plan, milestone, { check: { ...check, notes, at }, checkAsked: asked }) }, [event(check.by, check.verdict === 'pass' ? 'gate' : 'failed', `${check.verdict === 'pass' ? 'checked' : 'didn’t pass'} ${milestoneName(plan, milestone)}${notes ? `: ${notes.split('\n')[0]!.slice(0, 160)}` : ''}`, at)]);
+    return this.change(plan, { runs: withRun(plan, milestone, { check: { ...check, notes, at }, checkAsked: asked }) }, [event(check.by, check.verdict === 'pass' ? 'checked' : 'failed', `${check.verdict === 'pass' ? 'checked' : 'didn’t pass'} ${milestoneName(plan, milestone)}${notes ? `: ${notes.split('\n')[0]!.slice(0, 160)}` : ''}`, at)]);
   }
 
   pass(id: string, milestone: string, by: Actor): Plan {
@@ -270,6 +296,61 @@ export class Plans {
     if (!run?.passedAt) return plan;
     const { passedAt: _p, passedBy: _b, check: _c, checkAsked: _a, ...rest } = run;
     return this.change(plan, { runs: { ...plan.runs, [milestone]: rest }, status: 'active', doneAt: undefined }, [event(by, 'note', `reopened ${milestoneName(plan, milestone)}`, this.now())]);
+  }
+
+  /** A task's start being combined from several branches (undefined: no longer). */
+  setCombining(id: string, task: string, combining: Combining | undefined): Plan {
+    const plan = this.need(id);
+    const { [task]: _was, ...rest } = plan.combining ?? {};
+    const next = combining ? { ...rest, [task]: combining } : rest;
+    return this.change(plan, { combining: Object.keys(next).length ? next : undefined }, []);
+  }
+
+  /** A task's stall and what was done about it (undefined: it's fine again, or finished). */
+  setWatch(id: string, task: string, watch: TaskWatch | undefined): Plan {
+    const plan = this.need(id);
+    const { [task]: was, ...rest } = plan.watch ?? {};
+    if (!watch && !was) return plan;
+    const next = watch ? { ...rest, [task]: watch } : rest;
+    return this.change(plan, { watch: Object.keys(next).length ? next : undefined }, []);
+  }
+
+  /** The plan's branch is there (made from main, or one that was there already). */
+  setBranch(id: string, branch: string, made: boolean): Plan {
+    const plan = this.need(id);
+    if (plan.branch === branch) return plan;
+    return this.change(plan, { branch }, [event({ kind: 'klaud' }, 'note', made ? `made the plan’s branch ${branch} from main` : `collects the plan’s work on ${branch}`, this.now())]);
+  }
+
+  /** A passed milestone being merged into the plan's branch (undefined: no longer). */
+  setMerging(id: string, milestone: string, merge: PlanMerge | undefined): Plan {
+    const plan = this.need(id);
+    const { [milestone]: _was, ...rest } = plan.merging ?? {};
+    const next = merge ? { ...rest, [milestone]: merge } : rest;
+    return this.change(plan, { merging: Object.keys(next).length ? next : undefined }, []);
+  }
+
+  /** The branch's pull request as last seen (what changed goes in the activity). */
+  setPr(id: string, pr: IssuePr): Plan {
+    const plan = this.need(id);
+    const before = plan.pr;
+    if (before && before.number === pr.number && before.state === pr.state && before.checks === pr.checks && before.review === pr.review && before.title === pr.title && before.draft === pr.draft) return plan;
+    const notes: PlanEvent[] = [];
+    const at = this.now();
+    if (!before || before.number !== pr.number) notes.push(event({ kind: 'klaud' }, 'note', `pull request #${pr.number} is open for ${plan.branch ?? 'the plan'}`, at));
+    if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') notes.push(event({ kind: 'klaud' }, 'problem', `pull request #${pr.number} was closed without merging: its tasks stay In Plan`, at));
+    return this.change(plan, { pr }, notes);
+  }
+
+  setShipped(id: string, shipped: PlanShipped): Plan {
+    const plan = this.need(id);
+    if (plan.shipped) return plan;
+    return this.change(plan, { shipped }, [event({ kind: 'klaud' }, 'done', shipped.how === 'pr' ? `merged into main via #${shipped.number}` : 'merged into main here', shipped.at)]);
+  }
+
+  setCaughtUp(id: string): Plan {
+    const plan = this.need(id);
+    return plan.caughtUp ? plan : this.change(plan, { caughtUp: true }, []);
   }
 
   note(id: string, kind: PlanEventKind, text: string, by: Actor): Plan {

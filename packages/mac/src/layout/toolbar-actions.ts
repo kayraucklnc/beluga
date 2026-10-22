@@ -1,9 +1,12 @@
 import type { AppState } from '@klaud/core/store.js';
+import { type PlanOwner, planOwnerOf } from '@klaud/core/plans/owner.js';
+import { planTitle } from '@klaud/core/plans/model.js';
 import { type WorkspaceAction, type WorkspaceButton, workspaceButtons } from '@klaud/ui/workspace-models.js';
 import type { Workspace } from '@klaud/workspaces/types.js';
 import type { IconName } from '../components/Icon.js';
 import { COMMAND_KEYS, runRunning } from '../lib/commands.js';
 import { mergeTargetOf } from '../lib/merge-review.js';
+import type { PlanAction } from '../lib/plan-task.js';
 import { asksBeforeWork } from '../lib/work-confirm.js';
 
 /**
@@ -23,8 +26,11 @@ export interface ToolAction {
   readonly disabled?: boolean;
   readonly tone?: 'error' | 'ok' | 'info';
   readonly danger?: boolean;
-  /** A workspace action, or `fix_checks` (ask Claude to fix the PR's failing checks). */
-  readonly action: WorkspaceAction | 'fix_checks';
+  /**
+   * A workspace action, `fix_checks` (ask Claude to fix the PR's failing checks), or what a plan's
+   * task worktree offers instead of merging (see plan-task.ts).
+   */
+  readonly action: WorkspaceAction | 'fix_checks' | PlanAction;
 }
 
 export interface ToolbarActions {
@@ -78,7 +84,7 @@ function labelOf(b: WorkspaceButton, pr: boolean): string {
     case 'commit':
       return 'Commit…';
     case 'merge':
-      return 'Merge…';
+      return 'Merge Locally…';
     case 'compact':
       return 'Compact…';
     case 'finder':
@@ -137,12 +143,15 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
   }
   if (pr?.state === 'MERGED') {
     const archive = all.find((x) => x.action === 'archive');
-    if (archive) return { ...archive, label: 'Archive', danger: false, hint: `PR #${pr.number} is merged: put this workspace away (the branch and conversation are kept)` };
+    if (archive) return { ...archive, label: 'Archive Worktree', danger: false, hint: `PR #${pr.number} is merged: put this worktree away (the branch and conversation are kept)` };
   }
+  // Part of a plan: Klaud merges it into the plan, so the next thing is the plan, never Merge.
+  const plan = all.find((x) => x.action === 'open_plan');
+  if (plan) return plan;
   const merge = by('merge');
   if (merge) {
     const into = mergeTargetOf(state, ws);
-    return { ...merge, label: `Merge into ${into}`, hint: `Shows what would merge into ${into} and checks it first; nothing changes until you confirm` };
+    return { ...merge, label: `Merge Locally into ${into}`, hint: `Shows what would merge into ${into} on this Mac and checks it first; nothing changes until you confirm` };
   }
   const run = all.find((x) => x.action === 'run' || x.action === 'stop_run');
   return run;
@@ -152,9 +161,10 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
 const ICONS: readonly WorkspaceAction[] = ['run', 'stop_run'];
 
 /** ⋯'s sections, in order: the git steps, the conversation, the folder, putting it away. */
-const SECTIONS: ReadonlyArray<readonly WorkspaceAction[]> = [
+const SECTIONS: ReadonlyArray<readonly ToolAction['action'][]> = [
+  ['open_plan', 'open_task'],
   ['run'],
-  ['commit', 'pr', 'review_claude', 'merge', 'merge_claude'],
+  ['commit', 'pr', 'review_claude', 'merge', 'merge_anyway', 'merge_claude'],
   ['compact', 'handoff', 'share'],
   ['finder', 'fork', 'setup'],
   ['restore', 'archive', 'delete'],
@@ -162,11 +172,13 @@ const SECTIONS: ReadonlyArray<readonly WorkspaceAction[]> = [
 
 export function toolbarActions(state: AppState, ws: Workspace): ToolbarActions {
   const pr = Boolean(state.prs[ws.id]);
-  const all = workspaceButtons(state, ws).map((b) => {
+  const own = workspaceButtons(state, ws).map((b) => {
     // While the run script runs, its button stops it.
     if (b.action === 'run' && runRunning(state, ws.id)) return { ...toAction(b, pr), id: 'stop_run', action: 'stop_run' as const, label: 'Stop Running', icon: 'stop' as const, hint: 'Stop the run script', keys: KEYS.stop_run };
     return toAction(b, pr);
   });
+  const owner = ws.archived ? undefined : planOwnerOf(state.plans, state.board, ws.id);
+  const all = owner ? asPlanTask(own, owner, pr) : own;
   const primary = pickPrimary(state, ws, all);
   const shown = (a: ToolAction): boolean => a.action !== primary?.action || primary.id === 'fix_checks';
   const icons = ICONS.flatMap((id) => all.filter((a) => a.action === id && shown(a)));
@@ -177,9 +189,30 @@ export function toolbarActions(state: AppState, ws: Workspace): ToolbarActions {
 /** Actions in ⋯'s sections, in their order there (any section left empty is dropped). */
 export function inSections(list: readonly ToolAction[]): ToolAction[][] {
   const at = (a: ToolAction): number => {
-    const i = SECTIONS.findIndex((ids) => ids.includes(a.action === 'stop_run' ? 'run' : (a.action as WorkspaceAction)));
+    const i = SECTIONS.findIndex((ids) => ids.includes(a.action === 'stop_run' ? 'run' : a.action));
     return i < 0 ? SECTIONS.length : i;
   };
-  const rank = (a: ToolAction): number => SECTIONS.flat().indexOf(a.action as WorkspaceAction);
+  const rank = (a: ToolAction): number => SECTIONS.flat().indexOf(a.action);
   return Array.from({ length: SECTIONS.length + 1 }, (_, k) => list.filter((a) => at(a) === k).sort((a, b) => rank(a) - rank(b))).filter((section) => section.length > 0);
+}
+
+/**
+ * A worktree doing a plan's task is part of the plan: Open Plan and Open Task lead, and Merge
+ * becomes 'Merge Anyway…' (Klaud merges it into the plan when its milestone passes). No PR of its
+ * own either: the plan opens one PR at the end (one already open stays reachable).
+ */
+function asPlanTask(all: readonly ToolAction[], owner: PlanOwner, pr: boolean): ToolAction[] {
+  const name = planTitle(owner.plan);
+  const lead: ToolAction[] = [
+    { id: 'open_plan', label: 'Open Plan', hint: `Part of “${name}”: Klaud merges it into the plan when “${owner.milestone.title}” passes`, icon: 'flag', action: 'open_plan' },
+    { id: 'open_task', label: 'Open Task', hint: `The task this worktree does (${owner.issue.key})`, icon: 'task', action: 'open_task' },
+  ];
+  const rest = all.flatMap((a): ToolAction[] => {
+    if (a.action === 'pr' && !pr) return [];
+    // Solving a conflict finishes a local merge: it stays, but says so and warns first (actions.run).
+    if (a.action === 'merge_claude') return [{ ...a, hint: `Claude finishes this merge by hand, which skips “${name}”: Klaud merges it into the plan itself` }];
+    if (a.action !== 'merge') return [a];
+    return [{ ...a, id: 'merge_anyway', label: 'Merge Anyway…', action: 'merge_anyway', hint: `Klaud merges this into “${name}” itself; merging it by hand skips the plan` }];
+  });
+  return [...lead, ...rest];
 }

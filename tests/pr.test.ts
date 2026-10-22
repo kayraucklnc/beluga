@@ -248,9 +248,9 @@ describe('hasGh / findPr (gh mocked)', () => {
   it('findPr parses gh pr view output', async () => {
     exec.impl = (_cmd, args) => (args[0] === 'auth' ? { stdout: 'ok' } : { stdout: JSON.stringify({ number: 5, url: 'u', state: 'OPEN', title: 'T', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }], reviewDecision: 'APPROVED' }) });
     const m = await load();
-    expect(await m.findPr('/repo', 'feat/x')).toEqual({ number: 5, url: 'u', state: 'OPEN', title: 'T', draft: false, checks: 'passing', review: 'APPROVED' });
+    expect(await m.findPr('/repo', 'feat/x')).toEqual({ number: 5, url: 'u', state: 'OPEN', title: 'T', draft: false, checks: 'passing', checkRuns: [{ name: 'check', state: 'completed', conclusion: 'success' }], review: 'APPROVED' });
     const view = exec.calls.find((c) => c.args[0] === 'pr');
-    expect(view).toEqual({ cmd: 'gh', args: ['pr', 'view', 'feat/x', '--json', 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision'], cwd: '/repo' });
+    expect(view).toEqual({ cmd: 'gh', args: ['pr', 'view', 'feat/x', '--json', 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision,mergeable,autoMergeRequest'], cwd: '/repo' });
   });
 
   it('findPr returns undefined when there is no PR for the branch', async () => {

@@ -7,6 +7,7 @@ import { type Disclosure, useDisclosure } from '../chat/steps/step-memory.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Working, cx } from '../components/ui.js';
 import { useApi } from '../lib/klaud.js';
+import { useClock } from '../lib/window-active.js';
 import { useSteps } from './use-steps.js';
 import s from './claude-code.module.css';
 
@@ -54,16 +55,6 @@ const ToolRow = memo(function ToolRow({ step, live, sessionId, agentId, open, no
     </div>
   );
 });
-
-function useTick(active: boolean): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [active]);
-  return now;
-}
 
 /**
  * A message another session sent this one (SendMessage): from the lead session, another agent,
@@ -120,7 +111,7 @@ const StepView = memo(function StepView({ step, who }: { step: CcStep; who: 'ses
 export function LiveTranscript({ sessionId, agentId, version, live, label }: { sessionId: string; agentId?: string; version: string; live: boolean; label: string }) {
   const { steps, more, missing, loading, error, loadEarlier } = useSteps(sessionId, agentId, version);
   const open = useDisclosure(`cc:${sessionId}/${agentId ?? ''}`);
-  const now = useTick(live);
+  const now = useClock(live);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [away, setAway] = useState(false);
