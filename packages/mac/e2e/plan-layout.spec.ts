@@ -45,6 +45,7 @@ test('the plan and its chat share the page: no panel, a toggle that stays, a wid
   // Hidden, then back after a reload: still hidden, and as wide when shown again.
   await main(page).getByRole('button', { name: 'Hide the Chat' }).click();
   await page.reload();
+  await openPlan(page, /^Card checkout for launch,/);
   await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Card checkout for launch');
   await expect(chat(page)).toHaveCount(0);
   await main(page).getByRole('button', { name: 'Show the Chat' }).click();
