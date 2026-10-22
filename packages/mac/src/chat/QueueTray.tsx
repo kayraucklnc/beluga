@@ -23,7 +23,7 @@ function Act({ icon, label, onClick, disabled }: { icon: IconName; label: string
 const STEERING_MS = 8_000;
 
 /**
- * Steer: Claude reads this now. Interrupts a long command (a test run) or a stuck turn so it
+ * Steer: Claude reads this now. Interrupts a long command (a test run) or a turn gone quiet so it
  * does; the row says "Steering…" until the message leaves the queue for the chat. `blocked`: why
  * it can't (someone else's message), shown in its tooltip and said when clicked.
  */

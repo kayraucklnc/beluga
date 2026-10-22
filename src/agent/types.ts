@@ -59,6 +59,8 @@ export interface AgentRunInput {
    * or answers in a turn of its own right after. Undefined once the run ends.
    */
   readonly onSteer?: (steer: Steer | undefined) => void;
+  /** Called once Claude Code's process for this run is up: whether it still lives, and a way to end it for sure. */
+  readonly onProcess?: (proc: RunProcess) => void;
   /**
    * In a project's main folder (ask-only): carry this conversation into a new worktree and do
    * `task` there (Claude's continue_in_worktree tool). Resolves with what to tell Claude.
@@ -170,6 +172,18 @@ export interface LiveStatus {
   readonly lastEventAt: number;
   /** Claude has answered and waits between turns (a message starts a turn at once). */
   readonly between: boolean;
+  /** Claude's last word was thinking (a quiet spell is Claude thinking, not a stuck step). */
+  readonly thinking?: boolean;
+  /** False once Claude Code's process is gone (the run is dead whatever else it says). */
+  readonly alive?: boolean;
+}
+
+/** Claude Code's process behind a run (see AgentRunInput.onProcess). */
+export interface RunProcess {
+  readonly pid: number;
+  alive(): boolean;
+  /** SIGTERM, then SIGKILL if it's still there after a moment; resolves once it's gone. */
+  kill(): Promise<void>;
 }
 
 /**

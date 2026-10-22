@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import type { AgentBackend, BoardTools, FollowUp, LiveStatus, Steer } from '../agent/types.js';
+import type { AgentBackend, BoardTools, FollowUp, LiveStatus, RunProcess, Steer } from '../agent/types.js';
 import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
@@ -121,16 +121,23 @@ interface Lane {
   followUps?: (followUp: FollowUp) => boolean;
   /** Set while a run of Claude's works here: your urgent messages steer it (see steer). */
   steer?: Steer;
+  /** Set while a steer interrupts the current run: the next steer waits for it (see rush). */
+  interrupting?: Promise<void>;
 }
 
 /** A tool running at least this long: a steer interrupts it instead of waiting for Claude's next step. */
 const STEER_WAIT_MS = 20_000;
 /** A run silent this long with no tool running (stuck in a step): a steer interrupts it. */
 const STEER_QUIET_MS = 60_000;
-/** A run silent this long with no tool running: dead; a steer starts a fresh turn instead. */
+/** A run silent this long with no tool running (and not thinking): dead; a steer starts a fresh turn instead. */
 const DEAD_RUN_MS = 5 * 60_000;
-/** A stopped run that hasn't ended after this long is left behind, so the next message can start. */
+/**
+ * A stopped run that hasn't ended after this long has its Claude Code killed. Stopped for a newer
+ * message (a steer or a dead run), it's then left behind so that message can start.
+ */
 const ABORT_GRACE_MS = 5_000;
+/** Said when a run that wouldn't take an interrupt was stopped for your message. */
+const STOPPED_FOR_YOU = 'Claude didn’t stop when asked, so its run was stopped for your message';
 
 /** What Claude reads a steered message after, said on its card. */
 export const READS_AFTER_STEP = 'Claude reads this after its current step';
@@ -149,14 +156,17 @@ const span = (ms: number): string => {
  * the run went quiet; a fresh turn when the run looks dead. No status (an older backend): steer.
  */
 export function planSteer(status: LiveStatus | undefined, now: number): { kind: 'steer' } | { kind: 'interrupt' | 'restart'; note: string } {
-  if (!status || status.between) return { kind: 'steer' };
+  if (!status) return { kind: 'steer' };
+  if (status.alive === false) return { kind: 'restart', note: 'Claude’s run had ended without finishing: started over with your message' };
+  if (status.between) return { kind: 'steer' };
   if (status.tool) {
     const ran = now - status.tool.since;
     return ran < STEER_WAIT_MS ? { kind: 'steer' } : { kind: 'interrupt', note: `Interrupted: ${status.tool.label} (${span(ran)}) to read your message` };
   }
   const quiet = now - status.lastEventAt;
-  if (quiet >= DEAD_RUN_MS) return { kind: 'restart', note: `Claude had gone quiet for ${span(quiet)}: stopped to start over with your message` };
-  if (quiet >= STEER_QUIET_MS) return { kind: 'interrupt', note: `Interrupted: Claude was quiet for ${span(quiet)}; reading your message` };
+  // Thinking is Claude at work (its process still runs): interrupted, never taken for dead.
+  if (quiet >= DEAD_RUN_MS && !status.thinking) return { kind: 'restart', note: `Claude had gone quiet for ${span(quiet)}: stopped to start over with your message` };
+  if (quiet >= STEER_QUIET_MS) return { kind: 'interrupt', note: `Interrupted: Claude was ${status.thinking ? 'thinking' : 'quiet'} for ${span(quiet)}; reading your message` };
   return { kind: 'steer' };
 }
 
@@ -463,8 +473,14 @@ export class AgentHost {
    * card says which; nothing is lost when a step fails (it goes back in line).
    */
   private rush(lane: Lane, item: Waiting, queued: boolean): void {
+    // Another steer is interrupting the run: this one goes after it, so they're answered in the order you sent them.
+    if (lane.interrupting) {
+      void lane.interrupting.then(() => this.rush(lane, item, queued));
+      return;
+    }
     const { from, body } = item;
-    const steer = lane.steer && lane.runFrom === from && !body.plan && !body.project && !item.compact ? lane.steer : undefined;
+    const live = lane.current && !lane.current.signal.aborted;
+    const steer = live && lane.steer && lane.runFrom === from && !body.plan && !body.project && !item.compact ? lane.steer : undefined;
     const plan = steer ? planSteer(steer.status?.(), Date.now()) : undefined;
     const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
     if (steer && plan?.kind === 'steer' && steer(this.followUp(lane, item, queued))) {
@@ -475,11 +491,20 @@ export class AgentHost {
     }
     if (steer?.interrupt && plan?.kind === 'interrupt') {
       const run = lane.current;
+      const followUp = this.followUp(lane, item, true);
       emit('started');
-      void steer.interrupt(this.followUp(lane, item, true), plan.note).then(
-        (ok) => ok || this.jump(lane, item, 'Claude didn’t stop when asked, so its run was stopped for your message', run),
-        () => this.jump(lane, item, 'Claude didn’t stop when asked, so its run was stopped for your message', run),
-      );
+      const interrupting: Promise<void> = steer
+        .interrupt(followUp, plan.note)
+        .catch(() => false)
+        .then((ok) => {
+          if (lane.interrupting === interrupting) lane.interrupting = undefined;
+          if (ok) return;
+          // Claude answered meanwhile and waits between turns: the message starts its turn now.
+          if (lane.current === run && steer.status?.().between && steer(followUp)) return;
+          // Still mid-turn: stopped for it (and said so). Ended already: it just goes first.
+          this.jump(lane, item, run && lane.current === run && !run.signal.aborted ? STOPPED_FOR_YOU : undefined, run);
+        });
+      lane.interrupting = interrupting;
       return;
     }
     this.jump(lane, item, plan?.kind === 'restart' ? plan.note : undefined, lane.current);
@@ -492,6 +517,8 @@ export class AgentHost {
   private jump(lane: Lane, item: Waiting, note: string | undefined, run: AbortController | undefined): void {
     const at = lane.waiting.findIndex((w) => !w.urgent);
     lane.waiting.splice(at === -1 ? lane.waiting.length : at, 0, { ...item, urgent: true });
+    // Back in line: its card says so (it may have said started).
+    if (!item.compact) this.emitAgent(item.body.requestId, item.from, 'queued', item.body.prompt, item.body.channel);
     if (run && lane.current === run && !run.signal.aborted) {
       lane.interruptedBy = item.body.requestId;
       lane.interruptNote = note;
@@ -654,7 +681,6 @@ export class AgentHost {
       onError: (reason) => {
         // The run ended before Claude read it (and you didn't stop it): it goes back in line, first.
         if (read || lane.stopping) return emit('error', reason);
-        if (queued) emit('queued', body.prompt);
         this.jump(lane, item, 'Claude’s run ended before it read your message: it runs next', undefined);
       },
     };
@@ -744,6 +770,9 @@ export class AgentHost {
     // A friend's request in your project gets a fresh conversation in its main folder: questions only.
     const place = root ? { cwd: root, additionalDirectories: [], autoEdit: false, onSession: () => undefined, askOnly: { project: body.project ?? '' } } : this.deps.workspaces?.place(body.channel);
     let markFinished: () => void = () => undefined;
+    /** Claude Code's process for this run (see gone), and whether the run is over. */
+    let proc: RunProcess | undefined;
+    let ended = false;
     const finished = new Promise<void>((resolve) => (markFinished = resolve));
     // In a main folder, a change request carries the conversation into a new worktree.
     const move = place?.askOnly && !place.syncMain && body.channel !== 'room' ? (task: string) => this.moveToWorktree(from, requesterName, body.channel, task, finished) : undefined;
@@ -763,8 +792,23 @@ export class AgentHost {
       // (In a plan's conversation, planning is the plan's: no single task to define.)
       const planFirst = body.plan && !plans?.tools;
       const board = (place?.askOnly && (!planFirst || place.syncMain)) || from !== this.selfId ? undefined : this.deps.board?.(body.channel, from, { plan: planFirst });
-      // A run stopped but not ending (wedged) is left behind after a moment, so the next message starts.
-      const gone = new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => setTimeout(() => reject(new Error('aborted')), ABORT_GRACE_MS).unref(), { once: true }));
+      // A run stopped but not ending (wedged) has its Claude Code killed after a moment (at once
+      // when it's gone already). Stopped for a newer message, it's then left behind so that message
+      // starts: never while its Claude Code could still work in this folder.
+      const gone = new Promise<never>((_, reject) =>
+        controller.signal.addEventListener(
+          'abort',
+          () => {
+            const leave = lane.interruptedBy !== undefined;
+            const timer = setTimeout(() => {
+              if (ended) return;
+              void (proc?.kill() ?? Promise.resolve()).then(() => leave && !ended && reject(new Error('aborted')));
+            }, proc && !proc.alive() ? 0 : ABORT_GRACE_MS);
+            timer.unref();
+          },
+          { once: true },
+        ),
+      );
       gone.catch(() => undefined);
       const final = await Promise.race([gone, agent.run({
         ...(scratch ? { scratchDir: scratch } : {}),
@@ -794,6 +838,7 @@ export class AgentHost {
         plan: body.plan,
         // A plan's conversation plans; it doesn't move to a worktree.
         ...(move && !plans?.tools ? { continueInWorktree: move } : {}),
+        onProcess: (p) => void (proc = p),
         onSteer: (steer) => {
           if (lane.current === controller) lane.steer = steer;
         },
@@ -818,6 +863,7 @@ export class AgentHost {
       lane.stopping = undefined;
       this.emitAgent(body.requestId, from, 'error', reason, body.channel);
     } finally {
+      ended = true;
       if (lane.current === controller) {
         lane.current = undefined;
         lane.followUps = undefined;

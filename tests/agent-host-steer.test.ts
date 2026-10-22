@@ -13,15 +13,27 @@ const MIN = 60_000;
  * A pretend Claude. "slow" runs until finished (or stopped), offering a steer whose status the
  * test sets; anything else answers at once. `wedged`: a stopped run never ends (a dead process).
  */
-function backend(opts: { wedged?: boolean; interrupts?: boolean } = {}) {
+function backend(opts: { wedged?: boolean; interrupts?: boolean; process?: boolean; hold?: Promise<void> } = {}) {
   const prompts: string[] = [];
   const steered: FollowUp[] = [];
   const interrupts: Array<{ followUp: FollowUp; note: string }> = [];
-  const live: { status: LiveStatus; finish?: () => void } = { status: { lastEventAt: Date.now(), between: false } };
+  /** What happened, in order: runs starting, and Claude Code processes killed. */
+  const timeline: string[] = [];
+  const live: { status: LiveStatus; finish?: () => void; procAlive: boolean } = { status: { lastEventAt: Date.now(), between: false }, procAlive: true };
   const agent: AgentBackend = {
     async run(input: AgentRunInput) {
       prompts.push(input.prompt);
+      timeline.push(`run ${input.prompt}`);
       if (input.prompt !== 'slow') return `did ${input.prompt}`;
+      if (opts.process)
+        input.onProcess?.({
+          pid: 4242,
+          alive: () => live.procAlive,
+          kill: async () => {
+            timeline.push('killed slow');
+            live.procAlive = false;
+          },
+        });
       return new Promise<string>((resolve, reject) => {
         input.signal.addEventListener('abort', () => (opts.wedged ? undefined : reject(new Error('aborted'))));
         const steer: Steer = Object.assign(
@@ -33,6 +45,7 @@ function backend(opts: { wedged?: boolean; interrupts?: boolean } = {}) {
             status: () => live.status,
             interrupt: async (followUp: FollowUp, note: string) => {
               interrupts.push({ followUp, note });
+              await opts.hold;
               if (opts.interrupts === false) return false;
               // The interrupted turn ends saying why; the message's turn follows at once.
               input.onEvent('text', note);
@@ -50,7 +63,7 @@ function backend(opts: { wedged?: boolean; interrupts?: boolean } = {}) {
       });
     },
   };
-  return { agent, prompts, steered, interrupts, live };
+  return { agent, prompts, steered, interrupts, live, timeline };
 }
 
 function host(agent: AgentBackend) {
@@ -105,6 +118,18 @@ describe('planSteer', () => {
     expect(planSteer({ lastEventAt: now - 6 * MIN, between: false }, now).kind).toBe('restart');
     // Between turns (waiting on background agents), a message starts a turn at once.
     expect(planSteer({ lastEventAt: now - 30 * MIN, between: true }, now)).toEqual({ kind: 'steer' });
+  });
+
+  it('a run whose Claude Code is gone is dead, however recently it spoke', () => {
+    expect(planSteer({ lastEventAt: now - 1_000, between: false, alive: false }, now).kind).toBe('restart');
+    expect(planSteer({ lastEventAt: now - 1_000, between: true, alive: false }, now).kind).toBe('restart');
+    expect(planSteer({ lastEventAt: now - 1_000, between: false, alive: true }, now).kind).toBe('steer');
+  });
+
+  it('a quiet spell spent thinking says so, and is never taken for dead', () => {
+    expect(planSteer({ lastEventAt: now - 90_000, between: false, thinking: true }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was thinking for 2m; reading your message' });
+    expect(planSteer({ lastEventAt: now - 90_000, between: false }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was quiet for 2m; reading your message' });
+    expect(planSteer({ lastEventAt: now - 8 * MIN, between: false, thinking: true }, now).kind).toBe('interrupt');
   });
 });
 
@@ -161,12 +186,39 @@ describe('Steer on a queued message', () => {
     expect(b.prompts).toEqual(['slow', 'later']);
   }, 12_000);
 
+  it('dead run with its Claude Code still running: killed before the message’s run starts', async () => {
+    const b = backend({ wedged: true, process: true });
+    const t = await busy(b);
+    b.live.status = { lastEventAt: Date.now() - 6 * MIN, between: false };
+    expect(t.h.promote('r2')).toBe(true);
+    await waitFor(() => t.card('r2')?.status === 'done', 9_000);
+    expect(b.timeline).toEqual(['run slow', 'killed slow', 'run later']);
+  }, 12_000);
+
+  it('a run whose Claude Code is gone: restarted at once, without waiting out the grace', async () => {
+    const b = backend({ wedged: true, process: true });
+    const t = await busy(b);
+    b.live.procAlive = false;
+    b.live.status = { lastEventAt: Date.now(), between: false, alive: false };
+    expect(t.h.promote('r2')).toBe(true);
+    await waitFor(() => t.card('r2')?.status === 'done', 1_000);
+    expect(t.card('r1')?.text).toMatch(/ended without finishing/);
+    expect(b.prompts).toEqual(['slow', 'later']);
+  });
+
   it('interrupt failing: the message is not lost, it goes first and the run is stopped for it', async () => {
     const b = backend({ interrupts: false });
     const t = await busy(b);
     b.live.status = { tool: { label: 'npx playwright test', since: Date.now() - 12 * MIN }, lastEventAt: Date.now(), between: false };
+    const seen: string[] = [];
+    t.store.subscribe(() => {
+      const status = t.card('r2')?.status;
+      if (status && seen.at(-1) !== status) seen.push(status);
+    });
     expect(t.h.promote('r2')).toBe(true);
     await waitFor(() => t.card('r2')?.status === 'done');
+    // Back in line said so on its card before it ran.
+    expect(seen).toEqual(['started', 'queued', 'started', 'done']);
     expect(t.card('r2')?.text).toBe('did later');
     expect(b.prompts).toEqual(['slow', 'later']);
     expect(t.toasts.some((x) => x.includes('didn’t stop when asked'))).toBe(true);
@@ -179,6 +231,7 @@ describe('Steer on a queued message', () => {
     // The run ends without Claude reading it (as the runner fails what it hadn't got to).
     b.steered[0]!.onError('Claude finished before getting to this message');
     expect(t.card('r2')?.status).toBe('queued');
+    expect(t.toasts.at(-1)).toMatch(/runs next/);
     b.live.finish!();
     await waitFor(() => t.card('r2')?.status === 'done');
     expect(t.card('r2')?.text).toBe('did later');
@@ -194,6 +247,68 @@ describe('Steer on a queued message', () => {
     expect(t.toasts.at(-1)).toMatch(/isn’t waiting any more/);
     b.live.finish!();
     await t.h.idle('room');
+  });
+});
+
+describe('two steers in a row', () => {
+  it('the second waits for the first one’s interrupt: answered in the order steered, no toast', async () => {
+    let release!: () => void;
+    const b = backend({ hold: new Promise<void>((r) => (release = r)) });
+    const t = await busy(b);
+    await t.ask('r3', 'after that');
+    b.live.status = { tool: { label: 'npm test', since: Date.now() - 3 * MIN }, lastEventAt: Date.now() - 3 * MIN, between: false };
+    expect(t.h.promote('r2')).toBe(true);
+    expect(t.h.promote('r3')).toBe(true);
+    // Only the first interrupts; the second hasn't hard-stopped the run.
+    expect(b.interrupts.map((i) => i.followUp.prompt)).toEqual(['later']);
+    // The run is in the first message's turn now: the second goes into it.
+    b.live.status = { lastEventAt: Date.now(), between: false };
+    release();
+    await waitFor(() => b.steered.length === 1);
+    expect(b.steered.map((f) => f.prompt)).toEqual(['after that']);
+    expect(t.card('r2')?.status).toBe('done');
+    expect(t.card('r3')?.text).toBe(READS_AFTER_STEP);
+    expect(t.toasts.filter((x) => x.includes('didn’t stop'))).toEqual([]);
+    b.live.finish!();
+    await t.h.idle('room');
+    expect(b.prompts).toEqual(['slow']);
+  });
+
+  it('the first interrupt failing: both go first in line, in the order steered', async () => {
+    let release!: () => void;
+    const b = backend({ interrupts: false, hold: new Promise<void>((r) => (release = r)) });
+    const t = await busy(b);
+    await t.ask('r3', 'after that');
+    b.live.status = { tool: { label: 'npm test', since: Date.now() - 3 * MIN }, lastEventAt: Date.now(), between: false };
+    t.h.promote('r3');
+    t.h.promote('r2');
+    release();
+    await waitFor(() => t.card('r2')?.status === 'done' && t.card('r3')?.status === 'done');
+    expect(b.prompts).toEqual(['slow', 'after that', 'later']);
+    expect(t.toasts.filter((x) => x.includes('didn’t stop'))).toHaveLength(1);
+  });
+});
+
+describe('the abort grace is only for steers', () => {
+  it('Stop never leaves a run behind: the next message waits for it to end', async () => {
+    const b = backend({ wedged: true, process: true });
+    const t = await busy(b);
+    t.h.stopRun('room');
+    await t.ask('r3', 'next');
+    await new Promise((r) => setTimeout(r, 5_500));
+    // Its Claude Code was killed after the grace, but the run is waited for, not left behind.
+    expect(b.timeline).toEqual(['run slow', 'killed slow']);
+    expect(b.prompts).toEqual(['slow']);
+    b.live.finish!();
+    await waitFor(() => t.card('r3')?.status === 'done');
+  }, 9_000);
+
+  it('a run that ends normally is never killed', async () => {
+    const b = backend({ process: true });
+    const t = await busy(b);
+    b.live.finish!();
+    await waitFor(() => t.card('r2')?.status === 'done');
+    expect(b.timeline).toEqual(['run slow', 'run later']);
   });
 });
 
