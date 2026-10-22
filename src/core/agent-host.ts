@@ -512,6 +512,41 @@ export class AgentHost {
   }
 
   /**
+   * Send one of your waiting messages next, never interrupting (Send Now, beside Steer Now): into
+   * the running turn when it can take it (read at Claude's next step), else first in line, after
+   * your other urgent ones, with the run left to finish. False, with a toast saying why, when it
+   * isn't yours or isn't waiting any more.
+   */
+  sendNext(requestId: string): boolean {
+    for (const lane of this.lanes.values()) {
+      const i = lane.waiting.findIndex((w) => w.body.requestId === requestId);
+      if (i < 0) continue;
+      const item = lane.waiting[i]!;
+      if (item.from !== this.selfId) {
+        this.toast('Only the person who sent a message can send it now', 'warn');
+        return false;
+      }
+      lane.waiting.splice(i, 1);
+      // Your go-ahead: a queue held after a failed run goes on (see Lane.held).
+      lane.held = undefined;
+      const { from, body } = item;
+      const live = lane.current && !lane.current.signal.aborted && !lane.interrupting;
+      const steer = live && lane.steer && lane.runFrom === from && !body.plan && !body.project && !item.compact ? lane.steer : undefined;
+      if (steer && steer(this.followUp(lane, item, true))) {
+        this.emitAgent(body.requestId, from, 'text', READS_AFTER_STEP, body.channel);
+        return true;
+      }
+      const at = lane.waiting.findIndex((w) => !w.urgent);
+      lane.waiting.splice(at === -1 ? lane.waiting.length : at, 0, { ...item, urgent: true });
+      this.store.dispatch({ type: 'queue_order', owner: this.selfId, ids: lane.waiting.filter((w) => w.from === this.selfId && !w.compact).map((w) => w.body.requestId) });
+      void this.pump(lane);
+      return true;
+    }
+    this.toast('That message isn’t waiting any more', 'warn');
+    return false;
+  }
+
+  /**
    * Your message, now (a queued one you steer, or one sent with ⌥↩). Claude about to be at its
    * next step: it goes into the running turn. A tool running long or Claude gone quiet: the turn
    * is interrupted and the message answered next, at once. No run to steer, or a dead one: the

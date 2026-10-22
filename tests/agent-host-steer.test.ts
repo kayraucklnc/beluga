@@ -378,3 +378,34 @@ describe('the watchdog taking over a run (KLD-37 on KLD-43’s stop)', () => {
     expect(b.prompts).toEqual(['slow', 'theirs']);
   });
 });
+
+describe('Send Now on a queued message (next, never interrupting)', () => {
+  it('a run that can take it: into its turn, read at the next step, even during a long command', async () => {
+    const b = backend();
+    const t = await busy(b);
+    b.live.status = { tool: { label: 'npx playwright test', since: Date.now() - 12 * MIN }, lastEventAt: Date.now() - 12 * MIN, between: false };
+    expect(t.h.sendNext('r2')).toBe(true);
+    expect(b.interrupts).toEqual([]);
+    expect(b.steered.map((f) => f.prompt)).toEqual(['later']);
+    expect(t.card('r2')?.text).toBe(READS_AFTER_STEP);
+    b.live.finish!();
+    await t.h.idle('room');
+    expect(b.prompts).toEqual(['slow']);
+  });
+
+  it('no run to take it: first in line, ahead of what queued before it, and the run is never stopped', async () => {
+    const b = backend();
+    const t = host(b.agent);
+    await t.ask('r0', 'theirs-first', false, 'bob');
+    await t.ask('r1', 'slow', false, 'bob');
+    await waitFor(() => Boolean(b.live.finish));
+    await t.ask('r2', 'one');
+    await t.ask('r3', 'two');
+    expect(t.h.sendNext('r3')).toBe(true);
+    expect(t.card('r1')?.status).toBe('started');
+    b.live.finish!();
+    await waitFor(() => t.card('r2')?.status === 'done');
+    expect(b.prompts).toEqual(['theirs-first', 'slow', 'two', 'one']);
+    expect(t.h.sendNext('nope')).toBe(false);
+  });
+});

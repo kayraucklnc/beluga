@@ -82,7 +82,7 @@ function TaskHead({ t }: { t: TaskView }) {
       {info.sub && t.pulse ? <p className={p.detailsStep}>{t.pulse.kind === 'working' || t.pulse.kind === 'command' ? `Now: ${info.sub}` : info.sub}</p> : t.step && t.state === 'running' ? <p className={p.detailsStep}>Now: {t.step}</p> : null}
       {t.waiting?.length ? (
         <p className={p.detailsWaiting}>
-          <WaitingLine waiting={t.waiting} />
+          <WaitingLine waiting={t.waiting} each />
         </p>
       ) : null}
     </>

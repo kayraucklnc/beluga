@@ -1407,6 +1407,16 @@
 .waitingWords {
   white-space: nowrap;
 }
+.waitingList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.waitingList .waitingWords {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .steerNow {
   padding: 0;
   border: 0;

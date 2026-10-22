@@ -104,6 +104,8 @@ export const API = {
   // ---- your Claude's queue and approvals
   'host.answerApproval': args(Answer, id),
   'host.promote': args(id),
+  // Send a waiting message next, never interrupting (Send Now).
+  'host.sendNext': args(id),
   // Stop your Claude in one conversation: → { stopped, returned: your queued prompts, in order }.
   'host.stopRun': args(channel),
   'host.cancelQueued': args(id),
