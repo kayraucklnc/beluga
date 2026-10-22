@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { ProjectsConfig, WorkspaceRecord } from './types.js';
@@ -64,4 +65,19 @@ export class WorkspaceStore {
   saveHistory(id: string, items: readonly unknown[]): void {
     writeJson(this.historyFile(id), items);
   }
+
+  /**
+   * saveHistory off the main thread's way: the file is written aside, then put in place only if
+   * `current()` still says so (a newer save may have come meanwhile).
+   */
+  async saveHistoryAsync(id: string, items: readonly unknown[], current: () => boolean = () => true): Promise<void> {
+    const file = this.historyFile(id);
+    await mkdir(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.${++asyncWrites}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(items, null, 2)}\n`, { mode: 0o600 });
+    if (!current()) return void (await rm(tmp, { force: true }));
+    renameSync(tmp, file);
+  }
 }
+
+let asyncWrites = 0;

@@ -1052,6 +1052,10 @@ export class WorkspaceManager {
   saveHistory(id: string, items: readonly unknown[]): void {
     this.store.saveHistory(id, items);
   }
+
+  saveHistoryAsync(id: string, items: readonly unknown[], current?: () => boolean): Promise<void> {
+    return this.store.saveHistoryAsync(id, items, current);
+  }
 }
 
 const commandHash = (command: string): string => createHash('sha256').update(command.trim()).digest('hex').slice(0, 16);
