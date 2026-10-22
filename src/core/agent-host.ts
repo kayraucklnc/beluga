@@ -17,6 +17,7 @@ import { isImportedItem } from '../agent/transcript.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
 import { STEERED_IN } from '../shared/claude-notices.js';
 import { decodeFailure } from '../shared/run-failure.js';
+import { e2eLockedIn, mayStartTests } from '../workspaces/test-procs.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -200,6 +201,8 @@ export class AgentHost {
    * the others, while messages within one conversation run in order (urgent ones jump the line).
    */
   private readonly lanes = new Map<string, Lane>();
+  /** Worktrees whose Claude ran something that may have started test processes since they were last stopped. */
+  private readonly testRuns = new Set<string>();
   private running = 0;
   /** Approvals waiting per person, so one person can't crowd out everyone else's. */
   private readonly approvalsBy = new Map<string, number>();
@@ -914,7 +917,10 @@ export class AgentHost {
           this.compactor.observe(body.channel, kind, text);
           this.emitAgent(body.requestId, from, kind, text, body.channel);
         },
-        onStep: (record) => this.steps.put(runKey(body.requestId), record),
+        onStep: (record) => {
+          if (worktree && record.tool === 'Bash' && mayStartTests(record.input?.command, record.input?.run_in_background)) this.testRuns.add(worktree);
+          this.steps.put(runKey(body.requestId), record);
+        },
         // Another Claude asked: give it the answer now rather than after every background agent.
         ...(body.viaAgent && from !== this.selfId ? { onAnswered: (text: string) => this.emitAgent(body.requestId, from, 'answered', text, body.channel) } : {}),
         onFileTouched: (abs) => this.announceAgentFocus(abs),
@@ -965,10 +971,12 @@ export class AgentHost {
       this.compactor.ran(body.channel);
       this.steps.flush(runKey(body.requestId));
       // Claude stopped: no test run (an e2e's daemon, vite, browser) it started outlives it.
-      if (worktree && !lane.current) void this.deps.stopTests?.(worktree).catch(() => undefined);
+      // Only when it may have started any (ps over every process is slow on a busy Mac).
+      if (worktree && !lane.current && (this.testRuns.delete(worktree) || e2eLockedIn(worktree))) void this.deps.stopTests?.(worktree).catch(() => undefined);
       if (!lane.current) this.wakeIdle(body.channel);
       void this.deps.refreshUsage();
-      if (body.channel !== 'room') void this.deps.workspaces?.refresh();
+      // Only this folder's git status: a run ending elsewhere changed nothing in the others.
+      if (body.channel !== 'room' && place) void this.deps.workspaces?.refreshWorkspace(place.cwd).catch(() => undefined);
     }
   }
 

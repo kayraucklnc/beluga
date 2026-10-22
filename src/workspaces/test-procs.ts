@@ -61,6 +61,18 @@ export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving =
   return [...out];
 }
 
+/** A command Claude ran that may start test processes (or anything left running in the background). */
+const STARTS_TESTS = /\b(tests?|vitest|playwright|jest|mocha|e2e|vite|demo)\b/i;
+
+export function mayStartTests(command: unknown, background?: unknown): boolean {
+  return background === true || (typeof command === 'string' && STARTS_TESTS.test(command));
+}
+
+/** Whether the machine-wide e2e lock is held from this worktree (one small file read, no ps). */
+export function e2eLockedIn(dir: string): boolean {
+  return lockedRun(path.resolve(dir)) !== undefined;
+}
+
 function ps(args: readonly string[]): Promise<string> {
   return new Promise((resolve) => execFile('ps', [...args], { maxBuffer: 256 * 1024 * 1024, timeout: 15_000 }, (err, out) => resolve(err ? '' : out)));
 }
