@@ -7,7 +7,7 @@ import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
-import { buildPrPrompt, customPrPrompt, ensurePrPromptFile, findPr, fixChecksPrompt, hasGh, resetPrPrompt } from '../workspaces/pr.js';
+import { type MergeOptions, type MergeProblem, buildPrPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
 import { checkSetup, scriptEnv } from '../workspaces/scripts.js';
 import type { SetupFix } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
@@ -38,6 +38,16 @@ export interface WorkbenchDeps {
   readonly listModels?: () => Promise<readonly ModelChoice[] | undefined>;
   /** Look for a pull request (injected in tests). */
   readonly findPr?: (dir: string, branch: string) => Promise<PullRequest | undefined>;
+  /** A repository's recent PRs by branch, in one call (injected in tests; without it, with an injected findPr, PRs are looked up one by one). */
+  readonly listPrs?: (dir: string) => Promise<{ prs: ReadonlyMap<string, PullRequest>; full: boolean }>;
+  /** Merge a PR on GitHub (injected in tests; throws gh's error). */
+  readonly mergePr?: (dir: string, number: number, opts: MergeOptions) => Promise<void>;
+  /** Delete a merged branch on GitHub (injected in tests). */
+  readonly deleteRemoteBranch?: (dir: string, branch: string) => Promise<void>;
+  /** Where a branch was last pushed to (its remote-tracking ref), to notice pushes. */
+  readonly remoteRef?: (dir: string, branch: string) => string | undefined;
+  /** The clock (injected in tests). */
+  readonly now?: () => number;
   readonly hasGh?: () => Promise<boolean>;
   readonly measure?: (dir: string) => Promise<number | undefined>;
   /** Your environment variables for something starting there (see env-vars.ts). */
@@ -49,7 +59,18 @@ export interface WorkbenchDeps {
 }
 
 const DISK_EVERY_MS = 5 * 60_000;
-const PR_EVERY_MS = 90_000;
+/** How often to see which PRs are due a look (cheap: no gh unless one is). */
+const PR_TICK_MS = 5_000;
+/** PRs with checks running, or a branch just pushed. */
+export const PR_FAST_MS = 15_000;
+/** Other open PRs, and worktrees with commits but no PR yet. */
+export const PR_SLOW_MS = 60_000;
+/** A push keeps its PR on the fast cadence this long (CI starts, a PR gets opened). */
+const PR_PUSHED_FOR_MS = 3 * 60_000;
+/** Coming back to the window refreshes PRs not looked at in this long. */
+const PR_FOCUS_FRESH_MS = 5_000;
+/** gh calls at once. */
+const PR_CONCURRENCY = 3;
 /** Terminal size until the Terminal tab is shown (it resizes to fit). */
 const START_SIZE = { cols: 120, rows: 30 };
 
@@ -65,10 +86,39 @@ export function prNews(name: string, channel: string, before: PullRequest | unde
   const out: NoticeEvent[] = [];
   if (before.checks !== pr.checks && (pr.checks === 'passing' || pr.checks === 'failing')) out.push({ kind: pr.checks === 'failing' ? 'problems' : 'pr', title: `Checks ${pr.checks} on PR #${pr.number}`, body: `${name} · ${pr.title}`, channel });
   if (before.state !== 'MERGED' && pr.state === 'MERGED') out.push({ kind: 'pr', title: `PR #${pr.number} was merged`, body: name, channel });
+  if (before.state === 'OPEN' && pr.state === 'CLOSED') out.push({ kind: 'pr', title: `PR #${pr.number} was closed without merging`, body: name, channel });
   if (before.review !== pr.review && pr.review === 'CHANGES_REQUESTED') out.push({ kind: 'pr', title: `Changes requested on PR #${pr.number}`, body: name, channel });
   if (before.review !== pr.review && pr.review === 'APPROVED') out.push({ kind: 'pr', title: `PR #${pr.number} was approved`, body: name, channel });
   return out;
 }
+
+/**
+ * How long until a worktree's PR is worth asking gh about again; undefined: not by itself
+ * (merged or closed). `pushedAt`: when its branch was last pushed.
+ */
+export function prCadence(pr: PullRequest | undefined, pushedAt: number | undefined, now: number): number | undefined {
+  if (pushedAt !== undefined && now - pushedAt < PR_PUSHED_FOR_MS) return PR_FAST_MS;
+  if (!pr) return PR_SLOW_MS;
+  if (pr.state !== 'OPEN') return undefined;
+  return pr.checks === 'pending' ? PR_FAST_MS : PR_SLOW_MS;
+}
+
+/**
+ * How a merge on GitHub went: `merged` now, or `queued` (auto-merge is on, or the repository's
+ * merge queue took it); else why not, in words you can act on.
+ */
+export type MergeOutcome = { readonly ok: true; readonly result: 'merged' | 'queued'; readonly message: string } | { readonly ok: false; readonly reason: MergeProblem | 'no_pr' | 'busy'; readonly message: string };
+
+/** Run `tasks`, at most `limit` at a time. */
+async function inPool(tasks: ReadonlyArray<() => Promise<void>>, limit: number): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < tasks.length) await tasks[next++]!();
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+}
+
+const samePr = (a: PullRequest | undefined, b: PullRequest | undefined): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 
 /**
@@ -82,6 +132,18 @@ export class Workbench {
   private prsSeeded = false;
   /** Worktrees you asked Claude to open a PR for: their PR appearing is worth a notification. */
   private readonly prAsked = new Set<string>();
+  /** When each worktree's PR was last asked about. */
+  private readonly prChecked = new Map<string, number>();
+  /** When each worktree's branch was last seen pushed, and the remote ref it was at. */
+  private readonly pushedAt = new Map<string, number>();
+  private readonly remoteSeen = new Map<string, string | undefined>();
+  /** PRs already announced as merged or closed ("<ws>#<number>:<state>"), so that's said once. */
+  private readonly prEnded = new Set<string>();
+  private polling = false;
+  /** Focus and push looks asked for while a look ran (or before the first): they run right after, never dropped. */
+  private pollQueue: Array<{ reason: 'focus' | 'push'; id?: string }> = [];
+  /** Worktrees whose PR is being merged right now. */
+  private readonly merging = new Set<string>();
 
   constructor(private readonly deps: WorkbenchDeps) {}
 
@@ -105,7 +167,7 @@ export class Workbench {
     setTimeout(() => void this.measureDisk(), 3000).unref();
     this.diskTimer = setInterval(() => void this.measureDisk(), DISK_EVERY_MS);
     this.diskTimer.unref();
-    this.prTimer = setInterval(() => void this.refreshPrs(), PR_EVERY_MS);
+    this.prTimer = setInterval(() => void this.pollPrs(), PR_TICK_MS);
     this.prTimer.unref();
   }
 
@@ -166,6 +228,47 @@ export class Workbench {
     this.deps.askClaude(fixChecksPrompt(pr), `ws:${id}`);
   }
 
+  /**
+   * Merge a worktree's PR on GitHub (gh pr merge), or with `auto` once its checks and reviews pass;
+   * then look at it again at once, so it shows Merged. GitHub's "no" comes back as a reason and a
+   * sentence (a review is required, it conflicts…).
+   */
+  async mergePr(id: string, opts: MergeOptions): Promise<MergeOutcome> {
+    const ws = this.worktree(id);
+    const pr = this.deps.store.getState().prs[id];
+    const fail = (reason: Extract<MergeOutcome, { ok: false }>['reason'], message: string): MergeOutcome => {
+      this.deps.toast(message, reason === 'busy' ? 'info' : 'error');
+      return { ok: false, reason, message };
+    };
+    if (!ws?.branch || !pr) return fail('no_pr', 'This worktree has no pull request to merge yet');
+    if (pr.state !== 'OPEN') return fail('closed', pr.state === 'MERGED' ? `PR #${pr.number} is already merged` : `PR #${pr.number} is closed`);
+    if (this.merging.has(id)) return fail('busy', `PR #${pr.number} is already being merged`);
+    this.merging.add(id);
+    try {
+      try {
+        await (this.deps.mergePr ?? mergePr)(ws.path, pr.number, opts);
+      } catch (err) {
+        const problem = explainMergeError(err instanceof Error ? err.message : String(err), opts.method);
+        // GitHub may know more now (a conflict, a review): show it.
+        await this.refreshPrs(id);
+        return fail(problem.reason, problem.message);
+      }
+      // You merged it: no "was merged" notification on top.
+      this.prEnded.add(`${id}#${pr.number}:MERGED`);
+      if (opts.auto) this.pushedAt.set(id, this.now());
+      await this.refreshPrs(id);
+      const merged = this.deps.store.getState().prs[id]?.state === 'MERGED';
+      if (merged && opts.deleteBranch) {
+        await (this.deps.deleteRemoteBranch ?? deleteRemoteBranch)(ws.path, ws.branch).catch((err: unknown) => this.deps.toast(`Merged, but the branch on GitHub wasn’t deleted: ${err instanceof Error ? err.message : String(err)}`, 'warn'));
+      }
+      const message = merged ? `Merged PR #${pr.number}` : opts.auto ? `PR #${pr.number} merges when its checks pass` : `PR #${pr.number} is queued to merge`;
+      this.deps.toast(message, 'success');
+      return { ok: true, result: merged ? 'merged' : 'queued', message };
+    } finally {
+      this.merging.delete(id);
+    }
+  }
+
   openPr(id: string): void {
     const pr = this.deps.store.getState().prs[id];
     if (pr) (this.deps.open ?? systemOpen)(pr.url);
@@ -181,25 +284,127 @@ export class Workbench {
       if (!recheckGh || !(await (this.deps.hasGh ?? hasGh)())) return;
       this.deps.store.dispatch({ type: 'gh', ok: true });
     }
-    const find = this.deps.findPr ?? findPr;
-    const state = this.deps.store.getState();
-    const list = this.manager.list.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && w.branch && !w.archived && worktreeOrigin(w) === 'klaud' && (only ? w.id === only : (w.status?.ahead ?? 0) > 0 || state.prs[w.id]));
     // The first look after starting only learns what exists; news is what changes after that.
     const quiet = !this.prsSeeded && !only;
-    for (const ws of list) {
-      let pr: PullRequest | undefined;
-      try {
-        pr = await find(ws.path, ws.branch!);
-      } catch {
-        continue; // gh couldn't tell this time: keep what we knew
-      }
-      const before = this.deps.store.getState().prs[ws.id];
-      this.deps.store.dispatch({ type: 'pr', id: ws.id, pr });
-      if (!pr || quiet) continue;
-      const asked = this.prAsked.delete(ws.id);
-      for (const e of prNews(ws.name, `ws:${ws.id}`, before, pr, asked)) this.deps.notify(e);
+    for (const ws of this.prWorktrees(only)) this.pushed(ws);
+    await this.lookUpPrs(this.prWorktrees(only), quiet);
+    if (!only) {
+      this.prsSeeded = true;
+      await this.runQueuedPolls();
     }
-    if (!only) this.prsSeeded = true;
+  }
+
+  /**
+   * Look again at the PRs that are due (see prCadence), and right away at a branch that was just
+   * pushed. Runs every few seconds; `focus`: you came back to the window, so anything not looked
+   * at in the last few seconds is; `push`: a branch was pushed (`id`, or any).
+   */
+  async pollPrs(reason: 'tick' | 'focus' | 'push' = 'tick', id?: string): Promise<void> {
+    if (this.deps.store.getState().gh !== true) return;
+    if (!this.prsSeeded || this.polling) {
+      // Another tick comes in a few seconds; focus and push are asked once, so they wait their turn.
+      if (reason !== 'tick' && !this.pollQueue.some((q) => q.reason === reason && q.id === id)) this.pollQueue.push({ reason, ...(id ? { id } : {}) });
+      return;
+    }
+    this.polling = true;
+    try {
+      const now = this.now();
+      const prs = this.deps.store.getState().prs;
+      const due = this.prWorktrees().filter((ws) => {
+        const pushed = this.pushed(ws) || (reason === 'push' && ws.id === id);
+        if (pushed) this.pushedAt.set(ws.id, now);
+        const every = prCadence(prs[ws.id], this.pushedAt.get(ws.id), now);
+        if (every === undefined) return false;
+        return pushed || now - (this.prChecked.get(ws.id) ?? 0) >= (reason === 'focus' ? PR_FOCUS_FRESH_MS : every);
+      });
+      if (due.length) await this.lookUpPrs(due, false);
+    } finally {
+      this.polling = false;
+    }
+    await this.runQueuedPolls();
+  }
+
+  /** Run the focus and push looks that were asked for while another look ran. */
+  private async runQueuedPolls(): Promise<void> {
+    for (const q of this.pollQueue.splice(0)) await this.pollPrs(q.reason, q.id);
+  }
+
+  private now(): number {
+    return (this.deps.now ?? Date.now)();
+  }
+
+  /** Your worktrees whose PRs are watched: with commits, or a PR already (or just `only`). Other tools' worktrees are theirs to watch. */
+  private prWorktrees(only?: string): Workspace[] {
+    const prs = this.deps.store.getState().prs;
+    return this.manager.list.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && w.branch && !w.archived && worktreeOrigin(w) === 'klaud' && (only ? w.id === only : (w.status?.ahead ?? 0) > 0 || prs[w.id]));
+  }
+
+  /** Whether the branch moved on origin since last time (pushed, or fetched after someone pushed). */
+  private pushed(ws: Workspace): boolean {
+    const ref = (this.deps.remoteRef ?? remoteRef)(ws.path, ws.branch!);
+    const known = this.remoteSeen.has(ws.id);
+    const before = this.remoteSeen.get(ws.id);
+    this.remoteSeen.set(ws.id, ref);
+    if (!known || !ref || ref === before) return false;
+    this.pushedAt.set(ws.id, this.now());
+    return true;
+  }
+
+  /**
+   * Ask gh about these worktrees' PRs, three calls at a time: one `gh pr list` for a project
+   * with several, `gh pr view` for the rest.
+   */
+  private async lookUpPrs(list: readonly Workspace[], quiet: boolean): Promise<void> {
+    const find = this.deps.findPr ?? findPr;
+    const listAll = this.deps.listPrs ?? (this.deps.findPr ? undefined : listPrs);
+    const now = this.now();
+    for (const ws of list) this.prChecked.set(ws.id, now);
+    const one = async (ws: Workspace): Promise<void> => {
+      try {
+        this.gotPr(ws, await find(ws.path, ws.branch!), quiet);
+      } catch {
+        // gh couldn't tell this time: keep what we knew
+      }
+    };
+    const byProject = new Map<string, Workspace[]>();
+    for (const ws of list) byProject.set(ws.projectId, [...(byProject.get(ws.projectId) ?? []), ws]);
+    const later: Workspace[] = [];
+    const tasks: Array<() => Promise<void>> = [];
+    for (const group of byProject.values()) {
+      if (!listAll || group.length < 2) {
+        tasks.push(...group.map((ws) => () => one(ws)));
+        continue;
+      }
+      tasks.push(async () => {
+        let found: Awaited<ReturnType<typeof listAll>>;
+        try {
+          found = await listAll(group[0]!.path);
+        } catch {
+          return; // gh couldn't tell this time
+        }
+        for (const ws of group) {
+          const pr = found.prs.get(ws.branch!);
+          // Not in a full page: maybe just older than what came back, so asked about by itself.
+          if (pr || (!found.full && !this.deps.store.getState().prs[ws.id])) this.gotPr(ws, pr, quiet);
+          else later.push(ws);
+        }
+      });
+    }
+    await inPool(tasks, PR_CONCURRENCY);
+    await inPool(later.map((ws) => () => one(ws)), PR_CONCURRENCY);
+  }
+
+  /** gh's answer for a worktree's branch: keep it, and tell you what changed. */
+  private gotPr(ws: Workspace, pr: PullRequest | undefined, quiet: boolean): void {
+    const before = this.deps.store.getState().prs[ws.id];
+    if (!samePr(before, pr)) this.deps.store.dispatch({ type: 'pr', id: ws.id, pr });
+    if (!pr || quiet) return;
+    const asked = this.prAsked.delete(ws.id);
+    // Merged or closed is said once, even if gh's answers flicker.
+    const ended = `${ws.id}#${pr.number}:${pr.state}`;
+    const told = pr.state !== 'OPEN' && this.prEnded.has(ended);
+    if (pr.state !== 'OPEN') this.prEnded.add(ended);
+    for (const e of prNews(ws.name, `ws:${ws.id}`, told && before ? { ...before, state: pr.state } : before, pr, asked)) this.deps.notify(e);
   }
 
   /** Open your PR instructions in your editor (created with the built-in text the first time). */

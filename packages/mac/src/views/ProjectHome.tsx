@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { PullRequest } from '@klaud/core/work-store.js';
+import { describePr } from '@klaud/shared/format.js';
 import { activityOf, stateOf } from '@klaud/ui/workspace-models.js';
 import type { Project, Workspace } from '@klaud/workspaces/types.js';
 import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, type Plan } from '@klaud/core/plans/model.js';
@@ -36,8 +38,9 @@ export function ProjectHome({ id }: { id: string }) {
   const project = useApp((st) => st.projects.find((p) => p.id === id && p.root));
   const log = useApp((st) => st.log);
   const conflicts = useApp((st) => st.conflicts);
+  const prs = useApp((st) => st.prs);
   if (!project) return <Empty icon="folder" title="This project isn’t here anymore" detail="It may have been hidden or moved. Pick another one in the sidebar." />;
-  const model = homeModel({ log, conflicts }, project);
+  const model = homeModel({ log, conflicts, prs }, project);
   return (
     <div className={s.page} aria-label={`${project.name} home`}>
       <div className={s.column}>
@@ -430,28 +433,86 @@ function Section({ title, count, hint, action, children }: { title: string; coun
   );
 }
 
-/** One worktree or question: its state, name, last line and when; a click opens it. */
+const PR_STATE: Record<PullRequest['state'], string> = { OPEN: 'Open', MERGED: 'Merged', CLOSED: 'Closed' };
+
+/** A worktree's PR on its row: #n, its state, and a mark for its checks (✓ ✗ or running). A button: it opens the PR sheet. */
+function PrChip({ pr, onOpen }: { pr: PullRequest; onOpen?: () => void }) {
+  const open = pr.state === 'OPEN';
+  const tone = pr.state === 'MERGED' ? 'merged' : !open ? 'closed' : pr.checks === 'failing' || pr.conflicts ? 'failing' : pr.checks;
+  const Tag = onOpen ? 'button' : 'span';
+  return (
+    <Tag
+      {...(onOpen ? { type: 'button' as const, onClick: onOpen, 'aria-label': `${describePr(pr)}: show its checks and merge` } : {})}
+      className={cx(s.rowPr, s[`pr_${tone}`])}
+      data-pr-chip={pr.number}
+      data-pr-state={pr.state}
+      data-pr-checks={pr.checks}
+      title={onOpen ? `${describePr(pr)}: click for its checks and to merge` : describePr(pr)}
+    >
+      <Icon name={pr.state === 'MERGED' ? 'merge' : 'pr'} size={11} />
+      <span>#{pr.number}</span>
+      <span className={s.rowPrState}>{pr.draft && open ? 'Draft' : PR_STATE[pr.state]}</span>
+      {open && pr.checks !== 'none' ? (
+        <span className={s.rowPrChecks} aria-label={`checks ${pr.checks}`}>
+          {pr.checks === 'pending' ? <span className={s.rowPrRunning} /> : <Icon name={pr.checks === 'passing' ? 'check' : 'x'} size={10} />}
+        </span>
+      ) : null}
+    </Tag>
+  );
+}
+
+/** One worktree or question: its state, name, last line and when; a click opens it (its PR: the PR sheet). */
 function Row({ ws, ask }: { ws: Workspace; ask?: boolean }) {
   const actions = useActions();
   const state = useApp((st) => st);
   const st = stateOf(state, ws, 0);
   const act = activityOf(state.log, `ws:${ws.id}`);
   const title = ws.kind === 'main' ? 'Main folder conversation' : ws.name;
-  return (
-    <div role="listitem">
-      <button type="button" className={cx(s.row, ws.archived && s.rowArchived)} onClick={() => actions.run(ws.archived ? { type: 'archived_menu', id: ws.id } : { type: 'open_ws', id: ws.id })} aria-label={`${title}: ${st.label}`}>
-        <span className={s.rowIcon}>{ask ? <Icon name="chat" size={13} /> : <Dot tone={st.tone === 'claude' ? 'claude' : st.tone} live={st.tone === 'claude'} />}</span>
-        <span className={s.rowMain}>
-          <span className={s.rowTitle}>
-            <span className={s.rowName}>{title}</span>
-            {ws.branch && !ask ? <span className={s.rowBranch}>{ws.branch}</span> : null}
-          </span>
-          {act.last ? <span className={s.rowLast}>{act.last}</span> : null}
+  const pr = ws.kind === 'worktree' && !ask ? state.prs[ws.id] : undefined;
+  const open = (): void => actions.run(ws.archived ? { type: 'archived_menu', id: ws.id } : { type: 'open_ws', id: ws.id });
+  // The PR chip is its own button (a button can't hold another): it opens the PR sheet, right here.
+  const chip = pr ? <PrChip pr={pr} {...(ws.archived ? {} : { onOpen: () => actions.run({ type: 'ws', id: ws.id, action: 'pr' }) })} /> : null;
+  const label = `${title}: ${st.label}${pr ? `, ${describePr(pr)}` : ''}`;
+  const parts = (
+    <>
+      <span className={s.rowIcon}>{ask ? <Icon name="chat" size={13} /> : <Dot tone={st.tone === 'claude' ? 'claude' : st.tone} live={st.tone === 'claude'} />}</span>
+      <span className={s.rowMain}>
+        <span className={s.rowTitle}>
+          <span className={s.rowName}>{title}</span>
+          {ws.branch && !ask ? <span className={s.rowBranch}>{ws.branch}</span> : null}
         </span>
-        <span className={cx(s.rowState, s[`tone_${st.tone}`])}>{ask ? '' : st.label}</span>
-        <span className={s.rowWhen}>{agoText(lastActive(state, ws))}</span>
-        <Icon name="chevronRight" size={11} className={s.rowChevron} />
+        {act.last ? <span className={s.rowLast}>{act.last}</span> : null}
+      </span>
+    </>
+  );
+  const tail = (
+    <>
+      <span className={cx(s.rowState, s[`tone_${st.tone}`])}>{ask ? '' : st.label}</span>
+      <span className={s.rowWhen}>{agoText(lastActive(state, ws))}</span>
+      <Icon name="chevronRight" size={11} className={s.rowChevron} />
+    </>
+  );
+  if (!pr) {
+    return (
+      <div role="listitem">
+        <button type="button" className={cx(s.row, ws.archived && s.rowArchived)} onClick={open} aria-label={label}>
+          {parts}
+          {tail}
+        </button>
+      </div>
+    );
+  }
+  // With a PR the chip sits beside the open button; a click anywhere else on the row (or Return on the button) bubbles up and opens it.
+  const click = (e: React.MouseEvent): void => {
+    if (!(e.target as Element).closest('button[data-pr-chip]')) open();
+  };
+  return (
+    <div role="listitem" className={cx(s.row, s.rowSplit, ws.archived && s.rowArchived)} onClick={click}>
+      <button type="button" className={s.rowOpen} aria-label={label}>
+        {parts}
       </button>
+      {chip}
+      {tail}
     </div>
   );
 }

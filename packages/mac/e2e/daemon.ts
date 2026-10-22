@@ -8,7 +8,8 @@ export default async function setup(): Promise<() => void> {
   const repo = path.resolve(import.meta.dirname, '../../..');
   const child = spawn('npx', ['tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'], {
     cwd: repo,
-    env: { ...process.env, KLAUD_HOME: home, KLAUD_DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', KLAUD_ALLOW_ORIGINS: `http://localhost:${process.env.E2E_PORT ?? 1421}` },
+    // GitHub is a stand-in (e2e/fake-gh.mjs): its PRs are whatever a test writes to fake-gh.json.
+    env: { ...process.env, KLAUD_HOME: home, KLAUD_GH: path.join(import.meta.dirname, 'fake-gh.mjs'), KLAUD_FAKE_GH: path.join(home, 'fake-gh.json'), KLAUD_DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', KLAUD_ALLOW_ORIGINS: `http://localhost:${process.env.E2E_PORT ?? 1421}` },
     stdio: 'ignore',
   });
   const info = path.join(home, 'daemon.json');

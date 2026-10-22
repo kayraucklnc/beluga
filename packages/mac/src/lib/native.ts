@@ -176,11 +176,17 @@ export function useTrayStatus(client: SocketClient): void {
 
 /**
  * Tell klaud whether this window is in front: what it shows isn't announced while it is, and
- * "Only when klaud isn't in front" waits until it isn't.
+ * "Only when klaud isn't in front" waits until it isn't. Coming to the front refreshes PRs.
  */
 export function useWindowFocus(client: SocketClient): void {
   useEffect(() => {
-    const set = (focused: boolean): void => client.store.dispatch({ type: 'away', away: !focused });
+    let wasFocused = false;
+    const set = (focused: boolean): void => {
+      client.store.dispatch({ type: 'away', away: !focused });
+      // Coming back to the window: PRs merged or checks finished while you were away show at once.
+      if (focused && !wasFocused) void client.api.workbench.refreshPrs({ reason: 'focus' }).catch(() => undefined);
+      wasFocused = focused;
+    };
     if (inApp()) {
       let alive = true;
       let off: (() => void) | undefined;

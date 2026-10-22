@@ -223,6 +223,7 @@ export function stateOf(state: AppState, ws: Workspace, frame: number, now = Dat
   if (ws.kind === 'chat') return { label: act.lastTs ? `Chat · ${ago(act.lastTs, now)}` : 'New chat', color: theme.muted, icon: '◇', tone: 'muted' };
   const st = ws.status;
   if (st?.changed) return { label: `${st.changed} uncommitted change${st.changed > 1 ? 's' : ''}`, color: theme.warn, icon: glyph.dot, tone: 'warn' };
+  if (ws.kind === 'worktree' && state.prs[ws.id]?.state === 'MERGED') return { label: 'Merged on GitHub', color: theme.ok, icon: glyph.dot, tone: 'ok' };
   if (ws.kind === 'worktree' && st?.ahead) return { label: `Ready to merge · ${st.ahead} commit${st.ahead > 1 ? 's' : ''}`, color: theme.info, icon: glyph.dot, tone: 'info' };
   return { label: ws.kind === 'main' ? 'Main folder' : 'Up to date', color: theme.ok, icon: glyph.dot, tone: 'ok' };
 }
@@ -493,7 +494,7 @@ function rowActions(state: AppState, p: Project, w: Workspace): Array<{ label: s
   const ahead = w.kind === 'worktree' ? (w.status?.ahead ?? 0) : 0;
   return [
     ...(conflict ? [{ label: 'Solve conflict', action: { type: 'ws', id: w.id, action: 'merge_claude' } as UiAction, hint: 'Ask Claude to resolve the merge conflict' }] : []),
-    ...(ahead > 0 && !(w.status?.changed ?? 0) && !conflict ? [{ label: 'Merge', action: { type: 'ws', id: w.id, action: 'merge' } as UiAction, hint: `Merge ${w.branch} into ${p.name}'s main folder` }] : []),
+    ...(ahead > 0 && !(w.status?.changed ?? 0) && !conflict ? [{ label: 'Merge Locally', action: { type: 'ws', id: w.id, action: 'merge' } as UiAction, hint: `Merge ${w.branch} into ${p.name}'s main folder on this computer (nothing on GitHub)` }] : []),
     ...(w.kind === 'worktree' && (ahead > 0 || pr) ? [{ label: pr ? 'View PR' : 'Open PR', action: { type: 'ws', id: w.id, action: 'pr' } as UiAction, hint: pr ? describePr(pr) : 'Claude opens a pull request with a short description' }] : []),
   ];
 }
@@ -618,7 +619,7 @@ export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButto
               conflict
                 ? { label: 'Solve conflict', action: 'merge_claude', hint: 'Ask Claude to resolve the merge conflict and finish the merge', tone: 'error' }
                 : {
-                    label: 'Merge',
+                    label: 'Merge Locally',
                     action: 'merge',
                     hint: changed ? 'Commit your changes first' : ahead ? `Merge ${ahead} commit(s) into ${project?.name ?? 'the'} main folder` : 'Nothing to merge yet',
                     disabled: !ahead || changed > 0,
