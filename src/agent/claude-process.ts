@@ -36,7 +36,8 @@ export async function endProcess(child: ChildProcess, graceMs = KILL_GRACE_MS): 
 
 /** A run's handle on its Claude Code process. */
 export function runProcess(child: ChildProcess & { pid: number }, graceMs = KILL_GRACE_MS): RunProcess {
-  return { pid: child.pid, alive: () => running(child), kill: () => endProcess(child, graceMs) };
+  const exited = running(child) ? new Promise<void>((resolve) => child.once('exit', () => resolve())) : Promise.resolve();
+  return { pid: child.pid, alive: () => running(child), kill: () => endProcess(child, graceMs), exited };
 }
 
 /** Add `data`'s non-empty lines to `lines`, keeping only the last `keep`. */

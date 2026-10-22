@@ -139,7 +139,7 @@ describe('the watcher: what a sub-agent made, to look at', () => {
     return p;
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-outputs-')));
     cwd = path.join(root, 'app');
     tmp = path.join(root, 'tmp');
@@ -170,7 +170,7 @@ describe('the watcher: what a sub-agent made, to look at', () => {
     );
     const store = new Store(initialState('room'));
     w = new ClaudeCodeWatcher({ home, store, watch: false, publishMs: 0 });
-    w.scan();
+    await w.scan();
     w.poll();
   });
   afterEach(() => {

@@ -10,13 +10,14 @@ import type { AgentPlace } from '../agent/types.js';
 import { type ArrangeTarget, type WorkspaceManager, real } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import type { ShareService } from './shares.js';
-import { type LogItem, type Store, type WorkspaceTab } from './store.js';
+import { type LogItem, type Store, type WorkspaceTab, settleRun } from './store.js';
 import { type Conversation, isImportedItem } from '../agent/transcript.js';
 import type { Intent } from './intents.js';
 import { type OtherTools, OtherWorktrees } from './other-worktrees.js';
 import { MainSync } from './main-sync.js';
 import { agentWorktreesFrom, cleanupText, removeAgentWorktrees } from './agent-worktree-cleanup.js';
 import { claudeHome } from './claude-code/launch.js';
+import { HistorySaver } from './history-saver.js';
 
 export interface ControllerDeps {
   readonly manager: WorkspaceManager;
@@ -48,8 +49,6 @@ export interface ControllerDeps {
   /** Move a folder to the Trash (Delete Project; default: the system's Trash, see workspaces/trash.ts). */
   readonly moveToTrash?: (dir: string) => Promise<void>;
 }
-
-const HISTORY_SAVE_MS = 400;
 
 export const REVIEW_PROMPT = [
   'Review everything done in this workspace compared to its base branch. Use parallel sub-agents for:',
@@ -99,7 +98,8 @@ export class WorkspaceController {
   private readonly worktreeListeners = new Set<(event: WorktreeEvent) => void>();
   private readonly loaded = new Set<string>();
   private reviewToken = 0;
-  private saveTimer?: NodeJS.Timeout;
+  /** Saves the loaded conversations that changed (see history-saver.ts). */
+  private readonly saver: HistorySaver;
   private lastLog: readonly LogItem[] = [];
   private readonly unsubscribe: () => void;
   /** Conversations shown in worktrees from other tools, resumed when you first talk there (by workspace id). */
@@ -136,6 +136,14 @@ export class WorkspaceController {
   }
 
   constructor(private readonly deps: ControllerDeps) {
+    this.saver = new HistorySaver({
+      log: () => deps.store.getState().log,
+      channels: () => this.loaded,
+      idOf: workspaceIdOf,
+      write: (id, items, current) => deps.manager.saveHistoryAsync(id, items, current),
+      writeSync: (id, items) => deps.manager.saveHistory(id, items),
+    });
+    this.lastLog = deps.store.getState().log;
     this.unsubscribe = deps.store.subscribe(() => this.scheduleSave());
     this.others = new OtherWorktrees({ manager: deps.manager, refresh: () => this.refresh(), toast: deps.toast, ...(deps.otherTools ? { tools: deps.otherTools } : {}) });
     this.mainSync = new MainSync({
@@ -157,10 +165,7 @@ export class WorkspaceController {
   stop(): void {
     this.unsubscribe();
     this.mainSync.stop();
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveNow();
-    }
+    this.saver.stop();
   }
 
   /** Re-scan projects and publish them; every workspace's folder becomes a private share. */
@@ -216,9 +221,12 @@ export class WorkspaceController {
     this.loaded.add(channel);
     const saved = this.deps.manager.loadHistory<LogItem>(id);
     const live = this.deps.store.getState().log.filter((l) => l.channel === channel);
+    // A run saved mid-way (a crash, a quit) has nothing behind it now unless it's live here: it was interrupted.
+    const liveById = new Map(live.map((l) => [l.id, l]));
     const known = new Set(saved.map((l) => l.id));
-    this.deps.store.dispatch({ type: 'history', channel, items: [...saved, ...live.filter((l) => !known.has(l.id))] });
-    if (live.length) this.scheduleSave();
+    this.deps.store.dispatch({ type: 'history', channel, items: [...saved.map((l) => liveById.get(l.id) ?? settleRun(l)), ...live.filter((l) => !known.has(l.id))] });
+    if (live.length) this.saver.changed();
+    else this.saver.loaded(channel);
     return { saved: saved.length + live.length };
   }
 
@@ -409,7 +417,7 @@ export class WorkspaceController {
     const proper = opts.name?.trim() ? undefined : nameTask(about).catch(() => undefined);
     const name = opts.name?.trim() || slugify(about);
     this.deps.store.dispatch({ type: 'system', channel: from, text: "Moving to a new worktree…" });
-    this.saveNow(); // the copy gets everything said so far
+    this.saver.flush(); // the copy gets everything said so far
     const made = await this.act("Couldn't create the worktree", () => this.deps.manager.fork(id, name, { base: opts.base ?? project.base }));
     if (!made) return undefined;
     // Named while it was being made; announced under its proper name.
@@ -797,19 +805,7 @@ export class WorkspaceController {
     const log = this.deps.store.getState().log;
     if (log === this.lastLog) return;
     this.lastLog = log;
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => this.saveNow(), HISTORY_SAVE_MS);
-    this.saveTimer.unref();
-  }
-
-  private saveNow(): void {
-    this.saveTimer = undefined;
-    const log = this.deps.store.getState().log;
-    for (const channel of this.loaded) {
-      const id = workspaceIdOf(channel);
-      if (!id) continue;
-      this.deps.manager.saveHistory(id, log.filter((l) => l.channel === channel).slice(-500));
-    }
+    this.saver.changed();
   }
 
   /** Your workspace a conversation belongs to, if any. */

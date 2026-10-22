@@ -16,7 +16,7 @@ import { SCRATCH_DIR, ensureScratch } from '../workspaces/scratch.js';
 import { isImportedItem } from '../agent/transcript.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
 import { STEERED_IN } from '../shared/claude-notices.js';
-import { decodeFailure } from '../shared/run-failure.js';
+import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
 import { e2eLockedIn, mayStartTests } from '../workspaces/test-procs.js';
 
 export interface AgentHostDeps {
@@ -145,6 +145,10 @@ const DEAD_RUN_MS = 5 * 60_000;
  * message (a steer or a dead run), it's then left behind so that message can start.
  */
 const ABORT_GRACE_MS = 5_000;
+/** How long a run whose Claude Code exited gets to end on its own (its error, with stderr) before it's closed out. */
+export const EXIT_GRACE_MS = 3_000;
+/** How long quitting waits for stopped runs to end before the last save (see abort). */
+const QUIT_SETTLE_MS = 2_000;
 /** Said when a run that wouldn't take an interrupt was stopped for your message. */
 const STOPPED_FOR_YOU = 'Claude didn’t stop when asked, so its run was stopped for your message';
 
@@ -204,6 +208,8 @@ export class AgentHost {
   /** Worktrees whose Claude ran something that may have started test processes since they were last stopped. */
   private readonly testRuns = new Set<string>();
   private running = 0;
+  /** klaud is quitting (see abort): nothing waiting starts. */
+  private quitting = false;
   /** Approvals waiting per person, so one person can't crowd out everyone else's. */
   private readonly approvalsBy = new Map<string, number>();
   private readonly seenRequests: string[] = [];
@@ -396,9 +402,19 @@ export class AgentHost {
     return `Done: the new worktree "${ws.name}" (branch ${ws.branch}, from ${ws.base}) has this conversation and the task continues there automatically. Do not do the work here; end your turn now with one short line.`;
   }
 
-  /** Stop whatever is running (when klaud quits). */
-  abort(): void {
-    for (const lane of this.lanes.values()) lane.current?.abort();
+  /**
+   * Stop whatever is running (when klaud quits): nothing new starts, and it resolves once those
+   * runs have ended (their ends sent), or after `waitMs` for one that won't.
+   */
+  async abort(waitMs = QUIT_SETTLE_MS): Promise<void> {
+    this.quitting = true;
+    const busy = [...this.lanes.values()].filter((l) => l.current);
+    for (const lane of busy) lane.current?.abort();
+    if (!busy.length) return;
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<void>((resolve) => (timer = setTimeout(resolve, waitMs)));
+    await Promise.race([Promise.all(busy.map((l) => this.idle(l.channel))), late]);
+    clearTimeout(timer);
   }
 
   private lane(channel: string): Lane {
@@ -778,6 +794,7 @@ export class AgentHost {
       // Nearly full (after the last run, or before the next message): compact first, between turns.
       for (;;) {
         const auto = this.compactor.due(lane.channel);
+        if (this.quitting) break;
         const next = auto || lane.held ? undefined : lane.waiting.shift();
         if (!auto && !next) break;
         while (this.running >= MAX_PARALLEL_RUNS) await new Promise((r) => setTimeout(r, 200));
@@ -898,7 +915,20 @@ export class AgentHost {
         ),
       );
       gone.catch(() => undefined);
-      const final = await Promise.race([gone, agent.run({
+      // Claude Code exited and the run didn't end with it (no result, no error): closed out after a
+      // moment, so it never shows as running with nothing behind it.
+      let lost: (err: Error) => void = () => undefined;
+      const exited = new Promise<never>((_, reject) => (lost = reject));
+      exited.catch(() => undefined);
+      const watch = (p: RunProcess): void => {
+        void p.exited?.then(() => {
+          const timer = setTimeout(() => {
+            if (!ended && proc === p) lost(new RunFailedError({ kind: 'crash', detail: 'Claude Code exited without ending its turn.' }));
+          }, EXIT_GRACE_MS);
+          timer.unref();
+        });
+      };
+      const final = await Promise.race([gone, exited, agent.run({
         ...(scratch ? { scratchDir: scratch } : {}),
         ...(board?.tools ? { board: board.tools } : {}),
         ...(board?.brief ? { taskBrief: board.brief } : {}),
@@ -929,7 +959,10 @@ export class AgentHost {
         plan: body.plan,
         // A plan's conversation plans; it doesn't move to a worktree.
         ...(move && !plans?.tools ? { continueInWorktree: move } : {}),
-        onProcess: (p) => void (proc = p),
+        onProcess: (p) => {
+          proc = p;
+          watch(p);
+        },
         onSteer: (steer) => {
           if (lane.current === controller) lane.steer = steer;
         },
