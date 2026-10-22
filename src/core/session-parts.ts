@@ -18,6 +18,7 @@ import { SharedDiff } from './shared-diff.js';
 import { EnvVars } from './env-vars.js';
 import { boardOf } from './board/registry.js';
 import { plansOf } from './plans/registry.js';
+import { stopTestProcesses } from '../workspaces/test-procs.js';
 
 /** Everything a session is made of, wired to each other and to the session. */
 export interface SessionParts {
@@ -137,6 +138,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       refreshUsage: () => session.refreshUsage(),
       canEditIn: (peerId, channel) => invites.canEditIn(peerId, channel),
       envFor: (channel, dir) => env.envFor(channel.startsWith('ws:') ? { workspaceId: channel.slice(3), dir } : { dir }),
+      stopTests: (dir) => stopTestProcesses(dir),
       nameTask: (prompt) => session.nameTask(prompt),
       steps: new StepBook(opts.stepsDir),
       isGuest: (peerId) => invites.isRestricted(peerId),

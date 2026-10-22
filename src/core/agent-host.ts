@@ -35,6 +35,8 @@ export interface AgentHostDeps {
   readonly canEditIn?: (peerId: string, channel: string) => boolean;
   /** Your environment variables for a run there (see env-vars.ts). */
   readonly envFor?: (channel: string, dir?: string) => Record<string, string>;
+  /** Stop the test runs a worktree's Claude started and left behind (see workspaces/test-procs.ts). */
+  readonly stopTests?: (dir: string) => Promise<unknown>;
   /** A short worktree name for a task (a small model names it). */
   readonly nameTask?: (prompt: string) => Promise<string>;
   /** Where the details of Claude's steps are kept (default: in memory only). */
@@ -658,6 +660,9 @@ export class AgentHost {
       if (lane.current === controller) lane.current = undefined;
       return;
     }
+    // A worktree's run: what it starts carries KLAUD_WORKTREE, so test runs it leaves behind can be stopped.
+    const worktree = place && place.autoEdit && !place.askOnly ? place.cwd : undefined;
+    const tag: Record<string, string> = worktree ? { KLAUD_WORKTREE: worktree } : {};
     this.currentChannel = body.channel;
     this.emitAgent(body.requestId, from, 'started', '', body.channel);
     try {
@@ -707,7 +712,7 @@ export class AgentHost {
         },
         ...this.modelFor(place?.model),
         // Your variables can hold secrets: only runs you asked for get them, never a friend's.
-        ...(from === this.selfId && this.deps.envFor ? { env: this.deps.envFor(body.channel, place?.cwd) } : {}),
+        ...(from === this.selfId && this.deps.envFor ? { env: { ...this.deps.envFor(body.channel, place?.cwd), ...tag } } : worktree ? { env: tag } : {}),
         ...this.compactor.threshold(),
       });
       if (controller.signal.aborted) throw new Error('aborted');
@@ -730,6 +735,8 @@ export class AgentHost {
       markFinished();
       this.compactor.ran(body.channel);
       this.steps.flush(runKey(body.requestId));
+      // Claude stopped: no test run (an e2e's daemon, vite, browser) it started outlives it.
+      if (worktree && !lane.current) void this.deps.stopTests?.(worktree).catch(() => undefined);
       if (!lane.current) this.wakeIdle(body.channel);
       void this.deps.refreshUsage();
       if (body.channel !== 'room') void this.deps.workspaces?.refresh();

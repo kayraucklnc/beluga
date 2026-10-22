@@ -1,5 +1,5 @@
 import { type BoardState, STATUS_INFO, filterIssues } from '../board/model.js';
-import { AUTONOMY_INFO, type Plan, type PlanBody, diffBodies, shownBody } from './model.js';
+import { AUTONOMY_INFO, type Plan, type PlanBody, TESTS_AT_INFO, diffBodies, shownBody } from './model.js';
 import { type MilestoneView, type PlanView, type TaskView, overlaps } from './progress.js';
 
 /**
@@ -46,7 +46,37 @@ const HOW_TO_PLAN = [
   '  sub-tasks (parent) only for a task that is really several steps. Default assignee is Claude; use "me" for',
   '  what only the user can do (accounts, secrets, decisions).',
   '- Use short, stable ids (like "auth-api"): keep them when you revise, so tasks keep their history.',
+  '- Ask for proof that fits: a task writes the tests it needs and runs typecheck and those tests; the e2e and full',
+  '  suites run once per milestone, at its check, on the combined work (or only at the end, if the plan says so).',
+  '  Don\'t make every task run the full suite.',
 ].join('\n');
+
+/** Under load (other worktrees testing too) a slow moment fails a test: it counts only if it fails alone too. */
+const UNDER_LOAD = 'A failure that looks like load (a timeout, "did not start", a flaky wait while the Mac is busy: see `uptime`) counts only if it fails again when re-run once, alone.';
+
+/** How the e2e suite is run on this Mac: one run at a time, machine-wide; it waits its turn. */
+const E2E_LOCK = 'Run the Mac e2e with `npm run e2e` in packages/mac: one e2e runs at a time on this Mac (it waits, saying whose run it waits for), with its own port and demo home, and stops everything it started when it ends.';
+
+/** What a task runs, by the plan's test timing. */
+export function taskTestsNote(plan: Pick<Plan, 'testsAt'>): string {
+  return [
+    'Tests: write the tests this task needs. Run only typecheck and the unit-test files you added or changed (for example',
+    '`npx vitest run tests/that.test.ts`), not the e2e or the full suites: ' +
+      (plan.testsAt === 'end' ? 'this plan runs those once, in its final step.' : 'they run once per milestone, at its check, on the combined work.'),
+    UNDER_LOAD,
+  ].join('\n');
+}
+
+/** What a milestone's check runs, by the plan's test timing (and whether it's the last milestone). */
+export function checkTestsNote(plan: Pick<Plan, 'testsAt'>, last: boolean): string {
+  if (plan.testsAt === 'end' && !last) return 'This plan runs its test suites only at the end: don\'t run them for this check. Check by reading the code, the diffs, the tests the tasks wrote and their typecheck.';
+  return [
+    last && plan.testsAt === 'end' ? 'This is the final step: run every test now, once, on the plan\'s combined work: typecheck, the full unit suite and the e2e.' : 'Run the full unit suite and the e2e once for this milestone, on its combined work (not per task): typecheck, the full unit suite, the e2e.',
+    'Combine the tasks\' branches in one temporary worktree (git worktree add --detach, then merge each branch), run there, and remove it after.',
+    E2E_LOCK,
+    UNDER_LOAD,
+  ].join('\n');
+}
 
 /** Planning (a draft, or changes to an approved plan): in the plan's home conversation. */
 export function planningBrief(plan: Plan, board: BoardState, style: string): string {
@@ -94,6 +124,7 @@ export function headBrief(view: PlanView): string {
     '  Check for real: read the tasks\' briefs, handoffs and proof, their pull requests and diffs (git diff main...branch).',
     '- plan_update: change the plan (new tasks to fix what failed, a re-cut). The user approves changes',
     '  unless the plan runs on autopilot.',
+    `Tests: ${TESTS_AT_INFO[plan.testsAt].hint.toLowerCase()}. Don't ask a task to run the full suite.`,
     plan.paused ? 'The plan is paused: nothing starts until the user resumes it.' : '',
     m ? `Now: milestone “${m.milestone.title}” (${MILESTONE_WORDS[m.state]}), ${m.finished}/${m.total} tasks finished; ${view.active.length} in progress, ${view.ready.length} ready.` : 'Every milestone has passed.',
     warnings.length ? `Running side by side and touching the same files (watch for conflicts):\n${warnings.join('\n')}` : '',
@@ -109,7 +140,7 @@ export function describePlan(view: PlanView): string {
   const body = shownBody(plan);
   if (!body) return 'The plan is empty.';
   const live = new Map(view.milestones.flatMap((m) => m.tasks.map((t) => [t.task.id, t] as const)));
-  const lines = [`# ${body.title}`, body.goal ? `\n${body.goal}` : '', `\nStatus: ${plan.status}${plan.paused ? ' (paused)' : ''} · autonomy ${plan.autonomy} · up to ${plan.maxParallel} tasks at once`];
+  const lines = [`# ${body.title}`, body.goal ? `\n${body.goal}` : '', `\nStatus: ${plan.status}${plan.paused ? ' (paused)' : ''} · autonomy ${plan.autonomy} · up to ${plan.maxParallel} tasks at once · tests ${plan.testsAt === 'end' ? 'only at the end' : 'each milestone'}`];
   if (plan.draft && plan.body) {
     const d = diffBodies(plan.body, plan.draft);
     lines.push(`Changes waiting for the user's approval: ${d.added.length} new, ${d.changed.length} changed, ${d.removed.length} removed (shown below as proposed).`);
@@ -148,7 +179,9 @@ export function checkPrompt(view: PlanView, m: MilestoneView): string {
     'Its tasks:',
     ...tasks,
     '',
-    'Read their briefs (task_get), handoffs, proof and diffs. Then call plan_gate with pass or fail and notes that say,',
+    'Read their briefs (task_get), handoffs, proof and diffs.',
+    checkTestsNote(view.plan, m.index === view.milestones.length - 1),
+    'Then call plan_gate with pass or fail and notes that say,',
     `per criterion, what you checked and found.${m.autonomy === 'autopilot' ? ' On pass, the plan moves on by itself.' : ' The user decides whether it passes.'} If it fails, add the`,
     'fix tasks with plan_update.',
   ].join('\n');
@@ -175,6 +208,7 @@ export function workerNote(view: PlanView, taskId: string): string {
     m.milestone.criteria.length ? `The milestone passes when: ${m.milestone.criteria.join('; ')}.` : '',
     me.task.touches?.length ? `This task's area: ${me.task.touches.join(', ')}.` : '',
     beside.length ? `Running beside it now, each in its own worktree (stay out of their areas):\n${beside.join('\n')}` : '',
+    taskTestsNote(view.plan),
     'When every acceptance criterion is true and the checks pass, commit your work, rewrite the handoff, and call',
     'task_update with status in_review: that tells the plan this task is finished. Ask the user only what you must.',
   ]

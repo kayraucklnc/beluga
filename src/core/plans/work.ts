@@ -6,7 +6,7 @@ import type { Store } from '../store.js';
 import type { WorkspaceController } from '../workspace-controller.js';
 import { ApplyError, applyDraft } from './apply.js';
 import type { BodyInput, PlanOp, TaskInput } from './edit.js';
-import { type Autonomy, type Plan, allTasks, planForHome, planTaskOfIssue } from './model.js';
+import { type Autonomy, type Plan, type TestsAt, allTasks, planForHome, planTaskOfIssue } from './model.js';
 import { PlanPilot } from './pilot.js';
 import type { Plans } from './plans.js';
 import { describePlan, headBrief, planningBrief, sizeWords, workerNote } from './prompt.js';
@@ -61,7 +61,7 @@ export class PlansWork {
    * A new plan with Claude: a conversation of its own in the project's main folder (Claude reads
    * the code there and changes nothing), and the plan's page. Claude starts planning from `goal`.
    */
-  async create(input: { readonly projectId: string; readonly goal: string; readonly autonomy?: Autonomy }): Promise<Plan> {
+  async create(input: { readonly projectId: string; readonly goal: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt }): Promise<Plan> {
     const controller = this.deps.controller;
     if (!controller) throw new Error('Plans need a project folder');
     const goal = input.goal.trim();
@@ -70,7 +70,7 @@ export class PlansWork {
     const chat = await controller.newChat(input.projectId, `Plan: ${title}`, undefined, { quiet: true });
     if (!chat) throw new Error('Couldn’t start the plan’s conversation');
     const home = `${WS}${chat.id}`;
-    const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}) }, this.me());
+    const plan = this.plans.create({ projectId: input.projectId, home, goal, ...(input.autonomy ? { autonomy: input.autonomy } : {}), ...(input.testsAt ? { testsAt: input.testsAt } : {}) }, this.me());
     this.deps.intend({ type: 'navigate', view: { kind: 'plan', id: plan.id } });
     this.deps.askClaude(goal, home, true);
     return plan;
@@ -140,6 +140,11 @@ export class PlansWork {
     const plan = this.plans.setMaxParallel(id, n, this.me());
     this.pilot.schedule();
     return plan;
+  }
+
+  /** When the plan runs its test suites: each milestone's check, or only the final step. */
+  setTestsAt(id: string, testsAt: TestsAt): Plan {
+    return this.plans.setTestsAt(id, testsAt, this.me());
   }
 
   pass(id: string, milestone: string): Plan {

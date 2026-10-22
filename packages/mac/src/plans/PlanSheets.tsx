@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AUTONOMIES, AUTONOMY_INFO, type Autonomy } from '@klaud/core/plans/model.js';
+import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, TESTS_AT, TESTS_AT_INFO, type TestsAt } from '@klaud/core/plans/model.js';
 import { Field, FormSheet, Popup, TextArea } from '../components/FormSheet.js';
 import { useApp } from '../lib/klaud.js';
 import { useTasksPrefs } from '../tasks/use-tasks.js';
@@ -14,6 +14,7 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
   const [goal, setGoal] = useState('');
   const [project, setProject] = useState(projectId ?? (projects.some((p) => p.id === prefs.project) ? prefs.project : projects[0]?.id) ?? '');
   const [autonomy, setAutonomy] = useState<Autonomy>('gated');
+  const [testsAt, setTestsAt] = useState<TestsAt>('milestone');
   if (!projects.length) return <FormSheet title="New Plan" intro="Plans belong to a project. Add a project first (File › Add Project…)." submitLabel="OK" hideSubmit onSubmit={close} onCancel={close} />;
   return (
     <FormSheet
@@ -25,7 +26,7 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
       onCancel={close}
       onSubmit={async () => {
         close();
-        await act(() => api.create({ projectId: project, goal: goal.trim(), autonomy }));
+        await act(() => api.create({ projectId: project, goal: goal.trim(), autonomy, testsAt }));
       }}
     >
       <Field label="Goal" htmlFor="plan-goal" hint="What it’s for and what done looks like. ⌘↩ starts planning.">
@@ -36,6 +37,9 @@ export function NewPlanSheet({ projectId, close }: { projectId?: string; close: 
       </Field>
       <Field label="Runs" hint={AUTONOMY_INFO[autonomy].hint}>
         <Popup label="Runs" value={autonomy} options={AUTONOMIES.map((a) => ({ value: a, label: AUTONOMY_INFO[a].label }))} onChange={setAutonomy} />
+      </Field>
+      <Field label="When to run tests" hint={TESTS_AT_INFO[testsAt].hint}>
+        <Popup label="When to run tests" value={testsAt} options={TESTS_AT.map((t) => ({ value: t, label: TESTS_AT_INFO[t].label }))} onChange={setTestsAt} />
       </Field>
     </FormSheet>
   );

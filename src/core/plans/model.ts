@@ -17,6 +17,15 @@ export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; 
   autopilot: { label: 'Autopilot', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
 };
 
+/** When a plan runs its e2e and full test suites: once per milestone at its check, or only at the end. */
+export const TESTS_AT = ['milestone', 'end'] as const;
+export type TestsAt = (typeof TESTS_AT)[number];
+
+export const TESTS_AT_INFO: Readonly<Record<TestsAt, { readonly label: string; readonly hint: string }>> = {
+  milestone: { label: 'Each Milestone', hint: 'Tasks run typecheck and the tests they touched; each milestone’s check runs the full suites once' },
+  end: { label: 'Only at the End', hint: 'Milestone checks read the code and diffs; the full suites run once, in the final step' },
+};
+
 /** One task of a plan, before and after it's on the board. */
 export interface PlanTask {
   /** Stable inside the plan ("auth-api"): Claude names tasks by it, and it survives re-planning. */
@@ -104,6 +113,8 @@ export interface Plan {
   readonly autonomy: Autonomy;
   /** How many of its tasks may run at once. */
   readonly maxParallel: number;
+  /** When the e2e and full test suites run (tasks only run typecheck and the tests they touched). */
+  readonly testsAt: TestsAt;
   readonly paused: boolean;
   readonly runs: Readonly<Record<string, MilestoneRun>>;
   readonly activity: readonly PlanEvent[];

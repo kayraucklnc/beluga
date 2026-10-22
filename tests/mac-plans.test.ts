@@ -17,7 +17,7 @@ const body = normalizeBody({
     { id: 'two', title: 'Two', tasks: [{ id: 'd', title: 'D', blockedBy: ['b'] }, { id: 'e', title: 'E', blockedBy: ['d'] }] },
   ],
 });
-const plan = (over: Partial<Plan> = {}): Plan => ({ id: 'p', projectId: 'x', home: 'ws:h', status: 'draft', draft: body, draftRev: 1, autonomy: 'gated', maxParallel: 3, paused: false, runs: {}, activity: [], createdAt: 0, updatedAt: 0, ...over });
+const plan = (over: Partial<Plan> = {}): Plan => ({ id: 'p', projectId: 'x', home: 'ws:h', status: 'draft', draft: body, draftRev: 1, autonomy: 'gated', maxParallel: 3, testsAt: 'milestone', paused: false, runs: {}, activity: [], createdAt: 0, updatedAt: 0, ...over });
 
 describe('the plan graph’s shape', () => {
   it('lines: blockers, the last tasks to the gate, the gate to the next milestone', () => {
