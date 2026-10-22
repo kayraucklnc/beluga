@@ -22,6 +22,7 @@ import {
   type PlanMerge,
   type PlanShipped,
   type PlansState,
+  type TaskWatch,
   diffBodies,
   isEmptyDiff,
   planById,
@@ -281,6 +282,15 @@ export class Plans {
     const { [task]: _was, ...rest } = plan.combining ?? {};
     const next = combining ? { ...rest, [task]: combining } : rest;
     return this.change(plan, { combining: Object.keys(next).length ? next : undefined }, []);
+  }
+
+  /** A task's stall and what was done about it (undefined: it's fine again, or finished). */
+  setWatch(id: string, task: string, watch: TaskWatch | undefined): Plan {
+    const plan = this.need(id);
+    const { [task]: was, ...rest } = plan.watch ?? {};
+    if (!watch && !was) return plan;
+    const next = watch ? { ...rest, [task]: watch } : rest;
+    return this.change(plan, { watch: Object.keys(next).length ? next : undefined }, []);
   }
 
   /** The plan's branch is there (made from main, or one that was there already). */

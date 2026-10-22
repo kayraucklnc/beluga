@@ -54,6 +54,9 @@ export function launchBoard(host: BoardHost): () => void {
     ...(session.workspaces ? { controller: session.workspaces } : {}),
     askClaude: (prompt, channel, echo) => session.askOwnClaude(prompt, channel, false, echo),
     intend: (intent) => session.intend(intent),
+    // A task whose Claude stopped: is its process there, and taking over to wake it.
+    alive: (channel) => session.host.runningIn(channel),
+    takeOver: (channel) => session.host.takeOver(channel),
   });
   attachPlans(session, planWork);
   let stopSeed = (): void => undefined;

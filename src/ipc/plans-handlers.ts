@@ -23,6 +23,7 @@ export const PLANS_HANDLERS = {
   'plans.mergePr': (s, id) => needPlans(s).mergePr(id),
   'plans.mergeLocal': (s, id) => needPlans(s).mergeLocal(id),
   'plans.startTask': (s, id, task) => needPlans(s).startTask(id, task),
+  'plans.resumeTask': (s, id, task) => needPlans(s).resumeTask(id, task),
   'plans.remove': (s, id) => needPlans(s).remove(id),
   'plans.setStyle': (s, text) => needPlans(s).setStyle(text),
 } satisfies PlansHandlers;

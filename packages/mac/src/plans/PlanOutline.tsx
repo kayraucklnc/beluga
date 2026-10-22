@@ -5,9 +5,9 @@ import { Icon } from '../components/Icon.js';
 import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
-import { MILESTONE_STATE, TASK_STATE, changeMarks, milestoneLabel } from './plans-model.js';
+import { MILESTONE_STATE, changeMarks, milestoneLabel, taskWords } from './plans-model.js';
 import { TaskStateIcon } from './marks.js';
-import { usePlanActions } from './use-plans.js';
+import { useClock, usePlanActions } from './use-plans.js';
 
 /** A change you make to a plan (as the API takes it). */
 type PlanOp = Parameters<ReturnType<typeof usePlanActions>['api']['edit']>[1][number];
@@ -77,7 +77,8 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
   const { api, act, openTask, openWorktree } = usePlanActions();
   const body = plan.draft ?? plan.body;
   const edit = (ops: PlanOp[]): void => void act(() => api.edit(plan.id, ops));
-  const info = TASK_STATE[t.state];
+  const now = useClock(t.pulse?.kind === 'working' || t.pulse?.kind === 'command');
+  const info = taskWords(t, now);
   const others = (body?.milestones ?? []).filter((m) => m.id !== t.milestoneId);
   const menu = (): ActionItem[] => [
     ...(canStart ? [{ label: 'Start', icon: 'play' as const, onSelect: () => void act(() => api.startTask(plan.id, t.task.id)) }] : []),
@@ -98,7 +99,7 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
           {t.task.parent ? <span className={p.muted}>sub-task</span> : null}
         </div>
         <span className={p.oTaskMeta}>
-          {t.state === 'running' && t.step ? <span className={p.oStep}>{t.step}</span> : t.state === 'blocked' ? <span className={p.muted}>{t.why}</span> : null}
+          {info.sub && (t.pulse || t.state === 'running') ? <span className={p.oStep}>{info.sub}</span> : t.state === 'blocked' ? <span className={p.muted}>{t.why}</span> : null}
           {t.task.estimate ? <span className={p.points}>{t.task.estimate}</span> : null}
           {t.forYou ? <Icon name="person" size={12} className={p.forYou} /> : null}
           {canStart ? (

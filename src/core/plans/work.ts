@@ -30,6 +30,10 @@ export interface PlansWorkDeps {
   readonly combine?: (projectId: string, key: string, branches: readonly string[], into?: string) => Promise<CombineResult>;
   /** The plan's branch and pull request (default: the project's folder, through the controller; null: none). */
   readonly git?: PlanGit | null;
+  /** The agent runner's run state, and taking over a stalled conversation (see watchdog.ts). */
+  readonly alive?: (channel: string) => boolean;
+  readonly takeOver?: (channel: string) => Promise<readonly string[]>;
+  readonly now?: () => number;
   readonly delayMs?: number;
 }
 
@@ -51,6 +55,9 @@ export class PlansWork {
       ...(deps.combine ? { combine: deps.combine } : deps.controller ? { combine: (projectId, key, branches, into) => deps.controller!.manager.combineBase(projectId, key, branches, into) } : {}),
       ...(git ? { git } : {}),
       ...(deps.controller ? { allowFixup: (channel, dir) => deps.controller!.allowFixup?.(channel, dir) } : {}),
+      ...(deps.alive ? { alive: deps.alive } : {}),
+      ...(deps.takeOver ? { takeOver: deps.takeOver } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
       ...(deps.delayMs !== undefined ? { delayMs: deps.delayMs } : {}),
     });
     // A task of a plan: its worktree's Claude knows the plan and what runs beside it.
@@ -189,6 +196,11 @@ export class PlansWork {
 
   startTask(id: string, task: string): Promise<string> {
     return this.pilot.startNow(id, task, this.me());
+  }
+
+  /** Wake a task whose Claude stopped without finishing (Resume on its card). */
+  resumeTask(id: string, task: string): string {
+    return this.pilot.resume(id, task);
   }
 
   remove(id: string): void {

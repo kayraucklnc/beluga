@@ -1,5 +1,6 @@
 import { type BoardState, type Issue, issueById } from '../board/model.js';
-import { type Autonomy, type Combining, type MilestoneRun, type Plan, type PlanBody, type PlanMerge, type PlanMilestone, type PlanTask, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
+import { type Autonomy, type Combining, type MilestoneRun, type Plan, type PlanBody, type PlanMerge, type PlanMilestone, type PlanTask, type TaskWatch, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
+import { type RunInfo, type TaskPulse, pulseOf } from './watchdog.js';
 
 /**
  * Where a plan stands, worked out from the plan and the board (and what Claude is doing right
@@ -20,8 +21,10 @@ export type TaskState =
   | 'running'
   /** Claude asked something there and waits for an answer. */
   | 'asking'
-  /** In progress, but nobody is working on it right now. */
+  /** In progress, but nobody is working on it right now (its Claude stopped without finishing). */
   | 'idle'
+  /** Its Claude stopped again soon after Klaud woke it: it waits for you (see watchdog.ts). */
+  | 'stalled'
   | 'review'
   /** Its milestone passed: merged into the plan's branch, waiting for the plan's PR. */
   | 'planned'
@@ -31,7 +34,7 @@ export type TaskState =
   | 'missing';
 
 export const FINISHED: ReadonlySet<TaskState> = new Set(['review', 'planned', 'done', 'canceled', 'missing']);
-export const ACTIVE: ReadonlySet<TaskState> = new Set(['running', 'asking', 'idle']);
+export const ACTIVE: ReadonlySet<TaskState> = new Set(['running', 'asking', 'idle', 'stalled']);
 
 export interface TaskView {
   readonly task: PlanTask;
@@ -54,6 +57,10 @@ export interface TaskView {
   readonly step?: string;
   /** Assigned to you: it never starts by itself. */
   readonly forYou: boolean;
+  /** Started: how it's doing right now (working on a step, in a long command, stopped, waiting for you). */
+  readonly pulse?: TaskPulse;
+  /** It stalled: the wake, or why it waits for you. */
+  readonly watch?: TaskWatch;
 }
 
 export type MilestoneState = 'draft' | 'later' | 'running' | 'checking' | 'gate' | 'failed' | 'merging' | 'passed';
@@ -87,7 +94,10 @@ export type NextStep =
   /** Every milestone passed: the plan's branch waits to reach main (Open PR, or merge it here). */
   | { readonly kind: 'ship'; readonly branch: string; readonly pr?: Plan['pr'] }
   | { readonly kind: 'answer'; readonly tasks: readonly TaskView[] }
-  | { readonly kind: 'working'; readonly tasks: readonly TaskView[] }
+  /** Tasks that stopped again after a wake: Resume them, or open their chat. */
+  | { readonly kind: 'stalled'; readonly tasks: readonly TaskView[] }
+  /** `note`: the latest stall and wake (“KLD-36 stopped, woke it at 11:13”). */
+  | { readonly kind: 'working'; readonly tasks: readonly TaskView[]; readonly note?: string }
   | { readonly kind: 'waiting'; readonly why: string }
   | { readonly kind: 'done' };
 
@@ -113,6 +123,8 @@ export interface Live {
   readonly asking: (channel: string) => boolean;
   /** The step Claude is on there. */
   readonly step?: (channel: string) => string | undefined;
+  /** Its latest run there (the heartbeat). */
+  readonly run?: (channel: string) => RunInfo | undefined;
 }
 
 export const NOBODY_LIVE: Live = { busy: () => false, asking: () => false };
@@ -244,6 +256,10 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
           else step = combiningStep(combining);
         }
       }
+      const watch = plan.watch?.[t.id];
+      if (state === 'idle' && watch?.needsYou) state = 'stalled';
+      const started = (state === 'running' && !combining) || state === 'asking' || state === 'idle' || state === 'stalled';
+      const pulse = started && own.worktree ? pulseOf(live.run?.(`ws:${own.worktree}`), state === 'asking', watch) : undefined;
       views.set(t.id, {
         task: t,
         milestoneId: m.id,
@@ -257,6 +273,8 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
         ...(combining ? { combining } : {}),
         ...(step ? { step } : {}),
         forYou,
+        ...(pulse ? { pulse } : {}),
+        ...(watch && started ? { watch } : {}),
       });
     }
   });
@@ -301,6 +319,8 @@ function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
   if (!v.open.length) return { kind: 'done' };
   const asking = v.active.filter((t) => t.state === 'asking');
   if (asking.length) return { kind: 'answer', tasks: asking };
+  const stalled = v.active.filter((t) => t.state === 'stalled');
+  if (stalled.length) return { kind: 'stalled', tasks: stalled };
   // Milestones running side by side: what's yours to do in any of them comes first.
   const failed = v.open.find((m) => m.state === 'failed');
   if (failed) return { kind: 'failed', milestone: failed };
@@ -313,7 +333,8 @@ function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
   const yours = v.ready.filter((t) => t.forYou || autonomyOfTask.get(t.milestoneId) === 'step');
   if (yours.length && v.active.length < plan.maxParallel) return { kind: 'start', tasks: yours };
   const running = v.active.filter((t) => t.state === 'running');
-  if (v.active.length) return { kind: 'working', tasks: running.length ? running : v.active };
+  const note = v.active.flatMap((t) => (t.watch ? [t.watch] : [])).sort((a, b) => b.at - a.at)[0]?.line;
+  if (v.active.length) return { kind: 'working', tasks: running.length ? running : v.active, ...(note ? { note } : {}) };
   if (v.ready.length) return { kind: 'working', tasks: [] };
   const checking = v.open.find((m) => m.state === 'checking' || m.state === 'gate');
   if (checking) return { kind: 'checking', milestone: checking };
@@ -371,11 +392,11 @@ export function waves(milestone: PlanMilestone): ReadonlyArray<readonly PlanTask
 
 /** Who's working in a conversation now, read from the shared state. */
 export function liveFrom(state: {
-  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[] }>;
+  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[]; readonly requestId?: string; readonly ts: number; readonly text?: string; readonly lastAt?: number; readonly stepAt?: number }>;
   readonly questions: ReadonlyArray<{ readonly channel: string }>;
   readonly approvals: ReadonlyArray<{ readonly channel?: string }>;
 }): Live {
-  const last = new Map<string, { readonly status?: string; readonly steps?: readonly string[] }>();
+  const last = new Map<string, (typeof state.log)[number]>();
   for (const l of state.log) if (l.type === 'agent') last.set(l.channel, l);
   const asking = new Set([...state.questions.map((q) => q.channel), ...state.approvals.flatMap((a) => (a.channel ? [a.channel] : []))]);
   const RUNNING = new Set(['queued', 'awaiting_approval', 'started', 'answered']);
@@ -383,5 +404,11 @@ export function liveFrom(state: {
     busy: (channel) => RUNNING.has(last.get(channel)?.status ?? ''),
     asking: (channel) => asking.has(channel),
     step: (channel) => last.get(channel)?.steps?.at(-1),
+    run: (channel) => {
+      const l = last.get(channel);
+      if (!l) return undefined;
+      const step = l.steps?.at(-1);
+      return { requestId: l.requestId ?? '', status: l.status ?? '', ts: l.ts, lastAt: l.lastAt ?? l.ts, text: l.text ?? '', ...(step ? { step } : {}), ...(l.stepAt !== undefined ? { stepAt: l.stepAt } : {}) };
+    },
   };
 }

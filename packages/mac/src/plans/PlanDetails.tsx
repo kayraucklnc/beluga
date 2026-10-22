@@ -3,9 +3,9 @@ import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progre
 import { Markdown } from '../chat/Markdown.js';
 import { Button, IconButton } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
-import { MILESTONE_STATE, TASK_STATE } from './plans-model.js';
+import { MILESTONE_STATE, taskWords } from './plans-model.js';
 import { TaskStateIcon, TonePill } from './marks.js';
-import { usePlanActions } from './use-plans.js';
+import { useClock, usePlanActions } from './use-plans.js';
 import p from './plans.module.css';
 
 /** What you picked on the plan: a task (its goal, criteria, what it waits on, where it runs) or a milestone's gate. */
@@ -24,7 +24,10 @@ export function PlanDetails({ view, picked, canStart, onClose }: { view: PlanVie
 function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canStart: boolean }) {
   const { api, act, openTask, openWorktree } = usePlanActions();
   const all = view.milestones.flatMap((m) => m.tasks);
-  const info = TASK_STATE[t.state];
+  const now = useClock(t.pulse?.kind === 'working' || t.pulse?.kind === 'command');
+  const info = taskWords(t, now);
+  // Its Claude stopped without finishing: one click wakes it with what it missed.
+  const canResume = Boolean(t.worktree) && (t.state === 'idle' || t.state === 'stalled');
   const ticked = new Set((t.issue?.brief.acceptance ?? '').split('\n').flatMap((l) => (/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)?.[1] ? [/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)![1]!.trim()] : [])));
   return (
     <>
@@ -40,7 +43,7 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
         </TonePill>
         {t.forYou ? <span className={p.muted}>For you</span> : null}
       </div>
-      {t.step && t.state === 'running' ? <p className={p.detailsStep}>Now: {t.step}</p> : null}
+      {info.sub && t.pulse ? <p className={p.detailsStep}>{t.pulse.kind === 'working' || t.pulse.kind === 'command' ? `Now: ${info.sub}` : info.sub}</p> : t.step && t.state === 'running' ? <p className={p.detailsStep}>Now: {t.step}</p> : null}
       {t.why && (t.state === 'blocked' || t.state === 'later') ? <p className={p.muted}>{t.why}</p> : null}
       <div className={p.detailsActions}>
         {canStart ? (
@@ -48,9 +51,14 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
             Start
           </Button>
         ) : null}
+        {canResume ? (
+          <Button size="small" variant="primary" icon="play" onClick={() => void act(() => api.resumeTask(view.plan.id, t.task.id))}>
+            Resume
+          </Button>
+        ) : null}
         {t.worktree ? (
           <Button size="small" icon="branch" onClick={() => openWorktree(t.worktree!)}>
-            Open Worktree
+            {canResume ? 'Open Chat' : 'Open Worktree'}
           </Button>
         ) : null}
         {t.issue ? (

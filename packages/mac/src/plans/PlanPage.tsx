@@ -92,6 +92,8 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
         return { label: 'Open PR', run: () => void act(() => api.openPr(plan.id), 'Opened the plan’s pull request') };
       case 'answer':
         return next.tasks[0]?.worktree ? { label: `Answer in ${next.tasks[0].issue?.key ?? 'Its Worktree'}`, run: () => openWorktree(next.tasks[0]!.worktree!) } : undefined;
+      case 'stalled':
+        return { label: words.title, icon: 'play', run: () => next.tasks.forEach((t) => void act(() => api.resumeTask(plan.id, t.task.id))) };
       default:
         return undefined;
     }
@@ -101,6 +103,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
     { label: prefs.chat ? 'Hide the Conversation' : 'Show the Conversation', onSelect: () => setPrefs({ chat: !prefs.chat }) },
     ...(plan.body && plan.status === 'active' ? [{ label: plan.paused ? 'Resume' : 'Pause', onSelect: () => void act(() => api.setPaused(plan.id, !plan.paused)) }] : []),
     { label: 'Run at Once', submenu: [1, 2, 3, 4, 6, MAX_PARALLEL].map((n) => ({ label: `${n} ${n === 1 ? 'task' : 'tasks'}`, checked: plan.maxParallel === n, onSelect: () => void act(() => api.setParallel(plan.id, n)) })), onSelect: () => undefined },
+    ...(next.kind === 'stalled' ? next.tasks.flatMap((t) => (t.worktree ? [{ label: `Open ${t.issue?.key ?? 'Its'} Chat`, onSelect: () => openWorktree(t.worktree!) }] : [])) : []),
     ...(next.kind === 'pass' ? [{ label: 'Not Yet…', onSelect: () => openSheet({ kind: 'plan_send_back', planId: plan.id, milestone: next.milestone.milestone.id }) }] : []),
     ...(next.kind === 'failed' || next.kind === 'checking'
       ? [

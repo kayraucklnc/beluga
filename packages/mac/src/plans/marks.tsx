@@ -26,7 +26,7 @@ export function TaskStateIcon({ state, size = 14 }: { state: TaskState; size?: n
           <rect x={4.5} y={7.2} width={7} height={5.3} rx={1.2} className={p.iconFill} />
           <path d="M6 7.2V5.6a2 2 0 0 1 4 0v1.6" className={p.iconRing} />
         </>
-      ) : state === 'asking' ? (
+      ) : state === 'asking' || state === 'stalled' ? (
         <>
           <circle cx={c} cy={c} r={6.5} className={p.iconFill} />
           <path d="M8 4.8v4 M8 11.1v.01" className={p.iconMark} />

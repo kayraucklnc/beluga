@@ -121,6 +121,24 @@ export interface PlanMerge {
   };
 }
 
+/**
+ * A started task whose Claude stopped without finishing (see watchdog.ts): the latest stall, and
+ * what Klaud did about it. Woken once; stalling again soon after, it waits for you.
+ */
+export interface TaskWatch {
+  /** When it was last seen stalled, and why (“it ended its turn without handing off”). */
+  readonly at: number;
+  readonly reason: string;
+  /** The run it stalled on (its request id): one run is one stall. */
+  readonly run?: string;
+  /** When Klaud woke it (or you resumed it). */
+  readonly wokeAt?: number;
+  /** It stalled again soon after a wake: it waits for you (Resume, or Open Chat). */
+  readonly needsYou?: boolean;
+  /** The one line it's shown with: “KLD-36 stopped, woke it at 11:13”. */
+  readonly line: string;
+}
+
 /** The plan reached main: through its pull request, or merged here. */
 export interface PlanShipped {
   readonly at: number;
@@ -159,6 +177,8 @@ export interface Plan {
   readonly runs: Readonly<Record<string, MilestoneRun>>;
   /** Tasks whose start is being combined from several branches (by plan task id). */
   readonly combining?: Readonly<Record<string, Combining>>;
+  /** Started tasks that stalled, and the wake or the stop that followed (by plan task id). */
+  readonly watch?: Readonly<Record<string, TaskWatch>>;
   /** Its branch (plan/<slug>, from main): every task starts from it, passed milestones merge into it, and it ends as one PR. */
   readonly branch?: string;
   /** Passed milestones being merged into the branch (by milestone id). */

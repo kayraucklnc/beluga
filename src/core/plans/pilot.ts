@@ -8,6 +8,7 @@ import type { PlanGit } from './plan-git.js';
 import type { Plans } from './plans.js';
 import { type MilestoneView, type PlanView, type TaskView, liveFrom, planView, startable } from './progress.js';
 import { checkPrompt, fixupPrompt, mergeFixupPrompt, recapPrompt } from './prompt.js';
+import { TaskWatchdog } from './watchdog.js';
 
 /**
  * The scheduler: runs approved plans as far as their autonomy allows. It starts what's ready
@@ -22,6 +23,9 @@ import { checkPrompt, fixupPrompt, mergeFixupPrompt, recapPrompt } from './promp
  * then, a passed milestone's task branches merge into it (its tasks go In Plan, their worktrees are
  * archived and their branches deleted), and the plan ends as one pull request into main, which
  * moves every In Plan task to Done when it merges. Plans that ran before this catch up once.
+ *
+ * A started task whose Claude stopped without finishing is woken once, and waits for you when it
+ * stops again soon after (see watchdog.ts); time alone can stall a turn, so it looks every minute.
  */
 
 export interface PilotDeps {
@@ -38,6 +42,11 @@ export interface PilotDeps {
   readonly git?: PlanGit;
   /** Let a plan's conversation edit a hidden worktree (a conflict to fix there), or no longer (undefined). */
   readonly allowFixup?: (channel: string, dir: string | undefined) => void;
+  /** Whether a run of Claude's is under way in a conversation: its Claude Code process is there (the agent runner's run state). */
+  readonly alive?: (channel: string) => boolean;
+  /** Stop what runs in a conversation; resolves once nothing does, with the messages that waited there. */
+  readonly takeOver?: (channel: string) => Promise<readonly string[]>;
+  readonly now?: () => number;
   readonly delayMs?: number;
 }
 
@@ -47,6 +56,8 @@ const FIXUP_ASKS = 2;
 const STUCK_RETRY_MS = 30_000;
 /** How often a plan's pull request is looked at on GitHub. */
 const PR_POLL_MS = 2 * 60_000;
+/** How often started tasks are looked at when nothing else happens (a turn can stall in silence). */
+const HEARTBEAT_MS = 60_000;
 
 /** What changes can move a plan along. */
 const WAKES = new Set(['board_issue', 'board_remove', 'plan_put', 'agent_event', 'question_add', 'question_remove', 'approval_add', 'approval_remove', 'projects']);
@@ -57,8 +68,9 @@ export class PlanPilot {
   private readonly starting = new Set<string>();
   /** Board tasks that failed to start: not tried again by themselves (you can start them). */
   private readonly failed = new Set<string>();
-  /** Board tasks whose Claude was nudged to finish (once each). */
-  private readonly nudged = new Set<string>();
+  /** Started tasks whose Claude stopped without finishing: woken once, then yours. */
+  private readonly watchdog: TaskWatchdog;
+  private heartbeat: ReturnType<typeof setInterval> | undefined;
   private readonly recapped = new Set<string>();
   /** Milestones whose tasks were taken out of the Backlog (`plan:milestone`), once each. */
   private readonly opened = new Set<string>();
@@ -78,10 +90,21 @@ export class PlanPilot {
   private stopped = false;
 
   constructor(private readonly deps: PilotDeps) {
+    this.watchdog = new TaskWatchdog({
+      store: deps.store,
+      plans: deps.plans,
+      askClaude: deps.askClaude,
+      system: deps.system,
+      ...(deps.alive ? { alive: deps.alive } : {}),
+      ...(deps.takeOver ? { takeOver: deps.takeOver } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
+    });
     this.off = deps.store.onAction((a: Action) => {
       if (WAKES.has(a.type)) this.schedule();
     });
     this.schedule();
+    this.heartbeat = setInterval(() => this.schedule(), HEARTBEAT_MS);
+    this.heartbeat.unref?.();
     if (deps.git) {
       this.prTimer = setInterval(() => void this.pollPrs(), PR_POLL_MS);
       this.prTimer.unref?.();
@@ -94,6 +117,7 @@ export class PlanPilot {
     clearTimeout(this.timer);
     clearTimeout(this.stuckTimer);
     clearInterval(this.prTimer);
+    clearInterval(this.heartbeat);
   }
 
   schedule(): void {
@@ -116,6 +140,8 @@ export class PlanPilot {
       try {
         // Its branch, catching up, merges: paused or done, they go on (nothing new starts).
         if (plan.body && plan.status !== 'draft') this.tend(plan);
+        // Started tasks that stopped without finishing: woken once, then they wait for you.
+        if (plan.body && plan.status === 'active') this.watch(this.deps.plans.need(plan.id));
         if (plan.status === 'active' && !plan.paused && !plan.draft) this.step(this.deps.plans.need(plan.id));
       } catch (err) {
         // Said once (a problem that stays would otherwise fill the history).
@@ -203,7 +229,6 @@ export class PlanPilot {
     for (const m of view.open) this.open(plan, m.milestone.id);
     for (const t of startable(view, this.failed, this.startingIn(plan))) void this.start(plan, t, { kind: 'klaud' }).catch(() => undefined);
     this.stepCombining(plan, view);
-    if (view.open.some((m) => m.state === 'running' && m.autonomy === 'autopilot')) this.nudge(plan, view);
     for (const m of view.open) this.stepMilestone(plan, view, m);
   }
 
@@ -588,19 +613,20 @@ export class PlanPilot {
     return { git: this.deps.git, plan, branch: plan.branch };
   }
 
-  /** On autopilot, a task whose Claude stopped without finishing gets one nudge to go on. */
-  private nudge(plan: Plan, view: PlanView): void {
-    const log = this.deps.store.getState().log;
-    const autopilot = new Set(view.open.filter((m) => m.autonomy === 'autopilot').map((m) => m.milestone.id));
-    for (const t of view.active) {
-      if (!autopilot.has(t.milestoneId) || t.state !== 'idle' || !t.worktree || !t.issue || this.nudged.has(t.issue.id)) continue;
-      const channel = `ws:${t.worktree}`;
-      const last = [...log].reverse().find((l) => l.type === 'agent' && l.channel === channel);
-      // Only after a run that ended normally (not stopped by you, not failed).
-      if (!last || last.type !== 'agent' || last.status !== 'done') continue;
-      this.nudged.add(t.issue.id);
-      this.deps.askClaude(`The plan “${view.body?.title ?? ''}” runs on autopilot. Go on with ${t.issue.key} until every acceptance criterion is true; then commit, rewrite the handoff and call task_update with status in_review. If you're stuck on something only the user can decide, say so clearly.`, channel, false);
-    }
-    void plan;
+  /** Look at a plan's started tasks: wake what stopped without finishing, or ask you. */
+  private watch(plan: Plan): void {
+    const live = liveFrom(this.deps.store.getState());
+    this.watchdog.step(plan, this.view(plan), (channel) => live.run?.(channel));
+  }
+
+  /** You resume a task whose Claude stopped (it waits for you): woken now, with what it missed. */
+  resume(planId: string, taskId: string): string {
+    const plan = this.deps.plans.need(planId);
+    const t = this.view(plan)
+      .milestones.flatMap((m) => m.tasks)
+      .find((x) => x.task.id === taskId || x.issue?.key === taskId.toUpperCase());
+    if (!t) throw new Error(`There's no task "${taskId}" in this plan`);
+    const live = liveFrom(this.deps.store.getState());
+    return this.watchdog.resume(plan, t, (channel) => live.run?.(channel));
   }
 }

@@ -52,6 +52,10 @@ export type LogItem =
       readonly ts: number;
       /** When the run finished (done/error/denied). */
       readonly endTs?: number;
+      /** Its heartbeat: when Claude last did something (started, wrote, took a step, a sub-agent moved). */
+      readonly lastAt?: number;
+      /** When the step it's on (its last tool call) began. */
+      readonly stepAt?: number;
     }
   | ShellItem;
 
@@ -632,6 +636,8 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
           : base.text,
     steps: a.event === 'tool' ? [...base.steps, a.text].slice(-MAX_STEPS) : base.steps,
     endTs: a.event === 'done' || a.event === 'error' || a.event === 'denied' ? a.ts : base.endTs,
+    ...(a.event === 'started' || a.event === 'text' || a.event === 'tool' || a.event === 'sub' ? { lastAt: a.ts } : {}),
+    ...(a.event === 'tool' ? { stepAt: a.ts } : {}),
     ...(a.event === 'queued' && a.text ? { prompt: a.text } : {}),
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);

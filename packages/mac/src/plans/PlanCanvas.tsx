@@ -7,7 +7,8 @@ import { Icon } from '../components/Icon.js';
 import { reducedMotion, useDocTheme } from '../components/markdown/use-doc-theme.js';
 import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
 import { layout } from '../components/graph/layout.js';
-import { MILESTONE_STATE, TASK_STATE, changeMarks, gateId, graphShape, groupId, taskNodeId } from './plans-model.js';
+import { MILESTONE_STATE, changeMarks, gateId, graphShape, groupId, taskNodeId, taskWords } from './plans-model.js';
+import { useClock } from './use-plans.js';
 import { TaskStateIcon } from './marks.js';
 import p from './plans.module.css';
 
@@ -260,8 +261,10 @@ const Ends = ({ hidden }: { hidden?: boolean }) => (
 
 const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task'>>) {
   const { view: t } = data;
-  const info = TASK_STATE[t.state];
-  const sub = t.state === 'running' && t.step ? t.step : t.state === 'blocked' || t.state === 'later' ? t.why : t.state === 'asking' ? 'Claude asked you something' : t.forYou && t.state === 'ready' ? 'For you' : undefined;
+  // A started task says how it's doing now (its step and for how long, or that it stopped).
+  const now = useClock(t.pulse?.kind === 'working' || t.pulse?.kind === 'command');
+  const info = taskWords(t, now);
+  const sub = info.sub ?? (t.state === 'asking' ? 'Claude asked you something' : t.forYou && t.state === 'ready' ? 'For you' : undefined);
   return (
     <div
       className={cx(p.task, p[`task_${t.state}`], data.selected && p.taskSelected, data.mark && p.taskMarked)}

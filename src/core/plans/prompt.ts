@@ -15,7 +15,8 @@ const STATE_WORDS: Readonly<Record<TaskView['state'], string>> = {
   ready: 'ready to start',
   running: 'Claude working',
   asking: 'waiting for an answer',
-  idle: 'in progress, nobody working right now',
+  idle: 'stopped without finishing (Klaud wakes it once)',
+  stalled: 'stopped again after Klaud woke it: waits for the user',
   review: 'in review',
   planned: 'merged into the plan’s branch',
   done: 'done',
@@ -173,7 +174,7 @@ function runsWith(body: PlanBody, id: string, titleOf: ReadonlyMap<string, strin
 
 /** Ask the head Claude to check a finished milestone. */
 export function checkPrompt(view: PlanView, m: MilestoneView): string {
-  const tasks = m.tasks.map((t) => `- ${t.issue?.key ?? t.task.id} “${t.task.title}” (${STATE_WORDS[t.state]}${t.issue?.pr ? `, PR #${t.issue.pr.number} ${t.issue.pr.state.toLowerCase()}` : ''}${t.issue?.branch ? `, branch ${t.issue.branch}` : ''})`);
+  const tasks = m.tasks.map((t) => `- ${t.issue?.key ?? t.task.id} “${t.task.title}” (${STATE_WORDS[t.state]}${t.state === 'stalled' && t.watch ? `: ${t.watch.reason}` : ''}${t.issue?.pr ? `, PR #${t.issue.pr.number} ${t.issue.pr.state.toLowerCase()}` : ''}${t.issue?.branch ? `, branch ${t.issue.branch}` : ''})`);
   return [
     `Every task of milestone “${m.milestone.title}” is finished. Check its pass criteria for real, one by one:`,
     ...m.milestone.criteria.map((c, i) => `${i + 1}. ${c}`),

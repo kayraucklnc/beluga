@@ -64,6 +64,8 @@ export const PLANS_API = {
   'plans.mergeLocal': { args: z.tuple([id]) },
   // Start a ready task now → what happened.
   'plans.startTask': { args: z.tuple([id, ref]) },
+  // Wake a started task whose Claude stopped without finishing (it waits for you) → what happened.
+  'plans.resumeTask': { args: z.tuple([id, ref]) },
   'plans.remove': { args: z.tuple([id]) },
   // Your planning style (how you like plans cut), added to Claude's planning instructions.
   'plans.setStyle': { args: z.tuple([z.string().max(8000)]) },
