@@ -6,6 +6,7 @@ import { brandText } from './lib/brand.js';
 import { capabilities, connect, inApp } from './lib/boot.js';
 import { KlaudProvider } from './lib/klaud.js';
 import { apply, zoom } from './lib/prefs.js';
+import { watchWindow } from './lib/window-active.js';
 import { Button } from './components/ui.js';
 import { UpdateLayer } from './dialogs/UpdateSheet.js';
 import s from './layout/Shell.module.css';
@@ -14,6 +15,7 @@ import './styles/base.css';
 
 apply();
 if (inApp()) document.documentElement.dataset.app = 'tauri';
+watchWindow();
 
 /** Attach to klaud, and keep trying while it starts (or comes back). */
 function Root() {

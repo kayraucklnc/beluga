@@ -1,4 +1,6 @@
 import type { AppState } from '../../../../src/core/store.js';
+import { type Plan, planTitle } from '../../../../src/core/plans/model.js';
+import { isLivePlan, isPlanOwned, planConversations, planOwnerOf } from '../../../../src/core/plans/owner.js';
 import { activityOf } from '../../../../src/ui/workspace-models.js';
 import type { Project, Workspace } from '../../../../src/workspaces/types.js';
 
@@ -27,7 +29,7 @@ export interface Signal {
 
 export const IDLE_SIGNAL: Signal = { level: 'idle', unread: 0, working: false, tip: '' };
 
-type Source = Pick<AppState, 'log' | 'unread' | 'questions' | 'approvals' | 'conflicts' | 'prs' | 'claudeCode'>;
+type Source = Pick<AppState, 'log' | 'unread' | 'questions' | 'approvals' | 'conflicts' | 'prs' | 'claudeCode' | 'plans' | 'board'>;
 
 const NEED_TIPS: Record<Need, string> = {
   approval: 'Claude needs your approval',
@@ -95,12 +97,53 @@ export function tally(signals: readonly Signal[]): Tally {
   };
 }
 
-/** The conversations a project's row stands for: its live worktrees and chats (the main folder isn't listed). */
-export const projectConversations = (p: Project): readonly Workspace[] => p.workspaces.filter((w) => !w.archived && w.kind !== 'main');
+/** The conversations a project's row stands for: its live worktrees and chats (the main folder isn't listed), a plan's own not on their own. */
+export const projectConversations = (state: Pick<Source, 'plans' | 'board'>, p: Project): readonly Workspace[] => p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && !isPlanOwned(state, w.id));
 
-export const projectTally = (state: Source, p: Project): Tally => tally(projectConversations(p).map((w) => workspaceSignal(state, w)));
+/** A project's live plans (each one item, however many tasks it runs). */
+export const projectPlans = (state: Pick<Source, 'plans'>, p: Project): readonly Plan[] => state.plans.plans.filter((x) => x.projectId === p.id && isLivePlan(x));
 
-export const groupTally = (state: Source, projects: readonly Project[]): Tally => tally(projects.flatMap((p) => projectConversations(p).map((w) => workspaceSignal(state, w))));
+const projectSignals = (state: Source, p: Project): Signal[] => [...projectConversations(state, p).map((w) => workspaceSignal(state, w)), ...projectPlans(state, p).map((x) => planSignal(state, x))];
+
+export const projectTally = (state: Source, p: Project): Tally => tally(projectSignals(state, p));
+
+export const groupTally = (state: Source, projects: readonly Project[]): Tally => tally(projects.flatMap((p) => projectSignals(state, p)));
+
+const NEED_WORDS: Record<Need, string> = {
+  approval: 'needs your approval',
+  question: 'asks a question',
+  plan: 'has a plan for you to approve',
+  conflict: 'has a merge conflict',
+  checks: 'has failing checks',
+};
+
+/** Where a plan waits on you: which of its conversations, and the plan's task there (its id), if it's a task's. */
+export interface PlanNeed {
+  readonly ws: string;
+  readonly task?: string;
+}
+
+/**
+ * A plan's signal, as one conversation's: the news in its home and all its tasks' worktrees added
+ * up ("3 updates"), and the first of them that needs you, by name ("KLD-12 asks a question").
+ */
+export function planSignal(state: Source, plan: Plan): Signal & { readonly at?: PlanNeed } {
+  const list = planConversations(state, plan.id).map((ws) => ({ ws, signal: signalOf(state, `ws:${ws}`, ws) }));
+  const unread = list.reduce((n, x) => n + x.signal.unread, 0);
+  const working = list.some((x) => x.signal.working);
+  const news = unread ? `${unread} update${unread === 1 ? '' : 's'}` : '';
+  const waiting = list.find((x) => x.signal.need);
+  if (waiting) {
+    const owner = planOwnerOf(state.plans, state.board, waiting.ws);
+    const who = owner?.issue.key ?? 'Claude';
+    const need = waiting.signal.need!;
+    const at = { ws: waiting.ws, ...(owner ? { task: owner.task.id } : {}) };
+    return { level: 'needs', unread, need, working, tip: [`${who} ${NEED_WORDS[need]}`, news].filter(Boolean).join(' · '), at };
+  }
+  if (unread) return { level: 'unread', unread, working, tip: news };
+  if (working) return { level: 'working', unread: 0, working, tip: 'Claude is working' };
+  return IDLE_SIGNAL;
+}
 
 /**
  * Claude is at work somewhere in a project: a klaud run or a Claude Code session, in any of its
@@ -128,6 +171,8 @@ export type UnreadEntry = {
   | { readonly kind: 'shared'; readonly owner: string; readonly id: string }
   | { readonly kind: 'dm'; readonly peerId: string }
   | { readonly kind: 'group'; readonly groupId: string }
+  /** A plan, once for its home and all its tasks' conversations (`channels`); `at`: where it waits on you. */
+  | { readonly kind: 'plan'; readonly plan: Plan; readonly project?: Project; readonly channels: readonly string[]; readonly at?: PlanNeed }
 );
 
 type ListSource = Source & Pick<AppState, 'projects' | 'shared' | 'network'>;
@@ -138,9 +183,17 @@ const counts = (x: Signal): boolean => x.level === 'needs' || x.unread > 0;
 export function unreadEntries(state: ListSource): UnreadEntry[] {
   const out: UnreadEntry[] = [];
   for (const p of state.projects) {
-    for (const ws of projectConversations(p)) {
+    for (const ws of projectConversations(state, p)) {
       const signal = workspaceSignal(state, ws);
       if (counts(signal)) out.push({ kind: 'workspace', channel: `ws:${ws.id}`, name: ws.name, ws, ...(p.root ? { project: p } : {}), signal, ts: activityOf(state.log, `ws:${ws.id}`).lastTs ?? 0 });
+    }
+    // A plan is one entry, never its conversations one by one.
+    for (const plan of projectPlans(state, p)) {
+      const { at, ...signal } = planSignal(state, plan);
+      if (!counts(signal)) continue;
+      const channels = planConversations(state, plan.id).map((ws) => `ws:${ws}`);
+      const ts = Math.max(0, ...channels.map((c) => activityOf(state.log, c).lastTs ?? 0));
+      out.push({ kind: 'plan', channel: `plan:${plan.id}`, name: planTitle(plan), plan, ...(p.root ? { project: p } : {}), channels, ...(at ? { at } : {}), signal, ts });
     }
   }
   for (const w of state.shared) {
@@ -166,7 +219,7 @@ export function unreadEntries(state: ListSource): UnreadEntry[] {
  */
 export function dockCount(state: ListSource & Pick<AppState, 'inbox' | 'knocks'>): number {
   const entries = unreadEntries(state);
-  const listed = new Set(entries.map((e) => e.channel));
+  const listed = new Set(entries.flatMap((e) => (e.kind === 'plan' ? e.channels : [e.channel])));
   const inListed = (channel: string | undefined): boolean => channel !== undefined && listed.has(channel);
   const covered = new Set([...state.approvals.filter((a) => inListed(a.channel)).map((a) => a.id), ...state.questions.filter((q) => inListed(q.channel)).map((q) => q.qid)]);
   const notices = state.inbox.filter((n) => !n.read && !inListed(n.channel) && !(n.ref !== undefined && covered.has(n.ref)));

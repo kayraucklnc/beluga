@@ -1,20 +1,24 @@
 import '@xyflow/react/dist/base.css';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Background, BackgroundVariant, BaseEdge, type Edge, type EdgeProps, Handle, type Node, type NodeProps, Panel, Position, ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react';
+import { AUTONOMY_INFO } from '@klaud/core/plans/model.js';
 import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progress.js';
 import { IconButton, cx } from '../components/ui.js';
 import { Icon } from '../components/Icon.js';
-import { reducedMotion, useDocTheme } from '../components/markdown/use-doc-theme.js';
+import { useDocTheme } from '../components/markdown/use-doc-theme.js';
 import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPath, routesOf } from '../components/graph/graph-model.js';
 import { layout } from '../components/graph/layout.js';
-import { MILESTONE_STATE, changeMarks, gateId, graphShape, groupId, taskNodeId, taskWords } from './plans-model.js';
+import { useSharpZoom } from '../components/graph/sharp-zoom.js';
+import { breath, turn, useLive } from '../lib/live-motion.js';
+import { MILESTONE_STATE, TASK_STATE, changeMarks, gateId, graphShape, groupId, taskNodeId, taskWords } from './plans-model.js';
 import { useClock } from './use-plans.js';
-import { TaskStateIcon } from './marks.js';
+import { TaskChatMark, TaskStateIcon } from './marks.js';
 import p from './plans.module.css';
 
 /**
- * A plan as a living graph: each milestone a box, left to right, its tasks inside laid out by what
- * waits on what, and a gate at its end that opens the next. Tasks Claude is working on glow and
+ * A plan as a living graph: each milestone a box, its tasks inside laid out by what waits on what,
+ * and a gate at its end. Milestones that run side by side sit side by side in a row; a line runs
+ * from each milestone down to the ones that wait on it. Tasks Claude is working on glow and
  * say what it's doing; finished ones tick; a gate waiting for you is the one thing in the accent.
  * The layout (ELK) depends only on the plan's shape, so work moving on never moves anything.
  */
@@ -22,8 +26,13 @@ import p from './plans.module.css';
 const TASK = { width: 252, height: 92 };
 const GATE = { width: 150, height: 44 };
 const HEAD = 62;
-/** Room between milestones (the gate's line runs through it). */
+/** Room between milestones. */
 const LANE_GAP = 40;
+/** A milestone's line to one two or more rows down runs down the right of the lanes, never across them. */
+const GUTTER = 22;
+const GUTTER_STEP = 10;
+/** A task's line to its gate is drawn only from the column next to it (not across empty columns). */
+const NEAR_GATE = 80;
 
 interface TaskData extends Record<string, unknown> {
   readonly view: TaskView;
@@ -32,6 +41,8 @@ interface TaskData extends Record<string, unknown> {
   readonly canStart: boolean;
   readonly onStart: (taskId: string) => void;
   readonly selected: boolean;
+  /** In another milestone, waiting on or waited on by the task you picked. */
+  readonly linked: boolean;
 }
 interface MilestoneData extends Record<string, unknown> {
   readonly view: MilestoneView;
@@ -48,7 +59,6 @@ interface LineData extends Record<string, unknown> {
   readonly kind: 'blocks' | 'finish' | 'next';
   readonly state: 'done' | 'live' | 'waiting';
   readonly route?: Route;
-  readonly motion: boolean;
 }
 type PlanEdge = Edge<LineData, 'line'>;
 
@@ -73,12 +83,14 @@ interface Laid {
   readonly key: string;
   readonly places: ReadonlyMap<string, Placed>;
   readonly routes: ReadonlyMap<string, Route>;
+  /** Width the milestone lines take right of the lanes. */
+  readonly gutter: number;
 }
 
 function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanvasProps) {
   const theme = useDocTheme();
-  const motion = !reducedMotion();
   const flow = useReactFlow<PlanNode, PlanEdge>();
+  useSharpZoom();
   const shape = useMemo(() => graphShape(view.plan), [view.plan]);
   const [laid, setLaid] = useState<Laid>();
   const [failed, setFailed] = useState(false);
@@ -118,19 +130,47 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
         if (!live) return;
         const places = new Map<string, Placed>();
         const routes = new Map<string, Route>();
+        const out = new Map(shape.milestones.map((m, i) => [m.id, outs[i]!] as const));
+        const rowOf = new Map(shape.rows.flatMap((row, r) => row.map((id) => [id, r] as const)));
+        // Rows top to bottom; the milestones of a row (they run side by side) left to right, each as
+        // wide as its tasks need, all as tall as the row's tallest.
         let y = 24;
-        // Lanes as wide as the widest, so the plan reads as one column of steps.
-        const wide = Math.max(420, ...outs.map((o) => o.width ?? 0));
-        outs.forEach((out, i) => {
-          const m = shape.milestones[i]!;
-          const width = wide;
-          const height = out.height ?? 0;
-          places.set(groupId(m.id), { x: 24, y, width, height });
-          for (const [id, at] of placesOf(out)) places.set(id, at);
-          for (const [id, r] of routesOf(out)) routes.set(id, { ...r, points: r.points.map((pt) => ({ x: pt.x + 24, y: pt.y + y })) });
+        for (const row of shape.rows) {
+          const height = Math.max(...row.map((id) => out.get(id)?.height ?? 0));
+          let x = 24;
+          for (const id of row) {
+            const o = out.get(id);
+            if (!o) continue;
+            const width = Math.max(row.length > 1 ? 340 : 420, o.width ?? 0);
+            places.set(groupId(id), { x, y, width, height });
+            for (const [nid, at] of placesOf(o)) places.set(nid, at);
+            for (const [eid, r] of routesOf(o)) routes.set(eid, { ...r, points: r.points.map((pt) => ({ x: pt.x + x, y: pt.y + y })) });
+            x += width + LANE_GAP;
+          }
           y += height + LANE_GAP;
-        });
-        setLaid({ key: shape.key, places, routes });
+        }
+        // A milestone → each one that waits on it: bottom to top through the gap between the rows;
+        // past a row in between, down a track right of every lane (never across a lane or its tasks).
+        const boxes = [...places].filter(([id]) => id.startsWith('m:')).map(([, at]) => at);
+        const right = Math.max(...boxes.map((b) => b.x + b.width));
+        const far = shape.edges.filter((e) => e.kind === 'next' && (rowOf.get(e.to.replace(/^m:/, '')) ?? 0) - (rowOf.get(e.from.replace(/^gate:/, '')) ?? 0) > 1);
+        for (const e of shape.edges) {
+          if (e.kind !== 'next') continue;
+          const from = places.get(groupId(e.from.replace(/^gate:/, '')));
+          const to = places.get(e.to);
+          if (!from || !to) continue;
+          const s = { x: from.x + from.width / 2, y: from.y + from.height };
+          const t = { x: to.x + to.width / 2, y: to.y };
+          const below = s.y + LANE_GAP / 2;
+          const above = t.y - LANE_GAP / 2;
+          const track = far.indexOf(e);
+          const points =
+            track < 0
+              ? [s, { x: s.x, y: above }, { x: t.x, y: above }, t]
+              : [s, { x: s.x, y: below }, { x: right + GUTTER + track * GUTTER_STEP, y: below }, { x: right + GUTTER + track * GUTTER_STEP, y: above }, { x: t.x, y: above }, t];
+          routes.set(e.id, { points });
+        }
+        setLaid({ key: shape.key, places, routes, gutter: far.length ? GUTTER + far.length * GUTTER_STEP : 0 });
         setFailed(false);
       })
       .catch(() => live && setFailed(true));
@@ -140,6 +180,13 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
   }, [shape.key]);
 
   const byTask = useMemo(() => new Map(view.milestones.flatMap((m) => m.tasks.map((t) => [t.task.id, t] as const))), [view]);
+  const lane = useMemo(() => new Map(shape.milestones.flatMap((m) => m.tasks.map((t) => [taskNodeId(t), m.id] as const))), [shape]);
+  // What the picked task waits on, or is waited on by, in other milestones: ringed, not wired across the lanes.
+  const linked = useMemo(() => {
+    if (!selected) return new Set<string>();
+    const me = taskNodeId(selected);
+    return new Set(shape.edges.filter((e) => e.kind === 'blocks' && (e.from === me || e.to === me) && lane.get(e.from) !== lane.get(e.to)).map((e) => (e.from === me ? e.to : e.from)));
+  }, [shape, lane, selected]);
   const nodes = useMemo<PlanNode[]>(() => {
     if (!laid) return [];
     const out: PlanNode[] = [];
@@ -161,14 +208,14 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
           width: TASK.width,
           height: TASK.height,
           draggable: false,
-          data: { view: t, ...(key ? { key } : {}), ...(mark ? { mark } : {}), canStart: startable.has(t.task.id), onStart, selected: selected === t.task.id },
+          data: { view: t, ...(key ? { key } : {}), ...(mark ? { mark } : {}), canStart: startable.has(t.task.id), onStart, selected: selected === t.task.id, linked: linked.has(taskNodeId(t.task.id)) },
         });
       }
       const gate = laid.places.get(gateId(m.milestone.id));
       if (gate) out.push({ id: gateId(m.milestone.id), type: 'gate', parentId: groupId(m.milestone.id), position: { x: gate.x, y: gate.y }, width: GATE.width, height: GATE.height, draggable: false, data: { view: m, current, selected: selected === gateId(m.milestone.id) } });
     }
     return out;
-  }, [laid, view, keys, marks, selected, startable, onStart]);
+  }, [laid, view, keys, marks, selected, linked, startable, onStart]);
 
   const edges = useMemo<PlanEdge[]>(() => {
     if (!laid) return [];
@@ -176,23 +223,29 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
       const s = byTask.get(id.replace(/^t:/, ''))?.state;
       return s === 'done' || s === 'review' || s === 'canceled';
     };
+    const titleOf = (id: string): string => `“${view.milestones.find((m) => m.milestone.id === id.replace(/^(gate|m):/, ''))?.milestone.title ?? id}”`;
     const passed = (gate: string): boolean => view.milestones.find((m) => gateId(m.milestone.id) === gate)?.state === 'passed';
     const working = (id: string): boolean => {
       const s = byTask.get(id.replace(/^t:/, ''))?.state;
       return s === 'running' || s === 'asking' || s === 'idle';
     };
-    const lane = new Map(shape.milestones.flatMap((m) => m.tasks.map((t) => [taskNodeId(t), m.id] as const)));
-    // A blocker in an earlier milestone is drawn only for the task you picked (the gates already say what comes first).
-    const shown = shape.edges.filter((e) => e.kind !== 'blocks' || lane.get(e.from) === lane.get(e.to) || (selected && (e.from === taskNodeId(selected) || e.to === taskNodeId(selected))));
+    const nearGate = (e: (typeof shape.edges)[number]): boolean => {
+      const task = laid.places.get(e.from);
+      const gate = laid.places.get(e.to);
+      return Boolean(task && gate && gate.x - (task.x + task.width) <= NEAR_GATE);
+    };
+    // Only real lines: blockers inside a milestone (across milestones the gates say what comes first),
+    // the last column of tasks into the gate, and a gate into the milestones that wait on it.
+    const shown = shape.edges.filter((e) => (e.kind === 'blocks' ? lane.get(e.from) === lane.get(e.to) : e.kind === 'finish' ? nearGate(e) : laid.routes.has(e.id)));
     return shown.map((e) => {
       const done = e.kind === 'next' ? passed(e.from) : finished(e.from);
       const state: LineData['state'] = done ? 'done' : e.kind !== 'next' && working(e.from) ? 'live' : 'waiting';
       const route = laid.routes.get(e.id);
-      const handles = e.kind === 'next' ? { sourceHandle: 'down', targetHandle: 'top' } : {};
-      const across = e.kind === 'blocks' && lane.get(e.from) !== lane.get(e.to);
-      return { id: e.id, source: e.from, target: e.to, type: 'line', ...handles, zIndex: across ? 10 : 0, data: { kind: e.kind, state, motion, ...(route ? { route } : {}) } };
+      // Drawn from the milestone's head (its gate is what it waits on, so the line keeps its state).
+      const ends = e.kind === 'next' ? { source: groupId(e.from.replace(/^gate:/, '')), sourceHandle: 'out', targetHandle: 'in', ariaLabel: `${titleOf(e.from)} leads to ${titleOf(e.to)}` } : { source: e.from };
+      return { id: e.id, ...ends, target: e.to, type: 'line', data: { kind: e.kind, state, ...(route ? { route } : {}) } };
     });
-  }, [laid, shape, byTask, view, motion, selected]);
+  }, [laid, shape, lane, byTask, view]);
 
   // Framed once laid out (and when the frame changes size a lot: the conversation folded away).
   const wrap = useRef<HTMLDivElement>(null);
@@ -201,13 +254,14 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     const box = wrap.current;
     if (!laid || !box) return;
     const groups = [...laid.places].filter(([id]) => id.startsWith('m:')).map(([, at]) => at);
-    const width = Math.max(...groups.map((g) => g.x + g.width)) + 24;
+    const width = Math.max(...groups.map((g) => g.x + g.width)) + laid.gutter + 24;
     const height = Math.max(...groups.map((g) => g.y + g.height)) + 24;
     const zoom = Math.max(0.55, Math.min(1, box.clientWidth / width, Math.max(box.clientHeight / height, box.clientWidth / width)));
     const current = view.current ? laid.places.get(groupId(view.current.milestone.id)) : undefined;
     // From the top (below the view switch), unless the current milestone would be out of sight.
     const top = current && (current.y + current.height) * zoom + 52 > box.clientHeight ? -(current.y - 24) * zoom + 52 : 40;
-    const left = width * zoom <= box.clientWidth ? (box.clientWidth - width * zoom) / 2 : 0;
+    // Wider than the view (milestones side by side): from the left, unless the current milestone would be out of sight.
+    const left = width * zoom <= box.clientWidth ? (box.clientWidth - width * zoom) / 2 : current && (current.x + current.width) * zoom > box.clientWidth ? -(current.x - 24) * zoom + 16 : 0;
     void flow.setViewport({ x: left, y: top, zoom }, { duration: ms });
   };
   useEffect(() => {
@@ -252,12 +306,20 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
 
 // ---------------------------------------------------------------- nodes
 
-const Ends = ({ hidden }: { hidden?: boolean }) => (
+/** Where lines meet a card: never drawn (a line shows itself). */
+const Ends = () => (
   <>
-    <Handle type="target" position={Position.Left} className={p.handle} isConnectable={false} style={hidden ? { opacity: 0 } : undefined} />
-    <Handle type="source" position={Position.Right} className={p.handle} isConnectable={false} style={hidden ? { opacity: 0 } : undefined} />
+    <Handle type="target" position={Position.Left} className={p.handle} isConnectable={false} />
+    <Handle type="source" position={Position.Right} className={p.handle} isConnectable={false} />
   </>
 );
+
+/** Claude at work on a card: a copper light going round its edge (with the live clock, lib/live-motion.ts). */
+function Glow() {
+  const glow = useRef<HTMLSpanElement>(null);
+  useLive(glow, (t) => glow.current?.style.setProperty('--angle', `${turn(t, 2600)}deg`));
+  return <span ref={glow} className={p.glow} aria-hidden="true" />;
+}
 
 const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task'>>) {
   const { view: t } = data;
@@ -267,17 +329,19 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task
   const sub = info.sub ?? (t.state === 'asking' ? 'Claude asked you something' : t.forYou && t.state === 'ready' ? 'For you' : undefined);
   return (
     <div
-      className={cx(p.task, p[`task_${t.state}`], data.selected && p.taskSelected, data.mark && p.taskMarked)}
+      className={cx(p.task, p[`task_${t.state}`], data.selected && p.taskSelected, data.linked && p.taskLinked, data.mark && p.taskMarked)}
       data-state={t.state}
+      data-linked={data.linked ? 'true' : undefined}
       aria-label={`${t.task.title}, ${info.label}`}
     >
-      <Ends hidden />
-      {t.state === 'running' ? <span className={p.glow} aria-hidden="true" /> : null}
+      <Ends />
+      {t.state === 'running' ? <Glow /> : null}
       <div className={p.taskTop}>
         <TaskStateIcon state={t.state} />
         <span className={p.taskKey}>{data.key ?? t.task.id}</span>
         {data.mark ? <span className={p.markChip}>{data.mark === 'added' ? 'New' : 'Changed'}</span> : null}
         <span className={p.grow} />
+        <TaskChatMark {...(t.worktree ? { worktree: t.worktree } : {})} />
         {t.task.estimate ? <span className={p.points}>{t.task.estimate}</span> : null}
         {t.forYou ? <Icon name="person" size={12} className={p.forYou} /> : null}
       </div>
@@ -310,7 +374,8 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
   const share = m.state === 'passed' ? 1 : m.total ? m.finished / m.total : 0;
   return (
     <div className={cx(p.milestone, p[`ms_${m.state}`], data.current && p.msCurrent)}>
-      <Handle id="top" type="target" position={Position.Top} className={p.handle} isConnectable={false} style={{ left: 27 }} />
+      <Handle id="in" type="target" position={Position.Top} className={p.handle} isConnectable={false} />
+      <Handle id="out" type="source" position={Position.Bottom} className={p.handle} isConnectable={false} />
       <div className={p.msHead}>
         <span className={p.msIndex}>{m.state === 'passed' ? <Icon name="check" size={11} /> : m.index + 1}</span>
         <span className={p.msTitles}>
@@ -324,12 +389,14 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
             ) : (
               <span className={p.msCount}>{m.milestone.tasks.length} tasks</span>
             )}
-            {m.milestone.autonomy ? <span className={p.msAuto}>{m.autonomy === 'autopilot' ? 'Autopilot' : m.autonomy === 'step' ? 'Step by step' : 'Gated'}</span> : null}
+            {m.state !== 'draft' ? (
+              <span className={p.msProgress} aria-hidden="true">
+                <span className={p.msProgressFill} style={{ width: `${Math.round(share * 100)}%` }} />
+              </span>
+            ) : null}
+            {m.milestone.autonomy ? <span className={p.msAuto}>{AUTONOMY_INFO[m.autonomy].label}</span> : null}
           </span>
         </span>
-      </div>
-      <div className={p.msProgress} aria-hidden="true">
-        <span className={p.msProgressFill} style={{ width: `${Math.round(share * 100)}%` }} />
       </div>
     </div>
   );
@@ -340,10 +407,12 @@ const GateNode = memo(function GateNode({ data }: NodeProps<Node<GateData, 'gate
   const n = m.milestone.criteria.length;
   const check = m.run.check;
   const label = m.state === 'passed' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? 'Pass it' : n ? `${n} ${n === 1 ? 'criterion' : 'criteria'}` : 'Milestone';
+  // Waiting for you: a soft ring that breathes out (with the live clock, lib/live-motion.ts).
+  const gate = useRef<HTMLDivElement>(null);
+  useLive(gate, (t) => gate.current?.style.setProperty('--beckon', (1 - breath(t, 2400)).toFixed(3)), m.state === 'gate');
   return (
-    <div className={cx(p.gate, p[`gate_${m.state}`], data.selected && p.gateSelected)} aria-label={`Gate of ${m.milestone.title}: ${label}`}>
-      <Ends hidden />
-      <Handle id="down" type="source" position={Position.Bottom} className={p.handle} isConnectable={false} />
+    <div ref={gate} className={cx(p.gate, p[`gate_${m.state}`], data.selected && p.gateSelected)} aria-label={`Gate of ${m.milestone.title}: ${label}`}>
+      <Ends />
       <span className={p.gateMark}>
         <Icon name={m.state === 'passed' ? 'check' : m.state === 'failed' ? 'x' : 'flag'} size={11} />
       </span>
@@ -380,14 +449,7 @@ const PlanLine = memo(function PlanLine({ id, sourceX, sourceY, targetX, targetY
   const kind = data?.kind ?? 'blocks';
   const state = data?.state ?? 'waiting';
   return (
-    <>
       <BaseEdge id={id} path={path} className={cx(p.line, p[`line_${kind}`], p[`line_${state}`])} interactionWidth={0} />
-      {state === 'live' && data?.motion ? (
-        <circle r={2.6} className={p.lineDot}>
-          <animateMotion dur="1.8s" repeatCount="indefinite" path={path} />
-        </circle>
-      ) : null}
-    </>
   );
 });
 

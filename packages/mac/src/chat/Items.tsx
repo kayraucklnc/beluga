@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LogItem, ShellItem } from '@klaud/core/store.js';
 import { isRunning } from '@klaud/ui/format.js';
 import { formatDuration } from '@klaud/shared/text.js';
@@ -13,6 +13,7 @@ import { copyText } from '../lib/copy.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
+import { useClock } from '../lib/window-active.js';
 import { ImageGrid } from './ChatImages.js';
 import { openLightbox } from './images.js';
 import { brandText } from '../lib/brand.js';
@@ -30,16 +31,8 @@ type AgentItem = Extract<LogItem, { type: 'agent' }>;
 type ChatItem = Extract<LogItem, { type: 'chat' }>;
 type SystemItem = Extract<LogItem, { type: 'system' }>;
 
-/** A clock that ticks while something is running (for "working · 12s"). */
-export function useNow(active: boolean, every = 1000): number {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setNow(Date.now()), every);
-    return () => clearInterval(t);
-  }, [active, every]);
-  return now;
-}
+/** A clock that ticks while something is running (for "working · 12s"), and you're looking at Klaud. */
+export const useNow = useClock;
 
 const time = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -49,6 +42,38 @@ function useMenuContext() {
   // In a group room only a mention reaches Claude; elsewhere quoting already asks it.
   const group = useApp((st) => st.view.kind === 'room' && st.peers.length > 1);
   return { ui, ...(group ? { askPrefix: '@claude ' } : {}), toast: (text: string) => client.store.dispatch({ type: 'toast', text, level: 'success' }) };
+}
+
+/**
+ * How a conversation shown beside something else (a plan's) reads: `fold`, a person's long message
+ * shows its first lines with Show all; `quietWorking`, Claude's card doesn't repeat a status the
+ * page already shows ("Working · 26s").
+ */
+export const PaneLook = createContext<{ readonly fold?: boolean; readonly quietWorking?: boolean }>({});
+
+/** A long message folded to three lines until you open it (only where FoldLongMessages is on). */
+function Folding({ children }: { children: ReactNode }) {
+  const { fold } = useContext(PaneLook);
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (fold && el && !open) setLong(el.scrollHeight > el.clientHeight + 2);
+  }, [fold, open, children]);
+  if (!fold) return <>{children}</>;
+  return (
+    <>
+      <div ref={box} className={cx(!open && s.folded)}>
+        {children}
+      </div>
+      {long || open ? (
+        <button type="button" className={s.showAll} aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? 'Show less' : 'Show all'}
+        </button>
+      ) : null}
+    </>
+  );
 }
 
 /** A message from a person (or a Claude speaking in the chat). `continued`: same author, shortly after. */
@@ -74,7 +99,15 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
               {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
             </div>
           )}
-          {text ? <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} /> : null}
+          {text ? (
+            item.byAgent ? (
+              <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} />
+            ) : (
+              <Folding>
+                <Markdown text={text} paths={mine} localImages={mine} mentions={mentions} />
+              </Folding>
+            )
+          ) : null}
           <ImageGrid images={images} />
         </div>
       </div>
@@ -122,6 +155,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
   const running = isRunning(item.status) && item.status !== 'queued';
   const now = useNow(running);
   const st = statusOf(item, now);
+  const { quietWorking } = useContext(PaneLook);
   const forSomeoneElse = item.requesterName !== item.ownerName;
   const mine = item.owner === selfId;
   const { client, ui } = useKlaud();
@@ -179,7 +213,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
                 </Button>
               </span>
             ) : null}
-            {st.label ? (
+            {st.label && !(running && quietWorking) ? (
               <span className={cx(s.status, s[`tone_${st.tone}`])}>
                 {running ? <Dot tone="claude" live /> : null}
                 {st.label}

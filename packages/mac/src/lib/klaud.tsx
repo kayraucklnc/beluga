@@ -3,6 +3,7 @@ import type { AppState } from '@klaud/core/store.js';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { type UiState, initialUi } from '@klaud/ui/keymap.js';
 import type { MenuKind } from '@klaud/ui/menus.js';
+import { onWindowActive, windowActive } from './window-active.js';
 
 /**
  * This window's own UI state. It uses the terminal UI's shape (UiState) for everything the
@@ -84,10 +85,45 @@ export function useKlaud(): Klaud {
   return k;
 }
 
+/** While you're not looking at Klaud, views catch up with the shared state at most this often. */
+const AWAY_MS = 1000;
+const views = new WeakMap<object, (listener: () => void) => () => void>();
+
+/**
+ * How this window's views hear the shared state change: at once while you're looking at Klaud;
+ * while you're not (lib/window-active.ts), at most once a second, so a Claude streaming for hours
+ * doesn't redraw a window nobody's watching (KLD-40). Looking back catches up at once. The Dock,
+ * tray and notifications listen to the store itself and never wait.
+ */
+function viewSubscribe(store: { subscribe: (listener: () => void) => () => void }): (listener: () => void) => () => void {
+  const known = views.get(store);
+  if (known) return known;
+  const listeners = new Set<() => void>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = (): void => {
+    clearTimeout(timer);
+    timer = undefined;
+    for (const l of [...listeners]) l();
+  };
+  store.subscribe(() => {
+    if (windowActive()) flush();
+    else timer ??= setTimeout(flush, AWAY_MS);
+  });
+  onWindowActive(() => {
+    if (windowActive() && timer) flush();
+  });
+  const subscribe = (listener: () => void): (() => void) => {
+    listeners.add(listener);
+    return () => void listeners.delete(listener);
+  };
+  views.set(store, subscribe);
+  return subscribe;
+}
+
 /** The shared state seen through this window (re-renders when the picked part changes). */
 export function useApp<T>(pick: (s: AppState) => T): T {
   const { client } = useKlaud();
-  return useSyncExternalStore(client.store.subscribe, () => pick(client.store.getState()));
+  return useSyncExternalStore(viewSubscribe(client.store), () => pick(client.store.getState()));
 }
 
 export function useUi<T>(pick: (s: MacUi) => T): T {

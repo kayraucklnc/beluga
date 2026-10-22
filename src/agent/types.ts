@@ -238,6 +238,8 @@ export interface AgentBackend {
   refreshUsage?(): Promise<Usage | undefined>;
   /** A short worktree name for a task (a small model names it). */
   nameTask?(prompt: string): Promise<string>;
+  /** A short name for a new plan from its goal (a small model names it; undefined when it couldn't). */
+  titlePlan?(goal: string): Promise<string | undefined>;
   /** Answer in a friends' chat from its history (one turn, no tools; core/chat/claude.ts). */
   answerChat?(req: ChatAnswerRequest): Promise<string>;
   /** What a project's setup should be after `failed` failed in `dir` (a small model looks). */

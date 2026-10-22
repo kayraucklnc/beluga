@@ -123,3 +123,11 @@ html[data-app='tauri'] body {
   background-color: #ffd60a;
   color: #1d1d1f;
 }
+
+/* Nobody's looking (another app in front, or the window hidden or covered: lib/window-active.ts):
+   every loop rests where it is, and picks up the moment you look again (KLD-40). */
+html[data-window='idle'] *,
+html[data-window='idle'] *::before,
+html[data-window='idle'] *::after {
+  animation-play-state: paused !important;
+}

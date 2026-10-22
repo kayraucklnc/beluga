@@ -332,18 +332,20 @@ function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
   if (failed) return { kind: 'failed', milestone: failed };
   const merging = v.open.find((m) => m.state === 'merging');
   if (merging?.merging) return { kind: 'merging', milestone: merging, text: mergingText(merging.merging, merging.milestone.title, plan.branch) };
-  const yoursToPass = v.open.find((m) => (m.state === 'checking' || m.state === 'gate') && !(m.autonomy === 'autopilot' && m.milestone.criteria.length));
+  // Yours to pass only once there's something to go on: Claude's check came back (or there's
+  // nothing to check). While the head Claude checks, on every mode, the plan waits on Claude.
+  const yoursToPass = v.open.find((m) => m.state === 'gate' && (m.run.check || !m.milestone.criteria.length) && !(m.autonomy === 'autopilot' && m.milestone.criteria.length));
   if (yoursToPass) return { kind: 'pass', milestone: yoursToPass };
   const autonomyOfTask = new Map(v.open.map((m) => [m.milestone.id, m.autonomy]));
   // Tasks for you, or (step by step) every task, wait for your click.
   const yours = v.ready.filter((t) => t.forYou || autonomyOfTask.get(t.milestoneId) === 'step');
   if (yours.length && v.active.length < plan.maxParallel) return { kind: 'start', tasks: yours };
+  const checking = v.open.find((m) => m.state === 'checking' || (m.state === 'gate' && m.milestone.criteria.length && !m.run.check));
+  if (checking) return { kind: 'checking', milestone: checking };
   const running = v.active.filter((t) => t.state === 'running');
   const note = v.active.flatMap((t) => (t.watch ? [t.watch] : [])).sort((a, b) => b.at - a.at)[0]?.line;
   if (v.active.length) return { kind: 'working', tasks: running.length ? running : v.active, ...(note ? { note } : {}) };
   if (v.ready.length) return { kind: 'working', tasks: [] };
-  const checking = v.open.find((m) => m.state === 'checking' || m.state === 'gate');
-  if (checking) return { kind: 'checking', milestone: checking };
   const blocked = v.open.flatMap((m) => m.tasks).find((t) => t.state === 'blocked');
   return { kind: 'waiting', why: blocked?.why ?? 'Waiting on its tasks' };
 }

@@ -8,8 +8,10 @@ import type { Store } from '../store.js';
 import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from './edit.js';
 import {
   AUTONOMIES,
+  AUTONOMY_INFO,
   type Autonomy,
   type Combining,
+  DEFAULT_AUTONOMY,
   DEFAULT_PARALLEL,
   type GateCheck,
   KEEP_PLAN_ACTIVITY,
@@ -44,6 +46,8 @@ export interface PlansDeps {
 }
 
 const MAX_STYLE = 8000;
+/** A plan's name until it has one. */
+export const UNTITLED = 'New plan';
 /** A run of drafting by one author this close together is one line in the activity. */
 const DRAFT_NOTE_MS = 3 * 60 * 1000;
 
@@ -123,10 +127,10 @@ export class Plans {
 
   // ------------------------------------------------------------------ drafting
 
-  /** A new plan: an empty draft in its conversation (Claude writes it there). */
+  /** A new plan: an empty draft in its conversation (Claude writes it there). Your goal is never its title: a quick model names it (autoTitle), and Claude's plan_write after that. */
   create(input: { readonly projectId: string; readonly home: string; readonly title?: string; readonly goal?: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt }, by: Actor): Plan {
     const at = this.now();
-    const title = (input.title ?? input.goal ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'New plan';
+    const title = (input.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || UNTITLED;
     const plan: Plan = {
       id: short('pl'),
       projectId: input.projectId,
@@ -134,7 +138,7 @@ export class Plans {
       status: 'draft',
       draft: { title, goal: input.goal?.trim().slice(0, 4000) ?? '', milestones: [] },
       draftRev: 1,
-      autonomy: input.autonomy ?? 'gated',
+      autonomy: input.autonomy ?? DEFAULT_AUTONOMY,
       maxParallel: DEFAULT_PARALLEL,
       testsAt: input.testsAt ?? 'milestone',
       paused: false,
@@ -182,6 +186,14 @@ export class Plans {
     return this.change(plan, { ...(plan.draft ? { draft: { ...plan.draft, title: clean } } : {}), ...(plan.body ? { body: { ...plan.body, title: clean } } : {}) }, [event(by, 'note', `renamed the plan to “${clean}”`, this.now())]);
   }
 
+  /** The quick name for a new plan: only while it has none (Claude's plan_write, or you, named it first otherwise). */
+  autoTitle(id: string, title: string): Plan | undefined {
+    const plan = this.get(id);
+    const clean = title.replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!plan || !clean || plan.body || plan.draft?.title !== UNTITLED) return undefined;
+    return this.change(plan, { draft: { ...plan.draft, title: clean } }, []);
+  }
+
   /** Throw the draft away (a plan never approved goes with it). */
   discard(id: string, by: Actor): Plan | undefined {
     const plan = this.need(id);
@@ -215,12 +227,12 @@ export class Plans {
     const plan = this.need(id);
     if (milestone) {
       const patchBody = (b: PlanBody | undefined): PlanBody | undefined => (b ? { ...b, milestones: b.milestones.map((m) => (m.id === milestone ? { ...m, autonomy } : m)) } : b);
-      return this.change(plan, { body: patchBody(plan.body), draft: patchBody(plan.draft) }, [event(by, 'autonomy', `set a milestone to ${autonomy}`, this.now())]);
+      return this.change(plan, { body: patchBody(plan.body), draft: patchBody(plan.draft) }, [event(by, 'autonomy', `set ${milestoneName(plan, milestone)} to ${AUTONOMY_INFO[autonomy].label}`, this.now())]);
     }
-    if (autonomy === plan.autonomy) return plan;
+    if (autonomy === plan.autonomy && !(plan.body ?? plan.draft)?.milestones.some((m) => m.autonomy)) return plan;
     // A plan-wide choice wins over every milestone's own.
     const clear = (b: PlanBody | undefined): PlanBody | undefined => (b ? { ...b, milestones: b.milestones.map(({ autonomy: _a, ...m }) => m) } : b);
-    return this.change(plan, { autonomy, body: clear(plan.body), draft: clear(plan.draft) }, [event(by, 'autonomy', `switched to ${autonomy === 'step' ? 'step by step' : autonomy}`, this.now())]);
+    return this.change(plan, { autonomy, body: clear(plan.body), draft: clear(plan.draft) }, [event(by, 'autonomy', `switched the plan to ${AUTONOMY_INFO[autonomy].label}`, this.now())]);
   }
 
   setPaused(id: string, paused: boolean, by: Actor, why?: string): Plan {
@@ -265,7 +277,7 @@ export class Plans {
     // Checked without being asked (the user asked in the conversation): it's this round's check.
     const asked = plan.runs[milestone]?.checkAsked ?? at;
     const notes = check.notes.trim().slice(0, 8000);
-    return this.change(plan, { runs: withRun(plan, milestone, { check: { ...check, notes, at }, checkAsked: asked }) }, [event(check.by, check.verdict === 'pass' ? 'gate' : 'failed', `${check.verdict === 'pass' ? 'checked' : 'didn’t pass'} ${milestoneName(plan, milestone)}${notes ? `: ${notes.split('\n')[0]!.slice(0, 160)}` : ''}`, at)]);
+    return this.change(plan, { runs: withRun(plan, milestone, { check: { ...check, notes, at }, checkAsked: asked }) }, [event(check.by, check.verdict === 'pass' ? 'checked' : 'failed', `${check.verdict === 'pass' ? 'checked' : 'didn’t pass'} ${milestoneName(plan, milestone)}${notes ? `: ${notes.split('\n')[0]!.slice(0, 160)}` : ''}`, at)]);
   }
 
   pass(id: string, milestone: string, by: Actor): Plan {

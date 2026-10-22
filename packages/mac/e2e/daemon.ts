@@ -83,7 +83,7 @@ export default async function setup(): Promise<() => Promise<void>> {
   const out = openSync(log, 'a');
   const child = spawn('npx', ['tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'], {
     cwd: repo,
-    env: { ...process.env, KLAUD_HOME: home, KLAUD_DEMO_PACE: '0.3', KLAUD_ALLOW_ORIGINS: `http://localhost:${port}` },
+    env: { ...process.env, KLAUD_HOME: home, KLAUD_DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', KLAUD_ALLOW_ORIGINS: `http://localhost:${port}` },
     stdio: ['ignore', out, out],
   });
   let exited: string | undefined;

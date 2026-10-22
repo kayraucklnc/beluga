@@ -1,6 +1,8 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
 import type { ArchivePreview } from '@klaud/workspaces/archive.js';
 import { formatBytes } from '@klaud/shared/format.js';
+import { planTitle } from '@klaud/core/plans/model.js';
+import { planOwnerOf } from '@klaud/core/plans/owner.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { ProjectIcon } from '../../components/ProjectIcon.js';
 import { type ActionItem, ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
@@ -84,10 +86,14 @@ function Left({ row }: { row: WorktreeRow }) {
   );
 }
 
-/** Its name (what a sub-agent was asked, else the worktree's), cut short with all of it on hover; its branch below. */
+/** Its name (what a sub-agent was asked, else the worktree's), cut short with all of it on hover; its branch below (and its plan, when it does one's task). */
 function NameCell({ row }: { row: WorktreeRow }) {
   const home = useApp((st) => st.home);
   const w = row.ws;
+  const plan = useApp((st) => {
+    const owner = planOwnerOf(st.plans, st.board, w.id);
+    return owner ? planTitle(owner.plan) : undefined;
+  });
   const where = outsideLocation({ home }, w);
   const task = row.madeBy.kind === 'agent' ? row.madeBy.task : undefined;
   const name = task ?? w.name;
@@ -99,6 +105,12 @@ function NameCell({ row }: { row: WorktreeRow }) {
           {name}
         </span>
         <span className={s.sub} title={where?.path ?? w.path}>
+          {plan ? (
+            <span className={s.planTag} title={`Part of the plan “${plan}”: Klaud merges it into the plan`}>
+              <Icon name="flag" size={10} />
+              {plan}
+            </span>
+          ) : null}
           {[w.branch, where?.folder].filter(Boolean).join(' · ') || w.path}
         </span>
       </span>

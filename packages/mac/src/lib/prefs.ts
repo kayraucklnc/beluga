@@ -65,6 +65,8 @@ export interface UiPrefs {
   readonly scratchTab: boolean;
   /** The icon you picked for each sidebar group (by name; unset: a folder). */
   readonly groupIcons: Readonly<Record<string, string>>;
+  /** Plans (by id) whose task chats you asked to see in the sidebar under them (a plan is one row otherwise). */
+  readonly planTaskChats: readonly string[];
 }
 
 export const ACCENTS = {
@@ -116,6 +118,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   changeLook: 'diff',
   scratchTab: true,
   groupIcons: {},
+  planTaskChats: [],
 };
 
 const KEY = 'klaud.prefs.v1';

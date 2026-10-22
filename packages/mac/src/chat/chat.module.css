@@ -429,3 +429,26 @@
 .turnTask {
   margin: 8px 0 10px;
 }
+
+/* A long message folded to its first three lines (a plan's narrow conversation, see Items.tsx Folding). */
+.folded {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.showAll {
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--accent);
+  cursor: pointer;
+}
+.showAll:hover {
+  text-decoration: underline;
+}

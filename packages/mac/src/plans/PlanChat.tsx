@@ -1,17 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { activityOf } from '@klaud/ui/workspace-models.js';
 import { ChatLog } from '../chat/ChatLog.js';
+import { PaneLook } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { LiveDot } from './marks.js';
 import p from './plans.module.css';
+
+const FOLD = { fold: true };
+const FOLD_QUIET = { fold: true, quietWorking: true };
 
 /**
  * Talking the plan through with Claude, beside it: the plan's own conversation (its head Claude
  * plans and runs it there), and a box to say what to change. The plan updates as Claude writes.
  */
-export function PlanChat({ channel, draft, onClose }: { channel: string; draft: boolean; onClose: () => void }) {
+export function PlanChat({ channel, draft, drafting, onClose }: { channel: string; draft: boolean; drafting: boolean; onClose: () => void }) {
   const api = useApi();
   const { client } = useKlaud();
   const actions = useActions();
@@ -43,9 +48,10 @@ export function PlanChat({ channel, draft, onClose }: { channel: string; draft: 
           <Icon name="claude" size={13} />
           Claude
         </span>
-        {busy ? (
+        {/* While it writes the first plan, the line under the placeholder says so (one status, not two). */}
+        {busy && !drafting ? (
           <span className={p.chatBusy}>
-            <span className={p.pillDot} />
+            <LiveDot />
             working
           </span>
         ) : null}
@@ -54,7 +60,10 @@ export function PlanChat({ channel, draft, onClose }: { channel: string; draft: 
         <IconButton icon="x" label="Hide the Conversation" onClick={onClose} />
       </header>
       <div className={p.chatLog}>
-        <ChatLog key={channel} channel={channel} empty={<Empty icon="flag" title="Plan it together" detail={draft ? 'Claude is reading the code and writing the plan. Tell it what to change: the plan on the left updates as it goes.' : 'Ask Claude about the plan, or tell it what to change.'} />} />
+        {/* A narrow pane: what you asked first folds to a few lines, so the conversation reads from the top; while the plan is being written, the line under it is Claude's one status. */}
+        <PaneLook.Provider value={drafting ? FOLD_QUIET : FOLD}>
+          <ChatLog key={channel} channel={channel} empty={<Empty icon="flag" title="Plan it together" detail={draft ? 'Claude is reading the code and writing the plan. Tell it what to change: the plan on the left updates as it goes.' : 'Ask Claude about the plan, or tell it what to change.'} />} />
+        </PaneLook.Provider>
       </div>
       {asking && wsId ? (
         <button type="button" className={p.chatAsk} onClick={() => actions.run({ type: 'open_ws', id: wsId, tab: 'chat' })}>

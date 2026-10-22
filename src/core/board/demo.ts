@@ -24,7 +24,7 @@ export function seedDemoBoard(store: Store, work: BoardWork, travel: (msAgo: num
     const api = projects.find((p) => p.name === 'bob-api');
     const landing = projects.find((p) => p.name === 'landing');
     const ws = (name: string) => projects.flatMap((p) => p.workspaces).find((w) => w.name === name);
-    if (!api || !landing || !ws('add-auth') || !ws('webhook-retries') || !ws('new-hero')) {
+    if (!api || !landing || !ws('checkout-auth') || !ws('checkout-events') || !ws('new-hero')) {
       if (left > 0) {
         timer = setTimeout(() => attempt(left - 1), 250);
         timer.unref?.();
@@ -32,7 +32,8 @@ export function seedDemoBoard(store: Store, work: BoardWork, travel: (msAgo: num
       return;
     }
     try {
-      seed(work, travel, { api: api.id, landing: landing.id, auth: ws('add-auth')!, retries: ws('webhook-retries')!, hero: ws('new-hero')! });
+      // The payments tasks are worked in the demo plan's worktrees (add-auth and webhook-retries are worktrees of their own, with no task).
+      seed(work, travel, { api: api.id, landing: landing.id, auth: ws('checkout-auth')!, retries: ws('checkout-events')!, hero: ws('new-hero')! });
       after?.();
     } finally {
       travel(0);

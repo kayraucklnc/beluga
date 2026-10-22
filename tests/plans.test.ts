@@ -21,7 +21,7 @@ const ws = (id: string, projectId: string, name: string, kind: Workspace['kind']
 const project = (id: string, name: string, workspaces: Workspace[] = []): Project => ({ id, name, root: `/tmp/${name}`, base: 'main', workspaces });
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit } = {}) {
+function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit; titlePlan?: (goal: string) => Promise<string | undefined> } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [ws('main', 'api', 'bob-api', 'chat', { askOnly: true } as Partial<Workspace>)])] });
   const listeners: Array<(e: WorktreeEvent) => void> = [];
@@ -48,18 +48,58 @@ function setup(opts: { combine?: PlansWorkDeps['combine']; git?: PlanGit } = {})
       add(w);
       return w;
     },
+    renameChat: async (id: string, name: string) => {
+      store.dispatch({ type: 'projects', projects: store.getState().projects.map((p) => ({ ...p, workspaces: p.workspaces.map((w) => (w.id === id ? { ...w, name } : w)) })) });
+    },
   } as unknown as WorkspaceController;
   const board = new Board({ store, dir: null, projectName: (id) => store.getState().projects.find((p) => p.id === id)?.name });
   const boardWork = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: (prompt, channel) => void asked.push({ prompt, channel, echo: true }) });
   const plans = new Plans({ store, dir: null });
   const intents: unknown[] = [];
-  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => void asked.push({ prompt, channel, echo }), intend: (i) => void intents.push(i), delayMs: 0, ...(opts.combine ? { combine: opts.combine } : {}), ...(opts.git ? { git: opts.git } : {}) });
+  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => void asked.push({ prompt, channel, echo }), intend: (i) => void intents.push(i), delayMs: 0, ...(opts.combine ? { combine: opts.combine } : {}), ...(opts.git ? { git: opts.git } : {}), ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}) });
   const claude = boardWork.myClaude();
   const me = boardWork.me();
   /** Claude in a worktree finishes its run, or works. */
   const run = (channel: string, status: 'started' | 'done', id = `r-${Math.random()}`): void => store.dispatch({ type: 'agent_event', owner: 'p-me', requestId: id, requester: 'p-me', event: status, text: '', ts: Date.now(), channel });
   return { store, board, boardWork, plans, work, asked, made, intents, claude, me, run };
 }
+
+describe('a new plan’s name (KLD-28)', () => {
+  const chatName = (t: ReturnType<typeof setup>, home: string): string | undefined => t.store.getState().projects.flatMap((p) => p.workspaces).find((w) => `ws:${w.id}` === home)?.name;
+  const goal = 'A couple of things that we should improve because they look unfinished while Claude drafts the plan';
+
+  it('is never your message: "New plan", then the quick model’s name, in the sidebar too', async () => {
+    let name!: (title: string | undefined) => void;
+    const t = setup({ titlePlan: () => new Promise((r) => (name = r)) });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    expect(plan.draft!.title).toBe('New plan');
+    expect(plan.draft!.goal).toBe(goal);
+    expect(chatName(t, plan.home)).toBe('New plan');
+    name('Calmer plan drafting screen');
+    await tick();
+    expect(t.plans.need(plan.id).draft!.title).toBe('Calmer plan drafting screen');
+    expect(chatName(t, plan.home)).toBe('Calmer plan drafting screen');
+  });
+
+  it('Claude’s plan_write names it after that, and a late quick name doesn’t win', async () => {
+    let name!: (title: string | undefined) => void;
+    const t = setup({ titlePlan: () => new Promise((r) => (name = r)) });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    t.work.forRun(plan.home, 'p-me')!.tools!.write(BODY);
+    expect(t.plans.need(plan.id).draft!.title).toBe('Payments');
+    expect(chatName(t, plan.home)).toBe('Payments');
+    name('Too late');
+    await tick();
+    expect(t.plans.need(plan.id).draft!.title).toBe('Payments');
+  });
+
+  it('stays "New plan" when the model can’t name it', async () => {
+    const t = setup({ titlePlan: async () => undefined });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    await tick();
+    expect(t.plans.need(plan.id).draft!.title).toBe('New plan');
+  });
+});
 
 const BODY: BodyInput = {
   title: 'Payments',
@@ -233,6 +273,7 @@ describe('running a plan', () => {
     expect(check?.echo).toBe(false);
     expect(check?.prompt).toContain('401 without a session');
     expect(planView(t.plans.need(t.plan.id), t.store.getState().board).current?.state).toBe('checking');
+    expect(planView(t.plans.need(t.plan.id), t.store.getState().board).next.kind).toBe('checking');
     t.work.forRun('ws:main', 'p-me')!.tools!.gate('safe', 'pass', '1 ✓ 2 ✓');
     await tick(5);
     const v = planView(t.plans.need(t.plan.id), t.store.getState().board);
@@ -243,6 +284,30 @@ describe('running a plan', () => {
     expect(issue(t, 'Refund endpoint').status).toBe('in_progress');
     // "Live keys" is yours: it waits for you.
     expect(issue(t, 'Live keys').status).toBe('todo');
+  });
+
+  it.each(['step', 'gated', 'autopilot'] as const)('%s: while the head Claude checks, the plan waits on Claude; it’s yours to pass only once the check is back (KLD-22)', async (autonomy) => {
+    const t = await running(autonomy);
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']) t.board.update(issue(t, title).id, { status: 'in_review' }, t.claude);
+    await tick(5);
+    await tick(5);
+    const view = () => planView(t.plans.need(t.plan.id), t.store.getState().board);
+    expect(view().next).toMatchObject({ kind: 'checking', milestone: { milestone: { id: 'safe' } } });
+    t.work.forRun('ws:main', 'p-me')!.tools!.gate('safe', 'pass', '1 ✓ 2 ✓');
+    await tick(5);
+    if (autonomy === 'autopilot') expect(t.plans.need(t.plan.id).runs.safe?.passedAt).toBeDefined();
+    else expect(view().next).toMatchObject({ kind: 'pass', milestone: { milestone: { id: 'safe' } } });
+  });
+
+  it('the pilot writes what happened: started, finished, checked, passed, the mode changed (KLD-22)', async () => {
+    const t = await running('gated');
+    t.board.update(issue(t, 'Idempotent webhooks').id, { status: 'in_review' }, t.claude);
+    await tick(5);
+    t.work.setAutonomy(t.plan.id, 'autopilot');
+    const kinds = t.plans.need(t.plan.id).activity.map((e) => `${e.kind}: ${e.text}`);
+    expect(kinds.filter((k) => k.startsWith('started:')).length).toBeGreaterThanOrEqual(2);
+    expect(kinds).toContainEqual(expect.stringMatching(/^finished: finished [A-Z]+-\d+ “Idempotent webhooks”$/));
+    expect(kinds.at(-1)).toBe('autonomy: switched the plan to Autopilot');
   });
 
   it('autopilot: a passing check moves on by itself; a failing one stops there', async () => {
@@ -484,7 +549,8 @@ describe('milestones run side by side unless one builds on another', () => {
     expect(checks).toHaveLength(1);
     expect(checks[0]!.prompt).toContain('Parallel milestones');
     expect(t.view().milestones.map((m) => m.state)).toEqual(['running', 'checking', 'later']);
-    expect(t.view().next.kind).toBe('pass');
+    // While the head Claude checks, the plan waits on Claude, not on you.
+    expect(t.view().next).toMatchObject({ kind: 'checking', milestone: { milestone: { id: 'pilot' } } });
     t.work.pass(t.plan.id, 'pilot');
     await tick(5);
     expect(t.view().open.map((m) => m.milestone.id)).toEqual(['channels', 'header']);

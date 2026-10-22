@@ -12,10 +12,14 @@ import type { Actor, IssuePr, Priority } from '../board/model.js';
 export const AUTONOMIES = ['step', 'gated', 'autopilot'] as const;
 export type Autonomy = (typeof AUTONOMIES)[number];
 
-export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; readonly hint: string }>> = {
-  step: { label: 'Step by Step', hint: 'Claude lines up what can start; you start each task' },
-  gated: { label: 'Gated', hint: 'Tasks start by themselves; each milestone waits for you to pass it' },
-  autopilot: { label: 'Autopilot', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
+/**
+ * What each autonomy is called everywhere (the Mac app, Claude's prompt): `label` its name,
+ * `summary` the one sentence a choice of it shows, `hint` the longer how-it-runs.
+ */
+export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; readonly summary: string; readonly hint: string }>> = {
+  step: { label: 'Step by Step', summary: 'You start each task', hint: 'Claude lines up what can start; you start each task' },
+  gated: { label: 'Check-ins', summary: 'Runs, then waits for you at each milestone', hint: 'Tasks start by themselves; each milestone waits for you to pass it' },
+  autopilot: { label: 'Autopilot', summary: 'Runs to the end, stops only if something fails', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
 };
 
 /** When a plan runs its e2e and full test suites: once per milestone at its check, or only at the end. */
@@ -26,6 +30,9 @@ export const TESTS_AT_INFO: Readonly<Record<TestsAt, { readonly label: string; r
   milestone: { label: 'Each Milestone', hint: 'Tasks run typecheck and the tests they touched; each milestone’s check runs the full suites once' },
   end: { label: 'Only at the End', hint: 'Milestone checks read the code and diffs; the full suites run once, in the final step' },
 };
+
+/** A new plan's autonomy. */
+export const DEFAULT_AUTONOMY: Autonomy = 'gated';
 
 /** One task of a plan, before and after it's on the board. */
 export interface PlanTask {
@@ -159,7 +166,12 @@ export interface PlanShipped {
   readonly number?: number;
 }
 
-export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'gate' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
+/**
+ * What a plan's activity records. `started`/`finished`: a task began / came back for review;
+ * `gate`: Claude was asked to check a milestone, `checked`: its check passed (`failed`: it didn't);
+ * `merged`: a milestone's work went into the plan's branch; `autonomy`: the run mode changed.
+ */
+export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'finished' | 'gate' | 'checked' | 'merged' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
 
 export interface PlanEvent {
   readonly id: string;

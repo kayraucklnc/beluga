@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { type ReactNode, type TextareaHTMLAttributes, type InputHTMLAttributes, useId, useState } from 'react';
+import { type ReactNode, type Ref, type TextareaHTMLAttributes, type InputHTMLAttributes, useId, useState } from 'react';
 import { pickFolders } from '../lib/projects.js';
 import { copyText } from '../lib/copy.js';
 import { inApp } from '../lib/boot.js';
@@ -144,7 +144,7 @@ export function TextInput({ value, onChange, mono, invalid, className, ...rest }
   return <input {...rest} className={cx(s.input, mono && s.mono, invalid && s.invalid, className)} value={value} spellCheck={mono ? false : rest.spellCheck} autoComplete="off" onChange={(e) => onChange(e.target.value)} />;
 }
 
-type AreaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange' | 'value'> & { readonly value: string; readonly onChange: (v: string) => void; readonly mono?: boolean };
+type AreaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange' | 'value'> & { readonly value: string; readonly onChange: (v: string) => void; readonly mono?: boolean; readonly ref?: Ref<HTMLTextAreaElement> };
 
 export function TextArea({ value, onChange, mono, className, rows = 4, ...rest }: AreaProps) {
   return <textarea {...rest} rows={rows} className={cx(s.input, s.area, mono && s.mono, className)} value={value} onChange={(e) => onChange(e.target.value)} />;

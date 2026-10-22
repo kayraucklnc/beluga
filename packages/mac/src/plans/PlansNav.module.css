@@ -1,0 +1,22 @@
+/* A plan's row in the sidebar (PlansNav.tsx): a small ring of how far it got. */
+
+.ring {
+  display: block;
+  flex: none;
+}
+.ringTrack {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text-3) 35%, transparent);
+  stroke-width: 2;
+}
+.ringFill {
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--dur-fast);
+}
+/* Claude is working on its tasks: the ring in Claude's color (the row's dot matrix is what moves; KLD-40). */
+.ringLive .ringFill {
+  stroke: var(--claude);
+}

@@ -61,6 +61,7 @@ export function launchBoard(host: BoardHost): () => void {
     takeOver: (channel) => session.host.takeOver(channel),
     // The head Claude's steered messages go in the way Steer Now does (interrupting a long command or a dead run).
     promote: (requestId) => session.host.promote(requestId),
+    titlePlan: (goal) => session.titlePlan(goal),
   });
   attachPlans(session, planWork);
   let stopSeed = (): void => undefined;
