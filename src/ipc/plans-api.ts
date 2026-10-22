@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AUTONOMIES, MAX_PARALLEL } from '../core/plans/model.js';
+import { AUTONOMIES, MAX_PARALLEL, TESTS_AT } from '../core/plans/model.js';
 import { PRIORITIES } from '../core/board/model.js';
 
 /**
@@ -41,7 +41,7 @@ export const PlanOpSchema = z.discriminatedUnion('op', [
 
 export const PLANS_API = {
   // A new plan with Claude: its own conversation (in the project's main folder) and its page → the plan.
-  'plans.create': { args: z.tuple([z.object({ projectId: z.string().min(1).max(200), goal: z.string().min(1).max(8000), autonomy: autonomy.optional() })]) },
+  'plans.create': { args: z.tuple([z.object({ projectId: z.string().min(1).max(200), goal: z.string().min(1).max(8000), autonomy: autonomy.optional(), testsAt: z.enum(TESTS_AT).optional() })]) },
   // Plan in this conversation (the composer's Plan with Tasks) → the plan.
   'plans.here': { args: z.tuple([z.string().min(1).max(200), autonomy.optional()]) },
   // The draft goes on the board (a new plan, or changes to one).
@@ -53,6 +53,8 @@ export const PLANS_API = {
   'plans.setAutonomy': { args: z.tuple([id, autonomy, ref.optional()]) },
   'plans.setPaused': { args: z.tuple([id, z.boolean()]) },
   'plans.setParallel': { args: z.tuple([id, z.number().int().min(1).max(MAX_PARALLEL)]) },
+  // When the e2e and full suites run: once per milestone (at its check), or only in the final step.
+  'plans.setTestsAt': { args: z.tuple([id, z.enum(TESTS_AT)]) },
   // Pass a milestone (the next one opens), or send it back to the head Claude with what's missing.
   'plans.pass': { args: z.tuple([id, ref]) },
   // Ask the plan's Claude to check a milestone again.

@@ -8,6 +8,7 @@ import * as g from './git.js';
 import * as sync from './sync.js';
 import { type EnvChange, applyEnvChanges, copyEnvFiles, envChanges, envSnapshot } from './env.js';
 import { WorkspaceStore } from './store.js';
+import { stopTestProcesses } from './test-procs.js';
 import { type ArchiveManifest, type ArchivePhase, type ArchivePreview, archiveWorktree, dropArchive, freeSpace, planArchive, previewOf, readManifest, restoreWorktree } from './archive.js';
 import { worktreeOrigin } from './origin.js';
 import { moveToTrash } from './trash.js';
@@ -737,6 +738,8 @@ export class WorkspaceManager {
     const ws = this.require(id);
     if (ws.kind === 'main') throw new WorkspaceError("The main folder can't be archived");
     let manifest: ArchiveManifest | undefined;
+    // Its test runs (an e2e's daemon, vite, browser) go first: nothing keeps running for a folder that's gone.
+    if (ws.kind === 'worktree') await stopTestProcesses(ws.path, { leaving: true }).catch(() => 0);
     if (ws.kind === 'worktree') {
       // Deleted by hand already: nothing to keep; forget it in git.
       if (!existsSync(ws.path)) await g.git(ws.projectRoot, ['worktree', 'prune']).catch(() => undefined);
@@ -786,6 +789,7 @@ export class WorkspaceManager {
       // Made by another tool (Conductor, Claude Code), even if you've talked in it here: never force-remove it
       // (its uncommitted work isn't ours to discard) and keep its branch.
       const foreign = ws.external || !real(ws.path).startsWith(real(this.store.workspacesDir) + path.sep);
+      if (!ws.archived) await stopTestProcesses(ws.path, { leaving: true }).catch(() => 0);
       if (!ws.archived && existsSync(ws.path)) await g.removeWorktree(ws.projectRoot, ws.path, !foreign);
       // Folder deleted by hand: forget it in git too, or the branch stays "checked out" and the worktree comes back.
       else if (!ws.archived) await g.git(ws.projectRoot, ['worktree', 'prune']).catch(() => undefined);

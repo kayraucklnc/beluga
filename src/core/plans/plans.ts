@@ -23,6 +23,8 @@ import {
   type PlanShipped,
   type PlansState,
   type TaskWatch,
+  TESTS_AT,
+  type TestsAt,
   diffBodies,
   isEmptyDiff,
   planById,
@@ -75,6 +77,7 @@ const SavedPlan = z
     draftRev: z.number().default(0),
     autonomy: z.enum(AUTONOMIES).default('gated'),
     maxParallel: z.number().int().min(1).max(MAX_PARALLEL).catch(DEFAULT_PARALLEL),
+    testsAt: z.enum(TESTS_AT).catch('milestone'),
     body: Body.optional().catch(undefined),
     draft: Body.optional().catch(undefined),
     paused: z.boolean().default(false),
@@ -121,7 +124,7 @@ export class Plans {
   // ------------------------------------------------------------------ drafting
 
   /** A new plan: an empty draft in its conversation (Claude writes it there). */
-  create(input: { readonly projectId: string; readonly home: string; readonly title?: string; readonly goal?: string; readonly autonomy?: Autonomy }, by: Actor): Plan {
+  create(input: { readonly projectId: string; readonly home: string; readonly title?: string; readonly goal?: string; readonly autonomy?: Autonomy; readonly testsAt?: TestsAt }, by: Actor): Plan {
     const at = this.now();
     const title = (input.title ?? input.goal ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || 'New plan';
     const plan: Plan = {
@@ -133,6 +136,7 @@ export class Plans {
       draftRev: 1,
       autonomy: input.autonomy ?? 'gated',
       maxParallel: DEFAULT_PARALLEL,
+      testsAt: input.testsAt ?? 'milestone',
       paused: false,
       runs: {},
       activity: [event(by, 'created', 'started this plan', at)],
@@ -230,6 +234,12 @@ export class Plans {
     const max = Math.max(1, Math.min(MAX_PARALLEL, Math.round(n)));
     if (max === plan.maxParallel) return plan;
     return this.change(plan, { maxParallel: max }, [event(by, 'note', `lets ${max} ${max === 1 ? 'task' : 'tasks'} run at once`, this.now())]);
+  }
+
+  setTestsAt(id: string, testsAt: TestsAt, by: Actor): Plan {
+    const plan = this.need(id);
+    if (plan.testsAt === testsAt) return plan;
+    return this.change(plan, { testsAt }, [event(by, 'note', testsAt === 'end' ? 'runs the test suites only at the end, in the final step' : 'runs the test suites once per milestone, at its check', this.now())]);
   }
 
   /** The head Claude was asked to check a milestone (a new round of checking). */
