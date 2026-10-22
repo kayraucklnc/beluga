@@ -3,6 +3,7 @@ import type { Store } from '../store.js';
 import type { Plan, TaskWatch } from './model.js';
 import type { Plans } from './plans.js';
 import type { PlanView, TaskView } from './progress.js';
+import { CONTINUE_PROMPT, CRASH_RETRY_MS, type RunFailure, decodeFailure, failureText, resetWords } from '../../shared/run-failure.js';
 
 /**
  * The watchdog: a plan's started task never sits "working" while nothing happens. Each task has a
@@ -12,6 +13,11 @@ import type { PlanView, TaskView } from './progress.js';
  * where it was and the messages that waited for it; stalling again within half an hour, it waits
  * for you, with the reason. A turn with no new step for 20 minutes counts as stopped, unless it's
  * inside a command that runs long (tests, a build, waiting on someone).
+ *
+ * A run that ended on your usage limit isn't a stall: the task shows "Paused · usage limit", and
+ * once the limit resets Klaud resumes the head Claude, then each such task, one at a time within
+ * the plan's task limit. A run that crashed is retried once after 30s; crashing again, it waits
+ * for you (see shared/run-failure.ts).
  *
  * The pure parts (a run's pulse, its words) are browser-safe: the Mac app draws them.
  */
@@ -34,6 +40,11 @@ export const STEER_UNREAD_MS = 2 * 60_000;
 const STEER_RETRIES = 2;
 /** What a steered message's card says while it waits in the running turn for Claude's next step (AgentHost's READS_AFTER_STEP). */
 const READS_AFTER_STEP = 'Claude reads this after its current step';
+
+/** A usage limit with no known reset: try again this long after it stopped. */
+export const LIMIT_UNKNOWN_MS = 30 * 60_000;
+/** Resuming a moment after the reset, so the first message isn't refused again. */
+export const LIMIT_MARGIN_MS = 60_000;
 
 /** Steps that may take long without anything new: commands, and waiting on other people or Claudes. */
 const LONG_STEP = /^(Bash|BashOutput|Monitor|KillShell|wait_for|ask_agent|ask_person|run_on|run_on_peer|mcp__klaud_\w+__wait\w*)\b/;
@@ -96,16 +107,25 @@ export function stepWords(step: string, command?: string): string {
 export type TaskPulse =
   | { readonly kind: 'working'; readonly step?: string; readonly since: number; readonly progress?: string }
   | { readonly kind: 'command'; readonly step: string; readonly since: number; readonly progress?: string }
-  | { readonly kind: 'stopped'; readonly reason: string }
+  | { readonly kind: 'stopped'; readonly reason: string; readonly crashed?: boolean }
+  | { readonly kind: 'paused'; readonly until: number }
   | { readonly kind: 'waiting' }
   | { readonly kind: 'needs_you'; readonly reason: string };
 
 export const isTurn = (run: RunInfo | undefined): boolean => Boolean(run && TURN.has(run.status));
 export const isLongStep = (step: string | undefined): boolean => Boolean(step && LONG_STEP.test(step));
 
+/** How a run that failed ended, when the runner said (a usage limit, a crash). */
+export const failureOf = (run: RunInfo | undefined): RunFailure | undefined => (run?.status === 'error' ? decodeFailure(run.text) : undefined);
+
+/** When a run stopped by your usage limit may go on (the reset, or a guess when it's unknown). */
+export const limitUntil = (run: RunInfo, f: RunFailure): number => f.resetsAt ?? run.lastAt + LIMIT_UNKNOWN_MS;
+
 /** Why a run that's over ended, in words. */
 export function endedWhy(run: RunInfo | undefined): string {
   if (!run) return 'no Claude is working on it';
+  const failure = failureOf(run);
+  if (failure && failure.kind !== 'stopped') return failureText(run.text).split('\n')[0]!;
   if (run.status === 'error') return BY_YOU.test(run.text) ? 'you stopped it' : `its run failed: ${run.text.replace(/\s+/g, ' ').slice(0, 120)}`;
   if (run.status === 'denied') return 'its run was declined';
   return 'it ended its turn without handing off';
@@ -123,6 +143,10 @@ export function pulseOf(run: RunInfo | undefined, asking: boolean, watch: TaskWa
     return { kind: 'working', ...(step ? { step } : {}), since: inStep ? run!.stepAt! : run!.lastAt, ...progress };
   }
   if (watch?.needsYou) return { kind: 'needs_you', reason: watch.reason };
+  // Stopped by your usage limit or a crash: never "working", and said as such.
+  const failure = failureOf(run);
+  if (failure?.kind === 'usage_limit') return { kind: 'paused', until: limitUntil(run!, failure) };
+  if (failure?.kind === 'crash') return { kind: 'stopped', reason: endedWhy(run), crashed: true };
   return { kind: 'stopped', reason: watch && watch.run === run?.requestId ? watch.reason : endedWhy(run) };
 }
 
@@ -146,7 +170,9 @@ export function pulseWords(p: TaskPulse, now: number): { readonly label: string;
       // Busy, not dead: the command, how far it got, and for how long ("Running npx playwright test · 137/215 · 12m").
       return { label: now - p.since >= LONG_SHOWN_MS ? 'Running a long command' : 'Working', sub: nowLine(p.step, p.progress, now - p.since), tone: 'claude' };
     case 'stopped':
-      return { label: 'Stopped without finishing', sub: p.reason, tone: 'warn' };
+      return p.crashed ? { label: 'Stopped · Claude Code crashed', sub: p.reason, tone: 'warn' } : { label: 'Stopped without finishing', sub: p.reason, tone: 'warn' };
+    case 'paused':
+      return { label: 'Paused · usage limit', sub: now < p.until ? `Resumes at ${resetWords(p.until, now)}` : 'Resuming', tone: 'warn' };
     case 'waiting':
       return { label: 'Waiting for you', sub: 'Claude asked you something', tone: 'warn' };
     case 'needs_you':
@@ -160,7 +186,7 @@ export function pulseWords(p: TaskPulse, now: number): { readonly label: string;
  * no run at all. `talkedAt`: when you last wrote in its chat (a turn ending then is you talking
  * with it: shown as stopped, not woken).
  */
-export function assess(input: { readonly run?: RunInfo; readonly asking: boolean; readonly alive?: boolean; readonly now: number; readonly seenAt?: number; readonly talkedAt?: number }): { readonly stall?: string; readonly woken: boolean } {
+export function assess(input: { readonly run?: RunInfo; readonly asking: boolean; readonly alive?: boolean; readonly now: number; readonly seenAt?: number; readonly talkedAt?: number }): { readonly stall?: string; readonly woken: boolean; readonly limitUntil?: number } {
   const { run, asking, alive, now } = input;
   // Asking you: it waits for you, that's not a stall.
   if (asking) return { woken: false };
@@ -179,6 +205,11 @@ export function assess(input: { readonly run?: RunInfo; readonly asking: boolean
   // Its turn is over but its process is still there: background work it waits on.
   if (alive === true) return now - run.lastAt >= COMMAND_LIMIT_MS ? { stall: `nothing new in the background for ${elapsed(now - run.lastAt)}`, woken: true } : { woken: false };
   const why = endedWhy(run);
+  const failure = failureOf(run);
+  // Your usage limit: it waits for the reset (see TaskWatchdog.step), not woken as a stall.
+  if (failure?.kind === 'usage_limit') return { stall: why, woken: false, limitUntil: limitUntil(run, failure) };
+  // Claude Code crashed: retried once, 30s after.
+  if (failure?.kind === 'crash') return now - run.lastAt >= CRASH_RETRY_MS ? { stall: why, woken: true } : { woken: false };
   // You stopped it, or you're talking with it: shown as stopped, and yours to go on with.
   const yours = why === 'you stopped it' || (input.talkedAt !== undefined && now - input.talkedAt < REPEAT_MS);
   return { stall: why, woken: !yours };
@@ -257,6 +288,9 @@ export class TaskWatchdog {
   private readonly waking = new Set<string>();
   /** Messages the head Claude steered in, until their Claude reads them (by request id). */
   private readonly steered = new Map<string, Steered>();
+  /** Head Claude runs sent on after a limit or a crash (by request id), and plans whose head was retried after a crash. */
+  private readonly homeResumed = new Set<string>();
+  private readonly homeCrashed = new Set<string>();
 
   constructor(private readonly deps: WatchdogDeps) {}
 
@@ -324,7 +358,11 @@ export class TaskWatchdog {
       if (!t || !t.worktree || `ws:${t.worktree}` !== s.channel || !(t.state === 'running' || t.state === 'idle' || t.state === 'asking' || t.state === 'stalled')) this.steered.delete(s.requestId);
       else this.follow(s, now);
     }
-    for (const t of view.milestones.flatMap((m) => m.tasks)) {
+    const tasks = view.milestones.flatMap((m) => m.tasks);
+    if (!plan.paused && plan.status === 'active') this.resumeHome(plan, runOf(plan.home), now);
+    // Tasks paused by your usage limit go on one at a time, within the plan's task limit.
+    let room = plan.maxParallel - tasks.filter((t) => t.state === 'running' || this.waking.has(t.task.id)).length;
+    for (const t of tasks) {
       const w = plan.watch?.[t.task.id];
       const started = t.state === 'running' || t.state === 'idle' || t.state === 'asking' || t.state === 'stalled';
       // Finished (or not started): nothing to watch any more.
@@ -340,7 +378,17 @@ export class TaskWatchdog {
       else if (!this.noRun.has(channel)) this.noRun.set(channel, now);
       const alive = this.deps.alive?.(channel);
       const talkedAt = this.talkedAt(channel);
-      const { stall, woken } = assess({ run, asking: t.state === 'asking', ...(alive !== undefined ? { alive } : {}), now, ...(this.noRun.has(channel) ? { seenAt: this.noRun.get(channel)! } : {}), ...(talkedAt !== undefined ? { talkedAt } : {}) });
+      const { stall, woken, limitUntil: until } = assess({ run, asking: t.state === 'asking', ...(alive !== undefined ? { alive } : {}), now, ...(this.noRun.has(channel) ? { seenAt: this.noRun.get(channel)! } : {}), ...(talkedAt !== undefined ? { talkedAt } : {}) });
+      if (until !== undefined && run) {
+        if (w?.resumed === run.requestId) continue; // resumed already; its run is on its way
+        if (now < until + LIMIT_MARGIN_MS || room <= 0) {
+          if (w?.run !== run.requestId || w.limitUntil !== until) this.deps.plans.setWatch(plan.id, t.task.id, { at: now, reason: stall!, run: run.requestId, limitUntil: until, line: `${t.issue.key} paused: usage limit · resumes at ${resetWords(until, now)}` });
+          continue;
+        }
+        room--;
+        this.wake(plan, t, t.issue, channel, stall!, run, `Usage is back: resumed ${t.issue.key} at ${clock(now)}`, { counts: false });
+        continue;
+      }
       if (!stall || !woken || w?.needsYou) continue;
       // The wake is on its way (its run hasn't started yet).
       if (w?.wokeAt !== undefined && w.run === run?.requestId && now - w.wokeAt < WAKE_GRACE_MS) continue;
@@ -377,10 +425,29 @@ export class TaskWatchdog {
     return `Resumed ${t.issue.key}`;
   }
 
-  private wake(plan: Plan, t: TaskView, issue: Issue, channel: string, reason: string, run: RunInfo | undefined, line: string): void {
+  /**
+   * The plan's head Claude stopped by your usage limit: sent on once it resets (once per run). A
+   * crash of its is retried once, 30s after.
+   */
+  private resumeHome(plan: Plan, run: RunInfo | undefined, now: number): void {
+    const failure = failureOf(run);
+    // A run of its that didn't crash: a later crash is retried again.
+    if (run && !failure && run.status !== 'error') this.homeCrashed.delete(plan.id);
+    if (!run || !failure || this.homeResumed.has(run.requestId)) return;
+    const retry = failure.kind === 'crash' && now - run.lastAt >= CRASH_RETRY_MS && !this.homeCrashed.has(plan.id);
+    const back = failure.kind === 'usage_limit' && now >= limitUntil(run, failure) + LIMIT_MARGIN_MS;
+    if (!retry && !back) return;
+    this.homeResumed.add(run.requestId);
+    if (retry) this.homeCrashed.add(plan.id);
+    this.deps.plans.note(plan.id, 'note', back ? `Usage is back: resumed the plan’s Claude at ${clock(now)}` : `The plan’s Claude crashed (${endedWhy(run)}): retried at ${clock(now)}`, { kind: 'klaud' });
+    this.deps.askClaude(CONTINUE_PROMPT, plan.home, false);
+  }
+
+  private wake(plan: Plan, t: TaskView, issue: Issue, channel: string, reason: string, run: RunInfo | undefined, line: string, { counts = true }: { counts?: boolean } = {}): void {
     const now = this.now();
     this.waking.add(t.task.id);
-    this.deps.plans.setWatch(plan.id, t.task.id, { at: now, reason, ...(run ? { run: run.requestId } : {}), wokeAt: now, line });
+    // A resume after your usage limit isn't a wake: stopping again soon after doesn't make it wait for you.
+    this.deps.plans.setWatch(plan.id, t.task.id, counts ? { at: now, reason, ...(run ? { run: run.requestId } : {}), wokeAt: now, line } : { at: now, reason, ...(run ? { run: run.requestId, resumed: run.requestId } : {}), line });
     this.deps.plans.note(plan.id, 'note', `${line} (${reason})`, { kind: 'klaud' });
     void (async () => {
       const waited = this.deps.takeOver ? await this.deps.takeOver(channel).catch(() => []) : [];

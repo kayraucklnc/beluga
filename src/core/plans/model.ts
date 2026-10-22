@@ -137,6 +137,10 @@ export interface TaskWatch {
   readonly needsYou?: boolean;
   /** The one line it's shown with: “KLD-36 stopped, woke it at 11:13”. */
   readonly line: string;
+  /** Stopped by your usage limit: when it goes on by itself (see shared/run-failure.ts). */
+  readonly limitUntil?: number;
+  /** The run it was resumed from after the limit reset (so it's resumed once). */
+  readonly resumed?: string;
 }
 
 /** The plan reached main: through its pull request, or merged here. */

@@ -4,6 +4,7 @@ import { isRunning } from '@klaud/ui/format.js';
 import { formatDuration } from '@klaud/shared/text.js';
 import { splitImages } from '@klaud/shared/attachment-links.js';
 import { STEERED_IN, isLimitNotice } from '@klaud/shared/claude-notices.js';
+import { CONTINUE_PROMPT, type RunFailure, decodeFailure, failureTitle } from '@klaud/shared/run-failure.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, claudeColor, cx } from '../components/ui.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
@@ -103,6 +104,7 @@ function statusOf(item: AgentItem, now: number): { label: string; tone: 'claude'
       // The answer itself says it's done: no "Done in 3m" on every message.
       return { label: '', tone: 'ok' };
     case 'error':
+      if (decodeFailure(item.text)?.kind === 'usage_limit') return { label: 'Paused', tone: 'warn' };
       // Stopping or taking a message back is something you did, not a problem.
       if (/^(Taken out of the queue|Cancelled before it started)/.test(item.text)) return { label: 'Not sent', tone: 'muted' };
       if (/^(Stopped by you|Interrupted by a newer message|Stopped by owner)/.test(item.text)) return { label: 'Stopped', tone: 'muted' };
@@ -137,9 +139,12 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
   // Claude Code stopped at a plan limit: the newest card here offers to go on, in one click.
   const latest = useApp((st) => st.log.findLast((l) => l.type === 'agent' && l.channel === item.channel)?.id === item.id);
   const group = useApp((st) => st.peers.length > 1);
-  const limited = mine && latest && !running && isLimitNotice(item.text);
+  // A run that failed on its own (a usage limit, a crash): what happened in words, and Continue.
+  const failure = item.status === 'error' ? decodeFailure(item.text) : undefined;
+  const limited = mine && latest && !running && (isLimitNotice(item.text) || Boolean(failure && failure.kind !== 'stopped'));
+  // The same session goes on, ahead of what queued behind the failed turn (that follows, in order).
   const resume = (): void =>
-    void client.api.session.submit(`${item.channel === 'room' && group ? '@claude ' : ''}continue`, { channel: item.channel }).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+    void client.api.session.submit(`${item.channel === 'room' && group ? '@claude ' : ''}${CONTINUE_PROMPT}`, { channel: item.channel, urgent: true }).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
   const hasSteps = item.steps.length > 0 || item.subagents.length > 0;
   const folded = answered && prefs.doneSteps === 'fold' && !steps.shown;
   const lead: ActionItem[] = stoppable
@@ -193,6 +198,8 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
           ))}
           {steeredIn ? (
             <div className={s.idle}>{item.text}</div>
+          ) : failure ? (
+            <FailureNotice failure={failure} />
           ) : item.text ? (
             <Markdown text={item.text} paths localImages={mine} live={running} />
           ) : item.status === 'queued' ? (
@@ -211,6 +218,22 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
     </ActionsContext>
   );
 });
+
+/** A failed turn in plain words (“Claude hit your usage limit · resets at 15:00”), the raw error a click away. */
+function FailureNotice({ failure }: { failure: RunFailure }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={s.failure}>
+      <div className={s.failureTitle}>{failureTitle(failure)}</div>
+      {failure.kind === 'stopped' ? null : (
+        <button type="button" className={s.failureToggle} onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? 'Hide details' : 'Show details'}
+        </button>
+      )}
+      {open ? <pre className={s.failureDetail}>{failure.detail}</pre> : null}
+    </div>
+  );
+}
 
 /** A command that ran (or waits to run) on someone's computer, with its output. */
 export const ShellCard = memo(function ShellCard({ item }: { item: ShellItem }) {

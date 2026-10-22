@@ -8,7 +8,8 @@ import { createBoardTools } from './board-tools.js';
 import { createPlanTools } from './plan-tools.js';
 import { decideTool, denyReason } from './policy.js';
 import { buildSyncMainAppend, syncProbes } from './sync-main.js';
-import { fromRateLimitEvent, fromUsageResponse } from './usage.js';
+import { fromRateLimitEvent, fromUsageResponse, toMs } from './usage.js';
+import { RunFailedError, classifyRun } from '../shared/run-failure.js';
 import { SubAgentTracker, withAgentScratch } from './subagents.js';
 import { type RecorderMessage, StepRecorder } from './step-recorder.js';
 import { type ContextMessage, ContextReport, breakdownReader, isCompactCommand } from './context-report.js';
@@ -33,6 +34,8 @@ const BACKGROUND_LIMIT_MS = 3 * 60 * 60_000;
  * instant, because an agent can resume right after its shell finishes.
  */
 const QUIET_MS = 15_000;
+/** Claude Code's last stderr lines kept for a failed run's details. */
+const STDERR_KEEP = 40;
 
 export interface ClaudeBackendOptions {
   readonly cwd: string;
@@ -151,6 +154,11 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
         hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: reason },
       });
+      // How the run ends, when it fails: Claude Code's stderr, a limit that said no, an API error.
+      const stderr: string[] = [];
+      let rejectedUntil: number | undefined;
+      let apiError: string | undefined;
+      let failedResult: string | undefined;
       const options: Options = {
         cwd,
         additionalDirectories: [...extraDirs, ...(fixup ? [fixup] : [])],
@@ -203,6 +211,11 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         // Claude Code's own auto-compact follows Klaud's threshold (see shared/context-usage.ts).
         ...((input.env && Object.keys(input.env).length) || input.autoCompactAt ? { env: { ...process.env, ...input.env, ...compactEnv(Boolean(input.autoCompactAt), input.autoCompactAt ?? 0) } } : {}),
         ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
+        // Its last words, so a crash says why (see shared/run-failure.ts).
+        stderr: (data: string) => {
+          stderr.push(...data.split('\n').filter((l) => l.trim()));
+          if (stderr.length > STDERR_KEEP) stderr.splice(0, stderr.length - STDERR_KEEP);
+        },
         canUseTool: async (toolName, toolInput) => {
           if (toolName === 'AskUserQuestion') return answerQuestion(toolInput);
           if (toolName === 'ExitPlanMode') return reviewPlan(toolInput);
@@ -294,6 +307,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       abortController.signal.addEventListener('abort', finish, { once: true });
       input.onSteer?.((followUp) => deliver(followUp, true));
 
+      const ends = () => ({ stderr, ...(rejectedUntil !== undefined ? { rejectedUntil } : {}), ...(apiError ? { apiError } : {}) });
       const q = query({ prompt: prompts, options });
       showThinking(q);
       let failed = true;
@@ -305,7 +319,9 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           if (msg.type === 'rate_limit_event') {
             const update = fromRateLimitEvent(msg.rate_limit_info);
             if (update) opts.bridge.reportUsage(update);
+            if (msg.rate_limit_info.status === 'rejected') rejectedUntil = toMs(msg.rate_limit_info.resetsAt) ?? 0;
           }
+          if (msg.type === 'assistant' && msg.error) apiError = msg.error;
           if (msg.type === 'assistant') {
             for (const e of subagents.assistant(msg.parent_tool_use_id, msg.message.content)) input.onEvent('sub', JSON.stringify(e));
           }
@@ -342,15 +358,22 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             await report.result(msg.modelUsage, breakdownReader(q));
             const turn = turns.current();
             turn.onEvent('usage', JSON.stringify(usageOf(msg.modelUsage ?? {}, msg.total_cost_usd ?? 0, msg.session_id)));
-            const stopped = `Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`;
+            // A turn that ended on an API error (a usage limit, an outage) is a failure, whatever its subtype.
+            const ok = msg.subtype === 'success' && !msg.is_error;
+            if (!ok) failedResult = msg.subtype === 'success' ? msg.result : [`Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`, ...(msg.errors ?? [])].join('\n');
+            const stopped = ok ? '' : new RunFailedError(classifyRun({ result: failedResult, ...ends() })).message;
             // The prompts this turn took in: a message steered in mid-turn is answered by it.
             const took = msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : undefined);
             // A later turn failing (e.g. reporting a finished agent) doesn't throw away answers already given.
-            if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped, took) && !turns.answers.length) throw new Error(stopped);
+            if (!turns.end(ok, ok ? (msg as { result: string }).result : stopped, took) && !turns.answers.length) throw new RunFailedError(classifyRun({ result: failedResult, ...ends() }));
             settle();
           }
         }
         failed = false;
+      } catch (err) {
+        if (err instanceof RunFailedError || abortController.signal.aborted) throw err;
+        // Claude Code itself failed ("process exited with code 1"): say how, in words.
+        throw new RunFailedError(classifyRun({ error: err instanceof Error ? err.message : String(err), ...(failedResult ? { result: failedResult } : {}), ...ends() }));
       } finally {
         recorder.finish(failed || abortController.signal.aborted);
         finish();
