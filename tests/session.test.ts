@@ -119,7 +119,8 @@ describe('Session', () => {
 
     kay.session.submit('@claude:bob check the api');
     await waitFor(() => bob.state().approvals.length === 1);
-    expect(agentItems(kay.state())[0]).toMatchObject({ status: 'awaiting_approval' });
+    // Kay hears of it over the hub, a moment after Bob is asked.
+    await waitFor(() => agentItems(kay.state())[0]?.status === 'awaiting_approval');
     expect(bob.session.answerApproval('always')).toBe(true);
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.status === 'done'));
     expect(bob.runs[0]?.requesterName).toBe('kay');

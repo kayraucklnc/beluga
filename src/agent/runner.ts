@@ -22,7 +22,8 @@ import { fixSetup } from './setup-fixer.js';
 import { draftTask } from './task-drafter.js';
 import { createRoomTools } from './tools.js';
 import { createTaskTools } from './task-tools.js';
-import type { AgentBackend, AgentRunInput, FollowUp, RoomBridge } from './types.js';
+import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, RunProcess, Steer } from './types.js';
+import { keepLines, trackedSpawn } from './claude-process.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
@@ -36,6 +37,8 @@ const BACKGROUND_LIMIT_MS = 3 * 60 * 60_000;
 const QUIET_MS = 15_000;
 /** Claude Code's last stderr lines kept for a failed run's details. */
 const STDERR_KEEP = 40;
+/** How long Claude Code gets to stop a turn when asked (see Steer.interrupt). */
+const INTERRUPT_TIMEOUT_MS = 10_000;
 
 export interface ClaudeBackendOptions {
   readonly cwd: string;
@@ -151,11 +154,21 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const syncMain = askOnly ? place?.syncMain : undefined;
       const fixup = askOnly ? place?.fixup : undefined;
       const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}) };
+      // How the run ends, when it fails: Claude Code's stderr, a limit that said no, an API error.
+      const stderr: string[] = [];
+      const keepStderr = (data: string): void => keepLines(stderr, data, STDERR_KEEP);
+      // Claude Code's process, so a run that won't end can be told dead and killed (see AgentRunInput.onProcess).
+      // The SDK reads no stderr from a process we spawn: ours feeds the same lines a crash is told by.
+      let proc: RunProcess | undefined;
+      const tracked = input.onProcess
+        ? trackedSpawn((p) => {
+            proc = p;
+            input.onProcess?.(p);
+          }, keepStderr)
+        : undefined;
       const verdict = (permissionDecision: 'allow' | 'deny', reason: string) => ({
         hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision, permissionDecisionReason: reason },
       });
-      // How the run ends, when it fails: Claude Code's stderr, a limit that said no, an API error.
-      const stderr: string[] = [];
       let rejectedUntil: number | undefined;
       let apiError: string | undefined;
       let failedResult: string | undefined;
@@ -211,11 +224,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         // Claude Code's own auto-compact follows Klaud's threshold (see shared/context-usage.ts).
         ...((input.env && Object.keys(input.env).length) || input.autoCompactAt ? { env: { ...process.env, ...input.env, ...compactEnv(Boolean(input.autoCompactAt), input.autoCompactAt ?? 0) } } : {}),
         ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
-        // Its last words, so a crash says why (see shared/run-failure.ts).
-        stderr: (data: string) => {
-          stderr.push(...data.split('\n').filter((l) => l.trim()));
-          if (stderr.length > STDERR_KEEP) stderr.splice(0, stderr.length - STDERR_KEEP);
-        },
+        // Its last words, so a crash says why (see shared/run-failure.ts): read by our own spawn when there is one.
+        ...(tracked ? { spawnClaudeCodeProcess: tracked.spawn } : { stderr: keepStderr }),
         canUseTool: async (toolName, toolInput) => {
           if (toolName === 'AskUserQuestion') return answerQuestion(toolInput);
           if (toolName === 'ExitPlanMode') return reviewPlan(toolInput);
@@ -279,19 +289,32 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         prompts.close();
       };
       /** A message into the live session. `steer`: Claude works on a turn, and takes it in at its next step. */
-      const deliver = (followUp: FollowUp, steer: boolean): boolean => {
+      const deliver = (followUp: FollowUp, steer: boolean): string | false => {
         if (prompts.closed) return false;
         // Between turns it starts one now: thinking before its first step counts from here.
         if (turns.between) recorder.begin();
         const uuid = prompts.push(imageContent(buildPrompt(followUp), linkedImages(followUp.prompt)), { steer: steer && !turns.between });
         if (uuid === false) return false;
         turns.queue(followUp, uuid, steer && !turns.between);
-        return true;
+        return uuid;
       };
-      const send = (followUp: FollowUp): boolean => deliver(followUp, false);
+      const send = (followUp: FollowUp): boolean => deliver(followUp, false) !== false;
+      // What Claude is doing now, for a steer to judge whether it reads a message soon (see Steer.status).
+      const tools = new Map<string, { label: string; since: number }>();
+      let lastEventAt = Date.now();
+      /** Claude's last word in the main conversation was thinking. */
+      let thinking = false;
+      const status = (): LiveStatus => {
+        const tool = [...tools.values()].sort((a, b) => a.since - b.since)[0];
+        return { ...(tool ? { tool } : {}), lastEventAt, between: turns.between, ...(thinking ? { thinking } : {}), ...(proc ? { alive: proc.alive() } : {}) };
+      };
+      /** Set while a turn is being interrupted: what that turn ends with, and the run stays open for the next. */
+      let interrupting: string | undefined;
+      /** The message an interrupt is for: its own turn, never folded into the interrupted one. */
+      let interruptFor: string | undefined;
       /** After an answer: end the run, or keep it open (taking follow-ups) while agents work. */
       const settle = (): void => {
-        if (!background.busy && !turns.waiting) return finish();
+        if (interrupting === undefined && !background.busy && !turns.waiting) return finish();
         if (limit) return;
         limit = setTimeout(finish, BACKGROUND_LIMIT_MS);
         limit.unref();
@@ -305,7 +328,27 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         quiet.unref();
       };
       abortController.signal.addEventListener('abort', finish, { once: true });
-      input.onSteer?.((followUp) => deliver(followUp, true));
+      /** Stop the running tool and turn, then answer `followUp` in the next turn (see Steer.interrupt). */
+      const interrupt = async (followUp: FollowUp, note: string): Promise<boolean> => {
+        if (prompts.closed || turns.between || interrupting !== undefined) return false;
+        interrupting = note;
+        try {
+          let timer: NodeJS.Timeout | undefined;
+          const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('interrupt timed out')), INTERRUPT_TIMEOUT_MS)));
+          await Promise.race([q.interrupt(), late]).finally(() => clearTimeout(timer));
+        } catch {
+          interrupting = undefined;
+          if (turns.between) settle();
+          return false;
+        }
+        const sent = deliver(followUp, false);
+        // The interrupted turn may have ended already (its result kept the run open for this).
+        if (turns.between) interrupting = undefined;
+        else if (sent) interruptFor = sent;
+        if (!sent) settle();
+        return sent !== false;
+      };
+      input.onSteer?.(Object.assign((followUp: FollowUp) => deliver(followUp, true) !== false, { status, interrupt }) satisfies Steer);
 
       const ends = () => ({ stderr, ...(rejectedUntil !== undefined ? { rejectedUntil } : {}), ...(apiError ? { apiError } : {}) });
       const q = query({ prompt: prompts, options });
@@ -313,6 +356,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       let failed = true;
       try {
         for await (const msg of q) {
+          lastEventAt = Date.now();
           background.observe(msg as Parameters<BackgroundAgents['observe']>[0]);
           watchQuiet();
           if (msg.type === 'system' && msg.subtype === 'init') remember(msg.session_id);
@@ -337,8 +381,13 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             // A command's output that says how far it got (a test run polled in the background): its card shows "137/215".
             const count = progressCount(toolOutput(msg.message.content));
             if (count) turns.current().onEvent('progress', count);
+            const content = msg.message.content;
+            if (Array.isArray(content)) for (const block of content) if (block.type === 'tool_result') tools.delete(block.tool_use_id);
           }
+          if (msg.type === 'result' || (msg.type === 'user' && msg.parent_tool_use_id === null)) thinking = false;
           if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {
+            const last = msg.message.content.at(-1)?.type;
+            thinking = last === 'thinking' || last === 'redacted_thinking';
             for (const block of msg.message.content) {
               if (block.type === 'text' && block.text.trim()) {
                 lastText = block.text.trim();
@@ -346,7 +395,9 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
               }
               if (block.type === 'tool_use' && !subagents.isLaunch(block)) {
                 const toolInput = (block.input ?? {}) as Record<string, unknown>;
-                route?.onEvent('tool', summarizeTool(block.name, toolInput, cwd));
+                const label = summarizeTool(block.name, toolInput, cwd);
+                tools.set(block.id, { label: block.name === 'Bash' && typeof toolInput.command === 'string' ? (toolInput.command.split('\n')[0] ?? '').slice(0, 80) : label, since: Date.now() });
+                route?.onEvent('tool', label);
                 if (WRITE_TOOLS.has(block.name) && typeof toolInput.file_path === 'string') {
                   input.onFileTouched(toolInput.file_path);
                 }
@@ -364,8 +415,22 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             const stopped = ok ? '' : new RunFailedError(classifyRun({ result: failedResult, ...ends() })).message;
             // The prompts this turn took in: a message steered in mid-turn is answered by it.
             const took = msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : undefined);
+            tools.clear();
+            const note = interrupting;
+            if (note !== undefined) {
+              // Interrupted for a message: the turn ends saying so, and the message's turn comes next.
+              const said = msg.subtype === 'success' && msg.result ? `${msg.result}\n\n${note}` : note;
+              turn.onEvent('text', note);
+              // Its result can come after the message was sent and list it: the message still gets its own turn.
+              const own = interruptFor;
+              turns.end(true, said, own ? took?.filter((uuid) => uuid !== own) : took);
+              if (turns.waiting) {
+                interrupting = undefined;
+                interruptFor = undefined;
+              }
+            }
             // A later turn failing (e.g. reporting a finished agent) doesn't throw away answers already given.
-            if (!turns.end(ok, ok ? (msg as { result: string }).result : stopped, took) && !turns.answers.length) throw new RunFailedError(classifyRun({ result: failedResult, ...ends() }));
+            else if (!turns.end(ok, ok ? (msg as { result: string }).result : stopped, took) && !turns.answers.length) throw new RunFailedError(classifyRun({ result: failedResult, ...ends() }));
             settle();
           }
         }

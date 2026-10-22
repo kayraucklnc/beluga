@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentBackend } from '../src/agent/types.js';
+import { keepLines, trackedSpawn } from '../src/agent/claude-process.js';
 import { AgentHost } from '../src/core/agent-host.js';
 import { Board } from '../src/core/board/board.js';
 import { BoardWork } from '../src/core/board/work.js';
@@ -42,6 +43,22 @@ describe('how a run ended, in words', () => {
     expect(f).toMatchObject({ kind: 'crash', exitCode: 1 });
     expect(f.detail).toContain('TypeError: x is undefined');
     expect(failureTitle(f)).toBe('Claude Code stopped unexpectedly (exit 1)');
+  });
+
+  it('a crash of the Claude Code we spawn ourselves (KLD-43) keeps its exit code and stderr lines (the SDK reads none)', async () => {
+    const lines: string[] = [];
+    const pids: number[] = [];
+    const tracked = trackedSpawn((p) => void pids.push(p.pid), (chunk) => keepLines(lines, chunk, 40));
+    const script = "process.stderr.write('Error: ENOSPC: no space left on device\\n    at write (node:fs:1)\\n'); process.exit(3)";
+    const child = tracked.spawn({ command: process.execPath, args: ['-e', script], cwd: process.cwd(), env: process.env, signal: new AbortController().signal }) as unknown as import('node:child_process').ChildProcess;
+    const code = await new Promise<number | null>((resolve) => child.once('close', (c) => resolve(c)));
+    expect(pids).toHaveLength(1);
+    // The SDK's own words for it, with no stderr tail of its own for a custom spawn.
+    const f = classifyRun({ error: `Claude Code process exited with code ${code}`, stderr: lines });
+    expect(f).toMatchObject({ kind: 'crash', exitCode: 3 });
+    expect(f.detail).toContain('Error: ENOSPC: no space left on device');
+    expect(f.detail).toContain('at write (node:fs:1)');
+    expect(failureTitle(f)).toBe('Claude Code stopped unexpectedly (exit 3)');
   });
 
   it('network and API errors, and stopping it yourself', () => {

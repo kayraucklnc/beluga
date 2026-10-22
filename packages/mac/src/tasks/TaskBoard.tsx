@@ -489,19 +489,3 @@ function PlanPrs({ issues }: { issues: readonly Issue[] }) {
     </>
   );
 }
-
-/** In Plan waits for its plans' pull requests: a link to each once it's open. */
-function PlanPrs({ issues }: { issues: readonly Issue[] }) {
-  const { plans } = usePlans();
-  const ids = new Set(issues.flatMap((i) => (i.plan ? [i.plan.id] : [])));
-  const prs = plans.filter((p) => ids.has(p.id) && p.pr).map((p) => p.pr!);
-  return (
-    <>
-      {prs.map((pr) => (
-        <button key={pr.number} type="button" className={t.columnPr} title={`${pr.title} (${pr.state.toLowerCase()})`} onClick={() => void openExternal(pr.url)}>
-          #{pr.number}
-        </button>
-      ))}
-    </>
-  );
-}

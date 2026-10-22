@@ -240,7 +240,7 @@ export function wakePrompt(issue: Issue, reason: string, run: RunInfo | undefine
 export function steerAgainPrompt(text: string, waited: readonly string[]): string {
   const others = waited.filter((w) => w.trim() !== text.trim());
   return [
-    'Klaud stopped your run: an urgent message from the head of the plan waited more than 2 minutes without you reading it. Read it now and act on it before going on:',
+    'An urgent message from the head of the plan waited more than 2 minutes without you reading it. Read it now and act on it before going on:',
     '',
     text.trim(),
     ...(others.length ? ['', 'Other messages that waited for you:', ...others.map((w) => `---\n${w.trim()}`), '---'] : []),
@@ -336,15 +336,29 @@ export class TaskWatchdog {
       this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: interrupted it again`, { kind: 'klaud' });
       return;
     }
+    this.steered.delete(s.requestId);
+    // Taken into the turn but never read: sent again and steered in the agent host's one way (planSteer):
+    // a long command or a quiet turn is interrupted, a dead run restarted; what queued there keeps its place.
+    if (this.deps.promote) {
+      const id = this.deps.askClaude(steerAgainPrompt(s.prompt, []), s.channel, false);
+      this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: steered it in again`, { kind: 'klaud' });
+      // Followed like the first one: Steer Now once it queues, sent again if still unread.
+      if (id) this.track({ ...s, requestId: id, at: now, promoted: false });
+      return;
+    }
     this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: started a fresh turn with it`, { kind: 'klaud' });
     this.waking.add(s.taskId);
-    this.steered.delete(s.requestId);
     void (async () => {
       const waited = this.deps.takeOver ? await this.deps.takeOver(s.channel).catch(() => []) : [];
       this.deps.system(s.channel, 'Klaud restarted Claude: an urgent message from the plan’s Claude waited 2 minutes unread.');
       const id = this.deps.askClaude(steerAgainPrompt(s.prompt, waited), s.channel, false);
-      if (id) this.steered.set(id, { ...s, requestId: id, at: this.now(), promoted: false });
+      if (id) this.track({ ...s, requestId: id, at: this.now(), promoted: false });
     })().finally(() => this.waking.delete(s.taskId));
+  }
+
+  private track(s: Steered): Steered {
+    this.steered.set(s.requestId, s);
+    return s;
   }
 
   /** Look at every started task of a plan: wake what stopped, or ask you. */

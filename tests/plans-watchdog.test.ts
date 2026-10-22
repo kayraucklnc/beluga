@@ -304,7 +304,7 @@ describe('the head Claude steers a task, and its card shows what it does now', (
     expect(t.task().pulse).toMatchObject({ kind: 'command', step: 'Running npx playwright test' });
   });
 
-  it('a steered message unread after 2 minutes: interrupted again, then a fresh turn; each said in the plan feed', async () => {
+  it('a steered message unread after 2 minutes: interrupted again, then sent again through Steer Now (never a take-over); each said in the plan feed', async () => {
     const t = await running();
     t.setAlive(true);
     const r = t.newRun();
@@ -326,11 +326,17 @@ describe('the head Claude steers a task, and its card shows what it does now', (
     expect(waitingWords(t.task().waiting!).steer).toBeUndefined();
     await t.later(STEER_UNREAD_MS);
     await tick(2);
-    expect(t.tookOver).toEqual([t.channel]);
-    expect(feed().at(-1)).toMatch(/started a fresh turn with it/);
+    // Sent again and steered the agent host's one way (planSteer interrupts the long command): the run isn't taken over.
+    expect(t.tookOver).toEqual([]);
+    expect(feed().at(-1)).toMatch(/steered it in again/);
     const again = t.asked.filter((a) => a.channel === t.channel).at(-1)!;
-    expect(again.prompt).toMatch(/^Klaud stopped your run: an urgent message from the head of the plan waited/);
+    expect(again.prompt).toMatch(/^An urgent message from the head of the plan waited/);
     expect(again.prompt).toContain('Stop the e2e run.');
+    const [, m2] = sent(t);
+    expect(m2!.prompt).toBe(again.prompt);
+    t.event(m2!.id, 'queued', m2!.prompt);
+    await t.later(0);
+    expect(t.promoted).toEqual([m!.id, m!.id, m2!.id]);
   });
 
   it('a dead run with the head Claude\'s message waiting behind it is woken, the message going with the wake', async () => {
