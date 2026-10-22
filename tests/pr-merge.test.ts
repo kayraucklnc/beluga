@@ -20,6 +20,7 @@ vi.mock('node:child_process', async (orig) => ({
 }));
 
 const { explainMergeError, mergePr, deleteRemoteBranch, parsePr } = await import('../src/workspaces/pr.js');
+const { planGitOf } = await import('../src/core/plans/plan-git.js');
 
 const pr = (more: Partial<PullRequest> = {}): PullRequest => ({ number: 42, url: 'https://github.com/o/r/pull/42', state: 'OPEN', title: 'Add auth', draft: false, checks: 'passing', ...more });
 
@@ -33,6 +34,14 @@ describe('mergePr / deleteRemoteBranch (gh stubbed)', () => {
       { cmd: 'gh', args: ['pr', 'merge', '42', '--squash'], cwd: '/code/auth' },
       { cmd: 'gh', args: ['pr', 'merge', '42', '--rebase', '--auto'], cwd: '/code/auth' },
     ]);
+  });
+
+  it("a plan's pull request merges through the same mergePr, as a merge commit", async () => {
+    exec.calls.length = 0;
+    exec.impl = () => ({ stdout: '' });
+    const controller = { manager: { repoProject: () => ({ root: '/code/app' }) } } as unknown as WorkspaceController;
+    await planGitOf(controller).mergePr('app', 7);
+    expect(exec.calls.filter((c) => c.args[0] === 'pr')).toEqual([{ cmd: 'gh', args: ['pr', 'merge', '7', '--merge'], cwd: '/code/app' }]);
   });
 
   it("throws gh's own words", async () => {

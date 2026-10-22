@@ -15,6 +15,7 @@ import { type RecorderMessage, StepRecorder } from './step-recorder.js';
 import { type ContextMessage, ContextReport, breakdownReader, isCompactCommand } from './context-report.js';
 import { compactEnv } from '../shared/context-usage.js';
 import { progressCount } from '../shared/progress-count.js';
+import { resultText } from '../shared/steps.js';
 import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from './live-run.js';
 import { answerChat } from './chat-answer.js';
 import { nameTask, titlePlan } from './namer.js';
@@ -109,8 +110,7 @@ export function imageContent(text: string, files: readonly string[]): PromptCont
 /** The text of the tool results in a message from Claude Code (what its commands printed). */
 function toolOutput(content: unknown): string {
   if (!Array.isArray(content)) return '';
-  const text = (c: unknown): string => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (x && typeof x === 'object' && 'text' in x && typeof x.text === 'string' ? x.text : '')).join('\n') : '');
-  return content.map((b) => (b && typeof b === 'object' && 'type' in b && b.type === 'tool_result' && 'content' in b ? text(b.content) : '')).join('\n');
+  return content.map((b) => (b && typeof b === 'object' && 'type' in b && b.type === 'tool_result' && 'content' in b ? resultText(b.content) : '')).join('\n');
 }
 
 /**

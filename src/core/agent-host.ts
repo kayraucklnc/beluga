@@ -15,7 +15,7 @@ import { Compactor } from './compactor.js';
 import { SCRATCH_DIR, ensureScratch } from '../workspaces/scratch.js';
 import { isImportedItem } from '../agent/transcript.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
-import { STEERED_IN } from '../shared/claude-notices.js';
+import { READS_AFTER_STEP, STEERED_IN } from '../shared/claude-notices.js';
 import { span } from '../shared/clock.js';
 import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
 import { e2eLockedIn, mayLeaveProcesses } from '../workspaces/test-procs.js';
@@ -153,8 +153,6 @@ const QUIT_SETTLE_MS = 2_000;
 /** Said when a run that wouldn't take an interrupt was stopped for your message. */
 const STOPPED_FOR_YOU = 'Claude didn’t stop when asked, so its run was stopped for your message';
 
-/** What Claude reads a steered message after, said on its card. */
-export const READS_AFTER_STEP = 'Claude reads this after its current step';
 
 /**
  * How a steer reaches Claude now, from what its run is doing: into the running turn when Claude

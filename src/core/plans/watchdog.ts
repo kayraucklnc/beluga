@@ -3,6 +3,7 @@ import type { Store } from '../store.js';
 import type { Plan, TaskWatch } from './model.js';
 import type { Plans } from './plans.js';
 import type { PlanView, TaskView } from './progress.js';
+import { READS_AFTER_STEP } from '../../shared/claude-notices.js';
 import { hhmm, span } from '../../shared/clock.js';
 import { CONTINUE_PROMPT, CRASH_RETRY_MS, type RunFailure, decodeFailure, failureText, resetWords } from '../../shared/run-failure.js';
 
@@ -39,8 +40,6 @@ const LONG_SHOWN_MS = 60_000;
 export const STEER_UNREAD_MS = 2 * 60_000;
 /** Deliveries of one steered message after the first, before it's left to you. */
 const STEER_RETRIES = 2;
-/** What a steered message's card says while it waits in the running turn for Claude's next step (AgentHost's READS_AFTER_STEP). */
-const READS_AFTER_STEP = 'Claude reads this after its current step';
 
 /** A usage limit with no known reset: try again this long after it stopped. */
 const LIMIT_UNKNOWN_MS = 30 * 60_000;

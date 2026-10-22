@@ -1,5 +1,6 @@
 import { type RefObject, useEffect, useRef } from 'react';
 import { onWindowActive, windowActive } from './window-active.js';
+import { reducedMotion } from './reduced-motion.js';
 
 /**
  * One slow clock for everything that moves while Claude works: the plan's glowing cards and
@@ -21,8 +22,6 @@ let timer: ReturnType<typeof setInterval> | undefined;
 let watching = false;
 let observer: IntersectionObserver | undefined;
 
-const still = (): boolean => document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
 function tick(): void {
   const t = performance.now();
   for (const el of seen) marks.get(el)?.(t);
@@ -30,7 +29,7 @@ function tick(): void {
 
 /** Runs the clock when there's something on screen to move and someone to see it; otherwise stops it. */
 function wake(): void {
-  const run = seen.size > 0 && windowActive() && !still();
+  const run = seen.size > 0 && windowActive() && !reducedMotion();
   if (run && !timer) {
     tick();
     timer = setInterval(tick, 1000 / LIVE_FPS);
@@ -38,7 +37,7 @@ function wake(): void {
     clearInterval(timer);
     timer = undefined;
   }
-  if (still()) for (const el of seen) marks.get(el)?.(null);
+  if (reducedMotion()) for (const el of seen) marks.get(el)?.(null);
 }
 
 function watch(): void {
@@ -70,7 +69,7 @@ export function joinLive(el: Element, paint: LivePaint): () => void {
   watch();
   marks.set(el, paint);
   observe(el);
-  paint(still() ? null : performance.now());
+  paint(reducedMotion() ? null : performance.now());
   return () => {
     marks.delete(el);
     seen.delete(el);

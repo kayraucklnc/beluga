@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
-import { planConversations, planOf, planOfPlace } from '@klaud/core/plans/owner.js';
+import { isPlanOwned, planConversations, planOfPlace } from '@klaud/core/plans/owner.js';
 import type { UiAction } from '@klaud/ui/workspace-models.js';
 import { setOverviewView } from '../views/overview/use-overview-prefs.js';
 import { Icon } from '../components/Icon.js';
@@ -172,11 +172,10 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
   // from the plan). A finished plan's conversation shows only while you're in it.
   const plans = projectPlans(state, p);
   const planHomes = new Set(plansState.plans.map((x) => x.home));
-  const ofPlan = (w: { id: string }): boolean => planOf(state, w.id) !== undefined;
   // A plan you asked to show its tasks' chats: they sit under its row (its home is the plan's page).
   const showTasks = usePrefs().planTaskChats;
   const taskChats = (planId: string) => (showTasks.includes(planId) ? live.filter((w) => !planHomes.has(`ws:${w.id}`) && planConversations(state, planId).includes(w.id)) : []);
-  const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud' && !ofPlan(w) && (!planHomes.has(`ws:${w.id}`) || w.id === here));
+  const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud' && !isPlanOwned(state, w.id) && (!planHomes.has(`ws:${w.id}`) || w.id === here));
   const inPlan = planOfPlace(plansState, board, view);
   // You're in this project: on its home page, in one of its worktrees or chats, or in one of its plans.
   const current = onHome || (here !== undefined && p.workspaces.some((w) => w.id === here)) || plans.some((x) => x.id === inPlan);
@@ -267,7 +266,7 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
         // Folded: only the item you're in stays (its plan, when it's part of one), until you go elsewhere.
         <>
           {plans.filter((x) => x.id === inPlan).map((x) => <PlanRow key={x.id} plan={x} indent={kids} />)}
-          {live.filter((w) => w.id === here && w.kind !== 'main' && !ofPlan(w)).map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)}
+          {live.filter((w) => w.id === here && w.kind !== 'main' && !isPlanOwned(state, w.id)).map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)}
         </>
       ) : (
         <>

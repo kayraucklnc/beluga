@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, Steer } from '../src/agent/types.js';
-import { AgentHost, READS_AFTER_STEP, planSteer } from '../src/core/agent-host.js';
+import { AgentHost, planSteer } from '../src/core/agent-host.js';
+import { READS_AFTER_STEP } from '../src/shared/claude-notices.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { BodyOf } from '../src/protocol.js';
 import { STEERED_IN } from '../src/shared/claude-notices.js';
