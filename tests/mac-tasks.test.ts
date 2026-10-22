@@ -55,9 +55,9 @@ describe('the Tasks view', () => {
   });
 
   it('shows the statuses a scope is about', () => {
-    expect(statusesFor('active')).toEqual(['todo', 'in_progress', 'in_review']);
+    expect(statusesFor('active')).toEqual(['todo', 'in_progress', 'in_review', 'in_plan']);
     expect(statusesFor('backlog')).toEqual(['backlog']);
-    expect(statusesFor('all')).toHaveLength(6);
+    expect(statusesFor('all')).toHaveLength(7);
   });
 
   it('counts a project’s open tasks per scope, for everyone or someone', () => {

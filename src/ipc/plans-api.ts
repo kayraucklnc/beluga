@@ -58,6 +58,10 @@ export const PLANS_API = {
   // Ask the plan's Claude to check a milestone again.
   'plans.recheck': { args: z.tuple([id, ref]) },
   'plans.sendBack': { args: z.tuple([id, ref, z.string().min(1).max(4000)]) },
+  // The plan's one pull request (plan/<slug> → main), merging it on GitHub, or merging the branch into main here → the plan.
+  'plans.openPr': { args: z.tuple([id]) },
+  'plans.mergePr': { args: z.tuple([id]) },
+  'plans.mergeLocal': { args: z.tuple([id]) },
   // Start a ready task now → what happened.
   'plans.startTask': { args: z.tuple([id, ref]) },
   'plans.remove': { args: z.tuple([id]) },

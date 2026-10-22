@@ -1,5 +1,5 @@
 import { type BoardState, type Issue, issueById } from '../board/model.js';
-import { type Autonomy, type Combining, type MilestoneRun, type Plan, type PlanBody, type PlanMilestone, type PlanTask, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
+import { type Autonomy, type Combining, type MilestoneRun, type Plan, type PlanBody, type PlanMerge, type PlanMilestone, type PlanTask, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
 
 /**
  * Where a plan stands, worked out from the plan and the board (and what Claude is doing right
@@ -23,12 +23,14 @@ export type TaskState =
   /** In progress, but nobody is working on it right now. */
   | 'idle'
   | 'review'
+  /** Its milestone passed: merged into the plan's branch, waiting for the plan's PR. */
+  | 'planned'
   | 'done'
   | 'canceled'
   /** Its board task was deleted. */
   | 'missing';
 
-export const FINISHED: ReadonlySet<TaskState> = new Set(['review', 'done', 'canceled', 'missing']);
+export const FINISHED: ReadonlySet<TaskState> = new Set(['review', 'planned', 'done', 'canceled', 'missing']);
 export const ACTIVE: ReadonlySet<TaskState> = new Set(['running', 'asking', 'idle']);
 
 export interface TaskView {
@@ -42,7 +44,7 @@ export interface TaskView {
   readonly waitsOn: readonly string[];
   /** Why it can't start yet, in words. */
   readonly why?: string;
-  /** The branch it starts from: the one task it builds on that's in review (not merged yet). */
+  /** The branch it starts from: the one task it builds on that's in review (not merged yet), else the plan's branch. */
   readonly base?: string;
   /** Builds on several tasks in review: their branches, combined into its start (in its order of blockers). */
   readonly bases?: readonly string[];
@@ -54,7 +56,7 @@ export interface TaskView {
   readonly forYou: boolean;
 }
 
-export type MilestoneState = 'draft' | 'later' | 'running' | 'checking' | 'gate' | 'failed' | 'passed';
+export type MilestoneState = 'draft' | 'later' | 'running' | 'checking' | 'gate' | 'failed' | 'merging' | 'passed';
 
 export interface MilestoneView {
   readonly milestone: PlanMilestone;
@@ -67,6 +69,8 @@ export interface MilestoneView {
   readonly run: MilestoneRun;
   /** Milestones it waits on (ids: what it says, or inferred from its tasks' blockers). */
   readonly dependsOn: readonly string[];
+  /** Passed, and its tasks' branches are being merged into the plan's branch (or a conflict there is being fixed). */
+  readonly merging?: PlanMerge;
 }
 
 /** The one thing a plan waits for (the page's main button). */
@@ -78,6 +82,10 @@ export type NextStep =
   | { readonly kind: 'pass'; readonly milestone: MilestoneView }
   | { readonly kind: 'checking'; readonly milestone: MilestoneView }
   | { readonly kind: 'failed'; readonly milestone: MilestoneView }
+  /** A passed milestone merging into the plan's branch; `text`: “Fixing a merge conflict in KLD-9”. */
+  | { readonly kind: 'merging'; readonly milestone: MilestoneView; readonly text: string }
+  /** Every milestone passed: the plan's branch waits to reach main (Open PR, or merge it here). */
+  | { readonly kind: 'ship'; readonly branch: string; readonly pr?: Plan['pr'] }
   | { readonly kind: 'answer'; readonly tasks: readonly TaskView[] }
   | { readonly kind: 'working'; readonly tasks: readonly TaskView[] }
   | { readonly kind: 'waiting'; readonly why: string }
@@ -119,6 +127,8 @@ function taskState(board: BoardState, issue: Issue | undefined, live: Live): { r
       return { state: 'canceled' };
     case 'in_review':
       return { state: 'review', ...(worktree ? { worktree } : {}) };
+    case 'in_plan':
+      return { state: 'planned', ...(worktree ? { worktree } : {}) };
     case 'in_progress': {
       if (!worktree || issue.worktreeGone) return { state: 'idle', ...(worktree ? { worktree } : {}) };
       const channel = `ws:${worktree}`;
@@ -142,6 +152,15 @@ export function combiningStep(c: Combining): string {
   if (c.conflict.stuck) return `Combining ${names}: fix the conflict in ${c.conflict.files.slice(0, 3).join(', ')} (in ${c.conflict.dir}): it starts once no markers are left`;
   const files = c.conflict.files.slice(0, 3).join(', ') + (c.conflict.files.length > 3 ? ` and ${c.conflict.files.length - 3} more` : '');
   return `Combining ${names}: Claude is fixing a conflict in ${files}`;
+}
+
+/** What a milestone merging into the plan's branch shows. */
+export function mergingText(m: PlanMerge, title: string, branch: string | undefined): string {
+  const c = m.conflict;
+  const what = c?.key ?? c?.merging ?? '';
+  if (!c) return `Merging “${title}” into ${branch ?? 'the plan’s branch'} …`;
+  if (c.stuck) return `Fix the merge conflict in ${what} (${c.files.slice(0, 3).join(', ')}, in ${c.dir}): it merges once no markers are left`;
+  return `Fixing a merge conflict in ${what}`;
 }
 
 /** A plan where it stands. */
@@ -180,7 +199,7 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
   const finished = (id: string): boolean => FINISHED.has(base.get(id)?.state ?? 'missing');
   const merged = (id: string): boolean => {
     const s = base.get(id)?.state;
-    return s === 'done' || s === 'canceled' || s === 'missing';
+    return s === 'planned' || s === 'done' || s === 'canceled' || s === 'missing';
   };
   const titleOf = new Map(body.milestones.flatMap((m) => m.tasks.map((t) => [t.id, t.title] as const)));
 
@@ -214,6 +233,8 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
         } else if (unmerged.length === 1) {
           from = base.get(unmerged[0]!)?.issue?.branch;
         }
+        // Nothing unmerged to build on: the plan's branch as it is now (earlier milestones merged in).
+        if (state === 'ready' && !from && !froms && plan.branch) from = plan.branch;
         // Being combined right now: shown as under way, never as waiting in silence.
         combining = state === 'ready' ? plan.combining?.[t.id] : undefined;
         if (combining) {
@@ -246,14 +267,16 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
     const done = counted.filter((t) => FINISHED.has(t.state)).length;
     const run = plan.runs[m.id] ?? {};
     const autonomy = autonomyOf(plan, m);
+    const merging = plan.merging?.[m.id];
     let state: MilestoneState;
-    if (run.passedAt) state = 'passed';
+    if (merging && !merging.catchUp) state = 'merging';
+    else if (run.passedAt) state = 'passed';
     else if (!openIds.has(m.id)) state = 'later';
     else if (done < counted.length) state = 'running';
     else if (run.check && run.checkAsked !== undefined && run.check.at >= run.checkAsked) state = run.check.verdict === 'fail' ? 'failed' : 'gate';
     else if (run.checkAsked !== undefined) state = 'checking';
     else state = 'gate';
-    return { milestone: m, index, state, tasks, finished: done, total: counted.length, autonomy, run, dependsOn: milestoneDeps(body, m) };
+    return { milestone: m, index, state, tasks, finished: done, total: counted.length, autonomy, run, dependsOn: milestoneDeps(body, m), ...(merging ? { merging } : {}) };
   });
 
   const open = milestones.filter((m) => openIds.has(m.milestone.id));
@@ -267,7 +290,12 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
 }
 
 function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
-  if (plan.status === 'done') return plan.draft ? { kind: 'review_changes' } : { kind: 'done' };
+  if (plan.status === 'done') {
+    if (plan.draft) return { kind: 'review_changes' };
+    // Its work is on the plan's branch, not in main yet.
+    if (plan.branch && !plan.shipped && v.milestones.some((m) => m.tasks.some((t) => t.state === 'planned'))) return { kind: 'ship', branch: plan.branch, ...(plan.pr ? { pr: plan.pr } : {}) };
+    return { kind: 'done' };
+  }
   if (plan.draft) return { kind: 'review_changes' };
   if (plan.paused) return { kind: 'resume' };
   if (!v.open.length) return { kind: 'done' };
@@ -276,6 +304,8 @@ function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
   // Milestones running side by side: what's yours to do in any of them comes first.
   const failed = v.open.find((m) => m.state === 'failed');
   if (failed) return { kind: 'failed', milestone: failed };
+  const merging = v.open.find((m) => m.state === 'merging');
+  if (merging?.merging) return { kind: 'merging', milestone: merging, text: mergingText(merging.merging, merging.milestone.title, plan.branch) };
   const yoursToPass = v.open.find((m) => (m.state === 'checking' || m.state === 'gate') && !(m.autonomy === 'autopilot' && m.milestone.criteria.length));
   if (yoursToPass) return { kind: 'pass', milestone: yoursToPass };
   const autonomyOfTask = new Map(v.open.map((m) => [m.milestone.id, m.autonomy]));

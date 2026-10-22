@@ -6,7 +6,7 @@
  * Browser-safe: the Mac app runs it. See docs/tasks-and-plans.md.
  */
 
-export const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled'] as const;
+export const ISSUE_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'in_plan', 'done', 'canceled'] as const;
 export type IssueStatus = (typeof ISSUE_STATUSES)[number];
 
 export type StatusTone = 'muted' | 'neutral' | 'claude' | 'info' | 'ok' | 'error';
@@ -16,6 +16,8 @@ export const STATUS_INFO: Readonly<Record<IssueStatus, { readonly label: string;
   todo: { label: 'Todo', tone: 'neutral', open: true },
   in_progress: { label: 'In Progress', tone: 'claude', open: true },
   in_review: { label: 'In Review', tone: 'info', open: true },
+  /** A plan's task whose milestone passed: merged into the plan's branch, waiting for the plan's PR. */
+  in_plan: { label: 'In Plan', tone: 'info', open: true },
   done: { label: 'Done', tone: 'ok', open: false },
   canceled: { label: 'Canceled', tone: 'muted', open: false },
 };
@@ -332,7 +334,7 @@ export function filterIssues(board: BoardState, f: IssueFilter = {}): Issue[] {
         case 'mine':
           return Boolean(f.selfId && isMine(i, f.selfId)) && (isOpen(i.status) || now - (i.closedAt ?? i.updatedAt) < within);
         case 'active':
-          return i.status === 'todo' || i.status === 'in_progress' || i.status === 'in_review';
+          return i.status === 'todo' || i.status === 'in_progress' || i.status === 'in_review' || i.status === 'in_plan';
         case 'backlog':
           return i.status === 'backlog';
         default:

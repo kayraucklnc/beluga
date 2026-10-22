@@ -3,7 +3,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { readJson, writeJson } from '../../net/mesh/files.js';
-import type { Actor } from '../board/model.js';
+import type { Actor, IssuePr } from '../board/model.js';
 import type { Store } from '../store.js';
 import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from './edit.js';
 import {
@@ -19,6 +19,8 @@ import {
   type PlanBody,
   type PlanEvent,
   type PlanEventKind,
+  type PlanMerge,
+  type PlanShipped,
   type PlansState,
   diffBodies,
   isEmptyDiff,
@@ -279,6 +281,44 @@ export class Plans {
     const { [task]: _was, ...rest } = plan.combining ?? {};
     const next = combining ? { ...rest, [task]: combining } : rest;
     return this.change(plan, { combining: Object.keys(next).length ? next : undefined }, []);
+  }
+
+  /** The plan's branch is there (made from main, or one that was there already). */
+  setBranch(id: string, branch: string, made: boolean): Plan {
+    const plan = this.need(id);
+    if (plan.branch === branch) return plan;
+    return this.change(plan, { branch }, [event({ kind: 'klaud' }, 'note', made ? `made the plan’s branch ${branch} from main` : `collects the plan’s work on ${branch}`, this.now())]);
+  }
+
+  /** A passed milestone being merged into the plan's branch (undefined: no longer). */
+  setMerging(id: string, milestone: string, merge: PlanMerge | undefined): Plan {
+    const plan = this.need(id);
+    const { [milestone]: _was, ...rest } = plan.merging ?? {};
+    const next = merge ? { ...rest, [milestone]: merge } : rest;
+    return this.change(plan, { merging: Object.keys(next).length ? next : undefined }, []);
+  }
+
+  /** The branch's pull request as last seen (what changed goes in the activity). */
+  setPr(id: string, pr: IssuePr): Plan {
+    const plan = this.need(id);
+    const before = plan.pr;
+    if (before && before.number === pr.number && before.state === pr.state && before.checks === pr.checks && before.review === pr.review && before.title === pr.title && before.draft === pr.draft) return plan;
+    const notes: PlanEvent[] = [];
+    const at = this.now();
+    if (!before || before.number !== pr.number) notes.push(event({ kind: 'klaud' }, 'note', `pull request #${pr.number} is open for ${plan.branch ?? 'the plan'}`, at));
+    if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') notes.push(event({ kind: 'klaud' }, 'problem', `pull request #${pr.number} was closed without merging: its tasks stay In Plan`, at));
+    return this.change(plan, { pr }, notes);
+  }
+
+  setShipped(id: string, shipped: PlanShipped): Plan {
+    const plan = this.need(id);
+    if (plan.shipped) return plan;
+    return this.change(plan, { shipped }, [event({ kind: 'klaud' }, 'done', shipped.how === 'pr' ? `merged into main via #${shipped.number}` : 'merged into main here', shipped.at)]);
+  }
+
+  setCaughtUp(id: string): Plan {
+    const plan = this.need(id);
+    return plan.caughtUp ? plan : this.change(plan, { caughtUp: true }, []);
   }
 
   note(id: string, kind: PlanEventKind, text: string, by: Actor): Plan {

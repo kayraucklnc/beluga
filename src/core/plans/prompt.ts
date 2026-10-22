@@ -17,6 +17,7 @@ const STATE_WORDS: Readonly<Record<TaskView['state'], string>> = {
   asking: 'waiting for an answer',
   idle: 'in progress, nobody working right now',
   review: 'in review',
+  planned: 'merged into the plan’s branch',
   done: 'done',
   canceled: 'canceled',
   missing: 'its task was deleted',
@@ -28,6 +29,7 @@ const MILESTONE_WORDS: Readonly<Record<MilestoneView['state'], string>> = {
   running: 'in progress',
   checking: 'being checked',
   gate: 'finished, waiting to be passed',
+  merging: 'passed, merging into the plan’s branch',
   failed: 'check failed',
   passed: 'passed',
 };
@@ -98,7 +100,8 @@ export function headBrief(view: PlanView): string {
     '- plan_message_task: tell a task\'s Claude something (a decision, a heads-up about another task).',
     '- plan_start_task: start a ready task now (when the user asks).',
     '- plan_gate: after checking a finished milestone\'s pass criteria, pass or fail it with notes per criterion.',
-    '  Check for real: read the tasks\' briefs, handoffs and proof, their pull requests and diffs (git diff main...branch).',
+    `  Check for real: read the tasks\' briefs, handoffs and proof, and their diffs (git diff ${plan.branch ?? 'main'}...branch).`,
+    plan.branch ? `- The plan's work collects on ${plan.branch}: tasks start from it, a passed milestone's branches merge into it, and it reaches main as one pull request at the end (no PR per task or milestone).` : '',
     '- plan_update: change the plan (new tasks to fix what failed, a re-cut). The user approves changes',
     '  unless the plan runs on autopilot.',
     plan.paused ? 'The plan is paused: nothing starts until the user resumes it.' : '',
@@ -199,11 +202,26 @@ export function fixupPrompt(key: string, title: string, from: readonly string[],
   ].join('\n');
 }
 
+/** A passed milestone's merge into the plan's branch conflicted: the head Claude fixes it there. */
+export function mergeFixupPrompt(milestone: string, branch: string, key: string, c: { readonly dir: string; readonly merging: string; readonly files: readonly string[] }): string {
+  return [
+    `Milestone “${milestone}” passed, so klaud is merging its tasks' branches into the plan's branch ${branch}. Merging ${key} (${c.merging}) conflicted, in a worktree only for this:`,
+    '',
+    c.dir,
+    '',
+    'Conflicted files (paths in that folder):',
+    ...c.files.map((f) => `- ${f}`),
+    '',
+    'Fix each conflict there with Read and Edit, by its full path: keep what both sides meant (read the tasks\' briefs with task_get if you need to), and remove every conflict marker.',
+    "Change nothing else, and don't run git: when no markers are left, klaud commits the merge, merges the rest and passes the milestone by itself. End your turn with one short line.",
+  ].join('\n');
+}
+
 /** The plan is done: a short recap in its conversation. */
 export function recapPrompt(view: PlanView): string {
   return [
     `Every milestone of “${view.body?.title ?? 'the plan'}” has passed. Write a short recap for the user: what was built, per`,
-    'milestone, with links to pull requests, what was decided along the way, and anything left over. Include a klaud-graph',
+    'milestone, with the plan’s pull request if there is one, what was decided along the way, and anything left over. Include a klaud-graph',
     'of what changed when it helps.',
   ].join('\n');
 }

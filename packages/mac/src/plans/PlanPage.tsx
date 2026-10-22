@@ -6,6 +6,7 @@ import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { openSheet } from '../lib/sheets.js';
+import { openExternal } from '../lib/system.js';
 import { MilestoneBar, TonePill } from './marks.js';
 import { PlanChat } from './PlanChat.js';
 import { PlanDetails } from './PlanDetails.js';
@@ -85,6 +86,10 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
         return { label: 'Pass Milestone', icon: 'check', run: () => void act(() => api.pass(plan.id, next.milestone.milestone.id)) };
       case 'failed':
         return { label: 'Not Yet…', run: () => openSheet({ kind: 'plan_send_back', planId: plan.id, milestone: next.milestone.milestone.id }) };
+      case 'ship':
+        // One pull request for the whole plan (plan/<slug> → main); once open, merged on GitHub.
+        if (next.pr?.state === 'OPEN') return { label: 'Merge on GitHub', icon: 'check', run: () => void act(() => api.mergePr(plan.id), `Merged #${next.pr!.number}: the plan’s tasks are Done`) };
+        return { label: 'Open PR', run: () => void act(() => api.openPr(plan.id), 'Opened the plan’s pull request') };
       case 'answer':
         return next.tasks[0]?.worktree ? { label: `Answer in ${next.tasks[0].issue?.key ?? 'Its Worktree'}`, run: () => openWorktree(next.tasks[0]!.worktree!) } : undefined;
       default:
@@ -101,6 +106,13 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
       ? [
           { label: 'Check Again', onSelect: () => void act(() => api.recheck(plan.id, next.milestone.milestone.id)) },
           { label: 'Pass Anyway', onSelect: () => void act(() => api.pass(plan.id, next.milestone.milestone.id)) },
+        ]
+      : []),
+    ...(next.kind === 'ship'
+      ? [
+          ...(next.pr ? [{ label: `View PR #${next.pr.number}`, onSelect: () => void openExternal(next.pr!.url) }] : []),
+          ...(next.pr?.state === 'CLOSED' ? [{ label: 'Open PR Again', onSelect: () => void act(() => api.openPr(plan.id), 'Opened the plan’s pull request') }] : []),
+          { label: 'Merge into Main Locally', onSelect: () => openSheet({ kind: 'confirm', title: `Merge ${next.branch} into main here?`, message: 'The main folder must be on main with no uncommitted changes. The plan’s tasks go to Done.', confirm: 'Merge', run: () => void act(() => api.mergeLocal(plan.id), 'Merged into main: the plan’s tasks are Done') }) },
         ]
       : []),
     { label: 'Copy as Markdown', separate: true, onSelect: () => void copyText(markdownOf(view)) },
@@ -140,6 +152,10 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           ) : next.kind === 'checking' ? (
             <Button size="small" disabled>
               Claude is checking…
+            </Button>
+          ) : next.kind === 'merging' ? (
+            <Button size="small" disabled>
+              {next.milestone.merging?.conflict?.stuck ? 'Waiting for the fix…' : 'Merging…'}
             </Button>
           ) : null}
         </div>

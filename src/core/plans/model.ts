@@ -1,4 +1,4 @@
-import type { Actor, Priority } from '../board/model.js';
+import type { Actor, IssuePr, Priority } from '../board/model.js';
 
 /**
  * Plans: a goal cut into milestones, each with tasks and the criteria that say it's passed.
@@ -99,6 +99,35 @@ export interface Combining {
   };
 }
 
+/**
+ * A passed milestone's task branches being merged (--no-ff) into the plan's branch, in a hidden
+ * worktree. The milestone counts as passed once that's done; a conflict goes to the head Claude.
+ */
+export interface PlanMerge {
+  readonly at: number;
+  /** Who passed it. */
+  readonly by: Actor;
+  /** It had passed before the plan had a branch (catching up): it isn't passed again. */
+  readonly catchUp?: boolean;
+  readonly conflict?: {
+    readonly at: number;
+    readonly dir: string;
+    /** The branch that conflicted, and its task's key. */
+    readonly merging: string;
+    readonly key?: string;
+    readonly files: readonly string[];
+    /** Claude was asked and it's still there: it waits for you. */
+    readonly stuck?: boolean;
+  };
+}
+
+/** The plan reached main: through its pull request, or merged here. */
+export interface PlanShipped {
+  readonly at: number;
+  readonly how: 'pr' | 'local';
+  readonly number?: number;
+}
+
 export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'gate' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
 
 export interface PlanEvent {
@@ -130,6 +159,15 @@ export interface Plan {
   readonly runs: Readonly<Record<string, MilestoneRun>>;
   /** Tasks whose start is being combined from several branches (by plan task id). */
   readonly combining?: Readonly<Record<string, Combining>>;
+  /** Its branch (plan/<slug>, from main): every task starts from it, passed milestones merge into it, and it ends as one PR. */
+  readonly branch?: string;
+  /** Passed milestones being merged into the branch (by milestone id). */
+  readonly merging?: Readonly<Record<string, PlanMerge>>;
+  /** The branch's pull request into main, as last seen. */
+  readonly pr?: IssuePr;
+  readonly shipped?: PlanShipped;
+  /** Plans that ran before they had a branch were caught up once (passed milestones merged into one). */
+  readonly caughtUp?: boolean;
   readonly activity: readonly PlanEvent[];
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -242,6 +280,24 @@ export function openMilestones(plan: Plan): readonly string[] {
   if (!body || plan.status === 'done') return [];
   const passed = (id: string): boolean => Boolean(plan.runs[id]?.passedAt);
   return body.milestones.filter((m) => !passed(m.id) && milestoneDeps(body, m).every(passed)).map((m) => m.id);
+}
+
+/**
+ * The branch a plan's work collects on: a plan/<name> its text names (one kept by hand before),
+ * else plan/ and its title up to a colon ("Klaud polish round: menus…" → plan/klaud-polish-round).
+ */
+export function planBranchName(plan: Plan): string {
+  const body = plan.body ?? plan.draft;
+  const named = /\bplan\/[A-Za-z0-9][\w.-]*[A-Za-z0-9]/.exec([body?.goal ?? '', ...(body?.milestones ?? []).flatMap((m) => [m.goal ?? '', ...m.criteria])].join('\n'))?.[0];
+  if (named) return named;
+  const title = (body?.title ?? '').split(':')[0]!;
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/, '');
+  return `plan/${slug || plan.id.replace(/^pl_/, '').slice(0, 8)}`;
 }
 
 /** How a draft differs from what was approved: tasks added, changed and removed (by id). */

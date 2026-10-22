@@ -5,6 +5,8 @@ import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank } from
 import { ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
+import { openExternal } from '../lib/system.js';
+import { usePlans } from '../plans/use-plans.js';
 import { type Box, columnAt, edgeSpeed, isDrag, landingIndex, leanFor, neighbours, withGap } from './board-drag.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
 import { IssueMeta, useIssueMenu } from './parts.js';
@@ -255,6 +257,7 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
             <span className={t.groupName}>{STATUS_INFO[status].label}</span>
             <span className={t.groupCount}>{items.filter((i) => i.id !== lift?.id).length + (lift && over?.status === status ? 1 : 0)}</span>
             <span className={t.grow} />
+            {status === 'in_plan' ? <PlanPrs issues={items} /> : null}
             <IconButton icon="plus" label={`New Task in ${STATUS_INFO[status].label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { projectId } : {}) })} />
           </header>
           <div ref={(el) => void (el ? stacks.current.set(status, el) : stacks.current.delete(status))} className={t.cards}>
@@ -352,3 +355,19 @@ const Card = memo(function Card({ issue, onPress, onNudge, suppressClick }: { is
     </ActionsContext>
   );
 });
+
+/** In Plan waits for its plans' pull requests: a link to each once it's open. */
+function PlanPrs({ issues }: { issues: readonly Issue[] }) {
+  const { plans } = usePlans();
+  const ids = new Set(issues.flatMap((i) => (i.plan ? [i.plan.id] : [])));
+  const prs = plans.filter((p) => ids.has(p.id) && p.pr).map((p) => p.pr!);
+  return (
+    <>
+      {prs.map((pr) => (
+        <button key={pr.number} type="button" className={t.columnPr} title={`${pr.title} (${pr.state.toLowerCase()})`} onClick={() => void openExternal(pr.url)}>
+          #{pr.number}
+        </button>
+      ))}
+    </>
+  );
+}

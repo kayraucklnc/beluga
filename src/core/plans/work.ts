@@ -9,6 +9,7 @@ import { ApplyError, applyDraft } from './apply.js';
 import type { BodyInput, PlanOp, TaskInput } from './edit.js';
 import { type Autonomy, type Plan, allTasks, planForHome, planTaskOfIssue } from './model.js';
 import { PlanPilot } from './pilot.js';
+import { type PlanGit, planGitOf } from './plan-git.js';
 import type { Plans } from './plans.js';
 import { describePlan, headBrief, planningBrief, sizeWords, workerNote } from './prompt.js';
 
@@ -26,7 +27,9 @@ export interface PlansWorkDeps {
   readonly askClaude: (prompt: string, channel: string, echo: boolean) => void;
   readonly intend: (intent: Intent) => void;
   /** Combining a task's start from several branches (default: the project's folder, through the controller). */
-  readonly combine?: (projectId: string, key: string, branches: readonly string[]) => Promise<CombineResult>;
+  readonly combine?: (projectId: string, key: string, branches: readonly string[], into?: string) => Promise<CombineResult>;
+  /** The plan's branch and pull request (default: the project's folder, through the controller; null: none). */
+  readonly git?: PlanGit | null;
   readonly delayMs?: number;
 }
 
@@ -38,13 +41,15 @@ export class PlansWork {
 
   constructor(private readonly deps: PlansWorkDeps) {
     this.plans = deps.plans;
+    const git = deps.git === null ? undefined : (deps.git ?? (deps.controller?.manager ? planGitOf(deps.controller) : undefined));
     this.pilot = new PlanPilot({
       store: deps.store,
       plans: deps.plans,
       work: deps.board,
       askClaude: deps.askClaude,
       system: (channel, text) => deps.store.dispatch({ type: 'system', channel, text, level: 'info' }),
-      ...(deps.combine ? { combine: deps.combine } : deps.controller ? { combine: (projectId, key, branches) => deps.controller!.manager.combineBase(projectId, key, branches) } : {}),
+      ...(deps.combine ? { combine: deps.combine } : deps.controller ? { combine: (projectId, key, branches, into) => deps.controller!.manager.combineBase(projectId, key, branches, into) } : {}),
+      ...(git ? { git } : {}),
       ...(deps.controller ? { allowFixup: (channel, dir) => deps.controller!.allowFixup?.(channel, dir) } : {}),
       ...(deps.delayMs !== undefined ? { delayMs: deps.delayMs } : {}),
     });
@@ -167,6 +172,19 @@ export class PlansWork {
   recheck(id: string, milestone: string): Plan {
     this.pilot.recheck(id, milestone);
     return this.plans.need(id);
+  }
+
+  /** The plan's pull request (its branch → main), merging it on GitHub, or merging the branch here. */
+  openPr(id: string): Promise<Plan> {
+    return this.pilot.openPr(id);
+  }
+
+  mergePr(id: string): Promise<Plan> {
+    return this.pilot.mergePr(id);
+  }
+
+  mergeLocal(id: string): Promise<Plan> {
+    return this.pilot.mergeLocal(id);
   }
 
   startTask(id: string, task: string): Promise<string> {

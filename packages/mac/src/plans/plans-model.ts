@@ -19,6 +19,7 @@ export const TASK_STATE: Readonly<Record<TaskState, { readonly label: string; re
   asking: { label: 'Needs you', tone: 'warn' },
   idle: { label: 'In progress', tone: 'claude' },
   review: { label: 'In review', tone: 'info' },
+  planned: { label: 'In plan', tone: 'info' },
   done: { label: 'Done', tone: 'ok' },
   canceled: { label: 'Canceled', tone: 'muted' },
   missing: { label: 'Deleted', tone: 'muted' },
@@ -31,6 +32,7 @@ export const MILESTONE_STATE: Readonly<Record<MilestoneState, { readonly label: 
   checking: { label: 'Claude is checking', tone: 'claude' },
   gate: { label: 'Ready to pass', tone: 'accent' },
   failed: { label: 'Check failed', tone: 'error' },
+  merging: { label: 'Merging into the plan', tone: 'claude' },
   passed: { label: 'Passed', tone: 'ok' },
 };
 
@@ -54,7 +56,7 @@ export function milestoneLabel(view: Pick<PlanView, 'milestones' | 'open'>, m: M
 export function planStatus(view: Pick<PlanView, 'plan' | 'next'>): { readonly label: string; readonly tone: Tone } {
   const { plan, next } = view;
   if (!plan.body) return { label: 'Draft', tone: 'muted' };
-  if (plan.status === 'done' && !plan.draft) return { label: 'Done', tone: 'ok' };
+  if (plan.status === 'done' && !plan.draft) return next.kind === 'ship' ? { label: plan.pr?.state === 'CLOSED' ? 'PR closed' : plan.pr ? 'PR open' : 'Ready to ship', tone: plan.pr?.state === 'CLOSED' ? 'warn' : 'accent' } : { label: 'Done', tone: 'ok' };
   if (plan.draft) return { label: 'Changes proposed', tone: 'accent' };
   if (plan.paused) return { label: 'Paused', tone: 'muted' };
   switch (next.kind) {
@@ -66,6 +68,8 @@ export function planStatus(view: Pick<PlanView, 'plan' | 'next'>): { readonly la
       return { label: 'Needs a fix', tone: 'error' };
     case 'checking':
       return { label: 'Checking', tone: 'claude' };
+    case 'merging':
+      return next.milestone.merging?.conflict?.stuck ? { label: 'Waiting for you', tone: 'accent' } : { label: 'Merging', tone: 'claude' };
     case 'working':
       return { label: 'Running', tone: 'claude' };
     default:
@@ -96,6 +100,12 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
       return { title: next.tasks.length ? `${next.tasks.length} ${next.tasks.length === 1 ? 'task' : 'tasks'} in progress` : 'Starting…' };
     case 'waiting':
       return { title: 'Waiting', detail: next.why };
+    case 'merging':
+      return { title: next.text, detail: `“${next.milestone.milestone.title}” passes once its work is merged into the plan’s branch` };
+    case 'ship':
+      if (next.pr?.state === 'OPEN') return { title: `Pull request #${next.pr.number} is open`, detail: `${next.branch} → main: its tasks are Done once it merges` };
+      if (next.pr?.state === 'CLOSED') return { title: `Pull request #${next.pr.number} was closed`, detail: 'Closed without merging: the plan’s tasks stay In Plan' };
+      return { title: 'Open PR', detail: `Every milestone passed: ${next.branch} has all the plan’s work` };
     case 'done':
       return { title: 'Done', detail: 'Every milestone passed' };
   }
