@@ -356,6 +356,9 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `plans.setParallel` | — (Mac only, see below) | ✓ a plan's ⋯ › Run at Once ▸ |
 | `plans.pass` | — (Mac only, see below) | ✓ Pass Milestone on a plan's page |
 | `plans.recheck` | — (Mac only, see below) | ✓ Check Again on a milestone Claude is checking or that failed its check |
+| `plans.openPr` | — (Mac only, see below) | ✓ Open PR on a plan whose every milestone passed (plan/<slug> → main) |
+| `plans.mergePr` | — (Mac only, see below) | ✓ Merge on GitHub once the plan's pull request is open |
+| `plans.mergeLocal` | — (Mac only, see below) | ✓ ⋯ › Merge into Main Locally on a plan ready to ship |
 | `plans.sendBack` | — (Mac only, see below) | ✓ Not Yet… on a milestone waiting for you |
 | `plans.startTask` | — (Mac only, see below) | ✓ Start on a ready task (step by step, or a task for you) |
 | `plans.remove` | — (Mac only, see below) | ✓ a plan's ⋯ › Delete Plan… (its tasks stay on the board) |

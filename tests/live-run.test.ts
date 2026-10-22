@@ -4,26 +4,32 @@ import path from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { BackgroundAgents, PromptQueue, TurnRouter } from '../src/agent/live-run.js';
-import type { AgentRunInput, FollowUp, RoomBridge } from '../src/agent/types.js';
+import type { AgentRunInput, FollowUp, RoomBridge, Steer } from '../src/agent/types.js';
+import { endProcess } from '../src/agent/claude-process.js';
+import { spawn } from 'node:child_process';
 
-/** A scripted Claude Code: for each prompt it reads, it yields the next scripted turn. */
-type Turn = (prompt: string) => object[];
-const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options } = { turns: [], extra: [], prompts: [] };
+/** A scripted Claude Code: for each prompt it reads, it yields the next scripted turn (a promise in it: waited for). */
+type Turn = (prompt: string) => Array<object | Promise<object>>;
+const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options; interrupt?: () => void; queue?: unknown } = { turns: [], extra: [], prompts: [] };
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({
   ...(await original<object>()),
   query: ({ prompt, options }: { prompt: AsyncIterable<{ message: { content: string } }>; options: Options }) =>
-    (async function* () {
-      script.options = options;
-      yield { type: 'system', subtype: 'init', session_id: 's1' };
-      let turn = 0;
-      for await (const msg of prompt) {
-        script.prompts.push(msg.message.content);
-        for (const m of script.turns[turn++]?.(msg.message.content) ?? []) yield m;
-        // Turns Claude starts by itself once a background agent is done.
-        for (const extra of script.extra.splice(0)) for (const m of extra) yield m;
-      }
-    })(),
+    Object.assign(
+      (async function* () {
+        script.options = options;
+        script.queue = prompt;
+        yield { type: 'system', subtype: 'init', session_id: 's1' };
+        let turn = 0;
+        for await (const msg of prompt) {
+          script.prompts.push(msg.message.content);
+          for (const m of script.turns[turn++]?.(msg.message.content) ?? []) yield await m;
+          // Turns Claude starts by itself once a background agent is done.
+          for (const extra of script.extra.splice(0)) for (const m of extra) yield m;
+        }
+      })(),
+      { interrupt: async () => script.interrupt?.() },
+    ),
 }));
 
 const { createClaudeBackend } = await import('../src/agent/runner.js');
@@ -204,6 +210,93 @@ describe('steering', () => {
     expect(got).toEqual(['steer started', 'steer:switched to pnpm']);
     expect(script.prompts[1]).toContain('use pnpm');
     expect(steer).toBeUndefined(); // withdrawn once the run ended
+  });
+});
+
+describe('interrupting a long tool for a message', () => {
+  const route = (got: string[], name: string) => ({ onEvent: () => undefined, onStart: () => void got.push(`${name} started`), onDone: (t: string) => void got.push(`${name}:${t}`), onError: (r: string) => void got.push(`${name}!${r}`) });
+  it('stops the turn (it ends saying why) and answers the message in the next turn', async () => {
+    let steer: Steer | undefined;
+    const got: string[] = [];
+    script.prompts = [];
+    script.turns = [
+      () => [
+        { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'npx playwright test' } }] } },
+        // The command runs until Claude Code is interrupted.
+        new Promise<object>((resolve) => (script.interrupt = () => resolve({ ...result(''), subtype: 'error_during_execution' }))),
+      ],
+      () => [text('stopped the tests'), result('stopped the tests')],
+    ];
+    const input = runInput({ onSteer: (s) => void (steer = s) });
+    const running = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(input);
+    for (let i = 0; i < 50 && !steer?.status?.().tool; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(steer!.status!()).toMatchObject({ tool: { label: 'npx playwright test' }, between: false });
+    const note = 'Interrupted: npx playwright test (12m) to read your message';
+    expect(await steer!.interrupt!({ prompt: 'stop the tests', requesterName: 'kay', viaAgent: false, context: [], ...route(got, 'f') }, note)).toBe(true);
+    expect(await running).toBe(note);
+    expect(input.events).toContain(note);
+    expect(got).toEqual(['f started', 'f:stopped the tests']);
+    expect(script.prompts[1]).toContain('stop the tests');
+    script.interrupt = undefined;
+  });
+});
+
+describe('interrupting: the interrupted turn’s result comes late', () => {
+  const route = (got: string[], name: string) => ({ onEvent: () => undefined, onStart: () => void got.push(`${name} started`), onFolded: () => void got.push(`${name} folded`), onDone: (t: string) => void got.push(`${name}:${t}`), onError: (r: string) => void got.push(`${name}!${r}`) });
+  /** The ids of the prompts sent but not read yet (what Claude Code could list in the result). */
+  const unread = (): string[] => (script.queue as { items: Array<{ uuid: string }> }).items.map((i) => i.uuid);
+
+  it('after the message was sent, even listing it: the message is still answered in its own turn', async () => {
+    let steer: Steer | undefined;
+    const got: string[] = [];
+    script.prompts = [];
+    script.turns = [
+      () => [
+        { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'npm test' } }] } },
+        // The interrupt returns at once; the turn's result only arrives once the message is in, and lists it.
+        new Promise<object>((resolve) => (script.interrupt = () => void setTimeout(() => resolve({ ...result(''), subtype: 'error_during_execution', user_message_uuids: unread() }), 20))),
+      ],
+      () => [text('reading it now'), result('reading it now')],
+    ];
+    const input = runInput({ onSteer: (s) => void (steer = s) });
+    const running = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(input);
+    for (let i = 0; i < 50 && !steer?.status?.().tool; i++) await new Promise((r) => setTimeout(r, 5));
+    const note = 'Interrupted: npm test (3m) to read your message';
+    expect(await steer!.interrupt!({ prompt: 'stop that', requesterName: 'kay', viaAgent: false, context: [], ...route(got, 'f') }, note)).toBe(true);
+    expect(unread()).toHaveLength(1);
+    expect(await running).toBe(note);
+    expect(got).toEqual(['f started', 'f:reading it now']);
+    expect(script.prompts[1]).toContain('stop that');
+    script.interrupt = undefined;
+  });
+});
+
+describe('what a steer sees of the run', () => {
+  it('says when Claude’s last word was thinking', async () => {
+    let steer: Steer | undefined;
+    const seen: object[] = [];
+    // Looked at once Claude Code has said what came before.
+    const later = (then: () => object, ms = 10): Promise<object> => new Promise((r) => setTimeout(r, ms)).then(then);
+    script.turns = [
+      () => [
+        { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'thinking', thinking: 'hmm' }] } },
+        later(() => (seen.push(steer!.status!()), text('ok'))),
+        later(() => (seen.push(steer!.status!()), result('ok')), 20),
+      ],
+    ];
+    await createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(runInput({ onSteer: (s) => void (s && (steer = s)) }));
+    expect(seen[0]).toMatchObject({ thinking: true });
+    expect(seen[1]).not.toHaveProperty('thinking');
+  });
+
+  it('ends Claude Code for sure: SIGTERM, then SIGKILL when it ignores that', async () => {
+    const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => undefined); setInterval(() => undefined, 1000); console.log('up')"], { stdio: ['ignore', 'pipe', 'ignore'] });
+    await new Promise((r) => child.stdout.once('data', r));
+    const t0 = Date.now();
+    await endProcess(child, 200);
+    expect(child.signalCode).toBe('SIGKILL');
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(150);
+    await endProcess(child, 200); // already gone: nothing to do
   });
 });
 

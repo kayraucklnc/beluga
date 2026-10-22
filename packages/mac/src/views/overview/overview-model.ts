@@ -1,4 +1,7 @@
 import type { AppState } from '../../../../../src/core/store.js';
+import { type Plan, planTitle } from '../../../../../src/core/plans/model.js';
+import { planOf } from '../../../../../src/core/plans/owner.js';
+import { planSignal } from '../../layout/attention-model.js';
 import { activityOf } from '../../../../../src/ui/workspace-models.js';
 import { worktreeOrigin } from '../../../../../src/workspaces/origin.js';
 import type { Project, Workspace } from '../../../../../src/workspaces/types.js';
@@ -34,6 +37,11 @@ export interface OverviewItem {
   readonly size?: number;
   /** What needs you first: 0 conflict/approval, 1 failing checks, 2 Claude working, 3 unread, 4 the rest. */
   readonly rank: number;
+  /**
+   * A live plan, shown as one item where its conversation is (its tasks' worktrees aren't listed):
+   * its news and what waits on you are the plan's, added up.
+   */
+  readonly plan?: { readonly plan: Plan; readonly title: string; readonly unread: number; readonly tip: string };
 }
 
 export interface OverviewGroup {
@@ -76,9 +84,23 @@ function itemOf(state: AppState, project: Project, ws: Workspace): OverviewItem 
   };
 }
 
-/** Every workspace the Overview can show, in the projects' order. */
+/** A plan's conversation stands for the plan: what the plan as a whole is waiting on. */
+function planItemOf(state: AppState, item: OverviewItem, plan: Plan): OverviewItem {
+  const sig = planSignal(state, plan);
+  const needs = sig.level === 'needs';
+  const rank = needs ? 0 : sig.working ? 2 : sig.unread ? 3 : 4;
+  return { ...item, needs, ready: false, rank, plan: { plan, title: planTitle(plan), unread: sig.unread, tip: sig.tip } };
+}
+
+/** Every workspace the Overview can show, in the projects' order: a live plan once (where its conversation is), not its tasks' worktrees. */
 export function overviewItems(state: AppState): OverviewItem[] {
-  return state.projects.flatMap((p) => p.workspaces.filter(shown).map((w) => itemOf(state, p, w)));
+  return state.projects.flatMap((p) =>
+    p.workspaces.filter(shown).flatMap((w) => {
+      const plan = w.archived ? undefined : planOf(state, w.id);
+      if (!plan) return [itemOf(state, p, w)];
+      return plan.home === `ws:${w.id}` ? [planItemOf(state, itemOf(state, p, w), plan)] : [];
+    }),
+  );
 }
 
 export function inFilter(item: OverviewItem, filter: OverviewFilter): boolean {
@@ -100,7 +122,7 @@ export function inFilter(item: OverviewItem, filter: OverviewFilter): boolean {
 export function matchesSearch(item: OverviewItem, search: string): boolean {
   const words = search.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
-  const hay = [item.ws.name, item.ws.branch ?? '', item.project.root ? item.project.name : 'Chats', item.last ?? ''].join('\n').toLowerCase();
+  const hay = [item.plan?.title ?? '', item.ws.name, item.ws.branch ?? '', item.project.root ? item.project.name : 'Chats', item.last ?? ''].join('\n').toLowerCase();
   return words.every((w) => hay.includes(w));
 }
 

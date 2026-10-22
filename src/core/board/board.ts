@@ -485,7 +485,8 @@ export class Board {
   worktreeGone(workspaceId: string, gone: boolean, how: 'archived' | 'deleted' | 'restored'): void {
     for (const issue of this.issues) {
       if (issue.worktrees.at(-1) !== workspaceId) continue;
-      const ask = gone && isOpen(issue.status);
+      // In Plan: its work is in the plan's branch, so its worktree going away is expected.
+      const ask = gone && isOpen(issue.status) && issue.status !== 'in_plan';
       // A deleted worktree can't be opened again: it's no longer the task's.
       const worktrees = how === 'deleted' ? issue.worktrees.filter((w) => w !== workspaceId) : issue.worktrees;
       this.change(issue, { worktreeGone: ask || undefined, worktrees }, [this.entry({ kind: 'klaud' }, 'worktree', `its worktree was ${how}`)]);
@@ -529,6 +530,17 @@ export class Board {
       const klaud: Actor = { kind: 'klaud' };
       this.change(issue, { status: 'done' }, [this.entry(klaud, 'worktree', 'its worktree was merged into main'), this.entry(klaud, 'status', `moved this from ${STATUS_INFO[issue.status].label} to Done`)]);
     }
+  }
+
+  /**
+   * Where a plan's work is now: merged into the plan's branch (In Plan), or into main with the
+   * plan (Done). `text` says how ("merged into plan/x", "merged into main via #12").
+   */
+  planMoved(ref: string, status: 'in_plan' | 'done', text: string): Issue {
+    const issue = this.need(ref);
+    if (issue.status === status || issue.status === 'canceled') return issue;
+    const klaud: Actor = { kind: 'klaud' };
+    return this.change(issue, { status, rank: this.lastRank(status) }, [this.entry(klaud, 'plan', text), this.entry(klaud, 'status', `moved this from ${STATUS_INFO[issue.status].label} to ${STATUS_INFO[status].label}`)]);
   }
 
   // ------------------------------------------------------------------ settings

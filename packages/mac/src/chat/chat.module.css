@@ -189,6 +189,41 @@
   display: flex;
   margin-top: 6px;
 }
+/* A failed turn: what happened in one line, the raw error behind Show details. */
+.failure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.failureTitle {
+  color: var(--text);
+}
+.failureToggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.failureToggle:hover {
+  color: var(--text-2);
+}
+.failureDetail {
+  max-height: 220px;
+  max-width: 100%;
+  overflow: auto;
+  margin: 2px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text-2);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 /* Sits in the header row, just left of the status, so the two never overlap. */
 .hoverActions {
   display: inline-flex;

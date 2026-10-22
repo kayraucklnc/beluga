@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon.js';
 import { Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { LiveDot } from './marks.js';
 import p from './plans.module.css';
 
 const FOLD = { fold: true };
@@ -50,7 +51,7 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
         {/* While it writes the first plan, the line under the placeholder says so (one status, not two). */}
         {busy && !drafting ? (
           <span className={p.chatBusy}>
-            <span className={p.pillDot} />
+            <LiveDot />
             working
           </span>
         ) : null}

@@ -1,10 +1,11 @@
-import { memo } from 'react';
+import { type ReactNode, memo, useRef } from 'react';
 import type { StepRecord, StepSummary, ToolFamily } from '@klaud/shared/steps.js';
 import { toolFamily } from '@klaud/shared/steps.js';
 import { formatDuration } from '@klaud/shared/text.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Avatar, Dot, cx } from '../../components/ui.js';
 import { useApp } from '../../lib/klaud.js';
+import { useLive } from '../../lib/live-motion.js';
 import { StepDetail } from './StepDetail.js';
 import { useStepDetail } from './use-steps.js';
 import s from './steps.module.css';
@@ -39,6 +40,20 @@ const durationOf = (step: StepSummary, now: number, live: boolean): string | und
   if (step.status === 'running' && live) return formatDuration(Math.max(step.durationMs ?? 0, now - step.startedAt));
   return undefined;
 };
+
+/** Words with a light passing over them (the thing happening now), moved by the live clock (lib/live-motion.ts), not a CSS animation. */
+export function Shimmer({ children }: { children: ReactNode }) {
+  const words = useRef<HTMLSpanElement>(null);
+  useLive(words, (t) => {
+    // From 100% to -150% every 2.4s; still: the light rests off to the side.
+    if (words.current) words.current.style.backgroundPosition = `${t === null ? 100 : 100 - ((t % 2400) / 2400) * 250}% 0`;
+  });
+  return (
+    <span ref={words} className={s.shimmer}>
+      {children}
+    </span>
+  );
+}
 
 /** Someone's peer id by name (for their avatar's colour), else the name. */
 export function usePersonId(name: string | undefined): string {
@@ -79,7 +94,7 @@ export const StepRow = memo(function StepRow({ step, open, onToggle, load, live,
       </span>
       <span className={cx(s.icon, thinking && s.iconThink, step.person && s.iconPerson)}>{step.person ? <Avatar name={step.person} id={personId} size={15} /> : <Icon name={iconOf(step)} size={12} />}</span>
       <span className={cx(s.title, thinking && s.titleThink)} title={step.label ?? step.title}>
-        {current ? <span className={s.shimmer}>{words ?? wordsFor(step, true)}</span> : (words ?? wordsFor(step, false))}
+        {current ? <Shimmer>{words ?? wordsFor(step, true)}</Shimmer> : (words ?? wordsFor(step, false))}
       </span>
       <span className={s.end}>
         {time ? <span className={s.time}>{time}</span> : null}

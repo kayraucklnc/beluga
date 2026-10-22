@@ -49,7 +49,7 @@ export function readTasksPrefs(raw: string | null): TasksPrefs {
 export function statusesFor(scope: Scope): readonly IssueStatus[] {
   switch (scope) {
     case 'active':
-      return ['todo', 'in_progress', 'in_review'];
+      return ['todo', 'in_progress', 'in_review', 'in_plan'];
     case 'backlog':
       return ['backlog'];
     default:
@@ -130,6 +130,7 @@ function graphStatus(board: BoardState, issue: Issue): Pick<GraphNode, 'status' 
     case 'in_progress':
       return { status: 'active' };
     case 'in_review':
+    case 'in_plan':
       return { status: 'review' };
     case 'done':
       return { status: 'done' };

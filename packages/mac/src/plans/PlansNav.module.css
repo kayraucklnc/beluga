@@ -16,24 +16,7 @@
   stroke-linecap: round;
   transition: stroke-dashoffset var(--dur-fast);
 }
-/* Claude is working on its tasks: the ring in Claude's color, breathing softly. */
+/* Claude is working on its tasks: the ring in Claude's color (the row's dot matrix is what moves; KLD-40). */
 .ringLive .ringFill {
   stroke: var(--claude);
-}
-.ringLive {
-  animation: breathe 1.8s ease-in-out infinite;
-}
-@keyframes breathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ringLive {
-    animation: none;
-  }
 }

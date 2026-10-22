@@ -105,6 +105,15 @@ export async function deleteBranch(repo: string, branch: string): Promise<void> 
   await git(repo, ['branch', '-D', branch]);
 }
 
+/**
+ * Delete a branch only if its work is in `into` (`git branch -d`, never -D): `into` stands in as
+ * its upstream for this one command, so git itself refuses a branch with commits not merged there.
+ */
+export async function deleteMergedBranch(repo: string, branch: string, into: string): Promise<void> {
+  if (!branch || branch.startsWith('-') || !into || into.startsWith('-')) throw new Error(`Not a branch: ${branch}`);
+  await git(repo, ['-c', `branch.${branch}.remote=.`, '-c', `branch.${branch}.merge=refs/heads/${into}`, 'branch', '-d', branch]);
+}
+
 export interface Status {
   readonly branch?: string;
   readonly changed: number;
@@ -228,7 +237,7 @@ export async function mergeInto(mainDir: string, branch: string, target?: string
   }
 }
 
-const isAncestor = async (cwd: string, a: string, b: string): Promise<boolean> => (await tryGit(cwd, ['merge-base', '--is-ancestor', a, b])) !== undefined;
+export const isAncestor = async (cwd: string, a: string, b: string): Promise<boolean> => (await tryGit(cwd, ['merge-base', '--is-ancestor', a, b])) !== undefined;
 
 /**
  * The branches still needed to have them all: a branch already in another one of them (KLD-27 in
@@ -261,10 +270,11 @@ const MARKER = /^(<{7}|>{7})( |$)|^={7}$/m;
 
 /**
  * `branch`: the first of `branches` with the others merged in (--no-ff), made in the worktree `dir`
- * (removed again once it's made). Safe to run again: what's already in is skipped, and a conflict
+ * (removed again once it's made, unless `keep`: a checkout that was there before). An existing
+ * `branch` gets them merged in. Safe to run again: what's already in is skipped, and a conflict
  * someone fixed since (no markers left) is committed and the rest merged.
  */
-export async function combineBranches(repo: string, dir: string, branch: string, branches: readonly string[]): Promise<CombineResult> {
+export async function combineBranches(repo: string, dir: string, branch: string, branches: readonly string[], opts: { readonly keep?: boolean } = {}): Promise<CombineResult> {
   if (!branches.length) throw new GitError('Nothing to combine');
   if (!existsSync(dir)) {
     await tryGit(repo, ['worktree', 'prune']);
@@ -298,7 +308,7 @@ export async function combineBranches(repo: string, dir: string, branch: string,
       return { ok: false, branch, dir, merging: b, files };
     }
   }
-  await tryGit(repo, ['worktree', 'remove', '--force', dir]);
+  if (!opts.keep) await tryGit(repo, ['worktree', 'remove', '--force', dir]);
   return { ok: true, branch };
 }
 

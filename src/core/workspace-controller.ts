@@ -442,8 +442,9 @@ export class WorkspaceController {
   /**
    * Archive smartly (see workspaces/archive.ts): nothing of yours is lost, so uncommitted work
    * no longer stops it (`_force` is from when it did). How far along shows while it runs.
+   * `quiet`: a plan clearing away merged work (no toast).
    */
-  async archive(id: string, _force = false): Promise<boolean> {
+  async archive(id: string, _force = false, opts: { readonly quiet?: boolean } = {}): Promise<boolean> {
     const agents = this.agentWorktreesOf(id);
     const phase = (p?: ArchivePhase): void => void this.deps.store.dispatch({ type: 'archiving', id, ...(p ? { phase: p } : {}) });
     let manifest: ArchiveManifest | undefined;
@@ -459,7 +460,7 @@ export class WorkspaceController {
     if (done) {
       this.deps.intend({ type: 'close_tab', id });
       const also = await this.removeAgentWorktrees(agents);
-      this.deps.toast([archivedText(manifest), also].filter(Boolean).join(' '), 'success');
+      if (!opts.quiet) this.deps.toast([archivedText(manifest), also].filter(Boolean).join(' '), 'success');
       this.emit({ kind: 'archived', id });
     }
     return Boolean(done);

@@ -71,6 +71,7 @@ export const HANDLERS = {
 
   'host.answerApproval': (s, answer, id) => s.answerApproval(answer, id),
   'host.promote': (s, requestId) => s.host.promote(requestId),
+  'host.sendNext': (s, requestId) => s.host.sendNext(requestId),
   'host.stopRun': (s, channel) => s.host.stopRun(channel),
   'host.cancelQueued': (s, requestId) => s.host.cancelQueued(requestId),
   'host.reorderQueued': (s, requestId, index) => s.host.reorderQueued(requestId, index),

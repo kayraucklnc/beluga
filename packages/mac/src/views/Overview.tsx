@@ -85,7 +85,7 @@ export function OverviewView() {
     finder: (item) => void api.local.openFolder(item.project.root).catch((err: unknown) => toast(client, `Couldn’t open the folder: ${errorText(err)}`, 'error')),
     remove: (item) => setDeleting(item.ws.id),
   };
-  const open = (item: OverviewItem): void => (item.archived ? act.read(item) : actions.run({ type: 'open_ws', id: item.ws.id }));
+  const open = (item: OverviewItem): void => (item.archived ? act.read(item) : item.plan ? actions.run({ type: 'view', view: { kind: 'plan', id: item.plan.plan.id } }) : actions.run({ type: 'open_ws', id: item.ws.id }));
   const remove = (item: OverviewItem): void => {
     setDeleting(undefined);
     setPeek(undefined);

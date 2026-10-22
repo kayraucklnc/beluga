@@ -52,6 +52,12 @@ export type LogItem =
       readonly ts: number;
       /** When the run finished (done/error/denied). */
       readonly endTs?: number;
+      /** Its heartbeat: when Claude last did something (started, wrote, took a step, a sub-agent moved). */
+      readonly lastAt?: number;
+      /** When the step it's on (its last tool call) began. */
+      readonly stepAt?: number;
+      /** How far that step has got, when its output says ("137/215"). */
+      readonly progress?: string;
     }
   | ShellItem;
 
@@ -620,9 +626,13 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     channel: a.channel ?? 'room',
     ts: a.ts,
   };
+  // A new step starts with no count; a count says how far the step it's on has got.
+  const { progress: was, ...rest } = base as typeof base & { progress?: string };
+  const progress = a.event === 'progress' ? a.text.slice(0, 40) : a.event === 'tool' || a.event === 'done' || a.event === 'error' ? undefined : was;
   const updated = {
-    ...base,
-    status: a.event === 'text' || a.event === 'tool' || a.event === 'sub' ? 'started' : a.event,
+    ...rest,
+    ...(progress ? { progress } : {}),
+    status: a.event === 'text' || a.event === 'tool' || a.event === 'sub' || a.event === 'progress' ? 'started' : a.event,
     subagents: a.event === 'sub' ? applySub(base.subagents, a.text) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
     text:
       a.event === 'text'
@@ -632,6 +642,8 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
           : base.text,
     steps: a.event === 'tool' ? [...base.steps, a.text].slice(-MAX_STEPS) : base.steps,
     endTs: a.event === 'done' || a.event === 'error' || a.event === 'denied' ? a.ts : base.endTs,
+    ...(a.event === 'started' || a.event === 'text' || a.event === 'tool' || a.event === 'sub' || a.event === 'progress' ? { lastAt: a.ts } : {}),
+    ...(a.event === 'tool' ? { stepAt: a.ts } : {}),
     ...(a.event === 'queued' && a.text ? { prompt: a.text } : {}),
   } satisfies LogItem;
   const log = existing ? state.log.map((l, i) => (i === idx ? updated : l)) : appendLog(state.log, updated);

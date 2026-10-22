@@ -1,6 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
+import { planConversations, planOf, planOfPlace } from '@klaud/core/plans/owner.js';
 import type { UiAction } from '@klaud/ui/workspace-models.js';
 import { setOverviewView } from '../views/overview/use-overview-prefs.js';
 import { Icon } from '../components/Icon.js';
@@ -24,10 +25,11 @@ import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, us
 import { OutsideWorktrees } from './OtherWorktrees.js';
 import { ProjectAgents, SubAgentRows, useAgentOrigins, useCcSessions } from './SubAgents.js';
 import { hasRowsInside } from './project-rows.js';
-import { type Tally, groupTally, groupWorking, projectTally, projectWorking, tallyTip } from './attention-model.js';
+import { type Tally, groupTally, groupWorking, projectPlans, projectTally, projectWorking, tallyTip } from './attention-model.js';
 import { TallyMark } from './signal-marks.js';
 import { Row } from './sidebar-parts.js';
 import { WorkspaceRow } from './workspace-row.js';
+import { PlanRow } from './plan-row.js';
 import { useGitHubMenuItems } from '../views/project/GitHubRow.js';
 import side from './Sidebar.module.css';
 import s from './project-groups.module.css';
@@ -106,6 +108,7 @@ function useProjectFold(projectId: string): { folded: boolean; toggle: (all: boo
   const folded = !open && !peeked;
   const projects = useApp((st) => st.projects);
   const view = useApp((st) => st.view);
+  const planHere = useApp(({ view: v, plans }) => v.kind === 'plan' && plans.plans.some((x) => x.id === v.id && x.projectId === projectId));
   const project = projects.find((x) => x.id === projectId);
   const setOpen = (on: boolean, ids = [projectId]): void => {
     const rest = getPrefs().openProjects.filter((k) => !ids.includes(k));
@@ -120,13 +123,13 @@ function useProjectFold(projectId: string): { folded: boolean; toggle: (all: boo
   const peek = (): void => {
     if (folded) ui.patch({ peek: projectId });
   };
-  const at = view.kind === 'workspace' ? `ws:${view.id}` : view.kind === 'project' ? `project:${view.id}` : view.kind;
+  const at = view.kind === 'workspace' ? `ws:${view.id}` : view.kind === 'project' ? `project:${view.id}` : view.kind === 'plan' ? `plan:${view.id}` : view.kind;
   useEffect(() => {
     if (!peeked) return;
     if (at === `project:${projectId}`) return;
     ui.patch({ peek: undefined });
-    // You opened one of its worktrees or chats: it stays open. Anywhere else: it folds again.
-    const inside = at.startsWith('ws:') && project?.workspaces.some((w) => `ws:${w.id}` === at);
+    // You opened one of its worktrees, chats or plans: it stays open. Anywhere else: it folds again.
+    const inside = (at.startsWith('ws:') && project?.workspaces.some((w) => `ws:${w.id}` === at)) || planHere;
     if (inside) setOpen(true);
   }, [at, peeked]);
   return { folded, toggle, peek };
@@ -141,7 +144,10 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
   const actions = useActions();
   const { client } = useKlaud();
   const view = useApp((st) => st.view);
-  const plans = useApp((st) => st.plans.plans);
+  // Only the plans and the board (not the whole state): an open menu here isn't rebuilt on every change.
+  const plansState = useApp((st) => st.plans);
+  const board = useApp((st) => st.board);
+  const state = useMemo(() => ({ plans: plansState, board }), [plansState, board]);
   const earning = useApp((st) => Boolean(st.earnings[p.root]));
   const busy = useApp((st) => projectWorking(st, p));
   // What's inside: how many conversations have news, and whether one needs you (folded, it's how you notice).
@@ -155,17 +161,24 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
   }, [tallyKey]);
   const fold = useProjectFold(p.id);
   const here = view.kind === 'workspace' ? view.id : undefined;
-  // You're in this project: on its home page, or in one of its worktrees or chats.
   const onHome = view.kind === 'project' && view.id === p.id;
-  const current = onHome || (here !== undefined && p.workspaces.some((w) => w.id === here));
   const hide = useHide();
   const iconItems = useIconItems(p);
   const insideTip = tallyTip(inside);
   const live = p.workspaces.filter((w) => !w.archived);
   // Not the main checkout (work happens in worktrees); questions asked in its folder stay, as chats.
-  // A plan's own conversation lives on the plan's page (Plans), not in the tree — unless you're in it.
-  const planHomes = new Set(plans.map((x) => x.home));
-  const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud' && (!planHomes.has(`ws:${w.id}`) || w.id === here));
+  // A plan is one row: its conversation and its tasks' worktrees stay off the tree (they're reached
+  // from the plan). A finished plan's conversation shows only while you're in it.
+  const plans = projectPlans(state, p);
+  const planHomes = new Set(plansState.plans.map((x) => x.home));
+  const ofPlan = (w: { id: string }): boolean => planOf(state, w.id) !== undefined;
+  // A plan you asked to show its tasks' chats: they sit under its row (its home is the plan's page).
+  const showTasks = usePrefs().planTaskChats;
+  const taskChats = (planId: string) => (showTasks.includes(planId) ? live.filter((w) => !planHomes.has(`ws:${w.id}`) && planConversations(state, planId).includes(w.id)) : []);
+  const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud' && !ofPlan(w) && (!planHomes.has(`ws:${w.id}`) || w.id === here));
+  const inPlan = planOfPlace(plansState, board, view);
+  // You're in this project: on its home page, in one of its worktrees or chats, or in one of its plans.
+  const current = onHome || (here !== undefined && p.workspaces.some((w) => w.id === here)) || plans.some((x) => x.id === inPlan);
   const main = live.find((w) => w.kind === 'main');
   const archived = p.workspaces.filter((w) => w.archived);
   const item: Target = { project: p.id };
@@ -179,7 +192,7 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
   // Nothing to unfold: no arrow (its place kept, so the icons stay in line).
   const sessions = useCcSessions();
   const origins = useAgentOrigins();
-  const foldable = useMemo(() => hasRowsInside(p, sessions, origins), [p, sessions, origins]);
+  const foldable = useMemo(() => plans.length > 0 || hasRowsInside(p, sessions, origins), [plans.length, p, sessions, origins]);
   return (
     <>
       <SpecContext menu={{ kind: 'project', id: p.id }} extra={extra} hide={ownWay}>
@@ -250,10 +263,21 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
         />
       </SpecContext>
       {fold.folded ? (
-        // Folded: only the item you're in stays, until you go elsewhere.
-        live.filter((w) => w.id === here && w.kind !== 'main').map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)
+        // Folded: only the item you're in stays (its plan, when it's part of one), until you go elsewhere.
+        <>
+          {plans.filter((x) => x.id === inPlan).map((x) => <PlanRow key={x.id} plan={x} indent={kids} />)}
+          {live.filter((w) => w.id === here && w.kind !== 'main' && !ofPlan(w)).map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)}
+        </>
       ) : (
         <>
+          {plans.map((x) => (
+            <Fragment key={x.id}>
+              <PlanRow plan={x} indent={kids} />
+              {taskChats(x.id).map((w) => (
+                <WorkspaceRow key={w.id} ws={w} indent={kids + 1} />
+              ))}
+            </Fragment>
+          ))}
           {mine.map((w) => (
             <Fragment key={w.id}>
               <WorkspaceRow ws={w} indent={kids} />

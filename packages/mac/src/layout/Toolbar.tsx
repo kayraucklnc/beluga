@@ -9,6 +9,7 @@ import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useKlaud } from '../lib/klaud.js';
 import { type ToolAction, toolbarActions } from './toolbar-actions.js';
+import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { togglePanel } from '../lib/panel.js';
@@ -113,6 +114,7 @@ export function Toolbar() {
     const run = (a: ToolAction): void => {
       if (a.disabled) return toast(client, a.hint, 'info');
       if (a.action === 'fix_checks') return askBeforeWork(ws.id, 'fix_checks');
+      if (isPlanAction(a.action)) return runPlanAction(state, ws.id, a.action, actions.run);
       actions.run({ type: 'ws', id: ws.id, action: a.action });
     };
     const pr = state.prs[ws.id];

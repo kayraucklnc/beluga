@@ -35,7 +35,9 @@ export type NativeSheet =
   /** Your planning style (how you like plans cut). */
   | { readonly kind: 'plan_style' }
   /** Not yet: what a milestone still needs, for the plan's head Claude. */
-  | { readonly kind: 'plan_send_back'; readonly planId: string; readonly milestone: string };
+  | { readonly kind: 'plan_send_back'; readonly planId: string; readonly milestone: string }
+  /** How a running plan runs (its mode), with what a change means from now on. */
+  | { readonly kind: 'plan_mode'; readonly planId: string };
 
 type Listener = () => void;
 

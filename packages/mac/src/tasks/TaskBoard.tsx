@@ -5,6 +5,8 @@ import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank } from
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
+import { openExternal } from '../lib/system.js';
+import { usePlans } from '../plans/use-plans.js';
 import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
 import { IssueMeta, useIssueMenu } from './parts.js';
@@ -374,6 +376,7 @@ const Column = memo(function Column({
         <span className={t.groupName}>{label}</span>
         <span className={t.groupCount}>{shown.length}</span>
         <span className={t.grow} />
+        {status === 'in_plan' ? <PlanPrs issues={items} /> : null}
         <IconButton icon="plus" label={`New Task in ${label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { projectId } : {}) })} />
       </header>
       <div ref={(el) => register('stacks', status, el)} className={t.cards}>
@@ -470,3 +473,19 @@ const Card = memo(function Card({
     </ActionsContext>
   );
 });
+
+/** In Plan waits for its plans' pull requests: a link to each once it's open. */
+function PlanPrs({ issues }: { issues: readonly Issue[] }) {
+  const { plans } = usePlans();
+  const ids = new Set(issues.flatMap((i) => (i.plan ? [i.plan.id] : [])));
+  const prs = plans.filter((p) => ids.has(p.id) && p.pr).map((p) => p.pr!);
+  return (
+    <>
+      {prs.map((pr) => (
+        <button key={pr.number} type="button" className={t.columnPr} title={`${pr.title} (${pr.state.toLowerCase()})`} onClick={() => void openExternal(pr.url)}>
+          #{pr.number}
+        </button>
+      ))}
+    </>
+  );
+}

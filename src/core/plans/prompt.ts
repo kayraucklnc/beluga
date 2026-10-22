@@ -1,5 +1,5 @@
 import { type BoardState, STATUS_INFO, filterIssues } from '../board/model.js';
-import { AUTONOMY_INFO, type Plan, type PlanBody, diffBodies, milestoneDeps, shownBody } from './model.js';
+import { AUTONOMY_INFO, type Plan, type PlanBody, TESTS_AT_INFO, diffBodies, milestoneDeps, shownBody } from './model.js';
 import { type MilestoneView, type PlanView, type TaskView, overlaps } from './progress.js';
 
 /**
@@ -15,8 +15,10 @@ const STATE_WORDS: Readonly<Record<TaskView['state'], string>> = {
   ready: 'ready to start',
   running: 'Claude working',
   asking: 'waiting for an answer',
-  idle: 'in progress, nobody working right now',
+  idle: 'stopped without finishing (Klaud wakes it once)',
+  stalled: 'stopped again after Klaud woke it: waits for the user',
   review: 'in review',
+  planned: 'merged into the plan’s branch',
   done: 'done',
   canceled: 'canceled',
   missing: 'its task was deleted',
@@ -28,6 +30,7 @@ const MILESTONE_WORDS: Readonly<Record<MilestoneView['state'], string>> = {
   running: 'in progress',
   checking: 'being checked',
   gate: 'finished, waiting to be passed',
+  merging: 'passed, merging into the plan’s branch',
   failed: 'check failed',
   passed: 'passed',
 };
@@ -51,7 +54,37 @@ const HOW_TO_PLAN = [
   '  sub-tasks (parent) only for a task that is really several steps. Default assignee is Claude; use "me" for',
   '  what only the user can do (accounts, secrets, decisions).',
   '- Use short, stable ids (like "auth-api"): keep them when you revise, so tasks keep their history.',
+  '- Ask for proof that fits: a task writes the tests it needs and runs typecheck and those tests; the e2e and full',
+  '  suites run once per milestone, at its check, on the combined work (or only at the end, if the plan says so).',
+  '  Don\'t make every task run the full suite.',
 ].join('\n');
+
+/** Under load (other worktrees testing too) a slow moment fails a test: it counts only if it fails alone too. */
+const UNDER_LOAD = 'A failure that looks like load (a timeout, "did not start", a flaky wait while the Mac is busy: see `uptime`) counts only if it fails again when re-run once, alone.';
+
+/** How the e2e suite is run on this Mac: one run at a time, machine-wide; it waits its turn. */
+const E2E_LOCK = 'Run the Mac e2e with `npm run e2e` in packages/mac: one e2e runs at a time on this Mac (it waits, saying whose run it waits for), with its own port and demo home, and stops everything it started when it ends.';
+
+/** What a task runs, by the plan's test timing. */
+export function taskTestsNote(plan: Pick<Plan, 'testsAt'>): string {
+  return [
+    'Tests: write the tests this task needs. Run only typecheck and the unit-test files you added or changed (for example',
+    '`npx vitest run tests/that.test.ts`), not the e2e or the full suites: ' +
+      (plan.testsAt === 'end' ? 'this plan runs those once, in its final step.' : 'they run once per milestone, at its check, on the combined work.'),
+    UNDER_LOAD,
+  ].join('\n');
+}
+
+/** What a milestone's check runs, by the plan's test timing (and whether it's the last milestone). */
+export function checkTestsNote(plan: Pick<Plan, 'testsAt'>, last: boolean): string {
+  if (plan.testsAt === 'end' && !last) return 'This plan runs its test suites only at the end: don\'t run them for this check. Check by reading the code, the diffs, the tests the tasks wrote and their typecheck.';
+  return [
+    last && plan.testsAt === 'end' ? 'This is the final step: run every test now, once, on the plan\'s combined work: typecheck, the full unit suite and the e2e.' : 'Run the full unit suite and the e2e once for this milestone, on its combined work (not per task): typecheck, the full unit suite, the e2e.',
+    'Combine the tasks\' branches in one temporary worktree (git worktree add --detach, then merge each branch), run there, and remove it after.',
+    E2E_LOCK,
+    UNDER_LOAD,
+  ].join('\n');
+}
 
 /** Planning (a draft, or changes to an approved plan): in the plan's home conversation. */
 export function planningBrief(plan: Plan, board: BoardState, style: string): string {
@@ -95,12 +128,18 @@ export function headBrief(view: PlanView): string {
     'opens every milestone whose dependencies have passed, so independent milestones run side by side, each with',
     'its own check. You coordinate:',
     '- plan_get: the plan and the state of every task (who\'s working, what waits on what).',
-    '- plan_message_task: tell a task\'s Claude something (a decision, a heads-up about another task).',
+    '- plan_message_task: tell a task\'s Claude something. mode "queue" (default) waits until its current turn',
+    '  ends, which can be after a 15-minute test run: for a heads-up, a decision it needs later, an FYI.',
+    '  mode "steer" reaches it now, interrupting a long command or a stuck turn: only when waiting wastes',
+    '  work: stop a run going the wrong way, or a correction that changes what it does. Klaud delivers a',
+    '  steered message again if it isn\'t read within 2 minutes; don\'t send it twice.',
     '- plan_start_task: start a ready task now (when the user asks).',
     '- plan_gate: after checking a finished milestone\'s pass criteria, pass or fail it with notes per criterion.',
-    '  Check for real: read the tasks\' briefs, handoffs and proof, their pull requests and diffs (git diff main...branch).',
+    `  Check for real: read the tasks\' briefs, handoffs and proof, and their diffs (git diff ${plan.branch ?? 'main'}...branch).`,
+    plan.branch ? `- The plan's work collects on ${plan.branch}: tasks start from it, a passed milestone's branches merge into it, and it reaches main as one pull request at the end (no PR per task or milestone).` : '',
     '- plan_update: change the plan (new tasks to fix what failed, a re-cut). The user approves changes',
     '  unless the plan runs on autopilot.',
+    `Tests: ${TESTS_AT_INFO[plan.testsAt].hint.toLowerCase()}. Don't ask a task to run the full suite.`,
     plan.paused ? 'The plan is paused: nothing starts until the user resumes it.' : '',
     now.length ? `Now: ${now.length > 1 ? 'milestones' : 'milestone'} ${now.join(', ')}${now.length > 1 ? ', side by side' : ''}; ${view.active.length} tasks in progress, ${view.ready.length} ready.` : 'Every milestone has passed.',
     warnings.length ? `Running side by side and touching the same files (watch for conflicts):\n${warnings.join('\n')}` : '',
@@ -116,7 +155,7 @@ export function describePlan(view: PlanView): string {
   const body = shownBody(plan);
   if (!body) return 'The plan is empty.';
   const live = new Map(view.milestones.flatMap((m) => m.tasks.map((t) => [t.task.id, t] as const)));
-  const lines = [`# ${body.title}`, body.goal ? `\n${body.goal}` : '', `\nStatus: ${plan.status}${plan.paused ? ' (paused)' : ''} · autonomy ${plan.autonomy} · up to ${plan.maxParallel} tasks at once`];
+  const lines = [`# ${body.title}`, body.goal ? `\n${body.goal}` : '', `\nStatus: ${plan.status}${plan.paused ? ' (paused)' : ''} · autonomy ${plan.autonomy} · up to ${plan.maxParallel} tasks at once · tests ${plan.testsAt === 'end' ? 'only at the end' : 'each milestone'}`];
   if (plan.draft && plan.body) {
     const d = diffBodies(plan.body, plan.draft);
     lines.push(`Changes waiting for the user's approval: ${d.added.length} new, ${d.changed.length} changed, ${d.removed.length} removed (shown below as proposed).`);
@@ -170,7 +209,7 @@ function runsWith(body: PlanBody, id: string, titleOf: ReadonlyMap<string, strin
 
 /** Ask the head Claude to check a finished milestone. */
 export function checkPrompt(view: PlanView, m: MilestoneView): string {
-  const tasks = m.tasks.map((t) => `- ${t.issue?.key ?? t.task.id} “${t.task.title}” (${STATE_WORDS[t.state]}${t.issue?.pr ? `, PR #${t.issue.pr.number} ${t.issue.pr.state.toLowerCase()}` : ''}${t.issue?.branch ? `, branch ${t.issue.branch}` : ''})`);
+  const tasks = m.tasks.map((t) => `- ${t.issue?.key ?? t.task.id} “${t.task.title}” (${STATE_WORDS[t.state]}${t.state === 'stalled' && t.watch ? `: ${t.watch.reason}` : ''}${t.issue?.pr ? `, PR #${t.issue.pr.number} ${t.issue.pr.state.toLowerCase()}` : ''}${t.issue?.branch ? `, branch ${t.issue.branch}` : ''})`);
   return [
     `Every task of milestone “${m.milestone.title}” is finished. Check its pass criteria for real, one by one:`,
     ...m.milestone.criteria.map((c, i) => `${i + 1}. ${c}`),
@@ -178,7 +217,9 @@ export function checkPrompt(view: PlanView, m: MilestoneView): string {
     'Its tasks:',
     ...tasks,
     '',
-    'Read their briefs (task_get), handoffs, proof and diffs. Then call plan_gate with pass or fail and notes that say,',
+    'Read their briefs (task_get), handoffs, proof and diffs.',
+    checkTestsNote(view.plan, m.index === view.milestones.length - 1),
+    'Then call plan_gate with pass or fail and notes that say,',
     `per criterion, what you checked and found.${m.autonomy === 'autopilot' ? ' On pass, the plan moves on by itself.' : ' The user decides whether it passes.'} If it fails, add the`,
     'fix tasks with plan_update.',
   ].join('\n');
@@ -199,11 +240,26 @@ export function fixupPrompt(key: string, title: string, from: readonly string[],
   ].join('\n');
 }
 
+/** A passed milestone's merge into the plan's branch conflicted: the head Claude fixes it there. */
+export function mergeFixupPrompt(milestone: string, branch: string, key: string, c: { readonly dir: string; readonly merging: string; readonly files: readonly string[] }): string {
+  return [
+    `Milestone “${milestone}” passed, so klaud is merging its tasks' branches into the plan's branch ${branch}. Merging ${key} (${c.merging}) conflicted, in a worktree only for this:`,
+    '',
+    c.dir,
+    '',
+    'Conflicted files (paths in that folder):',
+    ...c.files.map((f) => `- ${f}`),
+    '',
+    'Fix each conflict there with Read and Edit, by its full path: keep what both sides meant (read the tasks\' briefs with task_get if you need to), and remove every conflict marker.',
+    "Change nothing else, and don't run git: when no markers are left, klaud commits the merge, merges the rest and passes the milestone by itself. End your turn with one short line.",
+  ].join('\n');
+}
+
 /** The plan is done: a short recap in its conversation. */
 export function recapPrompt(view: PlanView): string {
   return [
     `Every milestone of “${view.body?.title ?? 'the plan'}” has passed. Write a short recap for the user: what was built, per`,
-    'milestone, with links to pull requests, what was decided along the way, and anything left over. Include a klaud-graph',
+    'milestone, with the plan’s pull request if there is one, what was decided along the way, and anything left over. Include a klaud-graph',
     'of what changed when it helps.',
   ].join('\n');
 }
@@ -220,6 +276,7 @@ export function workerNote(view: PlanView, taskId: string): string {
     m.milestone.criteria.length ? `The milestone passes when: ${m.milestone.criteria.join('; ')}.` : '',
     me.task.touches?.length ? `This task's area: ${me.task.touches.join(', ')}.` : '',
     beside.length ? `Running beside it now, each in its own worktree (stay out of their areas):\n${beside.join('\n')}` : '',
+    taskTestsNote(view.plan),
     'When every acceptance criterion is true and the checks pass, commit your work, rewrite the handoff, and call',
     'task_update with status in_review: that tells the plan this task is finished. Ask the user only what you must.',
   ]

@@ -1,4 +1,4 @@
-import type { Actor, Priority } from '../board/model.js';
+import type { Actor, IssuePr, Priority } from '../board/model.js';
 
 /**
  * Plans: a goal cut into milestones, each with tasks and the criteria that say it's passed.
@@ -20,6 +20,15 @@ export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; 
   step: { label: 'Step by Step', summary: 'You start each task', hint: 'Claude lines up what can start; you start each task' },
   gated: { label: 'Check-ins', summary: 'Runs, then waits for you at each milestone', hint: 'Tasks start by themselves; each milestone waits for you to pass it' },
   autopilot: { label: 'Autopilot', summary: 'Runs to the end, stops only if something fails', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
+};
+
+/** When a plan runs its e2e and full test suites: once per milestone at its check, or only at the end. */
+export const TESTS_AT = ['milestone', 'end'] as const;
+export type TestsAt = (typeof TESTS_AT)[number];
+
+export const TESTS_AT_INFO: Readonly<Record<TestsAt, { readonly label: string; readonly hint: string }>> = {
+  milestone: { label: 'Each Milestone', hint: 'Tasks run typecheck and the tests they touched; each milestone’s check runs the full suites once' },
+  end: { label: 'Only at the End', hint: 'Milestone checks read the code and diffs; the full suites run once, in the final step' },
 };
 
 /** A new plan's autonomy. */
@@ -106,7 +115,63 @@ export interface Combining {
   };
 }
 
-export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'gate' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
+/**
+ * A passed milestone's task branches being merged (--no-ff) into the plan's branch, in a hidden
+ * worktree. The milestone counts as passed once that's done; a conflict goes to the head Claude.
+ */
+export interface PlanMerge {
+  readonly at: number;
+  /** Who passed it. */
+  readonly by: Actor;
+  /** It had passed before the plan had a branch (catching up): it isn't passed again. */
+  readonly catchUp?: boolean;
+  readonly conflict?: {
+    readonly at: number;
+    readonly dir: string;
+    /** The branch that conflicted, and its task's key. */
+    readonly merging: string;
+    readonly key?: string;
+    readonly files: readonly string[];
+    /** Claude was asked and it's still there: it waits for you. */
+    readonly stuck?: boolean;
+  };
+}
+
+/**
+ * A started task whose Claude stopped without finishing (see watchdog.ts): the latest stall, and
+ * what Klaud did about it. Woken once; stalling again soon after, it waits for you.
+ */
+export interface TaskWatch {
+  /** When it was last seen stalled, and why (“it ended its turn without handing off”). */
+  readonly at: number;
+  readonly reason: string;
+  /** The run it stalled on (its request id): one run is one stall. */
+  readonly run?: string;
+  /** When Klaud woke it (or you resumed it). */
+  readonly wokeAt?: number;
+  /** It stalled again soon after a wake: it waits for you (Resume, or Open Chat). */
+  readonly needsYou?: boolean;
+  /** The one line it's shown with: “KLD-36 stopped, woke it at 11:13”. */
+  readonly line: string;
+  /** Stopped by your usage limit: when it goes on by itself (see shared/run-failure.ts). */
+  readonly limitUntil?: number;
+  /** The run it was resumed from after the limit reset (so it's resumed once). */
+  readonly resumed?: string;
+}
+
+/** The plan reached main: through its pull request, or merged here. */
+export interface PlanShipped {
+  readonly at: number;
+  readonly how: 'pr' | 'local';
+  readonly number?: number;
+}
+
+/**
+ * What a plan's activity records. `started`/`finished`: a task began / came back for review;
+ * `gate`: Claude was asked to check a milestone, `checked`: its check passed (`failed`: it didn't);
+ * `merged`: a milestone's work went into the plan's branch; `autonomy`: the run mode changed.
+ */
+export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'finished' | 'gate' | 'checked' | 'merged' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
 
 export interface PlanEvent {
   readonly id: string;
@@ -133,10 +198,23 @@ export interface Plan {
   readonly autonomy: Autonomy;
   /** How many of its tasks may run at once. */
   readonly maxParallel: number;
+  /** When the e2e and full test suites run (tasks only run typecheck and the tests they touched). */
+  readonly testsAt: TestsAt;
   readonly paused: boolean;
   readonly runs: Readonly<Record<string, MilestoneRun>>;
   /** Tasks whose start is being combined from several branches (by plan task id). */
   readonly combining?: Readonly<Record<string, Combining>>;
+  /** Started tasks that stalled, and the wake or the stop that followed (by plan task id). */
+  readonly watch?: Readonly<Record<string, TaskWatch>>;
+  /** Its branch (plan/<slug>, from main): every task starts from it, passed milestones merge into it, and it ends as one PR. */
+  readonly branch?: string;
+  /** Passed milestones being merged into the branch (by milestone id). */
+  readonly merging?: Readonly<Record<string, PlanMerge>>;
+  /** The branch's pull request into main, as last seen. */
+  readonly pr?: IssuePr;
+  readonly shipped?: PlanShipped;
+  /** Plans that ran before they had a branch were caught up once (passed milestones merged into one). */
+  readonly caughtUp?: boolean;
   readonly activity: readonly PlanEvent[];
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -249,6 +327,24 @@ export function openMilestones(plan: Plan): readonly string[] {
   if (!body || plan.status === 'done') return [];
   const passed = (id: string): boolean => Boolean(plan.runs[id]?.passedAt);
   return body.milestones.filter((m) => !passed(m.id) && milestoneDeps(body, m).every(passed)).map((m) => m.id);
+}
+
+/**
+ * The branch a plan's work collects on: a plan/<name> its text names (one kept by hand before),
+ * else plan/ and its title up to a colon ("Klaud polish round: menus…" → plan/klaud-polish-round).
+ */
+export function planBranchName(plan: Plan): string {
+  const body = plan.body ?? plan.draft;
+  const named = /\bplan\/[A-Za-z0-9][\w.-]*[A-Za-z0-9]/.exec([body?.goal ?? '', ...(body?.milestones ?? []).flatMap((m) => [m.goal ?? '', ...m.criteria])].join('\n'))?.[0];
+  if (named) return named;
+  const title = (body?.title ?? '').split(':')[0]!;
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/, '');
+  return `plan/${slug || plan.id.replace(/^pl_/, '').slice(0, 8)}`;
 }
 
 /** How a draft differs from what was approved: tasks added, changed and removed (by id). */

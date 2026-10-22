@@ -1,5 +1,5 @@
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
-import { NewPlanSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
+import { NewPlanSheet, PlanModeSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
 import { useState } from 'react';
 import { channelOf } from '@klaud/core/store.js';
 import { canRunOn } from '@klaud/core/trust.js';
@@ -181,6 +181,8 @@ export function NativeSheets() {
       return <PlanStyleSheet close={close} />;
     case 'plan_send_back':
       return <SendBackSheet planId={sheet.planId} milestone={sheet.milestone} close={close} />;
+    case 'plan_mode':
+      return <PlanModeSheet key={sheet.planId} planId={sheet.planId} close={close} />;
     case 'confirm':
       return (
         <Alert

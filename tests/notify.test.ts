@@ -523,6 +523,7 @@ describe('plans: you hear from the plan, not each task', () => {
     autonomy: 'autopilot',
     maxParallel: 3,
     paused: false,
+    testsAt: 'end',
     runs: {},
     activity: [],
     createdAt: 0,

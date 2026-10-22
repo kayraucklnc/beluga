@@ -417,17 +417,18 @@ export class Session {
   /**
    * Send a message to the Claude of a workspace conversation: yours, or (in a workspace
    * someone shared with you) theirs. `echo: false` leaves the prompt out of the chat (it's there already).
+   * Returns the request's id (undefined when you can't ask there).
    */
-  askOwnClaude(prompt: string, channel: string, urgent = false, echo = true): void {
+  askOwnClaude(prompt: string, channel: string, urgent = false, echo = true): string | undefined {
     const shared = this.sharing.sharedFor(channel);
     if (shared && shared.role !== 'contribute') {
       this.toast(`You can follow ${shared.name}, but not ask its Claude. Ask the owner to let you contribute`, 'warn');
-      return;
+      return undefined;
     }
     // Load the saved conversation first, so what's said now is kept with it.
     if (!shared && channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
     if (echo) this.sendChat(prompt, false, channel);
-    this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent);
+    return this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent);
   }
 
   /** Run your Claude for someone else in one of your workspaces (they were invited to work there). */

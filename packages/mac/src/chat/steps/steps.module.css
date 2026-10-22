@@ -404,7 +404,8 @@ button.head:focus-visible {
 
 /* ---- While Claude works ---------------------------------------------------------------- */
 
-/* A hairline under the card's header with a soft light travelling along it. */
+/* A hairline under the card's header with a soft light travelling along it (--travel, from AgentSteps' Progress
+   on the live clock, lib/live-motion.ts: a CSS animation would redraw the window 60 times a second; KLD-40). */
 .progress {
   position: relative;
   height: 1.5px;
@@ -420,15 +421,7 @@ button.head:focus-visible {
   width: 34%;
   border-radius: inherit;
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--claude) 85%, transparent), transparent);
-  animation: travel 1.8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
-}
-@keyframes travel {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(300%);
-  }
+  transform: translateX(var(--travel, 100%));
 }
 
 /* The step Claude is on: a little more presence than the finished ones. */
@@ -449,25 +442,18 @@ button.head:focus-visible {
   color: var(--claude);
 }
 
-/* Words with a light passing over them (the thing happening now). */
+/* Words with a light passing over them (the thing happening now): StepRow's Shimmer moves it with the live
+   clock (lib/live-motion.ts), ~15 times a second; a CSS animation would redraw the window 60 times (KLD-40). */
 .shimmer {
   background: linear-gradient(100deg, var(--text-2) 0%, var(--text-2) 38%, var(--text) 50%, var(--text-2) 62%, var(--text-2) 100%);
   background-size: 250% 100%;
+  background-position: 100% 0;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: shimmer 2.4s linear infinite;
 }
 .rowCurrent .shimmer {
   background-image: linear-gradient(100deg, var(--text) 0%, var(--text) 38%, color-mix(in srgb, var(--claude) 70%, var(--text)) 50%, var(--text) 62%, var(--text) 100%);
-}
-@keyframes shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -150% 0;
-  }
 }
 
 /* Older finished steps, folded: "5 steps · 12s". */

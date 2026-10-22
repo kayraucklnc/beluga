@@ -52,7 +52,7 @@ export function ProgressRing({ share, live }: { share: number; live?: boolean })
 }
 
 /**
- * One plan as a sidebar row: its name, a progress ring (pulsing while tasks run), and a dot when it
+ * One plan as a sidebar row: its name, a progress ring (in Claude’s color while tasks run), and a dot when it
  * needs you (why, in the tooltip). Clicking opens the plan. Used under Plans, and under a project.
  */
 export function PlanSideRow({ plan, indent = 0 }: { plan: Plan; indent?: number }) {

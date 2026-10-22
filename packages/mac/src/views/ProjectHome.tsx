@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PullRequest } from '@klaud/core/work-store.js';
 import { describePr } from '@klaud/shared/format.js';
+import { isPlanOwned } from '@klaud/core/plans/owner.js';
 import { activityOf, stateOf } from '@klaud/ui/workspace-models.js';
 import type { Project, Workspace } from '@klaud/workspaces/types.js';
 import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, type Plan } from '@klaud/core/plans/model.js';
@@ -39,8 +40,11 @@ export function ProjectHome({ id }: { id: string }) {
   const log = useApp((st) => st.log);
   const conflicts = useApp((st) => st.conflicts);
   const prs = useApp((st) => st.prs);
+  const plansState = useApp((st) => st.plans);
+  const board = useApp((st) => st.board);
   if (!project) return <Empty icon="folder" title="This project isn’t here anymore" detail="It may have been hidden or moved. Pick another one in the sidebar." />;
-  const model = homeModel({ log, conflicts, prs }, project);
+  // A plan is one row: its conversation and its tasks' worktrees aren't counted or listed on their own.
+  const model = homeModel({ log, conflicts, prs }, { ...project, workspaces: project.workspaces.filter((w) => !isPlanOwned({ plans: plansState, board }, w.id)) });
   return (
     <div className={s.page} aria-label={`${project.name} home`}>
       <div className={s.column}>

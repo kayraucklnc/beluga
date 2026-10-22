@@ -1,14 +1,16 @@
-import { mkdtempSync } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { defineConfig } from '@playwright/test';
+import { homesFor, portFor, worktreeOf } from '../../scripts/e2e-lock.mjs';
 
-// One klaud home for the run: the demo daemon (global setup) and the dev server's bridge share it.
-process.env.KLAUD_HOME ??= mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-'));
-// A pretend ~/.claude the demo daemon watches for Claude Code sessions (e2e/claude-code.spec.ts writes there).
-process.env.KLAUD_CLAUDE_HOME ??= mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-claude-'));
-// E2E_PORT lets several runs go at once (each with its own dev server and daemon).
-const port = Number(process.env.E2E_PORT ?? 1421);
+// `npm run e2e` runs through scripts/e2e-lock.mjs: one Mac e2e run at a time, nothing left behind.
+// It hands every run its worktree's own port and demo home; a bare `playwright test` gets the same ones.
+// Never an inherited KLAUD_HOME without the lock (inside Klaud that's your real data; the demo home is wiped).
+const worktree = worktreeOf(import.meta.dirname);
+if (!process.env.KLAUD_E2E_RUN) {
+  process.env.KLAUD_HOME = homesFor(worktree).home;
+  // A pretend ~/.claude the demo daemon watches for Claude Code sessions (e2e/claude-code.spec.ts writes there).
+  process.env.KLAUD_CLAUDE_HOME = homesFor(worktree).claude;
+}
+const port = Number(process.env.E2E_PORT || portFor(worktree));
 process.env.E2E_PORT = String(port);
 
 export default defineConfig({
@@ -20,6 +22,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   globalSetup: './e2e/daemon.ts',
+  globalTeardown: './e2e/global-teardown.ts',
   use: {
     baseURL: `http://localhost:${port}`,
     viewport: { width: 1440, height: 900 },
@@ -27,5 +30,5 @@ export default defineConfig({
     // Every spec starts past the first-run welcome (src/onboarding); e2e/onboarding.spec.ts clears this.
     storageState: { cookies: [], origins: [{ origin: `http://localhost:${port}`, localStorage: [{ name: 'klaud.onboarding.v1', value: JSON.stringify({ version: 'e2e', at: 0, how: 'finished' }) }] }] },
   },
-  webServer: { command: `npx vite --port ${port} --strictPort`, url: `http://localhost:${port}`, reuseExistingServer: false, env: { KLAUD_HOME: process.env.KLAUD_HOME } },
+  webServer: { command: `npx vite --port ${port} --strictPort`, url: `http://localhost:${port}`, reuseExistingServer: false, env: { KLAUD_HOME: process.env.KLAUD_HOME! } },
 });

@@ -249,6 +249,13 @@ export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
     gitIn(auth.path, 'commit', '-m', 'Protect payments routes');
     const tests = await mgr.createWorktree(api.id, 'webhook-retries');
     writeTree(tests.path, { 'src/webhooks.ts': '// retry with backoff\nexport const MAX_RETRIES = 5;\n' });
+    // The demo plan's two tasks in progress, each in its own worktree (the sidebar shows the plan instead).
+    const checkoutAuth = await mgr.createWorktree(api.id, 'checkout-auth');
+    writeTree(checkoutAuth.path, { 'src/auth.ts': "export function requireUser(req: { session?: string }) {\n  if (!req.session) throw new Error('unauthorized');\n}\n" });
+    gitIn(checkoutAuth.path, 'add', '.');
+    gitIn(checkoutAuth.path, 'commit', '-m', 'Require a session on payment routes');
+    const checkoutHooks = await mgr.createWorktree(api.id, 'checkout-events');
+    writeTree(checkoutHooks.path, { 'src/webhooks.ts': '// handle each event once\nexport const MAX_RETRIES = 5;\n' });
     await mgr.createChat(api.id, 'How do deploys work?');
     // Worktrees Claude Code sub-agents leave behind (listed after the project's own worktrees).
     for (const id of ['a3f9c1e07b2d', 'a8b24d6e91c0']) gitIn(api.root, 'worktree', 'add', '-q', '-b', `agent-${id}`, path.join(api.root, '.claude', 'worktrees', `agent-${id}`));
