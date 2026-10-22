@@ -2,13 +2,14 @@ import { type RefObject, useRef } from 'react';
 import type { PathInfo } from '@klaud/core/attachments.js';
 import { inApp } from '../lib/boot.js';
 import { useApi } from '../lib/klaud.js';
-import { pathsInPaste } from './paste-paths-model.js';
+import { candidatePaths, imagePathsIn, pathsInPaste, pickPaths } from './paste-paths-model.js';
 
 /**
  * A pasted file path becomes the file: "/Users/…/CleanShot … .png" (quoted, with escaped
  * spaces, ~/…, or a file:// URL; one or more, one per line) is checked with klaud, and when
- * every one is a file here the box attaches them instead of the words. Anything else, and
- * ⌘⇧V (Edit › Paste as Plain Text), pastes the text as it is.
+ * every one is a file here the box attaches them instead of the words. In other text, each
+ * image's path (plain, quoted or “smart quoted”) becomes that image and the words stay.
+ * Anything else, and ⌘⇧V (Edit › Paste as Plain Text), pastes the text as it is.
  */
 
 export type { PathInfo };
@@ -54,15 +55,30 @@ export async function pastePlain(): Promise<void> {
   insertText(el, text);
 }
 
+/** An image's path in pasted text: `start`–`end` of the text is it (quotes and all). */
+export interface ImageInText {
+  readonly start: number;
+  readonly end: number;
+  readonly info: PathInfo;
+}
+
 /**
  * The paste handler for a message box. `onFiles` gets the files (images and others) and where
- * the cursor was; text that isn't only paths of files here goes into the box unchanged.
- * Returns true when it took the paste (the caller doesn't handle it then).
+ * the cursor was, when the paste is only their paths; `onText` gets other text that names images
+ * here, with where they are in it, to put in the box (at `at`) with the images in place of their
+ * paths. Text naming no file here goes into the box unchanged. Returns true when it took the
+ * paste (the caller doesn't handle it then).
  */
-export function usePastePaths(ref: RefObject<HTMLTextAreaElement | null>, onFiles: (files: readonly PathInfo[], at: number) => void): (e: React.ClipboardEvent<HTMLTextAreaElement>) => boolean {
+export function usePastePaths(
+  ref: RefObject<HTMLTextAreaElement | null>,
+  onFiles: (files: readonly PathInfo[], at: number) => void,
+  onText?: (text: string, images: readonly ImageInText[], at: { start: number; end: number }) => void,
+): (e: React.ClipboardEvent<HTMLTextAreaElement>) => boolean {
   const api = useApi();
   const latest = useRef(onFiles);
   latest.current = onFiles;
+  const latestText = useRef(onText);
+  latestText.current = onText;
   return (e) => {
     const plain = Date.now() - plainKeyAt < ECHO_MS;
     if (plain) {
@@ -78,12 +94,27 @@ export function usePastePaths(ref: RefObject<HTMLTextAreaElement | null>, onFile
     const text = e.clipboardData.getData('text/plain');
     const paths = text ? pathsInPaste(text) : undefined;
     const el = ref.current;
-    if (!paths || !el) return false;
+    const spots = !paths && text && latestText.current ? imagePathsIn(text) : [];
+    if (!el || (!paths && !spots.length)) return false;
     e.preventDefault();
     const at = { start: el.selectionStart, end: el.selectionEnd };
     const asText = (): void => {
       if (ref.current) insertText(ref.current, text, at);
     };
+    if (!paths) {
+      // Words with images' paths in them: ask which readings are images here.
+      const asked = candidatePaths(spots);
+      api.local.statFiles(asked).then(
+        (infos) => {
+          const found = new Map(asked.map((p, i) => [p, infos[i]] as const));
+          const picks = pickPaths(spots, (p) => found.get(p)?.kind === 'file' && Boolean(found.get(p)?.image));
+          if (!picks.length || !latestText.current) return asText();
+          latestText.current(text, picks.map((p) => ({ start: p.start, end: p.end, info: found.get(p.path)! })), at);
+        },
+        () => asText(),
+      );
+      return true;
+    }
     api.local.statFiles(paths).then(
       (infos) => {
         if (!infos.every((f) => f.kind === 'file')) return asText();

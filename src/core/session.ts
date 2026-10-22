@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
-import { type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
+import { Body, type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { type ShareService, parseShareSpec } from './shares.js';
 import { existsSync } from 'node:fs';
@@ -708,12 +708,32 @@ export class Session {
   // -------------------------------------------------------------------------
 
   send(body: BodyInput, opts: { to?: string; keep?: boolean } = {}): boolean {
+    // To yourself (your Claude in your own conversations, its events back to you): handled right
+    // here, never through the room. A dropped or half-open room connection (after sleep, a network
+    // change, offline) used to swallow these silently: the plan chat's message never reached Claude
+    // and its replies went missing until the connection came back (KLD-64).
+    if (opts.to !== undefined && opts.to === this.selfId) return this.loopback(body);
     try {
       return this.opts.client.send(body, opts);
     } catch (err) {
       this.system(`Could not send ${body.kind}: ${errorText(err)}`, 'error');
       return false;
     }
+  }
+
+  /** A message to yourself, delivered on the next turn (as one from the room would be). */
+  private loopback(input: BodyInput): boolean {
+    let body: Body;
+    try {
+      body = Body.parse(input);
+    } catch (err) {
+      this.system(`Could not send ${input.kind}: ${errorText(err)}`, 'error');
+      return false;
+    }
+    const now = Date.now();
+    const msg: IncomingMessage = { id: `local-${randomUUID()}`, from: this.selfId, ts: now, sentAt: now, body };
+    setImmediate(() => void this.handle(msg).catch((err: unknown) => this.system(`Error handling ${body.kind}: ${errorText(err)}`, 'error')));
+    return true;
   }
 
   private wire(): void {

@@ -1,32 +1,60 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { queueIn } from '@klaud/ui/compose.js';
 import { activityOf } from '@klaud/ui/workspace-models.js';
 import { ChatLog } from '../chat/ChatLog.js';
 import { PaneLook } from '../chat/Items.js';
+import { QueueTray } from '../chat/QueueTray.js';
+import { useAttachments } from '../chat/use-attachments.js';
 import { Icon } from '../components/Icon.js';
 import { Empty, IconButton, Tip, Working, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/klaud.js';
 import { LiveDot } from './marks.js';
 import { useConversationLoaded } from './use-plans.js';
+import s from '../chat/composer.module.css';
 import p from './plans.module.css';
 
 const FOLD = { fold: true };
 const FOLD_QUIET = { fold: true, quietWorking: true };
 
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
 /**
  * Talking the plan through with Claude, beside it: the plan's own conversation (its head Claude
  * plans and runs it there), and a box to say what to change. The plan updates as Claude writes.
+ * The box takes pasted, dropped and path-named images and files as every message box does; what
+ * you send while Claude works waits in the queue above it, and a send that fails says so here,
+ * with Retry.
  */
 export function PlanChat({ channel, draft, drafting, onClose }: { channel: string; draft: boolean; drafting: boolean; onClose: () => void }) {
   const api = useApi();
-  const { client } = useKlaud();
   const actions = useActions();
-  const [text, setText] = useState('');
+  const [text, setTextState] = useState('');
+  const words = useRef('');
+  const setText = (next: string): void => {
+    words.current = next;
+    setTextState(next);
+  };
   const box = useRef<HTMLTextAreaElement>(null);
-  const busy = useApp((s) => activityOf(s.log, channel).running);
-  const asking = useApp((s) => s.questions.some((q) => q.channel === channel) || s.approvals.some((a) => a.channel === channel));
+  const busy = useApp((st) => activityOf(st.log, channel).running);
+  const selfName = useApp((st) => st.self?.name ?? '');
+  // What waits for Claude here (picked as text, so streaming doesn't redraw this pane).
+  const queued = useApp((st) => JSON.stringify(queueIn(st, channel, st.selfId)));
+  const queue = useMemo(() => JSON.parse(queued) as ReturnType<typeof queueIn>, [queued]);
+  const asking = useApp((st) => st.questions.some((q) => q.channel === channel) || st.approvals.some((a) => a.channel === channel));
   const wsId = channel.startsWith('ws:') ? channel.slice(3) : undefined;
   const loading = !useConversationLoaded(channel);
+  /** A message that didn't go: said under the box, with Retry. */
+  const [failed, setFailed] = useState<{ text: string; error: string }>();
+  const att = useAttachments({
+    channel,
+    box,
+    text: () => words.current,
+    setText: (next, cursor) => {
+      setText(next);
+      requestAnimationFrame(() => box.current?.setSelectionRange(cursor, cursor));
+    },
+  });
 
   // The box grows with what you write (up to a point).
   useEffect(() => {
@@ -36,11 +64,32 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
     el.style.height = `${Math.min(160, el.scrollHeight)}px`;
   }, [text]);
 
+  /** Send `message` (already with its images' links); on failure it's kept, and said, for Retry. */
+  const deliver = (message: string): void => {
+    setFailed(undefined);
+    api.session.submit(message, { channel }).catch((err: unknown) => setFailed({ text: message, error: errorText(err) }));
+  };
   const send = (): void => {
-    const message = text.trim();
+    const typed = text.trim();
+    const { text: message, putBack } = att.take(typed);
     if (!message) return;
     setText('');
-    void api.session.submit(message, { channel }).catch((err: unknown) => toast(client, err instanceof Error ? err.message : String(err), 'error'));
+    // Image references become links to the images (klaud keeps them) before the message goes.
+    if (message.includes('[image ') && !message.startsWith('/')) {
+      api.attachments.expand(message, channel).then(deliver, (err: unknown) => {
+        // Put the words and images back so nothing is lost.
+        if (!words.current) setText(typed);
+        putBack();
+        setFailed({ text: message, error: `Couldn't send the images: ${errorText(err)}` });
+      });
+      return;
+    }
+    deliver(message);
+  };
+  const editQueued = (prompt: string): void => {
+    const current = words.current.trim();
+    setText(current ? `${prompt}\n${current}` : prompt);
+    box.current?.focus();
   };
 
   return (
@@ -83,34 +132,51 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
           Claude asked you something. Answer it in the conversation
         </button>
       ) : null}
+      <div className={p.chatQueue}>
+        <QueueTray queue={queue} selfName={selfName} onEdit={editQueued} channel={channel} />
+      </div>
+      {failed ? (
+        <div className={p.chatFailed} role="alert">
+          <Icon name="alert" size={12} />
+          <span className={p.chatFailedText}>Your message wasn’t sent: {failed.error}</span>
+          <button type="button" className={p.chatRetry} onClick={() => deliver(failed.text)}>
+            Retry
+          </button>
+        </div>
+      ) : null}
       <form
-        className={p.chatBox}
+        className={cx(p.chatBox, att.dropping && s.dropping)}
+        {...att.dropProps}
         onSubmit={(e) => {
           e.preventDefault();
           send();
         }}
       >
-        <textarea
-          ref={box}
-          className={cx(p.chatInput, 'selectable')}
-          rows={1}
-          value={text}
-          placeholder={draft ? 'Tell Claude what to change…' : 'Ask about the plan, or change it…'}
-          aria-label="Message Claude about the plan"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return;
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-        />
-        <Tip label="Send" keys="↩">
-          <button type="submit" className={p.chatSend} aria-label="Send" disabled={!text.trim()}>
-            <Icon name="send" size={13} />
-          </button>
-        </Tip>
+        {att.images.length || att.files.length ? <div className={p.chatWaiting}>{att.waiting}</div> : null}
+        <div className={p.chatRow}>
+          <textarea
+            ref={box}
+            className={cx(p.chatInput, 'selectable')}
+            rows={1}
+            value={text}
+            placeholder={busy ? 'Claude is working: this waits its turn…' : draft ? 'Tell Claude what to change…' : 'Ask about the plan, or change it…'}
+            aria-label="Message Claude about the plan"
+            onChange={(e) => setText(e.target.value)}
+            onPaste={att.onPaste}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+          />
+          <Tip label={busy ? 'Claude is working: this waits its turn in the queue' : 'Send'} keys="↩">
+            <button type="button" className={p.chatSend} aria-label={busy ? 'Queue' : 'Send'} disabled={!text.trim() && !att.images.length && !att.files.length} onClick={send}>
+              <Icon name={busy ? 'clock' : 'send'} size={13} />
+            </button>
+          </Tip>
+        </div>
       </form>
     </aside>
   );

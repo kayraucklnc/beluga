@@ -842,4 +842,27 @@ describe('Session hardening', () => {
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'ran'));
     expect(bob.state().approvals).toHaveLength(0);
   });
+
+  it('your own conversations reach your Claude with the room gone, and a busy Claude queues what you send', async () => {
+    hub = await startHub({ keys });
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const kay = peer('kay', { script: async (input) => (input.prompt === 'slow' ? (await held, 'slow done') : `did ${input.prompt}`) });
+    await room(kay);
+    // The room's connection drops (sleep, a network change): sends over it go nowhere.
+    await hub.close();
+    await waitFor(() => kay.state().status !== 'connected');
+    const plan = 'ws:plan-home';
+    // A workspace for it to run in (the test has no workspace manager).
+    (kay.session.host as unknown as { deps: { workspaces: unknown } }).deps.workspaces = { place: () => ({ cwd: kay.root, additionalDirectories: [], autoEdit: false, onSession: () => undefined }), refresh: async () => undefined };
+    kay.session.submit('slow', { channel: plan });
+    await waitFor(() => kay.runs.length === 1);
+    kay.session.submit('next', { channel: plan });
+    const inPlan = () => agentItems(kay.state()).filter((a) => a.type === 'agent' && a.channel === plan);
+    await waitFor(() => inPlan().some((a) => a.type === 'agent' && a.prompt === 'next' && a.status === 'queued'));
+    release();
+    await waitFor(() => inPlan().filter((a) => a.type === 'agent' && a.status === 'done').length === 2);
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'next']);
+    expect(kay.state().log.filter((l) => l.type === 'chat' && l.channel === plan).map((l) => (l.type === 'chat' ? l.text : ''))).toEqual(['slow', 'next']);
+  });
 });

@@ -17,8 +17,7 @@ import { QueueTray } from './QueueTray.js';
 import { expectClaude, launchFlight } from './flight.js';
 import { type WorktreeChoice, WorktreeDraft } from './WorktreeDraft.js';
 import { stopClaude } from '../lib/commands.js';
-import { keepPreview, previewOf } from './images.js';
-import { type PathInfo, usePastePaths } from './paste-paths.js';
+import { useAttachments } from './use-attachments.js';
 import { MentionHighlighter } from './MentionHighlighter.js';
 import { useSuggestions } from './Suggestions.js';
 import { useMentionWorld, worktreeOf } from './Mention.js';
@@ -27,15 +26,7 @@ import { openSheet } from '../lib/sheets.js';
 import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
 import { isPlanHome, planForHome } from '@klaud/core/plans/model.js';
 import s from './composer.module.css';
-import img from './images.module.css';
 import d from './draft.module.css';
-
-/** Images waiting to be sent, per conversation (so switching away and back keeps them). */
-const waitingImages = new Map<string, readonly number[]>();
-/** Other files (their paths were pasted) waiting to go with the message, per conversation. */
-const waitingFiles = new Map<string, readonly PathInfo[]>();
-/** How the words refer to a waiting image (it becomes a link to it when sent). */
-const imageRef = (n: number): string => `[image ${n}]`;
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -83,22 +74,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const shared = state.view.kind === 'shared';
   const compose = composeState(state, ui.get(), state.selfId, channel, shared);
   const queue = useMemo(() => queueIn(state, channel, state.selfId), [state.log, channel, state.selfId]);
-  // Images pasted or dropped here wait as thumbnails above the text, with an "[image N]" where
-  // the cursor was so the words can point at them, and go with the message. Kept per conversation.
-  const [images, setImagesState] = useState<readonly number[]>(() => waitingImages.get(channel) ?? []);
-  useEffect(() => setImagesState(waitingImages.get(channel) ?? []), [channel]);
-  const setImages = (next: readonly number[]): void => {
-    waitingImages.set(channel, next);
-    setImagesState(next);
-  };
-  const pendingImages = images.filter((n) => previewOf(n));
-  const [files, setFilesState] = useState<readonly PathInfo[]>(() => waitingFiles.get(channel) ?? []);
-  useEffect(() => setFilesState(waitingFiles.get(channel) ?? []), [channel]);
-  const setFiles = (next: readonly PathInfo[]): void => {
-    if (next.length) waitingFiles.set(channel, next);
-    else waitingFiles.delete(channel);
-    setFilesState(next);
-  };
+  // Images pasted, dropped or named by their path wait as thumbnails above the text, with an
+  // "[image N]" where they go; other pasted files as chips (see use-attachments).
+  const att = useAttachments({ channel, box: ref, text: () => ui.get().buffer, setText: (buffer, cursor) => ui.patch({ buffer, cursor }) });
   // While Claude works, sending queues the message; "Steer" gives it to Claude at its next step.
   const queueing = compose.busy && (compose.typing || !buffer.trim());
   const plan = state.planMode[channel] === true;
@@ -206,14 +184,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   };
   const send = (urgent = false): void => {
     const typed = buffer.trim();
-    const pictures = pendingImages;
     // Images stay where you referenced them in the words; any you took the reference out of go after them.
-    const unplaced = pictures.filter((n) => !typed.includes(imageRef(n)));
-    // Other files go as their paths (Claude reads them from this Mac).
-    const others = typed.startsWith('/') ? [] : files;
-    const text = (pictures.length || others.length) && !typed.startsWith('/') ? [typed, unplaced.map(imageRef).join(' '), others.map((f) => `\`${f.path}\``).join('\n')].filter(Boolean).join('\n\n') : typed;
-    if (pictures.length && !typed.startsWith('/')) setImages([]);
-    if (others.length) setFiles([]);
+    const { text, putBack } = att.take(typed);
     if (!text && !(draftProject && worktree.name.trim())) {
       if (draftProject) toast(client, 'Describe the task, or give the worktree a name', 'info');
       return;
@@ -233,72 +205,13 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
         (err: unknown) => {
           // Put the message and its images back so nothing is lost.
           if (!ui.get().buffer) ui.patch({ buffer: typed, cursor: typed.length });
-          if (pictures.length) setImages(pictures);
-          if (others.length) setFiles(others);
+          putBack();
           toast(client, `Couldn't send the images: ${errorText(err)}`, 'error');
         },
       );
       return;
     }
     deliver(text, urgent);
-  };
-  const attach = async (files: readonly File[]): Promise<void> => {
-    for (const file of files) {
-      const ext = (/image\/(png|jpe?g|gif|webp)/.exec(file.type)?.[1] ?? 'png') as 'png' | 'jpg' | 'jpeg' | 'gif' | 'webp';
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      let bin = '';
-      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      let added: { n: number; chip: string };
-      try {
-        added = await api.attachments.add(ext, btoa(bin));
-        keepPreview(added.n, file);
-      } catch (err) {
-        toast(client, `Couldn't add ${file.name || 'the image'}: ${errorText(err)}`, 'error');
-        continue;
-      }
-      setImages([...(waitingImages.get(channel) ?? []), added.n]);
-      placeRef(added.n);
-    }
-  };
-  /** Pasted paths of files on this Mac: images wait as thumbnails (referenced where the cursor was), others as chips. */
-  const pastePaths = usePastePaths(ref, async (picked, at) => {
-    const others = picked.filter((f) => !f.image);
-    if (others.length) setFiles([...(waitingFiles.get(channel) ?? []), ...others.filter((f) => !(waitingFiles.get(channel) ?? []).some((w) => w.path === f.path))]);
-    let cursor = at;
-    for (const f of picked.filter((x) => x.image)) {
-      try {
-        const added = await api.attachments.addFile(f.path);
-        const shown = await api.attachments.read(state.selfId, added.file);
-        keepPreview(added.n, new Blob([Uint8Array.from(atob(shown.data), (c) => c.charCodeAt(0))], { type: shown.mime }));
-        setImages([...(waitingImages.get(channel) ?? []), added.n]);
-        cursor = placeRef(added.n, cursor);
-      } catch (err) {
-        toast(client, `Couldn't add ${f.name}: ${errorText(err)}`, 'error');
-      }
-    }
-  });
-  /** "[image N]" goes in the words where the cursor is (or `where`), so you can say what it shows. → where the cursor is after it. */
-  const placeRef = (n: number, where?: number): number => {
-    const now = ui.get().buffer;
-    const el = ref.current;
-    const at = Math.min(where ?? (el && document.activeElement === el ? el.selectionStart : now.length), now.length);
-    const before = now.slice(0, at);
-    const after = now.slice(at);
-    const chip = `${before && !/\s$/.test(before) ? ' ' : ''}${imageRef(n)}${after && !/^\s/.test(after) ? ' ' : after ? '' : ' '}`;
-    const next = before + chip + after;
-    ui.patch({ buffer: next, cursor: before.length + chip.length });
-    requestAnimationFrame(() => el?.setSelectionRange(before.length + chip.length, before.length + chip.length));
-    return before.length + chip.length;
-  };
-  const imagesOf = (items: DataTransferItemList | undefined): File[] =>
-    [...(items ?? [])].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => Boolean(f));
-  const [dropping, setDropping] = useState(false);
-  /** Take an image out of the message. */
-  const removeImage = (n: number): void => {
-    setImages(images.filter((x) => x !== n));
-    const now = ui.get().buffer;
-    if (now.includes(imageRef(n))) ui.patch({ buffer: now.replace(` ${imageRef(n)}`, '').replace(imageRef(n), '') });
-    ref.current?.focus();
   };
   /** A queued message pulled back to edit: into the box, ahead of anything already there. */
   const editQueued = (prompt: string): void => {
@@ -371,22 +284,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       {sug.list}
       <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={editQueued} />
       <div
-        className={cx(s.box, pending && s.asking, readOnly && s.readOnly, dropping && s.dropping, (plan || tasksMode) && s.planning)}
+        className={cx(s.box, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
         data-plan={plan || tasksMode || undefined}
-        onDragOver={(e) => {
-          if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) {
-            e.preventDefault();
-            setDropping(true);
-          }
-        }}
-        onDragLeave={() => setDropping(false)}
-        onDrop={(e) => {
-          const files = imagesOf(e.dataTransfer.items);
-          setDropping(false);
-          if (!files.length) return;
-          e.preventDefault();
-          void attach(files);
-        }}
+        {...att.dropProps}
       >
         {mode !== 'act' ? (
           <div className={s.planBanner} role="status">
@@ -420,32 +320,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             </button>
           </div>
         ) : null}
-        {pendingImages.length ? (
-          <div className={img.pending} role="group" aria-label="Images to send">
-            {pendingImages.map((n) => (
-              <div key={n} className={img.pendingItem}>
-                <img src={previewOf(n)} alt={`image ${n}`} />
-                <span className={img.pendingLabel}>{n}</span>
-                <button type="button" className={img.pendingRemove} aria-label={`Remove image ${n}`} onClick={() => removeImage(n)}>
-                  <Icon name="x" size={9} />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {files.length ? (
-          <div className={s.fileChips} role="list" aria-label="Files to send">
-            {files.map((f) => (
-              <span key={f.path} role="listitem" className={s.fileChip} title={f.path}>
-                <Icon name="file" size={11} />
-                <span className={s.fileName}>{f.name}</span>
-                <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((x) => x.path !== f.path))}>
-                  <Icon name="x" size={9} />
-                </button>
-              </span>
-            ))}
-          </div>
-        ) : null}
+        {att.waiting}
         <div className={s.inputWrap}>
           <MentionHighlighter text={buffer} world={mentionWorld} input={ref} className={s.input ?? ""} />
           <textarea
@@ -457,12 +332,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
             placeholder={to ? `Message ${recipientLabel(to)}` : mode === 'tasks' && homePlan && !homePlan.body && !homePlan.draft?.milestones.length ? 'Describe what to build: Claude plans it into milestones and tasks' : placeholderOf(state, pending ? { pending } : {})}
             onChange={(e) => set(e.target.value)}
             onKeyDown={onKey}
-            onPaste={(e) => {
-              const images = imagesOf(e.clipboardData.items);
-              if (!images.length) return void pastePaths(e);
-              e.preventDefault();
-              void attach(images);
-            }}
+            onPaste={att.onPaste}
             spellCheck
           />
         </div>

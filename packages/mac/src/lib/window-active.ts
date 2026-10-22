@@ -30,12 +30,19 @@ export function watchWindow(): void {
   window.addEventListener('focus', update);
   window.addEventListener('blur', update);
   document.addEventListener('visibilitychange', update);
+  // A key or a click in the window: you're looking, whatever the web view last said about its
+  // visibility (WebKit can keep "hidden" after the window was covered until a resize; views then
+  // waited on a timer a hidden page may not run, and a sent message seemed to go nowhere, KLD-64).
+  const touched = (): void => set(true);
+  window.addEventListener('keydown', touched, true);
+  window.addEventListener('pointerdown', touched, true);
   active = look();
   document.documentElement.dataset.window = active ? 'active' : 'idle';
   // The web view's focus events can lag the window's own (a click into Klaud from another app): Tauri says it first.
+  // A focused window is in front, so it's seen even when the web view's visibility is stale.
   if (inApp())
     void import('@tauri-apps/api/window')
-      .then(({ getCurrentWindow }) => getCurrentWindow().onFocusChanged(({ payload }) => set(payload && document.visibilityState === 'visible')))
+      .then(({ getCurrentWindow }) => getCurrentWindow().onFocusChanged(({ payload }) => set(payload)))
       .catch(() => undefined);
 }
 
