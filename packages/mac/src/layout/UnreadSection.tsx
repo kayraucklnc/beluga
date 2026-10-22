@@ -6,6 +6,7 @@ import { ProjectIcon } from '../components/ProjectIcon.js';
 import { Avatar } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
+import { sameDeep } from '../lib/stable.js';
 import { usePrefs } from '../lib/prefs.js';
 import { openDm, openGroup } from '../network/use-net.js';
 import { IDLE_SIGNAL, type Signal, type UnreadEntry, planSignal, unreadEntries, workspaceSignal } from './attention-model.js';
@@ -61,12 +62,17 @@ export function UnreadSection() {
   const actions = useActions();
   const { client } = useKlaud();
   const prefs = usePrefs();
-  const state = useApp((st) => st);
-  // Where you are: a plan counts as one place (its page, its conversation and its tasks' worktrees).
-  const inPlan = state.view.kind === 'plan' ? state.view.id : state.view.kind === 'workspace' ? planOf(state, state.view.id)?.id : undefined;
-  const here = inPlan ? `plan:${inPlan}` : shownChannel(state.view);
   // The one you opened from here, and whether you've got there yet (opening it takes a moment).
   const [kept, setKept] = useState<{ entry: UnreadEntry; at: number; arrived: boolean } | undefined>();
+  // Only what the section shows (not the whole state): drawn again when that changes, not on every streamed event (KLD-48).
+  const { here, entries, stay, owners } = useApp((state) => {
+    // Where you are: a plan counts as one place (its page, its conversation and its tasks' worktrees).
+    const inPlan = state.view.kind === 'plan' ? state.view.id : state.view.kind === 'workspace' ? planOf(state, state.view.id)?.id : undefined;
+    const here = inPlan ? `plan:${inPlan}` : shownChannel(state.view);
+    const entries = prefs.unreadSection ? unreadEntries(state) : [];
+    const keep = kept && kept.entry.channel === here && !entries.some((e) => e.channel === here) ? kept.entry : undefined;
+    return { here, entries, stay: keep ? { ...keep, signal: nowOf(state, keep) } : undefined, owners: Object.fromEntries(state.peers.map((p) => [p.peerId, p.name])) };
+  }, sameDeep);
   // Leaving it lets it go.
   useEffect(() => {
     if (!kept) return;
@@ -75,12 +81,10 @@ export function UnreadSection() {
     } else if (kept.arrived) setKept(undefined);
   }, [here, kept]);
   if (!prefs.unreadSection) return null;
-  const entries = unreadEntries(state);
-  const stay = kept && kept.entry.channel === here && !entries.some((e) => e.channel === here) ? kept.entry : undefined;
   // In the place it had, so nothing moves under the pointer.
-  const list = stay && kept ? [...entries.slice(0, kept.at), { ...stay, signal: nowOf(state, stay) }, ...entries.slice(kept.at)] : entries;
+  const list = stay && kept ? [...entries.slice(0, kept.at), stay, ...entries.slice(kept.at)] : entries;
   if (!list.length) return null;
-  const ownerName = (id: string): string => state.peers.find((p) => p.peerId === id)?.name ?? 'Shared';
+  const ownerName = (id: string): string => owners[id] ?? 'Shared';
   const open = (e: UnreadEntry, at: number): void => {
     setKept({ entry: e, at, arrived: e.channel === here });
     if (e.kind === 'workspace') actions.run({ type: 'open_ws', id: e.ws.id });

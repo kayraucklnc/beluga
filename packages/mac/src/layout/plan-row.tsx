@@ -4,6 +4,7 @@ import { Icon } from '../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { Badge } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
+import { sameDeep } from '../lib/stable.js';
 import { ProgressRing } from '../plans/PlansNav.js';
 import { nextWords, planStatus, titleOf } from '../plans/plans-model.js';
 import { usePlanActions, usePlanView } from '../plans/use-plans.js';
@@ -23,13 +24,13 @@ import m from './signal.module.css';
 export function PlanRow({ plan, indent }: { plan: Plan; indent: number }) {
   const view = usePlanView(plan)!;
   const { open, openList } = usePlanActions();
-  const state = useApp((st) => st);
   const uiPrefs = usePrefs();
-  const selected = planOfPlace(state.plans, state.board, state.view) === plan.id;
+  // Only what the row shows (not the whole state): drawn again when that changes (KLD-48).
+  const selected = useApp((st) => planOfPlace(st.plans, st.board, st.view) === plan.id);
+  // What's new: in its conversation and in its tasks' worktrees (they have no row of their own).
+  const inside = useApp((st) => planSignal(st, plan), sameDeep);
   const title = titleOf(plan);
   const status = planStatus(view);
-  // What's new: in its conversation and in its tasks' worktrees (they have no row of their own).
-  const inside = planSignal(state, plan);
   const unread = inside.unread;
   const planNeeds = status.tone === 'accent' || status.tone === 'error';
   const needs = planNeeds || inside.level === 'needs';

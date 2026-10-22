@@ -65,9 +65,10 @@ function Toasts() {
 function useOverlays() {
   const { client, ui } = useKlaud();
   const overlay = useApp((st) => st.overlay);
-  const state = useApp((st) => st);
   useEffect(() => {
     if (!overlay) return;
+    // Read here, not watched: watching the whole state redrew the whole window on every streamed event (KLD-48).
+    const state = client.store.getState();
     client.store.dispatch({ type: 'overlay', overlay: undefined });
     const channel = channelOf(state.view);
     const wsId = state.view.kind === 'workspace' ? state.view.id : undefined;

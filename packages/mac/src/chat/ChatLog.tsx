@@ -8,6 +8,7 @@ import { LogTaskCard } from '../gateway/TaskCard.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Dot, Empty, Working } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
+import { keepSameLists, sameItems } from '../lib/stable.js';
 import { Lightbox } from './ChatImages.js';
 import { FindBar } from './FindBar.js';
 import { AgentCard, ChatRow, ShellCard, SystemRow } from './Items.js';
@@ -30,6 +31,7 @@ type Row = LogItem | TaskRow;
  */
 export function placeTasks(items: readonly LogItem[], tasks: readonly TaskView[]): { rows: readonly Row[]; inTurn: ReadonlyMap<string, readonly TaskView[]> } {
   const inTurn = new Map<string, TaskView[]>();
+  if (!tasks.length) return { rows: items, inTurn };
   const loose: TaskView[] = [];
   const turns = items.filter((l): l is Extract<LogItem, { type: 'agent' }> => l.type === 'agent');
   for (const task of tasks) {
@@ -50,18 +52,37 @@ function withTasks(items: readonly LogItem[], tasks: readonly TaskView[]): reado
   return rows;
 }
 
+/** A shared workspace's earlier message (a system line) as the chat row it's drawn as: the same row each time, so its memo holds. */
+const chatRows = new WeakMap<LogItem, LogItem>();
+function chatRowOf(item: LogItem): LogItem {
+  if (item.type !== 'system' || !item.said) return item;
+  let row = chatRows.get(item);
+  if (!row) chatRows.set(item, (row = asChatRow(item)));
+  return row;
+}
+
+/** The newest Claude card of a conversation's items. */
+export function latestCard(items: readonly LogItem[]): string | undefined {
+  return items.findLast((l) => l.type === 'agent')?.id;
+}
+
 /**
  * A conversation: virtualized (a long one stays fast), anchored to the bottom while you're at
  * the bottom, and left alone while you read further up (with a way back down).
  */
 export function ChatLog({ channel, empty }: { channel: string; empty?: React.ReactNode }) {
-  const log = useApp((st) => st.log);
+  // Only this conversation's items and tasks: another one streaming doesn't draw this one again (KLD-48).
+  const mine = useApp((st) => st.log.filter((l) => l.channel === channel), sameItems);
   const selfId = useApp((st) => st.selfId);
   // A shared workspace's earlier messages arrive as system lines; drawn here as normal messages.
-  const items = useMemo(() => log.filter((l) => l.channel === channel).map(asChatRow), [log, channel]);
-  const gateway = useApp((st) => st.gateway);
-  const tasks = useMemo(() => tasksIn({ gateway }, channel), [gateway, channel]);
-  const { rows, inTurn } = useMemo(() => placeTasks(items, tasks), [items, tasks]);
+  const items = useMemo(() => mine.map(chatRowOf), [mine]);
+  const tasks = useApp((st) => tasksIn(st, channel), sameItems);
+  const placed = useMemo(() => placeTasks(items, tasks), [items, tasks]);
+  // A card's tasks stay the same list while they're the same tasks, so its memo holds.
+  const turnTasks = useRef<ReadonlyMap<string, readonly TaskView[]>>(undefined);
+  const inTurn = useMemo(() => (turnTasks.current = keepSameLists(turnTasks.current, placed.inTurn)), [placed]);
+  const rows = placed.rows;
+  const latest = useMemo(() => latestCard(items), [items]);
   const parent = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
   const stick = useRef(true);
@@ -169,7 +190,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
                 ) : item.type === 'chat' ? (
                   <ChatRow item={item} continued={continued(v.index)} mine={item.from === selfId} />
                 ) : item.type === 'agent' ? (
-                  <AgentCard item={item} tasks={inTurn.get(item.id)} />
+                  <AgentCard item={item} tasks={inTurn.get(item.id)} latest={item.id === latest} />
                 ) : item.type === 'shell' ? (
                   <ShellCard item={item} />
                 ) : isCompactItem(item) ? (

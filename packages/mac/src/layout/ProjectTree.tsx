@@ -14,6 +14,7 @@ import { useActions } from '../lib/actions.js';
 import { inApp } from '../lib/boot.js';
 import { newEmptyGroup, useGroupEdit } from '../lib/group-edit.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { sameDeep } from '../lib/stable.js';
 import { openProjectHome } from '../lib/project-home.js';
 import { openSheet } from '../lib/sheets.js';
 import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
@@ -374,7 +375,8 @@ export function Projects() {
   const arrange = useArrange();
   const tree = useRef<HTMLDivElement>(null);
   const collapsed = useUi((u) => u.collapsed);
-  const state = useApp((st) => st);
+  // Each group's pulse and counts, not the whole state: the tree isn't drawn again on every streamed event (KLD-48).
+  const groups = useApp((st) => Object.fromEntries(entries.flatMap((e) => (e.kind === 'group' ? [[e.name, { busy: groupWorking(st, e.projects), tally: groupTally(st, e.projects) }]] : []))), sameDeep);
   const { creating } = useGroupEdit();
   const { dragging, onPointerDown } = useArrangeDrag(tree, entries, arrange, s.ghost ?? '');
   const hover = dragging?.hover;
@@ -415,8 +417,8 @@ export function Projects() {
                       name={e.name}
                       count={e.projects.length}
                       open={!collapsed.includes(`group:${e.name}`)}
-                      busy={groupWorking(state, e.projects)}
-                      tally={groupTally(state, e.projects)}
+                      busy={groups[e.name]?.busy ?? false}
+                      tally={groups[e.name]?.tally ?? { unread: 0, needs: 0, working: false }}
                       dropOn={intoGroup === e.name}
                       menu={moveItems(entries, { group: e.name }, arrange)}
                       onToggle={() => actions.run({ type: 'toggle_group', name: e.name })}

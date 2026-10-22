@@ -1,8 +1,8 @@
-import { type ReactNode, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LogItem, SubAgent } from '@klaud/core/store.js';
 import type { TaskView } from '@klaud/core/gateway/model.js';
 import { isFinal } from '@klaud/core/gateway/model.js';
-import type { StepSummary } from '@klaud/shared/steps.js';
+import type { StepRecord, StepSummary } from '@klaud/shared/steps.js';
 import { humanizeLine } from '@klaud/shared/step-titles.js';
 import { formatDuration } from '@klaud/shared/text.js';
 import { DONE_STEPS, HIDDEN_STEPS } from '@klaud/ui/format.js';
@@ -16,6 +16,7 @@ import { Shimmer, StepRow, usePersonId } from './StepRow.js';
 import { useAgentSteps } from './use-steps.js';
 import { useActions } from '../../lib/actions.js';
 import { useClock } from '../../lib/window-active.js';
+import { keepSameById, sameItems } from '../../lib/stable.js';
 import { useLive } from '../../lib/live-motion.js';
 import { agentOfToolUse, allSubAgents } from '../../claude-code/subagents-model.js';
 import { openSubAgent } from '../../layout/SubAgents.js';
@@ -42,6 +43,11 @@ function Progress() {
   });
   return <div ref={line} className={s.progress} role="progressbar" aria-label="Claude is working" />;
 }
+
+const NO_TASKS: readonly TaskView[] = [];
+
+/** The clock for a step's row: only a running step's time moves, so only its row is drawn again as the clock ticks. */
+const clockFor = (step: StepSummary, live: boolean, now: number): number => (live && step.status === 'running' ? now : 0);
 
 /** A one-line step (someone else's Claude, or a card from before details were kept) as a row. */
 function lineStep(line: string, i: number, at: number, live: boolean): StepSummary {
@@ -75,7 +81,6 @@ function spanOf(steps: readonly StepSummary[]): string | undefined {
 export const AgentSteps = memo(function AgentSteps({ item, running }: { item: AgentItem; running: boolean }) {
   const selfId = useApp((st) => st.selfId);
   const detail = useApp((st) => st.prefs.subagents);
-  const tasks = useApp((st) => st.gateway.tasks);
   const mine = item.owner === selfId;
   const change = `${item.status}:${item.steps.length}:${item.steps.at(-1) ?? ''}:${item.subagents.map((x) => `${x.steps.length}${x.status}`).join(',')}`;
   const { steps: rich } = useAgentSteps(item.channel, item.id, running, change, mine);
@@ -86,12 +91,24 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
   const subIds = useMemo(() => new Set(item.subagents.map((x) => x.id)), [item.subagents]);
   const richOnes = Boolean(rich?.length);
   // The main thread's steps: your own Claude's records, else its one-line steps in words.
+  // A step that reads as it did stays the same object, so its row isn't drawn again (KLD-48).
+  const before = useRef<readonly StepSummary[]>([]);
   const rows = useMemo<StepSummary[]>(() => {
-    if (rich?.length) return rich.filter((x) => !x.parent && !(x.tool && LAUNCH.has(x.tool) && subIds.has(x.id)) && !HIDDEN_STEPS.test(x.title)).map(withWords);
     const lines = item.steps.filter((x) => !HIDDEN_STEPS.test(x));
-    return lines.map((line, i) => lineStep(line, i, item.ts, running && i === lines.length - 1));
+    const next = rich?.length
+      ? rich.filter((x) => !x.parent && !(x.tool && LAUNCH.has(x.tool) && subIds.has(x.id)) && !HIDDEN_STEPS.test(x.title)).map(withWords)
+      : lines.map((line, i) => lineStep(line, i, item.ts, running && i === lines.length - 1));
+    return (before.current = keepSameById(before.current, next));
   }, [rich, subIds, item.steps, item.ts, running]);
   const working = running && !item.text;
+  // Only the tasks this card's steps wait on: another task changing doesn't draw this card again.
+  const asked = rows.flatMap((x) => (x.task ? [x.task] : [])).join(' ');
+  const tasks = useApp((st) => (asked ? st.gateway.tasks.filter((t) => asked.split(' ').includes(t.id)) : NO_TASKS), sameItems);
+  // The same functions every render and every second, so a step's row (memo) only draws again when it changes.
+  const disclosure = useRef(open);
+  disclosure.current = open;
+  const toggle = useCallback((id: string) => disclosure.current.toggle(id), []);
+  const load = useCallback((id: string) => api.agent.step(item.channel, item.id, id), [api, item.channel, item.id]);
 
   // The step Claude is on: the last one, while it runs.
   const lastRow = rows.at(-1);
@@ -102,7 +119,6 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
   const older = fold ? finished.slice(0, finished.length - keep) : [];
   const recent = fold ? finished.slice(-keep) : finished;
   const taskOf = (step: StepSummary): TaskView | undefined => (step.task ? tasks.find((t) => t.id === step.task) : undefined);
-  const load = (id: string) => () => api.agent.step(item.channel, item.id, id);
   const stepsOf = (sub: SubAgent): StepSummary[] => (rich ?? []).filter((x) => x.parent === sub.id);
 
   const row = (step: StepSummary, isCurrent: boolean) => {
@@ -111,12 +127,13 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
     return (
       <StepRow
         key={step.id}
-        step={task && !step.person ? { ...step, person: task.peerName } : step}
+        step={step}
+        person={task?.peerName}
         open={open.isOpen(step.id)}
-        onToggle={() => open.toggle(step.id)}
-        load={load(step.id)}
+        onToggle={toggle}
+        load={load}
         live={running}
-        now={now}
+        now={clockFor(step, running, now)}
         openable={richOnes}
         current={isCurrent}
         {...(step.wait && waitedLabel(task) ? { words: waitedLabel(task) } : {})}
@@ -146,7 +163,7 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
         {/* One keyed list with the step Claude is on: when it finishes it stays the same row
             (no remount, so nothing blinks or restarts) and only changes how it reads. */}
         {[...recent.map((step) => row(step, false)), current ? row(current, true) : working ? <LiveIdle key="idle" started={rows.length > 0} since={item.ts} /> : null]}
-        <SubAgents item={item} rich={richOnes} detail={detail} stepsOf={stepsOf} open={open} load={load} live={running} now={now} />
+        <SubAgents item={item} rich={richOnes} detail={detail} stepsOf={stepsOf} open={open} toggle={toggle} load={load} live={running} now={now} />
       </div>
     </>
   );
@@ -276,7 +293,7 @@ function WatchAgent({ id }: { id: string }) {
   );
 }
 
-function SubAgents({ item, rich, detail, stepsOf, open, load, live, now }: { item: AgentItem; rich: boolean; detail: string; stepsOf: (sub: SubAgent) => StepSummary[]; open: ReturnType<typeof useDisclosure>; load: (id: string) => () => Promise<import('@klaud/shared/steps.js').StepRecord | undefined>; live: boolean; now: number }) {
+function SubAgents({ item, rich, detail, stepsOf, open, toggle, load, live, now }: { item: AgentItem; rich: boolean; detail: string; stepsOf: (sub: SubAgent) => StepSummary[]; open: ReturnType<typeof useDisclosure>; toggle: (id: string) => void; load: (id: string) => Promise<StepRecord | undefined>; live: boolean; now: number }) {
   if (!item.subagents.length) return null;
   if (detail === 'hidden') {
     return (
@@ -319,7 +336,7 @@ function SubAgents({ item, rich, detail, stepsOf, open, load, live, now }: { ite
             {isOpen ? (
               <div className={s.subBody}>
                 {own.map((step) => (
-                  <StepRow key={step.id} step={step} open={open.isOpen(step.id)} onToggle={() => open.toggle(step.id)} load={load(step.id)} live={live} now={now} />
+                  <StepRow key={step.id} step={step} open={open.isOpen(step.id)} onToggle={toggle} load={load} live={live} now={clockFor(step, live, now)} />
                 ))}
               </div>
             ) : running && detail === 'full' && sub.steps.length ? (
