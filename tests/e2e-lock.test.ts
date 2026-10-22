@@ -8,8 +8,11 @@ import {
   alive,
   groupsUnder,
   homesFor,
+  listeners,
   portFor,
+  processesOf,
   processesTagged,
+  stopRun,
   readLock,
   releaseLock,
   rerunArgs,
@@ -135,6 +138,41 @@ describe('teardown: nothing a run started survives it', () => {
     await new Promise((r) => setTimeout(r, 200));
     expect(processesTagged('KLAUD_E2E_RUN', id).map((p) => p.pid)).toContain(child.pid);
     expect(processesTagged('KLAUD_E2E_RUN', `${id}x`)).toEqual([]);
+  });
+});
+
+describe('a stale lock’s cleanup only stops what it can verify is its own', () => {
+  const rows = [
+    { pid: 501, pgid: 501, line: 'node /w/kld-39/node_modules/.bin/vite --port 14321 PWD=/w/kld-39/packages/mac KLAUD_E2E_RUN=r1' },
+    { pid: 502, pgid: 502, line: '/Users/me/Library/Caches/ms-playwright/chromium/chrome-headless-shell PWD=/w/kld-39/packages/mac KLAUD_E2E_RUN=r1' },
+    // The same tag under another worktree, a longer tag, and a pid reused by something else.
+    { pid: 503, pgid: 503, line: 'node /w/kld-39-other/x.js KLAUD_E2E_RUN=r1' },
+    { pid: 504, pgid: 504, line: 'node /w/kld-39/x.js KLAUD_E2E_RUN=r10' },
+    { pid: 505, pgid: 505, line: '/usr/sbin/sshd -D' },
+  ];
+  it('tagged with its run id and under its worktree: nothing else', () => {
+    expect(processesOf(run({ id: 'r1', worktree: '/w/kld-39' }), rows).map((p) => p.pid)).toEqual([501, 502]);
+    expect(processesOf(run({ id: 'r1', worktree: undefined }), rows)).toEqual([]);
+  });
+
+  it('a reused pid, its old group and whoever listens on its port now all survive', async () => {
+    // Someone else's server, in its own group, listening on the dead run's port.
+    const server = spawn(process.execPath, ['-e', "const s=require('net').createServer().listen(0,'127.0.0.1',()=>console.log(s.address().port)); setInterval(()=>{},1000)"], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    children.push(server);
+    const port = await new Promise<number>((resolve) => server.stdout!.once('data', (d) => resolve(Number(String(d).trim()))));
+    // And a process of the dead run, tagged and under its worktree: that one goes.
+    const worktree = tmp();
+    const id = `stale-${Date.now()}`;
+    const left = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: worktree, env: { ...process.env, KLAUD_E2E_RUN: id, PWD: worktree }, detached: true, stdio: 'ignore' });
+    children.push(left);
+    await new Promise((r) => setTimeout(r, 300));
+    // The lock says: pid now reused by the server, its group, its port.
+    const stale = run({ id, pid: server.pid!, worktree, port, groups: [server.pid!] });
+    await stopRun(stale, { graceMs: 500 });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(alive(server.pid!)).toBe(true);
+    expect(listeners(port)).toContain(server.pid);
+    if (process.platform === 'darwin') expect(alive(left.pid!)).toBe(false);
   });
 });
 

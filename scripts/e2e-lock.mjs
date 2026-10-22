@@ -229,21 +229,38 @@ export async function stopGroups({ groups = [], pids = [] }, { graceMs = 3000 } 
   for (const p of ps) signal(p, 'SIGKILL');
 }
 
-/** Stop everything a run started: its tracked groups, anything tagged with its id, the demo daemon, its port. */
-export async function stopRun(run, opts) {
-  const tagged = processesTagged('KLAUD_E2E_RUN', run.id);
-  const daemon = readDaemonPid(run.home);
-  await stopGroups({ groups: [...(run.groups ?? []), ...tagged.map((p) => p.pgid)], pids: [...tagged.map((p) => p.pid), ...(daemon ? [daemon] : []), ...(run.port ? listeners(run.port) : [])] }, opts);
+/** Every process with its command line and (ps -E) environment: yours only. */
+function psEnv() {
+  try {
+    return execFileSync('ps', ['-axwwE', '-o', 'pid=,pgid=,command='], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+      .split('\n')
+      .map((l) => /^\s*(\d+)\s+(\d+)\s(.*)$/.exec(l))
+      .filter(Boolean)
+      .map((m) => ({ pid: Number(m[1]), pgid: Number(m[2]), line: m[3] }));
+  } catch {
+    return [];
+  }
 }
 
-function readDaemonPid(home) {
-  if (!home) return undefined;
-  try {
-    const pid = JSON.parse(readFileSync(path.join(home, 'daemon.json'), 'utf8')).pid;
-    return typeof pid === 'number' && alive(pid) ? pid : undefined;
-  } catch {
-    return undefined;
-  }
+/**
+ * The processes a run can verify are its own: their environment carries its run tag
+ * (KLAUD_E2E_RUN=<id>) and their command line or working folder is under its worktree. A pid
+ * reused after a reboot can't have both, so nothing else is ever matched.
+ */
+export function processesOf(run, rows = psEnv()) {
+  if (!run?.id || !run.worktree) return [];
+  const tag = ` KLAUD_E2E_RUN=${run.id}`;
+  const under = new RegExp(`${run.worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/|\\s|$)`);
+  return rows.filter((r) => r.pid !== process.pid && (r.line.includes(`${tag} `) || r.line.endsWith(tag)) && under.test(r.line)).map(({ pid, pgid }) => ({ pid, pgid }));
+}
+
+/**
+ * Stop everything a run started: only the processes it can verify are its own (see processesOf),
+ * one by one. Never a stored pid or process group, the demo daemon's pid file, or whoever listens
+ * on its port alone: after a reboot or pid reuse those can be anyone's.
+ */
+export async function stopRun(run, opts) {
+  await stopGroups({ pids: processesOf(run).map((p) => p.pid) }, opts);
 }
 
 // ------------------------------------------------------------------ load

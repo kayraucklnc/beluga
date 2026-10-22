@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type ProcRow, isTestRunner, stopTestProcesses, testProcessesIn } from '../src/workspaces/test-procs.js';
+import { type ProcRow, isTestRunner, lockTargets, stopTestProcesses, testProcessesIn } from '../src/workspaces/test-procs.js';
 
 const W = '/w/kld-5-playwright-fix';
 const row = (pid: number, ppid: number, line: string): ProcRow => ({ pid, ppid, line });
@@ -38,6 +38,35 @@ describe('which processes are a worktree’s test runs', () => {
 const children: ChildProcess[] = [];
 afterEach(() => {
   for (const c of children.splice(0)) c.kill('SIGKILL');
+});
+
+describe('a stale e2e lock never stops someone else’s process', () => {
+  const run = { pid: 4100, worktree: '/w/kld-39', id: 'r9', groups: [4100, 4200], daemon: 4300, file: '/tmp/lock.json' };
+  it('the lock holder verified (e2e-lock.mjs under its worktree): its groups, and its daemon when tagged', () => {
+    const rows: ProcRow[] = [
+      { pid: 4100, ppid: 1, line: 'node ../../scripts/e2e-lock.mjs playwright test PWD=/w/kld-39/packages/mac KLAUD_E2E_RUN=r9' },
+      { pid: 4300, ppid: 4100, line: 'node src/cli.tsx daemon --keep-alive demo PWD=/w/kld-39 KLAUD_E2E_RUN=r9' },
+    ];
+    expect(lockTargets(run, rows)).toEqual({ pids: [4100, 4300], groups: [4100, 4200] });
+  });
+
+  it('its pid reused after a reboot (another program now): nothing from the lock, groups and daemon pid included', () => {
+    const rows: ProcRow[] = [
+      { pid: 4100, ppid: 1, line: '/Applications/Safari.app/Contents/MacOS/Safari' },
+      { pid: 4300, ppid: 1, line: '/usr/sbin/cupsd -l' },
+    ];
+    expect(lockTargets(run, rows)).toEqual({ pids: [], groups: [] });
+    // Another worktree's e2e-lock on that pid isn't this run either.
+    expect(lockTargets(run, [{ pid: 4100, ppid: 1, line: 'node scripts/e2e-lock.mjs vitest PWD=/w/kld-12' }])).toEqual({ pids: [], groups: [] });
+  });
+
+  it('a daemon pid that isn’t tagged with the run is spared even while the run is there', () => {
+    const rows: ProcRow[] = [
+      { pid: 4100, ppid: 1, line: 'node scripts/e2e-lock.mjs playwright test PWD=/w/kld-39/packages/mac' },
+      { pid: 4300, ppid: 1, line: 'node my-own-server.js' },
+    ];
+    expect(lockTargets(run, rows).pids).toEqual([4100]);
+  });
 });
 
 describe.runIf(process.platform === 'darwin')('stopping them for real', () => {

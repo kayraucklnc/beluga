@@ -32,6 +32,7 @@ export function groupsUnder(root: number, table: ReadonlyArray<{ pid: number; pp
 export function processesTagged(key: string, value: string): Array<{ pid: number; pgid: number }>;
 export function listeners(port: number): number[];
 export function stopGroups(targets: { groups?: readonly number[]; pids?: readonly number[] }, opts?: { graceMs?: number }): Promise<void>;
+export function processesOf(run: E2eRun, rows?: ReadonlyArray<{ pid: number; pgid: number; line: string }>): Array<{ pid: number; pgid: number }>;
 export function stopRun(run: E2eRun, opts?: { graceMs?: number }): Promise<void>;
 export function loadPerCore(): number;
 export const OVERLOADED: number;

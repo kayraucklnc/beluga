@@ -85,11 +85,11 @@ const signal = (target: number, sig: NodeJS.Signals | 0): boolean => {
   }
 };
 
-/** The lock's run, when it's from this worktree: its pid, process groups, demo daemon. */
-function lockedRun(dir: string): { pid: number; groups: number[]; daemon?: number; file: string } | undefined {
+/** The lock's run, when it's from this worktree: its pid, process groups, demo daemon, run id. */
+function lockedRun(dir: string): LockedRun | undefined {
   const file = e2eLockFile();
   try {
-    const lock = JSON.parse(readFileSync(file, 'utf8')) as { pid?: unknown; worktree?: unknown; groups?: unknown; home?: unknown };
+    const lock = JSON.parse(readFileSync(file, 'utf8')) as { id?: unknown; pid?: unknown; worktree?: unknown; groups?: unknown; home?: unknown };
     if (typeof lock.pid !== 'number' || typeof lock.worktree !== 'string' || !inside(lock.worktree, dir)) return undefined;
     const groups = Array.isArray(lock.groups) ? lock.groups.filter((g): g is number => typeof g === 'number' && g > 1) : [];
     let daemon: number | undefined;
@@ -101,10 +101,36 @@ function lockedRun(dir: string): { pid: number; groups: number[]; daemon?: numbe
         // No daemon running.
       }
     }
-    return { pid: lock.pid, groups, ...(daemon ? { daemon } : {}), file };
+    return { pid: lock.pid, worktree: lock.worktree, groups, ...(typeof lock.id === 'string' ? { id: lock.id } : {}), ...(daemon ? { daemon } : {}), file };
   } catch {
     return undefined;
   }
+}
+
+export interface LockedRun {
+  readonly pid: number;
+  readonly worktree: string;
+  readonly id?: string;
+  readonly groups: readonly number[];
+  readonly daemon?: number;
+  readonly file: string;
+}
+
+/**
+ * What of a locked run may be stopped, judged on the processes there now. Its lock holder, its
+ * groups and its daemon only while the holder is verifiably that run (e2e-lock.mjs, under its
+ * worktree); the daemon only when it carries the run's tag. A stale lock (its holder gone, or the
+ * pid reused after a reboot) gives nothing: its leftovers are found by their tags instead.
+ */
+export function lockTargets(run: LockedRun, rows: readonly ProcRow[]): { pids: number[]; groups: number[] } {
+  const row = (pid: number | undefined) => (pid ? rows.find((r) => r.pid === pid) : undefined);
+  const holder = row(run.pid);
+  const verified = Boolean(holder && /e2e-lock\.mjs(\s|$)/.test(holder.line) && holder.line.includes(run.worktree));
+  if (!verified) return { pids: [], groups: [] };
+  const tag = run.id ? ` KLAUD_E2E_RUN=${run.id}` : undefined;
+  const daemon = row(run.daemon);
+  const daemonOurs = Boolean(daemon && tag && (daemon.line.includes(`${tag} `) || daemon.line.endsWith(tag)));
+  return { pids: [run.pid, ...(daemonOurs ? [run.daemon!] : [])], groups: [...run.groups] };
 }
 
 /**
@@ -113,14 +139,16 @@ function lockedRun(dir: string): { pid: number; groups: number[]; daemon?: numbe
  */
 export async function stopTestProcesses(dir: string, opts: { leaving?: boolean; graceMs?: number } = {}): Promise<number> {
   const root = path.resolve(dir);
-  const pids = testProcessesIn(await processRows(), root, opts.leaving);
-  // The e2e run holding the lock: when its Claude started it (it's among them), or the worktree goes.
+  const rows = await processRows();
+  const pids = testProcessesIn(rows, root, opts.leaving);
+  // The e2e run holding the lock: when its Claude started it (it's among them), or the worktree goes; only what it can verify (see lockTargets).
   const locked = lockedRun(root);
   const run = locked && (opts.leaving || pids.includes(locked.pid)) ? locked : undefined;
-  if (run) pids.push(run.pid, ...(run.daemon ? [run.daemon] : []));
+  const fromLock = run ? lockTargets(run, rows) : { pids: [], groups: [] };
+  pids.push(...fromLock.pids);
   const own = new Set([process.pid, process.ppid]);
   const targets = [...new Set(pids)].filter((p) => p > 1 && !own.has(p));
-  const groups = (run?.groups ?? []).filter((g) => !own.has(g));
+  const groups = fromLock.groups.filter((g) => !own.has(g));
   if (!targets.length && !groups.length) return 0;
   for (const p of targets) signal(p, 'SIGTERM');
   for (const g of groups) signal(-g, 'SIGTERM');
