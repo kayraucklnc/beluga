@@ -90,14 +90,10 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
   await expect(chat.getByText(/Read src\/server\.ts|Glob src/).first()).toBeVisible({ timeout: 15_000 });
   expect(await overflowRight(chat)).toEqual([]);
 
-  // The Inspector shows the plan, not the room.
-  if (!(await page.getByRole('complementary', { name: 'Inspector' }).isVisible())) await page.getByRole('button', { name: /^Show the panel/ }).click();
-  const info = page.getByRole('tab', { name: 'Info' });
-  if (await info.isVisible()) await info.click();
-  const inspector = page.getByRole('complementary', { name: 'Inspector' });
-  await expect(inspector).toContainText('This plan');
-  await expect(inspector).toContainText('bob-api');
-  await expect(inspector).toContainText('Claude is writing it');
+  // No right panel beside a plan (KLD-54): its project is in the toolbar, and the panel's button is off.
+  await expect(page.locator('aside[aria-label="Panel"]')).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.getByRole('button', { name: /^No panel on a plan/ })).toBeDisabled();
+  await expect(page.locator('header').filter({ hasText: 'bob-api' }).first()).toBeVisible();
   await expect(inspector).not.toContainText('New people');
 
   const dir = process.env.SHOTS;

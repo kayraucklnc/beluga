@@ -52,8 +52,7 @@ test('a task’s panel keeps its head and Close in reach while its brief scrolls
   await expect(main(page).getByRole('group', { name: '“Safe payments” leads to “Refunds and launch”', exact: true })).toHaveCount(1);
   await expect(main(page).getByRole('group', { name: /^“Test-mode foundations” leads to/ })).toHaveCount(0);
   // Milestones that run side by side make the plan wide: room for it (the conversation folded away), all of it in view.
-  await main(page).getByRole('button', { name: 'Plan Options' }).click();
-  await page.getByRole('menuitem', { name: 'Hide the Conversation' }).click();
+  await main(page).getByRole('button', { name: 'Hide the Chat' }).click();
   await main(page).getByRole('button', { name: 'Fit to View' }).click();
   await page.waitForTimeout(400);
   await main(page).locator('.react-flow__node').filter({ hasText: 'Refund endpoint' }).click();
@@ -219,9 +218,12 @@ test('the composer: Plan with Tasks makes the conversation a plan', async ({ pag
   await page.getByRole('menuitem', { name: /Plan with Tasks/ }).click();
   await expect(page.getByRole('button', { name: 'Mode: Plan with Tasks' })).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: 'nothing reaches the board until you approve' })).toBeVisible();
-  // Back to acting: the empty plan goes.
+  // A plan's own conversation has no modes to pick (KLD-54): the chip opens the plan, or throws the draft away.
   await page.getByRole('button', { name: /^Mode: / }).click();
-  await page.getByRole('menuitem', { name: /^Act/ }).click();
+  await expect(page.getByRole('menuitem', { name: /^Act/ })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Open the Plan' })).toBeVisible();
+  // Discarding the empty draft: the conversation is an ordinary one again.
+  await page.getByRole('menuitem', { name: 'Discard the Draft' }).click();
   await expect(page.getByRole('button', { name: 'Mode: Act' })).toBeVisible();
 });
 

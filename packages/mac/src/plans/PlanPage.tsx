@@ -8,31 +8,30 @@ import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { usePrefs } from '../lib/prefs.js';
+import { PLAN_CHAT_TOGGLE } from '../lib/panel.js';
+import { ResizeHandle } from '../layout/panel/ResizeHandle.js';
 import { taskChatsItem } from '../layout/plan-task-chats.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { openSheet } from '../lib/sheets.js';
-import { openExternal } from '../lib/system.js';
+import { mod, openExternal } from '../lib/system.js';
 import { MilestoneBar, PlanProgress, Said, TonePill } from './marks.js';
 import { PlanChat } from './PlanChat.js';
 import { FEED, PlanDetails } from './PlanDetails.js';
 import { PlanOutline } from './PlanOutline.js';
+import { CHAT_DEFAULT, DEFAULT_PLAN_LAYOUT, type Display, PLAN_LAYOUT_KEY, type PlanLayout, chatOpen, clampChatWidth, readPlanLayout, setChatOpen } from './plan-layout.js';
 import { barColumns, changeWords, headline, nextWords, titleOf } from './plans-model.js';
 import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
 
 const PlanCanvas = lazy(() => import('./PlanCanvas.js'));
 
-type Display = 'graph' | 'outline';
-const PREFS = 'klaud.plan.v1';
-
-function readPrefs(): { display: Display; chat: boolean } {
+function readPrefs(): PlanLayout {
   try {
-    const raw = JSON.parse(localStorage.getItem(PREFS) ?? '{}') as { display?: string; chat?: boolean };
-    return { display: raw.display === 'outline' ? 'outline' : 'graph', chat: raw.chat !== false };
+    return readPlanLayout(JSON.parse(localStorage.getItem(PLAN_LAYOUT_KEY) ?? '{}'));
   } catch {
-    return { display: 'graph', chat: true };
+    return DEFAULT_PLAN_LAYOUT;
   }
 }
 
@@ -45,15 +44,17 @@ export function PlanPage({ id, task }: { id: string; task?: string }) {
   const plan = usePlans().plans.find((x) => x.id === id);
   const view = usePlanView(plan);
   const [prefs, setPrefsState] = useState(readPrefs);
-  const setPrefs = (patch: Partial<typeof prefs>): void => {
-    const next = { ...prefs, ...patch };
-    setPrefsState(next);
-    try {
-      localStorage.setItem(PREFS, JSON.stringify(next));
-    } catch {
-      // Kept for now.
-    }
-  };
+  const setPrefs = useCallback((change: (layout: PlanLayout) => PlanLayout): void => {
+    setPrefsState((was) => {
+      const next = change(was);
+      try {
+        localStorage.setItem(PLAN_LAYOUT_KEY, JSON.stringify(next));
+      } catch {
+        // Kept for now.
+      }
+      return next;
+    });
+  }, []);
   const [picked, setPicked] = useState<string | undefined>(task);
   // Opened at a task (a notification about it): that task is picked.
   useEffect(() => {
@@ -102,8 +103,16 @@ function LimitPause({ view }: { view: PlanView }) {
   );
 }
 
-function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; prefs: { display: Display; chat: boolean }; setPrefs: (p: Partial<{ display: Display; chat: boolean }>) => void; picked?: string; setPicked: (id: string | undefined) => void }) {
+function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; prefs: PlanLayout; setPrefs: (change: (layout: PlanLayout) => PlanLayout) => void; picked?: string; setPicked: (id: string | undefined) => void }) {
   const { plan } = view;
+  const chat = chatOpen(prefs, plan.id);
+  const showChat = useCallback((open: boolean) => setPrefs((l) => setChatOpen(l, plan.id, open)), [plan.id, setPrefs]);
+  // ⌥⌘0 (and View › Show Panel): on a plan's page its right side is the chat.
+  useEffect(() => {
+    const toggle = (): void => setPrefs((l) => setChatOpen(l, plan.id, !chatOpen(l, plan.id)));
+    document.addEventListener(PLAN_CHAT_TOGGLE, toggle);
+    return () => document.removeEventListener(PLAN_CHAT_TOGGLE, toggle);
+  }, [plan.id, setPrefs]);
   const { api, act, openList, openWorktree } = usePlanActions();
   const uiPrefs = usePrefs();
   const body = shownBody(plan);
@@ -113,6 +122,20 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
     const step = new Set(view.open.filter((m) => m.autonomy === 'step').map((m) => m.milestone.id));
     return new Set(view.ready.filter((t) => t.forYou || plan.paused || step.has(t.milestoneId)).map((t) => t.task.id));
   }, [view, plan]);
+  // The chat's width: dragged (live), else the one you left it at, never past half the plan's area.
+  const split = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<number>();
+  const splitWidth = (): number => split.current?.clientWidth ?? window.innerWidth;
+  const [areaWidth, setAreaWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = split.current;
+    if (!el) return;
+    setAreaWidth(el.clientWidth);
+    const watch = new ResizeObserver(() => setAreaWidth(el.clientWidth));
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+  const chatWidth = drag ?? clampChatWidth(prefs.chatWidth, areaWidth || window.innerWidth);
   const start = useCallback((taskId: string) => void act(() => api.startTask(plan.id, taskId)), [plan.id, act, api]);
   const next = view.next;
   const words = nextWords(next);
@@ -148,7 +171,6 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   })();
 
   const more: ActionItem[] = [
-    { label: prefs.chat ? 'Hide the Conversation' : 'Show the Conversation', onSelect: () => setPrefs({ chat: !prefs.chat }) },
     ...(plan.body && plan.status === 'active' ? [{ label: plan.paused ? 'Resume' : 'Pause', onSelect: () => void act(() => api.setPaused(plan.id, !plan.paused)) }] : []),
     { label: 'Run at Once', submenu: [1, 2, 3, 4, 6, MAX_PARALLEL].map((n) => ({ label: `${n} ${n === 1 ? 'task' : 'tasks'}`, checked: plan.maxParallel === n, onSelect: () => void act(() => api.setParallel(plan.id, n)) })), onSelect: () => undefined },
     { label: 'When to Run Tests', submenu: TESTS_AT.map((t) => ({ label: TESTS_AT_INFO[t].label, hint: TESTS_AT_INFO[t].hint, checked: plan.testsAt === t, onSelect: () => void act(() => api.setTestsAt(plan.id, t), t === 'end' ? 'From now on, milestone checks skip the test suites; they all run once, in the final step' : 'From now on, each milestone’s check runs the full suites once, on its combined work') })), onSelect: () => undefined },
@@ -199,6 +221,8 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
               {view.milestones.some((m) => m.milestone.autonomy && m.milestone.autonomy !== plan.autonomy) ? ' (mixed)' : ''}
             </Button>
           )}
+          {/* The chat beside the plan, in and out: always here, whichever way it is. */}
+          <IconButton icon="claude" label={chat ? 'Hide the Chat' : 'Show the Chat'} keys={`⌥${mod()}0`} active={chat} onClick={() => showChat(!chat)} />
           <ActionsDropdown items={more}>
             <IconButton icon="more" label="Plan Options" />
           </ActionsDropdown>
@@ -225,14 +249,14 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           </Button>
         </div>
       ) : null}
-      <div className={cx(p.split, prefs.chat && p.splitChat)}>
+      <div ref={split} className={cx(p.split, chat && p.splitChat)} style={chat ? { gridTemplateColumns: `minmax(0, 1fr) ${chatWidth}px` } : undefined}>
         <div className={p.stage}>
           <div className={p.stageTools}>
             {drafting ? null : (
               <Segmented<Display>
                 label="Show"
                 value={prefs.display}
-                onChange={(display) => setPrefs({ display })}
+                onChange={(display) => setPrefs((l) => ({ ...l, display }))}
                 options={[
                   { value: 'graph', label: 'Canvas', hint: 'The plan as a graph' },
                   { value: 'outline', label: 'List', hint: 'Milestone by milestone' },
@@ -244,11 +268,6 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
                 What Happened
               </Button>
             )}
-            {!prefs.chat ? (
-              <Button size="small" variant="quiet" icon="claude" onClick={() => setPrefs({ chat: true })}>
-                Talk to Claude
-              </Button>
-            ) : null}
           </div>
           {!body?.milestones.length ? (
             <Drafting plan={plan} />
@@ -261,7 +280,23 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           )}
           {picked ? <PlanDetails view={view} picked={picked} canStart={startable.has(picked)} onClose={() => setPicked(undefined)} /> : null}
         </div>
-        {prefs.chat ? <PlanChat channel={plan.home} draft={!plan.body || Boolean(plan.draft)} drafting={drafting} onClose={() => setPrefs({ chat: false })} /> : null}
+        {chat ? (
+          <div className={p.chatSide}>
+            <ResizeHandle
+              axis="x"
+              label="Resize the chat"
+              className={p.chatEdge}
+              onMove={(x) => setDrag(clampChatWidth((split.current?.getBoundingClientRect().right ?? window.innerWidth) - x, splitWidth()))}
+              onEnd={() => {
+                if (drag !== undefined) setPrefs((l) => ({ ...l, chatWidth: drag }));
+                setDrag(undefined);
+              }}
+              onReset={() => setPrefs((l) => ({ ...l, chatWidth: CHAT_DEFAULT }))}
+              onStep={(dir) => setPrefs((l) => ({ ...l, chatWidth: clampChatWidth(chatWidth + dir * 24, splitWidth()) }))}
+            />
+            <PlanChat channel={plan.home} draft={!plan.body || Boolean(plan.draft)} drafting={drafting} onClose={() => showChat(false)} />
+          </div>
+        ) : null}
       </div>
     </div>
   );

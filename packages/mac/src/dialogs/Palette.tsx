@@ -10,7 +10,7 @@ import { useApp, useKlaud, useUi } from '../lib/klaud.js';
 import { setPrefs, usePrefs, zoom } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { showPanelTab, tabsOf, togglePanel, toggleTerminal } from '../lib/panel.js';
-import { PANEL_LABELS, panelDigit } from '../lib/panel-model.js';
+import { PANEL_LABELS, panelDigit, panelFits } from '../lib/panel-model.js';
 import { paletteCommands } from './palette-commands.js';
 import { networkPaletteItems } from '../network/net-palette.js';
 import s from './palette.module.css';
@@ -87,7 +87,9 @@ export function Palette() {
     { id: 'inbox', label: 'Notifications', hint: 'What happened while you were elsewhere', icon: 'bell', run: () => ui.patch({ notices: true }) },
     { id: 'appearance', label: `Appearance: ${prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark'}`, icon: 'eye', run: () => setPrefs({ appearance: prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark' }) },
     { id: 'sidebar', label: prefs.sidebar ? 'Hide the sidebar' : 'Show the sidebar', keys: '⌃⌘S', icon: 'sidebar', run: () => setPrefs({ sidebar: !prefs.sidebar }) },
-    { id: 'inspector', label: prefs.inspector ? 'Hide the panel' : 'Show the panel', hint: 'Changes, files, terminal, info', keys: `⌥${mod()}0`, icon: 'panelRight', run: togglePanel },
+    panelFits(state.view)
+      ? { id: 'inspector', label: prefs.inspector ? 'Hide the panel' : 'Show the panel', hint: 'Changes, files, terminal, info', keys: `⌥${mod()}0`, icon: 'panelRight', run: () => togglePanel(state.view) }
+      : { id: 'inspector', label: 'Show or hide the plan’s chat', keys: `⌥${mod()}0`, icon: 'claude', run: () => togglePanel(state.view) },
     { id: 'terminal-toggle', label: 'Show or hide the terminal', hint: prefs.termIn === 'drawer' ? 'under the chat' : 'in the panel', keys: `${mod()}J`, icon: 'terminal', run: () => void toggleTerminal(client.store.getState()) },
     { id: 'bigger', label: 'Bigger text', keys: `${mod()}+`, icon: 'plus', run: () => zoom('in') },
     { id: 'smaller', label: 'Smaller text', keys: `${mod()}−`, icon: 'x', run: () => zoom('out') },

@@ -17,6 +17,7 @@ import {
   migratePrefs,
   panelDigit,
   panelKey,
+  panelFits,
   panelTabsFor,
   pickPanelTab,
   rememberTab,
@@ -55,6 +56,12 @@ describe('the right panel’s two panes', () => {
 });
 
 describe('the right panel’s tabs', () => {
+  it('a plan’s page has no panel: its chat is its right side', () => {
+    expect(panelFits({ kind: 'plan', id: 'p1' })).toBe(false);
+    expect(panelTabsFor({ kind: 'plan', id: 'p1' })).toEqual([]);
+    expect(panelFits(ws)).toBe(true);
+    expect(panelFits({ kind: 'plans' })).toBe(true);
+  });
   it('a workspace has every tab; a chat has no Changes; a friend’s workspace and the Terminal view only Info', () => {
     expect(panelTabsFor(ws, 'worktree')).toEqual(['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background']);
     expect(panelTabsFor({ kind: 'project', id: 'p' })).toEqual(['terminal', 'info', 'history']);
