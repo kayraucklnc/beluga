@@ -5,12 +5,14 @@ import { type BodyInput, PlanError, applyOps, normalizeBody } from '../src/core/
 import { diffBodies, milestoneDeps, planForHome } from '../src/core/plans/model.js';
 import { Plans } from '../src/core/plans/plans.js';
 import { overlaps, planView, waves } from '../src/core/plans/progress.js';
-import { PlansWork } from '../src/core/plans/work.js';
+import { PlansWork, type PlansWorkDeps } from '../src/core/plans/work.js';
+import type { CombineResult } from '../src/workspaces/git.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 import { PLAN_TOOL_NAMES, createPlanToolDefs, milestoneInput, toOps } from '../src/agent/plan-tools.js';
 import { decideTool } from '../src/agent/policy.js';
+import { createMockBackend } from '../src/agent/mock.js';
 
 /** Plans: drafts that stay off the board, approving onto it, and the scheduler running them. */
 
@@ -18,7 +20,7 @@ const ws = (id: string, projectId: string, name: string, kind: Workspace['kind']
 const project = (id: string, name: string, workspaces: Workspace[] = []): Project => ({ id, name, root: `/tmp/${name}`, base: 'main', workspaces });
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-function setup() {
+function setup(opts: { titlePlan?: (goal: string) => Promise<string | undefined>; combine?: PlansWorkDeps['combine'] } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [ws('main', 'api', 'bob-api', 'chat', { askOnly: true } as Partial<Workspace>)])] });
   const listeners: Array<(e: WorktreeEvent) => void> = [];
@@ -45,18 +47,70 @@ function setup() {
       add(w);
       return w;
     },
+    renameChat: async (id: string, name: string) => {
+      store.dispatch({ type: 'projects', projects: store.getState().projects.map((p) => ({ ...p, workspaces: p.workspaces.map((w) => (w.id === id ? { ...w, name } : w)) })) });
+    },
   } as unknown as WorkspaceController;
   const board = new Board({ store, dir: null, projectName: (id) => store.getState().projects.find((p) => p.id === id)?.name });
   const boardWork = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: (prompt, channel) => void asked.push({ prompt, channel, echo: true }) });
   const plans = new Plans({ store, dir: null });
   const intents: unknown[] = [];
-  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => void asked.push({ prompt, channel, echo }), intend: (i) => void intents.push(i), delayMs: 0 });
+  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel, echo) => void asked.push({ prompt, channel, echo }), intend: (i) => void intents.push(i), delayMs: 0, ...(opts.titlePlan ? { titlePlan: opts.titlePlan } : {}), ...(opts.combine ? { combine: opts.combine } : {}) });
   const claude = boardWork.myClaude();
   const me = boardWork.me();
   /** Claude in a worktree finishes its run, or works. */
   const run = (channel: string, status: 'started' | 'done', id = `r-${Math.random()}`): void => store.dispatch({ type: 'agent_event', owner: 'p-me', requestId: id, requester: 'p-me', event: status, text: '', ts: Date.now(), channel });
   return { store, board, boardWork, plans, work, asked, made, intents, claude, me, run };
 }
+
+describe('a new plan’s name (KLD-28)', () => {
+  const chatName = (t: ReturnType<typeof setup>, home: string): string | undefined => t.store.getState().projects.flatMap((p) => p.workspaces).find((w) => `ws:${w.id}` === home)?.name;
+  const goal = 'A couple of things that we should improve because they look unfinished while Claude drafts the plan';
+
+  it('is never your message: "New plan", then the quick model’s name, in the sidebar too', async () => {
+    let name!: (title: string | undefined) => void;
+    const t = setup({ titlePlan: () => new Promise((r) => (name = r)) });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    expect(plan.draft!.title).toBe('New plan');
+    expect(plan.draft!.goal).toBe(goal);
+    expect(chatName(t, plan.home)).toBe('New plan');
+    name('Calmer plan drafting screen');
+    await tick();
+    expect(t.plans.need(plan.id).draft!.title).toBe('Calmer plan drafting screen');
+    expect(chatName(t, plan.home)).toBe('Calmer plan drafting screen');
+  });
+
+  it('Claude’s plan_write names it after that, and a late quick name doesn’t win', async () => {
+    let name!: (title: string | undefined) => void;
+    const t = setup({ titlePlan: () => new Promise((r) => (name = r)) });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    t.work.forRun(plan.home, 'p-me')!.tools!.write(BODY);
+    expect(t.plans.need(plan.id).draft!.title).toBe('Payments');
+    expect(chatName(t, plan.home)).toBe('Payments');
+    name('Too late');
+    await tick();
+    expect(t.plans.need(plan.id).draft!.title).toBe('Payments');
+  });
+
+  it('the mock agent’s quick call writes a short title, not your first words (KLD-36)', async () => {
+    const agent = createMockBackend({} as never, 0);
+    const t = setup({ titlePlan: (g) => agent.titlePlan!(g) });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    await tick(5);
+    const title = t.plans.need(plan.id).draft!.title;
+    expect(title).toBe('Improve unfinished drafts');
+    expect(title.split(' ').length).toBeLessThanOrEqual(6);
+    expect(goal.toLowerCase().startsWith(title.toLowerCase())).toBe(false);
+    expect(chatName(t, plan.home)).toBe(title);
+  });
+
+  it('stays "New plan" when the model can’t name it', async () => {
+    const t = setup({ titlePlan: async () => undefined });
+    const plan = await t.work.create({ projectId: 'api', goal });
+    await tick();
+    expect(t.plans.need(plan.id).draft!.title).toBe('New plan');
+  });
+});
 
 const BODY: BodyInput = {
   title: 'Payments',
@@ -525,5 +579,135 @@ describe('milestones run side by side unless one builds on another', () => {
     expect(got).toContain('Depends on no other milestone; runs alongside channels “Channels”, pilot “Parallel milestones”');
     t.work.discard(t.plan.id);
     expect(tools.get()).toContain('Runs after pilot “Parallel milestones”; runs alongside channels “Channels”.');
+  });
+});
+
+describe('a task that builds on several unfinished tasks starts from their combined work', () => {
+  /** Three tasks side by side; one builds on two of them, one on all three. */
+  const STACK: BodyInput = {
+    title: 'Stack',
+    goal: '',
+    milestones: [
+      {
+        id: 'm',
+        title: 'Everything',
+        criteria: ['works'],
+        tasks: [
+          { id: 'a', title: 'A' },
+          { id: 'b', title: 'B' },
+          { id: 'c', title: 'C' },
+          { id: 'two', title: 'Two', blockedBy: ['a', 'b'] },
+          { id: 'three', title: 'Three', blockedBy: ['a', 'b', 'c'] },
+        ],
+      },
+    ],
+  };
+
+  async function running(combine: (key: string, branches: readonly string[]) => CombineResult) {
+    const calls: Array<{ key: string; branches: readonly string[] }> = [];
+    const t = setup({
+      combine: async (_p, key, branches) => {
+        calls.push({ key, branches });
+        return combine(key, branches);
+      },
+    });
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main', autonomy: 'gated' }, t.claude);
+    t.plans.setMaxParallel(plan.id, 5, t.me);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(STACK);
+    t.work.approve(plan.id);
+    await tick(5);
+    const issue = (title: string) => t.store.getState().board.issues.find((i) => i.title === title)!;
+    const view = () => planView(t.plans.need(plan.id), t.store.getState().board);
+    const task = (id: string) => view().milestones[0]!.tasks.find((x) => x.task.id === id)!;
+    const review = async (...titles: string[]) => {
+      for (const title of titles) t.board.update(issue(title).id, { status: 'in_review' }, t.claude);
+      await tick(10);
+    };
+    return { ...t, plan, issue, view, task, review, calls };
+  }
+  const ok = (key: string): CombineResult => ({ ok: true, branch: `klaud/${key.toLowerCase()}-base` });
+
+  it('2 and 3 unmerged dependencies: each starts from a combined base, never “merge one first”', async () => {
+    const t = await running(ok);
+    await t.review('A', 'B');
+    const [a, b, c] = ['A', 'B', 'C'].map((x) => t.issue(x));
+    expect(t.calls[0]).toEqual({ key: t.issue('Two').key, branches: [a!.branch, b!.branch] });
+    expect(t.made.at(-1)).toMatchObject({ base: `klaud/${t.issue('Two').key.toLowerCase()}-base`, quiet: true });
+    expect(t.issue('Two').status).toBe('in_progress');
+    await t.review('C');
+    expect(t.calls[1]).toEqual({ key: t.issue('Three').key, branches: [a!.branch, b!.branch, c!.branch] });
+    expect(t.made.at(-1)).toMatchObject({ base: `klaud/${t.issue('Three').key.toLowerCase()}-base` });
+    expect(t.plans.need(t.plan.id).combining).toBeUndefined();
+    expect(JSON.stringify(t.view())).not.toMatch(/merge one first/);
+    expect(t.plans.need(t.plan.id).activity.map((e) => e.text).join('\n')).toContain(`combining ${a!.key} and ${b!.key} for ${t.issue('Two').key}`);
+  });
+
+  it('contained branches: the combine says one branch is enough, and that one is the start', async () => {
+    const t = await running((_key, branches) => ({ ok: true, branch: branches[1]! }));
+    await t.review('A', 'B');
+    expect(t.made.at(-1)).toMatchObject({ base: t.issue('B').branch });
+  });
+
+  it('while combining, the task shows “Combining KLD-x and KLD-y …” and counts as under way', async () => {
+    let release: (r: CombineResult) => void = () => undefined;
+    const t = setup({ combine: () => new Promise<CombineResult>((r) => (release = r)) });
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main', autonomy: 'gated' }, t.claude);
+    t.plans.setMaxParallel(plan.id, 5, t.me);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(STACK);
+    t.work.approve(plan.id);
+    await tick(5);
+    const issue = (title: string) => t.store.getState().board.issues.find((i) => i.title === title)!;
+    for (const title of ['A', 'B']) t.board.update(issue(title).id, { status: 'in_review' }, t.claude);
+    await tick(10);
+    const two = planView(t.plans.need(plan.id), t.store.getState().board).milestones[0]!.tasks.find((x) => x.task.id === 'two')!;
+    expect(two).toMatchObject({ state: 'running', step: `Combining ${issue('A').key} and ${issue('B').key} …` });
+    release({ ok: true, branch: 'klaud/x-base' });
+    await tick(10);
+    expect(t.made.at(-1)).toMatchObject({ base: 'klaud/x-base' });
+  });
+
+  it('a conflict goes to the head Claude as a fix-up there; after its run it’s tried again and starts', async () => {
+    let fixed = false;
+    const t = await running((key) => (fixed ? ok(key) : { ok: false, branch: `klaud/${key.toLowerCase()}-base`, dir: '/tmp/.bases/p/two-base', merging: 'klaud/b', files: ['shared.txt'] }));
+    const before = t.made.length;
+    await t.review('A', 'B');
+    expect(t.made).toHaveLength(before);
+    expect(t.task('two')).toMatchObject({ state: 'running', step: `Combining ${t.issue('A').key} and ${t.issue('B').key}: Claude is fixing a conflict in shared.txt` });
+    const fixup = t.asked.filter((a) => a.channel === 'ws:main' && a.prompt.includes('/tmp/.bases/p/two-base'));
+    expect(fixup).toHaveLength(1);
+    expect(fixup[0]!.prompt).toContain('shared.txt');
+    expect(fixup[0]!.echo).toBe(false);
+    // Nothing tries again while its run hasn't come and gone.
+    await tick(10);
+    expect(t.calls).toHaveLength(1);
+    t.run('ws:main', 'started', 'fix-1');
+    await tick(10);
+    expect(t.calls).toHaveLength(1);
+    fixed = true;
+    t.run('ws:main', 'done', 'fix-1');
+    await tick(10);
+    expect(t.calls).toHaveLength(2);
+    expect(t.made.at(-1)).toMatchObject({ base: `klaud/${t.issue('Two').key.toLowerCase()}-base` });
+    expect(t.issue('Two').status).toBe('in_progress');
+    expect(t.plans.need(t.plan.id).combining).toBeUndefined();
+  });
+
+  it('a conflict Claude can’t fix waits for you, saying where; Start (or fixing it) carries on', async () => {
+    let fixed = false;
+    const t = await running((key) => (fixed ? ok(key) : { ok: false, branch: 'b', dir: '/tmp/.bases/p/two-base', merging: 'klaud/b', files: ['shared.txt'] }));
+    await t.review('A', 'B');
+    for (const id of ['f1', 'f2']) {
+      t.run('ws:main', 'started', id);
+      await tick(10);
+      t.run('ws:main', 'done', id);
+      await tick(10);
+    }
+    expect(t.asked.filter((a) => a.prompt.includes('/tmp/.bases/p/two-base'))).toHaveLength(2);
+    expect(t.task('two')).toMatchObject({ state: 'blocked' });
+    expect(t.task('two').why).toBe(`Combining ${t.issue('A').key} and ${t.issue('B').key}: fix the conflict in shared.txt (in /tmp/.bases/p/two-base): it starts once no markers are left`);
+    expect(t.view().active.map((x) => x.task.id)).not.toContain('two');
+    fixed = true;
+    expect(await t.work.startTask(t.plan.id, 'two')).toContain('Started');
+    expect(t.issue('Two').status).toBe('in_progress');
   });
 });

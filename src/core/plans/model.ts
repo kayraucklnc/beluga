@@ -12,11 +12,18 @@ import type { Actor, Priority } from '../board/model.js';
 export const AUTONOMIES = ['step', 'gated', 'autopilot'] as const;
 export type Autonomy = (typeof AUTONOMIES)[number];
 
-export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; readonly hint: string }>> = {
-  step: { label: 'Step by Step', hint: 'Claude lines up what can start; you start each task' },
-  gated: { label: 'Gated', hint: 'Tasks start by themselves; each milestone waits for you to pass it' },
-  autopilot: { label: 'Autopilot', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
+/**
+ * What each autonomy is called everywhere (the Mac app, Claude's prompt): `label` its name,
+ * `summary` the one sentence a choice of it shows, `hint` the longer how-it-runs.
+ */
+export const AUTONOMY_INFO: Readonly<Record<Autonomy, { readonly label: string; readonly summary: string; readonly hint: string }>> = {
+  step: { label: 'Step by Step', summary: 'You start each task', hint: 'Claude lines up what can start; you start each task' },
+  gated: { label: 'Check-ins', summary: 'Runs, then waits for you at each milestone', hint: 'Tasks start by themselves; each milestone waits for you to pass it' },
+  autopilot: { label: 'Autopilot', summary: 'Runs to the end, stops only if something fails', hint: 'Milestone to milestone on its own: Claude checks each one; it stops only when something fails' },
 };
+
+/** A new plan's autonomy. */
+export const DEFAULT_AUTONOMY: Autonomy = 'gated';
 
 /** One task of a plan, before and after it's on the board. */
 export interface PlanTask {
@@ -83,6 +90,22 @@ export interface MilestoneRun {
   readonly checkAsked?: number;
 }
 
+/** A task that builds on several unmerged tasks: their branches are being combined into its start. */
+export interface Combining {
+  readonly at: number;
+  /** The tasks it builds on (their keys, e.g. KLD-9). */
+  readonly from: readonly string[];
+  /** It stopped at a conflict, left in a hidden worktree for the head Claude to fix. */
+  readonly conflict?: {
+    readonly at: number;
+    readonly dir: string;
+    readonly merging: string;
+    readonly files: readonly string[];
+    /** Claude was asked and it's still there: it waits for you. */
+    readonly stuck?: boolean;
+  };
+}
+
 export type PlanEventKind = 'created' | 'drafted' | 'approved' | 'changed' | 'started' | 'gate' | 'passed' | 'failed' | 'autonomy' | 'paused' | 'resumed' | 'done' | 'note' | 'problem';
 
 export interface PlanEvent {
@@ -112,6 +135,8 @@ export interface Plan {
   readonly maxParallel: number;
   readonly paused: boolean;
   readonly runs: Readonly<Record<string, MilestoneRun>>;
+  /** Tasks whose start is being combined from several branches (by plan task id). */
+  readonly combining?: Readonly<Record<string, Combining>>;
   readonly activity: readonly PlanEvent[];
   readonly createdAt: number;
   readonly updatedAt: number;

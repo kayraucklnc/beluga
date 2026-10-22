@@ -109,6 +109,8 @@ export class WorkspaceController {
   readonly mainSync: MainSync;
   /** Conversations whose next run may sync git in the main folder ("Let Claude handle it"), by workspace id. */
   private readonly syncRuns = new Map<string, { branch: string; upstream: string }>();
+  /** Main-folder conversations that may edit one hidden worktree (a plan's Claude fixing a conflict there), by workspace id. */
+  private readonly fixups = new Map<string, string>();
 
   /** Hear about worktrees opening, merging, going and coming back. */
   onWorktree(listener: (event: WorktreeEvent) => void): () => void {
@@ -281,7 +283,16 @@ export class WorkspaceController {
       onSession: (sessionId) => this.deps.manager.rememberSession(ws.id, sessionId),
       ...(ws.model ? { model: ws.model } : {}),
       ...(syncMain ? { syncMain } : {}),
+      ...(ws.askOnly && this.fixups.has(ws.id) ? { fixup: this.fixups.get(ws.id)! } : {}),
     };
+  }
+
+  /** Let a main-folder conversation's runs edit `dir` (a hidden worktree with a conflict to fix), until it's lifted (undefined). */
+  allowFixup(channel: string, dir: string | undefined): void {
+    const id = workspaceIdOf(channel);
+    if (!id) return;
+    if (dir) this.fixups.set(id, dir);
+    else this.fixups.delete(id);
   }
 
   // ------------------------------------------------------------- actions
@@ -317,6 +328,16 @@ export class WorkspaceController {
     const ws = await this.act("Couldn't start the chat", () => this.deps.manager.createChat(projectId, title, inDir));
     if (ws && !opts.quiet) this.open(ws.id);
     return ws;
+  }
+
+  /** A chat's name changed for you (a plan's conversation follows the plan's name). */
+  async renameChat(id: string, name: string): Promise<void> {
+    try {
+      this.deps.manager.rename(id, name);
+      await this.refresh();
+    } catch {
+      // Keeps its name.
+    }
   }
 
   /** Turn a draft into a real chat with your first message, then send it to Claude. */

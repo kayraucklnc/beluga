@@ -10,7 +10,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the top of the sidebar is Overview, Tasks, Plans and the chat', async ({ page }) => {
-  const top = sidebar(page).locator('section').first().getByRole('button');
+  // The places themselves: a running plan's row sits under Plans (KLD-18) and isn't one of them.
+  const top = sidebar(page).locator('section').first().getByRole('button').and(page.locator(':not([data-plan-row])'));
   await expect(top.nth(0)).toHaveAccessibleName(/^Overview/);
   await expect(top.nth(1)).toHaveAccessibleName(/^Tasks/);
   await expect(top.nth(2)).toHaveAccessibleName(/^Plans/);

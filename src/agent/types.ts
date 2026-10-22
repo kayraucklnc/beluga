@@ -178,6 +178,8 @@ export interface AgentPlace {
   readonly askOnly?: { readonly project: string };
   /** With askOnly, for one run: Claude brings the default branch up to date (git syncing only; see sync-main.ts). */
   readonly syncMain?: { readonly branch: string; readonly upstream: string };
+  /** With askOnly: a hidden worktree Claude may edit to fix a conflict there (see policy.ts). */
+  readonly fixup?: string;
 }
 
 export interface SubAgentEvent {
@@ -197,6 +199,8 @@ export interface AgentBackend {
   refreshUsage?(): Promise<Usage | undefined>;
   /** A short worktree name for a task (a small model names it). */
   nameTask?(prompt: string): Promise<string>;
+  /** A short name for a new plan from its goal (a small model names it; undefined when it couldn't). */
+  titlePlan?(goal: string): Promise<string | undefined>;
   /** Answer in a friends' chat from its history (one turn, no tools; core/chat/claude.ts). */
   answerChat?(req: ChatAnswerRequest): Promise<string>;
   /** What a project's setup should be after `failed` failed in `dir` (a small model looks). */

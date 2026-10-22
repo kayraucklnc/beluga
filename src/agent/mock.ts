@@ -1,6 +1,6 @@
 import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
 import { demoAnswerFromPrompt } from '../core/chat/demo-answers.js';
-import { slugify } from './namer.js';
+import { cleanPlanTitle, slugify } from './namer.js';
 import { type DraftContext, type TaskDraft, firstLineTitle } from './task-drafter.js';
 import { MORE, MockStepper, splitLine } from './mock-steps.js';
 import { MockContext, withGrowingContext } from './mock-context.js';
@@ -150,10 +150,10 @@ async function mockPlanning(input: AgentRunInput, plan: NonNullable<AgentRunInpu
   const empty = /The plan is empty|no milestones/i.test(plan.get()) || !/## 1\./.test(plan.get());
   if (empty) {
     const what = input.prompt.replace(/\s+/g, ' ').trim().replace(/[.!?]$/, '');
-    const topic = what.length > 60 ? `${what.slice(0, 57)}…` : what;
     input.onEvent('tool', 'plan_write');
     plan.write({
-      title: topic.charAt(0).toUpperCase() + topic.slice(1),
+      // A name, as Claude would give it: never your message cut off.
+      title: mockPlanTitle(what) ?? 'New plan',
       goal: `${what}. Shipped in small pull requests, each one tested.`,
       milestones: [
         {
@@ -315,6 +315,24 @@ export function mockDraft(text: string, ctx: DraftContext): TaskDraft {
   };
 }
 
+const PLAN_TITLE_STOP = new Set(
+  'about above after again also although among another anything around because been before being between both but can could couple does doing done each even every few for from front have here into its just keep like look looks make more most much need needs nothing now once only other our out over people really same should since some something such than that the their them then there these they thing things this those though through too under until very want was way were what when where which while who why claude will with without would yet you your'.split(' '),
+);
+
+/**
+ * The demo's plan namer, as Haiku would name it: what the goal is about in at most three words (its
+ * most-said words, in the order it says them), never its first words cut off. Undefined when the
+ * goal says too little: the plan stays "New plan" until Claude's plan_write names it.
+ */
+export function mockPlanTitle(goal: string): string | undefined {
+  const words = (goal.toLowerCase().match(/[a-z][a-z-]*/g) ?? []).filter((w) => w.length > 3 && !PLAN_TITLE_STOP.has(w));
+  const seen = new Map<string, { n: number; at: number }>();
+  words.forEach((w, at) => seen.set(w, { n: (seen.get(w)?.n ?? 0) + 1, at: seen.get(w)?.at ?? at }));
+  const top = [...seen].sort(([, a], [, b]) => b.n - a.n || a.at - b.at).slice(0, 3);
+  if (top.length < 2) return undefined;
+  return cleanPlanTitle(top.sort(([, a], [, b]) => a.at - b.at).map(([w]) => w).join(' '));
+}
+
 export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
   const context = new MockContext();
   return {
@@ -325,6 +343,11 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     draftTask: async (text, ctx) => {
       await new Promise((r) => setTimeout(r, 1500 * pace));
       return mockDraft(text, ctx);
+    },
+    // A short name a moment later, as Haiku would give it.
+    titlePlan: async (goal) => {
+      await new Promise((r) => setTimeout(r, 400 * pace));
+      return mockPlanTitle(goal);
     },
     answerChat: async (req) => {
       await sleep(1800 * pace, req.signal);

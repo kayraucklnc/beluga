@@ -1,18 +1,20 @@
-import type { Actor } from '../board/model.js';
+import type { CombineResult } from '../../workspaces/git.js';
+import type { Actor, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
 import type { Action, Store } from '../store.js';
 import { openMilestone } from './apply.js';
 import { type Plan, openMilestones } from './model.js';
 import type { Plans } from './plans.js';
 import { type MilestoneView, type PlanView, type TaskView, liveFrom, planView, startable } from './progress.js';
-import { checkPrompt, recapPrompt } from './prompt.js';
+import { checkPrompt, fixupPrompt, recapPrompt } from './prompt.js';
 
 /**
  * The scheduler: runs approved plans as far as their autonomy allows. It starts what's ready
  * (never more than the plan's limit, never a blocked task, never twice), asks the head Claude to
  * check a milestone once its tasks are finished, passes it on autopilot when the check passed,
  * opens every milestone whose dependencies have passed (independent ones run side by side, each
- * with its own check and pass), and asks for a recap at the end. Claude can't get around it: starting
+ * with its own check and pass), and asks for a recap at the end. A task that builds on several
+ * unmerged tasks starts from their branches combined (a conflict there goes to the head Claude). Claude can't get around it: starting
  * and passing go through here. It acts a moment after whatever changed (the board, a run, a plan).
  */
 
@@ -24,8 +26,17 @@ export interface PilotDeps {
   readonly askClaude: (prompt: string, channel: string, echo: boolean) => void;
   /** A quiet line in a conversation. */
   readonly system: (channel: string, text: string) => void;
+  /** Combine unmerged branches into the start of a task (its key): see WorkspaceManager.combineBase. */
+  readonly combine?: (projectId: string, key: string, branches: readonly string[]) => Promise<CombineResult>;
+  /** Let a plan's conversation edit a hidden worktree (a conflict to fix there), or no longer (undefined). */
+  readonly allowFixup?: (channel: string, dir: string | undefined) => void;
   readonly delayMs?: number;
 }
+
+/** How many times the head Claude is asked to fix one task's combining conflict before it waits for you. */
+const FIXUP_ASKS = 2;
+/** A conflict left to you is looked at again this often (it starts once no markers are left). */
+const STUCK_RETRY_MS = 30_000;
 
 /** What changes can move a plan along. */
 const WAKES = new Set(['board_issue', 'board_remove', 'plan_put', 'agent_event', 'question_add', 'question_remove', 'approval_add', 'approval_remove', 'projects']);
@@ -41,6 +52,11 @@ export class PlanPilot {
   private readonly recapped = new Set<string>();
   /** Milestones whose tasks were taken out of the Backlog (`plan:milestone`), once each. */
   private readonly opened = new Set<string>();
+  /** Combining conflicts the head Claude was asked to fix, by board task: how often, and its conversation's last run before. */
+  private readonly fixAsked = new Map<string, { readonly asks: number; readonly after?: string }>();
+  /** When a conflict left to you was last looked at (by board task), and the timer to look again. */
+  private readonly stuckTried = new Map<string, number>();
+  private stuckTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly off: () => void;
   private stopped = false;
 
@@ -55,6 +71,7 @@ export class PlanPilot {
     this.stopped = true;
     this.off();
     clearTimeout(this.timer);
+    clearTimeout(this.stuckTimer);
   }
 
   schedule(): void {
@@ -95,7 +112,11 @@ export class PlanPilot {
     // Claude starts nothing on a paused plan, nor on one you run step by step (you do).
     const autonomy = view.milestones.find((m) => m.milestone.id === t.milestoneId)?.autonomy ?? plan.autonomy;
     if (by.kind === 'claude' && (plan.paused || autonomy === 'step')) throw new Error(plan.paused ? 'The plan is paused: the user resumes it' : 'This plan runs step by step: the user starts each task');
-    if (t.state !== 'ready') throw new Error(`“${t.task.title}” can’t start: ${t.why ?? t.state}`);
+    // A combine that stopped at a conflict: Start tries it again (fixed since, or asks anew).
+    if (t.combining && t.issue) {
+      this.fixAsked.delete(t.issue.id);
+      this.deps.plans.setCombining(plan.id, t.task.id, { ...t.combining, ...(t.combining.conflict ? { conflict: { ...t.combining.conflict, stuck: false } } : {}) });
+    } else if (t.state !== 'ready') throw new Error(`“${t.task.title}” can’t start: ${t.why ?? t.state}`);
     if (view.active.length + this.startingIn(plan) >= plan.maxParallel) throw new Error(`${plan.maxParallel} tasks are already running (the plan’s limit)`);
     this.failed.delete(t.issue!.id);
     return this.start(plan, t, by);
@@ -139,6 +160,7 @@ export class PlanPilot {
     // Every open milestone runs side by side; the limit on tasks at once is the whole plan's.
     for (const m of view.open) this.open(plan, m.milestone.id);
     for (const t of startable(view, this.failed, this.startingIn(plan))) void this.start(plan, t, { kind: 'klaud' }).catch(() => undefined);
+    this.stepCombining(plan, view);
     if (view.open.some((m) => m.state === 'running' && m.autonomy === 'autopilot')) this.nudge(plan, view);
     for (const m of view.open) this.stepMilestone(plan, view, m);
   }
@@ -176,16 +198,118 @@ export class PlanPilot {
     this.schedule();
   }
 
+  /**
+   * Combines that are under way across a restart, or stopped at a conflict: tried again once the
+   * head Claude's fix-up run is over (or right away after a restart); gone once the task started.
+   */
+  private stepCombining(plan: Plan, view: PlanView): void {
+    const combining = plan.combining ?? {};
+    const tasks = view.milestones.flatMap((m) => m.tasks);
+    const busy = liveFrom(this.deps.store.getState()).busy(plan.home);
+    const last = this.lastRun(plan.home);
+    for (const id of Object.keys(combining)) {
+      const t = tasks.find((x) => x.task.id === id);
+      if (t?.issue && this.starting.has(t.issue.id)) continue;
+      // Started (or gone, or no longer waiting on several branches): nothing left to combine.
+      if (!t?.issue || !t.combining || !t.bases) {
+        this.deps.plans.setCombining(plan.id, id, undefined);
+        continue;
+      }
+      const c = t.combining.conflict;
+      if (c?.stuck) {
+        // Yours to fix: looked at again now and then, and it starts once it's fixed.
+        const wait = (this.stuckTried.get(t.issue.id) ?? c.at) + STUCK_RETRY_MS - Date.now();
+        if (wait > 0) {
+          this.wakeIn(wait);
+          continue;
+        }
+        this.stuckTried.set(t.issue.id, Date.now());
+      }
+      // Asked to fix it: tried again once its run came and went.
+      const asked = this.fixAsked.get(t.issue.id);
+      if (c && asked && (busy || last === asked.after)) continue;
+      void this.start(plan, t, { kind: 'klaud' }).catch(() => undefined);
+    }
+  }
+
+  private wakeIn(ms: number): void {
+    if (this.stuckTimer || this.stopped) return;
+    this.stuckTimer = setTimeout(() => {
+      this.stuckTimer = undefined;
+      this.schedule();
+    }, ms);
+    this.stuckTimer.unref?.();
+  }
+
+  /**
+   * The branch a task that builds on several unmerged tasks starts from: theirs combined. A conflict
+   * goes to the head Claude to fix in the hidden worktree (→ undefined: tried again after).
+   */
+  private async combinedBase(plan: Plan, t: TaskView, issue: Issue): Promise<string | undefined> {
+    const bases = t.bases ?? [];
+    const issues = this.deps.store.getState().board.issues;
+    const from = bases.map((b) => issues.find((i) => i.branch === b && i.projectId === issue.projectId)?.key ?? b);
+    const was = this.deps.plans.need(plan.id).combining?.[t.task.id];
+    if (!was) {
+      this.deps.plans.note(plan.id, 'started', `combining ${from.join(' and ')} for ${issue.key} “${t.task.title}”`, { kind: 'klaud' });
+      this.deps.plans.setCombining(plan.id, t.task.id, { at: Date.now(), from });
+    }
+    const combine = this.deps.combine;
+    let res: CombineResult;
+    try {
+      if (!combine) throw new Error('combining branches needs the project’s folder');
+      res = await combine(plan.projectId, issue.key, bases);
+    } catch (err) {
+      this.deps.plans.setCombining(plan.id, t.task.id, undefined);
+      this.deps.allowFixup?.(plan.home, undefined);
+      throw new Error(`couldn’t combine ${from.join(' and ')}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (res.ok) {
+      if (was?.conflict) this.deps.allowFixup?.(plan.home, undefined);
+      this.fixAsked.delete(issue.id);
+      this.stuckTried.delete(issue.id);
+      return res.branch;
+    }
+    const asks = this.fixAsked.get(issue.id)?.asks ?? 0;
+    const stuck = asks >= FIXUP_ASKS;
+    const conflict = { at: was?.conflict?.stuck && stuck ? was.conflict.at : Date.now(), dir: res.dir, merging: res.merging, files: res.files, ...(stuck ? { stuck } : {}) };
+    this.deps.plans.setCombining(plan.id, t.task.id, { at: was?.at ?? Date.now(), from, conflict });
+    this.deps.allowFixup?.(plan.home, res.dir);
+    if (!stuck) {
+      const after = this.lastRun(plan.home);
+      this.fixAsked.set(issue.id, { asks: asks + 1, ...(after ? { after } : {}) });
+      if (!asks) this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: ${res.merging} conflicts in ${res.files.join(', ')}; Claude is fixing it`, { kind: 'klaud' });
+      this.deps.askClaude(fixupPrompt(issue.key, t.task.title, from, res), plan.home, false);
+    } else if (!was?.conflict?.stuck) {
+      this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: the conflict in ${res.files.join(', ')} is still there; fix it in ${res.dir} and ${issue.key} starts`, { kind: 'klaud' });
+    }
+    return undefined;
+  }
+
+  /** The latest run in a conversation (its request id). */
+  private lastRun(channel: string): string | undefined {
+    const log = this.deps.store.getState().log;
+    for (let i = log.length - 1; i >= 0; i--) {
+      const l = log[i]!;
+      if (l.type === 'agent' && l.channel === channel) return l.requestId;
+    }
+    return undefined;
+  }
+
   private async start(plan: Plan, t: TaskView, by: Actor): Promise<string> {
     const issue = t.issue;
     if (!issue) throw new Error('That task isn’t on the board');
     if (this.starting.has(issue.id)) return `${issue.key} is starting`;
     this.starting.add(issue.id);
     try {
-      await this.deps.work.start(issue.id, { claude: true, quiet: true, ...(t.base ? { base: t.base } : {}) });
-      this.deps.plans.note(plan.id, 'started', `started ${issue.key} “${t.task.title}”${t.base ? ` from ${t.base}` : ''}`, by);
-      return `Started ${issue.key} “${t.task.title}” in a new worktree${t.base ? ` from ${t.base}` : ''}`;
+      const base = t.bases?.length ? await this.combinedBase(plan, t, issue) : t.base;
+      if (t.bases?.length && !base) return `${issue.key} builds on several tasks: combining their branches hit a conflict, and Claude is fixing it`;
+      await this.deps.work.start(issue.id, { claude: true, quiet: true, ...(base ? { base } : {}) });
+      if (t.bases?.length) this.deps.plans.setCombining(plan.id, t.task.id, undefined);
+      this.deps.plans.note(plan.id, 'started', `started ${issue.key} “${t.task.title}”${base ? ` from ${base}` : ''}`, by);
+      return `Started ${issue.key} “${t.task.title}” in a new worktree${base ? ` from ${base}` : ''}`;
     } catch (err) {
+      if (t.bases?.length && this.deps.plans.need(plan.id).combining?.[t.task.id]) this.deps.plans.setCombining(plan.id, t.task.id, undefined);
       this.failed.add(issue.id);
       const why = err instanceof Error ? err.message : String(err);
       this.deps.plans.note(plan.id, 'problem', `couldn’t start ${issue.key}: ${why}`, { kind: 'klaud' });

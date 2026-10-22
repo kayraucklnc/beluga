@@ -64,6 +64,11 @@ export interface PolicyContext {
    * files with conflict markers) is allowed too; nothing else changes (see sync-main.ts).
    */
   readonly syncMain?: SyncScope;
+  /**
+   * With askOnly: a hidden worktree where the plan's Claude fixes a conflict combining the
+   * branches a task starts from. Files there may be edited (nothing else changes).
+   */
+  readonly fixup?: string;
   /** A guest invited into one project asked: they never reach the room through your Claude. */
   readonly guest?: boolean;
 }
@@ -110,6 +115,7 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
     const target = resolveTarget(ctx.cwd, input[writeField]);
     if (isSecretPath(target)) return 'deny';
     if (ctx.autoEdit && inside(path.resolve(ctx.cwd), target)) return 'allow';
+    if (ctx.fixup && inside(path.resolve(ctx.fixup), target)) return 'allow';
     if (ctx.scope !== 'full' && !ctx.roots.some((r) => inside(path.resolve(r), target))) return 'deny';
     return 'ask';
   }
@@ -119,7 +125,10 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
 /** In a main folder (ask-only): would this tool change something there? */
 function changesMain(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): boolean {
   const writeField = WRITE_TOOLS[toolName];
-  if (writeField) return !ctx.syncMain?.conflicted?.(resolveTarget(ctx.cwd, input[writeField]));
+  if (writeField) {
+    const target = resolveTarget(ctx.cwd, input[writeField]);
+    return !(ctx.fixup && inside(path.resolve(ctx.fixup), target)) && !ctx.syncMain?.conflicted?.(target);
+  }
   if (toolName === 'Bash') return !(typeof input.command === 'string' && (isReadOnlyCommand(input.command) || (ctx.syncMain !== undefined && isSyncMainCommand(input.command, ctx.syncMain))));
   // A file fetched from a friend may not land in the main folder.
   if (toolName === 'mcp__klaud__get_peer_file') return typeof input.save_to === 'string' && inside(path.resolve(ctx.cwd), resolveTarget(ctx.cwd, input.save_to.replace(/^~(?=$|\/)/, process.env.HOME ?? '~')));

@@ -55,3 +55,48 @@ export async function nameTask(prompt: string, opts: { cwd: string; claudePath?:
   }
   return slugify(prompt);
 }
+
+const PLAN_TITLE_WORDS = 6;
+
+/** A plan's name out of whatever the model said: one line, no quotes or end mark, at most six words. */
+export function cleanPlanTitle(raw: string): string | undefined {
+  const line = (raw.trim().split('\n')[0] ?? '').replace(/^(title|name)\s*:\s*/i, '').replace(/[`"“”*#]/g, '').replace(/[.!?:;,]+$/, '').replace(/\s+/g, ' ').trim();
+  const words = line.split(' ').filter(Boolean);
+  if (!words.length || words.length > PLAN_TITLE_WORDS * 2) return undefined;
+  const title = words.slice(0, PLAN_TITLE_WORDS).join(' ').slice(0, 60).trim();
+  return title ? title.charAt(0).toUpperCase() + title.slice(1) : undefined;
+}
+
+/**
+ * A short name for a new plan from what you asked for (Haiku, one turn, no tools), so the plan's
+ * page and the sidebar never show your message cut off. Undefined on any trouble: it stays "New plan".
+ */
+export async function titlePlan(goal: string, opts: { cwd: string; claudePath?: string; model?: string }): Promise<string | undefined> {
+  const abortController = new AbortController();
+  const timer = setTimeout(() => abortController.abort(), NAME_TIMEOUT_MS);
+  timer.unref();
+  try {
+    const q = query({
+      prompt: `What the plan is for:\n"""\n${goal.slice(0, 3000)}\n"""\nName this plan.`,
+      options: {
+        cwd: opts.cwd,
+        model: opts.model ?? 'haiku',
+        tools: [],
+        maxTurns: 1,
+        settingSources: [],
+        persistSession: false,
+        abortController,
+        systemPrompt: `You name project plans. Reply with only the name: 2 to ${PLAN_TITLE_WORDS} plain words in sentence case that say what the plan achieves (e.g. "Card checkout for launch", "Calmer plan drafting screen"). No quotes, no end punctuation, no other text.`,
+        ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
+      },
+    });
+    for await (const msg of q) {
+      if (msg.type === 'result' && msg.subtype === 'success') return cleanPlanTitle(msg.result);
+    }
+  } catch {
+    // stays "New plan" until Claude writes the plan
+  } finally {
+    clearTimeout(timer);
+  }
+  return undefined;
+}
