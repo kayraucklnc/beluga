@@ -338,3 +338,11 @@ button.stat:disabled {
 .rowState.tone_muted {
   color: var(--text-3);
 }
+
+/* A plan's row: its progress ring where a worktree's "when" sits. */
+.rowRing {
+  width: 70px;
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}

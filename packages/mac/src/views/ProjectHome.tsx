@@ -1,4 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { Plan } from '@klaud/core/plans/model.js';
+import { isLivePlan, planWorktrees } from '@klaud/core/plans/owner.js';
 import { activityOf, stateOf } from '@klaud/ui/workspace-models.js';
 import type { Project, Workspace } from '@klaud/workspaces/types.js';
 import { EarningsPill } from '../components/EarningsPill.js';
@@ -18,6 +20,9 @@ import { HomeHistory } from './history/HomeHistory.js';
 import { GitHubRow } from './project/GitHubRow.js';
 import { MainSyncBar } from './project/MainSyncBar.js';
 import { outsideOf } from '../layout/outside-model.js';
+import { ProgressRing } from '../plans/PlansNav.js';
+import { planStatus, titleOf } from '../plans/plans-model.js';
+import { usePlanActions, usePlanView } from '../plans/use-plans.js';
 import { openSheet } from '../lib/sheets.js';
 import d from '../chat/draft.module.css';
 import s from './project-home.module.css';
@@ -31,14 +36,19 @@ export function ProjectHome({ id }: { id: string }) {
   const project = useApp((st) => st.projects.find((p) => p.id === id && p.root));
   const log = useApp((st) => st.log);
   const conflicts = useApp((st) => st.conflicts);
+  const plansState = useApp((st) => st.plans);
+  const board = useApp((st) => st.board);
+  // A plan is one row: its conversation and its tasks' worktrees aren't counted or listed on their own.
+  const plans = useMemo(() => plansState.plans.filter((x) => x.projectId === id && isLivePlan(x)), [plansState, id]);
+  const ofPlans = useMemo(() => new Set([...planWorktrees(plansState, board).keys(), ...plans.map((x) => x.home.replace(/^ws:/, ''))]), [plansState, board, plans]);
   if (!project) return <Empty icon="folder" title="This project isn’t here anymore" detail="It may have been hidden or moved. Pick another one in the sidebar." />;
-  const model = homeModel({ log, conflicts }, project);
+  const model = homeModel({ log, conflicts }, { ...project, workspaces: project.workspaces.filter((w) => !ofPlans.has(w.id)) });
   return (
     <div className={s.page} aria-label={`${project.name} home`}>
       <div className={s.column}>
         <Header model={model} />
         <HomeComposer project={project} />
-        <Lists model={model} />
+        <Lists model={model} plans={plans} />
       </div>
     </div>
   );
@@ -270,11 +280,18 @@ function HomeComposer({ project }: { project: Project }) {
   );
 }
 
-function Lists({ model }: { model: HomeModel }) {
+function Lists({ model, plans }: { model: HomeModel; plans: readonly Plan[] }) {
   const overview = useOpenOverview();
   const { project, worktrees, asks, archived } = model;
   return (
     <div className={s.lists}>
+      {plans.length ? (
+        <Section title="Plans" count={plans.length} hint="Each plan runs its own worktrees">
+          {plans.map((x) => (
+            <PlanRow key={x.id} plan={x} />
+          ))}
+        </Section>
+      ) : null}
       <Section
         title="Worktrees"
         count={worktrees.length}
@@ -354,6 +371,39 @@ function Row({ ws, ask }: { ws: Workspace; ask?: boolean }) {
         </span>
         <span className={cx(s.rowState, s[`tone_${st.tone}`])}>{ask ? '' : st.label}</span>
         <span className={s.rowWhen}>{agoText(lastActive(state, ws))}</span>
+        <Icon name="chevronRight" size={11} className={s.rowChevron} />
+      </button>
+    </div>
+  );
+}
+
+const PLAN_TONE = { accent: 'warn', error: 'error', claude: 'claude', ok: 'ok', info: 'info', warn: 'warn', neutral: 'muted', muted: 'muted' } as const;
+
+/** One plan: how far it got, where it stands and what it does now; a click opens it (with its conversation). */
+function PlanRow({ plan }: { plan: Plan }) {
+  const view = usePlanView(plan)!;
+  const { open } = usePlanActions();
+  const title = titleOf(plan);
+  const status = planStatus(view);
+  const working = view.active.some((t) => t.state === 'running');
+  const doing = view.active.find((t) => t.step)?.step;
+  return (
+    <div role="listitem">
+      <button type="button" className={s.row} onClick={() => open(plan.id)} aria-label={`${title}: ${status.label}`} data-plan-row={plan.id}>
+        <span className={s.rowIcon}>
+          <Icon name="flag" size={13} />
+        </span>
+        <span className={s.rowMain}>
+          <span className={s.rowTitle}>
+            <span className={s.rowName}>{title}</span>
+            {view.total ? <span className={s.rowBranch}>{`${view.done} of ${view.total} tasks`}</span> : null}
+          </span>
+          {doing ? <span className={s.rowLast}>{doing}</span> : null}
+        </span>
+        <span className={cx(s.rowState, s[`tone_${PLAN_TONE[status.tone]}`])}>{status.label}</span>
+        <span className={s.rowRing}>
+          <ProgressRing share={view.total ? view.done / view.total : 0} live={working} />
+        </span>
         <Icon name="chevronRight" size={11} className={s.rowChevron} />
       </button>
     </div>
