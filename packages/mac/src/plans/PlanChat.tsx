@@ -3,10 +3,11 @@ import { activityOf } from '@klaud/ui/workspace-models.js';
 import { ChatLog } from '../chat/ChatLog.js';
 import { PaneLook } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
-import { Empty, IconButton, Tip, cx } from '../components/ui.js';
+import { Empty, IconButton, Tip, Working, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
 import { LiveDot } from './marks.js';
+import { useConversationLoaded } from './use-plans.js';
 import p from './plans.module.css';
 
 const FOLD = { fold: true };
@@ -25,6 +26,7 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
   const busy = useApp((s) => activityOf(s.log, channel).running);
   const asking = useApp((s) => s.questions.some((q) => q.channel === channel) || s.approvals.some((a) => a.channel === channel));
   const wsId = channel.startsWith('ws:') ? channel.slice(3) : undefined;
+  const loading = !useConversationLoaded(channel);
 
   // The box grows with what you write (up to a point).
   useEffect(() => {
@@ -62,7 +64,17 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
       <div className={p.chatLog}>
         {/* A narrow pane: what you asked first folds to a few lines, so the conversation reads from the top; while the plan is being written, the line under it is Claude's one status. */}
         <PaneLook.Provider value={drafting ? FOLD_QUIET : FOLD}>
-          <ChatLog key={channel} channel={channel} empty={<Empty icon="flag" title="Plan it together" detail={draft ? 'Claude is reading the code and writing the plan. Tell it what to change: the plan on the left updates as it goes.' : 'Ask Claude about the plan, or tell it what to change.'} />} />
+          <ChatLog
+            key={channel}
+            channel={channel}
+            empty={
+              loading ? (
+                <Empty icon="chat" mark={<Working />} title="Loading the conversation…" />
+              ) : (
+                <Empty icon="flag" title="Plan it together" detail={draft ? 'Claude is reading the code and writing the plan. Tell it what to change: the plan on the left updates as it goes.' : 'Ask Claude about the plan, or tell it what to change.'} />
+              )
+            }
+          />
         </PaneLook.Provider>
       </div>
       {asking && wsId ? (

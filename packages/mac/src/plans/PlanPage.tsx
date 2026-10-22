@@ -19,7 +19,7 @@ import { PlanChat } from './PlanChat.js';
 import { FEED, PlanDetails } from './PlanDetails.js';
 import { PlanOutline } from './PlanOutline.js';
 import { barColumns, changeWords, headline, nextWords, titleOf } from './plans-model.js';
-import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
+import { useConversationLoaded, usePlanActions, usePlanView, usePlans } from './use-plans.js';
 import p from './plans.module.css';
 
 const PlanCanvas = lazy(() => import('./PlanCanvas.js'));
@@ -105,6 +105,8 @@ function LimitPause({ view }: { view: PlanView }) {
 function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; prefs: { display: Display; chat: boolean }; setPrefs: (p: Partial<{ display: Display; chat: boolean }>) => void; picked?: string; setPicked: (id: string | undefined) => void }) {
   const { plan } = view;
   const { api, act, openList, openWorktree } = usePlanActions();
+  // The plan's conversation (its chat, the head Claude's last turn) loads with the page, the chat shown or not.
+  useConversationLoaded(plan.home);
   const uiPrefs = usePrefs();
   const body = shownBody(plan);
   const keys = useMemo(() => new Map(view.milestones.flatMap((m) => m.tasks.flatMap((t) => (t.issue ? [[t.task.id, t.issue.key] as const] : [])))), [view]);
