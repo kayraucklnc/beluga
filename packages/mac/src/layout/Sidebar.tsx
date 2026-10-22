@@ -259,12 +259,15 @@ function SidebarFooter() {
         : hosting?.phase === 'ready'
           ? 'Invite ready'
           : 'Just you'
-      : status === 'connecting'
-        ? 'Connecting…'
-        : 'Offline';
+      : state.connection?.state === 'reconnecting'
+        ? 'Reconnecting…'
+        : status === 'connecting'
+          ? 'Connecting…'
+          : 'Offline';
+  const tone = status === 'connected' ? 'ok' : label === 'Offline' ? 'error' : 'warn';
   return (
     <div className={s.footer}>
-      <RoomStatus label={label} tone={status === 'connected' ? 'ok' : status === 'connecting' ? 'warn' : 'error'} />
+      <RoomStatus label={label} tone={tone} />
       <button type="button" className={s.invite} onClick={() => document.dispatchEvent(new CustomEvent('klaud:invite'))}>
         Invite
       </button>
