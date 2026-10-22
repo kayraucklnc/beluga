@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { limiter } from './limit.js';
 
 export class GitError extends Error {}
 
@@ -123,8 +124,15 @@ export interface Status {
   readonly upstream?: { readonly name: string; readonly ahead: number; readonly behind: number };
 }
 
+/** Status reads run a few at a time (each is one or two git processes): a refresh of many worktrees never forks dozens at once. */
+export const statusSlots = limiter(4);
+
 /** Uncommitted file count plus commits ahead/behind `base`. */
-export async function status(dir: string, base?: string): Promise<Status> {
+export function status(dir: string, base?: string): Promise<Status> {
+  return statusSlots(() => readStatus(dir, base));
+}
+
+async function readStatus(dir: string, base?: string): Promise<Status> {
   // Never take the index lock just to look: a commit (yours or Claude's) may be running.
   const out = await git(dir, ['--no-optional-locks', 'status', '--porcelain=v1', '-b']);
   const [head = '', ...files] = out.split('\n').filter(Boolean);

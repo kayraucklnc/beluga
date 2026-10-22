@@ -3,6 +3,7 @@ import type { ArchiveManifest, ArchivePhase, ArchivePreview } from '../workspace
 import { formatBytes } from '../workspaces/disk.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { slugify } from '../agent/namer.js';
 import { carrySession } from '../agent/session-carry.js';
 import type { AgentPlace } from '../agent/types.js';
@@ -178,10 +179,19 @@ export class WorkspaceController {
     this.publish();
   }
 
-  /** Publish the projects as they're arranged (no re-scan: arranging is instant). */
+  /** A run in this folder ended: its git status only (not every project's), published if it changed. */
+  async refreshWorkspace(dir: string): Promise<void> {
+    if (await this.deps.manager.refreshWorkspace(dir)) this.publish();
+  }
+
+  /** Publish the projects as they're arranged (no re-scan: arranging is instant); nothing when nothing changed. */
   private publish(): void {
     const { projects, groups, order } = this.deps.manager.arrangement();
-    this.deps.store.dispatch({ type: 'projects', projects, groups, order, hidden: this.deps.manager.hiddenProjects });
+    const state = this.deps.store.getState();
+    const hidden = this.deps.manager.hiddenProjects;
+    // A fresh list equal to the one shown would only re-scan transcripts and re-render every window.
+    if (isDeepStrictEqual(projects, state.projects) && isDeepStrictEqual(groups, state.projectGroups) && isDeepStrictEqual(order, state.projectOrder) && isDeepStrictEqual(hidden, state.hiddenProjects)) return;
+    this.deps.store.dispatch({ type: 'projects', projects, groups, order, hidden });
   }
 
   /** Show a workspace (chat, files, diff or terminal), loading its saved conversation the first time. */
