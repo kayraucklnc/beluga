@@ -96,9 +96,13 @@ export interface Size {
 export interface ElkInput {
   readonly id: string;
   readonly layoutOptions?: Readonly<Record<string, string>>;
+  readonly x?: number;
+  readonly y?: number;
   readonly width?: number;
   readonly height?: number;
   readonly children?: readonly ElkInput[];
+  /** Where lines meet a node (relative to it; its `elk.portConstraints` says how fixed). */
+  readonly ports?: readonly ElkInput[];
   readonly edges?: ReadonlyArray<{ readonly id: string; readonly sources: readonly string[]; readonly targets: readonly string[]; readonly labels?: ReadonlyArray<{ readonly text: string } & Size> }>;
 }
 

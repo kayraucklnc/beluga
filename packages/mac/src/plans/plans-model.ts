@@ -413,8 +413,8 @@ export function changeWords(plan: Plan): string {
 // ---- the graph's structure
 
 export interface PlanGraphShape {
-  /** Milestones as boxes (in order), each with its tasks and a gate at its end. */
-  readonly milestones: ReadonlyArray<{ readonly id: string; readonly tasks: readonly string[] }>;
+  /** Milestones as boxes (in order), each with its tasks and a gate at its end listing its criteria (they size it). */
+  readonly milestones: ReadonlyArray<{ readonly id: string; readonly tasks: readonly string[]; readonly criteria: readonly string[] }>;
   /** Milestones by row: those in a row run side by side (milestoneRows). */
   readonly rows: ReadonlyArray<readonly string[]>;
   /** Lines: task → task (waits on), task → gate (finishes the milestone), gate → a milestone that waits on it. */
@@ -430,7 +430,7 @@ export const taskNodeId = (taskId: string): string => `t:${taskId}`;
 /** The plan graph's structure from what's shown (the draft while there is one). */
 export function graphShape(plan: Plan): PlanGraphShape {
   const body = shownBody(plan);
-  const milestones = (body?.milestones ?? []).map((m) => ({ id: m.id, tasks: m.tasks.map((t) => t.id) }));
+  const milestones = (body?.milestones ?? []).map((m) => ({ id: m.id, tasks: m.tasks.map((t) => t.id), criteria: m.criteria }));
   const edges: Array<PlanGraphShape['edges'][number]> = [];
   for (const m of body?.milestones ?? []) {
     const inside = new Set(m.tasks.map((t) => t.id));
@@ -441,9 +441,14 @@ export function graphShape(plan: Plan): PlanGraphShape {
       if (!needed.has(t.id)) edges.push({ id: `${t.id}->gate`, from: taskNodeId(t.id), to: gateId(m.id), kind: 'finish' });
     }
   }
-  // A milestone's gate opens the milestones that wait on it (only those: the others run alongside).
+  // A milestone's gate opens the milestones that wait on it (only those: the others run alongside),
+  // and only the nearest: one that waits on A and on B (which waits on A) gets its line from B alone.
+  const deps = new Map((body?.milestones ?? []).map((m) => [m.id, milestoneDeps(body, m)] as const));
+  const reaches = (from: string, to: string, seen = new Set<string>()): boolean =>
+    (deps.get(from) ?? []).some((d) => d === to || (!seen.has(d) && (seen.add(d), reaches(d, to, seen))));
   for (const m of body?.milestones ?? []) {
-    for (const d of milestoneDeps(body, m)) edges.push({ id: `ms:${d}->${m.id}`, from: gateId(d), to: groupId(m.id), kind: 'next' });
+    const mine = deps.get(m.id) ?? [];
+    for (const d of mine) if (!mine.some((o) => o !== d && reaches(o, d))) edges.push({ id: `ms:${d}->${m.id}`, from: gateId(d), to: groupId(m.id), kind: 'next' });
   }
   const rows = milestoneRows(body);
   return { milestones, rows, edges, key: JSON.stringify({ milestones, rows, edges: edges.map((e) => e.id) }) };
