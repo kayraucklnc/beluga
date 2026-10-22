@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs';
 import { type Attention, type Location, type MyShare, type Prefs, type Store, peerName } from './store.js';
 import { WorkspaceController } from './workspace-controller.js';
 import { QuestionBroker } from './questions.js';
+import { isPlanHome } from './plans/model.js';
 import type { Conversation } from '../agent/transcript.js';
 import { slugify } from '../agent/namer.js';
 import type { SetupFix } from '../agent/setup-fixer.js';
@@ -576,6 +577,8 @@ export class Session {
 
   /** Plan first in this conversation: Claude investigates read-only, then proposes a plan. */
   setPlanMode(channel: string, on: boolean): void {
+    // A plan's own conversation: its head Claude runs the plan, and stopping to have a plan of its own approved would stall it.
+    if (on && isPlanHome(this.store.getState().plans, channel)) return this.toast('A plan’s own conversation has no plan mode: talk the plan through on its page', 'info');
     this.store.dispatch({ type: 'plan_mode', channel, on });
     this.toast(on ? 'Plan mode: Claude looks first and asks you to approve a plan before changing anything' : 'Plan mode off: Claude works right away', 'success');
   }

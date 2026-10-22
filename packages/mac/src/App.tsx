@@ -122,7 +122,7 @@ function useShortcuts() {
       } else if (e.altKey && e.metaKey && !e.shiftKey && e.code === 'Digit0') {
         // ⌥⌘0 shows and hides the right panel, as in Xcode (⌥⌘I still does too).
         e.preventDefault();
-        byKey('panel', togglePanel);
+        byKey('panel', () => togglePanel(state.view));
       } else if (e.altKey && e.metaKey && !e.shiftKey && /^Digit[1-7]$/.test(e.code)) {
         // ⌥⌘1…7: the panel's Changes, Files, Terminal, Info, History, Scratch and Background.
         e.preventDefault();
@@ -144,7 +144,7 @@ function useShortcuts() {
         zoom('reset');
       } else if (e.altKey && cmd && e.code === 'KeyI') {
         e.preventDefault();
-        byKey('panel', togglePanel);
+        byKey('panel', () => togglePanel(state.view));
       } else if (e.ctrlKey && e.metaKey && e.code === 'KeyS') {
         e.preventDefault();
         setPrefs({ sidebar: !prefs.sidebar });

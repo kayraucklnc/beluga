@@ -373,7 +373,7 @@
   grid-template-columns: 1fr;
 }
 .splitChat {
-  grid-template-columns: minmax(0, 1fr) clamp(320px, 30vw, 420px);
+  grid-template-columns: minmax(0, 1fr) 380px;
 }
 .stage {
   position: relative;
@@ -1733,4 +1733,21 @@ textarea.goalBox {
   display: inline-flex;
   align-items: center;
   flex: none;
+}
+
+/* The chat beside the plan, as wide as you drag its edge (KLD-54). */
+.chatSide {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.chatSide > :last-child {
+  flex: 1;
+}
+.chatEdge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
 }

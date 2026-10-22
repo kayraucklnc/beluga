@@ -73,7 +73,7 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
         if (why) client.store.dispatch({ type: 'toast', text: why, level: 'info' });
       });
     case 'toggle-inspector':
-      return byMenu('panel', togglePanel);
+      return byMenu('panel', () => togglePanel(state.view));
     case 'panel-changes':
     case 'panel-files':
     case 'panel-terminal':

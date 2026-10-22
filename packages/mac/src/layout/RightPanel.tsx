@@ -7,7 +7,7 @@ import { ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, Segmented, cx } from '../components/ui.js';
 import { useApp, useKlaud } from '../lib/klaud.js';
 import { currentTab, focusFor, paneShowing, paneTabsOf, placeTab, resetPanelLayout, setPanelTab, showPanelTab, tabShowing, tabsOf, useWorkspaceTabBridge } from '../lib/panel.js';
-import { PANEL_DEFAULT, PANEL_LABELS, type PaneId, type PanelTab, SPLIT_MAX, SPLIT_MIN, PANES_DEFAULT, clampPanelWidth, clampShare, paneKey, panelDigit, slotOf, viewsOf } from '../lib/panel-model.js';
+import { PANEL_DEFAULT, PANEL_LABELS, type PaneId, type PanelTab, SPLIT_MAX, SPLIT_MIN, PANES_DEFAULT, clampPanelWidth, clampShare, paneKey, panelDigit, panelFits, slotOf, viewsOf } from '../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { Inspector } from './Inspector.js';
 import { ResizeHandle, usePresence, useWindowWidth } from './panel/ResizeHandle.js';
@@ -330,7 +330,8 @@ export function RightPanel() {
   const [drag, setDrag] = useState<number>();
   const inner = useRef<HTMLDivElement>(null);
   const width = clampPanelWidth(drag ?? prefs.panelWidth, windowWidth);
-  const open = prefs.inspector;
+  // Not beside a plan: its chat is the page's right side (your choice stays for everywhere else).
+  const open = prefs.inspector && panelFits(view);
   const presence = usePresence(open, SLIDE_MS);
   const hasTop = paneTabsOf(state, 'top', prefs).length > 0;
   const hasBottom = paneTabsOf(state, 'bottom', prefs).length > 0;

@@ -25,7 +25,7 @@ import { useMentionWorld, worktreeOf } from './Mention.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { openSheet } from '../lib/sheets.js';
 import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
-import { planForHome } from '@klaud/core/plans/model.js';
+import { isPlanHome, planForHome } from '@klaud/core/plans/model.js';
 import s from './composer.module.css';
 import img from './images.module.css';
 import d from './draft.module.css';
@@ -106,6 +106,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const homePlan = planForHome(state.plans, channel);
   // While it's being planned (once approved, the conversation is the plan's head and the box is as usual).
   const tasksMode = Boolean(homePlan && !homePlan.body);
+  // A plan's own conversation (its head Claude plans and runs it here): no modes to pick, the plan is what it's for.
+  const planHome = isPlanHome(state.plans, channel);
   const canPlanTasks = state.plans.enabled && channel.startsWith('ws:') && state.projects.some((p) => p.root && p.workspaces.some((w) => `ws:${w.id}` === channel));
   const mode: ComposeMode = tasksMode ? 'tasks' : plan ? 'plan' : 'act';
   const setMode = (next: ComposeMode): void => {
@@ -319,7 +321,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     // Enter while an input method is composing (Japanese, Chinese…) picks the characters.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     // Shift-Tab switches between acting and planning first, as in Claude Code (not focus).
-    if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && channel !== 'draft' && !shared) {
+    if (e.key === 'Tab' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && channel !== 'draft' && !shared && !planHome) {
       e.preventDefault();
       setMode(nextMode(mode));
       return;
@@ -396,7 +398,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
               <button type="button" className={s.planLink} onClick={() => actions.run({ type: 'view', view: { kind: 'plan', id: homePlan.id } })}>
                 Open Plan
               </button>
-            ) : (
+            ) : planHome ? null : (
               <span className={s.planKeys}>⇧⇥ to act</span>
             )}
           </div>
@@ -465,7 +467,22 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
           />
         </div>
         <div className={s.bar}>
-          {channel !== 'draft' && !shared ? (
+          {planHome && homePlan ? (
+            <ActionsDropdown
+              align="start"
+              items={[
+                { label: 'Open the Plan', onSelect: () => actions.run({ type: 'view', view: { kind: 'plan', id: homePlan.id } }) },
+                // While it's a draft nothing is on the board: it can go (asked first when it has something in it).
+                ...(tasksMode ? [{ label: 'Discard the Draft', danger: true, separate: true, onSelect: () => setMode('act') }] : []),
+              ]}
+            >
+              <button type="button" className={cx(s.chip, s.chipOn)} title="This conversation is the plan’s own: its Claude plans and runs it here" aria-label={`Mode: ${MODE_INFO.tasks.label}`}>
+                <Icon name="graph" size={12} />
+                {tasksMode ? MODE_INFO.tasks.label : 'Plan'}
+                <Icon name="chevronDown" size={9} />
+              </button>
+            </ActionsDropdown>
+          ) : channel !== 'draft' && !shared ? (
             <ActionsDropdown
               align="start"
               items={(['act', 'plan', 'tasks'] as const)
