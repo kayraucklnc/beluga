@@ -221,12 +221,19 @@ describe('the project home (Mac)', () => {
   };
 
   it('lists worktrees, questions and archived, with counts', () => {
-    const m = homeModel({ log: [], conflicts: {} }, project);
+    const m = homeModel({ log: [], conflicts: {}, prs: {} }, project);
     expect(m.worktrees.map((w) => w.id)).toEqual(['hooks', 'auth']);
     expect(m.asks.map((w) => w.id)).toEqual(['q']);
     expect(m.archived.map((w) => w.id)).toEqual(['old']);
     expect(m.stats).toEqual({ active: 2, ready: 1, archived: 1 });
     expect(m.mainLine).toEqual({ label: '2 behind origin/main', tone: 'info' });
+  });
+
+  it("doesn't count a worktree whose PR is merged or closed as ready to merge", () => {
+    const pr = { number: 7, url: 'u', title: 'T', draft: false, checks: 'passing' as const };
+    expect(homeModel({ log: [], conflicts: {}, prs: { auth: { ...pr, state: 'OPEN' } } }, project).stats.ready).toBe(1);
+    expect(homeModel({ log: [], conflicts: {}, prs: { auth: { ...pr, state: 'MERGED' } } }, project).stats.ready).toBe(0);
+    expect(homeModel({ log: [], conflicts: {}, prs: { auth: { ...pr, state: 'CLOSED' } } }, project).stats.ready).toBe(0);
   });
 
   it('says how main compares with origin', () => {

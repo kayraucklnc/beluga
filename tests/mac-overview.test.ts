@@ -77,6 +77,15 @@ describe('Mac Overview: segments', () => {
     expect(ids(items.filter((i) => inFilter(i, 'ready')))).toEqual(['auth']);
   });
 
+  it('ready to merge: not once its PR is merged or closed', () => {
+    const pr = { number: 4, url: '', title: '', draft: false, checks: 'passing' as const };
+    for (const state of ['MERGED', 'CLOSED'] as const) {
+      const items = overviewItems({ ...base(), prs: { auth: { ...pr, state } } });
+      expect(items.find((i) => i.ws.id === 'auth')?.ready).toBe(false);
+    }
+    expect(overviewItems({ ...base(), prs: { auth: { ...pr, state: 'OPEN' } } }).find((i) => i.ws.id === 'auth')?.ready).toBe(true);
+  });
+
   it('needs you: a merge conflict, a pending approval or failing checks; never an archived one', () => {
     const s: AppState = { ...base(), conflicts: { hooks: ['a.ts'] }, prs: { auth: { number: 4, url: '', state: 'OPEN', title: '', draft: false, checks: 'failing' } } };
     const items = overviewItems(s);

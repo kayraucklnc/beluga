@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -127,6 +127,11 @@ describe('remoteRef', () => {
     expect(remoteRef(wt, 'klaud/x')).not.toBe(first);
     // The main checkout (a .git folder) reads the same refs.
     expect(remoteRef(dir, 'klaud/x')).toBe(git(wt, 'rev-parse', 'HEAD'));
+    // After `git gc` / `git pack-refs` the ref lives only in packed-refs.
+    git(dir, 'pack-refs', '--all');
+    expect(existsSync(path.join(dir, '.git', 'refs', 'remotes', 'origin', 'klaud', 'x'))).toBe(false);
+    expect(remoteRef(wt, 'klaud/x')).toBe(git(wt, 'rev-parse', 'HEAD'));
+    expect(remoteRef(wt, 'klaud/y')).toBeUndefined();
   });
 });
 
@@ -252,6 +257,40 @@ describe('PR polling', () => {
     await b.wb.pollPrs('focus');
     expect(b.calls).toEqual(['view klaud/a']);
     expect(b.prs().a?.state).toBe('MERGED');
+  });
+
+  it('runs a focus refresh asked for while a tick runs right after it, never drops it', async () => {
+    const b = bench([
+      { id: 'run', branch: 'klaud/run', project: 'x' },
+      { id: 'idle', branch: 'klaud/idle', project: 'y' },
+    ]);
+    b.gh.set('klaud/run', pr(1, { checks: 'pending' }));
+    b.gh.set('klaud/idle', pr(2));
+    await b.wb.refreshPrs();
+    b.calls.length = 0;
+    b.clock.now += 15_000;
+    const tick = b.wb.pollPrs(); // looks at the pending one; gh is slow
+    b.gh.set('klaud/idle', pr(2, { state: 'MERGED' }));
+    await b.wb.pollPrs('focus'); // arrives mid-tick: queued, not dropped
+    expect(b.calls).toEqual(['view klaud/run']);
+    await tick;
+    expect(b.calls).toEqual(['view klaud/run', 'view klaud/idle']);
+    expect(b.prs().idle?.state).toBe('MERGED');
+  });
+
+  it('runs a focus refresh asked for before the first look once that look is done', async () => {
+    const b = bench([{ id: 'a', branch: 'klaud/a' }]);
+    b.gh.set('klaud/a', pr(1));
+    const first = b.wb.refreshPrs();
+    await b.wb.pollPrs('focus');
+    await first;
+    // Just looked at, so the queued focus finds nothing stale, but it did run (and didn't throw).
+    expect(b.calls).toEqual(['view klaud/a']);
+    b.clock.now += 10_000;
+    const tick = b.wb.pollPrs('push', 'a');
+    await b.wb.pollPrs('push', 'a'); // the same push twice while it runs: one more look, not two
+    await tick;
+    expect(b.calls).toEqual(['view klaud/a', 'view klaud/a', 'view klaud/a']);
   });
 
   it('says merged or closed once, even if gh flickers', async () => {

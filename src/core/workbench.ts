@@ -140,6 +140,8 @@ export class Workbench {
   /** PRs already announced as merged or closed ("<ws>#<number>:<state>"), so that's said once. */
   private readonly prEnded = new Set<string>();
   private polling = false;
+  /** Focus and push looks asked for while a look ran (or before the first): they run right after, never dropped. */
+  private pollQueue: Array<{ reason: 'focus' | 'push'; id?: string }> = [];
   /** Worktrees whose PR is being merged right now. */
   private readonly merging = new Set<string>();
 
@@ -286,7 +288,10 @@ export class Workbench {
     const quiet = !this.prsSeeded && !only;
     for (const ws of this.prWorktrees(only)) this.pushed(ws);
     await this.lookUpPrs(this.prWorktrees(only), quiet);
-    if (!only) this.prsSeeded = true;
+    if (!only) {
+      this.prsSeeded = true;
+      await this.runQueuedPolls();
+    }
   }
 
   /**
@@ -295,7 +300,12 @@ export class Workbench {
    * at in the last few seconds is; `push`: a branch was pushed (`id`, or any).
    */
   async pollPrs(reason: 'tick' | 'focus' | 'push' = 'tick', id?: string): Promise<void> {
-    if (!this.prsSeeded || this.polling || this.deps.store.getState().gh !== true) return;
+    if (this.deps.store.getState().gh !== true) return;
+    if (!this.prsSeeded || this.polling) {
+      // Another tick comes in a few seconds; focus and push are asked once, so they wait their turn.
+      if (reason !== 'tick' && !this.pollQueue.some((q) => q.reason === reason && q.id === id)) this.pollQueue.push({ reason, ...(id ? { id } : {}) });
+      return;
+    }
     this.polling = true;
     try {
       const now = this.now();
@@ -311,6 +321,12 @@ export class Workbench {
     } finally {
       this.polling = false;
     }
+    await this.runQueuedPolls();
+  }
+
+  /** Run the focus and push looks that were asked for while another look ran. */
+  private async runQueuedPolls(): Promise<void> {
+    for (const q of this.pollQueue.splice(0)) await this.pollPrs(q.reason, q.id);
   }
 
   private now(): number {

@@ -307,5 +307,13 @@ export function remoteRef(dir: string, branch: string, remote = 'origin'): strin
   const gitDir = link ? path.resolve(dir, link) : path.join(dir, '.git');
   const commonDir = read(path.join(gitDir, 'commondir'));
   const common = commonDir ? path.resolve(gitDir, commonDir) : gitDir;
-  return read(path.join(common, 'refs', 'remotes', remote, ...branch.split('/')));
+  const name = `refs/remotes/${remote}/${branch}`;
+  const loose = read(path.join(common, ...name.split('/')));
+  if (loose) return loose;
+  // `git gc` / `git pack-refs` moves refs into packed-refs: "<sha> <ref>" lines (^ lines peel tags).
+  for (const line of read(path.join(common, 'packed-refs'))?.split('\n') ?? []) {
+    const [sha, ref] = line.trim().split(' ');
+    if (ref === name && sha && /^[0-9a-f]{40,64}$/.test(sha)) return sha;
+  }
+  return undefined;
 }

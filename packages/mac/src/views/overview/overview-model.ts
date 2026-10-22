@@ -2,6 +2,7 @@ import type { AppState } from '../../../../../src/core/store.js';
 import { activityOf } from '../../../../../src/ui/workspace-models.js';
 import { worktreeOrigin } from '../../../../../src/workspaces/origin.js';
 import type { Project, Workspace } from '../../../../../src/workspaces/types.js';
+import { isReady } from '../project/home-model.js';
 
 /**
  * What the Overview shows and how it's narrowed: every worktree and chat, archived ones too,
@@ -59,8 +60,7 @@ function itemOf(state: AppState, project: Project, ws: Workspace): OverviewItem 
   const conflict = Boolean(state.conflicts[ws.id]?.length);
   const failing = state.prs[ws.id]?.checks === 'failing' && state.prs[ws.id]?.state === 'OPEN';
   const needs = !archived && (conflict || act.awaiting || failing);
-  const st = ws.status;
-  const ready = !archived && ws.kind === 'worktree' && !conflict && !act.running && !st?.changed && (st?.ahead ?? 0) > 0;
+  const ready = isReady(state, ws);
   const rank = conflict || act.awaiting ? 0 : failing ? 1 : act.running ? 2 : state.unread[`ws:${ws.id}`] ? 3 : 4;
   const size = sizeOf(state, ws);
   return {

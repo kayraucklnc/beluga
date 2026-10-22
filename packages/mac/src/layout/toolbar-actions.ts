@@ -142,7 +142,7 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
   const merge = by('merge');
   if (merge) {
     const into = mergeTargetOf(state, ws);
-    return { ...merge, label: `Merge into ${into}`, hint: `Shows what would merge into ${into} and checks it first; nothing changes until you confirm` };
+    return { ...merge, label: `Merge Locally into ${into}`, hint: `Shows what would merge into ${into} on this Mac and checks it first; nothing changes until you confirm` };
   }
   const run = all.find((x) => x.action === 'run' || x.action === 'stop_run');
   return run;

@@ -17,7 +17,7 @@ test('Merge shows where it goes, what comes along and the checks, and Cancel cha
   await expect(toolbar(page)).toContainText('add-auth');
 
   // Green, and it says where.
-  const merge = toolbar(page).getByRole('button', { name: 'Merge into main' });
+  const merge = toolbar(page).getByRole('button', { name: 'Merge Locally into main' });
   await expect(merge).toBeVisible();
   const green = await merge.evaluate((el) => getComputedStyle(el).backgroundColor);
   const [r, g, b] = green.match(/\d+/g)!.map(Number);
