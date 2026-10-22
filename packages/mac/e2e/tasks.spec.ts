@@ -131,6 +131,34 @@ test('a worktree shows the task it’s doing, and opens it', async ({ page }) =>
   await expect(page.getByRole('region', { name: 'Proof' })).toContainText('Hero, desktop');
 });
 
+test('a file proof opens over the task page, and Show in Files goes to the file', async ({ page }) => {
+  await page.goto('/');
+  const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ position: { x: 60, y: 10 } });
+  await sidebar(page).getByRole('button', { name: 'new-hero', exact: true }).click();
+  await page.getByRole('button', { name: /New hero for the launch/ }).first().click();
+  const title = page.getByRole('textbox', { name: 'Title' });
+  await expect(title).toHaveValue('New hero for the launch');
+
+  // A click: the file, read over the page, at once; the task page stays under it.
+  const started = Date.now();
+  await page.getByRole('region', { name: 'Proof' }).getByRole('button', { name: 'Hero copy' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Hero copy' });
+  await expect(sheet).toBeVisible({ timeout: 1000 });
+  expect(Date.now() - started).toBeLessThan(1000);
+  await expect(sheet.getByRole('heading', { name: 'Build together' })).toBeVisible();
+  await expect(title).toHaveValue('New hero for the launch');
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+  await expect(title).toBeVisible();
+
+  // Show in Files: the old way, to the file in the Files view.
+  await page.getByRole('region', { name: 'Proof' }).getByRole('button', { name: 'Hero copy' }).click();
+  await page.getByRole('dialog', { name: 'Hero copy' }).getByRole('button', { name: 'Show in Files' }).click();
+  await expect(page.getByRole('dialog', { name: 'Hero copy' })).toBeHidden();
+  await expect(title).toBeHidden();
+});
+
 test('a narrow window: the bar wraps and New Task stays in reach; a task’s properties go on top', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 760 });
   await openTasks(page);
