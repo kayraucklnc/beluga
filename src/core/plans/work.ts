@@ -193,6 +193,11 @@ export class PlansWork {
     return this.pilot.pass(id, milestone, this.me());
   }
 
+  /** “Tidy up N merged task worktrees?”: only Yes merges and clears them away (see PlanPilot.tidyUp). */
+  tidyUp(id: string, yes: boolean): Plan {
+    return this.pilot.tidyUp(id, yes, this.me());
+  }
+
   /** Not yet: what's missing goes to the head Claude, which adds the work to the plan. */
   sendBack(id: string, milestone: string, note: string): Plan {
     const plan = this.plans.need(id);

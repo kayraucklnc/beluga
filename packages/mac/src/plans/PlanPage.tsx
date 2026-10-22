@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, MAX_PARALLEL, type Plan, TESTS_AT, TESTS_AT_INFO, shownBody } from '@klaud/core/plans/model.js';
-import type { PlanView } from '@klaud/core/plans/progress.js';
+import { type PlanView, tidyOffer } from '@klaud/core/plans/progress.js';
 import { CONTINUE_PROMPT, decodeFailure, resetWords } from '@klaud/shared/run-failure.js';
 import { formatDuration } from '@klaud/shared/text.js';
 import { activityOf } from '@klaud/ui/workspace-models.js';
@@ -210,6 +210,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
         </div>
       </header>
       <LimitPause view={view} />
+      <TidyOffer view={view} />
       {plan.body && plan.draft ? (
         <div className={p.changes} role="status">
           <Icon name="wand" size={13} />
@@ -365,3 +366,33 @@ function markdownOf(view: PlanView): string {
   }
   return lines.join('\n');
 }
+
+/**
+ * The plan adopted a branch after some milestones passed: their tasks still In Review can be merged
+ * into it and their worktrees cleared away, but only on your Yes (never by itself, nor on a restart).
+ */
+function TidyOffer({ view }: { view: PlanView }) {
+  const { api, act } = usePlanActions();
+  const tasks = tidyOffer(view);
+  if (!tasks.length) return null;
+  const plan = view.plan;
+  return (
+    <div className={p.changes} role="status" aria-label="Tidy up">
+      <Icon name="branch" size={13} />
+      <strong>
+        Tidy up {tasks.length} merged task {tasks.length === 1 ? 'worktree' : 'worktrees'}?
+      </strong>
+      <span title={tasks.map((t) => `${t.issue!.key} ${t.task.title}`).join('\n')}>
+        {tasks.map((t) => t.issue!.key).join(', ')}: their milestones passed before {plan.branch} was the plan’s branch. Tidy Up merges each into it, then archives its worktree (the conversation stays) and deletes its branch only if merged.
+      </span>
+      <span className={p.grow} />
+      <Button size="small" variant="quiet" onClick={() => void act(() => api.tidyUp(plan.id, false), 'Left as they are')}>
+        No
+      </Button>
+      <Button size="small" variant="primary" onClick={() => void act(() => api.tidyUp(plan.id, true), `Tidying up ${tasks.length === 1 ? '1 worktree' : `${tasks.length} worktrees`}`)}>
+        Tidy Up
+      </Button>
+    </div>
+  );
+}
+

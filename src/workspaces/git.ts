@@ -105,6 +105,15 @@ export async function deleteBranch(repo: string, branch: string): Promise<void> 
   await git(repo, ['branch', '-D', branch]);
 }
 
+/**
+ * Delete a branch only if its work is in `into` (`git branch -d`, never -D): `into` stands in as
+ * its upstream for this one command, so git itself refuses a branch with commits not merged there.
+ */
+export async function deleteMergedBranch(repo: string, branch: string, into: string): Promise<void> {
+  if (!branch || branch.startsWith('-') || !into || into.startsWith('-')) throw new Error(`Not a branch: ${branch}`);
+  await git(repo, ['-c', `branch.${branch}.remote=.`, '-c', `branch.${branch}.merge=refs/heads/${into}`, 'branch', '-d', branch]);
+}
+
 export interface Status {
   readonly branch?: string;
   readonly changed: number;

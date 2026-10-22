@@ -478,9 +478,9 @@ export class WorkspaceManager {
     return g.isAncestor(root, branch, await this.baseOf(root));
   }
 
-  /** Delete a branch whose work is merged elsewhere (git refuses while it's checked out). */
-  async dropBranch(projectId: string, branch: string): Promise<void> {
-    await g.deleteBranch(this.repoProject(projectId).root, branch);
+  /** Delete a branch whose work is merged into `into` (git refuses one that isn't, or that's checked out). */
+  async dropBranch(projectId: string, branch: string, into: string): Promise<void> {
+    await g.deleteMergedBranch(this.repoProject(projectId).root, branch, into);
   }
 
   /** Merge a branch into the main folder, which must be on the default branch. */

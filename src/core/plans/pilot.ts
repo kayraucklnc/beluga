@@ -6,7 +6,7 @@ import { openMilestone } from './apply.js';
 import { type Plan, type PlanMerge, openMilestones, planBranchName } from './model.js';
 import type { PlanGit } from './plan-git.js';
 import type { Plans } from './plans.js';
-import { FINISHED, type MilestoneView, type PlanView, type TaskState, type TaskView, liveFrom, planView, startable } from './progress.js';
+import { FINISHED, type MilestoneView, type PlanView, type TaskState, type TaskView, liveFrom, planView, startable, tidyOffer } from './progress.js';
 import { checkPrompt, fixupPrompt, mergeFixupPrompt, recapPrompt } from './prompt.js';
 import { TaskWatchdog } from './watchdog.js';
 
@@ -60,6 +60,16 @@ const STUCK_RETRY_MS = 30_000;
 const PR_POLL_MS = 2 * 60_000;
 /** How often started tasks are looked at when nothing else happens (a turn can stall in silence). */
 const HEARTBEAT_MS = 60_000;
+
+
+/** Why a milestone can't be merged yet: a task of it still being worked on (undefined: none). */
+export function stillWorking(m: MilestoneView): string | undefined {
+  const words: Partial<Record<TaskState, string>> = { running: 'is running', asking: 'asks you something', idle: 'is still open', stalled: 'stopped without finishing' };
+  const busy = m.tasks.filter((t) => t.issue && !t.issue.worktreeGone && words[t.state]);
+  if (!busy.length) return undefined;
+  const who = busy.map((t) => `${t.issue!.key} ${words[t.state]}`).join(', ');
+  return `“${m.milestone.title}” can’t be merged yet: ${who}. Merging retires each task’s worktree and branch, so only tasks In Review are merged: let them finish (or stop them), then pass it.`;
+}
 
 /** What changes can move a plan along. */
 const WAKES = new Set(['board_issue', 'board_remove', 'plan_put', 'agent_event', 'question_add', 'question_remove', 'approval_add', 'approval_remove', 'projects']);
@@ -187,6 +197,10 @@ export class PlanPilot {
     if (plan.runs[milestoneId]?.passedAt) return plan;
     if (!this.deps.git || !plan.branch) return this.passed(planId, milestoneId, by);
     if (plan.merging?.[milestoneId]) return plan;
+    // Merging retires its tasks' worktrees and branches: never while a Claude still works in one.
+    const m = this.view(plan).milestones.find((x) => x.milestone.id === milestoneId);
+    const busy = m ? stillWorking(m) : undefined;
+    if (busy) throw new Error(busy);
     const next = this.deps.plans.setMerging(planId, milestoneId, { at: Date.now(), by });
     this.schedule();
     return next;
@@ -246,7 +260,7 @@ export class PlanPilot {
     if (m.state !== 'gate' && m.state !== 'checking') return;
     // Nothing to check: autopilot moves on, otherwise it's yours to pass.
     if (!m.milestone.criteria.length) {
-      if (m.autonomy === 'autopilot') this.pass(plan.id, m.milestone.id, { kind: 'klaud' });
+      if (m.autonomy === 'autopilot') this.autoPass(plan.id, m.milestone.id, { kind: 'klaud' });
       return;
     }
     if (m.run.checkAsked === undefined) {
@@ -257,7 +271,16 @@ export class PlanPilot {
       return;
     }
     const check = m.run.check;
-    if (m.autonomy === 'autopilot' && check?.verdict === 'pass' && check.at >= m.run.checkAsked) this.pass(plan.id, m.milestone.id, check.by);
+    if (m.autonomy === 'autopilot' && check?.verdict === 'pass' && check.at >= m.run.checkAsked) this.autoPass(plan.id, m.milestone.id, check.by);
+  }
+
+  /** Autopilot's pass: a task still being worked on (see stillWorking) leaves it for the next look. */
+  private autoPass(planId: string, milestoneId: string, by: Actor): void {
+    try {
+      this.pass(planId, milestoneId, by);
+    } catch {
+      // Not merged under a working Claude: tried again once it's In Review.
+    }
   }
 
   /** Tasks that came back finished since the last look go in the plan's activity (what was there at the first look doesn't). */
@@ -417,7 +440,7 @@ export class PlanPilot {
       void this.makeBranch(plan);
       return;
     }
-    if (!plan.caughtUp) this.catchUp(plan);
+    // Catching up (merging and clearing away what passed before the branch) waits for your Yes: see tidyUp.
     this.stepMerges(this.deps.plans.need(plan.id));
   }
 
@@ -440,17 +463,21 @@ export class PlanPilot {
   }
 
   /**
-   * A plan that ran before it had a branch, once: each passed milestone whose tasks are still in
-   * review has them merged into the branch (no second pass); those already in main go to Done.
+   * Your answer to “Tidy up N merged task worktrees?” (see tidyOffer), asked once, never acted on by
+   * itself (not on a restart either). Yes: each passed milestone whose tasks are still in review has
+   * them merged into the branch (no second pass), then their worktrees archived and branches
+   * deleted if merged; those already in main go to Done. No: nothing changes, and it isn't asked again.
    */
-  private catchUp(plan: Plan): void {
-    const view = this.view(plan);
-    const at = Date.now();
-    for (const m of view.milestones) {
-      if (!m.run.passedAt || plan.merging?.[m.milestone.id]) continue;
-      if (m.tasks.some((t) => t.state === 'review')) this.deps.plans.setMerging(plan.id, m.milestone.id, { at, by: { kind: 'klaud' }, catchUp: true });
+  tidyUp(planId: string, yes: boolean, by: Actor): Plan {
+    const plan = this.deps.plans.need(planId);
+    if (!plan.branch) throw new Error('The plan has no branch yet');
+    if (yes) {
+      const offer = new Set(tidyOffer(this.view(plan)).map((t) => t.milestoneId));
+      for (const id of offer) this.deps.plans.setMerging(plan.id, id, { at: Date.now(), by, catchUp: true });
     }
-    this.deps.plans.setCaughtUp(plan.id);
+    const next = this.deps.plans.setCaughtUp(plan.id);
+    this.schedule();
+    return next;
   }
 
   /** Merges waiting: started, or tried again once the head Claude's fix-up run came and went. */
@@ -498,8 +525,15 @@ export class PlanPilot {
     }
     const key = `merge:${planId}:${milestoneId}`;
     const klaud: Actor = { kind: 'klaud' };
-    // Its started tasks that aren't merged anywhere yet (in review, or passed while still open).
-    let tasks = m.tasks.filter((t) => t.issue?.branch && t.issue.worktrees.length && (t.state === 'review' || (!merge.catchUp && (t.state === 'idle' || t.state === 'running' || t.state === 'asking'))));
+    // A task started again since it was passed: its worktree isn't retired under its Claude.
+    const busy = stillWorking(m);
+    if (busy) {
+      this.deps.plans.setMerging(planId, milestoneId, undefined);
+      this.deps.plans.note(planId, 'problem', busy, klaud);
+      return;
+    }
+    // Only tasks In Review (finished) are merged and retired.
+    let tasks = m.tasks.filter((t) => t.issue?.branch && t.issue.worktrees.length && t.state === 'review');
     if (merge.catchUp) {
       const left: TaskView[] = [];
       for (const t of tasks) {
@@ -549,7 +583,7 @@ export class PlanPilot {
     for (const t of tasks) {
       const ws = t.issue!.worktreeGone ? undefined : t.issue!.worktrees.at(-1);
       try {
-        await git.retire(plan.projectId, ws, t.issue!.branch);
+        await git.retire(plan.projectId, ws, t.issue!.branch, branch);
       } catch (err) {
         this.deps.plans.note(planId, 'problem', `couldn’t clear away ${t.issue!.key}’s worktree: ${err instanceof Error ? err.message : String(err)}`, klaud);
       }

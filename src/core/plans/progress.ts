@@ -180,6 +180,17 @@ export function mergingText(m: PlanMerge, title: string, branch: string | undefi
 }
 
 /** A plan where it stands. */
+/**
+ * A plan that adopted a branch after some milestones passed (an existing plan/<slug>): their tasks
+ * still In Review, which Tidy Up would merge into the branch and clear away. Offered once, never
+ * done by itself (empty once you've answered).
+ */
+export function tidyOffer(view: PlanView): readonly TaskView[] {
+  const plan = view.plan;
+  if (!plan.branch || plan.caughtUp) return [];
+  return view.milestones.filter((m) => m.run.passedAt && !plan.merging?.[m.milestone.id]).flatMap((m) => m.tasks.filter((t) => t.state === 'review' && t.issue?.branch && t.issue.worktrees.length));
+}
+
 export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE): PlanView {
   // A draft (or a plan never approved) is drawn as it's written: nothing runs yet.
   if (!plan.body) {

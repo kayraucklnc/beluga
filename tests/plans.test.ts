@@ -4,7 +4,7 @@ import { BoardWork } from '../src/core/board/work.js';
 import { type BodyInput, PlanError, applyOps, normalizeBody } from '../src/core/plans/edit.js';
 import { diffBodies, milestoneDeps, planForHome } from '../src/core/plans/model.js';
 import { Plans } from '../src/core/plans/plans.js';
-import { overlaps, planView, waves } from '../src/core/plans/progress.js';
+import { overlaps, planView, tidyOffer, waves } from '../src/core/plans/progress.js';
 import { PlansWork, type PlansWorkDeps } from '../src/core/plans/work.js';
 import type { CombineResult } from '../src/workspaces/git.js';
 import type { PlanGit } from '../src/core/plans/plan-git.js';
@@ -821,6 +821,50 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.view().milestones[0]!.tasks.map((x) => x.state)).toEqual(['planned', 'planned', 'planned']);
   });
 
+  it('a milestone with a task still being worked on isn’t merged: the pass says why, and nothing is retired', async () => {
+    const t = await running();
+    for (const title of ['Auth on payment routes', 'Idempotent webhooks']) t.board.update(t.issue(title).id, { status: 'in_review' }, t.claude);
+    await tick(10);
+    // “Receipts once” has started (its worktree is there) but isn't finished.
+    const open = t.issue('Receipts once');
+    expect(open.worktrees.length).toBe(1);
+    expect(() => t.work.pass(t.plan.id, 'safe')).toThrow(`“Safe payments” can’t be merged yet: ${open.key} is`);
+    await t.settle();
+    expect(t.log.merged).toEqual([]);
+    expect(t.log.retired).toEqual([]);
+    expect(t.plans.need(t.plan.id).runs.safe?.passedAt).toBeUndefined();
+    // Finished: now it merges, and only In Review tasks are retired.
+    t.board.update(open.id, { status: 'in_review' }, t.claude);
+    await tick(10);
+    t.work.pass(t.plan.id, 'safe');
+    await t.settle();
+    expect(t.log.retired).toHaveLength(3);
+  });
+
+  it('tidy up answered No: nothing is merged or cleared away, and it isn’t offered again', async () => {
+    const g = fakeGit();
+    g.existing.add('plan/payments');
+    const t = setup({ git: g.git });
+    const plan = t.plans.create({ projectId: 'api', home: 'ws:main' }, t.claude);
+    t.work.forRun('ws:main', 'p-me')!.tools!.write(BODY);
+    t.work.approve(plan.id);
+    const issue = (title: string) => t.store.getState().board.issues.find((i) => i.title === title)!;
+    ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once'].forEach((title, n) => {
+      t.board.linkWorktree(issue(title).id, `old${n}`, { branch: `klaud/old-${n}` }, t.claude);
+      t.board.update(issue(title).id, { status: 'in_review' }, t.claude);
+    });
+    t.plans.pass(plan.id, 'safe', t.me);
+    for (let n = 0; n < 100 && !t.plans.need(plan.id).branch; n++) await tick(5);
+    const view = () => planView(t.plans.need(plan.id), t.store.getState().board);
+    expect(tidyOffer(view())).toHaveLength(3);
+    t.work.tidyUp(plan.id, false);
+    await tick(20);
+    expect(tidyOffer(view())).toEqual([]);
+    expect(g.log.merged).toEqual([]);
+    expect(g.log.retired).toEqual([]);
+    expect(issue('Idempotent webhooks').status).toBe('in_review');
+  });
+
   it('a task of the next milestone starts from the plan branch as it is now (the passed work merged in)', async () => {
     const t = await running();
     await t.passSafe();
@@ -913,7 +957,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.plans.need(t.plan.id).shipped).toMatchObject({ how: 'local' });
   });
 
-  it('a plan already running catches up once: a passed milestone still in review is merged (not passed again); tasks in main go to Done', async () => {
+  it('a plan adopting a branch offers to tidy up, and only on Yes: a passed milestone still in review is merged (not passed again); tasks in main go to Done', async () => {
     const g = fakeGit();
     // Made by hand, before Klaud had plan branches.
     g.existing.add('plan/payments');
@@ -930,8 +974,17 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     g.inMain.add('klaud/old-0');
     t.plans.pass(plan.id, 'safe', t.me);
     const passes = t.plans.need(plan.id).activity.filter((e) => e.kind === 'passed').length;
-    for (let n = 0; n < 100 && !(t.plans.need(plan.id).caughtUp && !t.plans.need(plan.id).merging); n++) await tick(5);
+    for (let n = 0; n < 100 && !t.plans.need(plan.id).branch; n++) await tick(5);
+    await tick(20);
+    // Never by itself (nor after a restart): offered, with the list, until you say Yes.
+    expect(g.log.merged).toEqual([]);
+    expect(g.log.retired).toEqual([]);
+    const view = () => planView(t.plans.need(plan.id), t.store.getState().board);
+    expect(tidyOffer(view()).map((x) => x.issue!.title)).toEqual(['Auth on payment routes', 'Idempotent webhooks', 'Receipts once']);
+    t.work.tidyUp(plan.id, true);
+    for (let n = 0; n < 100 && t.plans.need(plan.id).merging && Object.keys(t.plans.need(plan.id).merging!).length; n++) await tick(5);
     await tick(10);
+    expect(tidyOffer(view())).toEqual([]);
     expect(g.log.ensured).toEqual(['plan/payments']);
     expect(g.log.merged).toEqual([{ into: 'plan/payments', branches: ['klaud/old-1', 'klaud/old-2'] }]);
     expect(issue('Auth on payment routes').status).toBe('done');

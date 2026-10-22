@@ -64,6 +64,22 @@ describe('a plan’s branch', () => {
     expect(sh(dir, 'rev-parse', 'main')).not.toBe(head);
   });
 
+  it('a retired task branch is deleted with git branch -d against the plan branch: merged ones go, unmerged work stays', async () => {
+    const { dir, manager, id } = await project();
+    await manager.planBranch(id, 'plan/p');
+    branch(dir, 'klaud/a', 'a.txt', 'a\n', 'plan/p');
+    branch(dir, 'klaud/b', 'b.txt', 'b\n', 'plan/p');
+    await manager.mergeIntoPlan(id, 'plan/p', ['klaud/a']);
+    // Merged into the plan's branch (not main, where the main folder is): deleted.
+    await manager.dropBranch(id, 'klaud/a', 'plan/p');
+    expect(sh(dir, 'branch', '--list', 'klaud/a').trim()).toBe('');
+    // Its work not in the plan's branch: git refuses, the branch and its commit stay.
+    await expect(manager.dropBranch(id, 'klaud/b', 'plan/p')).rejects.toThrow(/not fully merged/);
+    expect(sh(dir, 'branch', '--list', 'klaud/b').trim()).toBe('klaud/b');
+    // The one-off upstream isn't left in the repo's config.
+    expect(() => sh(dir, 'config', '--get', 'branch.klaud/b.merge')).toThrow();
+  });
+
   it('checked out somewhere already: merged there (kept); with uncommitted changes it says so', async () => {
     const { base, dir, manager, id } = await project();
     await manager.planBranch(id, 'plan/p');

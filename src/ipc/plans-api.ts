@@ -55,6 +55,7 @@ export const PLANS_API = {
   'plans.setParallel': { args: z.tuple([id, z.number().int().min(1).max(MAX_PARALLEL)]) },
   // When the e2e and full suites run: once per milestone (at its check), or only in the final step.
   'plans.setTestsAt': { args: z.tuple([id, z.enum(TESTS_AT)]) },
+  'plans.tidyUp': { args: z.tuple([id, z.boolean()]) },
   // Pass a milestone (the next one opens), or send it back to the head Claude with what's missing.
   'plans.pass': { args: z.tuple([id, ref]) },
   // Ask the plan's Claude to check a milestone again.
