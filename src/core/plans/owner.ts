@@ -1,5 +1,5 @@
 import type { BoardState, Issue } from '../board/model.js';
-import { type Plan, type PlanMilestone, type PlanTask, type PlansState, allTasks } from './model.js';
+import { type Plan, type PlanMilestone, type PlanTask, type PlansState, allTasks, planById } from './model.js';
 
 /**
  * Which plan a worktree belongs to: one doing a task of a plan that's still running (its task not
@@ -43,6 +43,38 @@ export function planOwnerOf(plans: PlansState, board: BoardState, workspaceId: s
     }
   }
   return undefined;
+}
+
+/** Who folds into whom, worked out once per plans and board (screens ask it for every row). */
+const folds = new WeakMap<PlansState, { readonly board: BoardState; readonly map: ReadonlyMap<string, Plan> }>();
+
+function foldMap(plans: PlansState, board: BoardState): ReadonlyMap<string, Plan> {
+  const hit = folds.get(plans);
+  if (hit?.board === board) return hit.map;
+  const map = new Map<string, Plan>();
+  // Its home, while it's live (the newest plan of a conversation wins, as planForHome).
+  for (const plan of plans.plans) if (isLivePlan(plan) && plan.home.startsWith('ws:')) map.set(plan.home.slice(3), plan);
+  for (const [ws, id] of planWorktrees(plans, board)) map.set(ws, planById(plans, id)!);
+  folds.set(plans, { board, map });
+  return map;
+}
+
+/**
+ * The one rule for “this conversation is part of a plan”: the live plan a workspace folds into,
+ * its home conversation (while the plan is being written or runs) or one of its running tasks'
+ * worktrees. Such a workspace never stands on its own at the top level: the sidebar, Unread,
+ * the bell and Overview show the plan instead (the same places planOfChannel in core/notify.ts
+ * finds, narrowed to plans that are live).
+ */
+export const planOf = (state: { readonly plans: PlansState; readonly board: BoardState }, workspaceId: string): Plan | undefined => foldMap(state.plans, state.board).get(workspaceId);
+
+export const isPlanOwned = (state: { readonly plans: PlansState; readonly board: BoardState }, workspaceId: string): boolean => planOf(state, workspaceId) !== undefined;
+
+/** Every workspace folded into a plan: its home first (when it's a workspace), then its tasks' worktrees. */
+export function planConversations(state: { readonly plans: PlansState; readonly board: BoardState }, planId: string): readonly string[] {
+  const out: string[] = [];
+  for (const [ws, plan] of foldMap(state.plans, state.board)) if (plan.id === planId) out.push(ws);
+  return out;
 }
 
 /**

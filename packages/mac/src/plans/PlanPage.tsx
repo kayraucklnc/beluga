@@ -6,6 +6,8 @@ import { activityOf } from '@klaud/ui/workspace-models.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
+import { usePrefs } from '../lib/prefs.js';
+import { taskChatsItem } from '../layout/plan-task-chats.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useApp } from '../lib/klaud.js';
@@ -67,6 +69,7 @@ export function PlanPage({ id, task }: { id: string; task?: string }) {
 function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; prefs: { display: Display; chat: boolean }; setPrefs: (p: Partial<{ display: Display; chat: boolean }>) => void; picked?: string; setPicked: (id: string | undefined) => void }) {
   const { plan } = view;
   const { api, act, openList, openWorktree } = usePlanActions();
+  const uiPrefs = usePrefs();
   const body = shownBody(plan);
   const keys = useMemo(() => new Map(view.milestones.flatMap((m) => m.tasks.flatMap((t) => (t.issue ? [[t.task.id, t.issue.key] as const] : [])))), [view]);
   const startable = useMemo(() => {
@@ -113,6 +116,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           { label: 'Pass Anyway', onSelect: () => void act(() => api.pass(plan.id, next.milestone.milestone.id)) },
         ]
       : []),
+    ...(plan.status === 'active' ? [taskChatsItem(plan.id, uiPrefs)] : []),
     { label: 'Copy as Markdown', separate: true, onSelect: () => void copyText(markdownOf(view)) },
     { label: 'Planning Style…', onSelect: () => openSheet({ kind: 'plan_style' }) },
     ...(plan.draft ? [{ label: plan.body ? 'Discard Changes' : 'Discard Draft', danger: true, separate: true, onSelect: () => openSheet({ kind: 'confirm', title: plan.body ? 'Discard the proposed changes?' : 'Discard this draft?', message: plan.body ? 'The plan stays as you approved it.' : 'Nothing was put on the board, so nothing else changes.', confirm: 'Discard', destructive: true, run: () => void act(() => api.discard(plan.id)) }) }] : []),

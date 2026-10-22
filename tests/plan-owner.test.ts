@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NO_BOARD, type BoardState, type Issue } from '../src/core/board/model.js';
 import { normalizeBody } from '../src/core/plans/edit.js';
 import type { Plan, PlansState } from '../src/core/plans/model.js';
-import { isLivePlan, planOfPlace, planOwnerOf, planWorktrees } from '../src/core/plans/owner.js';
+import { isLivePlan, isPlanOwned, planConversations, planOf, planOfPlace, planOwnerOf, planWorktrees } from '../src/core/plans/owner.js';
 
 /** A plan's task worktrees belong to the plan: the sidebar shows the plan, and the plan merges them. */
 
@@ -41,5 +41,25 @@ describe('which worktrees a plan owns', () => {
     expect(planOfPlace(state, board, { kind: 'workspace', id: 'w1' })).toBe('p');
     expect(planOfPlace(state, board, { kind: 'workspace', id: 'w4' })).toBeUndefined();
     expect(planOfPlace(state, board, { kind: 'overview' })).toBeUndefined();
+  });
+});
+
+describe('the one rule: what folds into a plan (planOf)', () => {
+  const st = (p: Plan) => ({ plans: plans(p), board });
+
+  it('its home and its running tasks’ worktrees; not a canceled task’s, nor a worktree outside it', () => {
+    const s = st(plan());
+    expect(planOf(s, 'home')?.id).toBe('p');
+    expect(planOf(s, 'w1')?.id).toBe('p');
+    expect(isPlanOwned(s, 'w2')).toBe(true);
+    expect(isPlanOwned(s, 'w3')).toBe(false);
+    expect(isPlanOwned(s, 'w4')).toBe(false);
+    expect(planConversations(s, 'p')).toEqual(['home', 'w1', 'w2']);
+  });
+
+  it('a plan being written owns its home only; a finished plan owns nothing', () => {
+    expect(planConversations(st(plan({ status: 'draft', body: undefined, draft: body })), 'p')).toEqual(['home']);
+    expect(isPlanOwned(st(plan({ status: 'done' })), 'home')).toBe(false);
+    expect(isPlanOwned(st(plan({ status: 'done' })), 'w1')).toBe(false);
   });
 });

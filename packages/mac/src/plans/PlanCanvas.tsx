@@ -10,7 +10,7 @@ import { type ElkInput, type Placed, type Point, type Route, placesOf, roundedPa
 import { layout } from '../components/graph/layout.js';
 import { useSharpZoom } from '../components/graph/sharp-zoom.js';
 import { MILESTONE_STATE, TASK_STATE, changeMarks, gateId, graphShape, groupId, taskNodeId } from './plans-model.js';
-import { TaskStateIcon } from './marks.js';
+import { TaskChatMark, TaskStateIcon } from './marks.js';
 import p from './plans.module.css';
 
 /**
@@ -330,6 +330,7 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task
         <span className={p.taskKey}>{data.key ?? t.task.id}</span>
         {data.mark ? <span className={p.markChip}>{data.mark === 'added' ? 'New' : 'Changed'}</span> : null}
         <span className={p.grow} />
+        <TaskChatMark {...(t.worktree ? { worktree: t.worktree } : {})} />
         {t.task.estimate ? <span className={p.points}>{t.task.estimate}</span> : null}
         {t.forYou ? <Icon name="person" size={12} className={p.forYou} /> : null}
       </div>

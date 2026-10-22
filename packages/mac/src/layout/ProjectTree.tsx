@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
-import { isLivePlan, planOfPlace, planWorktrees } from '@klaud/core/plans/owner.js';
+import { planConversations, planOf, planOfPlace } from '@klaud/core/plans/owner.js';
 import type { UiAction } from '@klaud/ui/workspace-models.js';
 import { setOverviewView } from '../views/overview/use-overview-prefs.js';
 import { Icon } from '../components/Icon.js';
@@ -24,7 +24,7 @@ import { type Entry, type Place, type Target, keyOfEntry, stepOf, useArrange, us
 import { OutsideWorktrees } from './OtherWorktrees.js';
 import { ProjectAgents, SubAgentRows, useAgentOrigins, useCcSessions } from './SubAgents.js';
 import { hasRowsInside } from './project-rows.js';
-import { groupTally, groupWorking, projectTally, projectWorking, tallyTip } from './attention-model.js';
+import { groupTally, groupWorking, projectPlans, projectTally, projectWorking, tallyTip } from './attention-model.js';
 import { TallyMark } from './signal-marks.js';
 import { Row } from './sidebar-parts.js';
 import { WorkspaceRow } from './workspace-row.js';
@@ -152,11 +152,12 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
   // Not the main checkout (work happens in worktrees); questions asked in its folder stay, as chats.
   // A plan is one row: its conversation and its tasks' worktrees stay off the tree (they're reached
   // from the plan). A finished plan's conversation shows only while you're in it.
-  const plans = state.plans.plans.filter((x) => x.projectId === p.id && isLivePlan(x));
-  const owned = useMemo(() => planWorktrees(state.plans, state.board), [state.plans, state.board]);
-  const liveHomes = new Set(plans.map((x) => x.home));
+  const plans = projectPlans(state, p);
   const planHomes = new Set(state.plans.plans.map((x) => x.home));
-  const ofPlan = (w: { id: string }): boolean => owned.has(w.id) || liveHomes.has(`ws:${w.id}`);
+  const ofPlan = (w: { id: string }): boolean => planOf(state, w.id) !== undefined;
+  // A plan you asked to show its tasks' chats: they sit under its row (its home is the plan's page).
+  const showTasks = usePrefs().planTaskChats;
+  const taskChats = (planId: string) => (showTasks.includes(planId) ? live.filter((w) => !planHomes.has(`ws:${w.id}`) && planConversations(state, planId).includes(w.id)) : []);
   const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud' && !ofPlan(w) && (!planHomes.has(`ws:${w.id}`) || w.id === here));
   const inPlan = planOfPlace(state.plans, state.board, state.view);
   // You're in this project: on its home page, in one of its worktrees or chats, or in one of its plans.
@@ -253,7 +254,12 @@ function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1
       ) : (
         <>
           {plans.map((x) => (
-            <PlanRow key={x.id} plan={x} indent={kids} />
+            <Fragment key={x.id}>
+              <PlanRow plan={x} indent={kids} />
+              {taskChats(x.id).map((w) => (
+                <WorkspaceRow key={w.id} ws={w} indent={kids + 1} />
+              ))}
+            </Fragment>
           ))}
           {mine.map((w) => (
             <Fragment key={w.id}>

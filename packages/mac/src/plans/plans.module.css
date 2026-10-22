@@ -1718,3 +1718,10 @@ textarea.goalBox {
 .oAfterArrow {
   transform: rotate(90deg);
 }
+
+/* A task's chat has news or waits on you (its row and card, inside the plan). */
+.taskChatMark {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}

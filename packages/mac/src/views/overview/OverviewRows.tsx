@@ -48,8 +48,43 @@ const rowProps = ({ item, selected, onSelect, onOpen }: RowBase, label: string) 
   },
 });
 
-/** A live worktree or chat: as the Overview always showed it (state, PR, context, when). */
+/** A live plan: one row (its tasks are inside it), with what the plan as a whole waits on. */
+function PlanItemRow(props: RowBase & { now: number }) {
+  const { item, now } = props;
+  const plan = item.plan!;
+  const act = useApp((st) => activityOf(st.log, `ws:${item.ws.id}`));
+  const tone = item.needs ? 'warn' : item.rank === 2 ? 'claude' : 'muted';
+  const items: ActionItem[] = [{ label: 'Open Plan', icon: 'chevronRight', onSelect: () => props.onOpen(item) }];
+  return (
+    <ActionsContext items={items}>
+      <div {...rowProps(props, `${plan.title}, plan${plan.tip ? `, ${plan.tip}` : ''}`)} className={s.row} data-plan-item={plan.plan.id}>
+        <span className={s.kind}>
+          <Icon name="flag" size={14} />
+        </span>
+        <span className={s.name}>
+          {plan.title}
+          {plan.unread ? <span className={s.unread}>{plan.unread} new</span> : null}
+        </span>
+        <span className={s.branch}>plan</span>
+        <span className={cx(s.state, s[`tone_${tone}`])}>
+          <Dot tone={tone} live={item.rank === 2} />
+          {plan.tip || 'Plan'}
+        </span>
+        <span className={s.extra} title={item.last}>
+          {item.last ?? ''}
+        </span>
+        <span className={s.when}>{act.lastTs ? ago(act.lastTs, now) : ''}</span>
+      </div>
+    </ActionsContext>
+  );
+}
+
+/** A live worktree or chat: as the Overview always showed it (state, PR, context, when). A plan's is the plan's row. */
 export function ActiveRow(props: RowBase & { now: number }) {
+  return props.item.plan ? <PlanItemRow {...props} /> : <WorkspaceItemRow {...props} />;
+}
+
+function WorkspaceItemRow(props: RowBase & { now: number }) {
   const { item, now } = props;
   const w = item.ws;
   const actions = useActions();

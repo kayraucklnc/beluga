@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Plan } from '@klaud/core/plans/model.js';
-import { isLivePlan, planWorktrees } from '@klaud/core/plans/owner.js';
+import { isLivePlan, isPlanOwned } from '@klaud/core/plans/owner.js';
 import { activityOf, stateOf } from '@klaud/ui/workspace-models.js';
 import type { Project, Workspace } from '@klaud/workspaces/types.js';
 import { EarningsPill } from '../components/EarningsPill.js';
@@ -40,9 +40,8 @@ export function ProjectHome({ id }: { id: string }) {
   const board = useApp((st) => st.board);
   // A plan is one row: its conversation and its tasks' worktrees aren't counted or listed on their own.
   const plans = useMemo(() => plansState.plans.filter((x) => x.projectId === id && isLivePlan(x)), [plansState, id]);
-  const ofPlans = useMemo(() => new Set([...planWorktrees(plansState, board).keys(), ...plans.map((x) => x.home.replace(/^ws:/, ''))]), [plansState, board, plans]);
   if (!project) return <Empty icon="folder" title="This project isn’t here anymore" detail="It may have been hidden or moved. Pick another one in the sidebar." />;
-  const model = homeModel({ log, conflicts }, { ...project, workspaces: project.workspaces.filter((w) => !ofPlans.has(w.id)) });
+  const model = homeModel({ log, conflicts }, { ...project, workspaces: project.workspaces.filter((w) => !isPlanOwned({ plans: plansState, board }, w.id)) });
   return (
     <div className={s.page} aria-label={`${project.name} home`}>
       <div className={s.column}>

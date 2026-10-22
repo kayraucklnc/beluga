@@ -6,7 +6,7 @@ import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/
 import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
 import { MILESTONE_STATE, TASK_STATE, changeMarks, milestoneLabel, milestoneRows } from './plans-model.js';
-import { TaskStateIcon } from './marks.js';
+import { TaskChatMark, TaskStateIcon } from './marks.js';
 import { usePlanActions } from './use-plans.js';
 
 /** A change you make to a plan (as the API takes it). */
@@ -114,6 +114,7 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
           <Rename value={t.task.title} className={p.oTaskTitle} label="Task name" onDone={(title) => edit([{ op: 'update_task', id: t.task.id, patch: { title } }])} />
           {mark ? <span className={p.markChip}>{mark === 'added' ? 'New' : 'Changed'}</span> : null}
           {t.task.parent ? <span className={p.muted}>sub-task</span> : null}
+          <TaskChatMark {...(t.worktree ? { worktree: t.worktree } : {})} />
         </div>
         <span className={p.oTaskMeta}>
           {t.state === 'running' && t.step ? <span className={p.oStep}>{t.step}</span> : t.state === 'blocked' ? <span className={p.muted}>{t.why}</span> : null}

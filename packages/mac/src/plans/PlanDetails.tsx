@@ -5,7 +5,7 @@ import { Markdown } from '../chat/Markdown.js';
 import { Button, IconButton } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
 import { MILESTONE_STATE, TASK_STATE } from './plans-model.js';
-import { TaskStateIcon, TonePill } from './marks.js';
+import { TaskChatMark, TaskStateIcon, TonePill } from './marks.js';
 import { PlanFeed } from './PlanFeed.js';
 import { usePlanActions } from './use-plans.js';
 import p from './plans.module.css';
@@ -95,8 +95,10 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
           </Button>
         ) : null}
         {t.worktree ? (
-          <Button size="small" icon="branch" onClick={() => openWorktree(t.worktree!)}>
-            Open Worktree
+          // Its chat, one click away (with its news); its Claude asking you: answering is this click.
+          <Button size="small" icon={t.state === 'asking' ? 'chat' : 'branch'} variant={t.state === 'asking' ? 'primary' : 'plain'} onClick={() => openWorktree(t.worktree!)}>
+            {t.state === 'asking' ? 'Answer' : 'Open Worktree'}
+            <TaskChatMark worktree={t.worktree} />
           </Button>
         ) : null}
         {t.issue ? (

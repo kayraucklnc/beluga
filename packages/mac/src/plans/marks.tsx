@@ -3,6 +3,8 @@ import type { TaskState } from '@klaud/core/plans/progress.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, cx } from '../components/ui.js';
 import { useApp } from '../lib/klaud.js';
+import { type Need, type Signal, signalOf } from '../layout/attention-model.js';
+import { SignalMark } from '../layout/signal-marks.js';
 import { type Headline, type Tone, type Who, TASK_STATE } from './plans-model.js';
 import p from './plans.module.css';
 
@@ -131,6 +133,27 @@ export function Said({ line, className }: { line: Headline; className?: string }
         {line.who === 'you' ? <strong className={p.saidYou}>You: </strong> : null}
         {line.who === 'you' ? line.text.charAt(0).toLowerCase() + line.text.slice(1) : line.text}
       </span>
+    </span>
+  );
+}
+
+/**
+ * A task's chat, as the sidebar would mark it (a plan keeps its tasks off the sidebar): a dot when
+ * its Claude waits on you, else how many new messages. Nothing when there's nothing new.
+ */
+export function TaskChatMark({ worktree }: { worktree?: string }) {
+  // A plain string, so the graph and the outline only redraw when the mark changes.
+  const mark = useApp((st) => {
+    if (!worktree) return '';
+    const x = signalOf(st, `ws:${worktree}`, worktree);
+    return x.level === 'needs' ? `needs|${x.need ?? ''}|${x.tip}` : x.unread ? `unread|${x.unread}|${x.tip}` : '';
+  });
+  if (!mark) return null;
+  const [level, value, tip] = mark.split('|') as [string, string, string];
+  const signal: Signal = level === 'needs' ? { level: 'needs', unread: 0, working: false, tip, ...(value ? { need: value as Need } : {}) } : { level: 'unread', unread: Number(value), working: false, tip };
+  return (
+    <span className={p.taskChatMark} title={tip} data-task-chat={level}>
+      <SignalMark signal={signal} />
     </span>
   );
 }
