@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useRef, useState } from 'react';
+import { Fragment, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { SocketClient } from '@klaud/ipc/socket-client.js';
 import { App } from './App.js';
@@ -71,8 +71,14 @@ function Root() {
   );
 }
 
+/**
+ * StrictMode draws everything twice while developing (never in the app you ship): a timing test
+ * (e2e/render-calm.spec.ts) opens `/?nostrict` to time what the app itself does.
+ */
+const Strict = import.meta.env.DEV && new URLSearchParams(location.search).has('nostrict') ? Fragment : StrictMode;
+
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+  <Strict>
     <Root />
-  </StrictMode>,
+  </Strict>,
 );

@@ -28,6 +28,8 @@ export interface SubAgent {
   readonly status: 'running' | 'done' | 'failed';
   /** Sub-agent, or background work (a background terminal or agent). */
   readonly kind?: 'agent' | 'background';
+  /** When it started (missing on items saved before it was kept): where it sits among the steps. */
+  readonly startedAt?: number;
 }
 
 export type LogItem =
@@ -643,7 +645,7 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ...(progress ? { progress } : {}),
     ...(between ? { between, betweenAt } : {}),
     status: a.event === 'text' || a.event === 'tool' || a.event === 'sub' || a.event === 'progress' ? 'started' : a.event,
-    subagents: a.event === 'sub' ? applySub(base.subagents, a.text) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
+    subagents: a.event === 'sub' ? applySub(base.subagents, a.text, a.ts) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
     text:
       a.event === 'text'
         ? (base.text ? `${base.text}\n` : '') + a.text
@@ -672,7 +674,7 @@ function reduceContext(state: DomainState, a: Extract<Action, { type: 'agent_eve
 export const formatTokens = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 
 /** Apply one sub-agent event (JSON from the runner) to the list. */
-function applySub(list: readonly SubAgent[], json: string): readonly SubAgent[] {
+function applySub(list: readonly SubAgent[], json: string, ts: number): readonly SubAgent[] {
   let e: { id?: string; phase?: string; title?: string; step?: string; kind?: 'agent' | 'background'; failed?: boolean };
   try {
     e = JSON.parse(json) as typeof e;
@@ -681,7 +683,7 @@ function applySub(list: readonly SubAgent[], json: string): readonly SubAgent[] 
   }
   if (!e.id) return list;
   const existing = list.find((s) => s.id === e.id);
-  if (e.phase === 'start' && !existing) return [...list, { id: e.id, title: e.title ?? 'sub-agent', steps: [], status: 'running', kind: e.kind ?? 'agent' }];
+  if (e.phase === 'start' && !existing) return [...list, { id: e.id, title: e.title ?? 'sub-agent', steps: [], status: 'running', kind: e.kind ?? 'agent', startedAt: ts }];
   return list.map((s) => {
     if (s.id !== e.id) return s;
     if (e.phase === 'step' && e.step) return { ...s, steps: [...s.steps, e.step].slice(-MAX_STEPS) };

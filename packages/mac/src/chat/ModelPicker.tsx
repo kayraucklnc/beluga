@@ -30,14 +30,16 @@ function flavor(value: string, label: string): string {
  */
 export function ModelPicker({ channel }: { channel: string }) {
   const api = useApi();
-  const state = useApp((st) => st);
   const conversation = channel === 'room' || channel === 'draft' ? undefined : channel;
-  const current = modelOf(state, channel) ?? '';
-  const effort = state.prefs.effort;
-  const model = state.models.find((m) => m.value === current);
+  // Only what the picker shows (not the whole state): not drawn again on every streamed event (KLD-48).
+  const current = useApp((st) => modelOf(st, channel) ?? '');
+  const label = useApp((st) => modelLabel(st, current || undefined));
+  const effort = useApp((st) => st.prefs.effort);
+  const models = useApp((st) => st.models);
+  const model = models.find((m) => m.value === current);
   // Some models take only some effort levels.
   const allowed = new Set((model?.efforts ?? EFFORTS) as readonly string[]);
-  const chip = `${modelLabel(state, current || undefined)}${effort ? ` · ${EFFORT_INFO[effort].label}` : ''}`;
+  const chip = `${label}${effort ? ` · ${EFFORT_INFO[effort].label}` : ''}`;
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -54,7 +56,7 @@ export function ModelPicker({ channel }: { channel: string }) {
             <span className={s.scope}>{conversation ? 'for this conversation' : 'for new conversations'}</span>
           </div>
           <div className={s.models} role="radiogroup" aria-label="Model">
-            {state.models.map((m) => {
+            {models.map((m) => {
               const on = m.value === current;
               return (
                 <button key={m.value || 'default'} type="button" role="radio" aria-checked={on} className={cx(s.model, on && s.modelOn)} onClick={() => void api.workbench.setModel(conversation, m.value)}>

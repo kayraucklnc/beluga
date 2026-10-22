@@ -89,6 +89,62 @@ test('a Bash step opens to show its command and output, and thinking opens to sh
   await expect(thinking.locator('[data-step-detail="thinking"]')).toContainText('They asked');
 });
 
+/** Notes every step row seen part way through closing or opening (its opacity between none and full). */
+async function watchSlides(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { slid: string[] };
+    w.slid = [];
+    const look = () => {
+      for (const el of document.querySelectorAll<HTMLElement>('[data-slot]')) {
+        const op = Number.parseFloat(getComputedStyle(el).opacity);
+        if (op > 0.02 && op < 0.98 && !w.slid.includes(el.dataset.slot!)) w.slid.push(el.dataset.slot!);
+      }
+      requestAnimationFrame(look);
+    };
+    requestAnimationFrame(look);
+  });
+}
+const slid = (page: Page) => page.evaluate(() => (window as unknown as { slid: string[] }).slid);
+const foldedCount = async (page: Page): Promise<number> => Number(await lastSteps(page).getByRole('button', { name: /^Show \d+ earlier steps/ }).getAttribute('data-folded-count'));
+
+test('while Claude works, a finished step closes up into the fold, whose count ticks up; the fold opens and closes again', async ({ page }) => {
+  await openWorkspace(page, 'new-hero', 'landing');
+  await send(page, 'deep dive into the webhook code, take your time');
+  const steps = lastSteps(page);
+  const fold = steps.getByRole('button', { name: /^Show \d+ earlier steps/ });
+  await expect(fold).toBeVisible({ timeout: 20_000 });
+  await watchSlides(page);
+  const before = await foldedCount(page);
+  // The next step finishing pushes the oldest shown one into the fold: it fades and closes as it goes.
+  await expect.poll(() => foldedCount(page), { timeout: 10_000 }).toBeGreaterThan(before);
+  await expect.poll(async () => (await slid(page)).length, { timeout: 3000 }).toBeGreaterThan(0);
+  const went = await slid(page);
+  // The last few rows are all still in sight: two finished ones and the one Claude is on.
+  await expect(steps.locator('[data-current="true"]')).toHaveCount(1);
+  // Open the fold: every step shows, and it closes again.
+  await fold.click();
+  const hide = steps.getByRole('button', { name: /^Hide \d+ earlier steps/ });
+  await expect(hide).toHaveAttribute('aria-expanded', 'true');
+  for (const id of went) await expect(steps.locator(`[data-slot="${id}"]`)).toHaveCount(1);
+  await hide.click();
+  await expect(steps.getByRole('button', { name: /^Show \d+ earlier steps/ })).toHaveAttribute('aria-expanded', 'false');
+  await page.getByRole('button', { name: 'Stop Claude' }).first().click();
+});
+
+test('with reduced motion, steps go into the fold at once', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openWorkspace(page, 'new-hero', 'landing');
+  await send(page, 'deep dive into the webhook code, take your time');
+  await expect(lastSteps(page).getByRole('button', { name: /^Show \d+ earlier steps/ })).toBeVisible({ timeout: 20_000 });
+  await watchSlides(page);
+  const before = await foldedCount(page);
+  await expect.poll(() => foldedCount(page), { timeout: 10_000 }).toBeGreaterThan(before);
+  // (Past where a slide would have been.)
+  await page.waitForTimeout(500);
+  expect(await slid(page)).toEqual([]);
+  await page.getByRole('button', { name: 'Stop Claude' }).first().click();
+});
+
 test('a sent message flies from the box into the chat and lands in place', async ({ page }) => {
   await openWorkspace(page, 'new-hero', 'landing');
   await countFlights(page);

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Plan, PlansState } from '@klaud/core/plans/model.js';
 import { type PlanView, liveFrom, planView } from '@klaud/core/plans/progress.js';
 import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
 import { useActions } from '../lib/actions.js';
 import { onWindowActive, windowActive } from '../lib/window-active.js';
+import { sameDeep, sameItems } from '../lib/stable.js';
 
 /** What the Plans screens share: the plans, a plan where it stands (live), and acting on plans. */
 
@@ -11,11 +12,16 @@ export const usePlans = (): PlansState => useApp((s) => s.plans);
 
 /** A plan where it stands now: from the board and what Claude is doing in each worktree. */
 export function usePlanView(plan: Plan | undefined): PlanView | undefined {
-  const board = useApp((s) => s.board);
-  const log = useApp((s) => s.log);
-  const questions = useApp((s) => s.questions);
-  const approvals = useApp((s) => s.approvals);
-  return useMemo(() => (plan ? planView(plan, board, liveFrom({ log, questions, approvals })) : undefined), [plan, board, log, questions, approvals]);
+  // Worked out again only when what it's made of changes, and given out again only when it reads
+  // differently: a Claude streaming in another conversation doesn't draw a plan's row again (KLD-48).
+  const made = useRef<{ readonly from: readonly unknown[]; readonly view: PlanView | undefined }>(undefined);
+  return useApp((s) => {
+    const from = [plan, s.board, s.log, s.questions, s.approvals];
+    if (made.current && sameItems(made.current.from, from)) return made.current.view;
+    const view = plan ? planView(plan, s.board, liveFrom(s)) : undefined;
+    made.current = { from, view };
+    return view;
+  }, sameDeep);
 }
 
 // One clock for every card that shows how long a step has run: it ticks each second only while one
