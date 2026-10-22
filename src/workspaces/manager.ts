@@ -62,6 +62,8 @@ export class WorkspaceManager {
   /** The refresh running now, and the one queued behind it (every call made meanwhile shares it). */
   private refreshing?: Promise<readonly Project[]>;
   private followUp?: Promise<readonly Project[]>;
+  /** One folder's status refresh in flight, per folder: the next waits for it (see refreshWorkspace). */
+  private readonly folderRefreshes = new Map<string, Promise<boolean>>();
   /** Fetching state per project root (in flight, the last failure), shown with the default branch. */
   private fetchState = new Map<string, Pick<ProjectSync, 'fetching' | 'fetchError'>>();
   /** A remote's default branch learned while fetching, for repos without origin/HEAD (by root). */
@@ -356,15 +358,31 @@ export class WorkspaceManager {
 
   /**
    * Refresh one folder's git status (a run there ended), not every project's → whether it changed.
-   * Waits for a full refresh in flight first, so that one's older reading never lands after this.
+   * Waits for a full refresh in flight first, so that one's older reading never lands after this;
+   * and for this folder's previous one, so two run endings there both land, the later reading last.
    */
-  async refreshWorkspace(dir: string): Promise<boolean> {
-    if (this.refreshing) await (this.followUp ?? this.refreshing).catch(() => undefined);
+  refreshWorkspace(dir: string): Promise<boolean> {
     const key = real(dir);
-    const ws = this.projects.flatMap((p) => p.workspaces).find((w) => !w.archived && w.kind !== 'chat' && real(w.path) === key);
-    if (!ws) return false;
-    const status = await g.status(ws.path, ws.kind === 'main' ? undefined : ws.base).catch(() => undefined);
+    const before = this.folderRefreshes.get(key);
+    const run = (before ? before.catch(() => false) : Promise.resolve(false)).then(() => this.refreshFolder(key));
+    this.folderRefreshes.set(key, run);
+    const forget = (): void => {
+      if (this.folderRefreshes.get(key) === run) this.folderRefreshes.delete(key);
+    };
+    run.then(forget, forget);
+    return run;
+  }
+
+  private async refreshFolder(key: string): Promise<boolean> {
+    if (this.refreshing) await (this.followUp ?? this.refreshing).catch(() => undefined);
+    const find = (): Workspace | undefined => this.projects.flatMap((p) => p.workspaces).find((w) => !w.archived && w.kind !== 'chat' && real(w.path) === key);
+    const read = find();
+    if (!read) return false;
+    const status = await g.status(read.path, read.kind === 'main' ? undefined : read.base).catch(() => undefined);
     if (this.refreshing) return false; // a full refresh started meanwhile: it has the newer reading
+    // As it is now (a full refresh may have replaced it meanwhile), not as it was before git ran.
+    const ws = find();
+    if (!ws || ws.id !== read.id) return false;
     // Claude may have switched branches there (detached shows as "HEAD": keep what's known).
     const branch = status?.branch && status.branch !== 'HEAD' ? status.branch : ws.branch;
     if (isDeepStrictEqual(status, ws.status) && branch === ws.branch) return false;

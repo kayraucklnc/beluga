@@ -26,6 +26,19 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
   useEffect(() => {
     const el = box.current;
     if (!el) return;
+    // After the frame that shows the switch, not before it: a click's effects run before its paint, and
+    // making a terminal (fonts measured, layout read) would hold up the chat you clicked (KLD-68).
+    let stop: (() => void) | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const frame = requestAnimationFrame(() => (timer = setTimeout(() => (stop = mount(el)))));
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+      stop?.();
+    };
+  }, [termKey]);
+  /** Make the terminal in `el` and connect it to its program → how to take it down. */
+  function mount(el: HTMLDivElement): () => void {
     const term = new Terminal({
       ...terminalOptions(getPrefs()),
       allowProposedApi: true,
@@ -74,7 +87,7 @@ export function Xterm({ termKey, start, focus = true }: { termKey: string; start
       link.close?.();
       term.dispose();
     };
-  }, [termKey]);
+  }
   // Your terminal look (Settings › Terminal) applies as you change it; size changes refit.
   useEffect(() => {
     const t = live.current;

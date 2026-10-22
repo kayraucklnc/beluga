@@ -87,7 +87,10 @@ test('eight chats streaming: only the card an event is about draws again, and th
   const liveKey = Object.keys(after).find((k) => k.startsWith('card:') && !done.includes(k))!;
   expect(after[liveKey]).toBeGreaterThan(before[liveKey]!);
 
-  // The sidebar answers at once: from the click to the frame that shows the other chat (its name in the toolbar).
+  // The sidebar answers at once: from the click to the painted frame that shows the other chat (its
+  // name in the toolbar). Watched as the page changes (not once a frame), then that frame's paint
+  // (a task posted from its animation frame runs after it): no idle frame interval of a headless,
+  // busy browser counts, only what the click makes the window do.
   const times: number[] = [];
   for (let i = 0; i < 9; i++) {
     const name = NAMES[i % 2 === 0 ? 1 : 0]!;
@@ -95,19 +98,45 @@ test('eight chats streaming: only the card an event is about draws again, and th
     const ms = await page.evaluate(
       ({ row, name }) =>
         new Promise<number>((resolve) => {
-          const title = (): string => document.querySelector('header')?.textContent ?? '';
+          const shown = (): boolean => (document.querySelector('header')?.textContent ?? '').includes(name);
+          const painted = (): void =>
+            requestAnimationFrame(() => {
+              const ch = new MessageChannel();
+              ch.port1.onmessage = () => resolve(performance.now() - start);
+              ch.port2.postMessage(null);
+            });
+          const watch = new MutationObserver(() => {
+            if (!shown()) return;
+            watch.disconnect();
+            painted();
+          });
+          watch.observe(document.body, { subtree: true, childList: true, characterData: true });
           const start = performance.now();
           (row as HTMLElement).click();
-          const check = (): void => {
-            if (title().includes(name)) requestAnimationFrame(() => resolve(performance.now() - start));
-            else requestAnimationFrame(check);
-          };
-          check();
+          if (shown()) {
+            watch.disconnect();
+            painted();
+          }
         }),
       { row, name },
     );
     times.push(Math.round(ms));
     await page.waitForTimeout(300);
+  }
+  // CALM_CLICK_PROFILE=<file>: a CPU profile of six more sidebar switches (to see what a click still does).
+  if (process.env.CALM_CLICK_PROFILE) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Profiler.enable');
+    await cdp.send('Profiler.setSamplingInterval', { interval: 100 });
+    await cdp.send('Profiler.start');
+    for (let i = 0; i < 6; i++) {
+      const name = NAMES[i % 2 === 0 ? 1 : 0]!;
+      const row = await sidebar(page).getByRole('button', { name, exact: true }).elementHandle();
+      await page.evaluate((row) => (row as HTMLElement).click(), row);
+      await expect(page.locator('header').first()).toContainText(name);
+      await page.waitForTimeout(300);
+    }
+    (await import('node:fs')).writeFileSync(process.env.CALM_CLICK_PROFILE, JSON.stringify((await cdp.send('Profiler.stop')).profile));
   }
   if (process.env.CALM_TRACE) {
     const cdp = await page.context().newCDPSession(page);
@@ -140,10 +169,10 @@ test('eight chats streaming: only the card an event is about draws again, and th
     (await import('node:fs')).writeFileSync(process.env.CALM_PROFILE, JSON.stringify(idle));
   }
   console.log(`[render-calm] sidebar click → shown (ms): ${times.join(', ')}`);
-  // The first switch can load the chat's history. Of the eight after it, all but at most one (a
-  // garbage collection, a burst of events on a busy Mac) show the other chat within 100 ms, and none takes 200.
+  // The first switch can load the chat's history (it gets 300 ms); every one after it shows the other
+  // chat within 100 ms: the click shows it at once, without waiting on the daemon (ClientStore.openAhead).
   // (Still a development build: the shipped app is faster.)
+  expect(times[0], `first switch: ${times[0]} ms`).toBeLessThan(300);
   const later = times.slice(1);
-  expect(later.filter((ms) => ms >= 100).length, `switches: ${later.join(', ')} ms`).toBeLessThanOrEqual(1);
-  expect(Math.max(...later)).toBeLessThan(200);
+  expect(Math.max(...later), `switches: ${later.join(', ')} ms`).toBeLessThan(100);
 });

@@ -9,9 +9,11 @@ import path from 'node:path';
  *
  * What counts: every process the worktree's Claude started (klaud gives its runs KLAUD_WORKTREE, and
  * their commands inherit it) that is a test runner or what one starts (vitest, playwright, vite, the
- * demo daemon, the browser); the e2e run holding the machine-wide lock (scripts/e2e-lock.mjs) from that
- * worktree, everything it started included; and, when the worktree is going away, any test runner
- * installed in it. Your own dev servers in its terminals are never touched.
+ * demo daemon, the browser); whatever its Bash commands left running (a dev server in the background,
+ * `npm run dev &`, `nohup node server.js`), whatever it's called; the e2e run holding the machine-wide
+ * lock (scripts/e2e-lock.mjs) from that worktree, everything it started included; and, when the
+ * worktree is going away, any test runner installed in it. Your own dev servers in its terminals are
+ * never touched (they don't carry the tag), nor is a Claude Code process itself.
  */
 
 /** The machine-wide e2e lock (scripts/e2e-lock.mjs keeps it there). */
@@ -26,8 +28,12 @@ export interface ProcRow {
 
 /** A test runner, judged on the command with the worktree's own path taken out (it may say "playwright"). */
 const RUNNER = /(^|[\s/])(vitest|playwright|jest|e2e-lock\.mjs|chrome-headless-shell)(\.[cm]?js)?(\s|$)|node_modules\/(@playwright\/|playwright(-core)?\/|vitest\/)|ms-playwright|cli\.tsx daemon --keep-alive demo/;
-/** A dev server: stopped only when an e2e run started it, or its worktree goes away. */
+/** A dev server installed there: stopped when its worktree goes away, whoever started it. */
 const SERVER = /(^|[\s/])vite(\.[cm]?js)?(\s|$)/;
+/** A shell Claude Code's Bash tool runs a command in (still there: the command runs in the background). */
+const BASH_SHELL = /\/shell-snapshots\/snapshot-/;
+/** Claude Code itself (its binary, or its npm cli.js): never stopped from here. Judged on the command (first), not its environment. */
+const CLAUDE = /^(\S*\/)?claude(\s|$)|^\S*node\s+\S*@anthropic-ai\/claude-code\/cli\.js(\s|$)/;
 
 export function isTestRunner(line: string, dir: string): boolean {
   return RUNNER.test(line.split(dir).join('<worktree>'));
@@ -46,7 +52,9 @@ export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving =
     const tagged = r.line.includes(`${tag} `) || r.line.endsWith(tag);
     const installed = leaving && r.line.includes(path.join(dir, 'node_modules') + path.sep);
     const e2e = tagged && r.line.includes(' KLAUD_E2E_RUN=');
-    return e2e || ((tagged || installed) && isTestRunner(r.line, dir)) || (installed && SERVER.test(r.line.split(dir).join('<worktree>')));
+    // Left by a Bash command: its shell still running (run_in_background), or orphaned once the shell exited (`&`, nohup).
+    const leftByBash = tagged && !CLAUDE.test(r.line) && (BASH_SHELL.test(r.line) || r.ppid === 1);
+    return e2e || leftByBash || ((tagged || installed) && isTestRunner(r.line, dir)) || (installed && SERVER.test(r.line.split(dir).join('<worktree>')));
   });
   const kids = new Map<number, number[]>();
   for (const r of rows) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]);
@@ -61,11 +69,21 @@ export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving =
   return [...out];
 }
 
-/** A command Claude ran that may start test processes (or anything left running in the background). */
+/** A command Claude ran that may start test processes. */
 const STARTS_TESTS = /\b(tests?|vitest|playwright|jest|mocha|e2e|vite|demo)\b/i;
+/** …or a server, a watcher, anything that keeps running (`npm run dev`, `node server.js`, `npm start`). */
+const STARTS_SERVER = /\b(dev|serve|server|start|watch|preview|daemon|http\.server|runserver)\b/i;
+/** …or puts something in the background: `cmd &` (not `&&`, `2>&1`, `&>`), nohup, setsid, disown. */
+const BACKGROUNDS = /(^|[^&>|])&(?![&>\d])|\b(nohup|setsid|disown)\b/;
 
-export function mayStartTests(command: unknown, background?: unknown): boolean {
-  return background === true || (typeof command === 'string' && STARTS_TESTS.test(command));
+/**
+ * Whether a Bash command may leave processes running after it returns (so the turn's end checks for
+ * them with ps). Judged on the command alone: ps on every turn is slow on a busy Mac.
+ */
+export function mayLeaveProcesses(command: unknown, background?: unknown): boolean {
+  if (background === true) return true;
+  if (typeof command !== 'string') return false;
+  return STARTS_TESTS.test(command) || STARTS_SERVER.test(command) || BACKGROUNDS.test(command);
 }
 
 /** Whether the machine-wide e2e lock is held from this worktree (one small file read, no ps). */

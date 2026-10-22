@@ -87,4 +87,13 @@ describe('event-loop delay', () => {
     expect(lines.length).toBeGreaterThanOrEqual(1);
     expect(lines[0]).toMatch(/^event loop delay: p50 [\d.]+ ms, p95 [\d.]+ ms/);
   });
+
+  it('reads how late the loop ran, not the sampling interval (an idle loop is near 0)', async () => {
+    const lines: string[] = [];
+    const stop = watchEventLoop((l) => void lines.push(l), 300);
+    await wait(350);
+    stop();
+    const p50 = Number(/p50 ([\d.]+) ms/.exec(lines[0] ?? '')?.[1]);
+    expect(p50).toBeLessThan(15);
+  });
 });

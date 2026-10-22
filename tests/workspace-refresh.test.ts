@@ -10,7 +10,7 @@ import { statusSlots } from '../src/workspaces/git.js';
 import { limiter } from '../src/workspaces/limit.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
-import { mayStartTests } from '../src/workspaces/test-procs.js';
+import { mayLeaveProcesses } from '../src/workspaces/test-procs.js';
 
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
 
@@ -138,11 +138,14 @@ describe('refreshing many worktrees', () => {
   }, 60_000);
 });
 
-describe('which commands may start tests', () => {
-  it('test runners, e2e, dev servers and anything in the background; not everyday commands', () => {
-    for (const c of ['npm test', 'npx vitest run tests/a.test.ts', 'npm run test:e2e', 'npx playwright test', 'npm run dev -- vite', 'node scripts/e2e-lock.mjs']) expect(mayStartTests(c)).toBe(true);
-    for (const c of ['git status', 'ls -la', 'npx tsc --noEmit', 'cat src/latest.ts']) expect(mayStartTests(c)).toBe(false);
-    expect(mayStartTests('sleep 100', true)).toBe(true);
-    expect(mayStartTests(undefined)).toBe(false);
+describe('which commands may leave processes running', () => {
+  it('test runners, e2e, dev servers, watchers and anything in the background; not everyday commands', () => {
+    for (const c of ['npm test', 'npx vitest run tests/a.test.ts', 'npm run test:e2e', 'npx playwright test', 'npm run dev -- vite', 'node scripts/e2e-lock.mjs']) expect(mayLeaveProcesses(c)).toBe(true);
+    // Not test-like names: a dev server, a server script, a watcher, anything put in the background.
+    for (const c of ['npm run dev', 'node server.js', 'npm start', 'pnpm serve', 'tsc --watch', 'python3 -m http.server 8000', 'sleep 100 &', 'nohup ./run.sh > out.log 2>&1', 'cd app && ./bin/api & echo started'])
+      expect(mayLeaveProcesses(c), c).toBe(true);
+    for (const c of ['git status', 'ls -la', 'npx tsc --noEmit', 'cat src/latest.ts', 'npm run build && echo ok', 'node build.js 2>&1 | tail -5', 'make all &> build.log']) expect(mayLeaveProcesses(c), c).toBe(false);
+    expect(mayLeaveProcesses('sleep 100', true)).toBe(true);
+    expect(mayLeaveProcesses(undefined)).toBe(false);
   });
 });
