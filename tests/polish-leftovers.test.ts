@@ -7,7 +7,7 @@ import { messageState } from '../src/core/plans/watchdog.js';
 import { READS_AFTER_STEP } from '../src/shared/claude-notices.js';
 import { progressCount } from '../src/shared/progress-count.js';
 import { resultText } from '../src/shared/steps.js';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { conflictedFiles, git, tryGit } from '../src/workspaces/git.js';
@@ -70,5 +70,27 @@ describe('polish-round leftovers', () => {
     expect(resultText([{ type: 'text', text: 'Running 40 tests' }, { type: 'image' }, { type: 'text', text: '12/40 passed' }])).toBe('Running 40 tests\n[image]\n12/40 passed');
     expect(resultText(undefined)).toBe('');
     expect(progressCount(resultText([{ type: 'text', text: '[12/40] tests' }]))).toBeDefined();
+  });
+
+  it("the Mac UI's ticking clocks are known: new ones use lib/window-active useClock (it rests while you look away, KLD-40)", () => {
+    const root = path.join(import.meta.dirname, '../packages/mac/src');
+    const files = (readdirSync(root, { recursive: true }) as string[]).filter((f) => /\.tsx?$/.test(f));
+    const ticking = files.filter((f) => readFileSync(path.join(root, f), 'utf8').includes('setInterval(')).map((f) => f.split(path.sep).join('/')).sort();
+    // The PR sheet's own once-a-second clock ticked behind your back; it uses useClock now. Shrink this list, don't grow it.
+    expect(ticking).toEqual([
+      'chat/steps/use-steps.ts',
+      'claude-code/AgentOutputs.tsx',
+      'claude-code/BackgroundTasks.tsx',
+      'layout/NotificationCenter.tsx',
+      'layout/panel/ScratchTab.tsx',
+      'lib/live-motion.ts',
+      'lib/window-active.ts',
+      'network/AddFriendSheet.tsx',
+      'network/ConversationView.tsx',
+      'network/net-native.ts',
+      'plans/use-plans.ts',
+      'views/project/MainSyncBar.tsx',
+      'views/room/ConnectionStatus.tsx',
+    ]);
   });
 });
