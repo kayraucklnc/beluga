@@ -57,6 +57,8 @@ export function launchBoard(host: BoardHost): () => void {
     // A task whose Claude stopped: is its process there, and taking over to wake it.
     alive: (channel) => session.host.runningIn(channel),
     takeOver: (channel) => session.host.takeOver(channel),
+    // The head Claude's steered messages go in the way Steer Now does (interrupting a long command or a dead run).
+    promote: (requestId) => session.host.promote(requestId),
   });
   attachPlans(session, planWork);
   let stopSeed = (): void => undefined;

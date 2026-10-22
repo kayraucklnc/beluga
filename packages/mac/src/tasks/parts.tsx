@@ -1,4 +1,6 @@
 import { activityOf } from '@klaud/ui/workspace-models.js';
+import { liveFrom } from '@klaud/core/plans/progress.js';
+import { pulseOf, pulseWords } from '@klaud/core/plans/watchdog.js';
 import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, openBlockers, progressOf } from '@klaud/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
@@ -6,10 +8,23 @@ import { Dot, Tip, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useKlaud, toast } from '../lib/klaud.js';
 import { openSheet } from '../lib/sheets.js';
+import { useClock } from '../plans/use-plans.js';
+import { WaitingLine } from '../plans/WaitingLine.js';
 import { LabelChip, PrChip } from './marks.js';
 import { dueText } from './tasks-model.js';
+import type { LogItem } from '@klaud/core/store.js';
 import { useBoard, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
+
+const NONE: readonly never[] = [];
+
+/** Who's working where, worked out once per log (every card on the board reads the same one). */
+const lives = new WeakMap<readonly LogItem[], ReturnType<typeof liveFrom>>();
+function liveOf(log: readonly LogItem[]): ReturnType<typeof liveFrom> {
+  let live = lives.get(log);
+  if (!live) lives.set(log, (live = liveFrom({ log, questions: [], approvals: [] })));
+  return live;
+}
 
 /** What a row and a card show besides the title: sub-tasks done, what blocks it, its worktree, labels, due date, pull request. */
 export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; compact?: boolean; labels?: boolean }) {
@@ -19,6 +34,12 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
   const last = issue.worktrees.at(-1);
   const worktree = useApp((s) => (last && s.projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined));
   const running = useApp((s) => (worktree ? activityOf(s.log, `ws:${worktree}`).running : false));
+  // What its Claude is doing right now, and the messages waiting for it (the head Claude's, yours).
+  const run = useApp((s) => (worktree && running ? liveOf(s.log).run?.(`ws:${worktree}`) : undefined));
+  const waiting = useApp((s) => (worktree && STATUS_INFO[issue.status].open ? liveOf(s.log).waiting?.(`ws:${worktree}`) : undefined)) ?? NONE;
+  const pulse = running ? pulseOf(run, false, undefined) : undefined;
+  const now = useClock(pulse?.kind === 'working' || pulse?.kind === 'command');
+  const doing = pulse && !compact ? pulseWords(pulse, now).sub : undefined;
   const due = issue.due ? dueText(issue.due) : undefined;
   // The plan (and milestone) it's part of.
   const plan = useApp((s) => (issue.plan ? s.plans.plans.find((x) => x.id === issue.plan!.id) : undefined));
@@ -60,9 +81,10 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
         </span>
       ) : null}
       {running ? (
-        <Tip label="Claude is working on it">
+        <Tip label={doing ? `Claude: ${doing}` : 'Claude is working on it'}>
           <span className={t.working}>
             <Dot tone="claude" live />
+            {doing ? <span className={t.nowStep}>{doing}</span> : null}
           </span>
         </Tip>
       ) : worktree && !issue.pr ? (
@@ -73,6 +95,7 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
         </Tip>
       ) : null}
       {issue.pr ? <PrChip pr={issue.pr} /> : null}
+      {waiting.length ? <WaitingLine waiting={waiting} /> : null}
     </span>
   );
 }

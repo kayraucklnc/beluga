@@ -6,6 +6,7 @@ import { openSheet } from '../lib/sheets.js';
 import { MILESTONE_STATE, taskWords } from './plans-model.js';
 import { TaskStateIcon, TonePill } from './marks.js';
 import { useClock, usePlanActions } from './use-plans.js';
+import { WaitingLine } from './WaitingLine.js';
 import p from './plans.module.css';
 
 /** What you picked on the plan: a task (its goal, criteria, what it waits on, where it runs) or a milestone's gate. */
@@ -44,6 +45,11 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
         {t.forYou ? <span className={p.muted}>For you</span> : null}
       </div>
       {info.sub && t.pulse ? <p className={p.detailsStep}>{t.pulse.kind === 'working' || t.pulse.kind === 'command' ? `Now: ${info.sub}` : info.sub}</p> : t.step && t.state === 'running' ? <p className={p.detailsStep}>Now: {t.step}</p> : null}
+      {t.waiting?.length ? (
+        <p className={p.detailsWaiting}>
+          <WaitingLine waiting={t.waiting} />
+        </p>
+      ) : null}
       {t.why && (t.state === 'blocked' || t.state === 'later') ? <p className={p.muted}>{t.why}</p> : null}
       <div className={p.detailsActions}>
         {canStart ? (

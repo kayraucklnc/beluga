@@ -141,9 +141,13 @@ export function createPlanToolDefs(plan: PlanTools) {
     tool('plan_start_task', 'Start a ready task now (a worktree with Claude on it). Only when the user asks: klaud starts ready tasks by itself unless the plan goes step by step.', { task: z.string().min(1).max(40).describe('Its id in the plan, or its board key') }, (a) => guarded(() => plan.start(a.task))),
     tool(
       'plan_message_task',
-      'Tell the Claude working on a started task something: a decision, a heads-up about another task, a correction.',
-      { task: z.string().min(1).max(40), text: z.string().min(1).max(8000) },
-      (a) => guarded(() => plan.message(a.task, a.text)),
+      'Tell the Claude working on a started task something: a decision, a heads-up about another task, a correction. mode "queue" (default) waits until its current turn ends (it may be behind a 15-minute test run); "steer" reaches it now: a long command or a stuck turn is interrupted, and Klaud delivers it again if it isn’t read within 2 minutes.',
+      {
+        task: z.string().min(1).max(40),
+        text: z.string().min(1).max(8000),
+        mode: z.enum(['queue', 'steer']).optional().describe('queue (default): when its turn ends. steer: now, interrupting what it runs: to stop wasted work, or a correction that changes the work'),
+      },
+      (a) => guarded(() => plan.message(a.task, a.text, a.mode ?? 'queue')),
     ),
   ];
 }

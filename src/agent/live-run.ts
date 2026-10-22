@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StepRecord } from '../shared/steps.js';
+import type { AgentRunInput } from './types.js';
 
 /** Task types that are Claude working (not a background shell or a watcher). */
 const AGENT_TASKS = new Set(['local_agent', 'local_workflow', 'remote_agent']);
@@ -90,7 +91,7 @@ export class BackgroundAgents {
   }
 }
 
-type OnEvent = (kind: 'text' | 'tool' | 'sub' | 'context' | 'compact' | 'usage', text: string) => void;
+type OnEvent = AgentRunInput['onEvent'];
 
 /** Where one turn's output goes: the request that started the run, or a follow-up sent into it. */
 export interface TurnRoute {

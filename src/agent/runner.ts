@@ -13,6 +13,7 @@ import { SubAgentTracker, withAgentScratch } from './subagents.js';
 import { type RecorderMessage, StepRecorder } from './step-recorder.js';
 import { type ContextMessage, ContextReport, breakdownReader, isCompactCommand } from './context-report.js';
 import { compactEnv } from '../shared/context-usage.js';
+import { progressCount } from '../shared/progress-count.js';
 import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from './live-run.js';
 import { answerChat } from './chat-answer.js';
 import { nameTask } from './namer.js';
@@ -96,6 +97,13 @@ export function imageContent(text: string, files: readonly string[]): PromptCont
   if (!images.length) return text;
   const note = `\n\n(${images.length === 1 ? 'The image linked above is' : 'The images linked above are'} attached to this message, in order.)`;
   return [{ type: 'text', text: text + note }, ...images];
+}
+
+/** The text of the tool results in a message from Claude Code (what its commands printed). */
+function toolOutput(content: unknown): string {
+  if (!Array.isArray(content)) return '';
+  const text = (c: unknown): string => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (x && typeof x === 'object' && 'text' in x && typeof x.text === 'string' ? x.text : '')).join('\n') : '');
+  return content.map((b) => (b && typeof b === 'object' && 'type' in b && b.type === 'tool_result' && 'content' in b ? text(b.content) : '')).join('\n');
 }
 
 /**
@@ -309,6 +317,9 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           recorder.observe(msg as RecorderMessage);
           if (msg.type === 'user' && msg.parent_tool_use_id === null) {
             for (const e of subagents.user(msg.message.content as never)) input.onEvent('sub', JSON.stringify(e));
+            // A command's output that says how far it got (a test run polled in the background): its card shows "137/215".
+            const count = progressCount(toolOutput(msg.message.content));
+            if (count) turns.current().onEvent('progress', count);
           }
           if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {
             for (const block of msg.message.content) {

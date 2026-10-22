@@ -4,7 +4,8 @@ import { BoardWork } from '../src/core/board/work.js';
 import type { BodyInput } from '../src/core/plans/edit.js';
 import { Plans } from '../src/core/plans/plans.js';
 import { planView, liveFrom } from '../src/core/plans/progress.js';
-import { COMMAND_LIMIT_MS, REPEAT_MS, STALL_MS, assess, pulseOf, pulseWords } from '../src/core/plans/watchdog.js';
+import { COMMAND_LIMIT_MS, REPEAT_MS, STALL_MS, STEER_UNREAD_MS, assess, pulseOf, pulseWords, stepWords, waitingWords } from '../src/core/plans/watchdog.js';
+import { progressCount } from '../src/shared/progress-count.js';
 import { PlansWork } from '../src/core/plans/work.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
@@ -23,7 +24,7 @@ const BODY: BodyInput = {
   milestones: [{ id: 'safe', title: 'Safe payments', criteria: ['works'], tasks: [{ id: 'auth', title: 'Auth on payment routes', acceptance: ['401 without session', 'tests pass'] }] }],
 };
 
-async function running(opts: { waited?: readonly string[] } = {}) {
+async function running(opts: { waited?: readonly string[]; promoteOk?: boolean } = {}) {
   const store = new Store(initialState('room'));
   store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [ws('main', 'api', 'bob-api', 'chat', { askOnly: true } as Partial<Workspace>)])] });
   let n = 0;
@@ -50,13 +51,16 @@ async function running(opts: { waited?: readonly string[] } = {}) {
   let now = Date.now();
   let alive = false;
   const tookOver: string[] = [];
+  const promoted: string[] = [];
   const work = new PlansWork({
     store,
     plans,
     board: boardWork,
     controller,
     git: null,
-    askClaude: (prompt, channel) => void asked.push({ prompt, channel }),
+    // Each ask is a request (its id is how a steered message is followed).
+    askClaude: (prompt, channel) => `q${asked.push({ prompt, channel })}`,
+    promote: (requestId) => (promoted.push(requestId), opts.promoteOk ?? true),
     intend: () => undefined,
     alive: () => alive,
     takeOver: async (channel) => (tookOver.push(channel), opts.waited ?? []),
@@ -72,7 +76,7 @@ async function running(opts: { waited?: readonly string[] } = {}) {
   const channel = `ws:${issue().worktrees.at(-1)}`;
   let seq = 0;
   /** An event of a run of Claude's in the task's worktree, at the test's clock. */
-  const event = (requestId: string, kind: 'started' | 'tool' | 'text' | 'done' | 'error', text = ''): void => store.dispatch({ type: 'agent_event', owner: 'p-me', requestId, requester: 'p-me', event: kind, text, ts: now, channel });
+  const event = (requestId: string, kind: 'queued' | 'started' | 'tool' | 'text' | 'progress' | 'done' | 'error', text = ''): void => store.dispatch({ type: 'agent_event', owner: 'p-me', requestId, requester: 'p-me', event: kind, text, ts: now, channel });
   const newRun = (): string => `r${++seq}`;
   /** Let time pass, then let the pilot look. */
   const later = async (ms: number): Promise<void> => {
@@ -83,7 +87,9 @@ async function running(opts: { waited?: readonly string[] } = {}) {
   const wakes = () => asked.filter((a) => a.channel === channel && a.prompt.startsWith('You stopped before handing off'));
   const view = () => planView(plans.need(plan.id), store.getState().board, liveFrom(store.getState()));
   const task = () => view().milestones[0]!.tasks[0]!;
-  return { store, plans, work, plan, issue, channel, event, newRun, later, wakes, view, task, asked, tookOver, setAlive: (a: boolean) => (alive = a), board, claude };
+  /** The head Claude's plan_message_task. */
+  const message = (text: string, mode?: 'queue' | 'steer'): string => work.forRun('ws:main', 'p-me')!.tools!.message('auth', text, mode);
+  return { store, plans, work, plan, issue, channel, event, newRun, later, wakes, view, task, asked, tookOver, promoted, message, setAlive: (a: boolean) => (alive = a), board, claude };
 }
 
 describe('a stalled task is woken once, then it asks you', () => {
@@ -189,8 +195,8 @@ describe('a stalled task is woken once, then it asks you', () => {
     t.event(r, 'tool', 'Bash npm run test:e2e');
     await t.later(40 * MIN);
     expect(t.wakes()).toHaveLength(0);
-    expect(t.task().pulse).toMatchObject({ kind: 'command', step: 'Bash npm run test:e2e' });
-    expect(pulseWords(t.task().pulse!, t.task().pulse!.kind === 'command' ? (t.task().pulse as { since: number }).since + 12 * MIN : 0).label).toBe('Running a long command · 12m');
+    expect(t.task().pulse).toMatchObject({ kind: 'command', step: 'Running npm run test:e2e' });
+    expect(pulseWords(t.task().pulse!, t.task().pulse!.kind === 'command' ? (t.task().pulse as { since: number }).since + 12 * MIN : 0)).toMatchObject({ label: 'Running a long command', sub: 'Running npm run test:e2e · 12m' });
     // The command finished and Claude moved on to a quick step, then nothing for 20 minutes.
     t.event(r, 'tool', 'Read src/auth.ts');
     await t.later(STALL_MS - MIN);
@@ -252,5 +258,125 @@ describe('assess: what counts as a stall', () => {
     expect(pulseOf(run({ status: 'done' }), false, undefined).kind).toBe('stopped');
     expect(pulseOf(run({ status: 'error', text: 'Agent stopped: error during execution' }), false, undefined)).toMatchObject({ kind: 'stopped', reason: 'its run failed: Agent stopped: error during execution' });
     expect(pulseOf(undefined, false, undefined).kind).toBe('stopped');
+  });
+});
+
+describe('the head Claude steers a task, and its card shows what it does now', () => {
+  /** The head Claude's message reaches the task's conversation as a request (q1, q2, …). */
+  const sent = (t: Awaited<ReturnType<typeof running>>) => t.asked.map((a, i) => ({ ...a, id: `q${i + 1}` })).filter((a) => a.channel === t.channel && a.prompt.includes('from the head of the plan'));
+
+  it('steer: in at once through Steer Now (interrupting a long command), and said to be urgent', async () => {
+    const t = await running();
+    t.setAlive(true);
+    const r = t.newRun();
+    t.event(r, 'started');
+    t.event(r, 'tool', 'Bash npx playwright test');
+    expect(t.message('Stop: the e2e suite runs at Ship, not here.', 'steer')).toMatch(/^Steered into .+: its Claude gets it now/);
+    const [m] = sent(t);
+    expect(m!.prompt).toMatch(/^An urgent message from the head of the plan/);
+    // It lands in the queue behind the long command: Klaud steers it in at once.
+    t.event(m!.id, 'queued', m!.prompt);
+    await t.later(0);
+    expect(t.promoted).toEqual([m!.id]);
+    // Read (its own turn started and Claude acted on it): nothing more happens.
+    t.event(m!.id, 'started');
+    t.event(m!.id, 'tool', 'Read src/auth.ts');
+    await t.later(STEER_UNREAD_MS + MIN);
+    expect(t.promoted).toEqual([m!.id]);
+    expect(t.tookOver).toEqual([]);
+  });
+
+  it('queue (the default): it waits for the turn to end, shown on the card with Steer Now', async () => {
+    const t = await running();
+    t.setAlive(true);
+    const r = t.newRun();
+    t.event(r, 'started');
+    t.event(r, 'tool', 'Bash npx playwright test');
+    expect(t.message('FYI: KLD-9 renamed the session helper.')).toMatch(/^Queued for the Claude working on/);
+    const [m] = sent(t);
+    expect(m!.prompt).toMatch(/^A message from the head of the plan/);
+    t.event(m!.id, 'queued', m!.prompt);
+    await t.later(STEER_UNREAD_MS + MIN);
+    expect(t.promoted).toEqual([]);
+    // The card: one message waiting, Steer Now sends it; the run behind it still shows its step.
+    expect(t.task().waiting).toEqual([{ requestId: m!.id, prompt: m!.prompt, queued: true }]);
+    expect(waitingWords(t.task().waiting!)).toEqual({ text: '1 message waiting', steer: m!.id });
+    expect(t.task().pulse).toMatchObject({ kind: 'command', step: 'Running npx playwright test' });
+  });
+
+  it('a steered message unread after 2 minutes: interrupted again, then a fresh turn; each said in the plan feed', async () => {
+    const t = await running();
+    t.setAlive(true);
+    const r = t.newRun();
+    t.event(r, 'started');
+    t.event(r, 'tool', 'Bash npx playwright test');
+    t.message('Stop the e2e run.', 'steer');
+    const [m] = sent(t);
+    t.event(m!.id, 'queued', m!.prompt);
+    await t.later(0);
+    expect(t.promoted).toEqual([m!.id]);
+    // The steer didn't land (still queued): 2 minutes on, it's steered again.
+    await t.later(STEER_UNREAD_MS);
+    expect(t.promoted).toEqual([m!.id, m!.id]);
+    const feed = () => t.plans.need(t.plan.id).activity.map((a) => a.text);
+    expect(feed().at(-1)).toMatch(/hadn't read the head Claude's message in 2m: interrupted it again/);
+    // Taken into the running turn but never read: a fresh turn with it.
+    t.event(m!.id, 'text', 'Claude reads this after its current step');
+    expect(t.task().waiting).toEqual([{ requestId: m!.id, prompt: m!.prompt, queued: false }]);
+    expect(waitingWords(t.task().waiting!).steer).toBeUndefined();
+    await t.later(STEER_UNREAD_MS);
+    await tick(2);
+    expect(t.tookOver).toEqual([t.channel]);
+    expect(feed().at(-1)).toMatch(/started a fresh turn with it/);
+    const again = t.asked.filter((a) => a.channel === t.channel).at(-1)!;
+    expect(again.prompt).toMatch(/^Klaud stopped your run: an urgent message from the head of the plan waited/);
+    expect(again.prompt).toContain('Stop the e2e run.');
+  });
+
+  it('a dead run with the head Claude\'s message waiting behind it is woken, the message going with the wake', async () => {
+    const t = await running({ waited: ['A message from the head of the plan “Payments”:\n\nUse the shared session helper.'] });
+    t.setAlive(true);
+    const r = t.newRun();
+    t.event(r, 'started');
+    t.event(r, 'tool', 'Read src/auth.ts');
+    t.message('Use the shared session helper.');
+    const [m] = sent(t);
+    t.event(m!.id, 'queued', m!.prompt);
+    // The run behind the message died: the message no longer hides it.
+    t.setAlive(false);
+    await t.later(1000);
+    expect(t.wakes()).toHaveLength(1);
+    expect(t.tookOver).toEqual([t.channel]);
+    expect(t.wakes()[0]!.prompt).toContain('Use the shared session helper.');
+  });
+
+  it('the card shows the step live: "Running npx playwright test · 137/215 · 12m"', async () => {
+    const t = await running();
+    t.setAlive(true);
+    const r = t.newRun();
+    t.event(r, 'started');
+    t.event(r, 'tool', 'Bash npx playwright test');
+    t.event(r, 'progress', '137/215');
+    const pulse = t.task().pulse!;
+    expect(pulse).toMatchObject({ kind: 'command', step: 'Running npx playwright test', progress: '137/215' });
+    expect(pulseWords(pulse, (pulse as { since: number }).since + 12 * MIN).sub).toBe('Running npx playwright test · 137/215 · 12m');
+    // The next step starts without the old count.
+    t.event(r, 'tool', 'Edit src/auth.ts');
+    expect(t.task().pulse).not.toHaveProperty('progress');
+  });
+});
+
+describe('a long command in words', () => {
+  it('counts from test runners, never from a date', () => {
+    expect(progressCount('  ✓  136 [chromium] › a.spec.ts\n  ✓  [137/215] [chromium] › b.spec.ts')).toBe('137/215');
+    expect(progressCount('12/40 tests done')).toBe('12/40');
+    expect(progressCount(' Tests  137 passed (215)')).toBe('137/215');
+    expect(progressCount('Released on 10/22 at noon')).toBeUndefined();
+    expect(progressCount('[300/215]')).toBeUndefined();
+  });
+  it('a command, and a step watching one, by name', () => {
+    expect(stepWords('Bash npx playwright test')).toBe('Running npx playwright test');
+    expect(stepWords('BashOutput', 'Bash npx playwright test')).toBe('Watching npx playwright test');
+    expect(stepWords('Read src/auth.ts')).toBe('Read src/auth.ts');
   });
 });

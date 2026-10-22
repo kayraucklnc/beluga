@@ -1,6 +1,6 @@
 import { type BoardState, type Issue, issueById } from '../board/model.js';
 import { type Autonomy, type Combining, type MilestoneRun, type Plan, type PlanBody, type PlanMerge, type PlanMilestone, type PlanTask, type TaskWatch, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
-import { type RunInfo, type TaskPulse, pulseOf } from './watchdog.js';
+import { type RunInfo, type TaskPulse, type WaitingMessage, messageState, pulseOf } from './watchdog.js';
 
 /**
  * Where a plan stands, worked out from the plan and the board (and what Claude is doing right
@@ -61,6 +61,8 @@ export interface TaskView {
   readonly pulse?: TaskPulse;
   /** It stalled: the wake, or why it waits for you. */
   readonly watch?: TaskWatch;
+  /** Messages waiting for its Claude (the head Claude's, yours): the card offers Steer Now. */
+  readonly waiting?: readonly WaitingMessage[];
 }
 
 export type MilestoneState = 'draft' | 'later' | 'running' | 'checking' | 'gate' | 'failed' | 'merging' | 'passed';
@@ -123,8 +125,10 @@ export interface Live {
   readonly asking: (channel: string) => boolean;
   /** The step Claude is on there. */
   readonly step?: (channel: string) => string | undefined;
-  /** Its latest run there (the heartbeat). */
+  /** Its latest run there (the heartbeat): not a message still waiting behind it. */
   readonly run?: (channel: string) => RunInfo | undefined;
+  /** Messages waiting there for Claude, oldest first. */
+  readonly waiting?: (channel: string) => readonly WaitingMessage[];
 }
 
 export const NOBODY_LIVE: Live = { busy: () => false, asking: () => false };
@@ -260,6 +264,7 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
       if (state === 'idle' && watch?.needsYou) state = 'stalled';
       const started = (state === 'running' && !combining) || state === 'asking' || state === 'idle' || state === 'stalled';
       const pulse = started && own.worktree ? pulseOf(live.run?.(`ws:${own.worktree}`), state === 'asking', watch) : undefined;
+      const waiting = started && own.worktree ? live.waiting?.(`ws:${own.worktree}`) : undefined;
       views.set(t.id, {
         task: t,
         milestoneId: m.id,
@@ -275,6 +280,7 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
         forYou,
         ...(pulse ? { pulse } : {}),
         ...(watch && started ? { watch } : {}),
+        ...(waiting?.length ? { waiting } : {}),
       });
     }
   });
@@ -390,25 +396,58 @@ export function waves(milestone: PlanMilestone): ReadonlyArray<readonly PlanTask
   return out.filter(Boolean);
 }
 
+const NOTHING_WAITING: readonly WaitingMessage[] = [];
+
 /** Who's working in a conversation now, read from the shared state. */
 export function liveFrom(state: {
-  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[]; readonly requestId?: string; readonly ts: number; readonly text?: string; readonly lastAt?: number; readonly stepAt?: number }>;
+  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[]; readonly requestId?: string; readonly ts: number; readonly text?: string; readonly prompt?: string; readonly lastAt?: number; readonly stepAt?: number; readonly progress?: string }>;
   readonly questions: ReadonlyArray<{ readonly channel: string }>;
   readonly approvals: ReadonlyArray<{ readonly channel?: string }>;
 }): Live {
-  const last = new Map<string, (typeof state.log)[number]>();
-  for (const l of state.log) if (l.type === 'agent') last.set(l.channel, l);
+  type Item = (typeof state.log)[number];
+  const last = new Map<string, Item>();
+  /** The latest run in each conversation that isn't a message still waiting behind it. */
+  const runs = new Map<string, Item>();
+  const waiting = new Map<string, WaitingMessage[]>();
+  for (const l of state.log) {
+    if (l.type !== 'agent') continue;
+    last.set(l.channel, l);
+    const m = messageState({ status: l.status ?? '', ...(l.text !== undefined ? { text: l.text } : {}), ...(l.steps ? { steps: l.steps } : {}) });
+    if (m === 'queued' || m === 'in_turn') {
+      const list = waiting.get(l.channel) ?? [];
+      list.push({ requestId: l.requestId ?? '', prompt: l.prompt ?? '', queued: m === 'queued' });
+      waiting.set(l.channel, list);
+    } else runs.set(l.channel, l);
+  }
+  const made = new Map<string, RunInfo | undefined>();
   const asking = new Set([...state.questions.map((q) => q.channel), ...state.approvals.flatMap((a) => (a.channel ? [a.channel] : []))]);
   const RUNNING = new Set(['queued', 'awaiting_approval', 'started', 'answered']);
   return {
     busy: (channel) => RUNNING.has(last.get(channel)?.status ?? ''),
     asking: (channel) => asking.has(channel),
-    step: (channel) => last.get(channel)?.steps?.at(-1),
+    step: (channel) => (runs.get(channel) ?? last.get(channel))?.steps?.at(-1),
+    // The same answer for the same log (screens read these as snapshots).
     run: (channel) => {
-      const l = last.get(channel);
-      if (!l) return undefined;
-      const step = l.steps?.at(-1);
-      return { requestId: l.requestId ?? '', status: l.status ?? '', ts: l.ts, lastAt: l.lastAt ?? l.ts, text: l.text ?? '', ...(step ? { step } : {}), ...(l.stepAt !== undefined ? { stepAt: l.stepAt } : {}) };
+      if (made.has(channel)) return made.get(channel);
+      const l = runs.get(channel) ?? last.get(channel);
+      made.set(channel, l ? runInfo(l) : undefined);
+      return made.get(channel);
     },
+    waiting: (channel) => waiting.get(channel) ?? NOTHING_WAITING,
   };
+  function runInfo(l: Item): RunInfo {
+    const step = l.steps?.at(-1);
+    const command = [...(l.steps ?? [])].reverse().find((s) => s.startsWith('Bash '));
+    return {
+      requestId: l.requestId ?? '',
+      status: l.status ?? '',
+      ts: l.ts,
+      lastAt: l.lastAt ?? l.ts,
+      text: l.text ?? '',
+      ...(step ? { step } : {}),
+      ...(l.stepAt !== undefined ? { stepAt: l.stepAt } : {}),
+      ...(l.progress ? { progress: l.progress } : {}),
+      ...(command ? { command } : {}),
+    };
+  }
 }

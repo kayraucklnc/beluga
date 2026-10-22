@@ -32,8 +32,10 @@ export interface PilotDeps {
   readonly store: Store;
   readonly plans: Plans;
   readonly work: BoardWork;
-  /** Ask your Claude in a conversation; `echo: false` doesn't show the prompt as your message. */
-  readonly askClaude: (prompt: string, channel: string, echo: boolean) => void;
+  /** Ask your Claude in a conversation; `echo: false` doesn't show the prompt as your message. Returns the request's id, when it can. */
+  readonly askClaude: (prompt: string, channel: string, echo: boolean) => string | void;
+  /** Steer a waiting message in now (the agent host's Steer Now: interrupts a long command or a dead run). */
+  readonly promote?: (requestId: string) => boolean;
   /** A quiet line in a conversation. */
   readonly system: (channel: string, text: string) => void;
   /** Combine unmerged branches into the start of a task (its key): see WorkspaceManager.combineBase. */
@@ -97,6 +99,7 @@ export class PlanPilot {
       system: deps.system,
       ...(deps.alive ? { alive: deps.alive } : {}),
       ...(deps.takeOver ? { takeOver: deps.takeOver } : {}),
+      ...(deps.promote ? { promote: deps.promote } : {}),
       ...(deps.now ? { now: deps.now } : {}),
     });
     this.off = deps.store.onAction((a: Action) => {
@@ -617,6 +620,13 @@ export class PlanPilot {
   private watch(plan: Plan): void {
     const live = liveFrom(this.deps.store.getState());
     this.watchdog.step(plan, this.view(plan), (channel) => live.run?.(channel));
+  }
+
+  /** The head Claude steered a message into a task (sent as `requestId`): it goes in now, and is followed until read. */
+  steer(planId: string, taskId: string, requestId: string, prompt: string): void {
+    const plan = this.deps.plans.need(planId);
+    const t = this.view(plan).milestones.flatMap((m) => m.tasks).find((x) => x.task.id === taskId);
+    if (t?.worktree) this.watchdog.steer(plan, t, `ws:${t.worktree}`, requestId, prompt);
   }
 
   /** You resume a task whose Claude stopped (it waits for you): woken now, with what it missed. */

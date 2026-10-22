@@ -494,6 +494,19 @@
 }
 .working {
   display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+/* What Claude is doing now: "Running npx playwright test · 137/215 · 12m". */
+.nowStep {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-2);
 }
 .worktreeMark {
   display: inline-flex;

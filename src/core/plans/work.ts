@@ -24,7 +24,10 @@ export interface PlansWorkDeps {
   readonly plans: Plans;
   readonly board: BoardWork;
   readonly controller?: WorkspaceController;
-  readonly askClaude: (prompt: string, channel: string, echo: boolean) => void;
+  /** Ask your Claude in a conversation; returns the request's id, when it can (to follow a steered message). */
+  readonly askClaude: (prompt: string, channel: string, echo: boolean) => string | void;
+  /** Steer a waiting message in now: the agent host's Steer Now (AgentHost.promote). */
+  readonly promote?: (requestId: string) => boolean;
   readonly intend: (intent: Intent) => void;
   /** Combining a task's start from several branches (default: the project's folder, through the controller). */
   readonly combine?: (projectId: string, key: string, branches: readonly string[], into?: string) => Promise<CombineResult>;
@@ -57,6 +60,7 @@ export class PlansWork {
       ...(deps.controller ? { allowFixup: (channel, dir) => deps.controller!.allowFixup?.(channel, dir) } : {}),
       ...(deps.alive ? { alive: deps.alive } : {}),
       ...(deps.takeOver ? { takeOver: deps.takeOver } : {}),
+      ...(deps.promote ? { promote: deps.promote } : {}),
       ...(deps.now ? { now: deps.now } : {}),
       ...(deps.delayMs !== undefined ? { delayMs: deps.delayMs } : {}),
     });
@@ -277,17 +281,22 @@ export class PlansWork {
         return verdict === 'pass' ? (auto ? 'Recorded: the milestone passes and the plan moves on.' : 'Recorded: the user passes the milestone.') : 'Recorded as failed. Add the fix tasks with plan_update.';
       },
       start: (task) => this.pilot.startNow(planId, task, this.claude()),
-      message: (task, text) => {
+      message: (task, text, mode = 'queue') => {
         const plan = plans.need(planId);
         const hit = allTasks(plan.body).find((t) => t.task.id === task || (t.task.issueId && this.deps.board.board.get(t.task.issueId)?.key === task.toUpperCase()));
         if (!hit?.task.issueId) throw new Error(`There's no task "${task}" on the board from this plan`);
         const issue = this.deps.board.board.need(hit.task.issueId);
         const w = issue.worktrees.at(-1);
         if (!w || issue.worktreeGone) throw new Error(`${issue.key} hasn't started: nothing to tell yet (start it, or change its brief)`);
+        const steer = mode === 'steer';
         // Shown there as the plan's message, not as yours.
-        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: `From the plan’s Claude: ${text.trim().slice(0, 2000)}`, level: 'info' });
-        this.deps.askClaude(`A message from the head of the plan “${plan.body?.title ?? ''}” (another Claude coordinating the plan, not the user):\n\n${text.trim()}`, `${WS}${w}`, false);
-        return `Sent to the Claude working on ${issue.key}`;
+        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: `${steer ? 'Urgent, from' : 'From'} the plan’s Claude: ${text.trim().slice(0, 2000)}`, level: 'info' });
+        const prompt = `${steer ? 'An urgent message' : 'A message'} from the head of the plan “${plan.body?.title ?? ''}” (another Claude coordinating the plan, not the user):\n\n${text.trim()}`;
+        const id = this.deps.askClaude(prompt, `${WS}${w}`, false);
+        if (!steer) return `Queued for the Claude working on ${issue.key}: it reads it when its current turn ends (its card shows it waiting; use mode "steer" if it can't wait)`;
+        // Steered: in now (interrupting a long command or a dead run), and followed until it's read.
+        if (id) this.pilot.steer(planId, hit.task.id, id, prompt);
+        return `Steered into ${issue.key}: its Claude gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Klaud delivers it again`;
       },
     };
   }

@@ -96,6 +96,8 @@ export const AgentEventKind = z.enum([
   'denied',
   /** The first answer is ready (the run may go on for background agents); lets the asker stop waiting. */
   'answered',
+  /** How far the step Claude is on has got, from its output ("137/215"; see progressCount). */
+  'progress',
   /** Sub-agent progress; text is JSON {id, phase, title?, step?}. */
   'sub',
   /** How full the conversation's context is; text is JSON {used, window}. */
