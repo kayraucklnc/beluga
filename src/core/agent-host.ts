@@ -16,6 +16,7 @@ import { SCRATCH_DIR, ensureScratch } from '../workspaces/scratch.js';
 import { isImportedItem } from '../agent/transcript.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
 import { STEERED_IN } from '../shared/claude-notices.js';
+import { decodeFailure } from '../shared/run-failure.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -111,6 +112,11 @@ interface Lane {
   followUps?: (followUp: FollowUp) => boolean;
   /** Set while a run of Claude's works here: your urgent messages steer it (see steer). */
   steer?: (followUp: FollowUp) => boolean;
+  /**
+   * The last run failed (a usage limit, a crash): what waits here stays waiting, in order, until
+   * you go on (Continue, or any message of yours) or Klaud resumes it (see shared/run-failure.ts).
+   */
+  held?: boolean;
 }
 
 /** Conversations whose Claude may work at the same time (keeps your plan's limits in mind). */
@@ -289,6 +295,7 @@ export class AgentHost {
     if (!lane) return [];
     const mine = lane.waiting.filter((w) => w.from === this.selfId && !w.compact);
     lane.waiting = lane.waiting.filter((w) => !mine.includes(w));
+    lane.held = undefined;
     for (const { from, body } of mine) this.emitAgent(body.requestId, from, 'done', 'Sent along with Klaud’s wake-up', body.channel);
     if (lane.current) {
       lane.interruptedBy = 'watchdog';
@@ -510,6 +517,7 @@ export class AgentHost {
    */
   private enqueue(from: string, body: BodyOf<'agent_request'>, askTo?: string): void {
     const lane = this.lane(body.channel);
+    if (from === this.selfId) lane.held = undefined;
     if (this.sendFollowUp(lane, from, body)) return;
     const urgent = body.urgent && from === this.selfId;
     if (urgent && this.steer(lane, from, body, false)) return;
@@ -597,7 +605,7 @@ export class AgentHost {
       // Nearly full (after the last run, or before the next message): compact first, between turns.
       for (;;) {
         const auto = this.compactor.due(lane.channel);
-        const next = auto ? undefined : lane.waiting.shift();
+        const next = auto || lane.held ? undefined : lane.waiting.shift();
         if (!auto && !next) break;
         while (this.running >= MAX_PARALLEL_RUNS) await new Promise((r) => setTimeout(r, 200));
         this.running++;
@@ -741,6 +749,9 @@ export class AgentHost {
       const reason = stopped ?? (lane.interruptedBy ? 'Interrupted by a newer message' : controller.signal.aborted ? 'Stopped by owner' : errorText(err));
       lane.interruptedBy = undefined;
       lane.stopping = undefined;
+      // Failed on its own (not stopped): what queued behind it waits for Continue, not to fail the same way.
+      const failure = decodeFailure(reason);
+      if (failure && failure.kind !== 'stopped' && lane.waiting.some((w) => !w.compact)) lane.held = true;
       this.emitAgent(body.requestId, from, 'error', reason, body.channel);
     } finally {
       if (lane.current === controller) {

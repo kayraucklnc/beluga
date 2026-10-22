@@ -1,10 +1,12 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, MAX_PARALLEL, shownBody } from '@klaud/core/plans/model.js';
 import type { PlanView } from '@klaud/core/plans/progress.js';
+import { CONTINUE_PROMPT, decodeFailure, resetWords } from '@klaud/shared/run-failure.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
+import { useApp, useKlaud } from '../lib/klaud.js';
 import { openSheet } from '../lib/sheets.js';
 import { openExternal } from '../lib/system.js';
 import { MilestoneBar, TonePill } from './marks.js';
@@ -55,6 +57,40 @@ export function PlanPage({ id }: { id: string }) {
   }, [view, picked]);
   if (!plan || !view) return <Empty icon="flag" title="This plan is gone" detail="It was deleted. Its tasks stay on the board." action={<Button onClick={() => openList()}>Back to Plans</Button>} />;
   return <Page view={view} prefs={prefs} setPrefs={setPrefs} picked={picked} setPicked={setPicked} />;
+}
+
+/**
+ * Your usage limit stopped the plan: when it goes on by itself, and Resume now. Klaud resumes the
+ * head Claude and each paused task once the limit resets (see core/plans/watchdog.ts).
+ */
+function LimitPause({ view }: { view: PlanView }) {
+  const { plan } = view;
+  const { api, act } = usePlanActions();
+  const { client } = useKlaud();
+  const paused = view.active.filter((t) => t.pulse?.kind === 'paused');
+  // The head Claude's own last turn, when your limit stopped it.
+  const home = useApp((st) => {
+    const card = st.log.findLast((l) => l.type === 'agent' && l.channel === plan.home);
+    const f = card?.type === 'agent' && card.status === 'error' ? decodeFailure(card.text) : undefined;
+    return f?.kind === 'usage_limit' ? (f.resetsAt ?? 0) : undefined;
+  });
+  if (plan.status !== 'active' || (!paused.length && home === undefined)) return null;
+  const until = Math.max(home ?? 0, ...paused.map((t) => (t.pulse?.kind === 'paused' ? t.pulse.until : 0)));
+  const resume = (): void => {
+    if (home !== undefined) void act(() => client.api.session.submit(CONTINUE_PROMPT, { channel: plan.home, urgent: true }));
+    for (const t of paused) void act(() => api.resumeTask(plan.id, t.task.id));
+  };
+  return (
+    <div className={p.changes} role="status">
+      <Icon name="clock" size={13} />
+      <strong>Paused: usage limit</strong>
+      <span>{until > Date.now() ? `resumes at ${resetWords(until)}` : 'resuming as usage comes back'}</span>
+      <span className={p.grow} />
+      <Button size="small" variant="primary" icon="play" onClick={resume}>
+        Resume now
+      </Button>
+    </div>
+  );
 }
 
 function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; prefs: { display: Display; chat: boolean }; setPrefs: (p: Partial<{ display: Display; chat: boolean }>) => void; picked?: string; setPicked: (id: string | undefined) => void }) {
@@ -163,6 +199,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
           ) : null}
         </div>
       </header>
+      <LimitPause view={view} />
       {plan.body && plan.draft ? (
         <div className={p.changes} role="status">
           <Icon name="wand" size={13} />
