@@ -119,7 +119,8 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     const merge = sheet.getByRole('button', { name: 'Merge on GitHub' });
     await expect(merge).toHaveAttribute('data-merge-github', 'squash');
     await sheet.getByRole('button', { name: 'More ways to merge' }).click();
-    for (const way of ['Squash and Merge', 'Create a Merge Commit', 'Rebase and Merge', 'Merge When Checks Pass']) await expect(page.getByRole('menuitem', { name: new RegExp(way) })).toBeVisible();
+    // (Anchored: “Merge When Checks Pass” says how it will merge, “Squash and Merge” among them.)
+    for (const way of ['Squash and Merge', 'Create a Merge Commit', 'Rebase and Merge', 'Merge When Checks Pass']) await expect(page.getByRole('menuitem', { name: new RegExp(`^${way}`) })).toBeVisible();
     await page.getByRole('menuitem', { name: /Merge When Checks Pass/ }).click();
     await expect(sheet).toContainText('Merges when checks pass');
     expect(readGh().merges).toEqual([['pr', 'merge', '7', '--squash', '--auto']]);
@@ -160,8 +161,12 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
 
     // Put things back for the other tests: no PR on GitHub, and none here.
     rmSync(ghFile());
-    await sheet.getByRole('button', { name: 'Refresh status' }).click();
-    await expect(page.getByRole('dialog', { name: 'Create Pull Request' })).toBeVisible();
+    // The sheet is live: it may see the PR gone by itself (and swap to Create Pull Request) before Refresh is clicked.
+    const create = page.getByRole('dialog', { name: 'Create Pull Request' });
+    await expect(async () => {
+      if (!(await create.isVisible())) await sheet.getByRole('button', { name: 'Refresh status' }).click({ timeout: 2000 });
+      await expect(create).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 20_000 });
     await page.getByRole('dialog', { name: 'Create Pull Request' }).getByRole('button', { name: 'Cancel' }).click();
   } finally {
     if (existsSync(ghFile())) rmSync(ghFile());

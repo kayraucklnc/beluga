@@ -227,7 +227,8 @@ test('the composer: Plan with Tasks makes the conversation a plan', async ({ pag
 
 test('a running plan sits under Plans in the sidebar: progress, what it waits for, one click to it', async ({ page }) => {
   await page.goto('/');
-  const row = sidebar(page).getByRole('button', { name: 'Card checkout for launch', exact: true });
+  // The first row is the one under Plans (its project shows it again further down, KLD-23).
+  const row = sidebar(page).getByRole('button', { name: 'Card checkout for launch', exact: true }).first();
   await expect(row).toBeVisible();
   // How far it got, and why it needs you, in the tooltip.
   await expect(row).toHaveAttribute('title', /^Card checkout for launch: .+ · \d+ of \d+ tasks done$/);

@@ -386,9 +386,9 @@ test('clicking a notification goes where it happened', async ({ page }) => {
   await expect(finished).toBeVisible({ timeout: 30_000 });
   await finished.click();
   await expect(centre(page)).toBeHidden();
-  // add-auth is a task of the demo's plan, and a plan speaks for its tasks: its news opens the plan.
-  await expect(page.getByRole('textbox', { name: 'Message Claude about the plan' })).toBeVisible();
-  await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Card checkout for launch');
+  // add-auth is a worktree of its own (the demo plan's tasks run in checkout-*, KLD-23): its news opens it.
+  // A plan task's news opening the plan is plan-black-box.spec.ts's.
+  await expect(composer(page)).toHaveAttribute('placeholder', /add-auth/);
 });
 
 test('effort goes back to Auto, and Shift-Tab switches plan mode on and off', async ({ page }) => {

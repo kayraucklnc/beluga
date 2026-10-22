@@ -71,7 +71,7 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
   const chat = page.getByRole('complementary', { name: 'Conversation' });
   await expect(chat.locator('header')).not.toContainText('working');
   await expect(chat.getByText(/^Working · /)).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /^How it runs/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Runs on / })).toHaveCount(0);
   await expect(page.getByRole('radiogroup', { name: 'Runs' })).toHaveCount(0);
   await expect(main(page).getByRole('tablist', { name: 'Show' })).toHaveCount(0);
 
@@ -110,9 +110,9 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
     await page.evaluate(() => (document.documentElement.dataset.theme = 'light'));
   }
 
-  // Written: the run mode comes back as the header's mode button, and the view toggle is labelled.
+  // Written: the run mode comes back as the header's mode button (“Runs on …”, KLD-22), and the view toggle is labelled.
   await expect(page.getByRole('button', { name: 'Approve Plan' })).toBeVisible({ timeout: 40_000 });
-  await expect(page.getByRole('button', { name: /^How it runs: / })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Runs on / })).toBeVisible();
   const show = main(page).getByRole('tablist', { name: 'Show' });
   await expect(show.getByRole('tab')).toHaveText(['Canvas', 'List']);
   await expect(line).toHaveCount(0);
