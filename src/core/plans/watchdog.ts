@@ -68,6 +68,9 @@ export interface RunInfo {
   readonly progress?: string;
   /** The last command it ran (a step watching a command's output names it). */
   readonly command?: string;
+  /** Past its step: thinking or writing, and since when (see the log item's `between`). */
+  readonly between?: 'thinking' | 'writing';
+  readonly betweenAt?: number;
 }
 
 /** A message waiting for a conversation's Claude (in its queue, or in the running turn for its next step). */
@@ -135,12 +138,14 @@ export function endedWhy(run: RunInfo | undefined): string {
 export function pulseOf(run: RunInfo | undefined, asking: boolean, watch: TaskWatch | undefined): TaskPulse {
   if (asking) return { kind: 'waiting' };
   if (isTurn(run)) {
-    const step = run!.step ? stepWords(run!.step, run!.command) : undefined;
-    // The step it's on is the last thing it did (nothing said since; a count from its output is it going on): it's still in it.
-    const inStep = step !== undefined && run!.stepAt !== undefined && (run!.stepAt >= run!.lastAt || run!.progress !== undefined);
-    const progress = inStep && run!.progress ? { progress: run!.progress } : {};
-    if (inStep && isLongStep(run!.step)) return { kind: 'command', step: step!, since: run!.stepAt!, ...progress };
-    return { kind: 'working', ...(step ? { step } : {}), since: inStep ? run!.stepAt! : run!.lastAt, ...progress };
+    const r = run!;
+    // Past its step (thinking, or writing): that, not the step it did before.
+    if (r.between) return { kind: 'working', step: r.between === 'writing' ? 'Writing' : 'Thinking', since: r.betweenAt ?? r.lastAt };
+    const step = r.step ? stepWords(r.step, r.command) : undefined;
+    if (step === undefined || r.stepAt === undefined) return { kind: 'working', since: r.lastAt };
+    const progress = r.progress ? { progress: r.progress } : {};
+    if (isLongStep(r.step)) return { kind: 'command', step, since: r.stepAt, ...progress };
+    return { kind: 'working', step, since: r.stepAt, ...progress };
   }
   if (watch?.needsYou) return { kind: 'needs_you', reason: watch.reason };
   // Stopped by your usage limit or a crash: never "working", and said as such.

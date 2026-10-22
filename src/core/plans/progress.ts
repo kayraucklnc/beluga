@@ -413,14 +413,15 @@ const NOTHING_WAITING: readonly WaitingMessage[] = [];
 
 /** Who's working in a conversation now, read from the shared state. */
 export function liveFrom(state: {
-  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[]; readonly requestId?: string; readonly ts: number; readonly text?: string; readonly prompt?: string; readonly lastAt?: number; readonly stepAt?: number; readonly progress?: string }>;
+  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[]; readonly requestId?: string; readonly ts: number; readonly text?: string; readonly prompt?: string; readonly lastAt?: number; readonly stepAt?: number; readonly progress?: string; readonly between?: 'thinking' | 'writing'; readonly betweenAt?: number }>;
   readonly questions: ReadonlyArray<{ readonly channel: string }>;
   readonly approvals: ReadonlyArray<{ readonly channel?: string }>;
 }): Live {
   type Item = (typeof state.log)[number];
   const last = new Map<string, Item>();
-  /** The latest run in each conversation that isn't a message still waiting behind it. */
+  /** The newest run in each conversation (the one Claude did something in last) that isn't a message still waiting behind it. */
   const runs = new Map<string, Item>();
+  const heard = (l: Item): number => Math.max(l.ts, l.lastAt ?? 0);
   const waiting = new Map<string, WaitingMessage[]>();
   for (const l of state.log) {
     if (l.type !== 'agent') continue;
@@ -430,7 +431,7 @@ export function liveFrom(state: {
       const list = waiting.get(l.channel) ?? [];
       list.push({ requestId: l.requestId ?? '', prompt: l.prompt ?? '', queued: m === 'queued' });
       waiting.set(l.channel, list);
-    } else runs.set(l.channel, l);
+    } else if (heard(l) >= heard(runs.get(l.channel) ?? l)) runs.set(l.channel, l);
   }
   const made = new Map<string, RunInfo | undefined>();
   const asking = new Set([...state.questions.map((q) => q.channel), ...state.approvals.flatMap((a) => (a.channel ? [a.channel] : []))]);
@@ -461,6 +462,7 @@ export function liveFrom(state: {
       ...(l.stepAt !== undefined ? { stepAt: l.stepAt } : {}),
       ...(l.progress ? { progress: l.progress } : {}),
       ...(command ? { command } : {}),
+      ...(l.between ? { between: l.between, ...(l.betweenAt !== undefined ? { betweenAt: l.betweenAt } : {}) } : {}),
     };
   }
 }
