@@ -161,6 +161,46 @@ test('its Outputs: the screenshot and test log it made, wherever it put them, to
   await expect(page.getByRole('log', { name: 'Sub-agent Write the webhook tests' })).toBeVisible();
 });
 
+test('in the chat, background work sits where it started: a live dot while it runs, then it folds with the other steps', async ({ page }) => {
+  const composer = page.locator('textarea:not(.xterm-helper-textarea)');
+  const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ position: { x: 60, y: 10 } });
+  await sidebar(page).getByRole('button', { name: 'new-hero', exact: true }).click();
+  await expect(composer).toHaveAttribute('placeholder', /new-hero/);
+  // Earlier specs answered here too: wait for this answer, not one of theirs.
+  const done = page.locator('[data-turn="done"]');
+  const answered = await done.count();
+  await composer.fill('run the tests please');
+  await composer.press('Enter');
+  // The demo's Claude runs the tests, then leaves them watching in the background.
+  const steps = page.getByRole('list', { name: "Claude's steps" }).last();
+  const live = steps.locator('[data-subagent][data-running="true"]');
+  await expect(live).toContainText('Background · npm test --watch', { timeout: 20_000 });
+  // Running: its live dot, never folded away.
+  await expect(live.locator('[class*="live_claude"]')).toBeVisible();
+  await shot(page, 'subagent-in-chat-running');
+
+  // Answered: shown again, it's a finished row among the steps, folded with the older ones.
+  await expect(done).toHaveCount(answered + 1, { timeout: 30_000 });
+  const card = done.last();
+  await card.hover();
+  await card.getByRole('button', { name: 'Show Steps' }).click();
+  const shown = card.getByRole('list', { name: "Claude's steps" });
+  // In the timeline, right after the step that started it (not trailing below the rest).
+  const earlier = shown.getByRole('button', { name: /^Show \d+ earlier steps/ });
+  // (Its full record is read back first; then the earlier steps open.)
+  const kinds = async (): Promise<string[]> => {
+    if (await earlier.isVisible()) await earlier.click();
+    return shown.locator('[data-slot]').evaluateAll((els) => els.map((el) => (el.querySelector('[data-subagent]') ? 'sub' : ((el.querySelector('[data-step-kind]') as HTMLElement | null)?.dataset.stepKind ?? '?'))));
+  };
+  await expect.poll(kinds, { timeout: 10_000 }).toEqual(expect.arrayContaining(['bash', 'sub']));
+  await expect(shown.locator('[data-subagent]')).toHaveCount(1);
+  await expect(shown.locator('[data-subagent][data-running]')).toHaveCount(0);
+  const now = await kinds();
+  expect(now.indexOf('sub')).toBe(now.lastIndexOf('bash') + 1);
+  await shot(page, 'subagent-in-chat-done');
+});
+
 test('its background commands: listed with how they run, and their output followed live (on its page and in the panel)', async ({ page }) => {
   await showAgents(page);
   await sidebar(page).getByRole('button', { name: /^Sub-agent Write the webhook tests/ }).click();
