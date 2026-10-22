@@ -27,6 +27,17 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await expect(main(page).locator('.react-flow__node').filter({ hasText: 'Test-mode foundations' })).toContainText('Passed');
   const receipts = main(page).locator('.react-flow__node').filter({ hasText: 'Receipt emails sent once' });
   await expect(receipts).toContainText('Waiting');
+  // Each milestone ends in its criteria, and a line runs from them to the milestones that wait on it (KLD-63).
+  const criteria = main(page).locator('[data-criteria]');
+  await expect(criteria).toHaveCount(3);
+  await expect(main(page).locator('[data-criteria="foundations"]')).toContainText('Passed');
+  await expect(main(page).locator('[data-criteria="foundations"] [data-met="true"]').first()).toBeVisible();
+  const next = main(page).getByRole('group', { name: '“Safe payments” leads to “Refunds and launch”', exact: true }).locator('[data-kind="next"]');
+  await expect(next).toHaveAttribute('data-from', 'gate:safe-payments');
+  await expect(next).toHaveAttribute('data-to', 'm:refunds');
+  await main(page).locator('[data-criteria="safe-payments"]').click();
+  await expect(page.getByRole('complementary', { name: 'Details' })).toContainText('Passes when');
+  await page.keyboard.press('Escape');
   await receipts.click();
   const details = page.getByRole('complementary', { name: 'Details' });
   await expect(details).toContainText('Waits on');

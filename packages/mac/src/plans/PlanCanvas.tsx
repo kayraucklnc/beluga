@@ -14,25 +14,32 @@ import { MILESTONE_STATE, TASK_STATE, changeMarks, gateId, graphShape, groupId, 
 import { useClock } from './use-plans.js';
 import { TaskChatMark, TaskStateIcon } from './marks.js';
 import p from './plans.module.css';
+import c from './PlanCanvas.module.css';
 
 /**
  * A plan as a living graph: each milestone a box, its tasks inside laid out by what waits on what,
- * and a gate at its end. Milestones that run side by side sit side by side in a row; a line runs
- * from each milestone down to the ones that wait on it. Tasks Claude is working on glow and
+ * and its criteria (the gate) at its end. Milestones that run side by side sit side by side in a row;
+ * a thin line runs from each one's criteria to the ones that wait on it. Tasks Claude is working on glow and
  * say what it's doing; finished ones tick; a gate waiting for you is the one thing in the accent.
  * The layout (ELK) depends only on the plan's shape, so work moving on never moves anything.
  */
 
 const TASK = { width: 252, height: 92 };
-const GATE = { width: 150, height: 44 };
 const HEAD = 62;
-/** Room between milestones. */
-const LANE_GAP = 40;
-/** A milestone's line to one two or more rows down runs down the right of the lanes, never across them. */
-const GUTTER = 22;
-const GUTTER_STEP = 10;
-/** A task's line to its gate is drawn only from the column next to it (not across empty columns). */
-const NEAR_GATE = 80;
+/** The criteria node at a milestone's end: its head, then one row per criterion (up to two lines each). */
+const CRITERIA = { width: 264, head: 38, line: 15.5, row: 7, foot: 12, chars: 36 };
+/** Room between milestones side by side, and between rows of them (their lines run there). */
+const SIDE_GAP = 48;
+const ROW_GAP = 64;
+/** Where a line comes into a milestone: above its number. */
+const IN_AT = 27;
+
+/** How tall a criteria node is: from its criteria's words (the shape), never from their state. */
+function criteriaHeight(criteria: readonly string[]): number {
+  if (!criteria.length) return CRITERIA.head + CRITERIA.foot + CRITERIA.line;
+  const lines = criteria.reduce((n, c) => n + Math.min(2, Math.max(1, Math.ceil(c.length / CRITERIA.chars))), 0);
+  return Math.round(CRITERIA.head + lines * CRITERIA.line + (criteria.length - 1) * CRITERIA.row + CRITERIA.foot);
+}
 
 interface TaskData extends Record<string, unknown> {
   readonly view: TaskView;
@@ -58,6 +65,8 @@ type PlanNode = Node<TaskData, 'task'> | Node<MilestoneData, 'milestone'> | Node
 interface LineData extends Record<string, unknown> {
   readonly kind: 'blocks' | 'finish' | 'next';
   readonly state: 'done' | 'live' | 'waiting';
+  /** On the current path: in or into a milestone being worked on. */
+  readonly current: boolean;
   readonly route?: Route;
 }
 type PlanEdge = Edge<LineData, 'line'>;
@@ -83,9 +92,42 @@ interface Laid {
   readonly key: string;
   readonly places: ReadonlyMap<string, Placed>;
   readonly routes: ReadonlyMap<string, Route>;
-  /** Width the milestone lines take right of the lanes. */
-  readonly gutter: number;
 }
+
+/** ELK's options for a milestone's inside: its tasks left to right by what waits on what, its criteria last. */
+const INSIDE = {
+  'elk.algorithm': 'layered',
+  'elk.direction': 'RIGHT',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '56',
+  'elk.spacing.nodeNode': '16',
+  'elk.layered.spacing.edgeNodeBetweenLayers': '20',
+  'elk.edgeRouting': 'ORTHOGONAL',
+  'elk.spacing.edgeEdge': '10',
+  // The lines into the criteria meet before it, as one.
+  'elk.layered.mergeEdges': 'true',
+  'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+  'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+  // What can start at once lines up on the left; the criteria are always last.
+  'elk.layered.layering.strategy': 'LONGEST_PATH_SOURCE',
+  'elk.padding': `[top=${HEAD + 12},left=20,bottom=20,right=20]`,
+} as const;
+
+/** …and for the plan: milestones top to bottom by what waits on what, side by side when they run at once. */
+const PLAN = {
+  'elk.algorithm': 'layered',
+  'elk.direction': 'DOWN',
+  'elk.layered.layering.strategy': 'LONGEST_PATH_SOURCE',
+  'elk.spacing.nodeNode': String(SIDE_GAP),
+  'elk.layered.spacing.nodeNodeBetweenLayers': String(ROW_GAP),
+  'elk.layered.spacing.edgeNodeBetweenLayers': '24',
+  'elk.spacing.edgeEdge': '14',
+  'elk.layered.spacing.edgeEdgeBetweenLayers': '14',
+  'elk.edgeRouting': 'ORTHOGONAL',
+  'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+  'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+  'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
+  'elk.padding': '[top=24,left=24,bottom=24,right=24]',
+} as const;
 
 function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanvasProps) {
   const theme = useDocTheme();
@@ -97,8 +139,9 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
   const framed = useRef(false);
   const marks = useMemo(() => changeMarks(view.plan), [view.plan]);
 
-  // Lay out when the shape changes (only then): each milestone on its own (its tasks left to right
-  // by what waits on what, its gate at the end), then the milestones stacked top to bottom.
+  // Lay out when the shape changes (only then). Each milestone's inside first; then the plan, with the
+  // milestones as boxes of those sizes: a line leaves each one below its criteria and comes into the
+  // ones that wait on it above their number, and ELK routes those lines between the boxes.
   useEffect(() => {
     let live = true;
     void Promise.all(
@@ -106,71 +149,59 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
         const inside = new Set([...m.tasks.map(taskNodeId), gateId(m.id)]);
         const input: ElkInput = {
           id: groupId(m.id),
-          layoutOptions: {
-            'elk.algorithm': 'layered',
-            'elk.direction': 'RIGHT',
-            'elk.layered.spacing.nodeNodeBetweenLayers': '56',
-            'elk.spacing.nodeNode': '16',
-            'elk.layered.spacing.edgeNodeBetweenLayers': '20',
-            'elk.edgeRouting': 'ORTHOGONAL',
-            'elk.spacing.edgeEdge': '10',
-            'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
-            'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-            // What can start at once lines up on the left; the gate is always last.
-            'elk.layered.layering.strategy': 'LONGEST_PATH_SOURCE',
-            'elk.padding': `[top=${HEAD + 12},left=20,bottom=20,right=20]`,
-          },
-          children: [...m.tasks.map((t) => ({ id: taskNodeId(t), ...TASK })), { id: gateId(m.id), ...GATE }],
+          layoutOptions: INSIDE,
+          children: [...m.tasks.map((t) => ({ id: taskNodeId(t), ...TASK })), { id: gateId(m.id), width: CRITERIA.width, height: criteriaHeight(m.criteria) }],
           edges: shape.edges.filter((e) => inside.has(e.from) && inside.has(e.to)).map((e) => ({ id: e.id, sources: [e.from], targets: [e.to] })),
         };
         return layout(input);
       }),
     )
-      .then((outs) => {
+      .then(async (outs) => {
+        const out = new Map(shape.milestones.map((m, i) => [m.id, outs[i]!] as const));
+        // The milestones of a row (side by side) all as tall as its tallest, so the row reads as one.
+        const tall = new Map(shape.rows.flatMap((row) => row.map((id) => [id, Math.max(...row.map((r) => out.get(r)?.height ?? 0))] as const)));
+        const gateOf = (id: string): Placed | undefined => placesOf(out.get(id)!).get(gateId(id));
+        const plan = await layout({
+          id: 'plan',
+          layoutOptions: PLAN,
+          children: shape.milestones.map((m) => {
+            const width = out.get(m.id)?.width ?? 0;
+            const height = tall.get(m.id) ?? 0;
+            const gate = gateOf(m.id);
+            const exit = gate ? gate.x + gate.width / 2 : width / 2;
+            return {
+              id: groupId(m.id),
+              width,
+              height,
+              layoutOptions: { 'elk.portConstraints': 'FIXED_POS' },
+              ports: [
+                { id: `in:${m.id}`, x: IN_AT, y: 0, width: 0, height: 0, layoutOptions: { 'elk.port.side': 'NORTH' } },
+                { id: `out:${m.id}`, x: exit, y: height, width: 0, height: 0, layoutOptions: { 'elk.port.side': 'SOUTH' } },
+              ],
+            };
+          }),
+          edges: shape.edges.filter((e) => e.kind === 'next').map((e) => ({ id: e.id, sources: [`out:${e.from.replace(/^gate:/, '')}`], targets: [`in:${e.to.replace(/^m:/, '')}`] })),
+        });
         if (!live) return;
         const places = new Map<string, Placed>();
         const routes = new Map<string, Route>();
-        const out = new Map(shape.milestones.map((m, i) => [m.id, outs[i]!] as const));
-        const rowOf = new Map(shape.rows.flatMap((row, r) => row.map((id) => [id, r] as const)));
-        // Rows top to bottom; the milestones of a row (they run side by side) left to right, each as
-        // wide as its tasks need, all as tall as the row's tallest.
-        let y = 24;
-        for (const row of shape.rows) {
-          const height = Math.max(...row.map((id) => out.get(id)?.height ?? 0));
-          let x = 24;
-          for (const id of row) {
-            const o = out.get(id);
-            if (!o) continue;
-            const width = Math.max(row.length > 1 ? 340 : 420, o.width ?? 0);
-            places.set(groupId(id), { x, y, width, height });
-            for (const [nid, at] of placesOf(o)) places.set(nid, at);
-            for (const [eid, r] of routesOf(o)) routes.set(eid, { ...r, points: r.points.map((pt) => ({ x: pt.x + x, y: pt.y + y })) });
-            x += width + LANE_GAP;
-          }
-          y += height + LANE_GAP;
+        for (const [id, at] of placesOf(plan)) places.set(id, at);
+        for (const m of shape.milestones) {
+          const box = places.get(groupId(m.id));
+          const o = out.get(m.id);
+          if (!box || !o) continue;
+          for (const [nid, at] of placesOf(o)) places.set(nid, at);
+          for (const [eid, r] of routesOf(o)) routes.set(eid, { ...r, points: r.points.map((pt) => ({ x: pt.x + box.x, y: pt.y + box.y })) });
         }
-        // A milestone → each one that waits on it: bottom to top through the gap between the rows;
-        // past a row in between, down a track right of every lane (never across a lane or its tasks).
-        const boxes = [...places].filter(([id]) => id.startsWith('m:')).map(([, at]) => at);
-        const right = Math.max(...boxes.map((b) => b.x + b.width));
-        const far = shape.edges.filter((e) => e.kind === 'next' && (rowOf.get(e.to.replace(/^m:/, '')) ?? 0) - (rowOf.get(e.from.replace(/^gate:/, '')) ?? 0) > 1);
-        for (const e of shape.edges) {
-          if (e.kind !== 'next') continue;
-          const from = places.get(groupId(e.from.replace(/^gate:/, '')));
-          const to = places.get(e.to);
-          if (!from || !to) continue;
-          const s = { x: from.x + from.width / 2, y: from.y + from.height };
-          const t = { x: to.x + to.width / 2, y: to.y };
-          const below = s.y + LANE_GAP / 2;
-          const above = t.y - LANE_GAP / 2;
-          const track = far.indexOf(e);
-          const points =
-            track < 0
-              ? [s, { x: s.x, y: above }, { x: t.x, y: above }, t]
-              : [s, { x: s.x, y: below }, { x: right + GUTTER + track * GUTTER_STEP, y: below }, { x: right + GUTTER + track * GUTTER_STEP, y: above }, { x: t.x, y: above }, t];
-          routes.set(e.id, { points });
+        // A milestone's line starts at its criteria (straight down to the box's edge, then as ELK drew it).
+        for (const [eid, r] of routesOf(plan)) {
+          const from = shape.edges.find((e) => e.id === eid)?.from.replace(/^gate:/, '');
+          const box = from ? places.get(groupId(from)) : undefined;
+          const gate = from ? places.get(gateId(from)) : undefined;
+          const first = r.points[0];
+          routes.set(eid, { ...r, points: box && gate && first ? [{ x: first.x, y: box.y + gate.y + gate.height }, ...r.points] : r.points });
         }
-        setLaid({ key: shape.key, places, routes, gutter: far.length ? GUTTER + far.length * GUTTER_STEP : 0 });
+        setLaid({ key: shape.key, places, routes });
         setFailed(false);
       })
       .catch(() => live && setFailed(true));
@@ -212,7 +243,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
         });
       }
       const gate = laid.places.get(gateId(m.milestone.id));
-      if (gate) out.push({ id: gateId(m.milestone.id), type: 'gate', parentId: groupId(m.milestone.id), position: { x: gate.x, y: gate.y }, width: GATE.width, height: GATE.height, draggable: false, data: { view: m, current, selected: selected === gateId(m.milestone.id) } });
+      if (gate) out.push({ id: gateId(m.milestone.id), type: 'gate', parentId: groupId(m.milestone.id), position: { x: gate.x, y: gate.y }, width: gate.width, height: gate.height, draggable: false, data: { view: m, current, selected: selected === gateId(m.milestone.id) } });
     }
     return out;
   }, [laid, view, keys, marks, selected, linked, startable, onStart]);
@@ -229,21 +260,18 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
       const s = byTask.get(id.replace(/^t:/, ''))?.state;
       return s === 'running' || s === 'asking' || s === 'idle';
     };
-    const nearGate = (e: (typeof shape.edges)[number]): boolean => {
-      const task = laid.places.get(e.from);
-      const gate = laid.places.get(e.to);
-      return Boolean(task && gate && gate.x - (task.x + task.width) <= NEAR_GATE);
-    };
-    // Only real lines: blockers inside a milestone (across milestones the gates say what comes first),
-    // the last column of tasks into the gate, and a gate into the milestones that wait on it.
-    const shown = shape.edges.filter((e) => (e.kind === 'blocks' ? lane.get(e.from) === lane.get(e.to) : e.kind === 'finish' ? nearGate(e) : laid.routes.has(e.id)));
+    // The milestones being worked on now: their lines, and the lines into them, are the current path.
+    const open = new Set(view.open.map((m) => m.milestone.id));
+    const now = (e: (typeof shape.edges)[number]): boolean => open.has(e.kind === 'next' ? e.to.replace(/^m:/, '') : (lane.get(e.from) ?? ''));
+    // Only real lines: blockers inside a milestone (across milestones the criteria say what comes first),
+    // its last tasks into its criteria, and its criteria into the milestones that wait on them.
+    const shown = shape.edges.filter((e) => (e.kind === 'blocks' ? lane.get(e.from) === lane.get(e.to) : laid.routes.has(e.id)));
     return shown.map((e) => {
       const done = e.kind === 'next' ? passed(e.from) : finished(e.from);
       const state: LineData['state'] = done ? 'done' : e.kind !== 'next' && working(e.from) ? 'live' : 'waiting';
       const route = laid.routes.get(e.id);
-      // Drawn from the milestone's head (its gate is what it waits on, so the line keeps its state).
-      const ends = e.kind === 'next' ? { source: groupId(e.from.replace(/^gate:/, '')), sourceHandle: 'out', targetHandle: 'in', ariaLabel: `${titleOf(e.from)} leads to ${titleOf(e.to)}` } : { source: e.from };
-      return { id: e.id, ...ends, target: e.to, type: 'line', data: { kind: e.kind, state, ...(route ? { route } : {}) } };
+      const ends = e.kind === 'next' ? { ariaLabel: `${titleOf(e.from)} leads to ${titleOf(e.to)}` } : {};
+      return { id: e.id, source: e.from, target: e.to, ...ends, type: 'line', data: { kind: e.kind, state, current: now(e), ...(route ? { route } : {}) } };
     });
   }, [laid, shape, lane, byTask, view]);
 
@@ -254,7 +282,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
     const box = wrap.current;
     if (!laid || !box) return;
     const groups = [...laid.places].filter(([id]) => id.startsWith('m:')).map(([, at]) => at);
-    const width = Math.max(...groups.map((g) => g.x + g.width)) + laid.gutter + 24;
+    const width = Math.max(...groups.map((g) => g.x + g.width)) + 24;
     const height = Math.max(...groups.map((g) => g.y + g.height)) + 24;
     const zoom = Math.max(0.55, Math.min(1, box.clientWidth / width, Math.max(box.clientHeight / height, box.clientWidth / width)));
     const current = view.current ? laid.places.get(groupId(view.current.milestone.id)) : undefined;
@@ -402,22 +430,43 @@ const MilestoneNode = memo(function MilestoneNode({ data }: NodeProps<Node<Miles
   );
 });
 
+/**
+ * The criteria at a milestone's end (its gate): what must be true to pass it, each ticked once it's
+ * met (Claude's check found them all met, or it passed). Picked, the details say more.
+ */
 const GateNode = memo(function GateNode({ data }: NodeProps<Node<GateData, 'gate'>>) {
   const m = data.view;
-  const n = m.milestone.criteria.length;
+  const criteria = m.milestone.criteria;
   const check = m.run.check;
-  const label = m.state === 'passed' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? 'Pass it' : n ? `${n} ${n === 1 ? 'criterion' : 'criteria'}` : 'Milestone';
+  const met = m.state === 'passed' || (check?.verdict === 'pass' && m.state !== 'failed');
+  const label = m.state === 'passed' ? 'Passed' : m.state === 'checking' ? 'Checking…' : m.state === 'failed' ? 'Failed check' : m.state === 'gate' ? 'Pass it' : met ? 'All met' : `${criteria.length} to meet`;
   // Waiting for you: a soft ring that breathes out (with the live clock, lib/live-motion.ts).
   const gate = useRef<HTMLDivElement>(null);
   useLive(gate, (t) => gate.current?.style.setProperty('--beckon', (1 - breath(t, 2400)).toFixed(3)), m.state === 'gate');
   return (
-    <div ref={gate} className={cx(p.gate, p[`gate_${m.state}`], data.selected && p.gateSelected)} aria-label={`Gate of ${m.milestone.title}: ${label}`}>
+    <div ref={gate} className={cx(c.criteria, c[`criteria_${m.state}`], data.current && c.criteriaCurrent, data.selected && c.criteriaSelected)} data-criteria={m.milestone.id} aria-label={`Criteria of ${m.milestone.title}: ${label}`}>
       <Ends />
-      <span className={p.gateMark}>
-        <Icon name={m.state === 'passed' ? 'check' : m.state === 'failed' ? 'x' : 'flag'} size={11} />
-      </span>
-      <span className={p.gateLabel}>{label}</span>
-      {check && m.state !== 'passed' ? <span className={cx(p.gateCheck, check.verdict === 'pass' ? p.tone_ok : p.tone_error)}>{check.verdict === 'pass' ? '✓' : '!'}</span> : null}
+      <div className={c.criteriaHead}>
+        <span className={c.criteriaMark}>
+          <Icon name={m.state === 'passed' ? 'check' : m.state === 'failed' ? 'x' : 'flag'} size={10} />
+        </span>
+        <span className={c.criteriaTitle}>Criteria</span>
+        <span className={c.criteriaState}>{label}</span>
+      </div>
+      {criteria.length ? (
+        <ul className={c.criteriaList}>
+          {criteria.map((text, i) => (
+            <li key={i} className={c.criterion} data-met={met ? 'true' : 'false'} title={text}>
+              <span className={c.criterionMark} aria-label={met ? 'Met' : 'Pending'}>
+                {met ? <Icon name="check" size={8} /> : null}
+              </span>
+              <span className={c.criterionText}>{text}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className={c.criteriaNone}>Passes when its tasks are done</div>
+      )}
     </div>
   );
 });
@@ -426,30 +475,20 @@ const NODE_TYPES = { task: TaskNode, milestone: MilestoneNode, gate: GateNode } 
 
 // ---------------------------------------------------------------- lines
 
-const PlanLine = memo(function PlanLine({ id, sourceX, sourceY, targetX, targetY, data }: EdgeProps<PlanEdge>) {
-  const down = data?.kind === 'next' || targetY > sourceY + 60;
-  // Down to the next milestone: below the gate, across the gap between lanes, into the next one.
-  const mid = data?.kind === 'next' ? targetY - LANE_GAP / 2 : (sourceY + targetY) / 2;
-  const points: readonly Point[] =
-    data?.route?.points ??
-    (down
-      ? [
-          { x: sourceX, y: sourceY },
-          { x: sourceX, y: mid },
-          { x: targetX, y: mid },
-          { x: targetX, y: targetY },
-        ]
-      : [
-          { x: sourceX, y: sourceY },
-          { x: (sourceX + targetX) / 2, y: sourceY },
-          { x: (sourceX + targetX) / 2, y: targetY },
-          { x: targetX, y: targetY },
-        ]);
-  const path = roundedPath(points, 10);
+/** Every line the same thin stroke: done ones in green, the current path darker, a task at work in copper. */
+const PlanLine = memo(function PlanLine({ id, source, target, sourceX, sourceY, targetX, targetY, data }: EdgeProps<PlanEdge>) {
+  const points: readonly Point[] = data?.route?.points ?? [
+    { x: sourceX, y: sourceY },
+    { x: (sourceX + targetX) / 2, y: sourceY },
+    { x: (sourceX + targetX) / 2, y: targetY },
+    { x: targetX, y: targetY },
+  ];
   const kind = data?.kind ?? 'blocks';
   const state = data?.state ?? 'waiting';
   return (
-      <BaseEdge id={id} path={path} className={cx(p.line, p[`line_${kind}`], p[`line_${state}`])} interactionWidth={0} />
+    <g data-from={source} data-to={target} data-kind={kind} data-state={state}>
+      <BaseEdge id={id} path={roundedPath(points, 10)} className={cx(c.line, c[`line_${state}`], data?.current && c.lineCurrent)} interactionWidth={0} />
+    </g>
   );
 });
 
