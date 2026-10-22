@@ -170,9 +170,9 @@ test('in the chat, background work sits where it started: a live dot while it ru
   // Earlier specs answered here too: wait for this answer, not one of theirs.
   const done = page.locator('[data-turn="done"]');
   const answered = await done.count();
-  await composer.fill('run the tests please');
+  await composer.fill('run the tests and keep them watching');
   await composer.press('Enter');
-  // The demo's Claude runs the tests, then leaves them watching in the background.
+  // The demo's Claude runs the tests, leaves them watching in the background, and reads on.
   const steps = page.getByRole('list', { name: "Claude's steps" }).last();
   const live = steps.locator('[data-subagent][data-running="true"]');
   await expect(live).toContainText('Background · npm test --watch', { timeout: 20_000 });
@@ -186,8 +186,14 @@ test('in the chat, background work sits where it started: a live dot while it ru
   await card.hover();
   await card.getByRole('button', { name: 'Show Steps' }).click();
   const shown = card.getByRole('list', { name: "Claude's steps" });
-  // In the timeline, right after the step that started it (not trailing below the rest).
   const earlier = shown.getByRole('button', { name: /^Show \d+ earlier steps/ });
+  // With the fold closed it's inside it (finished, with steps after it), not among the last few.
+  // (Its full record is read back first: wait for the steps after it.)
+  await expect.poll(async () => Number(await earlier.getAttribute('data-folded-count').catch(() => '0')), { timeout: 10_000 }).toBeGreaterThanOrEqual(4);
+  await expect(shown.locator('[data-step-kind="read"]').filter({ hasText: 'README' })).toHaveCount(1);
+  await expect(shown.locator('[data-subagent]')).toHaveCount(0);
+  await expect(earlier).toHaveAttribute('aria-expanded', 'false');
+  // In the timeline, right after the step that started it (not trailing below the rest).
   // (Its full record is read back first; then the earlier steps open.)
   const kinds = async (): Promise<string[]> => {
     if (await earlier.isVisible()) await earlier.click();

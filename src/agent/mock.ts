@@ -15,6 +15,8 @@ interface Script {
   readonly report?: { title: string; markdown: string };
   /** Sub-agents launched in parallel, each with its own steps. */
   readonly subagents?: ReadonlyArray<{ title: string; steps: readonly string[]; kind?: 'agent' | 'background' }>;
+  /** Steps after the sub-agents finished. */
+  readonly after?: readonly string[];
 }
 
 /** Canned, fast replies so the demo (and README recordings) never wait on real Claude calls. */
@@ -31,6 +33,14 @@ const SCRIPTS: readonly Script[] = [
     stepMs: 2500,
     steps: ['Glob **/*.ts', 'Read src/server.ts', 'Read src/payments.ts', 'Grep "TODO"', 'Read NOTES.md', 'Grep "session"', 'Read src/webhooks.ts', 'Bash npm test', 'Read package.json', 'Grep "retry"', 'Read README.md', 'Bash git log --oneline -20'],
     answer: 'Deep dive done. The riskiest parts are **webhook retries** (not idempotent) and **auth** (not started). Everything else is small and well tested.',
+  },
+  {
+    // Background work with steps after it: once answered, it folds with the older steps (e2e/subagents.spec.ts).
+    match: /keep (them )?watching/i,
+    steps: ['Read package.json', 'Bash npm test'],
+    subagents: [{ title: 'npm test --watch', steps: ['24 passed', '24 passed'], kind: 'background' }],
+    after: ['Read src/payments.ts', 'Grep "coverage"', 'Read README.md'],
+    answer: 'All **24 tests** pass, and they keep running in the background. `payments.ts` is the least covered file.',
   },
   {
     match: /review|changes|check my work/i,
@@ -429,6 +439,10 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
         if (step) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'step', step }));
         if (i === s.steps.length - 1) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'done' }));
       }
+    }
+    for (const step of script.after ?? []) {
+      await sleep((script.stepMs ?? 450) * pace, input.signal);
+      input.onEvent('tool', step);
     }
     if (script.report) await bridge.writeReport(script.report.title, script.report.markdown);
     // Doing a task: keep it true, as real Claude is told to (core/board/prompt.ts).
