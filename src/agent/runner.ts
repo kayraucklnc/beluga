@@ -382,7 +382,10 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             const count = progressCount(toolOutput(msg.message.content));
             if (count) turns.current().onEvent('progress', count);
             const content = msg.message.content;
+            const returned = Array.isArray(content) && content.some((block) => block.type === 'tool_result');
             if (Array.isArray(content)) for (const block of content) if (block.type === 'tool_result') tools.delete(block.tool_use_id);
+            // Every tool of its step came back: Claude thinks about what's next (an empty progress says so; older peers ignore it).
+            if (returned && !count && !tools.size) turns.current().onEvent('progress', '');
           }
           if (msg.type === 'result' || (msg.type === 'user' && msg.parent_tool_use_id === null)) thinking = false;
           if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {

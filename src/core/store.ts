@@ -58,6 +58,10 @@ export type LogItem =
       readonly stepAt?: number;
       /** How far that step has got, when its output says ("137/215"). */
       readonly progress?: string;
+      /** Between steps: Claude thinks (its turn began, or the step's tools returned) or wrote last; unset while a step runs. */
+      readonly between?: 'thinking' | 'writing';
+      /** Since when it has been `between` that way. */
+      readonly betweenAt?: number;
     }
   | ShellItem;
 
@@ -627,11 +631,15 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ts: a.ts,
   };
   // A new step starts with no count; a count says how far the step it's on has got.
-  const { progress: was, ...rest } = base as typeof base & { progress?: string };
+  const { progress: was, between: wasBetween, betweenAt: wasAt, ...rest } = base as typeof base & { progress?: string; between?: 'thinking' | 'writing'; betweenAt?: number };
   const progress = a.event === 'progress' ? a.text.slice(0, 40) : a.event === 'tool' || a.event === 'done' || a.event === 'error' ? undefined : was;
+  // What it does after its step: a turn starting or an empty progress (the step's tools returned) is thinking, words are writing; a step (or its count) ends that.
+  const between = a.event === 'started' || (a.event === 'progress' && !a.text) ? 'thinking' : a.event === 'text' ? 'writing' : a.event === 'tool' || a.event === 'progress' ? undefined : wasBetween;
+  const betweenAt = between === undefined ? undefined : between === wasBetween && wasAt !== undefined ? wasAt : a.ts;
   const updated = {
     ...rest,
     ...(progress ? { progress } : {}),
+    ...(between ? { between, betweenAt } : {}),
     status: a.event === 'text' || a.event === 'tool' || a.event === 'sub' || a.event === 'progress' ? 'started' : a.event,
     subagents: a.event === 'sub' ? applySub(base.subagents, a.text) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
     text:
