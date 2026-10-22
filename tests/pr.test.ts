@@ -250,7 +250,7 @@ describe('hasGh / findPr (gh mocked)', () => {
     const m = await load();
     expect(await m.findPr('/repo', 'feat/x')).toEqual({ number: 5, url: 'u', state: 'OPEN', title: 'T', draft: false, checks: 'passing', checkRuns: [{ name: 'check', state: 'completed', conclusion: 'success' }], review: 'APPROVED' });
     const view = exec.calls.find((c) => c.args[0] === 'pr');
-    expect(view).toEqual({ cmd: 'gh', args: ['pr', 'view', 'feat/x', '--json', 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision'], cwd: '/repo' });
+    expect(view).toEqual({ cmd: 'gh', args: ['pr', 'view', 'feat/x', '--json', 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision,mergeable,autoMergeRequest'], cwd: '/repo' });
   });
 
   it('findPr returns undefined when there is no PR for the branch', async () => {

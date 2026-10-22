@@ -78,7 +78,7 @@ function labelOf(b: WorkspaceButton, pr: boolean): string {
     case 'commit':
       return 'Commit…';
     case 'merge':
-      return 'Merge…';
+      return 'Merge Locally…';
     case 'compact':
       return 'Compact…';
     case 'finder':
@@ -137,7 +137,7 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
   }
   if (pr?.state === 'MERGED') {
     const archive = all.find((x) => x.action === 'archive');
-    if (archive) return { ...archive, label: 'Archive', danger: false, hint: `PR #${pr.number} is merged: put this workspace away (the branch and conversation are kept)` };
+    if (archive) return { ...archive, label: 'Archive Worktree', danger: false, hint: `PR #${pr.number} is merged: put this worktree away (the branch and conversation are kept)` };
   }
   const merge = by('merge');
   if (merge) {

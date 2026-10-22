@@ -54,6 +54,10 @@ export interface PullRequest {
   /** Each check behind `checks` (missing in PRs saved before they were kept). */
   readonly checkRuns?: readonly PrCheck[];
   readonly review?: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED';
+  /** GitHub says it conflicts with its base (open PRs only). */
+  readonly conflicts?: boolean;
+  /** Auto-merge is on: GitHub merges it once its checks and reviews pass. */
+  readonly autoMerge?: boolean;
 }
 
 export interface SetupRun {

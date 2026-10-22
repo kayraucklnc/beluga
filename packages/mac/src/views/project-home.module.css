@@ -292,6 +292,56 @@ button.stat:disabled {
   white-space: nowrap;
   flex-shrink: 0;
 }
+.rowPr {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+  color: var(--text-2);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rowPr:hover {
+  color: var(--text);
+  box-shadow: 0 0 0 0.5px var(--text-3);
+}
+.rowPrState {
+  color: var(--text-3);
+}
+.rowPrChecks {
+  display: inline-flex;
+  align-items: center;
+}
+.pr_passing .rowPrChecks,
+.pr_merged,
+.pr_merged .rowPrState {
+  color: var(--ok);
+}
+.pr_failing .rowPrChecks {
+  color: var(--error);
+}
+.pr_pending .rowPrChecks {
+  color: var(--warn);
+}
+.rowPrRunning {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: rowPrSpin 0.8s linear infinite;
+}
+@keyframes rowPrSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .rowWhen {
   width: 70px;
   text-align: right;

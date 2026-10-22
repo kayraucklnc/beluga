@@ -84,10 +84,13 @@ const run = (cmd: string, args: readonly string[], cwd: string, timeoutMs = 20_0
     execFile(cmd, [...args], { cwd, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => (err ? reject(new Error((stderr || err.message).trim())) : resolve(stdout)));
   });
 
+/** The GitHub CLI to run: `gh`, or KLAUD_GH (the Mac app's end-to-end tests point it at a stand-in). */
+const gh = (): string => process.env.KLAUD_GH || 'gh';
+
 let ghReady: Promise<boolean> | undefined;
 /** Whether the GitHub CLI is installed and signed in (checked once). */
 export function hasGh(): Promise<boolean> {
-  ghReady ??= run('gh', ['auth', 'status'], process.cwd(), 8000).then(
+  ghReady ??= run(gh(), ['auth', 'status'], process.cwd(), 8000).then(
     () => true,
     () => false,
   );
@@ -157,6 +160,8 @@ interface GhPr {
   statusCheckRollup?: GhCheck[];
   reviewDecision?: string;
   headRefName?: string;
+  mergeable?: string;
+  autoMergeRequest?: unknown;
 }
 
 function toPr(raw: GhPr): PullRequest | undefined {
@@ -164,7 +169,19 @@ function toPr(raw: GhPr): PullRequest | undefined {
   const state = raw.state === 'MERGED' || raw.state === 'CLOSED' ? raw.state : 'OPEN';
   const review = raw.reviewDecision === 'APPROVED' || raw.reviewDecision === 'CHANGES_REQUESTED' || raw.reviewDecision === 'REVIEW_REQUIRED' ? raw.reviewDecision : undefined;
   const checkRuns = parseChecks(raw.statusCheckRollup);
-  return { number: raw.number, url: raw.url, state, title: raw.title ?? '', draft: Boolean(raw.isDraft), checks: checksState(raw.statusCheckRollup), ...(checkRuns.length ? { checkRuns } : {}), ...(review ? { review } : {}) };
+  const open = state === 'OPEN';
+  return {
+    number: raw.number,
+    url: raw.url,
+    state,
+    title: raw.title ?? '',
+    draft: Boolean(raw.isDraft),
+    checks: checksState(raw.statusCheckRollup),
+    ...(checkRuns.length ? { checkRuns } : {}),
+    ...(review ? { review } : {}),
+    ...(open && raw.mergeable === 'CONFLICTING' ? { conflicts: true } : {}),
+    ...(open && raw.autoMergeRequest ? { autoMerge: true } : {}),
+  };
 }
 
 /** Parse `gh pr view --json …` output. */
@@ -199,7 +216,7 @@ export function parsePrList(json: string): Map<string, PullRequest> | undefined 
   return out;
 }
 
-const PR_FIELDS = 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision';
+const PR_FIELDS = 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision,mergeable,autoMergeRequest';
 /** How many PRs one `gh pr list` asks for. */
 export const PR_LIST_LIMIT = 60;
 
@@ -207,7 +224,7 @@ export const PR_LIST_LIMIT = 60;
 export async function findPr(dir: string, branch: string): Promise<PullRequest | undefined> {
   if (!(await hasGh())) return undefined;
   try {
-    return parsePr(await run('gh', ['pr', 'view', branch, '--json', PR_FIELDS], dir));
+    return parsePr(await run(gh(), ['pr', 'view', branch, '--json', PR_FIELDS], dir));
   } catch (err) {
     if (err instanceof Error && /no pull requests? found/i.test(err.message)) return undefined;
     throw err;
@@ -220,12 +237,56 @@ export async function findPr(dir: string, branch: string): Promise<PullRequest |
  */
 export async function listPrs(dir: string): Promise<{ prs: Map<string, PullRequest>; full: boolean }> {
   if (!(await hasGh())) return { prs: new Map(), full: false };
-  const out = await run('gh', ['pr', 'list', '--state', 'all', '--limit', String(PR_LIST_LIMIT), '--json', `${PR_FIELDS},headRefName`], dir, 30_000);
+  const out = await run(gh(), ['pr', 'list', '--state', 'all', '--limit', String(PR_LIST_LIMIT), '--json', `${PR_FIELDS},headRefName`], dir, 30_000);
   const prs = parsePrList(out);
   if (!prs) throw new Error('gh pr list gave something unexpected');
   // A full page may have left out an older PR: those branches are looked up one by one.
   const count = (JSON.parse(out) as unknown[]).length;
   return { prs, full: count >= PR_LIST_LIMIT };
+}
+
+export type MergeMethod = 'squash' | 'merge' | 'rebase';
+
+export interface MergeOptions {
+  readonly method: MergeMethod;
+  /** Merge once the required checks and reviews pass (GitHub's auto-merge), not now. */
+  readonly auto?: boolean;
+  /** Delete the branch on GitHub once merged (the worktree keeps its local branch). */
+  readonly deleteBranch?: boolean;
+}
+
+/** Why GitHub said no to a merge. */
+export type MergeProblem = 'conflicts' | 'reviews' | 'checks' | 'blocked' | 'auto_off' | 'method' | 'draft' | 'closed' | 'permission' | 'other';
+
+const METHOD_NAME: Record<MergeMethod, string> = { squash: 'Squash merging', merge: 'Merge commits', rebase: 'Rebase merging' };
+
+/** gh's error from `gh pr merge`, as what went wrong and what to do about it. */
+export function explainMergeError(error: string, method: MergeMethod = 'squash'): { reason: MergeProblem; message: string } {
+  const text = error.trim();
+  const say = (reason: MergeProblem, message: string) => ({ reason, message });
+  if (/conflict|cannot be cleanly created|mergeable state is dirty/i.test(text)) return say('conflicts', 'This branch conflicts with the base branch. Solve the conflict (or ask Claude to), push, then merge.');
+  if (/auto.?merge.*(not allowed|disabled|not enabled|isn.t enabled)|enablePullRequestAutoMerge|auto merge is not allowed/i.test(text)) return say('auto_off', "Auto-merge is off for this repository. Turn on “Allow auto-merge” in its GitHub settings, or merge once the checks pass.");
+  if (/draft/i.test(text)) return say('draft', 'This pull request is still a draft. Mark it ready for review on GitHub first.');
+  if (/approv|review(s)? (is |are )?required|changes requested|review_required/i.test(text)) return say('reviews', 'GitHub needs an approving review before this can merge. Ask for one, or use “Merge When Checks Pass” to merge once it’s approved.');
+  if (/status check|checks? (are |is )?(failing|pending|expected|in progress)|required check/i.test(text)) return say('checks', 'Required checks haven’t passed yet. Wait for them, or use “Merge When Checks Pass”.');
+  if (/base branch policy|protected branch|branch protection|repository rule|not mergeable/i.test(text)) return say('blocked', 'The branch’s rules don’t allow merging yet (a review or checks are still needed). Use “Merge When Checks Pass” to merge once they’re met.');
+  if (/not allowed|disabled|is not permitted/i.test(text) && /merge|squash|rebase/i.test(text)) return say('method', `${METHOD_NAME[method]} isn’t allowed on this repository. Pick another way to merge from the menu.`);
+  if (/already (been )?merged|is closed|was closed|not open/i.test(text)) return say('closed', 'This pull request isn’t open anymore.');
+  if (/permission|not authorized|forbidden|HTTP 403|must have (write|admin|push)/i.test(text)) return say('permission', 'Your GitHub account can’t merge into this repository.');
+  return say('other', `GitHub didn’t merge it: ${text.split('\n').find((l) => l.trim())?.trim() ?? 'no reason given'}`);
+}
+
+/** Merge a pull request on GitHub (`gh pr merge`), or ask GitHub to once its requirements pass (`auto`). Throws gh's error. */
+export async function mergePr(dir: string, number: number, opts: MergeOptions): Promise<void> {
+  await run(gh(), ['pr', 'merge', String(number), `--${opts.method}`, ...(opts.auto ? ['--auto'] : [])], dir, 60_000);
+}
+
+/**
+ * Delete a merged branch on GitHub. Not gh's --delete-branch: that also deletes the local branch
+ * and checks out the base, which a worktree can't (the base is checked out in the main folder).
+ */
+export async function deleteRemoteBranch(dir: string, branch: string, remote = 'origin'): Promise<void> {
+  await run('git', ['push', remote, '--delete', branch], dir, 30_000);
 }
 
 /**

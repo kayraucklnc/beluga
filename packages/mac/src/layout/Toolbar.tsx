@@ -142,9 +142,9 @@ export function Toolbar() {
               <span className={s.meta}>{ws.askOnly ? 'Questions only · main folder' : 'Claude chat'}</span>
             ) : null}
             {pr ? (
-              <span className={cx(s.meta, s.metaPr)} title={describePr(pr)}>
-                <Icon name="pr" size={11} />
-                <span className={s.ellipsis}>{describePr(pr)}</span>
+              <span className={cx(s.meta, s.metaPr, pr.state === 'MERGED' && s.metaMerged)} title={describePr(pr)} data-pr-state={pr.state}>
+                <Icon name={pr.state === 'MERGED' ? 'merge' : 'pr'} size={11} />
+                <span className={s.ellipsis}>{pr.state === 'MERGED' ? `PR #${pr.number}` : describePr(pr)}</span>
               </span>
             ) : null}
           </>

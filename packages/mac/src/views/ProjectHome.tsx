@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { PullRequest } from '@klaud/core/work-store.js';
+import { describePr } from '@klaud/shared/format.js';
 import { activityOf, stateOf } from '@klaud/ui/workspace-models.js';
 import type { Project, Workspace } from '@klaud/workspaces/types.js';
 import { EarningsPill } from '../components/EarningsPill.js';
@@ -334,16 +336,45 @@ function Section({ title, count, hint, action, children }: { title: string; coun
   );
 }
 
-/** One worktree or question: its state, name, last line and when; a click opens it. */
+const PR_STATE: Record<PullRequest['state'], string> = { OPEN: 'Open', MERGED: 'Merged', CLOSED: 'Closed' };
+
+/** A worktree's PR on its row: #n, its state, and a mark for its checks (✓ ✗ or running). */
+function PrChip({ pr }: { pr: PullRequest }) {
+  const open = pr.state === 'OPEN';
+  const tone = pr.state === 'MERGED' ? 'merged' : !open ? 'closed' : pr.checks === 'failing' || pr.conflicts ? 'failing' : pr.checks;
+  return (
+    <span className={cx(s.rowPr, s[`pr_${tone}`])} data-pr-chip={pr.number} data-pr-state={pr.state} data-pr-checks={pr.checks} title={`${describePr(pr)}: click for its checks and to merge`}>
+      <Icon name={pr.state === 'MERGED' ? 'merge' : 'pr'} size={11} />
+      <span>#{pr.number}</span>
+      <span className={s.rowPrState}>{pr.draft && open ? 'Draft' : PR_STATE[pr.state]}</span>
+      {open && pr.checks !== 'none' ? (
+        <span className={s.rowPrChecks} aria-label={`checks ${pr.checks}`}>
+          {pr.checks === 'pending' ? <span className={s.rowPrRunning} /> : <Icon name={pr.checks === 'passing' ? 'check' : 'x'} size={10} />}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** One worktree or question: its state, name, last line and when; a click opens it (its PR: the PR sheet). */
 function Row({ ws, ask }: { ws: Workspace; ask?: boolean }) {
   const actions = useActions();
   const state = useApp((st) => st);
   const st = stateOf(state, ws, 0);
   const act = activityOf(state.log, `ws:${ws.id}`);
   const title = ws.kind === 'main' ? 'Main folder conversation' : ws.name;
+  const pr = ws.kind === 'worktree' && !ask ? state.prs[ws.id] : undefined;
+  const open = (e: React.MouseEvent): void => {
+    // The PR part of the row opens the PR sheet, right here.
+    if (pr && !ws.archived && (e.target as Element).closest('[data-pr-chip]')) {
+      actions.run({ type: 'ws', id: ws.id, action: 'pr' });
+      return;
+    }
+    actions.run(ws.archived ? { type: 'archived_menu', id: ws.id } : { type: 'open_ws', id: ws.id });
+  };
   return (
     <div role="listitem">
-      <button type="button" className={cx(s.row, ws.archived && s.rowArchived)} onClick={() => actions.run(ws.archived ? { type: 'archived_menu', id: ws.id } : { type: 'open_ws', id: ws.id })} aria-label={`${title}: ${st.label}`}>
+      <button type="button" className={cx(s.row, ws.archived && s.rowArchived)} onClick={open} aria-label={`${title}: ${st.label}${pr ? `, ${describePr(pr)}` : ''}`}>
         <span className={s.rowIcon}>{ask ? <Icon name="chat" size={13} /> : <Dot tone={st.tone === 'claude' ? 'claude' : st.tone} live={st.tone === 'claude'} />}</span>
         <span className={s.rowMain}>
           <span className={s.rowTitle}>
@@ -352,6 +383,7 @@ function Row({ ws, ask }: { ws: Workspace; ask?: boolean }) {
           </span>
           {act.last ? <span className={s.rowLast}>{act.last}</span> : null}
         </span>
+        {pr ? <PrChip pr={pr} /> : null}
         <span className={cx(s.rowState, s[`tone_${st.tone}`])}>{ask ? '' : st.label}</span>
         <span className={s.rowWhen}>{agoText(lastActive(state, ws))}</span>
         <Icon name="chevronRight" size={11} className={s.rowChevron} />

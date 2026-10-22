@@ -7,7 +7,7 @@ import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
-import { buildPrPrompt, customPrPrompt, ensurePrPromptFile, findPr, fixChecksPrompt, hasGh, listPrs, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
+import { type MergeOptions, type MergeProblem, buildPrPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
 import { checkSetup, scriptEnv } from '../workspaces/scripts.js';
 import type { SetupFix } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
@@ -40,6 +40,10 @@ export interface WorkbenchDeps {
   readonly findPr?: (dir: string, branch: string) => Promise<PullRequest | undefined>;
   /** A repository's recent PRs by branch, in one call (injected in tests; without it, with an injected findPr, PRs are looked up one by one). */
   readonly listPrs?: (dir: string) => Promise<{ prs: ReadonlyMap<string, PullRequest>; full: boolean }>;
+  /** Merge a PR on GitHub (injected in tests; throws gh's error). */
+  readonly mergePr?: (dir: string, number: number, opts: MergeOptions) => Promise<void>;
+  /** Delete a merged branch on GitHub (injected in tests). */
+  readonly deleteRemoteBranch?: (dir: string, branch: string) => Promise<void>;
   /** Where a branch was last pushed to (its remote-tracking ref), to notice pushes. */
   readonly remoteRef?: (dir: string, branch: string) => string | undefined;
   /** The clock (injected in tests). */
@@ -99,6 +103,12 @@ export function prCadence(pr: PullRequest | undefined, pushedAt: number | undefi
   return pr.checks === 'pending' ? PR_FAST_MS : PR_SLOW_MS;
 }
 
+/**
+ * How a merge on GitHub went: `merged` now, or `queued` (auto-merge is on, or the repository's
+ * merge queue took it); else why not, in words you can act on.
+ */
+export type MergeOutcome = { readonly ok: true; readonly result: 'merged' | 'queued'; readonly message: string } | { readonly ok: false; readonly reason: MergeProblem | 'no_pr' | 'busy'; readonly message: string };
+
 /** Run `tasks`, at most `limit` at a time. */
 async function inPool(tasks: ReadonlyArray<() => Promise<void>>, limit: number): Promise<void> {
   let next = 0;
@@ -130,6 +140,8 @@ export class Workbench {
   /** PRs already announced as merged or closed ("<ws>#<number>:<state>"), so that's said once. */
   private readonly prEnded = new Set<string>();
   private polling = false;
+  /** Worktrees whose PR is being merged right now. */
+  private readonly merging = new Set<string>();
 
   constructor(private readonly deps: WorkbenchDeps) {}
 
@@ -212,6 +224,47 @@ export class Workbench {
     if (!pr) return;
     this.deps.controller.open(id);
     this.deps.askClaude(fixChecksPrompt(pr), `ws:${id}`);
+  }
+
+  /**
+   * Merge a worktree's PR on GitHub (gh pr merge), or with `auto` once its checks and reviews pass;
+   * then look at it again at once, so it shows Merged. GitHub's "no" comes back as a reason and a
+   * sentence (a review is required, it conflicts…).
+   */
+  async mergePr(id: string, opts: MergeOptions): Promise<MergeOutcome> {
+    const ws = this.worktree(id);
+    const pr = this.deps.store.getState().prs[id];
+    const fail = (reason: Extract<MergeOutcome, { ok: false }>['reason'], message: string): MergeOutcome => {
+      this.deps.toast(message, reason === 'busy' ? 'info' : 'error');
+      return { ok: false, reason, message };
+    };
+    if (!ws?.branch || !pr) return fail('no_pr', 'This worktree has no pull request to merge yet');
+    if (pr.state !== 'OPEN') return fail('closed', pr.state === 'MERGED' ? `PR #${pr.number} is already merged` : `PR #${pr.number} is closed`);
+    if (this.merging.has(id)) return fail('busy', `PR #${pr.number} is already being merged`);
+    this.merging.add(id);
+    try {
+      try {
+        await (this.deps.mergePr ?? mergePr)(ws.path, pr.number, opts);
+      } catch (err) {
+        const problem = explainMergeError(err instanceof Error ? err.message : String(err), opts.method);
+        // GitHub may know more now (a conflict, a review): show it.
+        await this.refreshPrs(id);
+        return fail(problem.reason, problem.message);
+      }
+      // You merged it: no "was merged" notification on top.
+      this.prEnded.add(`${id}#${pr.number}:MERGED`);
+      if (opts.auto) this.pushedAt.set(id, this.now());
+      await this.refreshPrs(id);
+      const merged = this.deps.store.getState().prs[id]?.state === 'MERGED';
+      if (merged && opts.deleteBranch) {
+        await (this.deps.deleteRemoteBranch ?? deleteRemoteBranch)(ws.path, ws.branch).catch((err: unknown) => this.deps.toast(`Merged, but the branch on GitHub wasn’t deleted: ${err instanceof Error ? err.message : String(err)}`, 'warn'));
+      }
+      const message = merged ? `Merged PR #${pr.number}` : opts.auto ? `PR #${pr.number} merges when its checks pass` : `PR #${pr.number} is queued to merge`;
+      this.deps.toast(message, 'success');
+      return { ok: true, result: merged ? 'merged' : 'queued', message };
+    } finally {
+      this.merging.delete(id);
+    }
   }
 
   openPr(id: string): void {
