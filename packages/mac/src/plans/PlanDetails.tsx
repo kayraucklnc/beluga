@@ -171,7 +171,7 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
       {t.issue?.proof.length ? (
         <section className={p.detailsSection} aria-label="Proof">
           <h4>Proof</h4>
-          <ProofItems issue={t.issue} />
+          <ProofItems issue={t.issue} readOnly />
         </section>
       ) : null}
       {t.task.context ? (

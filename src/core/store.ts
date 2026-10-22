@@ -13,7 +13,7 @@ import { type EarningsAction, type EarningsSlice, initialEarnings, reduceEarning
 import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceClaudeCode } from './claude-code/model.js';
 import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
-import { type PlansAction, type PlansSlice, initialPlans, reducePlans } from './plans/model.js';
+import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
 import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
 
@@ -634,7 +634,9 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
   const { progress: was, between: wasBetween, betweenAt: wasAt, ...rest } = base as typeof base & { progress?: string; between?: 'thinking' | 'writing'; betweenAt?: number };
   const progress = a.event === 'progress' ? a.text.slice(0, 40) : a.event === 'tool' || a.event === 'done' || a.event === 'error' ? undefined : was;
   // What it does after its step: a turn starting or an empty progress (the step's tools returned) is thinking, words are writing; a step (or its count) ends that.
-  const between = a.event === 'started' || (a.event === 'progress' && !a.text) ? 'thinking' : a.event === 'text' ? 'writing' : a.event === 'tool' || a.event === 'progress' ? undefined : wasBetween;
+  // A sub-agent it launched still at work keeps it in its step (an older runner says its tools returned while one runs).
+  const subOpen = base.subagents.some((sub) => sub.status === 'running' && sub.kind !== 'background');
+  const between = a.event === 'started' || (a.event === 'progress' && !a.text && !subOpen) ? 'thinking' : a.event === 'text' ? 'writing' : a.event === 'tool' || a.event === 'progress' ? undefined : wasBetween;
   const betweenAt = between === undefined ? undefined : between === wasBetween && wasAt !== undefined ? wasAt : a.ts;
   const updated = {
     ...rest,
@@ -943,7 +945,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'plan_remove':
     case 'plans_style':
     case 'plans_off':
-      return { ...state, ...reducePlans(state, action) };
+      return offPlanHomes({ ...state, ...reducePlans(state, action) });
     case 'context_reset': {
       const { [action.channel]: _gone, ...context } = state.context;
       return { ...state, context };
@@ -955,6 +957,16 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     default:
       return state;
   }
+}
+
+/**
+ * A plan's own conversation has no plan mode (KLD-66): one that had it on before it became a
+ * plan's home (or when plans load) has it turned off, so its banner can't get stuck with no way out.
+ */
+function offPlanHomes<S extends DomainState>(state: S): S {
+  const stuck = Object.keys(state.planMode).filter((channel) => isPlanHome(state.plans, channel));
+  if (!stuck.length) return state;
+  return { ...state, planMode: Object.fromEntries(Object.entries(state.planMode).filter(([channel]) => !stuck.includes(channel))) };
 }
 
 /** Minimal observable store of the domain state. `onAction` sees every (stamped) action that changed it. */

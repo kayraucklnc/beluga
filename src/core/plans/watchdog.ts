@@ -71,6 +71,8 @@ export interface RunInfo {
   /** Past its step: thinking or writing, and since when (see the log item's `between`). */
   readonly between?: 'thinking' | 'writing';
   readonly betweenAt?: number;
+  /** A sub-agent it launched (not one in the background) still runs: the step it's on isn't over. */
+  readonly subOpen?: boolean;
 }
 
 /** A message waiting for a conversation's Claude (in its queue, or in the running turn for its next step). */
@@ -144,6 +146,9 @@ export function pulseOf(run: RunInfo | undefined, asking: boolean, watch: TaskWa
     const step = r.step ? stepWords(r.step, r.command) : undefined;
     if (step === undefined || r.stepAt === undefined) return { kind: 'working', since: r.lastAt };
     const progress = r.progress ? { progress: r.progress } : {};
+    // Still in its step: the last thing it did, or a count from its output, or a sub-agent at work. Otherwise (a peer on an
+    // older klaud says nothing when a step's tools return) the step is named, timed from when it last did something.
+    if (r.stepAt < r.lastAt && !r.progress && !r.subOpen) return { kind: 'working', step, since: r.lastAt };
     if (isLongStep(r.step)) return { kind: 'command', step, since: r.stepAt, ...progress };
     return { kind: 'working', step, since: r.stepAt, ...progress };
   }

@@ -299,18 +299,21 @@ export class Session {
 
   /**
    * Handle a line from the composer, typed in `channel` (the conversation on screen). `urgent`
-   * (Alt/Ctrl+Enter) interrupts your Claude instead of queueing.
+   * (Alt/Ctrl+Enter) interrupts your Claude instead of queueing. False when a message for a
+   * conversation's Claude couldn't go (why is said in a toast), so the box can keep it.
    */
-  submit(raw: string, { channel = 'room', urgent = false }: { channel?: string; urgent?: boolean } = {}): void {
+  submit(raw: string, { channel = 'room', urgent = false }: { channel?: string; urgent?: boolean } = {}): boolean {
     const state = this.store.getState();
     // "/run @bob <command>": the command exactly as typed (spacing and quotes kept).
     const peerRun = /^\/run\s+@([\w.-]+)\s+([\s\S]+)$/.exec(raw.trim());
-    if (peerRun) return this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim(), channel);
+    if (peerRun) {
+      this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim(), channel);
+      return true;
+    }
     const parsed = parseInput(raw, this.selfId, state.peers);
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
-      this.askOwnClaude(parsed.kind === 'agent' ? parsed.prompt : parsed.text, channel, urgent);
-      return;
+      return this.askOwnClaude(parsed.kind === 'agent' ? parsed.prompt : parsed.text, channel, urgent) !== undefined;
     }
     // "@add-auth fix the test" from the main chat goes to the Claude working in that workspace.
     const toWorkspace = parsed.kind !== 'command' ? parseWorkspaceMention(raw, workspaceMentions(state.projects)) : undefined;
@@ -318,25 +321,25 @@ export class Session {
       this.askOwnClaude(toWorkspace.prompt, `ws:${toWorkspace.id}`, urgent);
       this.store.dispatch({ type: 'chat', id: randomUUID(), from: this.selfId, text: raw.slice(0, MAX_TEXT), ts: Date.now(), byAgent: false });
       this.system(`Sent to the Claude in ${toWorkspace.label.slice(1)}. Open it in the sidebar to follow along.`);
-      return;
+      return true;
     }
     switch (parsed.kind) {
       case 'empty':
-        return;
+        return true;
       case 'command':
         runCommand(this, parsed.name, parsed.args, channel);
-        return;
+        return true;
       case 'chat':
         this.sendChat(parsed.text, false);
         // On your own, the chat is a conversation with your Claude: no @claude needed.
         if (state.peers.length <= 1 && this.agent) this.requestAgent(this.selfId, parsed.text, false, 'room', urgent);
-        return;
+        return true;
       case 'agent':
         this.sendChat(parsed.text, false);
         for (const name of parsed.unknown) this.toast(`Nobody named "${name}" is here`, 'warn');
         for (const target of parsed.targets) this.requestAgent(target, parsed.prompt, false, 'room', urgent && target === this.selfId);
         if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.toast('No Claude is online', 'warn');
-        return;
+        return true;
     }
   }
 

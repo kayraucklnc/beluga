@@ -194,7 +194,8 @@ export function ProofList({ issue }: { issue: Issue }) {
 }
 
 /** A task's proof, newest first (on its page, and in a plan's task details). */
-export function ProofItems({ issue }: { issue: Issue }) {
+/** `readOnly`: shown elsewhere (a plan's details), so without a remove button. */
+export function ProofItems({ issue, readOnly = false }: { issue: Issue; readOnly?: boolean }) {
   const { api, act } = useTaskActions();
   const images = issue.proof.filter((p) => p.kind === 'image' && p.path).map((p) => localImage(p.path!, p.title));
   return (
@@ -203,17 +204,17 @@ export function ProofItems({ issue }: { issue: Issue }) {
         .slice()
         .reverse()
         .map((p) => (
-          <ProofItem key={p.id} proof={p} images={images} onRemove={() => void act(() => api.removeProof(issue.id, p.id))} />
+          <ProofItem key={p.id} proof={p} images={images} onRemove={readOnly ? undefined : () => void act(() => api.removeProof(issue.id, p.id))} />
         ))}
     </div>
   );
 }
 
-function ProofItem({ proof, images, onRemove }: { proof: Proof; images: ReturnType<typeof localImage>[]; onRemove: () => void }) {
+function ProofItem({ proof, images, onRemove }: { proof: Proof; images: ReturnType<typeof localImage>[]; onRemove: (() => void) | undefined }) {
   const actions = useActions();
   const [preview, setPreview] = useState(false);
   const by = `${proof.by.kind === 'claude' ? 'Claude' : proof.by.kind === 'person' ? proof.by.name : 'Klaud'} · ${ago(proof.at)}`;
-  const remove = <IconButton icon="x" label={`Remove ${proof.title}`} className={t.proofRemove} onClick={onRemove} />;
+  const remove = onRemove ? <IconButton icon="x" label={`Remove ${proof.title}`} className={t.proofRemove} onClick={onRemove} /> : null;
   if (proof.kind === 'graph' && proof.body) {
     return (
       <figure className={cx(t.proofItem, t.proofWide)}>

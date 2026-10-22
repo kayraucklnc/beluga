@@ -865,4 +865,24 @@ describe('Session hardening', () => {
     expect(kay.runs.map((r) => r.prompt)).toEqual(['slow', 'next']);
     expect(kay.state().log.filter((l) => l.type === 'chat' && l.channel === plan).map((l) => (l.type === 'chat' ? l.text : ''))).toEqual(['slow', 'next']);
   });
+
+  it('a plan chat message reaches your Claude over a half-open room connection (KLD-66)', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', { script: async (input) => `did ${input.prompt}` });
+    await room(kay);
+    // Half-open: the connection still says it's up and takes sends, but nothing comes out the other end.
+    const client = (kay.session as unknown as { opts: { client: { send: (b: object, o?: object) => boolean } } }).opts.client;
+    const relayed: object[] = [];
+    client.send = (body) => (relayed.push(body), true);
+    expect(kay.state().status).toBe('connected');
+    const plan = 'ws:plan-home';
+    (kay.session.host as unknown as { deps: { workspaces: unknown } }).deps.workspaces = { place: () => ({ cwd: kay.root, additionalDirectories: [], autoEdit: false, onSession: () => undefined }), refresh: async () => undefined };
+    // What the plan chat sends: the session says it went, and Claude answers it.
+    expect(kay.session.submit('tighten the plan', { channel: plan })).toBe(true);
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.channel === plan && a.status === 'done'));
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['tighten the plan']);
+    expect(agentItems(kay.state()).find((a) => a.type === 'agent' && a.channel === plan)).toMatchObject({ text: 'did tighten the plan' });
+    // None of it went through the room.
+    expect(relayed.filter((b) => 'requestId' in b)).toEqual([]);
+  });
 });

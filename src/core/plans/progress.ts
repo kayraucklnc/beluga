@@ -413,7 +413,7 @@ const NOTHING_WAITING: readonly WaitingMessage[] = [];
 
 /** Who's working in a conversation now, read from the shared state. */
 export function liveFrom(state: {
-  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[]; readonly requestId?: string; readonly ts: number; readonly text?: string; readonly prompt?: string; readonly lastAt?: number; readonly stepAt?: number; readonly progress?: string; readonly between?: 'thinking' | 'writing'; readonly betweenAt?: number }>;
+  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[]; readonly requestId?: string; readonly ts: number; readonly text?: string; readonly prompt?: string; readonly lastAt?: number; readonly stepAt?: number; readonly progress?: string; readonly between?: 'thinking' | 'writing'; readonly betweenAt?: number; readonly subagents?: ReadonlyArray<{ readonly status: string; readonly kind?: string }> }>;
   readonly questions: ReadonlyArray<{ readonly channel: string }>;
   readonly approvals: ReadonlyArray<{ readonly channel?: string }>;
 }): Live {
@@ -463,6 +463,7 @@ export function liveFrom(state: {
       ...(l.progress ? { progress: l.progress } : {}),
       ...(command ? { command } : {}),
       ...(l.between ? { between: l.between, ...(l.betweenAt !== undefined ? { betweenAt: l.betweenAt } : {}) } : {}),
+      ...(l.subagents?.some((sub) => sub.status === 'running' && sub.kind !== 'background') ? { subOpen: true } : {}),
     };
   }
 }
