@@ -308,11 +308,12 @@ test('the header says who the plan waits for; the run mode says what changes; th
   };
   await move('Receipt emails sent once', 'Refunds and launch');
   await move('Idempotent webhook retries', 'Refunds and launch');
-  // Claude checked: now (and only now) it's yours to pass.
-  await expect(head).toContainText('You: pass “Safe payments” — Claude checked all 3 criteria', { timeout: 20_000 });
+  // Claude checked: now (and only now) it's yours to pass. Once the demo has run a while, KLD-37's
+  // watchdog may have found a demo task that stopped again: resuming it outranks passing (progress.ts nextStep).
+  await expect(head).toContainText(/You: (pass “Safe payments” — Claude checked all 3 criteria|resume BOB-\d+: its Claude stopped again)/, { timeout: 20_000 });
   await head.getByRole('button', { name: /Show what happened$/ }).click();
   await expect(feed).toContainText('Claude is checking its pass criteria');
-  await expect(feed).toContainText('checked “Safe payments”');
+  await expect(feed).toContainText('checked “Safe payments”', { timeout: 20_000 });
   const said = await page.evaluate(() => (window as unknown as { __said: string[] }).__said);
   expect(said.filter((t) => t.includes('Waiting for you'))).toEqual([]);
   const shot2 = info.outputPath('header-pass.png');
