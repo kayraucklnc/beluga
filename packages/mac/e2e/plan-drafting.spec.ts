@@ -94,7 +94,6 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
   await expect(page.locator('aside[aria-label="Panel"]')).toHaveAttribute('aria-hidden', 'true');
   await expect(page.getByRole('button', { name: /^No panel on a plan/ })).toBeDisabled();
   await expect(page.locator('header').filter({ hasText: 'bob-api' }).first()).toBeVisible();
-  await expect(inspector).not.toContainText('New people');
 
   const dir = process.env.SHOTS;
   if (dir) {

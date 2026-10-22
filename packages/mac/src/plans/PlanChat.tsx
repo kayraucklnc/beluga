@@ -10,6 +10,7 @@ import { Empty, IconButton, Tip, Working, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import { LiveDot } from './marks.js';
+import { sendPlanMessage } from './plan-send.js';
 import { useConversationLoaded } from './use-plans.js';
 import s from '../chat/composer.module.css';
 import p from './plans.module.css';
@@ -64,26 +65,18 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
     el.style.height = `${Math.min(160, el.scrollHeight)}px`;
   }, [text]);
 
-  /** Send `message` (already with its images' links); on failure it's kept, and said, for Retry. */
+  /**
+   * Send `message` as typed (its image references are expanded on the way); when it doesn't go,
+   * it's kept, and said, for Retry. The box isn't refilled, so it can't go twice.
+   */
   const deliver = (message: string): void => {
     setFailed(undefined);
-    api.session.submit(message, { channel }).catch((err: unknown) => setFailed({ text: message, error: errorText(err) }));
+    sendPlanMessage(api, message, channel).catch((err: unknown) => setFailed({ text: message, error: errorText(err) }));
   };
   const send = (): void => {
-    const typed = text.trim();
-    const { text: message, putBack } = att.take(typed);
+    const { text: message } = att.take(text.trim());
     if (!message) return;
     setText('');
-    // Image references become links to the images (klaud keeps them) before the message goes.
-    if (message.includes('[image ') && !message.startsWith('/')) {
-      api.attachments.expand(message, channel).then(deliver, (err: unknown) => {
-        // Put the words and images back so nothing is lost.
-        if (!words.current) setText(typed);
-        putBack();
-        setFailed({ text: message, error: `Couldn't send the images: ${errorText(err)}` });
-      });
-      return;
-    }
     deliver(message);
   };
   const editQueued = (prompt: string): void => {

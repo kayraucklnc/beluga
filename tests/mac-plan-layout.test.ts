@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Plan, PlansState } from '../src/core/plans/model.js';
 import { isPlanHome } from '../src/core/plans/model.js';
+import { Store, initialState } from '../src/core/store.js';
 import { CHAT_DEFAULT, CHAT_MIN, DEFAULT_PLAN_LAYOUT, chatOpen, clampChatWidth, readPlanLayout, setChatOpen } from '../packages/mac/src/plans/plan-layout.js';
 
 describe('plan page layout', () => {
@@ -36,5 +37,18 @@ describe('a plan’s own conversation', () => {
     expect(isPlanHome(plans({ home: 'ws:a', status: 'active' }), 'ws:a')).toBe(true);
     expect(isPlanHome(plans({ home: 'ws:a', status: 'done' }), 'ws:a')).toBe(false);
     expect(isPlanHome(plans({ home: 'ws:a', status: 'active' }), 'ws:b')).toBe(false);
+  });
+
+  it('is never left in plan mode, even when it had it on before (KLD-66)', () => {
+    const store = new Store(initialState('room'));
+    // Older state: plan mode switched on in two conversations, before either was a plan's home.
+    store.dispatch({ type: 'plan_mode', channel: 'ws:a', on: true });
+    store.dispatch({ type: 'plan_mode', channel: 'ws:b', on: true });
+    // Plans load (a restart) with ws:a as a live plan's home: its plan mode goes, ws:b keeps it.
+    store.dispatch({ type: 'plans_init', state: plans({ home: 'ws:a', status: 'active' }) });
+    expect(store.getState().planMode).toEqual({ 'ws:b': true });
+    // ws:b becomes a plan's home: off too.
+    store.dispatch({ type: 'plan_put', plan: { id: 'p2', home: 'ws:b', status: 'draft' } as unknown as Plan });
+    expect(store.getState().planMode).toEqual({});
   });
 });

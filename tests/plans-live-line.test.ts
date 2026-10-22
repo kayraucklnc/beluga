@@ -58,6 +58,39 @@ describe('the live line says what Claude does now', () => {
   });
 });
 
+describe('the live line with older peers and sub-agents (KLD-66)', () => {
+  it("an older peer's run (no empty progress after a step) names the step, timed from when it last did something", () => {
+    const c = conversation();
+    c.event('r1', 'started', '', T0);
+    c.event('r1', 'tool', 'Read src/auth.ts', T0 + 1000);
+    expect(c.line(3000)).toBe('Read src/auth.ts · 2s');
+    // A sub-agent of an earlier step reports after this step (no count, no sub-agent left open): not still this step's time.
+    c.event('r1', 'sub', JSON.stringify({ id: 's0', phase: 'done' }), T0 + 9000);
+    expect(c.pulse()).toEqual({ kind: 'working', step: 'Read src/auth.ts', since: T0 + 9000 });
+    expect(c.line(10_000)).toBe('Read src/auth.ts · 1s');
+  });
+
+  it('a sub-agent still at work keeps the run in its step, not Thinking', () => {
+    const c = conversation();
+    c.event('r1', 'started', '', T0);
+    c.event('r1', 'tool', 'Grep auth', T0 + 1000);
+    c.event('r1', 'sub', JSON.stringify({ id: 's1', phase: 'start', title: 'explore' }), T0 + 1500);
+    // An older runner says its tools returned while the sub-agent still runs.
+    c.event('r1', 'progress', '', T0 + 3000);
+    expect(c.pulse()).toEqual({ kind: 'working', step: 'Grep auth', since: T0 + 1000 });
+    c.event('r1', 'sub', JSON.stringify({ id: 's1', phase: 'step', step: 'Read a.ts' }), T0 + 5000);
+    expect(c.line(6000)).toBe('Grep auth · 5s');
+    // The sub-agent is back: Claude thinks.
+    c.event('r1', 'sub', JSON.stringify({ id: 's1', phase: 'done' }), T0 + 7000);
+    c.event('r1', 'progress', '', T0 + 7000);
+    expect(c.line(9000)).toBe('Thinking · 2s');
+    // Words still say Writing with a sub-agent open.
+    c.event('r1', 'sub', JSON.stringify({ id: 's2', phase: 'start', title: 'tests' }), T0 + 10_000);
+    c.event('r1', 'text', 'Waiting for the tests agent.', T0 + 11_000);
+    expect(c.pulse()).toMatchObject({ step: 'Writing', since: T0 + 11_000 });
+  });
+});
+
 describe('liveFrom reads the newest run', () => {
   it('a newer run wins over an older one still marked running, wherever it sits in the log', () => {
     const c = conversation();

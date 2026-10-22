@@ -131,32 +131,63 @@ test('a worktree shows the task it’s doing, and opens it', async ({ page }) =>
   await expect(page.getByRole('region', { name: 'Proof' })).toContainText('Hero, desktop');
 });
 
-test('a file proof opens over the task page, and Show in Files goes to the file', async ({ page }) => {
+test('a file proof opens over the task page within 300 ms; ⌘-click and Show in Files go to the file', async ({ page }) => {
+  const openTask = async (): Promise<void> => {
+    const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });
+    if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ position: { x: 60, y: 10 } });
+    await sidebar(page).getByRole('button', { name: 'new-hero', exact: true }).click();
+    await page.getByRole('button', { name: /New hero for the launch/ }).first().click();
+    await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('New hero for the launch');
+  };
   await page.goto('/');
-  const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });
-  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ position: { x: 60, y: 10 } });
-  await sidebar(page).getByRole('button', { name: 'new-hero', exact: true }).click();
-  await page.getByRole('button', { name: /New hero for the launch/ }).first().click();
+  await openTask();
   const title = page.getByRole('textbox', { name: 'Title' });
-  await expect(title).toHaveValue('New hero for the launch');
+  const proof = page.getByRole('region', { name: 'Proof' }).getByRole('button', { name: 'Hero copy' });
 
-  // A click: the file, read over the page, at once; the task page stays under it.
-  const started = Date.now();
-  await page.getByRole('region', { name: 'Proof' }).getByRole('button', { name: 'Hero copy' }).click();
+  // A click: the file, read over the page, at once (timed in the page, from the click to the sheet); the task page stays under it.
+  await page.evaluate(() => {
+    const w = window as unknown as { proofShownIn?: Promise<number> };
+    w.proofShownIn = new Promise<number>((resolve) => {
+      document.addEventListener(
+        'click',
+        () => {
+          const at = performance.now();
+          const shown = (): boolean => [...document.querySelectorAll('[role="dialog"]')].some((d) => d.textContent?.includes('Hero copy'));
+          if (shown()) return resolve(0);
+          const watch = new MutationObserver(() => {
+            if (!shown()) return;
+            watch.disconnect();
+            resolve(performance.now() - at);
+          });
+          watch.observe(document.body, { childList: true, subtree: true });
+        },
+        { capture: true, once: true },
+      );
+    });
+  });
+  await proof.click();
   const sheet = page.getByRole('dialog', { name: 'Hero copy' });
-  await expect(sheet).toBeVisible({ timeout: 1000 });
-  expect(Date.now() - started).toBeLessThan(1000);
+  await expect(sheet).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { proofShownIn: Promise<number> }).proofShownIn)).toBeLessThan(300);
   await expect(sheet.getByRole('heading', { name: 'Build together' })).toBeVisible();
   await expect(title).toHaveValue('New hero for the launch');
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();
   await expect(title).toBeVisible();
 
-  // Show in Files: the old way, to the file in the Files view.
-  await page.getByRole('region', { name: 'Proof' }).getByRole('button', { name: 'Hero copy' }).click();
-  await page.getByRole('dialog', { name: 'Hero copy' }).getByRole('button', { name: 'Show in Files' }).click();
-  await expect(page.getByRole('dialog', { name: 'Hero copy' })).toBeHidden();
+  // ⌘-click: no sheet, the Files view on the file.
+  await proof.click({ modifiers: ['Meta'] });
+  await expect(page.getByRole('region', { name: 'hero.md' })).toBeVisible();
+  await expect(sheet).toHaveCount(0);
   await expect(title).toBeHidden();
+
+  // Show in Files: the same, from the sheet.
+  await openTask();
+  await proof.click();
+  await sheet.getByRole('button', { name: 'Show in Files' }).click();
+  await expect(sheet).toBeHidden();
+  await expect(title).toBeHidden();
+  await expect(page.getByRole('region', { name: 'hero.md' })).toBeVisible();
 });
 
 test('a narrow window: the bar wraps and New Task stays in reach; a task’s properties go on top', async ({ page }) => {

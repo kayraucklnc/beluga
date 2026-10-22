@@ -301,6 +301,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const send = (followUp: FollowUp): boolean => deliver(followUp, false) !== false;
       // What Claude is doing now, for a steer to judge whether it reads a message soon (see Steer.status).
       const tools = new Map<string, { label: string; since: number }>();
+      /** Sub-agents launched this step and not back yet (not in `tools`: they show as sub-agents, not steps). */
+      const launches = new Set<string>();
       let lastEventAt = Date.now();
       /** Claude's last word in the main conversation was thinking. */
       let thinking = false;
@@ -383,9 +385,14 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             if (count) turns.current().onEvent('progress', count);
             const content = msg.message.content;
             const returned = Array.isArray(content) && content.some((block) => block.type === 'tool_result');
-            if (Array.isArray(content)) for (const block of content) if (block.type === 'tool_result') tools.delete(block.tool_use_id);
-            // Every tool of its step came back: Claude thinks about what's next (an empty progress says so; older peers ignore it).
-            if (returned && !count && !tools.size) turns.current().onEvent('progress', '');
+            if (Array.isArray(content))
+              for (const block of content)
+                if (block.type === 'tool_result') {
+                  tools.delete(block.tool_use_id);
+                  launches.delete(block.tool_use_id);
+                }
+            // Every tool and sub-agent of its step came back: Claude thinks about what's next (an empty progress says so; older peers ignore it).
+            if (returned && !count && !tools.size && !launches.size) turns.current().onEvent('progress', '');
           }
           if (msg.type === 'result' || (msg.type === 'user' && msg.parent_tool_use_id === null)) thinking = false;
           if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {
@@ -396,6 +403,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                 lastText = block.text.trim();
                 route?.onEvent('text', lastText);
               }
+              if (block.type === 'tool_use' && subagents.isLaunch(block)) launches.add(block.id);
               if (block.type === 'tool_use' && !subagents.isLaunch(block)) {
                 const toolInput = (block.input ?? {}) as Record<string, unknown>;
                 const label = summarizeTool(block.name, toolInput, cwd);
@@ -419,6 +427,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             // The prompts this turn took in: a message steered in mid-turn is answered by it.
             const took = msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : undefined);
             tools.clear();
+            launches.clear();
             const note = interrupting;
             if (note !== undefined) {
               // Interrupted for a message: the turn ends saying so, and the message's turn comes next.
