@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import type { AgentBackend, BoardTools, FollowUp } from '../agent/types.js';
+import type { AgentBackend, BoardTools, FollowUp, LiveStatus, Steer } from '../agent/types.js';
 import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
@@ -95,14 +95,24 @@ const CONTEXT_LINES = 20;
 /** Requests one person may have waiting for your Claude at once. */
 const MAX_QUEUED_PER_PERSON = 10;
 
-/** The queue for one conversation (the room, or a workspace). `askTo`: who gets Claude's questions. */
+/** A message waiting in a conversation. `askTo`: who gets Claude's questions. `compact`: not a message but compacting the conversation (Compact now, /compact). */
+interface Waiting {
+  from: string;
+  body: BodyOf<'agent_request'>;
+  urgent?: boolean;
+  askTo?: string;
+  compact?: boolean;
+}
+
+/** The queue for one conversation (the room, or a workspace). */
 interface Lane {
   readonly channel: string;
-  /** `compact`: not a message but compacting the conversation (Compact now, /compact). */
-  waiting: Array<{ from: string; body: BodyOf<'agent_request'>; urgent?: boolean; askTo?: string; compact?: boolean }>;
+  waiting: Waiting[];
   pumping: boolean;
   current?: AbortController;
   interruptedBy?: string;
+  /** Why the current run was stopped for a newer message, when there's more to say (see rush). */
+  interruptNote?: string;
   /** Set while you stop the current run here (see stopRun), so it says who stopped it. */
   stopping?: boolean;
   /** Who started the current run. */
@@ -110,7 +120,44 @@ interface Lane {
   /** Set while the run has answered but waits on background agents: messages go straight in. */
   followUps?: (followUp: FollowUp) => boolean;
   /** Set while a run of Claude's works here: your urgent messages steer it (see steer). */
-  steer?: (followUp: FollowUp) => boolean;
+  steer?: Steer;
+}
+
+/** A tool running at least this long: a steer interrupts it instead of waiting for Claude's next step. */
+const STEER_WAIT_MS = 20_000;
+/** A run silent this long with no tool running (stuck in a step): a steer interrupts it. */
+const STEER_QUIET_MS = 60_000;
+/** A run silent this long with no tool running: dead; a steer starts a fresh turn instead. */
+const DEAD_RUN_MS = 5 * 60_000;
+/** A stopped run that hasn't ended after this long is left behind, so the next message can start. */
+const ABORT_GRACE_MS = 5_000;
+
+/** What Claude reads a steered message after, said on its card. */
+export const READS_AFTER_STEP = 'Claude reads this after its current step';
+
+/** "45s", "12m", "1h 5m". */
+const span = (ms: number): string => {
+  const s = Math.max(1, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+};
+
+/**
+ * How a steer reaches Claude now, from what its run is doing: into the running turn when Claude
+ * will soon be at its next step; interrupt the turn when a tool has run long (a test suite) or
+ * the run went quiet; a fresh turn when the run looks dead. No status (an older backend): steer.
+ */
+export function planSteer(status: LiveStatus | undefined, now: number): { kind: 'steer' } | { kind: 'interrupt' | 'restart'; note: string } {
+  if (!status || status.between) return { kind: 'steer' };
+  if (status.tool) {
+    const ran = now - status.tool.since;
+    return ran < STEER_WAIT_MS ? { kind: 'steer' } : { kind: 'interrupt', note: `Interrupted: ${status.tool.label} (${span(ran)}) to read your message` };
+  }
+  const quiet = now - status.lastEventAt;
+  if (quiet >= DEAD_RUN_MS) return { kind: 'restart', note: `Claude had gone quiet for ${span(quiet)}: stopped to start over with your message` };
+  if (quiet >= STEER_QUIET_MS) return { kind: 'interrupt', note: `Interrupted: Claude was quiet for ${span(quiet)}; reading your message` };
+  return { kind: 'steer' };
 }
 
 /** Conversations whose Claude may work at the same time (keeps your plan's limits in mind). */
@@ -389,26 +436,70 @@ export class AgentHost {
   }
 
   /**
-   * Send one of your waiting requests now: into the current run, which takes it in at its next
-   * step (see steer); when that run can't take it, it goes next and interrupts the current run.
+   * Send one of your waiting requests now (Steer): it always does something you can see (see
+   * rush). False, with a toast saying why, when it isn't yours or isn't waiting any more.
    */
   promote(requestId: string): boolean {
     for (const lane of this.lanes.values()) {
-      const i = lane.waiting.findIndex((w) => w.body.requestId === requestId && w.from === this.selfId);
+      const i = lane.waiting.findIndex((w) => w.body.requestId === requestId);
       if (i < 0) continue;
-      const [item] = lane.waiting.splice(i, 1);
-      if (!item!.compact && this.steer(lane, item!.from, item!.body, true)) return true;
-      const at = lane.waiting.findIndex((w) => !w.urgent);
-      lane.waiting.splice(at === -1 ? lane.waiting.length : at, 0, { ...item!, urgent: true });
-      if (lane.current) {
-        lane.interruptedBy = requestId;
-        lane.current.abort();
+      if (lane.waiting[i]!.from !== this.selfId) {
+        this.toast("Only the person who sent a message can steer it", 'warn');
+        return false;
       }
+      const [item] = lane.waiting.splice(i, 1);
+      this.rush(lane, item!, true);
       return true;
     }
+    this.toast('That message isn’t waiting any more', 'warn');
     return false;
   }
 
+  /**
+   * Your message, now (a queued one you steer, or one sent with ⌥↩). Claude about to be at its
+   * next step: it goes into the running turn. A tool running long or Claude gone quiet: the turn
+   * is interrupted and the message answered next, at once. No run to steer, or a dead one: the
+   * message goes first in line and the current run stops, so a fresh turn starts with it. The
+   * card says which; nothing is lost when a step fails (it goes back in line).
+   */
+  private rush(lane: Lane, item: Waiting, queued: boolean): void {
+    const { from, body } = item;
+    const steer = lane.steer && lane.runFrom === from && !body.plan && !body.project && !item.compact ? lane.steer : undefined;
+    const plan = steer ? planSteer(steer.status?.(), Date.now()) : undefined;
+    const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
+    if (steer && plan?.kind === 'steer' && steer(this.followUp(lane, item, queued))) {
+      // Shown at once: a queued card says so (and leaves the queue); a new message, a toast.
+      if (queued) emit('text', READS_AFTER_STEP);
+      else this.toast(READS_AFTER_STEP);
+      return;
+    }
+    if (steer?.interrupt && plan?.kind === 'interrupt') {
+      const run = lane.current;
+      emit('started');
+      void steer.interrupt(this.followUp(lane, item, true), plan.note).then(
+        (ok) => ok || this.jump(lane, item, 'Claude didn’t stop when asked, so its run was stopped for your message', run),
+        () => this.jump(lane, item, 'Claude didn’t stop when asked, so its run was stopped for your message', run),
+      );
+      return;
+    }
+    this.jump(lane, item, plan?.kind === 'restart' ? plan.note : undefined, lane.current);
+  }
+
+  /**
+   * First in line (after your other urgent messages), with `run` (the conversation's current run)
+   * stopped so it starts at once, continuing the same conversation.
+   */
+  private jump(lane: Lane, item: Waiting, note: string | undefined, run: AbortController | undefined): void {
+    const at = lane.waiting.findIndex((w) => !w.urgent);
+    lane.waiting.splice(at === -1 ? lane.waiting.length : at, 0, { ...item, urgent: true });
+    if (run && lane.current === run && !run.signal.aborted) {
+      lane.interruptedBy = item.body.requestId;
+      lane.interruptNote = note;
+      run.abort();
+    }
+    if (note) this.toast(note, 'warn');
+    void this.pump(lane);
+  }
   /**
    * Move one of your waiting requests to `index` among your others in its conversation (friends'
    * requests keep their places). The log follows, so every screen shows the new order.
@@ -480,33 +571,22 @@ export class AgentHost {
   }
 
   /**
-   * Queue a request. Normal requests wait their turn (and say so); urgent ones from you steer
-   * the current run (Claude reads them at its next step), or, when it can't take them,
-   * interrupt it and go next, continuing the same conversation.
+   * Queue a request. Normal requests wait their turn (and say so); urgent ones from you reach
+   * Claude now (see rush).
    */
   private enqueue(from: string, body: BodyOf<'agent_request'>, askTo?: string): void {
     const lane = this.lane(body.channel);
     if (this.sendFollowUp(lane, from, body)) return;
     const urgent = body.urgent && from === this.selfId;
-    if (urgent && this.steer(lane, from, body, false)) return;
-    if (urgent) {
-      // After earlier urgent messages (keeping your order), ahead of everything else in this conversation.
-      const at = lane.waiting.findIndex((w) => !w.urgent);
-      lane.waiting.splice(at === -1 ? lane.waiting.length : at, 0, { from, body, urgent: true });
-      if (lane.current) {
-        lane.interruptedBy = body.requestId;
-        lane.current.abort();
-      }
-    } else {
-      const queued = [...this.lanes.values()].reduce((n, l) => n + l.waiting.filter((w) => w.from === from).length, 0);
-      if (queued >= MAX_QUEUED_PER_PERSON) {
-        this.emitAgent(body.requestId, from, 'denied', 'Too many requests waiting; try again when the current ones finish.', body.channel);
-        return;
-      }
-      lane.waiting.push({ from, body, ...(askTo ? { askTo } : {}) });
-      // The prompt goes with it, so the queue can show (and you can edit) what's waiting.
-      if (lane.current || lane.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', body.prompt, body.channel);
+    if (urgent) return this.rush(lane, { from, body }, false);
+    const queued = [...this.lanes.values()].reduce((n, l) => n + l.waiting.filter((w) => w.from === from).length, 0);
+    if (queued >= MAX_QUEUED_PER_PERSON) {
+      this.emitAgent(body.requestId, from, 'denied', 'Too many requests waiting; try again when the current ones finish.', body.channel);
+      return;
     }
+    lane.waiting.push({ from, body, ...(askTo ? { askTo } : {}) });
+    // The prompt goes with it, so the queue can show (and you can edit) what's waiting.
+    if (lane.current || lane.waiting.length > 1) this.emitAgent(body.requestId, from, 'queued', body.prompt, body.channel);
     void this.pump(lane);
   }
 
@@ -539,31 +619,45 @@ export class AgentHost {
   }
 
   /**
-   * Steer the run working in this conversation: the message goes into its live session and
-   * Claude reads it at its next step (between tool calls), without stopping what it's doing.
-   * Taken in mid-turn, it gets no card of its own (the turn's answer covers it; a card it
-   * already had as a queued message says so); else it's answered in a turn of its own right
-   * after. Only your own messages into your own run: approvals are judged for its requester.
+   * A message of yours steered into the run working in this conversation (see rush). Taken in
+   * mid-turn, it gets no card of its own (the turn's answer covers it; a card it already had as
+   * a queued message says so); else it's answered in a turn of its own. Only your own messages
+   * into your own run: approvals are judged for its requester.
    */
-  private steer(lane: Lane, from: string, body: BodyOf<'agent_request'>, queued: boolean): boolean {
-    if (!lane.steer || lane.runFrom !== from || body.plan || body.project) return false;
+  private followUp(lane: Lane, item: Waiting, queued: boolean): FollowUp {
+    const { from, body } = item;
     const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
-    return lane.steer({
+    let read = false;
+    return {
       prompt: body.prompt,
       requesterName: peerName(this.store.getState(), from),
       viaAgent: body.viaAgent,
       // The conversation is the run's own: what's said in the chat it has already.
       context: [],
-      onEvent: (kind, text) => emit(kind, text),
+      onEvent: (kind, text) => {
+        read = true;
+        emit(kind, text);
+      },
       onStep: (record) => this.steps.put(runKey(body.requestId), record),
-      onStart: () => emit('started'),
-      onFolded: () => (queued ? emit('done', STEERED_IN) : undefined),
+      onStart: () => {
+        read = true;
+        emit('started');
+      },
+      onFolded: () => {
+        read = true;
+        if (queued) emit('done', STEERED_IN);
+      },
       onDone: (final) => {
         this.steps.flush(runKey(body.requestId));
         emit('done', final || '(done)');
       },
-      onError: (reason) => emit('error', reason),
-    });
+      onError: (reason) => {
+        // The run ended before Claude read it (and you didn't stop it): it goes back in line, first.
+        if (read || lane.stopping) return emit('error', reason);
+        if (queued) emit('queued', body.prompt);
+        this.jump(lane, item, 'Claude’s run ended before it read your message: it runs next', undefined);
+      },
+    };
   }
 
   private async pump(lane: Lane): Promise<void> {
@@ -669,7 +763,10 @@ export class AgentHost {
       // (In a plan's conversation, planning is the plan's: no single task to define.)
       const planFirst = body.plan && !plans?.tools;
       const board = (place?.askOnly && (!planFirst || place.syncMain)) || from !== this.selfId ? undefined : this.deps.board?.(body.channel, from, { plan: planFirst });
-      const final = await agent.run({
+      // A run stopped but not ending (wedged) is left behind after a moment, so the next message starts.
+      const gone = new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => setTimeout(() => reject(new Error('aborted')), ABORT_GRACE_MS).unref(), { once: true }));
+      gone.catch(() => undefined);
+      const final = await Promise.race([gone, agent.run({
         ...(scratch ? { scratchDir: scratch } : {}),
         ...(board?.tools ? { board: board.tools } : {}),
         ...(board?.brief ? { taskBrief: board.brief } : {}),
@@ -701,6 +798,7 @@ export class AgentHost {
           if (lane.current === controller) lane.steer = steer;
         },
         onFollowUps: (send) => {
+          if (lane.current !== controller) return;
           lane.followUps = send;
           // Anything that queued up behind this run from the same person can go in now.
           if (send) lane.waiting = lane.waiting.filter((w) => !this.sendFollowUp(lane, w.from, w.body));
@@ -709,13 +807,14 @@ export class AgentHost {
         // Your variables can hold secrets: only runs you asked for get them, never a friend's.
         ...(from === this.selfId && this.deps.envFor ? { env: this.deps.envFor(body.channel, place?.cwd) } : {}),
         ...this.compactor.threshold(),
-      });
+      })]);
       if (controller.signal.aborted) throw new Error('aborted');
       this.emitAgent(body.requestId, from, 'done', final || '(done)', body.channel);
     } catch (err) {
       const stopped = lane.stopping ? (from === this.selfId ? 'Stopped by you' : 'Stopped by owner') : undefined;
-      const reason = stopped ?? (lane.interruptedBy ? 'Interrupted by a newer message' : controller.signal.aborted ? 'Stopped by owner' : errorText(err));
+      const reason = stopped ?? (lane.interruptedBy ? (lane.interruptNote ?? 'Interrupted by a newer message') : controller.signal.aborted ? 'Stopped by owner' : errorText(err));
       lane.interruptedBy = undefined;
+      lane.interruptNote = undefined;
       lane.stopping = undefined;
       this.emitAgent(body.requestId, from, 'error', reason, body.channel);
     } finally {
@@ -726,6 +825,7 @@ export class AgentHost {
         lane.runFrom = undefined;
       }
       lane.interruptedBy = undefined; // never carry an interrupt label into the next run
+      lane.interruptNote = undefined;
       lane.stopping = undefined;
       markFinished();
       this.compactor.ran(body.channel);

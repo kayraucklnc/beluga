@@ -4,26 +4,29 @@ import path from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { BackgroundAgents, PromptQueue, TurnRouter } from '../src/agent/live-run.js';
-import type { AgentRunInput, FollowUp, RoomBridge } from '../src/agent/types.js';
+import type { AgentRunInput, FollowUp, RoomBridge, Steer } from '../src/agent/types.js';
 
-/** A scripted Claude Code: for each prompt it reads, it yields the next scripted turn. */
-type Turn = (prompt: string) => object[];
-const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options } = { turns: [], extra: [], prompts: [] };
+/** A scripted Claude Code: for each prompt it reads, it yields the next scripted turn (a promise in it: waited for). */
+type Turn = (prompt: string) => Array<object | Promise<object>>;
+const script: { turns: Turn[]; extra: object[][]; prompts: string[]; options?: Options; interrupt?: () => void } = { turns: [], extra: [], prompts: [] };
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (original) => ({
   ...(await original<object>()),
   query: ({ prompt, options }: { prompt: AsyncIterable<{ message: { content: string } }>; options: Options }) =>
-    (async function* () {
-      script.options = options;
-      yield { type: 'system', subtype: 'init', session_id: 's1' };
-      let turn = 0;
-      for await (const msg of prompt) {
-        script.prompts.push(msg.message.content);
-        for (const m of script.turns[turn++]?.(msg.message.content) ?? []) yield m;
-        // Turns Claude starts by itself once a background agent is done.
-        for (const extra of script.extra.splice(0)) for (const m of extra) yield m;
-      }
-    })(),
+    Object.assign(
+      (async function* () {
+        script.options = options;
+        yield { type: 'system', subtype: 'init', session_id: 's1' };
+        let turn = 0;
+        for await (const msg of prompt) {
+          script.prompts.push(msg.message.content);
+          for (const m of script.turns[turn++]?.(msg.message.content) ?? []) yield await m;
+          // Turns Claude starts by itself once a background agent is done.
+          for (const extra of script.extra.splice(0)) for (const m of extra) yield m;
+        }
+      })(),
+      { interrupt: async () => script.interrupt?.() },
+    ),
 }));
 
 const { createClaudeBackend } = await import('../src/agent/runner.js');
@@ -204,6 +207,34 @@ describe('steering', () => {
     expect(got).toEqual(['steer started', 'steer:switched to pnpm']);
     expect(script.prompts[1]).toContain('use pnpm');
     expect(steer).toBeUndefined(); // withdrawn once the run ended
+  });
+});
+
+describe('interrupting a long tool for a message', () => {
+  const route = (got: string[], name: string) => ({ onEvent: () => undefined, onStart: () => void got.push(`${name} started`), onDone: (t: string) => void got.push(`${name}:${t}`), onError: (r: string) => void got.push(`${name}!${r}`) });
+  it('stops the turn (it ends saying why) and answers the message in the next turn', async () => {
+    let steer: Steer | undefined;
+    const got: string[] = [];
+    script.prompts = [];
+    script.turns = [
+      () => [
+        { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'npx playwright test' } }] } },
+        // The command runs until Claude Code is interrupted.
+        new Promise<object>((resolve) => (script.interrupt = () => resolve({ ...result(''), subtype: 'error_during_execution' }))),
+      ],
+      () => [text('stopped the tests'), result('stopped the tests')],
+    ];
+    const input = runInput({ onSteer: (s) => void (steer = s) });
+    const running = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(input);
+    for (let i = 0; i < 50 && !steer?.status?.().tool; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(steer!.status!()).toMatchObject({ tool: { label: 'npx playwright test' }, between: false });
+    const note = 'Interrupted: npx playwright test (12m) to read your message';
+    expect(await steer!.interrupt!({ prompt: 'stop the tests', requesterName: 'kay', viaAgent: false, context: [], ...route(got, 'f') }, note)).toBe(true);
+    expect(await running).toBe(note);
+    expect(input.events).toContain(note);
+    expect(got).toEqual(['f started', 'f:stopped the tests']);
+    expect(script.prompts[1]).toContain('stop the tests');
+    script.interrupt = undefined;
   });
 });
 

@@ -58,7 +58,7 @@ export interface AgentRunInput {
    * which Claude Code takes in at its next step (between tool calls) without stopping the turn,
    * or answers in a turn of its own right after. Undefined once the run ends.
    */
-  readonly onSteer?: (steer: ((followUp: FollowUp) => boolean) | undefined) => void;
+  readonly onSteer?: (steer: Steer | undefined) => void;
   /**
    * In a project's main folder (ask-only): carry this conversation into a new worktree and do
    * `task` there (Claude's continue_in_worktree tool). Resolves with what to tell Claude.
@@ -160,6 +160,30 @@ export interface FollowUp extends Pick<AgentRunInput, 'prompt' | 'requesterName'
   readonly onStart?: () => void;
   /** Claude took it into the turn it was working on (see TurnRoute.onFolded). */
   readonly onFolded?: () => void;
+}
+
+/** What a live run is doing right now, so a steer can tell whether Claude would read it soon. */
+export interface LiveStatus {
+  /** The oldest tool still running in the main conversation: what it is and since when (ms). */
+  readonly tool?: { readonly label: string; readonly since: number };
+  /** When the run last said anything (any message from Claude Code). */
+  readonly lastEventAt: number;
+  /** Claude has answered and waits between turns (a message starts a turn at once). */
+  readonly between: boolean;
+}
+
+/**
+ * A way into a live run (see AgentRunInput.onSteer). Called: the message goes in and Claude reads
+ * it at its next step. `status` and `interrupt` are there when the backend can tell and stop.
+ */
+export interface Steer {
+  (followUp: FollowUp): boolean;
+  readonly status?: () => LiveStatus;
+  /**
+   * Stop the running tool and turn (Claude Code's interrupt), the interrupted turn ending with
+   * `note`, and answer `followUp` in the next turn. Resolves false when the run couldn't be interrupted.
+   */
+  readonly interrupt?: (followUp: FollowUp, note: string) => Promise<boolean>;
 }
 
 export interface AgentPlace {

@@ -1,4 +1,4 @@
-import { type ReactNode, useRef } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { QueuedMessage } from '@klaud/ui/compose.js';
 import { channelOf } from '@klaud/core/store.js';
 import { Icon, type IconName } from '../components/Icon.js';
@@ -19,6 +19,30 @@ function Act({ icon, label, onClick, disabled }: { icon: IconName; label: string
   );
 }
 
+/** How long a row may say "Steering…" before it shows Steer again (it normally leaves the queue at once). */
+const STEERING_MS = 8_000;
+
+/**
+ * Steer: Claude reads this now. Interrupts a long command (a test run) or a stuck turn so it
+ * does; the row says "Steering…" until the message leaves the queue for the chat. `blocked`: why
+ * it can't (someone else's message), shown in its tooltip and said when clicked.
+ */
+function SteerButton({ steering, blocked, onSteer }: { steering: boolean; blocked?: string; onSteer: () => void }) {
+  const { client } = useKlaud();
+  return (
+    <Tip label={blocked ?? (steering ? 'Steering: sending it to Claude now' : 'Steer: Claude reads this now (a long command is interrupted for it)')} keys={blocked ? undefined : '⌥↩'}>
+      <button
+        type="button"
+        className={cx(s.now, (blocked || steering) && s.nowOff, steering && s.steering)}
+        aria-disabled={Boolean(blocked || steering)}
+        onClick={() => (blocked ? toast(client, blocked, 'warn') : steering ? undefined : onSteer())}
+      >
+        {steering ? 'Steering…' : 'Steer'}
+      </button>
+    </Tip>
+  );
+}
+
 /** A queued message's row: the one you just sent flies into it from the box (see flight.ts). */
 function Row({ channel, prompt, mine, className, children }: { channel: string; prompt: string; mine: boolean; className?: string; children: ReactNode }) {
   const ref = useRef<HTMLLIElement>(null);
@@ -32,15 +56,39 @@ function Row({ channel, prompt, mine, className, children }: { channel: string; 
 
 /**
  * What waits for Claude in this conversation, above the box you type in: steer with one now
- * (Claude reads it at its next step), pull it back to edit, drop it, or change the order.
+ * (Claude reads it now), pull it back to edit, drop it, or change the order.
  */
 export function QueueTray({ queue, selfName, onEdit }: { queue: readonly QueuedMessage[]; selfName: string; onEdit: (text: string) => void }) {
   const { client } = useKlaud();
   const api = useApi();
   const channel = useApp((st) => channelOf(st.view));
+  const [steering, setSteering] = useState<ReadonlySet<string>>(new Set());
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
   if (!queue.length) return null;
   const yours = queue.filter((q) => q.yours);
   const call = (p: Promise<unknown>): void => void p.catch((err: unknown) => toast(client, errorText(err), 'error'));
+  const settle = (id: string): void =>
+    setSteering((cur) => {
+      const next = new Set(cur);
+      next.delete(id);
+      return next;
+    });
+  // "Steering…" until it leaves the queue; refused (the core says why in a toast) or failed: Steer again.
+  const steer = (id: string): void => {
+    setSteering((cur) => new Set(cur).add(id));
+    api.host.promote(id).then(
+      (ok) => {
+        if (!ok) return settle(id);
+        const t = setTimeout(() => (timers.current.delete(t), settle(id)), STEERING_MS);
+        timers.current.add(t);
+      },
+      (err: unknown) => {
+        settle(id);
+        toast(client, `Couldn’t steer: ${errorText(err)}`, 'error');
+      },
+    );
+  };
   return (
     <section className={s.tray} aria-label="Queued messages">
       <header className={s.head}>
@@ -80,13 +128,13 @@ export function QueueTray({ queue, selfName, onEdit }: { queue: readonly QueuedM
                     }
                   />
                   <Act icon="x" label="Remove from the queue" onClick={() => call(api.host.cancelQueued(q.requestId))} />
-                  <Tip label="Steer: Claude reads this at its next step, without stopping" keys="⌥↩">
-                    <button type="button" className={s.now} onClick={() => call(api.host.promote(q.requestId))}>
-                      Steer
-                    </button>
-                  </Tip>
+                  <SteerButton steering={steering.has(q.requestId)} onSteer={() => steer(q.requestId)} />
                 </span>
-              ) : null}
+              ) : (
+                <span className={s.acts}>
+                  <SteerButton steering={false} blocked={q.by === selfName ? `It waits for ${q.claude}'s Claude: only ${q.claude} can steer it` : `${q.by}'s message: only ${q.by} can steer it`} onSteer={() => undefined} />
+                </span>
+              )}
             </Row>
           );
         })}

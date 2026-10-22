@@ -19,7 +19,7 @@ import { nameTask } from './namer.js';
 import { fixSetup } from './setup-fixer.js';
 import { createRoomTools } from './tools.js';
 import { createTaskTools } from './task-tools.js';
-import type { AgentBackend, AgentRunInput, FollowUp, RoomBridge } from './types.js';
+import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, Steer } from './types.js';
 import { type ClaudeAnswer, ClaudeQuestion, type Usage } from '../protocol.js';
 
 const USAGE_TIMEOUT_MS = 20_000;
@@ -31,6 +31,8 @@ const BACKGROUND_LIMIT_MS = 3 * 60 * 60_000;
  * instant, because an agent can resume right after its shell finishes.
  */
 const QUIET_MS = 15_000;
+/** How long Claude Code gets to stop a turn when asked (see Steer.interrupt). */
+const INTERRUPT_TIMEOUT_MS = 10_000;
 
 export interface ClaudeBackendOptions {
   readonly cwd: string;
@@ -266,9 +268,18 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         return true;
       };
       const send = (followUp: FollowUp): boolean => deliver(followUp, false);
+      // What Claude is doing now, for a steer to judge whether it reads a message soon (see Steer.status).
+      const tools = new Map<string, { label: string; since: number }>();
+      let lastEventAt = Date.now();
+      const status = (): LiveStatus => {
+        const tool = [...tools.values()].sort((a, b) => a.since - b.since)[0];
+        return { ...(tool ? { tool } : {}), lastEventAt, between: turns.between };
+      };
+      /** Set while a turn is being interrupted: what that turn ends with, and the run stays open for the next. */
+      let interrupting: string | undefined;
       /** After an answer: end the run, or keep it open (taking follow-ups) while agents work. */
       const settle = (): void => {
-        if (!background.busy && !turns.waiting) return finish();
+        if (interrupting === undefined && !background.busy && !turns.waiting) return finish();
         if (limit) return;
         limit = setTimeout(finish, BACKGROUND_LIMIT_MS);
         limit.unref();
@@ -282,13 +293,33 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         quiet.unref();
       };
       abortController.signal.addEventListener('abort', finish, { once: true });
-      input.onSteer?.((followUp) => deliver(followUp, true));
+      /** Stop the running tool and turn, then answer `followUp` in the next turn (see Steer.interrupt). */
+      const interrupt = async (followUp: FollowUp, note: string): Promise<boolean> => {
+        if (prompts.closed || turns.between || interrupting !== undefined) return false;
+        interrupting = note;
+        try {
+          let timer: NodeJS.Timeout | undefined;
+          const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('interrupt timed out')), INTERRUPT_TIMEOUT_MS)));
+          await Promise.race([q.interrupt(), late]).finally(() => clearTimeout(timer));
+        } catch {
+          interrupting = undefined;
+          if (turns.between) settle();
+          return false;
+        }
+        const sent = deliver(followUp, false);
+        // The interrupted turn may have ended already (its result kept the run open for this).
+        if (turns.between) interrupting = undefined;
+        if (!sent) settle();
+        return sent;
+      };
+      input.onSteer?.(Object.assign((followUp: FollowUp) => deliver(followUp, true), { status, interrupt }) satisfies Steer);
 
       const q = query({ prompt: prompts, options });
       showThinking(q);
       let failed = true;
       try {
         for await (const msg of q) {
+          lastEventAt = Date.now();
           background.observe(msg as Parameters<BackgroundAgents['observe']>[0]);
           watchQuiet();
           if (msg.type === 'system' && msg.subtype === 'init') remember(msg.session_id);
@@ -308,6 +339,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           recorder.observe(msg as RecorderMessage);
           if (msg.type === 'user' && msg.parent_tool_use_id === null) {
             for (const e of subagents.user(msg.message.content as never)) input.onEvent('sub', JSON.stringify(e));
+            const content = msg.message.content;
+            if (Array.isArray(content)) for (const block of content) if (block.type === 'tool_result') tools.delete(block.tool_use_id);
           }
           if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {
             for (const block of msg.message.content) {
@@ -317,7 +350,9 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
               }
               if (block.type === 'tool_use' && !subagents.isLaunch(block)) {
                 const toolInput = (block.input ?? {}) as Record<string, unknown>;
-                route?.onEvent('tool', summarizeTool(block.name, toolInput, cwd));
+                const label = summarizeTool(block.name, toolInput, cwd);
+                tools.set(block.id, { label: block.name === 'Bash' && typeof toolInput.command === 'string' ? (toolInput.command.split('\n')[0] ?? '').slice(0, 80) : label, since: Date.now() });
+                route?.onEvent('tool', label);
                 if (WRITE_TOOLS.has(block.name) && typeof toolInput.file_path === 'string') {
                   input.onFileTouched(toolInput.file_path);
                 }
@@ -332,8 +367,17 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             const stopped = `Agent stopped: ${msg.subtype.replace(/_/g, ' ')}`;
             // The prompts this turn took in: a message steered in mid-turn is answered by it.
             const took = msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : undefined);
+            tools.clear();
+            const note = interrupting;
+            if (note !== undefined) {
+              // Interrupted for a message: the turn ends saying so, and the message's turn comes next.
+              const said = msg.subtype === 'success' && msg.result ? `${msg.result}\n\n${note}` : note;
+              turn.onEvent('text', note);
+              turns.end(true, said, took);
+              if (turns.waiting) interrupting = undefined;
+            }
             // A later turn failing (e.g. reporting a finished agent) doesn't throw away answers already given.
-            if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped, took) && !turns.answers.length) throw new Error(stopped);
+            else if (!turns.end(msg.subtype === 'success', msg.subtype === 'success' ? msg.result : stopped, took) && !turns.answers.length) throw new Error(stopped);
             settle();
           }
         }
