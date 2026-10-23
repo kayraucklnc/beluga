@@ -221,7 +221,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   const send = (urgent = false): void => {
     const typed = buffer.trim();
     // Images stay where you referenced them in the words; any you took the reference out of go after them.
-    const { text, putBack } = att.take(typed);
+    const { text, images, putBack } = att.take(typed);
     if (!text && !(draftProject && worktree.name.trim())) {
       if (draftProject) toast(client, 'Describe the task, or give the worktree a name', 'info');
       return;
@@ -236,7 +236,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, typed].slice(-200), historyIndex: -1 });
     // Image chips become links to the images (Beluga keeps them) before the message goes.
     if (text.includes('[image ') && !text.startsWith('/')) {
-      api.attachments.expand(text, channel).then(
+      api.attachments.expand(text, channel, [...images]).then(
         (expanded) => deliver(expanded, urgent),
         (err: unknown) => {
           // Put the message and its images back so nothing is lost.
@@ -250,7 +250,9 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     deliver(text, urgent);
   };
   /** A queued message pulled back to edit: into the box, ahead of anything already there. */
-  const editQueued = (prompt: string): void => {
+  const editQueued = async (sent: string): Promise<void> => {
+    // Its images wait above the box again, each an "[image N]" in the words (not the link it went as).
+    const prompt = await att.restore(sent);
     const toClaude = channel === 'room' && state.peers.length > 1 && !prompt.startsWith('@') ? `@claude ${prompt}` : prompt;
     const current = ui.get().buffer.trim();
     set(current ? `${toClaude}\n${current}` : toClaude);
@@ -277,6 +279,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     }
     const modKey = e.metaKey || e.ctrlKey;
     if (sug.onKeyDown(e)) return;
+    if (att.onRefKey(e)) return;
     if (e.key === 'Escape') {
       if (pending) ui.patch({ pending: undefined, buffer: '' });
       else if (to) ui.patch({ to: undefined });
@@ -319,7 +322,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     <div className={s.wrap}>
       {att.dropTarget}
       {sug.list}
-      <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={editQueued} />
+      <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={(prompt) => void editQueued(prompt)} />
       <div
         className={cx(s.box, pending && s.asking, readOnly && s.readOnly, att.dropping && s.dropping, (plan || tasksMode) && s.planning)}
         data-plan={plan || tasksMode || undefined}

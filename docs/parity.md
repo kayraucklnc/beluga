@@ -278,6 +278,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `env.set` | ✓ Settings › Environment |
 | `attachments.add` | ✓ |
 | `attachments.addFile` | ✓ a pasted path of an image becomes a waiting thumbnail |
+| `attachments.reattach` | ✓ a queued message pulled back to edit gets its images back as thumbnails |
 | `attachments.expand` | ✓ |
 | `attachments.read` | ✓ images shown in messages |
 | `attachments.open` | ✓ image full size › Open (in Preview) |

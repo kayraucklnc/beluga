@@ -4,6 +4,8 @@ import { Icon } from '../components/Icon.js';
 import { inApp } from '../lib/boot.js';
 import { toast, useApi, useBeluga } from '../lib/beluga.js';
 import { type Box, MAX_DROPPED, dropHits, droppedFiles, sameBox } from './drop-model.js';
+import { imageLinksIn } from '@beluga/shared/attachment-links.js';
+import { type RefKey, refKey } from './image-refs.js';
 import { keepPreview, previewOf } from './images.js';
 import { type ImageInText, type PathInfo, insertText, usePastePaths } from './paste-paths.js';
 import s from './composer.module.css';
@@ -47,9 +49,17 @@ export interface Attachments {
   /**
    * The message to send for what was typed: its images where their references are (those whose
    * reference was taken out go after it) and other files' paths. They leave the box; `putBack`
-   * returns them if sending fails. Commands ("/…") go as typed, and attachments stay.
+   * returns them if sending fails. Commands ("/…") go as typed, and attachments stay. `images`:
+   * the ones going (only their "[image N]" become links; one typed by hand stays words).
    */
-  readonly take: (typed: string) => { readonly text: string; readonly putBack: () => void };
+  readonly take: (typed: string) => { readonly text: string; readonly images: readonly number[]; readonly putBack: () => void };
+  /** For the text field's keydown: an "[image N]" goes whole (its picture too), and arrows step over it. True when it was handled. */
+  readonly onRefKey: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  /**
+   * A message that went (a queued one pulled back to edit): your images linked in it wait again
+   * as thumbnails, and their links become "[image N]". → the words for the box.
+   */
+  readonly restore: (sent: string) => Promise<string>;
   /** The thumbnails and file chips, for above the words. */
   readonly waiting: React.ReactNode;
 }
@@ -214,8 +224,53 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     box.current?.focus();
   };
 
-  const take = (typed: string): { text: string; putBack: () => void } => {
-    if (typed.startsWith('/')) return { text: typed, putBack: () => undefined };
+  const onRefKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    const el = e.currentTarget;
+    if (e.metaKey || e.ctrlKey || e.altKey || (e.shiftKey && e.key.startsWith('Arrow'))) return false;
+    if (e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return false;
+    const edit = refKey(el.value, el.selectionStart, el.selectionEnd, e.key as RefKey);
+    if (!edit) return false;
+    e.preventDefault();
+    if (edit.kind === 'move') {
+      el.setSelectionRange(edit.cursor, edit.cursor);
+      return true;
+    }
+    // Through the field's own editing, so ⌘Z brings it back.
+    insertText(el, '', { start: edit.start, end: edit.end });
+    const gone = edit.images.filter((n) => !el.value.includes(imageRef(n)));
+    if (gone.length) setImages((waitingImages.get(channel) ?? []).filter((n) => !gone.includes(n)));
+    return true;
+  };
+
+  const restore = async (sent: string): Promise<string> => {
+    let out = '';
+    let at = 0;
+    for (const link of imageLinksIn(sent)) {
+      out += sent.slice(at, link.start);
+      at = link.end;
+      if (link.owner !== selfId) {
+        out += sent.slice(link.start, link.end);
+        continue;
+      }
+      try {
+        const { n } = await api.attachments.reattach(link.file);
+        if (!previewOf(n)) {
+          const shown = await api.attachments.read(selfId, link.file);
+          keepPreview(n, new Blob([Uint8Array.from(atob(shown.data), (c) => c.charCodeAt(0))], { type: shown.mime }));
+        }
+        const waiting = waitingImages.get(channel) ?? [];
+        if (!waiting.includes(n)) setImages([...waiting, n]);
+        out += imageRef(n);
+      } catch {
+        // Gone from this Mac: the link stays as it was.
+        out += sent.slice(link.start, link.end);
+      }
+    }
+    return out + sent.slice(at);
+  };
+
+  const take = (typed: string): { text: string; images: readonly number[]; putBack: () => void } => {
+    if (typed.startsWith('/')) return { text: typed, images: [], putBack: () => undefined };
     const pictures = pendingImages;
     const unplaced = pictures.filter((n) => !typed.includes(imageRef(n)));
     // Other files go as their paths (Claude reads them from this Mac).
@@ -225,6 +280,7 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     if (others.length) setFiles([]);
     return {
       text: out,
+      images: pictures,
       putBack: () => {
         if (pictures.length) setImages(pictures);
         if (others.length) setFiles(others);
@@ -304,6 +360,8 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     },
     attach,
     take,
+    onRefKey,
+    restore,
     waiting,
   };
 }

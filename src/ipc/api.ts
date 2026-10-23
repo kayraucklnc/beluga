@@ -267,7 +267,10 @@ export const API = {
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),
   // An image file on this Mac (its path was pasted), copied in and made smaller if it's too big. → { n, chip, file }
   'attachments.addFile': args(path),
-  'attachments.expand': args(str, channel),
+  // An image you linked in a message (its file name), waiting in the box again. → { n, chip }
+  'attachments.reattach': args(z.string().min(1).max(255)),
+  // `only`: the images waiting in the box (others' "[image N]" stay words).
+  'attachments.expand': args(str, channel, opt(z.array(z.number().int().positive()).max(100))),
   // An image linked in a message (owner peer id, file name): its bytes to show, or opened in Preview.
   'attachments.read': args(id, z.string().min(1).max(255)),
   'attachments.open': args(id, z.string().min(1).max(255)),

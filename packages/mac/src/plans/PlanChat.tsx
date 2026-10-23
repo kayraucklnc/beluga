@@ -85,24 +85,25 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
   };
   /** While Claude works, your message reaches it now unless you queue it (⌥↩). */
   const send = (queue = false): void => {
-    const { text: message } = att.take(text.trim());
+    const { text: message, images } = att.take(text.trim());
     if (!message) return;
     setText('');
-    deliver(planMessage(message), busy && !queue);
+    deliver(planMessage(message, images), busy && !queue);
   };
   const stop = (): void => {
     api.host.stopRun(channel).then(
-      ({ returned }) => {
+      async ({ returned }) => {
         if (!returned.length) return;
         // Your messages that were waiting come back to the box: nothing typed is lost.
-        const back = [...returned, words.current.trim()].filter(Boolean).join('\n');
+        const back = [...(await Promise.all(returned.map(att.restore))), words.current.trim()].filter(Boolean).join('\n');
         setText(back);
         box.current?.focus();
       },
       (err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn't stop Claude: ${errorText(err)}`, level: 'error' }),
     );
   };
-  const editQueued = (prompt: string): void => {
+  const editQueued = async (sent: string): Promise<void> => {
+    const prompt = await att.restore(sent);
     const current = words.current.trim();
     setText(current ? `${prompt}\n${current}` : prompt);
     box.current?.focus();
@@ -151,7 +152,7 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
         </button>
       ) : null}
       <div className={p.chatQueue}>
-        <QueueTray queue={queue} selfName={selfName} onEdit={editQueued} channel={channel} />
+        <QueueTray queue={queue} selfName={selfName} onEdit={(prompt) => void editQueued(prompt)} channel={channel} />
       </div>
       {failed ? (
         <div className={p.chatFailed} role="alert">
@@ -183,6 +184,7 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
             onPaste={att.onPaste}
             onKeyDown={(e) => {
               if (e.nativeEvent.isComposing) return;
+              if (att.onRefKey(e)) return;
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 send(e.altKey);

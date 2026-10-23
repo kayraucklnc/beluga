@@ -37,6 +37,16 @@ export function registerAttachment(file: string, size: number): Attachment {
 }
 
 export const attachment = (n: number): Attachment | undefined => registry.get(n);
+
+/**
+ * An image you linked in a message, waiting again (a queued message pulled back into the box):
+ * the number it had while this session still knows it, else a new one for the same file.
+ */
+export function reattach(file: string, dir = attachmentsDir()): Attachment | undefined {
+  for (const a of registry.values()) if (path.basename(a.path) === file && isFile(a.path)) return a;
+  const own = ownAttachment(file, dir);
+  return own ? registerAttachment(own, statSync(own).size) : undefined;
+}
 export const chipText = (n: number): string => `[image ${n}]`;
 const CHIP = /\[image (\d+)\]/g;
 
@@ -60,13 +70,14 @@ export const attachmentLabel = (a: Attachment): string => `📎 image ${a.n} (${
 
 /**
  * Replace "[image N]" chips with Markdown links to the images. `publish` is told about each
- * image (to make it available to the room) and returns the file name to link to.
+ * image (to make it available to the room) and returns the file name to link to. `only`: the
+ * images waiting in the box (an "[image 1]" typed after its picture was taken out stays words).
  */
-export function expandChips(text: string, selfId: string, publish: (a: Attachment) => string = (a) => path.basename(a.path)): { text: string; attachments: Attachment[] } {
+export function expandChips(text: string, selfId: string, publish: (a: Attachment) => string = (a) => path.basename(a.path), only?: readonly number[]): { text: string; attachments: Attachment[] } {
   const used: Attachment[] = [];
   const out = text.replace(CHIP, (chip, n: string) => {
     const a = registry.get(Number(n));
-    if (!a) return chip;
+    if (!a || (only && !only.includes(a.n))) return chip;
     used.push(a);
     return `[${attachmentLabel(a)}](${ATTACHMENT_SCHEME}${selfId}/${publish(a)})`;
   });
