@@ -11,7 +11,7 @@ import { applyTheme } from './ui/theme.js';
 import { App } from './ui/App.js';
 import { ErrorBoundary } from './ui/components/ErrorBoundary.js';
 import { runUpdate } from './update/update.js';
-import { installedVersion } from './update/check.js';
+import { installedName, installedVersion } from './update/check.js';
 import { runView } from './ui/tty/view-cli.js';
 import { FOCUS_OFF, FOCUS_ON, MOUSE_OFF, MOUSE_ON, type MouseEvent, PASTE_OFF, PASTE_ON, createInput } from './ui/mouse.js';
 import { buildCore } from './daemon/core.js';
@@ -24,7 +24,7 @@ import { connectOrSpawn, listening } from './ipc/launch.js';
 import type { SocketClient } from './ipc/socket-client.js';
 import { belugaEnv } from './core/beluga-env.js';
 import { belugaHome } from './core/home.js';
-import { renameNote } from './core/rename-note.js';
+import { movePackageNote, renameNote } from './core/rename-note.js';
 
 const RESTORE = MOUSE_OFF + FOCUS_OFF + PASTE_OFF + '\x1b[?1049l';
 
@@ -160,8 +160,11 @@ async function attached(config: Config, args: readonly string[]): Promise<void> 
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  // Started as `klaud`, its old name: say once that it's Beluga now (the daemon only writes to its log).
-  const note = args[0] === 'daemon' ? undefined : renameNote(process.argv[1], belugaHome());
+  // Installed as `klaudcode`, the npm name before the rename: say each time how to move, since that name
+  // gets no more updates. Otherwise, started as `klaud`: say once that it's Beluga now. (The daemon only
+  // writes to its log; `update` is the move itself.)
+  const move = args[0] === 'daemon' || args[0] === 'update' ? undefined : movePackageNote(installedName());
+  const note = move ?? (args[0] === 'daemon' ? undefined : renameNote(process.argv[1], belugaHome()));
   if (note) process.stderr.write(note);
   if (args[0] === '--version' || args[0] === '-v' || args[0] === 'version') {
     process.stdout.write(`Beluga ${installedVersion()}\n`);

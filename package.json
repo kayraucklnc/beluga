@@ -44,6 +44,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "release:npm": "node scripts/release-npm.mjs",
+    "release:klaudcode": "node scripts/release-klaudcode.mjs",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
   "publishConfig": {

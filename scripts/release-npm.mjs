@@ -8,6 +8,7 @@
 // (0.6.2 -> 0.6.3) and that bump is committed. For a minor or major release, set the version
 // in package.json first. Needs `npm login` (once) and a clean checkout of main.
 // Beluga for Mac has its own: packages/mac, npm run release (scripts/release-mac.mjs).
+// The one last klaudcode (the old name, pointing here) is npm run release:klaudcode, right after this.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
