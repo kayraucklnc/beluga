@@ -17,7 +17,7 @@ const sameAttention = (a: Attention, b: Attention): boolean =>
 /**
  * One client's view of Beluga: the shared state plus this client's own screen, composed into
  * the AppState it draws. Screen actions apply here; everything else goes through the API.
- * Render-agnostic (the terminal UI and the Mac app both use it).
+ * Render-agnostic.
  */
 export class ClientStore {
   private screen: ScreenState;

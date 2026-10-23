@@ -3,8 +3,6 @@ import jpeg from 'jpeg-js';
 import { describe, expect, it } from 'vitest';
 import { createBitmap, fitPixels, resize } from '../src/image/bitmap.js';
 import { decodeImage, detectFormat, isImagePath, sanitizeSvg } from '../src/image/decode.js';
-import { bitmapToLines, imageToLines } from '../src/image/render.js';
-import { lineWidth } from '../src/ui/text.js';
 
 function png(w: number, h: number, rgba: [number, number, number, number]): Buffer {
   const img = new PNG({ width: w, height: h });
@@ -57,40 +55,6 @@ describe('image engine', () => {
     expect(fitPixels({ width: 500, height: 1000 }, 80, 20)).toEqual({ width: 20, height: 40 });
     expect(fitPixels({ width: 8, height: 8 }, 80, 20)).toEqual({ width: 8, height: 8 });
     expect(fitPixels({ width: 8, height: 8 }, 80, 20, true)).toEqual({ width: 40, height: 40 });
-  });
-
-  it('renders half blocks: top pixel as color, bottom as background, merged runs', () => {
-    const b = createBitmap(3, 2, [255, 0, 0, 255]);
-    b.data.set([0, 0, 255, 255], 3 * 4); // bottom-left blue
-    const [line] = bitmapToLines(b);
-    expect(line).toEqual([
-      { text: '▀', color: '#ff0000', bg: '#0000ff' },
-      { text: '▀▀', color: '#ff0000', bg: '#ff0000' },
-    ]);
-  });
-
-  it('lets the terminal background show through transparent pixels', () => {
-    const b = createBitmap(3, 2);
-    b.data.set([255, 0, 0, 255], 0); // top-left only
-    b.data.set([0, 255, 0, 255], (3 + 1) * 4); // bottom-middle only
-    const [line] = bitmapToLines(b);
-    expect(line?.map((s) => s.text).join('')).toBe('▀▄ ');
-    expect(line?.[0]).toEqual({ text: '▀', color: '#ff0000' });
-  });
-
-  it('text art spans the full ramp even for dim images', () => {
-    const b = createBitmap(2, 2);
-    b.data.set([10, 10, 10, 255, 40, 40, 40, 255, 10, 10, 10, 255, 40, 40, 40, 255]);
-    const [line] = bitmapToLines(b, { mode: 'ascii' });
-    expect(line?.map((s) => s.text).join('')).toBe(' @');
-  });
-
-  it('never draws wider or taller than asked', () => {
-    const img = decodeImage(png(640, 480, [10, 20, 30, 255]));
-    const lines = imageToLines(img, 50, 10);
-    expect(lines.length).toBeLessThanOrEqual(10);
-    expect(Math.max(...lines.map(lineWidth))).toBeLessThanOrEqual(50);
-    expect(imageToLines(img, 0, 10)).toEqual([]);
   });
 });
 

@@ -16,8 +16,8 @@ import { FILES_EDIT_API } from './files-api.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
- * against it (handlers.ts implements each one), and both clients call through it, so the
- * terminal UI and the Mac app can't drift apart. Browser-safe: no Node imports.
+ * against it (handlers.ts implements each one), and the Mac app calls through it, so the
+ * two can't drift apart. Browser-safe: no Node imports.
  *
  * Each entry is the method's arguments as a zod tuple. Results are typed from the handlers.
  */
@@ -48,7 +48,6 @@ export const PrefsPatch = z
     model: z.string().max(80).nullable().optional(),
     effort: z.enum(EFFORTS).nullable().optional(),
     autoSetup: bool,
-    autoUpdate: bool,
     contextMeter: bool,
     autoCompact: bool,
     autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX),

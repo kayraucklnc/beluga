@@ -15,7 +15,7 @@ export default defineConfig({
     hookTimeout: 30_000,
     coverage: {
       include: ['src/**/*.ts'],
-      exclude: ['src/cli.tsx', 'src/ui/components/**', 'src/ui/App.tsx', 'src/agent/runner.ts', 'src/core/clipboard.ts', 'src/ui/tty/clipboard.ts'],
+      exclude: ['src/cli.ts', 'src/agent/runner.ts', 'src/core/clipboard.ts'],
       thresholds: { lines: 80, functions: 80, statements: 80, branches: 70 },
     },
   },

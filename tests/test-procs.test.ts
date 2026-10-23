@@ -69,7 +69,7 @@ describe('which processes are a worktree’s test runs', () => {
       row(10, 1, `node ${W}/node_modules/.bin/vitest run${tag} KLAUD_KEEP=1`), // a test run marked to keep
       row(20, 1, `node ${W}/scripts/e2e-lock.mjs -- playwright test${tag} KLAUD_KEEP=1`), // the e2e lock holder
       row(21, 20, `node ${W}/node_modules/.bin/vite --port 14321${tag} KLAUD_KEEP=1 KLAUD_E2E_RUN=1-a`), // its vite
-      row(22, 20, `node ${W}/src/cli.tsx daemon${tag} KLAUD_KEEP=1`), // its daemon: under the e2e
+      row(22, 20, `node ${W}/src/cli.ts daemon${tag} KLAUD_KEEP=1`), // its daemon: under the e2e
       row(30, 1, `node server.js${tag} KLAUD_KEEP=1`), // a server kept on purpose
     ];
     expect(testProcessesIn(rows, W).sort((a, b) => a - b)).toEqual([10, 20, 21, 22]);
@@ -91,7 +91,7 @@ describe('a stale e2e lock never stops someone else’s process', () => {
   it('the lock holder verified (e2e-lock.mjs under its worktree): its groups, and its daemon when tagged', () => {
     const rows: ProcRow[] = [
       { pid: 4100, ppid: 1, line: 'node ../../scripts/e2e-lock.mjs playwright test PWD=/w/kld-39/packages/mac KLAUD_E2E_RUN=r9' },
-      { pid: 4300, ppid: 4100, line: 'node src/cli.tsx daemon --keep-alive demo PWD=/w/kld-39 KLAUD_E2E_RUN=r9' },
+      { pid: 4300, ppid: 4100, line: 'node src/cli.ts daemon --keep-alive demo PWD=/w/kld-39 KLAUD_E2E_RUN=r9' },
     ];
     expect(lockTargets(run, rows)).toEqual({ pids: [4100, 4300], groups: [4100, 4200] });
   });

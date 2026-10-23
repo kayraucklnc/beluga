@@ -17,7 +17,7 @@ export interface SubmitContext {
 /**
  * Send what was typed in the box, wherever it belongs: an answer to Claude's question, a
  * command for a shared workspace's shell, the first message of a new chat or worktree, a name
- * the box asked for, a search, or a message in the conversation on screen. Both screens use it.
+ * the box asked for, a search, or a message in the conversation on screen.
  */
 export function submitTyped(c: SubmitContext, typed: string, urgent = false): void {
   const { client, patchUi } = c;

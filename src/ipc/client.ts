@@ -5,8 +5,8 @@ import type { Args, Method } from './api.js';
 import type { Result } from './handlers.js';
 
 /**
- * How a screen talks to Beluga, whether Beluga runs in the same process (the terminal UI on its
- * own) or in the daemon (several screens at once, the Mac app). Browser-safe.
+ * How a screen talks to Beluga, whether Beluga runs in the same process (tests) or in
+ * the daemon (several screens at once, the Mac app). Browser-safe.
  */
 export interface BelugaClient {
   /** Which kind of screen this is. */
@@ -27,7 +27,7 @@ export interface BelugaClient {
   close(): void;
 }
 
-export type ClientKind = 'tui' | 'mac' | 'test';
+export type ClientKind = 'mac' | 'test';
 
 type Group<M> = M extends `${infer G}.${string}` ? G : never;
 type NameIn<M, G extends string> = M extends `${G}.${infer N}` ? N : never;

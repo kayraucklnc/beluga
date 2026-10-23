@@ -1,5 +1,5 @@
 //! The menu bar and the menu-bar (tray) icon. Every item sends its id to the window, which
-//! does what the same command does in the app (and in the terminal app).
+//! does what the same command does in the app.
 
 use std::collections::HashMap;
 

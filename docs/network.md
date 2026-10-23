@@ -123,8 +123,7 @@ offline.
 ## Multiple rooms
 
 One person can be in several rooms at once. Each room is its own Beluga: its own core, room client
-and peer list. That could be `beluga` hosting in one terminal and `beluga join <link>` in another,
-or the Mac app in your room while a terminal joins a friend's. All of them sign as the same identity,
+and peer list. All of them sign as the same identity,
 so the person's peer id is the same in every room (`tests/multi-room.test.ts`).
 
 - **Presence and the people list are per room.** Each hub lists whoever is connected to it. Leaving

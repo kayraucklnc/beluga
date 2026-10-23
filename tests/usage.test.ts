@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { describeWindow, fromRateLimitEvent, fromUsageResponse, toMs, toPct } from '../src/agent/usage.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
-import { peopleRows, usageMeter } from '../src/ui/banner.js';
 import { personMenu } from '../src/ui/menus.js';
 
 describe('usage', () => {
@@ -43,18 +42,12 @@ describe('usage', () => {
     expect(describeWindow({ pct: 3, resetsAt: Date.parse('2026-10-17T15:10:00Z') })).toMatch(/^3% · resets /);
   });
 
-  it('shows usage in the People panel and person menu, colored as it fills', () => {
-    expect(usageMeter(undefined)).toBeUndefined();
-    expect(usageMeter({ week: { pct: 95 }, updatedAt: 1 })).toEqual([
-      { text: ' · ', color: expect.any(String) },
-      { text: 'wk 95%', color: expect.any(String) },
-    ]);
+  it('shows usage in the person menu', () => {
     const peers: PeerInfo[] = [
       { peerId: 'me', name: 'kay', agent: true, shares: [] },
       { peerId: 'b', name: 'bob', agent: true, shares: [], usage: { plan: 'pro', fiveHour: { pct: 42 }, week: { pct: 10 }, updatedAt: 1 } },
     ];
     const s = reduce(reduce(initialState('r'), { type: 'peers', peers }), { type: 'welcome', self: peers[0]! });
-    expect(peopleRows(s, 0)[1]!.agent.map((x) => x.text).join('')).toBe('◆ Claude ready · 5h 42%');
     const menu = personMenu(s, 1)!;
     expect(menu.intro.join('\n')).toContain('Claude usage (pro):  5-hour 42%   ·   week 10%');
     expect(menu.intro.join('\n')).toContain('How much do you trust bob? Now: Ask me each time.');

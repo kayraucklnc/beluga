@@ -174,7 +174,7 @@ function useShortcuts() {
     return () => window.removeEventListener('keydown', onKey);
   }, [prefs.inspector, prefs.sidebar]);
   useEffect(() => {
-    // The Invite sheet, set to the project you're looking at (as the terminal UI's Invite is).
+    // The Invite sheet, set to the project you're looking at.
     const invite = (): void => ui.openMenu({ kind: 'invite_link', ...inviteChoice(projectInView(client)) });
     document.addEventListener('beluga:invite', invite);
     const palette = (): void => ui.patch({ palette: true });

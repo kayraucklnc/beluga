@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { cleanName, cleanPlanTitle, slugify } from '../src/agent/namer.js';
 import { toQuestion } from '../src/agent/runner.js';
-import type { PendingQuestion } from '../src/core/collab-store.js';
 import { cleanQuestion } from '../src/core/questions.js';
 import { type AppState } from '../src/core/store.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
-import { planFullModel, questionModel, sharedHeaderModel, sharedSection } from '../src/ui/collab-models.js';
 import { clearMenu, invitePersonMenu, sharedMenu, wsShareMenu } from '../src/ui/collab-menus.js';
 import { initialUi, handleKey, type KeyContext } from '../src/ui/keymap.js';
 import { personMenu } from '../src/ui/menus.js';
@@ -23,11 +21,6 @@ function room(host = true): AppState {
   s = reduce(s, { type: 'welcome', self: me });
   return reduce(s, { type: 'peers', peers: [me, { peerId: 'b', name: 'bob', shares: [], agent: true }] });
 }
-
-const question: PendingQuestion = {
-  qid: 'q1', requestId: 'r1', owner: 'me', channel: 'ws:w1', picked: {},
-  question: { kind: 'question', questions: [{ question: 'Which store?', header: 'Sessions', multiSelect: false, options: [{ label: 'Redis', description: 'fast' }, { label: 'Postgres', description: '' }] }] },
-};
 
 describe('worktree names', () => {
   it('cleans what the model says and falls back to the task words', () => {
@@ -61,22 +54,6 @@ describe("Claude's question card", () => {
     expect(toQuestion({ questions: 'nope' })).toBeUndefined();
   });
 
-  it('shows who asks, numbered clickable options, and Skip', () => {
-    const s = reduce(room(), { type: 'question_add', question });
-    const m = questionModel(s, question, 80);
-    const lines = text(m.lines);
-    expect(lines[0]).toContain('Your Claude in add-auth asks');
-    expect(lines.some((l) => l.includes('1 Redis  fast'))).toBe(true);
-    expect(m.zones.filter((z) => z.action.type === 'answer').map((z) => (z.action as { pick: string }).pick)).toEqual(['option', 'option', 'skip']);
-  });
-
-  it('shows a plan with Approve and Keep planning', () => {
-    const plan: PendingQuestion = { ...question, qid: 'q2', question: { kind: 'plan', plan: '1. add auth\n2. test it' } };
-    const m = questionModel(room(), plan, 80);
-    expect(text(m.lines)[0]).toContain('proposes a plan');
-    expect(m.zones.map((z) => (z.action as { pick: string }).pick)).toEqual(['approve', 'revise', undefined]); // + Full screen
-  });
-
   it('number keys pick an option while the composer is empty', () => {
     const ctx: KeyContext = { hasApproval: false, hasViewer: false, overlay: false, page: 20, maxChatScroll: 0, suggestions: [], peopleCount: 1, menuSize: 0, questionOptions: 2 };
     expect(handleKey(initialUi, '2', {}, ctx).effect).toEqual({ type: 'question_number', n: 2 });
@@ -101,14 +78,8 @@ describe('sharing and people', () => {
     expect(wsShareMenu(inside, 'w1')!.intro[0]).toContain('bob (working here)');
   });
 
-  it('shows workspaces shared with you, with a header that says how you are in it', () => {
+  it('a workspace shared with you can be left', () => {
     const s = reduce(room(), { type: 'shared_add', ws: { owner: 'b', id: 'x9', name: 'payments', project: 'shop', role: 'view', share: 'ws-x9' } });
-    const side = text(sharedSection(s, 34).lines);
-    expect(side).toContain('SHARED WITH ME');
-    expect(side.some((l) => l.includes('◈ payments') && l.includes('bob'))).toBe(true);
-    const header = text(sharedHeaderModel({ ...s, view: { kind: 'shared', owner: 'b', id: 'x9', tab: 'chat' } }, s.shared[0]!, 120).lines);
-    expect(header[0]).toContain("you're following along");
-    expect(header[1]).not.toContain('Plan'); // viewers can't ask Claude
     expect(sharedMenu(s, 'b', 'x9')!.options.map((o) => o.id)).toContain('sh-leave');
   });
 
@@ -137,20 +108,6 @@ describe('sharing and people', () => {
 });
 
 describe('plan full screen', () => {
-  const long = Array.from({ length: 60 }, (_, i) => `${i + 1}. step number ${i + 1}`).join('\n');
-  const plan: PendingQuestion = { qid: 'p1', requestId: 'r', owner: 'me', channel: 'ws:w1', picked: {}, question: { kind: 'plan', plan: long } };
-
-  it('the card offers full screen; the full view scrolls and keeps Approve / Keep planning visible', () => {
-    const s = reduce(room(), { type: 'question_add', question: plan });
-    expect(questionModel(s, plan, 100).zones.map((z) => (z.action as { type: string }).type)).toContain('plan_full');
-    const top = planFullModel(s, plan, 100, 20, 0);
-    expect(top.lines).toHaveLength(20);
-    expect(top.maxScroll).toBeGreaterThan(30);
-    expect(top.zones.map((z) => (z.action as { pick?: string; type: string }).pick ?? z.action.type)).toEqual(['approve', 'revise', 'plan_full']);
-    const end = planFullModel(s, plan, 100, 20, 999);
-    expect(end.lines.map((l) => l.map((x) => x.text).join('')).join('\n')).toContain('60. step number 60');
-  });
-
   it('Ctrl+F opens it, arrows scroll, Esc closes', () => {
     const ctx: KeyContext = { hasApproval: false, hasViewer: false, overlay: false, page: 20, maxChatScroll: 0, suggestions: [], peopleCount: 1, menuSize: 0, planId: 'p1', planMaxScroll: 40 };
     const open = handleKey(initialUi, 'f', { ctrl: true }, ctx).ui;

@@ -2,7 +2,7 @@ import type { LogItem } from '@beluga/core/store.js';
 
 /**
  * The earlier conversation of a workspace someone shared with you arrives as system lines
- * ("bob: …"), which the terminal app shows as they are. Here each one that says who wrote it is
+ * ("bob: …"). Here each one that says who wrote it is
  * drawn as that person's (or their Claude's) message: an avatar, a name, the text.
  */
 export function asChatRow(item: LogItem): LogItem {

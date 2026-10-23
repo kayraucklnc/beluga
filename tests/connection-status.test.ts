@@ -106,8 +106,8 @@ describe('a room that turns you away says so once, in the status (KLD-72)', () =
     await waitFor(() => tries.length >= 20, 10_000);
 
     expect(tries.every((t) => t.said && /newer Beluga/.test(t.reason))).toBe(true);
-    expect(store.getState().connection).toMatchObject({ state: 'reconnecting', attempt: 20, reason: 'The host has a newer Beluga. Run beluga update, then join again' });
-    expect(roomLines(store)).toEqual(['The host has a newer Beluga. Run beluga update, then join again. Retrying in the background']);
+    expect(store.getState().connection).toMatchObject({ state: 'reconnecting', attempt: 20, reason: 'The host has a newer Beluga. Update Beluga, then join again' });
+    expect(roomLines(store)).toEqual(['The host has a newer Beluga. Update Beluga, then join again. Retrying in the background']);
     expect(store.getState().log.filter((l) => 'text' in l && /newer Beluga/.test(l.text))).toHaveLength(1);
   }, 20_000);
 

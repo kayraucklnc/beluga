@@ -54,7 +54,7 @@ function Route() {
       // Always the conversation; its changes, files and terminal are in the right panel (a diff or a file can take the center for a while).
       return <WorkspaceCenter />;
     case 'shared':
-      // Its Files tab browses and searches (the terminal UI's read-only shell lives there too).
+      // Its Files tab browses and searches.
       return view.tab === 'chat' ? <ChatView /> : view.tab === 'diff' ? <DiffView /> : <FilesView />;
     case 'overview':
       return <OverviewView />;

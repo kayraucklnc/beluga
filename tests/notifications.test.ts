@@ -9,7 +9,6 @@ import { parseArgs } from '../src/ipc/api.js';
 import type { Session } from '../src/core/session.js';
 import { NotifySettings } from '../src/shared/settings-schema.js';
 import { dndActive, dndFor, dndLabel, nextDnd } from '../src/shared/quiet.js';
-import { FrontTracker } from '../src/ui/tty/front.js';
 import { badgeCount, filterNotices, foldPlanNotices, groupNotices, noticeAgo, noticeLook, noticeTarget } from '../src/ui/notice-models.js';
 import type { PeerInfo } from '../src/protocol.js';
 import type { Project } from '../src/workspaces/types.js';
@@ -345,38 +344,6 @@ describe('attention', () => {
     expect(store.getState().attention).toMatchObject({ shown: ['room'], front: false });
   });
 });
-
-describe('FrontTracker', () => {
-  it('a terminal without focus reports is away after a while unused, back on the next key', () => {
-    let now = 0;
-    const seen: boolean[] = [];
-    const t = new FrontTracker((away) => seen.push(away), 1000, () => now);
-    now = 999;
-    t.tick();
-    expect(seen).toEqual([]);
-    now = 1000;
-    t.tick();
-    t.tick();
-    expect(seen).toEqual([true]);
-    t.input();
-    expect(seen).toEqual([true, false]);
-  });
-
-  it('once a terminal reports focus, only its reports count', () => {
-    let now = 0;
-    const seen: boolean[] = [];
-    const t = new FrontTracker((away) => seen.push(away), 1000, () => now);
-    t.focus(false);
-    t.input();
-    expect(seen).toEqual([true]);
-    t.focus(true);
-    now = 10_000;
-    t.tick();
-    expect(seen).toEqual([true, false]);
-  });
-});
-
-// ---------------------------------------------------------------- how both screens show the inbox
 
 describe('notice models', () => {
   const at = (day: number, h: number, m = 0): number => new Date(2026, 9, day, h, m).getTime();

@@ -13,7 +13,7 @@ import { asksBeforeWork } from '../lib/work-confirm.js';
  * A workspace's toolbar, the Mac way: one prominent button for what this workspace needs next
  * (chosen from its state), Run when the project has a run script, and everything else under ⋯,
  * in sections (the git steps, the conversation, the folder, putting it away). The actions are
- * the shared `workspaceButtons` (the terminal app's top bar), so both agree.
+ * the shared `workspaceButtons`.
  */
 export interface ToolAction {
   readonly id: string;

@@ -36,7 +36,7 @@ const say = (line) => process.stdout.write(`[perf-lag] ${line}\n`);
 /** Lag lines the daemon logged, with when they arrived. */
 const lags = [];
 const LAG = /event loop delay: p50 ([\d.]+) ms, p95 ([\d.]+) ms, max ([\d.]+) ms/;
-const nodeArgs = [...(PROFILE ? ['--cpu-prof', `--cpu-prof-dir=${path.resolve(PROFILE)}`] : []), '--import', 'tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'];
+const nodeArgs = [...(PROFILE ? ['--cpu-prof', `--cpu-prof-dir=${path.resolve(PROFILE)}`] : []), '--import', 'tsx', 'src/cli.ts', 'daemon', '--keep-alive', 'demo'];
 const daemon = spawn(process.execPath, nodeArgs, {
   cwd: repo,
   // Its own home and ~/.claude: never your real data, never your real Claude Code sessions.
@@ -75,7 +75,7 @@ try {
   if (!existsSync(info)) throw new Error(`the demo daemon did not start:\n${logTail}`);
   const { port, token } = JSON.parse(readFileSync(info, 'utf8'));
   const { SocketClient } = await tsImport('../src/ipc/socket-client.ts', import.meta.url);
-  client = await SocketClient.connect({ url: `ws://127.0.0.1:${port}`, token, kind: 'tui', version: 'perf-lag', timeoutMs: 30_000 });
+  client = await SocketClient.connect({ url: `ws://127.0.0.1:${port}`, token, kind: 'test', version: 'perf-lag', timeoutMs: 30_000 });
   const state = () => client.store.getState();
   const project = state().projects.find((p) => p.name === 'bob-api');
   if (!project) throw new Error('no bob-api project in the demo');

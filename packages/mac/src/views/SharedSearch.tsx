@@ -64,8 +64,7 @@ function Marked({ text, query }: { text: string; query: string }) {
 
 /**
  * What the search found in a shared workspace: files whose name matches, then lines that
- * contain it. It's served by the owner's Beluga, read-only (the same search as the terminal UI's
- * `find` and `grep`); a click opens the file beside the list.
+ * contain it. It's served by the owner's Beluga, read-only; a click opens the file beside the list.
  */
 export function SearchResults({ id, owner, share, query }: { id: string; owner: string; share: string; query: string }) {
   const api = useApi();

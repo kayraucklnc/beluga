@@ -20,7 +20,7 @@ export type Intent =
 /** `target`: the client whose request caused it (undefined: every client). */
 export type IntentListener = (intent: Intent, target: string | undefined) => void;
 
-/** Delivers intents to whoever shows them (the terminal UI, or the daemon's connected clients). */
+/** Delivers intents to whoever shows them (the daemon's connected clients). */
 export class IntentBus {
   private readonly listeners = new Set<IntentListener>();
 

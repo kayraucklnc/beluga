@@ -23,7 +23,7 @@ import { FILES_EDIT_HANDLERS } from './files-handlers.js';
 
 /**
  * What each API method does (see api.ts for the list and its arguments). Runs in the core:
- * in the daemon for every connected client, or in the terminal UI's own process.
+ * in the daemon for every connected client, or in-process (tests).
  * Results are plain data (they cross a socket).
  */
 type Handler<M extends Method> = (s: Session, ...args: Args<M>) => unknown;

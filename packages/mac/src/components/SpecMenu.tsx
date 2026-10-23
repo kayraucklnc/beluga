@@ -9,8 +9,8 @@ import { guiHint } from '../lib/gui-copy.js';
 import s from './SpecMenu.module.css';
 
 /**
- * A menu built from the same spec as the terminal UI's (projectMenu, personMenu…): the same
- * options, the same ids, the same actions when picked. "Close" isn't needed here.
+ * A menu built from its shared spec (projectMenu, personMenu…): the spec's options, ids and
+ * actions when picked. "Close" isn't needed here.
  */
 function useItems(menu: MenuKind, hide?: (id: string) => boolean) {
   const { client } = useBeluga();

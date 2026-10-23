@@ -4,7 +4,6 @@ Claude can draw. When a picture explains better than prose, Claude adds a fenced
 
 - **How to ask:** `/visualize <what>` (or ⌘K › *Draw This as a Graph*). Words like "visualize", "diagram" or "map out" in any message work too, and Claude also draws on its own when it helps.
 - **Where graphs show:** answers in any conversation, reports, and Markdown files opened in Beluga.
-- **In the terminal app:** the same block shows as JSON.
 
 ## What you can do with one
 
@@ -122,7 +121,7 @@ In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag
   - `nodes.tsx`, `edges.tsx`, `Inspector.tsx`, `Walkthrough.tsx`
 - **Load time:** React Flow and ELK load the first time a graph shows.
 - **Where blocks are found:** the chat's Markdown (`chat/Markdown.tsx`) and the document reader (`components/markdown/MarkdownDoc.tsx`) both hand ```` ```beluga-graph ```` blocks to `GraphBlock`.
-- **Demo:** `beluga demo` answers "visualize…" with a payment-flow graph (`src/agent/mock-graphs.ts`).
+- **Demo:** the demo daemon (`npm run dev` at the repo root) answers "visualize…" with a payment-flow graph (`src/agent/mock-graphs.ts`).
 
 For tables, charts, stat tiles, code and colors (live from a file, database, web address or command), see [Views](views.md). Claude's `show` tool makes graphs too.
 

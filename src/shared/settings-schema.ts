@@ -72,8 +72,6 @@ export const Settings = z.object({
   effort: z.enum(EFFORTS).optional(),
   /** Run the project's setup script (e.g. npm install) in every new worktree. */
   autoSetup: z.boolean().default(true),
-  /** The terminal app installs new versions from npm by itself (the Mac app has its own setting). */
-  autoUpdate: z.boolean().default(false),
   /** Show how full each conversation's context is. */
   contextMeter: z.boolean().default(true),
   /** Compact a conversation on its own when its context is nearly full (the chat stays on screen). Off until you turn it on. */

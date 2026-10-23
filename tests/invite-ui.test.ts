@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { SharedWorkspace } from '../src/core/collab-store.js';
 import { type AppState } from '../src/core/store.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import { actionButtons } from '../src/ui/actions.js';
 import { renderLog } from '../src/ui/format.js';
 import { copyIndex, guestAddMenu, guestPersonMenu, inviteChoice, inviteMenu } from '../src/ui/invite-menus.js';
-import { firstKnock, guestShellModel, knockCardModel, shellSuggestions } from '../src/ui/invite-models.js';
 import { menuSpec, personMenu, projectMenu } from '../src/ui/menus.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 
@@ -67,50 +65,6 @@ describe('guests in People', () => {
     expect(spec.options.map((o) => o.id)).toEqual(['g-can:watch', 'g-can:prompt', 'g-can:edit', 'g-add', 'g-room', 'g-remove', 'close']);
     expect(guestPersonMenu(s, { ...guest, room: true }).options.map((o) => o.id)).not.toContain('g-room');
     expect(guestAddMenu(s, 'm')!.options.map((o) => o.hint)).toEqual(['already in', '', 'Esc']);
-  });
-});
-
-describe('the knock card', () => {
-  it('lets them in as offered, as watch only, or not at all', () => {
-    let s = reduce(room(), { type: 'link_set', link });
-    s = reduce(s, { type: 'knock', knock: { peerId: 'm', linkId: 'L1', ts: 0 }, show: true });
-    const knock = firstKnock(s)!;
-    const card = knockCardModel(s, knock, 120);
-    expect(text(card.lines)[0]).toContain('mia wants to join bob-api');
-    expect(card.zones.map((z) => z.action)).toEqual([
-      { type: 'knock', peerId: 'm', pick: 'in' },
-      { type: 'knock', peerId: 'm', pick: 'watch' },
-      { type: 'knock', peerId: 'm', pick: 'decline' },
-    ]);
-    // Someone who left the door isn't shown.
-    expect(firstKnock(reduce(s, { type: 'peers', peers: [me] }))).toBeUndefined();
-  });
-});
-
-describe("a guest's Terminal tab", () => {
-  const w: SharedWorkspace = { owner: 'me', id: 'w1', name: 'add-auth', project: 'bob-api', role: 'view', can: 'watch', share: 'ws-w1' };
-
-  it('makes every name in the output clickable and keeps the newest at the bottom', () => {
-    const s = reduce(room(), {
-      type: 'guest_shell',
-      id: 'w1',
-      shell: { cwd: 'src', busy: false, entries: [{ id: 1, cwd: '', cmd: 'ls', out: [{ text: 'src/', tone: 'dir', open: 'src', dir: true }, { text: 'README.md', tone: 'file', open: 'README.md', dir: false }] }] },
-    });
-    const m = guestShellModel(s, w, 100, 10, 0);
-    expect(text(m.lines)[0]).toContain('▸ /src');
-    expect(text(m.lines).slice(1, 4)).toEqual(['/ $ ls', 'src/', 'README.md']);
-    expect(m.zones.find((z) => z.action.type === 'shell_open' && z.y === 2)?.action).toEqual({ type: 'shell_open', id: 'w1', rel: 'src', dir: true });
-    expect(m.zones.some((z) => z.action.type === 'shell_run' && z.action.cmd === 'cd ..')).toBe(true);
-    // Short on room: the oldest lines scroll away.
-    expect(text(guestShellModel(s, w, 100, 2, 0).lines).slice(1)).toEqual(['README.md']);
-  });
-
-  it('completes half-typed names, and stays out of the way otherwise', () => {
-    const listing = (dir: string) => (dir === '' ? [{ name: 'README.md', dir: false, size: 1 }, { name: 'src', dir: true, size: 0 }] : undefined);
-    expect(shellSuggestions('cat RE', '', listing)).toEqual([{ label: 'README.md', hint: 'Enter opens it', value: 'cat README.md', enter: 'submit' }]);
-    expect(shellSuggestions('cd s', '', listing).map((x) => [x.value, x.enter])).toEqual([['cd src/', 'complete']]);
-    expect(shellSuggestions('cd src/', '', listing)).toEqual([]);
-    expect(shellSuggestions('', '', listing)).toEqual([]);
   });
 });
 

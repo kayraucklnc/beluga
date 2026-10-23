@@ -343,7 +343,7 @@ describe('settingsMenu', () => {
   it('top level links to every section', () => {
     const m = settingsMenu(s());
     expect(m.title).toBe('Settings');
-    expect(ids(m)).toEqual(['set-name', 'set-theme', 'sec:people', 'sec:notify', 'sec:claude', 'sec:workspaces', 'sec:display', 'set-autoupdate', 'close']);
+    expect(ids(m)).toEqual(['set-name', 'set-theme', 'sec:people', 'sec:notify', 'sec:claude', 'sec:workspaces', 'sec:display', 'close']);
     expect(m.options[0]!.hint).toContain('kayra');
     expect(m.options[3]!.hint).toBe('desktop on · sound');
     expect(settingsMenu(reduce(s(), { type: 'prefs', prefs: { notify: { ...s().prefs.notify, sound: { kind: 'none' } } } })).options[3]!.hint).toBe('desktop on');

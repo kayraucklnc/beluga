@@ -97,7 +97,7 @@ export async function startDemo({ home, claude, port }: { home: string; claude: 
   mkdirSync(path.join(os.tmpdir(), cache), { recursive: true });
   symlinkSync(path.join(os.tmpdir(), cache), path.join(tmp, cache));
   // node itself, not npx tsx (two processes fewer per daemon).
-  const child = spawn(process.execPath, ['--import', 'tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'], {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/cli.ts', 'daemon', '--keep-alive', 'demo'], {
     cwd: repo,
     // GitHub is a stand-in (e2e/fake-gh.mjs): its PRs are whatever a test writes to fake-gh.json.
     // Under both names: the core reads BELUGA_* first, so an inherited BELUGA_HOME (the run's) must not win.

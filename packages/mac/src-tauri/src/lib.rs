@@ -2,8 +2,7 @@
 //!
 //! The app owns only what the operating system is for: the window (vibrancy, traffic lights),
 //! the menu bar, the tray, notifications, `beluga://` (and the older `klaud://`) links, and
-//! keeping Beluga's daemon running. Everything Beluga does happens in the daemon, which the
-//! terminal app attaches to as well.
+//! keeping Beluga's daemon running. Everything Beluga does happens in the daemon.
 
 mod daemon;
 mod focus;
@@ -309,7 +308,7 @@ pub fn run() {
     app.run(|app, event| match event {
         // Clicking the Dock icon brings the window back.
         RunEvent::Reopen { .. } => focus_main(app),
-        // Quitting leaves the room (unless the terminal app started Beluga; it decides then),
+        // Quitting leaves the room (unless this app didn't start Beluga; it's left running then),
         // then puts a downloaded update in place.
         RunEvent::Exit => {
             daemon::stop(app);

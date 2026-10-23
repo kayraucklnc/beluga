@@ -1,5 +1,5 @@
-//! Keeping Beluga's daemon running: find the one that runs (the terminal app may have started
-//! it), else start the bundled one, and tell the web view where it is.
+//! Keeping Beluga's daemon running: find the one that runs (`beluga daemon` run by hand, say),
+//! else start the bundled one, and tell the web view where it is.
 
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek, SeekFrom};
@@ -34,7 +34,7 @@ struct Info {
     /// The Beluga version it runs (missing only in daemon.json files from very old versions).
     #[serde(default)]
     version: Option<String>,
-    /// Started to stay up for the Mac app (`--keep-alive`), not by a terminal window.
+    /// Started to stay up for the Mac app (`--keep-alive`), not run by hand.
     #[serde(default, rename = "keepAlive")]
     keep_alive: bool,
 }
@@ -130,7 +130,7 @@ fn bundled_version(app: &AppHandle) -> Option<String> {
 
 /// Whether a running daemon is an older (or other) Beluga this app should replace with its
 /// own: only a kept-alive one (a Mac app started it, maybe the version before an update),
-/// never one a terminal window started and still uses.
+/// never one started by hand.
 fn outdated(running: Option<&str>, keep_alive: bool, bundled: Option<&str>) -> bool {
     keep_alive && matches!((running, bundled), (Some(r), Some(b)) if r != b)
 }
@@ -262,7 +262,7 @@ fn base_command(app: &AppHandle) -> Result<(Command, bool), String> {
 fn dev_command() -> Result<Command, String> {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let mut c = Command::new("npx");
-    c.current_dir(&repo).args(["tsx", "src/cli.tsx"]);
+    c.current_dir(&repo).args(["tsx", "src/cli.ts"]);
     c.env("BELUGA_ALLOW_ORIGINS", "http://localhost:1420");
     Ok(c)
 }
@@ -354,7 +354,7 @@ async fn terminate_child(mut child: Child) -> bool {
     child.kill().is_ok() && child.wait().is_ok()
 }
 
-/// Ask a daemon someone else started (the terminal app) to quit; force it if it doesn't.
+/// Ask a daemon this app didn't start to quit; force it if it doesn't.
 async fn terminate_pid(pid: u32) -> bool {
     if !signal(pid, libc::SIGTERM) {
         return !alive(pid);
@@ -376,7 +376,7 @@ async fn terminate_pid(pid: u32) -> bool {
     false
 }
 
-/// Stop whichever daemon runs, ours or the terminal app's, and wait until it's gone.
+/// Stop whichever daemon runs, ours or another, and wait until it's gone.
 async fn stop_running(app: &AppHandle) -> Result<(), String> {
     let child = app
         .try_state::<AppState>()
@@ -446,7 +446,7 @@ fn check_join(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Stop the daemon this app started (one the terminal app started stops by itself).
+/// Stop the daemon this app started (one started elsewhere is left alone).
 pub fn stop(app: &AppHandle) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
@@ -511,7 +511,7 @@ mod tests {
     fn replaces_only_a_kept_alive_daemon_of_another_version() {
         assert!(outdated(Some("0.4.0"), true, Some("0.5.0")));
         assert!(!outdated(Some("0.5.0"), true, Some("0.5.0")));
-        // The terminal app's daemon is left alone, whatever its version.
+        // A daemon started by hand is left alone, whatever its version.
         assert!(!outdated(Some("0.4.0"), false, Some("0.5.0")));
         // Development (nothing bundled), or a daemon that doesn't say.
         assert!(!outdated(Some("0.4.0"), true, None));

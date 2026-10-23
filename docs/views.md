@@ -4,8 +4,7 @@ Claude can show you data, not just tell you about it. Tables, charts, stat tiles
 
 - **How to ask:** "show me…", "chart…", "table of…", or anything about data. Claude reaches for a view whenever something is tabular or numeric.
 - **Where views show:** answers in any conversation, reports, and Markdown files opened in Beluga.
-- **In the terminal app:** the same block shows as JSON.
-- **Demo:** `beluga demo`, then *show me the payments dashboard*.
+- **Demo:** the demo daemon (`npm run dev` at the repo root), then *show me the payments dashboard*.
 
 ## When Claude uses them
 

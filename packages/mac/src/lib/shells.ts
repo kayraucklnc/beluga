@@ -44,7 +44,7 @@ export function useGlobalShells(): GlobalShells {
     dir,
     pick: (k) => ui.patch({ termKey: k }),
     open: () => {
-      // Numbered after the open ones, like the terminal app does; it starts once it's shown.
+      // Numbered after the open ones; it starts once it's shown.
       const k = globalShellId(Math.max(0, ...globals.map(globalShellNumber)) + 1);
       seen.delete(k);
       ui.patch({ termKey: k });

@@ -3,10 +3,7 @@ import type { Config } from '../config.js';
 import { copyNative } from '../core/clipboard.js';
 import { currentClient } from '../core/client-context.js';
 import { openWithSystem } from '../core/local.js';
-import { belugaEnv } from '../core/beluga-env.js';
-import { belugaHome } from '../core/home.js';
 import { IPC_VERSION } from '../ipc/protocol.js';
-import { quietNow, startUpdateWatch, watchesItself } from '../update/auto.js';
 import { type Core, buildCore } from './core.js';
 import { clearDaemonInfo, writeDaemonInfo } from './files.js';
 import { watchEventLoop } from './lag.js';
@@ -37,8 +34,6 @@ export interface DaemonOptions {
   readonly firstClientMs?: number;
   /** How often the event-loop delay is logged (default 30 s, see lag.ts). */
   readonly lagEveryMs?: number;
-  /** Look for new versions of Beluga now and then (`beluga daemon`; never in tests, never the Mac app's). */
-  readonly updates?: boolean;
 }
 
 export interface RunningDaemon {
@@ -56,8 +51,8 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 
 /**
  * `beluga daemon`: build the core once and serve it to every screen on this computer. Leaves the
- * room a few seconds after the last screen closes (so quitting the terminal UI still means
- * "leave"), unless it's kept alive for the Mac app.
+ * room a few seconds after the last screen closes, unless it's kept alive for the
+ * Mac app.
  */
 export async function startDaemon(config: Config, opts: DaemonOptions): Promise<RunningDaemon> {
   const log = opts.log ?? (() => undefined);
@@ -66,7 +61,6 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
   let stopping: Promise<void> | undefined;
   let resolveDone!: () => void;
   let stopLag = (): void => undefined;
-  let stopUpdates = (): void => undefined;
   const done = new Promise<void>((r) => (resolveDone = r));
   const stop = (reason = 'Beluga is shutting down'): Promise<void> => {
     stopping ??= (async () => {
@@ -74,7 +68,6 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
       clearTimeout(linger);
       clearTimeout(firstClient);
       stopLag();
-      stopUpdates();
       clearDaemonInfo();
       await server.close(reason).catch(() => undefined);
       await core.stop().catch((err: unknown) => log(`stop failed: ${errorText(err)}`));
@@ -84,7 +77,7 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
   };
 
   const core = await buildCore(config, {
-    // The clipboard tool on this computer first; else the screen that asked (a terminal over SSH copies through its terminal).
+    // The clipboard tool on this computer first; else the screen that asked.
     copy: async (text) => {
       if (await copyNative(text).catch(() => false)) return;
       await server.callCap('copyText', [text], currentClient());
@@ -124,22 +117,6 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
 
   core.start();
   stopLag = watchEventLoop(log, opts.lagEveryMs);
-  if (opts.updates && watchesItself(opts.version, { check: belugaEnv('UPDATE_CHECK') })) {
-    stopUpdates = startUpdateWatch({
-      home: belugaHome(),
-      version: opts.version,
-      auto: () => core.store.getState().prefs.autoUpdate,
-      // With a screen attached, a restart would close it: wait until the last one is gone too.
-      idle: () => server.clients.size === 0 && quietNow(core.store.getState()),
-      // The next `beluga` starts a daemon with the new version.
-      restart: (version) => void stop(`Updated to Beluga ${version}`),
-      tell: (text, level) => {
-        log(`update: ${text}`);
-        if (server.clients.size > 0) core.session.toast(text, level);
-        else core.session.system(text, level === 'warn' ? 'warn' : 'info');
-      },
-    });
-  }
   return { core, server, port, token, stop, done };
 }
 

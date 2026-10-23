@@ -592,7 +592,7 @@ export interface WorkspaceButton {
   readonly tone?: 'error' | 'ok' | 'info';
 }
 
-/** The toolbar of a workspace, in order, as both screens show it (your hidden buttons left out). */
+/** The toolbar of a workspace, in order (your hidden buttons left out). */
 export function workspaceButtons(state: AppState, ws: Workspace): WorkspaceButton[] {
   const project = state.projects.find((p) => p.id === ws.projectId);
   const changed = ws.status?.changed ?? 0;

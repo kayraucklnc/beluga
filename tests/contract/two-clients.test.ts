@@ -48,7 +48,7 @@ async function setup(terminals?: ConstructorParameters<typeof DaemonServer>[0]['
   server = srv;
   const port = await srv.listen();
   await waitFor(() => store.getState().self, 4000);
-  const screen = async (kind: 'tui' | 'mac', caps: Capabilities = {}) => {
+  const screen = async (kind: 'test' | 'mac', caps: Capabilities = {}) => {
     const c = await SocketClient.connect({ url: `ws://127.0.0.1:${port}`, token, kind, version: 'test', caps });
     closers.push(() => c.close());
     return c;
@@ -61,7 +61,7 @@ describe('two screens at once', () => {
     const written: string[] = [];
     const pty = { backlog: () => '', running: true, exited: undefined, onData: () => () => undefined, onExit: () => () => undefined, write: (d: string) => void written.push(d), resize: () => undefined };
     const { screen } = await setup({ get: (key: string) => (key === 'shell:1' ? pty : undefined) } as never);
-    const tui = await screen('tui');
+    const tui = await screen('test');
     const mac = await screen('mac');
     const a = tui.attachTerminal('shell:1');
     await new Promise((r) => setTimeout(r, 50));
@@ -81,7 +81,7 @@ describe('two screens at once', () => {
 
   it('the first answer to an approval wins; the other gets false', async () => {
     const { session, screen } = await setup();
-    const tui = await screen('tui');
+    const tui = await screen('test');
     const mac = await screen('mac');
     const answer = session.ask('tool', 'Run npm test?', 'npm test');
     const approval = await waitFor(() => tui.store.getState().approvals[0]);
@@ -95,7 +95,7 @@ describe('two screens at once', () => {
 
   it("each screen goes where its own commands say; the other stays put", async () => {
     const { screen } = await setup();
-    const tui = await screen('tui');
+    const tui = await screen('test');
     const mac = await screen('mac');
     await mac.api.session.submit('/overview', { channel: 'room' });
     await waitFor(() => mac.store.getState().view.kind === 'overview');
@@ -109,7 +109,7 @@ describe('two screens at once', () => {
 
   it('what happens without anyone asking reaches every screen', async () => {
     const { session, screen } = await setup();
-    const tui = await screen('tui');
+    const tui = await screen('test');
     const mac = await screen('mac');
     session.toast('bob joined');
     await waitFor(() => tui.store.getState().toast?.text === 'bob joined' && mac.store.getState().toast?.text === 'bob joined');
@@ -121,7 +121,7 @@ describe('two screens at once', () => {
     const copiedMac: string[] = [];
     const notifiedTui: string[] = [];
     const notifiedMac: string[] = [];
-    const tui = await screen('tui', { copyText: (t: string) => void copiedTui.push(t), notify: (n: { title: string }) => void notifiedTui.push(n.title) });
+    const tui = await screen('test', { copyText: (t: string) => void copiedTui.push(t), notify: (n: { title: string }) => void notifiedTui.push(n.title) });
     await screen('mac', { copyText: (t: string) => void copiedMac.push(t), notify: (n: { title: string }) => void notifiedMac.push(n.title) });
     await tui.api.session.copyText('from the terminal', 'Copied');
     expect(copiedTui).toEqual(['from the terminal']);
@@ -134,7 +134,7 @@ describe('two screens at once', () => {
 
   it('a conversation is unread until some screen shows it; any screen showing it clears it', async () => {
     const { session, store, screen } = await setup();
-    const tui = await screen('tui');
+    const tui = await screen('test');
     const mac = await screen('mac');
     store.dispatch({ type: 'chat', id: 'm1', from: session.selfId, text: 'one', ts: 1, byAgent: false, channel: 'ws:w9' });
     await waitFor(() => tui.store.getState().unread['ws:w9'] === 1 && mac.store.getState().unread['ws:w9'] === 1);
@@ -148,7 +148,7 @@ describe('two screens at once', () => {
 
   it('a second screen sees images in the viewer, pixels and all', async () => {
     const { store, screen } = await setup();
-    const tui = await screen('tui');
+    const tui = await screen('test');
     const at = { owner: 'me', share: 's', path: 'a.png' };
     store.dispatch({ type: 'viewer_open', at });
     store.dispatch({ type: 'viewer_image', at, image: { width: 1, height: 1, data: new Uint8Array([255, 0, 0, 255]) } });

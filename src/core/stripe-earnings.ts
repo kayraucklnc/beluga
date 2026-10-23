@@ -252,7 +252,7 @@ const services = new WeakMap<object, StripeEarnings>();
 
 export const attachEarnings = (session: object, service: StripeEarnings): void => void services.set(session, service);
 
-/** The earnings service of this session, or a clear error where there's none (the terminal app). */
+/** The earnings service of this session, or a clear error where there's none (no daemon running it, e.g. tests). */
 export function earningsOf(session: object): StripeEarnings {
   const service = services.get(session);
   if (!service) throw new Error('Earnings from Stripe live in the Beluga app for Mac (its daemon).');

@@ -91,7 +91,7 @@ export function parseContextEvent(text: string): ContextEventData | undefined {
   };
 }
 
-/** The words a compaction shows where a client draws it as plain text (the terminal app). */
+/** The words a compaction shows where it's drawn as plain text. */
 export function compactText(mark: CompactMark): string {
   if (mark.state === 'running') return 'Compacting the conversation…';
   if (mark.state === 'failed') return "Compaction didn't finish. The conversation is unchanged.";

@@ -3,9 +3,9 @@ import type { MenuKind } from '../../../../src/ui/menus.js';
 import type { AskedWork } from './work-asked.js';
 
 /**
- * Sheets and alerts this window opens for things the terminal UI asks in its message box (a
- * name for a fork, a command for a friend's computer…) or doesn't ask at all (hiding a
- * project). The terminal UI types; here you get a proper form.
+ * Sheets and alerts this window opens for things the shared actions ask in the message box (a
+ * name for a fork, a command for a friend's computer…) or don't ask at all (hiding a
+ * project): here you get a proper form.
  */
 export type NativeSheet =
   /** Copy a workspace under a new name. */

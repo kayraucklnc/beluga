@@ -10,7 +10,7 @@ import t from './terminal-settings.module.css';
 
 const OTHER = '__other';
 
-/** Which shell new terminals run, and how it starts (Beluga's setting: the terminal app uses it too). */
+/** Which shell new terminals run, and how it starts (Beluga's setting, not just this window's). */
 function ShellGroup() {
   const api = useApi();
   const p = useApp((st) => st.prefs);

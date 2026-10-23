@@ -4,7 +4,6 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { belugaEnv, belugaEnvBoth } from '../src/core/beluga-env.js';
 import { belugaHome, migrateHome } from '../src/core/home.js';
-import { RENAME_NOTE, renameNote } from '../src/core/rename-note.js';
 import { tilde } from '../src/core/paths.js';
 import { isSecretPath } from '../src/core/shares.js';
 import { renamedActors } from '../src/core/board/model.js';
@@ -117,15 +116,6 @@ describe('paths and secrets', () => {
       expect(isSecretPath(path.join(home, name, 'identity.json'))).toBe(true);
       expect(isSecretPath(path.join(home, name, 'workspaces', 'app', 'README.md'))).toBe(false);
     }
-  });
-});
-
-describe('the one-time note for `klaud`', () => {
-  it('shows once to someone starting it as klaud, never as beluga', () => {
-    const home = tmp();
-    expect(renameNote('/usr/local/bin/beluga', home)).toBeUndefined();
-    expect(renameNote('/usr/local/bin/klaud', home)).toBe(RENAME_NOTE);
-    expect(renameNote('/usr/local/bin/klaud', home)).toBeUndefined();
   });
 });
 

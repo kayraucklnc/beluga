@@ -131,7 +131,7 @@ export class ProjectInvites {
       this.deps.toast('Opening a secure link… it will be copied when ready');
       return;
     }
-    await this.deps.copy(`beluga join ${url}`, `Link for ${link.label} copied (${CAN_INFO[link.can].short}${link.knock ? ', knocks first' : ''})`);
+    await this.deps.copy(url, `Link for ${link.label} copied (${CAN_INFO[link.can].short}${link.knock ? ', knocks first' : ''})`);
   }
 
   /** The link stops working; people already in keep their place until you remove them. */

@@ -42,7 +42,7 @@ export function buildSystemAppend(ownerName: string): string {
     'trusted = requests run, commands and files outside shared folders ask them; ask = they approve',
     'everything; blocked = declined. A "declined" answer is their choice: say so, never retry around it.',
     "If the person you're asked to reach isn't in list_peers, tell the user how to connect: click Invite",
-    '(or /invite) and send them the link; they run `beluga join <link>` and appear in the room.',
+    '(or /invite) and send them the link; they open it in Beluga and appear in the room.',
     '',
     "Working on someone else's computer (through ask_agent or run_on_peer, or when someone else asked you):",
     'be as careful as you would be on your own machine. Never do anything destructive or irreversible (deleting files,',

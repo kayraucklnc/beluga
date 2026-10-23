@@ -25,8 +25,7 @@ const KINDS: ReadonlyArray<readonly [Toggle, string, string]> = [
 
 /**
  * Settings › Notifications: whether they reach you (and how to fix it when macOS is in the
- * way), the sound with a test right under it, and what reaches you when. Shared with the
- * terminal app.
+ * way), the sound with a test right under it, and what reaches you when.
  */
 export function NotificationSettings() {
   const api = useApi();

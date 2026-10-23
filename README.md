@@ -13,7 +13,7 @@
   <a href="https://github.com/kayraucklnc/beluga/releases/latest"><img src="https://img.shields.io/github/v/release/kayraucklnc/beluga?label=Download%20for%20Mac&logo=apple&color=0a84ff&style=for-the-badge" alt="Download Beluga for Mac"></a>
 </p>
 <p align="center">
-  <sub>Apple Silicon · macOS 13+ · updates itself &nbsp;·&nbsp; Prefer the terminal? <a href="#-beluga-lite-in-your-terminal">Beluga Lite</a></sub>
+  <sub>Apple Silicon · macOS 13+ · updates itself</sub>
 </p>
 <p align="center">
   <sub><b>Klaud is now Beluga.</b> Same app, new name: updating keeps everything (<a href="#license">more</a>).</sub>
@@ -146,27 +146,11 @@ Light and dark, your accent colour, right-click everywhere, drag and drop, ⌘K 
 3. Sign in to [Claude Code](https://claude.com/claude-code) if you haven't (`claude`, then `/login`). Beluga brings everything else.
 4. To work with friends: **Friends › Turn On**, then **Add a Friend** and send them the code.
 
-## 🧑‍💻 Beluga Lite, in your terminal
-
-The same Beluga as a lightweight terminal app: projects, worktrees, every Claude and your friends, everything clickable. Great over SSH.
-
-```bash
-npm install -g beluga-code   # the command is `beluga`
-beluga                       # your projects
-beluga demo                  # look around with two pretend friends
-```
-
-<p align="center">
-  <img src="assets/terminal/overview.png" alt="Beluga Lite in the terminal: two worktrees working at once" width="760">
-</p>
-
-Beluga Lite and the Mac app can run at the same time on the same projects. The full guide: [docs/terminal.md](docs/terminal.md).
-
 ## ⚙️ How it works
 
-One engine, two faces. The engine (projects, Claude, terminals, friends) runs in the background on your Mac; the Mac app and Beluga Lite are windows onto it. Each Claude runs on its owner's computer through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview), with their own subscription.
+The engine (projects, Claude, terminals, friends) runs in the background on your Mac, and the app is the window onto it. Each Claude runs on its owner's computer through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview), with their own subscription.
 
-More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [peer-to-peer connections](docs/p2p.md) · [the friends network](docs/network.md) · [updates](docs/updates.md) · [what each app offers](docs/parity.md).
+More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [peer-to-peer connections](docs/p2p.md) · [the friends network](docs/network.md) · [updates](docs/updates.md) · [every action and where it is](docs/parity.md).
 
 ## 🛠️ Development
 
@@ -179,17 +163,17 @@ npm run app:dev            # the Mac app, running Beluga from this repo
 npm run e2e                # Playwright tests against the demo
 npm run app:build          # the .app and the designed .dmg
 npm run release            # build, sign and publish a release (see docs/updates.md)
-node scripts/gifs.mjs      # re-record the README's GIFs (vite + `beluga daemon demo`, needs ffmpeg)
+node scripts/gifs.mjs      # re-record the README's GIFs (vite + the demo daemon, needs ffmpeg)
 ```
 
 ```
 packages/mac/   the Mac app (React UI in src/, the native shell in src-tauri/)
-src/            the engine (core, friends network, Claude, terminals) and Beluga Lite (src/ui)
+src/            the engine (core, friends network, Claude, terminals) and the app's shared models (src/ui)
 docs/           guides and design notes
 scripts/readme/ the README's animated diagrams (python3 scripts/readme/*.py)
 ```
 
-**Klaud is now Beluga.** Same app, new name, nothing to do: updating keeps your settings, projects and worktrees (`~/.klaud` moves to `~/.beluga`, with a link back), old `klaud://` invite links still open, and the `klaud` command still works. Older still, it was klaude, and `~/.klaude` carries over too.
+**Klaud is now Beluga.** Same app, new name, nothing to do: updating keeps your settings, projects and worktrees (`~/.klaud` moves to `~/.beluga`, with a link back), and old `klaud://` invite links still open. Older still, it was klaude, and `~/.klaude` carries over too.
 
 ## License
 

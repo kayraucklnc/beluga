@@ -3,7 +3,7 @@ import { DEFAULT_SOUND, NO_SOUND, type SoundChoice } from '../../../../../src/sh
 /**
  * The test notification's sound is played by the window, not macOS: you hear it even while
  * macOS holds the banner (a Focus, banners off), and only once, because the banner goes silent.
- * Settings plays it on the click; a test asked for elsewhere (the terminal app) is played when
+ * Settings plays it on the click; a test asked for elsewhere is played when
  * its notification arrives.
  */
 

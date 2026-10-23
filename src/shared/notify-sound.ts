@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-// Which sound a notification makes (Settings › Notifications). Data only, shared by the daemon,
-// the Mac app (which plays all of them) and the terminal app (which plays what it can).
+// Which sound a notification makes (Settings › Notifications). Data only, shared by the daemon
+// and the Mac app (which plays them).
 
 /** The sounds macOS ships in /System/Library/Sounds. */
 export const MAC_SOUNDS = ['Glass', 'Ping', 'Pop', 'Purr', 'Tink', 'Hero', 'Funk', 'Submarine', 'Blow', 'Bottle', 'Frog', 'Morse', 'Sosumi', 'Basso'] as const;
@@ -104,7 +104,7 @@ export function soundOn(prefs: SoundPrefs): boolean {
   return coerceSound(prefs.sound).kind !== 'none';
 }
 
-/** The on/off switch of the terminal app: off is no sound anywhere; on is the default sound. */
+/** A plain on/off switch: off is no sound anywhere; on is the default sound. */
 export function toggledSound(prefs: SoundPrefs): { sound: SoundChoice; perKind: null } {
   return { sound: soundOn(prefs) ? NO_SOUND : DEFAULT_SOUND, perKind: null };
 }

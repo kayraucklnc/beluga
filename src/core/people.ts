@@ -10,8 +10,8 @@ export interface PeopleDeps {
   readonly saved: Settings['people'];
   readonly save: (people: Settings['people']) => void;
   /**
-   * What's saved right now. Another Beluga with your identity (in another room, another
-   * terminal) shares the file and may have chosen since this one started: each change starts from it.
+   * What's saved right now. Another Beluga with your identity (in another room, say)
+   * shares the file and may have chosen since this one started: each change starts from it.
    */
   readonly load?: () => Settings['people'];
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;

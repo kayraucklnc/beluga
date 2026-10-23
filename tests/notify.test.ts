@@ -5,7 +5,6 @@ import { ClientStore } from '../src/client/client-store.js';
 import { Notifier, detectNotices, enabled, placeName, planOfChannel, type NoticeEvent } from '../src/core/notify.js';
 import type { Issue } from '../src/core/board/model.js';
 import type { Plan, PlanBody } from '../src/core/plans/model.js';
-import { pickRoute, plan, type RouteEnv } from '../src/ui/tty/desktop-notify.js';
 import type { PeerInfo } from '../src/protocol.js';
 import type { Project } from '../src/workspaces/types.js';
 import type { PendingQuestion, SharedWorkspace } from '../src/core/collab-store.js';
@@ -345,87 +344,6 @@ describe('Notifier', () => {
     vi.runAllTimers();
     expect(store.getState().inbox).toEqual([]);
     expect(desktop).not.toHaveBeenCalled();
-  });
-});
-
-describe('pickRoute', () => {
-  const env = (over: Partial<RouteEnv> & { vars?: NodeJS.ProcessEnv } = {}): RouteEnv => ({
-    platform: over.platform ?? 'darwin',
-    env: over.vars ?? {},
-    hasTerminalNotifier: over.hasTerminalNotifier ?? false,
-    hasNotifySend: over.hasNotifySend ?? false,
-  });
-
-  it('uses OSC 9 in iTerm, ghostty, and WezTerm (any case)', () => {
-    for (const t of ['iTerm.app', 'ghostty', 'WezTerm']) expect(pickRoute(env({ vars: { TERM_PROGRAM: t }, hasTerminalNotifier: true }))).toBe('osc9');
-  });
-
-  it('uses OSC 99 in kitty', () => {
-    expect(pickRoute(env({ vars: { KITTY_WINDOW_ID: '1' } }))).toBe('osc99');
-    expect(pickRoute(env({ vars: { TERM_PROGRAM: 'kitty' }, platform: 'linux' }))).toBe('osc99');
-  });
-
-  it('uses terminal-notifier on macOS when installed, else osascript', () => {
-    expect(pickRoute(env({ vars: { TERM_PROGRAM: 'Apple_Terminal' }, hasTerminalNotifier: true }))).toBe('terminal-notifier');
-    expect(pickRoute(env({ vars: { TERM_PROGRAM: 'Apple_Terminal' } }))).toBe('osascript');
-  });
-
-  it('uses notify-send on Linux when present, else the bell', () => {
-    expect(pickRoute(env({ platform: 'linux', hasNotifySend: true }))).toBe('notify-send');
-    expect(pickRoute(env({ platform: 'linux' }))).toBe('bell');
-    expect(pickRoute(env({ platform: 'win32', hasNotifySend: true, hasTerminalNotifier: true }))).toBe('bell');
-  });
-});
-
-describe('plan', () => {
-  const n = { title: 'Claude finished', body: 'All good', sound: true };
-
-  it('writes OSC 9 with an optional bell', () => {
-    expect(plan('osc9', n)).toEqual({ write: '\x1b]9;Claude finished: All good\x07\x07' });
-    expect(plan('osc9', { ...n, sound: false })).toEqual({ write: '\x1b]9;Claude finished: All good\x07' });
-  });
-
-  it('writes OSC 99 title and body', () => {
-    expect(plan('osc99', { ...n, sound: false })).toEqual({
-      write: '\x1b]99;i=beluga:d=0;Claude finished\x1b\\\x1b]99;i=beluga:d=1:p=body;All good\x1b\\',
-    });
-    expect(plan('osc99', n).write?.endsWith('\x1b\\\x07')).toBe(true);
-  });
-
-  it('strips control characters and caps lengths so escapes cannot be injected', () => {
-    const out = plan('osc9', { title: 'a\x1b]0;evil\x07b\nc', body: 'x'.repeat(500), sound: false }).write ?? '';
-    expect(out).toBe(`\x1b]9;a ]0;evil b c: ${'x'.repeat(240)}\x07`);
-    expect(plan('osc9', { title: 't'.repeat(300), body: '', sound: false }).write).toBe(`\x1b]9;${'t'.repeat(120)}: \x07`);
-    expect(plan('osc9', { title: 'del\x7f', body: '', sound: false }).write).toContain('del ');
-  });
-
-  it('builds terminal-notifier args with sound and activation', () => {
-    expect(plan('terminal-notifier', n, { __CFBundleIdentifier: 'com.googlecode.iterm2' })).toEqual({
-      cmd: 'terminal-notifier',
-      args: ['-title', 'Beluga', '-subtitle', 'Claude finished', '-message', 'All good', '-group', 'beluga', '-sound', 'default', '-activate', 'com.googlecode.iterm2'],
-    });
-    expect(plan('terminal-notifier', { ...n, body: '', sound: false }, {})).toEqual({
-      cmd: 'terminal-notifier',
-      args: ['-title', 'Beluga', '-subtitle', 'Claude finished', '-message', ' ', '-group', 'beluga'],
-    });
-  });
-
-  it('builds an AppleScript with quotes and backslashes escaped', () => {
-    const p = plan('osascript', { title: 'say "hi"', body: 'path C:\\x "q"', sound: true });
-    expect(p.cmd).toBe('osascript');
-    expect(p.args).toEqual(['-e', 'display notification "path C:\\\\x \\"q\\"" with title "Beluga" subtitle "say \\"hi\\"" sound name "Glass"']);
-    expect(plan('osascript', { title: 't', body: '', sound: false }).args).toEqual(['-e', 'display notification " " with title "Beluga" subtitle "t"']);
-  });
-
-  it('builds notify-send args', () => {
-    expect(plan('notify-send', n)).toEqual({ cmd: 'notify-send', args: ['-a', 'Beluga', '--', 'Claude finished', 'All good'] });
-    // A name that looks like an option can't become one.
-    expect(plan('notify-send', { ...n, title: '--wait bob joined' }).args?.[3]).toBe('wait bob joined');
-  });
-
-  it('rings the bell only with sound on', () => {
-    expect(plan('bell', n)).toEqual({ write: '\x07' });
-    expect(plan('bell', { ...n, sound: false })).toEqual({ write: '' });
   });
 });
 

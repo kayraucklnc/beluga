@@ -20,7 +20,7 @@ const ACCESS: ReadonlyArray<{ value: Access; label: string }> = [
 
 /**
  * Share a workspace: everyone in the room with a role (work here, follow along, or nothing),
- * changed in place, plus a link for someone new. The terminal UI's Share menu, as a sheet.
+ * changed in place, plus a link for someone new. The shared Share menu, as a sheet.
  */
 export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>) {
   const api = useApi();

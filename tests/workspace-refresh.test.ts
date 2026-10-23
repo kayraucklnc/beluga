@@ -174,7 +174,7 @@ describe('which commands may leave processes running', () => {
       'npx tsc --watch',
       'bun server.ts',
       'bun test',
-      'npx tsx src/cli.tsx daemon --keep-alive demo',
+      'npx tsx src/cli.ts daemon --keep-alive demo',
       'node --test',
       'cd packages/mac && npm run test:e2e',
       'env NODE_ENV=dev nohup ./run.sh',

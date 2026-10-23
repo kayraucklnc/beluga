@@ -8,7 +8,7 @@ Three features that build on each other:
 
 Graphs ship first because the other two use them: plans are drawn as graphs, and milestone recaps explain what happened with graphs and proof.
 
-Mac-only, like the network and the gateway (see [parity.md](parity.md) › "Only in one client"). The terminal app stays as it is. The core holds the state and the agent tools, so a terminal screen could show it later.
+The core holds the state and the agent tools; the Mac app shows them (see [parity.md](parity.md) › "Beyond the shared actions").
 
 ---
 

@@ -1,10 +1,10 @@
 # Beluga for Mac updates
 
-Beluga for Mac updates itself from GitHub Releases, and its engine (the daemon it bundles) comes with it. The terminal app has its own, smaller version of this (see *The terminal app* below).
+Beluga for Mac updates itself from GitHub Releases, and its engine (the daemon it bundles) comes with it.
 
 ## Klaud is now Beluga
 
-Copies installed as Klaud update to Beluga like any other version: the old release URL redirects to `kayraucklnc/beluga`, so they find the Beluga build on their own. After the update, `~/.klaud` moves to `~/.beluga` (with a link back), old `klaud://` links still open, and the terminal app's `klaud` command still works.
+Copies installed as Klaud update to Beluga like any other version: the old release URL redirects to `kayraucklnc/beluga`, so they find the Beluga build on their own. After the update, `~/.klaud` moves to `~/.beluga` (with a link back), and old `klaud://` links still open.
 
 ## What you see
 
@@ -27,20 +27,11 @@ Copies installed as Klaud update to Beluga like any other version: the old relea
 - **Quitting.** A downloaded update always installs when you quit, unless updates are *Off*.
 - **After an update.** The pill says "Updated to 0.5 · What's new" once.
 
-## The terminal app
-
-The terminal app (`beluga`, from npm or a git checkout) looks for a new version too (`src/update/auto.ts`). It looks at launch unless it looked less than an hour ago, then every 4 hours, and retries an hour after a failed look. What it found is kept in `~/.beluga/update-check.json`, so a second window doesn't ask npm again. The Mac app's daemon (its version carries `+mac.`) doesn't look: the Mac app's updater replaces it. `BELUGA_UPDATE_CHECK=0` turns looking off.
-
-- **Update automatically off** (the default): it says once per run that "Beluga 0.11.0 is available" and how to get it (`beluga update`). The setting is **/settings › Update automatically**, or `autoUpdate` in `~/.beluga/settings.json`.
-- **Update automatically on**: a newer version on npm is installed in the background (quietly, as `beluga update` would). A daemon (`BELUGA_DAEMON=1`) then stops once nothing is using it: no screens attached, no Claude working and nobody in its room. The next `beluga` starts the new version. Beluga running in your terminal can't restart itself, so it says "Quit and start Beluga again". If an install fails, Beluga says so once and doesn't retry by itself.
-- **A git checkout** is only told how many new commits there are. It's never pulled and rebuilt behind your back.
-
 ## What an update restarts
 
 Installing restarts Beluga's engine, the daemon that the Mac app bundles. The new app runs its own daemon:
 
 - On launch, a kept-alive daemon (one that a Mac app started) with a different version is stopped and replaced.
-- A daemon the terminal app started is left alone.
 
 **Kept** (on disk in `~/.beluga`):
 
@@ -87,15 +78,6 @@ The script ([scripts/release-mac.mjs](../scripts/release-mac.mjs)) does the foll
 4. Creates the release, or updates it if it exists, and marks it latest.
 
 The app's version is `version` in [packages/mac/src-tauri/tauri.conf.json](../packages/mac/src-tauri/tauri.conf.json); the window reads it from there. `packages/mac/package.json` must match, and a test checks that.
-
-**The terminal app on npm** (`beluga-code`, tags `v<version>`), from a clean main, logged in to npm (`npm login`, once):
-
-```sh
-npm run release:npm -- --dry-run   # typecheck, test, npm publish --dry-run
-npm run release:npm                # publish, tag v<version>, push
-```
-
-If the version in package.json is already on npm, [scripts/release-npm.mjs](../scripts/release-npm.mjs) bumps the patch number and commits that. For a minor or major release, set the version in package.json first.
 
 ## The signing key
 

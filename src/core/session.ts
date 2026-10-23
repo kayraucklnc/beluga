@@ -93,7 +93,7 @@ export interface SessionOptions {
   readonly otherTools?: import('./other-worktrees.js').OtherTools;
   /** How friends' commands run on this computer (the demo injects canned output). */
   readonly runShell?: ShellRunner;
-  /** Stop Beluga itself (the daemon, or the terminal UI running it). */
+  /** Stop Beluga itself (the daemon). */
   readonly shutdown?: () => void;
 }
 
@@ -381,7 +381,7 @@ export class Session {
       this.toast('Opening a secure link for friends… it will be copied when ready');
       return;
     }
-    await this.copyOrShow(`beluga join ${invite}`, 'Invite copied. Paste it to a friend');
+    await this.copyOrShow(invite, 'Invite copied. Paste it to a friend');
   }
 
   async copyLastAnswer(): Promise<void> {

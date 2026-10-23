@@ -28,7 +28,7 @@ export interface InProcessOptions {
   readonly screen?: ScreenState;
 }
 
-/** A screen attached to a core running in the same process (the terminal UI on its own, and tests). */
+/** A screen attached to a core running in the same process (tests). */
 export class InProcessClient implements BelugaClient {
   readonly id: string;
   readonly kind: ClientKind;
@@ -43,7 +43,7 @@ export class InProcessClient implements BelugaClient {
     opts: InProcessOptions = {},
   ) {
     this.id = opts.id ?? randomUUID();
-    this.kind = opts.kind ?? 'tui';
+    this.kind = opts.kind ?? 'test';
     this.launchDir = opts.launchDir ?? session.launchDir;
     this.store = new ClientStore(session.store, (attention) => session.attend(this.id, attention), opts.screen);
     this.api = apiProxy((method, args) => this.invoke(method, args));

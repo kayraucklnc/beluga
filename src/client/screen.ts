@@ -18,9 +18,9 @@ import {
 } from '../core/store.js';
 
 /**
- * One screen's own state (see ScreenState in core/store.ts): each client keeps its own, so the
- * terminal UI and the Mac app can look at different things while sharing everything else.
- * Pure and render-agnostic: both clients use it.
+ * One screen's own state (see ScreenState in core/store.ts): each client keeps its own, so
+ * windows can look at different things while sharing everything else.
+ * Pure and render-agnostic.
  */
 export type ScreenAction =
   | { type: 'view'; view: View }
