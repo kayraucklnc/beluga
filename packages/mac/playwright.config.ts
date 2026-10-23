@@ -1,9 +1,10 @@
 import { defineConfig } from '@playwright/test';
-import { homesFor, portFor, worktreeOf } from '../../scripts/e2e-lock.mjs';
+import { homesFor, portFor, workerCount, worktreeOf } from '../../scripts/e2e-lock.mjs';
 
 // `npm run e2e` runs through scripts/e2e-lock.mjs: one Mac e2e run at a time, nothing left behind.
 // It hands every run its worktree's own port and demo home; a bare `playwright test` gets the same ones.
 // Never an inherited KLAUD_HOME without the lock (inside Klaud that's your real data; the demo home is wiped).
+// Each worker runs its own demo daemons in homes next to these (e2e/fixtures.ts): specs run side by side.
 const worktree = worktreeOf(import.meta.dirname);
 if (!process.env.KLAUD_E2E_RUN) {
   process.env.KLAUD_HOME = homesFor(worktree).home;
@@ -17,11 +18,11 @@ export default defineConfig({
   testDir: 'e2e',
   timeout: 45_000,
   expect: { timeout: 10_000 },
+  // Files run side by side, each with its own daemon; a file's tests run in order (some build on each other).
   fullyParallel: false,
-  workers: 1,
+  workers: workerCount(),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
-  globalSetup: './e2e/daemon.ts',
   globalTeardown: './e2e/global-teardown.ts',
   use: {
     baseURL: `http://localhost:${port}`,

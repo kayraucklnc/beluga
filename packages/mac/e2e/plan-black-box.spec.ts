@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * A running plan is a black box at the top level (KLD-29): its task chats getting answers make
@@ -49,7 +49,6 @@ test('a running plan whose task chats get answers is one Unread row, not one per
   for (const name of TASK_WORKTREES) {
     await row(page, name).click();
     await expect(composer(page)).toHaveAttribute('placeholder', new RegExp(name));
-    await page.waitForTimeout(500);
     await composer(page).fill('Take a deep dive into the webhooks, take your time');
     await composer(page).press('Enter');
     await expect(row(page, name)).toHaveAttribute('data-signal-row', 'working', { timeout: 10_000 });

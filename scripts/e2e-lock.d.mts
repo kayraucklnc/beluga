@@ -18,6 +18,10 @@ export function worktreeOf(dir: string): string;
 export function runName(worktree: string, branch?: string): string;
 export function portFor(worktree: string): number;
 export function homesFor(worktree: string): { readonly home: string; readonly claude: string };
+/** One of a run's demo homes: worker `worker`'s slot 0 or 1 (in use, warming up), next to the run's home. */
+export function slotHomes(homes: { readonly home: string; readonly claude: string }, worker: number, slot: 0 | 1): { readonly home: string; readonly claude: string };
+/** How many playwright workers a run uses: E2E_WORKERS, else half the cores (at most 4). */
+export function workerCount(env?: Record<string, string | undefined>, cores?: number): number;
 export function alive(pid: number): boolean;
 export function readLock(file?: string): E2eRun | undefined;
 export function tryLock(run: E2eRun, opts?: { file?: string; onStale?: (old: E2eRun) => void }): { ok: true } | { ok: false; holder: E2eRun };

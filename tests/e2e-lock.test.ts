@@ -17,10 +17,12 @@ import {
   releaseLock,
   rerunArgs,
   runName,
+  slotHomes,
   stopGroups,
   tryLock,
   waitForLock,
   waitingLine,
+  workerCount,
 } from '../scripts/e2e-lock.mjs';
 
 const tmp = (): string => mkdtempSync(path.join(os.tmpdir(), 'klaud-lock-'));
@@ -57,6 +59,24 @@ describe('names, ports and homes', () => {
     expect(portFor('/w/a')).toBeLessThan(17300);
     expect(homesFor('/w/a').home).not.toBe(homesFor('/w/b').home);
     expect(homesFor('/w/a').home.startsWith(os.tmpdir())).toBe(true);
+  });
+
+  it("gives each worker two homes of its own, next to the run's", () => {
+    const homes = homesFor('/w/a');
+    const all = [0, 1, 2].flatMap((w) => [slotHomes(homes, w, 0), slotHomes(homes, w, 1)]);
+    expect(new Set(all.map((h) => h.home)).size).toBe(6);
+    expect(new Set(all.map((h) => h.claude)).size).toBe(6);
+    for (const h of all) expect(path.dirname(h.home)).toBe(path.dirname(homes.home));
+    expect(slotHomes(homes, 2, 1)).toEqual({ home: `${homes.home}-2b`, claude: `${homes.claude}-2b` });
+  });
+
+  it('runs half the cores as workers, at most 4, unless E2E_WORKERS says', () => {
+    expect(workerCount({}, 14)).toBe(4);
+    expect(workerCount({}, 4)).toBe(2);
+    expect(workerCount({}, 1)).toBe(1);
+    expect(workerCount({ E2E_WORKERS: '7' }, 4)).toBe(7);
+    expect(workerCount({ E2E_WORKERS: '1' }, 14)).toBe(1);
+    expect(workerCount({ E2E_WORKERS: 'lots' }, 14)).toBe(4);
   });
 });
 

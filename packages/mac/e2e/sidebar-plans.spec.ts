@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * A plan is one row under its project (KLD-23): its task worktrees stay off the sidebar, the row

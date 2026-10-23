@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /** Tasks (docs/tasks-and-plans.md): the demo's board, a new task, a task's page, the board and the graph, and a worktree's task. */
 

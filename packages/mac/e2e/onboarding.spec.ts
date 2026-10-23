@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 
 /** The first-run welcome (src/onboarding): it shows once, its settings apply, and it stays gone. */
 

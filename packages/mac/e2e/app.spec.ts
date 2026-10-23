@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 import { pick } from './helpers.js';
 
 /** The Mac app's web view against a real klaud (the demo): what you click does what it says. */
@@ -115,6 +115,7 @@ test('opens and closes shells without them coming back', async ({ page }) => {
   // Closing the one shown moves to the other, and it stays closed.
   await shells.nth(1).getByRole('button', { name: /^Close/ }).click();
   await expect(shells).toHaveCount(1);
+  // Fixed waits, on purpose: they show the closed shell doesn't come back.
   await page.waitForTimeout(1500);
   await expect(shells).toHaveCount(1);
   await shells.first().getByRole('button', { name: /^Close/ }).click();
@@ -129,7 +130,8 @@ test('renames a shell, for every screen, and Escape cancels', async ({ page }) =
   await openTerminalPage(page);
   const first = page.getByRole('tab', { name: /^Shell \d+/ }).first();
   await expect(first).toBeVisible();
-  await page.waitForTimeout(800); // it has started
+  // It has started: its prompt is in.
+  await expect(page.locator('.xterm-rows')).toContainText(/\S/);
   await first.dblclick();
   await page.getByLabel('Terminal name').fill('build logs');
   await page.keyboard.press('Enter');
@@ -170,7 +172,7 @@ test('sets an environment variable that new shells get', async ({ page }) => {
   await page.keyboard.press('Escape');
   await openTerminalPage(page);
   await page.getByRole('button', { name: 'New shell' }).first().click();
-  await page.waitForTimeout(800);
+  await expect(page.locator('.xterm-rows')).toContainText(/\S/);
   await page.locator('.xterm').click();
   await page.keyboard.type('echo "got-$KLAUD_E2E_TOKEN"\n');
   await expect(page.getByText('got-tok-$((6*7))-secret')).toBeVisible({ timeout: 15_000 });

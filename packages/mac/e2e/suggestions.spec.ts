@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator } from './fixtures.js';
 
 /** The / and @ suggestions: the highlighted one stays in view while the arrows move through a long list. */
 

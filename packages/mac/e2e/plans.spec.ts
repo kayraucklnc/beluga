@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /** Plans (docs/tasks-and-plans.md): the demo's plan as a graph and an outline, a new plan drafted with Claude and approved onto the board, and the composer's Plan with Tasks. */
 
@@ -55,7 +55,6 @@ test('a task’s panel keeps its head and Close in reach while its brief scrolls
   await main(page).getByRole('button', { name: 'Plan Options' }).click();
   await page.getByRole('menuitem', { name: 'Hide the Conversation' }).click();
   await main(page).getByRole('button', { name: 'Fit to View' }).click();
-  await page.waitForTimeout(400);
   await main(page).locator('.react-flow__node').filter({ hasText: 'Refund endpoint' }).click();
   await expect(edge('t:retries', 't:refund-api')).toHaveCount(0);
   await expect(main(page).locator('.react-flow__node').filter({ hasText: 'Idempotent webhook retries' }).locator('[data-linked="true"]')).toHaveCount(1);
@@ -120,8 +119,18 @@ test('the plan stays sharp zoomed in, and its name never clips (KLD-25)', async 
   const viewport = main(page).locator('.react-flow__viewport');
   const scale = async () => Number(/scale\(([\d.]+)\)/.exec((await viewport.getAttribute('style')) ?? '')?.[1] ?? 0);
   for (let i = 0; i < 12 && (await scale()) < 1.5; i++) {
+    const before = await scale();
     await main(page).getByRole('button', { name: 'Zoom In' }).click();
-    await page.waitForTimeout(260);
+    // Each zoom animates: the next click waits for it to settle (bigger, and no longer moving).
+    let last = -1;
+    await expect
+      .poll(async () => {
+        const now = await scale();
+        const settled = now > before && now === last;
+        last = now;
+        return settled;
+      }, { intervals: [100] })
+      .toBe(true);
   }
   expect(await scale()).toBeGreaterThanOrEqual(1.5);
   // What matters once the zoom settles: the view was redrawn at its scale, and it's left a plain 2D

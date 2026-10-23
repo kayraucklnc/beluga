@@ -3,6 +3,7 @@
 //   node scripts/e2e-lock.mjs <command…>        (packages/mac's `npm run e2e` runs playwright through it)
 // - A second run, from any worktree, waits for the first and says whose it is ("waiting for KLD-12's e2e").
 // - Each worktree gets its own E2E_PORT and demo home (KLAUD_HOME), so runs never share a server or a daemon.
+//   Each playwright worker starts its own demo daemons next to it (see slotHomes and e2e/fixtures.ts).
 // - The command runs in its own process group; every process it starts is tracked (even ones that move to
 //   their own group, like vite and the browser) and stopped however the run ends: done, Ctrl-C, killed.
 // - A run that fails while the Mac is overloaded re-runs its failed tests once, alone, after the load drops.
@@ -50,6 +51,18 @@ export const portFor = (worktree) => 14300 + (Number.parseInt(short(worktree), 1
 export function homesFor(worktree) {
   const base = path.join(os.tmpdir(), `klaud-e2e-${short(worktree)}`);
   return { home: path.join(base, 'home'), claude: path.join(base, 'claude') };
+}
+
+/**
+ * One of a run's demo homes: playwright worker `worker` keeps two (slot 0 in use, slot 1 warming up for
+ * the next spec file, then they swap), next to the run's home: home-2b, claude-2b.
+ */
+export const slotHomes = ({ home, claude }, worker, slot) => ({ home: `${home}-${worker}${'ab'[slot]}`, claude: `${claude}-${worker}${'ab'[slot]}` });
+
+/** How many playwright workers a run uses: E2E_WORKERS, else half the cores (at most 4). */
+export function workerCount(env = process.env, cores = os.cpus().length) {
+  const asked = Number.parseInt(env.E2E_WORKERS ?? '', 10);
+  return asked > 0 ? asked : Math.max(1, Math.min(4, Math.floor(cores / 2)));
 }
 
 /** Whether a process is alive (and ours to signal). */

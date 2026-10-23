@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './fixtures.js';
 
 /**
  * A plan while Claude writes it (KLD-28): a name that isn't your message, one placeholder inside
