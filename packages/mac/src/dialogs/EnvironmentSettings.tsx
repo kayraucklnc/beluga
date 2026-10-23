@@ -47,6 +47,7 @@ function Editor({ projectId }: { projectId: string }) {
   const [rows, setRows] = useState<EnvRow[] | undefined>(undefined);
   const [dotenv, setDotenv] = useState(false);
   const [dotenvKeys, setDotenvKeys] = useState<readonly string[]>([]);
+  const [claudeDotenv, setClaudeDotenv] = useState(false);
   const [shown, setShown] = useState<ReadonlySet<number>>(new Set());
   const [showAll, setShowAll] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -65,6 +66,7 @@ function Editor({ projectId }: { projectId: string }) {
       setRows(withIds(scope.vars));
       setDotenv(scope.dotenv);
       setDotenvKeys(scope.dotenvKeys);
+      setClaudeDotenv(scope.claudeDotenv);
     });
     return () => void (live = false);
   }, [projectId, keysHere]);
@@ -199,6 +201,31 @@ function Editor({ projectId }: { projectId: string }) {
           </Row>
         </Group>
       ) : null}
+      <Group title="Your Claude">
+        <Row
+          label="Read .env files without asking"
+          detail={
+            projectId
+              ? 'In this project. Off: your Claude asks you each time it wants one. A friend’s request never gets them.'
+              : 'In every project. Off: your Claude asks you each time (or as each project says). A friend’s request never gets them.'
+          }
+        >
+          <Switch
+            label="Your Claude reads .env files without asking"
+            on={claudeDotenv}
+            onChange={(v) => {
+              setClaudeDotenv(v);
+              api.env.claudeDotenv(projectId || undefined, v).then(
+                () => setStatus({ kind: 'saved' }),
+                (err: unknown) => {
+                  setClaudeDotenv(!v);
+                  setStatus({ kind: 'error', text: errorText(err) });
+                },
+              );
+            }}
+          />
+        </Row>
+      </Group>
     </>
   );
 }

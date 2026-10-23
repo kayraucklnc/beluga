@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { type BodyInput, type BodyOf, CHUNK_BYTES, type FsEntry } from '../protocol.js';
 import { parseLocation } from './mentions.js';
-import type { ShareService } from './shares.js';
+import { type ShareService, isSecretPath } from './shares.js';
 import { type Location, type Store, peerName } from './store.js';
 import { DEFAULT_DOWNLOAD_DIR, downloadFile, fetchBytes } from './downloads.js';
 import { MAX_IMAGE_BYTES, isImagePath } from '../image/decode.js';
@@ -99,7 +99,8 @@ export class RoomFiles {
   async openLocation(at: Location, opts: { by?: string; broadcast?: boolean } = {}): Promise<void> {
     this.store.dispatch({ type: 'viewer_open', at, by: opts.by });
     if (opts.broadcast !== false) {
-      const hidden = at.owner === this.selfId && this.deps.shares.isPrivate(at.share);
+      // Your .env file isn't the room's business: not even its name goes out.
+      const hidden = at.owner === this.selfId && (this.deps.shares.isPrivate(at.share) || isSecretPath(at.path));
       this.send({ kind: 'focus', owner: at.owner, share: at.share, path: at.path, actor: 'human' }, hidden ? { to: this.selfId } : {});
     }
     await this.loadViewer(at);
@@ -159,10 +160,10 @@ export class RoomFiles {
   serveFs(from: string, body: BodyOf<'fs_list'> | BodyOf<'fs_read'> | BodyOf<'fs_fetch'>): Promise<void> {
     if (body.kind === 'fs_fetch') return this.serveChunk(from, body);
     if (body.kind === 'fs_list') {
-      return this.reply(from, body.reqId, async () => ({ kind: 'fs_list_result', reqId: body.reqId, ok: true, entries: await this.deps.shares.list(body.share, body.path) }), 'fs_list_result');
+      return this.reply(from, body.reqId, async () => ({ kind: 'fs_list_result', reqId: body.reqId, ok: true, entries: await this.deps.shares.list(body.share, body.path, from === this.selfId) }), 'fs_list_result');
     }
     this.deps.shares.watchFile(body.share, body.path);
-    return this.reply(from, body.reqId, async () => ({ kind: 'fs_read_result', reqId: body.reqId, ok: true, ...(await this.deps.shares.read(body.share, body.path)) }), 'fs_read_result');
+    return this.reply(from, body.reqId, async () => ({ kind: 'fs_read_result', reqId: body.reqId, ok: true, ...(await this.deps.shares.read(body.share, body.path, from === this.selfId)) }), 'fs_read_result');
   }
 
   private async reply(to: string, reqId: string, fn: () => Promise<BodyInput>, kind: 'fs_list_result' | 'fs_read_result'): Promise<void> {
@@ -200,7 +201,7 @@ export class RoomFiles {
   /** Owner side of a download: send one encrypted chunk, and tell the owner who is downloading. */
   private async serveChunk(from: string, body: BodyOf<'fs_fetch'>): Promise<void> {
     try {
-      const { data, total } = await this.deps.shares.readChunk(body.share, body.path, body.offset, CHUNK_BYTES);
+      const { data, total } = await this.deps.shares.readChunk(body.share, body.path, body.offset, CHUNK_BYTES, from === this.selfId);
       if (body.offset === 0 && from !== this.selfId) this.system(`${peerName(this.store.getState(), from)} is downloading ${body.share}/${body.path}`);
       this.send({ kind: 'fs_chunk', reqId: body.reqId, ok: true, data: data.toString('base64'), offset: body.offset, total }, { to: from });
     } catch (err) {

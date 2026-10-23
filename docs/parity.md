@@ -276,6 +276,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `terminals.rename` | ✓ double-click a shell tab, or right-click › Rename… (Return saves, Escape cancels, empty resets) |
 | `env.get` | ✓ Settings › Environment (values only go to the screen that asks) |
 | `env.set` | ✓ Settings › Environment |
+| `env.claudeDotenv` | ✓ Settings › Environment › Your Claude (and a .env approval's Always) |
 | `attachments.add` | ✓ |
 | `attachments.addFile` | ✓ a pasted path of an image becomes a waiting thumbnail |
 | `attachments.expand` | ✓ |

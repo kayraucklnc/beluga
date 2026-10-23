@@ -125,9 +125,12 @@ export interface ShellItem {
 
 export interface Approval {
   readonly id: string;
-  readonly kind: 'request' | 'tool';
+  /** 'secret': your own Claude wants a .env file (answers: once, always for `project`, always). */
+  readonly kind: 'request' | 'tool' | 'secret';
   readonly title: string;
   readonly detail: string;
+  /** A secret's project, by name: "Always for <project>" is offered. */
+  readonly project?: string;
   /** When it was asked, and how long it waits before it's declined (screens show a countdown). */
   readonly askedAt?: number;
   readonly timeoutMs?: number;

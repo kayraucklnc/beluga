@@ -212,6 +212,7 @@ export const HANDLERS = {
   // The values go back only to the screen that asked (Settings), never into the shared state.
   'env.get': (s, projectId) => s.env.get(projectId),
   'env.set': (s, projectId, rows, dotenv) => s.env.set(projectId, rows, dotenv),
+  'env.claudeDotenv': (s, projectId, on) => s.env.setClaudeDotenv(projectId, on),
 
   'attachments.add': async (_s, ext, base64) => {
     const bytes = Buffer.from(base64, 'base64');

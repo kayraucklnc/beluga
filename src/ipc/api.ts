@@ -68,7 +68,8 @@ const EnvRows = z.array(z.object({ key: z.union([z.literal(''), z.string().regex
 
 const WorkspaceTab = z.enum(['chat', 'files', 'review', 'terminal']);
 const Policy = z.enum(['ask', 'auto', 'deny']);
-const Answer = z.enum(['yes', 'no', 'always']);
+/** 'project': always, for this project (only a .env approval offers it). */
+const Answer = z.enum(['yes', 'no', 'always', 'project']);
 const LinkOptions = z.object({ scope: id, can: GuestCan, knock: bool, singleUse: bool, expiresInMs: z.number().int().min(0) });
 const GuestPatch = z.object({ addProject: opt(id), room: opt(bool), can: opt(GuestCan) });
 /** A project (by id) or a group (by name) in the sidebar's arrangement. */
@@ -262,6 +263,8 @@ export const API = {
   // ---- your environment variables (no project: yours everywhere; else that project's)
   'env.get': args(opt(id)),
   'env.set': args(opt(id), EnvRows, opt(bool)),
+  // Your own Claude reads .env files without asking (false: it asks again), in a project or (none) everywhere.
+  'env.claudeDotenv': args(opt(id), bool),
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),

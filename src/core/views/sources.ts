@@ -23,6 +23,7 @@ import {
 import { mentionsSecret } from '../../agent/policy.js';
 import { isSecretPath } from '../shares.js';
 import { loadEnvFile } from '../env-vars.js';
+import { databaseUrl, scrubbed } from './database-url.js';
 import { belugaHome } from '../home.js';
 
 /**
@@ -182,7 +183,7 @@ async function fetchWhole(source: Source, opts: FetchOptions): Promise<Whole> {
       return { ...capped(rows), at };
     }
     case 'postgres': {
-      const rows = await postgres(source, `SELECT * FROM (${bare(source.query)}) s LIMIT ${MAX_SOURCE_ROWS + 1}`, timeout);
+      const rows = await postgres(source, `SELECT * FROM (${bare(source.query)}) s LIMIT ${MAX_SOURCE_ROWS + 1}`, timeout, opts.cwd);
       return { ...capped(rows), at };
     }
     case 'http': {
@@ -317,7 +318,7 @@ async function pushedDown(source: Source, q: ViewQuery, opts: FetchOptions): Pro
     const order = q.sort ? ` ORDER BY ${quoteIdent(q.sort.key)} ${q.sort.dir === 'desc' ? 'DESC' : 'ASC'} NULLS LAST` : '';
     const sel = `SELECT * FROM (${inner}) s${andWhere(where, q, undefined, '%k::text')}${order}`;
     const kept = q.top ? `SELECT * FROM (${sel} LIMIT ${q.top}) s${order}` : sel;
-    const [rows, count] = await Promise.all([postgres(source, `${kept} LIMIT ${q.limit} OFFSET ${q.offset}`, timeout), postgres(source, `SELECT count(*) AS n FROM (${kept}) c`, timeout)]);
+    const [rows, count] = await Promise.all([postgres(source, `${kept} LIMIT ${q.limit} OFFSET ${q.offset}`, timeout, opts.cwd), postgres(source, `SELECT count(*) AS n FROM (${kept}) c`, timeout, opts.cwd)]);
     const total = Number(count[0]?.n ?? rows.length);
     return { rows, columns: keysOf(rows), total, hasMore: q.offset + rows.length < total, at, pushedDown: true };
   }
@@ -385,15 +386,30 @@ async function sqlite(db: string, sql: string, timeout: number): Promise<Row[]> 
   return out.trim() ? toRows(JSON.parse(out)).rows : [];
 }
 
-async function postgres(source: Extract<Source, { kind: 'postgres' }>, sql: string, timeout: number): Promise<Row[]> {
-  const url = source.env ? envValue(source.env) : source.url;
-  if (!url) throw new Error(source.env ? `$${source.env} isn’t set (add it in Settings › Environment)` : 'Postgres needs "env" (or "url")');
-  const out = await run('psql', ['-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1', '-d', url, '-c', `SELECT coalesce(json_agg(t), '[]'::json) FROM (${sql}) t`], {
-    timeout,
-    // Read-only too: every statement runs in a read-only transaction.
-    env: { PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=' + timeout },
-  });
-  return out.trim() ? toRows(JSON.parse(out)).rows : [];
+async function postgres(source: Extract<Source, { kind: 'postgres' }>, sql: string, timeout: number, cwd: string | undefined): Promise<Row[]> {
+  // Without "env" or "url": the project's own database (DATABASE_URL…, or Supabase's variables).
+  const found = source.url && !source.env ? { url: source.url, from: 'its address' } : databaseUrl({ ...process.env, ...viewEnv(source.cwd ?? cwd) }, source.env);
+  if ('problem' in found) throw new Error(found.problem);
+  const { url } = found;
+  try {
+    const out = await run('psql', ['-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1', '-d', url, '-c', `SELECT coalesce(json_agg(t), '[]'::json) FROM (${sql}) t`], {
+      timeout,
+      // Read-only too: every statement runs in a read-only transaction.
+      env: { PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=' + timeout },
+    });
+    return out.trim() ? toRows(JSON.parse(out)).rows : [];
+  } catch (err) {
+    const text = err instanceof Error ? err.message : String(err);
+    if (text === 'psql isn’t installed') throw new Error('psql isn’t on this Mac: install it with “brew install libpq” (or Postgres.app)');
+    throw new Error(`${scrubbed(text, url)} (connecting with ${found.from})`);
+  }
+}
+
+/** Your variables for something there (set by the session: yours, the project's, its .env); else just yours. */
+let viewEnv: (cwd?: string) => Record<string, string> = () => loadEnvFile().global;
+/** Where database views and web addresses find your variables (see EnvVars.viewEnv). */
+export function useViewEnv(fn: (cwd?: string) => Record<string, string>): void {
+  viewEnv = fn;
 }
 
 /** A variable from your Beluga environment (Settings), else Beluga's own. */
