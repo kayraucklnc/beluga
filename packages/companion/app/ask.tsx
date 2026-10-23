@@ -35,7 +35,9 @@ export default function Ask() {
 
   const targets = useMemo<Target[]>(() => {
     const t: Target[] = [];
-    for (const p of work?.data.projects ?? []) t.push({ kind: 'project', id: p.id, label: p.name });
+    // Only your own projects take a new chat: not the room, a friend's shared project or "Asked of
+    // friends" (views.ts groups those under 'room', 'shared:…' and 'asked').
+    for (const p of work?.data.projects ?? []) if (p.id !== 'room' && p.id !== 'asked' && !p.id.startsWith('shared:')) t.push({ kind: 'project', id: p.id, label: p.name });
     for (const c of home?.data.running ?? []) t.push({ kind: 'conv', topic: c.topic, label: c.title });
     for (const p of people?.data.people ?? []) if (p.presence !== 'offline') t.push({ kind: 'friend', id: p.peerId, name: p.name, label: `${p.name}'s Claude` });
     return t;

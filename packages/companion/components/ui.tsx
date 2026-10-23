@@ -185,7 +185,7 @@ export function Button({ label, onPress, Icon, quiet, disabled, style, flex }: {
   return (
     <Press disabled={disabled} onPress={onPress} style={[{ flex, height: 48, borderRadius: 24, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: quiet ? color.sunken : color.primary, opacity: disabled ? 0.4 : 1 }, style]}>
       {Icon ? <Icon color={quiet ? color.text : color.onPrimary} size={18} strokeWidth={2.2} /> : null}
-      <T v="body" c={quiet ? color.text : color.onPrimary} style={{ fontWeight: '600' }}>
+      <T v="body" c={quiet ? color.text : color.onPrimary} numberOfLines={1} style={{ fontWeight: '600', flexShrink: 1 }}>
         {label}
       </T>
     </Press>

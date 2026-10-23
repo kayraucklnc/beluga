@@ -60,7 +60,7 @@ const BASE = {
     shadowCss: '0 1px 2px rgba(0,0,0,0.04), 0 6px 18px rgba(0,0,0,0.05)',
     shadowCssBar: '0 8px 28px rgba(0,0,0,0.10)',
     // The image viewer's stage: dark in both themes, so pictures read true.
-    stage: '#19191B',
+    stage: '#0E0F11',
     onStage: '#ECECEE',
     onStageDim: 'rgba(236,236,238,0.4)',
     onStageChip: 'rgba(42,42,46,0.8)',
@@ -85,7 +85,7 @@ const BASE = {
     shadowInk: '#000000',
     shadowCss: 'none',
     shadowCssBar: '0 8px 28px rgba(0,0,0,0.4)',
-    stage: '#19191B',
+    stage: '#0E0F11',
     onStage: '#ECECEE',
     onStageDim: 'rgba(236,236,238,0.4)',
     onStageChip: 'rgba(42,42,46,0.8)',
@@ -130,7 +130,8 @@ export const alpha = (hex: string, a: number): string => {
 export const space = { 1: 2, 2: 4, 3: 8, 4: 12, 5: 16, 6: 24, 7: 32, 8: 48 } as const;
 export const radius = { s: 10, m: 16, l: 22, xl: 28, pill: 999 } as const;
 
-const sans = Platform.select({ ios: 'System', android: 'sans-serif', default: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Roboto", "Helvetica Neue", sans-serif' });
+// Android: no family name, so Roboto's real weights apply (a named family drops to regular).
+const sans = Platform.select({ ios: 'System', android: undefined, default: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Roboto", "Helvetica Neue", sans-serif' });
 const mono = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'ui-monospace, "SF Mono", Menlo, monospace' });
 
 /** Type: friendly weights, the system font; colors come from `color` at render time. */

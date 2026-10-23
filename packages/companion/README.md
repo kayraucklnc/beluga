@@ -81,9 +81,14 @@ followed because its `size` changes in the conversation's view, not by asking.
 **Bundling the worklet**: `npm run worklet:bundle` compiles `worklet/link.ts` and what it imports
 from the repo with `tsc` (bare-pack can't map `./x.js` imports to `.ts`), then packs it with
 `bare-pack --linked` into `worklet/dist/link.bundle.mjs` (git-ignored). Without the bundle, Metro
-resolves the import to an empty module and only the demo works. Native addons (udx-native,
-sodium-native) still have to be linked into the APK with `bare-link --preset android --out
-node_modules/react-native-bare-kit/android/src/main/addons worklet/build/...` (not done yet).
+resolves the import to an empty module and only the demo works. The same script links the native
+addons the bundle loads (udx-native, sodium-native, …) with `bare-link` into
+`node_modules/react-native-bare-kit/android/src/main/addons`, which the APK build picks up; it lives
+in node_modules, so `postinstall` re-runs it. Android needs minSdk 29 (react-native-bare-kit).
+
+**End to end against a real Mac** (BLG-32): an emulator (API 35, arm64) paired with a demo daemon
+in an isolated home, over the public DHT; scripts and screenshots in `.beluga/scratch/phone-e2e/`
+(`bin/repair.sh` restarts the daemon and pairs the app).
 
 ## Staying in step with the Mac (CLAUDE.md)
 
@@ -108,4 +113,4 @@ node_modules/react-native-bare-kit/android/src/main/addons worklet/build/...` (n
 ## Not yet
 
 Push (Beluga Push relay; `lib/notifications.ts` keeps the choices and makes the Android channels),
-linking the worklet's native addons into the APK, iOS.
+a release build with the JS embedded, iOS.

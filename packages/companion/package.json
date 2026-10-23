@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "typecheck:worklet": "tsc -p worklet",
     "worklet:bundle": "node scripts/bundle-worklet.mjs",
-    "demo-images": "node scripts/make-demo-images.mjs"
+    "demo-images": "node scripts/make-demo-images.mjs",
+    "postinstall": "node -e \"require('fs').existsSync('worklet/dist/link.bundle.mjs') && require('child_process').execSync('npm run worklet:bundle', {stdio:'inherit'})\""
   },
   "dependencies": {
     "@expo/metro-runtime": "~58.0.15",

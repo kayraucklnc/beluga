@@ -43,7 +43,8 @@ export class BareTransport implements Transport {
   }
 
   private post(msg: UiToWorklet): void {
-    this.start().IPC.write(encodeLine(msg));
+    // BareKit's IPC takes bytes, not strings.
+    this.start().IPC.write(new TextEncoder().encode(encodeLine(msg)));
   }
 
   private onLine(line: string): void {

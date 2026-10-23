@@ -493,6 +493,23 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
   };
 }
 
+/**
+ * Outputs no turn claimed (written after the last answer ended: by hand, by a background job, or
+ * after its last step) go with the newest answer from Claude, rather than nowhere.
+ */
+function withLateOutputs(turns: TurnView[], outputs: readonly OutputView[]): TurnView[] {
+  let at = turns.length - 1;
+  while (at >= 0 && turns[at]!.who !== 'claude') at--;
+  const last = turns[at];
+  if (!last) return turns;
+  const claimed = new Set(turns.flatMap((t) => [...(t.outputs ?? []), ...(t.subagents ?? []).flatMap((a) => a.outputs)].map((o) => o.ref)));
+  const late = outputs.filter((o) => !claimed.has(o.ref) && o.ts !== undefined && o.ts >= last.ts);
+  if (!late.length) return turns;
+  const copy = [...turns];
+  copy[at] = { ...last, outputs: [...(last.outputs ?? []), ...late].slice(0, 50) };
+  return copy;
+}
+
 /** A conversation's outputs as refs (what may go to the phone), newest first. */
 function outputsOf(ctx: ViewContext, conv: Pick<Conversation, 'channel' | 'cwd'>): OutputView[] {
   return (ctx.outputs?.(conv.channel) ?? []).flatMap((o) => {
@@ -594,7 +611,7 @@ export function convTurns(state: DomainState, ctx: ViewContext, channel: string,
   const conv = conversations(state).find((c) => c.channel === channel) ?? { channel };
   const task = taskOf(state, channel);
   const outputs = task ? [] : outputsOf(ctx, conv);
-  const all = task ? taskTurns(state, ctx, task) : itemsOf(state, channel).flatMap((l) => turnOf(state, l, outputs) ?? []);
+  const all = task ? taskTurns(state, ctx, task) : withLateOutputs(itemsOf(state, channel).flatMap((l) => turnOf(state, l, outputs) ?? []), outputs);
   const end = opts.before ? all.findIndex((t) => t.id === opts.before) : all.length;
   const upto = end < 0 ? all.length : end;
   const limit = opts.limit ?? VIEW_TURNS;

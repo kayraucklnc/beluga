@@ -21,7 +21,7 @@ declare const BareKit: { readonly IPC: { on(event: 'data', fn: (data: Uint8Array
 
 const APP = 'beluga-companion/0.1.0';
 const ipc = BareKit.IPC;
-const post = (msg: WorkletToUi): void => void ipc.write(encodeLine(msg));
+const post = (msg: WorkletToUi): void => void ipc.write(b4a.from(encodeLine(msg), 'utf8'));
 const frame = (f: MacFrame): void => post({ ev: 'frame', json: JSON.stringify(f) });
 const log = (line: string): void => post({ ev: 'log', line });
 

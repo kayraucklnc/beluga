@@ -45,4 +45,8 @@ describe('humanizeStep', () => {
     expect(humanizeStep('task_define Protect the payment routes')).toBe('Used task define');
     expect(humanizeStep('24 passed')).toBe('24 passed');
   });
+
+  it('keeps the words of a linked chat picture, not the link the phone cannot open', () => {
+    expect(stripCode('the error [📎 image 1 (png, 6K)](klaud-attachment:F5W6TU1pJG/checkout-error.png) on staging').text).toBe('the error 📎 image 1 (png, 6K) on staging');
+  });
 });

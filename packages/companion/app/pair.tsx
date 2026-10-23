@@ -101,6 +101,8 @@ export default function Pair() {
                 <TextInput
                   value={code}
                   onChangeText={(t) => setCode(formatCode(t))}
+                  // The dashes are added as you type: keep the caret at the end so it never lands mid-code.
+                  selection={{ start: code.length, end: code.length }}
                   placeholder="K7QM-4XPA-R2TD"
                   placeholderTextColor={color.text3}
                   autoCapitalize="characters"

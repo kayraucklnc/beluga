@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
 import { X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
@@ -172,16 +173,18 @@ export default function Viewer() {
 
   return (
     <View style={StyleSheet.absoluteFill}>
+      {/* The stage is dark in both themes: light status bar content over it. */}
+      <StatusBar style="light" />
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: color.stage }, bg]} />
       <GestureDetector gesture={gesture}>
         <Animated.View style={[{ flexDirection: 'row', width: W * items.length, height: H }, strip]}>
           {items.map((o, i) => (
-            <Page key={o.ref} o={o} i={i} active={i === index} first={i === start} W={W} H={H} origin={i === start ? origin : undefined} open={open} dragY={dragY} scale={scale} panX={panX} panY={panY} />
+            <Page key={o.ref} o={o} i={i} active={i === index} first={i === start} W={W} H={H} top={insets.top + 64} bottom={insets.bottom + 44} origin={i === start ? origin : undefined} open={open} dragY={dragY} scale={scale} panX={panX} panY={panY} />
           ))}
         </Animated.View>
       </GestureDetector>
       {chrome ? (
-        <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top + 8, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }, top]}>
+        <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top + 12, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }, top]}>
           <Press onPress={close} accessibilityLabel="Close" style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: color.onStageChip }}>
             <X color={color.onStage} size={20} />
           </Press>
@@ -204,15 +207,17 @@ export default function Viewer() {
   );
 }
 
-function Page({ o, active, first, W, H, origin, open, dragY, scale, panX, panY }: { o: OutputView; i: number; active: boolean; first: boolean; W: number; H: number; origin?: { x: number; y: number; w: number; h: number }; open: SharedValue<number>; dragY: SharedValue<number>; scale: SharedValue<number>; panX: SharedValue<number>; panY: SharedValue<number> }) {
+function Page({ o, active, first, W, H, top, bottom, origin, open, dragY, scale, panX, panY }: { o: OutputView; i: number; active: boolean; first: boolean; W: number; H: number; /** Kept clear for the status bar and the controls. */ top: number; bottom: number; origin?: { x: number; y: number; w: number; h: number }; open: SharedValue<number>; dragY: SharedValue<number>; scale: SharedValue<number>; panX: SharedValue<number>; panY: SharedValue<number> }) {
   const thumb = useFile(o.ref, 'thumb');
   const full = useFile(active ? o.ref : undefined, 'full');
   const [ratio, setRatio] = useState(origin ? origin.w / origin.h : 0.75);
   // The picture fitted to the screen.
-  const fitW = Math.min(W, H * ratio);
+  // Fitted between the top controls (under the status bar) and the page dots: never under either.
+  const room = H - top - bottom;
+  const fitW = Math.min(W, room * ratio);
   const fitH = fitW / ratio;
   const fx = (W - fitW) / 2;
-  const fy = (H - fitH) / 2;
+  const fy = top + (room - fitH) / 2;
   const from = first && origin ? origin : { x: fx + fitW * 0.1, y: fy + fitH * 0.1, w: fitW * 0.8, h: fitH * 0.8 };
 
   const frame = useAnimatedStyle(() => {

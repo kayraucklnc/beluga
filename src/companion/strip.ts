@@ -10,6 +10,12 @@ import type { ProseView } from './protocol.js';
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)?.*$/;
 const MAX_CODE = 200;
+/**
+ * A picture linked in a chat message ("[📎 image 1 (png, 6K)](klaud-attachment:<owner>/<file>)",
+ * src/core/attachment-share.ts ATTACHMENT_SCHEME): the phone can't open that link, so only its
+ * words stay ("📎 image 1 (png, 6K)"). Kept here, not imported, so this file stays runtime-free.
+ */
+const ATTACHMENT_LINK = /\[([^\]\n]*)\]\((?:klaud|beluga)-attachment:[^)\s]*\)/g;
 
 /** Claude's markdown with its code blocks taken out. */
 export function stripCode(markdown: string): ProseView {
@@ -19,7 +25,7 @@ export function stripCode(markdown: string): ProseView {
   for (let i = 0; i < lines.length; i++) {
     const open = FENCE.exec(lines[i]!);
     if (!open) {
-      out.push(lines[i]!);
+      out.push(lines[i]!.replace(ATTACHMENT_LINK, '$1'));
       continue;
     }
     const fence = open[1]!;

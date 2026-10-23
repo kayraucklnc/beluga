@@ -218,6 +218,14 @@ describe('the views of a known Mac', () => {
     expect(w2.canSend).toBe(true);
   });
 
+  it('a file written after the last answer ended shows with that answer (not nowhere)', () => {
+    const late: ViewContext = { ...context(), outputs: (channel) => (channel === 'ws:w1' ? [{ path: '/Users/k/landing/.beluga/scratch/after.png', size: 10, ts: T0 + 1_000_000, cwd: '/Users/k/landing' }] : []) };
+    const w1 = ConvView.parse(viewOf(state, late, 'conv:ws:w1'));
+    const answers = w1.turns.filter((t) => t.who === 'claude');
+    expect(answers.at(-1)!.outputs?.map((o) => o.name)).toEqual(['after.png']);
+    expect(answers.slice(0, -1).flatMap((t) => t.outputs ?? [])).toEqual([]);
+  });
+
   it('a friend’s Claude you asked reads as a conversation with its files', () => {
     const conv = ConvView.parse(viewOf(state, ctx, 'conv:task:t_screen000001'));
     expect(conv.turns.map((t) => [t.who, t.name, t.prose.text, t.status])).toEqual([
