@@ -56,11 +56,8 @@ test('a worktree’s right-click menu has Delete… beside Archive…; archiving
   expect(items).toEqual(expect.arrayContaining(['Archive…', 'Delete…']));
   expect(items.indexOf('Delete…')).toBe(items.indexOf('Archive…') + 1);
   await page.screenshot({ path: path.join(SHOTS, '01-worktree-menu-delete.png') });
-  // By keys (the demo's streaming keeps the sidebar, and so its menu, redrawing under a pointer click).
-  await page.keyboard.press('End');
-  await page.keyboard.press('ArrowUp');
-  await expect(page.getByRole('menuitem', { name: 'Archive…' })).toBeFocused();
-  await page.keyboard.press('Enter');
+  // A click event, not a pointer click: the demo's streaming keeps the sidebar, and so its menu, redrawing.
+  await page.getByRole('menuitem', { name: 'Archive…' }).dispatchEvent('click');
   const alert = page.getByRole('alertdialog', { name: /Archive “add-auth”/ });
   await alert.getByRole('button', { name: 'Archive', exact: true }).click();
   // Gone right away, not "Archiving…" for as long as the disk takes.
@@ -72,9 +69,7 @@ test('Delete… asks, then the worktree leaves the sidebar at once', async ({ pa
   await showProject(page, 'webhook-retries');
   const row = sidebar(page).getByRole('button', { name: 'webhook-retries', exact: true });
   await row.click({ button: 'right' });
-  await page.keyboard.press('End');
-  await expect(page.getByRole('menuitem', { name: 'Delete…' })).toBeFocused();
-  await page.keyboard.press('Enter');
+  await page.getByRole('menuitem', { name: 'Delete…' }).dispatchEvent('click');
   const alert = page.getByRole('alertdialog', { name: /Delete “webhook-retries”/ });
   await expect(alert).toContainText('You can’t undo this');
   await alert.getByRole('button', { name: 'Delete', exact: true }).click();
