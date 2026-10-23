@@ -483,13 +483,15 @@ export class Board {
 
   // ------------------------------------------------------------------ worktrees and pull requests
 
-  /** A worktree is doing this task now. */
-  linkWorktree(ref: string, workspaceId: string, info: { readonly branch?: string; readonly name?: string }, by: Actor): Issue {
+  /**
+   * A worktree is doing this task now. One task per worktree, unless `shared`: a plan milestone's
+   * one Claude does all of its tasks in one worktree (see plans/pilot.ts), so each of them links it.
+   */
+  linkWorktree(ref: string, workspaceId: string, info: { readonly branch?: string; readonly name?: string; readonly shared?: boolean }, by: Actor): Issue {
     const issue = this.need(ref);
-    // One task per worktree.
-    for (const other of this.issues) if (other.id !== issue.id && other.worktrees.includes(workspaceId)) this.change(other, { worktrees: other.worktrees.filter((w) => w !== workspaceId) }, []);
+    if (!info.shared) for (const other of this.issues) if (other.id !== issue.id && other.worktrees.includes(workspaceId)) this.change(other, { worktrees: other.worktrees.filter((w) => w !== workspaceId) }, []);
     if (issue.worktrees.at(-1) === workspaceId) return issue;
-    return this.change(issue, { worktrees: [...issue.worktrees.filter((w) => w !== workspaceId), workspaceId], ...(info.branch ? { branch: info.branch } : {}), worktreeGone: undefined }, [this.entry(by, 'worktree', info.name ? `started worktree ${info.name}` : 'started a worktree')]);
+    return this.change(issue, { worktrees: [...issue.worktrees.filter((w) => w !== workspaceId), workspaceId], ...(info.branch ? { branch: info.branch } : {}), worktreeGone: undefined }, [this.entry(by, 'worktree', info.name ? `${info.shared ? 'joined' : 'started'} worktree ${info.name}` : 'started a worktree')]);
   }
 
   /** The worktree was renamed (a small model named it): a task titled after it follows. */

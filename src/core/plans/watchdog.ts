@@ -219,7 +219,7 @@ export function assess(input: { readonly run?: RunInfo; readonly asking: boolean
 }
 
 /** What a woken Claude is told: where it was, what isn't true yet, and what waited for it. */
-export function wakePrompt(issue: Issue, reason: string, run: RunInfo | undefined, waited: readonly string[]): string {
+export function wakePrompt(issue: Issue, reason: string, run: RunInfo | undefined, waited: readonly string[], milestone = false): string {
   const open = unexplained(issue.brief.acceptance).map((c) => c.text);
   const said = run?.text.replace(/\s+/g, ' ').trim();
   return [
@@ -230,6 +230,7 @@ export function wakePrompt(issue: Issue, reason: string, run: RunInfo | undefine
     ...(waited.length ? ['', 'Messages that waited for you while you were stopped:', ...waited.map((w) => `---\n${w.trim()}`), '---'] : []),
     '',
     'Go on from there until every acceptance criterion is true; then commit, rewrite the handoff and call task_update with status in_review. If only the user can decide something, say so in one clear line and end your turn: Beluga asks them.',
+    ...(milestone ? ['Then go on with the next task of your milestone (your instructions list them in order), without stopping.'] : []),
   ].join('\n');
 }
 
@@ -373,6 +374,8 @@ export class TaskWatchdog {
     if (!plan.paused && plan.status === 'active') this.resumeHome(plan, runOf(plan.home), now);
     // Tasks paused by your usage limit go on one at a time, within the plan's task limit.
     let room = plan.maxParallel - tasks.filter((t) => t.state === 'running' || this.waking.has(t.task.id)).length;
+    // A milestone's one Claude does several tasks in one conversation: it's looked at (and woken) once.
+    const looked = new Set<string>();
     for (const t of tasks) {
       const w = plan.watch?.[t.task.id];
       const started = t.state === 'running' || t.state === 'idle' || t.state === 'asking' || t.state === 'stalled';
@@ -384,6 +387,8 @@ export class TaskWatchdog {
       // Paused: shown as it is, nobody woken.
       if (plan.paused || plan.status !== 'active' || this.waking.has(t.task.id)) continue;
       const channel = `ws:${t.worktree}`;
+      if (looked.has(channel)) continue;
+      looked.add(channel);
       const run = runOf(channel);
       if (run) this.noRun.delete(channel);
       else if (!this.noRun.has(channel)) this.noRun.set(channel, now);
@@ -463,7 +468,8 @@ export class TaskWatchdog {
     void (async () => {
       const waited = this.deps.takeOver ? await this.deps.takeOver(channel).catch(() => []) : [];
       this.deps.system(channel, `Beluga woke Claude: it stopped before handing off (${reason}).`);
-      this.deps.askClaude(wakePrompt(issue, reason, run, waited), channel, false);
+      const milestone = Object.values(plan.runs).some((r) => r?.agent?.worktree === t.worktree);
+      this.deps.askClaude(wakePrompt(issue, reason, run, waited, milestone), channel, false);
     })().finally(() => this.waking.delete(t.task.id));
   }
 }

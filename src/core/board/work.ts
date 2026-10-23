@@ -42,6 +42,8 @@ export class BoardWork {
   private readonly offs: Array<() => void> = [];
   /** More for a run doing a task (the plan it's part of): see setBriefExtra. */
   private briefExtra: (issue: Issue) => string = () => '';
+  /** A run's own instructions (a plan milestone's worktree): see setRunBrief. */
+  private runBrief: (channel: string) => { readonly brief: string; readonly current?: Issue } | undefined = () => undefined;
   /** Tasks Claude is writing from a description (by id): starting one waits for its words. */
   private readonly drafts = new Map<string, Promise<void>>();
 
@@ -149,16 +151,60 @@ export class BoardWork {
   }
 
   /**
+   * One worktree for several tasks (a plan milestone's one Claude does them in order): named
+   * `name`, from the latest origin or `base`, linked to every task (the first goes In Progress,
+   * all are your Claude's). Nobody is asked anything: the caller sends the brief. → the workspace.
+   */
+  async startShared(refs: readonly string[], name: string, opts: { readonly base?: string; readonly quiet?: boolean } = {}): Promise<Workspace> {
+    const controller = this.deps.controller;
+    if (!controller) throw new Error('Worktrees need a project folder');
+    if (!refs.length) throw new Error('No tasks to start');
+    for (const ref of refs) await this.drafts.get(this.board.need(ref).id);
+    const issues = refs.map((ref) => this.board.need(ref));
+    for (const issue of issues) if (isFinished(issue.status)) throw new Error(`${issue.key} is ${STATUS_INFO[issue.status].label.toLowerCase()}: reopen it to start it again`);
+    const first = issues[0]!;
+    const slug = slugify(name).slice(0, 48) || first.key.toLowerCase();
+    const ticket = { projectId: first.projectId, name: slug, issueId: first.id };
+    this.expecting.push(ticket);
+    let ws: Workspace | undefined;
+    try {
+      ws = await controller.newWorktree(first.projectId, slug, { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}) });
+    } finally {
+      const at = this.expecting.indexOf(ticket);
+      if (at >= 0) this.expecting.splice(at, 1);
+    }
+    if (!ws) throw new Error('Couldn’t create the worktree');
+    for (const issue of issues) this.linkShared(issue.id, ws);
+    const now = this.board.need(first.id);
+    if (now.status === 'backlog' || now.status === 'todo') this.board.update(first.id, { status: 'in_progress' }, this.me());
+    return ws;
+  }
+
+  /** One more task for a worktree that does several (a milestone's Claude): linked, the others kept. */
+  linkShared(ref: string, ws: Pick<Workspace, 'id' | 'branch' | 'name'>): Issue {
+    const issue = this.board.need(ref);
+    if (!issue.worktrees.includes(ws.id) || issue.worktrees.at(-1) !== ws.id) this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name, shared: true }, this.me());
+    if (!this.board.need(issue.id).assignee) this.board.update(issue.id, { assignee: this.myClaude() }, this.me());
+    return this.board.need(issue.id);
+  }
+
+  /** Instructions of their own for a run (a plan milestone's worktree): instead of the one task's brief. */
+  setRunBrief(fn: (channel: string) => { readonly brief: string; readonly current?: Issue } | undefined): void {
+    this.runBrief = fn;
+  }
+
+  /**
    * What one of Claude's runs gets: the task it's doing (in its prompt) and the task tools (your
    * own runs only). Planning (plan mode), Claude defines the task the plan is for; it goes on the
    * board when you approve the plan (`planApproved`), never before.
    */
   forRun(channel: string, from: string, opts: { readonly plan?: boolean } = {}): RunBoard | undefined {
     if (from !== this.deps.selfId()) return undefined;
-    const issue = channel.startsWith(WS) ? issueForWorkspace(this.board.state(), channel.slice(WS.length)) : undefined;
+    const own = opts.plan ? undefined : this.runBrief(channel);
+    const issue = own ? own.current : channel.startsWith(WS) ? issueForWorkspace(this.board.state(), channel.slice(WS.length)) : undefined;
     const tools = this.toolsFor(channel, issue, Boolean(opts.plan));
     const parallel = this.parallelNote(channel, issue);
-    const brief = (issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
+    const brief = (own ? own.brief : issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
     if (!opts.plan) return { tools, brief };
     this.pending.delete(channel);
     return {

@@ -276,6 +276,7 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
     case 'idle':
       return { who: 'beluga', text: 'In progress; nobody is working on it right now' };
     case 'ready':
+      if (t.queued) return { who: 'claude', text: 'Next for this milestone’s Claude, in its worktree' };
       return t.forYou || m.autonomy === 'step' ? { who: 'you', text: 'Ready: start it from the plan' } : { who: 'beluga', text: 'Ready: it starts by itself' };
     case 'blocked':
     case 'later':
