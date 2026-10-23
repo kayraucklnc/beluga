@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { NEEDS, type Need, type TaskKind } from './protocol.js';
+import { hhmm } from '../../shared/clock.js';
 
 /**
  * Who may have their Claude do what on this Mac: per-capability settings by trust level, and
@@ -247,8 +248,7 @@ export function expiryLabel(rule: Pick<Rule, 'expiresAt'>, now = Date.now()): st
   if (rule.expiresAt === undefined) return 'never expires';
   if (rule.expiresAt <= now) return 'expired';
   const d = new Date(rule.expiresAt);
-  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  return `until ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+  return `until ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${hhmm(rule.expiresAt)}`;
 }
 
 export const DECISION_INFO: Readonly<Record<RuleDecision, string>> = { allow: 'Allow', ask: 'Ask me', decline: 'Decline' };

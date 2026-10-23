@@ -117,7 +117,7 @@ export function PlanProgress({ columns }: { columns: ReadonlyArray<readonly Bar[
 }
 
 /** Whose turn a sentence is: your initial, Claude's mark, or Klaud's (the plan itself). */
-export function WhoMark({ who, size = 20 }: { who: Who; size?: number }) {
+function WhoMark({ who, size = 20 }: { who: Who; size?: number }) {
   const id = useApp((s) => s.selfId);
   const name = useApp((s) => s.self?.name ?? s.network.self?.name ?? 'You');
   if (who === 'you') return <Avatar name={name} id={id} size={size} />;

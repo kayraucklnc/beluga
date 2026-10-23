@@ -98,7 +98,7 @@ export function tally(signals: readonly Signal[]): Tally {
 }
 
 /** The conversations a project's row stands for: its live worktrees and chats (the main folder isn't listed), a plan's own not on their own. */
-export const projectConversations = (state: Pick<Source, 'plans' | 'board'>, p: Project): readonly Workspace[] => p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && !isPlanOwned(state, w.id));
+const projectConversations = (state: Pick<Source, 'plans' | 'board'>, p: Project): readonly Workspace[] => p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && !isPlanOwned(state, w.id));
 
 /** A project's live plans (each one item, however many tasks it runs). */
 export const projectPlans = (state: Pick<Source, 'plans'>, p: Project): readonly Plan[] => state.plans.plans.filter((x) => x.projectId === p.id && isLivePlan(x));

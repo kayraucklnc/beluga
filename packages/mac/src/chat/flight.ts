@@ -1,5 +1,6 @@
 import { useLayoutEffect, useSyncExternalStore } from 'react';
 import f from './flight.module.css';
+import { reducedMotion } from '../lib/reduced-motion.js';
 
 /**
  * Your message flying from the box you typed it in to where it lands, so sending doesn't feel
@@ -61,8 +62,6 @@ function pictureOf(row: HTMLElement): HTMLElement {
 let flights: Flight[] = [];
 let nextId = 0;
 
-export const reducedMotion = (): boolean =>
-  document.documentElement.dataset.motion === 'reduce' || (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 /** Mentions in front ("@claude ", "@bob ") and spacing don't change which message it is. */
 const norm = (text: string): string =>

@@ -65,7 +65,7 @@ const HEARTBEAT_MS = 60_000;
 
 
 /** Why a milestone can't be merged yet: a task of it still being worked on (undefined: none). */
-export function stillWorking(m: MilestoneView): string | undefined {
+function stillWorking(m: MilestoneView): string | undefined {
   const words: Partial<Record<TaskState, string>> = { running: 'is running', asking: 'asks you something', idle: 'is still open', stalled: 'stopped without finishing' };
   const busy = m.tasks.filter((t) => t.issue && !t.issue.worktreeGone && words[t.state]);
   if (!busy.length) return undefined;
@@ -74,7 +74,7 @@ export function stillWorking(m: MilestoneView): string | undefined {
 }
 
 /** pass() said no because a task is still being worked on: Autopilot waits for it instead of reporting a problem. */
-export class StillWorkingError extends Error {}
+class StillWorkingError extends Error {}
 
 /** What changes can move a plan along. */
 const WAKES = new Set(['board_issue', 'board_remove', 'plan_put', 'agent_event', 'question_add', 'question_remove', 'approval_add', 'approval_remove', 'projects']);

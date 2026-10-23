@@ -34,7 +34,7 @@ export type TaskState =
   | 'missing';
 
 export const FINISHED: ReadonlySet<TaskState> = new Set(['review', 'planned', 'done', 'canceled', 'missing']);
-export const ACTIVE: ReadonlySet<TaskState> = new Set(['running', 'asking', 'idle', 'stalled']);
+const ACTIVE: ReadonlySet<TaskState> = new Set(['running', 'asking', 'idle', 'stalled']);
 
 export interface TaskView {
   readonly task: PlanTask;
@@ -162,7 +162,7 @@ function taskState(board: BoardState, issue: Issue | undefined, live: Live): { r
 }
 
 /** What a task being combined shows: “Combining KLD-9 and KLD-27 …”, or the conflict being fixed. */
-export function combiningStep(c: Combining): string {
+function combiningStep(c: Combining): string {
   const names = c.from.length > 1 ? `${c.from.slice(0, -1).join(', ')} and ${c.from.at(-1)}` : (c.from[0] ?? 'its branches');
   if (!c.conflict) return `Combining ${names} …`;
   if (c.conflict.stuck) return `Combining ${names}: fix the conflict in ${c.conflict.files.slice(0, 3).join(', ')} (in ${c.conflict.dir}): it starts once no markers are left`;
@@ -171,7 +171,7 @@ export function combiningStep(c: Combining): string {
 }
 
 /** What a milestone merging into the plan's branch shows. */
-export function mergingText(m: PlanMerge, title: string, branch: string | undefined): string {
+function mergingText(m: PlanMerge, title: string, branch: string | undefined): string {
   const c = m.conflict;
   const what = c?.key ?? c?.merging ?? '';
   if (!c) return `Merging “${title}” into ${branch ?? 'the plan’s branch'} …`;
