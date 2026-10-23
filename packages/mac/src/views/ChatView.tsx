@@ -105,8 +105,9 @@ export function ChatView() {
   // A sub-agent's own worktree is the agent, followed live (never a place to start a conversation).
   if (other && isAgentWorktree(other) && !hasItems) return <AgentWorktreePage ws={other} />;
   if (other && (about || (!hasItems && !started))) return <WorktreeInfoPage ws={other} />;
+  // Files from Finder dropped anywhere on it go in the message box (use-attachments.tsx).
   const chat = (
-    <div className={s.chat}>
+    <div className={s.chat} data-drop-zone>
       {other ? <OtherWorktreeBanner ws={other} /> : null}
       {view.kind === 'room' ? <ConnectionStatus /> : null}
       {view.kind === 'workspace' ? <PlanStrip workspaceId={view.id} /> : null}

@@ -87,7 +87,8 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
   };
 
   return (
-    <aside className={p.chat} aria-label="Conversation">
+    <aside className={p.chat} aria-label="Conversation" data-drop-zone>
+      {att.dropTarget}
       <header className={p.chatHead}>
         <span className={p.chatTitle}>
           <Icon name="claude" size={13} />

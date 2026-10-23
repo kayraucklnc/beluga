@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FRESH_MS, fileKind, followed, foldersWithFiles, isFresh, scratchPlace, timeAgo } from '../packages/mac/src/layout/panel/scratch-model.js';
+import { FRESH_MS, fileKind, followed, foldersWithFiles, isFresh, scratchPlace, scratchState, timeAgo } from '../packages/mac/src/layout/panel/scratch-model.js';
 
 /** The Scratch tab's small decisions: how long ago, what a file is, which one to show. */
 describe('Scratch tab model', () => {
@@ -44,5 +44,12 @@ describe('Scratch tab model', () => {
     expect(foldersWithFiles([{ path: '.context/a', size: 1, mtime: 1 }], roots)).toEqual(['.context']);
     expect(foldersWithFiles([{ path: '.context/a', size: 1, mtime: 2 }, { path: '.klaud/scratch/b', size: 1, mtime: 1 }], roots)).toEqual(roots);
     expect(foldersWithFiles([], roots)).toEqual([]);
+  });
+
+  it('shows the skeleton only while the first look is on its way, and an empty folder as empty', () => {
+    expect(scratchState(undefined)).toBe('loading');
+    expect(scratchState(null)).toBe('missing');
+    expect(scratchState({ files: [] })).toBe('empty');
+    expect(scratchState({ files: [{ path: '.context/a', size: 1, mtime: 1 }] })).toBe('files');
   });
 });
