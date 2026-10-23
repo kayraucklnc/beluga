@@ -148,7 +148,7 @@ export class BoardWork {
 
   /**
    * A task from a description: on the board at once under its first line, while your Claude writes
-   * its title, goal and criteria (labels only from the board's own); they fill in when it's done.
+   * its title, goal, criteria and labels (the board's own first); they fill in when it's done.
    */
   createDescribed(input: Omit<NewIssue, 'title' | 'brief' | 'drafting'>, describe: string): Issue {
     const text = describe.trim();

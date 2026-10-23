@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
 import { issueForWorkspace } from '../src/core/board/model.js';
-import { briefPrompt, describeIssue, describeList } from '../src/core/board/prompt.js';
+import { boardNote, briefPrompt, describeIssue, describeList } from '../src/core/board/prompt.js';
 import { BoardWork, startPrompt } from '../src/core/board/work.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
@@ -324,5 +324,18 @@ describe('work that ships from another task’s worktree (BLG-29)', () => {
     expect(board.need(gone.key)).toMatchObject({ status: 'done', pr: { number: 4 } });
     expect(board.need(live.key).status).toBe('in_review');
     work.stop();
+  });
+});
+
+describe('what Claude is told about tasks (BLG-25)', () => {
+  it('every run hears to open tasks unasked for several asks, to say which, and that the user’s way wins', () => {
+    const { board, work } = setup();
+    const t = board.create({ projectId: 'api', title: 'x' }, work.me());
+    for (const text of [boardNote(), briefPrompt(board.state(), t)]) {
+      expect(text).toContain('two or more separate things');
+      expect(text).toContain('`task:KEY`');
+      expect(text).toContain('Not for questions, a single quick ask');
+      expect(text).toContain('If the user wants it some other way, do that.');
+    }
   });
 });

@@ -4,7 +4,7 @@ import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../compo
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
-import { LabelDot, PriorityIcon } from './marks.js';
+import { PriorityIcon } from './marks.js';
 import { assigneeChoices } from './tasks-model.js';
 import { useBoard, usePeople, useSelf, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
 import n from './NewTaskSheet.module.css';
@@ -13,8 +13,8 @@ import n from './NewTaskSheet.module.css';
 const SCALE: readonly Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
 
 /**
- * A new task: say what you want in one box and Claude writes its title and goal (or write them
- * yourself), how much it matters on a scale, labels the board already uses. It goes in the
+ * A new task: say what you want in one box and Claude writes its title and goal and picks its
+ * labels (or write them yourself), and how much it matters on a scale if you like. It goes in the
  * project and column you opened it from. Start with Claude makes the worktree and puts Claude on it.
  */
 export function NewTaskSheet({ projectId, status, parent, close }: { projectId?: string; status?: IssueStatus; parent?: string; close: () => void }) {
@@ -38,8 +38,6 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   const [priority, setPriority] = useState<Priority>('none');
   const choices = assigneeChoices(self, people);
   const [assignee, setAssignee] = useState('');
-  const known = useMemo(() => [...new Set(board.issues.flatMap((i) => i.labels))].sort(), [board.issues]);
-  const [labels, setLabels] = useState<readonly string[]>([]);
   const [start, setStart] = useState(false);
   const solo = useSolo(project);
   if (!projects.length) {
@@ -66,7 +64,6 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
           status: start ? 'todo' : column,
           priority,
           ...(who ? { assignee: who } : {}),
-          labels: [...labels],
           ...(parentIssue ? { parent: parentIssue.id } : {}),
         });
         close();
@@ -100,7 +97,7 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
             onInput={(e) => grow(e.currentTarget)}
             data-autofocus
           />
-          <div className={n.hint}>Claude writes the title, goal and what done looks like. ⌘↩ creates it.</div>
+          <div className={n.hint}>Claude writes the title, goal and what done looks like, and picks its labels. ⌘↩ creates it.</div>
         </div>
       )}
       <button type="button" className={n.disclosure} aria-expanded={mine} onClick={() => setMine(!mine)}>
@@ -121,21 +118,6 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
           <Popup label="Assignee" value={assignee} options={[{ value: '', label: 'No one' }, ...choices.map((c) => ({ value: c.key, label: c.label }))]} onChange={setAssignee} />
         </Field>
       )}
-      {known.length ? (
-        <Field label="Labels">
-          <div className={n.chips} role="group" aria-label="Labels">
-            {known.map((l) => {
-              const on = labels.includes(l);
-              return (
-                <button key={l} type="button" className={cx(n.chip, on && n.chipOn)} aria-pressed={on} onClick={() => setLabels(on ? labels.filter((x) => x !== l) : [...labels, l])}>
-                  <LabelDot label={l} />
-                  {l}
-                </button>
-              );
-            })}
-          </div>
-        </Field>
-      ) : null}
     </FormSheet>
   );
 }
