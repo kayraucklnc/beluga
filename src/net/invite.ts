@@ -3,9 +3,12 @@ import { z } from 'zod';
 /** Direct dial addresses look like `p2p://<z-base-32 public key>`. */
 export const P2P_SCHEME = 'p2p://';
 const LEGACY_PREFIX = 'klaude:';
-/** New direct invites use beluga://; klaud:// links from before the rename still open. */
-const DIRECT_PREFIX = 'beluga://';
-const DIRECT_PREFIXES = [DIRECT_PREFIX, 'klaud://'];
+/**
+ * Invites are made as klaud:// for now: a Klaud from before the rename only reads that, and Beluga
+ * registers and reads both. Switch to beluga:// once older Klauds are gone.
+ */
+export const DIRECT_PREFIX = 'klaud://';
+const DIRECT_PREFIXES = ['beluga://', 'klaud://'];
 const Z32_KEY = '[ybndrfg8ejkmcpqxot1uwisza345h769]{52}';
 const WS_URL = /^wss?:\/\/[^\s#@]+$/;
 const P2P_URL = new RegExp(`^p2p://${Z32_KEY}$`);
@@ -35,7 +38,7 @@ const toHttpUrl = (wsUrl: string): string => wsUrl.replace(/^ws(s?):\/\//, 'http
 
 /**
  * Invites are plain links. Direct ones name the host's public key, e.g.
- * `beluga://yry…bo?relay=https://calm-river.trycloudflare.com#k3Jd…`; relay-only ones are
+ * `klaud://yry…bo?relay=https://calm-river.trycloudflare.com#k3Jd…`; relay-only ones are
  * `https://calm-river.trycloudflare.com#k3Jd…`. The secret lives in the #fragment,
  * which browsers and proxies never send to servers (and the DHT never sees it).
  */

@@ -601,7 +601,7 @@ export class WorkspaceManager {
     const dir = this.freeDir(project, s);
     const branch = await this.freeBranch(project.root, `${BRANCH_PREFIX}${s}`);
     await g.git(project.root, ['worktree', 'add', '-b', branch, dir, startPoint]);
-    await g.excludeOrcaDir(dir);
+    await g.excludeProjectDir(dir);
     await copyEnvFiles(project.root, dir);
     const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: base ?? project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
     this.saveRecord(record);
@@ -695,7 +695,7 @@ export class WorkspaceManager {
     const dir = this.freeDir(project, s);
     const branch = await this.freeBranch(project.root, `${BRANCH_PREFIX}${s}`);
     await g.addWorktree(project.root, dir, branch, from);
-    await g.excludeOrcaDir(dir);
+    await g.excludeProjectDir(dir);
     await copyEnvFiles(project.root, dir);
     const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
     this.saveRecord(record);
@@ -770,7 +770,7 @@ export class WorkspaceManager {
     const from = opts.base ?? (source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD'));
     const branch = await this.freeBranch(project.root, `${BRANCH_PREFIX}${s}`);
     await g.addWorktree(project.root, dir, branch, from);
-    await g.excludeOrcaDir(dir);
+    await g.excludeProjectDir(dir);
     await copyEnvFiles(source.kind === 'chat' ? project.root : source.path, dir);
     const record: WorkspaceRecord = {
       id: freshId(),
@@ -996,7 +996,7 @@ export class WorkspaceManager {
     if (!project) throw new WorkspaceError('Project not found');
     const dir = this.freeDir(project, slug(name));
     await g.git(project.root, ['worktree', 'add', dir, branch]);
-    await g.excludeOrcaDir(dir);
+    await g.excludeProjectDir(dir);
     if (opts.copyEnv !== false) await copyEnvFiles(project.root, dir);
     const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: slug(name), path: dir, kind: 'worktree', branch, base: project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...extra };
     this.saveRecord(record);

@@ -87,8 +87,8 @@ describe('detectNotices: runs', () => {
     expect(detectNotices(forMe, apply(forMe, ev('b', 'me', 'done', 'ok', 'room')))).toEqual([
       { kind: 'done', title: "bob's Claude finished in the group chat", body: 'ok', channel: 'room' },
     ]);
-    const forCat = apply(withCat, ev('b', 'c', 'started', '', 'room'));
-    expect(detectNotices(forCat, apply(forCat, ev('b', 'c', 'done', 'ok', 'room')))).toEqual([]);
+    const catRun = apply(withCat, ev('b', 'c', 'started', '', 'room'));
+    expect(detectNotices(catRun, apply(catRun, ev('b', 'c', 'done', 'ok', 'room')))).toEqual([]);
   });
 
   it('reports errors and denials as problems', () => {

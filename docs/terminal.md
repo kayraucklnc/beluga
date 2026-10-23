@@ -1,13 +1,13 @@
-# Orca in the terminal
+# Beluga in the terminal
 
-The lightweight Orca: everything in your terminal, clickable, no shortcuts to memorize. Install it with `npm install -g orca-code` and run `orca`.
+The lightweight Beluga: everything in your terminal, clickable, no shortcuts to memorize. Install it with `npm install -g beluga-code` and run `beluga`.
 
 
 ## Projects and workspaces
 
-- **CHATS** are conversations with Claude that aren't tied to a project. **+ new** opens an empty chat in the folder you started Orca in. Your first message creates it, and Esc cancels.
+- **CHATS** are conversations with Claude that aren't tied to a project. **+ new** opens an empty chat in the folder you started Beluga in. Your first message creates it, and Esc cancels.
 - **PROJECTS** are your git repos. Each project row has three buttons:
-  - **+⌥** opens a new worktree: describe the task, and a small model (Haiku, on your own login) names it. It's created from the latest `origin` under `~/.orca/workspaces/<project>/<name>`, and Claude starts right away.
+  - **+⌥** opens a new worktree: describe the task, and a small model (Haiku, on your own login) names it. It's created from the latest `origin` under `~/.beluga/workspaces/<project>/<name>`, and Claude starts right away.
   - **+◇** opens a new chat in the project folder.
   - **⋯** moves the project to a group, hides it, or opens it in Finder.
 - **Inside a workspace**, the top bar has (Tab walks through every button, Enter presses it; whatever doesn't fit is under **⋯ More**, and Settings → Workspaces hides the ones you don't use):
@@ -23,37 +23,37 @@ The lightweight Orca: everything in your terminal, clickable, no shortcuts to me
   - **Archive**: keeps the conversation, removes the worktree. Restore it any time from **Archived**. Archiving or deleting a conversation also removes the worktrees its Claude Code sub-agents made (their branches are kept; one with uncommitted changes, without a branch, or whose agent is still working, stays).
   - **Share**: invite people from the room to work here or follow along, and remove them any time.
 - **Worktrees from other tools** stay out of the way. The ones Claude Code sub-agents create (`.claude/worktrees/agent-*`) fold into **Claude Code agents**, where **⋯** removes the finished ones (branches are kept). Other tools' worktrees fold into **Other worktrees**.
-- **Env files**: `.env*` files (and `.ssh` / `.aws` folders inside the project) are copied into new worktrees. When you archive or delete one, Orca shows which keys changed and offers to copy them back to main.
+- **Env files**: `.env*` files (and `.ssh` / `.aws` folders inside the project) are copied into new worktrees. When you archive or delete one, Beluga shows which keys changed and offers to copy them back to main.
 
 ## Terminal, setup and run
 
 - **Terminal** (the last tab at the top, next to Usage) is your own shell, always one click away: it starts in the project you're working in (or your home folder). Click it to type; **Ctrl+]** or a click anywhere else gives the keyboard back. **+** opens another shell.
 - Each workspace also has its own **Terminal** view: a real shell in the workspace's folder: colors, `vim`, `htop`, `git`, anything.
-- **Setup** runs in every new worktree (and forks and handoffs), in the Terminal tab where you can watch it: `npm install`, `uv sync`, whatever the project needs. Orca guesses it from the lockfile; set your own in the project's **⋯ → Setup and run commands**, or commit a `orca.json` so the whole team gets it (`conductor.json` works too):
+- **Setup** runs in every new worktree (and forks and handoffs), in the Terminal tab where you can watch it: `npm install`, `uv sync`, whatever the project needs. Beluga guesses it from the lockfile; set your own in the project's **⋯ → Setup and run commands**, or commit a `beluga.json` so the whole team gets it (`conductor.json` works too):
 
   ```json
   { "scripts": { "setup": "npm install", "run": "npm run dev" }, "prPrompt": "Link the Linear issue." }
   ```
 
-  Scripts get `ORCA_WORKSPACE_PATH`, `ORCA_ROOT_PATH` (the main checkout, e.g. to copy files from) and `ORCA_WORKSPACE_NAME`.
+  Scripts get `BELUGA_WORKSPACE_PATH`, `BELUGA_ROOT_PATH` (the main checkout, e.g. to copy files from) and `BELUGA_WORKSPACE_NAME`.
 - **Run** starts the run command in the Terminal tab; **Stop** and **Restart** are right above it.
 
 ## Pull requests
 
 Click **PR** (or type `/pr`) and Claude commits what belongs to the work, pushes the branch and opens a pull request with `gh`, with a short description: *what*, *why*, *how to test*. Make it yours:
 
-- **Settings → Claude → Pull request instructions** opens the instructions in your editor (`~/.orca/prompts/pull-request.md`). `{{branch}}`, `{{base}}` and `{{project}}` are filled in.
-- A project's `orca.json` can add `"prPrompt"` guidelines for everyone on it.
+- **Settings → Claude → Pull request instructions** opens the instructions in your editor (`~/.beluga/prompts/pull-request.md`). `{{branch}}`, `{{base}}` and `{{project}}` are filled in.
+- A project's `beluga.json` can add `"prPrompt"` guidelines for everyone on it.
 - `/pr mention the migration` adds a note for one pull request.
 
 The PR's number, checks and review state show on the workspace and in the Overview. If checks fail, **PR → Fix the failing checks** hands the CI logs to Claude. You need the [GitHub CLI](https://cli.github.com) signed in (`gh auth login`).
 
 ## Notifications and the inbox
 
-Orca tells you when something needs you: Claude finished, asks a question or proposes a plan, wants an approval, hit a merge conflict, setup failed, a PR opened or its checks finished, someone joined or handed you work. It never interrupts you about the conversation you're looking at.
+Beluga tells you when something needs you: Claude finished, asks a question or proposes a plan, wants an approval, hit a merge conflict, setup failed, a PR opened or its checks finished, someone joined or handed you work. It never interrupts you about the conversation you're looking at.
 
 - On the desktop: iTerm2, Ghostty, WezTerm and kitty show their own notifications (clicking one brings the terminal back); elsewhere macOS Notification Center or `notify-send`.
-- In Orca: **Inbox** (top right) lists everything, and clicking an item takes you there.
+- In Beluga: **Inbox** (top right) lists everything, and clicking an item takes you there.
 - **Settings → Notifications** turns each kind, the desktop and the sound on or off.
 
 ## Models, search, usage and templates
@@ -65,19 +65,19 @@ Orca tells you when something needs you: Claude finished, asks a question or pro
 
 ## On your own
 
-Orca starts solo. The **Chat** tab is you and your Claude, so just type, no `@claude` needed. Start a message with `@add-auth` (Tab completes) to send it to the Claude working in that worktree or project.
+Beluga starts solo. The **Chat** tab is you and your Claude, so just type, no `@claude` needed. Start a message with `@add-auth` (Tab completes) to send it to the Claude working in that worktree or project.
 
 Worktrees made by other tools (Conductor, Claude Code) show their Claude Code conversation when you open them (for Conductor's, the one Conductor has open; else the latest), and Claude continues it once you write there; until then they stay in their own fold. The People panel appears once someone joins.
 
 ## Working with people
 
-- **Invite** (bottom bar, a project's ⋯ menu, or a workspace's **Share**) asks two things: **Invite to** *This project* (all its worktrees and chats) or *Everything* (the whole room), and **They can** *Watch* (chat history and files), *Prompt* (talk to your Claude there; edits and commands follow your approval rules) or *Edit* (your Claude edits and runs commands in that project's folder without asking; secrets stay blocked). **Copy invite link**, and your friend runs `orca join <link>`.
-  - Links **knock** by default: a card says *mia wants to join bob-api* with **Let in**, **Watch only** and **Decline**. They're for one person and expire after 24 hours, unless you untick those; turn any link off from the same menu. They work in rooms you host, while Orca runs.
+- **Invite** (bottom bar, a project's ⋯ menu, or a workspace's **Share**) asks two things: **Invite to** *This project* (all its worktrees and chats) or *Everything* (the whole room), and **They can** *Watch* (chat history and files), *Prompt* (talk to your Claude there; edits and commands follow your approval rules) or *Edit* (your Claude edits and runs commands in that project's folder without asking; secrets stay blocked). **Copy invite link**, and your friend runs `beluga join <link>`.
+  - Links **knock** by default: a card says *mia wants to join bob-api* with **Let in**, **Watch only** and **Decline**. They're for one person and expire after 24 hours, unless you untick those; turn any link off from the same menu. They work in rooms you host, while Beluga runs.
   - Project guests see **only** what they were invited to: no group chat, no other projects or shared folders. Files stream as they open them (no full download), in **Files**, a read-only **Terminal** (`ls`, `cd`, `cat`, `tree`, `find`, `grep`; click any name to open it; Tab completes) and **Diff** (what changed). Nothing runs on your computer for that.
   - Their prompts run on your computer, with your Claude, in that project's folder, and show up as *mia (via kay's Claude)*.
   - **Click a guest** in People to change what they can do, add them to another project, invite them to everything, or remove them. No new link needed.
   - Prefer the old way? *Copy the room's open link* lets anyone with it into everything, without knocking.
-- **Someone joins**: a card asks *how much do you trust them?* Pick one, and Orca remembers it next time (by their own key, which nobody else can use):
+- **Someone joins**: a card asks *how much do you trust them?* Pick one, and Beluga remembers it next time (by their own key, which nobody else can use):
   - **Can't use my Claude**: they can chat, but their requests are declined.
   - **Ask me each time** (the default): you approve each request. Their requests only reach your shared folders; reading anything else asks you.
   - **Trusted**: requests run without asking. Commands, edits, and files outside your shared folders still ask.
@@ -98,8 +98,8 @@ Worktrees made by other tools (Conductor, Claude Code) show their Claude Code co
 - **Start a worktree on a friend's computer**: click them → *Start a worktree on bob's computer…*, pick one of their projects and describe the task. Bob approves, his Claude does the work on his computer, and you're both in it.
 - **Hand off**: in a worktree, click **Hand off** and pick someone. Your Claude writes a handoff note (done, left, decisions), uncommitted work is committed, and the branch goes over encrypted. They accept, get a worktree with the branch, the chat and the note, and their Claude continues. They need the same repository cloned. You can follow along under SHARED WITH ME.
 - **Your Claude on their computer**: ask your Claude things like *"get bob's ~/Desktop/report.pdf onto my desktop"*. It asks bob's Claude, or fetches the file itself; bob approves each read unless he fully trusts you. When their Claude works for you, it can send results back to you as files.
-- **Run a command on a friend's computer**: *Run a command on bob's computer…* in the person menu, `/run @bob npm test`, or ask your Claude (*"run the tests on bob's computer"*, also from inside a project chat). It runs through bob's Orca, in his shared folder (his home folder with full trust), with no input, stopping after 2 minutes (10 at most); the exit code and the end of the output (up to 64 KB) show in your chat. Bob gets a card with the exact command, the folder and who asked (**Yes**, **No**, or **Always** for you until Orca quits), unless he fully trusts you; blocked people are declined. Your card shows *waiting for bob*, then *running*, then the result, and bob sees a quiet line like "kay's Claude ran `npm test` in ~/api". Commands that touch secrets (`.env`, keys) are refused at every level.
-- **Your Claude knows what it may ask**: it sees each friend's projects, the workspaces they shared with you and how much they trust you, and can ask their Claude to work in a specific project. If the friend isn't in the room, it tells you to **Invite** them (they run `orca join <link>`).
+- **Run a command on a friend's computer**: *Run a command on bob's computer…* in the person menu, `/run @bob npm test`, or ask your Claude (*"run the tests on bob's computer"*, also from inside a project chat). It runs through bob's Beluga, in his shared folder (his home folder with full trust), with no input, stopping after 2 minutes (10 at most); the exit code and the end of the output (up to 64 KB) show in your chat. Bob gets a card with the exact command, the folder and who asked (**Yes**, **No**, or **Always** for you until Beluga quits), unless he fully trusts you; blocked people are declined. Your card shows *waiting for bob*, then *running*, then the result, and bob sees a quiet line like "kay's Claude ran `npm test` in ~/api". Commands that touch secrets (`.env`, keys) are refused at every level.
+- **Your Claude knows what it may ask**: it sees each friend's projects, the workspaces they shared with you and how much they trust you, and can ask their Claude to work in a specific project. If the friend isn't in the room, it tells you to **Invite** them (they run `beluga join <link>`).
 - **Share a folder** from **Shared files** (or the person menu). Pick this folder, a project or any path, then choose everyone or one person, and read-only or editable. Secrets are never shared.
 - **Clear** a conversation: just for you, for everyone (the host, in the group chat), or with a fresh Claude conversation (in a workspace).
 
@@ -175,7 +175,7 @@ Questions go to whoever asked Claude, even when it's a friend's Claude on their 
 
 ## Settings
 
-Your choices are saved in `~/.orca/settings.json`, so plain `orca` always starts the way you like it. Open **Settings** from the bottom bar or with `/settings`:
+Your choices are saved in `~/.beluga/settings.json`, so plain `beluga` always starts the way you like it. Open **Settings** from the bottom bar or with `/settings`:
 
 - **Name** and **color theme** (Calm, Light terminal, High contrast, Monochrome)
 - **People & permissions**: what new people start at, each person's trust level, people you trusted before, and how friends connect (direct with a Cloudflare backup, direct only, Cloudflare, ngrok, or local network)
@@ -187,13 +187,13 @@ Your choices are saved in `~/.orca/settings.json`, so plain `orca` always starts
 ## Command line
 
 ```
-orca                           your projects, with your saved settings (solo)
-orca --invite                  also open remote access and copy an invite
-orca join [invite]             join a friend (reads the invite from your clipboard)
-orca demo                      try everything with a pretend friend
-orca view <image> [--ascii]    show a PNG, JPEG, GIF or SVG in the terminal
-orca update [--check]          get the latest orca, or just check
-orca daemon [--keep-alive]     run orca in the background for other windows (the Mac app uses this)
+beluga                           your projects, with your saved settings (solo)
+beluga --invite                  also open remote access and copy an invite
+beluga join [invite]             join a friend (reads the invite from your clipboard)
+beluga demo                      try everything with a pretend friend
+beluga view <image> [--ascii]    show a PNG, JPEG, GIF or SVG in the terminal
+beluga update [--check]          get the latest beluga, or just check
+beluga daemon [--keep-alive]     run beluga in the background for other windows (the Mac app uses this)
 
   -n, --name <name>        display name (remembered)
   -s, --share <spec>       share a folder: [name=]path[:rw], repeatable

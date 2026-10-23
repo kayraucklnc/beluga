@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Release Orca for Mac by hand: build it, sign the update, and put it on GitHub so every
+// Release Beluga for Mac by hand: build it, sign the update, and put it on GitHub so every
 // installed copy finds it (they read releases/latest/download/latest.json).
 //
 //   node scripts/release-mac.mjs --notes notes.md            build, then create the release
@@ -12,8 +12,8 @@
 //   --skip-build       reuse what the last `npm run app:build` made
 //   --dry-run          build and write latest.json, but don't touch GitHub
 //   --force            release even if GitHub's latest release isn't older
-//   --key <file>       the updater's private key (default ~/.tauri/orca-updater.key, the old
-//                      name before the rename, or $TAURI_SIGNING_PRIVATE_KEY); its password, if any, from
+//   --key <file>       the updater's private key (default ~/.tauri/beluga-updater.key, else
+//                      ~/.tauri/klaud-updater.key from before the rename, or $TAURI_SIGNING_PRIVATE_KEY); its password, if any, from
 //                      $TAURI_SIGNING_PRIVATE_KEY_PASSWORD or <key>.password
 //
 // A maintainer's tool: nothing runs it automatically. Needs macOS, gh (logged in) and the key.
@@ -23,9 +23,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const REPO = 'kayraucklnc/orca';
+export const REPO = 'kayraucklnc/beluga';
 /** What people download is named for the app, whatever the build's productName still says. */
-export const APP = 'Orca';
+export const APP = 'Beluga';
 const root = path.resolve(import.meta.dirname, '..');
 const mac = path.join(root, 'packages/mac');
 const confFile = path.join(mac, 'src-tauri/tauri.conf.json');
@@ -85,7 +85,7 @@ function setVersion(version) {
 /** The updater's key: its name since the rename, else the one it had before (the same key). */
 function defaultKey() {
   const dir = path.join(os.homedir(), '.tauri');
-  const named = path.join(dir, 'orca-updater.key');
+  const named = path.join(dir, 'beluga-updater.key');
   return existsSync(named) ? named : path.join(dir, 'klaud-updater.key');
 }
 

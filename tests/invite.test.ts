@@ -38,9 +38,9 @@ describe('invite', () => {
     const relay = 'wss://calm-river.trycloudflare.com';
 
     it('encode the host key, an optional relay, and keep the secret in the fragment', () => {
-      expect(encodeInvite({ url: `p2p://${key}`, secret })).toBe(`beluga://${key}#${secret}`);
+      expect(encodeInvite({ url: `p2p://${key}`, secret })).toBe(`klaud://${key}#${secret}`);
       const withRelay = encodeInvite({ url: `p2p://${key}`, relay, secret });
-      expect(withRelay).toBe(`beluga://${key}?relay=https://calm-river.trycloudflare.com#${secret}`);
+      expect(withRelay).toBe(`klaud://${key}?relay=https://calm-river.trycloudflare.com#${secret}`);
       expect(new URL(withRelay).hash).toBe(`#${secret}`);
       expect(decodeInvite(withRelay)).toEqual({ url: `p2p://${key}`, relay, secret });
       expect(decodeInvite(`klaud://${key}#${secret}`)).toEqual({ url: `p2p://${key}`, secret });

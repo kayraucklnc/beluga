@@ -60,7 +60,8 @@ There is no special "last Klaud" release. The first Beluga release is the bridge
 - After an update the new app replaces a kept-alive daemon of another version, as before
   ([updates.md](updates.md)).
 - Both schemes, `beluga` and `klaud`, are registered in tauri.conf.json, so old invites and deep
-  links still open. New links say `beluga://`.
+  links still open. New invites are still made as `klaud://` (src/net/invite.ts, `LINK_SCHEME` in
+  src/net/mesh/invitations.ts) so an older Klaud can open them; switch once those are gone.
 
 ## What macOS asks again
 
