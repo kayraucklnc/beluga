@@ -1,9 +1,9 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { ORCA } from '../components/orca-path.js';
+import { BELUGA } from '../components/beluga-path.js';
 
 /**
- * The orca (assets/logo.svg), drawn in: the tile rises out of the dark, the orca leaps up into
- * it and settles, then a sheen crosses the tile and its glow comes up, as if the app just
+ * The beluga (assets/logo.svg), drawn in: the tile rises out of the dark, the beluga leaps up
+ * into it and settles, then a sheen crosses the tile and its glow comes up, as if the app just
  * became ready for you.
  */
 
@@ -20,7 +20,7 @@ export function Mark({ size = 132, delay = 0 }: { readonly size?: number; readon
       height={size}
       viewBox="0 0 1024 1024"
       role="img"
-      aria-label="Orca"
+      aria-label="Beluga"
       initial={still ? false : { opacity: 0, scale: 0.86, y: 14, filter: 'blur(10px)' }}
       animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
       transition={{ duration: 1.1, ease: EASE, delay: at(0) }}
@@ -28,12 +28,12 @@ export function Mark({ size = 132, delay = 0 }: { readonly size?: number; readon
     >
       <defs>
         <linearGradient id="mark-bg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#FFFFFF" />
-          <stop offset="1" stopColor="#ECEDF0" />
+          <stop offset="0" stopColor="#2A2C31" />
+          <stop offset="1" stopColor="#0F1013" />
         </linearGradient>
         <linearGradient id="mark-sheen" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stopColor="#fff" stopOpacity="0" />
-          <stop offset="0.5" stopColor="#fff" stopOpacity="0.85" />
+          <stop offset="0.5" stopColor="#fff" stopOpacity="0.22" />
           <stop offset="1" stopColor="#fff" stopOpacity="0" />
         </linearGradient>
         <clipPath id="mark-clip">
@@ -43,7 +43,7 @@ export function Mark({ size = 132, delay = 0 }: { readonly size?: number; readon
           <feGaussianBlur stdDeviation="40" />
         </filter>
       </defs>
-      {/* The tile's glow: comes up once the orca has landed, and stays soft. */}
+      {/* The tile's glow: comes up once the beluga has landed, and stays soft. */}
       <motion.path
         d={TILE}
         fill="#fff"
@@ -53,13 +53,13 @@ export function Mark({ size = 132, delay = 0 }: { readonly size?: number; readon
         transition={{ duration: 1.6, delay: at(1.15), ease: 'easeOut' }}
       />
       <path d={TILE} fill="url(#mark-bg)" />
-      <path d={TILE} fill="none" stroke="#000" strokeOpacity="0.06" strokeWidth="4" />
-      {/* The orca leaps up from the tile's lower edge (clipped, as if out of the water). */}
+      <path d={TILE} fill="none" stroke="#fff" strokeOpacity="0.14" strokeWidth="5" />
+      {/* The beluga leaps up from the tile's lower edge (clipped, as if out of the water). */}
       <g clipPath="url(#mark-clip)">
         <g transform="translate(512 512) scale(0.76) translate(-512 -512)">
           <motion.path
-            d={ORCA}
-            fill="#0B0B0C"
+            d={BELUGA}
+            fill="#F5F5F7"
             fillRule="evenodd"
             style={{ originX: 0.5, originY: 0.5 }}
             initial={still ? false : { opacity: 0, x: -150, y: 210, rotate: -16 }}

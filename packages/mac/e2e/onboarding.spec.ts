@@ -8,8 +8,8 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await page.goto('/');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Klaud' });
   await expect(welcome).toBeVisible();
-  // The orca opens the welcome, and comes back on the last step.
-  await expect(welcome.getByRole('img', { name: 'Orca' })).toBeVisible();
+  // The beluga opens the welcome, and comes back on the last step.
+  await expect(welcome.getByRole('img', { name: 'Beluga' })).toBeVisible();
   await welcome.getByRole('button', { name: /Get Started/ }).click();
   await expect(welcome.getByRole('heading', { name: 'Work on everything at once.' })).toBeVisible();
 
@@ -23,7 +23,7 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
   await welcome.getByRole('radio', { name: '⌘ Return' }).click();
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('klaud.prefs.v1') ?? '{}').sendWith)).toBe('cmd-enter');
   await welcome.getByRole('button', { name: 'Finish', exact: true }).click();
-  await expect(welcome.getByRole('img', { name: 'Orca' })).toBeVisible();
+  await expect(welcome.getByRole('img', { name: 'Beluga' })).toBeVisible();
 
   await welcome.getByRole('button', { name: /Open Klaud|Look Around First/ }).click();
   await expect(welcome).toHaveCount(0);

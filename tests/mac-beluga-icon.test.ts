@@ -1,20 +1,20 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ORCA } from '../packages/mac/src/components/orca-path.js';
+import { BELUGA } from '../packages/mac/src/components/beluga-path.js';
 
-/** The orca everywhere the app shows its icon, all from assets/orca.svg (packages/mac/scripts/make-icons.mjs). */
+/** The beluga everywhere the app shows its icon, all from assets/beluga.svg (packages/mac/scripts/make-icons.mjs). */
 const root = path.resolve(import.meta.dirname, '..');
 const read = (file: string): Buffer => readFileSync(path.join(root, file));
 const pngSize = (png: Buffer): [number, number] => [png.readUInt32BE(16), png.readUInt32BE(20)];
 
-describe('the orca', () => {
-  const drawing = read('assets/orca.svg').toString().match(/ d="([^"]+)"/)?.[1];
+describe('the beluga', () => {
+  const drawing = read('assets/beluga.svg').toString().match(/ d="([^"]+)"/)?.[1];
 
   it('is one path, and every copy of it is the drawing', () => {
     expect(drawing).toBeTruthy();
-    expect(ORCA).toBe(drawing);
-    expect(read('assets/logo.svg').toString()).toContain(drawing);
+    expect(BELUGA).toBe(drawing);
+    for (const logo of ['assets/logo.svg', 'assets/logo-light.svg']) expect(read(logo).toString()).toContain(drawing);
     for (const banner of ['assets/banner-light.svg', 'assets/banner-dark.svg']) expect(read(banner).toString()).toContain(drawing);
   });
 

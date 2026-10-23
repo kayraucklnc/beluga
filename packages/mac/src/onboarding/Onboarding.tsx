@@ -196,7 +196,7 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
         ) : null}
 
         <motion.main className={s.content} animate={finale ? { scale: 1.7, opacity: 0 } : { scale: 1, opacity: 1 }} transition={{ duration: WORMHOLE.enter, ease: [0.55, 0, 0.8, 0.3] }}>
-          {/* Not initial={false}: that would also skip the first step's own entrance (the orca leaping in). */}
+          {/* Not initial={false}: that would also skip the first step's own entrance (the beluga leaping in). */}
           <AnimatePresence mode="wait" custom={dir}>
             <motion.section
               key={step}
