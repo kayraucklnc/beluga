@@ -77,6 +77,20 @@ export function buildKeepAppend(): string {
   ].join('\n');
 }
 
+/**
+ * A worktree's run (not a plan's task: its brief says when to commit): Claude commits what it
+ * changed before the turn ends, so the branch is always ready for Create PR (see workspaces/pr.ts).
+ */
+export function buildCommitAppend(): string {
+  return [
+    '',
+    'You are on a branch of your own (a git worktree). When your turn changed files, commit them before you',
+    'end it: one commit with a short message in the style of `git log` here (no attribution lines unless the',
+    'repo uses them). Leave out scratch files, build output and anything secret. Never push, merge, rebase or',
+    'open a pull request unless asked: the owner does that from Beluga. If the request says not to run git, don\'t.',
+  ].join('\n');
+}
+
 /** How a sub-agent's own scratch folder is introduced (also how Beluga tells it already has one). */
 export const AGENT_SCRATCH_MARK = 'Your scratch folder:';
 

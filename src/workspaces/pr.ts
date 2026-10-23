@@ -254,6 +254,8 @@ export interface MergeOptions {
   readonly auto?: boolean;
   /** Delete the branch on GitHub once merged (the worktree keeps its local branch). */
   readonly deleteBranch?: boolean;
+  /** Merge now even though checks or reviews haven't passed (`gh pr merge --admin`: needs admin rights on the repository). */
+  readonly admin?: boolean;
 }
 
 /** Why GitHub said no to a merge. */
@@ -277,9 +279,9 @@ export function explainMergeError(error: string, method: MergeMethod = 'squash')
   return say('other', `GitHub didn’t merge it: ${text.split('\n').find((l) => l.trim())?.trim() ?? 'no reason given'}`);
 }
 
-/** Merge a pull request on GitHub (`gh pr merge`), or ask GitHub to once its requirements pass (`auto`). Throws gh's error. */
+/** Merge a pull request on GitHub (`gh pr merge`), or ask GitHub to once its requirements pass (`auto`), or now past them (`admin`). Throws gh's error. */
 export async function mergePr(dir: string, number: number, opts: MergeOptions): Promise<void> {
-  await run(gh(), ['pr', 'merge', String(number), `--${opts.method}`, ...(opts.auto ? ['--auto'] : [])], dir, 60_000);
+  await run(gh(), ['pr', 'merge', String(number), `--${opts.method}`, ...(opts.admin ? ['--admin'] : opts.auto ? ['--auto'] : [])], dir, 60_000);
 }
 
 /**

@@ -125,6 +125,12 @@ const toAction = (b: WorkspaceButton, pr: boolean): ToolAction => ({
   ...(b.action === 'archive' || b.action === 'delete' ? { danger: true } : {}),
 });
 
+/** Its project pushes somewhere and the GitHub CLI isn't known to be missing: PRs are the way to merge. */
+function onGitHub(state: AppState, ws: Workspace): boolean {
+  const sync = state.projects.find((p) => p.id === ws.projectId)?.sync;
+  return state.gh !== false && (!sync || Boolean(sync.upstream));
+}
+
 /** What this workspace needs next, in the order it matters. */
 function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[]): ToolAction | undefined {
   const by = (a: WorkspaceAction): ToolAction | undefined => all.find((x) => x.action === a && !x.disabled);
@@ -135,6 +141,10 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
   if (pr?.state === 'OPEN' && pr.checks === 'failing') {
     return { id: 'fix_checks', label: 'Fix Checks…', hint: `PR #${pr.number}'s checks are failing: Claude reads the logs and fixes them`, icon: 'wand', action: 'fix_checks', tone: 'error' };
   }
+  // On GitHub, a branch's next step is its pull request (Claude commits anything left as it opens it):
+  // there its checks run live and it merges into origin. Merge Locally stays under ⋯.
+  const create = !pr && onGitHub(state, ws) ? by('pr') : undefined;
+  if (create) return { ...create, label: 'Create PR…', hint: `Claude commits what’s left, pushes ${ws.branch ?? 'this branch'} and opens a pull request into ${mergeTargetOf(state, ws)}; its checks show here as they run` };
   const commit = by('commit');
   if (commit) return commit;
   if (pr?.state === 'OPEN') {

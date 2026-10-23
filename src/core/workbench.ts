@@ -251,6 +251,8 @@ export class Workbench {
         const problem = explainMergeError(err instanceof Error ? err.message : String(err), opts.method);
         // GitHub may know more now (a conflict, a review): show it.
         await this.refreshPrs(id);
+        // Skipping the checks is an admin's right: without it GitHub says forbidden or blocked.
+        if (opts.admin && (problem.reason === 'permission' || problem.reason === 'blocked')) return fail(problem.reason, 'Merging past the checks needs admin rights on this repository. Wait for the checks, or use “Merge When Checks Pass”.');
         return fail(problem.reason, problem.message);
       }
       // You merged it: no "was merged" notification on top.

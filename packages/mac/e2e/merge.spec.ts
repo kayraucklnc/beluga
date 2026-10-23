@@ -16,16 +16,15 @@ test('Merge shows where it goes, what comes along and the checks, and Cancel cha
   await row.click();
   await expect(toolbar(page)).toContainText('add-auth');
 
-  // Green, and it says where.
-  const merge = toolbar(page).getByRole('button', { name: 'Merge Locally into main' });
-  await expect(merge).toBeVisible();
-  const green = await merge.evaluate((el) => getComputedStyle(el).backgroundColor);
-  const [r, g, b] = green.match(/\d+/g)!.map(Number);
-  expect(g).toBeGreaterThan(r! + 40);
-  expect(g).toBeGreaterThan(b! + 30);
-
-  await merge.click();
-  const panel = page.getByRole('dialog', { name: 'Merge' });
+  // On GitHub, the next step is the pull request; merging locally is under ⋯, named for what it is.
+  await expect(toolbar(page).getByRole('button', { name: 'Create PR…' })).toBeVisible();
+  await expect(toolbar(page).getByRole('button', { name: /Merge Locally into/ })).toHaveCount(0);
+  const openMerge = async (): Promise<void> => {
+    await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
+    await page.getByRole('menuitem', { name: /Merge Locally…/ }).click();
+  };
+  await openMerge();
+  const panel = page.getByRole('dialog', { name: /^Merge/ });
   await expect(panel).toBeVisible();
   await expect(panel.getByRole('heading', { name: 'Merge into main' }).or(panel.getByText('Merge into main').first())).toBeVisible();
   await expect(panel.getByLabel(/^From .* into main$/)).toBeVisible();
@@ -46,11 +45,10 @@ test('Merge shows where it goes, what comes along and the checks, and Cancel cha
   // Cancel: closed, and still there to merge.
   await panel.getByRole('button', { name: 'Cancel' }).click();
   await expect(panel).toBeHidden();
-  await expect(merge).toBeVisible();
-  // Its button again opens it; pressing it once more closes it.
-  await merge.click();
+  // Still there to merge: ⋯ opens it again, Escape closes it.
+  await openMerge();
   await expect(panel).toBeVisible();
-  await merge.click();
+  await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
 });
 
@@ -97,12 +95,7 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     await expect(toolbar(page)).toContainText('add-auth');
 
     // The PR item opens the sheet and looks the PR up at once (the toolbar's own button once the PR is known).
-    const prButton = toolbar(page).getByRole('button', { name: /^PR #7/ });
-    if (await prButton.isVisible()) await prButton.click();
-    else {
-      await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
-      await page.getByRole('menuitem', { name: /Create PR|PR #/ }).click();
-    }
+    await toolbar(page).getByRole('button', { name: /^PR #7|^Create PR…$/ }).click();
     const sheet = page.getByRole('dialog', { name: /Pull Request/ });
     await expect(sheet).toContainText('#7');
     await expect(sheet).toContainText('Protect the payments routes');
@@ -120,7 +113,7 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
     await expect(merge).toHaveAttribute('data-merge-github', 'squash');
     await sheet.getByRole('button', { name: 'More ways to merge' }).click();
     // (Anchored: “Merge When Checks Pass” says how it will merge, “Squash and Merge” among them.)
-    for (const way of ['Squash and Merge', 'Create a Merge Commit', 'Rebase and Merge', 'Merge When Checks Pass']) await expect(page.getByRole('menuitem', { name: new RegExp(`^${way}`) })).toBeVisible();
+    for (const way of ['Squash and Merge', 'Create a Merge Commit', 'Rebase and Merge', 'Merge When Checks Pass', 'Merge Now, Skipping Checks']) await expect(page.getByRole('menuitem', { name: new RegExp(`^${way}`) })).toBeVisible();
     await page.getByRole('menuitem', { name: /Merge When Checks Pass/ }).click();
     await expect(sheet).toContainText('Merges when checks pass');
     expect(readGh().merges).toEqual([['pr', 'merge', '7', '--squash', '--auto']]);
@@ -168,6 +161,34 @@ test('Merge on GitHub: live checks, the ways to merge, GitHub saying no, then Me
       await expect(create).toBeVisible({ timeout: 2000 });
     }).toPass({ timeout: 20_000 });
     await page.getByRole('dialog', { name: 'Create Pull Request' }).getByRole('button', { name: 'Cancel' }).click();
+  } finally {
+    if (existsSync(ghFile())) rmSync(ghFile());
+  }
+});
+
+test('The chat watches the PR’s checks live, and an admin can merge past them', async ({ page }) => {
+  writeGh({ prs: { 'add-auth': openPr() } });
+  try {
+    await page.goto('/');
+    await expect(sidebar(page)).toBeVisible();
+    const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
+    await row.click();
+
+    // Above the chat: the PR, its checks open while they run, and Merge on GitHub.
+    const strip = page.locator('[data-pr-strip="OPEN"]');
+    await expect(strip).toContainText('#7', { timeout: 20_000 });
+    await expect(strip).toContainText('1 of 2 passed · 1 running');
+    await expect(strip.getByRole('list', { name: 'Checks' }).locator('[data-check="running"]')).toContainText('e2e');
+    await page.screenshot({ path: test.info().outputPath('pr-strip-running.png') });
+
+    // Override: merge now, past the running checks (gh's --admin).
+    await strip.getByRole('button', { name: 'More ways to merge' }).click();
+    await page.getByRole('menuitem', { name: /^Merge Now, Skipping Checks/ }).click();
+    await expect(page.locator('[data-pr-strip="MERGED"]')).toBeVisible();
+    expect(readGh().merges?.at(-1)).toEqual(['pr', 'merge', '7', '--squash', '--admin']);
+    await expect(page.locator('[data-pr-strip="MERGED"]').getByRole('button', { name: 'Archive Worktree' })).toBeVisible();
   } finally {
     if (existsSync(ghFile())) rmSync(ghFile());
   }

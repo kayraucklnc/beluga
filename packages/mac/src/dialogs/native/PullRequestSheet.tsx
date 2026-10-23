@@ -8,7 +8,7 @@ import { ActionsDropdown } from '../../components/SpecMenu.js';
 import { Button, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
 import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
-import { MERGE_METHODS, canAutoMerge, checkDuration, checkTone, checksSummary, sortChecks } from '../../lib/pr-checks.js';
+import { MERGE_METHODS, canAutoMerge, canSkipChecks, checkDuration, checkTone, checksSummary, sortChecks } from '../../lib/pr-checks.js';
 import { openExternal } from '../../lib/system.js';
 import { useClock } from '../../lib/window-active.js';
 import type { NativeMenuProps } from './index.js';
@@ -36,13 +36,13 @@ function lastMethod(): MergeMethod {
 }
 
 /** Each CI check, live: spinner while it runs, ✓ or ✗ when done, how long, and its page. */
-function CheckList({ checks }: { checks: readonly PrCheck[] }) {
+export function CheckList({ checks, summary = true }: { checks: readonly PrCheck[]; summary?: boolean }) {
   const running = checks.some((c) => c.state === 'in_progress');
   // Running checks count up, only while you're looking (KLD-40).
   const now = useClock(running);
   return (
     <div className={s.checks}>
-      <div className={s.checksHead}>{checksSummary(checks)}</div>
+      {summary ? <div className={s.checksHead}>{checksSummary(checks)}</div> : null}
       <ul className={s.checkList} aria-label="Checks">
         {sortChecks(checks).map((c, i) => {
           const tone = checkTone(c);
@@ -74,13 +74,14 @@ function CheckList({ checks }: { checks: readonly PrCheck[] }) {
 
 /**
  * Merge on GitHub: the button merges the way you last did (squash at first); its menu picks
- * another way, or "Merge When Checks Pass" while something is still to come.
+ * another way, "Merge When Checks Pass" while something is still to come, or "Merge Now,
+ * Skipping Checks" (an admin's override) when checks or a review are in the way.
  */
-function MergeButton({ wsId, pr, onError }: { wsId: string; pr: PullRequest; onError: (message: string | undefined) => void }) {
+export function MergeButton({ wsId, pr, onError, size }: { wsId: string; pr: PullRequest; onError: (message: string | undefined) => void; size?: 'small' }) {
   const api = useApi();
   const [method, setMethod] = useState<MergeMethod>(lastMethod);
   const [busy, setBusy] = useState(false);
-  const merge = async (how: MergeMethod, auto = false): Promise<void> => {
+  const merge = async (how: MergeMethod, mode?: 'auto' | 'admin'): Promise<void> => {
     if (busy) return;
     setMethod(how);
     try {
@@ -91,7 +92,7 @@ function MergeButton({ wsId, pr, onError }: { wsId: string; pr: PullRequest; onE
     setBusy(true);
     onError(undefined);
     try {
-      const out = await api.workbench.mergePr(wsId, { method: how, ...(auto ? { auto: true } : {}) });
+      const out = await api.workbench.mergePr(wsId, { method: how, ...(mode ? { [mode]: true } : {}) });
       if (out && !out.ok) onError(out.message);
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
@@ -101,19 +102,21 @@ function MergeButton({ wsId, pr, onError }: { wsId: string; pr: PullRequest; onE
   };
   const chosen = MERGE_METHODS.find((m) => m.method === method)!;
   const auto = canAutoMerge(pr);
+  const skip = canSkipChecks(pr);
   const items = [
     ...MERGE_METHODS.map((m) => ({ label: m.label, hint: m.hint, checked: m.method === method, onSelect: () => void merge(m.method) })),
-    ...(auto ? [{ label: 'Merge When Checks Pass', hint: `${chosen.label} as soon as GitHub allows it`, separate: true, onSelect: () => void merge(method, true) }] : []),
+    ...(auto ? [{ label: 'Merge When Checks Pass', hint: `${chosen.label} as soon as GitHub allows it`, separate: true, onSelect: () => void merge(method, 'auto') }] : []),
+    ...(skip ? [{ label: 'Merge Now, Skipping Checks', hint: `${chosen.label} into the base on GitHub right away, past its checks and reviews (needs admin rights)`, danger: true, onSelect: () => void merge(method, 'admin') }] : []),
   ];
   return (
     <span className={s.split} role="group" aria-label="Merge on GitHub">
       <Tip label={pr.draft ? 'It’s a draft: mark it ready for review on GitHub first' : `${chosen.label} on GitHub`}>
-        <Button variant="merge" icon="merge" className={s.splitMain} disabled={busy || pr.draft} data-merge-github={method} onClick={() => void merge(method)}>
+        <Button variant="merge" icon="merge" size={size ?? 'regular'} className={s.splitMain} disabled={busy || pr.draft} data-merge-github={method} onClick={() => void merge(method)}>
           {busy ? 'Merging…' : 'Merge on GitHub'}
         </Button>
       </Tip>
       <ActionsDropdown items={items} align="start">
-        <Button variant="merge" className={s.splitMore} disabled={busy || pr.draft} aria-label="More ways to merge">
+        <Button variant="merge" size={size ?? 'regular'} className={s.splitMore} disabled={busy || pr.draft} aria-label="More ways to merge">
           <Icon name="chevronDown" size={11} />
         </Button>
       </ActionsDropdown>

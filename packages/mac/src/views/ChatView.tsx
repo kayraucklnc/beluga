@@ -12,6 +12,7 @@ import { AgentWorktreePage } from '../claude-code/AgentMonitor.js';
 import { isAgentWorktree } from '../claude-code/subagents-model.js';
 import { LiveStrip } from '../claude-code/Live.js';
 import { TaskStrip } from '../tasks/TaskStrip.js';
+import { PrStrip } from '../chat/PrStrip.js';
 import { PlanStrip } from '../plans/PlanStrip.js';
 import { useWorktreeFlag } from './worktree-info-state.js';
 import { AskBanner } from '../chat/AskBanner.js';
@@ -111,6 +112,7 @@ export function ChatView() {
       {view.kind === 'room' ? <ConnectionStatus /> : null}
       {view.kind === 'workspace' ? <PlanStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <TaskStrip workspaceId={view.id} /> : null}
+      {view.kind === 'workspace' ? <PrStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <LiveStrip workspaceId={view.id} /> : null}
       <ChatLog key={channel} channel={channel === 'draft' ? '__draft__' : channel} empty={empty} />
       {ws?.askOnly && !ws.archived && !planHome ? <AskBanner wsId={ws.id} /> : null}
