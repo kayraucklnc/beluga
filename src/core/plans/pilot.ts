@@ -7,7 +7,7 @@ import { type Plan, type PlanMerge, allTasks, openMilestones, planBranchName } f
 import type { PlanGit } from './plan-git.js';
 import type { Plans } from './plans.js';
 import { FINISHED, type MilestoneView, type PlanView, type TaskState, type TaskView, liveFrom, planView, startable, tidyOffer } from './progress.js';
-import { checkPrompt, fixupPrompt, mergeFixupPrompt, recapPrompt } from './prompt.js';
+import { checkPrompt, criteriaNeedCheck, fixupPrompt, mergeFixupPrompt, recapPrompt } from './prompt.js';
 import { TaskWatchdog } from './watchdog.js';
 
 /**
@@ -325,8 +325,8 @@ export class PlanPilot {
     // Work came back to a milestone that was being checked: the next check is a new one.
     if (m.state === 'running' && m.run.checkAsked !== undefined) this.deps.plans.newRound(plan.id, m.milestone.id);
     if (m.state !== 'gate' && m.state !== 'checking') return;
-    // Nothing to check: autopilot moves on, otherwise it's yours to pass.
-    if (!m.milestone.criteria.length) {
+    // Nothing to check (no pass criteria, and its tasks' criteria are all settled): autopilot moves on, otherwise it's yours to pass.
+    if (!m.milestone.criteria.length && !criteriaNeedCheck(view, m)) {
       if (m.autonomy === 'autopilot') this.autoPass(plan.id, m.milestone.id, { kind: 'klaud' });
       return;
     }

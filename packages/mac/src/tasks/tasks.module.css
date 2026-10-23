@@ -1049,6 +1049,28 @@
   text-decoration: line-through;
   text-decoration-color: color-mix(in srgb, var(--text-3) 60%, transparent);
 }
+.checkDeferred .checkBox,
+.checkNotDone .checkBox {
+  color: var(--text-2);
+  background: var(--bg-hover);
+}
+.checkReason {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.checkReasonLabel {
+  font-weight: 500;
+}
+.needsChecks {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
 .checkNote {
   padding-left: 25px;
   font-size: 13px;

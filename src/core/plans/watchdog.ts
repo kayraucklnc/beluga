@@ -1,4 +1,5 @@
 import type { Issue } from '../board/model.js';
+import { unexplained } from '../board/criteria.js';
 import type { Store } from '../store.js';
 import type { Plan, TaskWatch } from './model.js';
 import type { Plans } from './plans.js';
@@ -234,7 +235,7 @@ export const clock = (at: number): string => {
 
 /** What a woken Claude is told: where it was, what isn't true yet, and what waited for it. */
 export function wakePrompt(issue: Issue, reason: string, run: RunInfo | undefined, waited: readonly string[]): string {
-  const open = (issue.brief.acceptance ?? '').split('\n').flatMap((l) => (/^\s*[-*]\s+\[ \]\s+(.*)$/.exec(l)?.[1] ? [/^\s*[-*]\s+\[ \]\s+(.*)$/.exec(l)![1]!.trim()] : []));
+  const open = unexplained(issue.brief.acceptance).map((c) => c.text);
   const said = run?.text.replace(/\s+/g, ' ').trim();
   return [
     `You stopped before handing off ${issue.key} “${issue.title}” (${reason}). Here is where you were:`,

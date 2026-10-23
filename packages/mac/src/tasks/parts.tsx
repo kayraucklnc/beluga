@@ -56,6 +56,11 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
           Claude is writing…
         </span>
       ) : null}
+      {issue.needsChecks && STATUS_INFO[issue.status].open ? (
+        <Tip label="Kept out of review: an acceptance criterion is neither ticked nor explained">
+          <span className={t.needsChecks}>Needs its checks</span>
+        </Tip>
+      ) : null}
       {plan && milestone ? (
         <Tip label={`Part of the plan “${(plan.body ?? plan.draft)?.title ?? ''}”, milestone “${milestone}”`}>
           <span className={t.planMark}>

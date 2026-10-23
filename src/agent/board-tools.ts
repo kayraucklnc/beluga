@@ -102,7 +102,7 @@ export function createBoardToolDefs(board: BoardTools) {
     ),
     tool(
       'task_update',
-      'Change a task: its title, status, priority, estimate, labels (the full list), or who it’s for (me: the user; claude: their Claude; nobody). Only mark a task done or canceled when the user asked.',
+      'Change a task: its title, status, priority, estimate, labels (the full list), or who it’s for (me: the user; claude: their Claude; nobody). Only mark a task done or canceled when the user asked. in_review is refused while an acceptance criterion is neither ticked nor explained.',
       { key, title: z.string().min(1).max(200).optional(), status: STATUS.optional(), priority: PRIORITY.optional(), estimate: ESTIMATE.optional(), labels: z.array(z.string().max(32)).max(12).optional(), assign: z.enum(['me', 'claude', 'nobody']).optional() },
       (a) =>
         guarded(() =>
@@ -118,7 +118,7 @@ export function createBoardToolDefs(board: BoardTools) {
     ),
     tool(
       'task_brief_edit',
-      'Write one section of a task’s brief (Markdown). Sections: goal, context, acceptance ("- [ ]" checklist), decisions (what was decided and why), questions (still open), handoff (notes for the next agent). mode "append" adds a line (decisions); "replace" (default) rewrites the section. Say why in reason: it shows in the history.',
+      'Write one section of a task’s brief (Markdown). Sections: goal, context, acceptance ("- [ ]" checklist; "- [x]" ticks one; one that can’t be true yet gets its reason on its line: "- [ ] … — deferred: why" or "— not done: why"), decisions (what was decided and why), questions (still open), handoff (notes for the next agent). mode "append" adds a line (decisions); "replace" (default) rewrites the section. Say why in reason: it shows in the history.',
       { key, section: SECTION, content: z.string().max(20_000), reason: z.string().max(200).optional(), mode: z.enum(['replace', 'append']).optional() },
       (a) => guarded(() => board.editBrief(a.key, a.section, a.content, a.reason, a.mode)),
     ),
