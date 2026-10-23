@@ -8,8 +8,9 @@ import { expect, test, type Page } from './fixtures.js';
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea)');
-const progress = (page: Page) => page.getByRole('progressbar', { name: 'Claude is working' }).last();
-const travel = (page: Page) => progress(page).evaluate((el) => (el as HTMLElement).style.getPropertyValue('--travel'));
+/** The light passing over "Working" in the working line at the bottom of Claude's card. */
+const progress = (page: Page) => page.locator('[data-working] [class*="shimmer"]').last();
+const travel = (page: Page) => progress(page).evaluate((el) => (el as HTMLElement).style.backgroundPosition);
 
 /** As WebKit tells the page when you switch to another app (true) or back (false). */
 async function lookAway(page: Page, away: boolean): Promise<void> {
@@ -38,7 +39,7 @@ test('what moves while Claude works rests while you look away, and moves again w
   // In front: the light travels (no CSS animation: the live clock writes it).
   const first = await travel(page);
   await expect.poll(() => travel(page), { timeout: 2000 }).not.toBe(first);
-  expect(await progress(page).evaluate((el) => getComputedStyle(el, '::after').animationName)).toBe('none');
+  expect(await progress(page).evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
 
   // Another app in front: the window says it's idle, and nothing moves.
   await lookAway(page, true);

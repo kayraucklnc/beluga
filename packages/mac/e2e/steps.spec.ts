@@ -193,7 +193,7 @@ test('with reduced motion, a sent message just appears', async ({ page }) => {
 test('while Claude works, a sent message flies into the queue above the box', async ({ page }) => {
   await openWorkspace(page, 'new-hero', 'landing');
   await send(page, 'deep dive into the webhook code, take your time');
-  await expect(page.getByText(/Working ·/).last()).toBeVisible();
+  await expect(page.locator('[data-working]').last()).toBeVisible();
   await countFlights(page);
   await send(page, 'then list the riskiest parts');
   const queued = page.getByRole('region', { name: 'Queued messages' }).locator('li', { hasText: 'then list the riskiest parts' });

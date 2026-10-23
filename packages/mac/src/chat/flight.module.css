@@ -37,13 +37,6 @@
   width: 34px;
   justify-content: center;
 }
-/* "Waiting on 2 background agents · …": one quiet line, never wrapping. */
-.waitText {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 @keyframes in {
   from {
     opacity: 0;

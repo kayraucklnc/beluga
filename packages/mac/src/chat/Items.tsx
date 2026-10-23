@@ -3,7 +3,7 @@ import type { LogItem, ShellItem } from '@beluga/core/store.js';
 import { isRunning } from '@beluga/ui/format.js';
 import { formatDuration } from '@beluga/shared/text.js';
 import { splitImages } from '@beluga/shared/attachment-links.js';
-import { STEERED_IN, isLimitNotice } from '@beluga/shared/claude-notices.js';
+import { READS_AFTER_STEP, STEERED_IN, isLimitNotice } from '@beluga/shared/claude-notices.js';
 import { CONTINUE_PROMPT, type RunFailure, decodeFailure, failureTitle } from '@beluga/shared/run-failure.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, claudeColor, cx } from '../components/ui.js';
@@ -23,6 +23,8 @@ import { Markdown } from './Markdown.js';
 import { AgentSteps, StepsFold, StepsToggle } from './steps/AgentSteps.js';
 import { useDisclosure } from './steps/step-memory.js';
 import { useFlightLanding } from './flight.js';
+import { type TurnPart, workingPhase } from './live-tail.js';
+import { Shimmer } from './steps/StepRow.js';
 import { useMentionWorld } from './Mention.js';
 import type { TaskView } from '@beluga/core/gateway/model.js';
 import { TaskCard } from '../gateway/TaskCard.js';
@@ -32,7 +34,7 @@ type AgentItem = Extract<LogItem, { type: 'agent' }>;
 type ChatItem = Extract<LogItem, { type: 'chat' }>;
 type SystemItem = Extract<LogItem, { type: 'system' }>;
 
-/** A clock that ticks while something is running (for "working · 12s"), and you're looking at Beluga. */
+/** A clock that ticks while something is running (for "Working · 12s"), and you're looking at Beluga. */
 export const useNow = useClock;
 
 const time = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -129,7 +131,11 @@ export const SystemRow = memo(function SystemRow({ item }: { item: SystemItem })
   );
 });
 
-function statusOf(item: AgentItem, now: number): { label: string; tone: 'claude' | 'ok' | 'error' | 'warn' | 'muted' } {
+/** What a steered message's card says once Claude read it: the turn's answer comes after it (see live-tail.ts). */
+const STEERED_BELOW = 'Claude read this while it worked; the answer below covers it.';
+
+/** The card's header status, when there's one to say (working is said by the working line at the bottom). */
+function statusOf(item: AgentItem): { label: string; tone: 'claude' | 'ok' | 'error' | 'warn' | 'muted' } {
   switch (item.status) {
     case 'awaiting_approval':
       return { label: `Waiting for ${item.ownerName} to approve`, tone: 'warn' };
@@ -150,17 +156,88 @@ function statusOf(item: AgentItem, now: number): { label: string; tone: 'claude'
       // Beluga stopped while it ran (quit, a crash): not a problem to flag, just where it was left.
       return { label: 'Interrupted', tone: 'muted' };
     default:
-      return { label: `Working · ${formatDuration(now - item.ts)}`, tone: 'claude' };
+      return { label: '', tone: 'claude' };
   }
 }
 
+/**
+ * The working line, the last thing in a turn Claude is on: what it's doing in a few words and
+ * for how long. Its own clock, so the card isn't drawn again every second. `quiet`: the page
+ * already says for how long (a plan's), so only what it's doing.
+ */
+function WorkingLine({ item, quiet }: { item: AgentItem; quiet: boolean }) {
+  const now = useNow(true);
+  const phase = workingPhase(item);
+  if (phase === undefined) return null;
+  return (
+    <div className={s.working} data-working="true" title={phase ? `Working · ${phase}` : 'Working'}>
+      <Dot tone="claude" live />
+      <span className={s.workingWords}>
+        <Shimmer>Working</Shimmer>
+        {phase ? <span className={s.workingPhase}> · {phase}</span> : null}
+      </span>
+      {quiet ? null : <span className={s.workingTime}>{formatDuration(Math.max(0, now - item.ts))}</span>}
+    </div>
+  );
+}
+
+/**
+ * Where a turn split by what was said during it began (see live-tail.ts): who, and the steps it
+ * had finished by then; the rest (what it does now, its answer) is further down.
+ */
+function TurnHead({ item, part, mine }: { item: AgentItem; part: TurnPart; mine: boolean }) {
+  const prefs = usePrefs();
+  const steps = useDisclosure(`${item.channel}/${item.id}`);
+  const running = isRunning(item.status) && item.status !== 'queued';
+  const folded = item.status === 'done' && Boolean(item.text) && prefs.doneSteps === 'fold' && !steps.shown;
+  return (
+    <div className={cx(s.message, s.agent, s.turnHead)} data-turn={item.status} data-turn-part="head">
+      <div className={s.gutter}>
+        <Avatar name="Claude" id={item.owner} claude size={26} />
+      </div>
+      <div className={s.body}>
+        <div className={s.meta}>
+          <span className={cx(s.author, s.claudeName)} style={claudeColor(item.owner) ? { color: claudeColor(item.owner) } : undefined}>
+            {mine ? 'Claude' : `${item.ownerName}'s Claude`}
+          </span>
+        </div>
+        <StepsFold folded={folded}>
+          <AgentSteps item={item} running={false} part={part} />
+        </StepsFold>
+        <div className={s.continues}>
+          <Icon name="chevronDown" size={11} />
+          {running ? 'Still working · continues below' : 'Continued below'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** What Claude is doing (or did): its steps, sub-agents and background work, then its answer. */
-export const AgentCard = memo(function AgentCard({ item, tasks, latest = false }: { item: AgentItem; tasks?: readonly TaskView[] | undefined; /** The newest Claude card in its conversation. */ latest?: boolean }) {
+export const AgentCard = memo(function AgentCard({
+  item,
+  tasks,
+  latest = false,
+  part,
+}: {
+  item: AgentItem;
+  tasks?: readonly TaskView[] | undefined;
+  /** The newest Claude card in its conversation. */
+  latest?: boolean;
+  /** Drawn in two parts, things having been said while it worked (see live-tail.ts). */
+  part?: TurnPart | undefined;
+}) {
   countRender(`card:${item.id}`);
   const selfId = useApp((st) => st.selfId);
-  const running = isRunning(item.status) && item.status !== 'queued';
-  const now = useNow(running);
-  const st = statusOf(item, now);
+  if (part?.side === 'head') return <TurnHead item={item} part={part} mine={item.owner === selfId} />;
+  return <TurnCard item={item} tasks={tasks} latest={latest} part={part} selfId={selfId} />;
+});
+
+function TurnCard({ item, tasks, latest, part, selfId }: { item: AgentItem; tasks: readonly TaskView[] | undefined; latest: boolean; part: TurnPart | undefined; selfId: string }) {
+  // A steered message's card waiting for Claude's next step isn't a turn at work: a note.
+  const waitingNote = item.text === READS_AFTER_STEP;
+  const running = isRunning(item.status) && item.status !== 'queued' && !waitingNote;
+  const st = statusOf(item);
   const { quietWorking } = useContext(PaneLook);
   const forSomeoneElse = item.requesterName !== item.ownerName;
   const mine = item.owner === selfId;
@@ -175,7 +252,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks, latest = false }
   const steps = useDisclosure(`${item.channel}/${item.id}`);
   const answered = item.status === 'done' && Boolean(item.text);
   // A queued message Claude read mid-turn: its answer is the card above's.
-  const steeredIn = item.status === 'done' && item.text === STEERED_IN;
+  const steeredIn = (item.status === 'done' && item.text === STEERED_IN) || waitingNote;
   // Claude Code stopped at a plan limit: the newest card here (`latest`) offers to go on, in one click.
   const group = useApp((st) => st.peers.length > 1);
   // A run that failed on its own (a usage limit, a crash): what happened in words, and Continue.
@@ -193,7 +270,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks, latest = false }
       : [];
   return (
     <ActionsContext items={() => messageItems({ ...menu, text: item.text, lead })}>
-      <div className={cx(s.message, s.agent, running && s.agentLive)} data-turn={item.status}>
+      <div className={cx(s.message, s.agent)} data-turn={item.status} data-turn-part={part ? 'tail' : undefined}>
         <div className={s.gutter}>
           <Avatar name="Claude" id={item.owner} claude size={26} />
         </div>
@@ -227,7 +304,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks, latest = false }
           </div>
           {/* Steps open to show what ran and what came back (see steps/AgentSteps.tsx). */}
           <StepsFold folded={folded}>
-            <AgentSteps item={item} running={running} />
+            <AgentSteps item={item} running={running} part={part} />
           </StepsFold>
           {/* What it asked other people's Claudes, before its answer (which comes last). */}
           {tasks?.map((t) => (
@@ -236,7 +313,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks, latest = false }
             </div>
           ))}
           {steeredIn ? (
-            <div className={s.idle}>{item.text}</div>
+            <div className={s.idle}>{item.text === STEERED_IN ? STEERED_BELOW : item.text}</div>
           ) : failure ? (
             <FailureNotice failure={failure} />
           ) : item.text ? (
@@ -252,11 +329,12 @@ export const AgentCard = memo(function AgentCard({ item, tasks, latest = false }
               </Button>
             </div>
           ) : null}
+          {running ? <WorkingLine item={item} quiet={Boolean(quietWorking)} /> : null}
         </div>
       </div>
     </ActionsContext>
   );
-});
+}
 
 /** A failed turn in plain words (“Claude hit your usage limit · resets at 15:00”), the raw error a click away. */
 function FailureNotice({ failure }: { failure: RunFailure }) {

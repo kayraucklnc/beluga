@@ -108,20 +108,49 @@
   color: var(--error);
 }
 
-/* Claude's runs: a soft rail while it works. */
+/* Claude's runs. */
 .agent .body {
   padding-left: 0;
 }
-.agentLive .body::before {
-  content: '';
-  position: absolute;
-  left: -22px;
-  top: 30px;
-  bottom: 4px;
-  width: 1.5px;
-  border-radius: 1px;
-  background: linear-gradient(var(--claude), transparent);
-  opacity: 0.5;
+
+/* The working line: the last thing in a turn Claude is on (what it's doing, for how long). */
+.working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin-top: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--claude) 6%, transparent);
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+.workingWords {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workingPhase {
+  color: var(--text-3);
+}
+.workingTime {
+  flex: none;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Where a turn split by what was said during it began: the rest is further down (see live-tail.ts). */
+.continues {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 0.86rem;
 }
 .steps {
   display: flex;
