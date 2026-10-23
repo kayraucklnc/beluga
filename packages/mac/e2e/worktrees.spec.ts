@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * The Worktrees page: every worktree in your projects, who made it, whether its work is done,
@@ -17,6 +17,7 @@ const grid = (page: Page) => page.getByRole('grid', { name: 'Worktrees' });
 const row = (page: Page, name: string) => grid(page).getByRole('row', { name, exact: true });
 const shot = async (page: Page, name: string): Promise<void> => {
   if (!process.env.SHOTS) return;
+  // Screenshots only: let animations settle so the picture is still.
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
 };

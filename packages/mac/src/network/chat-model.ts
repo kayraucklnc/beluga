@@ -32,7 +32,7 @@ export interface Member {
 const handle = (name: string): string => friendMention(name).slice(1);
 
 /** What / at the start of a channel's message box offers. */
-export type ChannelCommand = 'claude' | 'claudes' | 'files' | 'add-people';
+type ChannelCommand = 'claude' | 'claudes' | 'files' | 'add-people';
 
 /** One row of the @ / list: what it shows, the box's words after picking it, and (for /) what it does. */
 export interface ChannelSuggestion extends Suggestion {

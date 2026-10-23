@@ -1,0 +1,52 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the milestone check sees each task’s criteria > checkPrompt lists them with ticks and reasons, and fails on unexplained gaps 1`] = `
+"Every task of milestone “Network” is finished. Check its pass criteria for real, one by one:
+1. Reconnects within 5 s
+
+Its tasks, each with its acceptance criteria as its brief has them (ticked, deferred or not done with a reason):
+- KLD-52 “Connection errors” (in review, PR #12 open, branch klaud/kld-52)
+  - [x] Errors say why
+  - [ ] The network e2e passes — deferred: suites run at the end of the plan
+  - [ ] Banner goes away (not ticked, no reason)
+- KLD-53 “Copy pass” (in review)
+  - [ ] Words reviewed — not done: mia is away
+- later “Not started” (in review)
+  - [ ] Has a test (not ticked, no reason)
+
+Read their briefs (task_get), handoffs, proof and diffs.
+A criterion neither ticked nor explained is a gap: fail the milestone on it, unless you check it is true and tick it
+(task_brief_edit with the task's key). A "not done" one: say whether the milestone can pass without it.
+A "deferred" one is checked again at the end of the plan: don't fail on it now.
+
+This plan runs its test suites only at the end: don't run them for this check. Check by reading the code, the diffs, the tests the tasks wrote and their typecheck.
+Then call plan_gate with pass or fail and notes that say,
+per criterion, what you checked and found. On pass, the plan moves on by itself. If it fails, add the
+fix tasks with plan_update."
+`;
+
+exports[`the milestone check sees each task’s criteria > the final check lists every deferred item and requires each to be settled 1`] = `
+"Every task of milestone “Wrap up” is finished. Check its pass criteria for real, one by one:
+(It has none of its own: check its tasks' acceptance criteria below.)
+
+Its tasks, each with its acceptance criteria as its brief has them (ticked, deferred or not done with a reason):
+- KLD-60 “Full suite” (in review)
+  - [x] Everything passes
+
+Read their briefs (task_get), handoffs, proof and diffs.
+A criterion neither ticked nor explained is a gap: fail the milestone on it, unless you check it is true and tick it
+(task_brief_edit with the task's key). A "not done" one: say whether the milestone can pass without it.
+
+This is the plan's final check: every criterion deferred along the way must be settled now, against the full suite run:
+- KLD-52: The network e2e passes (deferred: suites run at the end of the plan)
+For each one: true on the combined work, tick it ("- [x]", task_brief_edit with that key); not true, fail the
+check and add a fix task for it with plan_update (name the criterion in its goal). Don't pass while one is still deferred.
+
+This is the final step: run every test now, once, on the plan's combined work: typecheck, the full unit suite and the e2e.
+Combine the tasks' branches in one temporary worktree (git worktree add --detach, then merge each branch), run there, and remove it after.
+Run the Mac e2e with \`npm run e2e\` in packages/mac: one e2e runs at a time on this Mac (it waits, saying whose run it waits for), with its own port and demo home, and stops everything it started when it ends.
+A failure that looks like load (a timeout, "did not start", a flaky wait while the Mac is busy: see \`uptime\`) counts only if it fails again when re-run once, alone.
+Then call plan_gate with pass or fail and notes that say,
+per criterion, what you checked and found. On pass, the plan moves on by itself. If it fails, add the
+fix tasks with plan_update."
+`;

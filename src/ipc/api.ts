@@ -75,7 +75,7 @@ const TermSize = z.object({ cols: z.number().int().min(1).max(1000), rows: z.num
 
 export const API = {
   // ---- the room, chat and your preferences
-  'session.submit': args(str, opt(z.object({ channel: opt(channel), urgent: opt(bool) }))),
+  'session.submit': args(str, opt(z.object({ channel: opt(channel), urgent: opt(bool), id: opt(id) }))),
   'session.copyInvite': args(),
   'session.copyLastAnswer': args(),
   'session.copyText': args(str, z.string().max(500)),
@@ -91,6 +91,7 @@ export const API = {
   'session.removePerson': args(id),
   'session.newInviteLink': args(),
   'session.setRoomOpen': args(bool),
+  'session.retryConnection': args(),
   'session.setFriendWorktrees': args(z.enum(['ask', 'off'])),
   'session.setAccess': args(id, z.enum(['folder', 'full'])),
   'session.runOnPeerByHand': args(z.string().max(64), str, opt(channel)),
@@ -167,7 +168,8 @@ export const API = {
   'files.read': args(Location),
 
   // ---- projects and workspaces
-  'workspaces.open': args(id, opt(WorkspaceTab)),
+  // `req`: a screen's id for this open, echoed in the navigate intent (it showed the workspace ahead, see ClientStore.openAhead).
+  'workspaces.open': args(id, opt(WorkspaceTab), opt(z.object({ req: opt(z.string().max(64)) }))),
   // Load a workspace's saved conversation without going there (the Mac Overview's read-only look at an archived one).
   'workspaces.load': args(id),
   'workspaces.refresh': args(),

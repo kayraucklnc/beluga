@@ -68,7 +68,7 @@ describe('changing tasks', () => {
     clock.t += 5000;
     const next = board.update(t.key, { status: 'in_progress', priority: 'high', assignee: { kind: 'claude', owner: 'p-me', ownerName: 'Kay' }, labels: ['Security', 'security', 'api'] }, me);
     expect(next.labels).toEqual(['security', 'api']);
-    expect(next.activity.slice(1).map((a) => a.text)).toEqual(['moved this from Todo to In Progress', 'set the priority to High', 'assigned this to Kay’s Claude', 'added security, api']);
+    expect(next.activity.slice(1).map((a) => a.text)).toEqual(['moved this from Ready to In Progress', 'set the priority to High', 'assigned this to Kay’s Claude', 'added security, api']);
     expect(next.updatedAt).toBe(1_005_000);
     // Nothing changed: nothing written.
     expect(board.update(t.key, { status: 'in_progress' }, me).activity).toHaveLength(next.activity.length);
@@ -262,7 +262,7 @@ describe('quick changes are one line in the activity', () => {
     const t = board.create({ projectId: 'api', title: 'T', status: 'todo' }, me);
     board.update(t.key, { status: 'in_progress' }, me);
     board.update(t.key, { status: 'in_review' }, me);
-    expect(board.need(t.key).activity.at(-1)?.text).toBe('moved this from Todo to In Review');
+    expect(board.need(t.key).activity.at(-1)?.text).toBe('moved this from Ready to In Review');
     board.update(t.key, { status: 'done' }, { kind: 'person', id: 'p-bob', name: 'bob' });
     expect(board.need(t.key).activity.at(-1)?.text).toBe('moved this from In Review to Done');
     expect(board.need(t.key).activity.filter((a) => a.kind === 'status')).toHaveLength(2);

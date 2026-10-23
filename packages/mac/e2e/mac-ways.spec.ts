@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 import { expectPicked } from './helpers.js';
 
 /** The Mac ways in: Stop, the toolbar's main action, right-click menus, the new worktree form, Find. */
@@ -12,8 +12,6 @@ async function openWorkspace(page: Page, name: string): Promise<void> {
   if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
   await sidebar(page).getByRole('button', { name, exact: true }).click();
   await expect(composer(page)).toHaveAttribute('placeholder', new RegExp(name));
-  // Its conversation loads from disk; send after it's in, so nothing races it.
-  await page.waitForTimeout(500);
 }
 
 test.beforeEach(async ({ page }) => {

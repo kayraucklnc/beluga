@@ -13,6 +13,7 @@ import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { togglePanel } from '../lib/panel.js';
+import { panelFits } from '../lib/panel-model.js';
 import { mod } from '../lib/system.js';
 import { NotificationBell } from './NotificationCenter.js';
 import { ContinueButton } from '../chat/AskBanner.js';
@@ -49,6 +50,9 @@ function SearchButton() {
 
 function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode; subtitle?: ReactNode; center?: ReactNode; right?: ReactNode; headerRef: React.RefObject<HTMLElement | null> }) {
   const prefs = usePrefs();
+  const view = useApp((st) => st.view);
+  // A plan's page has no panel: its chat is its right side (the plan's header shows and hides it, ⌥⌘0 too).
+  const fits = panelFits(view);
   // Only what every view needs: search, what's new, the panel. The terminal (⌘J) is a panel tab,
   // and everything you can do is ⌘K and the menu bar.
   return (
@@ -69,7 +73,14 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
         {right}
         <SearchButton />
         <NotificationBell />
-        <IconButton icon="panelRight" label={prefs.inspector ? 'Hide the panel' : 'Show the panel: changes, files, terminal, info'} keys={`⌥${mod()}0`} active={prefs.inspector} onClick={togglePanel} />
+        <IconButton
+          icon="panelRight"
+          label={!fits ? 'No panel on a plan’s page: its chat is beside the plan' : prefs.inspector ? 'Hide the panel' : 'Show the panel: changes, files, terminal, info'}
+          {...(fits ? { keys: `⌥${mod()}0` } : {})}
+          active={fits && prefs.inspector}
+          disabled={!fits}
+          onClick={() => togglePanel(view)}
+        />
       </div>
     </header>
   );
@@ -244,6 +255,8 @@ export function Toolbar() {
   if (view.kind === 'plan') {
     const plan = state.plans.plans.find((x) => x.id === view.id);
     const project = plan ? state.projects.find((p) => p.id === plan.projectId) : undefined;
+    // Where it runs: its project, and the branch its work comes together on (the panel's Info used to say).
+    const branch = plan?.branch ?? (plan?.home.startsWith('ws:') ? findWorkspace(state.projects, plan.home.slice(3))?.branch : undefined) ?? project?.base;
     return (
       <Shell
         headerRef={headerRef}
@@ -253,6 +266,7 @@ export function Toolbar() {
             <span className={s.name}>Plan</span>
           </>
         }
+        {...(branch ? { subtitle: branch } : {})}
       />
     );
   }

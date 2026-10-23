@@ -120,10 +120,21 @@ function viewSubscribe(store: { subscribe: (listener: () => void) => () => void 
   return subscribe;
 }
 
-/** The shared state seen through this window (re-renders when the picked part changes). */
-export function useApp<T>(pick: (s: AppState) => T): T {
+/**
+ * The shared state seen through this window (re-renders when the picked part changes). A pick
+ * that builds something new each time (a filtered list) passes `equal` (e.g. sameItems, lib/stable.ts):
+ * while it says the new pick is the same, the view keeps the old one and isn't drawn again.
+ */
+export function useApp<T>(pick: (s: AppState) => T, equal?: (a: T, b: T) => boolean): T {
   const { client } = useKlaud();
-  return useSyncExternalStore(viewSubscribe(client.store), () => pick(client.store.getState()));
+  const last = useRef<{ readonly value: T } | undefined>(undefined);
+  return useSyncExternalStore(viewSubscribe(client.store), () => {
+    const next = pick(client.store.getState());
+    if (!equal) return next;
+    if (last.current && equal(last.current.value, next)) return last.current.value;
+    last.current = { value: next };
+    return next;
+  });
 }
 
 export function useUi<T>(pick: (s: MacUi) => T): T {

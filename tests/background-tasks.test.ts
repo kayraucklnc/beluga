@@ -57,7 +57,7 @@ describe('the watcher: background commands, followed live', () => {
   const notice = (task: string, id: string, status: string, summary: string, at: number) =>
     line({ type: 'queue-operation', operation: 'enqueue', timestamp: iso(at), sessionId: SID, content: `<task-notification>\n<task-id>${task}</task-id>\n<tool-use-id>${id}</tool-use-id>\n<output-file>${tasks}/${task}.output</output-file>\n<status>${status}</status>\n<summary>${summary}</summary>\n</task-notification>` });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-bg-')));
     cwd = path.join(root, 'app');
     mkdirSync(cwd, { recursive: true });
@@ -90,7 +90,7 @@ describe('the watcher: background commands, followed live', () => {
     writeFileSync(path.join(agents, 'agent-a1.jsonl'), use('u1', 'Bash', { command: 'npm run build', description: 'Build it', run_in_background: true }, now - 1500, { agentId: 'a1' }) + started('u1', 'bbuild', now - 1400, { agentId: 'a1' }));
     store = new Store(initialState('room'));
     w = new ClaudeCodeWatcher({ home, store, watch: false, publishMs: 0 });
-    w.scan();
+    await w.scan();
     w.poll();
     w.publish();
   });
@@ -111,11 +111,11 @@ describe('the watcher: background commands, followed live', () => {
     expect(tasksOf()[3]).toMatchObject({ kind: 'command', command: 'npm test', endedAt: now - 3000 });
   });
 
-  it('a quiet one whose session went quiet is no longer said to be running', () => {
+  it('a quiet one whose session went quiet is no longer said to be running', async () => {
     const old = (now - 60 * 60_000) / 1000;
     for (const f of ['bdev', 'blog', 'bbuild']) utimesSync(path.join(tasks, `${f}.output`), old, old);
     const later = new ClaudeCodeWatcher({ home: path.join(root, 'claude'), store, watch: false, publishMs: 0, now: () => now + 20 * 60_000 });
-    later.scan();
+    await later.scan();
     later.poll();
     later.publish();
     expect(tasksOf().find((t) => t.id === 'bdev')?.status).toBe('idle');
@@ -137,7 +137,7 @@ describe('the watcher: background commands, followed live', () => {
     expect(w.taskOutput(SID, undefined, 'nope')).toBeUndefined();
   });
 
-  it("never shows a file a command only names: not outside the project or temp folders, not one older than the command", () => {
+  it("never shows a file a command only names: not outside the project or temp folders, not one older than the command", async () => {
     const home = path.join(root, 'claude');
     const outside = path.join(os.homedir(), `.klaud-test-${process.pid}-${Date.now()}.log`);
     writeFileSync(outside, 'private\n');
@@ -148,7 +148,7 @@ describe('the watcher: background commands, followed live', () => {
     for (const id of ['bout', 'bstale']) writeFileSync(path.join(tasks, `${id}.output`), '');
     appendFileSync(session, use('t5', 'Bash', { command: `true > ${outside}`, description: 'Names a file', run_in_background: true }, now - 500) + started('t5', 'bout', now - 400) + use('t6', 'Bash', { command: `true > ${stale}`, description: 'Names an old log', run_in_background: true }, now - 300) + started('t6', 'bstale', now - 200));
     const fresh = new ClaudeCodeWatcher({ home, store, watch: false, publishMs: 0 });
-    fresh.scan();
+    await fresh.scan();
     fresh.poll();
     try {
       expect(fresh.taskOutput(SID, undefined, 'bout')?.text).toBe('');
@@ -159,13 +159,13 @@ describe('the watcher: background commands, followed live', () => {
     }
   });
 
-  it('one with no word on it while its session works on: running only while it writes or just started', () => {
+  it('one with no word on it while its session works on: running only while it writes or just started', async () => {
     const old = (now - 60 * 60_000) / 1000;
     utimesSync(path.join(tasks, 'bdev.output'), old, old);
     // Its session goes on writing, 10 minutes after the dev server started.
     appendFileSync(session, use('t9', 'Bash', { command: 'ls' }, now + 10 * 60_000));
     const later = new ClaudeCodeWatcher({ home: path.join(root, 'claude'), store, watch: false, publishMs: 0, now: () => now + 10 * 60_000 + 1000 });
-    later.scan();
+    await later.scan();
     later.poll();
     later.publish();
     expect(tasksOf().find((t) => t.id === 'bdev')?.status).toBe('idle');

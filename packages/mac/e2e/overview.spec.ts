@@ -1,7 +1,6 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * The Overview shows everything, archived worktrees and chats too: segments with counts, a
@@ -86,18 +85,6 @@ test('an archived worktree is under Archived, and one click restores it as it wa
   await expect(page.getByText('Nothing archived yet')).toBeVisible();
   await segment(page, 'All').click();
   await expect(row(page, 'add-auth')).not.toHaveAccessibleName(/archived/);
-  // Leave add-auth as the other specs know it (its two changed files, nothing else). Restoring runs its
-  // Setup again in the background: let it finish (npm writes package-lock.json last), or it writes after the cleanup.
-  await expect.poll(() => existsSync(path.join(dir, 'package-lock.json')), { timeout: 30_000 }).toBe(true).catch(() => undefined);
-  await page.waitForTimeout(500);
-  for (const f of ['.gitignore', 'package.json']) {
-    try {
-      execFileSync('git', ['-C', dir, 'checkout', 'HEAD', '--', f], { stdio: 'ignore' });
-    } catch {
-      rmSync(path.join(dir, f), { force: true });
-    }
-  }
-  for (const f of ['wip.txt', '.env.local', 'package-lock.json', 'node_modules']) rmSync(path.join(dir, f), { force: true, recursive: true });
 });
 
 test('search (⌘F) finds by name, branch and project; Esc clears it', async ({ page }) => {

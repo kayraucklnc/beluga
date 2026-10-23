@@ -13,14 +13,14 @@ const AUTONOMY_ICON: Record<Autonomy, IconName> = { step: 'hand', gated: 'flag',
 
 /**
  * A new plan: what it's for (Claude plans from it, reading the code) and how far it runs on its
- * own. Opened from a project it's that project's (no picker); `goal` prefills the box.
+ * own. Opened from a project it's that project's (no picker).
  */
-export function NewPlanSheet({ projectId, goal: initialGoal, close }: { projectId?: string; goal?: string; close: () => void }) {
+export function NewPlanSheet({ projectId, close }: { projectId?: string; close: () => void }) {
   const prefs = useTasksPrefs();
   const all = useApp((s) => s.projects);
   const projects = useMemo(() => all.filter((p) => p.root && !p.error), [all]);
   const { api, act } = usePlanActions();
-  const [goal, setGoal] = useState(initialGoal ?? '');
+  const [goal, setGoal] = useState('');
   const known = projectId !== undefined && projects.some((p) => p.id === projectId);
   const [project, setProject] = useState((known ? projectId : projects.some((p) => p.id === prefs.project) ? prefs.project : projects[0]?.id) ?? '');
   const [autonomy, setAutonomy] = useState<Autonomy>(DEFAULT_AUTONOMY);

@@ -472,6 +472,27 @@ button.head:focus-visible {
   background: var(--bg-hover);
   color: var(--text);
 }
+/* Its count ticks up as a step closes into it: the new number rises in. */
+.count {
+  display: inline-flex;
+  overflow: hidden;
+  margin-right: -2px;
+}
+.countNow {
+  display: inline-block;
+  animation: tick calc(var(--dur) * 1.5) var(--ease-out);
+}
+@keyframes tick {
+  from {
+    transform: translateY(70%);
+    opacity: 0;
+  }
+}
+/* A row of the steps (AgentSteps' Slot): its height moves as it arrives or closes into the fold. */
+.slot {
+  flex: none;
+  min-width: 0;
+}
 .foldIcon {
   display: inline-flex;
   color: color-mix(in srgb, var(--ok) 70%, var(--text-3));
@@ -569,7 +590,8 @@ button.head:focus-visible {
 
 :global(:root[data-motion='reduce']) .progress::after,
 :global(:root[data-motion='reduce']) .shimmer,
-:global(:root[data-motion='reduce']) .waitAvatar::after {
+:global(:root[data-motion='reduce']) .waitAvatar::after,
+:global(:root[data-motion='reduce']) .countNow {
   animation: none;
 }
 :global(:root[data-motion='reduce']) .shimmer {
@@ -579,7 +601,8 @@ button.head:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .progress::after,
   .shimmer,
-  .waitAvatar::after {
+  .waitAvatar::after,
+  .countNow {
     animation: none;
   }
   .shimmer {

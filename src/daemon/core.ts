@@ -192,6 +192,8 @@ export interface Core {
   readonly terminals: TerminalManager;
   /** The room's name (one room per core). */
   readonly room: string;
+  /** Where its workspaces' records and saved conversations are kept. */
+  readonly workspacesHome: string;
   /** Start everything: the connection, timers, remote access when asked for, the demo's friends. */
   start(): void;
   /** Leave the room and stop everything. */
@@ -322,9 +324,10 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     session.system('Demo mode: bob, mia and every Claude are simulated. Nothing leaves your computer.');
     seedDemoContext(store);
     setTimeout(() => session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } }), 300);
-    // bob "arrives" a moment later so you first see how inviting works.
-    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob, 'bob'), 2500);
-    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.mine, 'mia'), 3500);
+    // bob "arrives" a moment later so you first see how inviting works (sooner at a faster pace: the e2e tests).
+    const soon = (ms: number): number => ms * Math.min(1, Number(process.env.KLAUD_DEMO_PACE) || 1);
+    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob, 'bob'), soon(2500));
+    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.mine, 'mia'), soon(3500));
     // zoe got a link to bob-api and knocks, so you see the card for letting someone in.
     setTimeout(() => {
       const project = store.getState().projects.find((p) => p.name === 'bob-api');
@@ -333,7 +336,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
         const secret = link && session.invites.urlOf(link.id)?.match(/#([\w-]+)$/)?.[1];
         if (secret) startDemoGuest(room.url, deriveKeys(secret));
       });
-    }, 5500);
+    }, soon(5500));
   };
 
   const stop = async (): Promise<void> => {
@@ -351,5 +354,5 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     await room.hub?.close();
   };
 
-  return { config, session, store, terminals, room: room.room, start, stop };
+  return { config, session, store, terminals, room: room.room, workspacesHome: workspaces.store.home, start, stop };
 }

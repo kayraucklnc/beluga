@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /** Plans (docs/tasks-and-plans.md): the demo's plan as a graph and an outline, a new plan drafted with Claude and approved onto the board, and the composer's Plan with Tasks. */
 
@@ -27,6 +27,40 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await expect(main(page).locator('.react-flow__node').filter({ hasText: 'Test-mode foundations' })).toContainText('Passed');
   const receipts = main(page).locator('.react-flow__node').filter({ hasText: 'Receipt emails sent once' });
   await expect(receipts).toContainText('Waiting');
+  // Each milestone ends in its criteria, and a line runs from them to the milestones that wait on it (KLD-63).
+  const criteria = main(page).locator('[data-criteria]');
+  await expect(criteria).toHaveCount(3);
+  await expect(main(page).locator('[data-criteria="foundations"]')).toContainText('Passed');
+  // No criterion is ticked on its own (Claude's check judges them together): plain bullets, and one state on the node.
+  // An unchecked milestone says "Not yet" and claims none of its criteria are met (KLD-67).
+  const refunds = main(page).locator('[data-criteria="refunds"]');
+  await expect(refunds).toHaveAttribute('aria-label', /: Not yet$/);
+  await expect(refunds.locator('li')).toHaveCount(2);
+  await expect(main(page).locator('[data-criteria] li svg, [data-criteria] li [aria-label="Met"]')).toHaveCount(0);
+  // Every card's title shows whole lines (two at most, then an ellipsis), clear of its state line, and all of it in its tooltip.
+  const titles = await main(page)
+    .locator('.react-flow__node-task [class*="taskTitle"]')
+    .evaluateAll((els) =>
+      els.map((el) => {
+        const line = parseFloat(getComputedStyle(el).lineHeight);
+        const foot = el.nextElementSibling!.getBoundingClientRect();
+        const zoom = el.getBoundingClientRect().height / el.clientHeight;
+        return { full: el.getAttribute('title') === el.textContent, lines: el.clientHeight / line, clear: el.getBoundingClientRect().bottom <= foot.top + 0.5 * zoom };
+      }),
+    );
+  expect(titles.length).toBeGreaterThan(5);
+  for (const t of titles) {
+    expect(t.full).toBe(true);
+    expect([1, 2]).toContain(Math.round(t.lines));
+    expect(Math.abs(t.lines - Math.round(t.lines))).toBeLessThan(0.1);
+    expect(t.clear).toBe(true);
+  }
+  const next = main(page).getByRole('group', { name: '“Safe payments” leads to “Refunds and launch”', exact: true }).locator('[data-kind="next"]');
+  await expect(next).toHaveAttribute('data-from', 'gate:safe-payments');
+  await expect(next).toHaveAttribute('data-to', 'm:refunds');
+  await main(page).locator('[data-criteria="safe-payments"]').click();
+  await expect(page.getByRole('complementary', { name: 'Details' })).toContainText('Passes when');
+  await page.keyboard.press('Escape');
   await receipts.click();
   const details = page.getByRole('complementary', { name: 'Details' });
   await expect(details).toContainText('Waits on');
@@ -41,6 +75,19 @@ test('the demo’s plan: milestones as a living graph, a task’s details, the o
   await expect(page.getByRole('complementary', { name: 'Conversation' })).toBeVisible();
 });
 
+test('the plan’s chat shows what was said there when the plan opens, after a reload too, without sending anything (KLD-53)', async ({ page }) => {
+  // The demo saved how its plan began without loading it, as a restarted daemon has it: only on disk.
+  await openPlans(page);
+  await main(page).getByRole('button', { name: /^Card checkout for launch,/ }).click();
+  const chat = page.getByRole('complementary', { name: 'Conversation' });
+  await expect(chat).toContainText('drafted the plan in three milestones', { timeout: 15_000 });
+  await expect(chat).not.toContainText('Plan it together');
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Card checkout for launch', { timeout: 20_000 });
+  await expect(chat).toContainText('drafted the plan in three milestones', { timeout: 15_000 });
+  await expect(chat.getByRole('textbox', { name: 'Message Claude about the plan' })).toHaveValue('');
+});
+
 test('a task’s panel keeps its head and Close in reach while its brief scrolls, and nothing runs off its edge (KLD-32)', async ({ page }, info) => {
   // Short enough that the brief has to scroll.
   await page.setViewportSize({ width: 1180, height: 560 });
@@ -52,10 +99,22 @@ test('a task’s panel keeps its head and Close in reach while its brief scrolls
   await expect(main(page).getByRole('group', { name: '“Safe payments” leads to “Refunds and launch”', exact: true })).toHaveCount(1);
   await expect(main(page).getByRole('group', { name: /^“Test-mode foundations” leads to/ })).toHaveCount(0);
   // Milestones that run side by side make the plan wide: room for it (the conversation folded away), all of it in view.
-  await main(page).getByRole('button', { name: 'Plan Options' }).click();
-  await page.getByRole('menuitem', { name: 'Hide the Conversation' }).click();
+  await main(page).getByRole('button', { name: 'Hide the Chat' }).click();
   await main(page).getByRole('button', { name: 'Fit to View' }).click();
-  await page.waitForTimeout(400);
+  // Fit frames every milestone tightly: 48 px above (the view switch sits there), and no more than that on the side that limits it (KLD-67).
+  // Waited for, not slept on: the fit animates, so it's read until it frames them that way.
+  const gapsOf = () =>
+    main(page).evaluate((root) => {
+      const pane = root.querySelector('.react-flow')!.getBoundingClientRect();
+      const boxes = [...root.querySelectorAll('.react-flow__node-milestone')].map((n) => n.getBoundingClientRect());
+      return { top: Math.min(...boxes.map((b) => b.top)) - pane.top, left: Math.min(...boxes.map((b) => b.left)) - pane.left, right: pane.right - Math.max(...boxes.map((b) => b.right)), bottom: pane.bottom - Math.max(...boxes.map((b) => b.bottom)) };
+    });
+  await expect
+    .poll(async () => {
+      const gaps = await gapsOf();
+      return Object.values(gaps).every((gap) => gap >= -1) && gaps.top <= 49 && ((gaps.left <= 49 && gaps.right <= 49) || gaps.bottom <= 49);
+    })
+    .toBe(true);
   await main(page).locator('.react-flow__node').filter({ hasText: 'Refund endpoint' }).click();
   await expect(edge('t:retries', 't:refund-api')).toHaveCount(0);
   await expect(main(page).locator('.react-flow__node').filter({ hasText: 'Idempotent webhook retries' }).locator('[data-linked="true"]')).toHaveCount(1);
@@ -120,8 +179,18 @@ test('the plan stays sharp zoomed in, and its name never clips (KLD-25)', async 
   const viewport = main(page).locator('.react-flow__viewport');
   const scale = async () => Number(/scale\(([\d.]+)\)/.exec((await viewport.getAttribute('style')) ?? '')?.[1] ?? 0);
   for (let i = 0; i < 12 && (await scale()) < 1.5; i++) {
+    const before = await scale();
     await main(page).getByRole('button', { name: 'Zoom In' }).click();
-    await page.waitForTimeout(260);
+    // Each zoom animates: the next click waits for it to settle (bigger, and no longer moving).
+    let last = -1;
+    await expect
+      .poll(async () => {
+        const now = await scale();
+        const settled = now > before && now === last;
+        last = now;
+        return settled;
+      }, { intervals: [100] })
+      .toBe(true);
   }
   expect(await scale()).toBeGreaterThanOrEqual(1.5);
   // What matters once the zoom settles: the view was redrawn at its scale, and it's left a plain 2D
@@ -141,6 +210,46 @@ test('the plan stays sharp zoomed in, and its name never clips (KLD-25)', async 
   const shot = info.outputPath('zoomed-canvas.png');
   await main(page).locator('.react-flow').screenshot({ path: shot });
   await info.attach('zoomed canvas', { path: shot, contentType: 'image/png' });
+
+  // At 200% and 300% too (KLD-70): once settled, the view keeps no layer hint, sits on whole device pixels,
+  // and every title shows whole lines: its last shown line (descenders included) lies inside the box.
+  for (const target of [2, 3]) {
+    for (let i = 0; i < 12 && (await scale()) < target - 0.05; i++) {
+      await main(page).getByRole('button', { name: 'Zoom In' }).click();
+      await page.waitForTimeout(260);
+    }
+    expect(await scale()).toBeGreaterThanOrEqual(target - 0.05);
+    await expect
+      .poll(() =>
+        viewport.evaluate((el) => {
+          const css = getComputedStyle(el);
+          const [x, y] = [...el.style.transform.matchAll(/(-?[\d.]+)px/g)].map((m) => Number(m[1]) * devicePixelRatio);
+          return { willChange: css.willChange, nudged: el.style.transform.includes('translateZ'), whole: Math.abs(x - Math.round(x)) < 0.01 && Math.abs(y - Math.round(y)) < 0.01 };
+        }),
+      )
+      .toEqual({ willChange: 'auto', nudged: false, whole: true });
+    const cut = await main(page)
+      .locator('.react-flow__node-task [class*="taskTitle"]')
+      .evaluateAll((els) =>
+        els.flatMap((el) => {
+          const box = el.getBoundingClientRect();
+          const zoom = box.height / el.clientHeight;
+          const line = parseFloat(getComputedStyle(el).lineHeight);
+          const text = document.createRange();
+          text.selectNodeContents(el);
+          // One rect per line fragment (the glyphs' full height, ascent to descent); keep the lines it shows.
+          const rects = [...text.getClientRects()].filter((r) => r.top < box.bottom - 1);
+          const lines = new Set([...text.getClientRects()].map((r) => Math.round((r.top - box.top) / zoom / line))).size;
+          const problems = [];
+          if (Math.max(...rects.map((r) => r.bottom)) > box.bottom + 0.5) problems.push('last line cut');
+          // Not cut by more than the clamp: as tall as its lines, two at most, whatever is hidden is whole lines.
+          if (Math.abs(el.clientHeight - Math.min(lines, 2) * line) > 1) problems.push(`box ${el.clientHeight} for ${lines} lines`);
+          if (el.scrollHeight > lines * line + 1) problems.push(`scroll ${el.scrollHeight} for ${lines} lines`);
+          return problems.length ? [`${el.textContent}: ${problems.join(', ')}`] : [];
+        }),
+      );
+    expect(cut).toEqual([]);
+  }
 });
 
 test('New Plan with no project known (⌘K) asks which project, and the title follows it', async ({ page }) => {
@@ -219,9 +328,12 @@ test('the composer: Plan with Tasks makes the conversation a plan', async ({ pag
   await page.getByRole('menuitem', { name: /Plan with Tasks/ }).click();
   await expect(page.getByRole('button', { name: 'Mode: Plan with Tasks' })).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: 'nothing reaches the board until you approve' })).toBeVisible();
-  // Back to acting: the empty plan goes.
+  // A plan's own conversation has no modes to pick (KLD-54): the chip opens the plan, or throws the draft away.
   await page.getByRole('button', { name: /^Mode: / }).click();
-  await page.getByRole('menuitem', { name: /^Act/ }).click();
+  await expect(page.getByRole('menuitem', { name: /^Act/ })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Open the Plan' })).toBeVisible();
+  // Discarding the empty draft: the conversation is an ordinary one again.
+  await page.getByRole('menuitem', { name: 'Discard the Draft' }).click();
   await expect(page.getByRole('button', { name: 'Mode: Act' })).toBeVisible();
 });
 

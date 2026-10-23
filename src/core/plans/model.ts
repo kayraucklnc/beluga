@@ -279,6 +279,16 @@ export const planById = (state: PlansState, id: string): Plan | undefined => sta
 /** The plan a conversation is the home of (the newest, when several were). */
 export const planForHome = (state: PlansState, channel: string): Plan | undefined => [...state.plans].reverse().find((p) => p.home === channel);
 
+/**
+ * The conversation is a live plan's own (its head Claude plans and runs it there): it has no
+ * Act/Plan modes, so plan mode is never switched there (Claude asking to approve a plan of its own
+ * would stall the plan).
+ */
+export const isPlanHome = (state: PlansState, channel: string): boolean => {
+  const plan = planForHome(state, channel);
+  return Boolean(plan && plan.status !== 'done');
+};
+
 /** What a screen shows of a plan: the draft while there is one, else what was approved. */
 export const shownBody = (plan: Plan): PlanBody | undefined => plan.draft ?? plan.body;
 

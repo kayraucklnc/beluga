@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './fixtures.js';
 
 /**
  * The file reader: a file from the panel's Files opened full size takes the center (the panel
@@ -107,7 +107,17 @@ test('the page scrolls with the wheel and the keyboard', async ({ page }) => {
   await pageEl.focus();
   await page.keyboard.press('PageDown');
   await expect.poll(async () => (await scrollOf(pageEl)).top).toBeGreaterThan(start.view / 2);
-  const afterPage = (await scrollOf(pageEl)).top;
+  // Page Down scrolls smoothly: Space goes on from where it stops.
+  let last = -1;
+  await expect
+    .poll(async () => {
+      const top = (await scrollOf(pageEl)).top;
+      const still = top === last;
+      last = top;
+      return still;
+    }, { intervals: [100] })
+    .toBe(true);
+  const afterPage = last;
   await page.keyboard.press('Space');
   await expect.poll(async () => (await scrollOf(pageEl)).top).toBeGreaterThan(afterPage + 100);
   await page.keyboard.press('End');

@@ -40,6 +40,27 @@ describe('the plan graph’s shape', () => {
     expect(next).toEqual([`${gateId('one')}>${groupId('two')}`, `${gateId('one')}>${groupId('four')}`]);
   });
 
+  it('one that waits on several gets lines only from the nearest (no line past a milestone in between)', () => {
+    const fan = normalizeBody({
+      ...body,
+      milestones: [
+        { id: 'a', title: 'A', dependsOn: [], tasks: [{ id: 'ta', title: 'TA' }] },
+        { id: 'b', title: 'B', dependsOn: [], tasks: [{ id: 'tb', title: 'TB' }] },
+        { id: 'c', title: 'C', dependsOn: [], tasks: [{ id: 'tc', title: 'TC' }] },
+        { id: 'left', title: 'Leftovers', dependsOn: ['a', 'b'], tasks: [{ id: 'tl', title: 'TL' }] },
+        { id: 'end', title: 'End', dependsOn: ['a', 'b', 'c', 'left'], tasks: [{ id: 'te', title: 'TE' }] },
+      ],
+    });
+    const next = graphShape(plan({ draft: fan })).edges.filter((e) => e.kind === 'next').map((e) => `${e.from}>${e.to}`);
+    expect(next).toEqual([`${gateId('a')}>${groupId('left')}`, `${gateId('b')}>${groupId('left')}`, `${gateId('c')}>${groupId('end')}`, `${gateId('left')}>${groupId('end')}`]);
+  });
+
+  it('its criteria are part of its shape (they size the criteria node)', () => {
+    const a = graphShape(plan());
+    const more = normalizeBody({ ...body, milestones: [{ ...body.milestones[0]!, criteria: ['works', 'and is fast'] }, body.milestones[1]!] });
+    expect(graphShape(plan({ draft: more })).key).not.toBe(a.key);
+  });
+
   it('its key changes with the shape only (status moving on never re-lays it out)', () => {
     const a = graphShape(plan());
     expect(graphShape(plan({ draft: { ...body, title: 'Renamed' } })).key).toBe(a.key);

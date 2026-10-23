@@ -9,13 +9,15 @@ import path from 'node:path';
  *
  * What counts: every process the worktree's Claude started (klaud gives its runs KLAUD_WORKTREE, and
  * their commands inherit it) that is a test runner or what one starts (vitest, playwright, vite, the
- * demo daemon, the browser); the e2e run holding the machine-wide lock (scripts/e2e-lock.mjs) from that
- * worktree, everything it started included; and, when the worktree is going away, any test runner
- * installed in it. Your own dev servers in its terminals are never touched.
+ * demo daemon, the browser); whatever its Bash commands left running (a dev server in the background,
+ * `npm run dev &`, `nohup node server.js`), whatever it's called; the e2e run holding the machine-wide
+ * lock (scripts/e2e-lock.mjs) from that worktree, everything it started included; and, when the
+ * worktree is going away, any test runner installed in it. Your own dev servers in its terminals are
+ * never touched (they don't carry the tag), nor is a Claude Code process itself.
  */
 
 /** The machine-wide e2e lock (scripts/e2e-lock.mjs keeps it there). */
-export const e2eLockFile = (): string => path.join(process.env.KLAUD_E2E_DIR || path.join(os.homedir(), '.klaud', 'e2e'), 'lock.json');
+const e2eLockFile = (): string => path.join(process.env.KLAUD_E2E_DIR || path.join(os.homedir(), '.klaud', 'e2e'), 'lock.json');
 
 export interface ProcRow {
   readonly pid: number;
@@ -26,8 +28,12 @@ export interface ProcRow {
 
 /** A test runner, judged on the command with the worktree's own path taken out (it may say "playwright"). */
 const RUNNER = /(^|[\s/])(vitest|playwright|jest|e2e-lock\.mjs|chrome-headless-shell)(\.[cm]?js)?(\s|$)|node_modules\/(@playwright\/|playwright(-core)?\/|vitest\/)|ms-playwright|cli\.tsx daemon --keep-alive demo/;
-/** A dev server: stopped only when an e2e run started it, or its worktree goes away. */
+/** A dev server installed there: stopped when its worktree goes away, whoever started it. */
 const SERVER = /(^|[\s/])vite(\.[cm]?js)?(\s|$)/;
+/** A shell Claude Code's Bash tool runs a command in (still there: the command runs in the background). */
+const BASH_SHELL = /\/shell-snapshots\/snapshot-/;
+/** Claude Code itself (its binary, or its npm cli.js): never stopped from here. Judged on the command (first), not its environment. */
+const CLAUDE = /^(\S*\/)?claude(\s|$)|^\S*node\s+\S*@anthropic-ai\/claude-code\/cli\.js(\s|$)/;
 
 export function isTestRunner(line: string, dir: string): boolean {
   return RUNNER.test(line.split(dir).join('<worktree>'));
@@ -41,12 +47,31 @@ const inside = (child: string, dir: string): boolean => child === dir || child.s
  */
 export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving = false): number[] {
   const tag = ` KLAUD_WORKTREE=${dir}`;
+  // Kept on purpose (KLAUD_KEEP=1, see keepsRunning) while the worktree stays: they, and the shells waiting on them.
+  // Never a test run or an e2e's processes (nor what runs under one), marked or not.
+  const keep = new Set<number>();
+  if (!leaving) {
+    const byPid = new Map(rows.map((r) => [r.pid, r]));
+    const testRun = (r: ProcRow) => r.line.includes(' KLAUD_E2E_RUN=') || isTestRunner(r.line, dir);
+    for (const r of rows) {
+      if (!r.line.includes(` ${KEEP_MARK} `) && !r.line.endsWith(` ${KEEP_MARK}`)) continue;
+      const chain: number[] = [];
+      let under = false;
+      for (let p: ProcRow | undefined = r; p && p.pid > 1 && !chain.includes(p.pid); p = byPid.get(p.ppid)) {
+        if (testRun(p)) under = true;
+        chain.push(p.pid);
+      }
+      if (!under) for (const p of chain) keep.add(p);
+    }
+  }
   const hits = rows.filter((r) => {
-    if (r.pid === process.pid) return false;
+    if (r.pid === process.pid || keep.has(r.pid)) return false;
     const tagged = r.line.includes(`${tag} `) || r.line.endsWith(tag);
     const installed = leaving && r.line.includes(path.join(dir, 'node_modules') + path.sep);
     const e2e = tagged && r.line.includes(' KLAUD_E2E_RUN=');
-    return e2e || ((tagged || installed) && isTestRunner(r.line, dir)) || (installed && SERVER.test(r.line.split(dir).join('<worktree>')));
+    // Left by a Bash command: its shell still running (run_in_background), or orphaned once the shell exited (`&`, nohup).
+    const leftByBash = tagged && !CLAUDE.test(r.line) && (BASH_SHELL.test(r.line) || r.ppid === 1);
+    return e2e || leftByBash || ((tagged || installed) && isTestRunner(r.line, dir)) || (installed && SERVER.test(r.line.split(dir).join('<worktree>')));
   });
   const kids = new Map<number, number[]>();
   for (const r of rows) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]);
@@ -54,11 +79,73 @@ export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving =
   const queue = hits.map((h) => h.pid);
   while (queue.length) {
     const pid = queue.shift()!;
-    if (out.has(pid) || pid === process.pid || pid <= 1) continue;
+    if (out.has(pid) || pid === process.pid || pid <= 1 || keep.has(pid)) continue;
     out.add(pid);
     queue.push(...(kids.get(pid) ?? []));
   }
   return [...out];
+}
+
+/** A program that runs tests, serves or watches (after `npx`, `pnpm exec`…). */
+const RUNS = /^(vitest|playwright|jest|mocha|vite|next|nuxt|astro|nodemon|webpack-dev-server|http-server|serve|live-server)$/;
+/** A package script (or make target) that does: `npm test`, `npm run test:e2e`, `pnpm dev`, `npm start`, `make serve`. */
+const SCRIPT = /^(test|e2e|dev|start|serve|preview|watch|demo)([:\-_.]|$)|[:\-_.](test|e2e|dev|start|serve|preview|watch|demo)([:\-_.]|$)/i;
+/** A script an interpreter runs that does: `node server.js`, `python3 -m http.server`, `tsx src/cli.tsx daemon`, `node scripts/e2e-lock.mjs`. */
+const RUNTIME = /^(node|nodejs|tsx|ts-node|deno|bun|python[\d.]*|ruby|php|rails|uvicorn|gunicorn|flask)$/;
+const SERVES = /(^|[\s/._-])(server|serve|dev|daemon|e2e|tests?|watch|runserver|http\.server)([\s/._-]|$)/i;
+/** `cmd &` (not `&&`, `2>&1`, `&>`, `|&`): it goes on after the command returns. */
+const AMP = /(^|[^&>|])&(?![&>\d])/;
+
+/** A command line's simple commands (split at `&&`, `||`, `;`, `|`, `&`, newlines), redirections taken out. */
+function simpleCommands(command: string): string[][] {
+  return command
+    .split(/&&|\|\||[;\n|]|(?<![&>|])&(?![&>\d])/)
+    .map((part) => part.replace(/\d*[<>]+&?\s*\S+/g, ' ').trim().split(/\s+/).filter(Boolean));
+}
+
+/** Whether one simple command starts something that may keep running. */
+function starts(words: readonly string[]): boolean {
+  const base = (x: string | undefined) => (x ?? '').replace(/^\(+/, '').split('/').pop() ?? '';
+  let w = [...words];
+  // Past its variables (`PORT=3000 npm run dev`) and what runs a program for you (`npx`, `env`, `pnpm exec`): the program.
+  for (;;) {
+    const next = w.findIndex((x) => !/^\w+=/.test(x));
+    w = next < 0 ? [] : w.slice(next);
+    const skip = ['env', 'time', 'exec', 'command', 'npx', 'bunx', 'pnpx'].includes(base(w[0])) ? 1 : ['pnpm', 'yarn'].includes(base(w[0])) && ['exec', 'dlx'].includes(w[1] ?? '') ? 2 : 0;
+    if (!skip) break;
+    w = w.slice(skip);
+    while (w[0]?.startsWith('-')) w = w.slice(1);
+  }
+  const program = base(w[0]);
+  if (['nohup', 'setsid', 'disown'].includes(program) || RUNS.test(program) || w.includes('--watch')) return true;
+  if (['npm', 'pnpm', 'yarn', 'bun', 'make', 'just', 'turbo'].includes(program)) {
+    const args = w.slice(1).filter((x) => !x.startsWith('-'));
+    const script = ['run', 'run-script'].includes(args[0] ?? '') ? args[1] : args[0];
+    if (script && SCRIPT.test(script)) return true;
+  }
+  return RUNTIME.test(program) && w.slice(1).some((x) => SERVES.test(x));
+}
+
+/**
+ * Whether a Bash command may leave processes running after it returns (so the turn's end checks for
+ * them with ps). Judged on the command alone, on what it runs (not on words in its paths: `2>/dev/null`,
+ * `cat src/server.ts`): ps on every turn is slow on a busy Mac.
+ */
+export function mayLeaveProcesses(command: unknown, background?: unknown): boolean {
+  if (background === true) return true;
+  if (typeof command !== 'string') return false;
+  return AMP.test(command) || simpleCommands(command).some(starts);
+}
+
+/** What a command says to keep what it starts running past the turn (they carry it in their environment). */
+export const KEEP_MARK = 'KLAUD_KEEP=1';
+
+/** Whether a Bash command asks to keep what it starts (`KLAUD_KEEP=1 npm run dev &`). */
+export const keepsRunning = (command: unknown): boolean => typeof command === 'string' && new RegExp(`(^|[\\s;&|(])${KEEP_MARK}(\\s|$)`).test(command);
+
+/** Whether the machine-wide e2e lock is held from this worktree (one small file read, no ps). */
+export function e2eLockedIn(dir: string): boolean {
+  return lockedRun(path.resolve(dir)) !== undefined;
 }
 
 function ps(args: readonly string[]): Promise<string> {
@@ -66,7 +153,7 @@ function ps(args: readonly string[]): Promise<string> {
 }
 
 /** Every process with its command and environment (yours only: the OS shows no one else's). */
-export async function processRows(): Promise<ProcRow[]> {
+async function processRows(): Promise<ProcRow[]> {
   if (process.platform === 'win32') return [];
   const out = await ps(process.platform === 'darwin' ? ['-axwwE', '-o', 'pid=,ppid=,command='] : ['axeww', '-o', 'pid=,ppid=,command=']);
   return out

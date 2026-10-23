@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { GitError, git } from './git.js';
+import { GitError, conflictedFiles, git, tryGit } from './git.js';
 
 /**
  * Keeping a project's main folder up to date with its remote: fetching (never asking for a
@@ -10,7 +10,6 @@ import { GitError, git } from './git.js';
  * every worktree, so "the top entry" may be someone else's). Never pushes, never discards.
  */
 
-const tryGit = (cwd: string, args: readonly string[]): Promise<string | undefined> => git(cwd, args).then((s) => s, () => undefined);
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export type FetchProblem = 'auth' | 'offline' | 'no_remote' | 'other';
@@ -263,7 +262,7 @@ export async function stashApply(dir: string, sha: string): Promise<ApplyResult>
     await git(dir, ['stash', 'apply', sha]);
     return { ok: true };
   } catch (err) {
-    const conflicts = ((await tryGit(dir, ['diff', '--name-only', '--diff-filter=U'])) ?? '').split('\n').filter(Boolean);
+    const conflicts = await conflictedFiles(dir);
     return { ok: false, conflicts, message: errText(err) };
   }
 }

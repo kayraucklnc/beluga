@@ -1,4 +1,5 @@
 import { type AppState, channelOf, shownChannel } from '@klaud/core/store.js';
+import { isPlanHome } from '@klaud/core/plans/model.js';
 import { runId } from '@klaud/shared/terminal-keys.js';
 import { isRunning } from '@klaud/ui/format.js';
 import { type WorkspaceAction, findWorkspace, workspaceButtons } from '@klaud/ui/workspace-models.js';
@@ -130,6 +131,7 @@ export function commandState(state: AppState, id: CommandId): CommandState {
       return claudeWorkingIn(state, channel) ? ON : OFF("Your Claude isn't working here");
     case 'conv-plan':
       if (!channel || channel === 'draft' || state.view.kind === 'shared') return OFF('Plan mode is for your own conversations');
+      if (isPlanHome(state.plans, channel)) return OFF('A plan’s own conversation has no plan mode: the plan is its plan');
       return { enabled: true, checked: state.planMode[channel] === true };
     case 'conv-find':
     case 'conv-find-next':

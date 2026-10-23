@@ -1,8 +1,11 @@
 import type { Issue } from '../board/model.js';
+import { unexplained } from '../board/criteria.js';
 import type { Store } from '../store.js';
 import type { Plan, TaskWatch } from './model.js';
 import type { Plans } from './plans.js';
 import type { PlanView, TaskView } from './progress.js';
+import { READS_AFTER_STEP } from '../../shared/claude-notices.js';
+import { hhmm, span } from '../../shared/clock.js';
 import { CONTINUE_PROMPT, CRASH_RETRY_MS, type RunFailure, decodeFailure, failureText, resetWords } from '../../shared/run-failure.js';
 
 /**
@@ -29,20 +32,18 @@ export const COMMAND_LIMIT_MS = 2 * 60 * 60_000;
 /** Stalling again this soon after a wake: it waits for you instead. */
 export const REPEAT_MS = 30 * 60_000;
 /** A wake's run gets this long to start before it counts as not having worked. */
-export const WAKE_GRACE_MS = 3 * 60_000;
+const WAKE_GRACE_MS = 3 * 60_000;
 /** A started task with no run of Claude's in sight for this long (since Klaud looked) is stopped. */
-export const NO_RUN_MS = 2 * 60_000;
+const NO_RUN_MS = 2 * 60_000;
 /** A command shows as "Running a long command" once it has run this long. */
-export const LONG_SHOWN_MS = 60_000;
+const LONG_SHOWN_MS = 60_000;
 /** A message the head Claude steered in, unread this long: delivered again (interrupting, or a fresh turn). */
 export const STEER_UNREAD_MS = 2 * 60_000;
 /** Deliveries of one steered message after the first, before it's left to you. */
 const STEER_RETRIES = 2;
-/** What a steered message's card says while it waits in the running turn for Claude's next step (AgentHost's READS_AFTER_STEP). */
-const READS_AFTER_STEP = 'Claude reads this after its current step';
 
 /** A usage limit with no known reset: try again this long after it stopped. */
-export const LIMIT_UNKNOWN_MS = 30 * 60_000;
+const LIMIT_UNKNOWN_MS = 30 * 60_000;
 /** Resuming a moment after the reset, so the first message isn't refused again. */
 export const LIMIT_MARGIN_MS = 60_000;
 
@@ -68,6 +69,11 @@ export interface RunInfo {
   readonly progress?: string;
   /** The last command it ran (a step watching a command's output names it). */
   readonly command?: string;
+  /** Past its step: thinking or writing, and since when (see the log item's `between`). */
+  readonly between?: 'thinking' | 'writing';
+  readonly betweenAt?: number;
+  /** A sub-agent it launched (not one in the background) still runs: the step it's on isn't over. */
+  readonly subOpen?: boolean;
 }
 
 /** A message waiting for a conversation's Claude (in its queue, or in the running turn for its next step). */
@@ -112,22 +118,23 @@ export type TaskPulse =
   | { readonly kind: 'waiting' }
   | { readonly kind: 'needs_you'; readonly reason: string };
 
-export const isTurn = (run: RunInfo | undefined): boolean => Boolean(run && TURN.has(run.status));
-export const isLongStep = (step: string | undefined): boolean => Boolean(step && LONG_STEP.test(step));
+const isTurn = (run: RunInfo | undefined): boolean => Boolean(run && TURN.has(run.status));
+const isLongStep = (step: string | undefined): boolean => Boolean(step && LONG_STEP.test(step));
 
 /** How a run that failed ended, when the runner said (a usage limit, a crash). */
-export const failureOf = (run: RunInfo | undefined): RunFailure | undefined => (run?.status === 'error' ? decodeFailure(run.text) : undefined);
+const failureOf = (run: RunInfo | undefined): RunFailure | undefined => (run?.status === 'error' ? decodeFailure(run.text) : undefined);
 
 /** When a run stopped by your usage limit may go on (the reset, or a guess when it's unknown). */
-export const limitUntil = (run: RunInfo, f: RunFailure): number => f.resetsAt ?? run.lastAt + LIMIT_UNKNOWN_MS;
+const limitUntil = (run: RunInfo, f: RunFailure): number => f.resetsAt ?? run.lastAt + LIMIT_UNKNOWN_MS;
 
 /** Why a run that's over ended, in words. */
-export function endedWhy(run: RunInfo | undefined): string {
+function endedWhy(run: RunInfo | undefined): string {
   if (!run) return 'no Claude is working on it';
   const failure = failureOf(run);
   if (failure && failure.kind !== 'stopped') return failureText(run.text).split('\n')[0]!;
   if (run.status === 'error') return BY_YOU.test(run.text) ? 'you stopped it' : `its run failed: ${run.text.replace(/\s+/g, ' ').slice(0, 120)}`;
   if (run.status === 'denied') return 'its run was declined';
+  if (run.status === 'interrupted') return 'klaud stopped while it ran';
   return 'it ended its turn without handing off';
 }
 
@@ -135,12 +142,17 @@ export function endedWhy(run: RunInfo | undefined): string {
 export function pulseOf(run: RunInfo | undefined, asking: boolean, watch: TaskWatch | undefined): TaskPulse {
   if (asking) return { kind: 'waiting' };
   if (isTurn(run)) {
-    const step = run!.step ? stepWords(run!.step, run!.command) : undefined;
-    // The step it's on is the last thing it did (nothing said since; a count from its output is it going on): it's still in it.
-    const inStep = step !== undefined && run!.stepAt !== undefined && (run!.stepAt >= run!.lastAt || run!.progress !== undefined);
-    const progress = inStep && run!.progress ? { progress: run!.progress } : {};
-    if (inStep && isLongStep(run!.step)) return { kind: 'command', step: step!, since: run!.stepAt!, ...progress };
-    return { kind: 'working', ...(step ? { step } : {}), since: inStep ? run!.stepAt! : run!.lastAt, ...progress };
+    const r = run!;
+    // Past its step (thinking, or writing): that, not the step it did before.
+    if (r.between) return { kind: 'working', step: r.between === 'writing' ? 'Writing' : 'Thinking', since: r.betweenAt ?? r.lastAt };
+    const step = r.step ? stepWords(r.step, r.command) : undefined;
+    if (step === undefined || r.stepAt === undefined) return { kind: 'working', since: r.lastAt };
+    const progress = r.progress ? { progress: r.progress } : {};
+    // Still in its step: the last thing it did, or a count from its output, or a sub-agent at work. Otherwise (a peer on an
+    // older klaud says nothing when a step's tools return) the step is named, timed from when it last did something.
+    if (r.stepAt < r.lastAt && !r.progress && !r.subOpen) return { kind: 'working', step, since: r.lastAt };
+    if (isLongStep(r.step)) return { kind: 'command', step, since: r.stepAt, ...progress };
+    return { kind: 'working', step, since: r.stepAt, ...progress };
   }
   if (watch?.needsYou) return { kind: 'needs_you', reason: watch.reason };
   // Stopped by your usage limit or a crash: never "working", and said as such.
@@ -150,16 +162,7 @@ export function pulseOf(run: RunInfo | undefined, asking: boolean, watch: TaskWa
   return { kind: 'stopped', reason: watch && watch.run === run?.requestId ? watch.reason : endedWhy(run) };
 }
 
-/** "45s", "12m", "2h 5m". */
-export function elapsed(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`;
-}
-
-const nowLine = (step: string, progress: string | undefined, ms: number): string => [step, progress, elapsed(ms)].filter(Boolean).join(' · ');
+const nowLine = (step: string, progress: string | undefined, ms: number): string => [step, progress, span(ms)].filter(Boolean).join(' · ');
 
 /** A pulse in words: the card's label, and the line under it. */
 export function pulseWords(p: TaskPulse, now: number): { readonly label: string; readonly sub?: string; readonly tone: 'claude' | 'warn' } {
@@ -199,11 +202,11 @@ export function assess(input: { readonly run?: RunInfo; readonly asking: boolean
     if (alive === false) return { stall: 'its Claude Code process ended mid-turn', woken: true };
     const pulse = pulseOf(run, false, undefined);
     const quiet = now - run.lastAt;
-    if (pulse.kind === 'command') return quiet >= COMMAND_LIMIT_MS ? { stall: `${run.step} ran ${elapsed(quiet)} with nothing new`, woken: true } : { woken: false };
-    return quiet >= STALL_MS ? { stall: `no new step for ${elapsed(quiet)}`, woken: true } : { woken: false };
+    if (pulse.kind === 'command') return quiet >= COMMAND_LIMIT_MS ? { stall: `${run.step} ran ${span(quiet)} with nothing new`, woken: true } : { woken: false };
+    return quiet >= STALL_MS ? { stall: `no new step for ${span(quiet)}`, woken: true } : { woken: false };
   }
   // Its turn is over but its process is still there: background work it waits on.
-  if (alive === true) return now - run.lastAt >= COMMAND_LIMIT_MS ? { stall: `nothing new in the background for ${elapsed(now - run.lastAt)}`, woken: true } : { woken: false };
+  if (alive === true) return now - run.lastAt >= COMMAND_LIMIT_MS ? { stall: `nothing new in the background for ${span(now - run.lastAt)}`, woken: true } : { woken: false };
   const why = endedWhy(run);
   const failure = failureOf(run);
   // Your usage limit: it waits for the reset (see TaskWatchdog.step), not woken as a stall.
@@ -215,15 +218,9 @@ export function assess(input: { readonly run?: RunInfo; readonly asking: boolean
   return { stall: why, woken: !yours };
 }
 
-/** "11:13". */
-export const clock = (at: number): string => {
-  const d = new Date(at);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
-
 /** What a woken Claude is told: where it was, what isn't true yet, and what waited for it. */
 export function wakePrompt(issue: Issue, reason: string, run: RunInfo | undefined, waited: readonly string[]): string {
-  const open = (issue.brief.acceptance ?? '').split('\n').flatMap((l) => (/^\s*[-*]\s+\[ \]\s+(.*)$/.exec(l)?.[1] ? [/^\s*[-*]\s+\[ \]\s+(.*)$/.exec(l)![1]!.trim()] : []));
+  const open = unexplained(issue.brief.acceptance).map((c) => c.text);
   const said = run?.text.replace(/\s+/g, ' ').trim();
   return [
     `You stopped before handing off ${issue.key} “${issue.title}” (${reason}). Here is where you were:`,
@@ -237,7 +234,7 @@ export function wakePrompt(issue: Issue, reason: string, run: RunInfo | undefine
 }
 
 /** What a task's Claude is told when a message the head Claude steered in is sent again in a fresh turn. */
-export function steerAgainPrompt(text: string, waited: readonly string[]): string {
+function steerAgainPrompt(text: string, waited: readonly string[]): string {
   const others = waited.filter((w) => w.trim() !== text.trim());
   return [
     'An urgent message from the head of the plan waited more than 2 minutes without you reading it. Read it now and act on it before going on:',
@@ -323,7 +320,7 @@ export class TaskWatchdog {
       return;
     }
     if (now - s.at < STEER_UNREAD_MS || this.waking.has(s.taskId)) return;
-    const waitedFor = elapsed(now - s.at);
+    const waitedFor = span(now - s.at);
     if (s.retries >= STEER_RETRIES) {
       this.steered.delete(s.requestId);
       this.deps.plans.note(s.planId, 'problem', `${s.key} still hasn't read the head Claude's message after ${waitedFor}: open its chat`, { kind: 'klaud' });
@@ -400,7 +397,7 @@ export class TaskWatchdog {
           continue;
         }
         room--;
-        this.wake(plan, t, t.issue, channel, stall!, run, `Usage is back: resumed ${t.issue.key} at ${clock(now)}`, { counts: false });
+        this.wake(plan, t, t.issue, channel, stall!, run, `Usage is back: resumed ${t.issue.key} at ${hhmm(now)}`, { counts: false });
         continue;
       }
       if (!stall || !woken || w?.needsYou) continue;
@@ -410,10 +407,10 @@ export class TaskWatchdog {
       if (w?.wokeAt !== undefined && now - w.wokeAt < REPEAT_MS) {
         const line = `${key} stopped again: ${stall}. It waits for you`;
         this.deps.plans.setWatch(plan.id, t.task.id, { at: now, reason: stall, ...(run ? { run: run.requestId } : {}), wokeAt: w.wokeAt, needsYou: true, line });
-        this.deps.plans.note(plan.id, 'problem', `${line} (woken at ${clock(w.wokeAt)}): Resume it, or open its chat.`, { kind: 'klaud' });
+        this.deps.plans.note(plan.id, 'problem', `${line} (woken at ${hhmm(w.wokeAt)}): Resume it, or open its chat.`, { kind: 'klaud' });
         continue;
       }
-      this.wake(plan, t, t.issue, channel, stall, run, `${key} stopped, woke it at ${clock(now)}`);
+      this.wake(plan, t, t.issue, channel, stall, run, `${key} stopped, woke it at ${hhmm(now)}`);
     }
   }
 
@@ -435,7 +432,7 @@ export class TaskWatchdog {
     const channel = `ws:${t.worktree}`;
     const run = runOf(channel);
     const reason = plan.watch?.[t.task.id]?.reason ?? endedWhy(run);
-    this.wake(plan, t, t.issue, channel, reason, run, `You resumed ${t.issue.key} at ${clock(this.now())}`);
+    this.wake(plan, t, t.issue, channel, reason, run, `You resumed ${t.issue.key} at ${hhmm(this.now())}`);
     return `Resumed ${t.issue.key}`;
   }
 
@@ -453,7 +450,7 @@ export class TaskWatchdog {
     if (!retry && !back) return;
     this.homeResumed.add(run.requestId);
     if (retry) this.homeCrashed.add(plan.id);
-    this.deps.plans.note(plan.id, 'note', back ? `Usage is back: resumed the plan’s Claude at ${clock(now)}` : `The plan’s Claude crashed (${endedWhy(run)}): retried at ${clock(now)}`, { kind: 'klaud' });
+    this.deps.plans.note(plan.id, 'note', back ? `Usage is back: resumed the plan’s Claude at ${hhmm(now)}` : `The plan’s Claude crashed (${endedWhy(run)}): retried at ${hhmm(now)}`, { kind: 'klaud' });
     this.deps.askClaude(CONTINUE_PROMPT, plan.home, false);
   }
 
