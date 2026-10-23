@@ -1,17 +1,17 @@
 import { activityOf } from '@beluga/ui/workspace-models.js';
 import { liveFrom } from '@beluga/core/plans/progress.js';
 import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
-import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isFinished, isOpen, openBlockers, progressOf } from '@beluga/core/board/model.js';
+import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isArchived, isFinished, isOpen, openBlockers, progressOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
-import { Dot, Tip, cx } from '../components/ui.js';
+import { Dot, IconButton, Tip, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { useApp, useBeluga, toast } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { useClock } from '../plans/use-plans.js';
 import { WaitingLine } from '../plans/WaitingLine.js';
 import { LabelChip, PrChip } from './marks.js';
-import { dueText } from './tasks-model.js';
+import { doneCount, dueText } from './tasks-model.js';
 import type { LogItem } from '@beluga/core/store.js';
 import { useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -125,6 +125,15 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
     const last = issue.worktrees.at(-1);
     const worktree = last && projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined;
     const startable = isOpen(issue.status) && !isFinished(issue.status);
+    // Archived: its words to read, back out of the Archive, or gone for good.
+    if (isArchived(issue)) {
+      return [
+        { label: 'Open', icon: 'task', onSelect: () => open(issue) },
+        { label: 'Restore from Archive', icon: 'refresh', separate: true, onSelect: () => void act(() => api.unarchive(issue.id), `${issue.key} is back on the board`) },
+        { label: 'Copy Key', icon: 'copy', separate: true, hint: issue.key, onSelect: () => void copyText(issue.key).then(() => toast(client, `Copied ${issue.key}`, 'success')) },
+        { label: 'Delete for Good…', danger: true, separate: true, onSelect: () => confirmDelete(issue, () => void act(() => api.remove(issue.id), `Deleted ${issue.key}`)) },
+      ];
+    }
     return [
       { label: 'Open', icon: 'task', onSelect: () => open(issue) },
       ...(worktree
@@ -149,21 +158,29 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
         onSelect: () => undefined,
       },
       { label: 'Add Sub-task…', icon: 'plus', onSelect: () => openSheet({ kind: 'new_task', projectId: issue.projectId, parent: issue.id }) },
+      ...(isOpen(issue.status) ? [] : [{ label: 'Archive', icon: 'archive' as const, hint: 'Off the board; its proof files let go', onSelect: () => void act(() => api.archive(issue.id), `Archived ${issue.key}`) }]),
       { label: 'Copy Key', icon: 'copy', separate: true, hint: issue.key, onSelect: () => void copyText(issue.key).then(() => toast(client, `Copied ${issue.key}`, 'success')) },
       { label: 'Copy Title and Key', onSelect: () => void copyText(`${issue.key} ${issue.title}`).then(() => toast(client, 'Copied', 'success')) },
-      {
-        label: 'Delete Task…',
-        danger: true,
-        onSelect: () =>
-          openSheet({
-            kind: 'confirm',
-            title: `Delete ${issue.key}?`,
-            message: `“${issue.title}”, its brief and its history go away. Its sub-tasks stay, as tasks of their own. Its worktree isn't touched.`,
-            confirm: 'Delete Task',
-            destructive: true,
-            run: () => void act(() => api.remove(issue.id), `Deleted ${issue.key}`),
-          }),
-      },
+      { label: 'Delete Task…', danger: true, onSelect: () => confirmDelete(issue, () => void act(() => api.remove(issue.id), `Deleted ${issue.key}`)) },
     ];
   };
+}
+
+function confirmDelete(issue: Issue, run: () => void): void {
+  openSheet({
+    kind: 'confirm',
+    title: `Delete ${issue.key}?`,
+    message: `“${issue.title}”, its brief and its history go away. Its sub-tasks stay, as tasks of their own. Its worktree isn't touched.`,
+    confirm: 'Delete Task',
+    destructive: true,
+    run,
+  });
+}
+
+/** Done's one click: every Done task in the project to the Archive (shown while there are any). */
+export function ArchiveDoneButton({ projectId }: { projectId?: string }) {
+  const { api, act } = useTaskActions();
+  const n = useApp((s) => doneCount(s.board, projectId));
+  if (!n || !projectId) return null;
+  return <IconButton icon="archive" label={`Archive ${n} Done ${n === 1 ? 'Task' : 'Tasks'}`} onClick={() => void act(() => api.archiveDone(projectId), `Archived ${n} done ${n === 1 ? 'task' : 'tasks'}: they’re in the Archive`)} />;
 }
