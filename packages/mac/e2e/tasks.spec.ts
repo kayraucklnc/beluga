@@ -1,6 +1,6 @@
 import { expect, test, type Page } from './fixtures.js';
 
-/** Tasks (docs/tasks-and-plans.md): the demo's board, a new task, a task's page, the board and the graph, and a worktree's task. */
+/** Tasks (docs/tasks-and-plans.md): the demo's board, a new task, a task's page, the board and the graph, a worktree's task, and the Archive. */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const main = (page: Page) => page.locator('main');
@@ -133,11 +133,8 @@ test('a column’s +: describe it, pick a priority, Create; the card lands there
   await scale.getByRole('radio', { name: /Low/ }).click();
   await page.keyboard.press('3');
   await expect(scale.getByRole('radio', { name: /High/ })).toHaveAttribute('aria-checked', 'true');
-  // Labels: the board's own, as chips.
-  const labels = sheet.getByRole('group', { name: 'Labels' });
-  await expect(labels.getByRole('textbox')).toHaveCount(0);
-  await labels.getByRole('button', { name: 'security' }).click();
-  await expect(labels.getByRole('button', { name: 'security' })).toHaveAttribute('aria-pressed', 'true');
+  // No labels to pick: Claude picks them as it writes the task (BLG-31).
+  await expect(sheet.getByRole('group', { name: 'Labels' })).toHaveCount(0);
   await sheet.getByRole('button', { name: 'Create Task' }).click();
   await expect(sheet).toBeHidden();
   // At once: under its first line, Claude writing; then Claude's title.
@@ -145,7 +142,6 @@ test('a column’s +: describe it, pick a priority, Create; the card lands there
   const card = column.getByRole('button', { name: /Make the login page remember me$/ });
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card).not.toContainText('Claude is writing…');
-  await expect(card).toContainText('security');
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
 });
 
@@ -351,4 +347,35 @@ test('the board: a card picked up lifts, the column makes room, and it lands whe
   await page.mouse.up();
   await expect(review).toContainText('Rate-limit the login endpoint');
   await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
+});
+
+test('Done’s one click puts every Done task in the Archive; an archived task reads as it was and comes back (BLG-27)', async ({ page }) => {
+  await openTasks(page);
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await page.getByRole('tablist', { name: 'Display' }).getByRole('tab', { name: 'List' }).click();
+  const list = page.getByRole('grid', { name: 'Tasks' });
+  const done = list.getByRole('region', { name: 'Done' });
+  await expect(done.getByRole('row', { name: /Stripe test-mode fixtures, Done/ })).toBeVisible();
+  if (process.env.ARCHIVE_SHOT) await page.screenshot({ path: `${process.env.ARCHIVE_SHOT}-1-done.png` });
+  await done.getByRole('button', { name: /^Archive \d+ Done Tasks?$/ }).click();
+  await expect(list.getByRole('region', { name: 'Done' })).toHaveCount(0);
+
+  // The Archive: a list of what was put away, emptied from its bar.
+  const tabs = page.getByRole('tablist', { name: 'Show' });
+  await tabs.getByRole('tab', { name: /^Archive/ }).click();
+  await expect(page.getByRole('tablist', { name: 'Display' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Empty Archive' })).toBeVisible();
+  const row = page.getByRole('grid', { name: 'Tasks' }).getByRole('row', { name: /Stripe test-mode fixtures, Done/ });
+  await expect(row).toBeVisible();
+  if (process.env.ARCHIVE_SHOT) await page.screenshot({ path: `${process.env.ARCHIVE_SHOT}-2-archive.png` });
+  await row.click();
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Stripe test-mode fixtures');
+  const banner = page.getByRole('status').filter({ hasText: 'Its words and history are kept' });
+  await expect(banner).toBeVisible();
+  if (process.env.ARCHIVE_SHOT) await page.screenshot({ path: `${process.env.ARCHIVE_SHOT}-3-archived-task.png` });
+  await banner.getByRole('button', { name: 'Restore' }).click();
+  await expect(banner).toHaveCount(0);
+  await sidebar(page).getByRole('button', { name: /^Tasks/ }).click();
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  await expect(page.getByRole('grid', { name: 'Tasks' }).getByRole('row', { name: /Stripe test-mode fixtures, Done/ })).toBeVisible();
 });

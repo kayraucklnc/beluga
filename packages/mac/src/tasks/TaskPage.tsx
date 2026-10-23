@@ -172,7 +172,7 @@ function ArchivedBanner({ issue }: { issue: Issue }) {
     <div className={t.banner} role="status">
       <Icon name="archive" size={14} />
       <span className={t.bannerText}>
-        <strong>Archived {ago(issue.archivedAt!)}.</strong> Its words and history are kept; its screenshots were kept small and its other proof files let go.
+        <strong>Archived {ago(issue.archivedAt!)}.</strong> Its words and history are kept{issue.proof.some((p) => p.thumb || p.bytes !== undefined) ? '; its screenshots were kept small and its other proof files let go' : ''}.
       </span>
       <Button size="small" onClick={() => void act(() => api.unarchive(issue.id), `${issue.key} is back on the board`)}>
         Restore
