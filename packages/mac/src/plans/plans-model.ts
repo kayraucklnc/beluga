@@ -124,7 +124,7 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
       return { title: next.text, detail: `“${next.milestone.milestone.title}” passes once its work is merged into the plan’s branch` };
     case 'ship':
       if (next.pr?.state === 'OPEN') return { title: `Pull request #${next.pr.number} is open`, detail: `${next.branch} → main: its tasks are Done once it merges` };
-      if (next.pr?.state === 'CLOSED') return { title: `Pull request #${next.pr.number} was closed`, detail: 'Closed without merging: the plan’s tasks stay In Plan' };
+      if (next.pr?.state === 'CLOSED') return { title: `Pull request #${next.pr.number} was closed`, detail: 'Closed without merging: the plan’s tasks stay merged into the plan' };
       return { title: 'Open PR', detail: `Every milestone passed: ${next.branch} has all the plan’s work` };
     case 'done':
       return { title: 'Done', detail: 'Every milestone passed' };

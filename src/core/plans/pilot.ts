@@ -20,9 +20,9 @@ import { TaskWatchdog } from './watchdog.js';
  * and passing go through here. It acts a moment after whatever changed (the board, a run, a plan).
  *
  * With git (`git`), the plan owns a branch, plan/<slug> from main: every task starts from it as it is
- * then, a passed milestone's task branches merge into it (its tasks go In Plan, their worktrees are
+ * then, a passed milestone's task branches merge into it (its tasks go Merged into Plan, their worktrees are
  * archived and their branches deleted), and the plan ends as one pull request into main, which
- * moves every In Plan task to Done when it merges. Plans that ran before this catch up once.
+ * moves every Merged into Plan task to Done when it merges. Plans that ran before this catch up once.
  *
  * A started task whose Claude stopped without finishing is woken once, and waits for you when it
  * stops again soon after (see watchdog.ts); time alone can stall a turn, so it looks every minute.
@@ -644,7 +644,7 @@ export class PlanPilot {
       }
       return;
     }
-    // In: its tasks are In Plan, the milestone passes, and their worktrees go.
+    // In: its tasks are Merged into Plan, the milestone passes, and their worktrees go.
     if (merge.conflict) this.deps.allowFixup?.(plan.home, undefined);
     this.fixAsked.delete(key);
     this.stuckTried.delete(key);
@@ -687,7 +687,7 @@ export class PlanPilot {
     if (pr.state === 'MERGED') this.ship(plan, 'pr', pr.number);
   }
 
-  /** The plan's work reached main: every In Plan task of it is Done at once. */
+  /** The plan's work reached main: every Merged into Plan task of it is Done at once. */
   private ship(plan: Plan, how: 'pr' | 'local', number?: number): void {
     const text = how === 'pr' ? `merged into main via #${number}` : 'merged into main here, with the plan';
     for (const i of this.deps.store.getState().board.issues) if (i.plan?.id === plan.id && i.status === 'in_plan') this.deps.work.board.planMoved(i.id, 'done', text);

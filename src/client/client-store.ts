@@ -26,8 +26,10 @@ export class ClientStore {
   private readonly listeners = new Set<() => void>();
   private readonly unsubscribe: () => void;
   private attention: Attention;
-  /** Workspaces this screen opened itself, ahead of the core's answer (see openAhead): when each was (by workspace id), and how many answers are owed. */
-  private readonly ahead = new Map<string, { at: number; owed: number }>();
+  /** Opens this screen made itself, ahead of the core's answer (see openAhead), by request id: which workspace and tab, and when. */
+  private readonly ahead = new Map<string, { id: string; tab: WorkspaceTab; at: number }>();
+  private nextReq = 0;
+  private readonly reqPrefix = Math.random().toString(36).slice(2, 10);
 
   constructor(
     private readonly source: DomainSource,
@@ -63,9 +65,8 @@ export class ClientStore {
   /** Show what the core asked for. */
   applyIntent = (intent: Intent): void => {
     // The core's answer to an open this screen already showed: not again (a later click may have moved on since).
-    // Matched on the workspace, whichever tab it names: an answer naming another tab still settles the
-    // open, so it can't stay waiting and swallow a real navigation there later.
-    if (intent.type === 'navigate' && intent.view.kind === 'workspace' && this.answered(intent.view.id)) return;
+    // Only the answer itself (its request id, workspace and tab): any other navigation always shows.
+    if (intent.type === 'navigate' && this.answered(intent)) return;
     const action = intentToScreen(intent, this.screen);
     if (action) this.dispatch(action);
   };
@@ -73,23 +74,31 @@ export class ClientStore {
   /**
    * Show a workspace now, ahead of the core (asked to open it too, it answers with the same
    * navigation once it has caught up with everything else it's sending, which can be a while
-   * when many Claudes stream). Its answer is then dropped, not shown again.
+   * when many Claudes stream). Its answer is then dropped, not shown again. → the request id to
+   * send with the open (workspaces.open's `req`), which the answer echoes.
    */
-  openAhead = (id: string, tab: WorkspaceTab): void => {
-    const now = Date.now();
-    // An answer that never came (the workspace went meanwhile) doesn't swallow a later one.
-    for (const [key, { at }] of this.ahead) if (now - at > AHEAD_MS) this.ahead.delete(key);
-    this.ahead.set(id, { at: now, owed: (this.ahead.get(id)?.owed ?? 0) + 1 });
+  openAhead = (id: string, tab: WorkspaceTab): string => {
+    this.expire(Date.now());
+    const req = `${this.reqPrefix}-${++this.nextReq}`;
+    this.ahead.set(req, { id, tab, at: Date.now() });
     this.dispatch({ type: 'view', view: { kind: 'workspace', id, tab } });
+    return req;
   };
 
-  /** Whether a navigation to this workspace answers an open made ahead (one answer owed fewer). */
-  private answered(id: string): boolean {
-    const open = this.ahead.get(id);
-    if (!open) return false;
-    if (open.owed > 1) this.ahead.set(id, { ...open, owed: open.owed - 1 });
-    else this.ahead.delete(id);
+  /** Whether a navigation is the answer to an open made ahead (same request, workspace and tab, within AHEAD_MS); settles it. */
+  private answered(intent: Extract<Intent, { type: 'navigate' }>): boolean {
+    this.expire(Date.now());
+    const { req, view } = intent;
+    if (!req || view.kind !== 'workspace') return false;
+    const open = this.ahead.get(req);
+    if (!open || open.id !== view.id || open.tab !== view.tab) return false;
+    this.ahead.delete(req);
     return true;
+  }
+
+  /** An answer that never came (the workspace went meanwhile, the daemon restarted) is forgotten, never left waiting. */
+  private expire(now: number): void {
+    for (const [req, { at }] of this.ahead) if (now - at > AHEAD_MS) this.ahead.delete(req);
   }
 
   close(): void {

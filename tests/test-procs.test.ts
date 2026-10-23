@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type ProcRow, isTestRunner, keepTestProcesses, lockTargets, stopTestProcesses, testProcessesIn } from '../src/workspaces/test-procs.js';
+import { type ProcRow, isTestRunner, lockTargets, stopTestProcesses, testProcessesIn } from '../src/workspaces/test-procs.js';
 
 const W = '/w/kld-5-playwright-fix';
 const row = (pid: number, ppid: number, line: string): ProcRow => ({ pid, ppid, line });
@@ -61,6 +61,18 @@ describe('which processes are a worktree’s test runs', () => {
     ];
     expect(testProcessesIn(rows, W)).toEqual([40]);
     expect(testProcessesIn(rows, W, true).sort((a, b) => a - b)).toEqual([20, 21, 22, 30, 40]);
+  });
+
+  it('never spares a test run or an e2e, even marked KLAUD_KEEP=1, nor what runs under one', () => {
+    const tag = ` KLAUD_WORKTREE=${W}`;
+    const rows = [
+      row(10, 1, `node ${W}/node_modules/.bin/vitest run${tag} KLAUD_KEEP=1`), // a test run marked to keep
+      row(20, 1, `node ${W}/scripts/e2e-lock.mjs -- playwright test${tag} KLAUD_KEEP=1`), // the e2e lock holder
+      row(21, 20, `node ${W}/node_modules/.bin/vite --port 14321${tag} KLAUD_KEEP=1 KLAUD_E2E_RUN=1-a`), // its vite
+      row(22, 20, `node ${W}/src/cli.tsx daemon${tag} KLAUD_KEEP=1`), // its daemon: under the e2e
+      row(30, 1, `node server.js${tag} KLAUD_KEEP=1`), // a server kept on purpose
+    ];
+    expect(testProcessesIn(rows, W).sort((a, b) => a - b)).toEqual([10, 20, 21, 22]);
   });
 
   it('stops every test runner installed there when the worktree goes away', () => {
@@ -152,15 +164,12 @@ describe.runIf(process.platform === 'darwin')('stopping them for real', () => {
     }
   });
 
-  it.each([
-    ['marked by Claude (`KLAUD_KEEP=1 node server.js &`)', true],
-    ['kept because you asked (keepTestProcesses)', false],
-  ])('spares a server kept on purpose at the turn’s end: %s', async (_name, marked) => {
+  it('spares a server kept on purpose (`KLAUD_KEEP=1 node server.js &`) at the turn’s end, until the worktree goes', async () => {
     const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-procs-')));
     const server = path.join(dir, 'server.js');
     writeFileSync(server, 'setInterval(() => {}, 1000);\n');
     const pidFile = path.join(dir, 'pid');
-    const sh = spawn('/bin/sh', ['-c', `${marked ? 'KLAUD_KEEP=1 ' : ''}"${process.execPath}" "${server}" > /dev/null 2>&1 & echo $! > "${pidFile}"`], { env: { ...process.env, KLAUD_WORKTREE: dir }, stdio: 'ignore' });
+    const sh = spawn('/bin/sh', ['-c', `KLAUD_KEEP=1 "${process.execPath}" "${server}" > /dev/null 2>&1 & echo $! > "${pidFile}"`], { env: { ...process.env, KLAUD_WORKTREE: dir }, stdio: 'ignore' });
     await new Promise((r) => sh.on('exit', r));
     const pid = Number((await import('node:fs')).readFileSync(pidFile, 'utf8'));
     const alive = () => {
@@ -174,7 +183,6 @@ describe.runIf(process.platform === 'darwin')('stopping them for real', () => {
     try {
       await new Promise((r) => setTimeout(r, 300));
       process.env.KLAUD_E2E_DIR = dir;
-      if (!marked) expect(await keepTestProcesses(dir)).toBe(1);
       // This turn's end, and a later one's.
       expect(await stopTestProcesses(dir, { graceMs: 300 })).toBe(0);
       expect(await stopTestProcesses(dir, { graceMs: 300 })).toBe(0);

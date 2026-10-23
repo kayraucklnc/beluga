@@ -1776,7 +1776,7 @@
   text-overflow: ellipsis;
 }
 
-/* The In Plan column: the plans' pull requests its tasks wait for. */
+/* The Merged into Plan column: the plans' pull requests its tasks wait for. */
 .columnPr {
   font-size: 12px;
   color: var(--text-3);

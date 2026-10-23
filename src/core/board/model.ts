@@ -13,7 +13,7 @@ export type StatusTone = 'muted' | 'neutral' | 'claude' | 'info' | 'ok' | 'error
 
 export const STATUS_INFO: Readonly<Record<IssueStatus, { readonly label: string; readonly tone: StatusTone; readonly open: boolean }>> = {
   backlog: { label: 'Backlog', tone: 'muted', open: true },
-  todo: { label: 'Todo', tone: 'neutral', open: true },
+  todo: { label: 'Ready', tone: 'neutral', open: true },
   in_progress: { label: 'In Progress', tone: 'claude', open: true },
   in_review: { label: 'In Review', tone: 'info', open: true },
   /** A plan's task whose milestone passed: merged into the plan's branch, waiting for the plan's PR. */

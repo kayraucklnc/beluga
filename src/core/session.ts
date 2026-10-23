@@ -800,9 +800,10 @@ export class Session {
         for (const id of gone) this.questions.cancelFor(id);
       }
     });
-    // A refusal while joining comes again as the reason of the retry (or the end) that follows it.
+    // A refusal while joining comes again as the reason of the retry (or the end) that follows it;
+    // with no retry to follow (reconnect off), it's said here, once.
     client.on('error', (message) => {
-      if (client.connected) this.system(message, 'error');
+      if (client.connected || !client.retries) this.system(message, 'error');
     });
     client.on('rekey', (secret) => {
       // The host replaced the invite link; keep yours current so /invite shares one that works.

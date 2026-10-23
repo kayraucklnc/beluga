@@ -134,7 +134,7 @@ export const HANDLERS = {
   },
   'files.read': (s, at) => s.files.readFile(at),
 
-  'workspaces.open': (s, id, tab) => ctl(s)?.open(id, tab),
+  'workspaces.open': (s, id, tab, o) => ctl(s)?.open(id, tab, o?.req),
   'workspaces.load': (s, id) => void ctl(s)?.ensureLoaded(id),
   'workspaces.refresh': (s) => ctl(s)?.refresh(),
   'workspaces.newWorktree': async (s, projectId, name, opts) => (await ctl(s)?.newWorktree(projectId, name, opts?.base ? { base: opts.base } : {}))?.id,

@@ -40,7 +40,7 @@ test('makes a task, then works on its page', async ({ page }) => {
   await sheet.getByLabel('Goal').fill('Fetch once an hour instead of on every request.');
   await sheet.getByRole('button', { name: 'Create Task' }).click();
   await expect(sheet).toBeHidden();
-  const row = page.getByRole('row', { name: /Cache the exchange rates, Todo/ });
+  const row = page.getByRole('row', { name: /Cache the exchange rates, Ready/ });
   await expect(row).toBeVisible();
   await row.click();
 
@@ -49,8 +49,8 @@ test('makes a task, then works on its page', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Goal' })).toContainText('Fetch once an hour');
   const props = page.getByRole('complementary', { name: 'Properties' });
 
-  // Status from its menu (2 = Todo, 3 = In Progress).
-  await props.getByRole('button', { name: /^Todo$/ }).click();
+  // Status from its menu (2 = Ready, 3 = In Progress).
+  await props.getByRole('button', { name: /^Ready$/ }).click();
   await page.getByRole('menu').getByRole('menuitem', { name: /In Progress/ }).click();
   await expect(props).toContainText('In Progress');
 
@@ -87,13 +87,13 @@ test('a task merged into its plan looks finished: no Start, what happened instea
   await sheet.getByLabel('Title').fill('Merged already');
   await sheet.getByRole('button', { name: 'Create Task' }).click();
   await expect(sheet).toBeHidden();
-  await page.getByRole('row', { name: /Merged already, Todo/ }).click();
+  await page.getByRole('row', { name: /Merged already, Ready/ }).click();
   const start = page.getByRole('button', { name: 'Start with Claude' });
   await expect(start).toBeVisible();
 
   // Merged into the plan: its outcome, no Start on the page or in its ⋯ menu.
   const props = page.getByRole('complementary', { name: 'Properties' });
-  await props.getByRole('button', { name: /^Todo$/ }).click();
+  await props.getByRole('button', { name: /^Ready$/ }).click();
   await page.getByRole('menu').getByRole('menuitem', { name: /Merged into Plan/ }).click();
   await expect(props).toContainText('Merged into Plan');
   await expect(page.getByTestId('task-outcome')).toContainText('Merged into the plan · ships with the plan’s pull request');
@@ -103,9 +103,9 @@ test('a task merged into its plan looks finished: no Start, what happened instea
   const menu = page.getByRole('menu');
   await expect(menu.getByRole('menuitem', { name: /Start with Claude|Start Worktree/ })).toHaveCount(0);
 
-  // ⋯ › Reopen the Task: back to Todo, and Start is back.
+  // ⋯ › Reopen the Task: back to Ready, and Start is back.
   await menu.getByRole('menuitem', { name: /Reopen the Task/ }).click();
-  await expect(props).toContainText('Todo');
+  await expect(props).toContainText('Ready');
   await expect(start).toBeVisible();
   await expect(page.getByTestId('task-outcome')).toHaveCount(0);
 });
@@ -253,7 +253,11 @@ for (const width of [1440, 2560]) {
     expect(propsBox.x - (activityBox.x + activityBox.width)).toBeLessThanOrEqual(40);
     // Prose stays capped: the goal's paragraph is no wider than about 90 characters.
     const goal = page.getByRole('region', { name: 'Goal' }).locator('p').first();
-    if (await goal.count()) expect((await goal.boundingBox())!.width).toBeLessThanOrEqual(900);
+    // The Goal paragraph must be there: a missing one fails here rather than skipping the check.
+    await expect(goal).toBeVisible();
+    const goalBox = await goal.boundingBox();
+    expect(goalBox, 'the Goal paragraph has a box').not.toBeNull();
+    expect(goalBox!.width).toBeLessThanOrEqual(900);
     await page.screenshot({ path: `../../.klaud/scratch/task-page-${width}.png` });
   });
 }

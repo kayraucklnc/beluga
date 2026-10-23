@@ -48,12 +48,20 @@ const inside = (child: string, dir: string): boolean => child === dir || child.s
 export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving = false): number[] {
   const tag = ` KLAUD_WORKTREE=${dir}`;
   // Kept on purpose (KLAUD_KEEP=1, see keepsRunning) while the worktree stays: they, and the shells waiting on them.
+  // Never a test run or an e2e's processes (nor what runs under one), marked or not.
   const keep = new Set<number>();
   if (!leaving) {
-    const parent = new Map(rows.map((r) => [r.pid, r.ppid]));
+    const byPid = new Map(rows.map((r) => [r.pid, r]));
+    const testRun = (r: ProcRow) => r.line.includes(' KLAUD_E2E_RUN=') || isTestRunner(r.line, dir);
     for (const r of rows) {
       if (!r.line.includes(` ${KEEP_MARK} `) && !r.line.endsWith(` ${KEEP_MARK}`)) continue;
-      for (let p: number | undefined = r.pid; p && p > 1 && !keep.has(p); p = parent.get(p)) keep.add(p);
+      const chain: number[] = [];
+      let under = false;
+      for (let p: ProcRow | undefined = r; p && p.pid > 1 && !chain.includes(p.pid); p = byPid.get(p.ppid)) {
+        if (testRun(p)) under = true;
+        chain.push(p.pid);
+      }
+      if (!under) for (const p of chain) keep.add(p);
     }
   }
   const hits = rows.filter((r) => {
@@ -135,12 +143,6 @@ export const KEEP_MARK = 'KLAUD_KEEP=1';
 /** Whether a Bash command asks to keep what it starts (`KLAUD_KEEP=1 npm run dev &`). */
 export const keepsRunning = (command: unknown): boolean => typeof command === 'string' && new RegExp(`(^|[\\s;&|(])${KEEP_MARK}(\\s|$)`).test(command);
 
-/** Whether someone's message asks to leave what Claude starts running ("keep the server running", "leave it up", "don't stop it"). */
-export function askedToKeep(prompt: unknown): boolean {
-  if (typeof prompt !== 'string') return false;
-  return /\b(keep|leave)\b[^.!?\n]{0,40}\b(running|up|on|open|alive|going)\b|\bdo(n['’]?t| not)\s+(stop|kill)\b/i.test(prompt);
-}
-
 /** Whether the machine-wide e2e lock is held from this worktree (one small file read, no ps). */
 export function e2eLockedIn(dir: string): boolean {
   return lockedRun(path.resolve(dir)) !== undefined;
@@ -218,23 +220,6 @@ export function lockTargets(run: LockedRun, rows: readonly ProcRow[]): { pids: n
   return { pids: [run.pid, ...(daemonOurs ? [run.daemon!] : [])], groups: [...run.groups] };
 }
 
-/** Processes kept running when you asked (see keepTestProcesses), per worktree: pid → its command then (a reused pid isn't spared). */
-const spared = new Map<string, Map<number, string>>();
-
-/**
- * Keep what a worktree's Claude left running (you asked it to: "keep the server running"): the next
- * turn's end spares those processes too, until the worktree goes away. → how many.
- */
-export async function keepTestProcesses(dir: string): Promise<number> {
-  const root = path.resolve(dir);
-  const rows = await processRows();
-  const pids = new Set(testProcessesIn(rows, root));
-  const keep = spared.get(root) ?? new Map<number, string>();
-  for (const r of rows) if (pids.has(r.pid)) keep.set(r.pid, r.line);
-  spared.set(root, keep);
-  return pids.size;
-}
-
 /**
  * Stop a worktree's test processes: SIGTERM, then SIGKILL what's left after `graceMs`.
  * → how many processes (and e2e process groups) were stopped.
@@ -242,11 +227,7 @@ export async function keepTestProcesses(dir: string): Promise<number> {
 export async function stopTestProcesses(dir: string, opts: { leaving?: boolean; graceMs?: number } = {}): Promise<number> {
   const root = path.resolve(dir);
   const rows = await processRows();
-  const kept = spared.get(root);
-  if (opts.leaving) spared.delete(root);
-  const keep = (r: ProcRow | undefined): boolean => Boolean(!opts.leaving && r && kept?.get(r.pid) === r.line);
-  const byPid = new Map(rows.map((r) => [r.pid, r]));
-  const pids = testProcessesIn(rows, root, opts.leaving).filter((p) => !keep(byPid.get(p)));
+  const pids = testProcessesIn(rows, root, opts.leaving);
   // The e2e run holding the lock: when its Claude started it (it's among them), or the worktree goes; only what it can verify (see lockTargets).
   const locked = lockedRun(root);
   const run = locked && (opts.leaving || pids.includes(locked.pid)) ? locked : undefined;

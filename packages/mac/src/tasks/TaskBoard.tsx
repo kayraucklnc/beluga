@@ -474,7 +474,7 @@ const Card = memo(function Card({
   );
 });
 
-/** In Plan waits for its plans' pull requests: a link to each once it's open. */
+/** Merged into Plan waits for its plans' pull requests: a link to each once it's open. */
 function PlanPrs({ issues }: { issues: readonly Issue[] }) {
   const { plans } = usePlans();
   const ids = new Set(issues.flatMap((i) => (i.plan ? [i.plan.id] : [])));

@@ -8,7 +8,7 @@ import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, mileston
  * Approving a plan: its draft goes on the board. New tasks are made (in the plan's milestone, its
  * sub-tasks and blockers wired up), tasks that changed are rewritten (ticks kept), and tasks taken
  * out are canceled. Tasks of milestones that can be worked on now (what they build on has passed)
- * are Todo; the others wait in the Backlog. Started work keeps its status. → the plan as approved, each task with its board task.
+ * are Ready (todo); the others wait in the Backlog. Started work keeps its status. → the plan as approved, each task with its board task.
  */
 
 export interface ApplyActors {
