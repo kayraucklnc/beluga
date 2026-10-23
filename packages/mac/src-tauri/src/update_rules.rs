@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const HOUR_MS: u64 = 3_600_000;
-/// Opening Beluga (or waking the Mac) looks for an update when the last look is older than this.
-pub const LAUNCH_AFTER_MS: u64 = 20 * HOUR_MS;
-/// While Beluga stays open, it looks once a day.
-pub const EVERY_MS: u64 = 24 * HOUR_MS;
+/// Opening Beluga (or waking the Mac) looks for an update unless it looked less than this ago.
+pub const LAUNCH_AFTER_MS: u64 = HOUR_MS;
+/// While Beluga stays open, it looks every few hours.
+pub const EVERY_MS: u64 = 4 * HOUR_MS;
 /// After a failed look (offline, GitHub down), wait this long before trying again.
 pub const RETRY_AFTER_MS: u64 = HOUR_MS;
 /// "Update when idle" waits until you haven't touched the Mac for this long.
@@ -168,39 +168,39 @@ mod tests {
     const NOW: u64 = 1_800_000_000_000;
 
     #[test]
-    fn looks_on_launch_only_when_the_last_look_is_old() {
+    fn looks_on_launch_unless_it_just_looked() {
         assert!(check_due(NOW, None, None, Occasion::Launch));
         assert!(!check_due(
             NOW,
-            Some(NOW - 19 * HOUR_MS),
+            Some(NOW - 59 * 60_000),
             None,
             Occasion::Launch
         ));
         assert!(check_due(
             NOW,
-            Some(NOW - 20 * HOUR_MS),
+            Some(NOW - HOUR_MS),
             None,
             Occasion::Launch
         ));
         assert!(check_due(
             NOW,
-            Some(NOW - 21 * HOUR_MS),
+            Some(NOW - 2 * HOUR_MS),
             None,
             Occasion::Wake
         ));
     }
 
     #[test]
-    fn looks_once_a_day_while_running() {
+    fn looks_every_four_hours_while_running() {
         assert!(!check_due(
             NOW,
-            Some(NOW - 23 * HOUR_MS),
+            Some(NOW - 3 * HOUR_MS),
             None,
             Occasion::Running
         ));
         assert!(check_due(
             NOW,
-            Some(NOW - 24 * HOUR_MS),
+            Some(NOW - 4 * HOUR_MS),
             None,
             Occasion::Running
         ));

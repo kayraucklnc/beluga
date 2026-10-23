@@ -1,11 +1,14 @@
 import { Button } from '../components/ui.js';
-import { lastCheckedLabel, statusLine, type UpdateMode } from '../lib/update-model.js';
+import { lastCheckedLabel, modeOf, statusLine, switchesOf } from '../lib/update-model.js';
 import { checkForUpdates, openUpdateSheet, setUpdateMode, useUpdates } from '../lib/updates.js';
-import { Group, Row, Select } from './settings-controls.js';
+import { Group, Row, Switch } from './settings-controls.js';
 
-const MODE_DETAIL: Record<UpdateMode, string> = {
-  idle: 'Downloads in the background and installs once you step away and nothing is running. Beluga reopens without taking focus.',
-  ask: 'Downloads in the background, then asks. Otherwise it installs the next time you quit.',
+const AUTO_DETAIL = {
+  on: 'Downloads new versions in the background and installs once you step away and nothing is running. Beluga reopens without taking focus.',
+  off: 'Downloads in the background, then shows “Beluga is ready” in the sidebar. Otherwise it installs the next time you quit.',
+};
+const CHECK_DETAIL = {
+  on: 'At launch and every few hours while Beluga runs.',
   off: 'Beluga only looks when you click Check Now.',
 };
 
@@ -31,19 +34,14 @@ function CheckRow({ label }: { label: string }) {
 /** Settings › General › Updates. */
 export function UpdateSettingsGroup() {
   const { state } = useUpdates();
+  const on = switchesOf(state.mode);
   return (
     <Group title="Updates">
-      <Row label="Install updates" detail={MODE_DETAIL[state.mode]}>
-        <Select<UpdateMode>
-          label="Install updates"
-          value={state.mode}
-          onChange={(v) => void setUpdateMode(v)}
-          options={[
-            { value: 'idle', label: 'Automatically when idle' },
-            { value: 'ask', label: 'Ask me' },
-            { value: 'off', label: 'Off' },
-          ]}
-        />
+      <Row label="Update automatically" detail={on.auto ? AUTO_DETAIL.on : AUTO_DETAIL.off}>
+        <Switch label="Update automatically" on={on.auto} onChange={(auto) => void setUpdateMode(modeOf({ auto }, state.mode))} />
+      </Row>
+      <Row label="Check for updates" detail={on.check ? CHECK_DETAIL.on : CHECK_DETAIL.off}>
+        <Switch label="Check for updates" on={on.check} onChange={(check) => void setUpdateMode(modeOf({ check }, state.mode))} />
       </Row>
       <CheckRow label={`Beluga ${state.current}`} />
     </Group>

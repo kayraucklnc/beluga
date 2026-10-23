@@ -79,7 +79,7 @@ function Ready() {
       {state.mode !== 'off' && !installing ? (
         <label className={s.always}>
           <input type="checkbox" checked={state.mode === 'idle'} onChange={(e) => void setUpdateMode(e.target.checked ? 'idle' : 'ask')} />
-          Always update when I’m idle
+          Update automatically from now on
         </label>
       ) : null}
       <div className={s.foot}>
