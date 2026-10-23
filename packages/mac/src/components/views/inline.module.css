@@ -1,0 +1,180 @@
+/* Inline elements: small enough to sit in a line of text without moving it. */
+
+.color {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 1.45em;
+  padding: 0 6px 0 3px;
+  border: 0;
+  border-radius: 5px;
+  vertical-align: -0.2em;
+  font: inherit;
+  background: var(--code-bg);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  cursor: default;
+}
+.color:hover {
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+.color code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  color: var(--text);
+}
+.swatch {
+  width: 1em;
+  height: 1em;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+}
+.strip {
+  display: inline-flex;
+  vertical-align: -0.2em;
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--hairline-strong);
+}
+.stripCell {
+  width: 1.5em;
+  height: 1.3em;
+  border: 0;
+  padding: 0;
+  cursor: default;
+}
+.stripCell:hover {
+  transform: scaleY(1.12);
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 1.45em;
+  padding: 0 7px;
+  border-radius: 999px;
+  vertical-align: 0.05em;
+  font-size: 0.85em;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-2);
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.badge::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.badge[data-tone='good'] {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 22%, transparent);
+}
+.badge[data-tone='critical'] {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--error) 22%, transparent);
+}
+.badge[data-tone='warning'] {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 22%, transparent);
+}
+.badge[data-tone='info'] {
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--info) 22%, transparent);
+}
+.keys {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: 0.05em;
+}
+.kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6em;
+  height: 1.55em;
+  padding: 0 5px;
+  border-radius: 5px;
+  font-family: var(--font);
+  font-size: 0.85em;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-raised);
+  box-shadow:
+    inset 0 0 0 1px var(--hairline-strong),
+    inset 0 -1.5px 0 var(--hairline-strong);
+}
+.progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  vertical-align: 0.02em;
+}
+.track {
+  position: relative;
+  width: 64px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--bg-press);
+  overflow: hidden;
+}
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 99px;
+  background: var(--accent);
+}
+.progress[data-done='true'] .fill {
+  background: var(--ok);
+}
+.progressLabel {
+  font-size: 0.85em;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.delta {
+  display: inline-flex;
+  align-items: center;
+  height: 1.45em;
+  padding: 0 6px;
+  border-radius: 5px;
+  vertical-align: 0.02em;
+  font-size: 0.85em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  background: var(--bg-hover);
+}
+.delta[data-good='true'] {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.delta[data-good='false'] {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+}
+.spark {
+  vertical-align: -0.15em;
+  overflow: visible;
+  /* Up isn't always good: a sparkline only shows the shape. */
+  --spark: var(--accent);
+}
+.spark polyline {
+  fill: none;
+  stroke: var(--spark);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.spark circle {
+  fill: var(--spark);
+}
+.time {
+  text-decoration: underline dotted var(--text-3);
+  text-underline-offset: 3px;
+  cursor: default;
+}

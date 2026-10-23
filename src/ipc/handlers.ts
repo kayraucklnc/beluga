@@ -18,6 +18,7 @@ import { GATEWAY_HANDLERS } from './gateway-handlers.js';
 import { BOARD_HANDLERS } from './board-handlers.js';
 import { PLANS_HANDLERS } from './plans-handlers.js';
 import { GIT_HANDLERS } from './git-handlers.js';
+import { VIEWS_HANDLERS } from './views-handlers.js';
 
 /**
  * What each API method does (see api.ts for the list and its arguments). Runs in the core:
@@ -276,6 +277,7 @@ export const HANDLERS = {
   ...BOARD_HANDLERS,
   ...PLANS_HANDLERS,
   ...GIT_HANDLERS,
+  ...VIEWS_HANDLERS,
 } satisfies Handlers;
 
 export type Result<M extends Method> = Awaited<ReturnType<(typeof HANDLERS)[M]>>;

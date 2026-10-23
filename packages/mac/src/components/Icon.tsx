@@ -100,6 +100,12 @@ const PATHS = {
   tag: 'M2.5 2.5h5.5l6 6-5.5 5.5-6-6z M5.25 5.25h.01',
   flag: 'M4 13.5V2.5 M4 3h8l-2 2.5 2 2.5H4',
   diamond: 'M8 2.5l5.5 5.5L8 13.5 2.5 8z',
+  /** Views (beluga-view): a table, a line chart, an area chart, a bar chart, a palette. */
+  table: 'M2.5 3.5h11v9h-11z M2.5 6.5h11 M2.5 9.5h11 M6.5 3.5v9',
+  chartLine: 'M2.5 2.5v11h11 M4.5 10.5l2.5-3 2 1.5 3.5-4.5',
+  chartArea: 'M2.5 2.5v11h11 M4.5 11.5V9l2.5-2.5 2 1.5 3.5-3.5v7z',
+  chartBar: 'M2.5 2.5v11h11 M5 11.5V8.5 M8 11.5V5.5 M11 11.5V7.5',
+  palette: 'M8 2.5a5.5 5.5 0 1 0 0 11c.9 0 1.3-.6 1.3-1.2 0-.8-.7-1-.7-1.8 0-.6.5-1 1.1-1h1.4A2.4 2.4 0 0 0 13.5 7c0-2.5-2.5-4.5-5.5-4.5z M5.25 7.25h.01 M7.25 5.25h.01 M10 5.5h.01',
 } as const;
 
 export type IconName = keyof typeof PATHS;
