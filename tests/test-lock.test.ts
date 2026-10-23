@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import setup, { type TestRun, releaseSlot, slotCount, trySlot, waitForSlot, waitingLine, workerCount } from '../scripts/test-lock.mjs';
+import { worktreeOf } from '../scripts/e2e-lock.mjs';
 import { niceForWorktree } from '../src/agent/claude-process.js';
 
 const tmp = (): string => mkdtempSync(path.join(os.tmpdir(), 'klaud-tests-'));
@@ -103,7 +104,9 @@ describe("vitest's global setup", () => {
     const teardown = await setup();
     const slot = JSON.parse(readFileSync(path.join(dir, 'slot-0.json'), 'utf8'));
     expect(slot.pid).toBe(process.pid);
-    expect(slot.name).toBe('KLD-49');
+    // Named after whichever worktree runs the suite (its task key, or its folder).
+    expect(slot.worktree).toBe(worktreeOf(process.cwd()));
+    expect(slot.name).toMatch(/\S/);
     expect(process.env.KLAUD_TEST_SLOT).toBe(path.join(dir, 'slot-0.json'));
     teardown?.();
     expect(existsSync(path.join(dir, 'slot-0.json'))).toBe(false);

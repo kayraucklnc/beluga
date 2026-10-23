@@ -105,10 +105,10 @@ describe('a room that turns you away says so once, in the status (KLD-72)', () =
     s.start();
     await waitFor(() => tries.length >= 20, 10_000);
 
-    expect(tries.every((t) => t.said && /newer klaud/.test(t.reason))).toBe(true);
-    expect(store.getState().connection).toMatchObject({ state: 'reconnecting', attempt: 20, reason: 'The host has a newer klaud. Run klaud update, then join again' });
-    expect(roomLines(store)).toEqual(['The host has a newer klaud. Run klaud update, then join again. Retrying in the background']);
-    expect(store.getState().log.filter((l) => 'text' in l && /newer klaud/.test(l.text))).toHaveLength(1);
+    expect(tries.every((t) => t.said && /newer Beluga/.test(t.reason))).toBe(true);
+    expect(store.getState().connection).toMatchObject({ state: 'reconnecting', attempt: 20, reason: 'The host has a newer Beluga. Run beluga update, then join again' });
+    expect(roomLines(store)).toEqual(['The host has a newer Beluga. Run beluga update, then join again. Retrying in the background']);
+    expect(store.getState().log.filter((l) => 'text' in l && /newer Beluga/.test(l.text))).toHaveLength(1);
   }, 20_000);
 
   it('a non-fatal refusal from the hub ("Peer id already connected") on every try is one line too', async () => {
@@ -185,9 +185,9 @@ describe('what the room said is never the reason of a later, unrelated drop (KLD
     const tries: Retry[] = [];
     client.on('retrying', (r) => tries.push(r));
     s.start();
-    await waitFor(() => roomLines(store).some((x) => /newer klaud/.test(x)), 5_000);
+    await waitFor(() => roomLines(store).some((x) => /newer Beluga/.test(x)), 5_000);
     await new Promise((r) => setTimeout(r, 300));
-    expect(store.getState().log.filter((l) => 'text' in l && /newer klaud/.test(l.text))).toHaveLength(1);
+    expect(store.getState().log.filter((l) => 'text' in l && /newer Beluga/.test(l.text))).toHaveLength(1);
     expect(tries).toHaveLength(0);
   }, 20_000);
 });
