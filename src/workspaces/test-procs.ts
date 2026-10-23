@@ -47,8 +47,17 @@ const inside = (child: string, dir: string): boolean => child === dir || child.s
  */
 export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving = false): number[] {
   const tag = ` KLAUD_WORKTREE=${dir}`;
+  // Kept on purpose (KLAUD_KEEP=1, see keepsRunning) while the worktree stays: they, and the shells waiting on them.
+  const keep = new Set<number>();
+  if (!leaving) {
+    const parent = new Map(rows.map((r) => [r.pid, r.ppid]));
+    for (const r of rows) {
+      if (!r.line.includes(` ${KEEP_MARK} `) && !r.line.endsWith(` ${KEEP_MARK}`)) continue;
+      for (let p: number | undefined = r.pid; p && p > 1 && !keep.has(p); p = parent.get(p)) keep.add(p);
+    }
+  }
   const hits = rows.filter((r) => {
-    if (r.pid === process.pid) return false;
+    if (r.pid === process.pid || keep.has(r.pid)) return false;
     const tagged = r.line.includes(`${tag} `) || r.line.endsWith(tag);
     const installed = leaving && r.line.includes(path.join(dir, 'node_modules') + path.sep);
     const e2e = tagged && r.line.includes(' KLAUD_E2E_RUN=');
@@ -62,28 +71,74 @@ export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving =
   const queue = hits.map((h) => h.pid);
   while (queue.length) {
     const pid = queue.shift()!;
-    if (out.has(pid) || pid === process.pid || pid <= 1) continue;
+    if (out.has(pid) || pid === process.pid || pid <= 1 || keep.has(pid)) continue;
     out.add(pid);
     queue.push(...(kids.get(pid) ?? []));
   }
   return [...out];
 }
 
-/** A command Claude ran that may start test processes. */
-const STARTS_TESTS = /\b(tests?|vitest|playwright|jest|mocha|e2e|vite|demo)\b/i;
-/** …or a server, a watcher, anything that keeps running (`npm run dev`, `node server.js`, `npm start`). */
-const STARTS_SERVER = /\b(dev|serve|server|start|watch|preview|daemon|http\.server|runserver)\b/i;
-/** …or puts something in the background: `cmd &` (not `&&`, `2>&1`, `&>`), nohup, setsid, disown. */
-const BACKGROUNDS = /(^|[^&>|])&(?![&>\d])|\b(nohup|setsid|disown)\b/;
+/** A program that runs tests, serves or watches (after `npx`, `pnpm exec`…). */
+const RUNS = /^(vitest|playwright|jest|mocha|vite|next|nuxt|astro|nodemon|webpack-dev-server|http-server|serve|live-server)$/;
+/** A package script (or make target) that does: `npm test`, `npm run test:e2e`, `pnpm dev`, `npm start`, `make serve`. */
+const SCRIPT = /^(test|e2e|dev|start|serve|preview|watch|demo)([:\-_.]|$)|[:\-_.](test|e2e|dev|start|serve|preview|watch|demo)([:\-_.]|$)/i;
+/** A script an interpreter runs that does: `node server.js`, `python3 -m http.server`, `tsx src/cli.tsx daemon`, `node scripts/e2e-lock.mjs`. */
+const RUNTIME = /^(node|nodejs|tsx|ts-node|deno|bun|python[\d.]*|ruby|php|rails|uvicorn|gunicorn|flask)$/;
+const SERVES = /(^|[\s/._-])(server|serve|dev|daemon|e2e|tests?|watch|runserver|http\.server)([\s/._-]|$)/i;
+/** `cmd &` (not `&&`, `2>&1`, `&>`, `|&`): it goes on after the command returns. */
+const AMP = /(^|[^&>|])&(?![&>\d])/;
+
+/** A command line's simple commands (split at `&&`, `||`, `;`, `|`, `&`, newlines), redirections taken out. */
+function simpleCommands(command: string): string[][] {
+  return command
+    .split(/&&|\|\||[;\n|]|(?<![&>|])&(?![&>\d])/)
+    .map((part) => part.replace(/\d*[<>]+&?\s*\S+/g, ' ').trim().split(/\s+/).filter(Boolean));
+}
+
+/** Whether one simple command starts something that may keep running. */
+function starts(words: readonly string[]): boolean {
+  const base = (x: string | undefined) => (x ?? '').replace(/^\(+/, '').split('/').pop() ?? '';
+  let w = [...words];
+  // Past its variables (`PORT=3000 npm run dev`) and what runs a program for you (`npx`, `env`, `pnpm exec`): the program.
+  for (;;) {
+    const next = w.findIndex((x) => !/^\w+=/.test(x));
+    w = next < 0 ? [] : w.slice(next);
+    const skip = ['env', 'time', 'exec', 'command', 'npx', 'bunx', 'pnpx'].includes(base(w[0])) ? 1 : ['pnpm', 'yarn'].includes(base(w[0])) && ['exec', 'dlx'].includes(w[1] ?? '') ? 2 : 0;
+    if (!skip) break;
+    w = w.slice(skip);
+    while (w[0]?.startsWith('-')) w = w.slice(1);
+  }
+  const program = base(w[0]);
+  if (['nohup', 'setsid', 'disown'].includes(program) || RUNS.test(program) || w.includes('--watch')) return true;
+  if (['npm', 'pnpm', 'yarn', 'bun', 'make', 'just', 'turbo'].includes(program)) {
+    const args = w.slice(1).filter((x) => !x.startsWith('-'));
+    const script = ['run', 'run-script'].includes(args[0] ?? '') ? args[1] : args[0];
+    if (script && SCRIPT.test(script)) return true;
+  }
+  return RUNTIME.test(program) && w.slice(1).some((x) => SERVES.test(x));
+}
 
 /**
  * Whether a Bash command may leave processes running after it returns (so the turn's end checks for
- * them with ps). Judged on the command alone: ps on every turn is slow on a busy Mac.
+ * them with ps). Judged on the command alone, on what it runs (not on words in its paths: `2>/dev/null`,
+ * `cat src/server.ts`): ps on every turn is slow on a busy Mac.
  */
 export function mayLeaveProcesses(command: unknown, background?: unknown): boolean {
   if (background === true) return true;
   if (typeof command !== 'string') return false;
-  return STARTS_TESTS.test(command) || STARTS_SERVER.test(command) || BACKGROUNDS.test(command);
+  return AMP.test(command) || simpleCommands(command).some(starts);
+}
+
+/** What a command says to keep what it starts running past the turn (they carry it in their environment). */
+export const KEEP_MARK = 'KLAUD_KEEP=1';
+
+/** Whether a Bash command asks to keep what it starts (`KLAUD_KEEP=1 npm run dev &`). */
+export const keepsRunning = (command: unknown): boolean => typeof command === 'string' && new RegExp(`(^|[\\s;&|(])${KEEP_MARK}(\\s|$)`).test(command);
+
+/** Whether someone's message asks to leave what Claude starts running ("keep the server running", "leave it up", "don't stop it"). */
+export function askedToKeep(prompt: unknown): boolean {
+  if (typeof prompt !== 'string') return false;
+  return /\b(keep|leave)\b[^.!?\n]{0,40}\b(running|up|on|open|alive|going)\b|\bdo(n['’]?t| not)\s+(stop|kill)\b/i.test(prompt);
 }
 
 /** Whether the machine-wide e2e lock is held from this worktree (one small file read, no ps). */
@@ -163,6 +218,23 @@ export function lockTargets(run: LockedRun, rows: readonly ProcRow[]): { pids: n
   return { pids: [run.pid, ...(daemonOurs ? [run.daemon!] : [])], groups: [...run.groups] };
 }
 
+/** Processes kept running when you asked (see keepTestProcesses), per worktree: pid → its command then (a reused pid isn't spared). */
+const spared = new Map<string, Map<number, string>>();
+
+/**
+ * Keep what a worktree's Claude left running (you asked it to: "keep the server running"): the next
+ * turn's end spares those processes too, until the worktree goes away. → how many.
+ */
+export async function keepTestProcesses(dir: string): Promise<number> {
+  const root = path.resolve(dir);
+  const rows = await processRows();
+  const pids = new Set(testProcessesIn(rows, root));
+  const keep = spared.get(root) ?? new Map<number, string>();
+  for (const r of rows) if (pids.has(r.pid)) keep.set(r.pid, r.line);
+  spared.set(root, keep);
+  return pids.size;
+}
+
 /**
  * Stop a worktree's test processes: SIGTERM, then SIGKILL what's left after `graceMs`.
  * → how many processes (and e2e process groups) were stopped.
@@ -170,7 +242,11 @@ export function lockTargets(run: LockedRun, rows: readonly ProcRow[]): { pids: n
 export async function stopTestProcesses(dir: string, opts: { leaving?: boolean; graceMs?: number } = {}): Promise<number> {
   const root = path.resolve(dir);
   const rows = await processRows();
-  const pids = testProcessesIn(rows, root, opts.leaving);
+  const kept = spared.get(root);
+  if (opts.leaving) spared.delete(root);
+  const keep = (r: ProcRow | undefined): boolean => Boolean(!opts.leaving && r && kept?.get(r.pid) === r.line);
+  const byPid = new Map(rows.map((r) => [r.pid, r]));
+  const pids = testProcessesIn(rows, root, opts.leaving).filter((p) => !keep(byPid.get(p)));
   // The e2e run holding the lock: when its Claude started it (it's among them), or the worktree goes; only what it can verify (see lockTargets).
   const locked = lockedRun(root);
   const run = locked && (opts.leaving || pids.includes(locked.pid)) ? locked : undefined;

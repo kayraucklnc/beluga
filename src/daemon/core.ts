@@ -192,6 +192,8 @@ export interface Core {
   readonly terminals: TerminalManager;
   /** The room's name (one room per core). */
   readonly room: string;
+  /** Where its workspaces' records and saved conversations are kept. */
+  readonly workspacesHome: string;
   /** Start everything: the connection, timers, remote access when asked for, the demo's friends. */
   start(): void;
   /** Leave the room and stop everything. */
@@ -351,5 +353,5 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     await room.hub?.close();
   };
 
-  return { config, session, store, terminals, room: room.room, start, stop };
+  return { config, session, store, terminals, room: room.room, workspacesHome: workspaces.store.home, start, stop };
 }

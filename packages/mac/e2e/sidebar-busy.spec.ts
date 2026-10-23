@@ -66,7 +66,7 @@ async function daemon<T>(page: Page, fn: string, arg: unknown): Promise<T> {
 
 test('after a force-quit mid-run and a restart, the run left "started" in saved history shows as not running', async ({ page }) => {
   const { execFileSync } = await import('node:child_process');
-  const { mkdirSync, mkdtempSync, writeFileSync } = await import('node:fs');
+  const { mkdirSync, mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
   const os = await import('node:os');
   const path = await import('node:path');
   await page.goto('/');
@@ -81,8 +81,10 @@ test('after a force-quit mid-run and a restart, the run left "started" in saved 
       await c.api.workspaces.refresh();
       return c.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.path === tree || w.name === 'force-quit-left').id;
     }`, tree);
-    // Its saved history, as a force-quit leaves it: the run started and nothing after (the demo keeps it beside its projects).
-    const history = path.join(path.dirname(path.dirname(root)), 'home', 'history');
+    // Its saved history, as a force-quit leaves it: the run started and nothing after (where the daemon says it keeps it).
+    const home = (JSON.parse(readFileSync(path.join(process.env.KLAUD_HOME!, 'daemon.json'), 'utf8')) as { workspaces?: string }).workspaces;
+    expect(home, 'daemon.json names its workspaces folder').toBeTruthy();
+    const history = path.join(home!, 'history');
     mkdirSync(history, { recursive: true });
     const at = Date.now() - 60_000;
     const run = { id: 'quit-1', type: 'agent', channel: `ws:${id}`, requestId: 'quit-req', owner: selfId, ownerName: 'you', requesterName: 'you', requester: selfId, prompt: 'deep dive, take your time', status: 'started', text: '', steps: ['Read src/server.ts'], subagents: [], ts: at, lastAt: at };

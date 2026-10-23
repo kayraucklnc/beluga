@@ -18,7 +18,7 @@ import type { StepPage, StepRecord } from '../shared/steps.js';
 import { READS_AFTER_STEP, STEERED_IN } from '../shared/claude-notices.js';
 import { span } from '../shared/clock.js';
 import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
-import { e2eLockedIn, mayLeaveProcesses } from '../workspaces/test-procs.js';
+import { askedToKeep, e2eLockedIn, keepsRunning, mayLeaveProcesses } from '../workspaces/test-procs.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -39,7 +39,7 @@ export interface AgentHostDeps {
   /** Your environment variables for a run there (see env-vars.ts). */
   readonly envFor?: (channel: string, dir?: string) => Record<string, string>;
   /** Stop the test runs a worktree's Claude started and left behind (see workspaces/test-procs.ts). */
-  readonly stopTests?: (dir: string) => Promise<unknown>;
+  readonly stopTests?: (dir: string, opts?: { readonly keep?: boolean }) => Promise<unknown>;
   /** A short worktree name for a task (a small model names it). */
   readonly nameTask?: (prompt: string) => Promise<string>;
   /** Where the details of Claude's steps are kept (default: in memory only). */
@@ -877,6 +877,8 @@ export class AgentHost {
     // A worktree's run: what it starts carries KLAUD_WORKTREE, so test runs it leaves behind can be stopped.
     const worktree = place && place.autoEdit && !place.askOnly ? place.cwd : undefined;
     const tag: Record<string, string> = worktree ? { KLAUD_WORKTREE: worktree } : {};
+    /** What this run kept running on purpose (see keepsRunning), noted in the conversation when it ends. */
+    const kept = new Set<string>();
     this.currentChannel = body.channel;
     this.emitAgent(body.requestId, from, 'started', '', body.channel);
     try {
@@ -939,7 +941,10 @@ export class AgentHost {
           this.emitAgent(body.requestId, from, kind, text, body.channel);
         },
         onStep: (record) => {
-          if (worktree && record.tool === 'Bash' && mayLeaveProcesses(record.input?.command, record.input?.run_in_background)) this.testRuns.add(worktree);
+          if (worktree && record.tool === 'Bash' && mayLeaveProcesses(record.input?.command, record.input?.run_in_background)) {
+            this.testRuns.add(worktree);
+            if (keepsRunning(record.input?.command)) kept.add(String(record.input?.command).slice(0, 120));
+          }
           this.steps.put(runKey(body.requestId), record);
         },
         // Another Claude asked: give it the answer now rather than after every background agent.
@@ -996,7 +1001,13 @@ export class AgentHost {
       this.steps.flush(runKey(body.requestId));
       // Claude stopped: no test run (an e2e's daemon, vite, browser) it started outlives it.
       // Only when it may have started any (ps over every process is slow on a busy Mac).
-      if (worktree && !lane.current && (this.testRuns.delete(worktree) || e2eLockedIn(worktree))) void this.deps.stopTests?.(worktree).catch(() => undefined);
+      // Except what was kept on purpose: a command marked KLAUD_KEEP=1 (stopTests spares it), or all of it when you asked (kept from then on).
+      if (worktree && !lane.current && (this.testRuns.delete(worktree) || e2eLockedIn(worktree))) {
+        const keep = askedToKeep(body.prompt);
+        if (keep) kept.add('what it started (you asked to keep it running)');
+        void this.deps.stopTests?.(worktree, keep ? { keep } : undefined).catch(() => undefined);
+      }
+      if (kept.size) this.store.dispatch({ type: 'system', channel: body.channel, level: 'info', text: `Left running on purpose: ${[...kept].join('; ')}. Archiving the worktree stops it.` });
       if (!lane.current) this.wakeIdle(body.channel);
       void this.deps.refreshUsage();
       // Only this folder's git status: a run ending elsewhere changed nothing in the others.
