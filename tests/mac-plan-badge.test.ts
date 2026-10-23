@@ -57,14 +57,13 @@ describe('the plan row’s badge', () => {
 });
 
 describe('opening the plan clears it', () => {
-  it('its page shows its conversation and its tasks’: their news is seen (only its own is in front)', () => {
+  it('its page shows its own conversation: that count clears, its tasks keep their marks', () => {
     const s = apply(busy(), said('ws:home'));
-    expect(attentionOf({ ...initialScreen, view: { kind: 'plan', id: 'pl' } }, s)).toEqual({ shown: ['ws:home', 'ws:t1', 'ws:t2'], visible: ['ws:home'], files: false, front: true });
+    expect(attentionOf({ ...initialScreen, view: { kind: 'plan', id: 'pl' } }, s)).toEqual({ shown: ['ws:home'], visible: ['ws:home'], files: false, front: true });
     const opened = apply(s, { type: 'view', view: { kind: 'plan', id: 'pl' } });
-    expect(planRowSignal(opened, plan)).toMatchObject({ unread: 0, inside: false });
-    expect(planSignal(opened, plan).unread).toBe(0);
-    // While it's open, what its tasks say isn't counted either.
-    expect(planRowSignal(apply(opened, said('ws:t1'), said('ws:home')), plan)).toMatchObject({ unread: 0, inside: false });
+    expect(planRowSignal(opened, plan)).toMatchObject({ unread: 0, inside: true });
+    // Each task's chat still has news to show inside the plan.
+    expect(planSignal(opened, plan).unread).toBe(120);
   });
 
   it('a plan that isn’t there shows no conversation', () => {

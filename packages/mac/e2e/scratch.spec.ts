@@ -63,7 +63,7 @@ test('Scratch: .beluga/scratch/ live, newest first, followed by the preview', as
 
 const SHOTS = path.resolve(import.meta.dirname, '../../../.context/shots');
 
-test('Scratch: drawn in outline before anything lands, moving while Claude works; .context/ files show too', async ({ page }) => {
+test('Scratch: a calm empty state before anything lands, saying when Claude works; .context/ files show too', async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page).getByRole('button', { name: 'bob-api' }).first()).toBeVisible();
   const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
@@ -73,13 +73,13 @@ test('Scratch: drawn in outline before anything lands, moving while Claude works
   await page.keyboard.press('Meta+Alt+6');
   await expect(tab(page, 'Scratch')).toHaveAttribute('aria-selected', 'true');
 
-  // Nothing yet, Claude idle: the outline, still, and both folders named.
-  await expect(panel(page).getByText('Nothing saved yet')).toBeVisible();
+  // Nothing yet, Claude idle: a calm empty state (not a loading outline), and both folders named.
+  await expect(panel(page).getByText('Nothing in scratch yet')).toBeVisible();
   await expect(panel(page)).toContainText('.beluga/scratch/');
   await expect(panel(page)).toContainText('.context/');
   await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-idle.png') });
 
-  // Claude starts: the outline moves and says so.
+  // Claude starts: the empty state says so.
   await composer(page).fill('Take a screenshot of the login page');
   await page.keyboard.press('Enter');
   await expect(panel(page).getByRole('status').filter({ hasText: 'Claude is working' })).toBeVisible();

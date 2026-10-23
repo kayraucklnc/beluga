@@ -1,6 +1,5 @@
 import type { Intent } from '../core/intents.js';
 import { planById } from '../core/plans/model.js';
-import { planConversations } from '../core/plans/owner.js';
 import {
   type Action,
   type AppState,
@@ -129,12 +128,11 @@ export function screenOf(state: AppState): ScreenState {
 /** What this screen is looking at, for unread counts and notifications. */
 export function attentionOf(screen: ScreenState, domain?: Pick<DomainState, 'plans' | 'board'>): Attention {
   const view = screen.view;
-  // A plan's page shows its conversation and how each of its tasks is doing: what's new there is seen.
-  // Only its own conversation is in front (its tasks' Claudes asking still notify).
+  // A plan's page shows its own conversation: what's new there is seen. Its tasks' chats keep their
+  // marks on the page (each one says which task has news) until you open them.
   const plan = view.kind === 'plan' && domain ? planById(domain.plans, view.id) : undefined;
   if (plan) {
-    const shown = [...new Set([plan.home, ...planConversations(domain!, plan.id).map((ws) => `ws:${ws}`)])];
-    return { shown, visible: screen.away ? [] : [plan.home], files: false, front: !screen.away };
+    return { shown: [plan.home], visible: screen.away ? [] : [plan.home], files: false, front: !screen.away };
   }
   const shown = shownChannel(view);
   // Overview, Search, Terminal… show no conversation: nothing is visible there, but the window is in front.
