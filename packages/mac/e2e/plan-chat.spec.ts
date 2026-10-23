@@ -5,8 +5,9 @@ import { expect, test, type Locator, type Page } from './fixtures.js';
 
 /**
  * The plan's chat (KLD-64): every message sent there reaches its Claude, right after the page
- * opens and while Claude is busy (queued, then run); images go with them as in any chat; and the
- * narrow column never scrolls sideways, whatever the conversation holds.
+ * opens and while Claude is busy (queued with ⌥↩, then run; Return sends it now); Stop ends its
+ * turn (BLG-10); images go with them as in any chat; and the narrow column never scrolls
+ * sideways, whatever the conversation holds.
  */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
@@ -45,22 +46,43 @@ const pasteText = (el: Locator, text: string) =>
 
 test('messages sent right after the page opens and while Claude is busy all reach it', async ({ page }) => {
   await newPlan(page, 'Nightly export of invoices to the data warehouse');
-  // At once, while Claude is still writing the first draft: it waits its turn, then runs.
+  // At once, while Claude is still writing the first draft: queued (⌥↩), it waits its turn, then runs.
   await box(page).fill('add a retry budget');
-  await box(page).press('Enter');
+  await box(page).press('Alt+Enter');
   await expect(box(page)).toHaveValue('');
   await expect(page.getByRole('button', { name: 'Approve Plan' }).first()).toBeVisible({ timeout: 30_000 });
-  // Two in a row: the second is sent while Claude works on the first, and queues behind it.
+  await expect(chat(page)).toContainText('Added add a retry budget', { timeout: 30_000 });
+  // Two in a row: the second is sent while Claude works on the first, queued (⌥↩) behind it.
   await box(page).fill('add an audit log');
   await box(page).press('Enter');
   await box(page).fill('add a dry run mode');
-  await box(page).press('Enter');
+  await box(page).press('Alt+Enter');
   // Each was said in the chat, and each reached Claude (it changed the plan for each).
   for (const asked of ['add a retry budget', 'add an audit log', 'add a dry run mode']) {
     await expect(chat(page)).toContainText(`Added ${asked}`, { timeout: 30_000 });
   }
   await expect(chat(page).getByRole('alert')).toHaveCount(0);
   await page.screenshot({ path: path.join(SCRATCH, '10-plan-chat-delivered.png') });
+});
+
+test('while Claude works the box still sends, and Stop ends its turn (BLG-10)', async ({ page }) => {
+  await newPlan(page, 'A plan to stop halfway');
+  await expect(page.getByRole('button', { name: 'Approve Plan' }).first()).toBeVisible({ timeout: 30_000 });
+  await box(page).fill('add a retry budget');
+  await box(page).press('Enter');
+  // Claude works on it: the box says it reaches Claude now, and Stop is there.
+  const stop = chat(page).getByRole('button', { name: 'Stop Claude' });
+  await expect(stop).toBeVisible({ timeout: 10_000 });
+  await expect(box(page)).toHaveAttribute('placeholder', /tell it now, or stop it/);
+  await expect(chat(page).getByRole('button', { name: 'Send Now' })).toBeVisible();
+  await stop.click();
+  await expect(chat(page)).toContainText('Stopped by you', { timeout: 15_000 });
+  await expect(stop).toHaveCount(0);
+  // And it answers the next message as usual.
+  await box(page).fill('add an audit log');
+  await box(page).press('Enter');
+  await expect(chat(page)).toContainText('Added add an audit log', { timeout: 30_000 });
+  await page.screenshot({ path: path.join(SCRATCH, '13-plan-chat-stopped.png') });
 });
 
 test('the plan chat never scrolls sideways: long paths, code and tables wrap or scroll in their own block', async ({ page }) => {

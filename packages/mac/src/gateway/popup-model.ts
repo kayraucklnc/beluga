@@ -122,7 +122,7 @@ export interface PopupNeed {
   readonly approval: string;
   readonly task: '';
   readonly tag: 'question' | 'decision' | 'plan' | 'approval' | 'milestone';
-  /** "Claude asks in add-auth", "Card checkout · KLD-12: your call". */
+  /** Where: "add-auth", "Card checkout · KLD-12" (the card's lead says what: "Claude asks you", "Your call"). */
   readonly title: string;
   /** The question, the command, what's ready. */
   readonly body: string;
@@ -169,7 +169,7 @@ export function popupNeeds(state: NeedState, opts: { readonly quiet: boolean; re
     if (showing(q.channel)) continue;
     const where = placeOf(state, q.channel);
     if (q.question.kind === 'plan') {
-      out.push({ need: true, approval: `${NEED}q:${q.qid}`, task: '', tag: 'plan', title: `Claude has a plan in ${where}`, body: 'Approve it, or say what to change', channel: q.channel });
+      out.push({ need: true, approval: `${NEED}q:${q.qid}`, task: '', tag: 'plan', title: where, body: 'Approve it, or say what to change', channel: q.channel });
       continue;
     }
     const first = q.question.questions[0];
@@ -179,7 +179,7 @@ export function popupNeeds(state: NeedState, opts: { readonly quiet: boolean; re
       approval: `${NEED}q:${q.qid}`,
       task: '',
       tag: decision ? 'decision' : 'question',
-      title: decision ? `${where}: your call` : `Claude asks in ${where}`,
+      title: where,
       body: firstLine(first?.question ?? ''),
       ...(first?.options.length ? { options: first.options.map((o) => oneLine(o.label, 40)).slice(0, 4) } : {}),
       channel: q.channel,
@@ -188,7 +188,7 @@ export function popupNeeds(state: NeedState, opts: { readonly quiet: boolean; re
   const tasks = state.gateway.tasks;
   for (const a of [...state.approvals].reverse()) {
     if (friendsRequest(a, tasks) || showing(a.channel)) continue;
-    out.push({ need: true, approval: `${NEED}a:${a.id}`, task: '', tag: 'approval', title: a.channel ? `Approval needed in ${placeOf(state, a.channel)}` : 'Approval needed', body: firstLine(a.detail ? `${a.title}: ${a.detail}` : a.title), ...(a.channel ? { channel: a.channel } : {}) });
+    out.push({ need: true, approval: `${NEED}a:${a.id}`, task: '', tag: 'approval', title: placeOf(state, a.channel), body: firstLine(a.detail ? `${a.title}: ${a.detail}` : a.title), ...(a.channel ? { channel: a.channel } : {}) });
   }
   for (const plan of state.plans.plans) {
     if (plan.status !== 'active' || !plan.body || plan.paused || showing(plan.home, plan.id)) continue;
@@ -200,7 +200,7 @@ export function popupNeeds(state: NeedState, opts: { readonly quiet: boolean; re
       approval: `${NEED}pass:${plan.id}:${m.milestone.id}`,
       task: '',
       tag: 'milestone',
-      title: `${planTitle(plan)}: “${oneLine(m.milestone.title, 60)}” is ready for you`,
+      title: `${planTitle(plan)}: “${oneLine(m.milestone.title, 60)}”`,
       body: m.run.check?.verdict === 'pass' ? 'Claude checked it: pass it to go on' : 'Its tasks are finished: pass it to go on',
       channel: plan.home,
       plan: plan.id,
@@ -236,7 +236,7 @@ export function previewItems(now: number): PopupItem[] {
       approval: `${PREVIEW_PREFIX}need`,
       task: '',
       tag: 'decision',
-      title: 'Card checkout · KLD-12: your call',
+      title: 'Card checkout · KLD-12',
       body: 'Which payment providers should checkout offer at launch?',
       options: ['Stripe', 'Apple Pay', 'PayPal'],
     },

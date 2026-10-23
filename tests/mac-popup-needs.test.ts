@@ -54,9 +54,9 @@ describe('what your Claude needs, on the pop-up', () => {
     t.store.dispatch({ type: 'approval_add', approval: { id: 'a1', kind: 'tool', title: 'Your Claude wants to use Bash', detail: 'rm -rf build', channel: 'ws:w9' } });
     const needs = popupNeeds(t.store.getState(), { quiet: false });
     expect(needs.map((n) => [n.tag, n.title])).toEqual([
-      ['plan', 'Claude has a plan in add-auth'],
-      ['question', 'Claude asks in add-auth'],
-      ['approval', 'Approval needed in add-auth'],
+      ['plan', 'add-auth'],
+      ['question', 'add-auth'],
+      ['approval', 'add-auth'],
     ]);
     const q = needs.find((n) => n.tag === 'question')!;
     expect(q.body).toBe('Which database?');
@@ -99,14 +99,14 @@ describe('what your Claude needs, on the pop-up', () => {
     await tick(5);
     t.store.dispatch({ type: 'question_add', question: { qid: decisionQid(plan.id, 'keys'), requestId: 'x', owner: 'p-me', channel: plan.home, question: question('**Live keys**', ['Done', 'Not needed']), picked: {} } });
     const [decision] = popupNeeds(t.store.getState(), { quiet: false });
-    expect(decision).toMatchObject({ tag: 'decision', title: 'Payments: your call', body: 'Live keys', channel: plan.home });
+    expect(decision).toMatchObject({ tag: 'decision', title: 'Payments', body: 'Live keys', channel: plan.home });
     // Done on the board: the milestone waits for you to pass it.
     const issue = t.plans.need(plan.id).body!.milestones[0]!.tasks[0]!.issueId!;
     t.board.update(issue, { status: 'done' }, t.me);
     t.store.dispatch({ type: 'question_remove', qid: decisionQid(plan.id, 'keys') });
     expect(planView(t.plans.need(plan.id), t.store.getState().board).next.kind).toBe('pass');
     const [pass] = popupNeeds(t.store.getState(), { quiet: false });
-    expect(pass).toMatchObject({ tag: 'milestone', title: 'Payments: “Set up” is ready for you', plan: plan.id, channel: plan.home });
+    expect(pass).toMatchObject({ tag: 'milestone', title: 'Payments: “Set up”', plan: plan.id, channel: plan.home });
     // Looking at the plan already: no card.
     expect(popupNeeds(t.store.getState(), { quiet: false, showing: (_c, p) => p === plan.id })).toEqual([]);
   });
