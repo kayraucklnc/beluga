@@ -32,9 +32,14 @@ function setup(draftTask?: (text: string, ctx: DraftContext) => Promise<TaskDraf
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 describe('the draft out of what the model says', () => {
-  it('reads the JSON object, keeps only the board’s own labels, and drops a null priority', () => {
+  it('reads the JSON object, keeps the board’s own labels in its spelling, and drops a null priority', () => {
     const raw = 'Here it is:\n{"title": "Rate-limit the login endpoint", "goal": "Stop brute force.", "acceptance": ["429 after 10 tries"], "labels": ["Security", "brand-new"], "priority": null}';
-    expect(parseTaskDraft(raw, ['security', 'api'])).toEqual({ title: 'Rate-limit the login endpoint', goal: 'Stop brute force.', acceptance: ['429 after 10 tries'], labels: ['security'] });
+    expect(parseTaskDraft(raw, ['security', 'api'])).toEqual({ title: 'Rate-limit the login endpoint', goal: 'Stop brute force.', acceptance: ['429 after 10 tries'], labels: ['security', 'brand-new'] });
+  });
+
+  it('a label board gets new labels: two at most, short and lowercase', () => {
+    const raw = '{"title": "x", "goal": "y", "labels": ["Dark Mode", "mac", "chat", "This is not a label at all, it is a sentence"]}';
+    expect(parseTaskDraft(raw, [])!.labels).toEqual(['dark-mode', 'mac']);
   });
 
   it('nothing usable: no draft', () => {

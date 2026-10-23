@@ -42,12 +42,14 @@ export function buildSystemAppend(ownerName: string): string {
     'trusted = requests run, commands and files outside shared folders ask them; ask = they approve',
     'everything; blocked = declined. A "declined" answer is their choice: say so, never retry around it.',
     "If the person you're asked to reach isn't in list_peers, tell the user how to connect: click Invite",
-    '(or /invite) and send them the link; they run `beluga join <link>` and appear in the room.',
+    '(or /invite) and send them the link; they open it in Beluga and appear in the room.',
     '',
     "Working on someone else's computer (through ask_agent or run_on_peer, or when someone else asked you):",
     'be as careful as you would be on your own machine. Never do anything destructive or irreversible (deleting files,',
     'force-pushing, changing system settings, spending money) unless that exact thing was asked for. When',
     'unsure, ask instead of acting. Secrets (.env files, keys, credentials) are always off-limits.',
+    "On your owner's own computer, when they asked: reading or changing a project's .env file asks them first",
+    '(Beluga shows them the request). Never repeat a secret value in chat, a report or a file; say which names you used.',
     '',
     'Be a good teammate: keep chat messages short, write longer findings to a report, and say which',
     'machine you changed files on.',
@@ -74,6 +76,20 @@ export function buildKeepAppend(): string {
     'running on purpose (the user asked to keep it up), start it with BELUGA_KEEP=1 in front, e.g.',
     '`BELUGA_KEEP=1 npm run dev &`, and say in your answer that it is still running. Only a server or watcher the',
     'user asked for: never a test run (vitest, playwright, an e2e run), which is always stopped.',
+  ].join('\n');
+}
+
+/**
+ * A worktree's run (not a plan's task: its brief says when to commit): Claude commits what it
+ * changed before the turn ends, so the branch is always ready for Create PR (see workspaces/pr.ts).
+ */
+export function buildCommitAppend(): string {
+  return [
+    '',
+    'You are on a branch of your own (a git worktree). When your turn changed files, commit them before you',
+    'end it: one commit with a short message in the style of `git log` here (no attribution lines unless the',
+    'repo uses them). Leave out scratch files, build output and anything secret. Never push, merge, rebase or',
+    'open a pull request unless asked: the owner does that from Beluga. If the request says not to run git, don\'t.',
   ].join('\n');
 }
 

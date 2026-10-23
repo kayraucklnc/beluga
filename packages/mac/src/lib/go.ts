@@ -5,7 +5,6 @@ import { type TopTab, topTabs } from '@beluga/ui/workspace-models.js';
  * The Mac app's places: Overview, Tasks and Chat (the sidebar's top), then Search, Usage,
  * Terminal and Shared files (the toolbar, the sidebar's top icons, the right panel). ⌥1…7, the
  * Go menu, ⌃Tab and the palette follow this order; each keeps its key even when it's absent.
- * (The terminal app keeps its own tab order; the places and what they show are the same.)
  */
 
 export type PlaceKind = TopTab['kind'] | 'tasks';

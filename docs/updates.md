@@ -1,14 +1,14 @@
 # Beluga for Mac updates
 
-Beluga for Mac updates itself from GitHub Releases. The terminal app doesn't use this; it updates with `beluga update` or npm.
+Beluga for Mac updates itself from GitHub Releases, and its engine (the daemon it bundles) comes with it.
 
 ## Klaud is now Beluga
 
-Copies installed as Klaud update to Beluga like any other version: the old release URL redirects to `kayraucklnc/beluga`, so they find the Beluga build on their own. After the update, `~/.klaud` moves to `~/.beluga` (with a link back), old `klaud://` links still open, and the terminal app's `klaud` command still works.
+Copies installed as Klaud update to Beluga like any other version: the old release URL redirects to `kayraucklnc/beluga`, so they find the Beluga build on their own. After the update, `~/.klaud` moves to `~/.beluga` (with a link back), and old `klaud://` links still open.
 
 ## What you see
 
-- **When it looks.** Beluga checks for a new version at launch, but only if the last check was more than 20 hours ago. While it runs, it checks once a day. After the Mac wakes, it checks if a check is overdue. A failed check is retried after an hour, so a normal launch makes no network request. You can also check by hand: **Beluga › Check for Updates…**, or **Check Now** in Settings › General › Updates (also in Settings › About).
+- **When it looks.** Beluga checks for a new version at launch (unless it checked less than an hour ago) and every 4 hours while it runs. After the Mac wakes, it checks if a check is overdue. A failed check is retried after an hour. The times are in `update_rules.rs`. You can also check by hand: **Beluga › Check for Updates…**, or **Check Now** in Settings › General › Updates (also in Settings › About).
 - **What happens when it finds one.** The update downloads in the background and its signature is verified. Then a small pill appears at the bottom of the sidebar, "Beluga 0.5 is ready". If the sidebar is hidden, the pill sits in the window's corner. Clicking the pill opens a short sheet with the release notes and three choices:
   - **Restart Now** installs the update and reopens Beluga where you were (the same workspace, project or place).
   - **Update When Idle** installs once all of these are true:
@@ -19,7 +19,11 @@ Copies installed as Klaud update to Beluga like any other version: the old relea
 
     Beluga then reopens quietly. If its window wasn't in front, it stays hidden in the menu bar and doesn't take focus.
   - **Later** installs the update the next time you quit Beluga.
-- **The Updates setting** (Settings › General): *Automatically when idle*, *Ask me* (the default), or *Off*. *Off* means Beluga checks only when you ask. The sheet's "Always update when I'm idle" box switches to *Automatically when idle*.
+- **The Updates settings** (Settings › General › Updates) are two switches:
+  - **Update automatically** (off by default): a downloaded update installs by itself once you're idle (as with *Update When Idle* above), and Beluga reopens in the background. When it's off, you get the pill and choose.
+  - **Check for updates** (on by default): when it's off, Beluga checks only when you click **Check Now**. Turning it off turns Update automatically off too, and turning Update automatically on turns it back on.
+
+  Together they are the shell's `mode` in `updates.json`: `idle` (both on), `ask` (only checking) or `off`. The sheet's "Update automatically from now on" box is the first switch.
 - **Quitting.** A downloaded update always installs when you quit, unless updates are *Off*.
 - **After an update.** The pill says "Updated to 0.5 · What's new" once.
 
@@ -28,7 +32,6 @@ Copies installed as Klaud update to Beluga like any other version: the old relea
 Installing restarts Beluga's engine, the daemon that the Mac app bundles. The new app runs its own daemon:
 
 - On launch, a kept-alive daemon (one that a Mac app started) with a different version is stopped and replaced.
-- A daemon the terminal app started is left alone.
 
 **Kept** (on disk in `~/.beluga`):
 
@@ -75,15 +78,6 @@ The script ([scripts/release-mac.mjs](../scripts/release-mac.mjs)) does the foll
 4. Creates the release, or updates it if it exists, and marks it latest.
 
 The app's version is `version` in [packages/mac/src-tauri/tauri.conf.json](../packages/mac/src-tauri/tauri.conf.json); the window reads it from there. `packages/mac/package.json` must match, and a test checks that.
-
-**The terminal app on npm** (`beluga-code`, tags `v<version>`), from a clean main, logged in to npm (`npm login`, once):
-
-```sh
-npm run release:npm -- --dry-run   # typecheck, test, npm publish --dry-run
-npm run release:npm                # publish, tag v<version>, push
-```
-
-If the version in package.json is already on npm, [scripts/release-npm.mjs](../scripts/release-npm.mjs) bumps the patch number and commits that. For a minor or major release, set the version in package.json first.
 
 ## The signing key
 

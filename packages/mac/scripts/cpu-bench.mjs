@@ -43,7 +43,7 @@ process.on('SIGINT', () => process.exit(1));
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const env = { ...process.env, BELUGA_HOME: home, KLAUD_HOME: home };
-start('npx', ['tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'], { cwd: repo, env: { ...env, BELUGA_DEMO_PACE: flag('pace', '10'), BELUGA_ALLOW_ORIGINS: `http://localhost:${port}` } });
+start('npx', ['tsx', 'src/cli.ts', 'daemon', '--keep-alive', 'demo'], { cwd: repo, env: { ...env, BELUGA_DEMO_PACE: flag('pace', '10'), BELUGA_ALLOW_ORIGINS: `http://localhost:${port}` } });
 for (let i = 0; i < 120 && !existsSync(path.join(home, 'daemon.json')); i++) await wait(250);
 start('npx', ['vite', '--port', String(port), '--strictPort'], { cwd: path.resolve(import.meta.dirname, '..'), env });
 for (let i = 0; i < 120; i++) {

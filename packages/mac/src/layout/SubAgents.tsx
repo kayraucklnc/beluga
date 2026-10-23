@@ -9,7 +9,8 @@ import { type Actions, useActions } from '../lib/actions.js';
 import { toast, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { showUndo } from '../lib/undo-toast.js';
 import { agentElapsed, agentLabel, openActivity, typeLabel } from '../claude-code/cc-model.js';
-import { type Residue, type SubAgent, agentResidue, agentTitle, isAgentWorktree, modelLabel, subAgentsUnder } from '../claude-code/subagents-model.js';
+import { type Residue, type SubAgent, agentResidue, agentTitle, cappedAgents, isAgentWorktree, modelLabel, subAgentsSummary, subAgentsUnder } from '../claude-code/subagents-model.js';
+import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { useNow } from '../chat/Items.js';
 import { agoText } from '../views/project/home-model.js';
 import { Row } from './sidebar-parts.js';
@@ -17,8 +18,10 @@ import s from './subagents.module.css';
 
 /**
  * Sub-agents in the sidebar: Claude's helpers, not your work. They sit under the conversation
- * that started them (a small robot, quieter than a worktree), running ones first; a few show,
- * the rest behind "N more". Their own worktrees aren't listed as worktrees: they open as the
+ * that started them (a small robot, quieter than a worktree), in the order they started (newest
+ * last: a row never moves when its agent finishes); the newest few show, earlier ones behind
+ * "N earlier", and the whole group folds away under one "4 sub-agents · 1 running" row
+ * (remembered per conversation). Their own worktrees aren't listed as worktrees: they open as the
  * agent. A sub-agent shows only under what started it, and only while Beluga follows it: old
  * agent worktrees with nothing to tie them to aren't listed (the Worktrees page has them). A
  * project's main folder has no row of its own: its sub-agents gather behind one "Agents" row.
@@ -49,8 +52,8 @@ function useSelectedAgent(): { ws?: string; agent?: string } {
 }
 
 function AgentMark({ status }: { status: SubAgent['agent']['status'] }) {
-  if (status === 'running') return <Dot tone="claude" live />;
-  return <Icon name={status === 'failed' ? 'x' : status === 'finished' ? 'check' : status === 'idle' ? 'clock' : 'stop'} size={10} className={cx(s.mark, status === 'failed' && s.markFailed)} />;
+  // One width running or done: the row's name doesn't shift when its agent finishes.
+  return <span className={s.markBox}>{status === 'running' ? <Dot tone="subagent" live /> : <Icon name={status === 'failed' ? 'x' : status === 'finished' ? 'check' : status === 'idle' ? 'clock' : 'stop'} size={10} className={cx(s.mark, status === 'failed' && s.markFailed)} />}</span>;
 }
 
 function AgentRow({ s: sub, indent, worktree, residue, menu }: { s: SubAgent; indent: number; worktree?: Workspace; residue?: Residue; menu?: readonly ActionItem[] }) {
@@ -89,29 +92,51 @@ export function SubAgentRows({ ws, indent }: { ws: Workspace; indent: number }) 
   const projects = useApp((st) => st.projects);
   const key = `subagents-more:${ws.id}`;
   const expanded = useUi((u) => u.collapsed.includes(key));
+  // The whole group folded away (kept across launches, per conversation).
+  const prefs = usePrefs();
+  const foldKey = `subagents:${ws.id}`;
   const list = useMemo(() => subAgentsUnder(sessions, ws.id, origins), [sessions, ws.id, origins]);
   const selected = useSelectedAgent();
   if (!list.length) return null;
+  // One sub-agent needs no group row of its own.
+  const grouped = list.length > 1;
+  const folded = grouped && prefs.folded.includes(foldKey);
   const worktreeOf = (sub: SubAgent): Workspace | undefined => (sub.agent.worktree ? projects.flatMap((p) => p.workspaces).find((w) => w.path === sub.agent.worktree!.path) : undefined);
-  // The one you're looking at always shows, even when it's among the tucked-away ones.
+  // The one you're looking at always shows when the list is capped; folding hides them all.
   const isOn = (sub: SubAgent): boolean => selected.agent === sub.agent.id || (selected.ws !== undefined && worktreeOf(sub)?.id === selected.ws);
-  const shown = expanded ? list : list.filter((sub, i) => i < SHOWN || isOn(sub));
-  const hidden = list.length - shown.length;
+  // The newest few, in start order: an agent finishing never moves or hides a row (BLG-21).
+  const { shown, hidden } = folded ? { shown: [], hidden: 0 } : expanded ? { shown: list, hidden: 0 } : cappedAgents(list, SHOWN, isOn);
+  const running = list.filter((sub) => sub.agent.status === 'running').length;
+  const summary = subAgentsSummary(list);
   return (
     <div role="group" aria-label={`Sub-agents of ${ws.name}`}>
-      {shown.map((sub) => {
-        const wt = worktreeOf(sub);
-        return <AgentRow key={`${sub.session.id}:${sub.agent.id}`} s={sub} indent={indent} {...(wt ? { worktree: wt } : {})} />;
-      })}
-      {hidden > 0 || expanded ? (
+      {grouped ? (
+        <Row
+          indent={indent}
+          className={cx(s.row, s.group)}
+          aria-expanded={!folded}
+          aria-label={`${summary} of ${ws.name}`}
+          icon={<Icon name="chevronRight" size={9} className={cx(s.disclosure, !folded && s.disclosureOpen)} />}
+          label={<span className={s.label}>{summary}</span>}
+          detail={folded ? `Show the sub-agents ${ws.name} started` : `Fold away the sub-agents ${ws.name} started`}
+          onClick={() => setPrefs({ folded: folded ? prefs.folded.filter((f) => f !== foldKey) : [...prefs.folded, foldKey] })}
+          trailing={folded && running ? <Dot tone="subagent" live /> : null}
+        />
+      ) : null}
+      {/* The tucked-away ones are the earlier ones: the toggle sits above the rows, where they unfold. */}
+      {!folded && (hidden > 0 || expanded) ? (
         <Row
           indent={indent}
           className={cx(s.row, s.more)}
           icon={<span className={s.moreDot} />}
-          label={expanded && hidden === 0 ? 'Show Fewer' : `${hidden} more sub-agent${hidden === 1 ? '' : 's'}`}
+          label={expanded && hidden === 0 ? 'Show Fewer' : `${hidden} earlier sub-agent${hidden === 1 ? '' : 's'}`}
           onClick={() => actions.run({ type: 'toggle_fold', key })}
         />
       ) : null}
+      {shown.map((sub) => {
+        const wt = worktreeOf(sub);
+        return <AgentRow key={`${sub.session.id}:${sub.agent.id}`} s={sub} indent={indent} {...(wt ? { worktree: wt } : {})} />;
+      })}
     </div>
   );
 }
@@ -182,7 +207,7 @@ export function ProjectAgents({ p, ws, indent }: { p: Project; ws: Workspace; in
         }
         detail={tip}
         onClick={() => actions.run({ type: 'toggle_fold', key })}
-        trailing={running ? <Dot tone="claude" live /> : <Icon name="chevronRight" size={9} className={cx(s.disclosure, open && s.disclosureOpen)} />}
+        trailing={running ? <Dot tone="subagent" live /> : <Icon name="chevronRight" size={9} className={cx(s.disclosure, open && s.disclosureOpen)} />}
       />
       {shown.map((r) => (
         <AgentRow key={`${r.sub.session.id}:${r.sub.agent.id}`} s={r.sub} indent={indent + 1} residue={r.residue} menu={menuOf(r)} {...(r.wt ? { worktree: r.wt } : {})} />

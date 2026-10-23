@@ -6,39 +6,6 @@ import { type ShareConfig, parseShareSpec } from './core/shares.js';
 import type { Policy } from './core/store.js';
 import type { TunnelKind } from './net/tunnel.js';
 
-export const USAGE = `Beluga — a multiplayer terminal for you, your friends, and everyone's Claude
-
-Usage:
-  beluga                           start a room with your saved settings (same as: beluga host)
-  beluga host [options]            start a room and get an invite link
-  beluga join [invite] [options]   join a friend's room (reads the invite from your clipboard if omitted)
-  beluga demo                      try everything alone with a pretend friend and simulated Claude
-  beluga view <image> [--ascii]    show a PNG, JPEG, GIF or SVG right in the terminal
-  beluga update [--check]          get the latest Beluga (or just check whether you have it)
-  beluga daemon [--keep-alive]     run Beluga in the background for other windows (the Mac app)
-                                   BELUGA_DAEMON=1 beluga attaches this window to it (or starts it)
-
-Options:
-  -n, --name <name>        display name (default: your OS username)
-  -s, --share <spec>       share a folder with the room: [name=]path[:rw]  (repeatable)
-                           :rw lets your claude edit there without asking
-      --invite             open remote access and copy an invite right away
-                           (otherwise Beluga starts solo; click Invite when you want company)
-      --no-agent           don't offer your claude to the room
-      --policy <p>         requests from friends for your claude: ask | auto | deny (default ask)
-      --model <id>         model for your claude (default: your Claude Code default)
-      --no-mouse           keyboard only (keeps your terminal's native text selection)
-  host only:
-      --tunnel <kind>      auto | p2p | cloudflared | ngrok | none (default auto: direct peer-to-peer, Cloudflare as fallback)
-      --lan                listen on all interfaces so LAN peers can dial ws://<your-ip>:<port>
-  -p, --port <port>        hub port (default random)
-  -h, --help               show this help
-  -v, --version            show the installed version
-
-Your name, theme and other choices are saved in ~/.beluga/settings.json.
-Change them any time inside Beluga with /settings.
-`;
-
 export interface Config {
   readonly mode: 'host' | 'join' | 'help' | 'demo';
   readonly invite?: string;
@@ -50,7 +17,7 @@ export interface Config {
   readonly tunnel: TunnelKind;
   readonly lan: boolean;
   readonly port: number;
-  /** Warnings to show in the room once the TUI starts. */
+  /** Warnings to show in the room once Beluga starts. */
   readonly notes: readonly string[];
   /** True when --policy was given, so the welcome screen can be skipped. */
   readonly policyChosen: boolean;
@@ -102,7 +69,7 @@ export function parseConfig(
   const [command, invite] = positionals;
   // Bare `beluga` means "host a room with my usual settings".
   const mode = values.help || command === 'help' ? 'help' : (command ?? 'host');
-  if (mode !== 'help' && mode !== 'host' && mode !== 'join' && mode !== 'demo') throw new Error(`Unknown command "${command}". Try beluga --help`);
+  if (mode !== 'help' && mode !== 'host' && mode !== 'join' && mode !== 'demo') throw new Error(`Unknown command "${command}"`);
 
   const tunnel = (values.tunnel ?? saved.tunnel) as TunnelKind;
   if (!TUNNELS.includes(tunnel)) throw new Error(`--tunnel must be one of ${TUNNELS.join(', ')}`);

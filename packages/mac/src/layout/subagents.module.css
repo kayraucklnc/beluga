@@ -19,6 +19,12 @@
 .quiet .bot {
   opacity: 0.55;
 }
+.markBox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+}
 .mark {
   color: var(--text-3);
 }

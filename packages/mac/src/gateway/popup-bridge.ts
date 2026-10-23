@@ -1,5 +1,5 @@
 import { inApp } from '../lib/boot.js';
-import type { PopupRequest } from './popup-model.js';
+import type { PopupItem } from './popup-model.js';
 import { REQUEST_NOTIFICATION, type RequestAction } from './request-actions.js';
 
 /**
@@ -11,7 +11,7 @@ import { REQUEST_NOTIFICATION, type RequestAction } from './request-actions.js';
 const CHANNEL = 'beluga-request-popup';
 
 type Message =
-  | { readonly t: 'requests'; readonly requests: readonly PopupRequest[] }
+  | { readonly t: 'requests'; readonly requests: readonly PopupItem[] }
   | { readonly t: 'hello' }
   | { readonly t: 'action'; readonly action: RequestAction; readonly approval: string; readonly task: string };
 
@@ -20,7 +20,7 @@ const channel = (): BroadcastChannel | undefined => (typeof BroadcastChannel ===
 // ------------------------------------------------------------------ Beluga's window
 
 /** Keep the pop-up showing these (none hides it). Returns a function that stops listening. */
-export function popupPublisher(): { publish: (requests: readonly PopupRequest[]) => void; close: () => void } {
+export function popupPublisher(): { publish: (requests: readonly PopupItem[]) => void; close: () => void } {
   if (inApp()) {
     return {
       publish: (requests) => void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_request_popup', { requests })).catch(() => undefined),
@@ -28,7 +28,7 @@ export function popupPublisher(): { publish: (requests: readonly PopupRequest[])
     };
   }
   const bc = channel();
-  let last: readonly PopupRequest[] = [];
+  let last: readonly PopupItem[] = [];
   if (bc) {
     bc.onmessage = (e: MessageEvent<Message>) => {
       const m = e.data;
@@ -50,8 +50,8 @@ export function popupPublisher(): { publish: (requests: readonly PopupRequest[])
 
 export interface PopupPort {
   /** Hear the requests to show (now, and whenever they change). */
-  readonly subscribe: (on: (requests: readonly PopupRequest[]) => void) => () => void;
-  readonly act: (action: RequestAction, r: Pick<PopupRequest, 'approval' | 'task'>) => void;
+  readonly subscribe: (on: (requests: readonly PopupItem[]) => void) => () => void;
+  readonly act: (action: RequestAction, r: Pick<PopupItem, 'approval' | 'task'>) => void;
   readonly resize: (height: number) => void;
   /** × : hide these until something new comes (they still wait in Beluga). */
   readonly dismiss: (approvals: readonly string[]) => void;
@@ -68,7 +68,7 @@ export function popupPort(): PopupPort {
         // Listen first, then ask what's showing; an event that came meanwhile is newer than the answer.
         void import('@tauri-apps/api/event')
           .then(({ listen }) =>
-            listen<PopupRequest[]>('request-popup', (e) => {
+            listen<PopupItem[]>('request-popup', (e) => {
               heard = true;
               on(e.payload);
             }),
@@ -76,7 +76,7 @@ export function popupPort(): PopupPort {
           .then((un) => {
             if (!alive) return un();
             off = un;
-            return core.then(({ invoke }) => invoke<PopupRequest[]>('request_popup_state')).then((r) => alive && !heard && on(r));
+            return core.then(({ invoke }) => invoke<PopupItem[]>('request_popup_state')).then((r) => alive && !heard && on(r));
           })
           .catch(() => undefined);
         return () => {
@@ -92,8 +92,8 @@ export function popupPort(): PopupPort {
   // One channel to send on; each subscription listens on its own (React may subscribe twice).
   const out = channel();
   const hidden = new Set<string>();
-  let listener: ((requests: readonly PopupRequest[]) => void) | undefined;
-  let last: readonly PopupRequest[] = [];
+  let listener: ((requests: readonly PopupItem[]) => void) | undefined;
+  let last: readonly PopupItem[] = [];
   const show = (): void => listener?.(last.filter((r) => !hidden.has(r.approval)));
   return {
     subscribe: (on) => {

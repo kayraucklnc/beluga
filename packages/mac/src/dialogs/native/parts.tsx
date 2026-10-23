@@ -183,7 +183,7 @@ export function useFlash(): [string | undefined, (key: string) => void] {
   return [key, flash];
 }
 
-/** The index of an option in a menu's spec (to run it exactly as the terminal UI does), or -1. */
+/** The index of an option in a menu's spec (to run it through the spec), or -1. */
 export function optionIndex(state: AppState, menu: MenuKind, id: string): number {
   return menuSpec(state, menu)?.options.findIndex((o) => o.id === id) ?? -1;
 }

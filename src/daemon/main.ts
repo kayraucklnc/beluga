@@ -51,8 +51,8 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 
 /**
  * `beluga daemon`: build the core once and serve it to every screen on this computer. Leaves the
- * room a few seconds after the last screen closes (so quitting the terminal UI still means
- * "leave"), unless it's kept alive for the Mac app.
+ * room a few seconds after the last screen closes, unless it's kept alive for the
+ * Mac app.
  */
 export async function startDaemon(config: Config, opts: DaemonOptions): Promise<RunningDaemon> {
   const log = opts.log ?? (() => undefined);
@@ -77,7 +77,7 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
   };
 
   const core = await buildCore(config, {
-    // The clipboard tool on this computer first; else the screen that asked (a terminal over SSH copies through its terminal).
+    // The clipboard tool on this computer first; else the screen that asked.
     copy: async (text) => {
       if (await copyNative(text).catch(() => false)) return;
       await server.callCap('copyText', [text], currentClient());

@@ -1,6 +1,6 @@
 /**
- * The product is "Beluga" in this app. Messages from the core are shared with the terminal app,
- * which writes "beluga" (and peers on a version from before the rename write "klaud"); where this
+ * The product is "Beluga" in this app. Messages from the core write "beluga"
+ * (and peers on a version from before the rename write "klaud"); where this
  * window shows them as its own words (toasts, notices, system lines, Stripe errors) they go
  * through `brandText`, which makes both "Beluga". Never for chat content: what people and Claude
  * wrote stays as written.

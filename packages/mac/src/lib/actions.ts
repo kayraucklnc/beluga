@@ -19,7 +19,7 @@ import { mergeNeedsWarning } from './plan-merge.js';
 import { isPlanAction, runPlanAction } from './plan-task.js';
 
 export interface Actions {
-  /** Do what a clicked row, button or card means (the same actions as the terminal UI). */
+  /** Do what a clicked row, button or card means (the shared actions, some done this window's way). */
   run(action: UiAction): void;
   /**
    * Pick an option of a menu (by its index in the menu's spec). Options that remove something
@@ -39,7 +39,7 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
   const patchUi = (patch: Partial<UiState>): void => ui.patch(patch);
   const route = { client, ui, run: (a: UiAction) => actions.run(a) };
   const typeInto = (buffer: string): void => {
-    // The terminal UI types a /command for you to finish; this window opens its sheet. The message
+    // The shared actions type a /command for you to finish; this window opens its sheet. The message
     // box is only for messages: a /command nobody routed is a bug, never a prefilled box.
     if (buffer.startsWith('/')) {
       if (!routeTyped(route, buffer) && import.meta.env.DEV) console.error(`beluga: typeInto(${JSON.stringify(buffer)}) has no Mac sheet; refused. Route it in lib/native-routes.ts.`, new Error().stack);
@@ -85,7 +85,7 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
     client,
     patchUi,
     typeInto,
-    // The terminal UI asks for a name in its message box. Here: a new group gets its row in the
+    // The shared actions ask for a name in the message box. Here: a new group gets its row in the
     // sidebar with the name field ready (like New Folder); worktrees and chats start as drafts.
     askForName: (kind, projectId) => {
       if (kind === 'group') newGroupFor(projectId);
@@ -118,7 +118,7 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
   };
   const actions: Actions = {
     run: (action) => {
-      // Things a window does its own way (the terminal UI types a command for them).
+      // Things a window does its own way (the shared actions type a command for them).
       if (action.type === 'add_project') return ui.patch({ addProject: true });
       if (action.type === 'ws' && action.action === 'fork') return openSheet({ kind: 'fork', wsId: action.id });
       // A plan's task: merging it locally warns first (Merge Anyway), however it was asked for.

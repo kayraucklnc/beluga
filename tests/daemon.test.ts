@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { parseConfig } from '../src/config.js';
 import { daemonInfoPath, daemonLockPath, readDaemonInfo, releaseLock, runningDaemon, takeLock, writeDaemonInfo, clearDaemonInfo } from '../src/daemon/files.js';
 import { type RunningDaemon, roomKeyOf, startDaemon } from '../src/daemon/main.js';
-import { connectOrSpawn } from '../src/ipc/launch.js';
 import { IPC_VERSION } from '../src/ipc/protocol.js';
 import { SocketClient } from '../src/ipc/socket-client.js';
 import { waitFor } from './helpers.js';
@@ -105,44 +104,9 @@ describe('the daemon, under stress', () => {
     a.close();
   });
 
-  it('starts afresh when daemon.json points at a Beluga that is gone', async () => {
-    // A live process id (this one) but nothing listening: klaud crashed and the id lives on.
-    writeDaemonInfo({ pid: process.pid, port: 1, token: 'x'.repeat(32), version: '1', ipc: IPC_VERSION, room: "kay's room", roomKey: 'host', startedAt: 1 });
-    let spawned = 0;
-    const spawnDaemon = (): void => {
-      spawned++;
-      void start({ lingerMs: 50 });
-    };
-    const a = await connectOrSpawn({ args: [], roomKey: 'host', anyRoom: true, version: '1.0.0', kind: 'test', launchDir: '/tmp', spawnDaemon });
-    expect(spawned).toBe(1);
-    a.close();
-  });
-
   it('refuses a daemon.json with an impossible process id', () => {
     writeDaemonInfo({ pid: 0, port: 4000, token: 'x'.repeat(32), version: '1', ipc: IPC_VERSION, room: "kay's room", roomKey: 'host', startedAt: 1 });
     expect(readDaemonInfo()).toBeUndefined();
     rmSync(daemonInfoPath());
-  });
-});
-
-describe('connectOrSpawn', () => {
-  it('starts one daemon for screens opening at once, then attaches to it', async () => {
-    let spawned = 0;
-    const spawnDaemon = (): void => {
-      spawned++;
-      void start({ lingerMs: 50 });
-    };
-    const opts = { args: [], roomKey: 'host', anyRoom: true, version: '1.0.0', kind: 'test' as const, launchDir: '/tmp', spawnDaemon };
-    const [a, b] = await Promise.all([connectOrSpawn(opts), connectOrSpawn(opts)]);
-    expect(spawned).toBe(1);
-    await waitFor(() => a.clients === 2 && b.clients === 2);
-    const c = await connectOrSpawn(opts);
-    expect(spawned).toBe(1);
-    for (const x of [a, b, c]) x.close();
-  });
-
-  it('refuses a daemon in another room', async () => {
-    await start();
-    await expect(connectOrSpawn({ args: ['join', 'x'], roomKey: roomKeyOf({ mode: 'join', invite: 'x' }), anyRoom: false, version: '1', kind: 'test', launchDir: '/tmp' })).rejects.toThrow(/already running/);
   });
 });

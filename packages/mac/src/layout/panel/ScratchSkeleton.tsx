@@ -1,24 +1,15 @@
+import { BELUGA } from '../../components/beluga-path.js';
 import { DotMatrix } from '../../components/DotMatrix.js';
 import { Icon } from '../../components/Icon.js';
-import { Button, cx } from '../../components/ui.js';
+import { Button, Empty, cx } from '../../components/ui.js';
 import { GHOST_WIDTHS } from './scratch-model.js';
 import k from './scratch.module.css';
 
 /**
- * The Scratch tab before anything is saved: the list and the preview drawn in outline, so it's clear
- * what will land here. While Claude works they softly move and the top line says so.
+ * The Scratch tab before it has a listing: the list and the preview drawn in outline, softly
+ * moving, while the first look is on its way. Once looked and nothing's there, `ScratchEmpty`
+ * says so instead (the skeleton never stays up on an empty folder).
  */
-
-interface ScratchSkeletonProps {
-  readonly working: boolean;
-  /** The folders shown here, from the workspace's root. */
-  readonly folders: readonly string[];
-  /** Claude is given no scratch folder (Settings › Claude). */
-  readonly off: boolean;
-  /** Beluga's own folder (where Show in Finder goes). */
-  readonly dir: string;
-  readonly onReveal: () => void;
-}
 
 function GhostRow({ width }: { width: number }) {
   return (
@@ -30,22 +21,12 @@ function GhostRow({ width }: { width: number }) {
   );
 }
 
-export function ScratchSkeleton({ working, folders, off, dir, onReveal }: ScratchSkeletonProps) {
+export function ScratchSkeleton() {
   return (
-    <div className={cx(k.skeleton, working && k.live)} aria-busy={working}>
+    <div className={cx(k.skeleton, k.live)} aria-busy>
       <div className={k.status} role="status">
-        {working ? (
-          <>
-            <DotMatrix size={13} className={k.statusWorking} />
-            <span className={cx(k.statusTitle, k.statusWorking)}>Claude is working</span>
-            <span>· files it saves show up here</span>
-          </>
-        ) : (
-          <>
-            <Icon name="pulse" size={13} />
-            <span className={k.statusTitle}>Nothing saved yet</span>
-          </>
-        )}
+        <Icon name="pulse" size={13} />
+        <span>Looking in the scratch folder…</span>
       </div>
       <div className={k.ghosts} aria-hidden>
         {GHOST_WIDTHS.map((w) => (
@@ -55,13 +36,54 @@ export function ScratchSkeleton({ working, folders, off, dir, onReveal }: Scratc
       <div className={k.tile} aria-hidden>
         <Icon name="image" size={22} />
       </div>
-      <div className={k.foot}>
-        <span>{off ? 'Claude isn’t given a scratch folder (Settings › Claude)' : folders.map((f) => `${f}/`).join('  ·  ')}</span>
-        <span className={k.flex} />
-        <Button icon="folder" title={dir} onClick={onReveal}>
-          Show in Finder
-        </Button>
-      </div>
+    </div>
+  );
+}
+
+interface ScratchEmptyProps {
+  readonly working: boolean;
+  /** The folders shown here, from the workspace's root. */
+  readonly folders: readonly string[];
+  /** Claude is given no scratch folder (Settings › Claude). */
+  readonly off: boolean;
+  /** Beluga's own folder (where Show in Finder goes). */
+  readonly dir: string;
+  readonly onReveal: () => void;
+}
+
+/** The app's beluga, quiet, over the empty state. */
+function BelugaMark() {
+  return (
+    <svg className={k.mark} width="40" height="32" viewBox="56 147 912 730" aria-hidden="true">
+      <path d={BELUGA} fill="currentColor" fillRule="evenodd" />
+    </svg>
+  );
+}
+
+/** Looked, and nothing's there yet: what will land here, and where it is. */
+export function ScratchEmpty({ working, folders, off, dir, onReveal }: ScratchEmptyProps) {
+  return (
+    <div className={k.empty}>
+      <Empty
+        icon="image"
+        mark={<BelugaMark />}
+        title="Nothing in scratch yet"
+        detail={off ? 'Claude isn’t given a scratch folder (Settings › Claude), so nothing lands here.' : 'Screenshots, logs, JSON and notes Claude saves while it works show up here, newest first.'}
+        action={
+          <>
+            {working ? (
+              <div className={k.emptyWorking} role="status">
+                <DotMatrix size={12} />
+                <span>Claude is working · its files show up here as they’re saved</span>
+              </div>
+            ) : null}
+            <Button icon="folder" title={dir} onClick={onReveal}>
+              Show in Finder
+            </Button>
+            {off ? null : <div className={k.emptyFolders}>{folders.map((f) => `${f}/`).join('  ·  ')}</div>}
+          </>
+        }
+      />
     </div>
   );
 }

@@ -45,6 +45,11 @@ export interface AgentRunInput {
   readonly vetTool?: (toolName: string, input: Record<string, unknown>) => string | undefined;
   /** Ask the owner whether a non-preapproved tool may run. */
   readonly canUseTool: (toolName: string, input: Record<string, unknown>) => Promise<boolean>;
+  /**
+   * Your own Claude wants a .env file (policy.ts 'secret'): ask you, even when nothing else would.
+   * Without it (a friend's request, a task from outside) .env files are refused like every secret.
+   */
+  readonly canUseSecret?: (toolName: string, input: Record<string, unknown>) => Promise<boolean>;
   /** Ask the person who made the request: Claude's questions, or a plan to approve. */
   readonly askUser?: (question: ClaudeQuestion) => Promise<ClaudeAnswer>;
   /** Plan first (read-only investigation, then a plan to approve) instead of acting right away. */
@@ -105,6 +110,10 @@ export interface PlanTools {
   start(task: string): Promise<string>;
   /** `queue` (default): read when its current turn ends. `steer`: now, interrupting a long command or a dead run. */
   message(task: string, text: string, mode?: 'queue' | 'steer'): string;
+  /** Stop the Claude working on a started task (its queued messages too); it waits until it's told what to do. */
+  stop?(task: string): string;
+  /** Pause the plan (nothing new starts) or resume it. */
+  pause?(paused: boolean): string;
 }
 
 /**

@@ -54,8 +54,17 @@ export interface PlanTask {
   readonly touches?: readonly string[];
   /** Who works on it: your Claude (the default) or you. */
   readonly assignee?: 'claude' | 'me';
+  /** Yours (assignee "me"): what you're asked when it's ready, in the plan's conversation (see decisions.ts). */
+  readonly decision?: PlanDecision;
   /** Its task on the board, once the plan is approved. */
   readonly issueId?: string;
+}
+
+/** A plan task that's yours, as a choice: the question, the options (pick one, or several), and always your own words. */
+export interface PlanDecision {
+  readonly question: string;
+  readonly options: ReadonlyArray<{ readonly label: string; readonly description?: string }>;
+  readonly multi?: boolean;
 }
 
 export interface PlanMilestone {
@@ -97,6 +106,22 @@ export interface MilestoneRun {
   readonly check?: GateCheck;
   /** When the head Claude was asked to check it (asked once per round). */
   readonly checkAsked?: number;
+  /** The one Claude doing its tasks, in one worktree (see pilot.ts). */
+  readonly agent?: MilestoneAgent;
+}
+
+/**
+ * A milestone's own Claude: one worktree that does the milestone's tasks one after another (in
+ * the order they build on each other), keeping what it learned. Each task links the worktree, and
+ * its Claude moves each one along on the board (In Progress, then In Review with its proof).
+ */
+export interface MilestoneAgent {
+  /** The worktree (workspace id) and its branch. */
+  readonly worktree: string;
+  readonly branch?: string;
+  readonly at: number;
+  /** Plan task ids handed to it so far (more come when a check adds fix tasks). */
+  readonly tasks: readonly string[];
 }
 
 /** A task that builds on several unmerged tasks: their branches are being combined into its start. */

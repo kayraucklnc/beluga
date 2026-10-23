@@ -402,6 +402,8 @@
 }
 .pillMore { flex: none; min-width: 0; }
 .pill:hover { background: var(--bg-press); }
+/* The same width running or done: a pill doesn't change size when its agent finishes. */
+.pillMark { flex: none; width: 13px; display: inline-flex; align-items: center; justify-content: center; }
 .pillText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- A worktree's info page */

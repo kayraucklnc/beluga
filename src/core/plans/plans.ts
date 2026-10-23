@@ -16,6 +16,7 @@ import {
   type GateCheck,
   KEEP_PLAN_ACTIVITY,
   MAX_PARALLEL,
+  type MilestoneAgent,
   type MilestoneRun,
   type Plan,
   type PlanBody,
@@ -296,6 +297,13 @@ export class Plans {
     if (!run?.passedAt) return plan;
     const { passedAt: _p, passedBy: _b, check: _c, checkAsked: _a, ...rest } = run;
     return this.change(plan, { runs: { ...plan.runs, [milestone]: rest }, status: 'active', doneAt: undefined }, [event(by, 'note', `reopened ${milestoneName(plan, milestone)}`, this.now())]);
+  }
+
+  /** A milestone's own Claude and the tasks handed to it (undefined: none, its worktree went). */
+  setAgent(id: string, milestone: string, agent: MilestoneAgent | undefined): Plan {
+    const plan = this.need(id);
+    const { agent: _was, ...rest } = plan.runs[milestone] ?? {};
+    return this.change(plan, { runs: { ...plan.runs, [milestone]: agent ? { ...rest, agent } : rest } }, []);
   }
 
   /** A task's start being combined from several branches (undefined: no longer). */

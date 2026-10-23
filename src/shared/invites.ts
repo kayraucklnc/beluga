@@ -2,7 +2,7 @@ import type { Guest } from '../core/collab-store.js';
 import type { GuestCan, WsRole } from '../protocol.js';
 import type { TrustLevel } from './settings-schema.js';
 
-// Project links as data (no network, no keys): shared by the core and both screens.
+// Project links as data (no network, no keys): shared by the core and the Mac app.
 
 export interface LinkOptions {
   /** A project id, or 'room' for everything. */

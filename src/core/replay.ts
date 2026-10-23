@@ -19,10 +19,16 @@ export class ReplayGuard {
     private readonly now: () => number = Date.now,
   ) {
     if (!file) return;
+    this.readFile();
+    this.prune();
+  }
+
+  /** Take in what's in the file (nothing remembered yet: nothing to take). */
+  private readFile(): void {
+    if (!this.file) return;
     try {
-      const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
-      for (const [id, at] of Object.entries(raw)) if (typeof at === 'number') this.seen.set(id, at);
-      this.prune();
+      const raw = JSON.parse(readFileSync(this.file, 'utf8')) as Record<string, unknown>;
+      for (const [id, at] of Object.entries(raw)) if (typeof at === 'number' && !this.seen.has(id)) this.seen.set(id, at);
     } catch {
       // Nothing remembered yet.
     }
@@ -53,6 +59,8 @@ export class ReplayGuard {
     clearTimeout(this.timer);
     this.timer = undefined;
     if (!this.file) return;
+    // Another Beluga with your identity (in another room) writes the same file: keep what it saw too.
+    this.readFile();
     this.prune();
     try {
       mkdirSync(path.dirname(this.file), { recursive: true });

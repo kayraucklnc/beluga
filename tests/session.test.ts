@@ -381,7 +381,7 @@ describe('Session', () => {
     kay.session.store.dispatch({ type: 'invite', invite: 'https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx' });
     kay.session.submit('/invite');
     await waitFor(() => kay.copied.length === 1);
-    expect(kay.copied[0]).toBe('beluga join https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx');
+    expect(kay.copied[0]).toBe('https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx');
     expect(kay.toasts).toContain('Invite copied. Paste it to a friend');
 
     kay.session.submit('/copy');

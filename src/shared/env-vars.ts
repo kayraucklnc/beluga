@@ -1,5 +1,5 @@
 // Environment variables you give Beluga for your shells, scripts and Claude, as data (no file
-// access), so the core and both clients check them the same way. Browser-safe.
+// access), so the core and the Mac app check them the same way. Browser-safe.
 
 /** A variable name a shell accepts: letters, digits and _, not starting with a digit. */
 export const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;

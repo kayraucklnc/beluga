@@ -53,7 +53,7 @@ export function failureTitle(f: RunFailure, now = Date.now()): string {
   }
 }
 
-/** A failure as a failed card's words: a readable line (for anyone, the TUI too), then the facts. */
+/** A failure as a failed card's words: a readable line (for anyone), then the facts. */
 export function encodeFailure(f: RunFailure, now = Date.now()): string {
   return `${failureTitle(f, now)}\n\n${MARK}${JSON.stringify(f)}`;
 }

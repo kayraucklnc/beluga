@@ -1,5 +1,5 @@
 /**
- * The terminal UI's menus are written for a terminal: intros wrapped to fit ~100 columns, hints
+ * The shared menus were written for a terminal: intros wrapped to fit ~100 columns, hints
  * like "Enter to change" or "type a name", /commands. Shown in this window, they read as a GUI.
  */
 

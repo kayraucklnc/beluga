@@ -100,7 +100,9 @@ describe('WorkspaceController', () => {
     await ctl.startWorktree(projectId(), 'do the thing', namer, { base: 'origin/feature', name: 'mine' });
     const mine = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.name === 'mine')!;
     expect(mine).toMatchObject({ base: 'origin/feature' });
-    expect(toasts).toContain('Creating worktree "mine" from origin/feature…');
+    // Its row showed while it was made (no "Creating…" toast); now it's the real one.
+    expect(toasts.some((t) => t.startsWith('Creating worktree'))).toBe(false);
+    expect(mine.pending).toBeUndefined();
     expect(toasts).not.toContain('Naming the worktree…');
     expect(asked).toEqual([{ prompt: 'do the thing', channel: `ws:${mine.id}` }]);
 
@@ -204,6 +206,72 @@ describe('WorkspaceController', () => {
     expect(toasts.some((t) => t.startsWith("Couldn't archive"))).toBe(true);
   });
 
+  it('shows a new worktree at once (pending, its page open) and the real one takes its place under the same id', async () => {
+    const making = ctl.newWorktree(projectId(), 'quick');
+    // Before any git work: the row is there, and you're on its page.
+    const row = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.name === 'quick')!;
+    expect(row).toMatchObject({ pending: true, kind: 'worktree', base: 'origin/main' });
+    expect(screen.getState().view).toEqual({ kind: 'workspace', id: row.id, tab: 'chat' });
+    const ws = (await making)!;
+    expect(ws.id).toBe(row.id);
+    const after = store.getState().projects.find((p) => p.root)!.workspaces.filter((w) => w.name === 'quick');
+    expect(after).toHaveLength(1);
+    expect(after[0]!.pending).toBeUndefined();
+    expect(existsSync(ws.path)).toBe(true);
+    expect(screen.getState().view).toMatchObject({ kind: 'workspace', id: ws.id });
+
+    // It can't be made: the row goes again, its page with it, and the toast says why.
+    const failing = ctl.newWorktree(projectId(), 'nope', { base: 'origin/no-such-branch' });
+    const ghost = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.name === 'nope')!;
+    expect(ghost.pending).toBe(true);
+    expect(await failing).toBeUndefined();
+    expect(store.getState().projects.find((p) => p.root)!.workspaces.some((w) => w.name === 'nope')).toBe(false);
+    expect(screen.getState().view.kind).not.toBe('workspace');
+    expect(toasts.at(-1)).toMatch(/^Couldn't create the worktree: There's no branch called origin\/no-such-branch/);
+  });
+
+  it('archives and deletes out of the sidebar at once; a failure puts it back and says so', async () => {
+    const ws = (await ctl.newWorktree(projectId(), 'away'))!;
+    const live = () => store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === ws.id);
+    const archiving = ctl.archive(ws.id);
+    // Already archived as far as you can see (the sidebar shows only live ones), its tab closed.
+    expect(live()?.archived).toBe(true);
+    expect(screen.getState().tabs).not.toContain(ws.id);
+    expect(existsSync(ws.path)).toBe(true); // the disk work hasn't started yet
+    expect(await archiving).toBe(true);
+    expect(live()?.archived).toBe(true);
+    expect(existsSync(ws.path)).toBe(false);
+
+    // Deleting: gone from the list at once.
+    const deleting = ctl.remove(ws.id);
+    expect(live()).toBeUndefined();
+    await deleting;
+    expect(live()).toBeUndefined();
+    expect(ctl.manager.find(ws.id)).toBeUndefined();
+
+    // The disk refuses: back as it was, with why and that it's back.
+    const kept = (await ctl.newWorktree(projectId(), 'kept'))!;
+    const real = ctl.manager.archive.bind(ctl.manager);
+    ctl.manager.archive = () => Promise.reject(new Error('the disk is full'));
+    const failing = ctl.archive(kept.id);
+    expect(store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === kept.id)?.archived).toBe(true);
+    expect(await failing).toBe(false);
+    expect(store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === kept.id)?.archived).toBeFalsy();
+    expect(toasts.at(-1)).toBe("Couldn't archive: the disk is full. kept is back in the sidebar, as it was.");
+    ctl.manager.archive = real;
+  });
+
+  it('archives several in one repo one after another, each out of the sidebar at once', async () => {
+    const a = (await ctl.newWorktree(projectId(), 'one'))!;
+    const b = (await ctl.newWorktree(projectId(), 'two'))!;
+    const both = Promise.all([ctl.archive(a.id), ctl.archive(b.id)]);
+    const shown = store.getState().projects.find((p) => p.root)!.workspaces;
+    expect(shown.find((w) => w.id === a.id)?.archived).toBe(true);
+    expect(shown.find((w) => w.id === b.id)?.archived).toBe(true);
+    expect(await both).toEqual([true, true]);
+    expect(existsSync(a.path) || existsSync(b.path)).toBe(false);
+  });
+
   it('archiving or deleting a conversation takes its sub-agents’ worktrees with it (branches kept; work in progress stays)', async () => {
     const ws = (await ctl.newWorktree(projectId(), 'lead'))!;
     const done = subAgentWorktree(ws.path, 'a1');
@@ -293,7 +361,11 @@ describe('WorkspaceController', () => {
     const ws = (await ctl.newWorktree(projectId(), 'tidy'))!;
     writeFileSync(path.join(ws.path, 'notes.txt'), 'mine\n');
     await ctl.setGroup(projectId(), 'work');
-    expect(await ctl.removeProject(projectId())).toBe(true);
+    const removing = ctl.removeProject(projectId());
+    // Out of the sidebar before its worktree is archived.
+    expect(store.getState().projects.filter((p) => p.root)).toEqual([]);
+    expect(existsSync(ws.path)).toBe(true);
+    expect(await removing).toBe(true);
     expect(store.getState().projects.filter((p) => p.root)).toEqual([]);
     expect(store.getState().hiddenProjects).toEqual([]);
     expect(store.getState().projectGroups).toEqual([{ name: 'work', projects: [] }]);
@@ -339,7 +411,11 @@ describe('WorkspaceController', () => {
     runCommand(session, 'new', [], here());
     expect(toasts.at(-1)).toBe('Usage: /new <name>');
     runCommand(session, 'new', ['cmd', 'test'], here());
-    await waitFor(() => screen.getState().view.kind === 'workspace', 5000);
+    // Its page opens at once; until git has made it, commands there say so.
+    expect(screen.getState().view.kind).toBe('workspace');
+    runCommand(session, 'fork', [], here());
+    expect(toasts.at(-1)).toBe('This worktree is still being made: a moment');
+    await waitFor(() => ctl.inChannel(here()) !== undefined, 5000);
     runCommand(session, 'fork', [], here());
     expect(toasts.at(-1)).toBe('Usage: /fork <name>');
     runCommand(session, 'review', [], here());

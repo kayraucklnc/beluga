@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isFinished, issueById } from '@beluga/core/board/model.js';
+import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isArchived, isFinished, issueById } from '@beluga/core/board/model.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp } from '../lib/beluga.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import { usePlanActions } from '../plans/use-plans.js';
 import { ActivityFeed } from './Activity.js';
 import { Brief } from './Brief.js';
@@ -15,7 +16,10 @@ import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker 
 import { ProofList, Relations, SubTasks } from './TaskSections.js';
 import { unexplained } from '@beluga/core/board/criteria.js';
 import { ago, dueText } from './tasks-model.js';
+import { openSheet } from '../lib/sheets.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
+import { useSwipeBack } from './use-swipe-back.js';
+import { SwipeBackEdge } from './SwipeBackEdge.js';
 import t from './tasks.module.css';
 
 /**
@@ -28,15 +32,30 @@ export function TaskPage({ id }: { id: string }) {
   const issue = issueById(board, id);
   if (!board.enabled) return <Empty icon="task" title="Tasks need the Beluga app" />;
   if (!issue) return <Empty icon="task" title="This task isn’t here anymore" detail="It may have been deleted." />;
+  return <IssuePage issue={issue} />;
+}
+
+/**
+ * The page itself. Getting back out is always at hand (BLG-5): the header with Back stays at the
+ * top while the page scrolls, and a two-finger swipe right, ⌘[ or Esc go back too.
+ */
+function IssuePage({ issue }: { issue: Issue }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const { back } = useTaskActions();
+  const swipe = useSwipeBack(wrap, () => back(issue.projectId));
+  const proofFirst = isFinished(issue.status) && issue.proof.length > 0;
   return (
-    <div className={t.pageWrap}>
+    <div ref={wrap} className={t.pageWrap}>
+    <SwipeBackEdge progress={swipe} />
     <div className={t.page}>
       <div className={t.pageMain}>
         <Header issue={issue} />
+        {/* Finished work: what shows it works comes first (BLG-13). */}
+        {proofFirst ? <ProofList issue={issue} /> : null}
         <Brief issue={issue} />
         <SubTasks issue={issue} />
         <Relations issue={issue} />
-        <ProofList issue={issue} />
+        {proofFirst ? null : <ProofList issue={issue} />}
         <section className={t.block} aria-label="Activity">
           <header className={t.blockHead}>
             <h3 className={t.sectionTitle}>Activity</h3>
@@ -54,11 +73,13 @@ function Header({ issue }: { issue: Issue }) {
   const board = useBoard();
   const project = useApp((s) => s.projects.find((p) => p.id === issue.projectId));
   const parent = issue.parent ? issueById(board, issue.parent) : undefined;
-  const { open, openList } = useTaskActions();
+  const { open, openList, back } = useTaskActions();
   const menu = useIssueMenu();
+  // The bar is the page's own child (not the header's), so it stays at the top all the way down.
   return (
-    <header className={t.pageHead}>
+    <>
       <nav className={t.crumbs} aria-label="Where this task is">
+        <IconButton icon="back" label="Back" keys="⌘[" className={t.crumbBack} onClick={() => back(issue.projectId)} />
         <button type="button" className={t.crumb} onClick={() => openList(issue.projectId)}>
           Tasks
         </button>
@@ -78,11 +99,14 @@ function Header({ issue }: { issue: Issue }) {
           <IconButton icon="more" label="More" />
         </ActionsDropdown>
       </nav>
-      <Title issue={issue} />
-      <GoneBanner issue={issue} />
-      <ChecksBanner issue={issue} />
-      <NextStep issue={issue} />
-    </header>
+      <header className={t.pageHead}>
+        <Title issue={issue} />
+        <ArchivedBanner issue={issue} />
+        <GoneBanner issue={issue} />
+        <ChecksBanner issue={issue} />
+        {isArchived(issue) ? null : <NextStep issue={issue} />}
+      </header>
+    </>
   );
 }
 
@@ -140,6 +164,39 @@ function ChecksBanner({ issue }: { issue: Issue }) {
   );
 }
 
+/** In the Archive: off the board, its words kept, its proof files let go. Back out, or gone for good. */
+function ArchivedBanner({ issue }: { issue: Issue }) {
+  const { api, act, back } = useTaskActions();
+  if (!isArchived(issue)) return null;
+  return (
+    <div className={t.banner} role="status">
+      <Icon name="archive" size={14} />
+      <span className={t.bannerText}>
+        <strong>Archived {ago(issue.archivedAt!)}.</strong> Its words and history are kept{issue.proof.some((p) => p.thumb || p.bytes !== undefined) ? '; its screenshots were kept small and its other proof files let go' : ''}.
+      </span>
+      <Button size="small" onClick={() => void act(() => api.unarchive(issue.id), `${issue.key} is back on the board`)}>
+        Restore
+      </Button>
+      <Button
+        size="small"
+        variant="quiet"
+        onClick={() =>
+          openSheet({
+            kind: 'confirm',
+            title: `Delete ${issue.key} for good?`,
+            message: `“${issue.title}”, its brief, its history and what’s left of its proof go away. This can’t be undone.`,
+            confirm: 'Delete for Good',
+            destructive: true,
+            run: () => void act(() => api.remove(issue.id), `Deleted ${issue.key}`).then(() => back(issue.projectId)),
+          })
+        }
+      >
+        Delete for Good
+      </Button>
+    </div>
+  );
+}
+
 /** Its worktree was archived or deleted before it was done: what now? */
 function GoneBanner({ issue }: { issue: Issue }) {
   const { api, act } = useTaskActions();
@@ -161,32 +218,77 @@ function GoneBanner({ issue }: { issue: Issue }) {
   );
 }
 
+/**
+ * The worktree a task has (or had): the last one that did it, even once it's archived or its work
+ * finished (BLG-13). `had`: some worktree did it (perhaps since removed): that's where its work is,
+ * so the page offers no Start (starting afresh is ⋯ › Start).
+ */
+function useTaskWorktree(issue: Issue): { readonly ws: Workspace | undefined; readonly live: Workspace | undefined; readonly had: boolean } {
+  const last = issue.worktrees.at(-1);
+  const ws = useApp((s) => (last ? findWorkspace(s.projects, last) : undefined));
+  const live = ws && !ws.archived ? ws : undefined;
+  const had = Boolean(ws) || issue.worktrees.length > 0 || issue.activity.some((a) => a.kind === 'worktree');
+  return { ws, live, had };
+}
+
+/** Where a task's work is: its worktree (open it, reveal its folder in Finder), or what became of it. */
+function WorktreeLinks({ issue, ws, live }: { issue: Issue; ws: Workspace | undefined; live: Workspace | undefined }) {
+  const { openWorktree } = useTaskActions();
+  const api = useApi();
+  if (live) {
+    return (
+      <>
+        <Button variant="primary" size="small" icon="branch" onClick={() => openWorktree(live.id)}>
+          Open Worktree
+        </Button>
+        <Button size="small" variant="quiet" icon="folder" onClick={() => void api.workspaces.openInFinder(live.id)}>
+          Reveal Folder
+        </Button>
+        <span className={t.nextInfo}>
+          <span className={t.mono}>{live.name}</span>
+          {issue.branch ? <span className={t.nextBranch}>on {issue.branch}</span> : null}
+        </span>
+      </>
+    );
+  }
+  // Archived: its conversation is still there (it's restored from there); removed: its branch is what's left.
+  return (
+    <>
+      {ws ? (
+        <Button size="small" icon="chat" onClick={() => openWorktree(ws.id)}>
+          Open the Conversation
+        </Button>
+      ) : null}
+      <span className={t.nextInfo}>
+        {ws ? (
+          <>
+            <span className={t.mono}>{ws.name}</span> is archived
+          </>
+        ) : (
+          'Its worktree was removed'
+        )}
+        {issue.branch ? <span className={t.nextBranch}>on {issue.branch}</span> : null}
+      </span>
+    </>
+  );
+}
+
 /** What to do next: open the worktree doing it (and its pull request), or start one; finished work shows how it ended. */
 function NextStep({ issue }: { issue: Issue }) {
-  const { api, act, openWorktree } = useTaskActions();
-  const workspaceId = issue.worktreeGone ? undefined : issue.worktrees.at(-1);
-  const ws = useApp((s) => (workspaceId ? findWorkspace(s.projects, workspaceId) : undefined));
+  const { api, act } = useTaskActions();
+  const { ws, live, had } = useTaskWorktree(issue);
   const [starting, setStarting] = useState(false);
   const start = async (claude: boolean): Promise<void> => {
     setStarting(true);
     await act(() => api.start(issue.id, { claude }));
     setStarting(false);
   };
-  if (isFinished(issue.status)) return <Outcome issue={issue} conversation={ws?.id} />;
-  const live = ws && !ws.archived ? ws : undefined;
+  if (isFinished(issue.status)) return <Outcome issue={issue} ws={ws} live={live} />;
   if (!STATUS_INFO[issue.status].open && !live) return null;
   return (
     <div className={t.nextStep}>
-      {live ? (
-        <>
-          <Button variant="primary" size="small" icon="branch" onClick={() => openWorktree(live.id)}>
-            Open Worktree
-          </Button>
-          <span className={t.nextInfo}>
-            <span className={t.mono}>{live.name}</span>
-            {issue.branch ? <span className={t.nextBranch}>on {issue.branch}</span> : null}
-          </span>
-        </>
+      {had ? (
+        <WorktreeLinks issue={issue} ws={ws} live={live} />
       ) : (
         <>
           <Button variant="primary" size="small" icon="claude" disabled={starting} onClick={() => void start(true)}>
@@ -206,11 +308,12 @@ function NextStep({ issue }: { issue: Issue }) {
 
 /**
  * A finished task (in review, merged into its plan, or shipped): what happened, where its work is
- * (branch, pull request, plan) and its conversation, to ask it things still. Starting again is
- * ⋯ › Reopen the Task.
+ * (branch, its worktree and folder, pull request, plan) and its conversation, to look at it or
+ * ask it things still. Starting again is ⋯ › Reopen the Task.
  */
-function Outcome({ issue, conversation }: { issue: Issue; conversation: string | undefined }) {
+function Outcome({ issue, ws, live }: { issue: Issue; ws: Workspace | undefined; live: Workspace | undefined }) {
   const { openWorktree } = useTaskActions();
+  const api = useApi();
   const plan = useApp((s) => (issue.plan ? s.plans.plans.find((p) => p.id === issue.plan!.id) : undefined));
   const { open: openPlan } = usePlanActions();
   const what =
@@ -234,8 +337,17 @@ function Outcome({ issue, conversation }: { issue: Issue; conversation: string |
           Open the Plan
         </Button>
       ) : null}
-      {conversation ? (
-        <Button size="small" icon="chat" onClick={() => openWorktree(conversation)}>
+      {live ? (
+        <>
+          <Button size="small" variant="quiet" icon="folder" onClick={() => void api.workspaces.openInFinder(live.id)}>
+            Reveal Folder
+          </Button>
+          <Button size="small" icon="branch" onClick={() => openWorktree(live.id)}>
+            Open Worktree
+          </Button>
+        </>
+      ) : ws ? (
+        <Button size="small" icon="chat" onClick={() => openWorktree(ws.id)}>
           Open the Conversation
         </Button>
       ) : null}

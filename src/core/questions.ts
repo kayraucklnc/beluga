@@ -33,8 +33,33 @@ export class QuestionBroker {
   private readonly waiting = new Map<string, { peer: string; channel: string; resolve: (a: ClaudeAnswer) => void; timer: NodeJS.Timeout }>();
   /** Requests you sent → whose Claude got them, so only that Claude can ask you things. */
   private readonly mine = new Map<string, { target: string; channel: string }>();
+  /** Cards Beluga itself put on your screen (a plan task that's yours to decide): no timeout, answered here. */
+  private readonly posed = new Map<string, (a: ClaudeAnswer) => void>();
 
   constructor(private readonly deps: QuestionDeps) {}
+
+  /**
+   * Put a card on your own screen that Beluga answers itself (not Claude): a plan's decision for
+   * you. It waits until you answer it or it's withdrawn; asking again with the same qid only
+   * replaces what to do with the answer.
+   */
+  pose(qid: string, channel: string, question: ClaudeQuestion, onAnswer: (a: ClaudeAnswer) => void): void {
+    this.posed.set(qid, onAnswer);
+    if (this.deps.store.getState().questions.some((q) => q.qid === qid)) return;
+    const self = this.deps.selfId();
+    this.deps.store.dispatch({ type: 'question_add', question: { qid, requestId: qid, owner: self, channel, question, picked: {} } });
+  }
+
+  /** Take back a card `pose` put up (it isn't needed any more). */
+  withdraw(qid: string): void {
+    if (!this.posed.delete(qid)) return;
+    if (this.deps.store.getState().questions.some((q) => q.qid === qid)) this.deps.store.dispatch({ type: 'question_remove', qid });
+  }
+
+  /** Whether a card `pose` put up is still waiting. */
+  posing(qid: string): boolean {
+    return this.posed.has(qid);
+  }
 
   /** Remember a request you sent (to your own or a friend's Claude). */
   track(requestId: string, target: string, channel: string): void {
@@ -84,6 +109,14 @@ export class QuestionBroker {
   answer(qid: string, answer: ClaudeAnswer): void {
     const q = this.deps.store.getState().questions.find((x) => x.qid === qid);
     if (!q) return;
+    const posed = this.posed.get(qid);
+    if (posed) {
+      // Skipping one of Beluga's own cards leaves it waiting: it's yours to answer.
+      if (answer.kind === 'skip') return;
+      this.posed.delete(qid);
+      this.deps.store.dispatch({ type: 'question_remove', qid });
+      return posed(answer);
+    }
     this.deps.store.dispatch({ type: 'question_remove', qid });
     const self = this.deps.selfId();
     if (q.owner === self) this.settle(qid, self, answer);

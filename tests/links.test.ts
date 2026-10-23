@@ -5,11 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { type AppState } from '../src/core/store.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import type { PeerInfo } from '../src/protocol.js';
-import { chatLinkModel } from '../src/ui/link-zones.js';
 import { type LinkTarget, chatLinkify, findCandidates, linkHint, linkSpans, linkifyLine, plausiblePath, resolveLocal, resolverFor, setLinkEnv, statCached } from '../src/ui/links.js';
 import { renderMarkdown } from '../src/ui/markdown.js';
-import { modifiersOf, parseMouse, takePastes } from '../src/ui/mouse.js';
-import { scrollForLine } from '../src/ui/link-actions.js';
 import { renderLog } from '../src/ui/format.js';
 
 const values = (text: string) => findCandidates(text).map((c) => [c.kind, c.value, c.line]);
@@ -118,51 +115,5 @@ describe('resolving and linkifying', () => {
     expect(linkHint({ kind: 'attachment', owner: 'b', file: 'a.png', label: '📎 image 1 (png, 1K)' })).toBe('View image 1 (png, 1K) · click');
     setLinkEnv({ roots: () => ['/room/project'] });
     expect(linkHint({ kind: 'local', path: '/room/project/README.md', dir: false })).toBe('Open README.md · click (⌥-click)');
-    expect(scrollForLine(42)).toBe(38);
-    expect(scrollForLine(1)).toBe(0);
-  });
-});
-
-describe('chat link zones', () => {
-  const link: LinkTarget = { kind: 'url', url: 'https://a.io' };
-  const lines = [[{ text: 'old' }], [{ text: 'go ' }, { text: 'https://a.io', link }], [{ text: 'last' }]];
-
-  it('places zones where bottom-aligned lines are drawn, and finds the hovered one', () => {
-    const m = chatLinkModel(lines, { x: 10, top: 5, rows: 10, scroll: 0 }, { x: 14, y: 13, alt: true });
-    // 3 lines in 10 rows: they sit on rows 12..14.
-    expect(m.zones).toEqual([expect.objectContaining({ x0: 13, x1: 24, y: 13, action: { type: 'open_link', link } })]);
-    expect(m.hover).toEqual({ line: 1, x0: 3, x1: 14, alt: true });
-    expect(m.zone?.hint).toContain('https://a.io');
-  });
-
-  it('follows scrolling', () => {
-    const m = chatLinkModel(lines, { x: 0, top: 0, rows: 1, scroll: 1 }, { x: 4, y: 0 });
-    expect(m.zones[0]?.y).toBe(0);
-    expect(m.hover?.line).toBe(1);
-    expect(chatLinkModel(lines, { x: 0, top: 0, rows: 1, scroll: 0 }).zones).toEqual([]);
-  });
-});
-
-describe('mouse modifiers and pastes', () => {
-  it('reads Shift, Option and Ctrl from SGR reports', () => {
-    expect(modifiersOf(0)).toEqual({});
-    expect(modifiersOf(8)).toEqual({ alt: true });
-    expect(modifiersOf(4 | 16)).toEqual({ shift: true, ctrl: true });
-    expect(parseMouse('\x1b[<8;3;4M').events).toEqual([{ x: 2, y: 3, button: 'left', kind: 'press', alt: true }]);
-    // Pointer movement with Option held.
-    expect(parseMouse('\x1b[<43;3;4M').events).toEqual([{ x: 2, y: 3, button: 'move', kind: 'press', alt: true }]);
-    expect(parseMouse('\x1b[<72;1;1M').events[0]).toMatchObject({ button: 'wheelUp', alt: true });
-  });
-
-  it('offers complete pastes and keeps the rest of the input', () => {
-    const seen: string[] = [];
-    const out = takePastes('a\x1b[200~\x1b[201~b\x1b[200~hi\x1b[201~', (t) => {
-      seen.push(t);
-      return t === '';
-    });
-    expect(seen).toEqual(['', 'hi']);
-    expect(out).toBe('ab\x1b[200~hi\x1b[201~');
-    expect(takePastes('x\x1b[200~hi\x1b[201~', () => false, true)).toBe('xhi');
-    expect(takePastes('plain', () => true)).toBe('plain');
   });
 });

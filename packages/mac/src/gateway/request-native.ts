@@ -2,8 +2,10 @@ import { useEffect, useSyncExternalStore } from 'react';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { inApp } from '../lib/boot.js';
 import { dndActive } from '@beluga/shared/quiet.js';
+import { planOfChannel } from '@beluga/core/notify.js';
+import { NOTIFICATION_TAP } from '../lib/notices.js';
 import { popupPublisher } from './popup-bridge.js';
-import { popupRequests } from './popup-model.js';
+import { type PopupItem, type PopupNeed, isNeedId, isPreviewId, popupNeeds, popupRequests, previewItems } from './popup-model.js';
 import { REQUEST_NOTIFICATION, type RequestAction, outsideStep, parseRequestMenuId, trayRequests } from './request-actions.js';
 
 /**
@@ -47,6 +49,12 @@ const message = (err: unknown): string => (err instanceof Error ? err.message : 
 
 /** Answer an approval from outside the window (a notification, the menu bar), or open its sheet. */
 export async function runRequestAction(client: SocketClient, action: RequestAction, approval: string | undefined, task: string | undefined): Promise<void> {
+  if (isPreviewId(approval)) {
+    // The preview's buttons: nothing was asked, so nothing is answered.
+    stopPreview();
+    return void client.store.dispatch({ type: 'toast', text: 'That was a preview: nothing was asked, and nothing was sent', level: 'info' });
+  }
+  if (isNeedId(approval)) return openNeed(shownNeeds.get(approval!));
   const approvals = client.store.getState().approvals;
   const known = approvals.find((a) => a.id === approval) ?? (task ? approvals.find((a) => a.task === task) : undefined);
   const say = (text: string, level: 'info' | 'success' | 'error' = 'info'): void => void client.store.dispatch({ type: 'toast', text, level });
@@ -80,23 +88,78 @@ export function runRequestMenuItem(id: string, client: SocketClient): boolean {
 const quietNow = (st: ReturnType<SocketClient['store']['getState']>): boolean =>
   dndActive(st.prefs.notify) || Boolean(st.network.self && (st.network.self.appearOffline || st.network.self.presence.state === 'dnd'));
 
-/** Keep the pop-up showing the friends' requests waiting for you (and hide it once they're answered). */
+// ------------------------------------------------------------------ the pop-up
+
+/** What your own Claude needs, as the card shows it now (by id), so Open knows where to go. */
+const shownNeeds = new Map<string, PopupNeed>();
+
+/** Open on a "Claude needs you" card: where it's asked (a plan's conversation opens the plan), like clicking its notification. */
+function openNeed(need: PopupNeed | undefined): void {
+  if (!need?.channel) return;
+  document.dispatchEvent(new CustomEvent(NOTIFICATION_TAP, { detail: { channel: need.channel } }));
+}
+
+/** The preview (⌘K › Preview Request Pop-up) while it shows, and who to tell when it changes. */
+let preview: { readonly items: readonly PopupItem[]; readonly timer: ReturnType<typeof setTimeout> } | undefined;
+const previewListeners = new Set<() => void>();
+const PREVIEW_MS = 60_000;
+
+function stopPreview(): void {
+  if (!preview) return;
+  clearTimeout(preview.timer);
+  preview = undefined;
+  for (const l of [...previewListeners]) l();
+}
+
+/**
+ * Show the pop-up with a pretend friend's request and a pretend decision, so you can see it (and
+ * that it reaches you) even when nobody else uses Beluga with you. Gone after a minute, or when
+ * you press one of its buttons (which do nothing).
+ */
+export function previewRequestPopup(): void {
+  if (preview) clearTimeout(preview.timer);
+  preview = { items: previewItems(Date.now()), timer: setTimeout(stopPreview, PREVIEW_MS) };
+  for (const l of [...previewListeners]) l();
+}
+
+/** A Beluga window in front shows this already (the conversation, or the plan's page): no card about it. */
+function showingNow(st: ReturnType<SocketClient['store']['getState']>): (channel: string | undefined, plan?: string) => boolean {
+  if (!st.attention.front) return () => false;
+  const onPlan = st.view.kind === 'plan' ? st.view.id : undefined;
+  return (channel, plan) => Boolean((channel && st.attention.visible.includes(channel)) || (onPlan && (plan === onPlan || (channel && planOfChannel(st, channel)?.plan.id === onPlan))));
+}
+
+/** Keep the pop-up showing the friends' requests and what your Claude needs from you (and hide it once they're answered). */
 export function useRequestPopup(client: SocketClient): void {
   useEffect(() => {
     const popup = popupPublisher();
     let last = '';
+    let seen: readonly unknown[] = [];
+    let wasPreview: typeof preview;
     const update = (): void => {
       const st = client.store.getState();
-      const requests = popupRequests(st.approvals, st.gateway.tasks, quietNow(st));
-      const key = JSON.stringify(requests);
+      // Claude streams all the time: only what the card is made of counts.
+      const parts = [st.approvals, st.questions, st.plans, st.board, st.prefs, st.attention, st.view, st.network.self, st.gateway.tasks, st.projects];
+      if (wasPreview === preview && parts.length === seen.length && parts.every((p, i) => p === seen[i])) return;
+      seen = parts;
+      wasPreview = preview;
+      const quiet = quietNow(st);
+      const requests = popupRequests(st.approvals, st.gateway.tasks, quiet);
+      const needs = popupNeeds(st, { quiet, showing: showingNow(st) });
+      shownNeeds.clear();
+      for (const n of needs) shownNeeds.set(n.approval, n);
+      const items: readonly PopupItem[] = [...(preview?.items ?? []), ...requests, ...needs];
+      const key = JSON.stringify(items);
       if (key === last) return;
       last = key;
-      popup.publish(requests);
+      popup.publish(items);
     };
     update();
     const unsubscribe = client.store.subscribe(update);
+    previewListeners.add(update);
     return () => {
       unsubscribe();
+      previewListeners.delete(update);
       popup.publish([]);
       popup.close();
     };

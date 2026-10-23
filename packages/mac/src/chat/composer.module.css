@@ -198,6 +198,37 @@
   box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
+/* Files from Finder dragged over the conversation: the whole of it is where they go. */
+.dropTarget {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  pointer-events: none;
+}
+.dropTarget::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: var(--radius-l);
+  background: color-mix(in srgb, var(--accent) 7%, color-mix(in srgb, var(--bg) 70%, transparent));
+}
+.dropTargetLabel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 1px var(--hairline), 0 6px 20px rgb(0 0 0 / 0.18);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* While Claude works: one control, two ways to send. Queue is the default (Return). */
 .split {
   display: inline-flex;

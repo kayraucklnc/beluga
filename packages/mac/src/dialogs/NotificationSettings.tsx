@@ -1,6 +1,7 @@
 import type { NotifySettings } from '@beluga/shared/settings-schema.js';
 import { DND_CHOICES, type DndChoice, dndActive, dndFor, dndLabel } from '@beluga/shared/quiet.js';
 import { Button } from '../components/ui.js';
+import { previewRequestPopup } from '../gateway/request-native.js';
 import { useApi, useApp } from '../lib/beluga.js';
 import { runAccessAction, useNotificationAccess } from '../lib/sounds/access.js';
 import { type AccessAction, notifyStatus } from '../lib/sounds/access-model.js';
@@ -24,8 +25,7 @@ const KINDS: ReadonlyArray<readonly [Toggle, string, string]> = [
 
 /**
  * Settings › Notifications: whether they reach you (and how to fix it when macOS is in the
- * way), the sound with a test right under it, and what reaches you when. Shared with the
- * terminal app.
+ * way), the sound with a test right under it, and what reaches you when.
  */
 export function NotificationSettings() {
   const api = useApi();
@@ -42,6 +42,12 @@ export function NotificationSettings() {
       <Group>
         <Row label="Desktop notifications" detail="The bell in the toolbar lists everything either way.">
           <Switch label="Desktop notifications" on={n.desktop} onChange={(v) => save({ desktop: v })} />
+        </Row>
+        <Row label="Show on-screen popups when something needs me" detail="A question, an approval, a decision of yours in a plan, or a milestone to pass: a card in the corner of the screen, on top of other apps, as friends’ requests get. Not on Do Not Disturb.">
+          <Switch label="Show on-screen popups when something needs me" on={n.popup !== false} onChange={(v) => save({ popup: v })} />
+        </Row>
+        <Row label="See the pop-up" detail="A pretend friend’s request and a pretend decision, in the corner of the screen for a minute. Their buttons do nothing.">
+          <Button onClick={previewRequestPopup}>Preview Pop-up</Button>
         </Row>
         <Row label="Only when Beluga isn’t in front" detail="Stay quiet while you’re using Beluga. Nothing is ever announced about the conversation you’re looking at.">
           <Switch label="Only when Beluga isn’t in front" on={n.onlyAway} onChange={(v) => save({ onlyAway: v })} />

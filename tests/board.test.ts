@@ -385,3 +385,70 @@ describe('fixes that keep the board right', () => {
     expect(readdirSync(dir).some((f) => f.startsWith('board.dropped-'))).toBe(true);
   });
 });
+
+describe('work carried by another worktree, and sub-tasks done with their parent', () => {
+  const pr = (state: 'OPEN' | 'MERGED' = 'OPEN') => ({ number: 9, url: 'https://x/9', state, title: 'Buglist', draft: false, checks: 'passing' as const });
+
+  it('a task carried by a worktree goes Done when that worktree’s pull request merges', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'Fix the badge', status: 'in_review' }, claude);
+    board.carry(t.key, { id: 'w1', branch: 'beluga/buglist', name: 'buglist' }, () => false);
+    expect(board.need(t.key)).toMatchObject({ carriedBy: 'w1', branch: 'beluga/buglist' });
+    board.prChanged('w1', pr('MERGED'));
+    expect(board.need(t.key)).toMatchObject({ status: 'done', pr: { number: 9 } });
+  });
+
+  it('a task with a live worktree of its own keeps following that one', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', status: 'in_progress' }, me);
+    board.linkWorktree(t.key, 'w1', {}, me);
+    board.carry(t.key, { id: 'w2' }, (id) => id === 'w1');
+    expect(board.need(t.key).carriedBy).toBeUndefined();
+    board.prChanged('w2', pr('MERGED'));
+    expect(board.need(t.key).status).toBe('in_progress');
+  });
+
+  it('a worktree merged here finishes the tasks it carried', () => {
+    const { board } = setup();
+    const t = board.create({ projectId: 'api', title: 'x', status: 'in_review' }, me);
+    board.carry(t.key, { id: 'w1' }, () => false);
+    board.worktreeMerged('w1');
+    expect(board.need(t.key).status).toBe('done');
+  });
+
+  it('a parent reaching Done takes its open sub-tasks with it, all the way down; canceled ones stay', () => {
+    const { board } = setup();
+    const parent = board.create({ projectId: 'api', title: 'Buglist', status: 'in_review' }, me);
+    const a = board.create({ projectId: 'api', title: 'A', status: 'in_review', parent: parent.key }, me);
+    const b = board.create({ projectId: 'api', title: 'B', status: 'canceled', parent: parent.key }, me);
+    const c = board.create({ projectId: 'api', title: 'C', status: 'backlog', parent: a.key }, me);
+    board.update(parent.key, { status: 'done' }, claude);
+    expect([a, b, c].map((i) => board.need(i.key).status)).toEqual(['done', 'canceled', 'done']);
+    expect(board.need(a.key).activity.at(-1)?.text).toBe(`done with its parent ${parent.key}: moved this from In Review to Done`);
+  });
+});
+
+describe('the archive', () => {
+  it('archives every Done task in one go; they leave the board and Claude’s lists, and can come back', () => {
+    const { board, store, clock } = setup();
+    const a = board.create({ projectId: 'api', title: 'Shipped', status: 'done' }, me);
+    const b = board.create({ projectId: 'api', title: 'Open' }, me);
+    const now = clock.t;
+    expect(board.archiveDone(me)).toBe(1);
+    expect(board.need(a.key).archivedAt).toBeDefined();
+    expect(filterIssues(store.getState().board, { now }).map((i) => i.key)).toEqual([b.key]);
+    expect(filterIssues(store.getState().board, { scope: 'archived' }).map((i) => i.key)).toEqual([a.key]);
+    expect(() => board.archive(b.key, me)).toThrow(/finished/);
+    board.unarchive(a.key, me);
+    expect(filterIssues(store.getState().board, { now }).map((i) => i.key).sort()).toEqual([a.key, b.key].sort());
+  });
+
+  it('emptying the archive deletes for good, and keys are never given out again', () => {
+    const { board } = setup();
+    const a = board.create({ projectId: 'api', title: 'Shipped', status: 'done' }, me);
+    board.archiveDone(me);
+    expect(board.emptyArchive()).toBe(1);
+    expect(board.get(a.key)).toBeUndefined();
+    expect(board.create({ projectId: 'api', title: 'Next' }, me).key).toBe('BOB-2');
+  });
+});

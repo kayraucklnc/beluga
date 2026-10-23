@@ -25,7 +25,7 @@ function hostingNote(phase: string | undefined, detail: string | undefined): str
 /**
  * Invite someone: where to, what they can do there, how the link behaves, then Copy. The links
  * you made are listed underneath (copy again, or revoke), with anyone waiting at the door.
- * The same choices and actions as the terminal UI's Invite menu.
+ * The choices and actions of the shared Invite menu.
  */
 export function InviteSheet({ menu, close }: NativeMenuProps<'invite_link'>) {
   const host = useApp((st) => st.self?.host === true);
@@ -152,7 +152,7 @@ function HowTheyJoin({ knock }: { knock: boolean }) {
           <svg width="15" height="12" viewBox="56 147 912 730" aria-hidden="true"><path d={BELUGA} fill="currentColor" fillRule="evenodd" /></svg>
         </span>
         <span>
-          <strong>They open it in Beluga.</strong> With Beluga for Mac a click on the link is enough; in a terminal they paste it (it starts with <code>beluga join</code>).
+          <strong>They open it in Beluga.</strong> A click on the link is enough.
         </span>
       </li>
       <li>

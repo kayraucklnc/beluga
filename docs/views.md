@@ -4,8 +4,7 @@ Claude can show you data, not just tell you about it. Tables, charts, stat tiles
 
 - **How to ask:** "show me…", "chart…", "table of…", or anything about data. Claude reaches for a view whenever something is tabular or numeric.
 - **Where views show:** answers in any conversation, reports, and Markdown files opened in Beluga.
-- **In the terminal app:** the same block shows as JSON.
-- **Demo:** `beluga demo`, then *show me the payments dashboard*.
+- **Demo:** the demo daemon (`npm run dev` at the repo root), then *show me the payments dashboard*.
 
 ## When Claude uses them
 
@@ -37,6 +36,9 @@ Small ones sit inside a sentence. Claude writes them as inline code, and the win
 | `` `delta:+12%` ``, `` `delta:-40ms good` `` | a change with its arrow, green when it's good (up, unless it says otherwise) |
 | `` `spark:3,5,4,8,12` `` | a sparkline (hover for the numbers) |
 | `` `time:2026-10-23T14:00:00Z` `` | "2 hours ago" (hover for the date) |
+| `` `task:BLG-12` `` | a board task: its status ring, key and title, live; click to open it (a key the board doesn't have says "not found") |
+
+Several tasks are a fenced `beluga-tasks` block, one key per line (or a JSON array of keys): a stack of cards with each task's key, title, status and priority, read live from the board. Click one to open it.
 
 None of these are required. Claude uses them when they say something faster than words, the way it uses a table or a graph.
 
@@ -161,7 +163,7 @@ Without the tool, the same JSON works in a fenced `beluga-view` block (or `belug
 | `file` | `path`, `format?`, `rows?` | CSV, TSV, JSON, JSON lines, or text by its extension; a code view shows the file as it is |
 | `folder` | `path`, `glob?` (`*.png`, `**/*.ts`), `recursive?`, `hidden?` | rows: name, kind, size, modified, path |
 | `sqlite` | `path`, `query` | `sqlite3 -readonly` |
-| `postgres` | `env` (a variable holding the connection string) or `url`, `query` | `psql` in a read-only transaction; keep passwords out of the chat with `env` (Settings › Environment) |
+| `postgres` | `query`; optionally `env` (a variable holding the connection string) or `url` | `psql` in a read-only transaction. With neither, the project's own database: `DATABASE_URL`, `POSTGRES_URL`, `DIRECT_URL` and the like, or one made from a Supabase project's variables (`…SUPABASE_URL` and `SUPABASE_DB_PASSWORD`; with `SUPABASE_REGION`, its session poolers on `aws-0` and `aws-1`), from Settings › Environment or the project's `.env`. Supabase's direct address (IPv6 only) falls back to those poolers when it can't be reached, and a leftover `[YOUR-PASSWORD]` is caught. Settings › Environment › Database tests the connection. The string only goes to `psql`: errors never show it, and Claude never sees it |
 | `http` | `url`, `method?`, `headers?`, `body?`, `rows?`, `format?` | JSON (finds the one array in it, or `rows`: `"data.items"`), CSV or text; `$NAME` in a header is one of your variables |
 | `command` | `command`, `cwd?`, `format?`, `rows?` | `/bin/sh -c`; JSON, JSON lines, CSV, TSV, a table lined up with spaces (`ps`, `docker ps`), or one row per line |
 

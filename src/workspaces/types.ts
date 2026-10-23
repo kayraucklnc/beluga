@@ -57,6 +57,8 @@ export interface WorkspaceRecord {
   readonly handedFrom?: string;
   /** A conversation started for one job: 'sync_main' is Claude bringing the main folder up to date. */
   readonly purpose?: 'sync_main';
+  /** You carried on after this PR merged (Continue After Merge): it and older ones are done, so the branch can have a new one. */
+  readonly prDone?: number;
 }
 
 /** A workspace as shown in the UI: record + live git status. */
@@ -70,6 +72,8 @@ export interface Workspace extends WorkspaceRecord {
    * and answer but changes nothing; work moves to a new worktree.
    */
   readonly askOnly?: boolean;
+  /** Being made: its row and page show at once, while git makes the folder (see core/optimistic.ts). */
+  readonly pending?: boolean;
 }
 
 export interface Project {

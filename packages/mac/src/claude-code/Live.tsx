@@ -7,6 +7,7 @@ import { useApp, useBeluga } from '../lib/beluga.js';
 import { Row } from '../layout/sidebar-parts.js';
 import { AgentCard } from './Cards.js';
 import { agentLabel, agentTone, openActivity, placeLabel, plural, sessionLabel, tokens } from './cc-model.js';
+import { cappedAgents, inStartOrder } from './subagents-model.js';
 import i from '../layout/Inspector.module.css';
 import s from './claude-code.module.css';
 
@@ -31,9 +32,10 @@ export function LiveStrip({ workspaceId }: { workspaceId: string }) {
   const now = useNow(Boolean(session && session.status === 'working'), 5000);
   if (!session) return null;
   const st = sessionLabel(session, now);
-  const agents = session.agents;
+  // In the order they started, the newest few as pills: an agent finishing never moves or hides one (BLG-21).
+  const agents = inStartOrder(session.agents);
   const running = agents.filter((a) => a.status === 'running').length;
-  const shown = agents.slice(0, MAX_PILLS);
+  const { shown, hidden } = cappedAgents(agents, MAX_PILLS);
   return (
     <div className={s.liveStrip} role="region" aria-label="Claude Code in this folder">
       <button type="button" className={s.liveLead} onClick={() => openActivity(client, session.id)} title={`${session.title} · ${st.label}`}>
@@ -44,13 +46,14 @@ export function LiveStrip({ workspaceId }: { workspaceId: string }) {
       </button>
       {shown.map((a) => (
         <button key={a.id} type="button" className={s.pill} onClick={() => openActivity(client, session.id, a.id)} title={`${a.description} · ${agentLabel(a)}${a.step ? ` · ${a.step}` : ''}`}>
-          {a.status === 'running' ? <Dot tone="claude" live /> : <Icon name={a.status === 'failed' ? 'x' : 'check'} size={10} className={s[`tone_${agentTone(a)}`]} />}
+          <span className={s.pillMark}>{a.status === 'running' ? <Dot tone="subagent" live /> : <Icon name={a.status === 'failed' ? 'x' : 'check'} size={10} className={s[`tone_${agentTone(a)}`]} />}</span>
           <span className={s.pillText}>{a.description}</span>
         </button>
       ))}
-      {agents.length > MAX_PILLS ? (
-        <button type="button" className={cx(s.pill, s.pillMore)} onClick={() => openActivity(client, session.id)}>
-          +{agents.length - MAX_PILLS}
+      {hidden ? (
+        // Always the same place: this session in Activity, with every one of its agents.
+        <button type="button" className={cx(s.pill, s.pillMore)} onClick={() => openActivity(client, session.id)} title={`${plural(hidden, 'earlier agent')}: show all ${agents.length} in Activity`} aria-label={`Show all ${agents.length} agents in Activity`}>
+          +{hidden}
         </button>
       ) : null}
       {sessions.length > 1 ? (
@@ -134,7 +137,7 @@ function SessionDetails({ session }: { session: CcSession }) {
       ) : null}
       {session.agents.map((a) => (
         <button key={a.id} type="button" className={s.inspectorAgent} onClick={() => openActivity(client, session.id, a.id)} title={a.step ?? ''}>
-          {a.status === 'running' ? <Dot tone="claude" live /> : <Icon name={a.status === 'failed' ? 'x' : a.status === 'finished' ? 'check' : 'clock'} size={10} className={s[`tone_${agentTone(a)}`]} />}
+          {a.status === 'running' ? <Dot tone="subagent" live /> : <Icon name={a.status === 'failed' ? 'x' : a.status === 'finished' ? 'check' : 'clock'} size={10} className={s[`tone_${agentTone(a)}`]} />}
           <span className={s.inspectorAgentText}>{a.description}</span>
           <span className={s.num}>{plural(a.steps, 'step')}</span>
         </button>

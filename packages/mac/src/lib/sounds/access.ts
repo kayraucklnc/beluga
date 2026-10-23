@@ -33,6 +33,22 @@ export async function notificationAccess(): Promise<NotificationAccess> {
   return shell<NotificationAccess>('notification_access', UNKNOWN_ACCESS).catch(() => UNKNOWN_ACCESS);
 }
 
+/**
+ * Ask macOS to let Beluga send notifications (its prompt shows the first time; after that it's
+ * System Settings). The on-screen pop-up needs no permission; notifications are what reach you
+ * when the pop-up is off, and in Notification Center later. Resolves with what macOS says now.
+ */
+export async function askNotificationPermission(): Promise<NotificationAccess> {
+  if (!inApp()) {
+    (window.__BELUGA_NOTIFY_CALLS__ ??= []).push('request_permission');
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') await Notification.requestPermission().catch(() => undefined);
+    return browserAccess();
+  }
+  const { requestPermission } = await import('@tauri-apps/plugin-notification');
+  await requestPermission().catch(() => undefined);
+  return notificationAccess();
+}
+
 /** Open System Settings › Notifications, at Beluga. */
 export async function openNotificationSettings(): Promise<void> {
   await shell('open_notification_settings', undefined);

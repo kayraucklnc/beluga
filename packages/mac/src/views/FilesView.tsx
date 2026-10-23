@@ -92,9 +92,10 @@ export function useRowItems(): (row: BrowserRow, onOpen: () => void) => ActionIt
       if (v.kind === 'workspace') actions.run({ type: 'open_ws', id: v.id, tab: 'chat' });
       else if (v.kind === 'shared') actions.run({ type: 'open_shared', owner: v.owner, id: v.id, tab: 'chat' });
       else actions.run({ type: 'view', view: { kind: 'room' } });
-      const current = ui.get().buffer;
-      const buffer = `${current}${current && !current.endsWith(' ') ? ' ' : ''}${mentionOf(state, at)} `;
+      // Added to that chat's own words, once its box shows them.
       setTimeout(() => {
+        const current = ui.get().buffer;
+        const buffer = `${current}${current && !current.endsWith(' ') ? ' ' : ''}${mentionOf(state, at)} `;
         ui.patch({ buffer, cursor: buffer.length });
         document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
       }, 60);

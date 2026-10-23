@@ -1,20 +1,19 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { asChatRow } from '../lib/said.js';
-import { backgroundWait } from '@beluga/shared/claude-notices.js';
 import type { LogItem } from '@beluga/core/store.js';
 import { type TaskView, tasksIn } from '@beluga/core/gateway/model.js';
 import { LogTaskCard } from '../gateway/TaskCard.js';
 import { Icon } from '../components/Icon.js';
-import { Avatar, Dot, Empty, Working } from '../components/ui.js';
+import { Avatar, Empty, Working } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { keepSameLists, sameItems } from '../lib/stable.js';
-import { Lightbox } from './ChatImages.js';
 import { FindBar } from './FindBar.js';
 import { AgentCard, ChatRow, ShellCard, SystemRow } from './Items.js';
 import { CompactDivider } from './CompactDivider.js';
 import { isCompactItem } from './context-model.js';
 import { useClaudeStarting } from './flight.js';
+import { withLiveTails } from './live-tail.js';
 import s from './chat.module.css';
 import f from './flight.module.css';
 
@@ -81,7 +80,9 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   // A card's tasks stay the same list while they're the same tasks, so its memo holds.
   const turnTasks = useRef<ReadonlyMap<string, readonly TaskView[]>>(undefined);
   const inTurn = useMemo(() => (turnTasks.current = keepSameLists(turnTasks.current, placed.inTurn)), [placed]);
-  const rows = placed.rows;
+  // A turn you spoke during goes on below what you said: its live part is the chat's last row (BLG-22).
+  const shown = useMemo(() => withLiveTails(placed.rows), [placed]);
+  const rows = useMemo(() => shown.map((x) => x.row), [shown]);
   const latest = useMemo(() => latestCard(items), [items]);
   const parent = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -92,7 +93,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
     getScrollElement: () => parent.current,
     estimateSize: (i) => (rows[i]?.type === 'agent' ? 140 : rows[i]?.type === 'task' ? 160 : rows[i]?.type === 'system' ? 28 : 52),
     overscan: 8,
-    getItemKey: (i) => rows[i]?.id ?? i,
+    getItemKey: (i) => shown[i]?.key ?? i,
     // A row that grows or shrinks (a new step under Claude, its answer streaming in) moves the
     // rows below it and the list's height in the same frame, straight from the resize: waiting
     // for a React render painted one frame with the old layout (the new line overlapping the
@@ -111,7 +112,6 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   // Until Claude's card for the message you just sent appears.
   const cards = useMemo(() => items.filter((l) => l.type === 'agent').length, [items]);
   const starting = useClaudeStarting(channel, cards);
-  const waiting = useMemo(() => backgroundWait(items), [items]);
 
   // New messages (and Claude's streaming text) keep you at the bottom if that's where you were.
   useLayoutEffect(() => {
@@ -119,8 +119,8 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
   }, [rows, virtualizer]);
   useLayoutEffect(() => {
     const el = parent.current;
-    if ((starting || waiting) && stick.current && el) el.scrollTop = el.scrollHeight;
-  }, [starting, waiting]);
+    if (starting && stick.current && el) el.scrollTop = el.scrollHeight;
+  }, [starting]);
   // You sent a message: back to the newest, where it lands (see flight.ts).
   useEffect(() => {
     const toBottom = (): void => {
@@ -183,6 +183,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
         <div ref={virtualizer.containerRef} className={s.logInner}>
           {virtualizer.getVirtualItems().map((v) => {
             const item = rows[v.index] as Row;
+            const part = shown[v.index]?.part;
             return (
               <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className={s.logRow}>
                 {item.type === 'task' ? (
@@ -190,7 +191,7 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
                 ) : item.type === 'chat' ? (
                   <ChatRow item={item} continued={continued(v.index)} mine={item.from === selfId} />
                 ) : item.type === 'agent' ? (
-                  <AgentCard item={item} tasks={inTurn.get(item.id)} latest={item.id === latest} />
+                  <AgentCard item={item} tasks={part?.side === 'head' ? undefined : inTurn.get(item.id)} latest={item.id === latest} part={part} />
                 ) : item.type === 'shell' ? (
                   <ShellCard item={item} />
                 ) : isCompactItem(item) ? (
@@ -210,14 +211,6 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
             <Working />
             <span>Claude is starting…</span>
           </div>
-        ) : waiting ? (
-          // Its results come back to Claude, which then goes on here.
-          <div className={f.starting} data-background-wait="true" role="status" title={waiting}>
-            <span className={f.startingAvatar}>
-              <Dot tone="claude" live />
-            </span>
-            <span className={f.waitText}>{waiting}</span>
-          </div>
         ) : null}
       </div>
       {atBottom ? null : (
@@ -234,7 +227,6 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
           Latest
         </button>
       )}
-      <Lightbox />
     </div>
   );
 }

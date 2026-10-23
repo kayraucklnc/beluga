@@ -6,7 +6,7 @@ import type { MenuKind } from '@beluga/ui/menus.js';
 import { onWindowActive, windowActive } from './window-active.js';
 
 /**
- * This window's own UI state. It uses the terminal UI's shape (UiState) for everything the
+ * This window's own UI state. It uses the shared shape (UiState) for everything the
  * shared menus and actions touch (an open menu, the composer's text, what it's asking for),
  * plus a few things only this window has.
  */

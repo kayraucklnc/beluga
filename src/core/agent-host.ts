@@ -6,7 +6,8 @@ import { type BodyInput, type BodyOf, MAX_TEXT } from '../protocol.js';
 import type { People } from './people.js';
 import type { QuestionBroker } from './questions.js';
 import type { ShareService } from './shares.js';
-import { type Store, peerName } from './store.js';
+import type { DotenvAccess } from './env-vars.js';
+import { type Approval, type Store, peerName } from './store.js';
 import { reachOf, trustOf } from './trust.js';
 import type { WorkspaceController } from './workspace-controller.js';
 import type { WorkspaceSharing } from './workspace-sharing.js';
@@ -20,6 +21,7 @@ import { span } from '../shared/clock.js';
 import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
 import { e2eLockedIn, keepsRunning, mayLeaveProcesses } from '../workspaces/test-procs.js';
 import { belugaEnvBoth } from './beluga-env.js';
+import { planForHome } from './plans/model.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -39,6 +41,8 @@ export interface AgentHostDeps {
   readonly canEditIn?: (peerId: string, channel: string) => boolean;
   /** Your environment variables for a run there (see env-vars.ts). */
   readonly envFor?: (channel: string, dir?: string) => Record<string, string>;
+  /** Whether your own Claude may read .env files there without asking, and remembering when you said always (env-vars.ts). */
+  readonly dotenvAccess?: DotenvAccess;
   /** Stop the test runs a worktree's Claude started and left behind (see workspaces/test-procs.ts). */
   readonly stopTests?: (dir: string) => Promise<unknown>;
   /** A short worktree name for a task (a small model names it). */
@@ -95,6 +99,11 @@ export function toolInside(toolName: string, input: Record<string, unknown>, cwd
 }
 
 const MAX_PENDING_APPROVALS = 20;
+
+/** How you answered an approval. 'project': always, for this project (a secret's approvals only). */
+export type ApprovalAnswer = 'yes' | 'no' | 'always' | 'project';
+/** Tools that only read the file they name (a secret's approval says "read", not "change"). */
+const READS_FILE = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead']);
 const MAX_APPROVALS_PER_PERSON = 3;
 const SEEN_REQUESTS = 1000;
 const CONTEXT_LINES = 20;
@@ -116,6 +125,8 @@ interface Lane {
   waiting: Waiting[];
   pumping: boolean;
   current?: AbortController;
+  /** The request the current run is for (with its controller: a compaction after it isn't it). */
+  currentRequest?: { readonly id: string; readonly controller: AbortController };
   interruptedBy?: string;
   /** Why the current run was stopped for a newer message, when there's more to say (see rush). */
   interruptNote?: string;
@@ -175,6 +186,12 @@ export function planSteer(status: LiveStatus | undefined, now: number): { kind: 
   return { kind: 'steer' };
 }
 
+/** A place without its questions-only rule (a plan's own conversation: see runAgent). */
+function withoutAskOnly<T extends { readonly askOnly?: unknown }>(place: T): T {
+  const { askOnly: _askOnly, ...rest } = place;
+  return rest as T;
+}
+
 /** Conversations whose Claude may work at the same time (keeps your plan's limits in mind). */
 const MAX_PARALLEL_RUNS = 4;
 
@@ -188,7 +205,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 export class AgentHost {
   /** Conversation the agent is currently working in (for its send_chat tool). */
   currentChannel = 'room';
-  private readonly approvals = new Map<string, (answer: 'yes' | 'no' | 'always') => void>();
+  private readonly approvals = new Map<string, (answer: ApprovalAnswer) => void>();
   private readonly alwaysTools = new Set<string>();
   /** "person:project" pairs you said Always to (this session). */
   private readonly alwaysProjects = new Set<string>();
@@ -444,7 +461,7 @@ export class AgentHost {
     this.enqueue(from, body, this.selfId);
   }
 
-  answerApproval(answer: 'yes' | 'no' | 'always', id?: string): boolean {
+  answerApproval(answer: ApprovalAnswer, id?: string): boolean {
     const target = id ?? this.store.getState().approvals[0]?.id;
     const resolve = target ? this.approvals.get(target) : undefined;
     if (!target || !resolve) return false;
@@ -640,6 +657,23 @@ export class AgentHost {
     return false;
   }
 
+  /**
+   * Beluga no longer needs one of its requests (a milestone check you passed past): taken out of
+   * the queue, or its run stopped, quietly (no toast; the run says `note`). → whether it was there.
+   */
+  cancelRun(requestId: string, note = 'Stopped by Beluga: no longer needed'): boolean {
+    if (this.cancelQueued(requestId)) return true;
+    for (const lane of this.lanes.values()) {
+      const run = lane.currentRequest;
+      if (run?.id !== requestId || lane.current !== run.controller || run.controller.signal.aborted) continue;
+      lane.interruptedBy = 'beluga';
+      lane.interruptNote = note;
+      run.controller.abort();
+      return true;
+    }
+    return false;
+  }
+
   /** Drop one of your waiting requests before it starts. */
   cancelQueued(requestId: string): boolean {
     for (const lane of this.lanes.values()) {
@@ -789,18 +823,27 @@ export class AgentHost {
         if (this.quitting) break;
         const next = auto || lane.held ? undefined : lane.waiting.shift();
         if (!auto && !next) break;
-        while (this.running >= MAX_PARALLEL_RUNS) await new Promise((r) => setTimeout(r, 200));
-        this.running++;
+        // A plan's own conversation (its head Claude, the orchestrator) never waits for a slot behind
+        // the task runs it started: you can always talk to it, and stop or redirect them from there.
+        const free = this.isPlanHome(lane.channel);
+        while (!free && this.running >= MAX_PARALLEL_RUNS) await new Promise((r) => setTimeout(r, 200));
+        if (!free) this.running++;
         try {
           if (!next || next.compact) await this.runCompaction(lane, auto, next?.body.prompt);
           else await this.runAgent(next.from, next.body, lane, next.askTo).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
         } finally {
-          this.running--;
+          if (!free) this.running--;
         }
       }
     } finally {
       lane.pumping = false;
     }
+  }
+
+  /** A running (or drafting) plan's own conversation: its head Claude. */
+  private isPlanHome(channel: string): boolean {
+    const plan = planForHome(this.store.getState().plans, channel);
+    return Boolean(plan && plan.status !== 'done');
   }
 
   /** The main folder of one of your projects, by name. */
@@ -833,11 +876,16 @@ export class AgentHost {
 
   /** Ask you to approve something; `peer` is who it's for (each person can have a few waiting at most). */
   ask(kind: 'request' | 'tool', title: string, detail: string, peer?: string, channel = 'room', meta: { task?: string } = {}): Promise<'yes' | 'no' | 'always'> {
+    // Only a secret offers "for this project": anywhere else it's a plain yes.
+    return this.pose(kind, title, detail, peer, channel, meta).then((answer) => (answer === 'project' ? 'yes' : answer));
+  }
+
+  private pose(kind: Approval['kind'], title: string, detail: string, peer?: string, channel = 'room', meta: { task?: string; project?: string } = {}): Promise<ApprovalAnswer> {
     if (this.approvals.size >= MAX_PENDING_APPROVALS) return Promise.resolve('no');
     if (peer && peer !== this.selfId && (this.approvalsBy.get(peer) ?? 0) >= MAX_APPROVALS_PER_PERSON) return Promise.resolve('no');
     if (peer) this.approvalsBy.set(peer, (this.approvalsBy.get(peer) ?? 0) + 1);
     const id = randomUUID();
-    if (kind === 'tool') this.toolApprovals.set(id, channel);
+    if (kind !== 'request') this.toolApprovals.set(id, channel);
     return new Promise((resolve) => {
       // Nobody should be stuck waiting forever on an approval you didn't see.
       const expiry = setTimeout(() => {
@@ -850,7 +898,7 @@ export class AgentHost {
         if (peer) this.approvalsBy.set(peer, Math.max(0, (this.approvalsBy.get(peer) ?? 1) - 1));
         resolve(answer);
       });
-      this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail, askedAt: Date.now(), timeoutMs: this.approvalTimeoutMs, ...(peer && peer !== this.selfId ? { peer } : {}), ...(meta.task ? { task: meta.task } : {}), ...(channel.startsWith('ws:') ? { channel } : {}) } });
+      this.store.dispatch({ type: 'approval_add', approval: { id, kind, title, detail, askedAt: Date.now(), timeoutMs: this.approvalTimeoutMs, ...(peer && peer !== this.selfId ? { peer } : {}), ...(meta.task ? { task: meta.task } : {}), ...(meta.project ? { project: meta.project } : {}), ...(channel.startsWith('ws:') ? { channel } : {}) } });
     });
   }
 
@@ -858,6 +906,7 @@ export class AgentHost {
     const agent = this.agent as AgentBackend;
     const controller = new AbortController();
     lane.current = controller;
+    lane.currentRequest = { id: body.requestId, controller };
     lane.runFrom = from;
     const requesterName = peerName(this.store.getState(), from);
     const root = body.project && body.channel === 'room' ? this.projectRoot(body.project) : undefined;
@@ -922,6 +971,9 @@ export class AgentHost {
           timer.unref();
         });
       };
+      // The plan's head Claude orchestrates: it may change things where it runs (your approvals and
+      // Beluga's secrets rules still apply), not only read like other main-folder chats.
+      const runPlace = plans?.tools && place?.askOnly && !place.syncMain ? withoutAskOnly(place) : place;
       const final = await Promise.race([gone, exited, agent.run({
         ...(scratch ? { scratchDir: scratch } : {}),
         ...(board?.tools ? { board: board.tools } : {}),
@@ -933,7 +985,7 @@ export class AgentHost {
         requesterName,
         viaAgent: body.viaAgent,
         context: this.recentChat(body.channel),
-        ...(place ? { place } : {}),
+        ...(runPlace ? { place: runPlace } : {}),
         scope: from === this.selfId ? 'full' : reachOf(this.store.getState(), from),
         ...(from !== this.selfId && this.deps.isGuest?.(from) ? { guest: true } : {}),
         signal: controller.signal,
@@ -952,6 +1004,8 @@ export class AgentHost {
         ...(body.viaAgent && from !== this.selfId ? { onAnswered: (text: string) => this.emitAgent(body.requestId, from, 'answered', text, body.channel) } : {}),
         onFileTouched: (abs) => this.announceAgentFocus(abs),
         canUseTool: (toolName, input) => this.authorizeTool(from, requesterName, toolName, input, body.channel, place?.cwd),
+        // Only your own Claude may ask for a .env file; for anyone else it stays refused.
+        ...(from === this.selfId ? { canUseSecret: (toolName: string, input: Record<string, unknown>) => this.authorizeSecret(toolName, input, body.channel, place?.cwd) } : {}),
         askUser: (question) => this.deps.questions.ask(askTo, body.requestId, body.channel, question),
         plan: body.plan,
         // A plan's conversation plans; it doesn't move to a worktree.
@@ -1033,6 +1087,24 @@ export class AgentHost {
     const detail = typeof input.command === 'string' ? input.command : JSON.stringify(input);
     const answer = await this.ask('tool', `Your Claude (working for ${requesterName}) wants to use ${toolName}`, detail, requester, channel);
     if (answer === 'always') this.alwaysTools.add(scope);
+    return answer !== 'no';
+  }
+
+  /**
+   * Your own Claude wants a .env file: you're asked every time (even if your Claude never asks you
+   * otherwise), unless you said always, for this project or everywhere.
+   */
+  private async authorizeSecret(toolName: string, input: Record<string, unknown>, channel = 'room', cwd?: string): Promise<boolean> {
+    const access = this.deps.dotenvAccess;
+    if (access?.allowed(cwd)) return true;
+    const project = access?.project(cwd);
+    const command = typeof input.command === 'string' ? input.command : undefined;
+    const file = ['file_path', 'notebook_path', 'path'].map((k) => input[k]).find((v): v is string => typeof v === 'string');
+    const verb = command ? 'run a command that reads' : READS_FILE.has(toolName) ? 'read' : 'change';
+    const what = command ? 'a .env file' : path.basename(file ?? '.env');
+    const answer = await this.pose('secret', `Your Claude wants to ${verb} ${what}${project ? ` in ${project}` : ''}`, command ?? file ?? '', undefined, channel, project ? { project } : {});
+    if (answer === 'project' && project) access?.allow(cwd, 'project');
+    if (answer === 'always') access?.allow(cwd, 'everywhere');
     return answer !== 'no';
   }
 

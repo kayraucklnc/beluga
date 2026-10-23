@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RAMP_AFTER_MS, cleanText, repeatStep, rowOf, wordLeft, wordRight, wrapBuffer } from '../src/ui/composer-text.js';
-import { composerScroll } from '../src/ui/components/Composer.js';
 import { handleKey, initialUi, insertText, type KeyContext, type KeyInfo, type UiState } from '../src/ui/keymap.js';
-import { computeLayout } from '../src/ui/layout.js';
-import { hitTest } from '../src/ui/hit.js';
 import { actionButtons } from '../src/ui/actions.js';
-import { splitPaste } from '../src/ui/mouse.js';
 import { initialAppState as initialState } from '../src/client/screen.js';
 
 const ctx: KeyContext = { hasApproval: false, hasViewer: false, overlay: false, page: 20, maxChatScroll: 0, suggestions: [], peopleCount: 1, menuSize: 0 };
@@ -42,13 +38,6 @@ describe('composer: wrapping', () => {
     expect(performance.now() - t0).toBeLessThan(2000);
   });
 
-  it('scrolls just enough to keep the cursor row visible', () => {
-    expect(composerScroll(0, 2, 10, 4)).toBe(0);
-    expect(composerScroll(0, 7, 10, 4)).toBe(4);
-    expect(composerScroll(4, 5, 10, 4)).toBe(4);
-    expect(composerScroll(4, 1, 10, 4)).toBe(1);
-    expect(composerScroll(8, 2, 3, 4)).toBe(0);
-  });
 });
 
 describe('composer: word editing', () => {
@@ -115,12 +104,6 @@ describe('composer: lines', () => {
     expect(key(at('hello there', 9), { upArrow: true }, '', wrapped).cursor).toBe(3);
   });
 
-  it('splits bracketed pastes out of raw input, across chunks', () => {
-    expect(splitPaste('a\x1b[200~x\ny\x1b[201~b', false)).toEqual({ parts: [{ text: 'a', paste: false }, { text: 'x\ny', paste: true }, { text: 'b', paste: false }], inPaste: false });
-    const first = splitPaste('\x1b[200~part', false);
-    expect(first).toEqual({ parts: [{ text: 'part', paste: true }], inPaste: true });
-    expect(splitPaste('two\x1b[201~', true).parts).toEqual([{ text: 'two', paste: true }]);
-  });
 });
 
 describe('composer: accelerating Backspace', () => {
@@ -162,22 +145,7 @@ describe('composer: accelerating Backspace', () => {
   });
 });
 
-describe('composer: layout and buttons', () => {
-  it('grows with the draft up to ~45% of the screen, shrinking the body; hit-testing follows', () => {
-    const one = computeLayout({ columns: 120, rows: 40, peopleCount: 1, hasViewer: false, suggestionCount: 0 });
-    const tall = computeLayout({ columns: 120, rows: 40, peopleCount: 1, hasViewer: false, suggestionCount: 0, composerLines: 6 });
-    expect(tall.composerLines).toBe(6);
-    expect(tall.bodyHeight).toBe(one.bodyHeight - 5);
-    expect(tall.actionBarY).toBe(tall.composerTop + 8);
-    expect(tall.actionBarY).toBe(39);
-    expect(computeLayout({ columns: 120, rows: 40, peopleCount: 1, hasViewer: false, suggestionCount: 0, composerLines: 500 }).composerLines).toBe(18);
-    const s = initialState('r');
-    const hit = { state: s, suggestionCount: 0, buttons: actionButtons('chat', s, false), approvalDetailLines: 0 };
-    expect(hitTest(tall, 60, tall.composerTop + 5, hit)).toEqual({ kind: 'composer' });
-    expect(hitTest(tall, 2, tall.actionBarY, hit)).toEqual({ kind: 'action', id: 'ask' });
-    expect(hitTest(tall, 60, tall.composerTop - 1, hit)).toEqual({ kind: 'chat' });
-  });
-
+describe('composer: buttons', () => {
   it('offers Queue / Send now while your Claude works, and the queued message controls', () => {
     const s = initialState('r');
     const ids = (c: Parameters<typeof actionButtons>[4]) => actionButtons('chat', s, false, undefined, c).map((b) => b.id);

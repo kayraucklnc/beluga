@@ -332,7 +332,7 @@ function About() {
       <Row label="Beluga for Mac">{APP_VERSION}</Row>
       <UpdateAboutRow />
       <Row label="Beluga (the part that runs your room)">{client.daemonVersion}</Row>
-      <Row label="Windows attached" detail="The terminal app and this one share the same room.">
+      <Row label="Windows attached" detail="Beluga windows connected to the room right now.">
         {client.clients}
       </Row>
       <Row label="Log" detail="~/.beluga/logs/daemon.log">

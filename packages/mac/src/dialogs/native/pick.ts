@@ -4,7 +4,7 @@ import { useActions } from '../../lib/actions.js';
 import { useBeluga } from '../../lib/beluga.js';
 
 /**
- * Pick a menu option by its id, the way the terminal UI does when you choose it from the list:
+ * Pick a menu option by its id, as if you chose it from the menu's list:
  * the same option, the same action. Native sheets draw the menu their own way but act through this.
  */
 export function usePick(menu: MenuKind): (id: string, confirmed?: boolean) => boolean {

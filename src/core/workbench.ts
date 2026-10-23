@@ -7,7 +7,8 @@ import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
-import { type MergeOptions, type MergeProblem, buildPrPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
+import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
+import { type MergeOptions, type MergeProblem, buildPrPrompt, catchUpPrompt, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
 import { PROJECT_FILES, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import type { SetupFix } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
@@ -119,6 +120,8 @@ async function inPool(tasks: ReadonlyArray<() => Promise<void>>, limit: number):
 }
 
 const samePr = (a: PullRequest | undefined, b: PullRequest | undefined): boolean => JSON.stringify(a) === JSON.stringify(b);
+/** Variables as text in one order, to tell whether they changed (kept only in memory, on this Mac). */
+const envText = (vars: Readonly<Record<string, string>>): string => JSON.stringify(Object.entries(vars).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 
 
 /**
@@ -129,6 +132,12 @@ export class Workbench {
   private diskTimer?: NodeJS.Timeout;
   private prTimer?: NodeJS.Timeout;
   private readonly watchers = new Map<string, () => void>();
+  /**
+   * What each terminal started with: where (for its variables now) and the variables as text.
+   * A program's variables are fixed when it starts, so after you change
+   * them (Settings › Environment) the ones still running are marked for a restart.
+   */
+  private readonly started = new Map<string, { place: EnvPlace; env: string }>();
   private prsSeeded = false;
   /** Worktrees you asked Claude to open a PR for: their PR appearing is worth a notification. */
   private readonly prAsked = new Set<string>();
@@ -221,6 +230,60 @@ export class Workbench {
     this.deps.toast('Claude is preparing the pull request…');
   }
 
+  /** The branch a worktree's PRs go into ("main"). */
+  private prBase(ws: Workspace): string {
+    const project = this.manager.list.find((p) => p.id === ws.projectId);
+    const base = (ws.base ?? project?.base ?? 'origin/main').replace(/^origin\//, '');
+    return base === 'HEAD' ? (project?.sync?.branch ?? 'main') : base;
+  }
+
+  /** GitHub says the PR conflicts with its base: Claude merges the base in here, resolves it and pushes. */
+  resolvePrConflicts(id: string): void {
+    const ws = this.worktree(id);
+    const pr = this.deps.store.getState().prs[id];
+    if (!ws || !pr) return;
+    this.deps.controller.open(id);
+    this.deps.askClaude(resolvePrConflictsPrompt(pr, this.prBase(ws)), `ws:${id}`);
+    this.deps.toast(`Claude is resolving PR #${pr.number}’s conflicts…`);
+  }
+
+  /**
+   * Keep working in a worktree whose PR merged: its PR is done (the next change opens a new one),
+   * and the branch starts again from the base. When everything on it is already in the base it
+   * just moves there; when it has work since, Claude merges the base in so nothing is lost.
+   */
+  async continueAfterMerge(id: string): Promise<void> {
+    const ws = this.worktree(id);
+    const pr = this.deps.store.getState().prs[id];
+    if (!ws?.branch) return;
+    if (!pr || pr.state !== 'MERGED') return this.deps.toast('Continue After Merge is for a worktree whose pull request merged', 'info');
+    if ((ws.status?.changed ?? 0) > 0) return this.deps.toast(`${ws.name} has uncommitted changes: commit them first`, 'warn');
+    const base = this.prBase(ws);
+    const target = `origin/${base}`;
+    try {
+      await fetchRemote(ws.path);
+    } catch (err) {
+      return this.deps.toast(`Couldn’t fetch ${target}: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+    const done = await contentIn(ws.path, 'HEAD', target);
+    this.manager.setPrDone(id, pr.number);
+    this.deps.store.dispatch({ type: 'pr', id, pr: undefined });
+    if (done) {
+      try {
+        await resetTo(ws.path, target);
+      } catch (err) {
+        return this.deps.toast(`Couldn’t move ${ws.branch} to ${target}: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      }
+      await this.deps.controller.refresh();
+      this.deps.toast(`PR #${pr.number} is done. ${ws.branch} now starts from the latest ${base}: the next change gets a new pull request`, 'success');
+      return;
+    }
+    await this.deps.controller.refresh();
+    this.deps.controller.open(id);
+    this.deps.askClaude(catchUpPrompt(pr, base), `ws:${id}`);
+    this.deps.toast(`${ws.branch} has work since PR #${pr.number}: Claude is bringing in the latest ${base}`);
+  }
+
   fixChecks(id: string): void {
     const pr = this.deps.store.getState().prs[id];
     if (!pr) return;
@@ -251,6 +314,8 @@ export class Workbench {
         const problem = explainMergeError(err instanceof Error ? err.message : String(err), opts.method);
         // GitHub may know more now (a conflict, a review): show it.
         await this.refreshPrs(id);
+        // Skipping the checks is an admin's right: without it GitHub says forbidden or blocked.
+        if (opts.admin && (problem.reason === 'permission' || problem.reason === 'blocked')) return fail(problem.reason, 'Merging past the checks needs admin rights on this repository. Wait for the checks, or use “Merge When Checks Pass”.');
         return fail(problem.reason, problem.message);
       }
       // You merged it: no "was merged" notification on top.
@@ -395,7 +460,9 @@ export class Workbench {
   }
 
   /** gh's answer for a worktree's branch: keep it, and tell you what changed. */
-  private gotPr(ws: Workspace, pr: PullRequest | undefined, quiet: boolean): void {
+  private gotPr(ws: Workspace, found: PullRequest | undefined, quiet: boolean): void {
+    // A PR you carried on after (Continue After Merge) is done: the branch waits for its next one.
+    const pr = found && ws.prDone !== undefined && found.number <= ws.prDone ? undefined : found;
     const before = this.deps.store.getState().prs[ws.id];
     if (!samePr(before, pr)) this.deps.store.dispatch({ type: 'pr', id: ws.id, pr });
     if (!pr || quiet) return;
@@ -432,7 +499,9 @@ export class Workbench {
     const prefs = this.deps.store.getState().prefs;
     // Commands are written for sh, so they run in an sh-like shell even if yours is fish or nu.
     const shell = command ? scriptShell(prefs.shell) : prefs.shell;
-    const env = { ...this.deps.envFor?.('id' in ws ? { workspaceId: ws.id } : { dir: ws.path }), ...('projectRoot' in ws ? scriptEnv(ws) : {}) };
+    const place: EnvPlace = 'id' in ws ? { workspaceId: ws.id } : { dir: ws.path };
+    const vars = this.deps.envFor?.(place) ?? {};
+    const env = { ...vars, ...('projectRoot' in ws ? scriptEnv(ws) : {}) };
     const session = terminals.open(key, {
       cwd: ws.path,
       cols: size.cols,
@@ -442,9 +511,14 @@ export class Workbench {
       ...(command ? { args: ['-l', '-c', command], title: command } : { args: shellArgs({ login: prefs.shellLogin, extra: prefs.shellArgs }) }),
     });
     this.deps.store.dispatch({ type: 'terminal', id: key, title: session.title });
+    // A setup is over in a moment: only shells and the run command are worth a restart later.
+    if (!key.endsWith(':setup')) this.started.set(key, { place, env: envText(vars) });
+    this.envChanged();
     // Every screen sees when it ends (the tab shows its exit code; clicking starts it again).
     const report = (code: number | null): void => {
-      if (this.deps.terminals?.get(key) === session) this.deps.store.dispatch({ type: 'terminal_exit', id: key, code });
+      if (this.deps.terminals?.get(key) !== session) return;
+      this.deps.store.dispatch({ type: 'terminal_exit', id: key, code });
+      this.envChanged();
     };
     if (session.exited) report(session.exited.code);
     else session.onExit((exit) => report(exit.code));
@@ -484,12 +558,48 @@ export class Workbench {
     this.deps.store.dispatch({ type: 'terminal_name', id: key, ...(clean ? { name: clean } : {}) });
   }
 
+  /**
+   * Your variables changed (Settings › Environment, /env): mark the terminals still running with
+   * the ones they started with. Claude and new terminals already get the new ones.
+   */
+  envChanged(): void {
+    const stale = [...this.started]
+      .filter(([key, s]) => this.deps.terminals?.get(key)?.running && envText(this.deps.envFor?.(s.place) ?? {}) !== s.env)
+      .map(([key]) => key)
+      .sort();
+    this.deps.store.dispatch({ type: 'terminal_env_stale', ids: stale });
+  }
+
+  /** Start a shell or the run command again, so it has your variables as they are now (its name stays). */
+  restartTerminal(key: string): PtyProcess | undefined {
+    const was = this.started.get(key);
+    const name = this.deps.store.getState().termNames[key];
+    const keepName = (session: PtyProcess | undefined): PtyProcess | undefined => {
+      if (session && name) this.deps.store.dispatch({ type: 'terminal_name', id: key, name });
+      return session;
+    };
+    if (isGlobalShell(key)) {
+      if (!was?.place.dir) return undefined;
+      this.closeTerminal(key);
+      return keepName(this.globalShell(key, was.place.dir));
+    }
+    if (key.endsWith(':setup')) return undefined;
+    if (key.endsWith(':run')) {
+      const wsId = key.slice(0, -':run'.length);
+      this.closeTerminal(key);
+      return this.run(wsId);
+    }
+    this.closeTerminal(key);
+    return keepName(this.shell(key));
+  }
+
   /** Close a terminal session (shell, setup or run). */
   closeTerminal(key: string): void {
     this.watchers.get(key)?.();
     this.watchers.delete(key);
     this.deps.terminals?.close(key);
     this.deps.store.dispatch({ type: 'terminal', id: key });
+    if (this.started.delete(key)) this.envChanged();
     // A setup that was closed before it finished isn't "setting up" anymore.
     const wsId = key.endsWith(':setup') ? key.slice(0, -':setup'.length) : undefined;
     if (wsId && this.deps.store.getState().setup[wsId]?.status === 'running') this.deps.store.dispatch({ type: 'setup', id: wsId });

@@ -379,6 +379,19 @@ describe('your shell, its names and your variables', () => {
     const run = kay.bench.run(ws!.id)!;
     await waitFor(() => run.backlog().includes('run:project:envy'), 8000);
 
+    // Changing them marks what's still running with the old ones; a restart gives it the new ones (and keeps its name).
+    expect(kay.state().termEnvStale).toEqual([]);
+    kay.bench.renameTerminal('shell:1', 'mine');
+    kay.session.env.set(undefined, [{ key: 'KLAUD_T_MINE', value: 'changed' }, { key: 'KLAUD_T_BOTH', value: 'mine' }]);
+    await waitFor(() => kay.state().termEnvStale.includes('shell:1') && kay.state().termEnvStale.includes(`${ws!.id}:run`), 4000);
+    const again = kay.bench.restartTerminal('shell:1')!;
+    expect(kay.state().termEnvStale).not.toContain('shell:1');
+    expect(kay.state().termNames['shell:1']).toBe('mine');
+    again.run('echo "now:$KLAUD_T_MINE"');
+    await waitFor(() => again.backlog().includes('now:changed'), 8000);
+    kay.bench.stopRun(ws!.id);
+    await waitFor(() => !kay.state().termEnvStale.includes(`${ws!.id}:run`), 4000);
+
     kay.bench.renameTerminal('shell:1', '  logs\n');
     expect(kay.state().termNames['shell:1']).toBe('logs');
     kay.bench.renameTerminal('shell:1', '');

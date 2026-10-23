@@ -7,7 +7,7 @@ import { pickFolders } from './projects.js';
 import { openSheet } from './sheets.js';
 
 /**
- * Where the Mac app answers what the terminal UI asks by typing. The shared action runners put
+ * Where the Mac app answers what the shared action runners ask by typing. They put
  * a /command into the message box ("/fork add-auth-2", "/template save ") or make the box ask
  * for a name; here each of those opens the sheet, alert or settings pane that does it.
  */

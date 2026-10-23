@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { folderSize } from './disk.js';
 import { ArchiveError, LONG_MS, RAW_ARGS, RAW_ENV, assertSettled, fingerprint, git, gitLiteral, ignoredByProject, ignoredIn, pack, run, snapshot, submoduleOnlyHere, submodulesIn, tryGit, unpackKeeping, untrackedDirs } from './archive-git.js';
@@ -178,11 +179,8 @@ async function removeFolder(repo: string, dir: string): Promise<boolean> {
     return false;
   } catch {
     await run('chmod', ['-R', 'u+w', dir], { cwd: repo, timeoutMs: LONG_MS }).catch(() => undefined);
-    try {
-      rmSync(dir, { recursive: true, force: true });
-    } catch {
-      // What's left stays; the archive has everything.
-    }
+    // Not rmSync: a big folder (node_modules) would freeze the daemon, and every window with it.
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined); // what's left stays; the archive has everything
     await tryGit(repo, ['worktree', 'prune']);
     return existsSync(dir);
   }

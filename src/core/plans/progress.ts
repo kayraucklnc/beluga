@@ -1,5 +1,5 @@
 import { type BoardState, type Issue, issueById } from '../board/model.js';
-import { type Autonomy, type Combining, type MilestoneRun, type Plan, type PlanBody, type PlanMerge, type PlanMilestone, type PlanTask, type TaskWatch, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
+import { type Autonomy, type Combining, type MilestoneAgent, type MilestoneRun, type Plan, type PlanBody, type PlanMerge, type PlanMilestone, type PlanTask, type TaskWatch, autonomyOf, milestoneDeps, openMilestones, shownBody } from './model.js';
 import { type RunInfo, type TaskPulse, type WaitingMessage, messageState, pulseOf } from './watchdog.js';
 
 /**
@@ -63,6 +63,8 @@ export interface TaskView {
   readonly watch?: TaskWatch;
   /** Messages waiting for its Claude (the head Claude's, yours): the card offers Steer Now. */
   readonly waiting?: readonly WaitingMessage[];
+  /** Handed to its milestone's Claude (`worktree`), not started yet: it does it after the ones before it. */
+  readonly queued?: boolean;
 }
 
 export type MilestoneState = 'draft' | 'later' | 'running' | 'checking' | 'gate' | 'failed' | 'merging' | 'passed';
@@ -80,6 +82,8 @@ export interface MilestoneView {
   readonly dependsOn: readonly string[];
   /** Passed, and its tasks' branches are being merged into the plan's branch (or a conflict there is being fixed). */
   readonly merging?: PlanMerge;
+  /** Its one Claude, while its worktree is there (see pilot.ts). */
+  readonly agent?: MilestoneAgent;
 }
 
 /** The one thing a plan waits for (the page's main button). */
@@ -271,6 +275,9 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
           else step = combiningStep(combining);
         }
       }
+      // Handed to the milestone's Claude (its worktree linked), not begun: it's next in that worktree.
+      const agent = plan.runs[m.id]?.agent;
+      const queued = state === 'ready' && !combining && Boolean(agent && own.issue && !own.issue.worktreeGone && own.issue.worktrees.at(-1) === agent.worktree);
       const watch = plan.watch?.[t.id];
       if (state === 'idle' && watch?.needsYou) state = 'stalled';
       const started = (state === 'running' && !combining) || state === 'asking' || state === 'idle' || state === 'stalled';
@@ -281,7 +288,7 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
         milestoneId: m.id,
         ...(own.issue ? { issue: own.issue } : {}),
         state,
-        ...(own.worktree ? { worktree: own.worktree } : {}),
+        ...(own.worktree ? { worktree: own.worktree } : queued ? { worktree: agent!.worktree } : {}),
         waitsOn,
         ...(why ? { why } : {}),
         ...(from ? { base: from } : {}),
@@ -292,6 +299,7 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
         ...(pulse ? { pulse } : {}),
         ...(watch && started ? { watch } : {}),
         ...(waiting?.length ? { waiting } : {}),
+        ...(queued ? { queued } : {}),
       });
     }
   });
@@ -303,6 +311,8 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
     const run = plan.runs[m.id] ?? {};
     const autonomy = autonomyOf(plan, m);
     const merging = plan.merging?.[m.id];
+    // Its Claude's worktree is there while a task of it still links it (archived or deleted: gone).
+    const agent = run.agent && tasks.some((t) => t.issue && t.issue.worktrees.at(-1) === run.agent!.worktree && !t.issue.worktreeGone) ? run.agent : undefined;
     let state: MilestoneState;
     if (merging && !merging.catchUp) state = 'merging';
     else if (run.passedAt) state = 'passed';
@@ -311,7 +321,7 @@ export function planView(plan: Plan, board: BoardState, live: Live = NOBODY_LIVE
     else if (run.check && run.checkAsked !== undefined && run.check.at >= run.checkAsked) state = run.check.verdict === 'fail' ? 'failed' : 'gate';
     else if (run.checkAsked !== undefined) state = 'checking';
     else state = 'gate';
-    return { milestone: m, index, state, tasks, finished: done, total: counted.length, autonomy, run, dependsOn: milestoneDeps(body, m), ...(merging ? { merging } : {}) };
+    return { milestone: m, index, state, tasks, finished: done, total: counted.length, autonomy, run, dependsOn: milestoneDeps(body, m), ...(merging ? { merging } : {}), ...(agent ? { agent } : {}) };
   });
 
   const open = milestones.filter((m) => openIds.has(m.milestone.id));
@@ -349,7 +359,7 @@ function nextStep(plan: Plan, v: Omit<PlanView, 'next'>): NextStep {
   if (yoursToPass) return { kind: 'pass', milestone: yoursToPass };
   const autonomyOfTask = new Map(v.open.map((m) => [m.milestone.id, m.autonomy]));
   // Tasks for you, or (step by step) every task, wait for your click.
-  const yours = v.ready.filter((t) => t.forYou || autonomyOfTask.get(t.milestoneId) === 'step');
+  const yours = v.ready.filter((t) => !t.queued && (t.forYou || autonomyOfTask.get(t.milestoneId) === 'step'));
   if (yours.length && v.active.length < plan.maxParallel) return { kind: 'start', tasks: yours };
   const checking = v.open.find((m) => m.state === 'checking' || (m.state === 'gate' && m.milestone.criteria.length && !m.run.check));
   if (checking) return { kind: 'checking', milestone: checking };
@@ -372,7 +382,32 @@ export function startable(view: PlanView, skip: ReadonlySet<string> = new Set(),
   if (plan.paused || plan.status !== 'active' || plan.draft) return [];
   const auto = new Set(view.open.filter((m) => m.state === 'running' && m.autonomy !== 'step').map((m) => m.milestone.id));
   const room = Math.max(0, plan.maxParallel - view.active.length - starting);
-  return view.ready.filter((t) => auto.has(t.milestoneId) && !t.forYou && !(t.issue && skip.has(t.issue.id))).slice(0, room);
+  return view.ready.filter((t) => auto.has(t.milestoneId) && !t.forYou && !t.queued && !(t.issue && skip.has(t.issue.id))).slice(0, room);
+}
+
+/** A milestone's tasks in the order its Claude does them: what a task builds on comes first (else the plan's order). */
+export function taskOrder(m: Pick<MilestoneView, 'milestone' | 'tasks'>): readonly TaskView[] {
+  const byId = new Map(m.tasks.map((t) => [t.task.id, t]));
+  return waves(m.milestone).flatMap((w) => w.flatMap((t) => byId.get(t.id) ?? []));
+}
+
+/** What a milestone's Claude does (or did): its tasks that aren't the user's, canceled or gone. */
+export function agentTasks(m: Pick<MilestoneView, 'milestone' | 'tasks'>): readonly TaskView[] {
+  return taskOrder(m).filter((t) => !t.forYou && t.issue && t.state !== 'canceled' && t.state !== 'missing');
+}
+
+/** Milestones whose Claude is at work (its worktree is there and it has unfinished tasks): each counts as one against the plan's limit. */
+export function agentsAtWork(view: PlanView): readonly MilestoneView[] {
+  return view.open.filter((m) => m.agent && agentTasks(m).some((t) => !FINISHED.has(t.state)));
+}
+
+/**
+ * Tasks only you can do (assigned to you), ready now in an open milestone: a milestone's Claude
+ * skips them, and what builds on them waits. The hook for asking you (see PilotDeps.forYou).
+ */
+export function waitingOnYou(view: PlanView): readonly TaskView[] {
+  if (view.plan.paused || view.plan.status !== 'active' || view.plan.draft) return [];
+  return view.ready.filter((t) => t.forYou);
 }
 
 /** Tasks running side by side right now that touch the same files (a likely conflict), by pairs. */

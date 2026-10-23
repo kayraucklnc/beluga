@@ -2,7 +2,9 @@ import { motion } from 'motion/react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { cx } from '../components/ui.js';
 import { Select, Switch } from '../dialogs/settings-controls.js';
+import { previewRequestPopup } from '../gateway/request-native.js';
 import { useApi, useApp } from '../lib/beluga.js';
+import { askNotificationPermission } from '../lib/sounds/access.js';
 import { ACCENTS, type Accent, type UiPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EASE_OUT, Rise, SPRING, Words } from './fx.js';
 import { Glass } from './Glass.js';
@@ -127,6 +129,48 @@ function SetupRow({ label, detail, children, index }: { readonly label: string; 
       </div>
       <div className={s.rowControl}>{children}</div>
     </motion.div>
+  );
+}
+
+/**
+ * When something needs you (Claude asks, a decision of yours in a plan, a friend's request): a
+ * card in the corner of the screen, over any app, full-screen ones too. It needs no macOS
+ * permission; notifications (asked for here) are the fallback and fill Notification Center.
+ */
+export function Popups() {
+  const api = useApi();
+  const notify = useApp((st) => st.prefs.notify);
+  const [asked, setAsked] = useState<'no' | 'asking' | 'done'>('no');
+  const ask = (): void => {
+    setAsked('asking');
+    void askNotificationPermission()
+      .catch(() => undefined)
+      .then(() => setAsked('done'));
+  };
+  return (
+    <div className={s.setup}>
+      <h2 className={s.title}>
+        <Words text="Never miss it when Claude needs you." />
+      </h2>
+      <Rise delay={0.2} className={s.body}>
+        When Claude asks you something, a plan waits on your decision, or a friend asks your Claude, a small card shows in the corner of your screen, over whatever you’re doing, full-screen apps too. It never takes the keyboard from you.
+      </Rise>
+      <Glass radius={16} width="100%" className={s.rows}>
+        <SetupRow index={0} label="Show on-screen popups when something needs me" detail="Needs no permission. Off: you still get notifications.">
+          <Switch label="Show on-screen popups when something needs me" on={notify.popup !== false} onChange={(v) => void api.session.setPrefs({ notify: { ...notify, popup: v } })} />
+        </SetupRow>
+        <SetupRow index={1} label="See one now" detail="A pretend friend’s request and a pretend decision, for a minute. Their buttons do nothing.">
+          <button type="button" className={cx(s.input, s.rowButton)} onClick={previewRequestPopup}>
+            Show Me a Sample
+          </button>
+        </SetupRow>
+        <SetupRow index={2} label="Notifications too" detail={asked === 'done' ? 'Asked. You can change it in System Settings › Notifications.' : 'macOS asks once. They reach you when popups are off, and stay in Notification Center.'}>
+          <button type="button" className={cx(s.input, s.rowButton)} disabled={asked !== 'no'} onClick={ask}>
+            {asked === 'done' ? 'Asked' : asked === 'asking' ? 'Asking…' : 'Allow Notifications'}
+          </button>
+        </SetupRow>
+      </Glass>
+    </div>
   );
 }
 

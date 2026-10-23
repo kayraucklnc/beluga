@@ -9,7 +9,7 @@ import type { PlanTools } from './types.js';
  * task, and talk to a task's Claude. Starting and passing go through Beluga's scheduler.
  */
 
-export const PLAN_TOOL_NAMES = ['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task'].map((n) => `mcp__beluga_plan__${n}`);
+export const PLAN_TOOL_NAMES = ['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task', 'plan_stop_task', 'plan_pause'].map((n) => `mcp__beluga_plan__${n}`);
 
 const id = z.string().min(1).max(40).describe('A short stable id, like "auth-api" (letters, digits, dashes)');
 const lines = (max: number) => z.array(z.string().min(1).max(400)).max(max);
@@ -30,6 +30,14 @@ const TASK = z.object({
   labels: z.array(z.string().max(32)).max(6).optional(),
   touches: z.array(z.string().max(200)).max(20).optional().describe('Files or folders it changes (parallel tasks shouldn’t share them)'),
   assignee: z.enum(['claude', 'me']).optional().describe('claude (default), or me: only the user can do it'),
+  decision: z
+    .object({
+      question: z.string().min(1).max(1000).describe('What the user decides, as a question'),
+      options: z.array(z.object({ label: z.string().min(1).max(200), description: z.string().max(600).optional() })).max(6).describe('The choices (the user can always write their own instead)'),
+      multi: z.boolean().optional().describe('true: they may pick several'),
+    })
+    .optional()
+    .describe('For a task assigned to me: the decision it asks for. No worktree is made; the user answers in the plan chat, and the answer is recorded on the task'),
   issue: z.string().max(40).optional().describe('An existing board task this is (its key, like BOB-12): adopted into the plan'),
 });
 
@@ -72,6 +80,7 @@ export function taskInput(t: Partial<Task>): Partial<TaskInput> & { readonly iss
     ...(t.labels ? { labels: t.labels } : {}),
     ...(t.touches ? { touches: t.touches } : {}),
     ...(t.assignee ? { assignee: t.assignee } : {}),
+    ...(t.decision ? { decision: { question: t.decision.question, options: t.decision.options, ...(t.decision.multi ? { multi: true } : {}) } } : {}),
     ...(t.issue ? { issue: t.issue } : {}),
   };
 }
@@ -148,6 +157,18 @@ export function createPlanToolDefs(plan: PlanTools) {
         mode: z.enum(['queue', 'steer']).optional().describe('queue (default): when its turn ends. steer: now, interrupting what it runs: to stop wasted work, or a correction that changes the work'),
       },
       (a) => guarded(() => plan.message(a.task, a.text, a.mode ?? 'queue')),
+    ),
+    tool(
+      'plan_stop_task',
+      'Stop the Claude working on a started task now (its current turn, and messages waiting for it). Use it when the user says stop, or a task is going the wrong way; then tell it what to do instead with plan_message_task, or leave it stopped.',
+      { task: z.string().min(1).max(40).describe('Its id in the plan, or its board key') },
+      (a) => guarded(() => (plan.stop ? plan.stop(a.task) : 'Stopping a task isn’t available here')),
+    ),
+    tool(
+      'plan_pause',
+      'Pause the whole plan (nothing new starts; running tasks go on unless you stop them) or resume it. Only when the user asks.',
+      { paused: z.boolean().describe('true: pause; false: resume') },
+      (a) => guarded(() => (plan.pause ? plan.pause(a.paused) : 'Pausing isn’t available here')),
     ),
   ];
 }

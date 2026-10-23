@@ -38,7 +38,7 @@ const GRANTED: Record<TrustLevel, string> = {
   full: 'Fully trusts you',
 };
 
-/** Run a person-menu option exactly as the terminal UI does (by its id). */
+/** Run a person-menu option by its id. */
 function usePick(menu: MenuKind) {
   const { client } = useBeluga();
   const actions = useActions();

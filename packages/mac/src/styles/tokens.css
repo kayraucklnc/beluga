@@ -60,6 +60,8 @@
   --warn: #b36b00;
   --error: #c4352e;
   --info: #2f6cb3;
+  /* Claude's sub-agents at work: violet, apart from the main Claude's copper. */
+  --subagent: #7656c9;
   --code-bg: #f4f4f6;
   --term-bg: #fbfbfc;
 }
@@ -87,6 +89,7 @@
   --warn: #e3a64a;
   --error: #ef7a72;
   --info: #79aef0;
+  --subagent: #ab93f3;
   --code-bg: #242427;
   --term-bg: #17171a;
 }

@@ -1,19 +1,8 @@
 {
-  "name": "beluga-code",
+  "name": "beluga",
+  "private": true,
   "version": "0.6.2",
-  "description": "A terminal home for all your projects and the Claude working in them: a worktree per task, sub-agents you can watch, and friends with their own Claude in the same room.",
-  "keywords": [
-    "claude",
-    "claude-code",
-    "ai",
-    "agents",
-    "terminal",
-    "tui",
-    "worktree",
-    "git",
-    "pair-programming",
-    "multiplayer"
-  ],
+  "description": "Beluga's engine: what the Mac app (packages/mac) runs in the background. Not published.",
   "homepage": "https://github.com/kayraucklnc/beluga#readme",
   "repository": {
     "type": "git",
@@ -25,30 +14,15 @@
   "author": "Kayra Uckilinc",
   "license": "MIT",
   "type": "module",
-  "bin": {
-    "beluga": "dist/cli.js",
-    "klaud": "dist/cli.js"
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/cli.js',0o755)\"",
-    "dev": "tsx src/cli.tsx",
+    "dev": "tsx src/cli.ts daemon --keep-alive demo",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "release:npm": "node scripts/release-npm.mjs",
-    "release:klaudcode": "node scripts/release-klaudcode.mjs",
-    "prepublishOnly": "npm run typecheck && npm run build"
-  },
-  "publishConfig": {
-    "access": "public"
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.301",
@@ -57,30 +31,23 @@
     "@resvg/resvg-js": "^2.6.2",
     "@xterm/addon-unicode11": "^0.9.0",
     "@xterm/headless": "^6.0.0",
-    "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "cloudflared": "^0.7.3",
     "hyperdht": "^6.34.1",
-    "ink": "^8.0.0",
     "jpeg-js": "^0.4.4",
-    "marked": "^15.0.12",
-    "marked-terminal": "^7.3.0",
     "omggif": "^1.0.10",
     "pngjs": "^7.0.0",
-    "react": "^19.3.1",
     "string-width": "^8.3.0",
     "ws": "^8.22.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/marked-terminal": "^6.1.1",
     "@types/node": "^26.6.5",
     "@types/omggif": "^1.0.5",
     "@types/pngjs": "^6.0.5",
     "@types/react": "^19.3.0",
     "@types/ws": "^8.18.2",
     "@vitest/coverage-v8": "^5.0.5",
-    "ink-testing-library": "^4.0.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"

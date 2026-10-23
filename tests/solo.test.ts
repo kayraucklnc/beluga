@@ -61,15 +61,3 @@ describe('@workspace from the main chat', () => {
     expect(parseWorkspaceMention('@add-auth', m)).toBeUndefined();
   });
 });
-
-describe('bottom bar', () => {
-  it('never wider than the screen, shortening the hint first', async () => {
-    const { barLine } = await import('../src/ui/components/Composer.js');
-    const { lineWidth } = await import('../src/ui/text.js');
-    const buttons = [{ id: 'a', text: 'Actions', key: 'Tab' }, { id: 'b', text: 'Diff', key: '' }];
-    const long = barLine(buttons, undefined, { text: 'x'.repeat(200), color: '#fff' }, 60);
-    expect(lineWidth(long)).toBe(60);
-    expect(long.at(-1)?.text.endsWith('…')).toBe(true);
-    expect(lineWidth(barLine(buttons, undefined, { text: 'hi there', color: '#fff' }, 10))).toBeLessThanOrEqual(10);
-  });
-});

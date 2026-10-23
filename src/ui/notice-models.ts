@@ -2,7 +2,7 @@ import type { DomainState } from '../core/store.js';
 import type { Notice } from '../core/work-store.js';
 import { findWorkspace } from './workspace-models.js';
 
-// The inbox as both screens show it: filters, Today / Earlier, how each notice looks, where it goes.
+// The inbox as the app shows it: filters, Today / Earlier, how each notice looks, where it goes.
 
 export type NoticeFilter = 'all' | 'unread' | 'needsYou' | 'mentions';
 

@@ -12,11 +12,12 @@ import { BOARD_API } from './board-api.js';
 import { PLANS_API } from './plans-api.js';
 import { GIT_API } from './git-api.js';
 import { VIEWS_API } from './views-api.js';
+import { FILES_EDIT_API } from './files-api.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
- * against it (handlers.ts implements each one), and both clients call through it, so the
- * terminal UI and the Mac app can't drift apart. Browser-safe: no Node imports.
+ * against it (handlers.ts implements each one), and the Mac app calls through it, so the
+ * two can't drift apart. Browser-safe: no Node imports.
  *
  * Each entry is the method's arguments as a zod tuple. Results are typed from the handlers.
  */
@@ -67,7 +68,8 @@ const EnvRows = z.array(z.object({ key: z.union([z.literal(''), z.string().regex
 
 const WorkspaceTab = z.enum(['chat', 'files', 'review', 'terminal']);
 const Policy = z.enum(['ask', 'auto', 'deny']);
-const Answer = z.enum(['yes', 'no', 'always']);
+/** 'project': always, for this project (only a .env approval offers it). */
+const Answer = z.enum(['yes', 'no', 'always', 'project']);
 const LinkOptions = z.object({ scope: id, can: GuestCan, knock: bool, singleUse: bool, expiresInMs: z.number().int().min(0) });
 const GuestPatch = z.object({ addProject: opt(id), room: opt(bool), can: opt(GuestCan) });
 /** A project (by id) or a group (by name) in the sidebar's arrangement. */
@@ -236,9 +238,11 @@ export const API = {
   'workbench.setModel': args(opt(channel), z.string().max(80)),
   'workbench.createPr': args(id, opt(str)),
   'workbench.fixChecks': args(id),
+  'workbench.resolvePrConflicts': args(id),
+  'workbench.continueAfterMerge': args(id),
   'workbench.openPr': args(id),
   // Merge a worktree's PR on GitHub (gh pr merge); auto: once its checks pass. → { ok, result | reason, message }
-  'workbench.mergePr': args(id, z.object({ method: z.enum(['squash', 'merge', 'rebase']), auto: opt(bool), deleteBranch: opt(bool) }).strict()),
+  'workbench.mergePr': args(id, z.object({ method: z.enum(['squash', 'merge', 'rebase']), auto: opt(bool), deleteBranch: opt(bool), admin: opt(bool) }).strict()),
   // A worktree's PR now (or all of them; true: check gh again), or { reason } to look at what's due:
   // 'focus' (the window came forward) or 'push' (a branch was pushed; id: which worktree).
   'workbench.refreshPrs': args(opt(z.union([id, z.object({ reason: z.enum(['focus', 'push']), id: opt(id) }).strict()])), opt(bool)),
@@ -254,17 +258,26 @@ export const API = {
   'terminals.shell': args(id, opt(TermSize)),
   'terminals.global': args(id, path, opt(TermSize)),
   'terminals.close': args(id),
+  // Start a shell or the run command again with your variables as they are now (its name stays).
+  'terminals.restart': args(id),
   'terminals.rename': args(id, z.string().max(200)),
 
   // ---- your environment variables (no project: yours everywhere; else that project's)
   'env.get': args(opt(id)),
   'env.set': args(opt(id), EnvRows, opt(bool)),
+  // Your own Claude reads .env files without asking (false: it asks again), in a project or (none) everywhere.
+  'env.claudeDotenv': args(opt(id), bool),
+  // Connect to the database a view would use there (a project, or none: yours) → { ok, from } or { ok: false, message } (never a value).
+  'env.testDatabase': args(opt(id)),
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),
   // An image file on this Mac (its path was pasted), copied in and made smaller if it's too big. → { n, chip, file }
   'attachments.addFile': args(path),
-  'attachments.expand': args(str, channel),
+  // An image you linked in a message (its file name), waiting in the box again. → { n, chip }
+  'attachments.reattach': args(z.string().min(1).max(255)),
+  // `only`: the images waiting in the box (others' "[image N]" stay words).
+  'attachments.expand': args(str, channel, opt(z.array(z.number().int().positive()).max(100))),
   // An image linked in a message (owner peer id, file name): its bytes to show, or opened in Preview.
   'attachments.read': args(id, z.string().min(1).max(255)),
   'attachments.open': args(id, z.string().min(1).max(255)),
@@ -301,6 +314,8 @@ export const API = {
   // ---- git: keeping main current, GitHub, history (git-api.ts)
   ...GIT_API,
   ...VIEWS_API,
+  // ---- your workspace's files: searching their contents, editing, formatting (files-api.ts)
+  ...FILES_EDIT_API,
 } as const;
 
 export type Api = typeof API;

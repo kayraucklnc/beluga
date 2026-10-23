@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from 'react';
 import type { CcAgent, CcSession } from '@beluga/core/claude-code/model.js';
 import { useNow } from '../chat/Items.js';
+import { StepWords } from '../chat/steps/StepRow.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, cx } from '../components/ui.js';
 import { agentElapsed, agentLabel, agentTone, plural, sessionLabel, tokens, typeLabel } from './cc-model.js';
@@ -32,12 +33,12 @@ export const AgentCard = memo(function AgentCard({ agent, selected, compact, onO
         {agent.name ? <span className={s.typeBadge}>@{agent.name}</span> : null}
         {agent.background ? null : <span className={s.typeBadge}>Foreground</span>}
         <span className={cx(s.cardStatus, s[`tone_${tone}`])}>
-          {running ? <Dot tone="claude" live /> : <Icon name={agent.status === 'failed' ? 'x' : agent.status === 'finished' ? 'check' : agent.status === 'idle' ? 'clock' : 'stop'} size={10} />}
+          {running ? <Dot tone="subagent" live /> : <Icon name={agent.status === 'failed' ? 'x' : agent.status === 'finished' ? 'check' : agent.status === 'idle' ? 'clock' : 'stop'} size={10} />}
           {agentLabel(agent)}
         </span>
       </span>
       <span className={s.cardTitle}>{agent.description}</span>
-      <span className={s.cardStep}>{agent.step ?? (running ? 'Starting…' : '—')}</span>
+      <span className={s.cardStep}>{agent.step ? <StepWords words={agent.step} /> : running ? 'Starting…' : '—'}</span>
       {compact ? null : (
         <span className={s.cardMeta}>
           <span>{agentElapsed(agent, now)}</span>
@@ -63,7 +64,7 @@ export function SessionChip({ session, selected, onOpen }: { session: CcSession;
         </span>
       </span>
       <span className={s.cardTitle}>Conversation</span>
-      <span className={s.cardStep}>{session.step ?? '—'}</span>
+      <span className={s.cardStep}>{session.step ? <StepWords words={session.step} /> : '—'}</span>
     </button>
   );
 }

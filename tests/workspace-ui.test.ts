@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { SubAgentTracker } from '../src/agent/subagents.js';
 import { channelOf, type AppState } from '../src/core/store.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
-import { derive } from '../src/ui/derive.js';
-import { initialUi } from '../src/ui/keymap.js';
 import { activityOf, contextMeter, isCompacting, isProjectOpen, overviewModel, projectsModel, reviewModel, stateOf, tabsModel, toggleProject, workspaceHeaderModel } from '../src/ui/workspace-models.js';
 import { agentsMenu, confirmMenu, projectMenu } from '../src/ui/menus.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
@@ -225,34 +223,6 @@ describe('workspace UI models', () => {
     expect(text(reviewModel(undefined, 100, 10).lines)[0]).toContain('Loading');
     expect(text(reviewModel({ ...review, error: 'boom' }, 100, 10).lines)[0]).toBe('boom');
     expect(text(reviewModel({ ...review, data: { base: 'a', commits: [], files: [] } }, 100, 10).lines)[0]).toContain('No changes');
-  });
-});
-
-const addZone = (s: AppState) => derive({ state: s, ui: initialUi, selfId: 'me', columns: 120, rows: 40, frame: 0 }).zones.find((z) => z.action.type === 'add_project')!;
-const addProjectX = (s: AppState) => addZone(s).x0 + 1;
-const addProjectY = (s: AppState) => addZone(s).y;
-
-describe('derive', () => {
-  it('lays out the screen and turns model zones into screen coordinates', () => {
-    const s = reduce(base(), { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } });
-    const d = derive({ state: s, ui: initialUi, selfId: 'me', columns: 120, rows: 40, frame: 0 });
-    expect(d.channel).toBe('ws:w1');
-    expect(d.workspace?.name).toBe('fix-auth');
-    expect(d.geometry.headerHeight).toBe(3);
-    expect(d.header).toBeDefined();
-    expect(d.projectItems).toEqual(expect.arrayContaining([{ type: 'toggle_project', id: 'p1' }]));
-    expect(d.headerItems.length).toBeGreaterThan(3);
-    const hovered = derive({ state: s, ui: initialUi, selfId: 'me', columns: 120, rows: 40, frame: 0, hover: { x: addProjectX(s), y: addProjectY(s) } });
-    expect(hovered.hint).toBe('Add a project, or a folder of projects');
-    const addProject = d.zones.find((z) => z.action.type === 'add_project')!;
-    expect(addProject.x0).toBeGreaterThan(2); // the "+ add" button on the PROJECTS header
-    expect(d.zones.some((z) => z.action.type === 'ws' && z.y === d.geometry.headerTop + 1)).toBe(true);
-    const review = derive({ state: reduce(s, { type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'review' } }), ui: { ...initialUi, focus: 'main' }, selfId: 'me', columns: 120, rows: 40, frame: 0 });
-    expect(review.focus).toBe('main');
-    expect(review.review).toBeDefined();
-    const overview = derive({ state: reduce(s, { type: 'view', view: { kind: 'overview' } }), ui: initialUi, selfId: 'me', columns: 120, rows: 40, frame: 0 });
-    expect(overview.overview).toBeDefined();
-    expect(overview.zones.some((z) => z.action.type === 'open_ws')).toBe(true);
   });
 });
 

@@ -731,13 +731,25 @@
   gap: 10px;
   margin-bottom: 18px;
 }
+/* Back and where the task is stay at the top while the page scrolls under them (BLG-5). */
 .crumbs {
+  position: sticky;
+  /* The page's own top padding counts for sticky: -18px is flush with its top. */
+  top: -18px;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: 26px;
+  margin: -18px -32px 10px;
+  padding: 10px 32px 6px;
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--hairline);
   color: var(--text-3);
   font-size: 12px;
+}
+.crumbBack {
+  margin-left: -6px;
 }
 .crumb {
   max-width: 300px;
@@ -1691,8 +1703,10 @@
 
 /* A task's page in a narrow column: its properties go above the content, two to a row. */
 .pageWrap {
+  position: relative;
   height: 100%;
   min-width: 0;
+  overflow: hidden;
   container: taskpage / inline-size;
 }
 @container taskpage (max-width: 780px) {
@@ -1703,6 +1717,11 @@
   .pageMain {
     overflow: visible;
     padding: 16px 20px 48px;
+  }
+  .crumbs {
+    top: 0;
+    margin: -16px -20px 10px;
+    padding: 8px 20px 6px;
   }
   .props {
     order: -1;
@@ -1789,4 +1808,28 @@
 .columnPr:hover {
   color: var(--text-1);
   text-decoration: underline;
+}
+
+/* Swiping back: an arrow comes in from the left edge with the swipe, and fills in once letting go goes back. */
+.swipeEdge {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 1px var(--hairline-strong), 0 4px 14px rgb(0 0 0 / 0.14);
+  color: var(--text-2);
+  opacity: calc(0.3 + var(--swipe) * 0.7);
+  transform: translate(calc(-40px + var(--swipe) * 56px), -50%);
+  pointer-events: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.swipeArmed {
+  background: var(--accent);
+  color: white;
 }

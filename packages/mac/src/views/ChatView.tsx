@@ -12,6 +12,7 @@ import { AgentWorktreePage } from '../claude-code/AgentMonitor.js';
 import { isAgentWorktree } from '../claude-code/subagents-model.js';
 import { LiveStrip } from '../claude-code/Live.js';
 import { TaskStrip } from '../tasks/TaskStrip.js';
+import { PrStrip } from '../chat/PrStrip.js';
 import { PlanStrip } from '../plans/PlanStrip.js';
 import { useWorktreeFlag } from './worktree-info-state.js';
 import { AskBanner } from '../chat/AskBanner.js';
@@ -105,12 +106,14 @@ export function ChatView() {
   // A sub-agent's own worktree is the agent, followed live (never a place to start a conversation).
   if (other && isAgentWorktree(other) && !hasItems) return <AgentWorktreePage ws={other} />;
   if (other && (about || (!hasItems && !started))) return <WorktreeInfoPage ws={other} />;
+  // Files from Finder dropped anywhere on it go in the message box (use-attachments.tsx).
   const chat = (
-    <div className={s.chat}>
+    <div className={s.chat} data-drop-zone>
       {other ? <OtherWorktreeBanner ws={other} /> : null}
       {view.kind === 'room' ? <ConnectionStatus /> : null}
       {view.kind === 'workspace' ? <PlanStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <TaskStrip workspaceId={view.id} /> : null}
+      {view.kind === 'workspace' ? <PrStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <LiveStrip workspaceId={view.id} /> : null}
       <ChatLog key={channel} channel={channel === 'draft' ? '__draft__' : channel} empty={empty} />
       {ws?.askOnly && !ws.archived && !planHome ? <AskBanner wsId={ws.id} /> : null}

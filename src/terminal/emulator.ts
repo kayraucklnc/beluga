@@ -248,7 +248,7 @@ export class TerminalEmulator {
   }
 }
 
-/** A link to a program in this same process (the terminal UI attached to its own core, and tests). */
+/** A link to a program in this same process (an in-process core, e.g. tests). */
 export function localLink(pty: PtyProcess): PtyLink {
   return {
     write: (data) => pty.write(data),

@@ -1,5 +1,5 @@
-//! Keeping Beluga up to date: look for a new version on GitHub now and then (never on every
-//! launch), download it in the background, and install it when you say so: right away, when
+//! Keeping Beluga up to date: look for a new version on GitHub at launch and every few hours,
+//! download it in the background, and install it when you say so: right away, when
 //! you've stepped away and nothing is running, or the next time you quit.
 //!
 //! The window shows what's happening (`update-state` events, see lib/updates.ts); the

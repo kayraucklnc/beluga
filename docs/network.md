@@ -120,6 +120,36 @@ system's idle time) when you chose Online, and Online again when you're back. Ne
 through the shared Notifier (the `mentions` kind), silently on Do Not Disturb or while you appear
 offline.
 
+## Multiple rooms
+
+One person can be in several rooms at once. Each room is its own Beluga: its own core, room client
+and peer list. All of them sign as the same identity,
+so the person's peer id is the same in every room (`tests/multi-room.test.ts`).
+
+- **Presence and the people list are per room.** Each hub lists whoever is connected to it. Leaving
+  room A takes you out of A's list only.
+- **Routing stays in the room it started in.** Directed frames (`to: peerId`) go to the connection
+  in that hub. `ask_agent`, `run_on_peer` and room gateway tasks find the person by name in that
+  room's peer list. If Bob is in both of your rooms, a request made in room B reaches his Beluga in B.
+  The mesh (friends, DMs, groups, gateway tasks over friends' links) runs only in the daemon, so one
+  Beluga per Mac takes those. A task over the mesh reaches the Beluga where the person runs the network,
+  not necessarily the one in your room.
+- **What they share is merged, not overwritten.** `~/.beluga/settings.json` `people` (trust) is
+  re-read before every change, and each change starts from what's saved. New people arriving re-read
+  it too, so a choice made in one room counts in the other. Before this, each Beluga wrote back the list it
+  had loaded at startup. `seen.json` (the replay guard) takes in the file before writing. A request
+  seen in one room can't be replayed into the other after a restart.
+- **The same room twice** (the same identity joining one hub again) still keeps the seat with whoever
+  has it. The newcomer is told "You’re already in this room from another window" (4003) and retries
+  in the background, so no window kicks another out in a loop. The hub then pings the existing seat. If
+  it doesn't answer within 3 s (`TWIN_PROBE_MS`), for example because a Mac went to sleep or its network
+  changed, the hub drops it, and the owner's next try gets in. Before this, a dead seat kept its owner
+  out until the 25 s heartbeat noticed, which took up to about 50 s.
+- **Limits.** The daemon (and so the Mac app) is in one room at a time. Joining a friend's room
+  restarts it with `join <link>`, and a terminal attaching with `BELUGA_DAEMON=1` to a different room is
+  refused. To be in two rooms from one Mac, the second one runs in a terminal. Desktop notifications
+  from two Belugas don't say which room they came from.
+
 ## Known limits (phase 1)
 
 - Logs are never compacted; very long-lived groups grow.

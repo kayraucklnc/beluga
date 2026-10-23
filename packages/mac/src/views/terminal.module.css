@@ -75,6 +75,21 @@
   right: 16px;
   bottom: 16px;
 }
+/* Variables changed since this terminal started: a quiet pill, not an alarm. */
+.envStale {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--card-line);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
 .none {
   flex: 1;
   display: grid;

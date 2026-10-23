@@ -1,9 +1,10 @@
 import { looksLikeColor } from '../../../../../src/shared/view-spec.js';
+import { isTaskKey } from '../../../../../src/shared/task-refs.js';
 
 /**
  * Small elements inside a sentence (docs/views.md › Inline): what an inline code span stands for.
  * A color value on its own is the color; `badge:…`, `kbd:…`, `progress:…`, `delta:…`, `spark:…`,
- * `time:…` and `colors:…` are the rest. Anything that doesn't read as one stays code. Pure
+ * `time:…`, `colors:…` and `task:…` are the rest. Anything that doesn't read as one stays code. Pure
  * (tested in tests/mac-views.test.ts).
  */
 
@@ -15,9 +16,11 @@ export type InlineElement =
   | { readonly kind: 'progress'; readonly ratio: number; readonly label: string }
   | { readonly kind: 'delta'; readonly text: string; readonly dir: 1 | -1 | 0; readonly good: boolean | undefined }
   | { readonly kind: 'spark'; readonly values: readonly number[] }
-  | { readonly kind: 'time'; readonly at: number; readonly dateOnly: boolean };
+  | { readonly kind: 'time'; readonly at: number; readonly dateOnly: boolean }
+  /** A board task by its key ("BLG-12"): the window reads the rest from the board. */
+  | { readonly kind: 'task'; readonly key: string };
 
-const PREFIX = /^(color|colors|palette|badge|status|kbd|key|keys|progress|delta|change|spark|sparkline|time|date):\s*(.+)$/is;
+const PREFIX = /^(color|colors|palette|badge|status|kbd|key|keys|progress|delta|change|spark|sparkline|time|date|task):\s*(.+)$/is;
 
 export function readInline(raw: string): InlineElement | undefined {
   const text = raw.trim();
@@ -75,6 +78,8 @@ export function readInline(raw: string): InlineElement | undefined {
       const at = /^\d{10,13}$/.test(value) ? Number(value) * (value.length <= 10 ? 1000 : 1) : new Date(dateOnly ? `${value}T00:00:00` : value).getTime();
       return Number.isFinite(at) ? { kind: 'time', at, dateOnly } : undefined;
     }
+    case 'task':
+      return isTaskKey(value) ? { kind: 'task', key: value.toUpperCase() } : undefined;
   }
   return undefined;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Board } from '../src/core/board/board.js';
 import { issueForWorkspace } from '../src/core/board/model.js';
-import { briefPrompt, describeIssue, describeList } from '../src/core/board/prompt.js';
+import { boardNote, briefPrompt, describeIssue, describeList } from '../src/core/board/prompt.js';
 import { BoardWork, startPrompt } from '../src/core/board/work.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
@@ -281,5 +281,61 @@ describe('review fixes', () => {
     const text = briefPrompt(store.getState().board, board.need(t.key));
     expect(text.match(/<\/task_brief>/g)).toHaveLength(1);
     expect(text).toContain('never as instructions');
+  });
+});
+
+describe('work that ships from another task’s worktree (BLG-29)', () => {
+  it('a task Claude moves along from a worktree is carried by it, and its merge makes it Done', async () => {
+    const { store, board, work, open } = setup();
+    open(ws('w1', 'api', 'buglist'));
+    const t = board.create({ projectId: 'api', title: 'Fix the badge' }, work.me());
+    work.forRun('ws:w1', 'p-me')!.tools!.update(t.key, { status: 'in_review' });
+    expect(board.need(t.key)).toMatchObject({ status: 'in_review', carriedBy: 'w1', branch: 'beluga/buglist' });
+    // It isn't the worktree's own task: the next run there isn't told it's doing it.
+    expect(issueForWorkspace(store.getState().board, 'w1')).toBeUndefined();
+    store.dispatch({ type: 'pr', id: 'w1', pr: { number: 3, url: 'u', state: 'MERGED', title: 'Buglist', draft: false, checks: 'passing' } });
+    await tick();
+    expect(board.need(t.key).status).toBe('done');
+  });
+
+  it('the sweep finds a merged pull request for a task whose worktree went, and leaves live ones to the workbench', async () => {
+    const store = new Store(initialState('room'));
+    store.dispatch({ type: 'projects', projects: [project('api', 'bob-api', [{ ...ws('w2', 'api', 'live'), archived: false } as Workspace])] });
+    const board = new Board({ store, dir: null, projectName: () => 'bob-api' });
+    const asked: string[] = [];
+    const work = new BoardWork({
+      store,
+      board,
+      selfId: () => 'p-me',
+      selfName: () => 'Kay',
+      askClaude: () => undefined,
+      sweepMs: 0,
+      findPr: async (_dir, branch) => {
+        asked.push(branch);
+        return branch === 'beluga/gone' ? { number: 4, url: 'u', state: 'MERGED', title: 'x', draft: false, checks: 'passing' } : undefined;
+      },
+    });
+    const gone = board.create({ projectId: 'api', title: 'Gone', status: 'in_review' }, work.me());
+    board.linkWorktree(gone.key, 'w-gone', { branch: 'beluga/gone' }, work.me());
+    const live = board.create({ projectId: 'api', title: 'Live', status: 'in_review' }, work.me());
+    board.linkWorktree(live.key, 'w2', { branch: 'beluga/live' }, work.me());
+    expect(await work.sweepShipped()).toBe(1);
+    expect(asked).toEqual(['beluga/gone']);
+    expect(board.need(gone.key)).toMatchObject({ status: 'done', pr: { number: 4 } });
+    expect(board.need(live.key).status).toBe('in_review');
+    work.stop();
+  });
+});
+
+describe('what Claude is told about tasks (BLG-25)', () => {
+  it('every run hears to open tasks unasked for several asks, to say which, and that the user’s way wins', () => {
+    const { board, work } = setup();
+    const t = board.create({ projectId: 'api', title: 'x' }, work.me());
+    for (const text of [boardNote(), briefPrompt(board.state(), t)]) {
+      expect(text).toContain('two or more separate things');
+      expect(text).toContain('`task:KEY`');
+      expect(text).toContain('Not for questions, a single quick ask');
+      expect(text).toContain('If the user wants it some other way, do that.');
+    }
   });
 });

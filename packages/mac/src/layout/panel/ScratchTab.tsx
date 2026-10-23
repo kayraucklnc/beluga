@@ -14,16 +14,16 @@ import { mod } from '../../lib/system.js';
 import { ChangedFileView } from '../../views/ChangedFile.js';
 import { signalOf } from '../attention-model.js';
 import { ResizeHandle } from './ResizeHandle.js';
-import { NextFileRow, ScratchSkeleton } from './ScratchSkeleton.js';
-import { type ScratchEntry, type ScratchKind, fileKind, followed, foldersWithFiles, isFresh, scratchPlace, timeAgo } from './scratch-model.js';
+import { NextFileRow, ScratchEmpty, ScratchSkeleton } from './ScratchSkeleton.js';
+import { type ScratchEntry, type ScratchKind, fileKind, followed, foldersWithFiles, isFresh, scratchPlace, scratchState, timeAgo } from './scratch-model.js';
 import s from './panel.module.css';
 import k from './scratch.module.css';
 
 /**
  * The right panel's Scratch: what Claude saves to the workspace's `.beluga/scratch/` (or `.context/`,
  * when another tool runs it there) while it works: screenshots, JSON, logs, notes, newest first and
- * live. Following, the preview shows the newest file as it lands; pick one to stay on it. Before
- * anything lands it's drawn in outline, moving while Claude works.
+ * live. Following, the preview shows the newest file as it lands; pick one to stay on it. While
+ * the first look is on its way it's drawn in outline; an empty folder says so, calmly.
  */
 
 const POLL_MS = 1200;
@@ -191,11 +191,10 @@ export function ScratchTab({ wsId }: { wsId: string }) {
     }
   };
 
-  if (list === undefined) return <div className={s.dimPad}>Looking in the scratch folder…</div>;
-  if (list === null) return <Empty icon="alert" title="No folder to look in" detail="This workspace’s folder is missing." />;
-  if (!files.length) {
-    return <ScratchSkeleton working={working} folders={SHOWN_SCRATCH_DIRS} off={!on} dir={list.dir} onReveal={() => void revealInFinder(client, list.dir)} />;
-  }
+  const state = scratchState(list);
+  if (state === 'loading') return <ScratchSkeleton />;
+  if (state === 'missing' || !list) return <Empty icon="alert" title="No folder to look in" detail="This workspace’s folder is missing." />;
+  if (state === 'empty') return <ScratchEmpty working={working} folders={SHOWN_SCRATCH_DIRS} off={!on} dir={list.dir} onReveal={() => void revealInFinder(client, list.dir)} />;
   const split = clampShare(prefs.panelSplit, SPLIT_MIN, SPLIT_MAX);
   return (
     <div ref={box} className={s.stack}>

@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { QueuedMessage } from '@beluga/ui/compose.js';
 import { channelOf } from '@beluga/core/store.js';
+import { imageLinksAsWords } from '@beluga/shared/attachment-links.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Tip, cx } from '../components/ui.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
@@ -106,8 +107,8 @@ export function QueueTray({ queue, selfName, onEdit, channel: given }: { queue: 
           return (
             <Row key={q.requestId} channel={channel} prompt={q.prompt} mine={q.yours} className={cx(s.row, !q.yours && s.theirs)}>
               <span className={s.n}>{i + 1}</span>
-              <span className={s.text} title={q.prompt}>
-                {q.prompt || 'A message'}
+              <span className={s.text} title={imageLinksAsWords(q.prompt)}>
+                {imageLinksAsWords(q.prompt) || 'A message'}
               </span>
               {who ? <span className={s.who}>{who}</span> : null}
               {q.yours ? (

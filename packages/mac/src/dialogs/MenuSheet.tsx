@@ -11,9 +11,9 @@ import { guiHint, paragraphs } from '../lib/gui-copy.js';
 import s from './sheet.module.css';
 
 /**
- * Every choice the terminal UI asks with a menu (settings sections, a person, a pull request,
- * invites, confirming an archive…), as a sheet: the same title, words and options, and picking
- * one does exactly what it does there. ↑↓ and Return work. Most menus have their own Mac way
+ * Every choice the shared menus ask (settings sections, a person, a pull request, invites,
+ * confirming an archive…), as a sheet: the spec's title, words and options, and picking one
+ * runs its action. ↑↓ and Return work. Most menus have their own Mac way
  * instead (dialogs/native); this is for the rest.
  */
 export function MenuSheet() {

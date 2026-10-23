@@ -8,7 +8,7 @@ import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
-import { type ToolAction, toolbarActions } from './toolbar-actions.js';
+import { type ToolAction, isPrStep, toolbarActions } from './toolbar-actions.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
@@ -124,7 +124,7 @@ export function Toolbar() {
     const menu = overflow.flatMap((section, k) => section.map((a, i) => ({ a, separate: k > 0 && i === 0 })));
     const run = (a: ToolAction): void => {
       if (a.disabled) return toast(client, a.hint, 'info');
-      if (a.action === 'fix_checks') return askBeforeWork(ws.id, 'fix_checks');
+      if (isPrStep(a.action)) return askBeforeWork(ws.id, a.action);
       if (isPlanAction(a.action)) return runPlanAction(state, ws.id, a.action, actions.run);
       actions.run({ type: 'ws', id: ws.id, action: a.action });
     };
@@ -152,7 +152,7 @@ export function Toolbar() {
                 <span className={s.ellipsis}>{ws.branch}</span>
               </span>
             ) : ws.kind === 'chat' ? (
-              <span className={s.meta}>{ws.askOnly ? 'Questions only · main folder' : 'Claude chat'}</span>
+              <span className={s.meta}>{ws.askOnly ? (planForHome(state.plans, `ws:${ws.id}`) ? 'The plan’s conversation · main folder' : 'Questions only · main folder') : 'Claude chat'}</span>
             ) : null}
             {pr ? (
               <span className={cx(s.meta, s.metaPr, pr.state === 'MERGED' && s.metaMerged)} title={describePr(pr)} data-pr-state={pr.state}>

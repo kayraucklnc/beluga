@@ -7,6 +7,7 @@ import { Avatar, Dot, cx } from '../../components/ui.js';
 import { useApp } from '../../lib/beluga.js';
 import { useLive } from '../../lib/live-motion.js';
 import { countRender } from '../../lib/render-count.js';
+import { type ImageRead, imageReadOf } from './image-read.js';
 import { StepDetail } from './StepDetail.js';
 import { useStepDetail } from './use-steps.js';
 import s from './steps.module.css';
@@ -64,6 +65,25 @@ export function usePersonId(name: string | undefined): string {
 /** A step's words: as it reads done, or while it's the step Claude is on. */
 export const wordsFor = (step: StepSummary, live: boolean): string => (live ? (step.doing ?? step.label ?? step.title) : (step.label ?? step.title));
 
+/** A picture being read: "Read" and the file's name as a badge (its whole path is the row's tooltip). */
+function ImageReadWords({ picture, current }: { picture: ImageRead; current: boolean }) {
+  return (
+    <>
+      {current ? <Shimmer>{picture.verb}</Shimmer> : picture.verb}
+      <span className={s.imageBadge}>
+        <Icon name="image" size={10} />
+        <span className={s.imageBadgeName}>{picture.name}</span>
+      </span>
+    </>
+  );
+}
+
+/** A step's one line where only its words are known (a card's "Reading shots/home.png"): a picture read shows as its badge. */
+export function StepWords({ words }: { words: string }) {
+  const picture = imageReadOf({ kind: 'tool' }, words);
+  return picture ? <ImageReadWords picture={picture} current={false} /> : <>{words}</>;
+}
+
 export interface StepRowProps {
   readonly step: StepSummary;
   readonly open: boolean;
@@ -97,6 +117,8 @@ export const StepRow = memo(function StepRow({ step: given, open, onToggle, load
   const running = step.status === 'running' && live;
   const { record, loading, gone } = useStepDetail(() => load(step.id), open && canOpen, `${step.status}:${step.durationMs ?? ''}:${step.endedAt ?? ''}`);
   const time = thinking ? undefined : durationOf(step, now, live);
+  const shown = words ?? wordsFor(step, current);
+  const picture = imageReadOf(step, shown);
   const head = (
     <>
       <span className={cx(s.chev, open && s.chevOpen, !canOpen && s.chevNone)}>
@@ -104,7 +126,7 @@ export const StepRow = memo(function StepRow({ step: given, open, onToggle, load
       </span>
       <span className={cx(s.icon, thinking && s.iconThink, step.person && s.iconPerson)}>{step.person ? <Avatar name={step.person} id={personId} size={15} /> : <Icon name={iconOf(step)} size={12} />}</span>
       <span className={cx(s.title, thinking && s.titleThink)} title={step.label ?? step.title}>
-        {current ? <Shimmer>{words ?? wordsFor(step, true)}</Shimmer> : (words ?? wordsFor(step, false))}
+        {picture ? <ImageReadWords picture={picture} current={current} /> : current ? <Shimmer>{shown}</Shimmer> : shown}
       </span>
       <span className={s.end}>
         {time ? <span className={s.time}>{time}</span> : null}

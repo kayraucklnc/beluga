@@ -57,5 +57,18 @@ export function scratchPlace(path: string, roots: readonly string[]): ScratchPla
 export const foldersWithFiles = (files: readonly ScratchEntry[], roots: readonly string[]): string[] =>
   roots.filter((r) => files.some((f) => f.path.startsWith(`${r}/`)));
 
+/**
+ * What the tab shows: `loading` until the first look answers (the outline skeleton), `missing`
+ * when there's no folder to look in, `empty` once looked and nothing's there (a calm empty
+ * state, never the skeleton), else the `files`.
+ */
+export type ScratchState = 'loading' | 'missing' | 'empty' | 'files';
+
+export function scratchState(list: { readonly files: readonly unknown[] } | null | undefined): ScratchState {
+  if (list === undefined) return 'loading';
+  if (list === null) return 'missing';
+  return list.files.length ? 'files' : 'empty';
+}
+
 /** The placeholder rows' name widths (%), so the skeleton reads as a list of different files. */
 export const GHOST_WIDTHS = [62, 44, 71, 38] as const;

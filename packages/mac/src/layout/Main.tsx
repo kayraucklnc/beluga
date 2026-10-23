@@ -1,11 +1,14 @@
 import { Component, type ReactNode, lazy, Suspense, useRef } from 'react';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Button, Empty } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
+import { useMaking } from '../lib/making.js';
 import { ChatView } from '../views/ChatView.js';
 import { Toolbar } from './Toolbar.js';
 import { WorkspaceCenter } from './panel/FocusView.js';
 import { TerminalDrawer } from './panel/TerminalDrawer.js';
 import s from './Shell.module.css';
+import side from './Sidebar.module.css';
 
 const OverviewView = lazy(() => import('../views/OverviewView.js').then((m) => ({ default: m.OverviewView })));
 const SearchView = lazy(() => import('../views/SearchView.js').then((m) => ({ default: m.SearchView })));
@@ -24,8 +27,24 @@ const TaskPage = lazy(() => import('../tasks/TaskPage.js').then((m) => ({ defaul
 const PlansView = lazy(() => import('../plans/PlansView.js').then((m) => ({ default: m.PlansView })));
 const PlanPage = lazy(() => import('../plans/PlanPage.js').then((m) => ({ default: m.PlanPage })));
 
+/** A worktree being made: its page shows at once, and becomes its conversation when git is done. */
+function MakingWorktree() {
+  const ws = useApp((st) => (st.view.kind === 'workspace' ? findWorkspace(st.projects, st.view.id) : undefined));
+  if (!ws) return null;
+  return (
+    <Empty
+      icon="branch"
+      mark={<span className={side.making} style={{ width: 18, height: 18 }} aria-hidden="true" />}
+      title={`Making ${ws.name}…`}
+      detail={`A new worktree from ${ws.base ?? 'the latest origin'}. Its conversation opens here in a moment; anything you asked Claude starts then.`}
+    />
+  );
+}
+
 function Route() {
   const view = useApp((st) => st.view);
+  const making = useMaking();
+  if (making) return <MakingWorktree />;
   switch (view.kind) {
     case 'room':
     case 'draft':
@@ -35,7 +54,7 @@ function Route() {
       // Always the conversation; its changes, files and terminal are in the right panel (a diff or a file can take the center for a while).
       return <WorkspaceCenter />;
     case 'shared':
-      // Its Files tab browses and searches (the terminal UI's read-only shell lives there too).
+      // Its Files tab browses and searches.
       return view.tab === 'chat' ? <ChatView /> : view.tab === 'diff' ? <DiffView /> : <FilesView />;
     case 'overview':
       return <OverviewView />;
@@ -98,6 +117,7 @@ class ViewBoundary extends Component<{ children: ReactNode; at: string }, { erro
 export function Main() {
   const at = useApp((st) => JSON.stringify(st.view));
   const column = useRef<HTMLElement>(null);
+  const making = useMaking();
   return (
     <main ref={column} className={s.main}>
       <Toolbar />
@@ -106,7 +126,8 @@ export function Main() {
           <Route />
         </Suspense>
       </ViewBoundary>
-      <TerminalDrawer column={column} />
+      {/* Nothing to run in a worktree that isn't there yet. */}
+      {making ? null : <TerminalDrawer column={column} />}
     </main>
   );
 }

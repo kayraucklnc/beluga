@@ -2,7 +2,136 @@ import { describe, expect, it } from 'vitest';
 import type { Plan, PlansState } from '../src/core/plans/model.js';
 import { isPlanHome } from '../src/core/plans/model.js';
 import { Store, initialState } from '../src/core/store.js';
-import { CHAT_DEFAULT, CHAT_MIN, DEFAULT_PLAN_LAYOUT, chatOpen, clampChatWidth, readPlanLayout, setChatOpen } from '../packages/mac/src/plans/plan-layout.js';
+import {
+  CHAT_DEFAULT,
+  CHAT_MIN,
+  DEFAULT_PLAN_LAYOUT,
+  FOLDED,
+  MILESTONE,
+  PLAN_GAPS,
+  TASK_CARD,
+  TASK_COMPACT,
+  arrowHead,
+  chatOpen,
+  clampChatWidth,
+  gateHeight,
+  isFolded,
+  labelAt,
+  milestoneAnchors,
+  milestoneFrame,
+  milestoneRoute,
+  placeMilestones,
+  readFolds,
+  readPlanLayout,
+  setChatOpen,
+  taskSize,
+  withFold,
+} from '../packages/mac/src/plans/plan-layout.js';
+
+describe('the plan graph’s geometry', () => {
+  it('draws a finished task as a slim row, the rest as full cards', () => {
+    expect(taskSize('done')).toEqual(TASK_COMPACT);
+    expect(taskSize('planned')).toEqual(TASK_COMPACT);
+    expect(taskSize('canceled')).toEqual(TASK_COMPACT);
+    for (const s of ['ready', 'running', 'review', 'blocked', 'asking']) expect(taskSize(s)).toEqual(TASK_CARD);
+    expect(TASK_COMPACT.width).toBe(TASK_CARD.width);
+    expect(TASK_COMPACT.height).toBeLessThan(TASK_CARD.height / 2);
+  });
+
+  it('puts a milestone’s gate across its foot, sized by its criteria, and stretches the box from above it', () => {
+    const inner = { width: 600, height: 180 };
+    const f = milestoneFrame(inner, ['One', 'Two'], false);
+    expect(f.width).toBe(600);
+    expect(f.gate).toEqual({ x: MILESTONE.inset, y: f.height - MILESTONE.inset - f.gate.height, width: 600 - 2 * MILESTONE.inset, height: gateHeight(['One', 'Two'], 580) });
+    expect(f.gate.y).toBe(180 + MILESTONE.gateGap);
+    // A longer criterion wraps (two lines at most), a narrower gate wraps sooner.
+    expect(gateHeight(['x'.repeat(200)], 580)).toBe(gateHeight(['a', 'b'], 580) - 5);
+    expect(gateHeight(['x'.repeat(70)], 300)).toBeGreaterThan(gateHeight(['x'.repeat(70)], 600));
+    // Stretched to its row's tallest: the gate stays at the foot.
+    const tall = milestoneFrame(inner, ['One', 'Two'], false, f.height + 100);
+    expect(tall.height).toBe(f.height + 100);
+    expect(tall.gate.y).toBe(f.gate.y + 100);
+    // A narrow milestone is still MILESTONE.minWidth wide, its tasks centred in it.
+    const narrow = milestoneFrame({ width: 292, height: 170 }, [], false);
+    expect(narrow.width).toBe(MILESTONE.minWidth);
+    expect(narrow.shiftX).toBe((MILESTONE.minWidth - 292) / 2);
+  });
+
+  it('folds a milestone into one summary row, whatever its tasks and criteria', () => {
+    const f = milestoneFrame({ width: 900, height: 400 }, ['a', 'b', 'c'], true, 700);
+    expect(f).toMatchObject({ folded: true, width: FOLDED.maxWidth, height: FOLDED.height, shiftX: 0 });
+    expect(f.gate).toEqual({ x: 0, y: 0, width: FOLDED.maxWidth, height: FOLDED.height });
+    expect(milestoneFrame({ width: 100, height: 400 }, [], true).width).toBe(FOLDED.minWidth);
+    expect(milestoneFrame({ width: 400, height: 400 }, [], true).width).toBe(400);
+    // Wide enough for its title beside its counts (a long one ends in an ellipsis past FOLDED.maxWidth).
+    expect(milestoneFrame({ width: 292, height: 170 }, [], true, undefined, 'Test-mode foundations').width).toBe(Math.round(FOLDED.chrome + 21 * 7.4));
+    expect(milestoneFrame({ width: 292, height: 170 }, [], true, undefined, 'x'.repeat(80)).width).toBe(FOLDED.maxWidth);
+  });
+
+  it('wires milestones from the middle of the gate’s foot to the top middle of the next, never a corner', () => {
+    const box = { x: 100, y: 50, width: 400, height: 300 };
+    const gate = { x: 10, y: 200, width: 380, height: 90 };
+    const a = milestoneAnchors(box, gate);
+    expect(a.out).toEqual({ x: 300, y: 340 });
+    expect(a.in).toEqual({ x: 300, y: 50 - MILESTONE.badge / 2 });
+    // Folded (no gate of its own): from the middle of the box's foot.
+    expect(milestoneAnchors(box).out).toEqual({ x: 300, y: 350 });
+  });
+
+  it('runs a milestone’s line down, across the gap, and down again (straight when they line up)', () => {
+    expect(milestoneRoute({ x: 300, y: 340 }, { x: 300, y: 430 }, 384, 384)).toEqual([
+      { x: 300, y: 340 },
+      { x: 300, y: 430 },
+    ]);
+    expect(milestoneRoute({ x: 300, y: 340 }, { x: 700, y: 430 }, 384, 384)).toEqual([
+      { x: 300, y: 340 },
+      { x: 300, y: 384 },
+      { x: 700, y: 384 },
+      { x: 700, y: 430 },
+    ]);
+    // Past a row in between: down a gap clear of the milestones there.
+    const between = { x: 200, y: 450, width: 300, height: 200 };
+    const route = milestoneRoute({ x: 300, y: 400 }, { x: 350, y: 800 }, 425, 750, [between]);
+    expect(route[0]).toEqual({ x: 300, y: 400 });
+    expect(route[route.length - 1]).toEqual({ x: 350, y: 800 });
+    const lane = route.find((pt, i) => i > 0 && pt.y === 750)!.x;
+    expect(lane < between.x || lane > between.x + between.width).toBe(true);
+    for (let i = 1; i < route.length; i++) expect(route[i]!.x === route[i - 1]!.x || route[i]!.y === route[i - 1]!.y).toBe(true);
+  });
+
+  it('places rows top to bottom, centred, a row under the milestones it waits on', () => {
+    const sizes = new Map([
+      ['a', { width: 400, height: 300 }],
+      ['b', { width: 400, height: 200 }],
+      ['c', { width: 300, height: 100 }],
+      ['d', { width: 300, height: 100 }],
+    ]);
+    const at = placeMilestones([['a', 'b'], ['c', 'd']], sizes, new Map([['c', ['b']], ['d', ['a']]]));
+    expect(at.get('a')).toEqual({ x: PLAN_GAPS.pad, y: PLAN_GAPS.pad, width: 400, height: 300 });
+    expect(at.get('b')!.x).toBe(PLAN_GAPS.pad + 400 + PLAN_GAPS.side);
+    expect(at.get('c')!.y).toBe(PLAN_GAPS.pad + 300 + PLAN_GAPS.row);
+    // d waits on a (left), c on b (right): d goes first.
+    expect(at.get('d')!.x).toBeLessThan(at.get('c')!.x);
+  });
+
+  it('ends a line in a small arrowhead pointing its way, and labels it just below the gate', () => {
+    expect(arrowHead([{ x: 0, y: 0 }, { x: 0, y: 100 }], 4)).toBe('M-4,95 L0,100 L4,95');
+    expect(arrowHead([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 0 }], 4)).toBe('M95,4 L100,0 L95,-4');
+    expect(arrowHead([{ x: 1, y: 1 }])).toBe('');
+    expect(labelAt([{ x: 0, y: 0 }, { x: 0, y: 40 }, { x: 90, y: 40 }])).toEqual({ x: 0, y: 20 });
+  });
+
+  it('folds passed milestones by itself, and keeps your choice for each plan', () => {
+    expect(isFolded({}, 'p', 'm', true)).toBe(true);
+    expect(isFolded({}, 'p', 'm', false)).toBe(false);
+    const opened = withFold({}, 'p', 'm', false);
+    expect(isFolded(opened, 'p', 'm', true)).toBe(false);
+    expect(isFolded(opened, 'q', 'm', true)).toBe(true);
+    expect(isFolded(withFold(opened, 'p', 'n', true), 'p', 'm', true)).toBe(false);
+    expect(readFolds({ p: { m: false, n: 'yes' }, q: 3, r: {} })).toEqual({ p: { m: false } });
+    expect(readFolds(null)).toEqual({});
+  });
+});
 
 describe('plan page layout', () => {
   it('reads older and broken saves as the defaults', () => {

@@ -57,9 +57,15 @@ fn place<R: Runtime>(app: &AppHandle<R>, height: f64) {
     };
     let height = height.clamp(MIN_HEIGHT, MAX_HEIGHT);
     let _ = window.set_size(LogicalSize::new(WIDTH, height));
+    // The screen you're on (the one with the pointer), else Beluga's, else the main one.
     let monitor = app
-        .get_webview_window("main")
-        .and_then(|m| m.current_monitor().ok().flatten())
+        .cursor_position()
+        .ok()
+        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+        .or_else(|| {
+            app.get_webview_window("main")
+                .and_then(|m| m.current_monitor().ok().flatten())
+        })
         .or_else(|| app.primary_monitor().ok().flatten());
     if let Some(m) = monitor {
         let scale = m.scale_factor();
@@ -95,8 +101,50 @@ fn ensure<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .visible(false);
     #[cfg(target_os = "macos")]
     let builder = builder.accept_first_mouse(true);
-    builder.build()?;
+    let window = builder.build()?;
+    #[cfg(target_os = "macos")]
+    {
+        let w = window.clone();
+        let _ = app.run_on_main_thread(move || float_over_everything(&w));
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
     Ok(())
+}
+
+/// `NSWindowCollectionBehavior`: on every Space, the full-screen ones too, staying put when Spaces
+/// change and out of ⌘` cycling.
+#[cfg(target_os = "macos")]
+const FLOAT_BEHAVIOR: usize = (1 << 0) /* canJoinAllSpaces */
+    | (1 << 4) /* stationary */
+    | (1 << 6) /* ignoresCycle */
+    | (1 << 8) /* fullScreenAuxiliary */;
+/// `NSPopUpMenuWindowLevel` (kCGPopUpMenuWindowLevel): above other apps' windows, a full-screen
+/// video's Space included, and above Beluga's own.
+#[cfg(target_os = "macos")]
+const FLOAT_LEVEL: isize = 101;
+
+/// The card shows wherever you are: over another app's full-screen Space (a video, a game),
+/// with Beluga hidden or in the Dock, and it never hides when Beluga isn't the active app. It
+/// still never takes the keyboard (the window isn't focusable). Needs no macOS permission.
+#[cfg(target_os = "macos")]
+fn float_over_everything<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    let ns = ptr.cast::<AnyObject>();
+    if ns.is_null() {
+        return;
+    }
+    // SAFETY: `ns` is this window's live NSWindow, and this runs on the main thread.
+    unsafe {
+        let _: () = msg_send![ns, setCollectionBehavior: FLOAT_BEHAVIOR];
+        let _: () = msg_send![ns, setLevel: FLOAT_LEVEL];
+        let _: () = msg_send![ns, setHidesOnDeactivate: false];
+        let _: () = msg_send![ns, setCanHide: false];
+    }
 }
 
 /// Show what's left to show (or hide the card when nothing is).

@@ -21,7 +21,7 @@ import type { Settings } from './settings.js';
 import { runCommand } from './commands.js';
 import { People } from './people.js';
 import { ReplayGuard } from './replay.js';
-import { AgentHost } from './agent-host.js';
+import { AgentHost, type ApprovalAnswer } from './agent-host.js';
 import { RoomFiles, dirKey } from './room-files.js';
 import { createRoomBridge } from './agent-bridge.js';
 import { createSessionParts } from './session-parts.js';
@@ -81,6 +81,8 @@ export interface SessionOptions {
   readonly hasGh?: () => Promise<boolean>;
   /** Trust levels you chose for people before (by key-derived id). */
   readonly savedPeople?: Settings['people'];
+  /** Re-reads the saved trust levels (another Beluga with your identity, in another room, may have changed them). */
+  readonly loadPeople?: () => Settings['people'];
   /** Where recent requests are remembered across restarts (omit in tests: memory only). */
   readonly replayFile?: string;
   /** Where the details of Claude's steps are kept across restarts (omit in tests: memory only). */
@@ -91,7 +93,7 @@ export interface SessionOptions {
   readonly otherTools?: import('./other-worktrees.js').OtherTools;
   /** How friends' commands run on this computer (the demo injects canned output). */
   readonly runShell?: ShellRunner;
-  /** Stop Beluga itself (the daemon, or the terminal UI running it). */
+  /** Stop Beluga itself (the daemon). */
   readonly shutdown?: () => void;
 }
 
@@ -379,7 +381,7 @@ export class Session {
       this.toast('Opening a secure link for friends… it will be copied when ready');
       return;
     }
-    await this.copyOrShow(`beluga join ${invite}`, 'Invite copied. Paste it to a friend');
+    await this.copyOrShow(invite, 'Invite copied. Paste it to a friend');
   }
 
   async copyLastAnswer(): Promise<void> {
@@ -459,7 +461,7 @@ export class Session {
     this.host.runOnBehalf(from, channel, prompt);
   }
 
-  answerApproval(answer: 'yes' | 'no' | 'always', id?: string): boolean {
+  answerApproval(answer: ApprovalAnswer, id?: string): boolean {
     return this.host.answerApproval(answer, id);
   }
 

@@ -16,11 +16,11 @@ import { type Entry, foldOf, movedTogether, ownStepsOf, subRowView, timelineOf }
 import { usePresence } from '../../layout/panel/ResizeHandle.js';
 import { Shimmer, StepRow, usePersonId } from './StepRow.js';
 import { useAgentSteps } from './use-steps.js';
+import { type TurnPart, inHead } from '../live-tail.js';
 import { useActions } from '../../lib/actions.js';
 import { useClock } from '../../lib/window-active.js';
 import { countRender } from '../../lib/render-count.js';
 import { keepSameById, sameDeep, sameItems } from '../../lib/stable.js';
-import { useLive } from '../../lib/live-motion.js';
 import { agentOfToolUse, allSubAgents } from '../../claude-code/subagents-model.js';
 import { openSubAgent } from '../../layout/SubAgents.js';
 import { waitState, waitTone, waitedLabel, waitingFor } from './waiting.js';
@@ -36,19 +36,9 @@ const RECENT_LIVE = 2;
 /** How long folding a finished card's steps takes (twice --dur, see .fold). */
 const FOLD_MS = 380;
 
-/** The hairline under a working card's header, a soft light travelling along it (moved by the live clock, lib/live-motion.ts). */
-function Progress() {
-  const line = useRef<HTMLDivElement>(null);
-  useLive(line, (t) => {
-    // Eased in and out, from just off the left to just off the right, every 1.8s.
-    const f = t === null ? 0.5 : (t % 1800) / 1800;
-    line.current?.style.setProperty('--travel', `${-100 + 400 * (0.5 - 0.5 * Math.cos(Math.PI * f))}%`);
-  });
-  return <div ref={line} className={s.progress} role="progressbar" aria-label="Claude is working" />;
-}
-
 const NO_TASKS: readonly TaskView[] = [];
 const NO_STEPS: readonly StepSummary[] = [];
+const NO_SUBS: readonly SubAgent[] = [];
 
 /** The clock for a step's row: only a running step's time moves, so only its row is drawn again as the clock ticks. */
 const clockFor = (step: StepSummary, live: boolean, now: number): number => (live && step.status === 'running' ? now : 0);
@@ -76,13 +66,13 @@ function spanOf(steps: readonly StepSummary[]): string | undefined {
 }
 
 /**
- * What Claude did on a card, and what it's doing now. While it works: a quiet progress line
- * under the header, the step it's on as the prominent live line (or a waiting row with the
- * friend it waits on), the last finished steps above it, and older ones folded into
- * "5 steps · 12s". Every step is said in words ("Ran npm test", "Asked bob's Claude: …"), never
+ * What Claude did on a card, and what it's doing now. While it works: the step it's on as the
+ * prominent live line (or a waiting row with the friend it waits on), the last finished steps
+ * above it, and older ones folded into "5 steps · 12s"; the card's working line says the rest.
+ * A turn split by what you said meanwhile (`part`, see live-tail.ts) draws only its side's steps. Every step is said in words ("Ran npm test", "Asked bob's Claude: …"), never
  * a tool's name or an id; your own Claude's steps open to show what ran and what came back.
  */
-export const AgentSteps = memo(function AgentSteps({ item, running }: { item: AgentItem; running: boolean }) {
+export const AgentSteps = memo(function AgentSteps({ item, running, part }: { item: AgentItem; running: boolean; part?: TurnPart | undefined }) {
   const selfId = useApp((st) => st.selfId);
   const detail = useApp((st) => st.prefs.subagents);
   const mine = item.owner === selfId;
@@ -110,8 +100,9 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
     const next = rich?.length
       ? rich.filter((x) => !x.parent && !(x.tool && LAUNCH.has(x.tool) && subIds.has(x.id)) && !HIDDEN_STEPS.test(x.title)).map(withWords)
       : lines.map((line, i) => lineStep(line, i, item.ts, running && i === lines.length - 1));
-    return (before.current = keepSameById(before.current, next));
-  }, [rich, subIds, item.steps, item.ts, running]);
+    const mine = part ? next.filter((x) => inHead(x, part.cut) === (part.side === 'head')) : next;
+    return (before.current = keepSameById(before.current, mine));
+  }, [rich, subIds, item.steps, item.ts, running, part?.side, part?.cut]);
   const working = running && !item.text;
   // Only the tasks this card's steps wait on: another task changing doesn't draw this card again.
   const asked = rows.flatMap((x) => (x.task ? [x.task] : [])).join(' ');
@@ -127,7 +118,9 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
   const current = working && lastRow?.status === 'running' ? lastRow : undefined;
   const finished = useMemo(() => (current ? rows.slice(0, -1) : rows), [current, rows]);
   // Sub-agents and background work sit where they started (KLD-51); hidden, they're one line at the end.
-  const timeline = useMemo(() => timelineOf(finished, detail === 'hidden' ? [] : subagents, (id) => rich?.find((x) => x.id === id)?.startedAt), [finished, detail, subagents, rich]);
+  // A split turn's sub-agents and background work are its tail's (what's still going stays in sight at the bottom).
+  const placedSubs = detail === 'hidden' || part?.side === 'head' ? NO_SUBS : subagents;
+  const timeline = useMemo(() => timelineOf(finished, placedSubs, (id) => rich?.find((x) => x.id === id)?.startedAt), [finished, placedSubs, rich]);
   const ownBefore = useRef<ReadonlyMap<string, readonly StepSummary[]>>(undefined);
   const own = useMemo(() => (ownBefore.current = ownStepsOf(ownBefore.current, rich, subagents)), [rich, subagents]);
   const keep = running ? RECENT_LIVE : DONE_STEPS;
@@ -172,7 +165,6 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
 
   return (
     <>
-      {working ? <Progress /> : null}
       <div className={s.list} role="list" aria-label="Claude's steps">
         {/* One keyed list with the step Claude is on: when it finishes it stays the same row (no
             remount, so nothing blinks or restarts) and only changes how it reads. A row leaving the
@@ -216,13 +208,9 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
             <Slot key={current.id} still={still} id={current.id}>
               {row(current, true)}
             </Slot>
-          ) : working ? (
-            <Slot key="idle" still={still}>
-              <LiveIdle started={rows.length > 0} since={item.ts} />
-            </Slot>
           ) : null}
         </AnimatePresence>
-        {detail === 'hidden' && item.subagents.length ? (
+        {detail === 'hidden' && item.subagents.length && part?.side !== 'head' ? (
           <div className={c.step}>
             <Icon name="claude" size={11} />
             {item.subagents.length} sub-agent{item.subagents.length === 1 ? '' : 's'}
@@ -319,22 +307,6 @@ export function StepsFold({ folded, children }: { folded: boolean; children: Rea
   );
 }
 
-/** Between steps (Claude thinking about what to do next), or before the first one. */
-function LiveIdle({ started, since }: { started: boolean; since: number }) {
-  return (
-    <div className={cx(s.row, s.rowCurrent)} data-current="true" data-claude-starting={started ? undefined : 'true'}>
-      <div className={cx(s.head, s.headStatic)}>
-        <span className={cx(s.chev, s.chevNone)} />
-        <span className={cx(s.icon, s.iconThink)}>{started ? <Icon name="bulb" size={12} /> : <Dot tone="claude" live />}</span>
-        <span className={s.title}>
-          <Shimmer>{started ? 'Thinking' : 'Claude is starting'}</Shimmer>
-        </span>
-        <span className={s.end} data-since={since} />
-      </div>
-    </div>
-  );
-}
-
 /** Claude waits on a friend's Claude (or Mac): who, where their side is, for how long; Cancel. */
 function WaitingRow({ step, task, now }: { step: StepSummary; task: TaskView | undefined; now: number }) {
   const { client } = useBeluga();
@@ -422,7 +394,7 @@ const SubAgentRow = memo(function SubAgentRow({ sub, own, detail, toggle, load, 
           <Icon name="chevronRight" size={9} />
         </span>
       ) : null}
-      {running ? <Dot tone="claude" live /> : <Icon name={sub.status === 'failed' ? 'x' : 'check'} size={11} className={sub.status === 'failed' ? c.subFailed : c.subDone} />}
+      {running ? <Dot tone={sub.kind === 'background' ? 'claude' : 'subagent'} live /> : <Icon name={sub.status === 'failed' ? 'x' : 'check'} size={11} className={sub.status === 'failed' ? c.subFailed : c.subDone} />}
       <span className={c.subTitle}>{sub.kind === 'background' ? `Background · ${sub.title}` : sub.title}</span>
       {sub.steps.length ? <span className={c.time}>{sub.steps.length} steps</span> : null}
       <WatchAgent id={sub.id} />

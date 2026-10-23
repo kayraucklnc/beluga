@@ -4,6 +4,10 @@ import { z } from 'zod';
 const DRAFT_TIMEOUT_MS = 20_000;
 const MAX_TEXT = 8000;
 const DRAFT_PRIORITIES = ['urgent', 'high', 'medium', 'low'] as const;
+/** New labels a draft may bring (the board's own come first). */
+export const NEW_LABELS = 2;
+/** A new label: one or two short lowercase words ("mac", "bug", "dark-mode"). */
+const LABEL = /^[a-z0-9][a-z0-9-]{0,19}$/;
 
 /** What a task's describer knows besides the words: the project, and the labels the board already uses. */
 export interface DraftContext {
@@ -16,7 +20,7 @@ export interface TaskDraft {
   readonly title: string;
   readonly goal: string;
   readonly acceptance: readonly string[];
-  /** Only labels the board already has. */
+  /** The board's own labels that fit, and at most NEW_LABELS new ones when none do. */
   readonly labels: readonly string[];
   /** Only when the words say how much it matters. */
   readonly priority?: (typeof DRAFT_PRIORITIES)[number];
@@ -30,7 +34,7 @@ const Draft = z.object({
   priority: z.enum(DRAFT_PRIORITIES).nullish(),
 });
 
-/** The draft out of what the model said (its JSON object), with labels kept to the board's own. */
+/** The draft out of what the model said (its JSON object): the board's labels in its own spelling, and a couple of new short ones at most. */
 export function parseTaskDraft(raw: string, known: readonly string[]): TaskDraft | undefined {
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
@@ -45,7 +49,10 @@ export function parseTaskDraft(raw: string, known: readonly string[]): TaskDraft
   if (!parsed.success) return undefined;
   const { title, goal, acceptance, labels, priority } = parsed.data;
   const byLower = new Map(known.map((l) => [l.toLowerCase(), l]));
-  const kept = [...new Set(labels.flatMap((l) => byLower.get(l.trim().toLowerCase()) ?? []))];
+  const said = labels.map((l) => l.trim().toLowerCase().replace(/\s+/g, '-'));
+  const own = said.flatMap((l) => byLower.get(l) ?? []);
+  const fresh = said.filter((l) => !byLower.has(l) && LABEL.test(l)).slice(0, NEW_LABELS);
+  const kept = [...new Set([...own, ...fresh])];
   return { title: title.replace(/\s+/g, ' ').replace(/^["“]|["”.]$/g, ''), goal, acceptance, labels: kept, ...(priority ? { priority } : {}) };
 }
 
@@ -73,7 +80,8 @@ const SYSTEM = [
   'title: an imperative, at most 8 words, no period ("Rate-limit the login endpoint").',
   'goal: 1 to 3 sentences of Markdown: what it is for and what done looks like.',
   'acceptance: 1 to 5 short, checkable criteria.',
-  'labels: only from the labels the board already uses, and only those that clearly fit; often none.',
+  'labels: 1 to 3 that clearly fit. Prefer the labels the board already uses; when none fit, make up to 2 new ones,',
+  'short and lowercase, about the area or kind of work ("mac", "chat", "bug", "tasks"). Never one for the priority.',
   "priority: only when their words say how much it matters; otherwise null.",
 ].join('\n');
 

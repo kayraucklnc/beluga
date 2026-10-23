@@ -6,6 +6,7 @@ import type { Action, LogItem, Store } from '../store.js';
 import type { Workspace } from '../../workspaces/types.js';
 import type { WorkspaceController, WorktreeEvent } from '../workspace-controller.js';
 import { Board, type IssuePatch, type NewIssue } from './board.js';
+import type { IssuePr } from './model.js';
 import { needsChecksText, unexplained } from './criteria.js';
 import { briefPrompt, boardNote, definePrompt, describeIssue, describeList } from './prompt.js';
 import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, filterIssues, isFinished, isOpen, issueForWorkspace, titleFromName } from './model.js';
@@ -26,7 +27,15 @@ export interface BoardWorkDeps {
   readonly askClaude: (prompt: string, channel: string) => void;
   /** Your Claude writes a task from a description (none: the first line is the title). */
   readonly draftTask?: (text: string, ctx: DraftContext) => Promise<TaskDraft | undefined>;
+  /** A branch's pull request, asked of gh (none: tasks whose worktree went aren't looked after). Throws when gh can't tell. */
+  readonly findPr?: (dir: string, branch: string) => Promise<IssuePr | undefined>;
+  /** How often to look for merged pull requests of tasks nobody watches any more (0: only when asked). */
+  readonly sweepMs?: number;
 }
+
+/** Looking for shipped work: soon after start, then every ten minutes. */
+const SWEEP_FIRST_MS = 30_000;
+const SWEEP_MS = 10 * 60_000;
 
 const WS = 'ws:';
 
@@ -42,12 +51,16 @@ export class BoardWork {
   private readonly offs: Array<() => void> = [];
   /** More for a run doing a task (the plan it's part of): see setBriefExtra. */
   private briefExtra: (issue: Issue) => string = () => '';
+  /** A run's own instructions (a plan milestone's worktree): see setRunBrief. */
+  private runBrief: (channel: string) => { readonly brief: string; readonly current?: Issue } | undefined = () => undefined;
   /** Tasks Claude is writing from a description (by id): starting one waits for its words. */
   private readonly drafts = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: BoardWorkDeps) {
     this.board = deps.board;
     if (deps.controller) this.offs.push(deps.controller.onWorktree((e) => this.onWorktree(e)));
+    // Proof made in a worktree outlives it: kept before its folder goes (proof-files.ts).
+    if (deps.controller?.onWorktreeGoing) this.offs.push(deps.controller.onWorktreeGoing((ws) => void this.board.keepProofs(ws.path)));
     // After the action that caused it has reached everyone (never inside its dispatch).
     this.offs.push(
       deps.store.onAction((a) =>
@@ -61,6 +74,58 @@ export class BoardWork {
       ),
     );
     for (const ws of this.workspaces()) this.names.set(ws.id, ws.name);
+    const every = deps.sweepMs ?? SWEEP_MS;
+    if (deps.findPr && every > 0) {
+      const first = setTimeout(() => void this.sweepShipped(), Math.min(SWEEP_FIRST_MS, every));
+      const timer = setInterval(() => void this.sweepShipped(), every);
+      first.unref?.();
+      timer.unref?.();
+      this.offs.push(() => {
+        clearTimeout(first);
+        clearInterval(timer);
+      });
+    }
+  }
+
+  /**
+   * Tasks still open whose work went out on a branch nobody watches any more (its worktree archived
+   * or gone, so the workbench stopped asking about its pull request): gh is asked, and a merged one
+   * makes them Done. → how many moved.
+   */
+  async sweepShipped(): Promise<number> {
+    const find = this.deps.findPr;
+    if (!find) return 0;
+    const live = new Set(this.workspaces().filter((w) => !w.archived).map((w) => w.id));
+    const roots = new Map(this.deps.store.getState().projects.flatMap((p) => (p.root ? [[p.id, p.root] as const] : [])));
+    const waiting = new Map<string, { readonly root: string; readonly branch: string; readonly ids: string[] }>();
+    for (const issue of this.board.list()) {
+      const via = issue.carriedBy ?? issue.worktrees.at(-1);
+      const root = roots.get(issue.projectId);
+      if (!issue.branch || !root || issue.archivedAt !== undefined || (via && live.has(via))) continue;
+      if (issue.status !== 'in_progress' && issue.status !== 'in_review') continue;
+      const key = `${root}\0${issue.branch}`;
+      const group = waiting.get(key) ?? { root, branch: issue.branch, ids: [] };
+      group.ids.push(issue.id);
+      waiting.set(key, group);
+    }
+    let moved = 0;
+    for (const { root, branch, ids } of waiting.values()) {
+      let pr: IssuePr | undefined;
+      try {
+        pr = await find(root, branch);
+      } catch {
+        continue; // gh couldn't tell this time
+      }
+      if (pr?.state !== 'MERGED') continue;
+      for (const id of ids) {
+        try {
+          if (this.board.branchShipped(id, pr).status === 'done') moved++;
+        } catch {
+          // Deleted meanwhile.
+        }
+      }
+    }
+    return moved;
   }
 
   /** Something to add to the instructions of a run doing a task (Plans adds the plan it's part of). */
@@ -83,7 +148,7 @@ export class BoardWork {
 
   /**
    * A task from a description: on the board at once under its first line, while your Claude writes
-   * its title, goal and criteria (labels only from the board's own); they fill in when it's done.
+   * its title, goal, criteria and labels (the board's own first); they fill in when it's done.
    */
   createDescribed(input: Omit<NewIssue, 'title' | 'brief' | 'drafting'>, describe: string): Issue {
     const text = describe.trim();
@@ -149,16 +214,60 @@ export class BoardWork {
   }
 
   /**
+   * One worktree for several tasks (a plan milestone's one Claude does them in order): named
+   * `name`, from the latest origin or `base`, linked to every task (the first goes In Progress,
+   * all are your Claude's). Nobody is asked anything: the caller sends the brief. → the workspace.
+   */
+  async startShared(refs: readonly string[], name: string, opts: { readonly base?: string; readonly quiet?: boolean } = {}): Promise<Workspace> {
+    const controller = this.deps.controller;
+    if (!controller) throw new Error('Worktrees need a project folder');
+    if (!refs.length) throw new Error('No tasks to start');
+    for (const ref of refs) await this.drafts.get(this.board.need(ref).id);
+    const issues = refs.map((ref) => this.board.need(ref));
+    for (const issue of issues) if (isFinished(issue.status)) throw new Error(`${issue.key} is ${STATUS_INFO[issue.status].label.toLowerCase()}: reopen it to start it again`);
+    const first = issues[0]!;
+    const slug = slugify(name).slice(0, 48) || first.key.toLowerCase();
+    const ticket = { projectId: first.projectId, name: slug, issueId: first.id };
+    this.expecting.push(ticket);
+    let ws: Workspace | undefined;
+    try {
+      ws = await controller.newWorktree(first.projectId, slug, { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}) });
+    } finally {
+      const at = this.expecting.indexOf(ticket);
+      if (at >= 0) this.expecting.splice(at, 1);
+    }
+    if (!ws) throw new Error('Couldn’t create the worktree');
+    for (const issue of issues) this.linkShared(issue.id, ws);
+    const now = this.board.need(first.id);
+    if (now.status === 'backlog' || now.status === 'todo') this.board.update(first.id, { status: 'in_progress' }, this.me());
+    return ws;
+  }
+
+  /** One more task for a worktree that does several (a milestone's Claude): linked, the others kept. */
+  linkShared(ref: string, ws: Pick<Workspace, 'id' | 'branch' | 'name'>): Issue {
+    const issue = this.board.need(ref);
+    if (!issue.worktrees.includes(ws.id) || issue.worktrees.at(-1) !== ws.id) this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name, shared: true }, this.me());
+    if (!this.board.need(issue.id).assignee) this.board.update(issue.id, { assignee: this.myClaude() }, this.me());
+    return this.board.need(issue.id);
+  }
+
+  /** Instructions of their own for a run (a plan milestone's worktree): instead of the one task's brief. */
+  setRunBrief(fn: (channel: string) => { readonly brief: string; readonly current?: Issue } | undefined): void {
+    this.runBrief = fn;
+  }
+
+  /**
    * What one of Claude's runs gets: the task it's doing (in its prompt) and the task tools (your
    * own runs only). Planning (plan mode), Claude defines the task the plan is for; it goes on the
    * board when you approve the plan (`planApproved`), never before.
    */
   forRun(channel: string, from: string, opts: { readonly plan?: boolean } = {}): RunBoard | undefined {
     if (from !== this.deps.selfId()) return undefined;
-    const issue = channel.startsWith(WS) ? issueForWorkspace(this.board.state(), channel.slice(WS.length)) : undefined;
+    const own = opts.plan ? undefined : this.runBrief(channel);
+    const issue = own ? own.current : channel.startsWith(WS) ? issueForWorkspace(this.board.state(), channel.slice(WS.length)) : undefined;
     const tools = this.toolsFor(channel, issue, Boolean(opts.plan));
     const parallel = this.parallelNote(channel, issue);
-    const brief = (issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
+    const brief = (own ? own.brief : issue ? briefPrompt(this.board.state(), issue) + this.briefExtra(issue) : boardNote()) + parallel + (opts.plan ? definePrompt(Boolean(issue)) : '');
     if (!opts.plan) return { tools, brief };
     this.pending.delete(channel);
     return {
@@ -255,8 +364,10 @@ export class BoardWork {
       case 'merged':
         return this.board.worktreeMerged(event.id);
       case 'archived':
+        this.board.keepProofs();
         return this.board.worktreeGone(event.id, true, 'archived');
       case 'removed':
+        this.board.keepProofs();
         return this.board.worktreeGone(event.id, true, 'deleted');
       case 'restored':
         return this.board.worktreeGone(event.id, false, 'restored');
@@ -313,6 +424,13 @@ export class BoardWork {
       const issue = issueForWorkspace(this.board.state(), ws.id);
       if (issue?.autoTitle) this.board.retitle(issue.id, titleFromName(ws.name));
     }
+  }
+
+  /** This conversation's worktree carries a task Claude moved along here (when the task has no worktree of its own still there). */
+  private carryHere(channel: string, issueId: string): void {
+    const ws = channel.startsWith(WS) ? this.workspaces().find((w) => w.id === channel.slice(WS.length)) : undefined;
+    if (ws?.kind !== 'worktree') return;
+    this.board.carry(issueId, ws, (id) => this.workspaces().some((w) => w.id === id && !w.archived));
   }
 
   private workspaces(): Workspace[] {
@@ -411,6 +529,8 @@ export class BoardWork {
           board.holdForChecks(issue.id);
           throw new Error(needsChecksText(issue.key, open));
         }
+        // Moved along from a worktree that isn't doing it: that worktree's pull request ships it (see Board.carry).
+        if (patch.status === 'in_progress' || patch.status === 'in_review') this.carryHere(channel, issue.id);
         const next = board.update(issue.id, { ...(patch.title ? { title: patch.title } : {}), ...(patch.status ? { status: patch.status } : {}), ...(patch.priority ? { priority: patch.priority } : {}), ...(patch.labels ? { labels: patch.labels } : {}), ...(patch.estimate !== undefined ? { estimate: patch.estimate } : {}), ...(assignee !== undefined ? { assignee } : {}) }, by());
         return `${next.key} is now: ${next.title} · ${next.status} · priority ${next.priority}${next.estimate ? ` · ${next.estimate} points` : ''}`;
       },

@@ -68,7 +68,7 @@ export function inviteMenu(state: AppState, c: InviteChoice, available: boolean)
   ];
   return {
     title: 'Invite someone',
-    intro: ['They run beluga join <link>. Files stream as they open them; secrets (.env, keys) never leave.'],
+    intro: ['They open the link in Beluga. Files stream as they open them; secrets (.env, keys) never leave.'],
     options,
   };
 }

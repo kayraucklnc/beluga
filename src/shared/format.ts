@@ -1,6 +1,6 @@
 import type { PullRequest } from '../core/work-store.js';
 
-// Small formatters both screens use.
+// Small formatters the app uses.
 
 /** "340 MB", "1.2 GB" */
 export function formatBytes(bytes: number): string {

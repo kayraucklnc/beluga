@@ -1,4 +1,4 @@
-import type { AgentBackend, AgentRunInput, RoomBridge } from './types.js';
+import type { AgentBackend, AgentRunInput, FollowUp, RoomBridge } from './types.js';
 import { demoAnswerFromPrompt } from '../core/chat/demo-answers.js';
 import { cleanPlanTitle, slugify } from './namer.js';
 import { type DraftContext, type TaskDraft, firstLineTitle } from './task-drafter.js';
@@ -18,6 +18,8 @@ interface Script {
   readonly subagents?: ReadonlyArray<{ title: string; steps: readonly string[]; kind?: 'agent' | 'background' }>;
   /** Steps after the sub-agents finished. */
   readonly after?: readonly string[];
+  /** Takes what you say while it works into the turn at its next step, as Claude Code does (steering). */
+  readonly steerable?: boolean;
 }
 
 /** Canned, fast replies so the demo (and README recordings) never wait on real Claude calls. */
@@ -35,11 +37,35 @@ const SCRIPTS: readonly Script[] = [
     answer: MOCK_VIEWS_ANSWER,
   },
   {
+    // Asking about tasks: the demo board's tasks as chips and cards that open them (BLG-26).
+    match: /where do (my |the )?tasks stand|task cards/i,
+    steps: ['Read NOTES.md'],
+    answer: [
+      'Auth `task:BOB-3` is waiting on bob’s review, and the webhook retries `task:BOB-4` are under way. Here’s what’s open on the payments work:',
+      '',
+      '```beluga-tasks',
+      'BOB-3',
+      'BOB-4',
+      'BOB-5',
+      'BOB-6',
+      'BOB-99',
+      '```',
+    ].join('\n'),
+  },
+  {
     // A long task, so you can try queueing messages (and sending one now) while Claude works.
     match: /deep dive|take your time/i,
     stepMs: 2500,
     steps: ['Glob **/*.ts', 'Read src/server.ts', 'Read src/payments.ts', 'Grep "TODO"', 'Read NOTES.md', 'Grep "session"', 'Read src/webhooks.ts', 'Bash npm test', 'Read package.json', 'Grep "retry"', 'Read README.md', 'Bash git log --oneline -20'],
     answer: 'Deep dive done. The riskiest parts are **webhook retries** (not idempotent) and **auth** (not started). Everything else is small and well tested.',
+  },
+  {
+    // A long task you can talk to while it works: what you say goes into the turn (e2e/live-tail.spec.ts).
+    match: /walk the codebase/i,
+    stepMs: 1800,
+    steerable: true,
+    steps: ['Glob **/*.ts', 'Read src/server.ts', 'Read src/payments.ts', 'Grep "TODO"', 'Read NOTES.md', 'Grep "session"', 'Read src/webhooks.ts', 'Bash npm test', 'Read package.json', 'Grep "retry"'],
+    answer: 'Walked the codebase, with your notes in mind. **Webhook retries** are the weak spot (not idempotent); the rest is small and well tested.',
   },
   {
     // Background work with steps after it: once answered, it folds with the older steps (e2e/subagents.spec.ts).
@@ -432,9 +458,18 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
       const picked = answer.kind === 'answers' ? Object.values(answer.answers)[0] : undefined;
       return picked ? `Going with **${picked}**. I'll wire \`requireUser()\` to it next.` : "No preference, so I'll start with **signed cookies**: the simplest option.";
     }
-    for (const step of script.steps) {
-      await sleep((script.stepMs ?? 450) * pace, input.signal);
-      input.onEvent('tool', step);
+    // What you said meanwhile: read at the next step, folded into this turn (its answer covers it).
+    const said: FollowUp[] = [];
+    if (script.steerable) input.onSteer?.((followUp) => (said.push(followUp), true));
+    try {
+      for (const step of script.steps) {
+        await sleep((script.stepMs ?? 450) * pace, input.signal);
+        for (const followUp of said.splice(0)) followUp.onFolded?.();
+        input.onEvent('tool', step);
+      }
+      for (const followUp of said.splice(0)) followUp.onFolded?.();
+    } finally {
+      if (script.steerable) input.onSteer?.(undefined);
     }
     const subs = (script.subagents ?? []).map((s, i) => ({ ...s, id: `sub-${Date.now()}-${i}` }));
     for (const s of subs) input.onEvent('sub', JSON.stringify({ id: s.id, phase: 'start', title: s.title, kind: s.kind ?? 'agent' }));

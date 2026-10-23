@@ -1,5 +1,5 @@
 // How full a conversation's context window is, and when to compact it. Pure (no Node), so the
-// core, the agent runner and both clients count the same way.
+// core, the agent runner and the Mac app count the same way.
 
 /** Claude's context window when nothing better is known (older models). */
 export const DEFAULT_CONTEXT_WINDOW = 200_000;

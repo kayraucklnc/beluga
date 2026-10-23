@@ -18,8 +18,7 @@ import { RemoteWorktreeSheet } from './RemoteWorktreeSheet.js';
 import { TemplatesSheet } from './TemplatesSheet.js';
 
 /**
- * Menus the Mac app shows its own way. The terminal UI draws every menu as a numbered list;
- * here a confirmation is an alert, an invite is a form, a person is a popover… A menu kind
+ * Menus the Mac app shows its own way: a confirmation is an alert, an invite is a form, a person is a popover… A menu kind
  * listed here is drawn by its component instead of the generic list sheet (MenuSheet), with
  * the same menu spec and actions underneath where that fits.
  */

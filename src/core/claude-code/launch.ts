@@ -19,7 +19,7 @@ const watchers = new WeakMap<object, ClaudeCodeWatcher>();
 
 export const attachClaudeCode = (session: object, watcher: ClaudeCodeWatcher): void => void watchers.set(session, watcher);
 
-/** The Claude Code watcher of this session, or a clear error where there's none (the terminal app). */
+/** The Claude Code watcher of this session, or a clear error where there's none (no daemon running it, e.g. tests). */
 export function claudeCodeOf(session: object): ClaudeCodeWatcher {
   const watcher = watchers.get(session);
   if (!watcher) throw new Error('Claude Code sessions show in the Beluga app for Mac (its daemon).');

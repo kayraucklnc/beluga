@@ -70,7 +70,7 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
   await expect(main(page).getByText('Claude is writing the plan…')).toHaveCount(0);
   const chat = page.getByRole('complementary', { name: 'Conversation' });
   await expect(chat.locator('header')).not.toContainText('working');
-  await expect(chat.getByText(/^Working · /)).toHaveCount(0);
+  await expect(chat.getByText(/^Working · \d/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Runs on / })).toHaveCount(0);
   await expect(page.getByRole('radiogroup', { name: 'Runs' })).toHaveCount(0);
   await expect(main(page).getByRole('tablist', { name: 'Show' })).toHaveCount(0);

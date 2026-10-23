@@ -77,6 +77,24 @@ export function buildPrPrompt(ctx: PrContext, template = customPrPrompt() ?? DEF
 }
 
 /** Ask Claude to fix the failing checks on a PR. */
+/** GitHub says the PR conflicts with its base: Claude brings the base in, resolves, and pushes. */
+export const resolvePrConflictsPrompt = (pr: PullRequest, base: string): string =>
+  [
+    `Pull request #${pr.number} (${pr.url}) has merge conflicts with ${base}, so GitHub can't merge it. Resolve them on this branch:`,
+    `1. Commit anything uncommitted first. Then \`git fetch origin\` and \`git merge origin/${base}\` (a merge, not a rebase: never rewrite what's pushed).`,
+    "2. For each conflicted file, read both sides and the commits behind them, and keep both intents; don't just pick one side. Remove every conflict marker.",
+    '3. Run the typecheck and the tests that cover what changed, and fix what the merge broke.',
+    `4. Commit the merge and \`git push\` (never force-push). Then say in a few lines which files conflicted and how you resolved each.`,
+  ].join('\n');
+
+/** After its PR merged, you carry on here but the branch has newer commits: Claude catches it up with the base. */
+export const catchUpPrompt = (pr: PullRequest, base: string): string =>
+  [
+    `Pull request #${pr.number} was merged into ${base}, and this branch has carried on since. Bring it up to date so the next pull request only has the new work:`,
+    `\`git fetch origin\`, then \`git merge origin/${base}\`. Resolve any conflicts keeping both intents, run the tests that cover what changed, and commit the merge. Don't push or open a pull request.`,
+    'Then say in one or two lines what is on this branch now that is not in the base yet.',
+  ].join('\n');
+
 export const fixChecksPrompt = (pr: PullRequest): string =>
   `The checks on pull request #${pr.number} (${pr.url}) are failing. Use gh pr checks ${pr.number} and gh run view --log-failed to find out why, fix it, run the tests, commit and push. Then say what was wrong.`;
 
@@ -254,6 +272,8 @@ export interface MergeOptions {
   readonly auto?: boolean;
   /** Delete the branch on GitHub once merged (the worktree keeps its local branch). */
   readonly deleteBranch?: boolean;
+  /** Merge now even though checks or reviews haven't passed (`gh pr merge --admin`: needs admin rights on the repository). */
+  readonly admin?: boolean;
 }
 
 /** Why GitHub said no to a merge. */
@@ -277,9 +297,9 @@ export function explainMergeError(error: string, method: MergeMethod = 'squash')
   return say('other', `GitHub didn’t merge it: ${text.split('\n').find((l) => l.trim())?.trim() ?? 'no reason given'}`);
 }
 
-/** Merge a pull request on GitHub (`gh pr merge`), or ask GitHub to once its requirements pass (`auto`). Throws gh's error. */
+/** Merge a pull request on GitHub (`gh pr merge`), or ask GitHub to once its requirements pass (`auto`), or now past them (`admin`). Throws gh's error. */
 export async function mergePr(dir: string, number: number, opts: MergeOptions): Promise<void> {
-  await run(gh(), ['pr', 'merge', String(number), `--${opts.method}`, ...(opts.auto ? ['--auto'] : [])], dir, 60_000);
+  await run(gh(), ['pr', 'merge', String(number), `--${opts.method}`, ...(opts.admin ? ['--admin'] : opts.auto ? ['--auto'] : [])], dir, 60_000);
 }
 
 /**

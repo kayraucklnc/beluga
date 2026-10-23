@@ -43,6 +43,10 @@ describe('transcript lines → steps', () => {
   it('describes tool calls in words, paths relative to the folder', () => {
     expect(describeTool('Read', { file_path: `${CWD}/src/core/store.ts` }, CWD)).toBe('Reading src/core/store.ts');
     expect(describeTool('Edit', { file_path: '/elsewhere/a.ts' }, CWD)).toBe('Editing /elsewhere/a.ts');
+    // A long path keeps its end: the file's name is what you look for.
+    const long = `/elsewhere/${'deep/'.repeat(30)}Screen Shot 1.png`;
+    expect(describeTool('Read', { file_path: long }, CWD)).toMatch(/^Reading ….*\/Screen Shot 1\.png$/);
+    expect(describeTool('Read', { file_path: long }, CWD).length).toBe('Reading '.length + 90);
     expect(describeTool('Write', { file_path: `${CWD}/x.md` }, CWD)).toBe('Writing x.md');
     expect(describeTool('Bash', { command: 'npm test', description: 'Run the tests' })).toBe('Run the tests');
     expect(describeTool('Bash', { command: 'npm   test\n--watch' })).toBe('Running npm test --watch');

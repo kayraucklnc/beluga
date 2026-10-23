@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 import { combine, type NoticeEvent } from '../src/core/notify.js';
 import { NotifySettings, loadSettings, saveSettings } from '../src/core/settings.js';
 import { DEFAULT_SOUND, NO_SOUND, coercePerKind, coerceSound, loudestKind, soundFor, soundGroupOf, soundOn, toggledSound, volumeOf } from '../src/shared/notify-sound.js';
-import { plan } from '../src/ui/tty/desktop-notify.js';
 
 /** Which sound a notification makes (Settings › Notifications), and what became of the old on/off switch. */
 
@@ -98,17 +97,5 @@ describe('per-kind sounds', () => {
     expect(volumeOf({ sound: coin, soundVolume: 0.25 })).toBe(0.25);
     expect(volumeOf({ sound: coin, soundVolume: 9 })).toBe(1);
     expect(volumeOf({ sound: coin })).toBe(0.7);
-  });
-});
-
-describe('the terminal app plays the Mac sound you picked', () => {
-  const n = { title: 't', body: 'b', sound: true };
-
-  it('through osascript and terminal-notifier, else its old default', () => {
-    expect(plan('osascript', { ...n, tone: purr }).args?.[1]).toContain('sound name "Purr"');
-    expect(plan('osascript', { ...n, tone: coin }).args?.[1]).toContain('sound name "Glass"');
-    expect(plan('terminal-notifier', { ...n, tone: purr }, {}).args).toContain('Purr');
-    expect(plan('terminal-notifier', { ...n, tone: coin }, {}).args).toContain('default');
-    expect(plan('osascript', { ...n, sound: false, tone: purr }).args?.[1]).not.toContain('sound name');
   });
 });

@@ -30,8 +30,8 @@ import { belugaEnv } from '../core/beluga-env.js';
 
 /**
  * Everything Beluga is apart from its screens: your identity, the room (hosted or joined),
- * remote access, projects, terminals and the Session that ties them together. The terminal UI
- * builds one in its own process; `beluga daemon` builds one and serves it to every screen.
+ * remote access, projects, terminals and the Session that ties them together. `beluga daemon`
+ * builds one and serves it to every screen.
  */
 
 interface Room {
@@ -69,7 +69,7 @@ async function hostRoom(config: Config, identity: Identity): Promise<Room> {
 async function resolveJoinInvite(config: Config): Promise<string> {
   if (config.invite) return config.invite;
   const found = findInvite((await pasteText()) ?? '');
-  if (!found) throw new Error('No invite given and none found on your clipboard. Copy the link your friend sent, then run: beluga join');
+  if (!found) throw new Error('No invite given and none found on your clipboard. Copy the link your friend sent, then join again');
   return found;
 }
 
@@ -107,7 +107,7 @@ async function addFallbackRelay(room: Room, session: Session, isClosing: () => b
     if (isClosing() || !after) return;
     store.dispatch({ type: 'invite', invite: after });
     // Refresh the clipboard only if it still holds the link we put there.
-    if (before && (await pasteText().catch(() => undefined))?.trim() === `beluga join ${before}`) await copyNative(`beluga join ${after}`).catch(() => false);
+    if (before && (await pasteText().catch(() => undefined))?.trim() === before) await copyNative(after).catch(() => false);
   };
   try {
     const tunnel = await openTunnel('auto', room.hub?.port ?? 0, {
@@ -137,7 +137,7 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
     store.dispatch({ type: 'invite', invite });
     store.dispatch({ type: 'hosting', hosting: { phase } });
     // Only auto-copy with a real clipboard tool; never silently push secrets through the terminal.
-    const copied = await copyNative(`beluga join ${invite}`).catch(() => false);
+    const copied = await copyNative(invite).catch(() => false);
     if (!isClosing()) store.dispatch({ type: 'hosting', hosting: { phase, copied } });
   };
 
@@ -163,7 +163,7 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
       onProgress: (detail) => store.dispatch({ type: 'hosting', hosting: { phase: 'tunnel', detail } }),
       onDied: (reason) => {
         if (isClosing()) return;
-        store.dispatch({ type: 'hosting', hosting: { phase: 'failed', detail: `${reason}. Restart beluga host to get a new invite.` } });
+        store.dispatch({ type: 'hosting', hosting: { phase: 'failed', detail: `${reason}. Restart Beluga to get a new invite.` } });
         session.toast('Remote access stopped: the tunnel closed', 'error');
       },
     });
@@ -287,6 +287,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     launchDir: process.cwd(),
     terminals,
     savedPeople: saved.people,
+    loadPeople: () => loadSettings().people,
     replayFile: path.join(belugaHome(), 'seen.json'),
     stepsDir: path.join(belugaHome(), 'steps'),
     ...(demo ? {} : { findConversation, otherTools }),

@@ -313,7 +313,7 @@ function runWorkspaceCommand(session: Session, name: string, args: readonly stri
   }
   // Outside a workspace, /terminal opens your own shell (the Terminal tab).
   if (!ws && name === 'terminal') return session.intend({ type: 'navigate', view: { kind: 'terminal' } });
-  if (!ws) return session.toast('Open a workspace first (Projects on the left)', 'warn');
+  if (!ws) return session.toast(ctl.isMaking(channel) ? 'This worktree is still being made: a moment' : 'Open a workspace first (Projects on the left)', 'warn');
   switch (name) {
     case 'pr':
       session.workbench?.createPr(ws.id, text);

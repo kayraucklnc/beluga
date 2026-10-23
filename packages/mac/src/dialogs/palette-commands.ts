@@ -9,6 +9,7 @@ import { openSettings } from '../lib/native-routes.js';
 import { openSheet } from '../lib/sheets.js';
 import { openStripe } from '../lib/earnings.js';
 import { SHOW_WELCOME } from '../onboarding/onboarding-model.js';
+import { previewRequestPopup } from '../gateway/request-native.js';
 
 export interface PaletteCommand {
   readonly id: string;
@@ -95,6 +96,14 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
     stripeCommand(state),
     cmd('env', 'env', 'Environment Variables…', 'lock', () => openSettings(ui, 'environment'), 'For your shells, scripts and Claude'),
     cmd('shell', 'shell', 'Terminal Settings…', 'terminal', () => openSettings(ui, 'terminal'), 'Which shell, and how it starts'),
+    {
+      id: 'cmd:popup-preview',
+      label: 'Preview Request Pop-up',
+      icon: 'bell',
+      hint: 'The card a friend’s request, or Claude needing you, gets on top of other apps (a pretend one)',
+      keywords: ['popup', 'pop-up', 'request', 'notification', 'preview', 'test', 'friend'],
+      run: previewRequestPopup,
+    },
     { id: 'cmd:welcome', label: 'Onboard Again', icon: 'spark', hint: 'The welcome, the tour and the first settings', keywords: ['onboarding', 'welcome', 'tour', 'intro'], run: () => void document.dispatchEvent(new CustomEvent(SHOW_WELCOME)) },
     ...(state.isHost
       ? [

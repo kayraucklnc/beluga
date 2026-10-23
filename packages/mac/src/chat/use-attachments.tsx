@@ -1,6 +1,11 @@
-import { type RefObject, useEffect, useState } from 'react';
+import { type RefObject, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon.js';
+import { inApp } from '../lib/boot.js';
 import { toast, useApi, useBeluga } from '../lib/beluga.js';
+import { type Box, MAX_DROPPED, dropHits, droppedFiles, sameBox } from './drop-model.js';
+import { imageLinksIn } from '@beluga/shared/attachment-links.js';
+import { type RefKey, refKey } from './image-refs.js';
 import { keepPreview, previewOf } from './images.js';
 import { type ImageInText, type PathInfo, insertText, usePastePaths } from './paste-paths.js';
 import s from './composer.module.css';
@@ -11,6 +16,9 @@ import img from './images.module.css';
  * and a plan's): images pasted, dropped, or named by their path in pasted text wait as thumbnails,
  * with an "[image N]" in the words where they go; other files whose paths were pasted wait as
  * chips. Kept per conversation, so switching away and back keeps them.
+ *
+ * Files dragged from Finder anywhere on the conversation (the element marked `data-drop-zone`
+ * around the box) go in the same way: the app takes the drop and hands over their paths.
  */
 
 /** Images waiting to be sent, per conversation. */
@@ -28,8 +36,10 @@ const imagesOf = (items: DataTransferItemList | undefined): File[] =>
 export interface Attachments {
   readonly images: readonly number[];
   readonly files: readonly PathInfo[];
-  /** Something is being dragged over the box. */
+  /** Something is being dragged over the box (or, from Finder, over the conversation). */
   readonly dropping: boolean;
+  /** Over the conversation while files from Finder are dragged on it: where they'll go. */
+  readonly dropTarget: React.ReactNode;
   /** For the box around the words: drop images on it. */
   readonly dropProps: Pick<React.HTMLAttributes<HTMLElement>, 'onDragOver' | 'onDragLeave' | 'onDrop'>;
   /** For the text field. */
@@ -39,9 +49,17 @@ export interface Attachments {
   /**
    * The message to send for what was typed: its images where their references are (those whose
    * reference was taken out go after it) and other files' paths. They leave the box; `putBack`
-   * returns them if sending fails. Commands ("/…") go as typed, and attachments stay.
+   * returns them if sending fails. Commands ("/…") go as typed, and attachments stay. `images`:
+   * the ones going (only their "[image N]" become links; one typed by hand stays words).
    */
-  readonly take: (typed: string) => { readonly text: string; readonly putBack: () => void };
+  readonly take: (typed: string) => { readonly text: string; readonly images: readonly number[]; readonly putBack: () => void };
+  /** For the text field's keydown: an "[image N]" goes whole (its picture too), and arrows step over it. True when it was handled. */
+  readonly onRefKey: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  /**
+   * A message that went (a queued one pulled back to edit): your images linked in it wait again
+   * as thumbnails, and their links become "[image N]". → the words for the box.
+   */
+  readonly restore: (sent: string) => Promise<string>;
   /** The thumbnails and file chips, for above the words. */
   readonly waiting: React.ReactNode;
 }
@@ -116,18 +134,72 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     }
   };
 
+  /** Files on this Mac: images wait as thumbnails (referenced at `at`, else where the cursor is), others as chips. */
+  const addPaths = async (picked: readonly PathInfo[], at?: number): Promise<void> => {
+    const others = picked.filter((f) => !f.image);
+    if (others.length) setFiles([...(waitingFiles.get(channel) ?? []), ...others.filter((f) => !(waitingFiles.get(channel) ?? []).some((w) => w.path === f.path))]);
+    let cursor = at;
+    for (const f of picked.filter((x) => x.image)) {
+      const n = await addImageFile(f);
+      if (n !== undefined) cursor = placeRef(n, cursor);
+    }
+  };
+
+  /** Paths dropped from Finder: the files among them go as a paste of their paths would. */
+  const dropPaths = async (paths: readonly string[]): Promise<void> => {
+    let infos: readonly PathInfo[];
+    try {
+      infos = await api.local.statFiles(paths.slice(0, MAX_DROPPED));
+    } catch (err) {
+      return toast(client, `Couldn't add what you dropped: ${errorText(err)}`, 'error');
+    }
+    const { files: picked, skipped } = droppedFiles(infos);
+    if (skipped) toast(client, picked.length ? `Only files go with a message: ${skipped} left out` : 'Only files go with a message (not folders)', 'warn');
+    if (!picked.length) return;
+    await addPaths(picked);
+    box.current?.focus();
+  };
+  const latestDrop = useRef(dropPaths);
+  latestDrop.current = dropPaths;
+
+  // Finder drops: the app takes them (the page never sees the files), so listen to it. Each box
+  // answers for its own conversation only, and not while it can't be written in.
+  const [dragOver, setDragOver] = useState<Box>();
+  useEffect(() => {
+    if (!inApp()) return;
+    let off: (() => void) | undefined;
+    let alive = true;
+    const zoneAt = (x: number, y: number): Box | undefined => {
+      const el = box.current;
+      if (!el || el.disabled || el.readOnly) return undefined;
+      const r = (el.closest('[data-drop-zone]') ?? el.parentElement)?.getBoundingClientRect();
+      const at = r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : undefined;
+      return dropHits(at, x, y, window.devicePixelRatio || 1) ? at : undefined;
+    };
+    void import('@tauri-apps/api/webview').then(async ({ getCurrentWebview }) => {
+      const un = await getCurrentWebview().onDragDropEvent((e) => {
+        const p = e.payload;
+        if (p.type === 'leave') return setDragOver(undefined);
+        const here = zoneAt(p.position.x, p.position.y);
+        if (p.type === 'drop') {
+          setDragOver(undefined);
+          if (here && p.paths.length) void latestDrop.current(p.paths);
+        } else setDragOver((was) => (sameBox(was, here) ? was : here));
+      });
+      if (alive) off = un;
+      else un();
+    });
+    return () => {
+      alive = false;
+      off?.();
+      setDragOver(undefined);
+    };
+  }, [channel]);
+
   const pastePaths = usePastePaths(
     box,
     // Only paths of files on this Mac: images wait as thumbnails (referenced where the cursor was), others as chips.
-    async (picked, at) => {
-      const others = picked.filter((f) => !f.image);
-      if (others.length) setFiles([...(waitingFiles.get(channel) ?? []), ...others.filter((f) => !(waitingFiles.get(channel) ?? []).some((w) => w.path === f.path))]);
-      let cursor = at;
-      for (const f of picked.filter((x) => x.image)) {
-        const n = await addImageFile(f);
-        if (n !== undefined) cursor = placeRef(n, cursor);
-      }
-    },
+    (picked, at) => void addPaths(picked, at),
     // Words naming images: the words go in, each image's path (quotes and all) becomes its reference.
     async (pasted: string, found: readonly ImageInText[], at) => {
       let words = '';
@@ -152,8 +224,53 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     box.current?.focus();
   };
 
-  const take = (typed: string): { text: string; putBack: () => void } => {
-    if (typed.startsWith('/')) return { text: typed, putBack: () => undefined };
+  const onRefKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    const el = e.currentTarget;
+    if (e.metaKey || e.ctrlKey || e.altKey || (e.shiftKey && e.key.startsWith('Arrow'))) return false;
+    if (e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return false;
+    const edit = refKey(el.value, el.selectionStart, el.selectionEnd, e.key as RefKey);
+    if (!edit) return false;
+    e.preventDefault();
+    if (edit.kind === 'move') {
+      el.setSelectionRange(edit.cursor, edit.cursor);
+      return true;
+    }
+    // Through the field's own editing, so ⌘Z brings it back.
+    insertText(el, '', { start: edit.start, end: edit.end });
+    const gone = edit.images.filter((n) => !el.value.includes(imageRef(n)));
+    if (gone.length) setImages((waitingImages.get(channel) ?? []).filter((n) => !gone.includes(n)));
+    return true;
+  };
+
+  const restore = async (sent: string): Promise<string> => {
+    let out = '';
+    let at = 0;
+    for (const link of imageLinksIn(sent)) {
+      out += sent.slice(at, link.start);
+      at = link.end;
+      if (link.owner !== selfId) {
+        out += sent.slice(link.start, link.end);
+        continue;
+      }
+      try {
+        const { n } = await api.attachments.reattach(link.file);
+        if (!previewOf(n)) {
+          const shown = await api.attachments.read(selfId, link.file);
+          keepPreview(n, new Blob([Uint8Array.from(atob(shown.data), (c) => c.charCodeAt(0))], { type: shown.mime }));
+        }
+        const waiting = waitingImages.get(channel) ?? [];
+        if (!waiting.includes(n)) setImages([...waiting, n]);
+        out += imageRef(n);
+      } catch {
+        // Gone from this Mac: the link stays as it was.
+        out += sent.slice(link.start, link.end);
+      }
+    }
+    return out + sent.slice(at);
+  };
+
+  const take = (typed: string): { text: string; images: readonly number[]; putBack: () => void } => {
+    if (typed.startsWith('/')) return { text: typed, images: [], putBack: () => undefined };
     const pictures = pendingImages;
     const unplaced = pictures.filter((n) => !typed.includes(imageRef(n)));
     // Other files go as their paths (Claude reads them from this Mac).
@@ -163,6 +280,7 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     if (others.length) setFiles([]);
     return {
       text: out,
+      images: pictures,
       putBack: () => {
         if (pictures.length) setImages(pictures);
         if (others.length) setFiles(others);
@@ -201,10 +319,23 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     </>
   );
 
+  const dropTarget = dragOver
+    ? createPortal(
+        <div className={s.dropTarget} style={{ left: dragOver.left, top: dragOver.top, width: dragOver.right - dragOver.left, height: dragOver.bottom - dragOver.top }} aria-hidden>
+          <div className={s.dropTargetLabel}>
+            <Icon name="image" size={16} />
+            Drop to attach
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+
   return {
     images: pendingImages,
     files,
-    dropping,
+    dropping: dropping || Boolean(dragOver),
+    dropTarget,
     dropProps: {
       onDragOver: (e) => {
         if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) {
@@ -229,6 +360,8 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     },
     attach,
     take,
+    onRefKey,
+    restore,
     waiting,
   };
 }

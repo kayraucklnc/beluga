@@ -146,6 +146,28 @@ export function planSignal(state: Source, plan: Plan): Signal & { readonly at?: 
 }
 
 /**
+ * What a plan's own row in the sidebar shows (BLG-12): a count only of what's new at the plan's
+ * level (its own conversation), never its tasks' worktrees added up; news in those is at most a
+ * quiet dot (`inside`). One that needs you still says so (and which task). Opening the plan
+ * counts all of it as seen (client/screen.ts › attentionOf).
+ */
+export interface PlanRowSignal extends Signal {
+  /** Something new in one of its tasks' conversations (they have no row of their own). */
+  readonly inside: boolean;
+}
+
+export function planRowSignal(state: Source, plan: Plan): PlanRowSignal {
+  const all = planSignal(state, plan);
+  const own = state.unread[plan.home] ?? 0;
+  const tasks = planConversations(state, plan.id).filter((ws) => `ws:${ws}` !== plan.home);
+  const inside = tasks.some((ws) => (state.unread[`ws:${ws}`] ?? 0) > 0);
+  const news = own ? plural(own, 'message') : '';
+  const tip = all.level === 'needs' ? all.tip.replace(/ · \d+ updates?$/, '') : own ? news : inside ? 'New in its tasks' : all.tip;
+  const level: Level = all.level === 'needs' ? 'needs' : own ? 'unread' : all.working ? 'working' : 'idle';
+  return { level, unread: own, ...(all.need ? { need: all.need } : {}), working: all.working, tip: [tip, all.level === 'needs' && own ? news : ''].filter(Boolean).join(' · '), inside };
+}
+
+/**
  * Claude is at work somewhere in a project: a Beluga run or a Claude Code session, in any of its
  * live workspaces (its main folder and worktrees made outside Beluga too). Folded, its row shows it.
  */

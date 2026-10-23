@@ -3,7 +3,6 @@ import { newShares, type AppState } from '../src/core/store.js';
 import { initialAppState as initialState, reduceApp as reduce } from '../src/client/screen.js';
 import { globalShellDir, globalShellId, isGlobalShell } from '../src/core/workbench.js';
 import type { PeerInfo } from '../src/protocol.js';
-import { normalizeKeys } from '../src/ui/mouse.js';
 import { lineWidth } from '../src/ui/text.js';
 import { globalTerminalBarModel } from '../src/ui/work-models.js';
 import { overviewNews, stepTab, tabKey, tabsModel, topTabs } from '../src/ui/workspace-models.js';
@@ -125,14 +124,5 @@ describe('global Terminal tab', () => {
     const narrow = text(globalTerminalBarModel(tabs, 'shell:1', 80, { focused: false, dir: '~/a/very/deep/folder/somewhere' }).lines)[0]!;
     expect(narrow).not.toContain('somewhere');
     expect(narrow).toContain('click the terminal');
-  });
-});
-
-describe('raw keys', () => {
-  it('turns Ctrl+Tab and a lone Option+[ into forms Ink reads', () => {
-    expect(normalizeKeys('\x1b[27;5;9~')).toBe('\x1b[9;5u');
-    expect(normalizeKeys('\x1b[27;6;9~')).toBe('\x1b[9;6u');
-    expect(normalizeKeys('\x1b[')).toBe('\x1b[91;3u');
-    expect(normalizeKeys('abc')).toBe('abc');
   });
 });

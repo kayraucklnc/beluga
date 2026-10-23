@@ -1,4 +1,4 @@
-import { type MouseEvent, type ReactNode, useRef, useState } from 'react';
+import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ViewerState } from '@beluga/core/store.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { Icon } from '../../components/Icon.js';
@@ -12,6 +12,9 @@ import { isImageFile } from '../../components/markdown/md-paths.js';
 import { BINARY_TEXT, LARGE_MARKDOWN, prettyJson, type ReaderMode, isMarkdownFile, isPdfFile, langOf } from './reader-model.js';
 import { PdfView } from './PdfView.js';
 import { usePinchZoom } from '../../components/usePinchZoom.js';
+import { useEditSession } from './edit-store.js';
+import { FileEditor } from './FileEditor.js';
+import { doneRevealing, scrollToLine, useReveal } from './reveal.js';
 import r from './reader.module.css';
 
 /**
@@ -96,10 +99,25 @@ export interface FileContentProps {
   readonly nav?: Partial<DocNav>;
   /** Changes when the file may have (a PDF is read again then). */
   readonly version?: unknown;
+  /** You may edit it here (Edit in the header starts it): your own workspace's file, in the panel or full size. */
+  readonly editable?: boolean;
 }
 
 /** The file itself, under whatever header the place showing it has. */
-export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEditor, onSaveCopy, nav, version }: FileContentProps) {
+export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEditor, onSaveCopy, nav, version, editable = false }: FileContentProps) {
+  const editing = useEditSession(editable ? viewer : undefined);
+  const reveal = useReveal(viewer);
+  const box = useRef<HTMLDivElement>(null);
+  const markdown = isMarkdownFile(viewer.path);
+  // A search result opened it at a line: the source, scrolled there (once it's drawn).
+  useEffect(() => {
+    if (!reveal || viewer.loading || !viewer.content) return;
+    if (markdown && mode === 'rendered' && !editing) return onMode('source');
+    const frame = requestAnimationFrame(() => {
+      if (box.current && scrollToLine(box.current, reveal.line, r.lineFlash!)) doneRevealing(viewer);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [reveal?.seq, viewer.path, viewer.loading, viewer.content.length, mode, Boolean(editing)]);
   // PDFs and pictures are read as themselves (their bytes), whatever the text read made of them.
   if (isPdfFile(viewer.path)) return <PdfView at={{ owner: viewer.owner, share: viewer.share, path: viewer.path }} controls={variant !== 'panel'} version={version} />;
   if (viewer.image || (isImageFile(viewer.path) && !viewer.error)) return <ImageView viewer={viewer} controls={variant !== 'panel'} {...(typeof version === 'string' || typeof version === 'number' ? { version } : {})} />;
@@ -117,11 +135,10 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
   if (viewer.content === BINARY_TEXT) {
     return <Empty icon="file" title="No preview for this kind of file" detail="It isn’t text, a picture or a PDF." action={escape ? <EmptyActions>{escape}</EmptyActions> : undefined} />;
   }
-  const markdown = isMarkdownFile(viewer.path);
   const large = markdown && viewer.content.length > LARGE_MARKDOWN;
   const json = mode === 'rendered' ? prettyJson(viewer.path, viewer.content) : undefined;
   return (
-    <div className={cx(r.content, r[`v_${variant}`])}>
+    <div ref={box} className={cx(r.content, r[`v_${variant}`])}>
       {viewer.truncated ? <Notice action={escape}>Only the first {formatBytes(MAX_FILE_BYTES)} of this file is shown.</Notice> : null}
       {large && mode === 'source' ? (
         <Notice
@@ -134,7 +151,11 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
           This file is large ({formatBytes(viewer.content.length)}), so it opens as source.
         </Notice>
       ) : null}
-      {markdown && mode === 'rendered' ? (
+      {editing ? (
+        <div className={r.codeFile}>
+          <FileEditor session={editing} lang={markdown ? 'markdown' : langOf(viewer.path)} variant={variant} />
+        </div>
+      ) : markdown && mode === 'rendered' ? (
         <MarkdownDoc text={viewer.content} at={viewer} variant={variant} {...(nav ? { nav } : {})} />
       ) : (
         <div className={r.codeFile}>

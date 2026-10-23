@@ -11,7 +11,10 @@ import { localPathOf, openWithDefaultApp, revealInFinder, saveFile } from '../..
 import { closeFocus, showPanelTab } from '../../lib/panel.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { SCROLL_ROOT } from '../../components/markdown/md-dom.js';
+import { EditTools } from './EditTools.js';
+import { useEditSession } from './edit-store.js';
 import { FileContent } from './FileReader.js';
+import { pendingLine } from './reveal.js';
 import { type ReaderMode, hasText, initialMode, isMarkdownFile } from './reader-model.js';
 import r from './reader.module.css';
 
@@ -45,10 +48,11 @@ export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string 
   const { client } = useBeluga();
   const prefs = usePrefs();
   const wsName = useApp((st) => findWorkspace(st.projects, wsId)?.name);
+  const selfId = useApp((st) => st.selfId);
   const local = useApp((st) => localPathOf(st, viewer));
   const page = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
-  const [mode, setModeNow] = useState<ReaderMode>(() => initialMode(viewer));
+  const [mode, setModeNow] = useState<ReaderMode>(() => (pendingLine(viewer) ? 'source' : initialMode(viewer)));
   // Rendered ⇄ Source keeps your place (as a share of the way down the file).
   const place = useRef<number | undefined>(undefined);
   const setMode = (next: ReaderMode): void => {
@@ -67,14 +71,15 @@ export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string 
 
   // Another file opened here (a link in a document): it starts at its top, as itself.
   useEffect(() => {
-    setModeNow(initialMode(viewer));
+    setModeNow(pendingLine(viewer) ? 'source' : initialMode(viewer));
     page.current?.scrollTo({ top: 0 });
     page.current?.focus({ preventScroll: true });
   }, [viewer.path]);
 
+  const editing = Boolean(useEditSession(viewer));
   const markdown = isMarkdownFile(viewer.path);
   const isText = hasText(viewer);
-  const showsCode = isText && (!markdown || mode === 'source');
+  const showsCode = isText && (!markdown || mode === 'source') && !editing;
   const name = viewer.path.split('/').pop() || viewer.path;
   const folders = viewer.path.split('/').slice(0, -1);
   // Other files (not Markdown) open in the panel's Files, next to the chat.
@@ -112,7 +117,7 @@ export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string 
           {viewer.by ? <span className={r.following}>following {viewer.by}</span> : null}
         </nav>
         <span className={r.flex} />
-        {markdown && isText ? (
+        {markdown && isText && !editing ? (
           <Segmented
             label="Show as"
             value={mode}
@@ -124,6 +129,7 @@ export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string 
           />
         ) : null}
         {showsCode ? <IconButton icon="wrap" label={prefs.readerWrap ? 'Don’t wrap long lines' : 'Wrap long lines'} active={prefs.readerWrap} onClick={() => setPrefs({ readerWrap: !prefs.readerWrap })} /> : null}
+        <EditTools viewer={viewer} wsId={wsId} selfId={selfId} />
         <span className={r.tools}>
           {isText ? <IconButton icon={copied ? 'check' : 'copy'} label={copied ? 'Copied' : 'Copy the text'} onClick={() => copy(viewer.content)} /> : null}
           {local ? <IconButton icon="external" label="Open in Editor" onClick={() => void openWithDefaultApp(client, local)} /> : null}
@@ -143,6 +149,7 @@ export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string 
               onOpenInEditor={local ? () => void openWithDefaultApp(client, local) : undefined}
               onSaveCopy={() => void saveFile(client, viewer)}
               nav={nav}
+              editable
             />
           </div>
         </div>

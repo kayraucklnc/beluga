@@ -130,8 +130,8 @@ class SocketTerm implements PtyLink {
 }
 
 /**
- * A screen attached to the beluga daemon over its local WebSocket (the terminal UI when other
- * screens are attached too, and the Mac app). Browser-safe.
+ * A screen attached to the beluga daemon over its local WebSocket (the Mac app).
+ * Browser-safe.
  */
 export class SocketClient implements BelugaClient {
   readonly store: ClientStore;

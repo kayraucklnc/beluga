@@ -9,6 +9,7 @@ import { useApp, useBeluga } from '../lib/beluga.js';
 import { currentTab, focusFor, paneShowing, paneTabsOf, placeTab, resetPanelLayout, setPanelTab, showPanelTab, tabShowing, tabsOf, useWorkspaceTabBridge } from '../lib/panel.js';
 import { PANEL_DEFAULT, PANEL_LABELS, type PaneId, type PanelTab, SPLIT_MAX, SPLIT_MIN, PANES_DEFAULT, clampPanelWidth, clampShare, paneKey, panelDigit, panelFits, slotOf, viewsOf } from '../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
+import { useMaking } from '../lib/making.js';
 import { Inspector } from './Inspector.js';
 import { ResizeHandle, usePresence, useWindowWidth } from './panel/ResizeHandle.js';
 import { ChangesTab } from './panel/ChangesTab.js';
@@ -85,7 +86,7 @@ let dragged: PanelTab | undefined;
  * A pane's tabs, always named. Drag one along the strip or to the other pane to keep it there
  * (or right-click it: Move to Bottom / Top). Changes opens on the view you used last (History).
  */
-function TabStrip({ pane, tabs, tab, open, badges }: { pane: PaneId; tabs: readonly PanelTab[]; tab: PanelTab | undefined; open: boolean; badges: Badges }) {
+function TabStrip({ pane, tabs, tab, open, badges, dock = false }: { pane: PaneId; tabs: readonly PanelTab[]; tab: PanelTab | undefined; open: boolean; badges: Badges; dock?: boolean }) {
   const view = useApp((st) => st.view);
   const projects = useApp((st) => st.projects);
   const prefs = usePrefs();
@@ -132,7 +133,7 @@ function TabStrip({ pane, tabs, tab, open, badges }: { pane: PaneId; tabs: reado
   return (
     <div
       ref={list}
-      className={cx(s.tabs, drop !== undefined && s.tabsDrop)}
+      className={cx(s.tabs, dock && s.dockTabs, drop !== undefined && s.tabsDrop)}
       role="tablist"
       aria-label={pane === 'top' ? 'Panel' : 'Panel bottom'}
       onKeyDown={onKey}
@@ -184,7 +185,7 @@ function TabStrip({ pane, tabs, tab, open, badges }: { pane: PaneId; tabs: reado
                 setDrop(undefined);
               }}
             >
-              <Icon name={ICONS[t]} size={13} />
+              {dock ? null : <Icon name={ICONS[t]} size={13} />}
               <span className={s.tabName}>
                 <span>{PANEL_LABELS[t]}</span>
               </span>
@@ -235,6 +236,7 @@ function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; styl
   const tab = currentTab(state, prefs, pane);
   const open = pane === 'top' || prefs.bottomOpen || lead;
   const wsId = view.kind === 'workspace' ? view.id : undefined;
+  const making = useMaking();
   if (!tabs.length || !tab) return null;
   // Dropping on the pane's content puts the tab at the end of its strip.
   const onDragOver = (e: DragEvent): void => {
@@ -247,21 +249,34 @@ function Pane({ pane, lead, style, badges }: { pane: PaneId; lead: boolean; styl
     placeTab(state, dragged, pane);
     dragged = undefined;
   };
+  // Under the top pane, what runs is a dock of its own (its own background, edge and tabs), and
+  // folded it's a slim bar: never read as more tabs of what's above it.
+  const dock = pane === 'bottom' && !lead;
   return (
-    <section className={cx(s.pane, !open && s.paneClosed)} style={open ? style : undefined} aria-label={pane === 'top' ? undefined : 'Bottom of the panel'} data-pane={pane}>
-      <header className={lead ? s.head : s.paneHead} {...(lead ? { 'data-tauri-drag-region': true } : {})}>
-        <TabStrip pane={pane} tabs={tabs} tab={tab} open={open} badges={badges} />
-        {pane === 'bottom' && !lead ? (
-          <IconButton icon={open ? 'chevronDown' : 'chevronUp'} label={open ? 'Hide the bottom of the panel' : 'Show the bottom of the panel'} className={s.paneToggle} onClick={() => setPrefs({ bottomOpen: !open })} />
+    <section className={cx(s.pane, !open && s.paneClosed, dock && s.dock, dock && !open && s.dockClosed)} style={open ? style : undefined} aria-label={pane === 'top' ? undefined : 'Bottom of the panel'} data-pane={pane}>
+      <header
+        className={lead ? s.head : cx(s.paneHead, dock && s.dockHead)}
+        {...(lead ? { 'data-tauri-drag-region': true } : {})}
+        {...(dock && !open ? { onClick: (e: React.MouseEvent) => e.target === e.currentTarget && setPrefs({ bottomOpen: true }), title: 'Show the terminal dock (⌘J)' } : {})}
+      >
+        {dock ? <Icon name="terminal" size={12} className={s.dockMark} /> : null}
+        <TabStrip pane={pane} tabs={tabs} tab={tab} open={open} badges={badges} dock={dock} />
+        {dock ? (
+          <IconButton icon={open ? 'chevronDown' : 'chevronUp'} label={open ? 'Hide the terminal dock' : 'Show the terminal dock'} className={s.paneToggle} onClick={() => setPrefs({ bottomOpen: !open })} />
         ) : null}
       </header>
       {open ? (
         <>
           <ViewSwitch views={viewsOf(tab, tabsOf(state))} tab={tab} pane={pane} />
           <div className={s.body} id={pane === 'top' ? 'panel-body' : 'panel-body-bottom'} role="tabpanel" aria-labelledby={`panel-tab-${slotOf(tab)}`} onDragOver={onDragOver} onDrop={onDrop}>
-            <Suspense fallback={<div className={s.loading} />}>
-              <Body tab={tab} wsId={wsId} {...(view.kind === 'project' ? { projectId: view.id } : {})} />
-            </Suspense>
+            {/* A worktree being made has no folder yet: its tabs fill in once it's there. */}
+            {making ? (
+              <div className={s.loading} />
+            ) : (
+              <Suspense fallback={<div className={s.loading} />}>
+                <Body tab={tab} wsId={wsId} {...(view.kind === 'project' ? { projectId: view.id } : {})} />
+              </Suspense>
+            )}
           </div>
         </>
       ) : null}

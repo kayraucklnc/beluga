@@ -1,0 +1,114 @@
+/* The Files tab searching inside the files: Names | Contents, the box's toggles, lines by file. */
+
+.modeRow {
+  flex: none;
+  display: flex;
+  padding: 0 10px 6px;
+}
+.flags {
+  flex: none;
+  display: inline-flex;
+  gap: 1px;
+  margin-right: -4px;
+}
+.flag {
+  height: 18px;
+  min-width: 20px;
+  padding: 0 3px;
+  border-radius: 4px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 18px;
+}
+.flag:hover {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+.flagOn,
+.flagOn:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  color: var(--text-3);
+  font-size: 0.82rem;
+}
+.busy {
+  animation: spin 900ms linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+:global(:root[data-motion='reduce']) .busy {
+  animation: none;
+}
+.error {
+  color: var(--error);
+  white-space: normal;
+  line-height: 1.4;
+  height: auto;
+  padding-top: 4px;
+}
+
+.file {
+  gap: 5px;
+  padding-right: 8px;
+}
+.name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.count {
+  flex: none;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-3);
+  font-size: 0.78rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.line {
+  gap: 8px;
+  padding-left: 22px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.no {
+  flex: none;
+  min-width: 3ch;
+  color: var(--text-3);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: pre;
+}
