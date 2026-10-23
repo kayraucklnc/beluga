@@ -22,7 +22,7 @@ export const TASK_STATE: Readonly<Record<TaskState, { readonly label: string; re
   idle: { label: 'Stopped without finishing', tone: 'warn' },
   stalled: { label: 'Needs you', tone: 'warn' },
   review: { label: 'In review', tone: 'info' },
-  planned: { label: 'In plan', tone: 'info' },
+  planned: { label: 'Merged into plan', tone: 'info' },
   done: { label: 'Done', tone: 'ok' },
   canceled: { label: 'Canceled', tone: 'muted' },
   missing: { label: 'Deleted', tone: 'muted' },

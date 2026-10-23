@@ -226,6 +226,19 @@ describe('plan mode defines the task', () => {
     await work.start(t.key);
     await expect(work.start(t.key)).rejects.toThrow(/already being worked on/);
   });
+
+  it('finished work (in review, merged into the plan, done) isn’t started again until it’s reopened', async () => {
+    const { board, work } = setup();
+    for (const status of ['in_review', 'in_plan', 'done'] as const) {
+      const t = board.create({ projectId: 'api', title: `Finished ${status}`, status }, work.me());
+      await expect(work.start(t.key)).rejects.toThrow(/reopen it/);
+      expect(board.need(t.key).worktrees).toEqual([]);
+      // Reopened: back to Todo, and it starts.
+      board.update(t.key, { status: 'todo' }, work.me());
+      await work.start(t.key);
+      expect(board.need(t.key).status).toBe('in_progress');
+    }
+  });
 });
 
 describe('tasks in words', () => {

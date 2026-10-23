@@ -996,7 +996,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     await t.work.pilot.pollPrs();
     expect(t.issue('Auth on payment routes').status).toBe('in_plan');
     expect(t.plans.need(t.plan.id).shipped).toBeUndefined();
-    expect(t.plans.need(t.plan.id).activity.map((e) => e.text)).toContain('pull request #9 was closed without merging: its tasks stay In Plan');
+    expect(t.plans.need(t.plan.id).activity.map((e) => e.text)).toContain('pull request #9 was closed without merging: its tasks stay merged into the plan');
   });
 
   it('Merge into main locally: every In Plan task is Done', async () => {
@@ -1057,6 +1057,6 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.issue(i.title).worktreeGone).toBeUndefined();
     const { ISSUE_STATUSES, STATUS_INFO } = await import('../src/core/board/model.js');
     expect(ISSUE_STATUSES.slice(3, 6)).toEqual(['in_review', 'in_plan', 'done']);
-    expect(STATUS_INFO.in_plan.label).toBe('In Plan');
+    expect(STATUS_INFO.in_plan.label).toBe('Merged into Plan');
   });
 });
