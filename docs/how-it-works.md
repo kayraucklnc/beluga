@@ -1,12 +1,12 @@
-# How Klaud works
+# How Orca works
 
 
-klaud is one core with two screens. The core (rooms, projects, Claude, terminals) runs in your terminal app's process, or as a background daemon that several screens attach to over a local WebSocket (`127.0.0.1`, a token in `~/.klaud/daemon.json` that only you can read). Every screen gets the same state and the same stream of changes and calls the same list of actions ([src/ipc/api.ts](../src/ipc/api.ts)); what each screen shows is its own. [docs/parity.md](parity.md) lists every action and where each screen offers it.
+Orca is one core with two screens. The core (rooms, projects, Claude, terminals) runs in your terminal app's process, or as a background daemon that several screens attach to over a local WebSocket (`127.0.0.1`, a token in `~/.orca/daemon.json` that only you can read). Every screen gets the same state and the same stream of changes and calls the same list of actions ([src/ipc/api.ts](../src/ipc/api.ts)); what each screen shows is its own. [docs/parity.md](parity.md) lists every action and where each screen offers it.
 
 ```
  your computer                                       bob's computer
 ┌──────────────────────────────┐                   ┌──────────────────────────────┐
-│ klaud                        │   encrypted       │ klaud                        │
+│ orca                         │   encrypted       │ orca                         │
 │  projects · chat · files      │◄─── frames ──────►│  projects · chat · files      │
 │  your Claude (your login)     │ direct (P2P) or   │  bob's Claude (bob's login)   │
 │                               │ via Cloudflare    │                               │

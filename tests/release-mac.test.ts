@@ -6,6 +6,7 @@ interface ReleaseScript {
   isNewer(next: string, prev: string | undefined): boolean;
   archOf(nodeArch: string): string;
   updateAsset(version: string, arch: string): string;
+  dmgAsset(version: string, arch: string): string;
   assetUrl(tag: string, name: string): string;
   latestJson(o: { version: string; notes: string; pubDate: string; signature: string; url: string; arch: string }): unknown;
 }
@@ -23,13 +24,14 @@ describe('release-mac', () => {
     expect(isNewer('nope', '0.1.0')).toBe(false);
   });
 
-  it('writes the latest.json every installed Klaud reads', async () => {
-    const { archOf, assetUrl, latestJson, updateAsset } = await script();
+  it('writes the latest.json every installed copy reads, with Orca-named files', async () => {
+    const { archOf, assetUrl, dmgAsset, latestJson, updateAsset } = await script();
     const arch = archOf('arm64');
     const name = updateAsset('0.5.0', arch);
-    expect(name).toBe('Klaud_0.5.0_aarch64.app.tar.gz');
+    expect(name).toBe('Orca_0.5.0_aarch64.app.tar.gz');
+    expect(dmgAsset('0.5.0', arch)).toBe('Orca_0.5.0_aarch64.dmg');
     const url = assetUrl('v0.5.0-mac', name);
-    expect(url).toBe('https://github.com/kayraucklnc/klaud/releases/download/v0.5.0-mac/Klaud_0.5.0_aarch64.app.tar.gz');
+    expect(url).toBe('https://github.com/kayraucklnc/orca/releases/download/v0.5.0-mac/Orca_0.5.0_aarch64.app.tar.gz');
     expect(latestJson({ version: '0.5.0', notes: '- Faster', pubDate: '2026-10-18T10:00:00.000Z', signature: 'c2ln\n', url, arch })).toEqual({
       version: '0.5.0',
       notes: '- Faster',
