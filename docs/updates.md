@@ -1,6 +1,6 @@
 # Beluga for Mac updates
 
-Beluga for Mac updates itself from GitHub Releases. The terminal app doesn't use this; it updates with `beluga update` or npm.
+Beluga for Mac updates itself from GitHub Releases, and its engine (the daemon it bundles) comes with it. The terminal app has its own, smaller version of this (see *The terminal app* below).
 
 ## Klaud is now Beluga
 
@@ -8,7 +8,7 @@ Copies installed as Klaud update to Beluga like any other version: the old relea
 
 ## What you see
 
-- **When it looks.** Beluga checks for a new version at launch, but only if the last check was more than 20 hours ago. While it runs, it checks once a day. After the Mac wakes, it checks if a check is overdue. A failed check is retried after an hour, so a normal launch makes no network request. You can also check by hand: **Beluga › Check for Updates…**, or **Check Now** in Settings › General › Updates (also in Settings › About).
+- **When it looks.** Beluga checks for a new version at launch (unless it checked less than an hour ago) and every 4 hours while it runs. After the Mac wakes, it checks if a check is overdue. A failed check is retried after an hour. The times are in `update_rules.rs`. You can also check by hand: **Beluga › Check for Updates…**, or **Check Now** in Settings › General › Updates (also in Settings › About).
 - **What happens when it finds one.** The update downloads in the background and its signature is verified. Then a small pill appears at the bottom of the sidebar, "Beluga 0.5 is ready". If the sidebar is hidden, the pill sits in the window's corner. Clicking the pill opens a short sheet with the release notes and three choices:
   - **Restart Now** installs the update and reopens Beluga where you were (the same workspace, project or place).
   - **Update When Idle** installs once all of these are true:
@@ -19,9 +19,21 @@ Copies installed as Klaud update to Beluga like any other version: the old relea
 
     Beluga then reopens quietly. If its window wasn't in front, it stays hidden in the menu bar and doesn't take focus.
   - **Later** installs the update the next time you quit Beluga.
-- **The Updates setting** (Settings › General): *Automatically when idle*, *Ask me* (the default), or *Off*. *Off* means Beluga checks only when you ask. The sheet's "Always update when I'm idle" box switches to *Automatically when idle*.
+- **The Updates settings** (Settings › General › Updates) are two switches:
+  - **Update automatically** (off by default): a downloaded update installs by itself once you're idle (as with *Update When Idle* above), and Beluga reopens in the background. When it's off, you get the pill and choose.
+  - **Check for updates** (on by default): when it's off, Beluga checks only when you click **Check Now**. Turning it off turns Update automatically off too, and turning Update automatically on turns it back on.
+
+  Together they are the shell's `mode` in `updates.json`: `idle` (both on), `ask` (only checking) or `off`. The sheet's "Update automatically from now on" box is the first switch.
 - **Quitting.** A downloaded update always installs when you quit, unless updates are *Off*.
 - **After an update.** The pill says "Updated to 0.5 · What's new" once.
+
+## The terminal app
+
+The terminal app (`beluga`, from npm or a git checkout) looks for a new version too (`src/update/auto.ts`). It looks at launch unless it looked less than an hour ago, then every 4 hours, and retries an hour after a failed look. What it found is kept in `~/.beluga/update-check.json`, so a second window doesn't ask npm again. The Mac app's daemon (its version carries `+mac.`) doesn't look: the Mac app's updater replaces it. `BELUGA_UPDATE_CHECK=0` turns looking off.
+
+- **Update automatically off** (the default): it says once per run that "Beluga 0.11.0 is available" and how to get it (`beluga update`). The setting is **/settings › Update automatically**, or `autoUpdate` in `~/.beluga/settings.json`.
+- **Update automatically on**: a newer version on npm is installed in the background (quietly, as `beluga update` would). A daemon (`BELUGA_DAEMON=1`) then stops once nothing is using it: no screens attached, no Claude working and nobody in its room. The next `beluga` starts the new version. Beluga running in your terminal can't restart itself, so it says "Quit and start Beluga again". If an install fails, Beluga says so once and doesn't retry by itself.
+- **A git checkout** is only told how many new commits there are. It's never pulled and rebuilt behind your back.
 
 ## What an update restarts
 

@@ -192,6 +192,7 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
           { id: 'sec:claude', label: 'Claude ›', hint: `${modelLabel(state, p.model)} · PR instructions · templates` },
           { id: 'sec:workspaces', label: 'Workspaces ›', hint: `setup ${p.autoSetup ? 'on' : 'off'} · terminal · environment · top bar` },
           { id: 'sec:display', label: 'Display ›', hint: 'mouse, text size, context meter, sub-agents' },
+          { id: 'set-autoupdate', label: 'Update automatically', hint: `${onOff(p.autoUpdate)}  ·  installs new versions of Beluga by itself` },
           { id: 'close', label: 'Done', hint: 'Esc' },
         ],
       };

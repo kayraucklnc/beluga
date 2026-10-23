@@ -110,6 +110,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
       selfId: () => session.selfId,
       saved: opts.savedPeople ?? {},
       save: (people) => opts.saveSettings?.({ people }),
+      ...(opts.loadPeople ? { load: opts.loadPeople } : {}),
       toast: (text, level) => session.toast(text, level),
     });
     const files = new RoomFiles({

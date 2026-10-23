@@ -12,6 +12,7 @@ import { App } from './ui/App.js';
 import { ErrorBoundary } from './ui/components/ErrorBoundary.js';
 import { runUpdate } from './update/update.js';
 import { installedName, installedVersion } from './update/check.js';
+import { startUpdateWatch, watchesItself } from './update/auto.js';
 import { runView } from './ui/tty/view-cli.js';
 import { FOCUS_OFF, FOCUS_ON, MOUSE_OFF, MOUSE_ON, type MouseEvent, PASTE_OFF, PASTE_ON, createInput } from './ui/mouse.js';
 import { buildCore } from './daemon/core.js';
@@ -114,16 +115,23 @@ async function inProcess(config: Config): Promise<void> {
     shutdown: () => void shutdown(),
   });
   const client = new InProcessClient(core.session, { kind: 'tui', launchDir: process.cwd() });
+  let stopUpdates = (): void => undefined;
   shutdown = runTui(
     client,
     config,
     async () => {
+      stopUpdates();
       client.close();
       await core.stop();
     },
     'Beluga: left the room. See you soon!',
   );
   core.start();
+  // Beluga runs in this terminal, so it can't restart itself: it says when a new version is in.
+  const version = installedVersion();
+  if (config.mode !== 'demo' && watchesItself(version, { check: belugaEnv('UPDATE_CHECK') })) {
+    stopUpdates = startUpdateWatch({ home: belugaHome(), version, auto: () => core.store.getState().prefs.autoUpdate, idle: () => false, tell: (text, level) => core.session.toast(text, level) });
+  }
 }
 
 /** Beluga as one screen of the daemon (started if it isn't running): other screens can attach too. */
@@ -188,7 +196,7 @@ async function main(): Promise<void> {
     const extra = (belugaEnv('ALLOW_ORIGINS') ?? '').split(',').map((o) => o.trim()).filter(Boolean);
     // BELUGA_LAG_EVERY_MS: log the event-loop delay more often than every 30 s (scripts/perf-lag.mjs).
     const lagEveryMs = Number(belugaEnv('LAG_EVERY_MS')) || undefined;
-    await runDaemon(parseConfig(rest), { version: installedVersion(), keepAlive: args.includes('--keep-alive') || belugaEnv('KEEP_ALIVE') === '1', allowedOrigins: [...APP_ORIGINS, ...extra], ...(lagEveryMs ? { lagEveryMs } : {}) });
+    await runDaemon(parseConfig(rest), { version: installedVersion(), keepAlive: args.includes('--keep-alive') || belugaEnv('KEEP_ALIVE') === '1', updates: true, allowedOrigins: [...APP_ORIGINS, ...extra], ...(lagEveryMs ? { lagEveryMs } : {}) });
     return;
   }
   const config = parseConfig(args);

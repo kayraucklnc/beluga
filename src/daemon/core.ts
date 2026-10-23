@@ -287,6 +287,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     launchDir: process.cwd(),
     terminals,
     savedPeople: saved.people,
+    loadPeople: () => loadSettings().people,
     replayFile: path.join(belugaHome(), 'seen.json'),
     stepsDir: path.join(belugaHome(), 'steps'),
     ...(demo ? {} : { findConversation, otherTools }),

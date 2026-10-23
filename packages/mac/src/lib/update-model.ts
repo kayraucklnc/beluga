@@ -33,6 +33,23 @@ export interface UpdateState {
 
 export const INITIAL_UPDATE_STATE: UpdateState = { current: '', mode: 'ask', phase: 'idle', waitingOn: [] };
 
+/** Settings' two switches, as the mode the app shell keeps: "Update automatically" and "Check for updates". */
+export interface UpdateSwitches {
+  readonly auto: boolean;
+  readonly check: boolean;
+}
+
+export const switchesOf = (mode: UpdateMode): UpdateSwitches => ({ auto: mode === 'idle', check: mode !== 'off' });
+
+/** Updating automatically needs looking; not looking can't update automatically. */
+export function modeOf(next: Partial<UpdateSwitches>, now: UpdateMode): UpdateMode {
+  const was = switchesOf(now);
+  const auto = next.auto ?? (next.check === false ? false : was.auto);
+  const check = next.check ?? (next.auto === true ? true : was.check);
+  if (!check) return 'off';
+  return auto ? 'idle' : 'ask';
+}
+
 /** "0.5" for 0.5.0, "0.4.1" otherwise: how people say a version. */
 export function shortVersion(version: string): string {
   return version.replace(/^v/, '').replace(/^(\d+\.\d+)\.0$/, '$1');

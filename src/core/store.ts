@@ -213,6 +213,8 @@ export interface Prefs {
   readonly model?: string;
   readonly effort?: Effort;
   readonly autoSetup: boolean;
+  /** Install new versions of the terminal app by itself (src/update/auto.ts). */
+  readonly autoUpdate: boolean;
   readonly contextMeter: boolean;
   /** Compact a conversation on its own when its context passes `autoCompactAt` percent. */
   readonly autoCompact: boolean;
@@ -512,6 +514,7 @@ export const DEFAULT_PREFS: Prefs = {
   selfApproval: 'never',
   notify: NotifySchema.parse({}),
   autoSetup: true,
+  autoUpdate: false,
   contextMeter: true,
   autoCompact: false,
   autoCompactAt: AUTO_COMPACT_DEFAULT,

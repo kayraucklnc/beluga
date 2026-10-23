@@ -22,6 +22,8 @@ export interface HubOptions {
   /** Messages per second allowed per connection before frames are dropped. */
   readonly rateLimit?: number;
   readonly authTimeoutMs?: number;
+  /** Override TWIN_PROBE_MS (tests). */
+  readonly twinProbeMs?: number;
   /** Shown to everyone who joins. */
   readonly roomName?: string;
   /** The host's own peer id, marked `host` in the peer list. */
@@ -53,6 +55,8 @@ interface Conn {
   guest?: { full: boolean; contacts: Set<string> };
   tokens: number;
   lastRefill: number;
+  /** Asked whether it's still there, because the same person is coming in again. */
+  probing?: boolean;
 }
 
 export interface Hub {
@@ -97,6 +101,10 @@ const MAX_PENDING_AUTH = 32;
 /** Must stay well under the client's maxPayload since history ships inside `welcome`. */
 const HISTORY_BYTES = 1536 * 1024;
 const HEARTBEAT_MS = 25_000;
+/** How long a seat whose owner is coming in again has to answer a ping before it's dropped. */
+export const TWIN_PROBE_MS = 3000;
+/** What someone already in the room hears when they come in a second time. */
+export const ALREADY_HERE = 'You’re already in this room from another window';
 
 /**
  * The hub is a tiny relay that runs on the host's machine. It authenticates
@@ -108,6 +116,7 @@ export function startHub(opts: HubOptions): Promise<Hub> {
   const historyLimit = opts.historyLimit ?? 300;
   const rate = opts.rateLimit ?? 120;
   const authTimeoutMs = opts.authTimeoutMs ?? 10_000;
+  const twinProbeMs = opts.twinProbeMs ?? TWIN_PROBE_MS;
   const conns = new Set<Conn>();
   const roomKeys = opts.keys;
   let inviteKeys = opts.keys;
@@ -139,6 +148,17 @@ export function startHub(opts: HubOptions): Promise<Hub> {
 
   const authed = (): Conn[] => [...conns].filter((c) => c.peer);
   const peerList = (): PeerInfo[] => authed().map((c) => c.peer as PeerInfo);
+  /** A seat that doesn't answer a ping in time is dropped (its owner gets in on their next try). */
+  const probe = (c: Conn): void => {
+    if (c.probing) return;
+    c.probing = true;
+    c.alive = false;
+    c.ws.ping();
+    setTimeout(() => {
+      c.probing = false;
+      if (!c.alive && conns.has(c)) c.ws.terminate();
+    }, twinProbeMs).unref?.();
+  };
   let gate: GuestGate | undefined;
   const restricted = (c: Conn): boolean => Boolean(c.guest && !c.guest.full);
 
@@ -209,8 +229,12 @@ export function startHub(opts: HubOptions): Promise<Hub> {
       conn.ws.close(4002, 'profile');
       return;
     }
-    if (authed().some((c) => c.peer?.peerId === frame.peerId)) {
-      send(conn, { t: 'error', message: 'Peer id already connected' });
+    const twin = authed().find((c) => c.peer?.peerId === frame.peerId);
+    if (twin) {
+      // The seat stays with whoever has it, but a seat left over from before (the Mac slept, the
+      // network changed) shouldn't keep its owner out until the heartbeat notices: ask it now.
+      probe(twin);
+      send(conn, { t: 'error', message: ALREADY_HERE });
       conn.ws.close(4003, 'dup');
       return;
     }

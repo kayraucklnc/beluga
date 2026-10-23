@@ -211,6 +211,10 @@ export function runWorkOption(ctx: MenuContext, menu: MenuKind, id: string, inde
     case 'w-buttons':
       section('buttons');
       return true;
+    case 'set-autoupdate':
+      setPrefs({ autoUpdate: !prefs.autoUpdate });
+      reopen();
+      return true;
     case 'd-context':
       setPrefs({ contextMeter: !prefs.contextMeter });
       reopen();

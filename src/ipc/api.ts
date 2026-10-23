@@ -47,6 +47,7 @@ export const PrefsPatch = z
     model: z.string().max(80).nullable().optional(),
     effort: z.enum(EFFORTS).nullable().optional(),
     autoSetup: bool,
+    autoUpdate: bool,
     contextMeter: bool,
     autoCompact: bool,
     autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX),

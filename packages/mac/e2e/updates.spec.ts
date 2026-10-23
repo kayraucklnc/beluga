@@ -1,5 +1,4 @@
 import { expect, test, type Page } from './fixtures.js';
-import { expectPicked, pick } from './helpers.js';
 
 /**
  * Beluga's own updates. The browser build has no app shell (the updater lives in
@@ -61,7 +60,7 @@ test('Later closes the sheet and leaves the update for when you quit', async ({ 
   await open(page, READY);
   await sidebar(page).getByRole('button', { name: 'Beluga 0.5 is ready' }).click();
   // The sheet offers the idle way for every update too.
-  const always = page.getByRole('dialog').getByLabel('Always update when I’m idle');
+  const always = page.getByRole('dialog').getByLabel('Update automatically from now on');
   await always.check();
   await always.uncheck();
   await page.getByRole('dialog').getByRole('button', { name: 'Later' }).click();
@@ -89,15 +88,26 @@ test('after an update installed: What’s new, once', async ({ page }) => {
   expect(await calls(page)).toEqual(['update_dismiss_news']);
 });
 
-test('Settings › General: how updates install, Check Now and when Beluga last looked', async ({ page }) => {
+test('Settings › General: Update automatically, Check for updates, Check Now and when Beluga last looked', async ({ page }) => {
   await open(page, { ...READY, available: null, choice: null, phase: 'idle' });
   await page.keyboard.press('Meta+,');
   const settings = page.getByRole('dialog', { name: 'Settings' });
   await expect(settings.getByText('Last checked: 5 minutes ago')).toBeVisible();
-  await expectPicked(settings.getByLabel('Install updates'), 'ask');
-  await pick(settings, 'Install updates', 'Automatically when idle');
+  const auto = settings.getByRole('switch', { name: 'Update automatically' });
+  const check = settings.getByRole('switch', { name: 'Check for updates' });
+  await expect(auto).toHaveAttribute('aria-checked', 'false');
+  await expect(check).toHaveAttribute('aria-checked', 'true');
+  await auto.click();
+  await expect(auto).toHaveAttribute('aria-checked', 'true');
   await expect(settings.getByText(/installs once you step away/)).toBeVisible();
+  // Not looking at all can't update automatically.
+  await check.click();
+  await expect(auto).toHaveAttribute('aria-checked', 'false');
+  await expect(settings.getByText(/only looks when you click Check Now/)).toBeVisible();
+  // Updating automatically looks again.
+  await auto.click();
+  await expect(check).toHaveAttribute('aria-checked', 'true');
   await settings.getByRole('button', { name: 'Check Now' }).first().click();
   await expect(settings.getByText(/Beluga is up to date\. · Last checked: Just now/).first()).toBeVisible();
-  expect(await calls(page)).toEqual(['update_set_mode {"mode":"idle"}', 'update_check']);
+  expect(await calls(page)).toEqual(['update_set_mode {"mode":"idle"}', 'update_set_mode {"mode":"off"}', 'update_set_mode {"mode":"idle"}', 'update_check']);
 });
