@@ -62,9 +62,11 @@
   font-size: 11.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+.toggle {
   cursor: pointer;
 }
-.status:disabled {
+.toggle:disabled {
   cursor: default;
 }
 .ok {

@@ -10,7 +10,8 @@ import { useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { workspaceSignal } from './attention-model.js';
 import { DotMark, SignalMark, nameClass, signalClass } from './signal-marks.js';
-import { inSections, toolbarActions } from './toolbar-actions.js';
+import { inSections, isPrStep, toolbarActions } from './toolbar-actions.js';
+import { askBeforeWork } from '../lib/work-confirm.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { Row } from './sidebar-parts.js';
 import { outsideLocation } from './outside-model.js';
@@ -24,7 +25,7 @@ import o from './other-worktrees.module.css';
 export function workspaceItems(state: AppState, ws: Workspace, run: ReturnType<typeof useActions>['run']): ActionItem[] {
   const { primary, icons, more } = toolbarActions(state, ws);
   const here = state.view.kind === 'workspace' && state.view.id === ws.id;
-  const sections = inSections([...(primary && primary.action !== 'fix_checks' ? [primary] : []), ...icons, ...more.flat()]);
+  const sections = inSections([...(primary ? [primary] : []), ...icons, ...more.flat()]);
   return [
     { label: 'Open', icon: 'chevronRight', onSelect: () => run({ type: 'open_ws', id: ws.id }) },
     ...sections.flatMap((section) =>
@@ -35,7 +36,7 @@ export function workspaceItems(state: AppState, ws: Workspace, run: ReturnType<t
         ...(here && a.keys ? { keys: a.keys } : {}),
         ...(a.danger ? { danger: true } : {}),
         ...(i === 0 ? { separate: true } : {}),
-        onSelect: () => (a.action === 'fix_checks' ? undefined : isPlanAction(a.action) ? runPlanAction(state, ws.id, a.action, run) : run({ type: 'ws', id: ws.id, action: a.action })),
+        onSelect: () => (isPrStep(a.action) ? askBeforeWork(ws.id, a.action) : isPlanAction(a.action) ? runPlanAction(state, ws.id, a.action, run) : run({ type: 'ws', id: ws.id, action: a.action })),
       })),
     ),
   ];

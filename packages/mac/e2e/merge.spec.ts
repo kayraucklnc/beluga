@@ -193,3 +193,46 @@ test('The chat watches the PR’s checks live, and an admin can merge past them'
     if (existsSync(ghFile())) rmSync(ghFile());
   }
 });
+
+test('A PR that conflicts says so and offers Resolve Merge Conflicts; a merged one offers Archive, Continue After Merge or Delete', async ({ page }) => {
+  writeGh({ prs: { 'add-auth': openPr({ mergeable: 'CONFLICTING' }) } });
+  try {
+    await page.goto('/');
+    await expect(sidebar(page)).toBeVisible();
+    const row = sidebar(page).getByRole('button', { name: 'add-auth', exact: true });
+    const unfold = sidebar(page).getByRole('button', { name: "Show what's in bob-api" });
+    if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
+    await row.click();
+
+    // Conflicts: no Merge button, Resolve Merge Conflicts instead (in the chat and the toolbar), asking first.
+    const strip = page.locator('[data-pr-strip="OPEN"]');
+    await expect(strip).toContainText('Conflicts with the base', { timeout: 20_000 });
+    await expect(strip.getByRole('button', { name: 'Merge on GitHub' })).toHaveCount(0);
+    await expect(toolbar(page).getByRole('button', { name: 'Resolve Merge Conflicts…' })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('pr-strip-conflicts.png') });
+    await strip.getByRole('button', { name: 'Resolve Merge Conflicts…' }).click();
+    const ask = page.getByRole('dialog', { name: 'Ask Claude to resolve the merge conflicts?' }).or(page.getByRole('alertdialog', { name: 'Ask Claude to resolve the merge conflicts?' }));
+    await expect(ask).toContainText('merges the latest base');
+    await ask.getByRole('button', { name: 'Cancel' }).click();
+    await expect(ask).toBeHidden();
+
+    // Merged: done, and the three ways on from here.
+    writeGh({ prs: { 'add-auth': openPr({ state: 'MERGED', statusCheckRollup: passed() }) } });
+    const merged = page.locator('[data-pr-strip="MERGED"]');
+    await expect(merged).toContainText('Merged · done', { timeout: 30_000 });
+    await expect(merged.getByRole('button', { name: 'Archive Worktree' })).toBeVisible();
+    await merged.getByRole('button', { name: 'Other ways to finish' }).click();
+    await expect(page.getByRole('menuitem', { name: /^Delete Worktree…/ })).toBeVisible();
+    await page.getByRole('menuitem', { name: /^Continue After Merge…/ }).click();
+    const carry = page.getByRole('dialog', { name: 'Continue working after the merge?' }).or(page.getByRole('alertdialog', { name: 'Continue working after the merge?' }));
+    await expect(carry).toContainText('the next change gets a new pull request');
+    await page.screenshot({ path: test.info().outputPath('continue-after-merge.png') });
+    await carry.getByRole('button', { name: 'Cancel' }).click();
+    // The toolbar's ⋯ has it too.
+    await toolbar(page).getByRole('button', { name: 'More for this workspace' }).click();
+    await expect(page.getByRole('menuitem', { name: /^Continue After Merge…/ })).toBeVisible();
+    await page.keyboard.press('Escape');
+  } finally {
+    if (existsSync(ghFile())) rmSync(ghFile());
+  }
+});

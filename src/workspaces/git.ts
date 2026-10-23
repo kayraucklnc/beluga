@@ -338,3 +338,23 @@ export async function excludeProjectDir(dir: string): Promise<void> {
   await mkdir(`${gitDir}/info`, { recursive: true });
   await appendFile(file, `${current && !current.endsWith('\n') ? '\n' : ''}${PROJECT_DIR}/\n`);
 }
+
+/**
+ * Whether everything on `head` is already in `base`, whichever way it got there (merged, squashed
+ * or rebased): merging it into `base` changes nothing. Undefined when git can't tell (older than 2.38).
+ */
+export async function contentIn(dir: string, head: string, base: string): Promise<boolean | undefined> {
+  const merged = (await tryGit(dir, ['merge-tree', '--write-tree', base, head]))?.split('\n')[0]?.trim();
+  const tree = (await tryGit(dir, ['rev-parse', `${base}^{tree}`]))?.trim();
+  return merged && tree ? merged === tree : undefined;
+}
+
+/** Fetch `remote` (no pruning, no tags beyond the usual). Throws git's error. */
+export async function fetchRemote(dir: string, remote = 'origin'): Promise<void> {
+  await git(dir, ['fetch', remote]);
+}
+
+/** Move this worktree's branch to `to` (a clean worktree only: its files change to match). */
+export async function resetTo(dir: string, to: string): Promise<void> {
+  await withLockRetry(dir, ['reset', '--hard', to]);
+}
