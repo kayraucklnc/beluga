@@ -686,7 +686,13 @@ export class WorkspaceManager {
    * branch of the project). The worktree remembers what it branched from, so what it's ahead by,
    * its review and its merge compare against that.
    */
-  async createWorktree(projectIdOrRoot: string, name: string, base?: string): Promise<Workspace> {
+  /** An id for a worktree about to be made (its row shows under it while it's made: see core/optimistic.ts). */
+  newWorktreeId(): string {
+    return freshId();
+  }
+
+  /** `opts.id`: the id it gets (from newWorktreeId), else a fresh one. */
+  async createWorktree(projectIdOrRoot: string, name: string, base?: string, opts: { readonly id?: string } = {}): Promise<Workspace> {
     const project = this.projects.find((p) => p.id === projectIdOrRoot || p.root === projectIdOrRoot);
     if (!project) throw new WorkspaceError('Project not found');
     if (base !== undefined && !(await g.isCommit(project.root, base))) throw new WorkspaceError(`There's no branch called ${base}`);
@@ -697,7 +703,7 @@ export class WorkspaceManager {
     await g.addWorktree(project.root, dir, branch, from);
     await g.excludeProjectDir(dir);
     await copyEnvFiles(project.root, dir);
-    const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
+    const record: WorkspaceRecord = { id: opts.id && !this.records.some((r) => r.id === opts.id) ? opts.id : freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
     this.saveRecord(record);
     await this.refresh();
     return this.require(record.id);

@@ -1,51 +1,45 @@
-import { useState } from 'react';
-import { Alert, Checkbox } from '../../components/Alert.js';
+import { Alert } from '../../components/Alert.js';
 import { worktreeOrigin } from '@beluga/workspaces/origin.js';
 import { useApi, useApp } from '../../lib/beluga.js';
 import { count } from './pick.js';
 
 /**
- * Delete Project…: by default it only leaves Beluga (its worktrees archived first, so nothing
- * is lost); its folder goes to the Trash only if you tick that, and never further than the Trash.
+ * Delete Project…: it leaves Beluga, and so do the worktrees Beluga made for it (archived first,
+ * so nothing of yours is lost). The project's own folder is never touched: not deleted, not
+ * moved to the Trash. It leaves the sidebar at once; the archiving goes on in the background.
  */
 export function DeleteProjectAlert({ projectId, close }: { projectId: string; close: () => void }) {
   const api = useApi();
   const project = useApp((st) => st.projects.find((p) => p.id === projectId && p.root));
-  const [trash, setTrash] = useState(false);
   if (!project) return null;
   const worktrees = project.workspaces.filter((w) => w.kind === 'worktree' && !w.archived && worktreeOrigin(w) === 'beluga').length;
   const remove = (): void => {
     close();
-    void api.workspaces.removeProject(project.id, { trash });
+    void api.workspaces.removeProject(project.id);
   };
   return (
     <Alert
       icon="alert"
       tone="danger"
-      title={`Delete “${project.name}”?`}
+      title={`Delete “${project.name}” from Beluga?`}
       message={
         <>
           <p>
             It leaves Beluga: the sidebar, its group and Hidden Projects.
-            {worktrees ? <> Its {count(worktrees, 'worktree')} {worktrees === 1 ? 'is' : 'are'} archived first, keeping everything of yours; add the project again to restore them.</> : null}
+            {worktrees ? (
+              <>
+                {' '}
+                The {count(worktrees, 'worktree')} Beluga made for it {worktrees === 1 ? 'goes' : 'go'} too: archived first, so everything of yours in {worktrees === 1 ? 'it' : 'them'} is kept (uncommitted work included), then {worktrees === 1 ? 'its folder is' : 'their folders are'} removed. Add the project again to restore {worktrees === 1 ? 'it' : 'them'}.
+              </>
+            ) : null}
           </p>
           <p>
-            {trash ? (
-              <>
-                The folder <code>{project.root}</code> goes to the Trash. You can put it back from there.
-              </>
-            ) : (
-              <>
-                The folder <code>{project.root}</code> stays where it is.
-              </>
-            )}
+            Your project folder <code>{project.root}</code> isn’t touched: nothing in it is deleted or moved to the Trash.
           </p>
         </>
       }
-      confirm={{ label: trash ? 'Remove and Move to Trash' : 'Remove from Beluga', destructive: true, onClick: remove }}
+      confirm={{ label: 'Delete from Beluga', destructive: true, onClick: remove }}
       onCancel={close}
-    >
-      <Checkbox checked={trash} onChange={setTrash} label="Also move the folder to the Trash" detail="Off: the folder isn’t touched" />
-    </Alert>
+    />
   );
 }

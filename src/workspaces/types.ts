@@ -70,6 +70,8 @@ export interface Workspace extends WorkspaceRecord {
    * and answer but changes nothing; work moves to a new worktree.
    */
   readonly askOnly?: boolean;
+  /** Being made: its row and page show at once, while git makes the folder (see core/optimistic.ts). */
+  readonly pending?: boolean;
 }
 
 export interface Project {

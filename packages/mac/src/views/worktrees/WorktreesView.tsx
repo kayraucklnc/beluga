@@ -62,17 +62,23 @@ export function WorktreesView({ projectId }: { projectId?: string | undefined })
   const allShown = shown.length > 0 && shown.every((r) => ticked.has(r.ws.id));
   const tickAll = (on: boolean): void => setTicked(on ? new Set([...ticked, ...shown.filter((r) => !r.archiving).map((r) => r.ws.id)]) : new Set([...ticked].filter((id) => !shown.some((r) => r.ws.id === id))));
 
-  /** One at a time (each archive is a lot of disk work); what failed says why and the rest go on. */
+  /**
+   * Archiving and deleting: all asked at once, so every row leaves its list now (Beluga does the
+   * disk work one at a time behind them). Freeing space and restoring: one at a time. What failed
+   * says why and the rest go on.
+   */
   const run = async (kind: Batch | 'restore', list: readonly WorktreeRow[]): Promise<void> => {
     setBatch(undefined);
     setRunning(true);
     try {
+      if (kind === 'archive' || kind === 'delete') {
+        await Promise.all(list.map((r) => (kind === 'archive' ? api.workspaces.archive(r.ws.id) : api.workspaces.remove(r.ws.id)).catch((err: unknown) => toast(client, `${r.ws.name}: ${errorText(err)}`, 'error'))));
+        return;
+      }
       for (const r of list) {
         try {
-          if (kind === 'archive') await api.workspaces.archive(r.ws.id);
-          else if (kind === 'free') await api.workspaces.freeSpace(r.ws.id);
-          else if (kind === 'restore') await api.workspaces.restore(r.ws.id);
-          else await api.workspaces.remove(r.ws.id);
+          if (kind === 'free') await api.workspaces.freeSpace(r.ws.id);
+          else await api.workspaces.restore(r.ws.id);
         } catch (err) {
           toast(client, `${r.ws.name}: ${errorText(err)}`, 'error');
         }

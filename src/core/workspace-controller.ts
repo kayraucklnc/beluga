@@ -18,6 +18,7 @@ import { MainSync } from './main-sync.js';
 import { agentWorktreesFrom, cleanupText, removeAgentWorktrees } from './agent-worktree-cleanup.js';
 import { claudeHome } from './claude-code/launch.js';
 import { HistorySaver } from './history-saver.js';
+import { nothingAhead, pendingWorktree, withAhead } from './optimistic.js';
 
 export interface ControllerDeps {
   readonly manager: WorkspaceManager;
@@ -112,6 +113,10 @@ export class WorkspaceController {
   private readonly syncRuns = new Map<string, { branch: string; upstream: string }>();
   /** Main-folder conversations that may edit one hidden worktree (a plan's Claude fixing a conflict there), by workspace id. */
   private readonly fixups = new Map<string, string>();
+  /** What you see ahead of the disk: worktrees going and being made, projects going (see optimistic.ts). */
+  private readonly ahead = nothingAhead();
+  /** Archiving and deleting in one repo, one at a time (git locks its worktrees): the last job queued, by repo. */
+  private readonly lanes = new Map<string, Promise<unknown>>();
 
   /** Hear about worktrees opening, merging, going and coming back. */
   onWorktree(listener: (event: WorktreeEvent) => void): () => void {
@@ -191,7 +196,9 @@ export class WorkspaceController {
 
   /** Publish the projects as they're arranged (no re-scan: arranging is instant); nothing when nothing changed. */
   private publish(): void {
-    const { projects, groups, order } = this.deps.manager.arrangement();
+    const arranged = this.deps.manager.arrangement();
+    const { groups, order } = arranged;
+    const projects = withAhead(arranged.projects, this.ahead);
     const state = this.deps.store.getState();
     const hidden = this.deps.manager.hiddenProjects;
     // A fresh list equal to the one shown would only re-scan transcripts and re-render every window.
@@ -315,28 +322,75 @@ export class WorkspaceController {
 
   // ------------------------------------------------------------- actions
 
-  private async act<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
+  /** Run `job` after the ones already queued for `repo` (a failure doesn't hold the next one up). */
+  private inLane<T>(repo: string, job: () => Promise<T>): Promise<T> {
+    const run = (this.lanes.get(repo) ?? Promise.resolve()).then(job, job);
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.lanes.set(repo, tail);
+    void tail.then(() => {
+      if (this.lanes.get(repo) === tail) this.lanes.delete(repo);
+    });
+    return run;
+  }
+
+  /**
+   * A workspace leaves the sidebar now (archived, or gone) and its tab closes, before any of the
+   * slow work. → `settle`, for when that work is over: done, the disk agrees; failed, it's back as it was.
+   */
+  private leaveNow(id: string, how: 'archive' | 'delete'): () => void {
+    this.ahead.leaving.set(id, how);
+    this.publish();
+    this.deps.intend({ type: 'close_tab', id });
+    return () => {
+      if (this.ahead.leaving.get(id) === how) this.ahead.leaving.delete(id);
+      this.publish();
+    };
+  }
+
+  /** `back`: what failing put back as it was (shown after why). */
+  private async act<T>(label: string, fn: () => Promise<T>, back?: string): Promise<T | undefined> {
     try {
       const result = await fn();
       await this.refresh();
       return result;
     } catch (err) {
-      this.deps.toast(`${label}: ${errorText(err)}`, 'error');
+      const why = errorText(err);
+      this.deps.toast(`${label}: ${why}${back ? `${/[.!?]$/.test(why) ? '' : '.'} ${back}` : ''}`, 'error');
       return undefined;
     }
   }
 
   /** New worktree from the latest origin default branch, or from `opts.base` (one of `branches`). */
   /** `quiet`: made by a plan running on its own, so it doesn't take you there (nor toast). */
+  /**
+   * Its row shows (and, unless `quiet`, its page opens) right away, while git fetches and makes
+   * the folder; the real worktree then takes the row's place under the same id. If it can't be
+   * made, the row goes again and the toast says why.
+   */
   async newWorktree(projectId: string, name: string, opts: { base?: string; quiet?: boolean } = {}): Promise<Workspace | undefined> {
-    if (!opts.quiet) this.deps.toast(`Creating worktree "${name}" from ${opts.base ?? 'the latest origin'}…`);
-    const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.createWorktree(projectId, name, opts.base));
+    const project = this.deps.manager.list.find((p) => p.root !== '' && (p.id === projectId || p.root === projectId));
+    const id = this.deps.manager.newWorktreeId();
+    if (project) {
+      this.ahead.making.set(id, pendingWorktree({ id, project, name: slugify(name) || 'worktree', ...(opts.base ? { base: opts.base } : {}) }));
+      this.publish();
+      if (!opts.quiet) this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab: 'chat' } });
+    }
+    const ws = await this.act("Couldn't create the worktree", () => this.deps.manager.createWorktree(projectId, name, opts.base, { id }));
+    const shown = this.ahead.making.delete(id);
+    this.publish();
     if (ws) {
       if (!opts.quiet) {
         this.deps.toast(`Worktree ${ws.name} is ready on ${ws.branch}`, 'success');
-        this.open(ws.id);
+        // Its page is open already (you may have gone elsewhere since: you stay there).
+        if (shown) this.ensureLoaded(ws.id);
+        else this.open(ws.id);
       }
       this.created(ws);
+    } else if (shown) {
+      this.deps.intend({ type: 'close_tab', id });
     }
     return ws;
   }
@@ -464,17 +518,27 @@ export class WorkspaceController {
    */
   async archive(id: string, _force = false, opts: { readonly quiet?: boolean } = {}): Promise<boolean> {
     const agents = this.agentWorktreesOf(id);
+    const ws = this.deps.manager.find(id);
+    // Out of the sidebar now (it can't be archived: the manager says why); saving and removing the folder follow.
+    this.deps.onWorkspaceGoing?.(id);
+    const settle = ws && !ws.archived && ws.kind !== 'main' ? this.leaveNow(id, 'archive') : () => undefined;
     const phase = (p?: ArchivePhase): void => void this.deps.store.dispatch({ type: 'archiving', id, ...(p ? { phase: p } : {}) });
     let manifest: ArchiveManifest | undefined;
-    const done = await this.act("Couldn't archive", async () => {
-      this.deps.onWorkspaceGoing?.(id);
-      try {
-        manifest = await this.deps.manager.archive(id, phase);
-      } finally {
-        phase();
-      }
-      return true;
-    });
+    const done = await this.inLane(ws?.projectRoot || ws?.path || id, () =>
+      this.act(
+        "Couldn't archive",
+        async () => {
+          try {
+            manifest = await this.deps.manager.archive(id, phase);
+          } finally {
+            phase();
+          }
+          return true;
+        },
+        ws ? `${ws.name} is back in the sidebar, as it was.` : undefined,
+      ),
+    );
+    settle();
     if (done) {
       this.deps.intend({ type: 'close_tab', id });
       const also = await this.removeAgentWorktrees(agents);
@@ -565,11 +629,21 @@ export class WorkspaceController {
 
   async remove(id: string): Promise<void> {
     const agents = this.agentWorktreesOf(id);
-    const done = await this.act("Couldn't delete", async () => {
-      this.deps.onWorkspaceGoing?.(id);
-      await this.deps.manager.remove(id);
-      return true;
-    });
+    const ws = this.deps.manager.find(id);
+    // Gone from the sidebar now; the folder, its branch and the conversation follow.
+    this.deps.onWorkspaceGoing?.(id);
+    const settle = ws && ws.kind !== 'main' ? this.leaveNow(id, 'delete') : () => undefined;
+    const done = await this.inLane(ws?.projectRoot || ws?.path || id, () =>
+      this.act(
+        "Couldn't delete",
+        async () => {
+          await this.deps.manager.remove(id);
+          return true;
+        },
+        ws ? `${ws.name} is back in the sidebar, as it was.` : undefined,
+      ),
+    );
+    settle();
     if (done) {
       this.loaded.delete(`${WS_PREFIX}${id}`);
       this.deps.intend({ type: 'close_tab', id });
@@ -696,10 +770,21 @@ export class WorkspaceController {
       this.deps.onWorkspaceGoing?.(w.id);
       this.deps.intend({ type: 'close_tab', id: w.id });
     }
+    // Out of the sidebar now; archiving its worktrees follows (if that fails, it's back).
+    if (project) {
+      this.ahead.projects.add(projectId);
+      this.publish();
+    }
     const phase = (id: string, p?: ArchivePhase): void => void this.deps.store.dispatch({ type: 'archiving', id, ...(p ? { phase: p } : {}) });
-    const res = await this.act("Couldn't delete the project", () =>
-      this.deps.manager.removeProject(projectId, { trash, onPhase: phase, ...(this.deps.moveToTrash ? { toTrash: this.deps.moveToTrash } : {}) }),
+    const res = await this.inLane(project?.root || projectId, () =>
+      this.act(
+        "Couldn't delete the project",
+        () => this.deps.manager.removeProject(projectId, { trash, onPhase: phase, ...(this.deps.moveToTrash ? { toTrash: this.deps.moveToTrash } : {}) }),
+        project ? `${project.name} is back in the sidebar.` : undefined,
+      ),
     );
+    this.ahead.projects.delete(projectId);
+    this.publish();
     if (!res) return false;
     const kept = res.archived ? ` ${res.archived} worktree${res.archived === 1 ? '' : 's'} archived (nothing lost).` : '';
     this.deps.toast(`Removed ${project?.name ?? 'the project'} from Beluga.${res.trashed ? ' Its folder is in the Trash.' : ''}${kept}`, 'success');
@@ -812,5 +897,11 @@ export class WorkspaceController {
   inChannel(channel: string): Workspace | undefined {
     const id = workspaceIdOf(channel);
     return id ? this.deps.manager.find(id) : undefined;
+  }
+
+  /** A worktree whose row shows but git is still making (see newWorktree). */
+  isMaking(channel: string): boolean {
+    const id = workspaceIdOf(channel);
+    return id !== undefined && this.ahead.making.has(id);
   }
 }

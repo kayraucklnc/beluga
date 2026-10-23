@@ -57,7 +57,8 @@ test('an archived worktree is under Archived, and one click restores it as it wa
   mkdirSync(path.join(dir, 'node_modules', 'left-pad'), { recursive: true });
   writeFileSync(path.join(dir, 'node_modules', 'left-pad', 'index.js'), 'x'.repeat(200_000));
   await archive(page, 'add-auth');
-  expect(existsSync(dir)).toBe(false);
+  // It leaves the list at once; the folder goes in the background.
+  await expect.poll(() => existsSync(dir), { timeout: 30_000 }).toBe(false);
   await segment(page, 'Archived').click();
   await expect(segment(page, 'Archived')).toHaveAttribute('aria-selected', 'true');
   const archived = row(page, 'add-auth');

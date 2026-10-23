@@ -170,13 +170,23 @@ const SECTIONS: ReadonlyArray<readonly ToolAction['action'][]> = [
   ['restore', 'archive', 'delete'],
 ];
 
+/** Being made: nothing to do with it yet (its folder isn't there). */
+const NONE: ToolbarActions = { icons: [], more: [] };
+
+/** Delete…, beside Archive… (Archive keeps everything; Delete is for what you don't want back). */
+const DELETE: ToolAction = { id: 'delete', label: 'Delete…', hint: 'Delete it for good: the folder, its branch and the conversation', icon: ICON.delete, action: 'delete', danger: true };
+
 export function toolbarActions(state: AppState, ws: Workspace): ToolbarActions {
+  if (ws.pending) return NONE;
   const pr = Boolean(state.prs[ws.id]);
-  const own = workspaceButtons(state, ws).map((b) => {
+  const buttons = workspaceButtons(state, ws);
+  // Not for worktrees another tool made: those are removed on the Worktrees page (their branch kept).
+  const withDelete = !ws.archived && ws.kind !== 'main' && !ws.external && !buttons.some((b) => b.action === 'delete') && !state.prefs.hiddenButtons.includes('delete');
+  const own = [...buttons.map((b) => {
     // While the run script runs, its button stops it.
     if (b.action === 'run' && runRunning(state, ws.id)) return { ...toAction(b, pr), id: 'stop_run', action: 'stop_run' as const, label: 'Stop Running', icon: 'stop' as const, hint: 'Stop the run script', keys: KEYS.stop_run };
     return toAction(b, pr);
-  });
+  }), ...(withDelete ? [ws.kind === 'worktree' ? DELETE : { ...DELETE, hint: 'Remove it from Beluga and delete the conversation' }] : [])];
   const owner = ws.archived ? undefined : planOwnerOf(state.plans, state.board, ws.id);
   const all = owner ? asPlanTask(own, owner, pr) : own;
   const primary = pickPrimary(state, ws, all);
