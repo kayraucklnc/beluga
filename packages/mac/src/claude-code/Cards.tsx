@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from 'react';
 import type { CcAgent, CcSession } from '@beluga/core/claude-code/model.js';
 import { useNow } from '../chat/Items.js';
+import { StepWords } from '../chat/steps/StepRow.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, cx } from '../components/ui.js';
 import { agentElapsed, agentLabel, agentTone, plural, sessionLabel, tokens, typeLabel } from './cc-model.js';
@@ -37,7 +38,7 @@ export const AgentCard = memo(function AgentCard({ agent, selected, compact, onO
         </span>
       </span>
       <span className={s.cardTitle}>{agent.description}</span>
-      <span className={s.cardStep}>{agent.step ?? (running ? 'Starting…' : '—')}</span>
+      <span className={s.cardStep}>{agent.step ? <StepWords words={agent.step} /> : running ? 'Starting…' : '—'}</span>
       {compact ? null : (
         <span className={s.cardMeta}>
           <span>{agentElapsed(agent, now)}</span>
@@ -63,7 +64,7 @@ export function SessionChip({ session, selected, onOpen }: { session: CcSession;
         </span>
       </span>
       <span className={s.cardTitle}>Conversation</span>
-      <span className={s.cardStep}>{session.step ?? '—'}</span>
+      <span className={s.cardStep}>{session.step ? <StepWords words={session.step} /> : '—'}</span>
     </button>
   );
 }

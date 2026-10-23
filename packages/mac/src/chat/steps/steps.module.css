@@ -83,6 +83,32 @@ button.head:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A picture being read: its name as a small pill after the verb. */
+.imageBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 4.5em);
+  margin-left: 6px;
+  padding: 0 7px 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  color: var(--text-2);
+  font-size: 0.86em;
+  line-height: 17px;
+  vertical-align: 1px;
+}
+.imageBadge svg {
+  flex: none;
+  color: var(--text-3);
+}
+.imageBadgeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .titleThink {
   font-style: italic;
   color: var(--text-3);

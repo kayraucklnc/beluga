@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Workspace } from '@beluga/workspaces/types.js';
 import { useNow } from '../chat/Items.js';
+import { StepWords } from '../chat/steps/StepRow.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Dot, Empty, Segmented, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -158,7 +159,11 @@ export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Work
               </span>
             ) : null}
           </div>
-          {live && a.step ? <div className={m.now}>{a.step}</div> : null}
+          {live && a.step ? (
+            <div className={m.now} title={a.step}>
+              <StepWords words={a.step} />
+            </div>
+          ) : null}
         </div>
         <div className={m.headActions}>
           {parent ? (

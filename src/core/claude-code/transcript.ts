@@ -165,9 +165,11 @@ function rel(p: string, cwd?: string): string {
 export function describeTool(name: string, input: Record<string, unknown>, cwd?: string): string {
   const file = rel(str(input.file_path) || str(input.notebook_path) || str(input.path), cwd);
   const arg = (s: string): string => clip(oneLine(s), ARG_MAX);
+  // A long path keeps its end: the file's name (and what kind it is) is what you look for.
+  const tail = (s: string): string => (oneLine(s).length > ARG_MAX ? `…${oneLine(s).slice(-(ARG_MAX - 1))}` : oneLine(s));
   switch (name) {
     case 'Read':
-      return file ? `Reading ${arg(file)}` : 'Reading';
+      return file ? `Reading ${tail(file)}` : 'Reading';
     case 'Edit':
     case 'MultiEdit':
     case 'NotebookEdit':
