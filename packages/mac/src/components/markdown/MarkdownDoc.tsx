@@ -19,6 +19,9 @@ import { metaRows, splitFrontMatter, type MetaRow } from './md-frontmatter.js';
 import { resolveLink } from './md-paths.js';
 import { GraphBlock } from '../graph/GraphBlock.js';
 import { isGraphFence } from '@beluga/shared/graph-spec.js';
+import { MarkdownTable, ViewBlock } from '../views/ViewBlock.js';
+import { InlineCode } from '../views/Inline.js';
+import { viewFenceType } from '@beluga/shared/view-spec.js';
 import m from './markdown.module.css';
 
 /**
@@ -148,14 +151,21 @@ function makeComponents(ctx: { current: Ctx }): Components {
       if (lang === 'math') return <MathTex tex={text} display />;
       if (lang === 'mermaid') return <Diagram code={text} />;
       if (isGraphFence(lang)) return <GraphBlock code={text} />;
+      if (viewFenceType(lang)) return <ViewBlock code={text} type={viewFenceType(lang)!} />;
       return <CodeBlock code={text} lang={lang} />;
     },
     code: ({ className, children }) =>
-      className?.includes('math-inline') ? <MathTex tex={String(children)} display={false} /> : <code className={m.inlineCode}>{children}</code>,
-    table: ({ children }) => (
-      <div className={m.tableWrap}>
-        <table>{children}</table>
-      </div>
+      className?.includes('math-inline') ? <MathTex tex={String(children)} display={false} /> : <InlineCode text={String(children)} fallback={<code className={m.inlineCode}>{children}</code>} />,
+    // A plain table sorts, searches and charts like a view (views/md-table.ts); one with links stays as written.
+    table: ({ node, children }) => (
+      <MarkdownTable
+        node={node}
+        fallback={
+          <div className={m.tableWrap}>
+            <table>{children}</table>
+          </div>
+        }
+      />
     ),
     input: ({ type, checked }) => (type === 'checkbox' ? <input type="checkbox" className={m.check} checked={!!checked} readOnly disabled aria-label={checked ? 'Done' : 'Not done'} /> : null),
     p: ({ className, children }) => {

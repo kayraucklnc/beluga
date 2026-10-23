@@ -5,6 +5,7 @@ import { type DraftContext, type TaskDraft, firstLineTitle } from './task-drafte
 import { MORE, MockStepper, splitLine } from './mock-steps.js';
 import { MockContext, withGrowingContext } from './mock-context.js';
 import { MOCK_GRAPH_ANSWER } from './mock-graphs.js';
+import { MOCK_VIEWS_ANSWER } from './mock-views.js';
 
 interface Script {
   readonly match: RegExp;
@@ -26,6 +27,12 @@ const SCRIPTS: readonly Script[] = [
     match: /visuali[sz]e|diagram|\bdraw (it|this|me)\b|map (it|this) out/i,
     steps: ['Glob src/**/*.ts', 'Read src/server.ts', 'Read src/payments.ts', 'Read src/webhooks.ts'],
     answer: MOCK_GRAPH_ANSWER,
+  },
+  {
+    // Asking to see data: live tables, a chart, stats, code and colors (docs/views.md).
+    match: /dashboard|show me the (data|numbers|metrics)|\bchart\b|\btable of\b/i,
+    steps: ['Bash sqlite3 payments.db ".tables"', 'Read src/webhooks.ts'],
+    answer: MOCK_VIEWS_ANSWER,
   },
   {
     // A long task, so you can try queueing messages (and sending one now) while Claude works.

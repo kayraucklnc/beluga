@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { isSecretPath } from '../core/shares.js';
 import { isReadOnlyCommand } from './read-only.js';
+import { SourceSchema } from '../shared/view-spec.js';
 import { SYNC_MAIN_REASON, type SyncScope, isSyncMainCommand } from './sync-main.js';
 
 /** Read-only tools and the input field that names their target path. */
@@ -102,6 +103,7 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
   // Commands on a friend's computer: their Beluga decides; secrets are refused on both ends.
   if (toolName === 'mcp__beluga__run_on_peer' || toolName === 'mcp__beluga__run_on') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
   if (toolName === 'Bash') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
+  if (toolName === 'mcp__beluga_view__show') return decideShow(input, ctx);
   const readField = READ_TOOLS[toolName];
   if (readField) {
     const target = resolveTarget(ctx.cwd, input[readField]);
@@ -120,6 +122,25 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
     return 'ask';
   }
   return 'ask';
+}
+
+/**
+ * Showing a view runs its source once: a command asks like Bash; a file, folder or SQLite file is
+ * read like Read; a web address runs (asking when it would send one of your variables along).
+ */
+function decideShow(input: Record<string, unknown>, ctx: PolicyContext): Decision {
+  const view = input.view && typeof input.view === 'object' ? (input.view as Record<string, unknown>) : {};
+  if (view.source === undefined) return 'allow';
+  const parsed = SourceSchema.safeParse(view.source);
+  if (!parsed.success) return 'allow'; // the tool says what's wrong; nothing runs
+  const source = parsed.data;
+  if (source.kind === 'command') return mentionsSecret(source.command) ? 'deny' : ctx.askOnly && !isReadOnlyCommand(source.command) ? 'deny' : 'ask';
+  if (source.kind === 'http') return Object.values(source.headers ?? {}).some((v) => /\$\{?[A-Za-z_]/.test(v)) ? 'ask' : 'allow';
+  if (source.kind === 'postgres') return 'allow';
+  const target = resolveTarget(ctx.cwd, source.path.replace(/^~(?=$|\/)/, process.env.HOME ?? '~'));
+  if (isSecretPath(target)) return 'deny';
+  if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
+  return ctx.scope === 'full' ? 'allow' : 'ask';
 }
 
 /** In a main folder (ask-only): would this tool change something there? */

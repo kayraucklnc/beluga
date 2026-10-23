@@ -32,8 +32,9 @@ const cx = (...c: Array<string | false | undefined>): string => c.filter(Boolean
 /** The arrowheads, once per graph: plain, lit, accent and blocker. */
 export function EdgeMarkers({ id }: { id: string }) {
   const marker = (name: string, className: string) => (
-    <marker id={`${id}-${name}`} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
-      <path d="M1 1.5L8.5 5L1 8.5z" className={className} />
+    <marker id={`${id}-${name}`} viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="11" markerHeight="11" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      {/* A slim, notched head with rounded corners. */}
+      <path d="M2.5 2.25L10.5 6L2.5 9.75L4.25 6z" className={className} />
     </marker>
   );
   return (
@@ -52,7 +53,7 @@ const moving = (kind: EdgeKind, animated?: boolean): boolean => animated ?? (kin
 
 function routed(route: Route): [string, number, number] {
   const at = route.label ?? midpoint(route.points);
-  return [roundedPath(route.points), at.x, at.y];
+  return [roundedPath(route.points, 12), at.x, at.y];
 }
 
 export const GraphEdge = memo(function GraphEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps<FlowEdge>) {
@@ -71,13 +72,13 @@ export const GraphEdge = memo(function GraphEdge({ id, sourceX, sourceY, targetX
         interactionWidth={14}
       />
       {dot ? (
-        <circle r={2.6} className={cx(g.edgeDot, data?.emphasis && g.edgeDotAccent)}>
+        <circle r={3} className={cx(g.edgeDot, data?.emphasis && g.edgeDotAccent)}>
           <animateMotion dur={kind === 'async' ? '2.6s' : '1.9s'} repeatCount="indefinite" path={path} />
         </circle>
       ) : null}
       {data?.label ? (
         <EdgeLabelRenderer>
-          <div className={cx(g.edgeLabel, state === 'hot' && g.edgeLabelHot, state === 'dim' && g.edgeLabelDim, 'nopan')} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
+          <div className={cx(g.edgeLabel, data.emphasis && g.edgeLabelAccent, kind === 'blocks' && g.edgeLabelBlocks, state === 'hot' && g.edgeLabelHot, state === 'dim' && g.edgeLabelDim, 'nopan')} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
             {data.label}
           </div>
         </EdgeLabelRenderer>

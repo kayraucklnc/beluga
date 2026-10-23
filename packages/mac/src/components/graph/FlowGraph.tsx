@@ -16,7 +16,7 @@ import {
 import type { Graph, GraphDirection } from '@beluga/shared/graph-spec.js';
 import { IconButton } from '../ui.js';
 import { reducedMotion, useDocTheme } from '../markdown/use-doc-theme.js';
-import { type ElkOutput, type Focus, type Placed, type Route, type Size, elkGraph, handleSides, inlineAspect, neighborhood, parentsFirst, placesOf, routesOf, stepFocus } from './graph-model.js';
+import { type ElkOutput, type Focus, INLINE_MAX_HEIGHT, type Placed, type Route, SIMPLEX_MAX_EDGES, type Size, bestLayout, elkGraph, handleSides, inlineAspect, neighborhood, nodeBoxes, parentsFirst, placeLabels, placesOf, routesOf, stepFocus, turned } from './graph-model.js';
 import { cachedLayout, rememberLayout } from './layout-cache.js';
 import { layout } from './layout.js';
 import { useSharpZoom } from './sharp-zoom.js';
@@ -161,26 +161,37 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
     requestAnimationFrame(() => frame(0));
   }, []);
 
+  /**
+   * Lay the graph out. With `choose`, it's tried both ways round, plainly and wrapped onto more
+   * rows, and the one that reads biggest in the frame wins (bestLayout); else only `start`'s way.
+   */
   const lay = useCallback(
-    async (dir: GraphDirection): Promise<void> => {
+    async (start: GraphDirection, choose: boolean): Promise<void> => {
       const mine = ++run.current;
       setPhase((p) => (p === 'ready' ? p : 'laying-out'));
       const box = wrap.current;
-      const aspect = box && box.clientHeight ? (mode === 'inline' ? inlineAspect(box.clientWidth) : box.clientWidth / box.clientHeight) : undefined;
-      let out: ElkOutput | undefined;
-      // Wrapping a long chain is a nicety: if it fails (or takes too long), lay it out plainly.
-      for (const shape of aspect ? [aspect, undefined] : [undefined]) {
-        try {
-          out = await layout(elkGraph(graph, sizes.current, dir, shape));
-          break;
-        } catch {
-          if (mine !== run.current) return;
-        }
-      }
+      const real = !!box && box.clientWidth > 0 && box.clientHeight > 0;
+      const aspect = box && real ? (mode === 'inline' ? inlineAspect(box.clientWidth) : box.clientWidth / box.clientHeight) : undefined;
+      // In a conversation the card grows to fit the graph (up to a point).
+      const room = box && real ? { width: box.clientWidth, height: mode === 'inline' ? INLINE_MAX_HEIGHT : box.clientHeight } : undefined;
+      // A busy graph takes a while to lay out: only the way it was asked for.
+      const ways = choose && room && graph.edges.length <= SIMPLEX_MAX_EDGES ? [start, turned(start)] : [start];
+      const tries = ways.flatMap((dir) => [undefined, ...(aspect ? [aspect] : [])].map((shape) => ({ dir, shape })));
+      // A layout that fails (or takes too long) just isn't a choice.
+      const done = await Promise.allSettled(tries.map((t) => layout(elkGraph(graph, sizes.current, t.dir, t.shape))));
       if (mine !== run.current) return;
-      if (!out) return setPhase('failed');
+      const laid = tries.flatMap((t, i) => {
+        const r = done[i]!;
+        return r.status === 'fulfilled' ? [{ direction: t.dir, wrapped: t.shape !== undefined, size: { width: r.value.width ?? 0, height: r.value.height ?? 0 }, out: r.value }] : [];
+      });
+      const pick = room ? bestLayout(laid, room, start) : laid[0];
+      if (!pick) return setPhase('failed');
+      const out: ElkOutput = pick.out;
+      const dir = pick.direction;
+      if (dir !== start) setDirection(dir);
       const places = placesOf(out);
-      const lines = routesOf(out);
+      // Down, ELK leaves labels to us: each finds a free spot on its line.
+      const lines = placeLabels(routesOf(out), new Map(graph.edges.flatMap((e) => (e.label ? [[e.id, e.label] as const] : []))), nodeBoxes(out));
       setRoutes(lines);
       setMoved(new Set());
       if (out.width && out.height) {
@@ -212,7 +223,7 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
       const h = n.measured?.height;
       if (w && h) sizes.current.set(n.id, { width: Math.ceil(w), height: Math.ceil(h) });
     }
-    void lay(direction);
+    void lay(direction, true);
   }, [initialized, phase]);
 
   // The frame changed size (the card fit its height, the window was resized): frame the graph again.
@@ -232,7 +243,7 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
   }, [mode]);
 
   const turn = (): void => {
-    const next: GraphDirection = direction === 'right' || direction === 'left' ? 'down' : 'right';
+    const next = turned(direction);
     setDirection(next);
     // Sizes from the cache aren't known: measure first (the canvas stays as it is meanwhile).
     if (!sizes.current.size) {
@@ -242,7 +253,7 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
         if (n.data.node.type !== 'group' && w && h) sizes.current.set(n.id, { width: Math.ceil(w), height: Math.ceil(h) });
       }
     }
-    void lay(next);
+    void lay(next, false);
   };
 
   useEffect(() => {
@@ -346,7 +357,7 @@ function Canvas({ graph, mode, localImages, onExpand, onCopy, startStep, onLaidO
         zoomOnPinch
         panOnDrag
       >
-        <Background variant={BackgroundVariant.Dots} gap={18} size={1} className={g.dots} />
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1.2} className={g.dots} />
         {!inline ? <MiniMap pannable zoomable className={g.minimap} nodeClassName={(n) => (n.type === 'group' ? g.miniGroup! : g.miniNode!)} /> : null}
         <Panel position="top-right" className={g.tools}>
           {steps.length ? <IconButton icon="play" label={step >= 0 ? 'Leave the Walkthrough' : 'Walk Me Through It'} active={step >= 0} onClick={() => goStep(step >= 0 ? -1 : 0)} /> : null}

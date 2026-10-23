@@ -41,8 +41,8 @@ export function Inspector({ graph, node, onPick, onClose, wide, onOpen, openLabe
   return (
     <aside className={g.inspector} data-wide={wide ? 'true' : 'false'} aria-label={`About ${node.label}`}>
       <header className={g.inspectorHead}>
-        <span className={g.kindIcon} data-kind={node.type}>
-          <KindIcon kind={node.type} size={14} />
+        <span className={`${g.kindIcon} ${g.kindIconLg}`} data-kind={node.type}>
+          <KindIcon kind={node.type} size={16} />
         </span>
         <span className={g.titles}>
           <span className={g.inspectorTitle}>{node.label}</span>
@@ -76,7 +76,7 @@ export function Inspector({ graph, node, onPick, onClose, wide, onOpen, openLabe
               {node.fields.map((f, i) => (
                 <li key={`${i}:${f.name}`} className={g.fieldRow}>
                   <span className={g.fieldKey} data-key={f.key}>
-                    {f.key === 'pk' ? 'PK' : f.key === 'fk' ? 'FK' : ''}
+                    {f.key === 'pk' ? 'PK' : f.key === 'fk' ? 'FK' : null}
                   </span>
                   <span className={g.fieldName}>{f.name}</span>
                   {f.type ? <span className={g.fieldType}>{f.type}</span> : null}
@@ -103,10 +103,12 @@ export function Inspector({ graph, node, onPick, onClose, wide, onOpen, openLabe
               {lines.map((c) => (
                 <li key={`${c.edge.id}:${c.other.id}`}>
                   <button type="button" className={g.connection} onClick={() => onPick(c.other.id)}>
-                    <span className={g.connectionVerb}>{c.verb}</span>
-                    <span className={g.connectionName}>
+                    <span className={`${g.kindIcon} ${g.kindIconSm}`} data-kind={c.other.type}>
                       <KindIcon kind={c.other.type} size={12} />
-                      {c.other.label}
+                    </span>
+                    <span className={g.connectionText}>
+                      <span className={g.connectionVerb}>{c.verb}</span>
+                      <span className={g.connectionName}>{c.other.label}</span>
                     </span>
                     {c.edge.label ? <span className={g.connectionLabel}>{c.edge.label}</span> : null}
                   </button>

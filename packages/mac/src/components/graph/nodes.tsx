@@ -60,8 +60,11 @@ export const CardNode = memo(function CardNode({ data }: NodeProps<FlowNode>) {
       <Ends sides={data.sides} />
       {node.type === 'metric' && node.value ? (
         <div className={g.metric}>
+          <span className={g.metricHead}>
+            <span className={g.metricLabel}>{node.label}</span>
+            {node.tag ? <span className={g.tag}>{node.tag}</span> : null}
+          </span>
           <span className={g.metricValue}>{node.value}</span>
-          <span className={g.metricLabel}>{node.label}</span>
           {node.sublabel ? <span className={g.sublabel}>{node.sublabel}</span> : null}
         </div>
       ) : (
@@ -89,7 +92,7 @@ export const TableNode = memo(function TableNode({ data }: NodeProps<FlowNode>) 
           {fields.map((f, i) => (
             <li key={`${i}:${f.name}`} className={g.fieldRow} title={f.note}>
               <span className={g.fieldKey} data-key={f.key}>
-                {f.key === 'pk' ? 'PK' : f.key === 'fk' ? 'FK' : ''}
+                {f.key === 'pk' ? 'PK' : f.key === 'fk' ? 'FK' : null}
               </span>
               <span className={g.fieldName}>{f.name}</span>
               {f.type ? <span className={g.fieldType}>{f.type}</span> : null}
@@ -145,6 +148,7 @@ export const GroupNode = memo(function GroupNode({ data }: NodeProps<FlowNode>) 
       {/* Lines can go to a group as a whole. */}
       <Ends sides={data.sides} />
       <div className={g.groupHead}>
+        <span className={g.groupMark} aria-hidden="true" />
         <span className={g.groupName}>{node.label}</span>
         {node.sublabel ? <span className={g.sublabel}>{node.sublabel}</span> : null}
         {node.tag ? <span className={g.tag}>{node.tag}</span> : null}

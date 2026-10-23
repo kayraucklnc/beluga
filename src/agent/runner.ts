@@ -4,6 +4,7 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../core/attachments.js';
 import { buildAskOnlyAppend, buildKeepAppend, buildPrompt, buildScratchAppend, buildSystemAppend, summarizeTool } from './prompt.js';
 import { buildGraphAppend } from './graph-prompt.js';
+import { buildViewAppend } from './view-prompt.js';
 import { createBoardTools } from './board-tools.js';
 import { createPlanTools } from './plan-tools.js';
 import { decideTool, denyReason } from './policy.js';
@@ -22,6 +23,7 @@ import { nameTask, titlePlan } from './namer.js';
 import { fixSetup } from './setup-fixer.js';
 import { draftTask } from './task-drafter.js';
 import { createRoomTools } from './tools.js';
+import { ViewShelf, createViewTools } from './view-tools.js';
 import { createTaskTools } from './task-tools.js';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, RoomBridge, RunProcess, Steer } from './types.js';
 import { keepLines, trackedSpawn } from './claude-process.js';
@@ -150,6 +152,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const autoEdit = !askOnly && (place?.autoEdit ?? opts.autoEdit);
       const remember = (id: string): void => (place ? place.onSession(id) : void (sessionId = id));
       const subagents = new SubAgentTracker(cwd);
+      // Views Claude shows (mcp__beluga_view__show) go into its answers where it puts their tokens.
+      const shelf = new ViewShelf();
       const scratchRoot = input.scratchDir ? path.resolve(cwd, input.scratchDir) : undefined;
       const syncMain = askOnly ? place?.syncMain : undefined;
       const fixup = askOnly ? place?.fixup : undefined;
@@ -179,7 +183,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { beluga: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input), ...boardServer(input), ...planServer(input) },
+        mcpServers: { beluga: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input), ...boardServer(input), ...planServer(input), beluga_view: createViewTools(shelf, cwd) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -215,7 +219,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + buildViewAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
@@ -401,7 +405,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             for (const block of msg.message.content) {
               if (block.type === 'text' && block.text.trim()) {
                 lastText = block.text.trim();
-                route?.onEvent('text', lastText);
+                route?.onEvent('text', shelf.expand(lastText));
               }
               if (block.type === 'tool_use' && subagents.isLaunch(block)) launches.add(block.id);
               if (block.type === 'tool_use' && !subagents.isLaunch(block)) {
@@ -431,7 +435,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             const note = interrupting;
             if (note !== undefined) {
               // Interrupted for a message: the turn ends saying so, and the message's turn comes next.
-              const said = msg.subtype === 'success' && msg.result ? `${msg.result}\n\n${note}` : note;
+              const said = msg.subtype === 'success' && msg.result ? `${shelf.finish(msg.result)}\n\n${note}` : note;
               turn.onEvent('text', note);
               // Its result can come after the message was sent and list it: the message still gets its own turn.
               const own = interruptFor;
@@ -442,7 +446,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
               }
             }
             // A later turn failing (e.g. reporting a finished agent) doesn't throw away answers already given.
-            else if (!turns.end(ok, ok ? (msg as { result: string }).result : stopped, took) && !turns.answers.length) throw new RunFailedError(classifyRun({ result: failedResult, ...ends() }));
+            else if (!turns.end(ok, ok ? shelf.finish((msg as { result: string }).result) : stopped, took) && !turns.answers.length) throw new RunFailedError(classifyRun({ result: failedResult, ...ends() }));
             settle();
           }
         }
