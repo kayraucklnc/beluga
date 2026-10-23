@@ -8,7 +8,7 @@ import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
-import { type ToolAction, toolbarActions } from './toolbar-actions.js';
+import { type ToolAction, isPrStep, toolbarActions } from './toolbar-actions.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
@@ -124,7 +124,7 @@ export function Toolbar() {
     const menu = overflow.flatMap((section, k) => section.map((a, i) => ({ a, separate: k > 0 && i === 0 })));
     const run = (a: ToolAction): void => {
       if (a.disabled) return toast(client, a.hint, 'info');
-      if (a.action === 'fix_checks') return askBeforeWork(ws.id, 'fix_checks');
+      if (isPrStep(a.action)) return askBeforeWork(ws.id, a.action);
       if (isPlanAction(a.action)) return runPlanAction(state, ws.id, a.action, actions.run);
       actions.run({ type: 'ws', id: ws.id, action: a.action });
     };

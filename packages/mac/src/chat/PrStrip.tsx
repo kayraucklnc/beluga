@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { PullRequest } from '@beluga/core/work-store.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Tip, cx } from '../components/ui.js';
-import { CheckList, MergeButton } from '../dialogs/native/PullRequestSheet.js';
+import { AfterMergeButton, CheckList, MergeButton, ResolveConflictsButton } from '../dialogs/native/PullRequestSheet.js';
 import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/beluga.js';
 import { checksSummary } from '../lib/pr-checks.js';
@@ -12,9 +12,10 @@ import s from './pr-strip.module.css';
 const CHECKS: Record<PullRequest['checks'], string> = { passing: 'Checks passed', failing: 'Checks failed', pending: 'Checks running', none: 'No checks' };
 
 /**
- * Above a worktree's conversation, once it has a pull request: its CI, live, and the way to merge
- * it on GitHub (past the checks too, for an admin), so you watch it from the chat. The checks open
- * by themselves while they run or fail; the PR sheet has the rest.
+ * Above a worktree's conversation, once it has a pull request: where it stands and its one next
+ * step. Open: its CI, live (the checks open by themselves while they run or fail), and Merge on
+ * GitHub (past the checks too, for an admin), or Resolve Merge Conflicts when GitHub can't merge
+ * it. Merged: done, so Archive, or Continue After Merge (a new PR next), or Delete.
  */
 export function PrStrip({ workspaceId }: { workspaceId: string }) {
   const actions = useActions();
@@ -38,14 +39,12 @@ export function PrStrip({ workspaceId }: { workspaceId: string }) {
         </Tip>
         {pr.state === 'MERGED' ? (
           <>
-            <span className={cx(s.status, s.ok)}>Merged</span>
-            <Button size="small" icon="archive" onClick={() => actions.run({ type: 'ws', id: workspaceId, action: 'archive' })}>
-              Archive Worktree
-            </Button>
+            <span className={cx(s.status, s.ok)}>Merged · done</span>
+            <AfterMergeButton wsId={workspaceId} size="small" />
           </>
         ) : (
           <>
-            <button type="button" className={cx(s.status, tone)} disabled={!runs.length} aria-expanded={shown} onClick={() => setOpen(!shown)}>
+            <button type="button" className={cx(s.status, s.toggle, tone)} disabled={!runs.length} aria-expanded={shown} onClick={() => setOpen(!shown)}>
               {pr.checks === 'pending' ? <span className={s.spinner} /> : pr.checks === 'passing' ? <Icon name="check" size={11} /> : pr.checks === 'failing' ? <Icon name="x" size={11} /> : null}
               {runs.length ? checksSummary(runs) : CHECKS[pr.checks]}
               {runs.length ? <Icon name={shown ? 'chevronUp' : 'chevronDown'} size={10} /> : null}
@@ -55,7 +54,14 @@ export function PrStrip({ workspaceId }: { workspaceId: string }) {
                 Fix Checks…
               </Button>
             ) : null}
-            <MergeButton wsId={workspaceId} pr={pr} onError={setError} size="small" />
+            {pr.conflicts ? (
+              <>
+                <span className={cx(s.status, s.bad)}>Conflicts with the base</span>
+                <ResolveConflictsButton wsId={workspaceId} size="small" />
+              </>
+            ) : (
+              <MergeButton wsId={workspaceId} pr={pr} onError={setError} size="small" />
+            )}
           </>
         )}
       </div>

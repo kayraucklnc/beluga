@@ -10,6 +10,7 @@ import { useActions } from '../../lib/actions.js';
 import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { MERGE_METHODS, canAutoMerge, canSkipChecks, checkDuration, checkTone, checksSummary, sortChecks } from '../../lib/pr-checks.js';
 import { openExternal } from '../../lib/system.js';
+import { askBeforeWork } from '../../lib/work-confirm.js';
 import { useClock } from '../../lib/window-active.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
@@ -124,6 +125,41 @@ export function MergeButton({ wsId, pr, onError, size }: { wsId: string; pr: Pul
   );
 }
 
+/** GitHub can't merge a PR that conflicts with its base: Claude resolves it in the chat (asks first). */
+export function ResolveConflictsButton({ wsId, size }: { wsId: string; size?: 'small' }) {
+  return (
+    <Tip label="Claude merges the latest base into this branch, resolves the conflicts in the chat, and pushes">
+      <Button variant="danger" icon="merge" size={size ?? 'regular'} data-pr-next="resolve" onClick={() => askBeforeWork(wsId, 'resolve_pr')}>
+        Resolve Merge Conflicts…
+      </Button>
+    </Tip>
+  );
+}
+
+/**
+ * Once the PR merged, the worktree is done: Archive Worktree puts it away; its menu carries on
+ * here instead (Continue After Merge: a new PR next), or deletes it.
+ */
+export function AfterMergeButton({ wsId, size }: { wsId: string; size?: 'small' }) {
+  const actions = useActions();
+  const items = [
+    { label: 'Continue After Merge…', hint: 'Start this branch again from the latest base and keep the conversation; the next change gets a new PR', onSelect: () => askBeforeWork(wsId, 'continue_after_merge') },
+    { label: 'Delete Worktree…', hint: 'Remove the folder and its branch for good', danger: true, onSelect: () => actions.run({ type: 'ws', id: wsId, action: 'delete' }) },
+  ];
+  return (
+    <span className={s.split} role="group" aria-label="After the merge">
+      <Button variant="primary" icon="archive" size={size ?? 'regular'} className={s.splitMain} data-pr-next="archive" onClick={() => actions.run({ type: 'ws', id: wsId, action: 'archive' })}>
+        Archive Worktree
+      </Button>
+      <ActionsDropdown items={items} align="start">
+        <Button variant="primary" size={size ?? 'regular'} className={s.splitMore} aria-label="Other ways to finish">
+          <Icon name="chevronDown" size={11} />
+        </Button>
+      </ActionsDropdown>
+    </span>
+  );
+}
+
 /** The PR you have: its state and checks at a glance, and what to do next. */
 function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pick: (id: string) => boolean; refresh: () => void }) {
   const actions = useActions();
@@ -163,12 +199,8 @@ function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pi
       </div>
       {pr.checkRuns?.length && pr.state !== 'CLOSED' ? <CheckList checks={pr.checkRuns} /> : null}
       <div className={s.prActions}>
-        {open ? <MergeButton wsId={wsId} pr={pr} onError={setError} /> : null}
-        {pr.state === 'MERGED' ? (
-          <Button variant="primary" icon="archive" data-pr-next="archive" onClick={() => actions.run({ type: 'ws', id: wsId, action: 'archive' })}>
-            Archive Worktree
-          </Button>
-        ) : null}
+        {open ? pr.conflicts ? <ResolveConflictsButton wsId={wsId} /> : <MergeButton wsId={wsId} pr={pr} onError={setError} /> : null}
+        {pr.state === 'MERGED' ? <AfterMergeButton wsId={wsId} /> : null}
         <Button onClick={() => pick('pr-open')}>Open on GitHub</Button>
         {pr.checks === 'failing' && open ? (
           <Button icon="claude" onClick={() => pick('pr-fix')}>
@@ -187,7 +219,8 @@ function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pi
           {error}
         </div>
       ) : null}
-      {pr.state === 'MERGED' ? <div className={s.prNote}>Merged on GitHub. Archive the worktree to put it away: its branch and conversation are kept.</div> : null}
+      {pr.state === 'MERGED' ? <div className={s.prNote}>Merged on GitHub, so this worktree is done. Archive it to put it away (its branch and conversation are kept), or Continue After Merge to keep working here with a new PR.</div> : null}
+      {open && pr.conflicts ? <div className={s.prNote}>It conflicts with its base, so GitHub can’t merge it until the conflicts are resolved and pushed.</div> : null}
     </div>
   );
 }

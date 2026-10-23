@@ -92,6 +92,34 @@ export function wordsFor(state: AppState, ws: Workspace, action: AskedWork): Wor
         icon: 'wand',
       };
     }
+    case 'resolve_pr': {
+      const pr = state.prs[ws.id];
+      return {
+        title: 'Ask Claude to resolve the merge conflicts?',
+        message: (
+          <>
+            <p>{pr ? `Pull request #${pr.number}` : 'The pull request'} conflicts with its base, so GitHub can’t merge it. In this chat, Claude merges the latest base into <strong>{branch}</strong>, resolves each conflict keeping both sides’ intent, runs the tests, then commits and pushes.</p>
+            <p className={s.quiet}>Once it’s pushed, the checks run again and you can merge.</p>
+          </>
+        ),
+        confirm: 'Resolve Conflicts',
+        icon: 'merge',
+      };
+    }
+    case 'continue_after_merge': {
+      const pr = state.prs[ws.id];
+      return {
+        title: 'Continue working after the merge?',
+        message: (
+          <>
+            <p>{pr ? `Pull request #${pr.number}` : 'The pull request'} is done. <strong>{branch}</strong> starts again from the latest base, and the conversation stays, so the next change gets a new pull request.</p>
+            <p className={s.quiet}>If the branch has work that isn’t merged yet, nothing is lost: Claude brings the base in instead.</p>
+          </>
+        ),
+        confirm: 'Continue',
+        icon: 'branch',
+      };
+    }
   }
 }
 
@@ -111,6 +139,10 @@ export function startWork(api: ReturnType<typeof useApi>, wsId: string, action: 
       return void w.compact(wsId);
     case 'fix_checks':
       return void api.workbench.fixChecks(wsId);
+    case 'resolve_pr':
+      return void api.workbench.resolvePrConflicts(wsId);
+    case 'continue_after_merge':
+      return void api.workbench.continueAfterMerge(wsId);
   }
 }
 

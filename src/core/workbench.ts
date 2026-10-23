@@ -7,7 +7,8 @@ import type { WorkspaceManager } from '../workspaces/manager.js';
 import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
-import { type MergeOptions, type MergeProblem, buildPrPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
+import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
+import { type MergeOptions, type MergeProblem, buildPrPrompt, catchUpPrompt, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
 import { PROJECT_FILES, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import type { SetupFix } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
@@ -221,6 +222,60 @@ export class Workbench {
     this.deps.toast('Claude is preparing the pull request…');
   }
 
+  /** The branch a worktree's PRs go into ("main"). */
+  private prBase(ws: Workspace): string {
+    const project = this.manager.list.find((p) => p.id === ws.projectId);
+    const base = (ws.base ?? project?.base ?? 'origin/main').replace(/^origin\//, '');
+    return base === 'HEAD' ? (project?.sync?.branch ?? 'main') : base;
+  }
+
+  /** GitHub says the PR conflicts with its base: Claude merges the base in here, resolves it and pushes. */
+  resolvePrConflicts(id: string): void {
+    const ws = this.worktree(id);
+    const pr = this.deps.store.getState().prs[id];
+    if (!ws || !pr) return;
+    this.deps.controller.open(id);
+    this.deps.askClaude(resolvePrConflictsPrompt(pr, this.prBase(ws)), `ws:${id}`);
+    this.deps.toast(`Claude is resolving PR #${pr.number}’s conflicts…`);
+  }
+
+  /**
+   * Keep working in a worktree whose PR merged: its PR is done (the next change opens a new one),
+   * and the branch starts again from the base. When everything on it is already in the base it
+   * just moves there; when it has work since, Claude merges the base in so nothing is lost.
+   */
+  async continueAfterMerge(id: string): Promise<void> {
+    const ws = this.worktree(id);
+    const pr = this.deps.store.getState().prs[id];
+    if (!ws?.branch) return;
+    if (!pr || pr.state !== 'MERGED') return this.deps.toast('Continue After Merge is for a worktree whose pull request merged', 'info');
+    if ((ws.status?.changed ?? 0) > 0) return this.deps.toast(`${ws.name} has uncommitted changes: commit them first`, 'warn');
+    const base = this.prBase(ws);
+    const target = `origin/${base}`;
+    try {
+      await fetchRemote(ws.path);
+    } catch (err) {
+      return this.deps.toast(`Couldn’t fetch ${target}: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+    const done = await contentIn(ws.path, 'HEAD', target);
+    this.manager.setPrDone(id, pr.number);
+    this.deps.store.dispatch({ type: 'pr', id, pr: undefined });
+    if (done) {
+      try {
+        await resetTo(ws.path, target);
+      } catch (err) {
+        return this.deps.toast(`Couldn’t move ${ws.branch} to ${target}: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      }
+      await this.deps.controller.refresh();
+      this.deps.toast(`PR #${pr.number} is done. ${ws.branch} now starts from the latest ${base}: the next change gets a new pull request`, 'success');
+      return;
+    }
+    await this.deps.controller.refresh();
+    this.deps.controller.open(id);
+    this.deps.askClaude(catchUpPrompt(pr, base), `ws:${id}`);
+    this.deps.toast(`${ws.branch} has work since PR #${pr.number}: Claude is bringing in the latest ${base}`);
+  }
+
   fixChecks(id: string): void {
     const pr = this.deps.store.getState().prs[id];
     if (!pr) return;
@@ -397,7 +452,9 @@ export class Workbench {
   }
 
   /** gh's answer for a worktree's branch: keep it, and tell you what changed. */
-  private gotPr(ws: Workspace, pr: PullRequest | undefined, quiet: boolean): void {
+  private gotPr(ws: Workspace, found: PullRequest | undefined, quiet: boolean): void {
+    // A PR you carried on after (Continue After Merge) is done: the branch waits for its next one.
+    const pr = found && ws.prDone !== undefined && found.number <= ws.prDone ? undefined : found;
     const before = this.deps.store.getState().prs[ws.id];
     if (!samePr(before, pr)) this.deps.store.dispatch({ type: 'pr', id: ws.id, pr });
     if (!pr || quiet) return;

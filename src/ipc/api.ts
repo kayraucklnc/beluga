@@ -236,6 +236,8 @@ export const API = {
   'workbench.setModel': args(opt(channel), z.string().max(80)),
   'workbench.createPr': args(id, opt(str)),
   'workbench.fixChecks': args(id),
+  'workbench.resolvePrConflicts': args(id),
+  'workbench.continueAfterMerge': args(id),
   'workbench.openPr': args(id),
   // Merge a worktree's PR on GitHub (gh pr merge); auto: once its checks pass. → { ok, result | reason, message }
   'workbench.mergePr': args(id, z.object({ method: z.enum(['squash', 'merge', 'rebase']), auto: opt(bool), deleteBranch: opt(bool), admin: opt(bool) }).strict()),
