@@ -76,7 +76,7 @@ afterAll(() => {
 });
 
 function host() {
-  const stopTests = vi.fn(async (_dir: string) => 0);
+  const stopTests = vi.fn(async (_dir: string, _opts?: { keep?: boolean }) => 0);
   const send = (body: { kind: string } & Record<string, unknown>): boolean => {
     if (body.kind !== 'agent_event') return true;
     const e = body as unknown as BodyOf<'agent_event'>;
@@ -138,5 +138,22 @@ describe('a run ending in a worktree', () => {
     await t.run('git diff');
     await new Promise((r) => setTimeout(r, 50));
     expect(t.stopTests).not.toHaveBeenCalled();
+  }, 30_000);
+
+  it('keeps what you asked to keep running, and says so in the conversation', async () => {
+    const t = host();
+    const notes = () => store.getState().log.flatMap((l) => (l.type === 'system' && l.channel === `ws:${wsId}` && l.text.startsWith('Left running on purpose') ? [l] : []));
+    const before = notes().length;
+    // Marked by Claude: stopTests runs (it spares the marked processes), and the turn says what was kept.
+    await t.run('KLAUD_KEEP=1 npm run dev &');
+    await waitFor(() => t.stopTests.mock.calls.length > 0, 5_000);
+    expect(t.stopTests.mock.calls[0]).toEqual([tree, undefined]);
+    expect(notes().at(-1)?.text).toContain('KLAUD_KEEP=1 npm run dev &');
+    // You asked: everything it started is kept (from then on), not stopped.
+    t.stopTests.mockClear();
+    await t.run('npm run dev & ; keep it running please');
+    await waitFor(() => t.stopTests.mock.calls.length > 0, 5_000);
+    expect(t.stopTests.mock.calls[0]).toEqual([tree, { keep: true }]);
+    expect(notes().length).toBe(before + 2);
   }, 30_000);
 });

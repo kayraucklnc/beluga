@@ -26,7 +26,7 @@ function writeJson(file: string, value: unknown): void {
 
 /** Small JSON-file persistence for projects, workspaces and per-workspace chat history. */
 export class WorkspaceStore {
-  constructor(private readonly home: string = klaudHome()) {}
+  constructor(readonly home: string = klaudHome()) {}
 
   get workspacesDir(): string {
     return path.join(this.home, 'workspaces');
