@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Store } from '../store.js';
 import { unexplained } from './criteria.js';
+import { dropKeptFile, dropProofFolder, keepProofFile, keepProofFiles } from './proof-files.js';
 import {
   type Activity,
   type ActivityKind,
@@ -165,6 +166,16 @@ export class Board {
   constructor(private readonly deps: BoardDeps) {
     this.now = deps.now ?? Date.now;
     this.load();
+    // Proof saved before files were kept (still in a worktree): kept now, while it's there.
+    if (deps.dir) {
+      const home = deps.dir;
+      const before = this.issues;
+      this.issues = this.issues.map((i) => {
+        const proof = keepProofFiles(i.proof, i.id, home);
+        return proof === i.proof ? i : { ...i, proof };
+      });
+      if (this.issues.some((i, n) => i !== before[n])) this.save();
+    }
     deps.store.dispatch({ type: 'board_init', state: this.state() });
   }
 
@@ -457,20 +468,45 @@ export class Board {
     const issue = this.need(ref);
     const title = oneLine(proof.title, 120);
     if (!title) throw new Error('Proof needs a title');
-    const item: Proof = { ...proof, title, id: short('p'), at: this.now(), by };
-    return this.change(issue, { proof: [...issue.proof, item].slice(-KEEP_PROOF) }, [this.entry(by, 'proof', `added proof: ${title}`)]);
+    const { from: _, gone: __, ...given } = proof;
+    const made: Proof = { ...given, title, id: short('p'), at: this.now(), by };
+    // Its file is copied now, so it outlives the worktree it was made in.
+    const item = this.deps.dir ? keepProofFile(made, issue.id, this.deps.dir) : made;
+    const kept = [...issue.proof, item];
+    if (this.deps.dir) for (const old of kept.slice(0, -KEEP_PROOF)) dropKeptFile(this.deps.dir, old.path);
+    return this.change(issue, { proof: kept.slice(-KEEP_PROOF) }, [this.entry(by, 'proof', `added proof: ${title}`)]);
   }
 
   removeProof(ref: string, proofId: string, by: Actor): Issue {
     const issue = this.need(ref);
     const gone = issue.proof.find((p) => p.id === proofId);
     if (!gone) return issue;
+    if (this.deps.dir) dropKeptFile(this.deps.dir, gone.path);
     return this.change(issue, { proof: issue.proof.filter((p) => p.id !== proofId) }, [this.entry(by, 'proof', `removed proof: ${gone.title}`)]);
+  }
+
+  /**
+   * Keep proof files that are still somewhere else (`within`: only those in this folder, a
+   * worktree about to be archived or deleted): copied into ~/.beluga/proof, and those whose file
+   * is gone marked so. Quiet: no activity, the task's time untouched. → how many proofs changed.
+   */
+  keepProofs(within?: string): number {
+    const home = this.deps.dir;
+    if (!home) return 0;
+    let n = 0;
+    for (const issue of this.issues) {
+      const proof = keepProofFiles(issue.proof, issue.id, home, within);
+      if (proof === issue.proof) continue;
+      n += proof.filter((p, i) => p !== issue.proof[i]).length;
+      this.change(issue, { proof }, [], false);
+    }
+    return n;
   }
 
   /** Delete a task: its sub-tasks become tasks of their own, and nothing waits on it any more. */
   remove(ref: string): void {
     const issue = this.need(ref);
+    if (this.deps.dir) dropProofFolder(this.deps.dir, issue.id);
     this.issues = this.issues.filter((i) => i.id !== issue.id);
     this.deps.store.dispatch({ type: 'board_remove', id: issue.id });
     for (const other of this.issues) {

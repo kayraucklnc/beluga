@@ -96,6 +96,7 @@ export function archivedText(m: ArchiveManifest | undefined): string {
 
 export class WorkspaceController {
   private readonly worktreeListeners = new Set<(event: WorktreeEvent) => void>();
+  private readonly goingListeners = new Set<(ws: Workspace) => void>();
   private readonly loaded = new Set<string>();
   private reviewToken = 0;
   /** Saves the loaded conversations that changed (see history-saver.ts). */
@@ -117,6 +118,26 @@ export class WorkspaceController {
   onWorktree(listener: (event: WorktreeEvent) => void): () => void {
     this.worktreeListeners.add(listener);
     return () => void this.worktreeListeners.delete(listener);
+  }
+
+  /** Hear about a workspace about to be archived or deleted, while its folder is still there (the board keeps proof files from it). */
+  onWorktreeGoing(listener: (ws: Workspace) => void): () => void {
+    this.goingListeners.add(listener);
+    return () => void this.goingListeners.delete(listener);
+  }
+
+  /** A workspace is about to go: its terminals close, and whoever keeps things from its folder does so now. */
+  private going(id: string, closing = true): void {
+    if (closing) this.deps.onWorkspaceGoing?.(id);
+    const ws = this.goingListeners.size ? this.deps.manager.find(id) : undefined;
+    if (!ws) return;
+    for (const l of this.goingListeners) {
+      try {
+        l(ws);
+      } catch {
+        // A listener's problem is its own.
+      }
+    }
   }
 
   private emit(event: WorktreeEvent): void {
@@ -467,7 +488,7 @@ export class WorkspaceController {
     const phase = (p?: ArchivePhase): void => void this.deps.store.dispatch({ type: 'archiving', id, ...(p ? { phase: p } : {}) });
     let manifest: ArchiveManifest | undefined;
     const done = await this.act("Couldn't archive", async () => {
-      this.deps.onWorkspaceGoing?.(id);
+      this.going(id);
       try {
         manifest = await this.deps.manager.archive(id, phase);
       } finally {
@@ -500,7 +521,7 @@ export class WorkspaceController {
   /** Remove them (branches kept; any working or with uncommitted changes stays) → what to say about it. */
   private async removeAgentWorktrees(agents: { root: string; list: ReturnType<typeof agentWorktreesFrom> } | undefined): Promise<string | undefined> {
     if (!agents) return undefined;
-    for (const w of agents.list) this.deps.onWorkspaceGoing?.(w.id);
+    for (const w of agents.list) this.going(w.id);
     const res = await removeAgentWorktrees(agents.root, agents.list, this.deps.store.getState().claudeCode.sessions);
     await this.refresh();
     return cleanupText(res);
@@ -509,6 +530,8 @@ export class WorkspaceController {
   /** Remove a worktree made outside Beluga (its branch kept), and the sub-agent worktrees made from it. */
   async removeOther(id: string, force = false): Promise<boolean> {
     const agents = this.agentWorktreesOf(id);
+    // Its terminals stay until it's gone (it may be refused: uncommitted changes).
+    this.going(id, false);
     const done = await this.others.remove(id, force);
     if (done) {
       const also = await this.removeAgentWorktrees(agents);
@@ -566,7 +589,7 @@ export class WorkspaceController {
   async remove(id: string): Promise<void> {
     const agents = this.agentWorktreesOf(id);
     const done = await this.act("Couldn't delete", async () => {
-      this.deps.onWorkspaceGoing?.(id);
+      this.going(id);
       await this.deps.manager.remove(id);
       return true;
     });
@@ -693,7 +716,7 @@ export class WorkspaceController {
     const project = this.deps.manager.list.find((p) => p.id === projectId);
     // Stop what runs in its folders (shells, dev servers) and close their tabs first.
     for (const w of project?.workspaces.filter((x) => !x.archived) ?? []) {
-      this.deps.onWorkspaceGoing?.(w.id);
+      this.going(w.id);
       this.deps.intend({ type: 'close_tab', id: w.id });
     }
     const phase = (id: string, p?: ArchivePhase): void => void this.deps.store.dispatch({ type: 'archiving', id, ...(p ? { phase: p } : {}) });

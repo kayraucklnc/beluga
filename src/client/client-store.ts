@@ -40,7 +40,7 @@ export class ClientStore {
     this.screen = screen;
     this.domain = source.getState();
     this.composed = compose(this.domain, this.screen);
-    this.attention = attentionOf(screen);
+    this.attention = attentionOf(screen, this.domain);
     this.onAttention(this.attention);
     this.unsubscribe = source.subscribe(() => this.onDomain());
   }
@@ -112,17 +112,25 @@ export class ClientStore {
     const prev = this.domain;
     this.domain = next;
     this.screen = reconcileScreen(prev, next, this.screen);
+    // On a plan's page, what it shows follows the plan (its tasks' conversations come and go).
+    if (this.screen.view.kind === 'plan') this.tellAttention();
     this.publish();
+  }
+
+  /** Tell the core what this screen looks at now, when that changed. */
+  private tellAttention(): boolean {
+    const attention = attentionOf(this.screen, this.domain);
+    if (sameAttention(attention, this.attention)) return false;
+    this.attention = attention;
+    this.onAttention(attention);
+    return true;
   }
 
   private setScreen(next: ScreenState): void {
     if (next === this.screen) return;
     this.screen = next;
-    const attention = attentionOf(next);
-    if (!sameAttention(attention, this.attention)) {
-      this.attention = attention;
-      // In the same process this updates the domain right away (and we publish once, after).
-      this.onAttention(attention);
+    // In the same process this updates the domain right away (and we publish once, after).
+    if (this.tellAttention()) {
       const latest = this.source.getState();
       if (latest !== this.domain) {
         const prev = this.domain;

@@ -116,8 +116,12 @@ export interface Proof {
   readonly id: string;
   readonly kind: 'image' | 'url' | 'file' | 'graph' | 'text';
   readonly title: string;
-  /** A file on this Mac (image, file). */
+  /** A file on this Mac (image, file): Beluga's own copy of it, kept in ~/.beluga/proof (see proof-files.ts). */
   readonly path?: string;
+  /** Where the file was attached from (a worktree's scratch folder, say), when `path` is the kept copy. */
+  readonly from?: string;
+  /** Its file is nowhere any more (deleted with its worktree before it could be kept): screens say so. */
+  readonly gone?: boolean;
   readonly url?: string;
   /** An beluga-graph's JSON, or text. */
   readonly body?: string;

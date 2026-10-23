@@ -18,6 +18,19 @@ import s from './proof-preview.module.css';
  * Files view instead. Read on its own like a changed file, so the Files view's open file stays put.
  */
 
+/** A file that isn't there any more (its worktree went before it was kept): said calmly, never as an error. */
+export const isMissing = (error: string): boolean => /ENOENT|no such file|not found|isn.t there/i.test(error);
+
+/** What shows where a proof's file was, once it's gone. */
+export function ProofGone({ className }: { className?: string }) {
+  return (
+    <div className={cx(s.gone, className)} role="note">
+      <Icon name="file" size={14} />
+      <span>Proof file is gone</span>
+    </div>
+  );
+}
+
 /** Load the reader ahead of the click (hovering a proof), so opening it is only reading the file. */
 export const preloadReader = (): void => void import('../views/reader/FileReader.js');
 
@@ -26,7 +39,10 @@ export function ProofPreview({ proof, onClose }: { proof: Proof & { path: string
   const actions = useActions();
   const [at, setAt] = useState<Location>();
   const [error, setError] = useState<string>();
+  const gone = Boolean(proof.gone) || (error !== undefined && isMissing(error));
   useEffect(() => {
+    // Known to be gone: nothing to ask for.
+    if (proof.gone) return;
     let alive = true;
     client.api.session.localLocation(proof.path, false).then(
       (loc) => alive && setAt(loc),
@@ -35,7 +51,7 @@ export function ProofPreview({ proof, onClose }: { proof: Proof & { path: string
     return () => {
       alive = false;
     };
-  }, [client, proof.path]);
+  }, [client, proof.path, proof.gone]);
   const showInFiles = (): void => {
     onClose();
     actions.openLink({ kind: 'local', path: proof.path, dir: false });
@@ -53,18 +69,22 @@ export function ProofPreview({ proof, onClose }: { proof: Proof & { path: string
                 {proof.path}
               </span>
             </div>
-            <Button size="small" variant="quiet" icon="folder" onClick={showInFiles}>
-              Show in Files
-            </Button>
-            <Button size="small" variant="quiet" icon="external" onClick={() => void openWithDefaultApp(client, proof.path)}>
-              Open in Editor
-            </Button>
+            {gone ? null : (
+              <>
+                <Button size="small" variant="quiet" icon="folder" onClick={showInFiles}>
+                  Show in Files
+                </Button>
+                <Button size="small" variant="quiet" icon="external" onClick={() => void openWithDefaultApp(client, proof.path)}>
+                  Open in Editor
+                </Button>
+              </>
+            )}
             <Dialog.Close asChild>
               <IconButton icon="x" label="Close" keys="Esc" />
             </Dialog.Close>
           </header>
           <div className={cx(s.body, 'selectable')} tabIndex={0} role="region" aria-label={proof.title} {...{ [SCROLL_ROOT]: '' }}>
-            {error ? <div className={r.opening}>Can’t open this file: {error}</div> : at ? <ChangedFileView at={at} variant="panel" version={proof.at} /> : <div className={r.opening}>Opening…</div>}
+            {gone ? <ProofGone className={s.goneLarge} /> : error ? <div className={r.opening}>Can’t open this file: {error}</div> : at ? <ChangedFileView at={at} variant="panel" version={proof.at} /> : <div className={r.opening}>Opening…</div>}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

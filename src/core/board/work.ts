@@ -50,6 +50,8 @@ export class BoardWork {
   constructor(private readonly deps: BoardWorkDeps) {
     this.board = deps.board;
     if (deps.controller) this.offs.push(deps.controller.onWorktree((e) => this.onWorktree(e)));
+    // Proof made in a worktree outlives it: kept before its folder goes (proof-files.ts).
+    if (deps.controller?.onWorktreeGoing) this.offs.push(deps.controller.onWorktreeGoing((ws) => void this.board.keepProofs(ws.path)));
     // After the action that caused it has reached everyone (never inside its dispatch).
     this.offs.push(
       deps.store.onAction((a) =>
@@ -301,8 +303,10 @@ export class BoardWork {
       case 'merged':
         return this.board.worktreeMerged(event.id);
       case 'archived':
+        this.board.keepProofs();
         return this.board.worktreeGone(event.id, true, 'archived');
       case 'removed':
+        this.board.keepProofs();
         return this.board.worktreeGone(event.id, true, 'deleted');
       case 'restored':
         return this.board.worktreeGone(event.id, false, 'restored');

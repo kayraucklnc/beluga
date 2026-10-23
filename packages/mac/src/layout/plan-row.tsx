@@ -8,7 +8,7 @@ import { sameDeep } from '../lib/stable.js';
 import { ProgressRing } from '../plans/PlansNav.js';
 import { nextWords, planStatus, titleOf } from '../plans/plans-model.js';
 import { usePlanActions, usePlanView } from '../plans/use-plans.js';
-import { planSignal } from './attention-model.js';
+import { planRowSignal } from './attention-model.js';
 import { usePrefs } from '../lib/prefs.js';
 import { taskChatsItem } from './plan-task-chats.js';
 import { DotMark, nameClass, signalClass } from './signal-marks.js';
@@ -18,7 +18,8 @@ import m from './signal.module.css';
 /**
  * A plan under its project: one row for the plan, its conversation and all its task worktrees
  * (they stay off the sidebar). Its name, a small ring of how far it got (breathing while Claude
- * works its tasks), a dot when it waits for you, and a count of what's new, as a chat row has.
+ * works its tasks), a dot when it waits for you, a count of what's new in its own conversation
+ * (never its tasks' added up: news there is a quiet dot), as a chat row has.
  * It stays marked while you're in its conversation or in one of its tasks.
  */
 export function PlanRow({ plan, indent }: { plan: Plan; indent: number }) {
@@ -27,8 +28,8 @@ export function PlanRow({ plan, indent }: { plan: Plan; indent: number }) {
   const uiPrefs = usePrefs();
   // Only what the row shows (not the whole state): drawn again when that changes (KLD-48).
   const selected = useApp((st) => planOfPlace(st.plans, st.board, st.view) === plan.id);
-  // What's new: in its conversation and in its tasks' worktrees (they have no row of their own).
-  const inside = useApp((st) => planSignal(st, plan), sameDeep);
+  // What's new at the plan's level (its own conversation); its tasks' worktrees only add a quiet dot (BLG-12).
+  const inside = useApp((st) => planRowSignal(st, plan), sameDeep);
   const title = titleOf(plan);
   const status = planStatus(view);
   const unread = inside.unread;
@@ -37,7 +38,7 @@ export function PlanRow({ plan, indent }: { plan: Plan; indent: number }) {
   const working = view.active.some((t) => t.state === 'running') || inside.working;
   const next = nextWords(view.next);
   const why = planNeeds ? (next.detail ? `${next.title}: ${next.detail}` : next.title) : inside.level === 'needs' ? inside.tip : status.label;
-  const tip = [`${title}: ${why}`, view.total ? `${view.done} of ${view.total} tasks done` : '', unread ? `${unread} new message${unread === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+  const tip = [`${title}: ${why}`, view.total ? `${view.done} of ${view.total} tasks done` : '', unread ? `${unread} new message${unread === 1 ? '' : 's'}` : inside.inside && !needs ? 'New in its tasks' : ''].filter(Boolean).join(' · ');
   const signal = { level: needs ? 'needs' : unread ? 'unread' : working ? 'working' : 'idle', unread, working, tip } as const;
   const items: ActionItem[] = [
     { label: 'Open Plan', icon: 'chevronRight', onSelect: () => open(plan.id) },
@@ -64,7 +65,7 @@ export function PlanRow({ plan, indent }: { plan: Plan; indent: number }) {
                 <Badge count={unread} urgent />
               </span>
             ) : null}
-            {needs ? <DotMark tone={status.tone === 'error' ? 'error' : 'warn'} signal="needs" /> : null}
+            {needs ? <DotMark tone={status.tone === 'error' ? 'error' : 'warn'} signal="needs" /> : inside.inside && !unread && !selected ? <DotMark tone="muted" signal="inside" /> : null}
             <span className={m.mark} data-signal={working ? 'working' : undefined}>
               <ProgressRing share={view.total ? view.done / view.total : 0} live={working} />
             </span>
