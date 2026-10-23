@@ -274,3 +274,81 @@
   font-size: 0.84rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- editing (Edit in the header): a text box over the colored lines */
+
+.editor {
+  position: relative;
+  width: max-content;
+  min-width: 100%;
+}
+.editorLines {
+  pointer-events: none;
+}
+.editArea {
+  position: absolute;
+  inset: 0 0 0 calc(var(--gutter) + 28px);
+  width: calc(100% - var(--gutter) - 28px);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: transparent;
+  caret-color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  tab-size: 4;
+  -moz-tab-size: 4;
+  white-space: pre;
+  resize: none;
+  outline: none;
+}
+.v_panel .editArea {
+  font-size: 11.5px;
+}
+.editArea::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: transparent;
+}
+.editState {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+.dirtyDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.editButton {
+  flex: none;
+}
+/* Shown, not pressable: its tooltip says why. */
+.toolOff {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* A line a search result opened the file at. */
+.lineFlash {
+  animation: lineFlash 1.6s var(--ease-out);
+}
+@keyframes lineFlash {
+  0%,
+  40% {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+}
+:global(:root[data-motion='reduce']) .lineFlash {
+  animation: none;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
