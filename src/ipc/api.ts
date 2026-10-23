@@ -12,6 +12,7 @@ import { BOARD_API } from './board-api.js';
 import { PLANS_API } from './plans-api.js';
 import { GIT_API } from './git-api.js';
 import { VIEWS_API } from './views-api.js';
+import { FILES_EDIT_API } from './files-api.js';
 
 /**
  * Everything a client can ask Beluga to do, in one list. The daemon validates every call
@@ -301,6 +302,8 @@ export const API = {
   // ---- git: keeping main current, GitHub, history (git-api.ts)
   ...GIT_API,
   ...VIEWS_API,
+  // ---- your workspace's files: searching their contents, editing, formatting (files-api.ts)
+  ...FILES_EDIT_API,
 } as const;
 
 export type Api = typeof API;
