@@ -65,6 +65,11 @@ export const BOARD_API = {
   'board.remove': { args: z.tuple([ref]) },
   // Start a worktree for a task (and open it); with claude, your Claude starts on it there → the workspace id.
   'board.start': { args: z.tuple([ref, z.object({ claude: z.boolean().optional(), base: z.string().min(1).max(200).optional() }).optional()]) },
+  // The Archive: one finished task (and its finished sub-tasks), or every Done one (in a project); back out; deleted for good.
+  'board.archive': { args: z.tuple([ref]) },
+  'board.archiveDone': { args: z.tuple([projectId.optional()]) },
+  'board.unarchive': { args: z.tuple([ref]) },
+  'board.emptyArchive': { args: z.tuple([projectId.optional()]) },
   // Its worktree went away before it was done: Canceled, back to the Backlog, or keep it as it is.
   'board.settleGone': { args: z.tuple([ref, z.enum(['canceled', 'backlog', 'keep'])]) },
   // Open a task for every new worktree (on by default).

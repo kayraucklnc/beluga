@@ -353,6 +353,10 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.remove` | ✓ Delete Task… (an alert, with Cancel) |
 | `board.start` | ✓ Start Worktree / Start with Claude on a task |
 | `board.settleGone` | ✓ the banner on a task whose worktree was archived or deleted (Cancel Task / Back to Backlog / Keep) |
+| `board.archive` | ✓ a finished task's ⋯ › Archive |
+| `board.archiveDone` | ✓ the archive button on Done (list group, board column), Tasks ⋯ › Archive Done Tasks |
+| `board.unarchive` | ✓ an archived task's banner (Restore), ⋯ › Restore from Archive |
+| `board.emptyArchive` | ✓ Tasks › Archive › Empty Archive |
 | `board.setAutoTasks` | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
 | `board.setPrefix` | ✓ Tasks › ⋯ › Task Keys… |
 | `plans.create` | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder) |

@@ -36,6 +36,9 @@ Small ones sit inside a sentence. Claude writes them as inline code, and the win
 | `` `delta:+12%` ``, `` `delta:-40ms good` `` | a change with its arrow, green when it's good (up, unless it says otherwise) |
 | `` `spark:3,5,4,8,12` `` | a sparkline (hover for the numbers) |
 | `` `time:2026-10-23T14:00:00Z` `` | "2 hours ago" (hover for the date) |
+| `` `task:BLG-12` `` | a board task: its status ring, key and title, live; click to open it (a key the board doesn't have says "not found") |
+
+Several tasks are a fenced `beluga-tasks` block, one key per line (or a JSON array of keys): a stack of cards with each task's key, title, status and priority, read live from the board. Click one to open it.
 
 None of these are required. Claude uses them when they say something faster than words, the way it uses a table or a graph.
 

@@ -66,9 +66,9 @@ describe('the Tasks view', () => {
     b.create({ projectId: 'api', title: 'B', status: 'backlog' }, me);
     b.create({ projectId: 'api', title: 'C', status: 'done' }, me);
     const s = store.getState().board;
-    expect(scopeCounts(s, 'api', '', 'p-me')).toEqual({ active: 1, backlog: 1, all: 2 });
-    expect(scopeCounts(s, 'api', 'claude:p-me', 'p-me')).toEqual({ active: 1, backlog: 0, all: 1 });
-    expect(scopeCounts(s, 'api', 'nobody', 'p-me')).toEqual({ active: 0, backlog: 1, all: 1 });
+    expect(scopeCounts(s, 'api', '', 'p-me')).toEqual({ active: 1, backlog: 1, all: 2, archived: 0 });
+    expect(scopeCounts(s, 'api', 'claude:p-me', 'p-me')).toEqual({ active: 1, backlog: 0, all: 1, archived: 0 });
+    expect(scopeCounts(s, 'api', 'nobody', 'p-me')).toEqual({ active: 0, backlog: 1, all: 1, archived: 0 });
   });
 
   it('never mixes projects', () => {

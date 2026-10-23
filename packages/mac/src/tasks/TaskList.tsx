@@ -5,7 +5,7 @@ import { ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { IssueMeta, useIssueMenu } from './parts.js';
+import { ArchiveDoneButton, IssueMeta, useIssueMenu } from './parts.js';
 import { AssigneePicker, PriorityPicker, StatusPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
 import { setTasksPrefs, useSelfId, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
@@ -16,7 +16,7 @@ import t from './tasks.module.css';
  * status, priority and assignee change from their own menus; the rest of the row opens the task.
  * ↑↓ move, Return opens, right-click for everything else.
  */
-export function TaskList({ issues, statuses, projectId, emptyGroups }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string; emptyGroups: boolean }) {
+export function TaskList({ issues, statuses, projectId, emptyGroups, archived = false }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string; emptyGroups: boolean; archived?: boolean }) {
   const prefs = useTasksPrefs();
   const { open } = useTaskActions();
   const [cursor, setCursor] = useState<string>();
@@ -59,7 +59,8 @@ export function TaskList({ issues, statuses, projectId, emptyGroups }: { issues:
                 <span className={t.groupName}>{STATUS_INFO[g.status].label}</span>
                 <span className={t.groupCount}>{g.items.length}</span>
               </button>
-              <IconButton icon="plus" label={`New Task in ${STATUS_INFO[g.status].label}`} onClick={() => openSheet({ kind: 'new_task', status: g.status, ...(projectId ? { projectId } : {}) })} />
+              {g.status === 'done' && !archived ? <ArchiveDoneButton projectId={projectId} /> : null}
+              {archived ? null : <IconButton icon="plus" label={`New Task in ${STATUS_INFO[g.status].label}`} onClick={() => openSheet({ kind: 'new_task', status: g.status, ...(projectId ? { projectId } : {}) })} />}
             </header>
             {folded ? null : g.items.map((issue) => <Row key={issue.id} issue={issue} cursor={cursor === issue.id} onCursor={() => setCursor(issue.id)} />)}
             {!folded && !g.items.length ? <div className={t.groupEmpty}>Nothing here</div> : null}

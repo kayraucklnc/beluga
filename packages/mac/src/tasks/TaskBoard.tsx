@@ -9,7 +9,7 @@ import { openExternal } from '../lib/system.js';
 import { usePlans } from '../plans/use-plans.js';
 import { type ColumnGeometry, type Slot, type Span, closeUp, edgeSpeed, isDrag, leanFor, neighbours, spotIn, withGap } from './board-drag.js';
 import { AssigneeMark, PriorityIcon, StatusIcon } from './marks.js';
-import { IssueMeta, useIssueMenu } from './parts.js';
+import { ArchiveDoneButton, IssueMeta, useIssueMenu } from './parts.js';
 import { isSolo } from './tasks-model.js';
 import { useBoard, useOthers, useSelfId, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -377,6 +377,7 @@ const Column = memo(function Column({
         <span className={t.groupCount}>{shown.length}</span>
         <span className={t.grow} />
         {status === 'in_plan' ? <PlanPrs issues={items} /> : null}
+        {status === 'done' ? <ArchiveDoneButton projectId={projectId} /> : null}
         <IconButton icon="plus" label={`New Task in ${label}`} onClick={() => openSheet({ kind: 'new_task', status, ...(projectId ? { projectId } : {}) })} />
       </header>
       <div ref={(el) => register('stacks', status, el)} className={t.cards}>

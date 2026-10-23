@@ -37,6 +37,22 @@ const SCRIPTS: readonly Script[] = [
     answer: MOCK_VIEWS_ANSWER,
   },
   {
+    // Asking about tasks: the demo board's tasks as chips and cards that open them (BLG-26).
+    match: /where do (my |the )?tasks stand|task cards/i,
+    steps: ['Read NOTES.md'],
+    answer: [
+      'Auth `task:BOB-3` is waiting on bob’s review, and the webhook retries `task:BOB-4` are under way. Here’s what’s open on the payments work:',
+      '',
+      '```beluga-tasks',
+      'BOB-3',
+      'BOB-4',
+      'BOB-5',
+      'BOB-6',
+      'BOB-99',
+      '```',
+    ].join('\n'),
+  },
+  {
     // A long task, so you can try queueing messages (and sending one now) while Claude works.
     match: /deep dive|take your time/i,
     stepMs: 2500,

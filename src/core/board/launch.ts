@@ -5,6 +5,7 @@ import { belugaHome } from '../home.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import type { DraftContext } from '../../agent/task-drafter.js';
+import { findPr } from '../../workspaces/pr.js';
 import { Board } from './board.js';
 import { seedDemoBoard } from './demo.js';
 import { attachBoard, detachBoard } from './registry.js';
@@ -46,6 +47,15 @@ export function launchBoard(host: BoardHost): () => void {
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'You',
     askClaude: (prompt, channel) => session.askOwnClaude(prompt, channel),
     ...(session.draftsTasks ? { draftTask: (text: string, ctx: DraftContext) => session.draftTask(text, ctx) } : {}),
+    // Tasks whose worktree went before their pull request merged still go Done (the demo has no GitHub).
+    ...(host.demo
+      ? {}
+      : {
+          findPr: async (dir: string, branch: string) => {
+            const pr = await findPr(dir, branch);
+            return pr && { number: pr.number, url: pr.url, state: pr.state, title: pr.title, draft: pr.draft, checks: pr.checks, ...(pr.review ? { review: pr.review } : {}) };
+          },
+        }),
   });
   attachBoard(session, work);
   // Plans: drafted in a conversation, approved onto the board, run milestone by milestone.

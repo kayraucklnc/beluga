@@ -50,6 +50,19 @@ export const BOARD_HANDLERS = {
   },
   'board.remove': (s, ref) => needBoard(s).board.remove(ref),
   'board.start': (s, ref, opts) => needBoard(s).start(ref, opts ?? {}),
+  'board.archive': (s, ref) => {
+    const work = needBoard(s);
+    return work.board.archive(ref, work.me());
+  },
+  'board.archiveDone': (s, projectId) => {
+    const work = needBoard(s);
+    return work.board.archiveDone(work.me(), projectId);
+  },
+  'board.unarchive': (s, ref) => {
+    const work = needBoard(s);
+    return work.board.unarchive(ref, work.me());
+  },
+  'board.emptyArchive': (s, projectId) => needBoard(s).board.emptyArchive(projectId),
   'board.settleGone': (s, ref, next) => {
     const work = needBoard(s);
     return work.board.settleGone(ref, next, work.me());

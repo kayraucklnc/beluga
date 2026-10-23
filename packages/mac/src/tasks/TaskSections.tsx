@@ -12,6 +12,7 @@ import { AssigneeMark, StatusIcon } from './marks.js';
 import { ProofGone, ProofPreview, preloadReader } from './ProofPreview.js';
 import { TaskPicker } from './pickers.js';
 import { ago } from './tasks-model.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
@@ -227,13 +228,15 @@ function ProofItem({ proof, images, onRemove }: { proof: Proof; images: ReturnTy
       </figure>
     );
   }
-  if ((proof.kind === 'image' || proof.kind === 'file') && proof.path && proof.gone) {
+  if ((proof.kind === 'image' || proof.kind === 'file') && proof.gone && (proof.path || proof.bytes !== undefined)) {
+    // Let go when its task was archived (it says how big it was), or removed with its worktree before it was kept.
+    const why = proof.bytes !== undefined ? `Let go when the task was archived (it was ${formatBytes(proof.bytes)})` : `${proof.from ?? proof.path}: removed with its worktree before Beluga kept a copy`;
     return (
       <figure className={proof.kind === 'image' ? t.proofItem : cx(t.proofItem, t.proofCard)}>
         {proof.kind === 'image' ? <ProofGone /> : null}
         <figcaption className={t.proofCaption}>
-          <Tip label={`${proof.from ?? proof.path}: removed with its worktree before Beluga kept a copy`}>
-            <span className={t.proofTitle}>{proof.kind === 'image' ? proof.title : `${proof.title} · Proof file is gone`}</span>
+          <Tip label={why}>
+            <span className={t.proofTitle}>{proof.kind === 'image' ? proof.title : `${proof.title} · ${proof.bytes !== undefined ? 'Let go when archived' : 'Proof file is gone'}`}</span>
           </Tip>
           {remove}
         </figcaption>
@@ -248,7 +251,13 @@ function ProofItem({ proof, images, onRemove }: { proof: Proof; images: ReturnTy
           <Thumb image={images[index] ?? localImage(proof.path, proof.title)} all={images} index={Math.max(0, index)} tiled />
         </div>
         <figcaption className={t.proofCaption}>
-          <span className={t.proofTitle}>{proof.title}</span>
+          {proof.thumb ? (
+            <Tip label={`Kept small when the task was archived (the full one was ${formatBytes(proof.bytes ?? 0)})`}>
+              <span className={t.proofTitle}>{proof.title} · kept small</span>
+            </Tip>
+          ) : (
+            <span className={t.proofTitle}>{proof.title}</span>
+          )}
           {remove}
         </figcaption>
       </figure>

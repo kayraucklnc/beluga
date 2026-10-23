@@ -8,7 +8,7 @@ import type { Graph, GraphNode, GraphEdge } from '../../../../src/shared/graph-s
  * people a task can be for, the dependency graph, and words for times and counts.
  */
 
-export type Scope = 'active' | 'backlog' | 'all';
+export type Scope = 'active' | 'backlog' | 'all' | 'archived';
 export type Display = 'list' | 'board' | 'graph';
 
 export interface TasksPrefs {
@@ -28,6 +28,7 @@ export const SCOPES: ReadonlyArray<{ readonly value: Scope; readonly label: stri
   { value: 'active', label: 'Active', hint: 'Ready, In Progress and In Review' },
   { value: 'backlog', label: 'Backlog', hint: 'Not planned yet' },
   { value: 'all', label: 'All', hint: 'Everything open, and what finished this week' },
+  { value: 'archived', label: 'Archive', hint: 'Finished tasks you archived: their words and history kept' },
 ];
 
 /** Saved prefs, read kindly (anything odd falls back to the default). */
@@ -53,6 +54,8 @@ export function statusesFor(scope: Scope): readonly IssueStatus[] {
       return ['todo', 'in_progress', 'in_review', 'in_plan'];
     case 'backlog':
       return ['backlog'];
+    case 'archived':
+      return ['done', 'canceled'];
     default:
       return ISSUE_STATUSES;
   }
@@ -66,11 +69,14 @@ export function scoped(board: BoardState, prefs: Pick<TasksPrefs, 'scope' | 'pro
   return filterIssues(board, { scope: prefs.scope, selfId, now, projectId: prefs.project, ...(query.trim() ? { query } : {}) }).filter((i) => isFor(i, prefs.who));
 }
 
-/** How many unfinished tasks each scope has in a project (for someone): the tabs' counts. */
+/** How many unfinished tasks each scope has in a project (for someone), and how many are archived: the tabs' counts. */
 export function scopeCounts(board: BoardState, project: string, who: string, selfId: string, now = Date.now()): Readonly<Record<Scope, number>> {
   const count = (scope: Scope): number => scoped(board, { scope, project, who }, selfId, '', now).filter((i) => isOpen(i.status)).length;
-  return { active: count('active'), backlog: count('backlog'), all: count('all') };
+  return { active: count('active'), backlog: count('backlog'), all: count('all'), archived: scoped(board, { scope: 'archived', project, who }, selfId, '', now).length };
 }
+
+/** Done tasks a project has on its board (not archived yet): what Archive Done takes. */
+export const doneCount = (board: BoardState, projectId: string | undefined): number => board.issues.filter((i) => i.status === 'done' && i.projectId === projectId && i.archivedAt === undefined).length;
 
 /**
  * The project Tasks shows: the one asked for, else the one you were last in, else the one with
