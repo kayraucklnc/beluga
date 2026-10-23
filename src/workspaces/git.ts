@@ -328,7 +328,7 @@ export async function currentBranch(dir: string): Promise<string | undefined> {
 }
 
 /** Keep Beluga's per-workspace folder (.beluga/) out of git without touching the repo's .gitignore. */
-export async function excludeOrcaDir(dir: string): Promise<void> {
+export async function excludeProjectDir(dir: string): Promise<void> {
   const gitDir = (await tryGit(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']))?.trim();
   if (!gitDir) return;
   const { appendFile, readFile, mkdir } = await import('node:fs/promises');

@@ -134,7 +134,7 @@ function endedWhy(run: RunInfo | undefined): string {
   if (failure && failure.kind !== 'stopped') return failureText(run.text).split('\n')[0]!;
   if (run.status === 'error') return BY_YOU.test(run.text) ? 'you stopped it' : `its run failed: ${run.text.replace(/\s+/g, ' ').slice(0, 120)}`;
   if (run.status === 'denied') return 'its run was declined';
-  if (run.status === 'interrupted') return 'klaud stopped while it ran';
+  if (run.status === 'interrupted') return 'Beluga stopped while it ran';
   return 'it ended its turn without handing off';
 }
 
@@ -149,7 +149,7 @@ export function pulseOf(run: RunInfo | undefined, asking: boolean, watch: TaskWa
     if (step === undefined || r.stepAt === undefined) return { kind: 'working', since: r.lastAt };
     const progress = r.progress ? { progress: r.progress } : {};
     // Still in its step: the last thing it did, or a count from its output, or a sub-agent at work. Otherwise (a peer on an
-    // older klaud says nothing when a step's tools return) the step is named, timed from when it last did something.
+    // older Claude Code says nothing when a step's tools return) the step is named, timed from when it last did something.
     if (r.stepAt < r.lastAt && !r.progress && !r.subOpen) return { kind: 'working', step, since: r.lastAt };
     if (isLongStep(r.step)) return { kind: 'command', step, since: r.stepAt, ...progress };
     return { kind: 'working', step, since: r.stepAt, ...progress };
