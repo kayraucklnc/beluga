@@ -9,7 +9,8 @@
     linear-gradient(180deg,#17181c 0%,#0e0f12 100%)}
   .grain{position:absolute;inset:0;opacity:.05;background-image:radial-gradient(#fff 0.5px,transparent 0.6px);background-size:3px 3px}
   .head{position:absolute;top:30px;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:12px;color:#f5f5f7}
-  .mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(180deg,#2a2c31,#0f1013);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.14),0 6px 16px rgba(0,0,0,.45);display:grid;place-items:center}
+  /* The app icon: its tile sits 100/1024 in from the edge, so 42 px shows a 34 px tile. */
+  .mark{width:42px;height:42px;margin:-4px;filter:drop-shadow(0 6px 14px rgba(0,0,0,.45))}
   .word{font-size:26px;font-weight:650;letter-spacing:-.4px}
   .sub{position:absolute;top:74px;left:0;right:0;text-align:center;color:rgba(235,235,245,.55);font-size:13px;letter-spacing:.1px}
   /* Soft light under each icon, and a frosted tag behind each name: Finder draws names white in
@@ -23,7 +24,7 @@
 </style></head><body>
   <div class="glow"></div><div class="grain"></div>
   <div class="head">
-    <div class="mark"><svg width="22" height="22" viewBox="0 0 22 22"><path d="M5 6.5l5 4.5-5 4.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><rect x="11.5" y="14.2" width="6.5" height="2.4" rx="1.2" fill="#E58C6C"/></svg></div>
+    <img class="mark" src="../../../assets/logo.svg" alt="">
     <div class="word">Klaud</div>
   </div>
   <div class="sub">Your projects, your friends, and everyone's Claude</div>

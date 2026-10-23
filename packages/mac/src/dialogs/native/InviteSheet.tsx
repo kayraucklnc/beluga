@@ -3,6 +3,7 @@ import type { GuestCan } from '@klaud/protocol.js';
 import { CAN_INFO, DAY_MS, expiresIn } from '@klaud/shared/invites.js';
 import { CAN_ORDER, type InviteChoice } from '@klaud/ui/invite-menus.js';
 import { Icon } from '../../components/Icon.js';
+import { ORCA } from '../../components/orca-path.js';
 import { Avatar, Button, Tip, cx } from '../../components/ui.js';
 import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
 import { Select } from '../settings-controls.js';
@@ -146,7 +147,10 @@ function HowTheyJoin({ knock }: { knock: boolean }) {
         <span><strong>Send the link</strong> any way you like: Messages, Slack, email.</span>
       </li>
       <li>
-        <span className={v.stepIcon}><Icon name="claude" size={13} /></span>
+        <span className={v.stepIcon}>
+          {/* The app's orca: this step is about the app, not Claude. */}
+          <svg width="14" height="13" viewBox="53 99 918 826" aria-hidden="true"><path d={ORCA} fill="currentColor" fillRule="evenodd" /></svg>
+        </span>
         <span>
           <strong>They open it in Klaud.</strong> With Klaud for Mac a click on the link is enough; in a terminal they paste it (it starts with <code>klaud join</code>).
         </span>
