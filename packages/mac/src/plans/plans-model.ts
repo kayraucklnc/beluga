@@ -282,6 +282,7 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
       return { who: 'beluga', text: 'In progress; nobody is working on it right now' };
     case 'ready':
       if (t.forYou) return { who: 'you', text: 'Yours: answer it in the plan’s conversation (no worktree)' };
+      if (t.queued) return { who: 'claude', text: 'Next for this milestone’s Claude, in its worktree' };
       return m.autonomy === 'step' ? { who: 'you', text: 'Ready: start it from the plan' } : { who: 'beluga', text: 'Ready: it starts by itself' };
     case 'blocked':
     case 'later':

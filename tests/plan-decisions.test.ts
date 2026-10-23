@@ -61,10 +61,26 @@ function setup() {
   const boardWork = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: () => undefined });
   const plans = new Plans({ store, dir: null });
   const asked: Array<{ prompt: string; channel: string }> = [];
-  const work = new PlansWork({ store, plans, board: boardWork, controller, askClaude: (prompt, channel) => void asked.push({ prompt, channel }), intend: () => undefined, delayMs: 0, git: null });
+  // As launch.ts wires it: the pilot's forYou hook puts the cards up at once.
+  let decisions: PlanDecisions | undefined;
+  const forYou: string[] = [];
+  const work = new PlansWork({
+    store,
+    plans,
+    board: boardWork,
+    controller,
+    askClaude: (prompt, channel) => void asked.push({ prompt, channel }),
+    intend: () => undefined,
+    delayMs: 0,
+    git: null,
+    forYou: (_plan, tasks) => {
+      forYou.push(...tasks.map((t) => t.task.id));
+      decisions?.sync(true);
+    },
+  });
   const questions = new QuestionBroker({ store, selfId: () => 'p-me', send: () => true, timeoutMs: () => 60_000, toast: () => undefined });
   let scheduled = 0;
-  const decisions = new PlanDecisions({
+  decisions = new PlanDecisions({
     store,
     plans,
     board: boardWork,
@@ -75,7 +91,7 @@ function setup() {
       work.pilot.schedule();
     },
   });
-  return { store, board, plans, work, questions, decisions, asked, made, scheduled: () => scheduled };
+  return { store, board, plans, work, questions, decisions: decisions!, asked, made, forYou, scheduled: () => scheduled };
 }
 
 async function approved(t: ReturnType<typeof setup>) {
@@ -157,6 +173,8 @@ describe('a task of yours in a running plan', () => {
     const cards = t.store.getState().questions.filter((q) => isDecisionQid(q.qid));
     expect(cards.map((q) => q.qid).sort()).toEqual([decisionQid(plan.id, 'keys'), decisionQid(plan.id, 'providers')].sort());
     expect(cards.every((q) => q.channel === plan.home)).toBe(true);
+    // The pilot told us once each (its forYou hook), and no Claude took them.
+    expect([...t.forYou].sort()).toEqual(['keys', 'providers']);
     await expect(t.work.startTask(plan.id, 'providers')).rejects.toThrow(/plan’s conversation/);
     const said = t.store.getState().log.filter((l) => l.type === 'system' && l.channel === plan.home).map((l) => (l as { text: string }).text);
     expect(said.some((s) => s.includes('“Pick the providers” is yours'))).toBe(true);

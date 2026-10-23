@@ -117,6 +117,8 @@ interface Lane {
   waiting: Waiting[];
   pumping: boolean;
   current?: AbortController;
+  /** The request the current run is for (with its controller: a compaction after it isn't it). */
+  currentRequest?: { readonly id: string; readonly controller: AbortController };
   interruptedBy?: string;
   /** Why the current run was stopped for a newer message, when there's more to say (see rush). */
   interruptNote?: string;
@@ -647,6 +649,23 @@ export class AgentHost {
     return false;
   }
 
+  /**
+   * Beluga no longer needs one of its requests (a milestone check you passed past): taken out of
+   * the queue, or its run stopped, quietly (no toast; the run says `note`). → whether it was there.
+   */
+  cancelRun(requestId: string, note = 'Stopped by Beluga: no longer needed'): boolean {
+    if (this.cancelQueued(requestId)) return true;
+    for (const lane of this.lanes.values()) {
+      const run = lane.currentRequest;
+      if (run?.id !== requestId || lane.current !== run.controller || run.controller.signal.aborted) continue;
+      lane.interruptedBy = 'beluga';
+      lane.interruptNote = note;
+      run.controller.abort();
+      return true;
+    }
+    return false;
+  }
+
   /** Drop one of your waiting requests before it starts. */
   cancelQueued(requestId: string): boolean {
     for (const lane of this.lanes.values()) {
@@ -874,6 +893,7 @@ export class AgentHost {
     const agent = this.agent as AgentBackend;
     const controller = new AbortController();
     lane.current = controller;
+    lane.currentRequest = { id: body.requestId, controller };
     lane.runFrom = from;
     const requesterName = peerName(this.store.getState(), from);
     const root = body.project && body.channel === 'room' ? this.projectRoot(body.project) : undefined;

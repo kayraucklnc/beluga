@@ -115,10 +115,10 @@ export class PlanDecisions {
     this.asked.clear();
   }
 
-  /** Ask what's due, take back what isn't any more. */
-  sync(): void {
+  /** Ask what's due, take back what isn't any more. `force`: look again even if nothing changed (the pilot's forYou hook). */
+  sync(force = false): void {
     const state = this.deps.store.getState();
-    if (this.seen.plans === state.plans && this.seen.board === state.board) return;
+    if (!force && this.seen.plans === state.plans && this.seen.board === state.board) return;
     this.seen = { plans: state.plans, board: state.board };
     const due = decisionsDue(this.deps.plans.list(), state.board);
     const want = new Set(due.map((d) => d.qid));

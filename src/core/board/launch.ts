@@ -50,6 +50,8 @@ export function launchBoard(host: BoardHost): () => void {
   attachBoard(session, work);
   // Plans: drafted in a conversation, approved onto the board, run milestone by milestone.
   const plans = new Plans({ store, dir, now: () => Date.now() - back });
+  // Made after the plans' work (it moves the plan along), told by its forYou hook.
+  let decisions: PlanDecisions | undefined;
   const planWork = new PlansWork({
     store,
     plans,
@@ -64,11 +66,15 @@ export function launchBoard(host: BoardHost): () => void {
     promote: (requestId) => session.host.promote(requestId),
     // The head Claude stopping a task's Claude (plan_stop_task).
     stopRun: (channel) => void session.host.stopRun(channel),
+    // A milestone check you passed past: its run stops, so nothing the plan asks next waits behind it.
+    cancel: (requestId) => void session.host.cancelRun(requestId, 'Stopped by Beluga: the milestone was passed without this check'),
     titlePlan: (goal) => session.titlePlan(goal),
+    // Tasks only you can do came up: their decision cards (below) go up now.
+    forYou: () => decisions?.sync(true),
   });
   attachPlans(session, planWork);
   // A plan task that's yours: a decision card in the plan's conversation, never a worktree.
-  const decisions = new PlanDecisions({
+  decisions = new PlanDecisions({
     store,
     plans,
     board: work,
@@ -82,7 +88,7 @@ export function launchBoard(host: BoardHost): () => void {
   }
   return () => {
     stopSeed();
-    decisions.stop();
+    decisions?.stop();
     detachPlans(session);
     planWork.stop();
     detachBoard(session);

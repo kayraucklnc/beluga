@@ -14,3 +14,8 @@ export function planAskOf(questions: readonly PendingQuestion[], channel: string
   const here = questions.filter((q) => q.channel === channel && q.question.kind === 'question');
   return here.find((q) => q.qid.startsWith('decide:')) ?? here[0];
 }
+
+/** "Decide…" on a task of yours (the canvas, the outline, its details): the plan's page opens its conversation, where the card asks you. */
+export const OPEN_DECISION = 'beluga:plan-open-decision';
+
+export const openDecision = (): void => void document.dispatchEvent(new CustomEvent(OPEN_DECISION));

@@ -6,8 +6,8 @@ import { openMilestone } from './apply.js';
 import { type Plan, type PlanMerge, allTasks, openMilestones, planBranchName } from './model.js';
 import type { PlanGit } from './plan-git.js';
 import type { Plans } from './plans.js';
-import { FINISHED, type MilestoneView, type PlanView, type TaskState, type TaskView, liveFrom, planView, startable, tidyOffer } from './progress.js';
-import { checkPrompt, criteriaNeedCheck, fixupPrompt, mergeFixupPrompt, recapPrompt } from './prompt.js';
+import { FINISHED, type MilestoneView, type PlanView, type TaskState, type TaskView, agentTasks, agentsAtWork, liveFrom, planView, startable, tidyOffer, waitingOnYou } from './progress.js';
+import { checkPrompt, criteriaNeedCheck, fixupPrompt, mergeFixupPrompt, milestoneNextPrompt, milestonePrompt, recapPrompt } from './prompt.js';
 import { TaskWatchdog } from './watchdog.js';
 
 /**
@@ -26,6 +26,16 @@ import { TaskWatchdog } from './watchdog.js';
  *
  * A started task whose Claude stopped without finishing is woken once, and waits for you when it
  * stops again soon after (see watchdog.ts); time alone can stall a turn, so it looks every minute.
+ *
+ * One Claude per milestone (the default, `workers: 'milestone'`): an open milestone with work
+ * ready gets one worktree and one Claude, which does its tasks one after another in the order
+ * they build on each other, keeping its context (a worktree per task spent most of its time
+ * finding its way around again). Every task links that worktree, and its Claude moves each one
+ * along on the board itself (In Progress, its criteria, proof, In Review), so tasks still show
+ * one by one. Its turn ending with tasks left, it's sent on (once per step: then it's yours);
+ * tasks added later (a failed check's fixes) go to the same Claude. Tasks for you are never
+ * its: they wait for you (see PilotDeps.forYou). Milestones still run side by side, the plan's
+ * limit counting milestones at work. `workers: 'task'` is the older way: a worktree per task.
  */
 
 export interface PilotDeps {
@@ -52,6 +62,15 @@ export interface PilotDeps {
   readonly delayMs?: number;
   /** A run's events re-check its plans at most this often (they stream all the time): default 1 s, or delayMs when that's given. */
   readonly eventMs?: number;
+  /** Who does a milestone's tasks: one Claude for the whole milestone (default), or a worktree per task. */
+  readonly workers?: 'milestone' | 'task';
+  /** Beluga no longer needs a request of its own (a check you passed past): out of the queue, or its run stopped. */
+  readonly cancel?: (requestId: string) => void;
+  /**
+   * Tasks only you can do came up (ready, in an open milestone), each once: the hook for asking you
+   * (the plan's chat). A milestone's Claude skips them, and what builds on them waits.
+   */
+  readonly forYou?: (plan: Plan, tasks: readonly TaskView[]) => void;
 }
 
 /** How many times the head Claude is asked to fix one task's combining conflict before it waits for you. */
@@ -67,9 +86,10 @@ const HEARTBEAT_MS = 60_000;
 /** Why a milestone can't be merged yet: a task of it still being worked on (undefined: none). */
 function stillWorking(m: MilestoneView): string | undefined {
   const words: Partial<Record<TaskState, string>> = { running: 'is running', asking: 'asks you something', idle: 'is still open', stalled: 'stopped without finishing' };
-  const busy = m.tasks.filter((t) => t.issue && !t.issue.worktreeGone && words[t.state]);
+  // Handed to the milestone's Claude and not begun: its worktree is still in use too.
+  const busy = m.tasks.filter((t) => t.issue && !t.issue.worktreeGone && (words[t.state] || t.queued));
   if (!busy.length) return undefined;
-  const who = busy.map((t) => `${t.issue!.key} ${words[t.state]}`).join(', ');
+  const who = busy.map((t) => `${t.issue!.key} ${t.queued ? 'is next for its milestone’s Claude' : words[t.state]}`).join(', ');
   return `“${m.milestone.title}” can’t be merged yet: ${who}. Merging retires each task’s worktree and branch, so only tasks In Review are merged: let them finish (or stop them), then pass it.`;
 }
 
@@ -79,6 +99,9 @@ class StillWorkingError extends Error {}
 /** What changes can move a plan along. */
 const WAKES = new Set(['board_issue', 'board_remove', 'plan_put', 'agent_event', 'question_add', 'question_remove', 'approval_add', 'approval_remove', 'projects']);
 const EVENT_MS = 1000;
+/** A run that's under way (or waiting to be). */
+const RUNNING = new Set(['queued', 'awaiting_approval', 'started', 'answered']);
+const milestoneName = (plan: Plan, id: string): string => plan.body?.milestones.find((m) => m.id === id)?.title ?? id;
 const WS_PREFIX = 'ws:';
 
 /** The plans each conversation belongs to: a plan's home, and its tasks' worktrees. */
@@ -129,6 +152,19 @@ export class PlanPilot {
   private dueAt = 0;
   private lastTick = -Infinity;
   private channels?: { readonly plans: readonly Plan[]; readonly board: BoardState; readonly map: Map<string, Set<string>> };
+  /** Milestones whose Claude is being started now (`plan:milestone`). */
+  private readonly launching = new Set<string>();
+  /**
+   * What each milestone's Claude was last sent (`plan:milestone`): the tasks ready then, its
+   * conversation's last run before, how often for those same tasks; `told`: it's been left to you.
+   */
+  private readonly sentOn = new Map<string, { readonly sig: string; readonly after?: string; readonly count: number; readonly told?: boolean }>();
+  /** Milestones whose Claude got tasks since it was last sent on (they're new to it). */
+  private readonly handed = new Set<string>();
+  /** Tasks for you already passed to the forYou hook (`plan:task`). */
+  private readonly toldYou = new Set<string>();
+  /** The head Claude's check of a milestone under way (`plan:milestone` → its request). */
+  private readonly checkRuns = new Map<string, string>();
 
   constructor(private readonly deps: PilotDeps) {
     this.watchdog = new TaskWatchdog({
@@ -251,9 +287,36 @@ export class PlanPilot {
       this.fixAsked.delete(t.issue.id);
       this.deps.plans.setCombining(plan.id, t.task.id, { ...t.combining, ...(t.combining.conflict ? { conflict: { ...t.combining.conflict, stuck: false } } : {}) });
     } else if (t.state !== 'ready') throw new Error(`“${t.task.title}” can’t start: ${t.why ?? t.state}`);
+    if (this.byMilestone) return this.startInMilestone(plan, view, t, by);
     if (view.active.length + this.startingIn(plan) >= plan.maxParallel) throw new Error(`${plan.maxParallel} tasks are already running (the plan’s limit)`);
     this.failed.delete(t.issue!.id);
     return this.start(plan, t, by);
+  }
+
+  /** One milestone, one Claude (see the top): unless the plan says a worktree per task. */
+  private get byMilestone(): boolean {
+    return (this.deps.workers ?? 'milestone') === 'milestone';
+  }
+
+  /** Start a task of a milestone: its Claude gets it (started first if there's none yet). */
+  private async startInMilestone(plan: Plan, view: PlanView, t: TaskView, by: Actor): Promise<string> {
+    const m = view.milestones.find((x) => x.milestone.id === t.milestoneId)!;
+    const key = `${plan.id}:${m.milestone.id}`;
+    if (this.launching.has(key)) return `The Claude for “${m.milestone.title}” is starting`;
+    const issue = t.issue!;
+    this.failed.delete(issue.id);
+    if (m.agent) {
+      const channel = `ws:${m.agent.worktree}`;
+      this.hand(plan, m, [t]);
+      this.deps.askClaude(milestoneNextPrompt(this.view(this.deps.plans.need(plan.id)), m, [t], m.autonomy === 'step' ? 'only' : 'new'), channel, false);
+      this.sentOn.set(key, { sig: issue.id, ...this.after(channel), count: 1 });
+      this.handed.delete(key);
+      this.deps.plans.note(plan.id, 'started', `gave ${issue.key} “${t.task.title}” to the Claude doing “${m.milestone.title}”`, by);
+      return `Gave ${issue.key} “${t.task.title}” to the Claude doing “${m.milestone.title}”, in its worktree: it does it ${liveFrom(this.deps.store.getState()).busy(channel) ? 'once its current turn ends' : 'now'}`;
+    }
+    if (agentsAtWork(view).length + this.launchingIn(plan) >= plan.maxParallel) throw new Error(`${plan.maxParallel} milestones are already at work (the plan’s limit)`);
+    // A task of yours you start yourself: that one, for its Claude (it never takes yours on its own).
+    return this.launch(plan, m.milestone.id, by, m.autonomy === 'step' || t.forYou ? [t.task.id] : undefined);
   }
 
   /**
@@ -264,15 +327,35 @@ export class PlanPilot {
     const plan = this.deps.plans.need(planId);
     if (!plan.body?.milestones.some((m) => m.id === milestoneId)) throw new Error('That milestone isn’t in the approved plan');
     if (plan.runs[milestoneId]?.passedAt) return plan;
-    if (!this.deps.git || !plan.branch) return this.passed(planId, milestoneId, by);
     if (plan.merging?.[milestoneId]) return plan;
     // Merging retires its tasks' worktrees and branches: never while a Claude still works in one.
-    const m = this.view(plan).milestones.find((x) => x.milestone.id === milestoneId);
+    const m = this.deps.git && plan.branch ? this.view(plan).milestones.find((x) => x.milestone.id === milestoneId) : undefined;
     const busy = m ? stillWorking(m) : undefined;
     if (busy) throw new StillWorkingError(busy);
+    // Passed past a check still under way: it's no longer needed, and nothing waits behind it.
+    this.dropCheck(plan, milestoneId);
+    if (!this.deps.git || !plan.branch) return this.passed(planId, milestoneId, by);
+    // Said at once (the page shows it merging); the merge runs in the background, and it passes once it's in.
     const next = this.deps.plans.setMerging(planId, milestoneId, { at: Date.now(), by });
-    this.schedule();
+    this.stepMerges(next);
     return next;
+  }
+
+  /**
+   * The head Claude's check of a milestone that's being passed without it: its run is stopped (or
+   * taken out of the queue), so what the plan asks next (a merge's fix-up, the next check, the
+   * recap) doesn't wait behind a test run nobody needs. A verdict that comes late is ignored.
+   */
+  private dropCheck(plan: Plan, milestoneId: string): void {
+    const key = `${plan.id}:${milestoneId}`;
+    const id = this.checkRuns.get(key);
+    this.checkRuns.delete(key);
+    const run = plan.runs[milestoneId];
+    if (!id || run?.checkAsked === undefined || (run.check && run.check.at >= run.checkAsked)) return;
+    const item = this.deps.store.getState().log.find((l) => l.type === 'agent' && l.requestId === id);
+    if (item?.type === 'agent' && !RUNNING.has(item.status)) return;
+    this.deps.cancel?.(id);
+    this.deps.plans.note(plan.id, 'note', `stopped the check of “${milestoneName(plan, milestoneId)}”: it was passed without it`, { kind: 'beluga' });
   }
 
   /** It passed (its work is in the plan's branch, or there's none): what waited on it opens. */
@@ -314,11 +397,146 @@ export class PlanPilot {
     const view = this.view(plan);
     this.noteFinished(plan, view);
     if (!view.open.length) return;
-    // Every open milestone runs side by side; the limit on tasks at once is the whole plan's.
+    // Every open milestone runs side by side; the limit on tasks (or milestones at work) at once is the whole plan's.
     for (const m of view.open) this.open(plan, m.milestone.id);
-    for (const t of startable(view, this.failed, this.startingIn(plan))) void this.start(plan, t, { kind: 'beluga' }).catch(() => undefined);
-    this.stepCombining(plan, view);
+    if (this.byMilestone) this.stepAgents(plan, view);
+    else {
+      for (const t of startable(view, this.failed, this.startingIn(plan))) void this.start(plan, t, { kind: 'beluga' }).catch(() => undefined);
+      this.stepCombining(plan, view);
+    }
+    this.tellYou(plan, view);
     for (const m of view.open) this.stepMilestone(plan, view, m);
+  }
+
+  /** Tasks only you can do that came up: to the hook, once each (a milestone's Claude never does them). */
+  private tellYou(plan: Plan, view: PlanView): void {
+    const fresh = waitingOnYou(view).filter((t) => !this.toldYou.has(`${plan.id}:${t.task.id}`));
+    if (!fresh.length) return;
+    for (const t of fresh) this.toldYou.add(`${plan.id}:${t.task.id}`);
+    for (const t of fresh) this.deps.plans.note(plan.id, 'note', `${t.issue?.key ?? t.task.id} “${t.task.title}” waits for you: only you can do it${this.byMilestone ? ', so its milestone’s Claude leaves it to you' : ''}`, { kind: 'beluga' });
+    this.deps.forYou?.(plan, fresh);
+  }
+
+  // ------------------------------------------------------------------ one Claude per milestone
+
+  /**
+   * Each open milestone's one Claude: started once work is ready (within the plan's limit, never
+   * on a step-by-step milestone by itself), given the tasks it doesn't have yet, and sent on when
+   * its turn ended with tasks of it ready and none begun.
+   */
+  private stepAgents(plan: Plan, view: PlanView): void {
+    let room = plan.maxParallel - agentsAtWork(view).length - this.launchingIn(plan);
+    const live = liveFrom(this.deps.store.getState());
+    for (const m of view.open) {
+      const key = `${plan.id}:${m.milestone.id}`;
+      if (m.state !== 'running' || this.launching.has(key)) continue;
+      const todo = agentTasks(m).filter((t) => !FINISHED.has(t.state));
+      const agent = m.agent;
+      // Not begun anywhere (one already under way in a worktree of its own stays there).
+      const unbegun = todo.filter((t) => t.state === 'ready' || t.state === 'blocked');
+      if (!agent) {
+        const ready = todo.some((t) => t.state === 'ready' && !this.failed.has(t.issue!.id));
+        if (m.autonomy === 'step' || !ready || room <= 0) continue;
+        room--;
+        void this.launch(plan, m.milestone.id, { kind: 'beluga' }).catch(() => undefined);
+        continue;
+      }
+      // Step by step: you hand it each task (Start).
+      if (m.autonomy === 'step') continue;
+      const fresh = unbegun.filter((t) => !t.issue!.worktrees.includes(agent.worktree));
+      if (fresh.length) this.hand(plan, m, fresh);
+      const channel = `ws:${agent.worktree}`;
+      // At work, or a task of it started and stopped (the watchdog wakes that one).
+      if (live.busy(channel) || this.deps.alive?.(channel) || m.tasks.some((t) => t.worktree === agent.worktree && (t.state === 'running' || t.state === 'asking' || t.state === 'idle' || t.state === 'stalled'))) continue;
+      const ready = todo.filter((t) => t.state === 'ready');
+      if (!ready.length) continue;
+      const sig = ready.map((t) => t.issue!.id).join(',');
+      const sent = this.sentOn.get(key);
+      // Its run since it was last sent hasn't come and gone yet.
+      if (sent && this.lastRun(channel) === sent.after) continue;
+      if (sent?.sig === sig && sent.count >= 1) {
+        if (!sent.told) {
+          this.sentOn.set(key, { ...sent, told: true });
+          this.deps.plans.note(plan.id, 'problem', `the Claude doing “${m.milestone.title}” stopped again with ${ready.map((t) => t.issue!.key).join(', ')} not begun: open its chat, or Start one`, { kind: 'beluga' });
+        }
+        continue;
+      }
+      const fresher = this.handed.has(key);
+      this.handed.delete(key);
+      this.deps.askClaude(milestoneNextPrompt(view, m, ready, fresher ? 'new' : 'continue'), channel, false);
+      this.sentOn.set(key, { sig, ...this.after(channel), count: sent?.sig === sig ? sent.count + 1 : 1 });
+      this.deps.plans.note(plan.id, 'note', `sent the Claude doing “${m.milestone.title}” on to ${ready[0]!.issue!.key} “${ready[0]!.task.title}”`, { kind: 'beluga' });
+    }
+  }
+
+  /** Its conversation's last run now (what a reply has to come after). */
+  private after(channel: string): { readonly after?: string } {
+    const last = this.lastRun(channel);
+    return last ? { after: last } : {};
+  }
+
+  /** Tasks go to a milestone's Claude: they link its worktree (and it's told when it's next sent on). */
+  private hand(plan: Plan, m: MilestoneView, tasks: readonly TaskView[]): void {
+    const agent = m.agent;
+    if (!agent) return;
+    const ws = this.deps.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.id === agent.worktree);
+    for (const t of tasks) if (t.issue) this.deps.work.linkShared(t.issue.id, { id: agent.worktree, ...(agent.branch ? { branch: agent.branch } : {}), name: ws?.name ?? agent.worktree });
+    const ids = [...new Set([...agent.tasks, ...tasks.map((t) => t.task.id)])];
+    if (ids.length !== agent.tasks.length) {
+      this.deps.plans.setAgent(plan.id, m.milestone.id, { ...agent, tasks: ids });
+      this.handed.add(`${plan.id}:${m.milestone.id}`);
+    }
+  }
+
+  /** Milestones of this plan whose Claude is being started right now. */
+  private launchingIn(plan: Plan): number {
+    return [...this.launching].filter((k) => k.startsWith(`${plan.id}:`)).length;
+  }
+
+  /**
+   * A milestone's one Claude: one worktree for its tasks (`only`: just these, when you start them
+   * one by one), from the plan's branch (or what its first task builds on), and its brief.
+   */
+  private async launch(plan: Plan, milestoneId: string, by: Actor, only?: readonly string[]): Promise<string> {
+    const key = `${plan.id}:${milestoneId}`;
+    if (this.launching.has(key)) return 'Its Claude is starting';
+    this.launching.add(key);
+    let ids: string[] = [];
+    try {
+      const view = this.view(this.deps.plans.need(plan.id));
+      const m = view.milestones.find((x) => x.milestone.id === milestoneId);
+      if (!m) throw new Error('That milestone isn’t in the approved plan');
+      // Not begun anywhere: one already under way in a worktree of its own stays there.
+      const tasks = only ? m.tasks.filter((t) => only.includes(t.task.id)) : agentTasks(m).filter((t) => (t.state === 'ready' || t.state === 'blocked') && !this.failed.has(t.issue!.id));
+      const first = tasks.find((t) => t.state === 'ready');
+      if (!first?.issue) throw new Error(`Nothing of “${m.milestone.title}” can start yet`);
+      // The first ready task first (it goes In Progress); the rest in their order.
+      const ordered = [first, ...tasks.filter((t) => t !== first)];
+      ids = ordered.map((t) => t.issue!.id);
+      const base = first.bases?.length ? plan.branch : first.base;
+      const ws = await this.deps.work.startShared(ids, `${first.issue.key} ${m.milestone.title}`, { quiet: true, ...(base ? { base } : {}) });
+      const fresh = this.deps.plans.setAgent(plan.id, milestoneId, { worktree: ws.id, ...(ws.branch ? { branch: ws.branch } : {}), at: Date.now(), tasks: ordered.map((t) => t.task.id) });
+      const keys = ordered.map((t) => t.issue!.key);
+      const said = `started one Claude for “${m.milestone.title}” (${keys.join(', ')}) in a new worktree${base ? ` from ${base}` : ''}`;
+      this.deps.plans.note(plan.id, 'started', said, by);
+      const now = this.view(fresh);
+      const mv = now.milestones.find((x) => x.milestone.id === milestoneId)!;
+      const channel = `ws:${ws.id}`;
+      const after = this.after(channel);
+      const all = new Map(mv.tasks.map((t) => [t.task.id, t]));
+      this.deps.askClaude(milestonePrompt(now, mv, ordered.map((t) => all.get(t.task.id) ?? t), { only: Boolean(only) || mv.autonomy === 'step', ...(base ? { base } : {}) }), channel, false);
+      this.sentOn.set(key, { sig: first.issue.id, ...after, count: 0 });
+      this.handed.delete(key);
+      return said.charAt(0).toUpperCase() + said.slice(1);
+    } catch (err) {
+      for (const id of ids) this.failed.add(id);
+      const why = err instanceof Error ? err.message : String(err);
+      this.deps.plans.note(plan.id, 'problem', `couldn’t start the Claude for “${milestoneName(plan, milestoneId)}”: ${why}`, { kind: 'beluga' });
+      throw err;
+    } finally {
+      this.launching.delete(key);
+      this.schedule();
+    }
   }
 
   /** One open milestone: a new round when work came back, its check when it's finished, its pass on autopilot. */
@@ -334,7 +552,8 @@ export class PlanPilot {
     }
     if (m.run.checkAsked === undefined) {
       // Asked first: if asking fails, the check isn't marked as asked (it's tried again).
-      this.deps.askClaude(checkPrompt(view, m), plan.home, false);
+      const id = this.deps.askClaude(checkPrompt(view, m), plan.home, false);
+      if (id) this.checkRuns.set(`${plan.id}:${m.milestone.id}`, id);
       this.deps.plans.checkAsked(plan.id, m.milestone.id);
       this.deps.system(plan.home, `Every task of “${m.milestone.title}” is finished: Claude is checking its pass criteria.`);
       return;
@@ -619,7 +838,8 @@ export class PlanPilot {
     let res: CombineResult | undefined;
     if (tasks.length) {
       try {
-        res = await git.mergeInto(plan.projectId, branch, tasks.map((t) => t.issue!.branch!));
+        // A milestone's one Claude: its tasks share one branch, merged once.
+        res = await git.mergeInto(plan.projectId, branch, [...new Set(tasks.map((t) => t.issue!.branch!))]);
       } catch (err) {
         // Not a conflict (a dirty checkout, no git identity): said once, and you pass it again.
         this.deps.plans.setMerging(planId, milestoneId, undefined);
@@ -629,7 +849,9 @@ export class PlanPilot {
       }
     }
     if (res && !res.ok) {
-      const conflictKey = tasks.find((t) => t.issue!.branch === res.merging)?.issue?.key ?? res.merging;
+      // One task's branch: its key; a milestone's one Claude (a branch for several): the branch.
+      const on = tasks.filter((t) => t.issue!.branch === res.merging);
+      const conflictKey = on.length === 1 ? on[0]!.issue!.key : res.merging;
       const asks = this.fixAsked.get(key)?.asks ?? 0;
       const stuck = asks >= FIXUP_ASKS;
       const was = merge.conflict;
@@ -654,12 +876,22 @@ export class PlanPilot {
     this.deps.plans.setMerging(planId, milestoneId, undefined);
     if (tasks.length) this.deps.plans.note(planId, 'passed', `merged ${tasks.map((t) => t.issue!.key).join(', ')} into ${branch}`, beluga);
     if (!merge.catchUp) this.passed(planId, milestoneId, merge.by);
+    // Cleared away in the background: the next merge (another milestone passed) doesn't wait for archiving.
+    void this.retireAll(plan, tasks, branch);
+  }
+
+  /** Merged tasks' worktrees archived and branches deleted (a shared one once). */
+  private async retireAll(plan: Plan, tasks: readonly TaskView[], into: string): Promise<void> {
+    const done = new Set<string>();
     for (const t of tasks) {
       const ws = t.issue!.worktreeGone ? undefined : t.issue!.worktrees.at(-1);
+      const id = `${ws ?? ''}:${t.issue!.branch ?? ''}`;
+      if (done.has(id)) continue;
+      done.add(id);
       try {
-        await git.retire(plan.projectId, ws, t.issue!.branch, branch);
+        await this.deps.git!.retire(plan.projectId, ws, t.issue!.branch, into);
       } catch (err) {
-        this.deps.plans.note(planId, 'problem', `couldn’t clear away ${t.issue!.key}’s worktree: ${err instanceof Error ? err.message : String(err)}`, beluga);
+        this.deps.plans.note(plan.id, 'problem', `couldn’t clear away ${t.issue!.key}’s worktree: ${err instanceof Error ? err.message : String(err)}`, { kind: 'beluga' });
       }
     }
   }
