@@ -6,9 +6,9 @@ import { type UiPrefs, getPrefs, setPrefs } from '../lib/prefs.js';
  * under it too (per plan, off by default). Unread, the bell and Overview keep it as one either way.
  */
 
-export const showsTaskChats = (planId: string, prefs = getPrefs()): boolean => prefs.planTaskChats.includes(planId);
+const showsTaskChats = (planId: string, prefs = getPrefs()): boolean => prefs.planTaskChats.includes(planId);
 
-export function setShowsTaskChats(planId: string, on: boolean): void {
+function setShowsTaskChats(planId: string, on: boolean): void {
   const rest = getPrefs().planTaskChats.filter((id) => id !== planId);
   setPrefs({ planTaskChats: on ? [...rest, planId] : rest });
 }

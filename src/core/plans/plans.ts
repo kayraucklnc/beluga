@@ -338,7 +338,7 @@ export class Plans {
     const notes: PlanEvent[] = [];
     const at = this.now();
     if (!before || before.number !== pr.number) notes.push(event({ kind: 'beluga' }, 'note', `pull request #${pr.number} is open for ${plan.branch ?? 'the plan'}`, at));
-    if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') notes.push(event({ kind: 'beluga' }, 'problem', `pull request #${pr.number} was closed without merging: its tasks stay In Plan`, at));
+    if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') notes.push(event({ kind: 'beluga' }, 'problem', `pull request #${pr.number} was closed without merging: its tasks stay merged into the plan`, at));
     return this.change(plan, { pr }, notes);
   }
 

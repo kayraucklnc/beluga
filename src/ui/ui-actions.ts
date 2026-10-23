@@ -28,11 +28,14 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
   const { api, store } = client;
   if (runCollabUiAction(c.menuCtx(), action)) return;
   switch (action.type) {
-    case 'open_ws':
-      void api.workspaces.open(action.id, action.tab);
+    case 'open_ws': {
+      // Shown at once, not after the daemon's answer (behind whatever else it's sending while Claudes stream).
+      const req = findWorkspace(store.getDomain().projects, action.id) ? store.openAhead(action.id, action.tab ?? 'chat') : undefined;
+      void api.workspaces.open(action.id, action.tab ?? 'chat', req ? { req } : undefined);
       // Opening a view puts you inside it: the file list, the diff, the terminal, or the chat.
       patchUi(action.tab === 'review' ? { focus: 'main', entered: true } : action.tab === 'files' ? { focus: 'files', entered: true } : action.tab === 'terminal' ? { focus: 'terminal', terminalScroll: 0 } : { focus: 'chat', entered: false });
       return;
+    }
     case 'open_link':
       c.openLink(action.link);
       return;

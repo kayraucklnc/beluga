@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { systemOpen } from '../core/os-open.js';
 import { copyFileSync, existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { findProjects, isMainCheckout } from './discovery.js';
 import * as g from './git.js';
 import * as sync from './sync.js';
@@ -62,8 +63,11 @@ export class WorkspaceManager {
   private records: WorkspaceRecord[];
   private config: ProjectsConfig;
   private projects: Project[] = [];
-  private refreshGen = 0;
-  private appliedGen = 0;
+  /** The refresh running now, and the one queued behind it (every call made meanwhile shares it). */
+  private refreshing?: Promise<readonly Project[]>;
+  private followUp?: Promise<readonly Project[]>;
+  /** One folder's status refresh in flight, per folder: the next waits for it (see refreshWorkspace). */
+  private readonly folderRefreshes = new Map<string, Promise<boolean>>();
   /** Fetching state per project root (in flight, the last failure), shown with the default branch. */
   private fetchState = new Map<string, Pick<ProjectSync, 'fetching' | 'fetchError'>>();
   /** A remote's default branch learned while fetching, for repos without origin/HEAD (by root). */
@@ -332,16 +336,70 @@ export class WorkspaceManager {
     return { root, archived, trashed };
   }
 
-  /** Re-scan projects and worktrees and refresh git status for every workspace. */
-  async refresh(): Promise<readonly Project[]> {
+  /**
+   * Re-scan projects and worktrees and refresh git status for every workspace. Single-flight: a call
+   * while one runs waits for one more after it (what's running may have read things before the
+   * call's change), and every call meanwhile shares that one.
+   */
+  refresh(): Promise<readonly Project[]> {
+    if (!this.refreshing) return this.startRefresh();
+    this.followUp ??= this.refreshing
+      .catch(() => undefined)
+      .then(() => {
+        this.followUp = undefined;
+        return this.startRefresh();
+      });
+    return this.followUp;
+  }
+
+  private startRefresh(): Promise<readonly Project[]> {
+    const run: Promise<readonly Project[]> = this.scan().finally(() => {
+      if (this.refreshing === run) this.refreshing = undefined;
+    });
+    this.refreshing = run;
+    return run;
+  }
+
+  /**
+   * Refresh one folder's git status (a run there ended), not every project's → whether it changed.
+   * Waits for a full refresh in flight first, so that one's older reading never lands after this;
+   * and for this folder's previous one, so two run endings there both land, the later reading last.
+   */
+  refreshWorkspace(dir: string): Promise<boolean> {
+    const key = real(dir);
+    const before = this.folderRefreshes.get(key);
+    const run = (before ? before.catch(() => false) : Promise.resolve(false)).then(() => this.refreshFolder(key));
+    this.folderRefreshes.set(key, run);
+    const forget = (): void => {
+      if (this.folderRefreshes.get(key) === run) this.folderRefreshes.delete(key);
+    };
+    run.then(forget, forget);
+    return run;
+  }
+
+  private async refreshFolder(key: string): Promise<boolean> {
+    if (this.refreshing) await (this.followUp ?? this.refreshing).catch(() => undefined);
+    const find = (): Workspace | undefined => this.projects.flatMap((p) => p.workspaces).find((w) => !w.archived && w.kind !== 'chat' && real(w.path) === key);
+    const read = find();
+    if (!read) return false;
+    const status = await g.status(read.path, read.kind === 'main' ? undefined : read.base).catch(() => undefined);
+    if (this.refreshing) return false; // a full refresh started meanwhile: it has the newer reading
+    // As it is now (a full refresh may have replaced it meanwhile), not as it was before git ran.
+    const ws = find();
+    if (!ws || ws.id !== read.id) return false;
+    // Claude may have switched branches there (detached shows as "HEAD": keep what's known).
+    const branch = status?.branch && status.branch !== 'HEAD' ? status.branch : ws.branch;
+    if (isDeepStrictEqual(status, ws.status) && branch === ws.branch) return false;
+    const next: Workspace = { ...ws, status, ...(branch ? { branch } : {}) };
+    this.projects = this.projects.map((p) => (p.workspaces.includes(ws) ? { ...p, workspaces: p.workspaces.map((w) => (w === ws ? next : w)) } : p));
+    return true;
+  }
+
+  private async scan(): Promise<readonly Project[]> {
     const roots = [...new Set([...findProjects(this.config.roots), ...this.config.projects].map(real))].filter(
       (r) => !this.config.hidden.includes(r) && !this.config.removed?.includes(r) && existsSync(r),
     );
-    const gen = ++this.refreshGen;
     const loaded = await Promise.all(roots.map((root) => this.loadProject(root)));
-    // A refresh that started later already finished: its answer is more current than ours.
-    if (gen < this.appliedGen) return this.projects;
-    this.appliedGen = gen;
     // Same-named projects (e.g. two clones) get their parent folder added so you can tell them apart.
     const counts = new Map<string, number>();
     for (const p of loaded) counts.set(p.name, (counts.get(p.name) ?? 0) + 1);
@@ -1055,6 +1113,10 @@ export class WorkspaceManager {
 
   saveHistory(id: string, items: readonly unknown[]): void {
     this.store.saveHistory(id, items);
+  }
+
+  saveHistoryAsync(id: string, items: readonly unknown[], current?: () => boolean): Promise<void> {
+    return this.store.saveHistoryAsync(id, items, current);
   }
 }
 

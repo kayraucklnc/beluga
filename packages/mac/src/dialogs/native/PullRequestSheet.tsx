@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { PrCheck, PullRequest } from '@klaud/core/work-store.js';
 import type { MergeMethod } from '@klaud/workspaces/pr.js';
 import { findWorkspace } from '@klaud/ui/workspace-models.js';
@@ -10,6 +10,7 @@ import { useActions } from '../../lib/actions.js';
 import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
 import { MERGE_METHODS, canAutoMerge, checkDuration, checkTone, checksSummary, sortChecks } from '../../lib/pr-checks.js';
 import { openExternal } from '../../lib/system.js';
+import { useClock } from '../../lib/window-active.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
 import s from './menus.module.css';
@@ -34,21 +35,11 @@ function lastMethod(): MergeMethod {
   }
 }
 
-/** A clock that ticks every second while `on` (running checks count up). */
-function useNow(on: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!on) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [on]);
-  return now;
-}
-
 /** Each CI check, live: spinner while it runs, ✓ or ✗ when done, how long, and its page. */
 function CheckList({ checks }: { checks: readonly PrCheck[] }) {
   const running = checks.some((c) => c.state === 'in_progress');
-  const now = useNow(running);
+  // Running checks count up, only while you're looking (KLD-40).
+  const now = useClock(running);
   return (
     <div className={s.checks}>
       <div className={s.checksHead}>{checksSummary(checks)}</div>

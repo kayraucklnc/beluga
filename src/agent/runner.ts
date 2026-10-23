@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { MAX_ATTACHMENT_BYTES, linkedImages, mediaTypeOf } from '../core/attachments.js';
-import { buildAskOnlyAppend, buildPrompt, buildScratchAppend, buildSystemAppend, summarizeTool } from './prompt.js';
+import { buildAskOnlyAppend, buildKeepAppend, buildPrompt, buildScratchAppend, buildSystemAppend, summarizeTool } from './prompt.js';
 import { buildGraphAppend } from './graph-prompt.js';
 import { createBoardTools } from './board-tools.js';
 import { createPlanTools } from './plan-tools.js';
@@ -15,6 +15,7 @@ import { type RecorderMessage, StepRecorder } from './step-recorder.js';
 import { type ContextMessage, ContextReport, breakdownReader, isCompactCommand } from './context-report.js';
 import { compactEnv } from '../shared/context-usage.js';
 import { progressCount } from '../shared/progress-count.js';
+import { resultText } from '../shared/steps.js';
 import { BackgroundAgents, type PromptContent, PromptQueue, TurnRouter } from './live-run.js';
 import { answerChat } from './chat-answer.js';
 import { nameTask, titlePlan } from './namer.js';
@@ -109,8 +110,7 @@ export function imageContent(text: string, files: readonly string[]): PromptCont
 /** The text of the tool results in a message from Claude Code (what its commands printed). */
 function toolOutput(content: unknown): string {
   if (!Array.isArray(content)) return '';
-  const text = (c: unknown): string => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (x && typeof x === 'object' && 'text' in x && typeof x.text === 'string' ? x.text : '')).join('\n') : '');
-  return content.map((b) => (b && typeof b === 'object' && 'type' in b && b.type === 'tool_result' && 'content' in b ? text(b.content) : '')).join('\n');
+  return content.map((b) => (b && typeof b === 'object' && 'type' in b && b.type === 'tool_result' && 'content' in b ? resultText(b.content) : '')).join('\n');
 }
 
 /**
@@ -215,7 +215,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             },
           ],
         },
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: buildSystemAppend(opts.bridge.selfName()) + buildGraphAppend() + (input.taskBrief ?? '') + (input.planBrief ?? '') + (input.scratchDir ? buildScratchAppend(input.scratchDir) : '') + (input.env?.KLAUD_WORKTREE ? buildKeepAppend() : '') + (askOnly ? (syncMain ? buildSyncMainAppend(askOnly.project, syncMain.branch, syncMain.upstream) : buildAskOnlyAppend(askOnly.project, Boolean(input.continueInWorktree))) : '') },
         // Don't load settings files: a friend with :rw access could plant permission rules or hooks.
         settingSources: [],
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
@@ -301,6 +301,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const send = (followUp: FollowUp): boolean => deliver(followUp, false) !== false;
       // What Claude is doing now, for a steer to judge whether it reads a message soon (see Steer.status).
       const tools = new Map<string, { label: string; since: number }>();
+      /** Sub-agents launched this step and not back yet (not in `tools`: they show as sub-agents, not steps). */
+      const launches = new Set<string>();
       let lastEventAt = Date.now();
       /** Claude's last word in the main conversation was thinking. */
       let thinking = false;
@@ -382,7 +384,15 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             const count = progressCount(toolOutput(msg.message.content));
             if (count) turns.current().onEvent('progress', count);
             const content = msg.message.content;
-            if (Array.isArray(content)) for (const block of content) if (block.type === 'tool_result') tools.delete(block.tool_use_id);
+            const returned = Array.isArray(content) && content.some((block) => block.type === 'tool_result');
+            if (Array.isArray(content))
+              for (const block of content)
+                if (block.type === 'tool_result') {
+                  tools.delete(block.tool_use_id);
+                  launches.delete(block.tool_use_id);
+                }
+            // Every tool and sub-agent of its step came back: Claude thinks about what's next (an empty progress says so; older peers ignore it).
+            if (returned && !count && !tools.size && !launches.size) turns.current().onEvent('progress', '');
           }
           if (msg.type === 'result' || (msg.type === 'user' && msg.parent_tool_use_id === null)) thinking = false;
           if (msg.type === 'assistant' && msg.parent_tool_use_id === null) {
@@ -393,6 +403,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                 lastText = block.text.trim();
                 route?.onEvent('text', lastText);
               }
+              if (block.type === 'tool_use' && subagents.isLaunch(block)) launches.add(block.id);
               if (block.type === 'tool_use' && !subagents.isLaunch(block)) {
                 const toolInput = (block.input ?? {}) as Record<string, unknown>;
                 const label = summarizeTool(block.name, toolInput, cwd);
@@ -416,6 +427,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
             // The prompts this turn took in: a message steered in mid-turn is answered by it.
             const took = msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : undefined);
             tools.clear();
+            launches.clear();
             const note = interrupting;
             if (note !== undefined) {
               // Interrupted for a message: the turn ends saying so, and the message's turn comes next.

@@ -3,6 +3,7 @@
 //   node scripts/e2e-lock.mjs <command…>        (packages/mac's `npm run e2e` runs playwright through it)
 // - A second run, from any worktree, waits for the first and says whose it is ("waiting for KLD-12's e2e").
 // - Each worktree gets its own E2E_PORT and demo home (BELUGA_HOME), so runs never share a server or a daemon.
+//   Each playwright worker starts its own demo daemons next to it (see slotHomes and e2e/fixtures.ts).
 // - The command runs in its own process group; every process it starts is tracked (even ones that move to
 //   their own group, like vite and the browser) and stopped however the run ends: done, Ctrl-C, killed.
 // - A run that fails while the Mac is overloaded re-runs its failed tests once, alone, after the load drops.
@@ -58,6 +59,22 @@ export const portFor = (worktree) => 14300 + (Number.parseInt(short(worktree), 1
 export function homesFor(worktree) {
   const base = path.join(os.tmpdir(), `beluga-e2e-${short(worktree)}`);
   return { home: path.join(base, 'home'), claude: path.join(base, 'claude') };
+}
+
+/**
+ * One of a run's demo homes: playwright worker `worker` keeps two (slot 0 in use, slot 1 warming up for
+ * the next spec file, then they swap), next to the run's home: home-2b, claude-2b.
+ */
+export const slotHomes = ({ home, claude }, worker, slot) => ({ home: `${home}-${worker}${'ab'[slot]}`, claude: `${claude}-${worker}${'ab'[slot]}` });
+
+/**
+ * How many playwright workers a run uses: E2E_WORKERS, else 3 (fewer on a small Mac, 1 on one that's
+ * already busy: more work than cores). Most of a run is waiting on the demo, so 3 is fast enough.
+ */
+export function workerCount(env = process.env, cores = os.cpus().length, load = loadPerCore()) {
+  const asked = Number.parseInt(env.E2E_WORKERS ?? '', 10);
+  if (asked > 0) return asked;
+  return load > 1 ? 1 : Math.max(1, Math.min(3, Math.floor(cores / 2)));
 }
 
 /** Whether a process is alive (and ours to signal). */
@@ -296,6 +313,73 @@ export async function stopRun(run, opts) {
 /** The 1-minute load per core (1 = every core busy). */
 export const loadPerCore = () => os.loadavg()[0] / Math.max(1, os.cpus().length);
 
+/** CPU seconds from ps's time column ("1:02.50", "1:01:02.50", "2-01:01:02"). */
+export function cpuSeconds(time) {
+  const [days, rest] = time.includes('-') ? time.split('-') : ['0', time];
+  return Number(days) * 86400 + rest.split(':').reduce((sum, part) => sum * 60 + Number(part), 0);
+}
+
+/** Every process: pid, parent, CPU seconds used so far, memory (bytes) and its program's name. */
+function usageTable() {
+  try {
+    return execFileSync('ps', ['-axo', 'pid=,ppid=,time=,rss=,comm='], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
+      .split('\n')
+      .map((l) => /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\d+)\s+(.*)$/.exec(l))
+      .filter(Boolean)
+      .map(([, pid, ppid, time, rss, comm]) => ({ pid: Number(pid), ppid: Number(ppid), cpu: cpuSeconds(time), bytes: Number(rss) * 1024, name: path.basename(comm.trim()) }))
+      .filter((r) => Number.isFinite(r.pid) && Number.isFinite(r.cpu) && Number.isFinite(r.bytes));
+  } catch {
+    return [];
+  }
+}
+
+/** The pids under `root` (it included), by parent. */
+export function pidsUnder(root, table) {
+  const kids = new Map();
+  for (const p of table) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p.pid]);
+  const seen = new Set([root]);
+  const queue = [root];
+  while (queue.length) for (const k of kids.get(queue.shift()) ?? []) if (!seen.has(k)) seen.add(k), queue.push(k);
+  return seen;
+}
+
+/**
+ * What a run costs the Mac, sampled now and then: CPU in cores (from the CPU time its processes used
+ * between two samples) and memory (their resident memory; shared pages count once per process, so it
+ * errs high). `sample(pids)` takes the run's processes: everything under it, and what carries its tag.
+ */
+export function usageMeter() {
+  let last;
+  const peak = { cores: 0, bytes: 0, busiest: [] };
+  return {
+    peak,
+    sample(pids, table = usageTable(), now = Date.now()) {
+      const mine = table.filter((r) => pids.has(r.pid));
+      const cpu = new Map(mine.map((r) => [r.pid, r.cpu]));
+      const bytes = mine.reduce((sum, r) => sum + r.bytes, 0);
+      peak.bytes = Math.max(peak.bytes, bytes);
+      if (last && now > last.at) {
+        // A process new since the last sample used all its CPU time in between.
+        const secs = (now - last.at) / 1000;
+        const each = mine.map((r) => ({ name: r.name ?? String(r.pid), cores: Math.max(0, r.cpu - (last.cpu.get(r.pid) ?? 0)) / secs }));
+        const cores = each.reduce((sum, p) => sum + p.cores, 0);
+        if (cores > peak.cores) {
+          peak.cores = cores;
+          // What was busy then, by program: for finding what to make lighter.
+          const by = new Map();
+          for (const p of each) by.set(p.name, (by.get(p.name) ?? 0) + p.cores);
+          peak.busiest = [...by].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([name, c]) => `${name} ${c.toFixed(1)}`);
+        }
+      }
+      last = { at: now, cpu };
+    },
+  };
+}
+
+/** What a run cost, in words. */
+export const usageLine = (peak, wallMs, cores = os.cpus().length) =>
+  `e2e took ${(wallMs / 60_000).toFixed(1)} min; at most ${peak.cores.toFixed(1)} of ${cores} cores and ${(peak.bytes / 1024 ** 3).toFixed(2)} GB of memory${peak.busiest?.length ? ` (busiest then: ${peak.busiest.join(', ')})` : ''}`;
+
 /** A run counts as "under load" when the Mac had more work than cores at some point. */
 export const OVERLOADED = 1.5;
 
@@ -310,17 +394,24 @@ export function rerunArgs(args) {
 /** The command running now (kept off `run`, which is written to the lock file). */
 let current;
 
-function runOnce(cmd, args, env, run) {
+function runOnce(cmd, args, env, run, meter) {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { stdio: 'inherit', env, detached: true });
+    // At a lower priority (it and all it starts: vite, the browsers, the demo daemons): the Mac stays yours.
+    const child = spawn('nice', ['-n', '10', cmd, ...args], { stdio: 'inherit', env, detached: true });
     current = child;
     run.groups = [child.pid];
     let peak = loadPerCore();
+    let tick = 0;
+    let tagged = [];
     const track = setInterval(() => {
       const before = run.groups.length;
-      run.groups = [...new Set([...run.groups, ...groupsUnder(child.pid, processTable())])];
+      const table = processTable();
+      run.groups = [...new Set([...run.groups, ...groupsUnder(child.pid, table)])];
       if (run.groups.length !== before) writeLock(run);
       peak = Math.max(peak, loadPerCore());
+      // The demo daemons are started apart (npx, then their own group): found by the run's tag, now and then.
+      if (tick++ % 4 === 0) tagged = processesOf(run).map((p) => p.pid);
+      meter.sample(new Set([...pidsUnder(child.pid, table), ...tagged]));
     }, 2500);
     child.on('exit', (code, sig) => {
       clearInterval(track);
@@ -405,13 +496,16 @@ async function main(argv) {
   }
 
   const [cmd, ...args] = argv;
-  let { code, peak } = await runOnce(cmd, args, env, run);
+  const meter = usageMeter();
+  const began = Date.now();
+  let { code, peak } = await runOnce(cmd, args, env, run, meter);
+  console.log(usageLine(meter.peak, Date.now() - began));
   await stopRun(run, { graceMs: 1000 });
   const again = code !== 0 && peak > OVERLOADED ? rerunArgs(argv) : undefined;
   if (again) {
     console.log(`The run failed while the Mac was overloaded (load ${peak.toFixed(1)}× its ${os.cpus().length} cores). Re-running just the failed tests once, alone, when the load drops…`);
     for (let t = 0; t < 10 * 60_000 && loadPerCore() > 1; t += 5000) await new Promise((r) => setTimeout(r, 5000));
-    ({ code } = await runOnce(again[0], again.slice(1), env, run));
+    ({ code } = await runOnce(again[0], again.slice(1), { ...env, E2E_WORKERS: '1' }, run, usageMeter()));
     console.log(code === 0 ? 'They pass when run alone: the failure was the load, not the code.' : 'They fail alone too: a real failure.');
   }
   await finish(code);

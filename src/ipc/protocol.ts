@@ -85,5 +85,7 @@ export const DaemonInfo = z.object({
   roomKey: z.string().default('host'),
   startedAt: z.number(),
   keepAlive: z.boolean().optional(),
+  /** Where its workspaces' records and saved conversations are (history/<id>.json): the demo's own folder, else $KLAUD_HOME. */
+  workspaces: z.string().optional(),
 });
 export type DaemonInfo = z.infer<typeof DaemonInfo>;

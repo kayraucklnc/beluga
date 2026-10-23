@@ -1,0 +1,73 @@
+import { test as base } from '@playwright/test';
+import { slotHomes } from '../../../scripts/e2e-lock.mjs';
+import { type Demo, startDemo } from './daemon.js';
+
+export * from '@playwright/test';
+
+/**
+ * Every spec file gets a demo daemon of its own: fresh state, whatever the files before it in this
+ * worker archived, merged or turned off. The worker keeps the next one warming up in its other home
+ * while a file runs, so switching costs nothing. The page finds its daemon through the dev server's
+ * /__klaud/endpoint (src/lib/boot.ts), which is answered here instead.
+ *
+ * Specs read process.env.KLAUD_HOME (its fake-gh.json) and KLAUD_CLAUDE_HOME (the pretend ~/.claude):
+ * in a worker they're the current daemon's. Import `test` and `expect` from here, not @playwright/test.
+ */
+
+// The run's homes (scripts/e2e-lock.mjs, or playwright.config.ts without the lock): this worker's are next to them.
+const run = { home: process.env.KLAUD_HOME!, claude: process.env.KLAUD_CLAUDE_HOME! };
+const port = Number(process.env.E2E_PORT);
+
+class Demos {
+  private current?: { demo: Demo; file: string; slot: 0 | 1 };
+  private next?: { demo: Promise<Demo>; slot: 0 | 1 };
+
+  constructor(private readonly worker: number) {}
+
+  private start(slot: 0 | 1): Promise<Demo> {
+    return startDemo({ ...slotHomes(run, this.worker, slot), port });
+  }
+
+  /** The daemon for a spec file: the one it already has, else the warm one (then the next one warms up). */
+  async for(file: string): Promise<Demo> {
+    if (this.current?.file === file) return this.current.demo;
+    const old = this.current;
+    const slot = this.next?.slot ?? 0;
+    const demo = this.next?.demo ?? this.start(slot);
+    this.next = undefined;
+    this.current = undefined;
+    // The old daemon goes first: the next one warms up in its home.
+    await old?.demo.stop();
+    const ready = await demo;
+    this.current = { demo: ready, file, slot };
+    process.env.KLAUD_HOME = ready.home;
+    process.env.KLAUD_CLAUDE_HOME = ready.claude;
+    const other = slot === 0 ? 1 : 0;
+    const warming = this.start(other);
+    // Its failure is the next file's (it's awaited there), not an unhandled rejection now.
+    warming.catch(() => undefined);
+    this.next = { demo: warming, slot: other };
+    return ready;
+  }
+
+  async stop(): Promise<void> {
+    const next = this.next?.demo.then((d) => d.stop(), () => undefined);
+    await Promise.all([this.current?.demo.stop(), next]);
+  }
+}
+
+export const test = base.extend<{ demo: Demo }, { demos: Demos }>({
+  demos: [
+    async ({}, use, info) => {
+      const demos = new Demos(info.parallelIndex);
+      await use(demos);
+      await demos.stop();
+    },
+    { scope: 'worker', timeout: 120_000 },
+  ],
+  demo: [async ({ demos }, use, info) => use(await demos.for(info.file)), { auto: true, timeout: 120_000 }],
+  context: async ({ context, demo }, use) => {
+    await context.route('**/__klaud/endpoint', (route) => route.fulfill({ json: demo.endpoint }));
+    await use(context);
+  },
+});

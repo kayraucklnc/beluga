@@ -66,8 +66,18 @@ export function buildScratchAppend(dir: string): string {
   ].join('\n');
 }
 
-/** How a sub-agent's own scratch folder is introduced (also how Beluga tells it already has one). */
-export const AGENT_SCRATCH_MARK = 'Your scratch folder:';
+/** A worktree's run: what it leaves running is stopped when the turn ends, unless kept on purpose (see workspaces/test-procs.ts). */
+export function buildKeepAppend(): string {
+  return [
+    '',
+    'Processes you start here (dev servers, watchers, test runs) are stopped when your turn ends. To leave one',
+    'running on purpose (the user asked to keep it up), start it with BELUGA_KEEP=1 in front, e.g.',
+    '`BELUGA_KEEP=1 npm run dev &`, and say in your answer that it is still running. Only a server or watcher the',
+    'user asked for: never a test run (vitest, playwright, an e2e run), which is always stopped.',
+  ].join('\n');
+}
+
+/** How a sub-agent's own scratch folder is introduced (also how Beluga tells it already has one). */export const AGENT_SCRATCH_MARK = 'Your scratch folder:';
 
 /** Added to each sub-agent's prompt: its own scratch folder, which the owner watches on its page. */
 export function buildAgentScratchNote(dir: string): string {

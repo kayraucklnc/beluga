@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
+import { type Criterion, criteria } from '@klaud/core/board/criteria.js';
 import type { Plan } from '@klaud/core/plans/model.js';
 import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progress.js';
 import { Markdown } from '../chat/Markdown.js';
-import { Button, IconButton } from '../components/ui.js';
+import { Icon } from '../components/Icon.js';
+import { Button, IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
+import { ProofItems } from '../tasks/TaskSections.js';
 import { MILESTONE_STATE, taskWords } from './plans-model.js';
 import { TaskChatMark, TaskStateIcon, TonePill } from './marks.js';
 import { PlanFeed } from './PlanFeed.js';
@@ -94,7 +97,9 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
   const all = view.milestones.flatMap((m) => m.tasks);
   // Its Claude stopped without finishing: one click wakes it with what it missed.
   const canResume = Boolean(t.worktree) && (t.state === 'idle' || t.state === 'stalled');
-  const ticked = new Set((t.issue?.brief.acceptance ?? '').split('\n').flatMap((l) => (/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)?.[1] ? [/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)![1]!.trim()] : [])));
+  // The board's checklist when it has one (ticked, or explained with its reason: deferred, not done), else the plan's.
+  const onBoard = criteria(t.issue?.brief.acceptance);
+  const checks: readonly Criterion[] = onBoard.length ? onBoard : t.task.acceptance.map((text) => ({ text, state: 'open' as const }));
   return (
     <>
       {t.why && (t.state === 'blocked' || t.state === 'later') ? <p className={p.muted}>{t.why}</p> : null}
@@ -128,16 +133,28 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
           <Markdown text={t.task.goal} />
         </section>
       ) : null}
-      {t.task.acceptance.length ? (
-        <section className={p.detailsSection}>
+      {checks.length ? (
+        <section className={p.detailsSection} aria-label="Done when">
           <h4>Done when</h4>
           <ul className={p.checks}>
-            {t.task.acceptance.map((a) => (
-              <li key={a} className={ticked.has(a) ? p.checkDone : undefined}>
-                <span className={p.checkBox} aria-hidden="true" />
-                {a}
-              </li>
-            ))}
+            {checks.map((c, i) => {
+              const explained = c.state === 'deferred' || c.state === 'not_done';
+              return (
+                <li key={i} className={cx(c.state === 'done' && p.checkDone, explained && p.checkExplained)} data-state={c.state}>
+                  <span className={p.checkBox} aria-hidden="true">
+                    {explained ? <Icon name={c.state === 'deferred' ? 'clock' : 'minus'} size={9} /> : null}
+                  </span>
+                  <span>
+                    {c.text}
+                    {explained ? (
+                      <span className={p.checkReason}>
+                        {c.state === 'deferred' ? 'Deferred' : 'Not done'} · {c.reason}
+                      </span>
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -165,6 +182,12 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
               <code key={f}>{f}</code>
             ))}
           </div>
+        </section>
+      ) : null}
+      {t.issue?.proof.length ? (
+        <section className={p.detailsSection} aria-label="Proof">
+          <h4>Proof</h4>
+          <ProofItems issue={t.issue} readOnly />
         </section>
       ) : null}
       {t.task.context ? (

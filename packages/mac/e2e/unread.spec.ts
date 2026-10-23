@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './fixtures.js';
 
 /**
  * The sidebar tells you which conversations finished or need you, Slack-style: a bold name and
@@ -21,8 +21,6 @@ async function openWorkspace(page: Page, name: string, project: string): Promise
   }
   await row(page, name).click();
   await expect(composer(page)).toHaveAttribute('placeholder', new RegExp(name));
-  // Its conversation loads from disk; send after it's in, so nothing races it.
-  await page.waitForTimeout(500);
 }
 
 /** Read whatever other tests left unread, so the Unread section starts as empty as it can. */
@@ -30,8 +28,9 @@ async function readLeftovers(page: Page): Promise<void> {
   for (let i = 0; i < 12; i++) {
     const next = unreadSection(page).locator('[data-signal-row="unread"]').first();
     if (!(await next.isVisible().catch(() => false))) return;
+    const before = await unreadSection(page).locator('[data-signal-row="unread"]').count();
     await next.click();
-    await page.waitForTimeout(150);
+    await expect.poll(() => unreadSection(page).locator('[data-signal-row="unread"]').count()).toBeLessThan(before);
   }
 }
 

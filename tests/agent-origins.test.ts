@@ -22,10 +22,10 @@ describe('where a sub-agent worktree came from', () => {
   });
   afterEach(() => rmSync(home, { recursive: true, force: true }));
 
-  it('finds the session that started each one: its folder, its title, what the agent was asked', () => {
+  it('finds the session that started each one: its folder, its title, what the agent was asked', async () => {
     session(ROOT, 'aaaaaaaa-0000-0000-0000-000000000001', { a1: { worktreePath: WT('a1'), worktreeBranch: 'feat/a1', description: 'Composer package', agentType: 'general-purpose', finished: true } }, line({ type: 'ai-title', aiTitle: 'Klaud terminal work' }));
     session('/elsewhere/macau', 'aaaaaaaa-0000-0000-0000-000000000002', { b1: { worktreePath: WT('b1'), description: 'Terminal engine' } });
-    const found = new AgentOrigins(home).find([WT('a1'), WT('b1'), WT('nobody')]);
+    const found = await new AgentOrigins(home).find([WT('a1'), WT('b1'), WT('nobody')]);
     expect(found).toHaveLength(2);
     const a1 = found.find((o) => o.agentId === 'a1')!;
     expect(a1).toMatchObject({ path: WT('a1'), sessionId: 'aaaaaaaa-0000-0000-0000-000000000001', sessionCwd: ROOT, sessionTitle: 'Klaud terminal work', description: 'Composer package', branch: 'feat/a1', finished: true });
@@ -34,24 +34,24 @@ describe('where a sub-agent worktree came from', () => {
     expect(found.find((o) => o.agentId === 'b1')).toMatchObject({ sessionCwd: '/elsewhere/macau', sessionTitle: 'Split the work into packages' });
   });
 
-  it('by the folder’s name when the side file doesn’t say where its worktree is', () => {
+  it('by the folder’s name when the side file doesn’t say where its worktree is', async () => {
     session(ROOT, 'aaaaaaaa-0000-0000-0000-000000000003', { c1: { description: 'Old agent' } });
-    expect(new AgentOrigins(home).find([WT('c1')])[0]).toMatchObject({ agentId: 'c1', description: 'Old agent' });
+    expect((await new AgentOrigins(home).find([WT('c1')]))[0]).toMatchObject({ agentId: 'c1', description: 'Old agent' });
   });
 
-  it('looks again for one it didn’t know (a new agent), not on every call', () => {
+  it('looks again for one it didn’t know (a new agent), not on every call', async () => {
     const origins = new AgentOrigins(home, { retryMs: 0 });
-    expect(origins.find([WT('late')])).toEqual([]);
+    expect(await origins.find([WT('late')])).toEqual([]);
     session(ROOT, 'aaaaaaaa-0000-0000-0000-000000000004', { late: { worktreePath: WT('late') } });
-    expect(origins.find([WT('late')])[0]?.agentId).toBe('late');
+    expect((await origins.find([WT('late')]))[0]?.agentId).toBe('late');
     const slow = new AgentOrigins(home, { retryMs: 60_000 });
-    expect(slow.find([WT('later')])).toEqual([]);
+    expect(await slow.find([WT('later')])).toEqual([]);
     session(ROOT, 'aaaaaaaa-0000-0000-0000-000000000005', { later: { worktreePath: WT('later') } });
-    expect(slow.find([WT('later')])).toEqual([]);
+    expect(await slow.find([WT('later')])).toEqual([]);
   });
 
-  it('nothing for folders that aren’t sub-agent worktrees, or without a Claude Code folder', () => {
-    expect(new AgentOrigins(home).find(['/work/app/wt/feature'])).toEqual([]);
-    expect(new AgentOrigins(path.join(home, 'missing')).find([WT('a1')])).toEqual([]);
+  it('nothing for folders that aren’t sub-agent worktrees, or without a Claude Code folder', async () => {
+    expect(await new AgentOrigins(home).find(['/work/app/wt/feature'])).toEqual([]);
+    expect(await new AgentOrigins(path.join(home, 'missing')).find([WT('a1')])).toEqual([]);
   });
 });

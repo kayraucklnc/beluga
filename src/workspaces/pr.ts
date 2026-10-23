@@ -330,9 +330,3 @@ export async function createPr(dir: string, pr: { readonly base: string; readonl
   if (!made) throw new Error('GitHub didn’t show the new pull request');
   return made;
 }
-
-/** Merge a pull request on GitHub (a merge commit, keeping each milestone's merges). */
-export async function mergePrOnGitHub(dir: string, number: number): Promise<void> {
-  if (!(await hasGh())) throw new Error('Merging on GitHub needs the GitHub CLI (gh), signed in');
-  await run(gh(), ['pr', 'merge', String(number), '--merge'], dir, 60_000);
-}

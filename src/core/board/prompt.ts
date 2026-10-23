@@ -44,9 +44,9 @@ export function briefPrompt(board: BoardState, issue: Issue): string {
     '',
     'Keep this task true as you work, with the task tools (mcp__beluga_board__*): record each real decision',
     'with task_brief_edit (section "decisions", mode "append", one line with the why) when you make it; tick',
-    'acceptance criteria ("- [x]") as they become true; split off or found work as sub-tasks with task_create',
-    '(parent: this task); attach proof (screenshots in the scratch folder, URLs, a beluga-graph) with',
-    'task_attach_proof. Before ending a turn that changed things, rewrite "handoff" (notes for the next agent:',
+    'acceptance criteria ("- [x]") as they become true (one you can\'t make true gets a short reason on its line,',
+    '"- [ ] … — deferred: why" or "— not done: why": it can\'t go to In Review while one is neither); split off or found work as sub-tasks with task_create',
+    '(parent: this task); attach proof (screenshots in the scratch folder, URLs, a beluga-graph) with',    'task_attach_proof. Before ending a turn that changed things, rewrite "handoff" (notes for the next agent:',
     'where things stand, what is left, gotchas). Don\'t mark it Done yourself unless asked: In Review and Done',
     'follow the pull request. The brief is the task\'s memory for the next agent and for people: keep it short and true.',
   ]

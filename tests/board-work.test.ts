@@ -142,7 +142,7 @@ describe('Claude and the board', () => {
     expect(run.tools!.create({ title: 'Expired sessions', parent: 'BOB-2', acceptance: '- [ ] 401' })).toBe('Created BOB-3: Expired sessions (todo)');
     expect(board.need('BOB-3').origin).toBe('claude');
     expect(run.tools!.relate(undefined, 'blocks', 'BOB-3')).toBe('BOB-2 now blocks BOB-3');
-    expect(run.tools!.list({})).toContain('BOB-3 · Todo · Expired sessions');
+    expect(run.tools!.list({})).toContain('BOB-3 · Ready · Expired sessions');
     expect(run.tools!.get('bob-3')).toContain('Blocked by: BOB-2');
     expect(() => run.tools!.attachProof(undefined, { kind: 'file', title: 'env', path: '/tmp/add-auth/.env' })).toThrow(/secrets/);
     expect(run.tools!.attachProof(undefined, { kind: 'url', title: 'Preview', url: 'https://preview.example' })).toBe('Attached “Preview” to BOB-2');
@@ -225,6 +225,19 @@ describe('plan mode defines the task', () => {
     const t = board.create({ projectId: 'api', title: 'Once' }, work.me());
     await work.start(t.key);
     await expect(work.start(t.key)).rejects.toThrow(/already being worked on/);
+  });
+
+  it('finished work (in review, merged into the plan, done) isn’t started again until it’s reopened', async () => {
+    const { board, work } = setup();
+    for (const status of ['in_review', 'in_plan', 'done'] as const) {
+      const t = board.create({ projectId: 'api', title: `Finished ${status}`, status }, work.me());
+      await expect(work.start(t.key)).rejects.toThrow(/reopen it/);
+      expect(board.need(t.key).worktrees).toEqual([]);
+      // Reopened: back to Ready, and it starts.
+      board.update(t.key, { status: 'todo' }, work.me());
+      await work.start(t.key);
+      expect(board.need(t.key).status).toBe('in_progress');
+    }
   });
 });
 

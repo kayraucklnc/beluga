@@ -10,6 +10,7 @@ import {
 } from '../protocol.js';
 import { type RoomKeys, newNonce, open as openBox, seal, verifyNonce, verifyProof } from './crypto.js';
 import { type P2POptions, type P2PServer, listenP2P } from './p2p.js';
+import { isLate } from './patient-timer.js';
 import { type MessageSocket, fromWebSocket } from './transport.js';
 
 export interface HubOptions {
@@ -311,9 +312,14 @@ export function startHub(opts: HubOptions): Promise<Hub> {
     return p2p.then((server) => (p2pKey = server.publicKey));
   };
 
+  let lastBeat = Date.now();
   const heartbeat = setInterval(() => {
+    const now = Date.now();
+    // Stalled or asleep (the host's daemon runs this hub): pongs may be waiting to be read, so ask again.
+    const late = isLate(now - lastBeat, HEARTBEAT_MS);
+    lastBeat = now;
     for (const c of conns) {
-      if (!c.alive) {
+      if (!c.alive && !late) {
         c.ws.terminate();
         continue;
       }

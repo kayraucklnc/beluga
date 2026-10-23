@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * The panel's Scratch tab: what Claude saves to the workspace's .klaud/scratch/ while it works, live and
@@ -94,7 +94,7 @@ test('Scratch: drawn in outline before anything lands, moving while Claude works
   const shot = files.getByRole('option', { name: /login\.png/ });
   await expect(shot).toBeVisible();
   await expect(shot).toContainText('.context');
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(400); // the screenshot's: its thumbnail fades in
   await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-context-file.png') });
 
   // Claude works again: a row on top of the list says so, where the next file will land.

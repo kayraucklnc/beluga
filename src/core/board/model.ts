@@ -13,16 +13,19 @@ export type StatusTone = 'muted' | 'neutral' | 'claude' | 'info' | 'ok' | 'error
 
 export const STATUS_INFO: Readonly<Record<IssueStatus, { readonly label: string; readonly tone: StatusTone; readonly open: boolean }>> = {
   backlog: { label: 'Backlog', tone: 'muted', open: true },
-  todo: { label: 'Todo', tone: 'neutral', open: true },
+  todo: { label: 'Ready', tone: 'neutral', open: true },
   in_progress: { label: 'In Progress', tone: 'claude', open: true },
   in_review: { label: 'In Review', tone: 'info', open: true },
   /** A plan's task whose milestone passed: merged into the plan's branch, waiting for the plan's PR. */
-  in_plan: { label: 'In Plan', tone: 'info', open: true },
+  in_plan: { label: 'Merged into Plan', tone: 'info', open: true },
   done: { label: 'Done', tone: 'ok', open: false },
   canceled: { label: 'Canceled', tone: 'muted', open: false },
 };
 
 export const isOpen = (status: IssueStatus): boolean => STATUS_INFO[status].open;
+
+/** Its work is finished (in review, merged into its plan, or shipped): nothing to start until it's reopened. */
+export const isFinished = (status: IssueStatus): boolean => status === 'in_review' || status === 'in_plan' || status === 'done';
 
 /** Linear's order: urgent first; "none" sorts last. */
 export const PRIORITIES = ['urgent', 'high', 'medium', 'low', 'none'] as const;
@@ -166,6 +169,8 @@ export interface Issue {
   readonly pr?: IssuePr;
   /** Its worktree went away (archived or deleted) before it was done: screens ask what's next. */
   readonly worktreeGone?: boolean;
+  /** It was kept out of review: an acceptance criterion is neither ticked nor explained (see criteria.ts). */
+  readonly needsChecks?: boolean;
   readonly proof: readonly Proof[];
   readonly activity: readonly Activity[];
   readonly createdAt: number;

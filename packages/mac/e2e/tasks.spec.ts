@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /** Tasks (docs/tasks-and-plans.md): the demo's board, a new task, a task's page, the board and the graph, and a worktree's task. */
 
@@ -40,7 +40,7 @@ test('makes a task, then works on its page', async ({ page }) => {
   await sheet.getByLabel('Goal').fill('Fetch once an hour instead of on every request.');
   await sheet.getByRole('button', { name: 'Create Task' }).click();
   await expect(sheet).toBeHidden();
-  const row = page.getByRole('row', { name: /Cache the exchange rates, Todo/ });
+  const row = page.getByRole('row', { name: /Cache the exchange rates, Ready/ });
   await expect(row).toBeVisible();
   await row.click();
 
@@ -49,8 +49,8 @@ test('makes a task, then works on its page', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Goal' })).toContainText('Fetch once an hour');
   const props = page.getByRole('complementary', { name: 'Properties' });
 
-  // Status from its menu (2 = Todo, 3 = In Progress).
-  await props.getByRole('button', { name: /^Todo$/ }).click();
+  // Status from its menu (2 = Ready, 3 = In Progress).
+  await props.getByRole('button', { name: /^Ready$/ }).click();
   await page.getByRole('menu').getByRole('menuitem', { name: /In Progress/ }).click();
   await expect(props).toContainText('In Progress');
 
@@ -77,6 +77,37 @@ test('makes a task, then works on its page', async ({ page }) => {
   await page.getByLabel('Comment').fill('ECB updates once a day anyway.');
   await page.getByRole('button', { name: 'Comment', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Activity' })).toContainText('ECB updates once a day anyway.');
+});
+
+test('a task merged into its plan looks finished: no Start, what happened instead; Reopen brings Start back', async ({ page }) => {
+  await openTasks(page);
+  await page.getByRole('button', { name: 'New Task', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'New Task' });
+  await sheet.getByRole('button', { name: 'Write title and goal myself' }).click();
+  await sheet.getByLabel('Title').fill('Merged already');
+  await sheet.getByRole('button', { name: 'Create Task' }).click();
+  await expect(sheet).toBeHidden();
+  await page.getByRole('row', { name: /Merged already, Ready/ }).click();
+  const start = page.getByRole('button', { name: 'Start with Claude' });
+  await expect(start).toBeVisible();
+
+  // Merged into the plan: its outcome, no Start on the page or in its ⋯ menu.
+  const props = page.getByRole('complementary', { name: 'Properties' });
+  await props.getByRole('button', { name: /^Ready$/ }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: /Merged into Plan/ }).click();
+  await expect(props).toContainText('Merged into Plan');
+  await expect(page.getByTestId('task-outcome')).toContainText('Merged into the plan · ships with the plan’s pull request');
+  await expect(start).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Start Worktree' })).toHaveCount(0);
+  await page.getByRole('navigation', { name: 'Where this task is' }).getByRole('button', { name: 'More' }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu.getByRole('menuitem', { name: /Start with Claude|Start Worktree/ })).toHaveCount(0);
+
+  // ⋯ › Reopen the Task: back to Ready, and Start is back.
+  await menu.getByRole('menuitem', { name: /Reopen the Task/ }).click();
+  await expect(props).toContainText('Ready');
+  await expect(start).toBeVisible();
+  await expect(page.getByTestId('task-outcome')).toHaveCount(0);
 });
 
 test('a column’s +: describe it, pick a priority, Create; the card lands there and Claude writes its title', async ({ page }) => {
@@ -131,6 +162,66 @@ test('a worktree shows the task it’s doing, and opens it', async ({ page }) =>
   await expect(page.getByRole('region', { name: 'Proof' })).toContainText('Hero, desktop');
 });
 
+test('a file proof opens over the task page within 300 ms; ⌘-click and Show in Files go to the file', async ({ page }) => {
+  const openTask = async (): Promise<void> => {
+    const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });
+    if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ position: { x: 60, y: 10 } });
+    await sidebar(page).getByRole('button', { name: 'new-hero', exact: true }).click();
+    await page.getByRole('button', { name: /New hero for the launch/ }).first().click();
+    await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('New hero for the launch');
+  };
+  await page.goto('/');
+  await openTask();
+  const title = page.getByRole('textbox', { name: 'Title' });
+  const proof = page.getByRole('region', { name: 'Proof' }).getByRole('button', { name: 'Hero copy', exact: true });
+
+  // A click: the file, read over the page, at once (timed in the page, from the click to the sheet); the task page stays under it.
+  await page.evaluate(() => {
+    const w = window as unknown as { proofShownIn?: Promise<number> };
+    w.proofShownIn = new Promise<number>((resolve) => {
+      document.addEventListener(
+        'click',
+        () => {
+          const at = performance.now();
+          const shown = (): boolean => [...document.querySelectorAll('[role="dialog"]')].some((d) => d.textContent?.includes('Hero copy'));
+          if (shown()) return resolve(0);
+          const watch = new MutationObserver(() => {
+            if (!shown()) return;
+            watch.disconnect();
+            resolve(performance.now() - at);
+          });
+          watch.observe(document.body, { childList: true, subtree: true });
+        },
+        { capture: true, once: true },
+      );
+    });
+  });
+  await proof.click();
+  const sheet = page.getByRole('dialog', { name: 'Hero copy' });
+  await expect(sheet).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { proofShownIn: Promise<number> }).proofShownIn)).toBeLessThan(300);
+  await expect(sheet.getByRole('heading', { name: 'Build together' })).toBeVisible();
+  // The sheet is modal, so the page under it is hidden from the accessibility tree, but still there.
+  await expect(page.getByRole('textbox', { name: 'Title', includeHidden: true })).toHaveValue('New hero for the launch');
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+  await expect(title).toBeVisible();
+
+  // ⌘-click: no sheet, the Files view on the file.
+  await proof.click({ modifiers: ['Meta'] });
+  await expect(page.getByRole('region', { name: 'hero.md' })).toBeVisible();
+  await expect(sheet).toHaveCount(0);
+  await expect(title).toBeHidden();
+
+  // Show in Files: the same, from the sheet.
+  await openTask();
+  await proof.click();
+  await sheet.getByRole('button', { name: 'Show in Files' }).click();
+  await expect(sheet).toBeHidden();
+  await expect(title).toBeHidden();
+  await expect(page.getByRole('region', { name: 'hero.md' })).toBeVisible();
+});
+
 test('a narrow window: the bar wraps and New Task stays in reach; a task’s properties go on top', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 760 });
   await openTasks(page);
@@ -144,6 +235,32 @@ test('a narrow window: the bar wraps and New Task stays in reach; a task’s pro
   expect((await props.boundingBox())!.y).toBeLessThan((await title.boundingBox())!.y);
   await expect(props.getByRole('button', { name: /In Review/ })).toBeInViewport();
 });
+
+for (const width of [1440, 2560]) {
+  test(`a ${width}px window: the task page spans the middle area and prose keeps a readable line`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await openTasks(page);
+    await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+    await page.getByRole('row', { name: /Add auth to the payment routes/ }).first().click();
+    const props = page.getByRole('complementary', { name: 'Properties' });
+    const activity = page.getByRole('region', { name: 'Activity' });
+    await expect(activity).toBeVisible();
+    // Wide parts reach from the page's left edge to the properties, apart from padding.
+    const mainBox = (await main(page).boundingBox())!;
+    const propsBox = (await props.boundingBox())!;
+    const activityBox = (await activity.boundingBox())!;
+    expect(activityBox.x - mainBox.x).toBeLessThanOrEqual(40);
+    expect(propsBox.x - (activityBox.x + activityBox.width)).toBeLessThanOrEqual(40);
+    // Prose stays capped: the goal's paragraph is no wider than about 90 characters.
+    const goal = page.getByRole('region', { name: 'Goal' }).locator('p').first();
+    // The Goal paragraph must be there: a missing one fails here rather than skipping the check.
+    await expect(goal).toBeVisible();
+    const goalBox = await goal.boundingBox();
+    expect(goalBox, 'the Goal paragraph has a box').not.toBeNull();
+    expect(goalBox!.width).toBeLessThanOrEqual(900);
+    await page.screenshot({ path: `../../.klaud/scratch/task-page-${width}.png` });
+  });
+}
 
 test('Tasks is one project at a time: the one you came from, and the switcher changes it', async ({ page }) => {
   await page.goto('/');

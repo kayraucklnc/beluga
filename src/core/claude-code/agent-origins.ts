@@ -1,4 +1,5 @@
-import { closeSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
+import { closeSync, openSync, readSync, statSync } from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { AgentOrigin } from './model.js';
 import { finishedIn, readMeta } from './agents.js';
@@ -19,15 +20,21 @@ const AGENT_DIR = /[\\/]\.claude[\\/]worktrees[\\/]agent-([\w-]+)\/?$/;
 const RETRY_MS = 10_000;
 const TITLE_TAIL = 256 * 1024;
 
-const list = (dir: string): string[] => {
+const list = async (dir: string): Promise<string[]> => {
   try {
-    return readdirSync(dir);
+    return await readdir(dir);
   } catch {
     return [];
   }
 };
 
-const mtime = (file: string): number => statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? 0;
+const mtime = async (file: string): Promise<number> => {
+  try {
+    return (await stat(file)).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
 
 /** The end of a file (titles are written as a session goes on). */
 function tailLines(file: string, max: number): string[] {
@@ -107,15 +114,15 @@ export class AgentOrigins {
   }
 
   /** Every sub-agent side file Claude Code kept, by agent id. */
-  private reindex(): void {
+  private async reindex(): Promise<void> {
     const index = new Map<string, Located>();
     const projects = path.join(this.home, 'projects');
-    for (const folder of list(projects)) {
+    for (const folder of await list(projects)) {
       const dir = path.join(projects, folder);
-      for (const sessionId of list(dir)) {
+      for (const sessionId of await list(dir)) {
         if (!SESSION_DIR.test(sessionId)) continue;
         const agents = path.join(dir, sessionId, 'subagents');
-        for (const name of list(agents)) {
+        for (const name of await list(agents)) {
           const id = META_FILE.exec(name)?.[1];
           if (id) index.set(id, { metaFile: path.join(agents, name), sessionFile: path.join(dir, `${sessionId}.jsonl`), sessionId });
         }
@@ -125,11 +132,11 @@ export class AgentOrigins {
     this.indexedAt = this.now;
   }
 
-  private originOf(worktree: string, agentId: string, at: Located): AgentOrigin {
+  private async originOf(worktree: string, agentId: string, at: Located): Promise<AgentOrigin> {
     const meta = readMeta(at.metaFile);
     const finished = finishedIn(at.metaFile);
     const session = sessionFacts(at.sessionFile);
-    const lastAt = Math.max(mtime(at.metaFile), mtime(at.metaFile.replace(/\.meta\.json$/, '.jsonl')));
+    const lastAt = Math.max(await mtime(at.metaFile), await mtime(at.metaFile.replace(/\.meta\.json$/, '.jsonl')));
     return {
       path: worktree,
       agentId,
@@ -144,22 +151,22 @@ export class AgentOrigins {
     };
   }
 
-  /** The origins of these sub-agent worktrees (those Claude Code still has a record of). */
-  find(worktrees: readonly string[]): AgentOrigin[] {
+  /** The origins of these sub-agent worktrees (those Claude Code still has a record of). Not called again before it resolves. */
+  async find(worktrees: readonly string[]): Promise<AgentOrigin[]> {
     const out: AgentOrigin[] = [];
     for (const wt of worktrees) {
       const agentId = AGENT_DIR.exec(wt)?.[1];
       if (!agentId) continue;
-      if (!this.index.has(agentId) && this.now - this.indexedAt >= (this.opts.retryMs ?? RETRY_MS)) this.reindex();
+      if (!this.index.has(agentId) && this.now - this.indexedAt >= (this.opts.retryMs ?? RETRY_MS)) await this.reindex();
       const at = this.index.get(agentId);
       if (!at) continue;
-      const stamp = mtime(at.metaFile);
+      const stamp = await mtime(at.metaFile);
       const known = this.cache.get(wt);
       if (known && known.at === stamp) {
         out.push(known.origin);
         continue;
       }
-      const origin = this.originOf(wt, agentId, at);
+      const origin = await this.originOf(wt, agentId, at);
       this.cache.set(wt, { origin, at: stamp });
       out.push(origin);
     }

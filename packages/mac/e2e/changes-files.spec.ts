@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * Changes and Files, side by side: a changed file shows as itself too (Markdown formatted,

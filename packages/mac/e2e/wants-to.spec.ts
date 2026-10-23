@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * The request pop-up (a friend’s Claude “wants to…”) against the demo with the network on: mention a screenshot to mia and her

@@ -65,9 +65,10 @@ function Toasts() {
 function useOverlays() {
   const { client, ui } = useKlaud();
   const overlay = useApp((st) => st.overlay);
-  const state = useApp((st) => st);
   useEffect(() => {
     if (!overlay) return;
+    // Read here, not watched: watching the whole state redrew the whole window on every streamed event (KLD-48).
+    const state = client.store.getState();
     client.store.dispatch({ type: 'overlay', overlay: undefined });
     const channel = channelOf(state.view);
     const wsId = state.view.kind === 'workspace' ? state.view.id : undefined;
@@ -122,7 +123,7 @@ function useShortcuts() {
       } else if (e.altKey && e.metaKey && !e.shiftKey && e.code === 'Digit0') {
         // ⌥⌘0 shows and hides the right panel, as in Xcode (⌥⌘I still does too).
         e.preventDefault();
-        byKey('panel', togglePanel);
+        byKey('panel', () => togglePanel(state.view));
       } else if (e.altKey && e.metaKey && !e.shiftKey && /^Digit[1-7]$/.test(e.code)) {
         // ⌥⌘1…7: the panel's Changes, Files, Terminal, Info, History, Scratch and Background.
         e.preventDefault();
@@ -144,7 +145,7 @@ function useShortcuts() {
         zoom('reset');
       } else if (e.altKey && cmd && e.code === 'KeyI') {
         e.preventDefault();
-        byKey('panel', togglePanel);
+        byKey('panel', () => togglePanel(state.view));
       } else if (e.ctrlKey && e.metaKey && e.code === 'KeyS') {
         e.preventDefault();
         setPrefs({ sidebar: !prefs.sidebar });

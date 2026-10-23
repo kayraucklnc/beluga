@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, Steer } from '../src/agent/types.js';
-import { AgentHost, READS_AFTER_STEP, planSteer } from '../src/core/agent-host.js';
+import { AgentHost, planSteer } from '../src/core/agent-host.js';
+import { READS_AFTER_STEP } from '../src/shared/claude-notices.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { BodyOf } from '../src/protocol.js';
 import { STEERED_IN } from '../src/shared/claude-notices.js';
@@ -127,8 +128,8 @@ describe('planSteer', () => {
   });
 
   it('a quiet spell spent thinking says so, and is never taken for dead', () => {
-    expect(planSteer({ lastEventAt: now - 90_000, between: false, thinking: true }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was thinking for 2m; reading your message' });
-    expect(planSteer({ lastEventAt: now - 90_000, between: false }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was quiet for 2m; reading your message' });
+    expect(planSteer({ lastEventAt: now - 90_000, between: false, thinking: true }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was thinking for 1m; reading your message' });
+    expect(planSteer({ lastEventAt: now - 90_000, between: false }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was quiet for 1m; reading your message' });
     expect(planSteer({ lastEventAt: now - 8 * MIN, between: false, thinking: true }, now).kind).toBe('interrupt');
   });
 });

@@ -6,8 +6,9 @@ import type { Action, LogItem, Store } from '../store.js';
 import type { Workspace } from '../../workspaces/types.js';
 import type { WorkspaceController, WorktreeEvent } from '../workspace-controller.js';
 import { Board, type IssuePatch, type NewIssue } from './board.js';
+import { needsChecksText, unexplained } from './criteria.js';
 import { briefPrompt, boardNote, definePrompt, describeIssue, describeList } from './prompt.js';
-import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, filterIssues, isOpen, issueForWorkspace, titleFromName } from './model.js';
+import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, filterIssues, isFinished, isOpen, issueForWorkspace, titleFromName } from './model.js';
 
 /**
  * The board at work: tasks open with worktrees and follow their pull requests, a task can start
@@ -118,6 +119,8 @@ export class BoardWork {
     // Claude still writing it: its worktree is named after, and Claude starts with, the real words.
     await this.drafts.get(this.board.need(ref).id);
     const issue = this.board.need(ref);
+    // Finished work starts again only deliberately: reopened (back to Ready) first.
+    if (isFinished(issue.status)) throw new Error(`${issue.key} is ${STATUS_INFO[issue.status].label.toLowerCase()}: reopen it to start it again`);
     // One worktree per task at a time: another one already doing it is where to go.
     const doing = issue.worktrees.at(-1);
     const live = doing && !issue.worktreeGone ? this.workspaces().find((w) => w.id === doing && !w.archived) : undefined;
@@ -402,6 +405,12 @@ export class BoardWork {
       update: (key, patch) => {
         const issue = pick(key);
         const assignee = assign(patch.assign);
+        // To review only when every criterion is ticked or explained: its Claude is told which aren't.
+        const open = patch.status === 'in_review' && issue.status !== 'in_review' ? unexplained(issue.brief.acceptance) : [];
+        if (open.length) {
+          board.holdForChecks(issue.id);
+          throw new Error(needsChecksText(issue.key, open));
+        }
         const next = board.update(issue.id, { ...(patch.title ? { title: patch.title } : {}), ...(patch.status ? { status: patch.status } : {}), ...(patch.priority ? { priority: patch.priority } : {}), ...(patch.labels ? { labels: patch.labels } : {}), ...(patch.estimate !== undefined ? { estimate: patch.estimate } : {}), ...(assignee !== undefined ? { assignee } : {}) }, by());
         return `${next.key} is now: ${next.title} · ${next.status} · priority ${next.priority}${next.estimate ? ` · ${next.estimate} points` : ''}`;
       },

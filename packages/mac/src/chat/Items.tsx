@@ -14,6 +14,7 @@ import { useActions } from '../lib/actions.js';
 import { toast, useApp, useKlaud } from '../lib/klaud.js';
 import { usePrefs } from '../lib/prefs.js';
 import { useClock } from '../lib/window-active.js';
+import { countRender } from '../lib/render-count.js';
 import { ImageGrid } from './ChatImages.js';
 import { openLightbox } from './images.js';
 import { brandText } from '../lib/brand.js';
@@ -78,6 +79,7 @@ function Folding({ children }: { children: ReactNode }) {
 
 /** A message from a person (or a Claude speaking in the chat). `continued`: same author, shortly after. */
 export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: ChatItem; continued: boolean; mine: boolean }) {
+  countRender(`chat:${item.id}`);
   const prefs = usePrefs();
   // Screenshots and other images sent with the message show as pictures, under its words.
   const { text, images } = useMemo(() => splitImages(item.text), [item.text]);
@@ -144,13 +146,17 @@ function statusOf(item: AgentItem, now: number): { label: string; tone: 'claude'
       return { label: 'Stopped', tone: 'error' };
     case 'denied':
       return { label: 'Declined', tone: 'warn' };
+    case 'interrupted':
+      // klaud stopped while it ran (quit, a crash): not a problem to flag, just where it was left.
+      return { label: 'Interrupted', tone: 'muted' };
     default:
       return { label: `Working · ${formatDuration(now - item.ts)}`, tone: 'claude' };
   }
 }
 
 /** What Claude is doing (or did): its steps, sub-agents and background work, then its answer. */
-export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentItem; tasks?: readonly TaskView[] | undefined }) {
+export const AgentCard = memo(function AgentCard({ item, tasks, latest = false }: { item: AgentItem; tasks?: readonly TaskView[] | undefined; /** The newest Claude card in its conversation. */ latest?: boolean }) {
+  countRender(`card:${item.id}`);
   const selfId = useApp((st) => st.selfId);
   const running = isRunning(item.status) && item.status !== 'queued';
   const now = useNow(running);
@@ -170,8 +176,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks }: { item: AgentI
   const answered = item.status === 'done' && Boolean(item.text);
   // A queued message Claude read mid-turn: its answer is the card above's.
   const steeredIn = item.status === 'done' && item.text === STEERED_IN;
-  // Claude Code stopped at a plan limit: the newest card here offers to go on, in one click.
-  const latest = useApp((st) => st.log.findLast((l) => l.type === 'agent' && l.channel === item.channel)?.id === item.id);
+  // Claude Code stopped at a plan limit: the newest card here (`latest`) offers to go on, in one click.
   const group = useApp((st) => st.peers.length > 1);
   // A run that failed on its own (a usage limit, a crash): what happened in words, and Continue.
   const failure = item.status === 'error' ? decodeFailure(item.text) : undefined;

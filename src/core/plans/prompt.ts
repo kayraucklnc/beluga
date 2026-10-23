@@ -1,3 +1,4 @@
+import { type Criterion, criteria, criterionLine } from '../board/criteria.js';
 import { type BoardState, STATUS_INFO, filterIssues } from '../board/model.js';
 import { AUTONOMY_INFO, type Plan, type PlanBody, TESTS_AT_INFO, diffBodies, milestoneDeps, shownBody } from './model.js';
 import { type MilestoneView, type PlanView, type TaskView, overlaps } from './progress.js';
@@ -207,22 +208,61 @@ function runsWith(body: PlanBody, id: string, titleOf: ReadonlyMap<string, strin
   return `${after}${beside.length ? `; runs alongside ${beside.map(name).join(', ')}` : ''}.`;
 }
 
+/** A task's criteria for a check: its board checklist (ticks and reasons), else the plan's list. */
+const taskCriteria = (t: TaskView): Criterion[] => (t.issue?.brief.acceptance ? criteria(t.issue.brief.acceptance) : t.task.acceptance.map((text) => ({ text, state: 'open' as const })));
+
+const checkLine = (c: Criterion): string => `  ${criterionLine(c)}${c.state === 'open' ? ' (not ticked, no reason)' : ''}`;
+
+/** The plan's deferred criteria, by task: what its final check must settle. */
+export function deferredItems(view: PlanView): Array<{ readonly task: TaskView; readonly criterion: Criterion }> {
+  return view.milestones.flatMap((m) => m.tasks.flatMap((task) => (task.state === 'canceled' ? [] : taskCriteria(task).filter((c) => c.state === 'deferred').map((criterion) => ({ task, criterion })))));
+}
+
+/**
+ * Whether a milestone needs Claude's check even with no pass criteria of its own: one of its tasks
+ * has a criterion neither ticked nor explained, or it's the plan's last and something was deferred.
+ */
+export function criteriaNeedCheck(view: PlanView, m: MilestoneView): boolean {
+  const last = m.index === view.milestones.length - 1;
+  return m.tasks.some((t) => t.state !== 'canceled' && taskCriteria(t).some((c) => c.state === 'open')) || (last && deferredItems(view).length > 0);
+}
+
 /** Ask the head Claude to check a finished milestone. */
 export function checkPrompt(view: PlanView, m: MilestoneView): string {
-  const tasks = m.tasks.map((t) => `- ${t.issue?.key ?? t.task.id} “${t.task.title}” (${STATE_WORDS[t.state]}${t.state === 'stalled' && t.watch ? `: ${t.watch.reason}` : ''}${t.issue?.pr ? `, PR #${t.issue.pr.number} ${t.issue.pr.state.toLowerCase()}` : ''}${t.issue?.branch ? `, branch ${t.issue.branch}` : ''})`);
+  const last = m.index === view.milestones.length - 1;
+  const tasks = m.tasks.flatMap((t) => [
+    `- ${t.issue?.key ?? t.task.id} “${t.task.title}” (${STATE_WORDS[t.state]}${t.state === 'stalled' && t.watch ? `: ${t.watch.reason}` : ''}${t.issue?.pr ? `, PR #${t.issue.pr.number} ${t.issue.pr.state.toLowerCase()}` : ''}${t.issue?.branch ? `, branch ${t.issue.branch}` : ''})`,
+    ...taskCriteria(t).map(checkLine),
+  ]);
+  const deferred = last ? deferredItems(view) : [];
   return [
     `Every task of milestone “${m.milestone.title}” is finished. Check its pass criteria for real, one by one:`,
-    ...m.milestone.criteria.map((c, i) => `${i + 1}. ${c}`),
+    ...(m.milestone.criteria.length ? m.milestone.criteria.map((c, i) => `${i + 1}. ${c}`) : ['(It has none of its own: check its tasks\' acceptance criteria below.)']),
     '',
-    'Its tasks:',
+    'Its tasks, each with its acceptance criteria as its brief has them (ticked, deferred or not done with a reason):',
     ...tasks,
     '',
     'Read their briefs (task_get), handoffs, proof and diffs.',
-    checkTestsNote(view.plan, m.index === view.milestones.length - 1),
+    'A criterion neither ticked nor explained is a gap: fail the milestone on it, unless you check it is true and tick it',
+    '(task_brief_edit with the task\'s key). A "not done" one: say whether the milestone can pass without it.',
+    last ? '' : 'A "deferred" one is checked again at the end of the plan: don\'t fail on it now.',
+    ...(deferred.length
+      ? [
+          '',
+          'This is the plan\'s final check: every criterion deferred along the way must be settled now, against the full suite run:',
+          ...deferred.map((d) => `- ${d.task.issue?.key ?? d.task.task.id}: ${d.criterion.text} (deferred: ${d.criterion.reason})`),
+          'For each one: true on the combined work, tick it ("- [x]", task_brief_edit with that key); not true, fail the',
+          'check and add a fix task for it with plan_update (name the criterion in its goal). Don\'t pass while one is still deferred.',
+        ]
+      : []),
+    '',
+    checkTestsNote(view.plan, last),
     'Then call plan_gate with pass or fail and notes that say,',
     `per criterion, what you checked and found.${m.autonomy === 'autopilot' ? ' On pass, the plan moves on by itself.' : ' The user decides whether it passes.'} If it fails, add the`,
     'fix tasks with plan_update.',
-  ].join('\n');
+  ]
+    .filter((l, i, all) => l !== '' || (all[i - 1] !== '' && i > 0))
+    .join('\n');
 }
 
 /** A task's start couldn't be combined from the branches it builds on: the head Claude fixes the conflict. */
@@ -277,8 +317,10 @@ export function workerNote(view: PlanView, taskId: string): string {
     me.task.touches?.length ? `This task's area: ${me.task.touches.join(', ')}.` : '',
     beside.length ? `Running beside it now, each in its own worktree (stay out of their areas):\n${beside.join('\n')}` : '',
     taskTestsNote(view.plan),
-    'When every acceptance criterion is true and the checks pass, commit your work, rewrite the handoff, and call',
-    'task_update with status in_review: that tells the plan this task is finished. Ask the user only what you must.',
+    'When every acceptance criterion is ticked and the checks pass, commit your work, rewrite the handoff, and call',
+    'task_update with status in_review: that tells the plan this task is finished. One you can\'t make true here',
+    'gets a short reason on its own line instead ("- [ ] … — deferred: suites run at the end of the plan", or',
+    '"— not done: why"): task_update refuses in_review while one is neither. Ask the user only what you must.',
   ]
     .filter(Boolean)
     .join('\n');

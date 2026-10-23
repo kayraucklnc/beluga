@@ -1,4 +1,5 @@
 import type { NotifySettings } from './settings-schema.js';
+import { hhmm } from './clock.js';
 
 // Do Not Disturb, as data: the core checks it before a desktop notification, the screens show it.
 
@@ -32,7 +33,7 @@ export function dndLabel(n: Pick<NotifySettings, 'dnd'>, now = Date.now()): stri
   const until = n.dnd?.until;
   if (until === undefined) return 'until you turn it off';
   const end = new Date(until);
-  const time = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
+  const time = hhmm(until);
   return end.toDateString() === new Date(now).toDateString() ? `until ${time}` : `until tomorrow ${time}`;
 }
 

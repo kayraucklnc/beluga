@@ -58,10 +58,12 @@ function Row({ channel, prompt, mine, className, children }: { channel: string; 
  * What waits for Claude in this conversation, above the box you type in: steer with one now
  * (Claude reads it now), pull it back to edit, drop it, or change the order.
  */
-export function QueueTray({ queue, selfName, onEdit }: { queue: readonly QueuedMessage[]; selfName: string; onEdit: (text: string) => void }) {
+/** `channel`: the conversation it's for, when that isn't the one on screen (a plan's, beside it). */
+export function QueueTray({ queue, selfName, onEdit, channel: given }: { queue: readonly QueuedMessage[]; selfName: string; onEdit: (text: string) => void; channel?: string }) {
   const { client } = useKlaud();
   const api = useApi();
-  const channel = useApp((st) => channelOf(st.view));
+  const onScreen = useApp((st) => channelOf(st.view));
+  const channel = given ?? onScreen;
   const [steering, setSteering] = useState<ReadonlySet<string>>(new Set());
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(() => () => timers.current.forEach(clearTimeout), []);

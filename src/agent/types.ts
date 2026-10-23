@@ -186,6 +186,8 @@ export interface RunProcess {
   alive(): boolean;
   /** SIGTERM, then SIGKILL if it's still there after a moment; resolves once it's gone. */
   kill(): Promise<void>;
+  /** Resolves once it has exited, however that happened. */
+  readonly exited?: Promise<void>;
 }
 
 /**

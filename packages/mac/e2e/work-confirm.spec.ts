@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /** Work that starts Claude or changes git asks first: the toolbar's Review (a popover), the same from the keyboard and the palette, and a right-click menu (an alert). */
 
@@ -13,7 +13,6 @@ async function openWorkspace(page: Page, project: string, name: string): Promise
   if (!(await row.isVisible()) && (await unfold.isVisible())) await unfold.click();
   await row.click();
   await expect(toolbar(page)).toContainText(name);
-  await page.waitForTimeout(400);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -39,6 +38,7 @@ test("Review (under ⋯) says what it does and starts only when you say so", asy
   // Cancel: nothing happens.
   await pop.getByRole('button', { name: 'Cancel' }).click();
   await expect(pop).toBeHidden();
+  // A fixed wait, on purpose: it shows nothing was sent.
   await page.waitForTimeout(300);
   await expect(page.getByText(REVIEW_SENT)).toHaveCount(sent);
   // ⇧⌘R (the menu bar's item) asks the same way.

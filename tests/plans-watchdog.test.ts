@@ -6,6 +6,7 @@ import { Plans } from '../src/core/plans/plans.js';
 import { planView, liveFrom } from '../src/core/plans/progress.js';
 import { COMMAND_LIMIT_MS, REPEAT_MS, STALL_MS, STEER_UNREAD_MS, assess, pulseOf, pulseWords, stepWords, waitingWords } from '../src/core/plans/watchdog.js';
 import { progressCount } from '../src/shared/progress-count.js';
+import { READS_AFTER_STEP } from '../src/shared/claude-notices.js';
 import { PlansWork } from '../src/core/plans/work.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController, WorktreeEvent } from '../src/core/workspace-controller.js';
@@ -321,7 +322,7 @@ describe('the head Claude steers a task, and its card shows what it does now', (
     const feed = () => t.plans.need(t.plan.id).activity.map((a) => a.text);
     expect(feed().at(-1)).toMatch(/hadn't read the head Claude's message in 2m: interrupted it again/);
     // Taken into the running turn but never read: a fresh turn with it.
-    t.event(m!.id, 'text', 'Claude reads this after its current step');
+    t.event(m!.id, 'text', READS_AFTER_STEP);
     expect(t.task().waiting).toEqual([{ requestId: m!.id, prompt: m!.prompt, queued: false }]);
     expect(waitingWords(t.task().waiting!).steer).toBeUndefined();
     await t.later(STEER_UNREAD_MS);

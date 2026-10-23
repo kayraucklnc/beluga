@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /** Graphs Claude draws (docs/graphs.md): /visualize in the demo, then point, click, walk through, open in full. */
 
@@ -9,9 +9,10 @@ async function openWorkspace(page: Page, name: string): Promise<void> {
   const row = sidebar(page).getByRole('button', { name, exact: true });
   if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
   await sidebar(page).getByRole('button', { name, exact: true }).click();
+  await expect(composer(page)).toHaveAttribute('placeholder', new RegExp(name));
 }
 
-/** Earlier specs leave Claude busy here (a long run, queued messages): wait until it's free. */
+/** The demo's Claude may be busy here (a long run, queued messages): wait until it's free. */
 async function untilIdle(page: Page): Promise<void> {
   await expect(page.getByRole('button', { name: 'Stop Claude' })).toHaveCount(0, { timeout: 90_000 });
 }

@@ -1,4 +1,5 @@
 import type { Board } from '../board/board.js';
+import { criteria, criterionLine } from '../board/criteria.js';
 import { type Actor, type Assignee, type BriefSection, type Issue, isOpen } from '../board/model.js';
 import { PlanError } from './edit.js';
 import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, milestoneDeps, taskById } from './model.js';
@@ -7,7 +8,7 @@ import { type Plan, type PlanBody, type PlanTask, allTasks, diffBodies, mileston
  * Approving a plan: its draft goes on the board. New tasks are made (in the plan's milestone, its
  * sub-tasks and blockers wired up), tasks that changed are rewritten (ticks kept), and tasks taken
  * out are canceled. Tasks of milestones that can be worked on now (what they build on has passed)
- * are Todo; the others wait in the Backlog. Started work keeps its status. → the plan as approved, each task with its board task.
+ * are Ready (todo); the others wait in the Backlog. Started work keeps its status. → the plan as approved, each task with its board task.
  */
 
 export interface ApplyActors {
@@ -144,8 +145,9 @@ function applyInto(plan: Plan, board: Board, actors: ApplyActors, linked: Map<st
 
 /** A plan task's brief on the board (`ticked`: the board's checklist now, whose ticks stay). */
 export function briefOf(task: PlanTask, ticked?: string): Partial<Record<BriefSection, string>> {
-  const done = new Set((ticked ?? '').split('\n').flatMap((l) => (/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)?.[1] ? [/^\s*[-*]\s+\[[xX]\]\s+(.*)$/.exec(l)![1]!.trim()] : [])));
-  const acceptance = task.acceptance.map((a) => `- [${done.has(a) ? 'x' : ' '}] ${a}`).join('\n');
+  // Ticks and reasons (deferred, not done) stay with their criterion.
+  const now = new Map(criteria(ticked).map((c) => [c.text, c]));
+  const acceptance = task.acceptance.map((a) => criterionLine(now.get(a) ?? { text: a, state: 'open' })).join('\n');
   return {
     ...(task.goal ? { goal: task.goal } : {}),
     ...(task.context ? { context: task.context } : {}),

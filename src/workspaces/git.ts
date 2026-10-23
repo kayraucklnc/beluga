@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PROJECT_DIR } from '../shared/scratch-dir.js';
+import { limiter } from './limit.js';
 
 export class GitError extends Error {}
 
@@ -124,8 +125,15 @@ export interface Status {
   readonly upstream?: { readonly name: string; readonly ahead: number; readonly behind: number };
 }
 
+/** Status reads run a few at a time (each is one or two git processes): a refresh of many worktrees never forks dozens at once. */
+export const statusSlots = limiter(4);
+
 /** Uncommitted file count plus commits ahead/behind `base`. */
-export async function status(dir: string, base?: string): Promise<Status> {
+export function status(dir: string, base?: string): Promise<Status> {
+  return statusSlots(() => readStatus(dir, base));
+}
+
+async function readStatus(dir: string, base?: string): Promise<Status> {
   // Never take the index lock just to look: a commit (yours or Claude's) may be running.
   const out = await git(dir, ['--no-optional-locks', 'status', '--porcelain=v1', '-b']);
   const [head = '', ...files] = out.split('\n').filter(Boolean);
@@ -230,13 +238,16 @@ export async function mergeInto(mainDir: string, branch: string, target?: string
     await git(mainDir, ['merge', '--no-ff', '--no-edit', branch]);
     return { ok: true };
   } catch (err) {
-    const conflicts = ((await tryGit(mainDir, ['diff', '--name-only', '--diff-filter=U'])) ?? '').split('\n').filter(Boolean);
+    const conflicts = await conflictedFiles(mainDir);
     await tryGit(mainDir, ['merge', '--abort']);
     // Not a conflict (missing branch, no git identity, a hook said no): show git's own reason.
     if (!conflicts.length) throw err;
     return { ok: false, reason: 'conflict', files: conflicts };
   }
 }
+
+/** The files a merge (or stash apply) left conflicted in `dir`. */
+export const conflictedFiles = async (dir: string): Promise<string[]> => ((await tryGit(dir, ['diff', '--name-only', '--diff-filter=U'])) ?? '').split('\n').filter(Boolean);
 
 export const isAncestor = async (cwd: string, a: string, b: string): Promise<boolean> => (await tryGit(cwd, ['merge-base', '--is-ancestor', a, b])) !== undefined;
 
@@ -282,10 +293,9 @@ export async function combineBranches(repo: string, dir: string, branch: string,
     const exists = await tryGit(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]);
     await git(repo, exists ? ['worktree', 'add', dir, branch] : ['worktree', 'add', '-b', branch, dir, branches[0]!]);
   }
-  const conflicted = async (): Promise<string[]> => ((await tryGit(dir, ['diff', '--name-only', '--diff-filter=U'])) ?? '').split('\n').filter(Boolean);
   // A merge left to fix: committed once no conflict markers are left.
   if (await tryGit(dir, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'])) {
-    const files = await conflicted();
+    const files = await conflictedFiles(dir);
     const marked: string[] = [];
     for (const f of files) if (MARKER.test(await readFile(path.join(dir, f), 'utf8').catch(() => ''))) marked.push(f);
     if (marked.length) {
@@ -300,7 +310,7 @@ export async function combineBranches(repo: string, dir: string, branch: string,
     try {
       await git(dir, ['merge', '--no-ff', '--no-edit', b]);
     } catch (err) {
-      const files = await conflicted();
+      const files = await conflictedFiles(dir);
       // Not a conflict (no git identity, a hook said no): nothing is left half-merged.
       if (!files.length) {
         await tryGit(dir, ['merge', '--abort']);

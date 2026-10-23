@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef } from 'react';
 import type { Project } from '@klaud/workspaces/types.js';
 import { worktreeOrigin } from '@klaud/workspaces/origin.js';
-import { planConversations, planOf, planOfPlace } from '@klaud/core/plans/owner.js';
+import { isPlanOwned, planConversations, planOfPlace } from '@klaud/core/plans/owner.js';
 import type { UiAction } from '@klaud/ui/workspace-models.js';
 import { setOverviewView } from '../views/overview/use-overview-prefs.js';
 import { Icon } from '../components/Icon.js';
@@ -14,6 +14,7 @@ import { useActions } from '../lib/actions.js';
 import { inApp } from '../lib/boot.js';
 import { newEmptyGroup, useGroupEdit } from '../lib/group-edit.js';
 import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { sameDeep } from '../lib/stable.js';
 import { openProjectHome } from '../lib/project-home.js';
 import { openSheet } from '../lib/sheets.js';
 import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
@@ -171,11 +172,10 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
   // from the plan). A finished plan's conversation shows only while you're in it.
   const plans = projectPlans(state, p);
   const planHomes = new Set(plansState.plans.map((x) => x.home));
-  const ofPlan = (w: { id: string }): boolean => planOf(state, w.id) !== undefined;
   // A plan you asked to show its tasks' chats: they sit under its row (its home is the plan's page).
   const showTasks = usePrefs().planTaskChats;
   const taskChats = (planId: string) => (showTasks.includes(planId) ? live.filter((w) => !planHomes.has(`ws:${w.id}`) && planConversations(state, planId).includes(w.id)) : []);
-  const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'beluga' && !ofPlan(w) && (!planHomes.has(`ws:${w.id}`) || w.id === here));
+  const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'beluga' && !isPlanOwned(state, w.id) && (!planHomes.has(`ws:${w.id}`) || w.id === here));
   const inPlan = planOfPlace(plansState, board, view);
   // You're in this project: on its home page, in one of its worktrees or chats, or in one of its plans.
   const current = onHome || (here !== undefined && p.workspaces.some((w) => w.id === here)) || plans.some((x) => x.id === inPlan);
@@ -266,7 +266,7 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
         // Folded: only the item you're in stays (its plan, when it's part of one), until you go elsewhere.
         <>
           {plans.filter((x) => x.id === inPlan).map((x) => <PlanRow key={x.id} plan={x} indent={kids} />)}
-          {live.filter((w) => w.id === here && w.kind !== 'main' && !ofPlan(w)).map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)}
+          {live.filter((w) => w.id === here && w.kind !== 'main' && !isPlanOwned(state, w.id)).map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)}
         </>
       ) : (
         <>
@@ -374,7 +374,8 @@ export function Projects() {
   const arrange = useArrange();
   const tree = useRef<HTMLDivElement>(null);
   const collapsed = useUi((u) => u.collapsed);
-  const state = useApp((st) => st);
+  // Each group's pulse and counts, not the whole state: the tree isn't drawn again on every streamed event (KLD-48).
+  const groups = useApp((st) => Object.fromEntries(entries.flatMap((e) => (e.kind === 'group' ? [[e.name, { busy: groupWorking(st, e.projects), tally: groupTally(st, e.projects) }]] : []))), sameDeep);
   const { creating } = useGroupEdit();
   const { dragging, onPointerDown } = useArrangeDrag(tree, entries, arrange, s.ghost ?? '');
   const hover = dragging?.hover;
@@ -415,8 +416,8 @@ export function Projects() {
                       name={e.name}
                       count={e.projects.length}
                       open={!collapsed.includes(`group:${e.name}`)}
-                      busy={groupWorking(state, e.projects)}
-                      tally={groupTally(state, e.projects)}
+                      busy={groups[e.name]?.busy ?? false}
+                      tally={groups[e.name]?.tally ?? { unread: 0, needs: 0, working: false }}
                       dropOn={intoGroup === e.name}
                       menu={moveItems(entries, { group: e.name }, arrange)}
                       onToggle={() => actions.run({ type: 'toggle_group', name: e.name })}

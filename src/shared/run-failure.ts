@@ -1,3 +1,4 @@
+import { hhmm } from './clock.js';
 import { isLimitNotice } from './claude-notices.js';
 
 /**
@@ -8,7 +9,7 @@ import { isLimitNotice } from './claude-notices.js';
  * marker), and screens and plans read it back. Browser-safe.
  */
 
-export type RunFailureKind = 'usage_limit' | 'crash' | 'network' | 'api' | 'stopped';
+type RunFailureKind = 'usage_limit' | 'crash' | 'network' | 'api' | 'stopped';
 
 export interface RunFailure {
   readonly kind: RunFailureKind;
@@ -28,12 +29,6 @@ export const CRASH_RETRY_MS = 30_000;
 
 const MARK = '⁣klaud-failure:';
 const STDERR_LINES = 12;
-
-/** "15:00" (local time). */
-const hhmm = (at: number): string => {
-  const d = new Date(at);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
 
 /** "15:00", or "Oct 24, 15:00" when it isn't today. */
 export function resetWords(at: number, now = Date.now()): string {

@@ -1,6 +1,6 @@
 import type { Actor } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
-import type { Store } from '../store.js';
+import type { LogItem, Store } from '../store.js';
 import type { PlansWork } from './work.js';
 
 /**
@@ -16,7 +16,29 @@ const DAY = 24 * HOUR;
 export async function seedDemoPlan(store: Store, work: PlansWork, board: BoardWork, travel: (msAgo: number) => void): Promise<void> {
   const api = store.getState().projects.find((p) => p.name === 'bob-api');
   if (!api) return;
-  const home = await work.homeFor(api.id, 'Card checkout for launch');
+  const { selfId, self } = store.getState();
+  const me = self?.name ?? 'you';
+  const asked = Date.now() - 4 * DAY;
+  // How the plan began, saved but not loaded (as after a restart): the plan's chat loads it when the plan opens.
+  const home = await work.homeFor(api.id, 'Card checkout for launch', (channel): LogItem[] => [
+    { id: 'demo-plan-asked', type: 'chat', channel, from: selfId, name: me, text: 'Plan card checkout for the launch: behind auth, webhooks that never double-charge, and refunds from the admin.', ts: asked, byAgent: false },
+    {
+      id: 'demo-plan-drafted',
+      type: 'agent',
+      channel,
+      subagents: [],
+      requestId: 'demo-plan-drafted',
+      owner: selfId,
+      ownerName: me,
+      requesterName: me,
+      requester: selfId,
+      status: 'done',
+      text: 'I read the payment routes and the webhooks, and drafted the plan in three milestones: test-mode foundations first, then safe payments, then refunds and the launch checklist.',
+      steps: [],
+      ts: asked + 60_000,
+      endTs: asked + 4 * 60_000,
+    },
+  ]);
   if (!home) return;
   const key = (title: string): string | undefined => board.board.list().find((i) => i.projectId === api.id && i.title === title)?.id;
   const fixtures = key('Stripe test-mode fixtures');

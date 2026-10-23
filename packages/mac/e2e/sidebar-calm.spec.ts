@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /** A calm sidebar: three places at the top; Search, Usage and the terminal elsewhere, one click or key away. */
 

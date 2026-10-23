@@ -183,8 +183,9 @@ async function main(): Promise<void> {
     const rest = args.slice(1).filter((a) => a !== '--keep-alive');
     // The Mac app's web view; BELUGA_ALLOW_ORIGINS adds more (its dev server while developing).
     const extra = (belugaEnv('ALLOW_ORIGINS') ?? '').split(',').map((o) => o.trim()).filter(Boolean);
-    await runDaemon(parseConfig(rest), { version: installedVersion(), keepAlive: args.includes('--keep-alive') || belugaEnv('KEEP_ALIVE') === '1', allowedOrigins: [...APP_ORIGINS, ...extra] });
-    return;
+    // BELUGA_LAG_EVERY_MS: log the event-loop delay more often than every 30 s (scripts/perf-lag.mjs).
+    const lagEveryMs = Number(belugaEnv('LAG_EVERY_MS')) || undefined;
+    await runDaemon(parseConfig(rest), { version: installedVersion(), keepAlive: args.includes('--keep-alive') || belugaEnv('KEEP_ALIVE') === '1', allowedOrigins: [...APP_ORIGINS, ...extra], ...(lagEveryMs ? { lagEveryMs } : {}) });    return;
   }
   const config = parseConfig(args);
   if (config.mode === 'help') {
