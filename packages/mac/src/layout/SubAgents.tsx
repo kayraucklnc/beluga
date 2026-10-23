@@ -102,10 +102,10 @@ export function SubAgentRows({ ws, indent }: { ws: Workspace; indent: number }) 
   const grouped = list.length > 1;
   const folded = grouped && prefs.folded.includes(foldKey);
   const worktreeOf = (sub: SubAgent): Workspace | undefined => (sub.agent.worktree ? projects.flatMap((p) => p.workspaces).find((w) => w.path === sub.agent.worktree!.path) : undefined);
-  // The one you're looking at always shows, even when it's tucked away (or the group is folded).
+  // The one you're looking at always shows when the list is capped; folding hides them all.
   const isOn = (sub: SubAgent): boolean => selected.agent === sub.agent.id || (selected.ws !== undefined && worktreeOf(sub)?.id === selected.ws);
   // The newest few, in start order: an agent finishing never moves or hides a row (BLG-21).
-  const { shown, hidden } = folded ? { shown: list.filter(isOn), hidden: 0 } : expanded ? { shown: list, hidden: 0 } : cappedAgents(list, SHOWN, isOn);
+  const { shown, hidden } = folded ? { shown: [], hidden: 0 } : expanded ? { shown: list, hidden: 0 } : cappedAgents(list, SHOWN, isOn);
   const running = list.filter((sub) => sub.agent.status === 'running').length;
   const summary = subAgentsSummary(list);
   return (
