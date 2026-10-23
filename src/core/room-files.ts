@@ -70,7 +70,7 @@ export class RoomFiles {
     this.deps.system(text, level);
   }
 
-  /** Cancel what's waiting (klaud is quitting). */
+  /** Cancel what's waiting (Beluga is quitting). */
   stop(): void {
     for (const t of this.fsTimers.values()) clearTimeout(t);
     for (const p of this.pending.values()) {
@@ -208,7 +208,7 @@ export class RoomFiles {
     }
   }
 
-  /** Download a file from a friend's share into ~/Downloads/klaud/<friend>/, or to `opts.to` (an absolute path). */
+  /** Download a file from a friend's share into ~/Downloads/Beluga/<friend>/, or to `opts.to` (an absolute path). */
   async download(at: Location, opts: { to?: string } = {}): Promise<string | undefined> {
     const from = peerName(this.store.getState(), at.owner);
     if (!at.path || at.path.endsWith('/')) {

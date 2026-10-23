@@ -34,8 +34,8 @@ async function pair(a: string, b: string, extraA: Parameters<typeof node>[2] = {
 
 const scratch = (name: string): string => realpathSync(mkdtempSync(path.join(os.tmpdir(), `klaud-fix-${name}-`)));
 
-describe('klaud’s own folder (isSecretPath)', () => {
-  const saved = { KLAUD_HOME: process.env.KLAUD_HOME, HOME: process.env.HOME };
+describe('Beluga’s own folder (isSecretPath)', () => {
+  const saved = { BELUGA_HOME: process.env.BELUGA_HOME, HOME: process.env.HOME };
   afterEach(() => {
     for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete process.env[k];
@@ -45,7 +45,7 @@ describe('klaud’s own folder (isSecretPath)', () => {
 
   it('friends’ task folders in it stay usable (screenshots and files can go back); the rest stays secret', async () => {
     const home = path.join(scratch('home'), '.klaud');
-    process.env.KLAUD_HOME = home;
+    process.env.BELUGA_HOME = home;
     const work = path.join(home, 'tasks', 'work', 't_abcdefghijk', 'screens');
     mkdirSync(work, { recursive: true });
     writeFileSync(path.join(work, 'screen.png'), 'png');
@@ -65,7 +65,7 @@ describe('klaud’s own folder (isSecretPath)', () => {
     const base = scratch('home2');
     const home = path.join(base, '.klaud');
     mkdirSync(home, { recursive: true });
-    process.env.KLAUD_HOME = home;
+    process.env.BELUGA_HOME = home;
     process.env.HOME = base;
     if (process.platform === 'darwin') expect(isSecretPath(path.join(base, '.KLAUD', 'identity.json'))).toBe(true);
     const link = path.join(scratch('link'), 'k');

@@ -86,7 +86,7 @@ export function historyLines(before: readonly MessageView[], owner: string): str
 export function systemPrompt(scene: ChatScene): string {
   const others = scene.people.filter((p) => p !== scene.owner);
   return [
-    `You are ${scene.owner}'s Claude, answering in a Klaud chat: ${scene.where}, with ${others.length ? others.join(', ') : 'nobody else yet'} and ${scene.owner}.`,
+    `You are ${scene.owner}'s Claude, answering in a Beluga chat: ${scene.where}, with ${others.length ? others.join(', ') : 'nobody else yet'} and ${scene.owner}.`,
     "People chat here on their own and call Claudes in only when they want one. Each person's Claude runs on its own owner's Mac;",
     'several Claudes may answer the same message, each on its own owner’s behalf.',
     scene.askedAll ? `${scene.asker} asked everyone's Claude to answer their message.` : `${scene.asker} asked you to answer their message.`,

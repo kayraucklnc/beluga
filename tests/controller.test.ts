@@ -32,7 +32,7 @@ beforeEach(async () => {
   mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '--bare', '-b', 'main', path.join(base, 'app.git')], { stdio: 'pipe' });
   sh(repo, 'init', '-b', 'main');
-  sh(repo, 'config', 'user.email', 't@t'); // klaud's own commits and merges need an identity (CI has none)
+  sh(repo, 'config', 'user.email', 't@t'); // Beluga's own commits and merges need an identity (CI has none)
   sh(repo, 'config', 'user.name', 'T');
   writeFileSync(path.join(repo, 'a.txt'), 'one\n');
   sh(repo, 'add', '.');
@@ -118,20 +118,20 @@ describe('WorkspaceController', () => {
     // Made and Claude started before the model answers, under a quick name from the message.
     await waitFor(() => asked.length === 1, 8000);
     const ws = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.kind === 'worktree')!;
-    expect(ws).toMatchObject({ name: 'fix-login-redirect-bug', branch: 'klaud/fix-login-redirect-bug' });
+    expect(ws).toMatchObject({ name: 'fix-login-redirect-bug', branch: 'beluga/fix-login-redirect-bug' });
     expect(asked[0]).toEqual({ prompt: 'Please fix the login redirect bug', channel: `ws:${ws.id}` });
     expect(toasts).not.toContain('Naming the worktree…');
     name('login-redirect');
     await started;
     const renamed = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.id === ws.id)!;
-    expect(renamed).toMatchObject({ name: 'login-redirect', branch: 'klaud/login-redirect', path: ws.path });
-    expect(sh(ws.path, 'branch', '--show-current').trim()).toBe('klaud/login-redirect');
+    expect(renamed).toMatchObject({ name: 'login-redirect', branch: 'beluga/login-redirect', path: ws.path });
+    expect(sh(ws.path, 'branch', '--show-current').trim()).toBe('beluga/login-redirect');
   });
 
   it('keeps the quick name when naming fails', async () => {
     await ctl.startWorktree(projectId(), 'add dark mode', () => Promise.reject(new Error('offline')));
     const ws = store.getState().projects.find((p) => p.root)!.workspaces.find((w) => w.kind === 'worktree')!;
-    expect(ws).toMatchObject({ name: 'add-dark-mode', branch: 'klaud/add-dark-mode' });
+    expect(ws).toMatchObject({ name: 'add-dark-mode', branch: 'beluga/add-dark-mode' });
   });
 
   it('creates a worktree, opens it, runs Claude there, and saves its conversation', async () => {
@@ -189,7 +189,7 @@ describe('WorkspaceController', () => {
     expect(toasts.some((t) => t.includes('uncommitted changes'))).toBe(true);
     writeFileSync(tracked, original);
     await ctl.merge(ws.id);
-    expect(toasts.some((t) => t.startsWith('Merged klaud/clean'))).toBe(true);
+    expect(toasts.some((t) => t.startsWith('Merged beluga/clean'))).toBe(true);
 
     const fork = (await ctl.fork(ws.id, 'clean v2'))!;
     expect(fork.forkedFrom).toBe(ws.id);
@@ -213,7 +213,7 @@ describe('WorkspaceController', () => {
     // No branch (detached): its commits would be lost with it.
     const detached = subAgentWorktree(ws.path, 'a4');
     sh(detached, 'checkout', '-q', '--detach');
-    // Written to just now, in a session Klaud doesn't follow: maybe still working.
+    // Written to just now, in a session Beluga doesn't follow: maybe still working.
     const fresh = subAgentWorktree(ws.path, 'a5');
     const now = Date.now() / 1000;
     utimesSync(path.join(claude, 'projects', ws.path.replace(/[^a-zA-Z0-9]/g, '-'), 'aaaaaaaa-0000-0000-0000-00000000000a', 'subagents', 'agent-a5.meta.json'), now, now);
@@ -243,7 +243,7 @@ describe('WorkspaceController', () => {
     expect(toasts.at(-1)).toBe('Deleted.');
   });
 
-  it('turns a draft into a chat with the first message, in the folder klaud started in', async () => {
+  it('turns a draft into a chat with the first message, in the folder Beluga started in', async () => {
     const launch = path.dirname(repo);
     await ctl.startChat('chats', 'explain   this repo please', launch);
     const chat = store.getState().projects.find((p) => p.id === 'chats')!.workspaces[0]!;
@@ -297,7 +297,7 @@ describe('WorkspaceController', () => {
     expect(store.getState().projects.filter((p) => p.root)).toEqual([]);
     expect(store.getState().hiddenProjects).toEqual([]);
     expect(store.getState().projectGroups).toEqual([{ name: 'work', projects: [] }]);
-    expect(toasts.at(-1)).toMatch(/Removed app from Klaud\. 1 worktree archived/);
+    expect(toasts.at(-1)).toMatch(/Removed app from Beluga\. 1 worktree archived/);
     expect(existsSync(repo)).toBe(true); // the folder stays without the checkbox
     expect(existsSync(ws.path)).toBe(false); // archived, its work kept in the archive
     expect(trashed).toEqual([]);

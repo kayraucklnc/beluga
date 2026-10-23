@@ -36,7 +36,7 @@ export function runNetworkMenuItem(id: string, client: SocketClient): boolean {
 /** A klaud:// link that adds a friend or joins a group: open the sheet ready to accept it. True if it was one. */
 export function openNetworkLink(url: string): boolean {
   const found = findInvitation(url);
-  if (!found || !/^klaud:\/\/(add|join)\/?[#?]/.test(url)) return false;
+  if (!found || !/^(?:beluga|klaud):\/\/(add|join)\/?[#?]/.test(url)) return false;
   openNet(found.group ? { kind: 'join_group', accept: found.text } : { kind: 'add_friend', accept: found.text });
   return true;
 }

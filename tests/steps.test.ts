@@ -60,7 +60,7 @@ describe('bounds and redaction', () => {
   });
 
   it('names tool families and thinking durations', () => {
-    expect(['Bash', 'Read', 'MultiEdit', 'Glob', 'WebSearch', 'Task', 'mcp__klaud__send_chat', 'TodoWrite', 'Weird'].map(toolFamily)).toEqual(['bash', 'read', 'edit', 'search', 'web', 'agent', 'mcp', 'todo', 'other']);
+    expect(['Bash', 'Read', 'MultiEdit', 'Glob', 'WebSearch', 'Task', 'mcp__beluga__send_chat', 'TodoWrite', 'Weird'].map(toolFamily)).toEqual(['bash', 'read', 'edit', 'search', 'web', 'agent', 'mcp', 'todo', 'other']);
     expect(thinkingTitle(12_400, false)).toBe('Thought for 12s');
     expect(thinkingTitle(300, false)).toBe('Thought briefly');
     expect(thinkingTitle(75_000, false)).toBe('Thought for 1m 15s');
@@ -311,14 +311,14 @@ describe('steps in words', () => {
     expect(humanizeTool('mcp__context7__query-docs', {}).done).toBe('Used query docs from context7');
   });
 
-  it("says klaud's tools with who they involve, never a tool name or a task id", () => {
-    expect(humanizeTool('mcp__klaud__who_can', {}).done).toBe('Looked for who can help');
-    expect(humanizeTool('mcp__klaud__ask_person', { person: 'bob', ask: 'Run the tests\nand report' })).toEqual({ done: 'Asked bob’s Claude: Run the tests', doing: 'Asking bob’s Claude: Run the tests', person: 'bob' });
-    expect(humanizeTool('mcp__klaud__wait_for', { task: 't_1' })).toMatchObject({ wait: true, task: 't_1' });
-    expect(humanizeTool('mcp__klaud__run_on', { person: 'bob', command: 'npm test' }).done).toBe('Ran on bob’s Mac: npm test');
-    expect(humanizeTool('mcp__klaud__get_file', { person: 'mia', path: '~/notes/plan.md' }).done).toBe('Got plan.md from mia’s Mac');
+  it("says Beluga's tools with who they involve, never a tool name or a task id", () => {
+    expect(humanizeTool('mcp__beluga__who_can', {}).done).toBe('Looked for who can help');
+    expect(humanizeTool('mcp__beluga__ask_person', { person: 'bob', ask: 'Run the tests\nand report' })).toEqual({ done: 'Asked bob’s Claude: Run the tests', doing: 'Asking bob’s Claude: Run the tests', person: 'bob' });
+    expect(humanizeTool('mcp__beluga__wait_for', { task: 't_1' })).toMatchObject({ wait: true, task: 't_1' });
+    expect(humanizeTool('mcp__beluga__run_on', { person: 'bob', command: 'npm test' }).done).toBe('Ran on bob’s Mac: npm test');
+    expect(humanizeTool('mcp__beluga__get_file', { person: 'mia', path: '~/notes/plan.md' }).done).toBe('Got plan.md from mia’s Mac');
     for (const name of ['who_can', 'ask_person', 'wait_for', 'run_on', 'check', 'cancel', 'answer_question', 'get_file']) {
-      const h = humanizeTool(`mcp__klaud__${name}`, { task: 't_lbTQ6LYNbZrq', person: 'bob' });
+      const h = humanizeTool(`mcp__beluga__${name}`, { task: 't_lbTQ6LYNbZrq', person: 'bob' });
       expect(h.done).not.toMatch(/_|t_lb/);
     }
   });

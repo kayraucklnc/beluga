@@ -9,8 +9,8 @@ export const STRIPE_KEY = /^(rk|sk)_(live|test)_[A-Za-z0-9]{16,}$/;
 /** What's wrong with a pasted key, if anything. */
 export function stripeKeyProblem(key: string): string | undefined {
   if (!key) return 'Paste a key from your Stripe dashboard';
-  if (/^pk_/.test(key)) return 'That’s a publishable key (pk_…). klaud needs a restricted key (rk_…) that can read charges.';
-  if (/^whsec_/.test(key)) return 'That’s a webhook signing secret. klaud needs a restricted key (rk_…) that can read charges.';
+  if (/^pk_/.test(key)) return 'That’s a publishable key (pk_…). Beluga needs a restricted key (rk_…) that can read charges.';
+  if (/^whsec_/.test(key)) return 'That’s a webhook signing secret. Beluga needs a restricted key (rk_…) that can read charges.';
   if (!STRIPE_KEY.test(key)) return 'That doesn’t look like a Stripe key. Restricted keys start with rk_live_ or rk_test_.';
   return undefined;
 }

@@ -15,11 +15,11 @@ function toAnsi(line: Line): string {
     .join('');
 }
 
-/** `klaud view <image> [--ascii]`: print an image right in the terminal. */
+/** `beluga view <image> [--ascii]`: print an image right in the terminal. */
 export async function runView(args: readonly string[]): Promise<number> {
   const file = args.find((a) => !a.startsWith('-'));
   if (!file) {
-    process.stderr.write('Usage: klaud view <image.png|jpg|gif|svg> [--ascii] [--width N]\n');
+    process.stderr.write('Usage: beluga view <image.png|jpg|gif|svg> [--ascii] [--width N]\n');
     return 1;
   }
   try {
@@ -31,7 +31,7 @@ export async function runView(args: readonly string[]): Promise<number> {
     process.stdout.write(`${lines.map(toAnsi).join('\n')}\n${chalk.hex('#7d8590')(`${file} · ${image.width}×${image.height}`)}\n`);
     return 0;
   } catch (err) {
-    process.stderr.write(`klaud view: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(`beluga view: ${err instanceof Error ? err.message : String(err)}\n`);
     return 1;
   }
 }

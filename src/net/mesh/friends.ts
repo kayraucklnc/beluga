@@ -3,7 +3,7 @@ import { readJson, writeJson } from './files.js';
 import { type Card, verifyCard } from './keys.js';
 import { CardSchema, NameSchema } from './schemas.js';
 
-/** Your friends on the klaud network, kept in ~/.klaud/friends.json (readable only by you). */
+/** Your friends on the Beluga network, kept in ~/.beluga/friends.json (readable only by you). */
 
 export const FriendRecord = z.object({
   peerId: z.string(),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { KlaudClient } from '@klaud/ipc/client.js';
+import type { BelugaClient } from '@klaud/ipc/client.js';
 import { inApp } from './boot.js';
 import { useKlaud } from './klaud.js';
 
@@ -10,7 +10,7 @@ type Icon = string | null;
 const cache = new Map<string, Promise<Icon>>();
 const listeners = new Set<(projectId: string) => void>();
 
-function load(client: KlaudClient, key: string): Promise<Icon> {
+function load(client: BelugaClient, key: string): Promise<Icon> {
   let p = cache.get(key);
   if (!p) {
     // "path:/…" is a folder that isn't a project yet.

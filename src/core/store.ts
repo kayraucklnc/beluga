@@ -98,7 +98,7 @@ export interface SaidBy {
   readonly ts: number;
 }
 
-/** A command run on someone's computer (through their klaud), with its output. */
+/** A command run on someone's computer (through their Beluga), with its output. */
 export interface ShellItem {
   readonly id: string;
   readonly type: 'shell';
@@ -201,7 +201,7 @@ export interface Toast {
 
 export type Overlay = 'help' | 'settings' | 'welcome' | 'clear' | 'model' | 'inbox' | 'templates' | 'handoff';
 
-/** Preferences mirrored from ~/.klaud/settings.json (every key here is a settings key). */
+/** Preferences mirrored from ~/.beluga/settings.json (every key here is a settings key). */
 export interface Prefs {
   readonly theme: ThemeName;
   readonly mouse: boolean;
@@ -217,7 +217,7 @@ export interface Prefs {
   /** Compact a conversation on its own when its context passes `autoCompactAt` percent. */
   readonly autoCompact: boolean;
   readonly autoCompactAt: number;
-  /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.klaud/scratch/` folder (watched live in the Mac app). */
+  /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder (watched live in the Mac app). */
   readonly scratchFolder: boolean;
   readonly subagents: Settings['subagents'];
   readonly hiddenButtons: readonly string[];
@@ -262,9 +262,9 @@ export type View =
   | { readonly kind: 'draft_worktree'; readonly projectId: string; readonly back: View }
   /** Someone else's workspace that they shared with you. */
   | { readonly kind: 'shared'; readonly owner: string; readonly id: string; readonly tab: SharedTab }
-  /** A conversation on the klaud network (Mac app): with a friend (`dm:<peerId>`) or in a group (`group:<id>`). */
+  /** A conversation on the Beluga network (Mac app): with a friend (`dm:<peerId>`) or in a group (`group:<id>`). */
   | { readonly kind: 'conversation'; readonly id: string }
-  /** Claude Code sessions running outside klaud, live and read-only (Mac app): all of them, or one session or agent. */
+  /** Claude Code sessions running outside Beluga, live and read-only (Mac app): all of them, or one session or agent. */
   | { readonly kind: 'claude_code'; readonly session?: string; readonly agent?: string }
   /** A project's home (Mac app): start work in a new worktree or ask about it; its worktrees and chats. */
   | { readonly kind: 'project'; readonly id: string; readonly page?: 'history' }
@@ -313,7 +313,7 @@ export const channelOf = (view: View): string =>
 export const shownChannel = (view: View): string | undefined =>
   view.kind === 'conversation' ? view.id : view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' ? channelOf(view) : undefined;
 
-/** What the screens attached to this computer's klaud are looking at (all of them together). */
+/** What the screens attached to this computer's Beluga are looking at (all of them together). */
 export interface Attention {
   /** Conversations some screen shows: new messages there aren't unread. */
   readonly shown: readonly string[];
@@ -321,7 +321,7 @@ export interface Attention {
   readonly visible: readonly string[];
   /** Some screen shows Shared files (every folder there counts as seen). */
   readonly files: boolean;
-  /** Some klaud window is in front (focused, or a terminal that was used lately). */
+  /** Some Beluga window is in front (focused, or a terminal that was used lately). */
   readonly front: boolean;
 }
 
@@ -338,7 +338,7 @@ export interface MyShare {
 }
 
 /**
- * Everything klaud knows that isn't about a screen: the room, people, projects, conversations,
+ * Everything Beluga knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
 export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice {

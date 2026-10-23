@@ -104,7 +104,7 @@ describe('the default branch', () => {
     git(dir, 'push', '-q', '-u', 'origin', 'master');
     const fetched = await fetchRemote(dir);
     expect(fetched.ok).toBe(true);
-    // Newer git sets origin/HEAD while fetching; older git: Klaud asks the remote (ls-remote --symref).
+    // Newer git sets origin/HEAD while fetching; older git: Beluga asks the remote (ls-remote --symref).
     const learned = fetched.ok && fetched.remoteDefault ? `origin/${fetched.remoteDefault}` : await defaultBase(dir);
     expect(learned).toBe('origin/master');
     expect(parseSymref('ref: refs/heads/trunk\tHEAD\nabc123\tHEAD\n')).toBe('trunk');
@@ -151,15 +151,15 @@ describe('Update main', () => {
     writeFileSync(path.join(repo, 'notes.txt'), fileWith({ 4: 'mine' }));
     const out = await ctl.mainSync.stashAndUpdate(pid());
     expect(out).toMatchObject({ kind: 'updated', restored: false, conflicts: ['notes.txt'] });
-    expect(out.stash?.message).toMatch(/^klaud: before updating main/);
-    expect(stashes(repo)).toContain('klaud: before updating main');
+    expect(out.stash?.message).toMatch(/^beluga: before updating main/);
+    expect(stashes(repo)).toContain('beluga: before updating main');
     expect(head(repo)).toBe(head(mate));
   });
 
   it('never touches someone else’s stash entry (finds its own by message)', async () => {
     writeFileSync(path.join(repo, 'notes.txt'), fileWith({ 2: 'x' }));
     const mine = await stashPush(repo, 'test');
-    expect(mine?.message).toMatch(/^klaud: test/);
+    expect(mine?.message).toMatch(/^beluga: test/);
     expect(mine?.sha).toBe(head(repo, 'refs/stash'));
     expect(await stashPush(repo, 'nothing left')).toBeUndefined();
   });
@@ -173,7 +173,7 @@ describe('Update main', () => {
     expect(outcome).toMatchObject({ kind: 'updated', commits: 1 });
     const ws = mgr.find(wsId)!;
     expect(ws.kind).toBe('worktree');
-    expect(ws.branch).toBe('klaud/my-changes');
+    expect(ws.branch).toBe('beluga/my-changes');
     expect(head(ws.path)).toBe(before);
     expect(readFileSync(path.join(ws.path, 'notes.txt'), 'utf8')).toBe(fileWith({ 0: 'mine' }));
     expect(existsSync(path.join(ws.path, 'draft.md'))).toBe(true);

@@ -14,14 +14,14 @@ type NetworkHandlers = { readonly [M in NetworkMethod]: (s: Session, ...args: Ar
 
 const net = networkOf;
 
-/** Turn the network on or off for this klaud now, and next time. */
+/** Turn the network on or off for this Beluga now, and next time. */
 async function setEnabled(s: Session, on: boolean): Promise<ReturnType<typeof networkStatus>> {
   const sw = networkSwitchOf(s);
-  if (!sw) throw new Error('Only the klaud app (its daemon) can be on the network');
+  if (!sw) throw new Error('Only the Beluga app (its daemon) can be on the network');
   saveSettings({ network: on });
   const effective = networkEnabled({ network: on });
   await sw.set(effective);
-  if (effective !== on) throw new Error(on ? 'KLAUD_NETWORK=0 keeps the network off for this klaud' : 'KLAUD_NETWORK=1 keeps the network on for this klaud');
+  if (effective !== on) throw new Error(on ? 'BELUGA_NETWORK=0 keeps the network off for this Beluga' : 'BELUGA_NETWORK=1 keeps the network on for this Beluga');
   return networkStatus(s);
 }
 

@@ -93,7 +93,7 @@ export function pretendSystem(opts: { big?: boolean } = {}): PretendSystem {
         ],
       }),
     },
-    readdir: async (dir) => (dir === '/Applications' ? ['Safari.app', 'Xcode.app', 'Figma.app', 'Klaud.app', '.DS_Store', 'Utilities'] : []),
+    readdir: async (dir) => (dir === '/Applications' ? ['Safari.app', 'Xcode.app', 'Figma.app', 'Beluga.app', '.DS_Store', 'Utilities'] : []),
     exec: async (cmd, args) => {
       ran.push([cmd, ...args].join(' '));
       if (cmd === 'screencapture') {
@@ -105,7 +105,7 @@ export function pretendSystem(opts: { big?: boolean } = {}): PretendSystem {
         copyFileSync(args[args.indexOf('--out') - 1]!, args[args.indexOf('--out') + 1]!);
         return ok();
       }
-      if (cmd === 'osascript') return ok(JSON.stringify([{ id: 4242, app: 'Safari', title: 'Staging' }, { id: 77, app: 'Klaud', title: '' }]));
+      if (cmd === 'osascript') return ok(JSON.stringify([{ id: 4242, app: 'Safari', title: 'Staging' }, { id: 77, app: 'Beluga', title: '' }]));
       if (cmd === 'sw_vers') return ok(args[0] === '-productVersion' ? '26.5\n' : '25F71\n');
       if (cmd === 'system_profiler') return ok(JSON.stringify({ SPHardwareDataType: [{ machine_name: 'MacBook Pro', chip_type: 'Apple M4 Pro', serial_number: 'C02SECRET123' }] }));
       if (cmd === 'df') return ok('Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk3s5 971350180 512000000 412000000 56% /System/Volumes/Data\n');

@@ -228,7 +228,7 @@ export class PlanPilot {
       } catch (err) {
         // Said once (a problem that stays would otherwise fill the history).
         const text = `couldn’t move the plan along: ${err instanceof Error ? err.message : String(err)}`;
-        if (plan.activity.at(-1)?.text !== text) this.deps.plans.note(plan.id, 'problem', text, { kind: 'klaud' });
+        if (plan.activity.at(-1)?.text !== text) this.deps.plans.note(plan.id, 'problem', text, { kind: 'beluga' });
       }
     }
   }
@@ -303,7 +303,7 @@ export class PlanPilot {
     const key = `${plan.id}:${milestoneId}`;
     if (this.opened.has(key)) return;
     this.opened.add(key);
-    openMilestone(plan, milestoneId, this.deps.work.board, { kind: 'klaud' });
+    openMilestone(plan, milestoneId, this.deps.work.board, { kind: 'beluga' });
   }
 
   private step(plan: Plan): void {
@@ -314,7 +314,7 @@ export class PlanPilot {
     if (!view.open.length) return;
     // Every open milestone runs side by side; the limit on tasks at once is the whole plan's.
     for (const m of view.open) this.open(plan, m.milestone.id);
-    for (const t of startable(view, this.failed, this.startingIn(plan))) void this.start(plan, t, { kind: 'klaud' }).catch(() => undefined);
+    for (const t of startable(view, this.failed, this.startingIn(plan))) void this.start(plan, t, { kind: 'beluga' }).catch(() => undefined);
     this.stepCombining(plan, view);
     for (const m of view.open) this.stepMilestone(plan, view, m);
   }
@@ -327,7 +327,7 @@ export class PlanPilot {
     if (m.state !== 'gate' && m.state !== 'checking') return;
     // Nothing to check (no pass criteria, and its tasks' criteria are all settled): autopilot moves on, otherwise it's yours to pass.
     if (!m.milestone.criteria.length && !criteriaNeedCheck(view, m)) {
-      if (m.autonomy === 'autopilot') this.autoPass(plan.id, m.milestone.id, { kind: 'klaud' });
+      if (m.autonomy === 'autopilot') this.autoPass(plan.id, m.milestone.id, { kind: 'beluga' });
       return;
     }
     if (m.run.checkAsked === undefined) {
@@ -351,7 +351,7 @@ export class PlanPilot {
       // Anything else is a real problem: said once in the plan's activity, not swallowed.
       const text = `couldn’t pass the milestone on Autopilot: ${err instanceof Error ? err.message : String(err)}`;
       const plan = this.deps.plans.get(planId);
-      if (plan && plan.activity.at(-1)?.text !== text) this.deps.plans.note(planId, 'problem', text, { kind: 'klaud' });
+      if (plan && plan.activity.at(-1)?.text !== text) this.deps.plans.note(planId, 'problem', text, { kind: 'beluga' });
     }
   }
 
@@ -364,7 +364,7 @@ export class PlanPilot {
     for (const t of tasks) {
       const was = before.get(t.task.id);
       if (!t.issue || (t.state !== 'review' && t.state !== 'done') || !was || FINISHED.has(was)) continue;
-      const by = [...t.issue.activity].reverse().find((a) => a.kind === 'status')?.by ?? { kind: 'klaud' };
+      const by = [...t.issue.activity].reverse().find((a) => a.kind === 'status')?.by ?? { kind: 'beluga' };
       this.deps.plans.note(plan.id, 'finished', `finished ${t.issue.key} “${t.task.title}”`, by);
     }
   }
@@ -411,7 +411,7 @@ export class PlanPilot {
       // Asked to fix it: tried again once its run came and went.
       const asked = this.fixAsked.get(t.issue.id);
       if (c && asked && (busy || last === asked.after)) continue;
-      void this.start(plan, t, { kind: 'klaud' }).catch(() => undefined);
+      void this.start(plan, t, { kind: 'beluga' }).catch(() => undefined);
     }
   }
 
@@ -434,7 +434,7 @@ export class PlanPilot {
     const from = bases.map((b) => issues.find((i) => i.branch === b && i.projectId === issue.projectId)?.key ?? b);
     const was = this.deps.plans.need(plan.id).combining?.[t.task.id];
     if (!was) {
-      this.deps.plans.note(plan.id, 'started', `combining ${from.join(' and ')} for ${issue.key} “${t.task.title}”`, { kind: 'klaud' });
+      this.deps.plans.note(plan.id, 'started', `combining ${from.join(' and ')} for ${issue.key} “${t.task.title}”`, { kind: 'beluga' });
       this.deps.plans.setCombining(plan.id, t.task.id, { at: Date.now(), from });
     }
     const combine = this.deps.combine;
@@ -461,10 +461,10 @@ export class PlanPilot {
     if (!stuck) {
       const after = this.lastRun(plan.home);
       this.fixAsked.set(issue.id, { asks: asks + 1, ...(after ? { after } : {}) });
-      if (!asks) this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: ${res.merging} conflicts in ${res.files.join(', ')}; Claude is fixing it`, { kind: 'klaud' });
+      if (!asks) this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: ${res.merging} conflicts in ${res.files.join(', ')}; Claude is fixing it`, { kind: 'beluga' });
       this.deps.askClaude(fixupPrompt(issue.key, t.task.title, from, res), plan.home, false);
     } else if (!was?.conflict?.stuck) {
-      this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: the conflict in ${res.files.join(', ')} is still there; fix it in ${res.dir} and ${issue.key} starts`, { kind: 'klaud' });
+      this.deps.plans.note(plan.id, 'problem', `combining ${from.join(' and ')} for ${issue.key}: the conflict in ${res.files.join(', ')} is still there; fix it in ${res.dir} and ${issue.key} starts`, { kind: 'beluga' });
     }
     return undefined;
   }
@@ -495,7 +495,7 @@ export class PlanPilot {
       if (t.bases?.length && this.deps.plans.need(plan.id).combining?.[t.task.id]) this.deps.plans.setCombining(plan.id, t.task.id, undefined);
       this.failed.add(issue.id);
       const why = err instanceof Error ? err.message : String(err);
-      this.deps.plans.note(plan.id, 'problem', `couldn’t start ${issue.key}: ${why}`, { kind: 'klaud' });
+      this.deps.plans.note(plan.id, 'problem', `couldn’t start ${issue.key}: ${why}`, { kind: 'beluga' });
       throw err;
     } finally {
       this.starting.delete(issue.id);
@@ -527,7 +527,7 @@ export class PlanPilot {
     } catch (err) {
       // Without one the plan runs as before: tasks from main.
       this.noBranch.add(plan.id);
-      this.deps.plans.note(plan.id, 'problem', `couldn’t make the plan’s branch ${branch}: ${err instanceof Error ? err.message : String(err)}; tasks start from main`, { kind: 'klaud' });
+      this.deps.plans.note(plan.id, 'problem', `couldn’t make the plan’s branch ${branch}: ${err instanceof Error ? err.message : String(err)}; tasks start from main`, { kind: 'beluga' });
     } finally {
       this.branching.delete(plan.id);
       this.schedule();
@@ -596,12 +596,12 @@ export class PlanPilot {
       return;
     }
     const key = `merge:${planId}:${milestoneId}`;
-    const klaud: Actor = { kind: 'klaud' };
+    const beluga: Actor = { kind: 'beluga' };
     // A task started again since it was passed: its worktree isn't retired under its Claude.
     const busy = stillWorking(m);
     if (busy) {
       this.deps.plans.setMerging(planId, milestoneId, undefined);
-      this.deps.plans.note(planId, 'problem', busy, klaud);
+      this.deps.plans.note(planId, 'problem', busy, beluga);
       return;
     }
     // Only tasks In Review (finished) are merged and retired.
@@ -622,7 +622,7 @@ export class PlanPilot {
         // Not a conflict (a dirty checkout, no git identity): said once, and you pass it again.
         this.deps.plans.setMerging(planId, milestoneId, undefined);
         this.deps.allowFixup?.(plan.home, undefined);
-        this.deps.plans.note(planId, 'problem', `couldn’t merge “${m.milestone.title}” into ${branch}: ${err instanceof Error ? err.message : String(err)}`, klaud);
+        this.deps.plans.note(planId, 'problem', `couldn’t merge “${m.milestone.title}” into ${branch}: ${err instanceof Error ? err.message : String(err)}`, beluga);
         return;
       }
     }
@@ -637,10 +637,10 @@ export class PlanPilot {
       if (!stuck) {
         const after = this.lastRun(plan.home);
         this.fixAsked.set(key, { asks: asks + 1, ...(after ? { after } : {}) });
-        if (!asks) this.deps.plans.note(planId, 'problem', `merging “${m.milestone.title}” into ${branch}: ${conflictKey} conflicts in ${res.files.join(', ')}; Claude is fixing it`, klaud);
+        if (!asks) this.deps.plans.note(planId, 'problem', `merging “${m.milestone.title}” into ${branch}: ${conflictKey} conflicts in ${res.files.join(', ')}; Claude is fixing it`, beluga);
         this.deps.askClaude(mergeFixupPrompt(m.milestone.title, branch, conflictKey, res), plan.home, false);
       } else if (!was?.stuck) {
-        this.deps.plans.note(planId, 'problem', `merging “${m.milestone.title}” into ${branch}: the conflict in ${res.files.join(', ')} is still there; fix it in ${res.dir} and the milestone passes`, klaud);
+        this.deps.plans.note(planId, 'problem', `merging “${m.milestone.title}” into ${branch}: the conflict in ${res.files.join(', ')} is still there; fix it in ${res.dir} and the milestone passes`, beluga);
       }
       return;
     }
@@ -650,14 +650,14 @@ export class PlanPilot {
     this.stuckTried.delete(key);
     for (const t of tasks) this.deps.work.board.planMoved(t.issue!.id, 'in_plan', `merged into ${branch}: “${m.milestone.title}” passed`);
     this.deps.plans.setMerging(planId, milestoneId, undefined);
-    if (tasks.length) this.deps.plans.note(planId, 'passed', `merged ${tasks.map((t) => t.issue!.key).join(', ')} into ${branch}`, klaud);
+    if (tasks.length) this.deps.plans.note(planId, 'passed', `merged ${tasks.map((t) => t.issue!.key).join(', ')} into ${branch}`, beluga);
     if (!merge.catchUp) this.passed(planId, milestoneId, merge.by);
     for (const t of tasks) {
       const ws = t.issue!.worktreeGone ? undefined : t.issue!.worktrees.at(-1);
       try {
         await git.retire(plan.projectId, ws, t.issue!.branch, branch);
       } catch (err) {
-        this.deps.plans.note(planId, 'problem', `couldn’t clear away ${t.issue!.key}’s worktree: ${err instanceof Error ? err.message : String(err)}`, klaud);
+        this.deps.plans.note(planId, 'problem', `couldn’t clear away ${t.issue!.key}’s worktree: ${err instanceof Error ? err.message : String(err)}`, beluga);
       }
     }
   }

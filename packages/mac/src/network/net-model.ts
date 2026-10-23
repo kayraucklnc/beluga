@@ -111,7 +111,7 @@ export interface FoundInvitation {
 
 /** A klaud network invitation in some text (a pasted link, a code, a message with one in it). */
 export function findInvitation(text: string): FoundInvitation | undefined {
-  const link = /klaud:\/\/(add|join)\/?(?:#[\w-]{22}(?![\w-])|\?code=[0-9A-Za-z%+-]{8,40})/.exec(text);
+  const link = /(?:beluga|klaud):\/\/(add|join)\/?(?:#[\w-]{22}(?![\w-])|\?code=[0-9A-Za-z%+-]{8,40})/.exec(text);
   if (link) return { text: link[0], group: link[1] === 'join' };
   const trimmed = text.trim();
   if (trimmed.length <= 20 && readCode(trimmed)) return { text: trimmed, group: false };

@@ -20,7 +20,7 @@ import { type Node, node, task } from './helpers.js';
 
 /**
  * Approvals and rules, capabilities, big files and questions between Claudes: simulated people
- * on a local DHT, each with their own klaud. The screen and the device are a pretend Mac.
+ * on a local DHT, each with their own Beluga. The screen and the device are a pretend Mac.
  */
 
 let net: Crowd;
@@ -170,7 +170,7 @@ describe('capabilities: the screen and device info', () => {
     bob.gw.setCapabilities({ levels: { screen: { ...DEFAULT_CAPABILITIES.levels.screen, trusted: 'off' } } });
     const no = kay.gw.ask({ person: 'bob6', ask: 'what is on screen?', needs: ['screen'], by: 'agent' });
     await settle(() => task(kay, no.id)?.state === 'declined');
-    expect(task(kay, no.id)?.result?.summary).toBe("bob6's klaud doesn't let you see the screen");
+    expect(task(kay, no.id)?.result?.summary).toBe("bob6's Beluga doesn't let you see the screen");
     expect(system.ran).toHaveLength(0);
     // Their card says what you're offered now.
     await settle(() => kay.store.getState().gateway.cards[bob.id]?.offers.includes('screen') === false);
@@ -219,7 +219,7 @@ describe('capabilities: the screen and device info', () => {
     expect(parseBattery("Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true")).toMatchObject({ percent: 100, charging: true, power: 'AC Power' });
     expect(parseBattery("Now drawing from 'AC Power'\n")).toBeUndefined();
     const info = await deviceInfo(pretendSystem());
-    expect(info.apps).toEqual(['Figma', 'Klaud', 'Safari', 'Xcode']);
+    expect(info.apps).toEqual(['Beluga', 'Figma', 'Safari', 'Xcode']);
     expect(describeDevice(info)).toContain('4 apps in /Applications');
   });
 });

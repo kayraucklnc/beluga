@@ -89,7 +89,7 @@ export function homeModel(state: Pick<AppState, 'log' | 'conflicts' | 'prs'>, pr
   const recent = (a: Workspace, b: Workspace): number => lastActive(state, b) - lastActive(state, a);
   const live = project.workspaces.filter((w) => !w.archived);
   const main = project.workspaces.find((w) => w.kind === 'main');
-  const worktrees = live.filter((w) => w.kind === 'worktree' && worktreeOrigin(w) === 'klaud').sort(recent);
+  const worktrees = live.filter((w) => w.kind === 'worktree' && worktreeOrigin(w) === 'beluga').sort(recent);
   // The main checkout's own conversation (from before) counts as a question asked there.
   const asks = live.filter((w) => w.askOnly && (w.kind === 'chat' || (w.kind === 'main' && Boolean(w.sessionId)))).sort(recent);
   const archived = project.workspaces.filter((w) => w.archived).sort((a, b) => b.createdAt - a.createdAt);

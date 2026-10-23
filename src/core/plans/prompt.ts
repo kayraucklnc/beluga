@@ -16,8 +16,8 @@ const STATE_WORDS: Readonly<Record<TaskView['state'], string>> = {
   ready: 'ready to start',
   running: 'Claude working',
   asking: 'waiting for an answer',
-  idle: 'stopped without finishing (Klaud wakes it once)',
-  stalled: 'stopped again after Klaud woke it: waits for the user',
+  idle: 'stopped without finishing (Beluga wakes it once)',
+  stalled: 'stopped again after Beluga woke it: waits for the user',
   review: 'in review',
   planned: 'merged into the plan’s branch',
   done: 'done',
@@ -96,9 +96,9 @@ export function planningBrief(plan: Plan, board: BoardState, style: string): str
   const body = shownBody(plan);
   return [
     '',
-    '<klaud_plan_mode>',
-    `This conversation is planning in klaud's Plans: ${plan.body ? 'an approved plan (changes you make are proposed; the user approves them)' : 'a new plan, a draft only you and the user see'}.`,
-    'Write the plan with the plan tools (mcp__klaud_plan__*): plan_write for the whole plan, plan_update for changes,',
+    '<beluga_plan_mode>',
+    `This conversation is planning in Beluga's Plans: ${plan.body ? 'an approved plan (changes you make are proposed; the user approves them)' : 'a new plan, a draft only you and the user see'}.`,
+    'Write the plan with the plan tools (mcp__beluga_plan__*): plan_write for the whole plan, plan_update for changes,',
     'plan_get to see it. Nothing reaches the task board until the user approves the plan; you can\'t approve it yourself.',
     plan.body && plan.autonomy === 'autopilot' ? 'This plan runs on autopilot: changes you make to it now apply at once and can start work, so change only what the plan needs.' : '',
     'Don\'t move to a worktree or change code here: this conversation is for planning.',
@@ -109,7 +109,7 @@ export function planningBrief(plan: Plan, board: BoardState, style: string): str
     HOW_TO_PLAN,
     style.trim() ? `\nThe user's planning style (follow it):\n<planning_style>\n${style.replace(/<\/?planning_style>/gi, '').trim()}\n</planning_style>` : '',
     existing.length ? `\nTasks already on this project's board (don't duplicate them; a plan task can say it builds on one in its context):\n${existing.join('\n')}` : '',
-    '</klaud_plan_mode>',
+    '</beluga_plan_mode>',
   ]
     .filter((l) => l !== undefined)
     .join('\n');
@@ -123,16 +123,16 @@ export function headBrief(view: PlanView): string {
   const warnings = overlaps(view).map(([a, b, files]) => `- “${a.task.title}” and “${b.task.title}” both touch ${files.join(', ')}`);
   return [
     '',
-    '<klaud_plan_head>',
-    `You are the head of the plan “${shownBody(plan)?.title ?? 'plan'}” in klaud's Plans (${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].label}: ${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].hint.toLowerCase()}).`,
-    'Each task runs in its own worktree with its own Claude; klaud starts what\'s ready (up to the plan\'s limit) and',
+    '<beluga_plan_head>',
+    `You are the head of the plan “${shownBody(plan)?.title ?? 'plan'}” in Beluga's Plans (${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].label}: ${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].hint.toLowerCase()}).`,
+    'Each task runs in its own worktree with its own Claude; Beluga starts what\'s ready (up to the plan\'s limit) and',
     'opens every milestone whose dependencies have passed, so independent milestones run side by side, each with',
     'its own check. You coordinate:',
     '- plan_get: the plan and the state of every task (who\'s working, what waits on what).',
     '- plan_message_task: tell a task\'s Claude something. mode "queue" (default) waits until its current turn',
     '  ends, which can be after a 15-minute test run: for a heads-up, a decision it needs later, an FYI.',
     '  mode "steer" reaches it now, interrupting a long command or a stuck turn: only when waiting wastes',
-    '  work: stop a run going the wrong way, or a correction that changes what it does. Klaud delivers a',
+    '  work: stop a run going the wrong way, or a correction that changes what it does. Beluga delivers a',
     '  steered message again if it isn\'t read within 2 minutes; don\'t send it twice.',
     '- plan_start_task: start a ready task now (when the user asks).',
     '- plan_gate: after checking a finished milestone\'s pass criteria, pass or fail it with notes per criterion.',
@@ -144,7 +144,7 @@ export function headBrief(view: PlanView): string {
     plan.paused ? 'The plan is paused: nothing starts until the user resumes it.' : '',
     now.length ? `Now: ${now.length > 1 ? 'milestones' : 'milestone'} ${now.join(', ')}${now.length > 1 ? ', side by side' : ''}; ${view.active.length} tasks in progress, ${view.ready.length} ready.` : 'Every milestone has passed.',
     warnings.length ? `Running side by side and touching the same files (watch for conflicts):\n${warnings.join('\n')}` : '',
-    '</klaud_plan_head>',
+    '</beluga_plan_head>',
   ]
     .filter(Boolean)
     .join('\n');
@@ -268,7 +268,7 @@ export function checkPrompt(view: PlanView, m: MilestoneView): string {
 /** A task's start couldn't be combined from the branches it builds on: the head Claude fixes the conflict. */
 export function fixupPrompt(key: string, title: string, from: readonly string[], c: { readonly dir: string; readonly merging: string; readonly files: readonly string[] }): string {
   return [
-    `${key} “${title}” builds on ${from.join(' and ')}, which aren't merged yet, so klaud is combining their branches into its start. Merging ${c.merging} conflicted, in a hidden worktree only for this:`,
+    `${key} “${title}” builds on ${from.join(' and ')}, which aren't merged yet, so Beluga is combining their branches into its start. Merging ${c.merging} conflicted, in a hidden worktree only for this:`,
     '',
     c.dir,
     '',
@@ -276,14 +276,14 @@ export function fixupPrompt(key: string, title: string, from: readonly string[],
     ...c.files.map((f) => `- ${f}`),
     '',
     'Fix each conflict there with Read and Edit, by its full path: keep what both tasks meant (read their briefs with task_get if you need to), and remove every conflict marker.',
-    "Change nothing else, and don't run git: when no markers are left, klaud commits the merge, finishes combining and starts the task by itself. End your turn with one short line.",
+    "Change nothing else, and don't run git: when no markers are left, Beluga commits the merge, finishes combining and starts the task by itself. End your turn with one short line.",
   ].join('\n');
 }
 
 /** A passed milestone's merge into the plan's branch conflicted: the head Claude fixes it there. */
 export function mergeFixupPrompt(milestone: string, branch: string, key: string, c: { readonly dir: string; readonly merging: string; readonly files: readonly string[] }): string {
   return [
-    `Milestone “${milestone}” passed, so klaud is merging its tasks' branches into the plan's branch ${branch}. Merging ${key} (${c.merging}) conflicted, in a worktree only for this:`,
+    `Milestone “${milestone}” passed, so Beluga is merging its tasks' branches into the plan's branch ${branch}. Merging ${key} (${c.merging}) conflicted, in a worktree only for this:`,
     '',
     c.dir,
     '',
@@ -291,7 +291,7 @@ export function mergeFixupPrompt(milestone: string, branch: string, key: string,
     ...c.files.map((f) => `- ${f}`),
     '',
     'Fix each conflict there with Read and Edit, by its full path: keep what both sides meant (read the tasks\' briefs with task_get if you need to), and remove every conflict marker.',
-    "Change nothing else, and don't run git: when no markers are left, klaud commits the merge, merges the rest and passes the milestone by itself. End your turn with one short line.",
+    "Change nothing else, and don't run git: when no markers are left, Beluga commits the merge, merges the rest and passes the milestone by itself. End your turn with one short line.",
   ].join('\n');
 }
 
@@ -299,7 +299,7 @@ export function mergeFixupPrompt(milestone: string, branch: string, key: string,
 export function recapPrompt(view: PlanView): string {
   return [
     `Every milestone of “${view.body?.title ?? 'the plan'}” has passed. Write a short recap for the user: what was built, per`,
-    'milestone, with the plan’s pull request if there is one, what was decided along the way, and anything left over. Include a klaud-graph',
+    'milestone, with the plan’s pull request if there is one, what was decided along the way, and anything left over. Include a beluga-graph',
     'of what changed when it helps.',
   ].join('\n');
 }

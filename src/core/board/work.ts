@@ -268,7 +268,7 @@ export class BoardWork {
     if (ws.kind !== 'worktree') return;
     const state = this.board.state();
     const linked = (id: string): Issue | undefined => issueForWorkspace(state, id);
-    const klaud: Actor = { kind: 'klaud' };
+    const beluga: Actor = { kind: 'beluga' };
     // Started from a task: the worktree opened under its name (perhaps with "-2" when taken).
     const at = this.expecting.findIndex((e) => e.projectId === ws.projectId && (ws.name === e.name || ws.name.startsWith(`${e.name}-`)));
     if (at >= 0) {
@@ -281,14 +281,14 @@ export class BoardWork {
     const source = from ? (linked(from) ?? (carried ? this.board.get(carried) : undefined)) : undefined;
     if (source) {
       if (carried) this.carried.delete(from!);
-      this.board.linkWorktree(source.id, ws.id, { branch: ws.branch, name: ws.name }, klaud);
-      if (source.status === 'todo' || source.status === 'backlog') this.board.update(source.id, { status: 'in_progress' }, klaud);
+      this.board.linkWorktree(source.id, ws.id, { branch: ws.branch, name: ws.name }, beluga);
+      if (source.status === 'todo' || source.status === 'backlog') this.board.update(source.id, { status: 'in_progress' }, beluga);
       return;
     }
     // Only when you asked for a task per worktree (tasks come from plans). Claude writes its brief: what you said isn't pasted in.
     if (!this.board.autoTasksOn || !this.deps.store.getState().projects.some((p) => p.id === ws.projectId && p.root)) return;
-    const issue = this.board.create({ projectId: ws.projectId, title: titleFromName(ws.name), autoTitle: true, status: 'in_progress', assignee: this.myClaude() }, klaud, 'worktree');
-    this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name }, klaud);
+    const issue = this.board.create({ projectId: ws.projectId, title: titleFromName(ws.name), autoTitle: true, status: 'in_progress', assignee: this.myClaude() }, beluga, 'worktree');
+    this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name }, beluga);
   }
 
   private onAction(action: Action): void {

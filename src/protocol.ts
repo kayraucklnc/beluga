@@ -295,7 +295,7 @@ export const FileOfferBody = z.object({
   note: z.string().max(1000).default(''),
 });
 
-// ---- Running a command on someone's computer (through their klaud) ----
+// ---- Running a command on someone's computer (through their Beluga) ----
 
 /** Most output a command sends back (its tail is kept). */
 export const MAX_SHELL_OUTPUT = 64 * 1024;

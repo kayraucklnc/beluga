@@ -1,13 +1,13 @@
 import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { DaemonInfo } from '../ipc/protocol.js';
-import { klaudHome } from '../workspaces/store.js';
+import { belugaHome } from '../workspaces/store.js';
 
 /** Where the running daemon says how to reach it (port, token). Only you can read it. */
-export const daemonInfoPath = (): string => path.join(klaudHome(), 'daemon.json');
+export const daemonInfoPath = (): string => path.join(belugaHome(), 'daemon.json');
 /** Held while a daemon is starting, so two screens opening at once start only one. */
-export const daemonLockPath = (): string => path.join(klaudHome(), 'daemon.lock');
-export const daemonLogPath = (): string => path.join(klaudHome(), 'logs', 'daemon.log');
+export const daemonLockPath = (): string => path.join(belugaHome(), 'daemon.lock');
+export const daemonLogPath = (): string => path.join(belugaHome(), 'logs', 'daemon.log');
 
 const LOG_LIMIT = 5 * 1024 * 1024;
 

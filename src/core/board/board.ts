@@ -35,10 +35,11 @@ import {
   isOpen,
   prefixFor,
   rankBetween,
+  renamedActors,
 } from './model.js';
 
 /**
- * The board: tasks per project, kept in ~/.klaud/board.json (readable only by you) and mirrored
+ * The board: tasks per project, kept in ~/.beluga/board.json (readable only by you) and mirrored
  * into the shared state for every screen. Every change says who made it and goes into the
  * task's activity; brief edits keep their revisions. Without a folder (tests) it stays in memory.
  */
@@ -404,9 +405,9 @@ export class Board {
     const pr = issue.pr;
     const waiting = pr?.state === 'OPEN' && !pr.draft && pr.review !== 'CHANGES_REQUESTED' && (issue.status === 'backlog' || issue.status === 'todo' || issue.status === 'in_progress');
     if (!waiting) return this.change(issue, { needsChecks: undefined }, [], false);
-    const klaud: Actor = { kind: 'klaud' };
+    const beluga: Actor = { kind: 'beluga' };
     return this.change(issue, { needsChecks: undefined, status: 'in_review', rank: this.lastRank('in_review') }, [
-      this.entry(klaud, 'status', `every criterion is ticked or explained: ${statusText(STATUS_INFO[issue.status].label, STATUS_INFO.in_review.label)}`),
+      this.entry(beluga, 'status', `every criterion is ticked or explained: ${statusText(STATUS_INFO[issue.status].label, STATUS_INFO.in_review.label)}`),
     ]);
   }
 
@@ -514,7 +515,7 @@ export class Board {
       const ask = gone && isOpen(issue.status) && issue.status !== 'in_plan';
       // A deleted worktree can't be opened again: it's no longer the task's.
       const worktrees = how === 'deleted' ? issue.worktrees.filter((w) => w !== workspaceId) : issue.worktrees;
-      this.change(issue, { worktreeGone: ask || undefined, worktrees }, [this.entry({ kind: 'klaud' }, 'worktree', `its worktree was ${how}`)]);
+      this.change(issue, { worktreeGone: ask || undefined, worktrees }, [this.entry({ kind: 'beluga' }, 'worktree', `its worktree was ${how}`)]);
     }
   }
 
@@ -526,30 +527,30 @@ export class Board {
       const before = issue.pr;
       const same = before && before.number === pr.number && before.state === pr.state && before.checks === pr.checks && before.review === pr.review && before.draft === pr.draft && before.title === pr.title;
       if (same) continue;
-      const klaud: Actor = { kind: 'klaud' };
+      const beluga: Actor = { kind: 'beluga' };
       const notes: Activity[] = [];
       let status: IssueStatus | undefined;
-      if (!before || before.number !== pr.number) notes.push(this.entry(klaud, 'pr', `opened pull request #${pr.number}`));
+      if (!before || before.number !== pr.number) notes.push(this.entry(beluga, 'pr', `opened pull request #${pr.number}`));
       if (pr.state === 'MERGED' && before?.state !== 'MERGED') {
-        notes.push(this.entry(klaud, 'pr', `pull request #${pr.number} was merged`));
+        notes.push(this.entry(beluga, 'pr', `pull request #${pr.number} was merged`));
         if (issue.status !== 'canceled') status = 'done';
       } else if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') {
-        notes.push(this.entry(klaud, 'pr', `pull request #${pr.number} was closed without merging`));
+        notes.push(this.entry(beluga, 'pr', `pull request #${pr.number} was closed without merging`));
       } else if (pr.state === 'OPEN') {
         if (pr.review === 'CHANGES_REQUESTED' && before?.review !== 'CHANGES_REQUESTED') {
-          notes.push(this.entry(klaud, 'pr', 'changes were requested on the pull request'));
+          notes.push(this.entry(beluga, 'pr', 'changes were requested on the pull request'));
           if (issue.status === 'in_review') status = 'in_progress';
-        } else if (pr.review === 'APPROVED' && before?.review !== 'APPROVED') notes.push(this.entry(klaud, 'pr', 'the pull request was approved'));
-        if (pr.checks === 'failing' && before?.checks !== 'failing') notes.push(this.entry(klaud, 'pr', 'checks are failing'));
+        } else if (pr.review === 'APPROVED' && before?.review !== 'APPROVED') notes.push(this.entry(beluga, 'pr', 'the pull request was approved'));
+        if (pr.checks === 'failing' && before?.checks !== 'failing') notes.push(this.entry(beluga, 'pr', 'checks are failing'));
         if (!status && pr.review !== 'CHANGES_REQUESTED' && (issue.status === 'backlog' || issue.status === 'todo' || issue.status === 'in_progress') && (!before || before.number !== pr.number || pr.draft !== before.draft) && !pr.draft) status = 'in_review';
       }
       // Not to review while a criterion is neither ticked nor explained: held until it is (see checksSettled).
       const open = status === 'in_review' ? unexplained(issue.brief.acceptance) : [];
       if (open.length) {
         status = undefined;
-        notes.push(this.entry(klaud, 'pr', `kept this out of In Review: ${open.length === 1 ? 'a criterion is' : `${open.length} criteria are`} neither ticked nor explained (${open.map((c) => `“${c.text}”`).join('; ')})`));
+        notes.push(this.entry(beluga, 'pr', `kept this out of In Review: ${open.length === 1 ? 'a criterion is' : `${open.length} criteria are`} neither ticked nor explained (${open.map((c) => `“${c.text}”`).join('; ')})`));
       }
-      if (status && status !== issue.status) notes.push(this.entry(klaud, 'status', `moved this from ${STATUS_INFO[issue.status].label} to ${STATUS_INFO[status].label}`));
+      if (status && status !== issue.status) notes.push(this.entry(beluga, 'status', `moved this from ${STATUS_INFO[issue.status].label} to ${STATUS_INFO[status].label}`));
       const moved = status && status !== issue.status;
       this.change(issue, { pr, ...(moved ? { status, rank: this.lastRank(status!), needsChecks: undefined } : {}), ...(open.length ? { needsChecks: true } : {}) }, notes);
     }
@@ -559,8 +560,8 @@ export class Board {
   worktreeMerged(workspaceId: string): void {
     for (const issue of this.issues) {
       if (issue.worktrees.at(-1) !== workspaceId || issue.status === 'done' || issue.status === 'canceled') continue;
-      const klaud: Actor = { kind: 'klaud' };
-      this.change(issue, { status: 'done' }, [this.entry(klaud, 'worktree', 'its worktree was merged into main'), this.entry(klaud, 'status', `moved this from ${STATUS_INFO[issue.status].label} to Done`)]);
+      const beluga: Actor = { kind: 'beluga' };
+      this.change(issue, { status: 'done' }, [this.entry(beluga, 'worktree', 'its worktree was merged into main'), this.entry(beluga, 'status', `moved this from ${STATUS_INFO[issue.status].label} to Done`)]);
     }
   }
 
@@ -571,8 +572,8 @@ export class Board {
   planMoved(ref: string, status: 'in_plan' | 'done', text: string): Issue {
     const issue = this.need(ref);
     if (issue.status === status || issue.status === 'canceled') return issue;
-    const klaud: Actor = { kind: 'klaud' };
-    return this.change(issue, { status, rank: this.lastRank(status) }, [this.entry(klaud, 'plan', text), this.entry(klaud, 'status', `moved this from ${STATUS_INFO[issue.status].label} to ${STATUS_INFO[status].label}`)]);
+    const beluga: Actor = { kind: 'beluga' };
+    return this.change(issue, { status, rank: this.lastRank(status) }, [this.entry(beluga, 'plan', text), this.entry(beluga, 'status', `moved this from ${STATUS_INFO[issue.status].label} to ${STATUS_INFO[status].label}`)]);
   }
 
   // ------------------------------------------------------------------ settings
@@ -672,10 +673,10 @@ export class Board {
     if (!this.deps.dir) return;
     const file = path.join(this.deps.dir, 'board.json');
     if (!existsSync(file)) return;
-    const raw = readJson(file);
+    const raw = renamedActors(readJson(file));
     const parsed = BoardFile.safeParse(raw);
     if (!parsed.success) {
-      // Never written over: kept aside (a newer Klaud's board, or a damaged file), and this one starts fresh.
+      // Never written over: kept aside (a newer Beluga's board, or a damaged file), and this one starts fresh.
       this.setAside(file, 'unreadable');
       return;
     }

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { belugaEnvBoth } from '../core/beluga-env.js';
 
 /** Commands a project runs in its workspaces: `setup` once per new worktree, `run` on demand. */
 export interface ProjectScripts {
@@ -10,18 +11,22 @@ export interface ProjectScripts {
   readonly skipSetup?: boolean;
 }
 
-export type ScriptSource = 'yours' | 'klaud.json' | 'conductor.json' | 'detected';
+/** The project's own file: beluga.json, or klaud.json from before the rename (read, and kept up to date, where it's the one there). */
+export const PROJECT_FILES = ['beluga.json', 'klaud.json'] as const;
+export type ProjectFileName = (typeof PROJECT_FILES)[number];
+
+export type ScriptSource = 'yours' | ProjectFileName | 'conductor.json' | 'detected';
 
 export interface ResolvedScripts {
   readonly setup?: { readonly command: string; readonly source: ScriptSource };
   readonly run?: { readonly command: string; readonly source: ScriptSource };
-  /** Extra pull request instructions for this project (klaud.json "prPrompt"). */
+  /** Extra pull request instructions for this project (beluga.json "prPrompt"). */
   readonly prPrompt?: string;
 }
 
 const Command = z.string().trim().min(1).max(2000);
 
-/** `klaud.json` at the project root, committed so the whole team shares it. */
+/** `beluga.json` at the project root, committed so the whole team shares it. */
 export const ProjectFile = z.object({
   scripts: z.object({ setup: Command.optional(), run: Command.optional() }).partial().default({}),
   prPrompt: z.string().max(8000).optional(),
@@ -38,11 +43,15 @@ function readJson(file: string): unknown {
   }
 }
 
-/** The project's own klaud.json (or Conductor's conductor.json, which uses the same idea). */
-export function readProjectFile(root: string): { file?: ProjectFile; conductor?: ProjectScripts } {
-  const own = ProjectFile.safeParse(readJson(path.join(root, 'klaud.json')));
+/** Which of the project's own files it has: beluga.json, else an older klaud.json, else (to make) beluga.json. */
+export const projectFileName = (root: string): ProjectFileName => PROJECT_FILES.find((name) => existsSync(path.join(root, name))) ?? PROJECT_FILES[0];
+
+/** The project's own beluga.json or klaud.json (or Conductor's conductor.json, which uses the same idea). */
+export function readProjectFile(root: string): { file?: ProjectFile; name: ProjectFileName; conductor?: ProjectScripts } {
+  const name = projectFileName(root);
+  const own = ProjectFile.safeParse(readJson(path.join(root, name)));
   const conductor = ConductorFile.safeParse(readJson(path.join(root, 'conductor.json')));
-  return { file: own.success ? own.data : undefined, conductor: conductor.success ? conductor.data.scripts : undefined };
+  return { file: own.success ? own.data : undefined, name, conductor: conductor.success ? conductor.data.scripts : undefined };
 }
 
 const LOCKFILES: ReadonlyArray<readonly [string, string]> = [
@@ -105,14 +114,14 @@ export function detectRun(root: string): string | undefined {
 }
 
 /**
- * The scripts that apply to a project, in order of preference: what you set in klaud,
- * then klaud.json, then conductor.json, then a guess from its files.
+ * The scripts that apply to a project, in order of preference: what you set in Beluga,
+ * then beluga.json (or klaud.json), then conductor.json, then a guess from its files.
  */
 export function resolveScripts(root: string, yours: ProjectScripts = {}): ResolvedScripts {
-  const { file, conductor } = readProjectFile(root);
+  const { file, name, conductor } = readProjectFile(root);
   const pick = (key: 'setup' | 'run', detect: (r: string) => string | undefined) => {
     if (yours[key]) return { command: yours[key]!, source: 'yours' as const };
-    if (file?.scripts[key]) return { command: file.scripts[key]!, source: 'klaud.json' as const };
+    if (file?.scripts[key]) return { command: file.scripts[key]!, source: name };
     if (conductor?.[key]) return { command: conductor[key]!, source: 'conductor.json' as const };
     const guess = detect(root);
     return guess ? { command: guess, source: 'detected' as const } : undefined;
@@ -122,21 +131,23 @@ export function resolveScripts(root: string, yours: ProjectScripts = {}): Resolv
   return { ...(setup ? { setup } : {}), ...(run ? { run } : {}), ...(file?.prPrompt ? { prPrompt: file.prPrompt } : {}) };
 }
 
-/** Write the scripts into the project's klaud.json so teammates get them too (keeps other fields). */
-export function saveProjectFile(root: string, scripts: ProjectScripts): void {
-  const file = path.join(root, 'klaud.json');
+/** Write the scripts into the project's beluga.json (or its older klaud.json) so teammates get them too (keeps other fields). */
+export function saveProjectFile(root: string, scripts: ProjectScripts): ProjectFileName {
+  const name = projectFileName(root);
+  const file = path.join(root, name);
   const current = (readJson(file) as Record<string, unknown> | undefined) ?? {};
   const merged = { ...current, scripts: { ...((current.scripts as object | undefined) ?? {}), ...scripts } };
   writeFileSync(file, `${JSON.stringify(merged, null, 2)}\n`);
+  return name;
 }
 
-/** Environment for scripts, matching what Conductor provides so existing scripts work. */
+/** Environment for scripts, matching what Conductor provides so existing scripts work (and KLAUD_*, from before the rename). */
 export function scriptEnv(ws: { path: string; name: string; projectRoot: string; branch?: string }): Record<string, string> {
   return {
-    KLAUD_WORKSPACE_PATH: ws.path,
-    KLAUD_WORKSPACE_NAME: ws.name,
-    KLAUD_ROOT_PATH: ws.projectRoot,
-    ...(ws.branch ? { KLAUD_BRANCH: ws.branch } : {}),
+    ...belugaEnvBoth('WORKSPACE_PATH', ws.path),
+    ...belugaEnvBoth('WORKSPACE_NAME', ws.name),
+    ...belugaEnvBoth('ROOT_PATH', ws.projectRoot),
+    ...(ws.branch ? belugaEnvBoth('BRANCH', ws.branch) : {}),
     CONDUCTOR_WORKSPACE_PATH: ws.path,
     CONDUCTOR_WORKSPACE_NAME: ws.name,
     CONDUCTOR_ROOT_PATH: ws.projectRoot,

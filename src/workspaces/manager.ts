@@ -20,6 +20,7 @@ import { ArrangeError, type Item, type Layout, MAX_GROUP_NAME, arrangedOrder, gr
 /** A project (by id) or a group (by name), for arranging the sidebar. */
 export type ArrangeTarget = { readonly project: string } | { readonly group: string };
 import { type ProjectScripts, type ResolvedScripts, resolveScripts, saveProjectFile } from './scripts.js';
+import { PROJECT_DIR } from '../shared/scratch-dir.js';
 
 export const slug = (s: string): string =>
   s
@@ -48,6 +49,9 @@ export const mainId = (root: string): string => `${projectId(root)}:main`;
 
 /** Chats that don't belong to any project live in this pseudo-project. */
 export const CHATS_PROJECT = 'chats';
+/** Beluga's own branches: beluga/<name> (klaud/<name> from before the rename still count as its own). */
+export const BRANCH_PREFIX = 'beluga/';
+export const LEGACY_BRANCH_PREFIX = 'klaud/';
 
 export class WorkspaceError extends Error {}
 
@@ -291,7 +295,7 @@ export class WorkspaceManager {
   }
 
   /**
-   * Remove a project from Klaud (Delete Project): Klaud's own worktrees of it are archived first
+   * Remove a project from Beluga (Delete Project): Beluga's own worktrees of it are archived first
    * (losslessly, restorable if you add it back), then it leaves the project list, the hidden
    * ones, its group and the sidebar's order. One a scanned root would find again is kept out.
    * The folder itself stays unless `trash`: then it goes to the Trash (never deleted outright).
@@ -301,7 +305,7 @@ export class WorkspaceManager {
     if (!project) throw new WorkspaceError('Project not found');
     const root = project.root;
     let archived = 0;
-    for (const w of project.workspaces.filter((x) => x.kind === 'worktree' && !x.archived && worktreeOrigin(x) === 'klaud')) {
+    for (const w of project.workspaces.filter((x) => x.kind === 'worktree' && !x.archived && worktreeOrigin(x) === 'beluga')) {
       try {
         await this.archive(w.id, opts.onPhase ? (phase) => opts.onPhase!(w.id, phase) : undefined);
       } finally {
@@ -480,7 +484,7 @@ export class WorkspaceManager {
 
   /**
    * A task that builds on several unmerged branches starts from them all: what it needs of them
-   * (none already in another, nor in the default branch), combined into `klaud/<key>-base` in a
+   * (none already in another, nor in the default branch), combined into `beluga/<key>-base` in a
    * hidden worktree. One left: that branch itself. A conflict is left there to fix (run again after).
    */
   async combineBase(projectId: string, key: string, branches: readonly string[], into?: string): Promise<g.CombineResult> {
@@ -492,7 +496,7 @@ export class WorkspaceManager {
     if (needed.length < 2) return { ok: true, branch: needed[0] ?? main };
     const dir = path.join(this.basesDir, `${slug(project.name)}-${project.id.slice(0, 4)}`, name);
     mkdirSync(path.dirname(dir), { recursive: true });
-    return g.combineBranches(project.root, dir, `klaud/${name}`, needed);
+    return g.combineBranches(project.root, dir, `${BRANCH_PREFIX}${name}`, needed);
   }
 
   // ------------------------------------------------------------- a plan's branch
@@ -589,15 +593,15 @@ export class WorkspaceManager {
     throw new WorkspaceError('A chat outside a project has no history');
   }
 
-  /** A new worktree on a new klaud/<name> branch starting at `startPoint` (a commit), compared with `base`. */
+  /** A new worktree on a new beluga/<name> branch starting at `startPoint` (a commit), compared with `base`. */
   async createWorktreeAt(projectId: string, name: string, startPoint: string, base?: string): Promise<Workspace> {
     const project = this.repoProject(projectId);
     if (!(await g.isCommit(project.root, startPoint))) throw new WorkspaceError(`There’s no commit ${startPoint.slice(0, 12)} here`);
     const s = slug(name);
     const dir = this.freeDir(project, s);
-    const branch = await this.freeBranch(project.root, `klaud/${s}`);
+    const branch = await this.freeBranch(project.root, `${BRANCH_PREFIX}${s}`);
     await g.git(project.root, ['worktree', 'add', '-b', branch, dir, startPoint]);
-    await g.excludeKlaudDir(dir);
+    await g.excludeOrcaDir(dir);
     await copyEnvFiles(project.root, dir);
     const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: base ?? project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
     this.saveRecord(record);
@@ -689,9 +693,9 @@ export class WorkspaceManager {
     const from = base ?? project.base;
     const s = slug(name);
     const dir = this.freeDir(project, s);
-    const branch = await this.freeBranch(project.root, `klaud/${s}`);
+    const branch = await this.freeBranch(project.root, `${BRANCH_PREFIX}${s}`);
     await g.addWorktree(project.root, dir, branch, from);
-    await g.excludeKlaudDir(dir);
+    await g.excludeOrcaDir(dir);
     await copyEnvFiles(project.root, dir);
     const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: s, path: dir, kind: 'worktree', branch, base: from, createdAt: Date.now(), envSnapshot: await envSnapshot(dir) };
     this.saveRecord(record);
@@ -747,7 +751,7 @@ export class WorkspaceManager {
   /** A Claude chat with no project: its own scratch folder for anything Claude makes. */
   async createStandaloneChat(title: string, inDir?: string): Promise<Workspace> {
     const id = `chat-${randomUUID().slice(0, 8)}`;
-    // Runs in the folder you give it (e.g. where you started klaud), or its own scratch folder.
+    // Runs in the folder you give it (e.g. where you started Beluga), or its own scratch folder.
     const dir = inDir ?? path.join(this.chatsDir, id);
     mkdirSync(dir, { recursive: true });
     const record: WorkspaceRecord = { id, projectRoot: '', name: title.trim().slice(0, 40) || 'chat', path: real(dir), kind: 'chat', createdAt: Date.now() };
@@ -764,9 +768,9 @@ export class WorkspaceManager {
     const dir = this.freeDir(project, s);
     // `opts.base`: start from there (e.g. the latest origin) instead of the source's own commits.
     const from = opts.base ?? (source.kind === 'chat' ? project.base : (source.branch ?? 'HEAD'));
-    const branch = await this.freeBranch(project.root, `klaud/${s}`);
+    const branch = await this.freeBranch(project.root, `${BRANCH_PREFIX}${s}`);
     await g.addWorktree(project.root, dir, branch, from);
-    await g.excludeKlaudDir(dir);
+    await g.excludeOrcaDir(dir);
     await copyEnvFiles(source.kind === 'chat' ? project.root : source.path, dir);
     const record: WorkspaceRecord = {
       id: freshId(),
@@ -842,7 +846,7 @@ export class WorkspaceManager {
   /** Permanently delete: worktree folder, its branch, and its conversation. */
   async remove(id: string): Promise<void> {
     const ws = this.require(id);
-    if (ws.kind === 'main') throw new WorkspaceError("The main folder can't be deleted from klaud");
+    if (ws.kind === 'main') throw new WorkspaceError("The main folder can't be deleted from Beluga");
     if (ws.kind === 'worktree') {
       // Made by another tool (Conductor, Claude Code), even if you've talked in it here: never force-remove it
       // (its uncommitted work isn't ours to discard) and keep its branch.
@@ -855,7 +859,7 @@ export class WorkspaceManager {
     }
     rmSync(this.store.historyFile(id), { force: true });
     if (ws.archived) await dropArchive(ws.projectRoot, this.store.archivesDir, id).catch(() => undefined);
-    // Only ever delete klaud's own scratch folders, never a folder you started a chat in.
+    // Only ever delete Beluga's own scratch folders, never a folder you started a chat in.
     if (ws.projectRoot === '' && real(ws.path).startsWith(real(this.chatsDir) + path.sep)) rmSync(ws.path, { recursive: true, force: true });
     this.records = this.records.filter((r) => r.id !== id);
     this.store.saveRecords(this.records);
@@ -933,14 +937,14 @@ export class WorkspaceManager {
 
   // ---------------------------------------------------------------- scripts
 
-  /** The setup / run commands for a project (yours, then klaud.json, then a guess). */
+  /** The setup / run commands for a project (yours, then beluga.json, then a guess). */
   scripts(projectId: string): ResolvedScripts {
     const project = this.projects.find((p) => p.id === projectId);
     if (!project?.root) return {};
     return resolveScripts(project.root, this.config.scripts?.[project.root]);
   }
 
-  /** Set a project's commands just for you, or in its klaud.json so the whole team gets them. */
+  /** Set a project's commands just for you, or in its beluga.json so the whole team gets them. */
   setScripts(projectId: string, scripts: ProjectScripts, opts: { inRepo?: boolean } = {}): void {
     const project = this.projects.find((p) => p.id === projectId);
     if (!project?.root) throw new WorkspaceError('Project not found');
@@ -992,7 +996,7 @@ export class WorkspaceManager {
     if (!project) throw new WorkspaceError('Project not found');
     const dir = this.freeDir(project, slug(name));
     await g.git(project.root, ['worktree', 'add', dir, branch]);
-    await g.excludeKlaudDir(dir);
+    await g.excludeOrcaDir(dir);
     if (opts.copyEnv !== false) await copyEnvFiles(project.root, dir);
     const record: WorkspaceRecord = { id: freshId(), projectRoot: project.root, name: slug(name), path: dir, kind: 'worktree', branch, base: project.base, createdAt: Date.now(), envSnapshot: await envSnapshot(dir), ...extra };
     this.saveRecord(record);
@@ -1000,9 +1004,9 @@ export class WorkspaceManager {
     return this.require(record.id);
   }
 
-  /** A free local branch name like klaud/<name>, klaud/<name>-2… */
+  /** A free local branch name like beluga/<name>, beluga/<name>-2… */
   freeBranchName(projectRoot: string, name: string): Promise<string> {
-    return this.freeBranch(projectRoot, `klaud/${slug(name)}`);
+    return this.freeBranch(projectRoot, `${BRANCH_PREFIX}${slug(name)}`);
   }
 
   forgetSession(id: string): void {
@@ -1015,14 +1019,14 @@ export class WorkspaceManager {
 
   /**
    * Give a just-made worktree its proper name (it was created under a quick one while a model
-   * named it): the label and its klaud/ branch, unless the branch was pushed. The folder stays.
+   * named it): the label and its beluga/ (or older klaud/) branch, unless the branch was pushed. The folder stays.
    */
   async renameWorktree(id: string, name: string): Promise<void> {
     const ws = this.require(id);
     const s = slug(name);
     if (ws.kind !== 'worktree' || !s || s === ws.name) return;
     const pushed = ws.branch && (await g.tryGit(ws.path, ['for-each-ref', '--count=1', `refs/remotes/*/${ws.branch}`]))?.trim();
-    const branch = ws.branch?.startsWith('klaud/') && !pushed ? await this.freeBranch(ws.path, `klaud/${s}`) : undefined;
+    const branch = (ws.branch?.startsWith(BRANCH_PREFIX) || ws.branch?.startsWith(LEGACY_BRANCH_PREFIX)) && !pushed ? await this.freeBranch(ws.path, `${BRANCH_PREFIX}${s}`) : undefined;
     if (branch) await g.git(ws.path, ['branch', '-m', ws.branch!, branch]);
     this.patchRecord(id, { name: s, ...(branch ? { branch } : {}) });
     await this.refresh();
@@ -1095,7 +1099,7 @@ export class WorkspaceManager {
 
   contextDir(id: string): string {
     const ws = this.require(id);
-    return path.join(ws.path, '.klaud');
+    return path.join(ws.path, PROJECT_DIR);
   }
 
   openInFinder(id: string): void {

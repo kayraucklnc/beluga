@@ -280,7 +280,7 @@ export class PeerClient extends EventEmitter<ClientEvents> {
       case 'challenge':
         if (frame.v !== PROTOCOL_VERSION) {
           // Hang up now (not at the room's auth timeout): the retry says why, and tries again later.
-          this.refused(frame.v > PROTOCOL_VERSION ? 'The host has a newer klaud. Run klaud update, then join again' : 'The host has an older klaud. Ask them to run klaud update');
+          this.refused(frame.v > PROTOCOL_VERSION ? 'The host has a newer Beluga. Run beluga update, then join again' : 'The host has an older Beluga. Ask them to run beluga update');
           this.socket?.close();
           return;
         }

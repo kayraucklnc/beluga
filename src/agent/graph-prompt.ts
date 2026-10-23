@@ -1,13 +1,13 @@
 import { EDGE_KINDS, GRAPH_FENCE, NODE_KINDS, STATUSES } from '../shared/graph-spec.js';
 
 /**
- * Teaching Claude to draw: the `klaud-graph` format (src/shared/graph-spec.ts) and when a graph
+ * Teaching Claude to draw: the `beluga-graph` format (src/shared/graph-spec.ts) and when a graph
  * beats prose. The Mac app draws these blocks as interactive diagrams (docs/graphs.md).
  */
 export function buildGraphAppend(): string {
   return [
     '',
-    `Graphs: the klaud app draws a fenced block tagged ${GRAPH_FENCE} (JSON) as an interactive diagram. Use one`,
+    `Graphs: the Beluga app draws a fenced block tagged ${GRAPH_FENCE} (JSON) as an interactive diagram. Use one`,
     'whenever a picture explains better than prose: architecture, how parts talk, a request or data flow, a',
     'pipeline, a data model, dependencies, a plan, or what a change touched. When the user asks you to',
     'visualize, draw, diagram or map something, answer with a graph. The app lays it out (never give',

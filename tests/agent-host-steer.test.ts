@@ -356,9 +356,9 @@ describe('the watchdog taking over a run (KLD-37 on KLD-43’s stop)', () => {
     expect(waited).toEqual(['later', 'after that']);
     // Killed before the wake could start: no second Claude in the folder, and nothing ran in between.
     expect(b.timeline).toEqual(['run slow', 'killed slow']);
-    expect(t.card('r1')?.text).toBe('Stopped by Klaud to wake Claude');
-    expect(t.card('r2')?.text).toBe('Sent along with Klaud’s wake-up');
-    expect(t.card('r3')?.text).toBe('Sent along with Klaud’s wake-up');
+    expect(t.card('r1')?.text).toBe('Stopped by Beluga to wake Claude');
+    expect(t.card('r2')?.text).toBe('Sent along with Beluga’s wake-up');
+    expect(t.card('r3')?.text).toBe('Sent along with Beluga’s wake-up');
     expect(t.h.runningIn('room')).toBe(false);
   }, 9_000);
 

@@ -1,11 +1,11 @@
 /**
- * Claude Code sessions running outside klaud (in a terminal, through Conductor…), as screens see
- * them: each live session, where it runs, what it's doing, and its sub-agents. Read-only: klaud
+ * Claude Code sessions running outside Beluga (in a terminal, through Conductor…), as screens see
+ * them: each live session, where it runs, what it's doing, and its sub-agents. Read-only: Beluga
  * only watches the transcripts Claude Code writes (see watch.ts). Only what a list needs to
  * draw; the steps themselves come on demand (`claudeCode.steps`). Browser-safe: the Mac app runs it.
  */
 
-/** Sessions running outside Klaud (Activity's): Klaud's own are watched only for their sub-agents. */
+/** Sessions running outside Beluga (Activity's): Beluga's own are watched only for their sub-agents. */
 export const outsideSessions = (sessions: readonly CcSession[]): readonly CcSession[] => (sessions.some((s) => s.own) ? sessions.filter((s) => !s.own) : sessions);
 
 /** running: working now · finished · failed · stopped (killed or interrupted) · idle: no writes for a while and no final answer. */
@@ -44,7 +44,7 @@ export interface CcAgent {
   readonly cwd?: string;
   /** Its own worktree, when it was started in isolation (and that worktree's branch). */
   readonly worktree?: { readonly path: string; readonly branch?: string };
-  /** The tool call that started it (Klaud's chat knows its sub-agents by it). */
+  /** The tool call that started it (Beluga's chat knows its sub-agents by it). */
   readonly toolUseId?: string;
   /** The agent that started it, when it wasn't the session itself. */
   readonly parentAgentId?: string;
@@ -56,7 +56,7 @@ export interface CcSession {
   readonly title: string;
   /** The folder it runs in. */
   readonly cwd: string;
-  /** The project and workspace of klaud's that folder belongs to, if any. */
+  /** The project and workspace of Beluga's that folder belongs to, if any. */
   readonly projectId?: string;
   readonly workspaceId?: string;
   readonly status: CcSessionStatus;
@@ -69,7 +69,7 @@ export interface CcSession {
   /** Its sub-agents that are running or ended lately, newest first. */
   readonly agents: readonly CcAgent[];
   /**
-   * One of Klaud's own conversations (a worktree's chat). It's shown in that chat, not in Activity;
+   * One of Beluga's own conversations (a worktree's chat). It's shown in that chat, not in Activity;
    * it's watched for its sub-agents, so they can be followed live.
    */
   readonly own?: true;
@@ -169,7 +169,7 @@ export interface CcTeam {
 /** A page of steps: the newest `limit` before `before`, or everything after `after`. */
 export interface CcSteps {
   readonly steps: readonly CcStep[];
-  /** Earlier steps exist (in what klaud keeps). */
+  /** Earlier steps exist (in what Beluga keeps). */
   readonly more: boolean;
   /** Nothing to show: no such session or agent being watched. */
   readonly missing?: boolean;
@@ -190,7 +190,7 @@ export interface CcOutput {
 export interface CcOutputs {
   /** Newest first. */
   readonly outputs: readonly CcOutput[];
-  /** Its own scratch folder (`.klaud/scratch/agents/<name>/` where its session runs), when it has one. */
+  /** Its own scratch folder (`.beluga/scratch/agents/<name>/` where its session runs), when it has one. */
   readonly scratch?: string;
   /** No such session or agent being watched. */
   readonly missing?: true;
@@ -206,7 +206,7 @@ export interface CcOutputFile extends CcOutput {
 
 /**
  * Who started a sub-agent's worktree, from Claude Code's files on disk: kept for as long as the
- * worktree is there (Klaud follows an agent live only for a while after it finishes).
+ * worktree is there (Beluga follows an agent live only for a while after it finishes).
  */
 export interface AgentOrigin {
   /** The worktree. */
@@ -220,7 +220,7 @@ export interface AgentOrigin {
   readonly sessionId: string;
   readonly sessionCwd?: string;
   readonly sessionTitle?: string;
-  /** That conversation in Klaud: the workspace whose chat it is (one of Klaud's own) or whose folder it ran in. */
+  /** That conversation in Beluga: the workspace whose chat it is (one of Beluga's own) or whose folder it ran in. */
   readonly projectId?: string;
   readonly workspaceId?: string;
   readonly own?: true;

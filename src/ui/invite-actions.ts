@@ -1,5 +1,5 @@
 import { DAY_MS } from '../shared/invites.js';
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import type { GuestCan } from '../protocol.js';
 import { type InviteChoice, copyIndex, inviteChoice, inviteMenu } from './invite-menus.js';
 import type { MenuContext } from './menu-actions.js';
@@ -14,7 +14,7 @@ export function openInvite(ctx: MenuContext, from?: string, choice: InviteChoice
 }
 
 /** The project of the workspace you're looking at (invites from there default to it). */
-export function projectInView(client: KlaudClient): string | undefined {
+export function projectInView(client: BelugaClient): string | undefined {
   const state = client.store.getState();
   if (state.view.kind !== 'workspace') return undefined;
   const id = state.view.id;
@@ -98,7 +98,7 @@ export function runInviteOption(ctx: MenuContext, menu: MenuKind, id: string, in
 }
 
 /** Clicks on the knock card and in a shared workspace's Terminal. */
-export function runInviteUiAction(client: KlaudClient, action: UiAction): boolean {
+export function runInviteUiAction(client: BelugaClient, action: UiAction): boolean {
   const { api } = client;
   switch (action.type) {
     case 'knock':

@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type Run, type Status, compareVersions, decide, parseCommits, readStatus } from '../src/update/check.js';
 import { runUpdate } from '../src/update/update.js';
@@ -27,7 +30,7 @@ function fakeGit(o: { behind: number; ahead?: number; dirty?: boolean; deps?: bo
   return { run, calls, out: { write: (s: string) => void (text += s), tty: false }, text: () => text };
 }
 
-describe('klaud update', () => {
+describe('beluga update', () => {
   it('parses one-line logs', () => {
     expect(parseCommits('abc fix: a thing\ndef feat: b\n')).toEqual([
       { sha: 'abc', subject: 'fix: a thing' },
@@ -54,7 +57,7 @@ describe('klaud update', () => {
   it('says so when already up to date and installs nothing', async () => {
     const g = fakeGit({ behind: 0 });
     expect(await runUpdate({ run: g.run, out: g.out, root: '/k' })).toBe(0);
-    expect(g.text()).toContain("You're on the latest klaud");
+    expect(g.text()).toContain("You're on the latest Beluga");
     expect(g.calls.some((c) => c.includes('merge'))).toBe(false);
   });
 
@@ -102,16 +105,17 @@ describe('klaud update', () => {
       calls.push(key);
       if (key.includes('--show-toplevel')) throw new Error('not a repo');
       if (key === 'npm root -g') return `${globalRoot}\n`;
-      if (key === 'npm view klaudcode version') return `${latest}\n`;
+      if (key === 'npm view beluga-code version') return `${latest}\n`;
       return '';
     };
     let text = '';
     const out = { write: (s: string) => void (text += s), tty: false };
-    const root = '/usr/lib/node_modules/klaudcode';
+    const root = '/usr/lib/node_modules/beluga-code';
     // installedVersion reads root/package.json, which doesn't exist here → "unknown" (0.0.0)
     expect(await runUpdate({ run: npm('9.9.9'), out, root })).toBe(0);
-    expect(calls).toContain('npm install -g --no-audit --no-fund --loglevel=error klaudcode@9.9.9');
-    expect(text).toContain('klaud 9.9.9 is installed');
+    expect(calls).toContain('npm install -g --no-audit --no-fund --loglevel=error beluga-code@9.9.9');
+    expect(calls.some((c) => c.includes('uninstall'))).toBe(false);
+    expect(text).toContain('Beluga 9.9.9 is installed');
 
     text = '';
     expect(await runUpdate({ run: npm('9.9.9'), out, root, checkOnly: true })).toBe(0);
@@ -122,6 +126,35 @@ describe('klaud update', () => {
     expect(text).toContain('part of another project');
   });
 
+  it('moves an install under the old npm name (klaudcode) to beluga-code, and puts it back if that fails', async () => {
+    const globalRoot = mkdtempSync(path.join(os.tmpdir(), 'beluga-npm-'));
+    const root = path.join(globalRoot, 'klaudcode');
+    mkdirSync(root);
+    writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'klaudcode', version: '0.6.2' }));
+    const calls: string[] = [];
+    let installFails = false;
+    const run = async (cmd: string, args: readonly string[]) => {
+      const key = `${cmd} ${args.join(' ')}`;
+      calls.push(key);
+      if (key.includes('--show-toplevel')) throw new Error('not a repo');
+      if (key === 'npm root -g') return `${globalRoot}\n`;
+      if (key === 'npm view beluga-code version') return '9.9.9\n';
+      if (installFails && key.endsWith('beluga-code@9.9.9')) throw new Error('E404 not found');
+      return '';
+    };
+    const out = { write: () => undefined, tty: false };
+    expect(await runUpdate({ run, out, root })).toBe(0);
+    const uninstall = calls.findIndex((c) => c === 'npm uninstall -g --loglevel=error klaudcode');
+    const install = calls.findIndex((c) => c.endsWith('install -g --no-audit --no-fund --loglevel=error beluga-code@9.9.9'));
+    expect(uninstall).toBeGreaterThan(-1);
+    expect(install).toBeGreaterThan(uninstall);
+
+    calls.length = 0;
+    installFails = true;
+    expect(await runUpdate({ run, out, root })).toBe(1);
+    expect(calls).toContain('npm install -g --no-audit --no-fund --loglevel=error klaudcode@0.6.2');
+  });
+
   it('compares versions', () => {
     expect(compareVersions('0.3.0', '0.2.9')).toBe(1);
     expect(compareVersions('0.2.1', '0.2.1')).toBe(0);
@@ -129,9 +162,9 @@ describe('klaud update', () => {
     expect(compareVersions('0.10.0', '0.9.0')).toBe(1);
   });
 
-  it('never updates a project that merely contains klaud (e.g. in node_modules)', async () => {
+  it('never updates a project that merely contains Beluga (e.g. in node_modules)', async () => {
     const g = fakeGit({ behind: 2, toplevel: '/my-app\n' });
-    expect(await runUpdate({ run: g.run, out: g.out, root: '/my-app/node_modules/klaudcode' })).toBe(1);
+    expect(await runUpdate({ run: g.run, out: g.out, root: '/my-app/node_modules/beluga-code' })).toBe(1);
     expect(g.calls.some((c) => c.includes('fetch') || c.includes('merge'))).toBe(false);
   });
 });

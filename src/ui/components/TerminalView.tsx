@@ -21,7 +21,7 @@ interface TerminalViewProps {
 /** Terminal size that fits a pane of this size (the bar above + the panel's border). */
 export const terminalSize = (width: number, height: number): { cols: number; rows: number } => ({ cols: Math.max(10, width - 4), rows: Math.max(3, height - 3) });
 
-/** A real shell (or the setup / run command) drawn inside klaud, with its sessions above it. */
+/** A real shell (or the setup / run command) drawn inside Beluga, with its sessions above it. */
 export function TerminalView({ session, bar, width, height, focused, scroll, title }: TerminalViewProps) {
   const { rows } = terminalSize(width, height);
   const snap = session?.snapshot(scroll);

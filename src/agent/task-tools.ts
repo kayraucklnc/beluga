@@ -8,7 +8,7 @@ import type { TaskTools } from './types.js';
  * device. They only exist in runs for a request that needed them and was let in.
  */
 
-export const TASK_TOOL_NAMES = ['screenshot', 'device_info'].map((n) => `mcp__klaud_task__${n}`);
+export const TASK_TOOL_NAMES = ['screenshot', 'device_info'].map((n) => `mcp__beluga_task__${n}`);
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 
@@ -47,5 +47,5 @@ export function createTaskToolDefs(tools: TaskTools) {
 /** The MCP server with those tools (none: undefined). */
 export function createTaskTools(tools: TaskTools) {
   const defs = createTaskToolDefs(tools);
-  return defs.length ? createSdkMcpServer({ name: 'klaud_task', version: '0.1.0', tools: defs }) : undefined;
+  return defs.length ? createSdkMcpServer({ name: 'beluga_task', version: '0.1.0', tools: defs }) : undefined;
 }

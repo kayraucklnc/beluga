@@ -21,7 +21,7 @@ type ShellItem = Extract<LogItem, { type: 'shell' }>;
 /** Output lines a finished command shows in the chat (its tail). */
 const SHELL_TAIL = 14;
 
-/** "/private/var/folders/…/klaud-demo/api" → "…/klaud-demo/api" (short paths stay as they are). */
+/** "/private/var/folders/…/beluga-demo/api" → "…/beluga-demo/api" (short paths stay as they are). */
 export const shortFolder = (p: string, max = 32): string => {
   if (p.length <= max) return p;
   const parts = p.split('/').filter(Boolean);

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * The klaud network's part of the API (see api.ts): friends, direct messages, groups and your
+ * The Beluga network's part of the API (see api.ts): friends, direct messages, groups and your
  * status. Only the Mac app shows it; the calls fail with a clear message while the network is off.
  * Browser-safe: zod only.
  */

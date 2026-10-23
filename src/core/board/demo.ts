@@ -5,7 +5,7 @@ import type { Actor, Assignee, BriefSection } from './model.js';
 import type { BoardWork } from './work.js';
 
 /**
- * The demo's board (`klaud demo`, screenshots, the README): a payments API mid-launch and a
+ * The demo's board (`beluga demo`, screenshots, the README): a payments API mid-launch and a
  * landing page, with the demo's worktrees doing three of the tasks, a pull request in review,
  * blockers, sub-tasks, briefs Claude kept, proof and a few days of history.
  */
@@ -55,7 +55,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
   const board = work.board;
   const me = work.me();
   const claude = work.myClaude();
-  const klaud: Actor = { kind: 'klaud' };
+  const beluga: Actor = { kind: 'beluga' };
   const when = (ago: number): void => travel(ago);
   const brief = (key: string, section: BriefSection, text: string, by: Actor, reason: string, mode: 'replace' | 'append' = 'replace'): void => void board.editBrief(key, section, text, by, { reason, mode });
 
@@ -171,7 +171,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
       assignee: me,
       labels: ['design', 'launch'],
       brief: {
-        goal: 'A hero that says what Klaud is in one line, with a real screenshot.',
+        goal: 'A hero that says what Beluga is in one line, with a real screenshot.',
         acceptance: '- [x] New headline and line under it\n- [x] Screenshot of the app\n- [ ] Looks right on phones\n- [ ] mia signs off on the copy',
       },
     },
@@ -190,5 +190,5 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
   board.relate(pricing.id, 'blocked_by', hero.id, true, mia);
   when(2 * HOUR);
   board.create({ projectId: at.landing, title: 'Open Graph images for every page', status: 'backlog', labels: ['design'] }, me);
-  board.create({ projectId: at.landing, title: 'Lighthouse 95+ on mobile', status: 'backlog', priority: 'low', labels: ['performance'] }, klaud);
+  board.create({ projectId: at.landing, title: 'Lighthouse 95+ on mobile', status: 'backlog', priority: 'low', labels: ['performance'] }, beluga);
 }

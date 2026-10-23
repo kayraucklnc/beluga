@@ -11,7 +11,7 @@ import { outsideOf } from './outside-model.js';
  */
 export function hasRowsInside(p: Project, sessions: readonly CcSession[], origins: readonly AgentOrigin[] = []): boolean {
   const live = p.workspaces.filter((w) => !w.archived);
-  if (live.some((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud')) return true;
+  if (live.some((w) => w.kind !== 'main' && worktreeOrigin(w) === 'beluga')) return true;
   if (outsideOf(p).some((w) => !isAgentWorktree(w))) return true;
   const main = live.find((w) => w.kind === 'main');
   return Boolean(main && subAgentsUnder(sessions, main.id, origins).length);

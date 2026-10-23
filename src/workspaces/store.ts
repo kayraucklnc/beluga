@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ProjectsConfig, WorkspaceRecord } from './types.js';
 
-export { klaudHome } from '../core/home.js';
-import { klaudHome } from '../core/home.js';
+export { belugaHome } from '../core/home.js';
+import { belugaHome } from '../core/home.js';
 
 export const DEFAULT_ROOTS = ['Projects', 'projects', 'code', 'Code', 'dev', 'src', 'Developer', 'GitHub', 'repos', 'workspace'].map((d) => path.join(os.homedir(), d));
 
@@ -26,7 +26,7 @@ function writeJson(file: string, value: unknown): void {
 
 /** Small JSON-file persistence for projects, workspaces and per-workspace chat history. */
 export class WorkspaceStore {
-  constructor(readonly home: string = klaudHome()) {}
+  constructor(readonly home: string = belugaHome()) {}
 
   get workspacesDir(): string {
     return path.join(this.home, 'workspaces');

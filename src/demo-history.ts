@@ -13,7 +13,7 @@ interface Person {
   readonly email: string;
 }
 
-const KAY: Person = { name: 'Kay', email: 'kay@klaud.dev' };
+const KAY: Person = { name: 'Kay', email: 'kay@beluga.dev' };
 const MIA: Person = { name: 'Mia Chen', email: 'mia@studio.dev' };
 const BOB: Person = { name: 'Bob Rivera', email: 'bob@rivera.io' };
 const SAM: Person = { name: 'Sam Okafor', email: 'sam@okafor.dev' };
@@ -57,7 +57,7 @@ export function seedLandingHistory(dir: string, origin: string, scratch: string)
   checkout(dir, 'main');
   commit(dir, KAY, 8 * d + 9, 'Hero copy: “Build together”', { 'content/hero.md': '# Build together\n\nYou, your friends, and everyone’s Claude.\n' });
   checkout(dir, 'feat/blog');
-  commit(dir, SAM, 8 * d + 2, 'RSS feed for the blog', { 'src/pages/rss.xml.ts': 'export const GET = () => rss({ title: "klaud blog" });\n' });
+  commit(dir, SAM, 8 * d + 2, 'RSS feed for the blog', { 'src/pages/rss.xml.ts': 'export const GET = () => rss({ title: "Beluga blog" });\n' });
   checkout(dir, 'main');
   merge(dir, MIA, 7 * d, 'feat/blog');
   run(dir, KAY, 7 * d, ['tag', 'v0.1']);

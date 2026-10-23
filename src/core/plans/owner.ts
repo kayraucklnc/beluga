@@ -4,7 +4,7 @@ import { type Plan, type PlanMilestone, type PlanTask, type PlansState, allTasks
 /**
  * Which plan a worktree belongs to: one doing a task of a plan that's still running (its task not
  * canceled). Such a worktree is part of the plan, not something of its own: the sidebar shows the
- * plan instead of it, and Klaud (not you) merges it into the plan. Pure and browser-safe
+ * plan instead of it, and Beluga (not you) merges it into the plan. Pure and browser-safe
  * (tests/plan-owner.test.ts).
  */
 

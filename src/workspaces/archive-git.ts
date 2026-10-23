@@ -14,7 +14,7 @@ import path from 'node:path';
 export const LONG_MS = 10 * 60_000;
 export const TAR_TIMEOUT_MS = 30 * 60_000;
 /** Commits need a name; yours when git has one. */
-const IDENTITY = { GIT_AUTHOR_NAME: 'Klaud', GIT_AUTHOR_EMAIL: 'klaud@localhost', GIT_COMMITTER_NAME: 'Klaud', GIT_COMMITTER_EMAIL: 'klaud@localhost' };
+const IDENTITY = { GIT_AUTHOR_NAME: 'Beluga', GIT_AUTHOR_EMAIL: 'beluga@localhost', GIT_COMMITTER_NAME: 'Beluga', GIT_COMMITTER_EMAIL: 'beluga@localhost' };
 
 export class ArchiveError extends Error {}
 
@@ -136,7 +136,7 @@ export function fingerprint(dir: string, rels: readonly string[]): string {
   return h.digest('hex');
 }
 
-/** Your name for the snapshot commit when git has one, else Klaud's. */
+/** Your name for the snapshot commit when git has one, else Beluga's. */
 async function identity(dir: string): Promise<NodeJS.ProcessEnv> {
   const name = await tryGit(dir, ['config', 'user.name']);
   const email = await tryGit(dir, ['config', 'user.email']);
@@ -162,7 +162,7 @@ export async function snapshot(dir: string, message: string): Promise<Snapshot> 
   const submodules = new Set(await gitlinks(dir));
   // Staging: unmerged files can't be written as a tree; then it's the same as the folder.
   const staged = await tryGit(dir, ['write-tree']);
-  const tmp = mkdtempSync(path.join(os.tmpdir(), 'klaud-archive-'));
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'beluga-archive-'));
   try {
     const temp = { ...env, ...RAW_ENV, GIT_INDEX_FILE: path.join(tmp, 'index') };
     await git(dir, head ? ['read-tree', head] : ['read-tree', '--empty'], temp, LONG_MS);

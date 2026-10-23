@@ -200,7 +200,7 @@ describe('worktrees and pull requests', () => {
     board.prChanged('w1', pr({ state: 'MERGED' }));
     const done = board.need(t.key);
     expect(done.status).toBe('done');
-    expect(done.activity.filter((a) => a.by.kind === 'klaud').map((a) => a.text)).toEqual([
+    expect(done.activity.filter((a) => a.by.kind === 'beluga').map((a) => a.text)).toEqual([
       'opened pull request #7',
       'moved this from In Progress to In Review',
       'changes were requested on the pull request',

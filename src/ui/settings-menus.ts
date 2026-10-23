@@ -75,11 +75,11 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
     case 'notify':
       return {
         title: 'Settings › Notifications',
-        intro: ['klaud tells you when something needs you, on the desktop and in the inbox (top right).', 'Nothing is announced about the conversation you are looking at.', ''],
+        intro: ['Beluga tells you when something needs you, on the desktop and in the inbox (top right).', 'Nothing is announced about the conversation you are looking at.', ''],
         options: [
           { id: 'n-desktop', label: 'Desktop notifications', hint: `${onOff(p.notify.desktop)}${sw}` },
           { id: 'n-sound', label: 'Sound', hint: `${onOff(soundOn(p.notify))}${sw}` },
-          { id: 'n-onlyAway', label: 'Only when klaud isn’t in front', hint: `${onOff(p.notify.onlyAway)}${sw}` },
+          { id: 'n-onlyAway', label: 'Only when Beluga isn’t in front', hint: `${onOff(p.notify.onlyAway)}${sw}` },
           { id: 'n-dnd', label: 'Do Not Disturb', hint: dndActive(p.notify) ? `On ${dndLabel(p.notify)}  ·  Enter for longer, then off` : 'Off  ·  Enter: for 1 hour, then longer' },
           { id: 'n-needsYou', label: 'Claude needs you', hint: `${onOff(p.notify.needsYou)}  ·  questions, plans, approvals` },
           { id: 'n-done', label: 'Claude finished', hint: `${onOff(p.notify.done)}${sw}` },
@@ -183,7 +183,7 @@ export function settingsMenu(state: AppState, section?: SettingsSection, extra: 
       const others = state.peers.filter((x) => x.peerId !== state.self?.peerId).length;
       return {
         title: 'Settings',
-        intro: ['Saved to ~/.klaud/settings.json and used every time you run klaud.', ''],
+        intro: ['Saved to ~/.beluga/settings.json and used every time you run Beluga.', ''],
         options: [
           { id: 'set-name', label: 'Your name', hint: `${state.self?.name ?? '–'}  ·  type a new one` },
           { id: 'set-theme', label: 'Color theme', hint: `${THEME_LABELS[p.theme]}${sw}` },
@@ -249,7 +249,7 @@ export function inboxMenu(state: AppState, view: InboxView = {}, now = Date.now(
       ],
     };
   }
-  const empty = all.length ? `Nothing ${filter === 'unread' ? 'unread' : `in ${label}`}.` : 'Nothing yet. klaud lists what happens in other workspaces here.';
+  const empty = all.length ? `Nothing ${filter === 'unread' ? 'unread' : `in ${label}`}.` : 'Nothing yet. Beluga lists what happens in other workspaces here.';
   return {
     title: 'Inbox',
     intro: [rows.length ? `${unread} new · click one to open it` : empty, ''],

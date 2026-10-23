@@ -19,6 +19,7 @@ import { READS_AFTER_STEP, STEERED_IN } from '../shared/claude-notices.js';
 import { span } from '../shared/clock.js';
 import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
 import { e2eLockedIn, keepsRunning, mayLeaveProcesses } from '../workspaces/test-procs.js';
+import { belugaEnvBoth } from './beluga-env.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -130,7 +131,7 @@ interface Lane {
   interrupting?: Promise<void>;
   /**
    * The last run failed (a usage limit, a crash): what waits here stays waiting, in order, until
-   * you go on (Continue, or any message of yours) or Klaud resumes it (see shared/run-failure.ts).
+   * you go on (Continue, or any message of yours) or Beluga resumes it (see shared/run-failure.ts).
    */
   held?: boolean;
 }
@@ -345,7 +346,7 @@ export class AgentHost {
   }
 
   /**
-   * Klaud takes over a stalled conversation (a plan's watchdog waking its Claude): the current run
+   * Beluga takes over a stalled conversation (a plan's watchdog waking its Claude): the current run
    * stops, and your messages waiting there come out of the queue to go with the wake (returned in
    * order). Quiet: no toast. Resolves once nothing runs there.
    *
@@ -362,14 +363,14 @@ export class AgentHost {
     const run = lane.current;
     if (run && !run.signal.aborted) {
       lane.interruptedBy = 'watchdog';
-      lane.interruptNote = 'Stopped by Klaud to wake Claude';
+      lane.interruptNote = 'Stopped by Beluga to wake Claude';
       run.abort();
     }
     await this.idle(channel);
     const mine = lane.waiting.filter((w) => w.from === this.selfId && !w.compact);
     lane.waiting = lane.waiting.filter((w) => !mine.includes(w));
     lane.held = undefined;
-    for (const { from, body } of mine) this.emitAgent(body.requestId, from, 'done', 'Sent along with Klaud’s wake-up', body.channel);
+    for (const { from, body } of mine) this.emitAgent(body.requestId, from, 'done', 'Sent along with Beluga’s wake-up', body.channel);
     // Someone else's request waiting here goes on as before.
     void this.pump(lane);
     return mine.map((w) => w.body.prompt);
@@ -389,12 +390,12 @@ export class AgentHost {
       if (answer === 'no') return 'The owner of this computer declined moving to a new worktree. Stay read-only here and say so.';
     }
     const ws = await ctl.continueInWorktree(id, (p) => this.deps.nameTask?.(p) ?? Promise.resolve('worktree'), { task, after: finished });
-    if (!ws) return "Couldn't create the worktree (klaud showed the user why). Don't change anything here; tell the user briefly.";
+    if (!ws) return "Couldn't create the worktree (Beluga showed the user why). Don't change anything here; tell the user briefly.";
     return `Done: the new worktree "${ws.name}" (branch ${ws.branch}, from ${ws.base}) has this conversation and the task continues there automatically. Do not do the work here; end your turn now with one short line.`;
   }
 
   /**
-   * Stop whatever is running (when klaud quits): nothing new starts, and it resolves once those
+   * Stop whatever is running (when Beluga quits): nothing new starts, and it resolves once those
    * runs have ended (their ends sent), or after `waitMs` for one that won't.
    */
   async abort(waitMs = QUIT_SETTLE_MS): Promise<void> {
@@ -818,7 +819,7 @@ export class AgentHost {
       const scope = `${from}:${body.project}`;
       if (level === 'full' || this.alwaysProjects.has(scope)) return true;
       this.emitAgent(body.requestId, from, 'awaiting_approval', `Waiting for ${state.self?.name ?? 'owner'} to approve`, body.channel);
-      const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to work in ${body.project} (Always: for ${body.project}, until klaud quits)`, body.prompt, from);
+      const answer = await this.ask('request', `${name}${body.viaAgent ? "'s Claude" : ''} wants your Claude to work in ${body.project} (Always: for ${body.project}, until Beluga quits)`, body.prompt, from);
       if (answer === 'always') this.alwaysProjects.add(scope);
       return answer !== 'no';
     }
@@ -874,9 +875,9 @@ export class AgentHost {
       if (lane.current === controller) lane.current = undefined;
       return;
     }
-    // A worktree's run: what it starts carries KLAUD_WORKTREE, so test runs it leaves behind can be stopped.
+    // A worktree's run: what it starts carries BELUGA_WORKTREE (and the old KLAUD_WORKTREE), so test runs it leaves behind can be stopped.
     const worktree = place && place.autoEdit && !place.askOnly ? place.cwd : undefined;
-    const tag: Record<string, string> = worktree ? { KLAUD_WORKTREE: worktree } : {};
+    const tag: Record<string, string> = worktree ? belugaEnvBoth('WORKTREE', worktree) : {};
     /** What this run kept running on purpose (see keepsRunning), noted in the conversation when it ends. */
     const kept = new Set<string>();
     this.currentChannel = body.channel;

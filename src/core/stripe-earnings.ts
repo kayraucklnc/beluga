@@ -1,8 +1,8 @@
 /**
- * Each project's earnings from Stripe: you connect a key per project, klaud counts what the
+ * Each project's earnings from Stripe: you connect a key per project, Beluga counts what the
  * account earned (see stripe-client.ts for exactly what counts) in the background, once a
  * day, and keeps the running count so the next look only reads what's new. The keys live in
- * ~/.klaud/stripe.json, readable only by you, and never leave this computer: screens get
+ * ~/.beluga/stripe.json, readable only by you, and never leave this computer: screens get
  * "connected", the account's name and the totals (core/earnings-store.ts), nothing more.
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -10,17 +10,17 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { EarningsError, MoneyTotal, ProjectEarnings } from './earnings-store.js';
 import { STRIPE_KEY, stripeKeyProblem } from '../shared/stripe-keys.js';
-import { klaudHome } from './home.js';
+import { belugaHome } from './home.js';
 import type { Store } from './store.js';
 import { type StripeOptions, type Tally, StripeError, accountName, catchUp, checkKey, fullCount } from './stripe-client.js';
 
-/** Refresh when the last count is older than this (about once a day, whenever klaud is open). */
+/** Refresh when the last count is older than this (about once a day, whenever Beluga is open). */
 export const STALE_MS = 20 * 3600_000;
 /** Count everything again this often, to correct anything the quick looks missed. */
 export const FULL_RECOUNT_MS = 7 * 24 * 3600_000;
-/** How often klaud checks whether a refresh is due. */
+/** How often Beluga checks whether a refresh is due. */
 const CHECK_MS = 3600_000;
-/** The first check waits a little, so it doesn't compete with klaud starting. */
+/** The first check waits a little, so it doesn't compete with Beluga starting. */
 const FIRST_CHECK_MS = 8_000;
 
 const TallySchema = z.object({
@@ -56,7 +56,7 @@ export interface StripeFile {
 
 const EMPTY: StripeFile = { projects: {} };
 
-export const stripePath = (): string => path.join(klaudHome(), 'stripe.json');
+export const stripePath = (): string => path.join(belugaHome(), 'stripe.json');
 
 export function loadStripeFile(file: string = stripePath()): StripeFile {
   try {
@@ -255,6 +255,6 @@ export const attachEarnings = (session: object, service: StripeEarnings): void =
 /** The earnings service of this session, or a clear error where there's none (the terminal app). */
 export function earningsOf(session: object): StripeEarnings {
   const service = services.get(session);
-  if (!service) throw new Error('Earnings from Stripe live in the klaud app for Mac (its daemon).');
+  if (!service) throw new Error('Earnings from Stripe live in the Beluga app for Mac (its daemon).');
   return service;
 }

@@ -105,7 +105,7 @@ describe('the daemon, under stress', () => {
     a.close();
   });
 
-  it('starts afresh when daemon.json points at a klaud that is gone', async () => {
+  it('starts afresh when daemon.json points at a Beluga that is gone', async () => {
     // A live process id (this one) but nothing listening: klaud crashed and the id lives on.
     writeDaemonInfo({ pid: process.pid, port: 1, token: 'x'.repeat(32), version: '1', ipc: IPC_VERSION, room: "kay's room", roomKey: 'host', startedAt: 1 });
     let spawned = 0;

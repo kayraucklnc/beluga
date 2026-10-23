@@ -52,15 +52,15 @@ export interface SessionOptions {
   readonly agentCwd: string;
   readonly requestTimeoutMs?: number;
   readonly agentTimeoutMs?: number;
-  /** Folder klaud was started in; new stand-alone chats run here. */
+  /** Folder Beluga was started in; new stand-alone chats run here. */
   readonly launchDir?: string;
   /** Clipboard writer (injected so tests don't touch the real clipboard). */
   readonly copy?: (text: string) => Promise<unknown>;
-  /** Where downloads are saved (default ~/Downloads/klaud). */
+  /** Where downloads are saved (default ~/Downloads/Beluga). */
   readonly downloadDir?: string;
   /** Persist a settings change (name, policy, theme…). */
   readonly saveSettings?: (patch: Partial<Settings>) => void;
-  /** Open remote access and create an invite (klaud starts solo; this runs on first Invite). */
+  /** Open remote access and create an invite (Beluga starts solo; this runs on first Invite). */
   readonly startInvite?: () => void;
   /** How long an unanswered approval waits before it's declined (default 5 minutes). */
   readonly approvalTimeoutMs?: number;
@@ -87,11 +87,11 @@ export interface SessionOptions {
   readonly stepsDir?: string;
   /** Read Claude Code conversations from other tools (omitted in tests and the demo). */
   readonly findConversation?: (dir: string, self: { id: string; name: string }, opts?: { sessionId?: string; prefer?: string }) => Promise<Conversation | undefined>;
-  /** Read Conductor's and Claude Code's data about worktrees klaud didn't make (omitted in tests and the demo). */
+  /** Read Conductor's and Claude Code's data about worktrees Beluga didn't make (omitted in tests and the demo). */
   readonly otherTools?: import('./other-worktrees.js').OtherTools;
   /** How friends' commands run on this computer (the demo injects canned output). */
   readonly runShell?: ShellRunner;
-  /** Stop klaud itself (the daemon, or the terminal UI running it). */
+  /** Stop Beluga itself (the daemon, or the terminal UI running it). */
   readonly shutdown?: () => void;
 }
 
@@ -283,7 +283,7 @@ export class Session {
     this.intend({ type: 'quit' });
   }
 
-  /** Stop klaud entirely (every screen closes). */
+  /** Stop Beluga entirely (every screen closes). */
   shutdown(): void {
     if (this.opts.shutdown) this.opts.shutdown();
     else this.intend({ type: 'quit' });
@@ -379,7 +379,7 @@ export class Session {
       this.toast('Opening a secure link for friends… it will be copied when ready');
       return;
     }
-    await this.copyOrShow(`klaud join ${invite}`, 'Invite copied. Paste it to a friend');
+    await this.copyOrShow(`beluga join ${invite}`, 'Invite copied. Paste it to a friend');
   }
 
   async copyLastAnswer(): Promise<void> {
@@ -499,7 +499,7 @@ export class Session {
     });
   }
 
-  /** Run a command on a friend's computer (through their klaud) and show it with its output here. */
+  /** Run a command on a friend's computer (through their Beluga) and show it with its output here. */
   async runOnPeer(name: string, command: string, opts: { cwd?: string; project?: string; timeoutSec?: number; why?: string; viaAgent?: boolean; channel?: string } = {}): Promise<string> {
     const peer = this.findPeer(name);
     if (!peer || peer.peerId === this.selfId) throw new Error(`No friend named "${name}" is here. Call list_peers first.`);
@@ -624,7 +624,7 @@ export class Session {
     return this.files.browserUp();
   }
 
-  /** Download a shared file to ~/Downloads/klaud/<friend>/, or to `opts.to` (an absolute path). */
+  /** Download a shared file to ~/Downloads/Beluga/<friend>/, or to `opts.to` (an absolute path). */
   download(at: Location, opts: { to?: string } = {}): Promise<string | undefined> {
     return this.files.download(at, opts);
   }
@@ -813,7 +813,7 @@ export class Session {
     client.on('ended', (why) => {
       const before = store.getState().connection;
       store.dispatch({ type: 'connection', connection: { state: 'offline', attempt: before?.attempt ?? 0, reason: why, since: before?.since ?? Date.now() } });
-      this.system(`${why}. You can keep working on your own; restart klaud to join a room again.`, 'warn');
+      this.system(`${why}. You can keep working on your own; restart Beluga to join a room again.`, 'warn');
       this.toast(why, 'warn');
       store.dispatch({ type: 'shared_clear' });
     });

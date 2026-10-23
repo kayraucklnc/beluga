@@ -341,14 +341,14 @@ export function projectsModel(state: AppState, toggled: ReadonlySet<string>, fra
     );
     if (!open) return;
     const live = p.workspaces.filter((w) => !w.archived);
-    for (const ws of live.filter((w) => worktreeOrigin(w) === 'klaud')) wsRow(ws, '  ');
+    for (const ws of live.filter((w) => worktreeOrigin(w) === 'beluga')) wsRow(ws, '  ');
     // Worktrees other apps made stay folded so they don't drown yours. Claude Code's own
     // sub-agent worktrees aren't shown at all: they have no conversation here (tidy them up in ⋯).
     const external = live.filter((w) => worktreeOrigin(w) === 'external');
     if (external.length) {
       const key = `external:${p.id}`;
       const showing = toggled.has(key) || external.some((w) => w.id === current);
-      add([{ text: `    ${showing ? '▾' : '▸'} Other worktrees `, color: theme.muted }, { text: String(external.length), color: theme.muted, bold: true }], { type: 'toggle_fold', key }, `${showing ? 'Hide' : 'Show'} worktrees made outside klaud`);
+      add([{ text: `    ${showing ? '▾' : '▸'} Other worktrees `, color: theme.muted }, { text: String(external.length), color: theme.muted, bold: true }], { type: 'toggle_fold', key }, `${showing ? 'Hide' : 'Show'} worktrees made outside Beluga`);
       if (showing) for (const ws of external) wsRow(ws, '    ');
     }
     const archived = p.workspaces.filter((w) => w.archived);

@@ -2,13 +2,13 @@ import { execFile } from 'node:child_process';
 import { copyFileSync, mkdirSync, promises as fs, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { klaudHome } from './home.js';
+import { belugaHome } from './home.js';
 export { ATTACHMENT_SHARE, ATTACHMENT_SCHEME } from './attachment-share.js';
 import { ATTACHMENT_SHARE, ATTACHMENT_SCHEME } from './attachment-share.js';
 
 /**
  * Images pasted into the box you type in. Each becomes a chip like "[image 1]" in the
- * text; the file is saved under ~/.klaud/attachments. On send, chips turn into links
+ * text; the file is saved under ~/.beluga/attachments. On send, chips turn into links
  * ("📎 image 1 (png, 120K)") that open the image, and your own Claude gets the pixels.
  */
 
@@ -16,7 +16,7 @@ const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
 /** Biggest image accepted (the Claude API takes up to 5 MB per image once base64-encoded, a third bigger). */
 export const MAX_ATTACHMENT_BYTES = Math.floor(3.7 * 1024 * 1024);
 
-export const attachmentsDir = (): string => path.join(klaudHome(), 'attachments');
+export const attachmentsDir = (): string => path.join(belugaHome(), 'attachments');
 /** Copies of images sent to the room, the only ones friends can fetch. */
 export const roomAttachmentsDir = (): string => path.join(attachmentsDir(), 'room');
 

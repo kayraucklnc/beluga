@@ -36,7 +36,7 @@ export interface ControllerDeps {
   readonly compact?: (channel: string, instructions: string) => void;
   /** A Claude Code conversation in a folder (from other tools), to show and continue: the newest, or the one asked for. */
   readonly findConversation?: (dir: string, opts?: { sessionId?: string; prefer?: string }) => Promise<Conversation | undefined>;
-  /** Reads Conductor's and Claude Code's data about worktrees klaud didn't make (omitted in the demo and tests). */
+  /** Reads Conductor's and Claude Code's data about worktrees Beluga didn't make (omitted in the demo and tests). */
   readonly otherTools?: OtherTools;
   /** A new worktree exists (created, forked or handed over): e.g. run its setup. */
   readonly onWorktreeCreated?: (ws: Workspace) => void;
@@ -104,7 +104,7 @@ export class WorkspaceController {
   private readonly unsubscribe: () => void;
   /** Conversations shown in worktrees from other tools, resumed when you first talk there (by workspace id). */
   private readonly pendingResume = new Map<string, string>();
-  /** Worktrees klaud didn't make: who made them, their info page, tidying them away. */
+  /** Worktrees Beluga didn't make: who made them, their info page, tidying them away. */
   readonly others: OtherWorktrees;
   /** Keeping main folders current: fetching, Update main, and Claude's sync runs. */
   readonly mainSync: MainSync;
@@ -231,7 +231,7 @@ export class WorkspaceController {
   }
 
   /**
-   * A workspace klaud hasn't talked in yet (a worktree from Conductor, Claude Code, or your
+   * A workspace Beluga hasn't talked in yet (a worktree from Conductor, Claude Code, or your
    * main folder) shows the latest Claude Code conversation from that folder, and Claude
    * continues it from there.
    */
@@ -284,7 +284,7 @@ export class WorkspaceController {
   place(channel: string): AgentPlace | undefined {
     const id = workspaceIdOf(channel);
     const ws = id ? this.deps.manager.find(id) : undefined;
-    // A folder deleted behind klaud's back: say so instead of Claude failing to start.
+    // A folder deleted behind Beluga's back: say so instead of Claude failing to start.
     if (!ws || ws.archived || !existsSync(ws.path)) return undefined;
     // "Let Claude handle it": this one run may sync git in the main folder (and nothing else).
     const syncMain = ws.askOnly ? this.syncRuns.get(ws.id) : undefined;
@@ -506,7 +506,7 @@ export class WorkspaceController {
     return cleanupText(res);
   }
 
-  /** Remove a worktree made outside Klaud (its branch kept), and the sub-agent worktrees made from it. */
+  /** Remove a worktree made outside Beluga (its branch kept), and the sub-agent worktrees made from it. */
   async removeOther(id: string, force = false): Promise<boolean> {
     const agents = this.agentWorktreesOf(id);
     const done = await this.others.remove(id, force);
@@ -579,7 +579,7 @@ export class WorkspaceController {
     }
   }
 
-  async commit(id: string, message = 'Work from klaud'): Promise<void> {
+  async commit(id: string, message = 'Work from Beluga'): Promise<void> {
     const committed = await this.act("Couldn't commit", () => this.deps.manager.commitAll(id, message));
     if (committed !== undefined) this.deps.toast(committed ? 'Committed all changes' : 'Nothing to commit', committed ? 'success' : 'info');
   }
@@ -686,7 +686,7 @@ export class WorkspaceController {
   }
 
   /**
-   * Delete Project: it leaves Klaud (its worktrees archived first, losslessly); with `trash`, its
+   * Delete Project: it leaves Beluga (its worktrees archived first, losslessly); with `trash`, its
    * folder goes to the Trash too. False: it couldn't (and says why).
    */
   async removeProject(projectId: string, trash = false): Promise<boolean> {
@@ -702,7 +702,7 @@ export class WorkspaceController {
     );
     if (!res) return false;
     const kept = res.archived ? ` ${res.archived} worktree${res.archived === 1 ? '' : 's'} archived (nothing lost).` : '';
-    this.deps.toast(`Removed ${project?.name ?? 'the project'} from Klaud.${res.trashed ? ' Its folder is in the Trash.' : ''}${kept}`, 'success');
+    this.deps.toast(`Removed ${project?.name ?? 'the project'} from Beluga.${res.trashed ? ' Its folder is in the Trash.' : ''}${kept}`, 'success');
     return true;
   }
 

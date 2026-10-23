@@ -7,7 +7,7 @@ import { combineBranches, neededBranches } from '../src/workspaces/git.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
 
-/** A task that builds on several unmerged branches starts from them combined (klaud/<key>-base). */
+/** A task that builds on several unmerged branches starts from them combined (beluga/<key>-base). */
 
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' }).toString();
 
@@ -38,14 +38,14 @@ const parents = (dir: string, ref: string): number => sh(dir, 'rev-list', '--par
 describe('combining the branches a task builds on', () => {
   it('two unmerged branches: the first with the other merged in (--no-ff); the hidden worktree goes', async () => {
     const dir = repo();
-    branch(dir, 'klaud/kld-9', 'nine.txt', '9\n');
-    branch(dir, 'klaud/kld-27', 'twenty-seven.txt', '27\n');
+    branch(dir, 'beluga/kld-9', 'nine.txt', '9\n');
+    branch(dir, 'beluga/kld-27', 'twenty-seven.txt', '27\n');
     const at = hidden();
-    const res = await combineBranches(dir, at, 'klaud/kld-10-base', ['klaud/kld-9', 'klaud/kld-27']);
-    expect(res).toEqual({ ok: true, branch: 'klaud/kld-10-base' });
-    expect(has(dir, 'klaud/kld-10-base', 'nine.txt') && has(dir, 'klaud/kld-10-base', 'twenty-seven.txt')).toBe(true);
-    expect(parents(dir, 'klaud/kld-10-base')).toBe(2);
-    expect(sh(dir, 'merge-base', '--is-ancestor', 'klaud/kld-9', 'klaud/kld-10-base')).toBe('');
+    const res = await combineBranches(dir, at, 'beluga/kld-10-base', ['beluga/kld-9', 'beluga/kld-27']);
+    expect(res).toEqual({ ok: true, branch: 'beluga/kld-10-base' });
+    expect(has(dir, 'beluga/kld-10-base', 'nine.txt') && has(dir, 'beluga/kld-10-base', 'twenty-seven.txt')).toBe(true);
+    expect(parents(dir, 'beluga/kld-10-base')).toBe(2);
+    expect(sh(dir, 'merge-base', '--is-ancestor', 'beluga/kld-9', 'beluga/kld-10-base')).toBe('');
     expect(existsSync(at)).toBe(false);
     expect(sh(dir, 'worktree', 'list')).not.toContain('kld-10-base');
   });
@@ -55,47 +55,47 @@ describe('combining the branches a task builds on', () => {
     branch(dir, 'a', 'a.txt', 'a\n');
     branch(dir, 'b', 'b.txt', 'b\n');
     branch(dir, 'c', 'c.txt', 'c\n');
-    expect(await combineBranches(dir, hidden(), 'klaud/kld-12-base', ['a', 'b', 'c'])).toMatchObject({ ok: true });
-    for (const f of ['a.txt', 'b.txt', 'c.txt']) expect(has(dir, 'klaud/kld-12-base', f)).toBe(true);
-    expect(sh(dir, 'rev-list', '--merges', '--count', 'a..klaud/kld-12-base').trim()).toBe('2');
+    expect(await combineBranches(dir, hidden(), 'beluga/kld-12-base', ['a', 'b', 'c'])).toMatchObject({ ok: true });
+    for (const f of ['a.txt', 'b.txt', 'c.txt']) expect(has(dir, 'beluga/kld-12-base', f)).toBe(true);
+    expect(sh(dir, 'rev-list', '--merges', '--count', 'a..beluga/kld-12-base').trim()).toBe('2');
   });
 
   it('a branch already in another one (KLD-31 contains KLD-27) is needed once; one already in main not at all', async () => {
     const dir = repo();
-    branch(dir, 'klaud/kld-27', 'x.txt', '27\n');
-    branch(dir, 'klaud/kld-31', 'y.txt', '31\n', 'klaud/kld-27');
-    branch(dir, 'klaud/kld-9', 'z.txt', '9\n');
-    branch(dir, 'klaud/kld-5', 'w.txt', '5\n');
-    sh(dir, 'merge', '-q', '--no-ff', '--no-edit', 'klaud/kld-5');
-    expect(await neededBranches(dir, ['klaud/kld-27', 'klaud/kld-31', 'klaud/kld-9', 'klaud/kld-5'], 'main')).toEqual(['klaud/kld-31', 'klaud/kld-9']);
+    branch(dir, 'beluga/kld-27', 'x.txt', '27\n');
+    branch(dir, 'beluga/kld-31', 'y.txt', '31\n', 'beluga/kld-27');
+    branch(dir, 'beluga/kld-9', 'z.txt', '9\n');
+    branch(dir, 'beluga/kld-5', 'w.txt', '5\n');
+    sh(dir, 'merge', '-q', '--no-ff', '--no-edit', 'beluga/kld-5');
+    expect(await neededBranches(dir, ['beluga/kld-27', 'beluga/kld-31', 'beluga/kld-9', 'beluga/kld-5'], 'main')).toEqual(['beluga/kld-31', 'beluga/kld-9']);
     // Combined anyway, a branch already in is skipped (no second merge).
-    expect(await combineBranches(dir, hidden(), 'klaud/kld-40-base', ['klaud/kld-31', 'klaud/kld-27'])).toMatchObject({ ok: true });
-    expect(sh(dir, 'rev-parse', 'klaud/kld-40-base').trim()).toBe(sh(dir, 'rev-parse', 'klaud/kld-31').trim());
+    expect(await combineBranches(dir, hidden(), 'beluga/kld-40-base', ['beluga/kld-31', 'beluga/kld-27'])).toMatchObject({ ok: true });
+    expect(sh(dir, 'rev-parse', 'beluga/kld-40-base').trim()).toBe(sh(dir, 'rev-parse', 'beluga/kld-31').trim());
     // Two names for one commit: the first counts.
-    sh(dir, 'branch', 'same', 'klaud/kld-9');
-    expect(await neededBranches(dir, ['klaud/kld-9', 'same'])).toEqual(['klaud/kld-9']);
+    sh(dir, 'branch', 'same', 'beluga/kld-9');
+    expect(await neededBranches(dir, ['beluga/kld-9', 'same'])).toEqual(['beluga/kld-9']);
   });
 
   it('a conflict is left in the hidden worktree; fixed there, running it again commits and finishes', async () => {
     const dir = repo();
-    branch(dir, 'klaud/kld-9', 'shared.txt', 'nine\n');
-    branch(dir, 'klaud/kld-27', 'shared.txt', 'twenty-seven\n');
-    branch(dir, 'klaud/kld-30', 'thirty.txt', '30\n');
+    branch(dir, 'beluga/kld-9', 'shared.txt', 'nine\n');
+    branch(dir, 'beluga/kld-27', 'shared.txt', 'twenty-seven\n');
+    branch(dir, 'beluga/kld-30', 'thirty.txt', '30\n');
     const at = hidden();
-    const first = await combineBranches(dir, at, 'klaud/kld-10-base', ['klaud/kld-9', 'klaud/kld-27', 'klaud/kld-30']);
-    expect(first).toEqual({ ok: false, branch: 'klaud/kld-10-base', dir: at, merging: 'klaud/kld-27', files: ['shared.txt'] });
+    const first = await combineBranches(dir, at, 'beluga/kld-10-base', ['beluga/kld-9', 'beluga/kld-27', 'beluga/kld-30']);
+    expect(first).toEqual({ ok: false, branch: 'beluga/kld-10-base', dir: at, merging: 'beluga/kld-27', files: ['shared.txt'] });
     expect(readFileSync(path.join(at, 'shared.txt'), 'utf8')).toContain('<<<<<<<');
     // Not fixed yet: still the conflict (with the branch it was merging).
-    expect(await combineBranches(dir, at, 'klaud/kld-10-base', ['klaud/kld-9', 'klaud/kld-27', 'klaud/kld-30'])).toMatchObject({ ok: false, merging: 'klaud/kld-27', files: ['shared.txt'] });
+    expect(await combineBranches(dir, at, 'beluga/kld-10-base', ['beluga/kld-9', 'beluga/kld-27', 'beluga/kld-30'])).toMatchObject({ ok: false, merging: 'beluga/kld-27', files: ['shared.txt'] });
     // Claude's fix-up: markers gone (no git).
     writeFileSync(path.join(at, 'shared.txt'), 'nine and twenty-seven\n');
-    expect(await combineBranches(dir, at, 'klaud/kld-10-base', ['klaud/kld-9', 'klaud/kld-27', 'klaud/kld-30'])).toEqual({ ok: true, branch: 'klaud/kld-10-base' });
-    expect(sh(dir, 'show', 'klaud/kld-10-base:shared.txt')).toBe('nine and twenty-seven\n');
-    expect(has(dir, 'klaud/kld-10-base', 'thirty.txt')).toBe(true);
+    expect(await combineBranches(dir, at, 'beluga/kld-10-base', ['beluga/kld-9', 'beluga/kld-27', 'beluga/kld-30'])).toEqual({ ok: true, branch: 'beluga/kld-10-base' });
+    expect(sh(dir, 'show', 'beluga/kld-10-base:shared.txt')).toBe('nine and twenty-seven\n');
+    expect(has(dir, 'beluga/kld-10-base', 'thirty.txt')).toBe(true);
     expect(existsSync(at)).toBe(false);
   });
 
-  it('through the manager: klaud/<key>-base in a hidden worktree that never shows as the project’s; one branch needed is just that one', async () => {
+  it('through the manager: beluga/<key>-base in a hidden worktree that never shows as the project’s; one branch needed is just that one', async () => {
     const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-combine-m-')));
     const dir = path.join(base, 'code', 'app');
     mkdirSync(dir, { recursive: true });
@@ -105,17 +105,17 @@ describe('combining the branches a task builds on', () => {
     writeFileSync(path.join(dir, 'shared.txt'), 'one\n');
     sh(dir, 'add', '.');
     sh(dir, 'commit', '-qm', 'init');
-    branch(dir, 'klaud/kld-9', 'shared.txt', 'nine\n');
-    branch(dir, 'klaud/kld-27', 'shared.txt', 'twenty-seven\n');
-    branch(dir, 'klaud/kld-31', 'more.txt', '31\n', 'klaud/kld-27');
+    branch(dir, 'beluga/kld-9', 'shared.txt', 'nine\n');
+    branch(dir, 'beluga/kld-27', 'shared.txt', 'twenty-seven\n');
+    branch(dir, 'beluga/kld-31', 'more.txt', '31\n', 'beluga/kld-27');
     const store = new WorkspaceStore(path.join(base, 'home'));
     store.saveConfig({ roots: [path.join(base, 'code')], projects: [], hidden: [] });
     const manager = new WorkspaceManager(store);
     await manager.refresh();
     const project = manager.list.find((p) => p.root)!;
-    expect(await manager.combineBase(project.id, 'KLD-40', ['klaud/kld-27', 'klaud/kld-31'])).toEqual({ ok: true, branch: 'klaud/kld-31' });
-    const res = await manager.combineBase(project.id, 'KLD-10', ['klaud/kld-9', 'klaud/kld-27']);
-    expect(res).toMatchObject({ ok: false, branch: 'klaud/kld-10-base', merging: 'klaud/kld-27', files: ['shared.txt'] });
+    expect(await manager.combineBase(project.id, 'KLD-40', ['beluga/kld-27', 'beluga/kld-31'])).toEqual({ ok: true, branch: 'beluga/kld-31' });
+    const res = await manager.combineBase(project.id, 'KLD-10', ['beluga/kld-9', 'beluga/kld-27']);
+    expect(res).toMatchObject({ ok: false, branch: 'beluga/kld-10-base', merging: 'beluga/kld-27', files: ['shared.txt'] });
     if (res.ok) return;
     expect(res.dir.startsWith(manager.basesDir + path.sep)).toBe(true);
     expect(sh(dir, 'worktree', 'list')).toContain('kld-10-base');

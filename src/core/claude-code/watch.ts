@@ -16,7 +16,7 @@ import type { Facts } from './transcript.js';
 /**
  * Watches the transcripts Claude Code writes (~/.claude/projects/<folder>/<session>.jsonl, and
  * each session's subagents/agent-<id>.jsonl with its .meta.json) for sessions running outside
- * klaud, and keeps `claudeCode.sessions` in the shared state up to date: live sessions, where
+ * Beluga, and keeps `claudeCode.sessions` in the shared state up to date: live sessions, where
  * they run, what they do, and their sub-agents. Reads only: never writes, moves or deletes
  * anything there. fs.watch makes it quick; a slow poll keeps it right when events don't come.
  * The state stays on this computer (screens only; friends never get it).
@@ -46,13 +46,13 @@ export interface WatcherOptions {
   /** Tell you a background agent finished (through the notifier, which minds your settings). */
   readonly notify?: (note: { title: string; body: string; failed: boolean }) => void;
   /**
-   * Where klaud remembers the Claude sessions it ran, so they stay out of Activity after their
+   * Where Beluga remembers the Claude sessions it ran, so they stay out of Activity after their
    * conversation is archived or deleted (undefined: memory only).
    */
   readonly ownFile?: string;
 }
 
-/** The most sessions remembered as klaud's own (the oldest are forgotten first). */
+/** The most sessions remembered as Beluga's own (the oldest are forgotten first). */
 const MAX_OWN = 5000;
 
 interface AgentEntry {
@@ -75,7 +75,7 @@ interface SessionEntry {
   readonly agents: Map<string, AgentEntry>;
   /** When a screen last asked for its steps (kept watched a while after it goes quiet). */
   viewedAt: number;
-  /** One of klaud's own conversations: watched for its sub-agents, kept out of Activity. */
+  /** One of Beluga's own conversations: watched for its sub-agents, kept out of Activity. */
   readonly own: boolean;
 }
 
@@ -160,13 +160,13 @@ export class Listings {
   }
 }
 
-/** One of klaud's own sessions: the workspace whose conversation it is (else where its folder is). */
+/** One of Beluga's own sessions: the workspace whose conversation it is (else where its folder is). */
 function ownPlace(projects: readonly Project[], sessionId: string, cwd: string): { projectId?: string; workspaceId?: string } {
   for (const p of projects) for (const w of p.workspaces) if (w.sessionId === sessionId) return { projectId: p.id, workspaceId: w.id };
   return cwd ? placeOf(projects, cwd) : {};
 }
 
-/** The klaud project and workspace a folder belongs to (the deepest workspace folder containing it). */
+/** The Beluga project and workspace a folder belongs to (the deepest workspace folder containing it). */
 export function placeOf(projects: readonly Project[], cwd: string): { projectId?: string; workspaceId?: string } {
   const within = (root: string): boolean => Boolean(root) && (cwd === root || cwd.startsWith(`${root}/`));
   let best: { projectId: string; workspaceId: string; len: number } | undefined;
@@ -276,7 +276,7 @@ export class ClaudeCodeWatcher {
   private remembered?: Set<string>;
 
   /**
-   * klaud's own conversations (its workspaces) show in klaud's chat already, and stay out of
+   * Beluga's own conversations (its workspaces) show in Beluga's chat already, and stay out of
    * Activity for good: once seen they're remembered, even after the conversation is deleted.
    */
   private ownSessions(): Set<string> {
@@ -351,7 +351,7 @@ export class ClaudeCodeWatcher {
   }
 
   private async scanOnce(): Promise<void> {
-    // Claude Code's folder may appear after klaud starts: watch it once it's there.
+    // Claude Code's folder may appear after Beluga starts: watch it once it's there.
     if (this.opts.watch !== false && !this.watcher) this.watchFolder();
     const now = this.now;
     const activeMs = this.opts.activeMs ?? ACTIVE_MS;
@@ -663,7 +663,7 @@ export class ClaudeCodeWatcher {
     return undefined;
   }
 
-  /** One step of a session (or of one of its agents) with its details, while klaud keeps them. */
+  /** One step of a session (or of one of its agents) with its details, while Beluga keeps them. */
   step(sessionId: string, agentId: string | undefined, seq: number): StepRecord | undefined {
     const s = this.sessions.get(sessionId);
     if (!s) return undefined;

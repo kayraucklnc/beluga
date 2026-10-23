@@ -1,4 +1,4 @@
-// Environment variables you give klaud for your shells, scripts and Claude, as data (no file
+// Environment variables you give Beluga for your shells, scripts and Claude, as data (no file
 // access), so the core and both clients check them the same way. Browser-safe.
 
 /** A variable name a shell accepts: letters, digits and _, not starting with a digit. */

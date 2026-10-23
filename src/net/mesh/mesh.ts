@@ -22,13 +22,13 @@ import { type ChatExtras, type ChatFile, type FriendView, type GroupView, type I
 import { type LinkMessage, PROTO } from './wire.js';
 
 /**
- * Your Mac on the klaud network: no server and no host. It listens at an address derived from
+ * Your Mac on the Beluga network: no server and no host. It listens at an address derived from
  * your identity, stays linked to your friends and the people in your groups (end-to-end
  * encrypted Noise links over the Hyperswarm DHT, relayed through a member's Mac when a direct
  * route can't be made), keeps your groups' logs in step, holds messages for friends who are
  * offline, and tells people your status.
  *
- * Files under `dir` (normally ~/.klaud): friends.json, invitations.json, outbox.json, dms/,
+ * Files under `dir` (normally ~/.beluga): friends.json, invitations.json, outbox.json, dms/,
  * groups/, presence.json, reads.json. Keys never leave this process; what screens see is views.ts.
  */
 
@@ -221,10 +221,10 @@ export class Mesh extends EventEmitter<MeshEvents> {
     await this.pairing.stop(id);
   }
 
-  /** Use a friend or group invitation (a klaud:// link or a code). */
+  /** Use a friend or group invitation (a beluga:// or klaud:// link, or a code). */
   async accept(text: string): Promise<Accepted> {
     const ticket = parseTicket(text);
-    if (!ticket) throw new Error('That isn’t a klaud invitation: paste the klaud:// link or type the code (like K7QM-4XPA-R2TD)');
+    if (!ticket) throw new Error('That isn’t a Beluga invitation: paste the beluga:// link or type the code (like K7QM-4XPA-R2TD)');
     const result = await pairWith(this.node, this.keys.keyPair, this.profile, ticket, this.timing.pairTimeoutMs);
     if (result.profile.card.peerId === this.peerId) throw new Error("That's your own invitation");
     if (result.kind === 'friend') {

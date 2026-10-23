@@ -35,7 +35,7 @@ describe('/visualize', () => {
     ]);
     expect(asked).toHaveLength(1);
     expect(asked[0]![0]).toContain('Visualize how auth works as an interactive graph');
-    expect(asked[0]![0]).toContain('klaud-graph');
+    expect(asked[0]![0]).toContain('beluga-graph');
     expect(asked[0]!.slice(1)).toEqual(['ws:1', false]);
   });
 
@@ -65,7 +65,7 @@ describe('/visualize', () => {
       onFileTouched: () => undefined,
       canUseTool: async () => true,
     });
-    const block = /```klaud-graph\n([\s\S]*?)```/.exec(answer)?.[1];
+    const block = /```beluga-graph\n([\s\S]*?)```/.exec(answer)?.[1];
     const parsed = parseGraph(block ?? '');
     expect(parsed.ok && parsed.warnings).toEqual([]);
     if (parsed.ok) expect(parsed.graph.steps.length).toBeGreaterThan(2);
@@ -75,13 +75,13 @@ describe('/visualize', () => {
 describe('graph instructions', () => {
   it('name the fence, every node and line kind, and say never to give coordinates', () => {
     const text = buildGraphAppend();
-    expect(text).toContain('```klaud-graph');
+    expect(text).toContain('```beluga-graph');
     for (const k of [...NODE_KINDS, ...EDGE_KINDS]) expect(text).toContain(k);
     expect(text).toMatch(/never give\s+coordinates/);
   });
 
   it("their example is a graph that parses", () => {
-    const example = /```klaud-graph\n([\s\S]*?)```/.exec(buildGraphAppend())?.[1] ?? '';
+    const example = /```beluga-graph\n([\s\S]*?)```/.exec(buildGraphAppend())?.[1] ?? '';
     const parsed = parseGraph(example);
     expect(parsed.ok && parsed.warnings).toEqual([]);
   });

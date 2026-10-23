@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } fr
 import path from 'node:path';
 
 /**
- * Small helpers for the network's files under ~/.klaud: everything is written readable only
+ * Small helpers for the network's files under ~/.beluga: everything is written readable only
  * by you (0600), whole files atomically (temp file, then rename), logs a line at a time.
  */
 
@@ -55,7 +55,7 @@ export function writeLines(file: string, values: readonly unknown[]): void {
 
 /** JSON with keys in a fixed order, so the same value always hashes and signs the same. */
 export function canonical(value: unknown, depth = 0): string {
-  // Nothing klaud writes nests this deep; refusing it keeps hostile input from blowing the stack.
+  // Nothing Beluga writes nests this deep; refusing it keeps hostile input from blowing the stack.
   if (depth > 32) throw new Error('Too deeply nested');
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
   if (Array.isArray(value)) return `[${value.map((v) => canonical(v, depth + 1)).join(',')}]`;

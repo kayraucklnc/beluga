@@ -108,9 +108,9 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
  * ("klaud://<host key>…#secret", what Invite copies), so clicking the link a friend sent works.
  */
 export function inviteOf(url: string): string | undefined {
-  const m = /^klaud:\/\/join\/(.+)$/.exec(url);
+  const m = /^(?:beluga|klaud):\/\/join\/(.+)$/.exec(url);
   if (m) return decodeURIComponent(m[1]!);
-  return /^klaud:\/\/[ybndrfg8ejkmcpqxot1uwisza345h769]{52}\/?(\?relay=[^\s#]+)?#[\w-]{16,256}$/.test(url) ? url : undefined;
+  return /^(?:beluga|klaud):\/\/[ybndrfg8ejkmcpqxot1uwisza345h769]{52}\/?(\?relay=[^\s#]+)?#[\w-]{16,256}$/.test(url) ? url : undefined;
 }
 
 /** Listen to the menu bar and to klaud:// links (only in the app). */

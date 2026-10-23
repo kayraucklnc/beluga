@@ -5,7 +5,7 @@ import { type WorktreeFilter, archivedRows, archivedText, filterRows, totals, wo
 
 /** Every worktree on this Mac in one list: who made it, whether its work is done, what it takes. */
 describe('the Worktrees page', () => {
-  const ws = (id: string, over: Partial<Workspace> = {}): Workspace => ({ id, projectRoot: '/r', name: id, path: `/r/wt/${id}`, kind: 'worktree', createdAt: 0, projectId: 'p', external: false, branch: `klaud/${id}`, status: { changed: 0, ahead: 2, behind: 0 }, ...over });
+  const ws = (id: string, over: Partial<Workspace> = {}): Workspace => ({ id, projectRoot: '/r', name: id, path: `/r/wt/${id}`, kind: 'worktree', createdAt: 0, projectId: 'p', external: false, branch: `beluga/${id}`, status: { changed: 0, ahead: 2, behind: 0 }, ...over });
   const main = ws('main', { kind: 'main', path: '/r', branch: 'main' });
   const chat = ws('ask', { kind: 'chat', path: '/r', name: 'How do deploys work?' });
   const mine = ws('add-auth');
@@ -55,7 +55,7 @@ describe('the Worktrees page', () => {
     expect(by('wip').archiving).toBe('compressing');
   });
 
-  it('filters: done, sub-agents, orphaned (who started it is gone), made outside Klaud', () => {
+  it('filters: done, sub-agents, orphaned (who started it is gone), made outside Beluga', () => {
     const ids = (f: WorktreeFilter) => filterRows(rows, f).map((r) => r.ws.id).sort();
     expect(ids('done')).toEqual(['nothing-new', 'old-fix']);
     expect(ids('agents')).toEqual(['agent-a1', 'agent-b2', 'agent-c3']);
@@ -82,8 +82,8 @@ describe('the Worktrees page', () => {
     expect(of('lost').archived?.restorable).toBe(false);
     const fmt = (n: number) => `${n} B`;
     expect(archivedText(of('smart'), fmt).restore).toMatch(/as it was/);
-    expect(archivedText(of('smart'), fmt).remove).toBe('Deleting loses its archive (uncommitted work and files of yours, 2048 B), its branch klaud/smart (commits only there) and its conversation.');
-    expect(archivedText(of('old'), fmt).restore).toBe('Restore makes it again from its branch klaud/old');
+    expect(archivedText(of('smart'), fmt).remove).toBe('Deleting loses its archive (uncommitted work and files of yours, 2048 B), its branch beluga/smart (commits only there) and its conversation.');
+    expect(archivedText(of('old'), fmt).restore).toBe('Restore makes it again from its branch beluga/old');
     // Another tool's branch is never deleted.
     expect(archivedText(of('theirs'), fmt).remove).toBe('Deleting loses its conversation.');
     expect(archivedText(of('lost'), fmt).restore).toMatch(/Can’t come back/);

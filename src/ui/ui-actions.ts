@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import { globalShellId, globalShellNumber, isGlobalShell, runId, setupId } from '../shared/terminal-keys.js';
 import { runCollabUiAction } from './collab-actions.js';
 import type { UiState } from './keymap.js';
@@ -9,7 +9,7 @@ import { type UiAction, findWorkspace, toggleProject } from './workspace-models.
 
 /** What clicking things (and pressing Enter on them) needs from the app. */
 export interface UiActionContext {
-  readonly client: KlaudClient;
+  readonly client: BelugaClient;
   readonly patchUi: (patch: Partial<UiState>) => void;
   readonly uiRef: MutableRefObject<UiState>;
   readonly toggle: (key: string) => void;

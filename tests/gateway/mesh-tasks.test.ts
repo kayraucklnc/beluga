@@ -8,8 +8,8 @@ import { type Crowd, befriend, crowd, settle } from '../mesh/helpers.js';
 import { type Node, node, task } from './helpers.js';
 
 /**
- * Tasks between Claudes over the klaud network: several simulated people on a local DHT, each
- * with their own klaud (store, gateway, a fake Claude), friends linked end to end.
+ * Tasks between Claudes over the Beluga network: several simulated people on a local DHT, each
+ * with their own Beluga (store, gateway, a fake Claude), friends linked end to end.
  */
 
 let net: Crowd;
@@ -113,7 +113,7 @@ describe('asking a friend’s Claude', () => {
     gus.gw.setCapabilities({ levels: { screen: { ask: 'off', trusted: 'ask', full: 'allow' } } });
     const t = fay.gw.ask({ person: 'gus', ask: 'what is on screen', needs: ['screen'], by: 'agent' });
     await settle(() => task(fay, t.id)?.state === 'declined');
-    expect(task(fay, t.id)?.result?.summary).toBe("gus's klaud doesn't let you see the screen");
+    expect(task(fay, t.id)?.result?.summary).toBe("gus's Beluga doesn't let you see the screen");
     expect(gus.approvals).toHaveLength(0);
   }, 60_000);
 

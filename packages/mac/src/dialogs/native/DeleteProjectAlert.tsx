@@ -13,7 +13,7 @@ export function DeleteProjectAlert({ projectId, close }: { projectId: string; cl
   const project = useApp((st) => st.projects.find((p) => p.id === projectId && p.root));
   const [trash, setTrash] = useState(false);
   if (!project) return null;
-  const worktrees = project.workspaces.filter((w) => w.kind === 'worktree' && !w.archived && worktreeOrigin(w) === 'klaud').length;
+  const worktrees = project.workspaces.filter((w) => w.kind === 'worktree' && !w.archived && worktreeOrigin(w) === 'beluga').length;
   const remove = (): void => {
     close();
     void api.workspaces.removeProject(project.id, { trash });

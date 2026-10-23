@@ -4,7 +4,7 @@ import { type Action, type DomainState, reduceDomain } from '../core/store.js';
 import type { PtyExit } from '../terminal/pty-host.js';
 import type { PtyLink } from '../terminal/emulator.js';
 import type { Args, Method } from './api.js';
-import { type ApiProxy, type ClientKind, type KlaudClient, apiProxy } from './client.js';
+import { type ApiProxy, type ClientKind, type BelugaClient, apiProxy } from './client.js';
 import type { Result } from './handlers.js';
 import { type Cap, type ClientFrame, type DaemonFrame, IPC_VERSION, encodeFrame, parseDaemonFrame } from './protocol.js';
 
@@ -130,10 +130,10 @@ class SocketTerm implements PtyLink {
 }
 
 /**
- * A screen attached to the klaud daemon over its local WebSocket (the terminal UI when other
+ * A screen attached to the beluga daemon over its local WebSocket (the terminal UI when other
  * screens are attached too, and the Mac app). Browser-safe.
  */
-export class SocketClient implements KlaudClient {
+export class SocketClient implements BelugaClient {
   readonly store: ClientStore;
   readonly api: ApiProxy;
   readonly kind: ClientKind;
@@ -170,7 +170,7 @@ export class SocketClient implements KlaudClient {
       let client: SocketClient | undefined;
       const early: string[] = [];
       const timer = setTimeout(() => {
-        reject(new Error('The klaud daemon did not answer'));
+        reject(new Error('The beluga daemon did not answer'));
         socket.close();
       }, opts.timeoutMs ?? 10_000);
       socket.onopen = () => {
@@ -194,8 +194,8 @@ export class SocketClient implements KlaudClient {
       };
       socket.onclose = (ev) => {
         clearTimeout(timer);
-        if (!client) return reject(new Error(ev.reason || 'Could not reach the klaud daemon'));
-        client.ended(ev.reason || 'The klaud daemon went away');
+        if (!client) return reject(new Error(ev.reason || 'Could not reach the beluga daemon'));
+        client.ended(ev.reason || 'The beluga daemon went away');
       };
       socket.onerror = () => undefined;
     });
@@ -206,7 +206,7 @@ export class SocketClient implements KlaudClient {
   }
 
   private invoke(method: Method, args: readonly unknown[]): Promise<unknown> {
-    if (this.closed) return Promise.reject(new Error('Not connected to klaud'));
+    if (this.closed) return Promise.reject(new Error('Not connected to Beluga'));
     const id = String(++this.nextId);
     const promise = new Promise<unknown>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });

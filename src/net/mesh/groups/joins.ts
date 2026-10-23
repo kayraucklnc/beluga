@@ -3,7 +3,7 @@ import { readJson, writeJson } from '../files.js';
 import { ProfileSchema } from '../schemas.js';
 
 /**
- * Joining by link, both sides, kept in ~/.klaud/groups/joins.json:
+ * Joining by link, both sides, kept in ~/.beluga/groups/joins.json:
  * - asked: groups you asked to join (and the admin who has your request), until you're in;
  * - requests: people waiting for you, an admin, to let them into one of your groups.
  */

@@ -1,13 +1,14 @@
 import { execFile } from 'node:child_process';
-import { readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { belugaEnv } from '../core/beluga-env.js';
 
 /**
- * Test runs a worktree left behind: when its Claude stops or it's archived, klaud stops them, so
+ * Test runs a worktree left behind: when its Claude stops or it's archived, Beluga stops them, so
  * interrupted e2e runs never pile up demo daemons, vite servers and browsers on the Mac.
  *
- * What counts: every process the worktree's Claude started (klaud gives its runs KLAUD_WORKTREE, and
+ * What counts: every process the worktree's Claude started (Beluga gives its runs BELUGA_WORKTREE, and
  * their commands inherit it) that is a test runner or what one starts (vitest, playwright, vite, the
  * demo daemon, the browser); whatever its Bash commands left running (a dev server in the background,
  * `npm run dev &`, `nohup node server.js`), whatever it's called; the e2e run holding the machine-wide
@@ -17,7 +18,18 @@ import path from 'node:path';
  */
 
 /** The machine-wide e2e lock (scripts/e2e-lock.mjs keeps it there). */
-const e2eLockFile = (): string => path.join(process.env.KLAUD_E2E_DIR || path.join(os.homedir(), '.klaud', 'e2e'), 'lock.json');
+export const e2eLockFile = (): string => path.join(belugaEnv('E2E_DIR') || e2eHomeDir(), 'lock.json');
+
+/** ~/.beluga/e2e, or the old ~/.klaud/e2e while only that home exists (same folder once it moved). */
+function e2eHomeDir(): string {
+  const beluga = path.join(os.homedir(), '.beluga');
+  const klaud = path.join(os.homedir(), '.klaud');
+  return path.join(!existsSync(beluga) && existsSync(klaud) ? klaud : beluga, 'e2e');
+}
+
+/** The line carries `<NAME>=<value>` in its environment, under the Beluga name or the old klaud one. */
+const carries = (line: string, name: string, value: string): boolean =>
+  [`BELUGA_${name}`, `KLAUD_${name}`].some((key) => line.includes(` ${key}=${value} `) || line.endsWith(` ${key}=${value}`));
 
 export interface ProcRow {
   readonly pid: number;
@@ -46,15 +58,14 @@ const inside = (child: string, dir: string): boolean => child === dir || child.s
  * away, so test runners installed in it go too, whoever started them.
  */
 export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving = false): number[] {
-  const tag = ` KLAUD_WORKTREE=${dir}`;
-  // Kept on purpose (KLAUD_KEEP=1, see keepsRunning) while the worktree stays: they, and the shells waiting on them.
-  // Never a test run or an e2e's processes (nor what runs under one), marked or not.
+  // Kept on purpose (BELUGA_KEEP=1, or KLAUD_KEEP=1 from before the rename; see keepsRunning) while the worktree
+  // stays: they, and the shells waiting on them. Never a test run or an e2e's processes (nor what runs under one), marked or not.
   const keep = new Set<number>();
   if (!leaving) {
     const byPid = new Map(rows.map((r) => [r.pid, r]));
-    const testRun = (r: ProcRow) => r.line.includes(' KLAUD_E2E_RUN=') || isTestRunner(r.line, dir);
+    const testRun = (r: ProcRow) => / (BELUGA|KLAUD)_E2E_RUN=/.test(r.line) || isTestRunner(r.line, dir);
     for (const r of rows) {
-      if (!r.line.includes(` ${KEEP_MARK} `) && !r.line.endsWith(` ${KEEP_MARK}`)) continue;
+      if (!carries(r.line, 'KEEP', '1')) continue;
       const chain: number[] = [];
       let under = false;
       for (let p: ProcRow | undefined = r; p && p.pid > 1 && !chain.includes(p.pid); p = byPid.get(p.ppid)) {
@@ -66,9 +77,9 @@ export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving =
   }
   const hits = rows.filter((r) => {
     if (r.pid === process.pid || keep.has(r.pid)) return false;
-    const tagged = r.line.includes(`${tag} `) || r.line.endsWith(tag);
+    const tagged = carries(r.line, 'WORKTREE', dir);
     const installed = leaving && r.line.includes(path.join(dir, 'node_modules') + path.sep);
-    const e2e = tagged && r.line.includes(' KLAUD_E2E_RUN=');
+    const e2e = tagged && / (BELUGA|KLAUD)_E2E_RUN=/.test(r.line);
     // Left by a Bash command: its shell still running (run_in_background), or orphaned once the shell exited (`&`, nohup).
     const leftByBash = tagged && !CLAUDE.test(r.line) && (BASH_SHELL.test(r.line) || r.ppid === 1);
     return e2e || leftByBash || ((tagged || installed) && isTestRunner(r.line, dir)) || (installed && SERVER.test(r.line.split(dir).join('<worktree>')));
@@ -138,10 +149,10 @@ export function mayLeaveProcesses(command: unknown, background?: unknown): boole
 }
 
 /** What a command says to keep what it starts running past the turn (they carry it in their environment). */
-export const KEEP_MARK = 'KLAUD_KEEP=1';
+export const KEEP_MARK = 'BELUGA_KEEP=1';
 
-/** Whether a Bash command asks to keep what it starts (`KLAUD_KEEP=1 npm run dev &`). */
-export const keepsRunning = (command: unknown): boolean => typeof command === 'string' && new RegExp(`(^|[\\s;&|(])${KEEP_MARK}(\\s|$)`).test(command);
+/** Whether a Bash command asks to keep what it starts (`BELUGA_KEEP=1 npm run dev &`; the old KLAUD_KEEP=1 too). */
+export const keepsRunning = (command: unknown): boolean => typeof command === 'string' && /(^|[\s;&|(])(BELUGA|KLAUD)_KEEP=1(\s|$)/.test(command);
 
 /** Whether the machine-wide e2e lock is held from this worktree (one small file read, no ps). */
 export function e2eLockedIn(dir: string): boolean {
@@ -214,9 +225,8 @@ export function lockTargets(run: LockedRun, rows: readonly ProcRow[]): { pids: n
   const holder = row(run.pid);
   const verified = Boolean(holder && /e2e-lock\.mjs(\s|$)/.test(holder.line) && holder.line.includes(run.worktree));
   if (!verified) return { pids: [], groups: [] };
-  const tag = run.id ? ` KLAUD_E2E_RUN=${run.id}` : undefined;
   const daemon = row(run.daemon);
-  const daemonOurs = Boolean(daemon && tag && (daemon.line.includes(`${tag} `) || daemon.line.endsWith(tag)));
+  const daemonOurs = Boolean(daemon && run.id && carries(daemon.line, 'E2E_RUN', run.id));
   return { pids: [run.pid, ...(daemonOurs ? [run.daemon!] : [])], groups: [...run.groups] };
 }
 

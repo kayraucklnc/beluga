@@ -225,7 +225,7 @@ export class TranscriptTracker {
     this.details.delete(seq);
   }
 
-  /** One kept step with what opening it shows, as the same record klaud's own runs keep (shared/steps.ts). */
+  /** One kept step with what opening it shows, as the same record Beluga's own runs keep (shared/steps.ts). */
   detail(seq: number): StepRecord | undefined {
     const s = this.steps.find((x) => x.seq === seq);
     if (!s || (s.kind !== 'tool' && s.kind !== 'thinking')) return undefined;

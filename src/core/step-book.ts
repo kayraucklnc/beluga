@@ -7,7 +7,7 @@ import { type StepPage, type StepRecord, sizeOf, summaryOf } from '../shared/ste
  * Where the details of Claude's steps live (see shared/steps.ts): beside the chat, never in it.
  * The chat item keeps its one-line steps as before; this keeps, per run, every step's record
  * (input, output, thinking), in memory for recent runs and on disk (bounded) so a card can be
- * opened again after klaud restarts. Only ever read by screens on this computer
+ * opened again after Beluga restarts. Only ever read by screens on this computer
  * (`agent.steps`, `agent.step`); nothing here is sent to anyone.
  */
 
@@ -94,7 +94,7 @@ export class StepBook {
     this.save(run);
   }
 
-  /** Write everything waiting (klaud is quitting). */
+  /** Write everything waiting (Beluga is quitting). */
   flushAll(): void {
     for (const key of this.runs.keys()) this.flush(key);
   }

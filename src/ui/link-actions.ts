@@ -2,14 +2,14 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { systemOpen } from '../core/os-open.js';
 import { ATTACHMENT_SHARE, attachmentsDir, roomAttachmentsDir } from '../core/attachments.js';
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import type { Location } from '../core/store.js';
 import type { UiState } from './keymap.js';
 import type { LinkTarget } from './links.js';
 import { type UiAction, findWorkspace } from './workspace-models.js';
 
 export interface LinkContext {
-  readonly client: KlaudClient;
+  readonly client: BelugaClient;
   readonly patchUi: (patch: Partial<UiState>) => void;
   readonly run: (action: UiAction) => void;
 }

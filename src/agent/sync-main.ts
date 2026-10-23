@@ -193,7 +193,7 @@ export function syncProbes(cwd: string, target: { branch: string; upstream: stri
 
 /** Why a sync run can't do it, and what to do instead. */
 export const SYNC_MAIN_REASON =
-  'klaud blocked this: this run may only bring main up to date (git fetch, pull, merge, rebase --continue/--abort, stash, ' +
+  'Beluga blocked this: this run may only bring main up to date (git fetch, pull, merge, rebase --continue/--abort, stash, ' +
   'checkout --ours/--theirs or restore for conflicted files, editing files with conflict markers, add, and a commit that concludes a merge). ' +
   'Never push, and never discard anything (no reset --hard, checkout -- <file>, clean, stash drop/clear, rebase --skip). ' +
   "If that's what it would take, stop and explain the situation so the user can decide.";
@@ -203,7 +203,7 @@ export function syncMainPrompt(ctx: { branch: string; upstream: string; situatio
   const dirty = ctx.dirty?.length ? `\nUncommitted changes in the main folder (keep them): ${ctx.dirty.slice(0, 30).join(', ')}${ctx.dirty.length > 30 ? ` and ${ctx.dirty.length - 30} more` : ''}.` : '';
   return [
     `Bring main up to date with ${ctx.upstream}: the main folder should end up on ${ctx.branch} with everything from ${ctx.upstream}.`,
-    `What Klaud found: ${ctx.situation}${dirty}`,
+    `What Beluga found: ${ctx.situation}${dirty}`,
     '',
     '1. Look first: git status, git log --oneline --graph -15 ' + `${ctx.branch} ${ctx.upstream}` + ', git stash list.',
     `2. Keep my local work: uncommitted changes (stash them if they're in the way and put them back after, by the stash's hash) and any local commits on ${ctx.branch} (merge or rebase them onto ${ctx.upstream}; prefer a merge if they may have been shared).`,
@@ -219,7 +219,7 @@ export function buildSyncMainAppend(project: string, branch: string, upstream: s
   return [
     '',
     `IMPORTANT: You're in the main folder of ${project}, and this run's job is to bring ${branch} up to date with ${upstream}.`,
-    'Beyond reading, you may ONLY sync git here, in these forms (klaud blocks everything else, and any shell syntax like $VAR, \\, ~, *, {}, ()):',
+    'Beyond reading, you may ONLY sync git here, in these forms (Beluga blocks everything else, and any shell syntax like $VAR, \\, ~, *, {}, ()):',
     `- git fetch ${remote} [branch]; git pull [--ff-only | --rebase | --no-rebase] [${remote} ${branch}]`,
     `- git merge [--no-edit | -m "message"] ${upstream} (or FETCH_HEAD); git merge --continue / --abort; git rebase --continue / --abort`,
     '- git stash push -u -m "message"; then find its hash with git stash list --format="%H %gs" and put it back with git stash apply <hash> (or pop <hash>)',

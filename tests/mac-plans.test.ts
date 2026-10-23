@@ -136,7 +136,7 @@ describe('the plan’s one sentence, its bar and its feed (KLD-22)', () => {
   });
 
   it('the feed: newest first, the same thing in a row folded into one line', () => {
-    const klaud = { kind: 'klaud' } as const;
+    const klaud = { kind: 'beluga' } as const;
     const e = (id: string, at: number, kind: PlanEvent['kind'], text: string, by: PlanEvent['by'] = klaud): PlanEvent => ({ id, at, by, kind, text });
     const feed = feedOf([
       e('1', 1, 'started', 'started KLD-1 “A”'),

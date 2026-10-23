@@ -2,21 +2,29 @@
 // One Mac e2e run at a time, machine-wide, and nothing left behind when it ends.
 //   node scripts/e2e-lock.mjs <command…>        (packages/mac's `npm run e2e` runs playwright through it)
 // - A second run, from any worktree, waits for the first and says whose it is ("waiting for KLD-12's e2e").
-// - Each worktree gets its own E2E_PORT and demo home (KLAUD_HOME), so runs never share a server or a daemon.
+// - Each worktree gets its own E2E_PORT and demo home (BELUGA_HOME), so runs never share a server or a daemon.
 //   Each playwright worker starts its own demo daemons next to it (see slotHomes and e2e/fixtures.ts).
 // - The command runs in its own process group; every process it starts is tracked (even ones that move to
 //   their own group, like vite and the browser) and stopped however the run ends: done, Ctrl-C, killed.
 // - A run that fails while the Mac is overloaded re-runs its failed tests once, alone, after the load drops.
-// The lock lives in ~/.klaud/e2e (KLAUD_E2E_DIR overrides it); Klaud reads it to stop a worktree's tests.
+// The lock lives in ~/.beluga/e2e (BELUGA_E2E_DIR overrides it); Beluga reads it to stop a worktree's tests.
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-/** Where the machine-wide lock is kept. */
-export const stateDir = () => process.env.KLAUD_E2E_DIR || path.join(os.homedir(), '.klaud', 'e2e');
+/** BELUGA_<name>, else the KLAUD_<name> from before the rename. */
+const belugaEnv = (name) => process.env[`BELUGA_${name}`] ?? process.env[`KLAUD_${name}`];
+
+/** Where the machine-wide lock is kept: ~/.beluga/e2e (the old ~/.klaud/e2e while only that home exists). */
+export function stateDir() {
+  const fromEnv = belugaEnv('E2E_DIR');
+  if (fromEnv) return fromEnv;
+  const [beluga, klaud] = ['.beluga', '.klaud'].map((name) => path.join(os.homedir(), name));
+  return path.join(!existsSync(beluga) && existsSync(klaud) ? klaud : beluga, 'e2e');
+}
 export const lockFile = () => path.join(stateDir(), 'lock.json');
 
 const short = (text) => createHash('sha1').update(text).digest('hex').slice(0, 8);
@@ -30,7 +38,7 @@ export function worktreeOf(dir) {
   }
 }
 
-/** Whose run it is, in words: "KLD-12" from a task branch (klaud/kld-12-…), else the worktree's name. */
+/** Whose run it is, in words: "KLD-12" from a task branch (beluga/kld-12-…), else the worktree's name. */
 export function runName(worktree, branch) {
   const key = /(?:^|\/)([a-z]{2,6})-(\d+)(?:-|$)/i.exec(branch ?? '');
   return key ? `${key[1].toUpperCase()}-${key[2]}` : path.basename(worktree);
@@ -47,9 +55,9 @@ function branchOf(dir) {
 /** A worktree's own vite port: stable for the worktree, different between worktrees (14300–17299). */
 export const portFor = (worktree) => 14300 + (Number.parseInt(short(worktree), 16) % 3000);
 
-/** A worktree's own demo home (klaud data) and pretend ~/.claude, in the temp folder (short paths). */
+/** A worktree's own demo home (Beluga's data) and pretend ~/.claude, in the temp folder (short paths). */
 export function homesFor(worktree) {
-  const base = path.join(os.tmpdir(), `klaud-e2e-${short(worktree)}`);
+  const base = path.join(os.tmpdir(), `beluga-e2e-${short(worktree)}`);
   return { home: path.join(base, 'home'), claude: path.join(base, 'claude') };
 }
 
@@ -280,14 +288,15 @@ function psEnv() {
 
 /**
  * The processes a run can verify are its own: their environment carries its run tag
- * (KLAUD_E2E_RUN=<id>) and their command line or working folder is under its worktree. A pid
+ * (BELUGA_E2E_RUN=<id>, or KLAUD_E2E_RUN from before the rename) and their command line or working folder is under its worktree. A pid
  * reused after a reboot can't have both, so nothing else is ever matched.
  */
 export function processesOf(run, rows = psEnv()) {
   if (!run?.id || !run.worktree) return [];
-  const tag = ` KLAUD_E2E_RUN=${run.id}`;
+  const tags = [` BELUGA_E2E_RUN=${run.id}`, ` KLAUD_E2E_RUN=${run.id}`];
   const under = new RegExp(`${run.worktree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/|\\s|$)`);
-  return rows.filter((r) => r.pid !== process.pid && (r.line.includes(`${tag} `) || r.line.endsWith(tag)) && under.test(r.line)).map(({ pid, pgid }) => ({ pid, pgid }));
+  const tagged = (line) => tags.some((tag) => line.includes(`${tag} `) || line.endsWith(tag));
+  return rows.filter((r) => r.pid !== process.pid && tagged(r.line) && under.test(r.line)).map(({ pid, pgid }) => ({ pid, pgid }));
 }
 
 /**
@@ -426,16 +435,20 @@ async function main(argv) {
     name: runName(worktree, branchOf(worktree)),
     worktree,
     port,
-    // Never an inherited KLAUD_HOME: inside Klaud that's your real data, and the demo home is wiped each run.
-    home: process.env.KLAUD_E2E_HOME || homes.home,
+    // Never an inherited BELUGA_HOME (or KLAUD_HOME): inside Beluga that's your real data, and the demo home is wiped each run.
+    home: belugaEnv('E2E_HOME') || homes.home,
     startedAt: Date.now(),
     groups: [],
   };
   const env = {
     ...process.env,
     E2E_PORT: String(port),
+    // Both names: the daemon reads BELUGA_* first, and older readers (or an inherited BELUGA_HOME) must never win.
+    BELUGA_HOME: run.home,
     KLAUD_HOME: run.home,
+    BELUGA_CLAUDE_HOME: homes.claude,
     KLAUD_CLAUDE_HOME: homes.claude,
+    BELUGA_E2E_RUN: run.id,
     KLAUD_E2E_RUN: run.id,
   };
 

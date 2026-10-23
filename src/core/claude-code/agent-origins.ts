@@ -10,7 +10,7 @@ import { parseLine } from './transcript.js';
  * Where a sub-agent's worktree came from, read from Claude Code's own files: each session keeps
  * its sub-agents' side files (`<session>/subagents/agent-<id>.meta.json`), so a worktree under
  * `.claude/worktrees/agent-<id>` leads back to the conversation that started it, its folder and
- * title, long after Klaud stopped following it. Reads only.
+ * title, long after Beluga stopped following it. Reads only.
  */
 
 const SESSION_DIR = /^[0-9a-f-]{8,64}$/i;

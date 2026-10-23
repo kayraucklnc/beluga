@@ -17,27 +17,27 @@ import { Courier, type MeshPort, type RoomPort, type Via } from './transport.js'
 
 /**
  * The gateway: tasks between Claudes. Your Claude (or you) asks a friend's Claude to do
- * something, or runs one command on their Mac; their klaud decides by their trust in you,
+ * something, or runs one command on their Mac; their Beluga decides by their trust in you,
  * their Claude does the work and the result comes back to you only. If your Claude's turn
  * ended before the result arrived, a new turn starts in the same conversation with it, so the
  * work carries on (and can go on to ask the next person).
  *
- * Works over the klaud network (friends, mesh links, store-and-forward) and over today's rooms
- * (people in the same room). Tasks are kept in ~/.klaud/tasks/ on both sides.
+ * Works over the Beluga network (friends, mesh links, store-and-forward) and over today's rooms
+ * (people in the same room). Tasks are kept in ~/.beluga/tasks/ on both sides.
  */
 
 export interface GatewayDeps {
   readonly store: Store;
   readonly selfId: () => string;
   readonly selfName: () => string;
-  /** ~/.klaud/tasks (null: memory only). */
+  /** ~/.beluga/tasks (null: memory only). */
   readonly dir: string | null;
   /** Where scratch folders go when `dir` is null. */
   readonly scratch?: string;
   readonly agent: () => AgentBackend | undefined;
   /** Ask you (today's approval cards, linked to the task they're about), with a way to take the question back. */
   readonly approve: (kind: 'request' | 'tool', title: string, detail: string, peer: string, task?: string) => Pending;
-  /** ~/.klaud/rules.json (null or missing: rules stay in memory). */
+  /** ~/.beluga/rules.json (null or missing: rules stay in memory). */
   readonly rulesFile?: string | null;
   /** Your capability settings (what friends' Claudes may do here), and saving them. */
   readonly loadCaps?: () => unknown;
@@ -97,7 +97,7 @@ export interface Candidate {
   readonly status?: string;
   /** Your trust in them. */
   readonly your_trust: TrustLevel;
-  /** Their trust in you, as they told you (unknown until their klaud says). */
+  /** Their trust in you, as they told you (unknown until their Beluga says). */
   readonly their_trust?: TrustLevel;
   /** You'll be asked before your Claude contacts them. */
   readonly asks_you_first: boolean;
@@ -193,14 +193,14 @@ export class Gateway {
       now: () => this.now(),
       ...(deps.chunkTimeoutMs ? { chunkTimeoutMs: deps.chunkTimeoutMs } : {}),
     });
-    // Tasks that were waiting on the other side when klaud quit are still there: keep waiting.
+    // Tasks that were waiting on the other side when Beluga quit are still there: keep waiting.
     // Received ones that were running here stopped with it.
     for (const t of this.book.all()) {
-      if (t.direction === 'received' && !isFinal(t.state)) this.put({ ...t, state: 'failed', result: { status: 'failed', summary: 'klaud quit before it finished', files: [], log: t.steps }, endedAt: this.now(), updatedAt: this.now() });
-      if (t.direction === 'sent' && t.state === 'confirm') this.put({ ...t, state: 'cancelled', result: { status: 'cancelled', summary: 'Not sent (klaud quit before you answered)', files: [], log: [] }, endedAt: this.now(), updatedAt: this.now() });
+      if (t.direction === 'received' && !isFinal(t.state)) this.put({ ...t, state: 'failed', result: { status: 'failed', summary: 'Beluga quit before it finished', files: [], log: t.steps }, endedAt: this.now(), updatedAt: this.now() });
+      if (t.direction === 'sent' && t.state === 'confirm') this.put({ ...t, state: 'cancelled', result: { status: 'cancelled', summary: 'Not sent (Beluga quit before you answered)', files: [], log: [] }, endedAt: this.now(), updatedAt: this.now() });
     }
     deps.store.dispatch({ type: 'gw_init', state: this.view() });
-    // Results whose big files were still coming when klaud quit: carry on fetching them.
+    // Results whose big files were still coming when Beluga quit: carry on fetching them.
     for (const [id, result] of Object.entries(this.book.pending())) {
       const task = this.book.get(id);
       if (task && !isFinal(task.state)) setImmediate(() => void this.receiveFiles(task, result));
@@ -227,7 +227,7 @@ export class Gateway {
 
   // ------------------------------------------------------------------ transports
 
-  /** The klaud network came up: tasks go over friends' links too. */
+  /** The Beluga network came up: tasks go over friends' links too. */
   attachMesh(mesh: MeshNode): void {
     this.detachMesh();
     this.mesh = mesh;

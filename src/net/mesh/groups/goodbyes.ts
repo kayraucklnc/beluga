@@ -4,7 +4,7 @@ import { type Entry, type Profile, ProfileSchema } from '../schemas.js';
 
 /**
  * Leaving a group when none of its members was online: nobody heard you go. The entry that
- * says so waits here (~/.klaud/groups/goodbyes.json), with the last few entries before it in
+ * says so waits here (~/.beluga/groups/goodbyes.json), with the last few entries before it in
  * case they missed those, and the people to say it to. The first one of them you're linked
  * with gets it and passes it on to the rest, like anything new in a group. Kept even if you
  * delete the group from this Mac.

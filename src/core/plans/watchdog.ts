@@ -18,7 +18,7 @@ import { CONTINUE_PROMPT, CRASH_RETRY_MS, type RunFailure, decodeFailure, failur
  * inside a command that runs long (tests, a build, waiting on someone).
  *
  * A run that ended on your usage limit isn't a stall: the task shows "Paused · usage limit", and
- * once the limit resets Klaud resumes the head Claude, then each such task, one at a time within
+ * once the limit resets Beluga resumes the head Claude, then each such task, one at a time within
  * the plan's task limit. A run that crashed is retried once after 30s; crashing again, it waits
  * for you (see shared/run-failure.ts).
  *
@@ -32,9 +32,9 @@ export const COMMAND_LIMIT_MS = 2 * 60 * 60_000;
 /** Stalling again this soon after a wake: it waits for you instead. */
 export const REPEAT_MS = 30 * 60_000;
 /** A wake's run gets this long to start before it counts as not having worked. */
-const WAKE_GRACE_MS = 3 * 60_000;
-/** A started task with no run of Claude's in sight for this long (since Klaud looked) is stopped. */
-const NO_RUN_MS = 2 * 60_000;
+export const WAKE_GRACE_MS = 3 * 60_000;
+/** A started task with no run of Claude's in sight for this long (since Beluga looked) is stopped. */
+export const NO_RUN_MS = 2 * 60_000;
 /** A command shows as "Running a long command" once it has run this long. */
 const LONG_SHOWN_MS = 60_000;
 /** A message the head Claude steered in, unread this long: delivered again (interrupting, or a fresh turn). */
@@ -48,7 +48,7 @@ const LIMIT_UNKNOWN_MS = 30 * 60_000;
 export const LIMIT_MARGIN_MS = 60_000;
 
 /** Steps that may take long without anything new: commands, and waiting on other people or Claudes. */
-const LONG_STEP = /^(Bash|BashOutput|Monitor|KillShell|wait_for|ask_agent|ask_person|run_on|run_on_peer|mcp__klaud_\w+__wait\w*)\b/;
+const LONG_STEP = /^(Bash|BashOutput|Monitor|KillShell|wait_for|ask_agent|ask_person|run_on|run_on_peer|mcp__(?:beluga|klaud)_\w+__wait\w*)\b/;
 /** Runs you stopped yourself: shown as stopped, never woken behind your back. */
 const BY_YOU = /stopped by owner|cancelled by owner|taken out of the queue/i;
 const TURN = new Set(['queued', 'awaiting_approval', 'started', 'answered']);
@@ -185,7 +185,7 @@ export function pulseWords(p: TaskPulse, now: number): { readonly label: string;
 
 /**
  * Has this task's Claude stalled, and why? `alive`: whether its Claude Code process is still
- * there (the agent runner knows; undefined: can't tell). `seenAt`: when Klaud first saw it with
+ * there (the agent runner knows; undefined: can't tell). `seenAt`: when Beluga first saw it with
  * no run at all. `talkedAt`: when you last wrote in its chat (a turn ending then is you talking
  * with it: shown as stopped, not woken).
  */
@@ -229,7 +229,7 @@ export function wakePrompt(issue: Issue, reason: string, run: RunInfo | undefine
     open.length ? `- Not true yet: ${open.map((c) => `“${c}”`).join('; ')}` : '- Check the acceptance criteria in the task’s brief.',
     ...(waited.length ? ['', 'Messages that waited for you while you were stopped:', ...waited.map((w) => `---\n${w.trim()}`), '---'] : []),
     '',
-    'Go on from there until every acceptance criterion is true; then commit, rewrite the handoff and call task_update with status in_review. If only the user can decide something, say so in one clear line and end your turn: Klaud asks them.',
+    'Go on from there until every acceptance criterion is true; then commit, rewrite the handoff and call task_update with status in_review. If only the user can decide something, say so in one clear line and end your turn: Beluga asks them.',
   ].join('\n');
 }
 
@@ -323,14 +323,14 @@ export class TaskWatchdog {
     const waitedFor = span(now - s.at);
     if (s.retries >= STEER_RETRIES) {
       this.steered.delete(s.requestId);
-      this.deps.plans.note(s.planId, 'problem', `${s.key} still hasn't read the head Claude's message after ${waitedFor}: open its chat`, { kind: 'klaud' });
+      this.deps.plans.note(s.planId, 'problem', `${s.key} still hasn't read the head Claude's message after ${waitedFor}: open its chat`, { kind: 'beluga' });
       return;
     }
     s.retries += 1;
     s.at = now;
     // Still in the queue: steered again (it interrupts what runs). Else a fresh turn with it.
     if (state === 'queued' && this.deps.promote?.(s.requestId)) {
-      this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: interrupted it again`, { kind: 'klaud' });
+      this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: interrupted it again`, { kind: 'beluga' });
       return;
     }
     this.steered.delete(s.requestId);
@@ -338,16 +338,16 @@ export class TaskWatchdog {
     // a long command or a quiet turn is interrupted, a dead run restarted; what queued there keeps its place.
     if (this.deps.promote) {
       const id = this.deps.askClaude(steerAgainPrompt(s.prompt, []), s.channel, false);
-      this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: steered it in again`, { kind: 'klaud' });
+      this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: steered it in again`, { kind: 'beluga' });
       // Followed like the first one: Steer Now once it queues, sent again if still unread.
       if (id) this.track({ ...s, requestId: id, at: now, promoted: false });
       return;
     }
-    this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: started a fresh turn with it`, { kind: 'klaud' });
+    this.deps.plans.note(s.planId, 'note', `${s.key} hadn't read the head Claude's message in ${waitedFor}: started a fresh turn with it`, { kind: 'beluga' });
     this.waking.add(s.taskId);
     void (async () => {
       const waited = this.deps.takeOver ? await this.deps.takeOver(s.channel).catch(() => []) : [];
-      this.deps.system(s.channel, 'Klaud restarted Claude: an urgent message from the plan’s Claude waited 2 minutes unread.');
+      this.deps.system(s.channel, 'Beluga restarted Claude: an urgent message from the plan’s Claude waited 2 minutes unread.');
       const id = this.deps.askClaude(steerAgainPrompt(s.prompt, waited), s.channel, false);
       if (id) this.track({ ...s, requestId: id, at: this.now(), promoted: false });
     })().finally(() => this.waking.delete(s.taskId));
@@ -407,14 +407,14 @@ export class TaskWatchdog {
       if (w?.wokeAt !== undefined && now - w.wokeAt < REPEAT_MS) {
         const line = `${key} stopped again: ${stall}. It waits for you`;
         this.deps.plans.setWatch(plan.id, t.task.id, { at: now, reason: stall, ...(run ? { run: run.requestId } : {}), wokeAt: w.wokeAt, needsYou: true, line });
-        this.deps.plans.note(plan.id, 'problem', `${line} (woken at ${hhmm(w.wokeAt)}): Resume it, or open its chat.`, { kind: 'klaud' });
+        this.deps.plans.note(plan.id, 'problem', `${line} (woken at ${hhmm(w.wokeAt)}): Resume it, or open its chat.`, { kind: 'beluga' });
         continue;
       }
       this.wake(plan, t, t.issue, channel, stall, run, `${key} stopped, woke it at ${hhmm(now)}`);
     }
   }
 
-  /** When a person last wrote in a conversation (Klaud's own prompts aren't shown as messages). */
+  /** When a person last wrote in a conversation (Beluga's own prompts aren't shown as messages). */
   private talkedAt(channel: string): number | undefined {
     const log = this.deps.store.getState().log;
     for (let i = log.length - 1; i >= 0; i--) {
@@ -450,7 +450,7 @@ export class TaskWatchdog {
     if (!retry && !back) return;
     this.homeResumed.add(run.requestId);
     if (retry) this.homeCrashed.add(plan.id);
-    this.deps.plans.note(plan.id, 'note', back ? `Usage is back: resumed the plan’s Claude at ${hhmm(now)}` : `The plan’s Claude crashed (${endedWhy(run)}): retried at ${hhmm(now)}`, { kind: 'klaud' });
+    this.deps.plans.note(plan.id, 'note', back ? `Usage is back: resumed the plan’s Claude at ${hhmm(now)}` : `The plan’s Claude crashed (${endedWhy(run)}): retried at ${hhmm(now)}`, { kind: 'beluga' });
     this.deps.askClaude(CONTINUE_PROMPT, plan.home, false);
   }
 
@@ -459,10 +459,10 @@ export class TaskWatchdog {
     this.waking.add(t.task.id);
     // A resume after your usage limit isn't a wake: stopping again soon after doesn't make it wait for you.
     this.deps.plans.setWatch(plan.id, t.task.id, counts ? { at: now, reason, ...(run ? { run: run.requestId } : {}), wokeAt: now, line } : { at: now, reason, ...(run ? { run: run.requestId, resumed: run.requestId } : {}), line });
-    this.deps.plans.note(plan.id, 'note', `${line} (${reason})`, { kind: 'klaud' });
+    this.deps.plans.note(plan.id, 'note', `${line} (${reason})`, { kind: 'beluga' });
     void (async () => {
       const waited = this.deps.takeOver ? await this.deps.takeOver(channel).catch(() => []) : [];
-      this.deps.system(channel, `Klaud woke Claude: it stopped before handing off (${reason}).`);
+      this.deps.system(channel, `Beluga woke Claude: it stopped before handing off (${reason}).`);
       this.deps.askClaude(wakePrompt(issue, reason, run, waited), channel, false);
     })().finally(() => this.waking.delete(t.task.id));
   }

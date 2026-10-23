@@ -7,11 +7,11 @@ import type { DaemonInfo } from './protocol.js';
 import { type Capabilities, SocketClient } from './socket-client.js';
 
 export interface LaunchOptions {
-  /** Arguments the daemon is started with (the same ones you gave klaud). */
+  /** Arguments the daemon is started with (the same ones you gave Beluga). */
   readonly args: readonly string[];
   /** Which room this screen wants ('host' attaches to whatever runs; see roomKeyOf). */
   readonly roomKey: string;
-  /** Attach to a daemon in any room (plain `klaud`). */
+  /** Attach to a daemon in any room (plain `beluga`). */
   readonly anyRoom: boolean;
   readonly version: string;
   readonly kind: ClientKind;
@@ -19,7 +19,7 @@ export interface LaunchOptions {
   readonly caps?: Capabilities;
   /** How long to wait for a daemon we started (default 10 s). */
   readonly timeoutMs?: number;
-  /** Start the daemon (default: this same program, `klaud daemon …`, detached, logging to daemon.log). */
+  /** Start the daemon (default: this same program, `beluga daemon …`, detached, logging to daemon.log). */
   readonly spawnDaemon?: (args: readonly string[]) => void;
 }
 
@@ -39,7 +39,7 @@ export function listening(port: number, timeoutMs = 500): Promise<boolean> {
   });
 }
 
-/** Start `klaud daemon` in the background: this program, same Node, same loader (tsx in development). */
+/** Start `beluga daemon` in the background: this program, same Node, same loader (tsx in development). */
 export function spawnDaemonProcess(args: readonly string[]): void {
   const log = openDaemonLog();
   try {
@@ -67,18 +67,18 @@ function connect(info: DaemonInfo, opts: LaunchOptions): Promise<SocketClient> {
 
 function checkRoom(info: DaemonInfo, opts: LaunchOptions): void {
   if (opts.anyRoom || info.roomKey === opts.roomKey) return;
-  throw new Error(`klaud is already running in ${info.room}. Quit it there first (or attach with plain \`klaud\`).`);
+  throw new Error(`Beluga is already running in ${info.room}. Quit it there first (or attach with plain \`Beluga\`).`);
 }
 
 /**
- * Attach to this computer's klaud daemon, starting it first when none runs. Two screens
+ * Attach to this computer's beluga daemon, starting it first when none runs. Two screens
  * opening at once start only one daemon (a lock file decides who starts it).
  */
 export async function connectOrSpawn(opts: LaunchOptions): Promise<SocketClient> {
   const running = runningDaemon();
   if (running) {
     checkRoom(running, opts);
-    // Its process id may belong to something else now (klaud crashed, the id was reused).
+    // Its process id may belong to something else now (Beluga crashed, the id was reused).
     if (await listening(running.port)) return connect(running, opts);
     clearDaemonInfo(running.pid);
   }
@@ -97,7 +97,7 @@ export async function connectOrSpawn(opts: LaunchOptions): Promise<SocketClient>
           if (Date.now() > deadline) throw err;
         }
       }
-      if (Date.now() > deadline) throw new Error('klaud did not start in time. See ~/.klaud/logs/daemon.log');
+      if (Date.now() > deadline) throw new Error('Beluga did not start in time. See ~/.beluga/logs/daemon.log');
       await wait(100);
     }
   } finally {

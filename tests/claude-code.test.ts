@@ -362,7 +362,7 @@ describe('the watcher', () => {
     expect(sessions()[0]!.agents.map((a) => [a.id, a.description, a.background, a.status])).toEqual([['live1', 'Long task', false, 'running']]);
   });
 
-  it("leaves out klaud's own conversations, and maps folders outside any project to none", async () => {
+  it("leaves out Beluga's own conversations, and maps folders outside any project to none", async () => {
     const folder = path.dirname(fake.session);
     writeFileSync(path.join(folder, 'aaaaaaaa-0000-0000-0000-000000000000.jsonl'), `${user('mine', now)}\n`);
     const other = path.join(fake.home, 'projects', '-tmp-x');
@@ -376,7 +376,7 @@ describe('the watcher', () => {
     expect(outsideSessions(sessions())[0]).not.toHaveProperty('workspaceId');
   });
 
-  it("follows klaud's own conversations' sub-agents: where they started, model, effort, own worktree", async () => {
+  it("follows Beluga's own conversations' sub-agents: where they started, model, effort, own worktree", async () => {
     const OWN = 'aaaaaaaa-0000-0000-0000-000000000000';
     const folder = path.dirname(fake.session);
     const ownFile = path.join(folder, `${OWN}.jsonl`);
@@ -446,7 +446,7 @@ describe('the watcher', () => {
   });
 });
 
-describe('placing a folder in klaud', () => {
+describe('placing a folder in Beluga', () => {
   it('picks the deepest workspace, else the project, else nothing', () => {
     const p = project({ workspaces: [...project().workspaces, { id: 'w-deep', projectRoot: '/work/klaude/main', name: 'deep', path: '/work/klaude/main/.claude/worktrees/x', kind: 'worktree', createdAt: 0, projectId: 'p1', external: true }] });
     expect(placeOf([p], '/work/klaude/main/.claude/worktrees/x/src')).toEqual({ projectId: 'p1', workspaceId: 'w-deep' });
@@ -458,7 +458,7 @@ describe('placing a folder in klaud', () => {
 
 describe('launching, the state and the API', () => {
   it('finds Claude Code’s folder', () => {
-    expect(claudeHome({ KLAUD_CLAUDE_HOME: '/x' })).toBe('/x');
+    expect(claudeHome({ BELUGA_CLAUDE_HOME: '/x' })).toBe('/x');
     expect(claudeHome({ CLAUDE_CONFIG_DIR: '/y' })).toBe('/y');
     expect(claudeHome({})).toBe(path.join(os.homedir(), '.claude'));
   });
@@ -470,8 +470,8 @@ describe('launching, the state and the API', () => {
     launchClaudeCode({ session, store, demo: true })();
     expect(() => claudeCodeOf(session)).toThrow(/Mac/);
     const home = mkdtempSync(path.join(os.tmpdir(), 'klaud-claude-launch-'));
-    const prev = process.env.KLAUD_CLAUDE_HOME;
-    process.env.KLAUD_CLAUDE_HOME = home;
+    const prev = process.env.BELUGA_CLAUDE_HOME;
+    process.env.BELUGA_CLAUDE_HOME = home;
     const events: unknown[] = [];
     try {
       const stop = launchClaudeCode({ session, store, demo: true, notify: (e) => events.push(e) });
@@ -479,8 +479,8 @@ describe('launching, the state and the API', () => {
       expect(CLAUDE_CODE_HANDLERS['claudeCode.steps'](session as Session, SID, undefined, { limit: 5, before: 3, after: 1 })).toEqual({ steps: [], more: false, missing: true });
       stop();
     } finally {
-      if (prev === undefined) delete process.env.KLAUD_CLAUDE_HOME;
-      else process.env.KLAUD_CLAUDE_HOME = prev;
+      if (prev === undefined) delete process.env.BELUGA_CLAUDE_HOME;
+      else process.env.BELUGA_CLAUDE_HOME = prev;
       rmSync(home, { recursive: true, force: true });
     }
     attachClaudeCode(session, new ClaudeCodeWatcher({ home, store, watch: false }));
@@ -503,7 +503,7 @@ describe('launching, the state and the API', () => {
   });
 });
 
-describe('klaud’s own conversations stay out of Activity', () => {
+describe('Beluga’s own conversations stay out of Activity', () => {
   it('remembers them after the conversation is deleted', async () => {
     const { ClaudeCodeWatcher } = await import('../src/core/claude-code/watch.js');
     const { Store, initialState } = await import('../src/core/store.js');

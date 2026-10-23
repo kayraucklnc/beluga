@@ -256,8 +256,8 @@ describe('link detection edge cases', () => {
 describe('guest runs', () => {
   it('never reach the room tools, even the always-allowed ones', () => {
     const ctx = { cwd: '/p', roots: ['/p'], autoEdit: true, guest: true };
-    for (const tool of ['send_chat', 'list_peers', 'read_peer_file', 'list_peer_files', 'run_on_peer', 'ask_agent']) expect(decideTool(`mcp__klaud__${tool}`, {}, ctx), tool).toBe('deny');
-    expect(decideTool('mcp__klaud__list_peers', {}, { ...ctx, guest: false })).toBe('allow');
+    for (const tool of ['send_chat', 'list_peers', 'read_peer_file', 'list_peer_files', 'run_on_peer', 'ask_agent']) expect(decideTool(`mcp__beluga__${tool}`, {}, ctx), tool).toBe('deny');
+    expect(decideTool('mcp__beluga__list_peers', {}, { ...ctx, guest: false })).toBe('allow');
   });
 
   it('an edit guest cannot follow a symlink out of the project', async () => {

@@ -5,7 +5,7 @@ import path from 'node:path';
 /** Files and folders that hold local secrets/config and aren't in git, copied into new worktrees. */
 const ENV_FILE = /^\.env(\..+)?$/;
 const ENV_DIRS = new Set(['.ssh', '.aws']);
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.klaud', '.klaude', '.next', 'vendor']);
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.beluga', '.klaud', '.klaude', '.next', 'vendor']);
 const MAX_DEPTH = 3;
 
 /** Relative paths of env files (and files inside .ssh/.aws folders) in a checkout. */

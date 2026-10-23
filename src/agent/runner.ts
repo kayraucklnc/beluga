@@ -62,19 +62,19 @@ export function toQuestion(input: Record<string, unknown>): ClaudeQuestion | und
 }
 
 /** A friend's task brings the tools its owner allowed (the screen, device info) as a server of their own. */
-function taskServer(input: AgentRunInput): { klaud_task?: NonNullable<ReturnType<typeof createTaskTools>> } {
+function taskServer(input: AgentRunInput): { beluga_task?: NonNullable<ReturnType<typeof createTaskTools>> } {
   const server = input.taskTools ? createTaskTools(input.taskTools) : undefined;
-  return server ? { klaud_task: server } : {};
+  return server ? { beluga_task: server } : {};
 }
 
 /** Your own runs get the task board (core/board): the task they're doing, and tools to keep it true. */
-function boardServer(input: AgentRunInput): { klaud_board?: ReturnType<typeof createBoardTools> } {
-  return input.board ? { klaud_board: createBoardTools(input.board) } : {};
+function boardServer(input: AgentRunInput): { beluga_board?: ReturnType<typeof createBoardTools> } {
+  return input.board ? { beluga_board: createBoardTools(input.board) } : {};
 }
 
 /** A plan's home conversation gets the plan's tools (core/plans). */
-function planServer(input: AgentRunInput): { klaud_plan?: ReturnType<typeof createPlanTools> } {
-  return input.planTools ? { klaud_plan: createPlanTools(input.planTools) } : {};
+function planServer(input: AgentRunInput): { beluga_plan?: ReturnType<typeof createPlanTools> } {
+  return input.planTools ? { beluga_plan: createPlanTools(input.planTools) } : {};
 }
 
 /** Tokens and cost of a run, summed over every model it used (sub-agents included). */
@@ -179,7 +179,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...(place?.forkSession && place.resume ? { forkSession: true } : {}),
         abortController,
         permissionMode: input.plan ? 'plan' : autoEdit ? 'acceptEdits' : 'default',
-        mcpServers: { klaud: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input), ...boardServer(input), ...planServer(input) },
+        mcpServers: { beluga: askOnly && input.continueInWorktree ? createRoomTools(opts.bridge, input.continueInWorktree) : roomTools, ...taskServer(input), ...boardServer(input), ...planServer(input) },
         // The hook runs before Claude Code's own permission logic, even for commands it would
         // auto-approve, so the machine owner stays in control of every risky action.
         hooks: {
@@ -197,7 +197,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                   // A sub-agent is told where its own scratch folder is, so what it makes shows on its page.
                   const patched = scratchRoot ? withAgentScratch(hookInput.tool_name, toolInput, hookInput.tool_use_id, scratchRoot) : undefined;
                   const allow = (reason: string) => (patched ? { hookSpecificOutput: { ...verdict('allow', reason).hookSpecificOutput, updatedInput: patched } } : verdict('allow', reason));
-                  if (decision === 'allow') return patched ? allow('Allowed by klaud.') : {};
+                  if (decision === 'allow') return patched ? allow('Allowed by Beluga.') : {};
                   return (await input.canUseTool(hookInput.tool_name, toolInput)) ? allow('Approved by the machine owner.') : verdict('deny', 'The machine owner declined this action.');
                 },
               ],
@@ -221,7 +221,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         ...((input.model ?? opts.model) ? { model: input.model ?? opts.model } : {}),
         ...(input.effort ? { effort: input.effort } : {}),
         // Set, this replaces Claude Code's whole environment, so it starts from ours.
-        // Claude Code's own auto-compact follows Klaud's threshold (see shared/context-usage.ts).
+        // Claude Code's own auto-compact follows Beluga's threshold (see shared/context-usage.ts).
         ...((input.env && Object.keys(input.env).length) || input.autoCompactAt ? { env: { ...process.env, ...input.env, ...compactEnv(Boolean(input.autoCompactAt), input.autoCompactAt ?? 0) } } : {}),
         ...(opts.claudePath ? { pathToClaudeCodeExecutable: opts.claudePath } : {}),
         // Its last words, so a crash says why (see shared/run-failure.ts): read by our own spawn when there is one.
@@ -251,7 +251,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
         // The plan is for a task: Claude defines it (in its own words) before the plan comes to you. Asked once.
         if (input.planTask?.needsDefinition() && !askedToDefine) {
           askedToDefine = true;
-          return { behavior: 'deny' as const, message: 'Before asking for approval, call mcp__klaud_board__task_define with the task this plan is for (title, goal in your own words, context, acceptance criteria, decisions, open questions, estimate, priority). Then call ExitPlanMode again.' };
+          return { behavior: 'deny' as const, message: 'Before asking for approval, call mcp__beluga_board__task_define with the task this plan is for (title, goal in your own words, context, acceptance criteria, decisions, open questions, estimate, priority). Then call ExitPlanMode again.' };
         }
         const plan = typeof toolInput.plan === 'string' && toolInput.plan.trim() ? toolInput.plan : lastText || '(Claude proposed a plan)';
         const answer = await ask({ kind: 'plan', plan: plan.slice(0, 60_000) });

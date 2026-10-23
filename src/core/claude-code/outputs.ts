@@ -32,7 +32,7 @@ const MEDIA = /\.(png|jpe?g|gif|webp|pdf|mp4|webm|mov)$/i;
 const TRACE = /[\\/][^\\/]*trace[^\\/]*\.zip$/i;
 const TEXT = /\.(log|txt|out|json|jsonl|ndjson|md|markdown|csv|tsv|xml|html?)$/i;
 /** Inside the project, text is source unless it's in a folder outputs go to. */
-const OUTPUT_DIRS = /[\\/](\.klaud[\\/]scratch|test-results|playwright-report|coverage|\.context|screenshots|tmp)[\\/]/;
+const OUTPUT_DIRS = /[\\/](\.(?:beluga|klaud)[\\/]scratch|test-results|playwright-report|coverage|\.context|screenshots|tmp)[\\/]/;
 const NEVER = /[\\/](node_modules|\.git)[\\/]/;
 
 const isMedia = (p: string): boolean => MEDIA.test(p) || TRACE.test(p);

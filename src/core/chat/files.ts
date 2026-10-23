@@ -27,7 +27,7 @@ export const MAX_PREVIEW = 16 * 1024 * 1024;
 
 export interface ChatFilesOptions {
   readonly mesh: Mesh;
-  /** Where the files are kept (normally ~/.klaud/chat-files). */
+  /** Where the files are kept (normally ~/.beluga/chat-files). */
   readonly dir: string;
   /** File states changed (`null`: forget it). */
   readonly onState?: (patch: Readonly<Record<string, ChatFileState | null>>) => void;
@@ -178,7 +178,7 @@ export class ChatFiles {
   stop(): void {
     this.stopped = true;
     this.off();
-    for (const p of this.pulls.values()) p.cancel('klaud stopped');
+    for (const p of this.pulls.values()) p.cancel('Beluga stopped');
     clearTimeout(this.flushTimer);
   }
 
