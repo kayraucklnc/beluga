@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Alert, Checkbox } from '../../components/Alert.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
 

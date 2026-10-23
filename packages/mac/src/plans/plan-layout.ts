@@ -13,7 +13,7 @@ export interface PlanLayout {
   readonly chatWidth: number;
 }
 
-export const PLAN_LAYOUT_KEY = 'klaud.plan.v1';
+export const PLAN_LAYOUT_KEY = 'beluga.plan.v1';
 export const CHAT_MIN = 300;
 export const CHAT_DEFAULT = 380;
 /** The chat never takes more than this share of the plan's width: the map stays the bigger part. */

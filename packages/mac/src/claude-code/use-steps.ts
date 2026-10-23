@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CcStep } from '@klaud/core/claude-code/model.js';
-import { useApi } from '../lib/klaud.js';
+import type { CcStep } from '@beluga/core/claude-code/model.js';
+import { useApi } from '../lib/beluga.js';
 
 /**
  * A session's (or agent's) steps, live: all of the newest at first, then only what changed each

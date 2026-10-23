@@ -77,7 +77,7 @@ fn ensure<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         return Ok(());
     }
     let builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("popup.html".into()))
-        .title("Klaud")
+        .title("Beluga")
         .inner_size(WIDTH, 160.0)
         .resizable(false)
         .minimizable(false)
@@ -178,7 +178,7 @@ pub fn request_popup_resize(app: AppHandle, height: f64) {
     place(&app, height);
 }
 
-/// × on the card: these requests stay waiting (in Klaud, the menu bar) without the card.
+/// × on the card: these requests stay waiting (in Beluga, the menu bar) without the card.
 #[tauri::command]
 pub fn request_popup_dismiss(app: AppHandle, approvals: Vec<String>) {
     if let Some(state) = app.try_state::<PopupState>() {

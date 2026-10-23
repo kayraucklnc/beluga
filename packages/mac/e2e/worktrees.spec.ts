@@ -39,11 +39,11 @@ function addDependencies(dir: string): void {
 }
 
 /**
- * A project with a worktree a Claude Code sub-agent left (in .claude/worktrees), added to Klaud.
+ * A project with a worktree a Claude Code sub-agent left (in .claude/worktrees), added to Beluga.
  * Its own, since usage.spec's Clean Up… removes the demo's finished sub-agent worktrees.
  */
 async function addAgentProject(page: Page): Promise<void> {
-  const repo = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-agents-')), 'agents-app');
+  const repo = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-agents-')), 'agents-app');
   const git = (...args: string[]): void => void execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd: repo, stdio: 'pipe' });
   mkdirSync(repo, { recursive: true });
   git('init', '-q', '-b', 'main');
@@ -71,7 +71,7 @@ test('lists every worktree with who made it and whether it’s done; filters nar
   await sidebar(page).getByRole('button', { name: 'Worktrees' }).click();
   await expect(page.getByRole('heading', { name: 'Worktrees' })).toBeVisible();
   await expect(row(page, 'add-auth')).toBeVisible();
-  await expect(row(page, 'add-auth')).toContainText('Klaud');
+  await expect(row(page, 'add-auth')).toContainText('Beluga');
   // Sub-agent worktrees: Claude's, with who started them (or that nothing says).
   await page.getByRole('tab', { name: /^Sub-agents/ }).click();
   await expect(grid(page).getByRole('row').filter({ hasText: 'Sub-agent' }).first()).toBeVisible();

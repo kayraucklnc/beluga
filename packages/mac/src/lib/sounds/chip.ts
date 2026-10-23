@@ -2,7 +2,7 @@ import type { ChipSound } from '../../../../../src/shared/notify-sound.js';
 import { midi, type Note, type SoundSpec } from './synth.js';
 
 /**
- * Klaud's 8-bit sounds: square, pulse, triangle and a little noise, like an old console, but
+ * Beluga's 8-bit sounds: square, pulse, triangle and a little noise, like an old console, but
  * soft (gentle attack and release, low-passed) and short (none is longer than 0.8 s).
  */
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, clampThreshold } from '@klaud/shared/context-usage.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, clampThreshold } from '@beluga/shared/context-usage.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import { Group, Row, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 

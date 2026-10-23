@@ -15,7 +15,7 @@ export interface MainLine {
   /** "Up to date with origin/main", "3 behind origin/main"… */
   readonly label: string;
   readonly tone: Tone;
-  /** "4 uncommitted changes in main" (they were made outside klaud). */
+  /** "4 uncommitted changes in main" (they were made outside Beluga). */
   readonly dirty?: string;
   /** The default branch the line is about ("main" or "master"). */
   readonly branch?: string;
@@ -30,7 +30,7 @@ export interface HomeModel {
   /** The main checkout (its branch and status). */
   readonly main?: Workspace;
   readonly mainLine: MainLine;
-  /** Worktrees klaud made, still around: the most recently active first. */
+  /** Worktrees Beluga made, still around: the most recently active first. */
   readonly worktrees: readonly Workspace[];
   /** Questions asked in the main folder (ask-only chats), the most recent first. */
   readonly asks: readonly Workspace[];

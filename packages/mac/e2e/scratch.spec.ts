@@ -3,7 +3,7 @@ import path from 'node:path';
 import { expect, test, type Page } from './fixtures.js';
 
 /**
- * The panel's Scratch tab: what Claude saves to the workspace's .klaud/scratch/ while it works, live and
+ * The panel's Scratch tab: what Claude saves to the workspace's .beluga/scratch/ while it works, live and
  * newest first. Following, the preview shows each new file as it's written (JSON laid out, pictures
  * as pictures, redrawn when they change); picking one stays on it.
  */
@@ -17,7 +17,7 @@ const tab = (page: Page, name: string) => panel(page).getByRole('tablist', { nam
 const RED = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==', 'base64');
 const BLUE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGNkYPjPwMDAxMAAAA0GAQOqgnhHAAAAAElFTkSuQmCC', 'base64');
 
-test('Scratch: .klaud/scratch/ live, newest first, followed by the preview', async ({ page }) => {
+test('Scratch: .beluga/scratch/ live, newest first, followed by the preview', async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
   await expect(sidebar(page).getByRole('button', { name: 'bob-api' }).first()).toBeVisible();
@@ -31,7 +31,7 @@ test('Scratch: .klaud/scratch/ live, newest first, followed by the preview', asy
   const finder = panel(page).getByRole('button', { name: 'Show in Finder' });
   await expect(finder).toBeVisible();
   const dir = (await finder.getAttribute('title'))!;
-  expect(dir).toMatch(/\/\.klaud\/scratch$/);
+  expect(dir).toMatch(/\/\.beluga\/scratch$/);
 
   // Claude writes a JSON response: it shows up, laid out.
   writeFileSync(path.join(dir, 'api-response.json'), '{"ok":true,"items":[1,2]}');
@@ -75,7 +75,7 @@ test('Scratch: drawn in outline before anything lands, moving while Claude works
 
   // Nothing yet, Claude idle: the outline, still, and both folders named.
   await expect(panel(page).getByText('Nothing saved yet')).toBeVisible();
-  await expect(panel(page)).toContainText('.klaud/scratch/');
+  await expect(panel(page)).toContainText('.beluga/scratch/');
   await expect(panel(page)).toContainText('.context/');
   await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-idle.png') });
 

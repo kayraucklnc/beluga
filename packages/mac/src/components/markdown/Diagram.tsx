@@ -29,7 +29,7 @@ export function renderDiagram(code: string, theme: DocTheme): Promise<string> {
       fontFamily: FONT,
       themeVariables: { background: 'transparent', fontFamily: FONT, fontSize: '14px' },
     });
-    const id = `klaud-mermaid-${++next}`;
+    const id = `beluga-mermaid-${++next}`;
     try {
       await api.parse(code);
       const { svg } = await api.render(id, code);

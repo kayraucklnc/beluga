@@ -1,4 +1,4 @@
-import type { GraphStep } from '@klaud/shared/graph-spec.js';
+import type { GraphStep } from '@beluga/shared/graph-spec.js';
 import { IconButton } from '../ui.js';
 import g from './graph.module.css';
 

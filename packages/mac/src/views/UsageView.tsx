@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Empty, EmptyActions } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { ActivityCard } from './usage/ActivityCard.js';
 import { Breakdown } from './usage/Breakdown.js';
 import { CleanupCard } from './usage/CleanupCard.js';
@@ -11,7 +11,7 @@ import { StorageCard } from './usage/StorageCard.js';
 import { type SortKey, cleanups, projectRows } from './usage/usage-model.js';
 import s from './usage/usage.module.css';
 
-const SORT_KEY = 'klaud.usage.sort';
+const SORT_KEY = 'beluga.usage.sort';
 const isSort = (v: unknown): v is SortKey => v === 'size' || v === 'tokens' || v === 'recent';
 
 /** The breakdown's order, remembered in this window between visits. */
@@ -38,7 +38,7 @@ function useSort(): [SortKey, (s: SortKey) => void] {
 /** Measures every folder when the view opens (and on request); `measuring` while it runs. */
 function useMeasure(): { measuring: boolean; measure: () => void } {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [measuring, setMeasuring] = useState(true);
   const measure = useCallback(() => {
     setMeasuring(true);

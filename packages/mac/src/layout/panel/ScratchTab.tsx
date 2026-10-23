@@ -1,11 +1,11 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import type { Location } from '@klaud/core/store.js';
-import { shareNameOf } from '@klaud/shared/share-names.js';
-import { SHOWN_SCRATCH_DIRS } from '@klaud/shared/scratch-dir.js';
-import { formatBytes } from '@klaud/shared/format.js';
+import type { Location } from '@beluga/core/store.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
+import { SHOWN_SCRATCH_DIRS } from '@beluga/shared/scratch-dir.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Empty, IconButton, Segmented, cx } from '../../components/ui.js';
-import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { openWithDefaultApp, revealInFinder } from '../../lib/files.js';
 import { openFocus } from '../../lib/panel.js';
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
@@ -20,7 +20,7 @@ import s from './panel.module.css';
 import k from './scratch.module.css';
 
 /**
- * The right panel's Scratch: what Claude saves to the workspace's `.klaud/scratch/` (or `.context/`,
+ * The right panel's Scratch: what Claude saves to the workspace's `.beluga/scratch/` (or `.context/`,
  * when another tool runs it there) while it works: screenshots, JSON, logs, notes, newest first and
  * live. Following, the preview shows the newest file as it lands; pick one to stay on it. Before
  * anything lands it's drawn in outline, moving while Claude works.
@@ -117,7 +117,7 @@ function useNow(): number {
 
 function Preview({ wsId, file, root, onClose }: { wsId: string; file: ScratchEntry; root: string; onClose: () => void }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const selfId = useApp((st) => st.selfId);
   const now = useNow();
   const at: Location = { owner: selfId, share: shareNameOf(wsId), path: file.path };
@@ -144,7 +144,7 @@ function Preview({ wsId, file, root, onClose }: { wsId: string; file: ScratchEnt
 }
 
 export function ScratchTab({ wsId }: { wsId: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const prefs = usePrefs();
   const on = useApp((st) => st.prefs.scratchFolder);
   const working = useApp((st) => signalOf(st, `ws:${wsId}`, wsId).working);

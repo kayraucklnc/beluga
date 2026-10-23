@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { StepRecord, StepSummary } from '@klaud/shared/steps.js';
-import { useApi } from '../../lib/klaud.js';
+import type { StepRecord, StepSummary } from '@beluga/shared/steps.js';
+import { useApi } from '../../lib/beluga.js';
 import { useWindowActive } from '../../lib/window-active.js';
 
 /**
  * A Claude card's steps in detail (`agent.steps`): fetched when the card shows, then every
- * second while Claude works and you're looking at Klaud (only what changed comes back), right
+ * second while Claude works and you're looking at Beluga (only what changed comes back), right
  * away when you look back, and once more when it ends.
  * `undefined` steps: not loaded yet, or this computer has no details (someone else's Claude).
  */

@@ -1,13 +1,13 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { asChatRow } from '../lib/said.js';
-import { backgroundWait } from '@klaud/shared/claude-notices.js';
-import type { LogItem } from '@klaud/core/store.js';
-import { type TaskView, tasksIn } from '@klaud/core/gateway/model.js';
+import { backgroundWait } from '@beluga/shared/claude-notices.js';
+import type { LogItem } from '@beluga/core/store.js';
+import { type TaskView, tasksIn } from '@beluga/core/gateway/model.js';
 import { LogTaskCard } from '../gateway/TaskCard.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Dot, Empty, Working } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { keepSameLists, sameItems } from '../lib/stable.js';
 import { Lightbox } from './ChatImages.js';
 import { FindBar } from './FindBar.js';
@@ -128,8 +128,8 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
       setAtBottom(true);
       if (rows.length) virtualizer.scrollToIndex(rows.length - 1, { align: 'end' });
     };
-    document.addEventListener('klaud:chat-bottom', toBottom);
-    return () => document.removeEventListener('klaud:chat-bottom', toBottom);
+    document.addEventListener('beluga:chat-bottom', toBottom);
+    return () => document.removeEventListener('beluga:chat-bottom', toBottom);
   }, [rows.length, virtualizer]);
   useEffect(() => {
     stick.current = true;

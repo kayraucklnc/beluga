@@ -11,7 +11,7 @@ import s from './onboarding.module.css';
  * On the last step it waits behind "You're all set", slow and hypnotic, leaning toward the
  * pointer (a click sends a ring of light down it). When you go, it pulls: the comets stop, turn
  * and rush at you, the tunnel speeds up and twists as you fall in, a light grows at the far
- * end, and you come out into it. Then the light clears to your Klaud.
+ * end, and you come out into it. Then the light clears to your Beluga.
  *
  * Everything moves on the GPU (the tunnel's shader, eased every frame through `tune`) or as a
  * transform or opacity on the compositor, so it keeps its frame rate.

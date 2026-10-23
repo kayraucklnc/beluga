@@ -1,12 +1,12 @@
 import { type RefObject, useRef } from 'react';
-import type { PathInfo } from '@klaud/core/attachments.js';
+import type { PathInfo } from '@beluga/core/attachments.js';
 import { inApp } from '../lib/boot.js';
-import { useApi } from '../lib/klaud.js';
+import { useApi } from '../lib/beluga.js';
 import { candidatePaths, imagePathsIn, pathsInPaste, pickPaths } from './paste-paths-model.js';
 
 /**
  * A pasted file path becomes the file: "/Users/…/CleanShot … .png" (quoted, with escaped
- * spaces, ~/…, or a file:// URL; one or more, one per line) is checked with klaud, and when
+ * spaces, ~/…, or a file:// URL; one or more, one per line) is checked with Beluga, and when
  * every one is a file here the box attaches them instead of the words. In other text, each
  * image's path (plain, quoted or “smart quoted”) becomes that image and the words stay.
  * Anything else, and ⌘⇧V (Edit › Paste as Plain Text), pastes the text as it is.

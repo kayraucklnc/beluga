@@ -2,8 +2,8 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { inApp } from './boot.js';
 
 /**
- * Whether you're looking at Klaud's window: it's in front (focused) and not hidden, minimized or
- * covered. While it isn't, Klaud stays cool (KLD-40): `html[data-window='idle']` pauses every CSS
+ * Whether you're looking at Beluga's window: it's in front (focused) and not hidden, minimized or
+ * covered. While it isn't, Beluga stays cool (KLD-40): `html[data-window='idle']` pauses every CSS
  * animation (base.css), the dot matrices and once-a-second clocks stop, and live polling waits.
  * Live states still arrive and render as they happen; only motion and ticking rest. Back in
  * front, everything resumes at once and pollers fetch right away.
@@ -38,7 +38,7 @@ export function watchWindow(): void {
   window.addEventListener('pointerdown', touched, true);
   active = look();
   document.documentElement.dataset.window = active ? 'active' : 'idle';
-  // The web view's focus events can lag the window's own (a click into Klaud from another app): Tauri says it first.
+  // The web view's focus events can lag the window's own (a click into Beluga from another app): Tauri says it first.
   // A focused window is in front, so it's seen even when the web view's visibility is stale.
   if (inApp())
     void import('@tauri-apps/api/window')
@@ -48,13 +48,13 @@ export function watchWindow(): void {
 
 export const windowActive = (): boolean => active;
 
-/** Called whenever you look at Klaud again, or look away. Returns a stop. */
+/** Called whenever you look at Beluga again, or look away. Returns a stop. */
 export function onWindowActive(listener: () => void): () => void {
   listeners.add(listener);
   return () => void listeners.delete(listener);
 }
 
-/** True while you're looking at Klaud's window (see above). */
+/** True while you're looking at Beluga's window (see above). */
 export function useWindowActive(): boolean {
   return useSyncExternalStore(onWindowActive, windowActive, () => true);
 }

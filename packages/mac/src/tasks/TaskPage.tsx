@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isFinished, issueById } from '@klaud/core/board/model.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isFinished, issueById } from '@beluga/core/board/model.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { usePlanActions } from '../plans/use-plans.js';
 import { ActivityFeed } from './Activity.js';
 import { Brief } from './Brief.js';
@@ -13,7 +13,7 @@ import { AssigneeMark, LabelChip, PrChip, PriorityIcon, StatusIcon } from './mar
 import { useIssueMenu } from './parts.js';
 import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker } from './pickers.js';
 import { ProofList, Relations, SubTasks } from './TaskSections.js';
-import { unexplained } from '@klaud/core/board/criteria.js';
+import { unexplained } from '@beluga/core/board/criteria.js';
 import { ago, dueText } from './tasks-model.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -26,7 +26,7 @@ import t from './tasks.module.css';
 export function TaskPage({ id }: { id: string }) {
   const board = useBoard();
   const issue = issueById(board, id);
-  if (!board.enabled) return <Empty icon="task" title="Tasks need the Klaud app" />;
+  if (!board.enabled) return <Empty icon="task" title="Tasks need the Beluga app" />;
   if (!issue) return <Empty icon="task" title="This task isn’t here anymore" detail="It may have been deleted." />;
   return (
     <div className={t.pageWrap}>

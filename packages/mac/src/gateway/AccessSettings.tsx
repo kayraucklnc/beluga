@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { CAP_INFO, CAP_LEVEL_INFO, CAP_ORDER, type CapLevel, type CapRow, type CapTrust, DECISION_INFO, type Rule, type RuleDecision, expiryLabel, ruleLabel } from '@klaud/core/gateway/access.js';
-import { TRUST_INFO } from '@klaud/core/trust.js';
+import { CAP_INFO, CAP_LEVEL_INFO, CAP_ORDER, type CapLevel, type CapRow, type CapTrust, DECISION_INFO, type Rule, type RuleDecision, expiryLabel, ruleLabel } from '@beluga/core/gateway/access.js';
+import { TRUST_INFO } from '@beluga/core/trust.js';
 import { Button, cx } from '../components/ui.js';
 import { Group, Select } from '../dialogs/settings-controls.js';
 import { inApp } from '../lib/boot.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import s from './access.module.css';
 
 /**
@@ -18,7 +18,7 @@ const message = (err: unknown): string => (err instanceof Error ? err.message : 
 const COLUMNS: readonly CapTrust[] = ['ask', 'trusted', 'full'];
 
 function useSay(): (what: string, call: Promise<unknown>, done?: string) => void {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   return (what, call, done) =>
     void call
       .then(() => (done ? client.store.dispatch({ type: 'toast', text: done, level: 'success' }) : undefined))

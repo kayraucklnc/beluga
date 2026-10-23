@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
-import { findWorkspace, stateOf } from '@klaud/ui/workspace-models.js';
-import { formatTokens } from '@klaud/ui/work-models.js';
-import { formatBytes } from '@klaud/shared/format.js';
-import { contextPct, contextTone, formatTokenCount } from '@klaud/shared/context-usage.js';
-import { unreadCount } from '@klaud/core/work-store.js';
-import { noticeAgo, noticeLook } from '@klaud/ui/notice-models.js';
+import { findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
+import { formatTokens } from '@beluga/ui/work-models.js';
+import { formatBytes } from '@beluga/shared/format.js';
+import { contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { unreadCount } from '@beluga/core/work-store.js';
+import { noticeAgo, noticeLook } from '@beluga/ui/notice-models.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { openExternal } from '../lib/system.js';
 import { Switch } from '../dialogs/settings-controls.js';
 import { openPerson } from '../dialogs/native/PersonPopover.js';
@@ -94,7 +94,7 @@ function NeedsYou() {
 function WorkspaceDetails({ id }: { id: string }) {
   const api = useApi();
   const actions = useActions();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const state = useApp((st) => st);
   const ws = findWorkspace(state.projects, id);
   if (!ws) return null;
@@ -187,10 +187,10 @@ function WorkspaceDetails({ id }: { id: string }) {
 
 function Room() {
   const api = useApi();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const state = useApp((st) => st);
   const hosting = state.hosting;
-  const invite = (): void => void document.dispatchEvent(new CustomEvent('klaud:invite'));
+  const invite = (): void => void document.dispatchEvent(new CustomEvent('beluga:invite'));
   const inviteState = hosting?.phase === 'ready' || state.invite ? 'Ready to share' : hosting?.phase === 'local' ? 'Local network only' : hosting?.phase === 'failed' ? (hosting.detail ?? 'Couldn’t open remote access') : hosting ? 'Opening…' : 'Not open yet';
   return (
     <Panel
@@ -239,7 +239,7 @@ function Room() {
 
 /** The newest unread notification; the rest are under the bell in the toolbar. */
 function Inbox() {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const unread = useApp((st) => unreadCount(st));
   const latest = useApp((st) => st.inbox.find((n) => !n.read));
   if (!unread || !latest) return null;

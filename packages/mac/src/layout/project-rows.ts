@@ -6,7 +6,7 @@ import { outsideOf } from './outside-model.js';
 
 /**
  * Whether unfolding a project shows anything: its worktrees and chats, worktrees made outside
- * Klaud, or sub-agents its main folder started. Without any,
+ * Beluga, or sub-agents its main folder started. Without any,
  * its row has no fold arrow. Pure (tests/mac-project-rows.test.ts).
  */
 export function hasRowsInside(p: Project, sessions: readonly CcSession[], origins: readonly AgentOrigin[] = []): boolean {

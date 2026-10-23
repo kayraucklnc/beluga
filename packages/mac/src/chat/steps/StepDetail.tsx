@@ -1,15 +1,15 @@
 import { type ReactNode, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Location } from '@klaud/core/store.js';
-import type { StepRecord } from '@klaud/shared/steps.js';
-import { toolFamily } from '@klaud/shared/steps.js';
-import { stripAnsi } from '@klaud/shared/ansi.js';
-import { addedLines, editDiff } from '@klaud/shared/line-diff.js';
-import type { DiffLine } from '@klaud/shared/diff-lines.js';
+import type { Location } from '@beluga/core/store.js';
+import type { StepRecord } from '@beluga/shared/steps.js';
+import { toolFamily } from '@beluga/shared/steps.js';
+import { stripAnsi } from '@beluga/shared/ansi.js';
+import { addedLines, editDiff } from '@beluga/shared/line-diff.js';
+import type { DiffLine } from '@beluga/shared/diff-lines.js';
 import { Icon } from '../../components/Icon.js';
 import { cx } from '../../components/ui.js';
 import { copyText } from '../../lib/copy.js';
 import { useActions } from '../../lib/actions.js';
-import { toast, useApi, useKlaud } from '../../lib/klaud.js';
+import { toast, useApi, useBeluga } from '../../lib/beluga.js';
 import { Thumb } from '../ChatImages.js';
 import { imageSource, localImage } from '../md-images.js';
 import { isPdfFile } from '../../views/reader/reader-model.js';
@@ -31,7 +31,7 @@ const tidy = (out: string | undefined): string => (out ?? '').replace(REMINDERS,
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 function useCopy(): (text: string, what: string) => void {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   return (text, what) => void copyText(text).then(() => toast(client, `Copied ${what}`, 'success'));
 }
 
@@ -439,7 +439,7 @@ export function StepDetail({ record }: { record: StepRecord }) {
   return (
     <div className={s.detail} data-step-detail={record.kind === 'thinking' ? 'thinking' : toolFamily(record.tool)}>
       {body}
-      {record.truncated ? <div className={s.note}>Long, so Klaud kept its start and end.</div> : null}
+      {record.truncated ? <div className={s.note}>Long, so Beluga kept its start and end.</div> : null}
     </div>
   );
 }

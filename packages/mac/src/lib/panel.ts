@@ -1,11 +1,11 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import type { AppState, View } from '@klaud/core/store.js';
+import type { AppState, View } from '@beluga/core/store.js';
 
 /** What the panel needs to know about the window: what's on screen and the projects. */
 export type PanelState = Pick<AppState, 'view' | 'projects'>;
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
-import type { Workspace } from '@klaud/workspaces/types.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { DEFAULT_LAYOUT, PANES_DEFAULT, type PaneId, type PanelTab, drawerFits, moveTab, panelFits, paneKey, paneOf, paneTabs, panelTabsFor, pickPanelTab, rememberTab, viewsOf } from './panel-model.js';
 import { type UiPrefs, getPrefs, setPrefs } from './prefs.js';
 
@@ -130,7 +130,7 @@ export const peekChangeAsk = (wsId: string): string | undefined => (changeAsk?.w
 export const forgetChangeAsk = (): void => void (changeAsk = undefined);
 
 /** The event a plan's page listens for: ⌥⌘0 there shows and hides its chat (its right side). */
-export const PLAN_CHAT_TOGGLE = 'klaud:plan-chat';
+export const PLAN_CHAT_TOGGLE = 'beluga:plan-chat';
 
 export const togglePanel = (view: View): void => {
   if (!panelFits(view)) return void document.dispatchEvent(new CustomEvent(PLAN_CHAT_TOGGLE));

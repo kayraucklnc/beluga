@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { type CcSession, outsideSessions, runningAgents, sessionsIn } from '@klaud/core/claude-code/model.js';
+import { type CcSession, outsideSessions, runningAgents, sessionsIn } from '@beluga/core/claude-code/model.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { Badge, Button, Dot, cx } from '../components/ui.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { Row } from '../layout/sidebar-parts.js';
 import { AgentCard } from './Cards.js';
 import { agentLabel, agentTone, openActivity, placeLabel, plural, sessionLabel, tokens } from './cc-model.js';
@@ -23,9 +23,9 @@ export function useSessionsIn(workspaceId: string | undefined): CcSession[] {
 
 const MAX_PILLS = 3;
 
-/** A slim bar above a workspace's chat: Claude Code is working here (outside klaud), and its agents. */
+/** A slim bar above a workspace's chat: Claude Code is working here (outside Beluga), and its agents. */
 export function LiveStrip({ workspaceId }: { workspaceId: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const sessions = useSessionsIn(workspaceId);
   const session = sessions[0];
   const now = useNow(Boolean(session && session.status === 'working'), 5000);
@@ -64,7 +64,7 @@ export function LiveStrip({ workspaceId }: { workspaceId: string }) {
 
 /** A worktree's info page: what's running in it right now, with a way to open it. */
 export function LivePanel({ workspaceId }: { workspaceId: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const sessions = useSessionsIn(workspaceId);
   const now = useNow(sessions.some((x) => x.status === 'working'), 5000);
   if (!sessions.length) return null;
@@ -101,7 +101,7 @@ export function LivePanel({ workspaceId }: { workspaceId: string }) {
 }
 
 function SessionDetails({ session }: { session: CcSession }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const place = useApp((st) => placeLabel(st, session));
   const now = useNow(session.status === 'working', 5000);
   const st = sessionLabel(session, now);
@@ -164,10 +164,10 @@ export function ClaudeCodeInspector() {
   );
 }
 
-/** The sidebar's Activity row: how many agents are running outside klaud right now. */
-/** `whenLive`: only while a session runs outside Klaud (or you're looking at Activity). */
+/** The sidebar's Activity row: how many agents are running outside Beluga right now. */
+/** `whenLive`: only while a session runs outside Beluga (or you're looking at Activity). */
 export function ActivityRow({ whenLive }: { whenLive?: boolean } = {}) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const running = useApp((st) => runningAgents(outsideSessions(st.claudeCode.sessions)));
   const live = useApp((st) => outsideSessions(st.claudeCode.sessions).length > 0);
   const selected = useApp((st) => st.view.kind === 'claude_code');
@@ -176,7 +176,7 @@ export function ActivityRow({ whenLive }: { whenLive?: boolean } = {}) {
     <Row
       icon={<Icon name="pulse" size={14} />}
       label="Activity"
-      detail={running ? `${plural(running, 'Claude Code agent')} running outside Klaud` : 'Claude Code sessions running outside Klaud (a terminal, another app), live'}
+      detail={running ? `${plural(running, 'Claude Code agent')} running outside Beluga` : 'Claude Code sessions running outside Beluga (a terminal, another app), live'}
       selected={selected}
       onClick={() => openActivity(client)}
       trailing={running ? <Badge count={running} /> : live ? <Dot tone="muted" /> : null}

@@ -7,7 +7,7 @@ import { testTone } from './test-sound.js';
 import { encodeWav } from './wav.js';
 
 /**
- * Getting a notification's sound to macOS: Mac sounds go by their name; Klaud's own are
+ * Getting a notification's sound to macOS: Mac sounds go by their name; Beluga's own are
  * written to ~/Library/Sounds once (by the app shell) and then go by theirs, so the system
  * plays them with the banner and Focus silences them like any other app's. If that fails,
  * the window plays the sound itself.
@@ -53,7 +53,7 @@ export async function notificationSound(n: NoteSound): Promise<{ readonly sound?
 }
 
 /**
- * Put the chosen sounds in place ahead of the first notification, and remove Klaud's sounds
+ * Put the chosen sounds in place ahead of the first notification, and remove Beluga's sounds
  * nobody chose any more (after a change in Settings).
  */
 export async function syncSounds(prefs: SoundPrefs): Promise<void> {

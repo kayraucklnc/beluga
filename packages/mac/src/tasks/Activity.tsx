@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { type Activity as Entry, type ActivityKind, type Issue, activityText, actorName } from '@klaud/core/board/model.js';
+import { type Activity as Entry, type ActivityKind, type Issue, activityText, actorName } from '@beluga/core/board/model.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Avatar, Button, cx } from '../components/ui.js';
@@ -8,7 +8,7 @@ import { useSelfId, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
 /**
- * What happened to a task, oldest first: changes as quiet lines ("Klaud moved this to In
+ * What happened to a task, oldest first: changes as quiet lines ("Beluga moved this to In
  * Review"), comments and Claude's notes as messages. A comment box at the end (⌘↩ sends).
  */
 
@@ -32,7 +32,7 @@ function Who({ entry, selfId }: { entry: Entry; selfId: string }) {
   if (by.kind === 'person') return <Avatar name={by.name} id={by.id} size={20} />;
   if (by.kind === 'claude') return <Avatar name={by.ownerName} id={by.owner} claude size={20} />;
   return (
-    <span className={t.klaudMark} aria-label={actorName(by, selfId)}>
+    <span className={t.belugaMark} aria-label={actorName(by, selfId)}>
       <Icon name="claude" size={11} />
     </span>
   );

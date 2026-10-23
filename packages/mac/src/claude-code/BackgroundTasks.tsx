@@ -1,11 +1,11 @@
 import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CcTaskOutput } from '@klaud/core/claude-code/model.js';
-import { formatBytes } from '@klaud/shared/format.js';
+import type { CcTaskOutput } from '@beluga/core/claude-code/model.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, Empty, IconButton, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
 import { openWithDefaultApp, revealInFinder } from '../lib/files.js';
-import { useApi, useKlaud } from '../lib/klaud.js';
+import { useApi, useBeluga } from '../lib/beluga.js';
 import { type TaskItem, taskLabel } from './background-model.js';
 import s from './background.module.css';
 
@@ -70,7 +70,7 @@ function Mark({ item }: { item: TaskItem }) {
 }
 
 function Output({ item, now }: { item: TaskItem; now: number }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const out = useTaskOutput(item);
   const body = useRef<HTMLPreElement>(null);
   const atEnd = useRef(true);

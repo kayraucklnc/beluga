@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Location } from '@klaud/core/store.js';
+import type { Location } from '@beluga/core/store.js';
 import { Empty, IconButton, cx } from '../../components/ui.js';
-import { useApi } from '../../lib/klaud.js';
+import { useApi } from '../../lib/beluga.js';
 import type { PDFDocumentProxy } from './pdf-lib.js';
 import { usePinchZoom } from '../../components/usePinchZoom.js';
 import r from './reader.module.css';

@@ -1,7 +1,7 @@
-import type { LinkedImage } from '@klaud/shared/attachment-links.js';
+import type { LinkedImage } from '@beluga/shared/attachment-links.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
-import type { UiStore } from '../lib/klaud.js';
+import type { UiStore } from '../lib/beluga.js';
 
 /**
  * What right-clicking a message offers: copy it (as you read it, or as Markdown), quote it in
@@ -38,7 +38,7 @@ export function quoteInBox(ui: UiStore, text: string, prefix = ''): void {
   const buffer = `${prefix}${quoted(text)}\n\n${current}`;
   const cursor = buffer.length - current.length;
   ui.patch({ focus: 'chat', buffer, cursor, suggestHidden: true });
-  document.dispatchEvent(new CustomEvent('klaud:focus-composer'));
+  document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
 }
 
 /**

@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useRef, useState } from 'react';
-import { parseCriterion } from '@klaud/core/board/criteria.js';
-import { BRIEF_SECTIONS, type BriefSection, type Issue, SECTION_INFO, actorName } from '@klaud/core/board/model.js';
+import { parseCriterion } from '@beluga/core/board/criteria.js';
+import { BRIEF_SECTIONS, type BriefSection, type Issue, SECTION_INFO, actorName } from '@beluga/core/board/model.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
 import { Button, IconButton, Tip, cx } from '../components/ui.js';

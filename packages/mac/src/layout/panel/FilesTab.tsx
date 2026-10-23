@@ -1,13 +1,13 @@
 import { type KeyboardEvent, type ReactNode, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import type { Location, ViewerState } from '@klaud/core/store.js';
-import type { FsEntry } from '@klaud/protocol.js';
-import { shareNameOf } from '@klaud/shared/share-names.js';
-import { formatBytes } from '@klaud/shared/format.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import type { Location, ViewerState } from '@beluga/core/store.js';
+import type { FsEntry } from '@beluga/protocol.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
+import { formatBytes } from '@beluga/shared/format.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Icon } from '../../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../../components/SpecMenu.js';
 import { IconButton, Segmented, cx } from '../../components/ui.js';
-import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { localPathOf, openWithDefaultApp } from '../../lib/files.js';
 import { focusFor, openFocus, showChange, usePanelRuntime } from '../../lib/panel.js';
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
@@ -44,7 +44,7 @@ function Marked({ name, query }: { name: string; query: string }): ReactNode {
 /** The open file under the tree: Markdown formatted (or as source), code in color, images as they are. */
 function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: string; local: string | undefined; changed: boolean }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [mode, setMode] = useState<ReaderMode>(() => initialMode(viewer));
   const body = useRef<HTMLDivElement>(null);
   // Another file: from its top, as itself.
@@ -95,7 +95,7 @@ function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: 
  */
 export function FilesTab({ wsId }: { wsId: string }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const prefs = usePrefs();
   const selfId = useApp((st) => st.selfId);
   const cache = useApp((st) => st.dirCache);

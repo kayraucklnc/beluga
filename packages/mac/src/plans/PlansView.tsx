@@ -1,10 +1,10 @@
 import { useEffect, useMemo } from 'react';
-import type { Plan } from '@klaud/core/plans/model.js';
+import type { Plan } from '@beluga/core/plans/model.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, EmptyActions, IconButton, cx } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { currentSheet, openSheet } from '../lib/sheets.js';
 import { PickMenu } from '../tasks/PickMenu.js';
 import { ago, projectToShow } from '../tasks/tasks-model.js';
@@ -45,7 +45,7 @@ export function PlansView() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [project]);
 
-  if (!state.enabled) return <Empty icon="flag" title="Plans need the Klaud app" detail="Open Klaud for Mac to plan big work with Claude." />;
+  if (!state.enabled) return <Empty icon="flag" title="Plans need the Beluga app" detail="Open Beluga for Mac to plan big work with Claude." />;
   if (!here) return <Empty icon="flag" title="No projects yet" detail="Plans belong to a project. Add one from the sidebar." />;
   return (
     <div className={p.list}>

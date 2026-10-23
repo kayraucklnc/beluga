@@ -1,12 +1,12 @@
 import * as Popover from '@radix-ui/react-popover';
 import { type ReactNode, useEffect, useState } from 'react';
-import type { GroupView, MemberView } from '@klaud/net/mesh/views.js';
+import type { GroupView, MemberView } from '@beluga/net/mesh/views.js';
 import { Alert } from '../components/Alert.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext, ActionsDropdown } from '../components/SpecMenu.js';
 import { Avatar, Button, Tip } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { Choice, useFlash } from '../dialogs/native/parts.js';
 import { AvatarStack, GroupAvatar, PersonAvatar } from './Avatars.js';
 import { expiryLabel, openGroupInvitation, presenceLine, shownState, sortMembers } from './net-model.js';
@@ -18,7 +18,7 @@ type Confirm = { readonly title: string; readonly message: string; readonly conf
 
 /** The group's name, renamed in place (anyone in the group may rename it). */
 function Name({ g }: { g: GroupView }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [name, setName] = useState(g.name);
   useEffect(() => setName(g.name), [g.name]);
   const save = (): void => {
@@ -67,7 +67,7 @@ function memberItems(g: GroupView, m: MemberView, ctx: { friend: boolean; messag
 
 /** Who's in the group: you first, then admins, then everyone else, each with a menu. */
 function Members({ g, confirm }: { g: GroupView; confirm: (c: Confirm) => void }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const friends = useApp((st) => st.network.friends);
   const api = client.api.network;
   return (
@@ -117,7 +117,7 @@ function Members({ g, confirm }: { g: GroupView; confirm: (c: Confirm) => void }
 
 /** People who used the group's link and wait for an admin: Approve or Decline. */
 function Requests({ g }: { g: GroupView }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   if (!g.admin || !g.requests.length) return null;
   return (
     <div className={s.infoSection}>
@@ -145,7 +145,7 @@ const autoLinks = new Set<string>();
 
 /** An invite link for the group (admins): approve each request, or let anyone with it in; Copy. */
 function InviteLink({ g }: { g: GroupView }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const say = useSay();
   const invitations = useApp((st) => st.network.invitations);
   const open = openGroupInvitation(invitations, g.id);
@@ -218,7 +218,7 @@ function InviteLink({ g }: { g: GroupView }) {
 
 /** The group's info, beside its header: name, members, join requests, invite link, Leave. */
 export function GroupInfo({ g, children }: { g: GroupView; children: ReactNode }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const sheet = useNetSheet();
   const open = sheet?.kind === 'group_info' && sheet.groupId === g.id;
   const [confirm, setConfirm] = useState<Confirm>();

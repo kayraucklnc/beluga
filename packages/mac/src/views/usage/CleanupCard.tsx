@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import type { AppState } from '@klaud/core/store.js';
-import { formatBytes } from '@klaud/shared/format.js';
+import type { AppState } from '@beluga/core/store.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { Alert } from '../../components/Alert.js';
 import { Icon } from '../../components/Icon.js';
 import { ProjectIcon } from '../../components/ProjectIcon.js';
 import { Button } from '../../components/ui.js';
-import { toast, useApi, useKlaud } from '../../lib/klaud.js';
+import { toast, useApi, useBeluga } from '../../lib/beluga.js';
 import { type Cleanup, REASON } from './usage-model.js';
 import s from './usage.module.css';
 
@@ -18,7 +18,7 @@ const sizeOf = (c: Cleanup): string => (c.disk ? formatBytes(c.disk) : '–');
 /** Put the chosen folders away, one after the other: worktrees are archived, sub-agent leftovers removed. */
 function useCleanUp(onDone: () => void): { busy: boolean; run: (items: readonly Cleanup[]) => Promise<void> } {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [busy, setBusy] = useState(false);
   const run = async (items: readonly Cleanup[]): Promise<void> => {
     setBusy(true);

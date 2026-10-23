@@ -1,29 +1,29 @@
-//! When Klaud looks for a new version, and when it's fine to install one without asking.
+//! When Beluga looks for a new version, and when it's fine to install one without asking.
 //! Pure decisions (no clock, network or processes of their own), so they're tested below.
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const HOUR_MS: u64 = 3_600_000;
-/// Opening Klaud (or waking the Mac) looks for an update when the last look is older than this.
+/// Opening Beluga (or waking the Mac) looks for an update when the last look is older than this.
 pub const LAUNCH_AFTER_MS: u64 = 20 * HOUR_MS;
-/// While Klaud stays open, it looks once a day.
+/// While Beluga stays open, it looks once a day.
 pub const EVERY_MS: u64 = 24 * HOUR_MS;
 /// After a failed look (offline, GitHub down), wait this long before trying again.
 pub const RETRY_AFTER_MS: u64 = HOUR_MS;
 /// "Update when idle" waits until you haven't touched the Mac for this long.
 pub const IDLE_FOR_SECS: f64 = 600.0;
-/// A wall-clock jump this much bigger than the time Klaud was running means the Mac slept.
+/// A wall-clock jump this much bigger than the time Beluga was running means the Mac slept.
 const SLEEP_GAP: Duration = Duration::from_secs(120);
 
 /// Why a look for updates is being considered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Occasion {
-    /// Klaud just opened.
+    /// Beluga just opened.
     Launch,
     /// The Mac just woke from sleep.
     Wake,
-    /// The regular tick while Klaud runs.
+    /// The regular tick while Beluga runs.
     Running,
 }
 
@@ -58,10 +58,10 @@ pub fn slept(wall: Duration, monotonic: Duration) -> bool {
     wall > monotonic + SLEEP_GAP
 }
 
-/// What the window says is going on in klaud (see `useUpdateActivity` in lib/updates.ts).
+/// What the window says is going on in Beluga (see `useUpdateActivity` in lib/updates.ts).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Activity {
-    /// Claude runs working or queued in this klaud.
+    /// Claude runs working or queued in this Beluga.
     pub claude: u32,
     /// Other people in your room (a restart drops them and changes the invite link).
     pub guests: u32,
@@ -75,7 +75,7 @@ pub struct Activity {
 pub enum Blocker {
     /// Claude is working (or the window can't say whether it is).
     Claude,
-    /// A program runs in one of klaud's terminals (not just the shell's prompt).
+    /// A program runs in one of Beluga's terminals (not just the shell's prompt).
     Terminal,
     /// Friends are in your room, or you're in theirs.
     Room,
@@ -84,7 +84,7 @@ pub enum Blocker {
 }
 
 pub struct IdleInputs {
-    /// Whether klaud's daemon runs (when it doesn't, nothing of it can be interrupted).
+    /// Whether Beluga's daemon runs (when it doesn't, nothing of it can be interrupted).
     pub daemon_up: bool,
     /// The window's last report; `None` when it isn't connected.
     pub activity: Option<Activity>,
@@ -92,7 +92,7 @@ pub struct IdleInputs {
     pub busy_terminals: Option<usize>,
     /// Seconds since the last keyboard/mouse input anywhere on the Mac, if the system says.
     pub idle_secs: Option<f64>,
-    /// Seconds since Klaud's window lost focus (`None` while it has it): the fallback for idle.
+    /// Seconds since Beluga's window lost focus (`None` while it has it): the fallback for idle.
     pub unfocused_secs: Option<f64>,
     /// How long you must have been away (IDLE_FOR_SECS).
     pub idle_for: f64,
@@ -151,7 +151,7 @@ pub fn parse_ps(text: &str) -> Vec<Proc> {
         .collect()
 }
 
-/// klaud's terminals running a program: each terminal's shell is a child of the daemon with
+/// Beluga's terminals running a program: each terminal's shell is a child of the daemon with
 /// its own terminal, and while something runs in it (a build, a dev server, vim) the
 /// terminal's foreground group is that program's, not the shell's.
 pub fn busy_terminals(procs: &[Proc], daemon_pid: u32) -> usize {

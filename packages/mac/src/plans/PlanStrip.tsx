@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { planForHome, planTitle, planTaskOfIssue } from '@klaud/core/plans/model.js';
-import { issueForWorkspace } from '@klaud/core/board/model.js';
+import { planForHome, planTitle, planTaskOfIssue } from '@beluga/core/plans/model.js';
+import { issueForWorkspace } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Tip } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { Said } from './marks.js';
 import { headline, taskHeadline } from './plans-model.js';
 import { usePlanActions, usePlanView } from './use-plans.js';
@@ -12,7 +12,7 @@ import p from './plans.module.css';
 /**
  * Above a conversation that plans (a plan's home): the plan and its one sentence (who it waits
  * for). In a worktree doing a plan's task: which plan, and the same sentence from the task's side
- * (“Done. Claude is checking “API”; Klaud merges this into the plan”).
+ * (“Done. Claude is checking “API”; Beluga merges this into the plan”).
  */
 export function PlanStrip({ workspaceId }: { workspaceId: string }) {
   const home = useApp((s) => planForHome(s.plans, `ws:${workspaceId}`));

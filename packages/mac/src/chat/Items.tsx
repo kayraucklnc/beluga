@@ -1,17 +1,17 @@
 import { type ReactNode, createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { LogItem, ShellItem } from '@klaud/core/store.js';
-import { isRunning } from '@klaud/ui/format.js';
-import { formatDuration } from '@klaud/shared/text.js';
-import { splitImages } from '@klaud/shared/attachment-links.js';
-import { STEERED_IN, isLimitNotice } from '@klaud/shared/claude-notices.js';
-import { CONTINUE_PROMPT, type RunFailure, decodeFailure, failureTitle } from '@klaud/shared/run-failure.js';
+import type { LogItem, ShellItem } from '@beluga/core/store.js';
+import { isRunning } from '@beluga/ui/format.js';
+import { formatDuration } from '@beluga/shared/text.js';
+import { splitImages } from '@beluga/shared/attachment-links.js';
+import { STEERED_IN, isLimitNotice } from '@beluga/shared/claude-notices.js';
+import { CONTINUE_PROMPT, type RunFailure, decodeFailure, failureTitle } from '@beluga/shared/run-failure.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, claudeColor, cx } from '../components/ui.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { stopClaude } from '../lib/commands.js';
 import { copyText } from '../lib/copy.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { usePrefs } from '../lib/prefs.js';
 import { useClock } from '../lib/window-active.js';
 import { countRender } from '../lib/render-count.js';
@@ -24,7 +24,7 @@ import { AgentSteps, StepsFold, StepsToggle } from './steps/AgentSteps.js';
 import { useDisclosure } from './steps/step-memory.js';
 import { useFlightLanding } from './flight.js';
 import { useMentionWorld } from './Mention.js';
-import type { TaskView } from '@klaud/core/gateway/model.js';
+import type { TaskView } from '@beluga/core/gateway/model.js';
 import { TaskCard } from '../gateway/TaskCard.js';
 import s from './chat.module.css';
 
@@ -32,14 +32,14 @@ type AgentItem = Extract<LogItem, { type: 'agent' }>;
 type ChatItem = Extract<LogItem, { type: 'chat' }>;
 type SystemItem = Extract<LogItem, { type: 'system' }>;
 
-/** A clock that ticks while something is running (for "working · 12s"), and you're looking at Klaud. */
+/** A clock that ticks while something is running (for "working · 12s"), and you're looking at Beluga. */
 export const useNow = useClock;
 
 const time = (ts: number): string => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /** What a message's right-click menu needs: the box to quote into, and how to reach Claude here. */
 function useMenuContext() {
-  const { ui, client } = useKlaud();
+  const { ui, client } = useBeluga();
   // In a group room only a mention reaches Claude; elsewhere quoting already asks it.
   const group = useApp((st) => st.view.kind === 'room' && st.peers.length > 1);
   return { ui, ...(group ? { askPrefix: '@claude ' } : {}), toast: (text: string) => client.store.dispatch({ type: 'toast', text, level: 'success' }) };
@@ -122,7 +122,7 @@ export const SystemRow = memo(function SystemRow({ item }: { item: SystemItem })
   return (
     <ActionsContext items={() => messageItems({ ...menu, text: item.text })}>
         <div className={cx(s.system, item.level === 'warn' && s.systemWarn, item.level === 'error' && s.systemError)}>
-          {/* Core words ("klaud") in this app's; a line quoting what someone said stays as written. */}
+          {/* Core words ("beluga") in this app's; a line quoting what someone said stays as written. */}
           <Markdown text={item.said ? item.text : brandText(item.text)} />
         </div>
     </ActionsContext>
@@ -147,7 +147,7 @@ function statusOf(item: AgentItem, now: number): { label: string; tone: 'claude'
     case 'denied':
       return { label: 'Declined', tone: 'warn' };
     case 'interrupted':
-      // klaud stopped while it ran (quit, a crash): not a problem to flag, just where it was left.
+      // Beluga stopped while it ran (quit, a crash): not a problem to flag, just where it was left.
       return { label: 'Interrupted', tone: 'muted' };
     default:
       return { label: `Working · ${formatDuration(now - item.ts)}`, tone: 'claude' };
@@ -164,7 +164,7 @@ export const AgentCard = memo(function AgentCard({ item, tasks, latest = false }
   const { quietWorking } = useContext(PaneLook);
   const forSomeoneElse = item.requesterName !== item.ownerName;
   const mine = item.owner === selfId;
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const actions = useActions();
   const menu = useMenuContext();
   // Your own Claude, working now: it can be stopped from its card.

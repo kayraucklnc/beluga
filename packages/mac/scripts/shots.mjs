@@ -4,14 +4,14 @@ import { chromium } from 'playwright';
 import path from 'node:path';
 
 const out = path.resolve(import.meta.dirname, '../../../.context/shots');
-const url = process.env.KLAUD_URL ?? 'http://localhost:1420';
+const url = process.env.BELUGA_URL ?? process.env.KLAUD_URL ?? 'http://localhost:1420';
 const theme = process.env.THEME ?? 'light';
 const scenes = process.argv.slice(2);
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, colorScheme: theme });
 // Past the first-run welcome, unless the scene is the welcome itself.
-if (!scenes.includes('onboarding')) await page.addInitScript(() => localStorage.setItem('klaud.onboarding.v1', JSON.stringify({ version: 'shots', at: 0, how: 'finished' })));
+if (!scenes.includes('onboarding')) await page.addInitScript(() => localStorage.setItem('beluga.onboarding.v1', JSON.stringify({ version: 'shots', at: 0, how: 'finished' })));
 const errors = [];
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 page.on('pageerror', (e) => errors.push(String(e)));
@@ -32,7 +32,7 @@ const tab = async (name) => {
 const STEPS = {
   room: async () => {},
   onboarding: async () => {
-    await page.getByRole('dialog', { name: 'Welcome to Klaud' }).waitFor();
+    await page.getByRole('dialog', { name: 'Welcome to Beluga' }).waitFor();
     await wait(3600);
   },
   workspace: async () => openWs(),

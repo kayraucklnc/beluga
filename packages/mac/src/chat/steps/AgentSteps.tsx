@@ -1,15 +1,15 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { type ReactNode, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { LogItem, SubAgent } from '@klaud/core/store.js';
-import type { TaskView } from '@klaud/core/gateway/model.js';
-import { isFinal } from '@klaud/core/gateway/model.js';
-import type { StepRecord, StepSummary } from '@klaud/shared/steps.js';
-import { humanizeLine } from '@klaud/shared/step-titles.js';
-import { formatDuration } from '@klaud/shared/text.js';
-import { DONE_STEPS, HIDDEN_STEPS } from '@klaud/ui/format.js';
+import type { LogItem, SubAgent } from '@beluga/core/store.js';
+import type { TaskView } from '@beluga/core/gateway/model.js';
+import { isFinal } from '@beluga/core/gateway/model.js';
+import type { StepRecord, StepSummary } from '@beluga/shared/steps.js';
+import { humanizeLine } from '@beluga/shared/step-titles.js';
+import { formatDuration } from '@beluga/shared/text.js';
+import { DONE_STEPS, HIDDEN_STEPS } from '@beluga/ui/format.js';
 import { Icon } from '../../components/Icon.js';
 import { Avatar, Button, Dot, cx } from '../../components/ui.js';
-import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { usePrefs } from '../../lib/prefs.js';
 import { useDisclosure } from './step-memory.js';
 import { type Entry, foldOf, movedTogether, ownStepsOf, subRowView, timelineOf } from './timeline.js';
@@ -59,7 +59,7 @@ function lineStep(line: string, i: number, at: number, live: boolean): StepSumma
   return { id: `line-${i}`, kind: 'tool', title: line, label: h.done, doing: h.doing, status: live ? 'running' : 'done', startedAt: at, ...(h.person ? { person: h.person } : {}), ...(h.task ? { task: h.task } : {}), ...(h.wait ? { wait: true } : {}) };
 }
 
-/** A record kept before steps had words (or from an older klaud): its words from its line. */
+/** A record kept before steps had words (or from an older Beluga): its words from its line. */
 function withWords(step: StepSummary): StepSummary {
   if (step.label || step.kind !== 'tool') return step;
   const h = humanizeLine(step.title);
@@ -337,7 +337,7 @@ function LiveIdle({ started, since }: { started: boolean; since: number }) {
 
 /** Claude waits on a friend's Claude (or Mac): who, where their side is, for how long; Cancel. */
 function WaitingRow({ step, task, now }: { step: StepSummary; task: TaskView | undefined; now: number }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const api = useApi();
   const person = task?.peerName ?? step.person;
   const personId = usePersonId(person);
@@ -364,7 +364,7 @@ function WaitingRow({ step, task, now }: { step: StepSummary; task: TaskView | u
 
 /** Follow one of this conversation's sub-agents on its own page (live: thinking, tools, its worktree). */
 function WatchAgent({ id }: { id: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   const sessions = useApp((st) => st.claudeCode.sessions);
   // The chat knows a sub-agent by the call that started it (or, in the background, by its agent id).

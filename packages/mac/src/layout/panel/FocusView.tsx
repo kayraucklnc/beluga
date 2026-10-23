@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { shareNameOf } from '@klaud/shared/share-names.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
 import { Icon } from '../../components/Icon.js';
 import { Kbd } from '../../components/ui.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import { type FocusKind, closeFocus, usePanelRuntime } from '../../lib/panel.js';
 import { ChatView } from '../../views/ChatView.js';
 import s from './panel.module.css';
@@ -29,12 +29,12 @@ function useEscapeBack(): void {
     // goes. The box wasn't on screen to take the keyboard, so ask again once it is.
     const back = (): void => {
       closeFocus();
-      setTimeout(() => document.dispatchEvent(new CustomEvent('klaud:focus-composer')), 40);
+      setTimeout(() => document.dispatchEvent(new CustomEvent('beluga:focus-composer')), 40);
     };
-    document.addEventListener('klaud:focus-composer', back);
+    document.addEventListener('beluga:focus-composer', back);
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.removeEventListener('klaud:focus-composer', back);
+      document.removeEventListener('beluga:focus-composer', back);
     };
   }, []);
 }

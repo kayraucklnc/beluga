@@ -1,18 +1,18 @@
 import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { type Graph, parseGraph } from '@klaud/shared/graph-spec.js';
+import { type Graph, parseGraph } from '@beluga/shared/graph-spec.js';
 import { ActionsContext, type ActionItem } from '../SpecMenu.js';
 import { CodeLines } from '../markdown/CodeLines.js';
 import { IconButton } from '../ui.js';
 import { copyText } from '../../lib/copy.js';
-import { toast, useKlaud } from '../../lib/klaud.js';
+import { toast, useBeluga } from '../../lib/beluga.js';
 import { type Size, fittedHeight, inlineHeight } from './graph-model.js';
 import { cachedLayout } from './layout-cache.js';
 import { KindIcon } from './marks.js';
 import g from './graph.module.css';
 
 /**
- * A ```klaud-graph block wherever Markdown is drawn (answers, reports, documents): a card with
+ * A ```beluga-graph block wherever Markdown is drawn (answers, reports, documents): a card with
  * the graph's title and the graph itself, which opens in the whole window. React Flow and ELK
  * load the first time a graph shows. While Claude is still writing the block it says so; a
  * block that's wrong says what's wrong and shows its JSON.
@@ -61,7 +61,7 @@ function useWidth(): [React.RefObject<HTMLElement | null>, number] {
 }
 
 function GraphCard({ graph, code, warnings, localImages }: { graph: Graph; code: string; warnings: readonly string[]; localImages: boolean }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [full, setFull] = useState(false);
   const [ref, width] = useWidth();
   const [laid, setLaid] = useState<Size | undefined>(() => cachedLayout(code, 'inline')?.bounds);

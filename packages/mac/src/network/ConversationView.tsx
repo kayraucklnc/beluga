@@ -1,11 +1,11 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { FriendView, GroupView, MessageView } from '@klaud/net/mesh/views.js';
+import type { FriendView, GroupView, MessageView } from '@beluga/net/mesh/views.js';
 import type { MentionWorld } from '../chat/mentions.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
 import { Avatar, Button, Empty, claudeColor, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useKlaud } from '../lib/klaud.js';
+import { useBeluga } from '../lib/beluga.js';
 import { usePrefs } from '../lib/prefs.js';
 import { Markdown } from '../chat/Markdown.js';
 import { plainText } from '../chat/message-menu.js';
@@ -202,7 +202,7 @@ function LiveRow({ id, me }: { id: string; me?: string }) {
 
 /** Files dropped anywhere on the conversation go in the message box (Finder files by path; a browser's by bytes). */
 function useFileDrop(id: string, enabled: boolean) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const ref = useRef<HTMLDivElement>(null);
   const [over, setOver] = useState(false);
   useEffect(() => {
@@ -265,7 +265,7 @@ export function ConversationView({ id }: { id: string }) {
 }
 
 function Conversation({ id }: { id: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const net = useNetwork();
   const target = conversationOf(id);
   const friend = target?.kind === 'dm' ? net.friends.find((f) => f.peerId === target.peerId) : undefined;

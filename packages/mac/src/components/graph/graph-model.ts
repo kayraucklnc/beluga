@@ -1,7 +1,7 @@
 import type { EdgeKind, Graph, GraphDirection, GraphEdge, GraphNode, GraphStatus, GraphStep, NodeKind } from '../../../../../src/shared/graph-spec.js';
 
 /**
- * The pure half of drawing a `klaud-graph` (no DOM, no React Flow): what each kind looks like,
+ * The pure half of drawing a `beluga-graph` (no DOM, no React Flow): what each kind looks like,
  * the ELK layout request and its answer, what lights up when you point at a node or step
  * through a walkthrough, and how tall a graph should sit in a conversation.
  */

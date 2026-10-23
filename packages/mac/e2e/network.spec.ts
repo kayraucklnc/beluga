@@ -1,7 +1,7 @@
 import { expect, test, type Page } from './fixtures.js';
 
 /**
- * Friends, groups and your status (the klaud network) against the demo: turned on from the
+ * Friends, groups and your status (the Beluga network) against the demo: turned on from the
  * sidebar's card (it starts live, no restart), bob and mia as friends who answer, a group.
  * The last test turns it off again in Settings, so the other specs see the sidebar as before.
  */
@@ -96,7 +96,7 @@ test('Add a Friend shows a code and a link, and says when a code is wrong', asyn
   const field = sheet.getByRole('textbox', { name: 'Invitation code or link' });
   await field.fill('hello there');
   await sheet.getByRole('button', { name: 'Add Friend' }).click();
-  await expect(sheet.getByRole('alert')).toContainText('doesn’t look like a Klaud invitation');
+  await expect(sheet.getByRole('alert')).toContainText('doesn’t look like a Beluga invitation');
   await sheet.getByRole('button', { name: 'Done' }).click();
   await expect(sheet).toBeHidden();
 });

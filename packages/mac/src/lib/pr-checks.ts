@@ -1,5 +1,5 @@
-import type { PrCheck, PullRequest } from '@klaud/core/work-store.js';
-import type { MergeMethod } from '@klaud/workspaces/pr.js';
+import type { PrCheck, PullRequest } from '@beluga/core/work-store.js';
+import type { MergeMethod } from '@beluga/workspaces/pr.js';
 
 /** How one check is doing, as the PR sheet draws it: a spinner, a clock, ✓, ✗ or a dash. */
 export type CheckTone = 'running' | 'queued' | 'passed' | 'failed' | 'skipped';

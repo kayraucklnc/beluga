@@ -1,8 +1,8 @@
 import { expect, test, type Page } from './fixtures.js';
 
 /**
- * Klaud's window stays cool while Claude works (KLD-40): what moves while Claude works moves with
- * one slow clock (lib/live-motion.ts), not CSS animations; while you're not looking at Klaud it
+ * Beluga's window stays cool while Claude works (KLD-40): what moves while Claude works moves with
+ * one slow clock (lib/live-motion.ts), not CSS animations; while you're not looking at Beluga it
  * all rests, and the moment you look back it moves again. (Measured with scripts/cpu-bench.mjs.)
  */
 

@@ -1,4 +1,4 @@
-import type { PresenceState } from '@klaud/net/mesh/views.js';
+import type { PresenceState } from '@beluga/net/mesh/views.js';
 import { Avatar, cx, personColor } from '../components/ui.js';
 import { STATE_LABEL } from './net-model.js';
 import s from './network.module.css';

@@ -1,11 +1,11 @@
 import { type DragEvent, type KeyboardEvent, memo, Suspense, useEffect, useRef, useState } from 'react';
-import { shareNameOf } from '@klaud/shared/share-names.js';
-import { runId, setupId } from '@klaud/shared/terminal-keys.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
+import { runId, setupId } from '@beluga/shared/terminal-keys.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, Segmented, cx } from '../components/ui.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { currentTab, focusFor, paneShowing, paneTabsOf, placeTab, resetPanelLayout, setPanelTab, showPanelTab, tabShowing, tabsOf, useWorkspaceTabBridge } from '../lib/panel.js';
 import { PANEL_DEFAULT, PANEL_LABELS, type PaneId, type PanelTab, SPLIT_MAX, SPLIT_MIN, PANES_DEFAULT, clampPanelWidth, clampShare, paneKey, panelDigit, panelFits, slotOf, viewsOf } from '../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
@@ -77,7 +77,7 @@ function useBadges(): Badges {
 const changesView = new Map<string, PanelTab>();
 
 /** The kind of data a dragged panel tab carries (only panel tabs drop on panes). */
-const DRAG_TYPE = 'application/x-klaud-panel-tab';
+const DRAG_TYPE = 'application/x-beluga-panel-tab';
 /** The tab being dragged (the drag's data can't be read until it drops). */
 let dragged: PanelTab | undefined;
 
@@ -300,7 +300,7 @@ const Body = memo(function Body({ tab, wsId, projectId }: { tab: PanelTab; wsId:
  * Not while a file is open full size: a link in it opens the next page right there.
  */
 function useFileFollow(): void {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const opened = useApp((st) => (st.viewer && !st.viewer.by ? `${st.viewer.owner}\n${st.viewer.share}\n${st.viewer.path}` : ''));
   const first = useRef(true);
   useEffect(() => {
@@ -319,7 +319,7 @@ function useFileFollow(): void {
  * (⌥⌘0), is as wide as you drag it, and remembers each pane's tab in each workspace.
  */
 export function RightPanel() {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   useWorkspaceTabBridge(client);
   useFileFollow();
   const prefs = usePrefs();

@@ -1,8 +1,8 @@
 /**
  * Sending a message from the plan chat: its "[image N]" references become links to the images
- * (klaud keeps them) and it goes to the plan's Claude. Resolves when it went; rejects with what to
+ * (Beluga keeps them) and it goes to the plan's Claude. Resolves when it went; rejects with what to
  * say under the box otherwise. Retry sends the same message again: its images are expanded once
- * (the first time that works), and it carries one id, so a Retry of a message that reached klaud
+ * (the first time that works), and it carries one id, so a Retry of a message that reached Beluga
  * though its answer was lost isn't said in the chat, or asked of Claude, twice.
  */
 

@@ -1,6 +1,6 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { type KeyboardEvent, type ReactNode, type Ref } from 'react';
-import type { Project } from '@klaud/workspaces/types.js';
+import type { Project } from '@beluga/workspaces/types.js';
 import { Icon } from '../../components/Icon.js';
 import { ProjectIcon } from '../../components/ProjectIcon.js';
 import { ActionsDropdown } from '../../components/SpecMenu.js';

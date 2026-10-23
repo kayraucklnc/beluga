@@ -1,8 +1,8 @@
-import type { Plan } from '@klaud/core/plans/model.js';
+import type { Plan } from '@beluga/core/plans/model.js';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { Row } from '../layout/sidebar-parts.js';
 import { DotMark } from '../layout/signal-marks.js';
 import { projectOfView } from '../tasks/use-tasks.js';

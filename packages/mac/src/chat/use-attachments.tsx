@@ -1,6 +1,6 @@
 import { type RefObject, useEffect, useState } from 'react';
 import { Icon } from '../components/Icon.js';
-import { toast, useApi, useKlaud } from '../lib/klaud.js';
+import { toast, useApi, useBeluga } from '../lib/beluga.js';
 import { keepPreview, previewOf } from './images.js';
 import { type ImageInText, type PathInfo, insertText, usePastePaths } from './paste-paths.js';
 import s from './composer.module.css';
@@ -51,7 +51,7 @@ export interface Attachments {
  * plan chat in its own).
  */
 export function useAttachments({ channel, box, text, setText }: { channel: string; box: RefObject<HTMLTextAreaElement | null>; text: () => string; setText: (text: string, cursor: number) => void }): Attachments {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const api = useApi();
   const selfId = client.store.getState().selfId;
   const [images, setImagesState] = useState<readonly number[]>(() => waitingImages.get(channel) ?? []);

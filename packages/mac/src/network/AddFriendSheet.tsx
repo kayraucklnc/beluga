@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { InvitationView } from '@klaud/net/mesh/views.js';
+import type { InvitationView } from '@beluga/net/mesh/views.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, cx } from '../components/ui.js';
 import { inApp } from '../lib/boot.js';
 import { copyText } from '../lib/copy.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { Sheet, useFlash } from '../dialogs/native/parts.js';
 import { QrCode } from './QrCode.js';
 import { acceptError, expiryLabel, findInvitation, openFriendInvitation, timeLeft } from './net-model.js';
@@ -51,7 +51,7 @@ function Code({ code }: { code: string }) {
 
 /** Invite someone: one invitation (a code and a link), copyable, with when it ends and Cancel. */
 function InviteHalf() {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const say = useSay();
   const now = useMinute();
   const invitations = useApp((st) => st.network.invitations);
@@ -154,7 +154,7 @@ type Result = { readonly kind: 'friend'; readonly peerId: string; readonly name:
 
 /** Have a code or link: paste it (it pastes itself if one is on the clipboard), Add. */
 function AcceptHalf({ preset, group }: { preset?: string; group?: boolean }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [text, setText] = useState(preset ?? '');
   const [pasted, setPasted] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -178,7 +178,7 @@ function AcceptHalf({ preset, group }: { preset?: string; group?: boolean }) {
   const found = findInvitation(text);
   const submit = async (): Promise<void> => {
     if (!text.trim() || busy) return;
-    if (!found) return setError(acceptError('isn’t a Klaud invitation'));
+    if (!found) return setError(acceptError('isn’t a Beluga invitation'));
     setBusy(true);
     setError(undefined);
     try {
@@ -242,7 +242,7 @@ function AcceptHalf({ preset, group }: { preset?: string; group?: boolean }) {
           autoFocus={!preset}
           className={cx(s.acceptInput, error && s.acceptInvalid)}
           value={text}
-          placeholder="K7QM-4XPA-R2TD or klaud://add#…"
+          placeholder="K7QM-4XPA-R2TD or beluga://add#…"
           aria-label="Invitation code or link"
           spellCheck={false}
           autoComplete="off"
@@ -281,7 +281,7 @@ function AcceptHalf({ preset, group }: { preset?: string; group?: boolean }) {
 
 /**
  * Add a Friend: invite someone (a code, a link and a QR code to send) beside using someone
- * else's. A klaud://add link opens it with the invitation filled in, ready to accept.
+ * else's. A beluga://add link opens it with the invitation filled in, ready to accept.
  */
 export function AddFriendSheet({ accept }: { accept?: string }) {
   return (

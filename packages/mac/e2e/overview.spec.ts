@@ -62,7 +62,7 @@ test('an archived worktree is under Archived, and one click restores it as it wa
   await expect(segment(page, 'Archived')).toHaveAttribute('aria-selected', 'true');
   const archived = row(page, 'add-auth');
   await expect(archived).toBeVisible();
-  await expect(archived).toContainText('klaud/add-auth');
+  await expect(archived).toContainText('beluga/add-auth');
   // Archived smartly: it says what it freed.
   await expect(archived).toContainText(/Freed \d/);
   await expect(row(page, 'webhook-retries')).toBeHidden();
@@ -97,7 +97,7 @@ test('search (⌘F) finds by name, branch and project; Esc clears it', async ({ 
   await expect(row(page, 'add-auth')).toBeHidden();
   await expect(segment(page, 'All')).toHaveAccessibleName('All, 1');
 
-  await search.fill('klaud/new-hero');
+  await search.fill('beluga/new-hero');
   await expect(row(page, 'new-hero')).toBeVisible();
   await expect(row(page, 'webhook-retries')).toBeHidden();
 
@@ -146,7 +146,7 @@ test('deleting an archived worktree asks first, in red; reading it changes nothi
   await page.getByRole('menuitem', { name: /Delete Permanently/ }).click();
   const alert = page.getByRole('alertdialog', { name: /Delete “new-hero” permanently\?/ });
   await expect(alert).toBeVisible();
-  await expect(alert).toContainText('klaud/new-hero');
+  await expect(alert).toContainText('beluga/new-hero');
   await expect(alert.getByRole('button', { name: 'Delete' })).toBeFocused();
   await alert.getByRole('button', { name: 'Cancel' }).click();
   await expect(alert).toBeHidden();

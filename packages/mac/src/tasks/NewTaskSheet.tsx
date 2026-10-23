@@ -1,9 +1,9 @@
 import { type KeyboardEvent, useMemo, useState } from 'react';
-import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, issueById } from '@klaud/core/board/model.js';
+import { type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, issueById } from '@beluga/core/board/model.js';
 import { Checkbox, Field, FormSheet, Popup, TextArea, TextInput } from '../components/FormSheet.js';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { toast, useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { LabelDot, PriorityIcon } from './marks.js';
 import { assigneeChoices } from './tasks-model.js';
 import { useBoard, usePeople, useSelf, useSolo, useTaskActions, useTasksPrefs } from './use-tasks.js';
@@ -24,7 +24,7 @@ export function NewTaskSheet({ projectId, status, parent, close }: { projectId?:
   const projects = useMemo(() => allProjects.filter((p) => p.root && !p.error), [allProjects]);
   const self = useSelf();
   const people = usePeople();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const { api, act, open } = useTaskActions();
   const parentIssue = parent ? issueById(board, parent) : undefined;
   // The project you're in (Tasks is always one project's).

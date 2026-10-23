@@ -1,5 +1,5 @@
 import { type KeyboardEvent, memo, useEffect, useMemo, useRef } from 'react';
-import type { CommitInfo } from '@klaud/workspaces/history.js';
+import type { CommitInfo } from '@beluga/workspaces/history.js';
 import { Icon } from '../../components/Icon.js';
 import { cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';

@@ -69,7 +69,7 @@ test('in a task’s worktree (from the plan) the plan row stays marked; it offer
   await expect(page.getByRole('menuitem', { name: /^Merge…/ })).toHaveCount(0);
   await page.getByRole('menuitem', { name: /^Merge Anyway/ }).click();
   const alert = page.getByRole('alertdialog', { name: /by hand\?/ });
-  await expect(alert).toContainText('Klaud merges it into the plan');
+  await expect(alert).toContainText('Beluga merges it into the plan');
   await alert.getByRole('button', { name: 'Cancel' }).click();
   await expect(alert).toBeHidden();
   // The strip at the top leads back to the plan.

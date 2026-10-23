@@ -1,7 +1,7 @@
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
-import type { MenuKind } from '@klaud/ui/menus.js';
-import type { UiAction } from '@klaud/ui/workspace-models.js';
-import type { SettingsPane, UiStore } from './klaud.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
+import type { MenuKind } from '@beluga/ui/menus.js';
+import type { UiAction } from '@beluga/ui/workspace-models.js';
+import type { SettingsPane, UiStore } from './beluga.js';
 import { inApp } from './boot.js';
 import { pickFolders } from './projects.js';
 import { openSheet } from './sheets.js';

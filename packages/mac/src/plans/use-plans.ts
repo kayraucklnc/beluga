@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { Plan, PlansState } from '@klaud/core/plans/model.js';
-import { type PlanView, liveFrom, planView } from '@klaud/core/plans/progress.js';
-import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import type { Plan, PlansState } from '@beluga/core/plans/model.js';
+import { type PlanView, liveFrom, planView } from '@beluga/core/plans/progress.js';
+import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { useActions } from '../lib/actions.js';
 import { onWindowActive, windowActive } from '../lib/window-active.js';
 import { sameDeep, sameItems } from '../lib/stable.js';
@@ -91,7 +91,7 @@ const message = (err: unknown): string => (err instanceof Error ? err.message.re
 /** The plans API with errors shown (a toast), and going places. */
 export function usePlanActions() {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   return useMemo(() => {
     const act = async <T,>(run: () => Promise<T>, done?: string): Promise<T | undefined> => {

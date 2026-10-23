@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { LinkedImage } from '@klaud/shared/attachment-links.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { LinkedImage } from '@beluga/shared/attachment-links.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 
 /**
  * Images linked in chat messages, fetched once through the core (yours from disk, a friend's

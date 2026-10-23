@@ -146,8 +146,8 @@ export function planSignal(state: Source, plan: Plan): Signal & { readonly at?: 
 }
 
 /**
- * Claude is at work somewhere in a project: a klaud run or a Claude Code session, in any of its
- * live workspaces (its main folder and worktrees made outside klaud too). Folded, its row shows it.
+ * Claude is at work somewhere in a project: a Beluga run or a Claude Code session, in any of its
+ * live workspaces (its main folder and worktrees made outside Beluga too). Folded, its row shows it.
  */
 export const projectWorking = (state: Source, p: Project): boolean => p.workspaces.some((w) => !w.archived && workspaceSignal(state, w).working);
 

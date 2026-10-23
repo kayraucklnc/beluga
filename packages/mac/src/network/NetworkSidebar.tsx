@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FriendView, GroupView } from '@klaud/net/mesh/views.js';
+import type { FriendView, GroupView } from '@beluga/net/mesh/views.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
 import { Avatar, Badge, Button, IconButton, Tip, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { Row, Section } from '../layout/sidebar-parts.js';
 import { GroupAvatar, PersonAvatar } from './Avatars.js';
@@ -23,7 +23,7 @@ import s from './network.module.css';
 
 /** Turn on talking with friends: what it is in two lines, and one button. */
 function Welcome() {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const prefs = usePrefs();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -83,7 +83,7 @@ function friendItems(f: FriendView, groups: readonly GroupView[], ctx: { open: (
 }
 
 function FriendRow({ f, groups }: { f: FriendView; groups: readonly GroupView[] }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const say = useSay();
   const selected = useApp((st) => st.view.kind === 'conversation' && st.view.id === dmId(f.peerId));
   const state = shownState(f);
@@ -128,7 +128,7 @@ function FriendRow({ f, groups }: { f: FriendView; groups: readonly GroupView[] 
 
 /** Rename a group in place (Return keeps it, Esc puts it back). */
 function RenameField({ g, done }: { g: GroupView; done: () => void }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [name, setName] = useState(g.name);
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -180,7 +180,7 @@ function groupItems(g: GroupView, ctx: { open: () => void; rename: () => void; c
 }
 
 function GroupRow({ g }: { g: GroupView }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const say = useSay();
   const net = useNetwork();
   const main = isMain(net, g);
@@ -247,7 +247,7 @@ export function FriendsSection() {
 
 /** Your main channel before it exists: one click makes it, with all your friends. */
 function MainRow() {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const say = useSay();
   return (
     <Row

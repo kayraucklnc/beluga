@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { Select, type SelectOption } from '../components/Select.js';
 import { Tip } from '../components/ui.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import s from './draft.module.css';
 
-/** What a new worktree starts from and is called (empty name: klaud names it from the task). */
+/** What a new worktree starts from and is called (empty name: Beluga names it from the task). */
 export interface WorktreeChoice {
   readonly base?: string;
   readonly name: string;
@@ -58,7 +58,7 @@ export function WorktreeDraft({ projectId, choice, onChange }: { projectId: stri
             // Return in the name goes to the task (or creates it when there's no task).
             if (e.key === 'Enter') {
               e.preventDefault();
-              document.dispatchEvent(new CustomEvent('klaud:focus-composer'));
+              document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
             }
           }}
         />

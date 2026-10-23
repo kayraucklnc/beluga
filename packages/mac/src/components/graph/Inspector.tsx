@@ -1,8 +1,8 @@
-import type { Graph, GraphNode } from '@klaud/shared/graph-spec.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import type { Graph, GraphNode } from '@beluga/shared/graph-spec.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Markdown } from '../../chat/Markdown.js';
 import { useActions } from '../../lib/actions.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import { Icon } from '../Icon.js';
 import { IconButton } from '../ui.js';
 import { KIND_NAME, connections, linkGoal } from './graph-model.js';
@@ -11,7 +11,7 @@ import g from './graph.module.css';
 
 /**
  * A node's details, beside the graph: what it is, Claude's notes on it (Markdown), its fields,
- * links (files open in klaud, pages in the browser) and what it's connected to (click one to go
+ * links (files open in Beluga, pages in the browser) and what it's connected to (click one to go
  * there).
  */
 

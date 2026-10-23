@@ -1,21 +1,21 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import type { View } from '@klaud/core/store.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { View } from '@beluga/core/store.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import type { Actions } from './actions.js';
 import { APP_VERSION, inApp } from './boot.js';
 import { INITIAL_UPDATE_STATE, type SavedPlace, type UpdateMode, type UpdateState, activityOf, placeAction } from './update-model.js';
 
 /**
- * Klaud's own updates in the window: a small store fed by the app shell (src-tauri/src/updater.rs
+ * Beluga's own updates in the window: a small store fed by the app shell (src-tauri/src/updater.rs
  * sends `update-state`), and what the buttons ask it to do. In a browser (development, the
- * end-to-end tests) there's no shell: a test seeds `window.__KLAUD_UPDATES__` before the page
- * loads, and every request is recorded in `window.__KLAUD_UPDATE_CALLS__` instead.
+ * end-to-end tests) there's no shell: a test seeds `window.__BELUGA_UPDATES__` before the page
+ * loads, and every request is recorded in `window.__BELUGA_UPDATE_CALLS__` instead.
  */
 
 declare global {
   interface Window {
-    __KLAUD_UPDATES__?: Partial<UpdateState>;
-    __KLAUD_UPDATE_CALLS__?: string[];
+    __BELUGA_UPDATES__?: Partial<UpdateState>;
+    __BELUGA_UPDATE_CALLS__?: string[];
   }
 }
 
@@ -54,7 +54,7 @@ export function startUpdates(): void {
   if (started) return;
   started = true;
   if (!inApp()) {
-    if (window.__KLAUD_UPDATES__) patchState(window.__KLAUD_UPDATES__);
+    if (window.__BELUGA_UPDATES__) patchState(window.__BELUGA_UPDATES__);
     return;
   }
   void (async () => {
@@ -67,7 +67,7 @@ export function startUpdates(): void {
 
 async function ask(cmd: string, args: Record<string, unknown> | undefined, pretend: () => void): Promise<void> {
   if (!inApp()) {
-    (window.__KLAUD_UPDATE_CALLS__ ??= []).push(args ? `${cmd} ${JSON.stringify(args)}` : cmd);
+    (window.__BELUGA_UPDATE_CALLS__ ??= []).push(args ? `${cmd} ${JSON.stringify(args)}` : cmd);
     pretend();
     return;
   }
@@ -100,7 +100,7 @@ export function updateWhenIdle(): Promise<void> {
   return ask('update_choose', { choice: 'idle' }, () => patchState({ choice: 'idle' }));
 }
 
-/** Install the next time you quit Klaud. */
+/** Install the next time you quit Beluga. */
 export function updateLater(): Promise<void> {
   set({ open: false });
   return ask('update_choose', { choice: 'quit' }, () => patchState({ choice: 'quit' }));
@@ -113,7 +113,7 @@ export function dismissNews(): Promise<void> {
 
 // ---- where you were, across Restart Now
 
-const PLACE_KEY = 'klaud.relaunch.v1';
+const PLACE_KEY = 'beluga.relaunch.v1';
 let currentView: View | undefined;
 
 function rememberPlace(): void {
@@ -121,7 +121,7 @@ function rememberPlace(): void {
   try {
     localStorage.setItem(PLACE_KEY, JSON.stringify({ view: currentView, at: Date.now() } satisfies SavedPlace));
   } catch {
-    // No storage: you start where klaud starts.
+    // No storage: you start where Beluga starts.
   }
 }
 

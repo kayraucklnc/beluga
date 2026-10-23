@@ -1,9 +1,9 @@
 import { type KeyboardEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, TESTS_AT, TESTS_AT_INFO, type TestsAt } from '@klaud/core/plans/model.js';
+import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, TESTS_AT, TESTS_AT_INFO, type TestsAt } from '@beluga/core/plans/model.js';
 import { Field, FormSheet, Popup, TextArea } from '../components/FormSheet.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { useTasksPrefs } from '../tasks/use-tasks.js';
 import { modeChange } from './plans-model.js';
 import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
@@ -190,7 +190,7 @@ export function PlanStyleSheet({ close }: { close: () => void }) {
         await act(() => api.setStyle(text), 'Planning style saved');
       }}
     >
-      <Field label="Style" htmlFor="plan-style" hint="Markdown. Kept in ~/.klaud/planning.md.">
+      <Field label="Style" htmlFor="plan-style" hint="Markdown. Kept in ~/.beluga/planning.md.">
         <TextArea id="plan-style" value={text} onChange={setText} rows={9} placeholder={'- Tasks are at most a day of work\n- Every milestone ends with screenshots of what changed\n- Tests before code; no task without them'} data-autofocus />
       </Field>
     </FormSheet>

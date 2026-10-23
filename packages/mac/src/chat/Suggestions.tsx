@@ -1,5 +1,5 @@
 import { type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
-import type { Suggestion } from '@klaud/ui/suggest.js';
+import type { Suggestion } from '@beluga/ui/suggest.js';
 import { cx } from '../components/ui.js';
 import s from './composer.module.css';
 

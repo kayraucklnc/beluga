@@ -1,5 +1,5 @@
-import type { AppState } from '@klaud/core/store.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { AppState } from '@beluga/core/store.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import type { IconName } from '../components/Icon.js';
 import { presenceLine, sortFriends, sortGroups } from './net-model.js';
 import { openNet } from './net-sheets.js';

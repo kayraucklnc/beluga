@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from 'react';
-import type { ChatFile } from '@klaud/net/mesh/views.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { ChatFile } from '@beluga/net/mesh/views.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 
 /**
  * Files waiting in a conversation's message box before you send them: each is taken into
- * klaud's file store as soon as you add it (checksummed, cloned), so Send is instant. Kept per
+ * Beluga's file store as soon as you add it (checksummed, cloned), so Send is instant. Kept per
  * conversation while the app runs, like drafts.
  */
 

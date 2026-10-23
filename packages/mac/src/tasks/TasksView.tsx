@@ -1,10 +1,10 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { isOpen } from '@klaud/core/board/model.js';
+import { isOpen } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, EmptyActions, IconButton, Segmented, cx } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { currentSheet, openSheet } from '../lib/sheets.js';
 import { TaskBoard } from './TaskBoard.js';
 import { TaskList } from './TaskList.js';
@@ -68,7 +68,7 @@ export function TasksView() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [project]);
 
-  if (!board.enabled) return <Empty icon="task" title="Tasks need the Klaud app" detail="Open Klaud for Mac to plan and track work here." />;
+  if (!board.enabled) return <Empty icon="task" title="Tasks need the Beluga app" detail="Open Beluga for Mac to plan and track work here." />;
   if (!projects.length || !here) return <Empty icon="task" title="No projects yet" detail="Tasks belong to a project. Add one from the sidebar, then plan its work here." />;
 
   const none = !board.issues.some((i) => i.projectId === project);

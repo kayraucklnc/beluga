@@ -97,7 +97,7 @@ test('forking asks for the name in a sheet, prefilled', async ({ page }) => {
   await palette(page, 'Fork', /Fork/);
   const sheet = page.getByRole('dialog', { name: 'Fork “add-auth”' });
   await expect(sheet.getByLabel('Name')).toHaveValue('add-auth-2');
-  await expect(sheet.getByText('klaud/add-auth-2')).toBeVisible();
+  await expect(sheet.getByText('beluga/add-auth-2')).toBeVisible();
   await sheet.getByRole('button', { name: 'Cancel' }).click();
   await expect(sheet).toBeHidden();
   await expectEmptyComposer(page);

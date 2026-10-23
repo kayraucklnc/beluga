@@ -2,7 +2,7 @@ import { motion } from 'motion/react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { cx } from '../components/ui.js';
 import { Select, Switch } from '../dialogs/settings-controls.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import { ACCENTS, type Accent, type UiPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EASE_OUT, Rise, SPRING, Words } from './fx.js';
 import { Glass } from './Glass.js';
@@ -10,7 +10,7 @@ import s from './onboarding.module.css';
 
 type Appearance = UiPrefs['appearance'];
 
-/** A tiny Klaud window in one look: sidebar, a conversation, the box you type in. */
+/** A tiny Beluga window in one look: sidebar, a conversation, the box you type in. */
 function MiniApp({ look }: { readonly look: 'light' | 'dark' }) {
   return (
     <span className={s.mini} data-look={look}>

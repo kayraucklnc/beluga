@@ -4,7 +4,7 @@ import type { Project, Workspace } from '../../../../src/workspaces/types.js';
 import { tildePath } from '../lib/brand.js';
 
 /**
- * Worktrees made outside Klaud, as the sidebar lists them: after Klaud's own, most recently
+ * Worktrees made outside Beluga, as the sidebar lists them: after Beluga's own, most recently
  * active first, each with where it is. Never grouped or labelled by the tool that made them.
  * Pure, so it's tested on its own (tests/mac-outside-worktrees.test.ts).
  */
@@ -14,7 +14,7 @@ export const OUTSIDE_MANY = 6;
 /** How many show while the rest are tucked away. */
 export const OUTSIDE_SHOWN = 5;
 
-/** A worktree made outside Klaud that Klaud hasn't talked in yet. */
+/** A worktree made outside Beluga that Beluga hasn't talked in yet. */
 export const isOutside = (w: Workspace): boolean => w.kind === 'worktree' && w.external && !w.archived;
 
 export const outsideOf = (p: Project): Workspace[] => p.workspaces.filter(isOutside);
@@ -34,7 +34,7 @@ export function folderTail(folder: string): string {
   return parts.length > 3 ? `…/${parts.slice(-2).join('/')}` : folder;
 }
 
-/** Where a worktree made outside Klaud is (undefined for Klaud's own and for chats). */
+/** Where a worktree made outside Beluga is (undefined for Beluga's own and for chats). */
 export function outsideLocation(state: Pick<AppState, 'home'>, ws: Workspace): OutsideLocation | undefined {
   if (!isOutside(ws)) return undefined;
   const path = tildePath(state.home, ws.path);
@@ -42,7 +42,7 @@ export function outsideLocation(state: Pick<AppState, 'home'>, ws: Workspace): O
   return { folder: folderTail(cut > 0 ? path.slice(0, cut) : path), path };
 }
 
-/** When something last happened in it: Klaud's conversation there, Claude's usage, or git (from `activity`). */
+/** When something last happened in it: Beluga's conversation there, Claude's usage, or git (from `activity`). */
 export function outsideActivity(state: Pick<AppState, 'log'>, ws: Workspace, activity: Readonly<Record<string, number>>): number {
   return Math.max(activityOf(state.log, `ws:${ws.id}`).lastTs ?? 0, ws.usage?.lastAt ?? 0, ws.createdAt ?? 0, activity[ws.id] ?? 0);
 }

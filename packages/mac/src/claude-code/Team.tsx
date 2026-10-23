@@ -1,4 +1,4 @@
-import type { CcAgent, CcMessage, CcSession } from '@klaud/core/claude-code/model.js';
+import type { CcAgent, CcMessage, CcSession } from '@beluga/core/claude-code/model.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { AgentCard } from './Cards.js';

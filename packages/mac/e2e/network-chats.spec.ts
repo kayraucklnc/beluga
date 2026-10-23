@@ -156,7 +156,7 @@ test('files you add wait in the box, then go with the message', async ({ page })
 });
 
 test('pasted paths of files on this Mac go as the files; other words stay words', async ({ page }) => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud paste-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga paste-'));
   writeFileSync(path.join(dir, 'plan notes.txt'), 'Pasted by its path.');
   // A 2×2 red PNG.
   writeFileSync(path.join(dir, 'shot.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==', 'base64'));

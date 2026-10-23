@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Field, FormSheet, PickList, formStyles as f } from '../../components/FormSheet.js';
 import { Icon } from '../../components/Icon.js';
 import { Avatar } from '../../components/ui.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
 import s from './menus.module.css';
@@ -33,7 +33,7 @@ export function HandoffSheet({ menu, close }: NativeMenuProps<'handoff'>) {
       width={540}
       footer={
         people.length ? undefined : (
-          <button type="button" className={f.linkButton} onClick={() => (close(), document.dispatchEvent(new CustomEvent('klaud:invite')))}>
+          <button type="button" className={f.linkButton} onClick={() => (close(), document.dispatchEvent(new CustomEvent('beluga:invite')))}>
             Invite Someone…
           </button>
         )

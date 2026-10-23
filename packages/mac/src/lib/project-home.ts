@@ -1,5 +1,5 @@
-import type { AppState } from '@klaud/core/store.js';
-import type { UiAction } from '@klaud/ui/workspace-models.js';
+import type { AppState } from '@beluga/core/store.js';
+import type { UiAction } from '@beluga/ui/workspace-models.js';
 
 /**
  * Clicking a project in the sidebar: its home (views/ProjectHome.tsx), where you start work in a

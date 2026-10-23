@@ -3,7 +3,7 @@ import { homesFor, portFor, workerCount, worktreeOf } from '../../scripts/e2e-lo
 
 // `npm run e2e` runs through scripts/e2e-lock.mjs: one Mac e2e run at a time, nothing left behind.
 // It hands every run its worktree's own port and demo home; a bare `playwright test` gets the same ones.
-// Never an inherited KLAUD_HOME without the lock (inside Klaud that's your real data; the demo home is wiped).
+// Never an inherited KLAUD_HOME without the lock (inside Beluga that's your real data; the demo home is wiped).
 // Each worker runs its own demo daemons in homes next to these (e2e/fixtures.ts): specs run side by side.
 const worktree = worktreeOf(import.meta.dirname);
 if (!process.env.BELUGA_E2E_RUN && !process.env.KLAUD_E2E_RUN) {
@@ -32,7 +32,7 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 },
     trace: 'retain-on-failure',
     // Every spec starts past the first-run welcome (src/onboarding); e2e/onboarding.spec.ts clears this.
-    storageState: { cookies: [], origins: [{ origin: `http://localhost:${port}`, localStorage: [{ name: 'klaud.onboarding.v1', value: JSON.stringify({ version: 'e2e', at: 0, how: 'finished' }) }] }] },
+    storageState: { cookies: [], origins: [{ origin: `http://localhost:${port}`, localStorage: [{ name: 'beluga.onboarding.v1', value: JSON.stringify({ version: 'e2e', at: 0, how: 'finished' }) }] }] },
   },
   webServer: { command: `npx vite --port ${port} --strictPort`, url: `http://localhost:${port}`, reuseExistingServer: false, env: { BELUGA_HOME: process.env.KLAUD_HOME!, KLAUD_HOME: process.env.KLAUD_HOME! } },
 });

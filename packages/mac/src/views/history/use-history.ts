@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { GitHubState } from '@klaud/core/main-sync.js';
-import type { CommitInfo, HistoryFilters } from '@klaud/workspaces/history.js';
-import type { Project } from '@klaud/workspaces/types.js';
-import { useApi, useApp } from '../../lib/klaud.js';
+import type { GitHubState } from '@beluga/core/main-sync.js';
+import type { CommitInfo, HistoryFilters } from '@beluga/workspaces/history.js';
+import type { Project } from '@beluga/workspaces/types.js';
+import { useApi, useApp } from '../../lib/beluga.js';
 
 /** History's data: pages of commits, the filter choices, the GitHub repository, your worktrees' branches. */
 

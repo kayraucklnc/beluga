@@ -1,15 +1,15 @@
 import { useMemo } from 'react';
-import type { Location } from '@klaud/core/store.js';
-import type { LinkTarget } from '@klaud/shared/link-target.js';
-import { ATTACHMENT_SHARE } from '@klaud/core/attachment-share.js';
-import type { UiState } from '@klaud/ui/keymap.js';
-import { type MenuKind, menuSpec } from '@klaud/ui/menus.js';
-import { type MenuContext, runMenu as runSharedMenu } from '@klaud/ui/menu-actions.js';
-import { submitTyped } from '@klaud/ui/submit.js';
-import { type UiActionContext, runUiActionWith } from '@klaud/ui/ui-actions.js';
-import type { UiAction } from '@klaud/ui/workspace-models.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
-import { type UiStore, useKlaud } from './klaud.js';
+import type { Location } from '@beluga/core/store.js';
+import type { LinkTarget } from '@beluga/shared/link-target.js';
+import { ATTACHMENT_SHARE } from '@beluga/core/attachment-share.js';
+import type { UiState } from '@beluga/ui/keymap.js';
+import { type MenuKind, menuSpec } from '@beluga/ui/menus.js';
+import { type MenuContext, runMenu as runSharedMenu } from '@beluga/ui/menu-actions.js';
+import { submitTyped } from '@beluga/ui/submit.js';
+import { type UiActionContext, runUiActionWith } from '@beluga/ui/ui-actions.js';
+import type { UiAction } from '@beluga/ui/workspace-models.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
+import { type UiStore, useBeluga } from './beluga.js';
 import { openExternal } from './system.js';
 import { asksFirst, routeOption, routeTyped } from './native-routes.js';
 import { newGroupFor } from './group-edit.js';
@@ -42,11 +42,11 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
     // The terminal UI types a /command for you to finish; this window opens its sheet. The message
     // box is only for messages: a /command nobody routed is a bug, never a prefilled box.
     if (buffer.startsWith('/')) {
-      if (!routeTyped(route, buffer) && import.meta.env.DEV) console.error(`klaud: typeInto(${JSON.stringify(buffer)}) has no Mac sheet; refused. Route it in lib/native-routes.ts.`, new Error().stack);
+      if (!routeTyped(route, buffer) && import.meta.env.DEV) console.error(`beluga: typeInto(${JSON.stringify(buffer)}) has no Mac sheet; refused. Route it in lib/native-routes.ts.`, new Error().stack);
       return;
     }
     ui.patch({ focus: 'chat', buffer, cursor: buffer.length, suggestHidden: false, selected: 0 });
-    document.dispatchEvent(new CustomEvent('klaud:focus-composer'));
+    document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
   };
   const openLink = (link: LinkTarget): void => {
     const go = (at: Location, dir: boolean): void => {
@@ -144,6 +144,6 @@ export function makeActions(client: SocketClient, ui: UiStore): Actions {
 }
 
 export function useActions(): Actions {
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   return useMemo(() => makeActions(client, ui), [client, ui]);
 }

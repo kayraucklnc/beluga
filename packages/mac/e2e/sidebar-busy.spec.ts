@@ -32,9 +32,9 @@ test('a folded project shows Claude Code working in one of its folders', async (
   const landing = sidebar.locator('[title$="/landing"]').first();
   await expect(landing).toBeVisible();
   const cwd = (await landing.getAttribute('title'))!;
-  // Claude Code, running outside klaud in the project's folder (mid-turn: it just called a tool).
+  // Claude Code, running outside Beluga in the project's folder (mid-turn: it just called a tool).
   const sid = '0b7e6c1d-2a3f-4e5d-8c9b-a1b2c3d4e5f6';
-  const folder = path.join(process.env.KLAUD_CLAUDE_HOME!, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+  const folder = path.join(process.env.BELUGA_CLAUDE_HOME!, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
   mkdirSync(folder, { recursive: true });
   const now = new Date().toISOString();
   writeFileSync(
@@ -74,7 +74,7 @@ test('after a force-quit mid-run and a restart, the run left "started" in saved 
   await expect(sidebar.getByRole('button', { name: 'bob-api' }).first()).toBeVisible();
   // A worktree this daemon hasn't loaded yet: what it reads is only what was saved, as after a restart.
   const { root, selfId } = await daemon<{ root: string; selfId: string }>(page, `(c) => ({ root: c.store.getState().projects.find((p) => p.name === 'bob-api').root, selfId: c.store.getState().selfId })`, null);
-  const tree = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-quit-')), 'force-quit-left');
+  const tree = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-quit-')), 'force-quit-left');
   execFileSync('git', ['worktree', 'add', '-q', '-b', 'force-quit-left', tree], { cwd: root, stdio: 'pipe' });
   try {
     const id = await daemon<string>(page, `async (c, tree) => {
@@ -82,7 +82,7 @@ test('after a force-quit mid-run and a restart, the run left "started" in saved 
       return c.store.getState().projects.flatMap((p) => p.workspaces).find((w) => w.path === tree || w.name === 'force-quit-left').id;
     }`, tree);
     // Its saved history, as a force-quit leaves it: the run started and nothing after (where the daemon says it keeps it).
-    const home = (JSON.parse(readFileSync(path.join(process.env.KLAUD_HOME!, 'daemon.json'), 'utf8')) as { workspaces?: string }).workspaces;
+    const home = (JSON.parse(readFileSync(path.join(process.env.BELUGA_HOME!, 'daemon.json'), 'utf8')) as { workspaces?: string }).workspaces;
     expect(home, 'daemon.json names its workspaces folder').toBeTruthy();
     const history = path.join(home!, 'history');
     mkdirSync(history, { recursive: true });

@@ -1,10 +1,12 @@
+// First: Beluga's storage keys become Beluga's before any module reads them.
+import './lib/storage-rename.js';
 import { Fragment, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { App } from './App.js';
 import { brandText } from './lib/brand.js';
 import { capabilities, connect, inApp } from './lib/boot.js';
-import { KlaudProvider } from './lib/klaud.js';
+import { BelugaProvider } from './lib/beluga.js';
 import { apply, zoom } from './lib/prefs.js';
 import { watchWindow } from './lib/window-active.js';
 import { Button } from './components/ui.js';
@@ -17,7 +19,7 @@ apply();
 if (inApp()) document.documentElement.dataset.app = 'tauri';
 watchWindow();
 
-/** Attach to klaud, and keep trying while it starts (or comes back). */
+/** Attach to Beluga, and keep trying while it starts (or comes back). */
 function Root() {
   const [client, setClient] = useState<SocketClient>();
   const [error, setError] = useState<string>();
@@ -25,9 +27,9 @@ function Root() {
   const failures = useRef(0);
   useEffect(() => {
     let alive = true;
-    // Waits longer each time in a row it fails (up to 10 s), so a broken klaud isn't hammered.
+    // Waits longer each time in a row it fails (up to 10 s), so a broken Beluga isn't hammered.
     const retry = (): void => void setTimeout(() => alive && setAttempt((n) => n + 1), Math.min(10_000, 500 * 2 ** Math.min(failures.current++, 5)));
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Klaud didn't answer")), 15_000));
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Beluga didn't answer")), 15_000));
     Promise.race([connect(capabilities(zoom)), timeout])
       .then((c) => {
         if (!alive) return c.close();
@@ -36,7 +38,7 @@ function Root() {
         const since = Date.now();
         c.onClose(() => {
           setClient(undefined);
-          // Dropped right away (klaud turned the screen away): wait before trying again.
+          // Dropped right away (Beluga turned the screen away): wait before trying again.
           if (Date.now() - since < 5000) return retry();
           failures.current = 0;
           setAttempt((n) => n + 1);
@@ -56,7 +58,7 @@ function Root() {
       <div className={s.connecting} data-tauri-drag-region>
         <UpdateLayer connected={false} />
         <div className={s.connectBox}>
-          <strong>{error ? 'Klaud isn’t running yet' : 'Starting Klaud…'}</strong>
+          <strong>{error ? 'Beluga isn’t running yet' : 'Starting Beluga…'}</strong>
           {error ? <span>{brandText(error)}</span> : null}
           {error ? <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button> : null}
         </div>
@@ -64,10 +66,10 @@ function Root() {
     );
   }
   return (
-    <KlaudProvider client={client}>
+    <BelugaProvider client={client}>
       <App />
       <UpdateLayer connected />
-    </KlaudProvider>
+    </BelugaProvider>
   );
 }
 

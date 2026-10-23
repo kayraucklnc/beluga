@@ -1,8 +1,8 @@
-import { tallyWords } from '@klaud/core/board/criteria.js';
-import { issueForWorkspace } from '@klaud/core/board/model.js';
+import { tallyWords } from '@beluga/core/board/criteria.js';
+import { issueForWorkspace } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Tip } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { PrChip, StatusIcon } from './marks.js';
 import { checklist } from './tasks-model.js';
 import { useTaskActions } from './use-tasks.js';

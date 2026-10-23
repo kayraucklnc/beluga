@@ -48,7 +48,7 @@ test('groups line up with projects, and wear the icon you pick', async ({ page }
   await rename.press('Enter');
   const renamed = sidebar.getByRole('button', { name: 'Group Renamed Group' });
   await expect(renamed).toBeVisible();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('klaud.prefs.v1') ?? '{}').groupIcons)).toEqual({ 'Renamed Group': 'globe' });
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('beluga.prefs.v1') ?? '{}').groupIcons)).toEqual({ 'Renamed Group': 'globe' });
   // Put things back for the other tests.
   await renamed.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Ungroup' }).click();

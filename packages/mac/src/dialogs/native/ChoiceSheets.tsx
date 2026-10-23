@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { modelOf } from '@klaud/ui/menus.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { modelOf } from '@beluga/ui/menus.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Field, FormSheet, PickList, formStyles as f } from '../../components/FormSheet.js';
 import { Icon } from '../../components/Icon.js';
-import { useApp, useKlaud } from '../../lib/klaud.js';
+import { useApp, useBeluga } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
 
@@ -72,7 +72,7 @@ export function WelcomeSheet({ menu, close }: NativeMenuProps<'welcome'>) {
 
 /** The inbox is the notification centre here (the bell). */
 export function InboxRedirect({ close }: NativeMenuProps<'inbox'>) {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   useEffect(() => {
     close();
     ui.patch({ notices: true });

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
-import type { BoardState, Issue } from '@klaud/core/board/model.js';
-import type { AppState } from '@klaud/core/store.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
-import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import type { BoardState, Issue } from '@beluga/core/board/model.js';
+import type { AppState } from '@beluga/core/store.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
+import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { useActions } from '../lib/actions.js';
 import { type Person, type TasksPrefs, isSolo, readTasksPrefs } from './tasks-model.js';
 
@@ -76,7 +76,7 @@ export function useRememberProject(): void {
 
 // ---- the view's prefs, per window
 
-const KEY = 'klaud.tasks.v1';
+const KEY = 'beluga.tasks.v1';
 let prefs = readTasksPrefs(typeof localStorage === 'undefined' ? null : localStorage.getItem(KEY));
 const listeners = new Set<() => void>();
 
@@ -107,7 +107,7 @@ const message = (err: unknown): string => (err instanceof Error ? err.message.re
 /** The board's API with errors shown (a toast) instead of thrown, and opening tasks. */
 export function useTaskActions() {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   return useMemo(() => {
     const act = async <T,>(run: () => Promise<T>, done?: string): Promise<T | undefined> => {

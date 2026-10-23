@@ -1,13 +1,13 @@
-import { type AppState, channelOf, shownChannel } from '@klaud/core/store.js';
-import { isPlanHome } from '@klaud/core/plans/model.js';
-import { runId } from '@klaud/shared/terminal-keys.js';
-import { isRunning } from '@klaud/ui/format.js';
-import { type WorkspaceAction, findWorkspace, workspaceButtons } from '@klaud/ui/workspace-models.js';
-import { worktreeOrigin } from '@klaud/workspaces/origin.js';
-import type { Workspace } from '@klaud/workspaces/types.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import { type AppState, channelOf, shownChannel } from '@beluga/core/store.js';
+import { isPlanHome } from '@beluga/core/plans/model.js';
+import { runId } from '@beluga/shared/terminal-keys.js';
+import { isRunning } from '@beluga/ui/format.js';
+import { type WorkspaceAction, findWorkspace, workspaceButtons } from '@beluga/ui/workspace-models.js';
+import { worktreeOrigin } from '@beluga/workspaces/origin.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import type { Actions } from './actions.js';
-import type { UiStore } from './klaud.js';
+import type { UiStore } from './beluga.js';
 
 /**
  * The window's commands that the menu bar, the keyboard and the buttons share: what each does,
@@ -92,7 +92,7 @@ export function currentWorkspace(state: AppState): Workspace | undefined {
 
 /** The conversation on screen, if one is (a workspace counts on any of its tabs). */
 export function currentChannel(state: AppState): string | undefined {
-  // A conversation with friends (the klaud network) has no Claude to stop, plan or clear.
+  // A conversation with friends (the Beluga network) has no Claude to stop, plan or clear.
   if (state.view.kind === 'conversation') return undefined;
   return state.view.kind === 'workspace' ? channelOf(state.view) : shownChannel(state.view);
 }
@@ -175,7 +175,7 @@ export function stopClaude({ client, ui }: CommandCtx, channel: string): void {
       const current = ui.get().buffer.trim();
       const buffer = [...returned.map(toClaude), current].filter(Boolean).join('\n');
       ui.patch({ buffer, cursor: buffer.length });
-      document.dispatchEvent(new CustomEvent('klaud:focus-composer'));
+      document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
     },
     (err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn't stop Claude: ${errorText(err)}`, level: 'error' }),
   );
@@ -217,11 +217,11 @@ export function runCommand(ctx: CommandCtx, id: CommandId): void {
       if (channel) void client.api.session.setPlanMode(channel, !st.checked);
       return;
     case 'conv-find':
-      document.dispatchEvent(new CustomEvent('klaud:find'));
+      document.dispatchEvent(new CustomEvent('beluga:find'));
       return;
     case 'conv-find-next':
     case 'conv-find-prev':
-      document.dispatchEvent(new CustomEvent('klaud:find-step', { detail: id === 'conv-find-next' ? 1 : -1 }));
+      document.dispatchEvent(new CustomEvent('beluga:find-step', { detail: id === 'conv-find-next' ? 1 : -1 }));
       return;
     case 'conv-copy':
       void client.api.session.copyLastAnswer();

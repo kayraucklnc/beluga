@@ -4,7 +4,7 @@ import { isTestNotice } from '../packages/mac/src/lib/brand.js';
 import { TEST_WINDOW_MS, testTone } from '../packages/mac/src/lib/sounds/test-sound.js';
 
 /**
- * Settings › Notifications in the Mac app: the status line at the top (what macOS and Klaud's
+ * Settings › Notifications in the Mac app: the status line at the top (what macOS and Beluga's
  * own switches let through, and the button that fixes it), what a test notification reports,
  * and the test's sound, which the window plays itself so you hear it whatever macOS does.
  */
@@ -29,7 +29,7 @@ describe('the status line', () => {
     expect(notifyStatus(older, own).detail).toContain('Focus');
   });
 
-  it('says macOS blocks them, what to turn on, and opens Klaud’s notification settings', () => {
+  it('says macOS blocks them, what to turn on, and opens Beluga’s notification settings', () => {
     const s = notifyStatus({ ...allowed, state: 'off', alerts: false }, own);
     expect(s).toMatchObject({ tone: 'warn', title: 'Blocked by macOS', action: 'notifications' });
     expect(s.fix).toContain('Allow notifications');
@@ -53,18 +53,18 @@ describe('the status line', () => {
     expect(notifyStatus({ ...allowed, state: 'off', focus: 'on' }, own).title).toBe('Blocked by macOS');
   });
 
-  it('never claims macOS hasn’t asked: Klaud’s banners don’t need asking, so a test is what tells', () => {
+  it('never claims macOS hasn’t asked: Beluga’s banners don’t need asking, so a test is what tells', () => {
     const s = notifyStatus({ ...allowed, state: 'notAsked', alerts: false }, own);
     expect(s).toMatchObject({ tone: 'muted', title: 'Send a test to check', action: 'notifications' });
     expect(s.title).not.toContain('Not set up');
   });
 
-  it('then Klaud’s own switches', () => {
+  it('then Beluga’s own switches', () => {
     expect(notifyStatus(allowed, { desktop: false, quietUntil: null })).toMatchObject({ tone: 'muted', title: 'Desktop notifications are off' });
     const quiet = notifyStatus(allowed, { desktop: true, quietUntil: 'until 15:00' });
-    expect(quiet.title).toBe('Klaud’s Do Not Disturb is on');
+    expect(quiet.title).toBe('Beluga’s Do Not Disturb is on');
     expect(quiet.detail).toContain('until 15:00');
-    // macOS comes first: turning Klaud's switch on wouldn't help.
+    // macOS comes first: turning Beluga's switch on wouldn't help.
     expect(notifyStatus({ ...allowed, state: 'off' }, { desktop: false, quietUntil: null }).title).toBe('Blocked by macOS');
   });
 
@@ -91,7 +91,7 @@ describe('what a test notification reports', () => {
     // Not a warning when macOS just won't say: where to look, and what to open if nothing shows.
     const unknown = testOutcome({ ...allowed, state: 'notAsked' }, null);
     expect(unknown).toMatchObject({ tone: 'ok', action: 'notifications' });
-    expect(unknown.text).toContain('clicking in Klaud closes it');
+    expect(unknown.text).toContain('clicking in Beluga closes it');
   });
 
   it('when Focus can’t be checked, says what to look for and offers Focus settings', () => {

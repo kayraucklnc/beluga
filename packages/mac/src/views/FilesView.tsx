@@ -1,10 +1,10 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import type { BrowserRow, ViewerState } from '@klaud/core/store.js';
-import { shareNameOf } from '@klaud/shared/share-names.js';
-import { formatBytes } from '@klaud/shared/format.js';
+import type { BrowserRow, ViewerState } from '@beluga/core/store.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { useActions } from '../lib/actions.js';
 import { copyText } from '../lib/copy.js';
@@ -36,7 +36,7 @@ export function Bitmap({ image }: { image: NonNullable<ViewerState['image']> }) 
 /** The open file beside the folder list (a friend's, or yours), read the way the reader reads it. */
 export function Viewer({ viewer }: { viewer: ViewerState }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [mode, setMode] = useState<ReaderMode>(() => initialMode(viewer));
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -78,7 +78,7 @@ export function Viewer({ viewer }: { viewer: ViewerState }) {
 
 /** Right-click on a file or folder: open it, find it in Finder, copy its path, mention it, save it. */
 export function useRowItems(): (row: BrowserRow, onOpen: () => void) => ActionItem[] {
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const actions = useActions();
   return (row, onOpen) => {
     if (row.target === 'up') return [{ label: 'Back', icon: 'back', onSelect: onOpen }];
@@ -96,7 +96,7 @@ export function useRowItems(): (row: BrowserRow, onOpen: () => void) => ActionIt
       const buffer = `${current}${current && !current.endsWith(' ') ? ' ' : ''}${mentionOf(state, at)} `;
       setTimeout(() => {
         ui.patch({ buffer, cursor: buffer.length });
-        document.dispatchEvent(new CustomEvent('klaud:focus-composer'));
+        document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
       }, 60);
     };
     return [
@@ -127,7 +127,7 @@ function Row({ row, selected, onOpen }: { row: BrowserRow; selected: boolean; on
 /** Shared files (everyone's folders), or a workspace's own Files tab. */
 export function FilesView() {
   const api = useApi();
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const home = useApp((st) => st.home);
   const myShares = useApp((st) => st.myShares);
   const view = useApp((st) => st.view);

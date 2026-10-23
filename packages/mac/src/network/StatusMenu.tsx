@@ -1,10 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useState } from 'react';
-import type { Presence, PresenceState } from '@klaud/net/mesh/views.js';
+import type { Presence, PresenceState } from '@beluga/net/mesh/views.js';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { useKlaud } from '../lib/klaud.js';
+import { useBeluga } from '../lib/beluga.js';
 import { PersonAvatar, PresenceDot } from './Avatars.js';
 import { CHOICE_LABEL, DURATIONS, type Duration, presenceFor, selfLine } from './net-model.js';
 import { closeNet } from './net-sheets.js';
@@ -27,7 +27,7 @@ function durationOf(p: Presence, now = Date.now()): Duration {
 
 /** Send a status (the core keeps it, tells your friends, and turns it back to Online when it ends). */
 export function useSetPresence(): (p: Presence) => void {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   return (p) => void client.api.network['presence.set'](p);
 }
 

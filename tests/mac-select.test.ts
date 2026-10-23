@@ -7,7 +7,7 @@ type O = { value: string; label: string; description?: string; keywords?: string
 const opt = (label: string, extra: Partial<O> = {}): O => ({ value: label.toLowerCase(), label, ...extra });
 const trust = [opt('Can’t use my Claude'), opt('Ask me each time', { description: 'You approve each request.' }), opt('Trusted'), opt('Full trust', { disabled: true })];
 
-describe('Klaud’s pop-up button: the menu’s rows', () => {
+describe('Beluga’s pop-up button: the menu’s rows', () => {
   it('flattens sections, with a header for each and a line between blocks', () => {
     const entries = [opt('Main'), { section: 'Local', options: [opt('add-auth'), opt('fix')] }, { section: 'Remote', options: [opt('origin/main')] }, opt('Other…')];
     expect(flatOptions(entries).map((o) => o.label)).toEqual(['Main', 'add-auth', 'fix', 'origin/main', 'Other…']);
@@ -108,7 +108,7 @@ describe('the Mac app has no native pop-ups left', () => {
       return statSync(p).isDirectory() ? files(p) : /\.tsx?$/.test(f) ? [p] : [];
     });
 
-  it('every <select> is Klaud’s Select (components/Select.tsx)', () => {
+  it('every <select> is Beluga’s Select (components/Select.tsx)', () => {
     const native = files('packages/mac/src').filter((f) => /<select[\s>]/.test(readFileSync(f, 'utf8')));
     expect(native).toEqual([]);
   });

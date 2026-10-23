@@ -1,11 +1,11 @@
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { localDirKey } from '@klaud/core/local-key.js';
-import { workspaceMentions } from '@klaud/core/mentions.js';
-import { mentionDir, suggest, type Suggestion } from '@klaud/ui/suggest.js';
-import { shareNameOf } from '@klaud/shared/share-names.js';
+import { localDirKey } from '@beluga/core/local-key.js';
+import { workspaceMentions } from '@beluga/core/mentions.js';
+import { mentionDir, suggest, type Suggestion } from '@beluga/ui/suggest.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
 import { cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import s from './composer.module.css';
 
 const MAX_LISTED = 50;

@@ -21,7 +21,7 @@ function Card({ r, act }: { r: PopupRequest; act: (action: RequestAction, r: Pop
     if (action === 'review') return act(action, r);
     setBusy(true);
     act(action, r);
-    // Answered, the card goes; if it couldn't be (Klaud says why), the buttons come back.
+    // Answered, the card goes; if it couldn't be (Beluga says why), the buttons come back.
     setTimeout(() => setBusy(false), 4000);
   };
   return (
@@ -63,7 +63,7 @@ function Card({ r, act }: { r: PopupRequest; act: (action: RequestAction, r: Pop
             <dd>{r.back}</dd>
           </dl>
           <button type="button" className={s.link} onClick={() => press('review')}>
-            Open in Klaud for more choices…
+            Open in Beluga for more choices…
           </button>
         </div>
       ) : null}
@@ -97,7 +97,7 @@ export function RequestPopup({ port }: { port: PopupPort }) {
   if (!shown.length) return null;
   return (
     <div ref={root} className={s.stack} role="dialog" aria-label="Requests from friends">
-      <button type="button" className={s.close} aria-label="Hide (they still wait in Klaud)" title="Hide (they still wait in Klaud)" onClick={() => port.dismiss(requests.map((r) => r.approval))}>
+      <button type="button" className={s.close} aria-label="Hide (they still wait in Beluga)" title="Hide (they still wait in Beluga)" onClick={() => port.dismiss(requests.map((r) => r.approval))}>
         <Icon name="x" size={10} />
       </button>
       {shown.map((r) => (
@@ -105,7 +105,7 @@ export function RequestPopup({ port }: { port: PopupPort }) {
       ))}
       {rest > 0 ? (
         <button type="button" className={s.rest} onClick={() => port.act('review', { approval: '', task: '' })}>
-          {rest} more waiting in Klaud
+          {rest} more waiting in Beluga
         </button>
       ) : null}
     </div>

@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import type { SharedTab } from '@klaud/core/store.js';
+import type { SharedTab } from '@beluga/core/store.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Avatar, Button } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useApi, useApp } from '../../lib/klaud.js';
+import { useApi, useApp } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 import { Alert, Section, Sheet, Tag } from './parts.js';
 import s from './sharing.module.css';

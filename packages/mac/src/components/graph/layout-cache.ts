@@ -1,4 +1,4 @@
-import type { GraphDirection } from '@klaud/shared/graph-spec.js';
+import type { GraphDirection } from '@beluga/shared/graph-spec.js';
 import type { Placed, Route, Size } from './graph-model.js';
 
 /**

@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 import { Button, Tip } from '../components/ui.js';
-import { TRUST_INFO } from '@klaud/core/trust.js';
-import { TRUST_LEVELS, type TrustLevel } from '@klaud/shared/settings-schema.js';
+import { TRUST_INFO } from '@beluga/core/trust.js';
+import { TRUST_LEVELS, type TrustLevel } from '@beluga/shared/settings-schema.js';
 import { PersonRules } from '../gateway/AccessSettings.js';
 import { Select } from '../dialogs/settings-controls.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { PersonAvatar } from './Avatars.js';
 import { conversationOf, presenceLine, shownState, sortMembers } from './net-model.js';
 import { openNet } from './net-sheets.js';
@@ -35,7 +35,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 /** What this friend's Claude may do here: your trust in them, and your rules for their requests. */
 function FriendAccess({ peerId, name }: { peerId: string; name: string }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const gateway = useApp((st) => st.gateway.enabled);
   const level = useApp((st): TrustLevel => st.levels[peerId] ?? st.remembered[peerId]?.trust ?? (st.policy === 'deny' ? 'blocked' : st.policy === 'auto' ? 'trusted' : 'ask'));
   if (!gateway) return null;

@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import type { NotifySettings } from '../../../../../src/shared/settings-schema.js';
 import { type SoundChoice, type SoundGroup, SOUND_GROUPS, coerceSound, soundFor, volumeOf } from '../../../../../src/shared/notify-sound.js';
 import { Segmented, cx } from '../../components/ui.js';
-import { klaudMade, soundTitle } from '../../lib/sounds/catalog.js';
+import { belugaMade, soundTitle } from '../../lib/sounds/catalog.js';
 import { syncSounds } from '../../lib/sounds/native.js';
 import { playSound } from '../../lib/sounds/player.js';
 import { Group, Row } from '../settings-controls.js';
@@ -46,7 +46,7 @@ export function SoundSettings({ n, save, test }: SoundSettingsProps) {
     return () => clearTimeout(t);
   }, [volume]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Klaud's sounds go to ~/Library/Sounds ahead of the next notification (old ones are removed).
+  // Beluga's sounds go to ~/Library/Sounds ahead of the next notification (old ones are removed).
   const inUse = JSON.stringify([n.sound, n.perKind, n.soundVolume]);
   useEffect(() => {
     const t = setTimeout(() => void syncSounds(n).catch(() => undefined), 800);
@@ -110,17 +110,17 @@ export function SoundSettings({ n, save, test }: SoundSettingsProps) {
       )}
       {test}
       <SoundPicker key={editing} value={value} volume={volume} made={n.madeSounds} onPick={pick} onKeep={keep} {...(editing === 'all' ? {} : { kindLabel: GROUP_LABELS[editing] })} />
-      <Row label="Volume" detail="For Klaud’s own sounds (8-bit and generated). Mac sounds play at your alert volume.">
+      <Row label="Volume" detail="For Beluga’s own sounds (8-bit and generated). Mac sounds play at your alert volume.">
         <input
           className={st.slider}
-          aria-label="Volume of Klaud’s sounds"
+          aria-label="Volume of Beluga’s sounds"
           type="range"
           min={0}
           max={1}
           step={0.05}
           value={volume}
           onChange={(e) => setVolume(Number(e.target.value))}
-          onPointerUp={() => klaudMade(value) && void playSound(value, volume).catch(() => undefined)}
+          onPointerUp={() => belugaMade(value) && void playSound(value, volume).catch(() => undefined)}
         />
       </Row>
     </Group>

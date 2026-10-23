@@ -109,6 +109,9 @@ describe('invitations', () => {
     expect(findInvitation(`hey, use klaud://add#${secret} tonight`)).toEqual({ text: `klaud://add#${secret}`, group: false });
     expect(findInvitation(`klaud://join#${secret}`)).toEqual({ text: `klaud://join#${secret}`, group: true });
     expect(findInvitation('klaud://add?code=K7QM-4XPA-R2TD')).toEqual({ text: 'klaud://add?code=K7QM-4XPA-R2TD', group: false });
+    // New links say beluga://; klaud:// ones from before the rename still count.
+    expect(findInvitation(`use beluga://add#${secret} tonight`)).toEqual({ text: `beluga://add#${secret}`, group: false });
+    expect(findInvitation('beluga://join?code=K7QM-4XPA-R2TD')).toEqual({ text: 'beluga://join?code=K7QM-4XPA-R2TD', group: true });
     expect(findInvitation(' k7qm-4xpa-r2td ')).toEqual({ text: 'k7qm-4xpa-r2td', group: false });
     expect(findInvitation('hello there')).toBeUndefined();
     // A room invite (klaud://join/<invite>) isn't a network invitation.

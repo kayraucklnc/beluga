@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { type AnsiStyle, parseAnsi } from '@klaud/shared/ansi.js';
+import { type AnsiStyle, parseAnsi } from '@beluga/shared/ansi.js';
 import s from './steps.module.css';
 
 /** The terminal's 16 colours, as theme variables (steps.module.css sets them for light and dark). */

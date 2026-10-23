@@ -3,7 +3,7 @@ import type { NotifySettings } from '../../../../../src/shared/settings-schema.j
 import { soundFor, volumeOf } from '../../../../../src/shared/notify-sound.js';
 import { Icon } from '../../components/Icon.js';
 import { Button, cx } from '../../components/ui.js';
-import { useApi } from '../../lib/klaud.js';
+import { useApi } from '../../lib/beluga.js';
 import { notificationAccess } from '../../lib/sounds/access.js';
 import { ACTION_LABELS, type AccessAction, type NotificationAccess, type TestOutcome, testOutcome } from '../../lib/sounds/access-model.js';
 import { soundTitle } from '../../lib/sounds/catalog.js';

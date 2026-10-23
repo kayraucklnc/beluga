@@ -1,7 +1,7 @@
-import { activityOf, findWorkspace } from '@klaud/ui/workspace-models.js';
+import { activityOf, findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Dot, Tip } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import s from './ask.module.css';
 

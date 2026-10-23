@@ -1,7 +1,7 @@
 import { expect, test, type Page } from './fixtures.js';
 import { pick } from './helpers.js';
 
-/** The Mac app's web view against a real klaud (the demo): what you click does what it says. */
+/** The Mac app's web view against a real Beluga (the demo): what you click does what it says. */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textarea)');
@@ -161,20 +161,20 @@ test('sets an environment variable that new shells get', async ({ page }) => {
   await page.getByLabel('Name', { exact: true }).last().fill('bad-name');
   await page.getByLabel(/^Value of/).last().click();
   await expect(page.getByText('Use letters, digits and _ only')).toBeVisible();
-  await page.getByLabel('Name', { exact: true }).last().fill('KLAUD_E2E_TOKEN');
+  await page.getByLabel('Name', { exact: true }).last().fill('BELUGA_E2E_TOKEN');
   await page.getByLabel(/^Value of/).last().fill('tok-$((6*7))-secret');
   await page.getByLabel('Name', { exact: true }).last().click();
   await expect(page.getByRole('status').getByText('Saved')).toBeVisible();
   // Values are masked until you ask to see them.
-  await expect(page.getByLabel('Value of KLAUD_E2E_TOKEN')).toHaveClass(/masked/);
-  await page.getByRole('button', { name: 'Show KLAUD_E2E_TOKEN' }).click();
-  await expect(page.getByLabel('Value of KLAUD_E2E_TOKEN')).not.toHaveClass(/masked/);
+  await expect(page.getByLabel('Value of BELUGA_E2E_TOKEN')).toHaveClass(/masked/);
+  await page.getByRole('button', { name: 'Show BELUGA_E2E_TOKEN' }).click();
+  await expect(page.getByLabel('Value of BELUGA_E2E_TOKEN')).not.toHaveClass(/masked/);
   await page.keyboard.press('Escape');
   await openTerminalPage(page);
   await page.getByRole('button', { name: 'New shell' }).first().click();
   await expect(page.locator('.xterm-rows')).toContainText(/\S/);
   await page.locator('.xterm').click();
-  await page.keyboard.type('echo "got-$KLAUD_E2E_TOKEN"\n');
+  await page.keyboard.type('echo "got-$BELUGA_E2E_TOKEN"\n');
   await expect(page.getByText('got-tok-$((6*7))-secret')).toBeVisible({ timeout: 15_000 });
 });
 
@@ -194,7 +194,7 @@ test('picks how the shell starts and how terminals look', async ({ page }) => {
   await expect(page.getByText('16 pt')).toBeVisible();
   // The open terminal follows right away.
   await expect(page.locator('.xterm .xterm-rows')).toHaveCSS('font-size', '16px');
-  // The shell settings are klaud's (shared); they're still there after a reload.
+  // The shell settings are Beluga's (shared); they're still there after a reload.
   await page.reload();
   await expect(sidebar(page)).toBeVisible();
   await page.keyboard.press('Meta+,');
@@ -211,7 +211,7 @@ test('adds a project from the Add Projects sheet, with its own icon', async ({ p
   const { mkdirSync, mkdtempSync, writeFileSync } = await import('node:fs');
   const os = await import('node:os');
   const path = await import('node:path');
-  const repo = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-repo-')), 'pixel-app');
+  const repo = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-repo-')), 'pixel-app');
   mkdirSync(path.join(repo, 'public'), { recursive: true });
   writeFileSync(path.join(repo, 'public/favicon.svg'), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect width="1" height="1" fill="red"/></svg>');
   execFileSync('git', ['init', '-q', repo]);
@@ -248,7 +248,7 @@ async function pasteImage(page: Page): Promise<void> {
 test("shows a friend's screenshot in the chat and opens it full size", async ({ page }) => {
   const thumb = page.getByRole('button', { name: /^Open image 1/ }).first();
   await expect(thumb).toBeVisible({ timeout: 15_000 });
-  // Fetched from bob's computer through klaud, and drawn.
+  // Fetched from bob's computer through Beluga, and drawn.
   await expect.poll(() => thumb.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(100);
   await thumb.click();
   const box = page.getByRole('dialog', { name: /image 1/ });

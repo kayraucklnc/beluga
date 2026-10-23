@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { formatBytes } from '@klaud/shared/format.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { Icon } from '../../components/Icon.js';
 import { type ActionItem, ActionsDropdown } from '../../components/SpecMenu.js';
 import { Button, Empty, IconButton, Segmented } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { openSheet } from '../../lib/sheets.js';
 import { outsideOf } from '../../layout/outside-model.js';
 import { type Batch, BatchAlert } from './BatchAlerts.js';
@@ -19,7 +19,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 const BUILD_FILES = 'node_modules, build output and caches: Remove Build Files deletes them (the project’s setup makes them again). Your work and the worktree stay.';
 
 /**
- * Every worktree in your projects, made by Klaud, by Claude Code's sub-agents or outside Klaud,
+ * Every worktree in your projects, made by Beluga, by Claude Code's sub-agents or outside Beluga,
  * and every one you archived: who made it, what's in it that isn't in main, what it takes on
  * disk and how much of that is build files. Tick the ones you're done with, then archive them
  * (everything of yours is kept) or remove their build files (they stay); under Archived, restore
@@ -27,7 +27,7 @@ const BUILD_FILES = 'node_modules, build output and caches: Remove Build Files d
  */
 export function WorktreesView({ projectId }: { projectId?: string | undefined }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   const projects = useApp((st) => st.projects);
   const disk = useApp((st) => st.disk);
@@ -95,17 +95,17 @@ export function WorktreesView({ projectId }: { projectId?: string | undefined })
     { label: 'All Projects', checked: !projectId, onSelect: () => actions.run({ type: 'view', view: { kind: 'worktrees' } }) },
     ...projects.filter((p) => p.root && p.workspaces.some((w) => w.kind === 'worktree')).map((p, i) => ({ label: p.name, checked: p.id === projectId, ...(i === 0 ? { separate: true } : {}), onSelect: () => actions.run({ type: 'view', view: { kind: 'worktrees', projectId: p.id } }) })),
   ];
-  // Worktrees made outside Klaud that can go without losing anything: the Clean Up sheet, per project.
+  // Worktrees made outside Beluga that can go without losing anything: the Clean Up sheet, per project.
   const outsideIn = projects.filter((p) => p.root && (!projectId || p.id === projectId) && outsideOf(p).length);
   const moreItems: ActionItem[] = [
     ...(outsideIn.length === 1
-      ? [{ label: 'Clean Up Worktrees Made Outside Klaud…', hint: 'Those already merged or with nothing new; branches kept', onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: outsideIn[0]!.id }) }]
+      ? [{ label: 'Clean Up Worktrees Made Outside Beluga…', hint: 'Those already merged or with nothing new; branches kept', onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: outsideIn[0]!.id }) }]
       : outsideIn.length
-        ? [{ label: 'Clean Up Worktrees Made Outside Klaud', onSelect: () => undefined, submenu: outsideIn.map((p) => ({ label: `${p.name}…`, onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: p.id }) })) }]
+        ? [{ label: 'Clean Up Worktrees Made Outside Beluga', onSelect: () => undefined, submenu: outsideIn.map((p) => ({ label: `${p.name}…`, onSelect: () => openSheet({ kind: 'clean_up_worktrees', projectId: p.id }) })) }]
         : []),
   ];
 
-  if (!rows.length) return <Empty icon="branch" title="No worktrees" detail="Worktrees made by Klaud, by Claude Code’s sub-agents or by other tools show up here, with the space they take." />;
+  if (!rows.length) return <Empty icon="branch" title="No worktrees" detail="Worktrees made by Beluga, by Claude Code’s sub-agents or by other tools show up here, with the space they take." />;
   return (
     <div className={s.page}>
       <header className={s.head}>

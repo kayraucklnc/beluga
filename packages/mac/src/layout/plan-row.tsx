@@ -1,9 +1,9 @@
-import type { Plan } from '@klaud/core/plans/model.js';
-import { planOfPlace } from '@klaud/core/plans/owner.js';
+import type { Plan } from '@beluga/core/plans/model.js';
+import { planOfPlace } from '@beluga/core/plans/owner.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { Badge } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { ProgressRing } from '../plans/PlansNav.js';
 import { nextWords, planStatus, titleOf } from '../plans/plans-model.js';

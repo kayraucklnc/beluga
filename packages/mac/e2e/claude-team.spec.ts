@@ -6,7 +6,7 @@ import { expect, test, type Page } from './fixtures.js';
  * Claude Code agents messaging each other (SendMessage): a pretend session whose two named
  * agents are a team. Activity groups them under a Team header with their messages; a message
  * to an agent shows in its transcript as a row of its own; the lead's transcript says whom it
- * messaged. Written where the demo daemon looks (KLAUD_CLAUDE_HOME), in the "landing" project.
+ * messaged. Written where the demo daemon looks (BELUGA_CLAUDE_HOME), in the "landing" project.
  */
 
 const SID = '9a2b3c4d-1111-4c3e-9a8b-0123456789cd';
@@ -20,7 +20,7 @@ test('a team of agents shows its members, its messages, and messages in transcri
   const project = sidebar(page).locator('[title$="/landing"]').first();
   await expect(project).toBeVisible();
   const cwd = (await project.getAttribute('title'))!;
-  const folder = path.join(process.env.KLAUD_CLAUDE_HOME!, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+  const folder = path.join(process.env.BELUGA_CLAUDE_HOME!, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
   const agents = path.join(folder, SID, 'subagents');
   mkdirSync(agents, { recursive: true });
   const t = Date.now() - 20_000;

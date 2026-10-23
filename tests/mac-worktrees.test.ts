@@ -39,8 +39,8 @@ describe('the Worktrees page', () => {
   });
 
   it('says who made each, and for a sub-agent, the conversation that started it (or that it’s gone)', () => {
-    expect(by('add-auth').madeBy).toEqual({ kind: 'klaud', label: 'Klaud' });
-    expect(by('berlin').madeBy).toEqual({ kind: 'outside', label: 'Made outside Klaud' });
+    expect(by('add-auth').madeBy).toEqual({ kind: 'beluga', label: 'Beluga' });
+    expect(by('berlin').madeBy).toEqual({ kind: 'outside', label: 'Made outside Beluga' });
     expect(by('agent-a1').madeBy).toMatchObject({ kind: 'agent', label: 'Sub-agent of “add-auth”', task: 'Composer package', parentId: 'add-auth' });
     expect(by('agent-b2').madeBy).toMatchObject({ kind: 'agent', label: 'Sub-agent of “Future feature ideas” (gone)', orphan: true });
     expect(by('agent-c3').madeBy).toMatchObject({ kind: 'agent', label: 'Sub-agent, origin unknown', orphan: true });

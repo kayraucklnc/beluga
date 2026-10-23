@@ -1,6 +1,6 @@
 import { Component, type ReactNode, lazy, Suspense, useRef } from 'react';
 import { Button, Empty } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { ChatView } from '../views/ChatView.js';
 import { Toolbar } from './Toolbar.js';
 import { WorkspaceCenter } from './panel/FocusView.js';

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { cx } from '../../components/ui.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import { DRAWER_DEFAULT, DRAWER_MAX, DRAWER_MIN, clampShare, drawerFits } from '../../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { ResizeHandle, usePresence } from './ResizeHandle.js';

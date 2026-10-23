@@ -1,9 +1,9 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import type { QueuedMessage } from '@klaud/ui/compose.js';
-import { channelOf } from '@klaud/core/store.js';
+import type { QueuedMessage } from '@beluga/ui/compose.js';
+import { channelOf } from '@beluga/core/store.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Tip, cx } from '../components/ui.js';
-import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { useFlightLanding } from './flight.js';
 import s from './queue.module.css';
 
@@ -28,7 +28,7 @@ const STEERING_MS = 8_000;
  * it can't (someone else's message), shown in its tooltip and said when clicked.
  */
 function SteerButton({ steering, blocked, onSteer }: { steering: boolean; blocked?: string; onSteer: () => void }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   return (
     <Tip label={blocked ?? (steering ? 'Steering: sending it to Claude now' : 'Steer: Claude reads this now (a long command is interrupted for it)')} keys={blocked ? undefined : '⌥↩'}>
       <button
@@ -60,7 +60,7 @@ function Row({ channel, prompt, mine, className, children }: { channel: string; 
  */
 /** `channel`: the conversation it's for, when that isn't the one on screen (a plan's, beside it). */
 export function QueueTray({ queue, selfName, onEdit, channel: given }: { queue: readonly QueuedMessage[]; selfName: string; onEdit: (text: string) => void; channel?: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const api = useApi();
   const onScreen = useApp((st) => channelOf(st.view));
   const channel = given ?? onScreen;

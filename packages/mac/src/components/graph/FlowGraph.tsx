@@ -13,7 +13,7 @@ import {
   useReactFlow,
   useUpdateNodeInternals,
 } from '@xyflow/react';
-import type { Graph, GraphDirection } from '@klaud/shared/graph-spec.js';
+import type { Graph, GraphDirection } from '@beluga/shared/graph-spec.js';
 import { IconButton } from '../ui.js';
 import { reducedMotion, useDocTheme } from '../markdown/use-doc-theme.js';
 import { type ElkOutput, type Focus, type Placed, type Route, type Size, elkGraph, handleSides, inlineAspect, neighborhood, parentsFirst, placesOf, routesOf, stepFocus } from './graph-model.js';
@@ -27,7 +27,7 @@ import { Walkthrough } from './Walkthrough.js';
 import g from './graph.module.css';
 
 /**
- * A `klaud-graph`, drawn with React Flow and laid out by ELK. Nodes are drawn once out of
+ * A `beluga-graph`, drawn with React Flow and laid out by ELK. Nodes are drawn once out of
  * sight to learn their sizes, laid out, then shown. Point at a node to see what it touches,
  * click it for its details, step through the walkthrough Claude wrote, turn the layout, or open
  * the graph in the whole window (minimap, two-finger scroll pans, pinch zooms).

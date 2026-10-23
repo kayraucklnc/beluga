@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { BaseEdge, type Edge, EdgeLabelRenderer, type EdgeProps, getBezierPath } from '@xyflow/react';
-import type { EdgeKind } from '@klaud/shared/graph-spec.js';
+import type { EdgeKind } from '@beluga/shared/graph-spec.js';
 import { type Route, midpoint, roundedPath } from './graph-model.js';
 import g from './graph.module.css';
 

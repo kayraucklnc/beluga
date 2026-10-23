@@ -1,17 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { PullRequest } from '@klaud/core/work-store.js';
-import { describePr } from '@klaud/shared/format.js';
-import { isPlanOwned } from '@klaud/core/plans/owner.js';
-import { activityOf, stateOf } from '@klaud/ui/workspace-models.js';
-import type { Project, Workspace } from '@klaud/workspaces/types.js';
-import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, type Plan } from '@klaud/core/plans/model.js';
+import type { PullRequest } from '@beluga/core/work-store.js';
+import { describePr } from '@beluga/shared/format.js';
+import { isPlanOwned } from '@beluga/core/plans/owner.js';
+import { activityOf, stateOf } from '@beluga/ui/workspace-models.js';
+import type { Project, Workspace } from '@beluga/workspaces/types.js';
+import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, type Plan } from '@beluga/core/plans/model.js';
 import { EarningsPill } from '../components/EarningsPill.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { Select } from '../components/Select.js';
 import { Button, Dot, Empty, Segmented, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { type OverviewFilter, readOverviewPrefs } from './overview/overview-model.js';
@@ -56,7 +56,7 @@ export function ProjectHome({ id }: { id: string }) {
   );
 }
 
-const OVERVIEW_KEY = 'klaud.overview.v1';
+const OVERVIEW_KEY = 'beluga.overview.v1';
 
 /** Open the Overview narrowed to one project and segment (Archived, Ready to Merge…). */
 function useOpenOverview(): (projectId: string, filter: OverviewFilter) => void {
@@ -147,7 +147,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 function HomeComposer({ project }: { project: Project }) {
   const api = useApi();
   const actions = useActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const prefs = usePrefs();
   const [mode, setMode] = useState<Mode>('worktree');
   const [text, setText] = useState('');
@@ -251,7 +251,7 @@ function HomeComposer({ project }: { project: Project }) {
           options={[
             { value: 'worktree', label: 'New Worktree', icon: 'branch', hint: 'Claude works on its own branch and folder, made from the latest origin' },
             { value: 'ask', label: 'Just Ask', icon: 'chat', hint: 'A question about the project: Claude reads the main folder and changes nothing' },
-            // Plans run in the Klaud app only.
+            // Plans run in the Beluga app only.
             ...(plansOn ? [{ value: 'plan' as const, label: 'New Plan', icon: 'flag' as const, hint: 'Big work: Claude cuts it into milestones and tasks; nothing reaches the board until you approve' }] : []),
           ]}
         />
@@ -327,7 +327,7 @@ function Lists({ model }: { model: HomeModel }) {
         title="Worktrees"
         count={worktrees.length}
         action={
-          // Worktrees made outside Klaud that can go (any tool's), ticked in one list.
+          // Worktrees made outside Beluga that can go (any tool's), ticked in one list.
           outsideOf(project).length ? (
             <Button size="small" variant="quiet" icon="archive" onClick={() => openSheet({ kind: 'clean_up_worktrees', projectId: project.id })}>
               Clean Up Worktrees…

@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from 'react';
-import type { CcAgent, CcSession } from '@klaud/core/claude-code/model.js';
+import type { CcAgent, CcSession } from '@beluga/core/claude-code/model.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, cx } from '../components/ui.js';

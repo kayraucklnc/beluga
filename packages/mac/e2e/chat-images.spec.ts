@@ -15,7 +15,7 @@ const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textar
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==', 'base64');
 
 test('a message’s local screenshots show as thumbnails that open full size', async ({ page }) => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud e2e shots-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga e2e shots-'));
   writeFileSync(path.join(dir, 'first.png'), PNG);
   writeFileSync(path.join(dir, 'second.png'), PNG);
   await page.goto('/');
@@ -28,7 +28,7 @@ test('a message’s local screenshots show as thumbnails that open full size', a
   await expect(first).toBeVisible();
   await expect(first.locator('img')).toHaveJSProperty('complete', true);
   await expect(page.getByRole('button', { name: 'Open second.png' }).last()).toBeVisible();
-  // A web image is a chip that opens in the browser (the window loads only what klaud reads).
+  // A web image is a chip that opens in the browser (the window loads only what Beluga reads).
   await expect(page.getByRole('link', { name: 'logo' }).last()).toBeVisible();
 
   await first.click();

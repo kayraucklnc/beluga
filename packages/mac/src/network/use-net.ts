@@ -1,10 +1,10 @@
-import type { FriendView, GroupView, NetworkState } from '@klaud/net/mesh/views.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import type { FriendView, GroupView, NetworkState } from '@beluga/net/mesh/views.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { dmId, groupId } from './net-model.js';
 import { getPrefs, setPrefs } from '../lib/prefs.js';
 
-/** The klaud network as the shared state has it. */
+/** The Beluga network as the shared state has it. */
 export const useNetwork = (): NetworkState => useApp((st) => st.network);
 
 export const useFriend = (peerId: string | undefined): FriendView | undefined => useApp((st) => (peerId ? st.network.friends.find((f) => f.peerId === peerId) : undefined));
@@ -42,7 +42,7 @@ export const useShownConversation = (): string | undefined => useApp((st) => (st
 
 /** Something short in this window ("Copied the link"). */
 export function useSay(): (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   return (text, level = 'success') => client.store.dispatch({ type: 'toast', text, level });
 }
 

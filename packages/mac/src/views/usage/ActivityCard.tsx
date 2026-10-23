@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { AppState } from '@klaud/core/store.js';
-import { type DayTotal, dailyTotals, tokensOf } from '@klaud/workspaces/usage-days.js';
+import type { AppState } from '@beluga/core/store.js';
+import { type DayTotal, dailyTotals, tokensOf } from '@beluga/workspaces/usage-days.js';
 import { cx } from '../../components/ui.js';
 import { Card } from './parts.js';
 import { compact, formatCost } from './usage-model.js';

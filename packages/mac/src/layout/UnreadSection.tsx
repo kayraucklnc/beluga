@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { shownChannel } from '@klaud/core/store.js';
-import { planOf } from '@klaud/core/plans/owner.js';
+import { shownChannel } from '@beluga/core/store.js';
+import { planOf } from '@beluga/core/plans/owner.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { Avatar } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { usePrefs } from '../lib/prefs.js';
 import { openDm, openGroup } from '../network/use-net.js';
@@ -60,7 +60,7 @@ function nowOf(state: Parameters<typeof planSignal>[0], e: UnreadEntry): Signal 
 
 export function UnreadSection() {
   const actions = useActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const prefs = usePrefs();
   // The one you opened from here, and whether you've got there yet (opening it takes a moment).
   const [kept, setKept] = useState<{ entry: UnreadEntry; at: number; arrived: boolean } | undefined>();

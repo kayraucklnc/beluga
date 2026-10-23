@@ -1,14 +1,14 @@
 import { NewTaskSheet } from '../../tasks/NewTaskSheet.js';
 import { NewPlanSheet, PlanModeSheet, PlanStyleSheet, SendBackSheet } from '../../plans/PlanSheets.js';
 import { useState } from 'react';
-import { channelOf } from '@klaud/core/store.js';
-import { canRunOn } from '@klaud/core/trust.js';
-import { menuSpec } from '@klaud/ui/menus.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { channelOf } from '@beluga/core/store.js';
+import { canRunOn } from '@beluga/core/trust.js';
+import { menuSpec } from '@beluga/ui/menus.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Alert } from '../../components/Alert.js';
 import { Field, FormSheet, Popup, TextInput } from '../../components/FormSheet.js';
 import { useActions } from '../../lib/actions.js';
-import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { type NativeSheet, closeSheet, useSheet } from '../../lib/sheets.js';
 import { RemoteWorktreeForm } from './RemoteWorktreeSheet.js';
 import { TemplateEditorSheet } from './TemplatesSheet.js';
@@ -17,7 +17,7 @@ import { CleanUpWorktreesAlert } from './CleanUpWorktrees.js';
 import { DeleteProjectAlert } from './DeleteProjectAlert.js';
 import { WorkConfirm } from './WorkConfirm.js';
 
-/** The folder and branch name klaud makes from a name (as the core's `slug` does). */
+/** The folder and branch name Beluga makes from a name (as the core's `slug` does). */
 const slug = (name: string): string =>
   name
     .toLowerCase()
@@ -108,7 +108,7 @@ function PeerRunSheet({ peerId, close }: { peerId?: string; close: () => void })
 /** What removing or leaving does, asked before the menu option runs. */
 function OptionAlert({ sheet, close }: { sheet: Extract<NativeSheet, { kind: 'confirm_option' }>; close: () => void }) {
   const actions = useActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const state = client.store.getState();
   const go = (): void => {
     close();

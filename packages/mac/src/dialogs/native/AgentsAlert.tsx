@@ -1,6 +1,6 @@
-import { worktreeOrigin } from '@klaud/workspaces/origin.js';
+import { worktreeOrigin } from '@beluga/workspaces/origin.js';
 import { Alert } from '../../components/Alert.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 import { count, usePick } from './pick.js';
 import s from './menus.module.css';
@@ -26,7 +26,7 @@ export function AgentsAlert({ menu, close }: NativeMenuProps<'agents'>) {
         icon="branch"
         tone="info"
         title={`Claude Code left ${count(agents.length, 'worktree')} in ${project.name}`}
-        message="Each one has uncommitted changes, so Klaud leaves them alone. Open one to look at what’s in it."
+        message="Each one has uncommitted changes, so Beluga leaves them alone. Open one to look at what’s in it."
         table={table}
         cancel={false}
         confirm={{ label: 'OK', onClick: close }}

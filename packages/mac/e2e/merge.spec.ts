@@ -57,7 +57,7 @@ test('Merge shows where it goes, what comes along and the checks, and Cancel cha
 // ---------------------------------------------------------------- Merge on GitHub (a stand-in gh)
 
 /** What the demo daemon's gh (e2e/fake-gh.mjs) knows: its PRs, and the merges it was asked for. */
-const ghFile = (): string => path.join(process.env.KLAUD_HOME!, 'fake-gh.json');
+const ghFile = (): string => path.join(process.env.BELUGA_HOME!, 'fake-gh.json');
 const readGh = (): { prs: Record<string, Record<string, unknown>>; merges?: string[][]; mergeError?: string } => JSON.parse(readFileSync(ghFile(), 'utf8'));
 const writeGh = (state: object): void => writeFileSync(ghFile(), JSON.stringify(state, null, 2));
 const ago = (s: number): string => new Date(Date.now() - s * 1000).toISOString();
