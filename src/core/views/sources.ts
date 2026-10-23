@@ -23,7 +23,7 @@ import {
 import { mentionsSecret } from '../../agent/policy.js';
 import { isSecretPath } from '../shares.js';
 import { loadEnvFile } from '../env-vars.js';
-import { databaseUrl, scrubbed } from './database-url.js';
+import { type DatabaseUrl, databaseUrl, scrubbed, unreachable } from './database-url.js';
 import { belugaHome } from '../home.js';
 
 /**
@@ -388,28 +388,69 @@ async function sqlite(db: string, sql: string, timeout: number): Promise<Row[]> 
 
 async function postgres(source: Extract<Source, { kind: 'postgres' }>, sql: string, timeout: number, cwd: string | undefined): Promise<Row[]> {
   // Without "env" or "url": the project's own database (DATABASE_URL…, or Supabase's variables).
-  const found = source.url && !source.env ? { url: source.url, from: 'its address' } : databaseUrl({ ...process.env, ...viewEnv(source.cwd ?? cwd) }, source.env);
-  if ('problem' in found) throw new Error(found.problem);
-  const { url } = found;
+  const place = viewEnv.database(source.cwd ?? cwd);
+  const found = source.url && !source.env ? { url: source.url, from: 'its address' } : databaseUrl({ ...process.env, ...place.vars }, source.env);
+  if ('problem' in found) throw new Error(`${found.problem}. Looked in ${place.where}.`);
+  return queryPostgres(found, sql, timeout);
+}
+
+/**
+ * Settings › Environment's Test connection: the database a view there would use, asked SELECT 1.
+ * → which variables it came from, or what went wrong (never a value).
+ */
+export async function testDatabase(place: { readonly vars: Record<string, string>; readonly where: string }): Promise<{ ok: true; from: string } | { ok: false; message: string }> {
+  const found = databaseUrl({ ...process.env, ...place.vars });
+  if ('problem' in found) return { ok: false, message: `${found.problem}. Looked in ${place.where}.` };
   try {
-    const out = await run('psql', ['-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1', '-d', url, '-c', `SELECT coalesce(json_agg(t), '[]'::json) FROM (${sql}) t`], {
-      timeout,
-      // Read-only too: every statement runs in a read-only transaction.
-      env: { PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=' + timeout },
-    });
-    return out.trim() ? toRows(JSON.parse(out)).rows : [];
+    await queryPostgres(found, 'SELECT 1 AS ok', 15_000);
+    return { ok: true, from: found.from };
   } catch (err) {
-    const text = err instanceof Error ? err.message : String(err);
-    if (text === 'psql isn’t installed') throw new Error('psql isn’t on this Mac: install it with “brew install libpq” (or Postgres.app)');
-    throw new Error(`${scrubbed(text, url)} (connecting with ${found.from})`);
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }
 }
 
-/** Your variables for something there (set by the session: yours, the project's, its .env); else just yours. */
-let viewEnv: (cwd?: string) => Record<string, string> = () => loadEnvFile().global;
-/** Where database views and web addresses find your variables (see EnvVars.viewEnv). */
-export function useViewEnv(fn: (cwd?: string) => Record<string, string>): void {
-  viewEnv = fn;
+/** Of a connection string and its fallbacks, the one that answered last time (no waiting on a dead address again). */
+const reachedBy = new Map<string, string>();
+
+/**
+ * Run a query against the first address that answers (Supabase's direct address, then its
+ * poolers). Errors never carry the connection string or its password.
+ */
+export async function queryPostgres(found: Extract<DatabaseUrl, { url: string }>, sql: string, timeout: number): Promise<Row[]> {
+  const all = [found.url, ...(found.more ?? [])];
+  const known = reachedBy.get(found.url);
+  const order = known && all.includes(known) ? [known, ...all.filter((u) => u !== known)] : all;
+  let last = '';
+  for (const url of order) {
+    try {
+      const out = await run('psql', ['-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1', '-d', url, '-c', `SELECT coalesce(json_agg(t), '[]'::json) FROM (${sql}) t`], {
+        timeout,
+        // Read-only too: every statement runs in a read-only transaction. A dead address gives up soon.
+        env: { PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=' + timeout, PGCONNECT_TIMEOUT: '8' },
+      });
+      reachedBy.set(found.url, url);
+      return out.trim() ? toRows(JSON.parse(out)).rows : [];
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      if (text === 'psql isn’t installed') throw new Error('psql isn’t on this Mac: install it with “brew install libpq” (or Postgres.app)');
+      last = order.reduce((t, u) => scrubbed(t, u), text);
+      if (!unreachable(text)) break;
+    }
+  }
+  const tried = order.length > 1 ? `, tried ${order.length} addresses` : '';
+  throw new Error(`${last} (connecting with ${found.from}${tried})${found.hint && unreachable(last) ? ` ${found.hint}` : ''}`);
+}
+
+/** Your variables for a view shown there: for a database (and where they came from), and for a command. */
+export interface ViewEnv {
+  readonly database: (cwd?: string) => { readonly vars: Record<string, string>; readonly where: string };
+  readonly commands: (cwd?: string) => Record<string, string>;
+}
+/** Set by the session (EnvVars: yours, the project's, its .env); before that, just yours. */
+let viewEnv: ViewEnv = { database: () => ({ vars: loadEnvFile().global, where: 'your variables (Settings › Environment)' }), commands: () => loadEnvFile().global };
+/** Where views find your variables, read fresh each time they run (see EnvVars.viewEnv). */
+export function useViewEnv(env: ViewEnv): void {
+  viewEnv = env;
 }
 
 /** A variable from your Beluga environment (Settings), else Beluga's own. */
@@ -468,7 +509,8 @@ function fill(template: string, q: ViewQuery | undefined, quote: (s: string) => 
 }
 
 async function shell(command: string, cwd: string, timeout: number): Promise<string> {
-  return run('/bin/sh', ['-c', command], { cwd, timeout, env: loadEnvFile().global });
+  // The same variables your Claude's own commands get there (yours, the project's, its .env when on).
+  return run('/bin/sh', ['-c', command], { cwd, timeout, env: viewEnv.commands(cwd) });
 }
 
 async function httpGet(source: Extract<Source, { kind: 'http' }>, url: string, timeout: number, body?: string): Promise<{ text: string; json?: unknown }> {

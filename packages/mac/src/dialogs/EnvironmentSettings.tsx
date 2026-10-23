@@ -48,6 +48,7 @@ function Editor({ projectId }: { projectId: string }) {
   const [dotenv, setDotenv] = useState(false);
   const [dotenvKeys, setDotenvKeys] = useState<readonly string[]>([]);
   const [claudeDotenv, setClaudeDotenv] = useState(false);
+  const [overridden, setOverridden] = useState<Readonly<Record<string, readonly string[]>>>({});
   const [shown, setShown] = useState<ReadonlySet<number>>(new Set());
   const [showAll, setShowAll] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -67,6 +68,7 @@ function Editor({ projectId }: { projectId: string }) {
       setDotenv(scope.dotenv);
       setDotenvKeys(scope.dotenvKeys);
       setClaudeDotenv(scope.claudeDotenv);
+      setOverridden(scope.overridden ?? {});
     });
     return () => void (live = false);
   }, [projectId, keysHere]);
@@ -108,6 +110,13 @@ function Editor({ projectId }: { projectId: string }) {
     setRows(next);
     commit(next);
   };
+
+  // Closing Settings (or switching place) mid-edit saves it too: a field left without a blur isn't lost.
+  const saveOnClose = useRef<() => void>(() => undefined);
+  saveOnClose.current = () => {
+    if (editing.current && rows) commit(rows);
+  };
+  useEffect(() => () => saveOnClose.current(), []);
 
   if (!rows) return <div className={s.note}>Loading…</div>;
   const masked = (id: number): boolean => !showAll && !shown.has(id);
@@ -163,6 +172,11 @@ function Editor({ projectId }: { projectId: string }) {
               <Icon name="x" size={10} />
             </button>
             {problems.has(i) ? <div className={e.problem}>{problems.get(i)}</div> : null}
+            {!problems.has(i) && overridden[r.key]?.length ? (
+              <div className={e.override}>
+                Not used in {overridden[r.key]!.join(', ')}: {overridden[r.key]!.length > 1 ? 'they set' : 'it sets'} {r.key} too, and that wins. Change it there.
+              </div>
+            ) : null}
           </div>
         ))}
         {importing ? <ImportBox onImport={addAll} onClose={() => setImporting(false)} /> : null}
@@ -201,6 +215,7 @@ function Editor({ projectId }: { projectId: string }) {
           </Row>
         </Group>
       ) : null}
+      <DatabaseTest projectId={projectId} />
       <Group title="Your Claude">
         <Row
           label="Read .env files without asking"
@@ -227,6 +242,37 @@ function Editor({ projectId }: { projectId: string }) {
         </Row>
       </Group>
     </>
+  );
+}
+
+/**
+ * Whether the database your Claude's views would use here answers: the same lookup they make
+ * (DATABASE_URL and the like, or Supabase's variables), so a pass here works for them too.
+ */
+function DatabaseTest({ projectId }: { projectId: string }) {
+  const api = useApi();
+  const [result, setResult] = useState<{ ok: true; from: string } | { ok: false; message: string } | 'testing' | undefined>(undefined);
+  const test = (): void => {
+    setResult('testing');
+    api.env.testDatabase(projectId || undefined).then(setResult, (err: unknown) => setResult({ ok: false, message: errorText(err) }));
+  };
+  return (
+    <Group title="Database">
+      <Row
+        label="Postgres for your Claude’s views"
+        detail={
+          result === undefined || result === 'testing'
+            ? 'Uses DATABASE_URL (or POSTGRES_URL…), or a Supabase project’s URL and SUPABASE_DB_PASSWORD, from here or the project’s .env.'
+            : result.ok
+              ? `Connected, using ${result.from}.`
+              : result.message
+        }
+      >
+        <Button size="small" icon={result !== undefined && result !== 'testing' && result.ok ? 'check' : undefined} disabled={result === 'testing'} onClick={test}>
+          {result === 'testing' ? 'Testing…' : 'Test Connection'}
+        </Button>
+      </Row>
+    </Group>
   );
 }
 

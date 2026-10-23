@@ -66,6 +66,13 @@
   color: var(--error);
   font-size: 0.84rem;
 }
+/* Something else wins over this one somewhere: said plainly, not as an error. */
+.override {
+  grid-column: 1 / -1;
+  padding: 0 2px;
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
 .eye,
 .remove {
   display: grid;

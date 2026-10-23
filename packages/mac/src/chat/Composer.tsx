@@ -5,6 +5,7 @@ import { workspaceMentions } from '@beluga/core/mentions.js';
 import { composeState, queueIn } from '@beluga/ui/compose.js';
 import { localDirOf, mentionDir, openTarget, suggest, type Suggestion } from '@beluga/ui/suggest.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
+import { secretIn } from '@beluga/shared/secret-text.js';
 import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
@@ -165,6 +166,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     if (autoFocus) ref.current?.focus();
   }, [state.view, autoFocus]);
 
+  /** The message you were just warned holds a secret. */
+  const secretWarned = useRef<string | undefined>(undefined);
   const set = (text: string): void => {
     ui.patch({ buffer: text, cursor: text.length });
     sug.reset();
@@ -184,6 +187,14 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   };
   const send = (urgent = false): void => {
     const typed = buffer.trim();
+    // A password on its way to the whole room: stop once and say where it belongs (sending again sends it).
+    const secret = state.view.kind === 'room' && !typed.startsWith('/') ? secretIn(typed) : undefined;
+    if (secret && secretWarned.current !== typed) {
+      secretWarned.current = typed;
+      toast(client, `That looks like ${secret}, and everyone in the room would see it. Put it in Settings › Environment instead: your Claude uses it from there. Send again to share it anyway.`, 'warn');
+      return;
+    }
+    secretWarned.current = undefined;
     // Images stay where you referenced them in the words; any you took the reference out of go after them.
     const { text, putBack } = att.take(typed);
     if (!text && !(draftProject && worktree.name.trim())) {

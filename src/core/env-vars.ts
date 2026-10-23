@@ -70,6 +70,8 @@ export interface EnvScope {
   readonly dotenvKeys: readonly string[];
   /** Your own Claude reads .env files here without asking (no project: in every project). */
   readonly claudeDotenv: boolean;
+  /** Yours only: names a project's variables or its .env win over, and which (so an edit here isn't a surprise). */
+  readonly overridden?: Readonly<Record<string, readonly string[]>>;
 }
 
 /** Whether your own Claude may read a folder's .env files without asking you (see agent-host.ts). */
@@ -122,7 +124,7 @@ export class EnvVars {
 
   /** Your variables (no project), or a project's. */
   get(projectId?: string): EnvScope {
-    if (!projectId) return { vars: toRows(this.data.global), dotenv: false, dotenvKeys: [], claudeDotenv: this.data.claudeDotenv };
+    if (!projectId) return { vars: toRows(this.data.global), dotenv: false, dotenvKeys: [], claudeDotenv: this.data.claudeDotenv, overridden: this.overridden() };
     const project = this.project(projectId);
     const saved = project ? this.data.projects[project.root] : undefined;
     return { vars: toRows(saved?.vars ?? {}), dotenv: saved?.dotenv ?? false, dotenvKeys: project ? Object.keys(readDotenv(project.root)) : [], claudeDotenv: saved?.claudeDotenv ?? false };
@@ -218,11 +220,37 @@ export class EnvVars {
    * The variables a database view there can use: as envFor, but the project's .env always counts.
    * They go only to the database's own tools on this Mac (psql), never to Claude or the room.
    */
-  viewEnv(dir?: string): Record<string, string> {
+  /** viewEnv for one of your projects (by id), or with none just yours. */
+  viewEnvOf(projectId?: string): { vars: Record<string, string>; where: string } {
+    const project = this.project(projectId);
+    if (projectId && !project) throw new Error('That project is gone');
+    return project ? this.viewEnv(project.root) : { vars: { ...this.data.global }, where: 'your variables (Settings › Environment)' };
+  }
+
+  viewEnv(dir?: string): { vars: Record<string, string>; where: string } {
     const { project, dir: at } = this.placeOf({ dir });
     const own = project ? this.data.projects[project.root] : undefined;
     const dotenv = { ...(project ? readDotenv(project.root) : {}), ...(at && at !== project?.root ? readDotenv(at) : {}) };
-    return mergeEnv(this.data.global, dotenv, own?.vars);
+    const where = project ? `your variables, ${project.name}’s variables (Settings › Environment) and its .env` : 'your variables (Settings › Environment); this folder isn’t in one of your projects';
+    return { vars: mergeEnv(this.data.global, dotenv, own?.vars), where };
+  }
+
+  /**
+   * Your variables that something else wins over, by name: a project's own variables, or its
+   * .env when it's loaded. Changing yours there changes nothing (Settings says so).
+   */
+  private overridden(): Record<string, string[]> {
+    const out: Record<string, string[]> = {};
+    for (const p of this.projects) {
+      const own = this.data.projects[p.root];
+      if (!own) continue;
+      const dotenv = own.dotenv ? Object.keys(readDotenv(p.root)) : [];
+      for (const key of Object.keys(this.data.global)) {
+        const by = key in own.vars ? `${p.name}’s variables` : dotenv.includes(key) ? `${p.name}’s .env` : undefined;
+        if (by) (out[key] ??= []).push(by);
+      }
+    }
+    return out;
   }
 }
 

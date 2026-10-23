@@ -267,6 +267,8 @@ export const API = {
   'env.set': args(opt(id), EnvRows, opt(bool)),
   // Your own Claude reads .env files without asking (false: it asks again), in a project or (none) everywhere.
   'env.claudeDotenv': args(opt(id), bool),
+  // Connect to the database a view would use there (a project, or none: yours) → { ok, from } or { ok: false, message } (never a value).
+  'env.testDatabase': args(opt(id)),
 
   // ---- images in a message (screens without their own disk access: the Mac app)
   'attachments.add': args(z.enum(['png', 'jpg', 'jpeg', 'gif', 'webp']), z.string().max(6_000_000)),

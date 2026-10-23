@@ -46,7 +46,7 @@ export function createSessionParts(session: Session, opts: SessionOptions): Sess
   let workbench: Workbench | undefined;
   const env = new EnvVars({ store: opts.store, onChange: () => workbench?.envChanged() });
   // Database views find the project's connection string (its variables, its .env).
-  useViewEnv((dir) => env.viewEnv(dir));
+  useViewEnv({ database: (dir) => env.viewEnv(dir), commands: (dir) => env.envFor({ dir }) });
     if (opts.workspaces) {
       workspaces = new WorkspaceController({
         manager: opts.workspaces,

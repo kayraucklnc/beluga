@@ -106,7 +106,9 @@ describe('EnvVars (kept by the core)', () => {
     expect(env.envFor({ workspaceId: 'w1' })).toEqual({ SHARED: 'project', ONLY_YOURS: '1' });
     expect(env.get('p1')).toEqual({ vars: [{ key: 'SHARED', value: 'project' }], dotenv: false, dotenvKeys: ['FROM_DOTENV', 'SHARED'], claudeDotenv: false });
     // Database views read the project's .env even when runs don't load it (it goes only to psql).
-    expect(env.viewEnv(wt)).toEqual({ SHARED: 'project', ONLY_YOURS: '1', FROM_DOTENV: 'worktree' });
+    expect(env.viewEnv(wt)).toMatchObject({ vars: { SHARED: 'project', ONLY_YOURS: '1', FROM_DOTENV: 'worktree' }, where: expect.stringContaining('app’s variables') });
+    // Yours that the project wins over are flagged where you edit them.
+    expect(env.get().overridden).toEqual({ SHARED: ['app’s variables'] });
 
     env.set('p1', [], true);
     // The worktree's own .env wins over the main folder's; the project's (now none) over both.

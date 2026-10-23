@@ -4,6 +4,7 @@ import type { Workbench } from '../core/workbench.js';
 import { listLocalDirs, localDirKey, openWithSystem } from '../core/local.js';
 import { ATTACHMENT_SHARE, type FetchShared, attachmentOnDisk, chipText, expandChips, importImageFitting, mediaTypeOf, pathInfo, publishForRoom, readAttachment, registerAttachment, roomAttachmentsDir, saveImageBytes } from '../core/attachments.js';
 import { fetchBytes } from '../core/downloads.js';
+import { testDatabase } from '../core/views/sources.js';
 import { statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -214,6 +215,7 @@ export const HANDLERS = {
   'env.get': (s, projectId) => s.env.get(projectId),
   'env.set': (s, projectId, rows, dotenv) => s.env.set(projectId, rows, dotenv),
   'env.claudeDotenv': (s, projectId, on) => s.env.setClaudeDotenv(projectId, on),
+  'env.testDatabase': (s, projectId) => testDatabase(s.env.viewEnvOf(projectId)),
 
   'attachments.add': async (_s, ext, base64) => {
     const bytes = Buffer.from(base64, 'base64');

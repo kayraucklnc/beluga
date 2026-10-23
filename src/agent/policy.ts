@@ -190,6 +190,12 @@ function changesMain(toolName: string, input: Record<string, unknown>, ctx: Poli
     return !(ctx.fixup && inside(path.resolve(ctx.fixup), target)) && !ctx.syncMain?.conflicted?.(target);
   }
   if (toolName === 'Bash') return !(typeof input.command === 'string' && (isReadOnlyCommand(input.command) || (ctx.syncMain !== undefined && isSyncMainCommand(input.command, ctx.syncMain))));
+  // A view whose command could change something (so the refusal says why, not "credential files").
+  if (toolName === 'mcp__beluga_view__show') {
+    const view = input.view && typeof input.view === 'object' ? (input.view as Record<string, unknown>) : {};
+    const source = SourceSchema.safeParse(view.source);
+    return source.success && source.data.kind === 'command' && !mentionsSecret(source.data.command) && !isReadOnlyCommand(source.data.command);
+  }
   // A file fetched from a friend may not land in the main folder.
   if (toolName === 'mcp__beluga__get_peer_file') return typeof input.save_to === 'string' && inside(path.resolve(ctx.cwd), resolveTarget(ctx.cwd, input.save_to.replace(/^~(?=$|\/)/, process.env.HOME ?? '~')));
   return false;
