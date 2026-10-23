@@ -235,7 +235,7 @@ test('drag a tab to the other pane and it stays there; right-click moves it back
   await page.getByRole('menuitem', { name: 'Move to Top' }).click();
   await expect(top.getByRole('tab')).toHaveText([/^Changes/, 'Files', 'Scratch', 'Info']);
   // The bottom pane folds to its tabs, and opens again from any of them.
-  await panel(page).getByRole('button', { name: 'Hide the bottom of the panel' }).click();
+  await panel(page).getByRole('button', { name: 'Hide the terminal dock' }).click();
   await expect(panel(page).locator('#panel-body-bottom')).toHaveCount(0);
   await bottom.getByRole('tab', { name: 'Terminal' }).click();
   await expect(panel(page).locator('#panel-body-bottom')).toBeVisible();
