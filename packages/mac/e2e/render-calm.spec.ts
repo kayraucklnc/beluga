@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * The window keeps up while many Claudes stream (KLD-48): eight chats run at once, and a streamed
@@ -27,18 +27,6 @@ async function daemon<T>(page: Page, fn: string, arg: unknown): Promise<T> {
     { fn, arg },
   ) as Promise<T>;
 }
-
-test.afterAll(async ({ browser }) => {
-  // Leave the demo as the other specs expect it: the eight chats go.
-  const page = await browser.newPage();
-  await page.goto('/');
-  await expect(sidebar(page)).toBeVisible();
-  await daemon(page, `async (c, names) => {
-    const all = c.store.getState().projects.flatMap((p) => p.workspaces).filter((w) => names.includes(w.name));
-    for (const w of all) await c.api.workspaces.remove(w.id).catch(() => undefined);
-  }`, NAMES);
-  await page.close();
-});
 
 test('eight chats streaming: only the card an event is about draws again, and the sidebar answers within 100 ms', async ({ page }) => {
   test.setTimeout(120_000);
