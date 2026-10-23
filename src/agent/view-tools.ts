@@ -64,6 +64,8 @@ const expandHome = (p: string): string => p.replace(/^~(?=$|\/)/, os.homedir());
 export function anchorSource(source: Source, cwd: string): Source {
   const abs = (p: string): string => path.resolve(cwd, expandHome(p));
   if (source.kind === 'command') return { ...source, cwd: source.cwd ? abs(source.cwd) : cwd };
+  // Postgres finds its connection string in the variables of the project it was shown in.
+  if (source.kind === 'postgres') return { ...source, cwd: source.cwd ? abs(source.cwd) : cwd };
   if ('path' in source) return { ...source, path: abs(source.path) } as Source;
   return source;
 }

@@ -25,6 +25,10 @@ const SECRET_FILE = [
 ];
 /** Credential folders deeper in a path (e.g. the GitHub CLI's token, the macOS keychains). */
 const SECRET_PATHS = [/(^|[\\/])\.config[\\/](gh|hub|gcloud|op|1password|doctl)([\\/]|$)/i, /(^|[\\/])library[\\/]keychains([\\/]|$)/i, /(^|[\\/])\.claude[\\/]\.credentials/i];
+/** A project's .env file: you can open and edit it, and your own Claude may read it once you say so. */
+const DOTENV = /^\.env(\..*)?$/i;
+/** What a project commits to show which variables it needs: no secrets in it. */
+const DOTENV_TEMPLATE = /^\.env\.(example|sample|template|dist|defaults)$/i;
 /** Heavy or internal folders that are hidden from peers. */
 const HIDDEN_SEGMENTS = new Set(['.git', 'node_modules']);
 
@@ -79,18 +83,35 @@ function secretInHome(abs: string): boolean {
   return false;
 }
 
-export function isSecretPath(p: string): boolean {
-  const segments = segmentsOf(p);
+/** In a credential store: ~/.ssh, a CLI's tokens, the keychains, Beluga's own files. */
+function inCredentialStore(p: string, segments: readonly string[]): boolean {
   if (segments.some((s) => SECRET_SEGMENTS.has(s))) return true;
   if (SECRET_PATHS.some((re) => re.test(p))) return true;
   // Beluga's own files in ~/.beluga (identity key, settings, rules, trust choices, history).
-  if (path.isAbsolute(p) && secretInHome(path.resolve(p))) return true;
+  return path.isAbsolute(p) && secretInHome(path.resolve(p));
+}
+
+export function isSecretPath(p: string): boolean {
+  const segments = segmentsOf(p);
+  if (inCredentialStore(p, segments)) return true;
   const base = segments.at(-1) ?? '';
+  if (DOTENV_TEMPLATE.test(base)) return false;
   return SECRET_FILE.some((re) => re.test(base));
 }
 
-export function isDenied(relPath: string): boolean {
-  return isSecretPath(relPath) || segmentsOf(relPath).some((s) => HIDDEN_SEGMENTS.has(s));
+/**
+ * A secret that is a project's .env file, and nothing more: never sent to anyone, but you can open
+ * it, and your own Claude can read or change it once you say so (see agent/policy.ts).
+ */
+export function isDotenvPath(p: string): boolean {
+  const segments = segmentsOf(p);
+  const base = segments.at(-1) ?? '';
+  return DOTENV.test(base) && !DOTENV_TEMPLATE.test(base) && !inCredentialStore(p, segments);
+}
+
+/** Hidden from the room. `owner`: you, on your own computer, who also see your .env files. */
+export function isDenied(relPath: string, owner = false): boolean {
+  return (isSecretPath(relPath) && !(owner && isDotenvPath(relPath))) || segmentsOf(relPath).some((s) => HIDDEN_SEGMENTS.has(s));
 }
 
 /** Parse `name=path[:rw]` or `path[:rw]` share specs from the CLI. */
@@ -112,12 +133,12 @@ export function parseShareSpec(spec: string, cwd: string): ShareConfig {
 
 /**
  * Resolve a peer-supplied relative path inside a share root, rejecting
- * traversal (`..`), absolute paths, symlink escapes and denied files.
+ * traversal (`..`), absolute paths, symlink escapes and denied files (`owner`: you, see isDenied).
  */
-export function resolveInShare(share: ShareConfig, relPath: string): string {
+export function resolveInShare(share: ShareConfig, relPath: string, owner = false): string {
   const cleaned = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
   if (cleaned.split('/').includes('..')) throw new ShareError('Path traversal is not allowed');
-  if (isDenied(cleaned)) throw new ShareError('That file is private');
+  if (isDenied(cleaned, owner)) throw new ShareError('That file is private');
   const root = realRoot(share.root);
   const target = path.resolve(root, cleaned);
   if (target !== root && !target.startsWith(root + path.sep)) throw new ShareError('Path escapes the share');
@@ -196,19 +217,20 @@ export class ShareService {
     return undefined;
   }
 
-  async list(shareName: string, relPath: string): Promise<FsEntry[]> {
+  /** `owner`: you, looking at your own files (your .env files show too). */
+  async list(shareName: string, relPath: string, owner = false): Promise<FsEntry[]> {
     const share = this.find(shareName);
-    const dir = resolveInShare(share, relPath);
+    const dir = resolveInShare(share, relPath, owner);
     const dirents = await fs.readdir(dir, { withFileTypes: true });
     const base = relPath.replace(/^\/+|\/+$/g, '');
     const rel = (name: string): string => (base ? `${base}/${name}` : name);
-    const visible = dirents.filter((d) => !isDenied(rel(d.name)));
+    const visible = dirents.filter((d) => !isDenied(rel(d.name), owner));
     const entries = await Promise.all(
       visible.map(async (d): Promise<FsEntry | undefined> => {
         let target = path.join(dir, d.name);
         if (d.isSymbolicLink()) {
           try {
-            target = resolveInShare(share, rel(d.name)); // hides links pointing outside the share
+            target = resolveInShare(share, rel(d.name), owner); // hides links pointing outside the share
           } catch {
             return undefined;
           }
@@ -223,9 +245,9 @@ export class ShareService {
       .sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name)).slice(0, 5000);
   }
 
-  async read(shareName: string, relPath: string): Promise<{ content: string; truncated: boolean }> {
+  async read(shareName: string, relPath: string, owner = false): Promise<{ content: string; truncated: boolean }> {
     const share = this.find(shareName);
-    const file = resolveInShare(share, relPath);
+    const file = resolveInShare(share, relPath, owner);
     const stat = await fs.stat(file);
     if (stat.isDirectory()) throw new ShareError('That is a directory');
     const handle = await fs.open(file, 'r');
@@ -241,8 +263,8 @@ export class ShareService {
   }
 
   /** Read one chunk of any file (binary-safe) for downloads. */
-  async readChunk(shareName: string, relPath: string, offset: number, length: number): Promise<{ data: Buffer; total: number }> {
-    const file = resolveInShare(this.find(shareName), relPath);
+  async readChunk(shareName: string, relPath: string, offset: number, length: number, owner = false): Promise<{ data: Buffer; total: number }> {
+    const file = resolveInShare(this.find(shareName), relPath, owner);
     const stat = await fs.stat(file);
     if (stat.isDirectory()) throw new ShareError('That is a folder; pick a file');
     if (stat.size > MAX_DOWNLOAD_BYTES) throw new ShareError(`File is too large to send (max ${MAX_DOWNLOAD_BYTES / 1024 / 1024} MB)`);

@@ -52,15 +52,37 @@ function Approvals() {
         {left !== undefined ? <span className={s.countdown}>{Math.ceil(left / 60_000)} min left</span> : null}
       </div>
       {first.detail ? <pre className={`${s.detail} selectable`}>{first.detail}</pre> : null}
-      <div className={s.actions}>
-        <Button variant="primary" onClick={() => void api.host.answerApproval('yes', first.id)}>
-          Allow
-        </Button>
-        <Button onClick={() => void api.host.answerApproval('always', first.id)}>Always allow</Button>
-        <Button variant="quiet" onClick={() => void api.host.answerApproval('no', first.id)}>
-          Deny
-        </Button>
-      </div>
+      {first.kind === 'secret' ? (
+        // A .env file: once, always for this project, or always (Settings › Environment takes it back).
+        <div className={s.actions}>
+          <Button variant="primary" onClick={() => void api.host.answerApproval('yes', first.id)}>
+            Allow once
+          </Button>
+          {first.project ? (
+            <Tip label="Your Claude reads this project’s .env files without asking. Change it in Settings › Environment.">
+              <Button onClick={() => void api.host.answerApproval('project', first.id)}>Always for {first.project}</Button>
+            </Tip>
+          ) : null}
+          <Tip label="In every project. Change it in Settings › Environment.">
+            <Button variant="quiet" onClick={() => void api.host.answerApproval('always', first.id)}>
+              Always
+            </Button>
+          </Tip>
+          <Button variant="quiet" onClick={() => void api.host.answerApproval('no', first.id)}>
+            Don’t allow
+          </Button>
+        </div>
+      ) : (
+        <div className={s.actions}>
+          <Button variant="primary" onClick={() => void api.host.answerApproval('yes', first.id)}>
+            Allow
+          </Button>
+          <Button onClick={() => void api.host.answerApproval('always', first.id)}>Always allow</Button>
+          <Button variant="quiet" onClick={() => void api.host.answerApproval('no', first.id)}>
+            Deny
+          </Button>
+        </div>
+      )}
       {showAll && others.length ? (
         <ul className={s.others} aria-label="Also waiting for you">
           {others.map((a) => (

@@ -7,7 +7,7 @@ import { buildGraphAppend } from './graph-prompt.js';
 import { buildViewAppend } from './view-prompt.js';
 import { createBoardTools } from './board-tools.js';
 import { createPlanTools } from './plan-tools.js';
-import { decideTool, denyReason } from './policy.js';
+import { SECRET_DECLINED, decideTool, denyReason } from './policy.js';
 import { buildSyncMainAppend, syncProbes } from './sync-main.js';
 import { fromRateLimitEvent, fromUsageResponse, toMs } from './usage.js';
 import { RunFailedError, classifyRun } from '../shared/run-failure.js';
@@ -158,7 +158,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const syncMain = askOnly ? place?.syncMain : undefined;
       // A hidden worktree to fix a conflict in (a plan's head Claude, in its main-folder conversation).
       const fixup = place?.fixup;
-      const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}) };
+      const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, dotenv: Boolean(input.canUseSecret) && !input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}) };
       // How the run ends, when it fails: Claude Code's stderr, a limit that said no, an API error.
       const stderr: string[] = [];
       const keepStderr = (data: string): void => keepLines(stderr, data, STDERR_KEEP);
@@ -203,6 +203,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
                   const patched = scratchRoot ? withAgentScratch(hookInput.tool_name, toolInput, hookInput.tool_use_id, scratchRoot) : undefined;
                   const allow = (reason: string) => (patched ? { hookSpecificOutput: { ...verdict('allow', reason).hookSpecificOutput, updatedInput: patched } } : verdict('allow', reason));
                   if (decision === 'allow') return patched ? allow('Allowed by Beluga.') : {};
+                  if (decision === 'secret') return (await input.canUseSecret?.(hookInput.tool_name, toolInput)) ? allow('Approved by the machine owner.') : verdict('deny', SECRET_DECLINED);
                   return (await input.canUseTool(hookInput.tool_name, toolInput)) ? allow('Approved by the machine owner.') : verdict('deny', 'The machine owner declined this action.');
                 },
               ],
@@ -238,6 +239,7 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
           if (veto) return { behavior: 'deny', message: veto };
           const decision = decideTool(toolName, toolInput, policy);
           if (decision === 'deny') return { behavior: 'deny', message: denyReason(toolName, toolInput, policy) };
+          if (decision === 'secret') return (await input.canUseSecret?.(toolName, toolInput)) ? { behavior: 'allow', updatedInput: toolInput } : { behavior: 'deny', message: SECRET_DECLINED };
           if (decision === 'allow' || (await input.canUseTool(toolName, toolInput))) return { behavior: 'allow', updatedInput: toolInput };
           return { behavior: 'deny', message: 'The machine owner declined this action.' };
         },

@@ -104,7 +104,11 @@ describe('EnvVars (kept by the core)', () => {
     env.set(undefined, [{ key: 'SHARED', value: 'yours' }, { key: 'ONLY_YOURS', value: '1' }]);
     env.set('p1', [{ key: 'SHARED', value: 'project' }]);
     expect(env.envFor({ workspaceId: 'w1' })).toEqual({ SHARED: 'project', ONLY_YOURS: '1' });
-    expect(env.get('p1')).toEqual({ vars: [{ key: 'SHARED', value: 'project' }], dotenv: false, dotenvKeys: ['FROM_DOTENV', 'SHARED'] });
+    expect(env.get('p1')).toEqual({ vars: [{ key: 'SHARED', value: 'project' }], dotenv: false, dotenvKeys: ['FROM_DOTENV', 'SHARED'], claudeDotenv: false });
+    // Database views read the project's .env even when runs don't load it (it goes only to psql).
+    expect(env.viewEnv(wt)).toMatchObject({ vars: { SHARED: 'project', ONLY_YOURS: '1', FROM_DOTENV: 'worktree' }, where: expect.stringContaining('app’s variables') });
+    // Yours that the project wins over are flagged where you edit them.
+    expect(env.get().overridden).toEqual({ SHARED: ['app’s variables'] });
 
     env.set('p1', [], true);
     // The worktree's own .env wins over the main folder's; the project's (now none) over both.
@@ -112,6 +116,32 @@ describe('EnvVars (kept by the core)', () => {
     expect(env.envFor({ dir: path.join(root, 'src') })).toEqual({ SHARED: 'dotenv', ONLY_YOURS: '1', FROM_DOTENV: 'root' });
     expect(env.envFor({ dir: os.homedir() })).toEqual({ SHARED: 'yours', ONLY_YOURS: '1' });
     expect(store.getState().envKeys.projects[root]).toEqual({ keys: [], dotenv: true });
+  });
+
+  it('remembers where your Claude may read .env files without asking', () => {
+    const root = path.join(dir, 'app');
+    const wt = path.join(dir, 'wt');
+    mkdirSync(root);
+    mkdirSync(wt);
+    const store = new Store(initialState('t'));
+    store.dispatch({ type: 'projects', projects: [project(root, wt)] });
+    const file = path.join(dir, 'env.json');
+    const env = new EnvVars({ store, file });
+    const access = env.dotenvAccess;
+    expect(access.allowed(wt)).toBe(false);
+    expect(access.project(wt)).toBe('app');
+    expect(access.project(os.homedir())).toBeUndefined();
+    access.allow(wt, 'project');
+    expect(access.allowed(path.join(root, 'src'))).toBe(true);
+    expect(access.allowed(os.homedir())).toBe(false);
+    // Kept with the project's variables, and survives a restart.
+    env.set('p1', [{ key: 'A', value: '1' }]);
+    expect(new EnvVars({ store, file }).get('p1').claudeDotenv).toBe(true);
+    env.setClaudeDotenv('p1', false);
+    expect(access.allowed(wt)).toBe(false);
+    access.allow(os.homedir(), 'everywhere');
+    expect(access.allowed(os.homedir())).toBe(true);
+    expect(env.get().claudeDotenv).toBe(true);
   });
 
   it('sets and removes one at a time (/env)', () => {

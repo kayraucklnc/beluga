@@ -10,7 +10,7 @@ import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { useGlobalShells } from '../../lib/shells.js';
 import { mod } from '../../lib/system.js';
 import { claimShell, extraShells, pruneShells, releaseShell, useShellOwners } from '../../lib/ws-shells.js';
-import { NoShells, ShellTabs } from '../../views/TerminalView.js';
+import { EnvStale, NoShells, ShellTabs, useEnvStale } from '../../views/TerminalView.js';
 import { TerminalTab } from '../../views/TerminalTab.js';
 import { Xterm } from '../../views/Xterm.js';
 import t from '../../views/terminal.module.css';
@@ -151,6 +151,8 @@ export function TerminalPane({ where, onClose }: { where: 'drawer' | 'panel'; on
   // A terminal shows in one place at a time: the drawer or the full-size view has it.
   const elsewhere = where === 'panel' ? (prefs.drawer ? 'drawer' : focus === 'terminal' ? 'full' : undefined) : focus === 'terminal' ? 'full' : undefined;
   const { key } = tabbed;
+  // Restarted with new variables: a fresh terminal on the new program.
+  const stale = useEnvStale(key);
   return (
     <section className={s.term} aria-label="Terminal">
       <div className={s.termBar}>
@@ -192,7 +194,8 @@ export function TerminalPane({ where, onClose }: { where: 'drawer' | 'panel'; on
           />
         ) : key ? (
           <>
-            <Xterm key={`${key}:${key in exits ? 'x' : 'live'}`} termKey={key} start={tabbed.start} focus={false} />
+            <Xterm key={`${key}:${key in exits ? 'x' : 'live'}${stale ? ':old' : ''}`} termKey={key} start={tabbed.start} focus={false} />
+            <EnvStale termKey={key} />
             {key in exits && tabbed.restart ? (
               <div className={t.restart}>
                 <Button size="small" onClick={tabbed.restart}>
