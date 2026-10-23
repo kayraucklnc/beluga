@@ -681,8 +681,9 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     status: a.event === 'text' || a.event === 'tool' || a.event === 'sub' || a.event === 'progress' ? 'started' : a.event,
     subagents: a.event === 'sub' ? applySub(base.subagents, a.text, a.ts) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
     text:
+      // Each thing Claude says between steps is its own paragraph (one newline would run them into one blob).
       a.event === 'text'
-        ? (base.text ? `${base.text}\n` : '') + a.text
+        ? (base.text ? `${base.text}\n\n` : '') + a.text
         : a.event === 'done' || a.event === 'error' || a.event === 'denied'
           ? a.text || base.text
           : base.text,
