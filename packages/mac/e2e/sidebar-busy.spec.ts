@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * Folded, a project still says Claude is at work inside it (the dot matrix on its row), beside

@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './fixtures.js';
 
 /**
  * A plan while Claude writes it (KLD-28): a name that isn't your message, one placeholder inside
@@ -100,6 +100,7 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
     await line.waitFor();
     await page.screenshot({ path: `${dir}/kld-28-drafting-light.png` });
     await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
+    // Screenshots only: the theme's colors fade over; let them land.
     await page.waitForTimeout(150);
     await page.screenshot({ path: `${dir}/kld-28-drafting-dark.png` });
     await page.evaluate(() => (document.documentElement.dataset.theme = 'light'));

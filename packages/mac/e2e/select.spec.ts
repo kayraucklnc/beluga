@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './fixtures.js';
 import { expectPicked, pick, popupMenu } from './helpers.js';
 
 /** Klaud's own pop-up buttons (components/Select.tsx) instead of the native <select>: the mouse, the keyboard and the search field. */
@@ -82,6 +82,7 @@ test('a pop-up opens over itself with a checkmark on the choice; the keyboard mo
 
   // Type-ahead: in the open menu it highlights; on the closed button it picks, like the native one.
   await page.keyboard.press('ArrowDown');
+  await expect(popupMenu(page)).toBeVisible();
   await page.keyboard.type('m');
   await expect(activeRow(page)).toHaveText('Match the system');
   await page.keyboard.press('Escape');

@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator } from './fixtures.js';
 
 /**
  * A group in the sidebar is a sibling of the projects around it, not their parent: a group's row and

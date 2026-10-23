@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './fixtures.js';
 
 /** The Usage view against the demo: plan meters, this week, disk by project, sorting, and putting things away. */
 

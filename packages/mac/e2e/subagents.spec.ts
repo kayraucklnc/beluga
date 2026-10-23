@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * Sub-agents are Claude's helpers, not your worktrees: a pretend Claude Code session in the demo's
@@ -20,6 +20,7 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 const line = (o: unknown): string => `${JSON.stringify(o)}\n`;
 const shot = async (page: Page, name: string): Promise<void> => {
   if (!process.env.SHOTS) return;
+  // Screenshots only: let animations settle so the picture is still.
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
 };
@@ -99,7 +100,7 @@ test('a sub-agent that finished long ago stays under what started it, and stays 
   await expect(row).toHaveAttribute('title', /started by “Split the API work into packages”/);
   await row.click();
   await expect(page.locator('main')).toContainText('Retry policy package', { timeout: 15_000 });
-  // Opening it follows it live again: same place, same row.
+  // Opening it follows it live again: same place, same row (a fixed wait, on purpose: it doesn't move meanwhile).
   await page.waitForTimeout(2500);
   await expect(row).toBeVisible();
   await expect(sidebar(page).getByRole('button', { name: /^Sub-agent Retry policy package/ })).toHaveCount(1);
@@ -111,7 +112,7 @@ test('its page follows it live: who started it, model, effort, thinking and tool
   await row.click();
   const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
   await expect(monitor).toBeVisible({ timeout: 15_000 });
-  // Clicking it doesn't move it: its row stays where it was, selected.
+  // Clicking it doesn't move it: its row stays where it was, selected (a fixed wait, on purpose).
   await page.waitForTimeout(1500);
   await expect(row).toBeVisible();
   await expect(monitor).toContainText('a Claude Code session outside Klaud in bob-api');

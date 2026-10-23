@@ -18,6 +18,22 @@ export function worktreeOf(dir: string): string;
 export function runName(worktree: string, branch?: string): string;
 export function portFor(worktree: string): number;
 export function homesFor(worktree: string): { readonly home: string; readonly claude: string };
+/** One of a run's demo homes: worker `worker`'s slot 0 or 1 (in use, warming up), next to the run's home. */
+export function slotHomes(homes: { readonly home: string; readonly claude: string }, worker: number, slot: 0 | 1): { readonly home: string; readonly claude: string };
+/** How many playwright workers a run uses: E2E_WORKERS, else 3 (fewer on a small Mac, 1 on a busy one). */
+export function workerCount(env?: Record<string, string | undefined>, cores?: number, load?: number): number;
+/** CPU seconds from ps's time column. */
+export function cpuSeconds(time: string): number;
+export function pidsUnder(root: number, table: ReadonlyArray<{ pid: number; ppid: number }>): Set<number>;
+export interface Usage {
+  cores: number;
+  bytes: number;
+  /** What was busiest at the CPU peak: "node 2.1". */
+  busiest?: string[];
+}
+/** What a run costs the Mac (peak CPU in cores, peak memory in bytes), sampled now and then. */
+export function usageMeter(): { readonly peak: Usage; sample(pids: Set<number>, table?: ReadonlyArray<{ pid: number; cpu: number; bytes: number; name?: string }>, now?: number): void };
+export function usageLine(peak: Usage, wallMs: number, cores?: number): string;
 export function alive(pid: number): boolean;
 export function readLock(file?: string): E2eRun | undefined;
 export function tryLock(run: E2eRun, opts?: { file?: string; onStale?: (old: E2eRun) => void }): { ok: true } | { ok: false; holder: E2eRun };

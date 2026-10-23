@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /** Plans (docs/tasks-and-plans.md): the demo's plan as a graph and an outline, a new plan drafted with Claude and approved onto the board, and the composer's Plan with Tasks. */
 
@@ -101,16 +101,20 @@ test('a task’s panel keeps its head and Close in reach while its brief scrolls
   // Milestones that run side by side make the plan wide: room for it (the conversation folded away), all of it in view.
   await main(page).getByRole('button', { name: 'Hide the Chat' }).click();
   await main(page).getByRole('button', { name: 'Fit to View' }).click();
-  await page.waitForTimeout(400);
   // Fit frames every milestone tightly: 48 px above (the view switch sits there), and no more than that on the side that limits it (KLD-67).
-  const gaps = await main(page).evaluate((root) => {
-    const pane = root.querySelector('.react-flow')!.getBoundingClientRect();
-    const boxes = [...root.querySelectorAll('.react-flow__node-milestone')].map((n) => n.getBoundingClientRect());
-    return { top: Math.min(...boxes.map((b) => b.top)) - pane.top, left: Math.min(...boxes.map((b) => b.left)) - pane.left, right: pane.right - Math.max(...boxes.map((b) => b.right)), bottom: pane.bottom - Math.max(...boxes.map((b) => b.bottom)) };
-  });
-  for (const gap of Object.values(gaps)) expect(gap).toBeGreaterThanOrEqual(-1);
-  expect(gaps.top).toBeLessThanOrEqual(49);
-  expect((gaps.left <= 49 && gaps.right <= 49) || gaps.bottom <= 49).toBe(true);
+  // Waited for, not slept on: the fit animates, so it's read until it frames them that way.
+  const gapsOf = () =>
+    main(page).evaluate((root) => {
+      const pane = root.querySelector('.react-flow')!.getBoundingClientRect();
+      const boxes = [...root.querySelectorAll('.react-flow__node-milestone')].map((n) => n.getBoundingClientRect());
+      return { top: Math.min(...boxes.map((b) => b.top)) - pane.top, left: Math.min(...boxes.map((b) => b.left)) - pane.left, right: pane.right - Math.max(...boxes.map((b) => b.right)), bottom: pane.bottom - Math.max(...boxes.map((b) => b.bottom)) };
+    });
+  await expect
+    .poll(async () => {
+      const gaps = await gapsOf();
+      return Object.values(gaps).every((gap) => gap >= -1) && gaps.top <= 49 && ((gaps.left <= 49 && gaps.right <= 49) || gaps.bottom <= 49);
+    })
+    .toBe(true);
   await main(page).locator('.react-flow__node').filter({ hasText: 'Refund endpoint' }).click();
   await expect(edge('t:retries', 't:refund-api')).toHaveCount(0);
   await expect(main(page).locator('.react-flow__node').filter({ hasText: 'Idempotent webhook retries' }).locator('[data-linked="true"]')).toHaveCount(1);
@@ -175,8 +179,18 @@ test('the plan stays sharp zoomed in, and its name never clips (KLD-25)', async 
   const viewport = main(page).locator('.react-flow__viewport');
   const scale = async () => Number(/scale\(([\d.]+)\)/.exec((await viewport.getAttribute('style')) ?? '')?.[1] ?? 0);
   for (let i = 0; i < 12 && (await scale()) < 1.5; i++) {
+    const before = await scale();
     await main(page).getByRole('button', { name: 'Zoom In' }).click();
-    await page.waitForTimeout(260);
+    // Each zoom animates: the next click waits for it to settle (bigger, and no longer moving).
+    let last = -1;
+    await expect
+      .poll(async () => {
+        const now = await scale();
+        const settled = now > before && now === last;
+        last = now;
+        return settled;
+      }, { intervals: [100] })
+      .toBe(true);
   }
   expect(await scale()).toBeGreaterThanOrEqual(1.5);
   // What matters once the zoom settles: the view was redrawn at its scale, and it's left a plain 2D

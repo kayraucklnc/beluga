@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * Tasks between Claudes (the gateway) against the demo with the network on: your Claude asks
@@ -32,10 +32,19 @@ test('your Claude asks bob’s Claude and mia’s (after you say yes); answers c
   await unfold(page, 'bob-api');
   await sidebar(page).getByRole('button', { name: /^webhook-retries/ }).first().click();
   await expect(composer(page)).toHaveAttribute('placeholder', /webhook-retries/);
-  await composer(page).fill('ask bob to run the tests in bob-api');
-  await composer(page).press('Enter');
+  // A fresh demo's Claude may still be at work here: ask once it's free, so the ask isn't queued.
+  await expect(page.getByRole('button', { name: 'Stop Claude' })).toHaveCount(0, { timeout: 90_000 });
   const bob = task(page, /^Task: To bob’s Claude/).last();
-  await expect(bob).toBeVisible({ timeout: 15_000 });
+  // Right after the network is turned on, bob can show Online before the link to him is up: then
+  // your Claude says he can't be reached, and you ask again (KLD-57 found this).
+  const unreachable = page.getByText("I couldn't ask bob: bob can't be reached");
+  await expect(async () => {
+    const before = await unreachable.count();
+    await composer(page).fill('ask bob to run the tests in bob-api');
+    await composer(page).press('Enter');
+    await expect(bob.or(unreachable.nth(before))).toBeVisible({ timeout: 15_000 });
+    await expect(bob).toBeVisible({ timeout: 500 });
+  }).toPass({ timeout: 60_000, intervals: [1000] });
   await expect(bob).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
   // Your Claude passes the answer on; the card keeps it one click away (not shown twice).
   await expect(page.getByText(/^bob's Claude says: All 27 tests/).last()).toBeVisible();
