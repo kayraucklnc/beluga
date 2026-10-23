@@ -22,6 +22,8 @@ import { isGraphFence } from '@beluga/shared/graph-spec.js';
 import { MarkdownTable, ViewBlock } from '../views/ViewBlock.js';
 import { InlineCode } from '../views/Inline.js';
 import { viewFenceType } from '@beluga/shared/view-spec.js';
+import { TASKS_FENCE } from '@beluga/shared/task-refs.js';
+import { TaskCards } from '../../tasks/TaskRef.js';
 import m from './markdown.module.css';
 
 /**
@@ -151,6 +153,7 @@ function makeComponents(ctx: { current: Ctx }): Components {
       if (lang === 'math') return <MathTex tex={text} display />;
       if (lang === 'mermaid') return <Diagram code={text} />;
       if (isGraphFence(lang)) return <GraphBlock code={text} />;
+      if (lang === TASKS_FENCE) return <TaskCards code={text} />;
       if (viewFenceType(lang)) return <ViewBlock code={text} type={viewFenceType(lang)!} />;
       return <CodeBlock code={text} lang={lang} />;
     },

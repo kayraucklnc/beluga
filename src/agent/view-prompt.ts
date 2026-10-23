@@ -1,4 +1,5 @@
 import { CHART_KINDS, COLUMN_TYPES, VIEW_FENCE } from '../shared/view-spec.js';
+import { TASKS_FENCE } from '../shared/task-refs.js';
 
 /**
  * Teaching Claude what it can show (src/shared/view-spec.ts, docs/views.md): what's there, and
@@ -39,5 +40,7 @@ export function buildViewAppend(): string {
     'Inline, inside a sentence: a color written as inline code (`#3987e5`) shows its swatch; also `badge:failed`,',
     '`kbd:cmd+k`, `progress:3/8`, `delta:+12%` (`delta:-40ms good`), `spark:3,5,4,8` and `time:2026-10-23T14:00:00Z`.',
     'Use them where they say more than the text would, sparingly.',
+    `A board task: \`task:BLG-12\` is a chip with its live status that opens it; a fenced ${TASKS_FENCE} block (one key`,
+    'per line) is a list of task cards. Use them for tasks you opened, changed or mean, not for every key you say.',
   ].join('\n');
 }

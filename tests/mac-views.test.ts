@@ -4,6 +4,7 @@ import { readInline } from '../packages/mac/src/components/views/inline-model.js
 import { tableRows, tableView } from '../packages/mac/src/components/views/md-table.js';
 import { planChart } from '../packages/mac/src/components/views/chart-model.js';
 import type { Column } from '../src/shared/view-spec.js';
+import { MAX_TASK_CARDS, readTaskKeys } from '../src/shared/task-refs.js';
 
 const col = (key: string, type: Column['type'] = 'number'): Column => ({ key, type });
 
@@ -71,10 +72,27 @@ describe('inline elements', () => {
     expect(readInline('delta:-12%')).toEqual({ kind: 'delta', text: '-12%', dir: -1, good: false });
     expect(readInline('spark:1,2,3')).toEqual({ kind: 'spark', values: [1, 2, 3] });
     expect(readInline('time:2026-10-22T09:30:00Z')).toEqual({ kind: 'time', at: Date.UTC(2026, 9, 22, 9, 30), dateOnly: false });
+    expect(readInline('task:blg-12')).toEqual({ kind: 'task', key: 'BLG-12' });
   });
 
   it('anything else stays code', () => {
-    for (const t of ['npm test', 'color:banana', 'progress:lots', 'spark:1', '#zzz', 'time:soon', 'a:b']) expect(readInline(t)).toBeUndefined();
+    for (const t of ['npm test', 'color:banana', 'progress:lots', 'spark:1', '#zzz', 'time:soon', 'a:b', 'task:BLG', 'task:12', 'task:the login bug']) expect(readInline(t)).toBeUndefined();
+  });
+});
+
+describe('a beluga-tasks block', () => {
+  it('reads one key per line, upper-cased, each once', () => {
+    expect(readTaskKeys('BLG-12\n- task:blg-3 the login\n\nBLG-12\nnot a key')).toEqual(['BLG-12', 'BLG-3']);
+  });
+
+  it('reads a JSON array of keys or of objects with a key', () => {
+    expect(readTaskKeys('["BLG-1", {"key": "BLG-2"}, 7, "nope"]')).toEqual(['BLG-1', 'BLG-2']);
+    // Half-streamed JSON reads as lines meanwhile.
+    expect(readTaskKeys('["BLG-1",\n "BLG-2')).toEqual(['BLG-1', 'BLG-2']);
+  });
+
+  it('keeps at most a screenful', () => {
+    expect(readTaskKeys(Array.from({ length: 50 }, (_, i) => `BLG-${i + 1}`).join('\n'))).toHaveLength(MAX_TASK_CARDS);
   });
 });
 
