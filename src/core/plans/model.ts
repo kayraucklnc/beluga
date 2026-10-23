@@ -54,8 +54,17 @@ export interface PlanTask {
   readonly touches?: readonly string[];
   /** Who works on it: your Claude (the default) or you. */
   readonly assignee?: 'claude' | 'me';
+  /** Yours (assignee "me"): what you're asked when it's ready, in the plan's conversation (see decisions.ts). */
+  readonly decision?: PlanDecision;
   /** Its task on the board, once the plan is approved. */
   readonly issueId?: string;
+}
+
+/** A plan task that's yours, as a choice: the question, the options (pick one, or several), and always your own words. */
+export interface PlanDecision {
+  readonly question: string;
+  readonly options: ReadonlyArray<{ readonly label: string; readonly description?: string }>;
+  readonly multi?: boolean;
 }
 
 export interface PlanMilestone {

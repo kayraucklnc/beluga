@@ -9,6 +9,7 @@ import { openSheet } from '../lib/sheets.js';
 import { ProofItems } from '../tasks/TaskSections.js';
 import { MILESTONE_STATE, taskWords } from './plans-model.js';
 import { TaskChatMark, TaskStateIcon, TonePill } from './marks.js';
+import { openDecision } from './plan-ask-model.js';
 import { PlanFeed } from './PlanFeed.js';
 import { useClock, usePlanActions } from './use-plans.js';
 import { WaitingLine } from './WaitingLine.js';
@@ -105,8 +106,8 @@ function TaskDetails({ view, t, canStart }: { view: PlanView; t: TaskView; canSt
       {t.why && (t.state === 'blocked' || t.state === 'later') ? <p className={p.muted}>{t.why}</p> : null}
       <div className={p.detailsActions}>
         {canStart ? (
-          <Button size="small" variant="primary" icon="play" onClick={() => void act(() => api.startTask(view.plan.id, t.task.id))}>
-            Start
+          <Button size="small" variant="primary" icon={t.forYou ? 'hand' : 'play'} onClick={() => (t.forYou ? openDecision() : void act(() => api.startTask(view.plan.id, t.task.id)))}>
+            {t.forYou ? 'Decide…' : 'Start'}
           </Button>
         ) : null}
         {canResume ? (

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { channelOf } from '@beluga/core/store.js';
 import { currentQuestion } from '@beluga/ui/collab-actions.js';
+import { isDecisionQid } from '@beluga/core/plans/decisions.js';
 import { TRUST_INFO } from '@beluga/core/trust.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Dot, Tip } from '../components/ui.js';
@@ -122,9 +123,12 @@ function Question() {
         <Icon name="claude" size={13} className={s.claude} />
         <span className={s.title}>{current.header || 'Claude asks'}</span>
         {total > 1 ? <span className={s.more}>{index + 1} of {total}</span> : null}
-        <Button size="small" variant="quiet" onClick={() => actions.run({ type: 'answer', qid: q.qid, pick: 'skip' })}>
-          Skip
-        </Button>
+        {/* A decision of yours in a plan waits until you answer it (core/plans/decisions.ts). */}
+        {isDecisionQid(q.qid) ? null : (
+          <Button size="small" variant="quiet" onClick={() => actions.run({ type: 'answer', qid: q.qid, pick: 'skip' })}>
+            Skip
+          </Button>
+        )}
       </div>
       <div className={`${s.question} selectable`}>
         <Markdown text={current.question} />

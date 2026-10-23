@@ -20,6 +20,7 @@ import { span } from '../shared/clock.js';
 import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
 import { e2eLockedIn, keepsRunning, mayLeaveProcesses } from '../workspaces/test-procs.js';
 import { belugaEnvBoth } from './beluga-env.js';
+import { planForHome } from './plans/model.js';
 
 export interface AgentHostDeps {
   readonly store: Store;
@@ -175,6 +176,12 @@ export function planSteer(status: LiveStatus | undefined, now: number): { kind: 
   if (quiet >= DEAD_RUN_MS && !status.thinking) return { kind: 'restart', note: `Claude had gone quiet for ${span(quiet)}: stopped to start over with your message` };
   if (quiet >= STEER_QUIET_MS) return { kind: 'interrupt', note: `Interrupted: Claude was ${status.thinking ? 'thinking' : 'quiet'} for ${span(quiet)}; reading your message` };
   return { kind: 'steer' };
+}
+
+/** A place without its questions-only rule (a plan's own conversation: see runAgent). */
+function withoutAskOnly<T extends { readonly askOnly?: unknown }>(place: T): T {
+  const { askOnly: _askOnly, ...rest } = place;
+  return rest as T;
 }
 
 /** Conversations whose Claude may work at the same time (keeps your plan's limits in mind). */
@@ -808,18 +815,27 @@ export class AgentHost {
         if (this.quitting) break;
         const next = auto || lane.held ? undefined : lane.waiting.shift();
         if (!auto && !next) break;
-        while (this.running >= MAX_PARALLEL_RUNS) await new Promise((r) => setTimeout(r, 200));
-        this.running++;
+        // A plan's own conversation (its head Claude, the orchestrator) never waits for a slot behind
+        // the task runs it started: you can always talk to it, and stop or redirect them from there.
+        const free = this.isPlanHome(lane.channel);
+        while (!free && this.running >= MAX_PARALLEL_RUNS) await new Promise((r) => setTimeout(r, 200));
+        if (!free) this.running++;
         try {
           if (!next || next.compact) await this.runCompaction(lane, auto, next?.body.prompt);
           else await this.runAgent(next.from, next.body, lane, next.askTo).catch((err: unknown) => this.system(`Agent run failed: ${errorText(err)}`, 'error'));
         } finally {
-          this.running--;
+          if (!free) this.running--;
         }
       }
     } finally {
       lane.pumping = false;
     }
+  }
+
+  /** A running (or drafting) plan's own conversation: its head Claude. */
+  private isPlanHome(channel: string): boolean {
+    const plan = planForHome(this.store.getState().plans, channel);
+    return Boolean(plan && plan.status !== 'done');
   }
 
   /** The main folder of one of your projects, by name. */
@@ -942,6 +958,9 @@ export class AgentHost {
           timer.unref();
         });
       };
+      // The plan's head Claude orchestrates: it may change things where it runs (your approvals and
+      // Beluga's secrets rules still apply), not only read like other main-folder chats.
+      const runPlace = plans?.tools && place?.askOnly && !place.syncMain ? withoutAskOnly(place) : place;
       const final = await Promise.race([gone, exited, agent.run({
         ...(scratch ? { scratchDir: scratch } : {}),
         ...(board?.tools ? { board: board.tools } : {}),
@@ -953,7 +972,7 @@ export class AgentHost {
         requesterName,
         viaAgent: body.viaAgent,
         context: this.recentChat(body.channel),
-        ...(place ? { place } : {}),
+        ...(runPlace ? { place: runPlace } : {}),
         scope: from === this.selfId ? 'full' : reachOf(this.store.getState(), from),
         ...(from !== this.selfId && this.deps.isGuest?.(from) ? { guest: true } : {}),
         signal: controller.signal,

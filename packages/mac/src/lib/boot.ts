@@ -36,15 +36,15 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
       } else await navigator.clipboard.writeText(text);
     },
     // Clicking one comes back as a tap (the app shell's "notification-tap" event, or NOTIFICATION_TAP here).
-    notify: async (raw: { title: string; body: string; sound: boolean; tone?: SoundChoice; volume?: number; channel?: string; approval?: string; task?: string }) => {
+    notify: async (raw: { title: string; body: string; sound: boolean; tone?: SoundChoice; volume?: number; channel?: string; approval?: string; task?: string; popup?: boolean }) => {
       const n = brandNotice(raw);
       // The test's sound is the window's own, so you hear it whatever macOS does with the banner.
       const test = isTestNotice(n);
       const { notificationSound, playTestSound } = await import('./sounds/native.js');
       if (test) playTestSound(n);
-      if (inApp() && n.approval && n.task) {
-        // A friend's request gets the floating pop-up (gateway/popup-bridge.ts) instead of a
-        // banner: only its sound here, so it's heard once.
+      // A friend's request, or (with on-screen popups on) only what Claude needs from you: the
+      // floating pop-up shows it (gateway/popup-bridge.ts) instead of a banner, so only its sound here.
+      if (inApp() && ((n.approval && n.task) || raw.popup)) {
         const { playSound } = await import('./sounds/player.js');
         const { DEFAULT_SOUND, DEFAULT_VOLUME, NO_SOUND } = await import('@beluga/shared/notify-sound.js');
         void playSound(n.tone ?? (n.sound ? DEFAULT_SOUND : NO_SOUND), n.volume ?? DEFAULT_VOLUME).catch(() => undefined);

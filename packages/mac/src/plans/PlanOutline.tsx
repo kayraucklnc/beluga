@@ -7,6 +7,7 @@ import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
 import { MILESTONE_STATE, TASK_STATE, changeMarks, milestoneLabel, milestoneRows, taskWords } from './plans-model.js';
 import { TaskChatMark, TaskStateIcon } from './marks.js';
+import { openDecision } from './plan-ask-model.js';
 import { useClock, usePlanActions } from './use-plans.js';
 
 /** A change you make to a plan (as the API takes it). */
@@ -99,7 +100,7 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
   const info = taskWords(t, now);
   const others = (body?.milestones ?? []).filter((m) => m.id !== t.milestoneId);
   const menu = (): ActionItem[] => [
-    ...(canStart ? [{ label: 'Start', icon: 'play' as const, onSelect: () => void act(() => api.startTask(plan.id, t.task.id)) }] : []),
+    ...(canStart ? [t.forYou ? { label: 'Decide…', icon: 'hand' as const, onSelect: openDecision } : { label: 'Start', icon: 'play' as const, onSelect: () => void act(() => api.startTask(plan.id, t.task.id)) }] : []),
     ...(t.worktree ? [{ label: 'Open Worktree', onSelect: () => openWorktree(t.worktree!) }] : []),
     ...(t.issue ? [{ label: 'Open Task', onSelect: () => openTask(t.issue!.id) }] : []),
     ...(others.length ? [{ label: 'Move to', separate: true, submenu: others.map((m) => ({ label: m.title, onSelect: () => edit([{ op: 'move_task', id: t.task.id, milestone: m.id }]) })), onSelect: () => undefined }] : []),
@@ -122,9 +123,9 @@ function TaskRow({ plan, t, k, mark, selected, onSelect, canStart }: { plan: Pla
           {t.task.estimate ? <span className={p.points}>{t.task.estimate}</span> : null}
           {t.forYou ? <Icon name="person" size={12} className={p.forYou} /> : null}
           {canStart ? (
-            <button type="button" className={p.startButton} onClick={() => void act(() => api.startTask(plan.id, t.task.id))}>
-              <Icon name="play" size={9} />
-              Start
+            <button type="button" className={p.startButton} onClick={() => (t.forYou ? openDecision() : void act(() => api.startTask(plan.id, t.task.id)))}>
+              <Icon name={t.forYou ? 'hand' : 'play'} size={9} />
+              {t.forYou ? 'Decide…' : 'Start'}
             </button>
           ) : (
             <span className={cx(p.taskState, p[`tone_${info.tone}`])}>{info.label}</span>

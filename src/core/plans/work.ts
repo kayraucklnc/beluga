@@ -28,6 +28,8 @@ export interface PlansWorkDeps {
   readonly askClaude: (prompt: string, channel: string, echo: boolean) => string | void;
   /** Steer a waiting message in now: the agent host's Steer Now (AgentHost.promote). */
   readonly promote?: (requestId: string) => boolean;
+  /** Stop your Claude in one conversation (its queued messages too): the agent host's Stop. */
+  readonly stopRun?: (channel: string) => void;
   readonly intend: (intent: Intent) => void;
   /** Combining a task's start from several branches (default: the project's folder, through the controller). */
   readonly combine?: (projectId: string, key: string, branches: readonly string[], into?: string) => Promise<CombineResult>;
@@ -364,6 +366,21 @@ export class PlansWork {
         // Steered: in now (interrupting a long command or a dead run), and followed until it's read.
         if (id) this.pilot.steer(planId, hit.task.id, id, prompt);
         return `Steered into ${issue.key}: its Claude gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Beluga delivers it again`;
+      },
+      stop: (task) => {
+        const plan = plans.need(planId);
+        const hit = allTasks(plan.body).find((t) => t.task.id === task || (t.task.issueId && this.deps.board.board.get(t.task.issueId)?.key === task.toUpperCase()));
+        const issue = hit?.task.issueId ? this.deps.board.board.get(hit.task.issueId) : undefined;
+        const w = issue?.worktrees.at(-1);
+        if (!issue || !w || issue.worktreeGone) throw new Error(`There's no started task "${task}" in this plan`);
+        if (!this.deps.stopRun) throw new Error('Stopping isn’t available here');
+        this.deps.stopRun(`${WS}${w}`);
+        this.deps.store.dispatch({ type: 'system', channel: `${WS}${w}`, text: 'Stopped by the plan’s Claude.', level: 'info' });
+        return `Stopped the Claude working on ${issue.key}. It waits: tell it what to do with plan_message_task, or start it again from the plan`;
+      },
+      pause: (paused) => {
+        this.setPaused(planId, paused);
+        return paused ? 'Paused: nothing new starts until the user (or you, when they ask) resumes it' : 'Resumed: ready tasks start again';
       },
     };
   }

@@ -36,10 +36,20 @@ const MILESTONE_WORDS: Readonly<Record<MilestoneView['state'], string>> = {
   passed: 'passed',
 };
 
+/** Who the plan's own conversation is: the one place the user runs the whole plan from. */
+const ORCHESTRATOR = [
+  'This conversation is the orchestrator of the whole plan: the user steers everything from here. When they say',
+  'stop, start, redirect, skip or change something (a task, a milestone, the whole plan), do it now with your tools',
+  '(plan_stop_task, plan_start_task, plan_message_task, plan_update, plan_pause, plan_gate) rather than only describing',
+  'it, and say in a line what you did. Their messages reach you even while you work: answer the newest first.',
+  'You may read and change files here when that is the quickest way to do what they ask (a note, a fix-up, a',
+  'config value); code work belongs to the plan\'s tasks, each in its own worktree.',
+].join('\n');
+
 /** How plans are cut: what the planner Claude is told (plus the user's own style). */
 const HOW_TO_PLAN = [
   'How to cut a good plan:',
-  '- Read the code first (it\'s read-only here): plan from how things really are, and name real files in context.',
+  '- Read the code first: plan from how things really are, and name real files in context.',
   '- Plan only what the work needs: as few milestones and tasks as it takes, not more. One milestone is fine for',
   '  small work, and one task per milestone is fine. Don\'t split for the sake of it: a split must buy something',
   '  (work that really runs in parallel, a checkpoint the user wants to see).',
@@ -54,7 +64,9 @@ const HOW_TO_PLAN = [
   '  each task its `touches` (files or folders it changes): parallel milestones shouldn\'t share them.',
   '- Every task has a goal in your own words, the context someone new needs, and acceptance criteria. Use',
   '  sub-tasks (parent) only for a task that is really several steps. Default assignee is Claude; use "me" for',
-  '  what only the user can do (accounts, secrets, decisions).',
+  '  what only the user can do (accounts, secrets, decisions). A task for "me" never gets a worktree: when it\'s',
+  '  ready, the user is asked in this conversation. Give it a `decision`: the question, a few options (multi: true',
+  '  when several can be picked); they can always write their own. Their answer is recorded on the task and the plan goes on.',
   '- Use short, stable ids (like "auth-api"): keep them when you revise, so tasks keep their history.',
   '- Ask for proof that fits: a task writes the tests it needs and runs typecheck and those tests; the e2e and full',
   '  suites run once per milestone, at its check, on the combined work (or only at the end, if the plan says so).',
@@ -102,7 +114,8 @@ export function planningBrief(plan: Plan, board: BoardState, style: string): str
     'Write the plan with the plan tools (mcp__beluga_plan__*): plan_write for the whole plan, plan_update for changes,',
     'plan_get to see it. Nothing reaches the task board until the user approves the plan; you can\'t approve it yourself.',
     plan.body && plan.autonomy === 'autopilot' ? 'This plan runs on autopilot: changes you make to it now apply at once and can start work, so change only what the plan needs.' : '',
-    'Don\'t move to a worktree or change code here: this conversation is for planning.',
+    'This conversation is the plan\'s own: don\'t move it to a worktree. You can change files here when it\'s quick and the',
+    'user asks (a note, a config value); real code changes are the plan\'s tasks, each in its own worktree.',
     body?.milestones.length ? 'The plan already has content: revise it with plan_update unless the user wants it rewritten.' : 'The plan is empty: understand what the user wants (ask only what you can\'t find out), read the code, then plan_write.',
     'After writing, answer briefly: the milestones in a line each, which run side by side and which wait, risks and open questions. Then the user',
     'approves, or tells you what to change.',
@@ -126,10 +139,11 @@ export function headBrief(view: PlanView): string {
     '',
     '<beluga_plan_head>',
     `You are the head of the plan “${shownBody(plan)?.title ?? 'plan'}” in Beluga's Plans (${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].label}: ${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].hint.toLowerCase()}).`,
+    ORCHESTRATOR,
     'Each milestone has one Claude in one worktree that does its tasks in order and moves each along on the board;',
     'Beluga starts it once work is ready (up to the plan\'s limit of milestones at once) and opens every milestone',
     'whose dependencies have passed, so independent milestones run side by side, each with its own check. Tasks',
-    'assigned to the user are never a Claude\'s: they wait for the user. You coordinate:',
+    'assigned to the user are never a Claude\'s: the user answers them in this conversation. You coordinate:',
     '- plan_get: the plan and the state of every task (who\'s working, what waits on what).',
     '- plan_message_task: tell a task\'s Claude (its milestone\'s Claude) something. mode "queue" (default) waits until its current turn',
     '  ends, which can be after a 15-minute test run: for a heads-up, a decision it needs later, an FYI.',
@@ -137,6 +151,9 @@ export function headBrief(view: PlanView): string {
     '  work: stop a run going the wrong way, or a correction that changes what it does. Beluga delivers a',
     '  steered message again if it isn\'t read within 2 minutes; don\'t send it twice.',
     '- plan_start_task: start a ready task now (when the user asks).',
+    '- plan_stop_task: stop the Claude working on a task (going the wrong way, or the user says stop); it waits, and',
+    '  plan_message_task (or the user) gets it going again with what to do instead.',
+    '- plan_pause: pause the whole plan (nothing new starts) or resume it, when the user asks.',
     '- plan_gate: after checking a finished milestone\'s pass criteria, pass or fail it with notes per criterion.',
     `  Check for real: read the tasks\' briefs, handoffs and proof, and their diffs (git diff ${plan.branch ?? 'main'}...branch).`,
     plan.branch ? `- The plan's work collects on ${plan.branch}: tasks start from it, a passed milestone's branches merge into it, and it reaches main as one pull request at the end (no PR per task or milestone).` : '',

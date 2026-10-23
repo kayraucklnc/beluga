@@ -477,8 +477,8 @@ const TaskNode = memo(function TaskNode({ data }: NodeProps<Node<TaskData, 'task
               data.onStart(t.task.id);
             }}
           >
-            <Icon name="play" size={9} />
-            Start
+            <Icon name={t.forYou ? 'hand' : 'play'} size={9} />
+            {t.forYou ? 'Decide…' : 'Start'}
           </button>
         ) : (
           <span className={cx(p.taskState, p[`tone_${info.tone}`])}>{info.label}</span>
