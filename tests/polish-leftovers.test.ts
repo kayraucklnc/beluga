@@ -61,7 +61,8 @@ describe('polish-round leftovers', () => {
     await commit('theirs\n', 'theirs');
     await git(dir, ['checkout', '-q', 'main']);
     await commit('ours\n', 'ours');
-    expect(await tryGit(dir, ['merge', '--no-edit', 'other'])).toBeUndefined();
+    // Its own identity: a CI runner has none, and git won't start a merge without one.
+    expect(await tryGit(dir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '--no-edit', 'other'])).toBeUndefined();
     expect(await conflictedFiles(dir)).toEqual(['a.txt']);
   });
 
