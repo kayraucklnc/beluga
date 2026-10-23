@@ -8,10 +8,10 @@ import type { WorkspaceController } from '../workspace-controller.js';
 import { ApplyError, applyDraft } from './apply.js';
 import type { BodyInput, PlanOp, TaskInput } from './edit.js';
 import { type Autonomy, type Plan, type TestsAt, allTasks, planForHome, planTaskOfIssue, planTitle } from './model.js';
-import { PlanPilot } from './pilot.js';
+import { type PilotDeps, PlanPilot } from './pilot.js';
 import { type PlanGit, planGitOf } from './plan-git.js';
 import { type Plans, UNTITLED } from './plans.js';
-import { describePlan, headBrief, planningBrief, sizeWords, workerNote } from './prompt.js';
+import { describePlan, headBrief, milestoneNote, planningBrief, sizeWords, workerNote } from './prompt.js';
 
 /**
  * Plans at work: making a plan (its own conversation, in the project's main folder where Claude
@@ -40,6 +40,12 @@ export interface PlansWorkDeps {
   /** A short name for a new plan from its goal (a quick model call; undefined when there's none). */
   readonly titlePlan?: (goal: string) => Promise<string | undefined>;
   readonly delayMs?: number;
+  /** One Claude per milestone (default), or a worktree per task: see PlanPilot. */
+  readonly workers?: 'milestone' | 'task';
+  /** Stop a request of Beluga's that's no longer needed (AgentHost.cancelRun). */
+  readonly cancel?: (requestId: string) => void;
+  /** Tasks only you can do came up: see PilotDeps.forYou. */
+  readonly forYou?: PilotDeps['forYou'];
 }
 
 const WS = 'ws:';
@@ -65,9 +71,14 @@ export class PlansWork {
       ...(deps.promote ? { promote: deps.promote } : {}),
       ...(deps.now ? { now: deps.now } : {}),
       ...(deps.delayMs !== undefined ? { delayMs: deps.delayMs } : {}),
+      ...(deps.workers ? { workers: deps.workers } : {}),
+      ...(deps.cancel ? { cancel: deps.cancel } : {}),
+      ...(deps.forYou ? { forYou: deps.forYou } : {}),
     });
     // A task of a plan: its worktree's Claude knows the plan and what runs beside it.
     deps.board.setBriefExtra((issue) => this.workerBrief(issue));
+    // A milestone's worktree: its one Claude gets the milestone (its tasks in order, where each stands).
+    deps.board.setRunBrief((channel) => this.milestoneBrief(channel));
   }
 
   stop(): void {
@@ -269,6 +280,24 @@ export class PlansWork {
     return workerNote(this.pilot.view(hit.plan), hit.task.id);
   }
 
+  /** In a milestone's worktree (its one Claude): the milestone, and the task it's on (for the task tools). */
+  private milestoneBrief(channel: string): { readonly brief: string; readonly current?: Issue } | undefined {
+    if (!channel.startsWith(WS)) return undefined;
+    const wsId = channel.slice(WS.length);
+    for (const plan of this.plans.list()) {
+      if (plan.status !== 'active' || !plan.body) continue;
+      const id = Object.keys(plan.runs).find((k) => plan.runs[k]?.agent?.worktree === wsId);
+      if (!id) continue;
+      const view = this.pilot.view(plan);
+      const m = view.milestones.find((x) => x.milestone.id === id);
+      if (!m) return undefined;
+      const mine = m.tasks.filter((t) => t.issue?.worktrees.includes(wsId));
+      const current = mine.find((t) => t.state === 'running' || t.state === 'idle' || t.state === 'asking' || t.state === 'stalled') ?? mine.find((t) => t.state === 'ready');
+      return { brief: milestoneNote(view, m, current), ...(current?.issue ? { current: current.issue } : {}) };
+    }
+    return undefined;
+  }
+
   /** A task Claude says is an existing board task (its key): that task, adopted into the plan. */
   private adopt<T extends Partial<TaskInput> & { readonly issue?: string }>(t: T, planId: string): T {
     if (!t.issue) return t;
@@ -311,6 +340,8 @@ export class PlansWork {
         const plan = plans.need(planId);
         const m = plan.body?.milestones.find((x) => x.id === milestone || x.title.toLowerCase() === milestone.toLowerCase());
         if (!m) throw new Error(`There's no milestone "${milestone}" in the approved plan (milestones: ${(plan.body?.milestones ?? []).map((x) => x.id).join(', ')})`);
+        // The user passed it while you checked: your verdict isn't needed any more.
+        if (plan.runs[m.id]?.passedAt || (plan.merging?.[m.id] && !plan.merging[m.id]!.catchUp)) return 'The user already passed this milestone: nothing to record. Stop checking it and end your turn.';
         plans.recordCheck(planId, m.id, { by: this.claude(), verdict, notes });
         this.pilot.schedule();
         const auto = (m.autonomy ?? plan.autonomy) === 'autopilot';

@@ -174,7 +174,7 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
 
   const more: ActionItem[] = [
     ...(plan.body && plan.status === 'active' ? [{ label: plan.paused ? 'Resume' : 'Pause', onSelect: () => void act(() => api.setPaused(plan.id, !plan.paused)) }] : []),
-    { label: 'Run at Once', submenu: [1, 2, 3, 4, 6, MAX_PARALLEL].map((n) => ({ label: `${n} ${n === 1 ? 'task' : 'tasks'}`, checked: plan.maxParallel === n, onSelect: () => void act(() => api.setParallel(plan.id, n)) })), onSelect: () => undefined },
+    { label: 'Run at Once', submenu: [1, 2, 3, 4, 6, MAX_PARALLEL].map((n) => ({ label: `${n} ${n === 1 ? 'milestone' : 'milestones'}`, checked: plan.maxParallel === n, onSelect: () => void act(() => api.setParallel(plan.id, n)) })), onSelect: () => undefined },
     { label: 'When to Run Tests', submenu: TESTS_AT.map((t) => ({ label: TESTS_AT_INFO[t].label, hint: TESTS_AT_INFO[t].hint, checked: plan.testsAt === t, onSelect: () => void act(() => api.setTestsAt(plan.id, t), t === 'end' ? 'From now on, milestone checks skip the test suites; they all run once, in the final step' : 'From now on, each milestone’s check runs the full suites once, on its combined work') })), onSelect: () => undefined },
     ...(next.kind === 'stalled' ? next.tasks.flatMap((t) => (t.worktree ? [{ label: `Open ${t.issue?.key ?? 'Its'} Chat`, onSelect: () => openWorktree(t.worktree!) }] : [])) : []),
     ...(next.kind === 'pass' ? [{ label: 'Not Yet…', onSelect: () => openSheet({ kind: 'plan_send_back', planId: plan.id, milestone: next.milestone.milestone.id }) }] : []),
