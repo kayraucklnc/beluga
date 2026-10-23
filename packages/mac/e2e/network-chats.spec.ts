@@ -18,6 +18,7 @@ const tabs = (page: Page) => page.getByRole('tablist', { name: 'Chats' });
 /** SHOTS=<folder>: save screenshots there (menus get a moment to finish fading in). */
 const shot = async (page: Page, name: string): Promise<void> => {
   if (!process.env.SHOTS) return;
+  // Screenshots only: let animations settle so the picture is still.
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
 };

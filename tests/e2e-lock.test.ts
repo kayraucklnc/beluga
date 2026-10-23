@@ -23,6 +23,10 @@ import {
   waitForLock,
   waitingLine,
   workerCount,
+  cpuSeconds,
+  pidsUnder,
+  usageLine,
+  usageMeter,
 } from '../scripts/e2e-lock.mjs';
 
 const tmp = (): string => mkdtempSync(path.join(os.tmpdir(), 'klaud-lock-'));
@@ -70,13 +74,39 @@ describe('names, ports and homes', () => {
     expect(slotHomes(homes, 2, 1)).toEqual({ home: `${homes.home}-2b`, claude: `${homes.claude}-2b` });
   });
 
-  it('runs half the cores as workers, at most 4, unless E2E_WORKERS says', () => {
-    expect(workerCount({}, 14)).toBe(4);
-    expect(workerCount({}, 4)).toBe(2);
-    expect(workerCount({}, 1)).toBe(1);
-    expect(workerCount({ E2E_WORKERS: '7' }, 4)).toBe(7);
-    expect(workerCount({ E2E_WORKERS: '1' }, 14)).toBe(1);
-    expect(workerCount({ E2E_WORKERS: 'lots' }, 14)).toBe(4);
+  it('runs 3 workers, fewer on a small Mac, 1 on a busy one, unless E2E_WORKERS says', () => {
+    expect(workerCount({}, 14, 0.3)).toBe(3);
+    expect(workerCount({}, 4, 0.3)).toBe(2);
+    expect(workerCount({}, 2, 0)).toBe(1);
+    expect(workerCount({}, 14, 1.2)).toBe(1);
+    expect(workerCount({ E2E_WORKERS: '4' }, 14, 3)).toBe(4);
+    expect(workerCount({ E2E_WORKERS: 'lots' }, 14, 0.3)).toBe(3);
+  });
+});
+
+describe('what a run costs', () => {
+  it("reads ps's CPU time", () => {
+    expect(cpuSeconds('0:01.50')).toBe(1.5);
+    expect(cpuSeconds('2:03.00')).toBe(123);
+    expect(cpuSeconds('1:00:00')).toBe(3600);
+    expect(cpuSeconds('1-00:00:01')).toBe(86401);
+  });
+
+  it('finds the processes under a run, whatever their group', () => {
+    const table = [{ pid: 10, ppid: 1 }, { pid: 11, ppid: 10 }, { pid: 12, ppid: 11 }, { pid: 20, ppid: 1 }];
+    expect([...pidsUnder(10, table)].sort()).toEqual([10, 11, 12]);
+  });
+
+  it('peaks: the cores used between two samples, and the memory at one', () => {
+    const meter = usageMeter();
+    meter.sample(new Set([1, 2]), [{ pid: 1, cpu: 10, bytes: 100 }, { pid: 2, cpu: 5, bytes: 50 }, { pid: 3, cpu: 99, bytes: 999 }], 0);
+    expect(meter.peak).toEqual({ cores: 0, bytes: 150, busiest: [] });
+    // 2 s later: pid 1 used 2 s, pid 2 ended, pid 4 is new and used 1 s: 1.5 cores.
+    meter.sample(new Set([1, 4]), [{ pid: 1, cpu: 12, bytes: 100 }, { pid: 4, cpu: 1, bytes: 20 }], 2000);
+    expect(meter.peak.cores).toBe(1.5);
+    expect(meter.peak.bytes).toBe(150);
+    expect(meter.peak.busiest).toEqual(['1 1.0', '4 0.5']);
+    expect(usageLine(meter.peak, 150_000, 14)).toBe('e2e took 2.5 min; at most 1.5 of 14 cores and 0.00 GB of memory (busiest then: 1 1.0, 4 0.5)');
   });
 });
 

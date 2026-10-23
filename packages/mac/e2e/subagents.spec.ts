@@ -20,6 +20,7 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 const line = (o: unknown): string => `${JSON.stringify(o)}\n`;
 const shot = async (page: Page, name: string): Promise<void> => {
   if (!process.env.SHOTS) return;
+  // Screenshots only: let animations settle so the picture is still.
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
 };

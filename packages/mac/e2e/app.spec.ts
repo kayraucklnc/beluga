@@ -274,6 +274,8 @@ test('shows pasted images before sending, and in the message after', async ({ pa
   await expect(pending.getByRole('img')).toHaveCount(1);
   await expect(composer(page)).toHaveValue(/^\[image \d+\] $/);
   const words = `pixel check ${Date.now()}`;
+  // The box puts the cursor after "[image N]" on the next frame: type once that frame has run (KLD-84).
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
   await composer(page).pressSequentially(words);
   await composer(page).press('Enter');
   await expect(page.getByText(words)).toBeVisible();

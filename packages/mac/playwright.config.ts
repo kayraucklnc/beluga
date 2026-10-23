@@ -12,6 +12,8 @@ if (!process.env.KLAUD_E2E_RUN) {
   process.env.KLAUD_CLAUDE_HOME = homesFor(worktree).claude;
 }
 const port = Number(process.env.E2E_PORT || portFor(worktree));
+// Decided once, here (the workers load this file too, and the Mac's load moves meanwhile).
+process.env.E2E_WORKERS ||= String(workerCount());
 process.env.E2E_PORT = String(port);
 
 export default defineConfig({

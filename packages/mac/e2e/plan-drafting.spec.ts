@@ -105,6 +105,7 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
     await line.waitFor();
     await page.screenshot({ path: `${dir}/kld-28-drafting-light.png` });
     await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
+    // Screenshots only: the theme's colors fade over; let them land.
     await page.waitForTimeout(150);
     await page.screenshot({ path: `${dir}/kld-28-drafting-dark.png` });
     await page.evaluate(() => (document.documentElement.dataset.theme = 'light'));

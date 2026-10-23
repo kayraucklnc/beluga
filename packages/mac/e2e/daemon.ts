@@ -1,5 +1,6 @@
 import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { SocketClient } from '../../../src/ipc/socket-client.js';
 import { alive, stopGroups } from '../../../scripts/e2e-lock.mjs';
@@ -87,7 +88,12 @@ export async function startDemo({ home, claude, port }: { home: string; claude: 
 
   const log = path.join(home, 'e2e-daemon.log');
   const out = openSync(log, 'a');
-  const child = spawn('npx', ['tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'], {
+  // Its temp folder is its own, but tsx's compile cache is shared (or each daemon compiles klaud again).
+  const cache = `tsx-${process.getuid?.() ?? 0}`;
+  mkdirSync(path.join(os.tmpdir(), cache), { recursive: true });
+  symlinkSync(path.join(os.tmpdir(), cache), path.join(tmp, cache));
+  // node itself, not npx tsx (two processes fewer per daemon).
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'], {
     cwd: repo,
     // GitHub is a stand-in (e2e/fake-gh.mjs): its PRs are whatever a test writes to fake-gh.json.
     env: { ...process.env, KLAUD_HOME: home, KLAUD_CLAUDE_HOME: claude, TMPDIR: `${tmp}/`, KLAUD_GH: path.join(import.meta.dirname, 'fake-gh.mjs'), KLAUD_FAKE_GH: path.join(home, 'fake-gh.json'), KLAUD_DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', KLAUD_ALLOW_ORIGINS: `http://localhost:${port}` },
@@ -136,7 +142,7 @@ export async function startDemo({ home, claude, port }: { home: string; claude: 
   return { home, claude, endpoint, stop };
 }
 
-/** Stop the demo daemon of a home (and the npx that started it). Safe to call twice. */
+/** Stop the demo daemon of a home (and what started it). Safe to call twice. */
 export async function stopDaemon(home: string, starter?: number): Promise<void> {
   const info = pidIn(path.join(home, 'daemon.json'));
   const pid = info && /daemon/.test(commandOf(info)) ? info : undefined;
