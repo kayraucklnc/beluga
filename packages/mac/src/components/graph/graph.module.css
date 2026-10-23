@@ -1,47 +1,108 @@
 /*
- * beluga-graph: diagrams drawn in the window's own greys. Cards are quiet, lines are thin, and
- * color only means something (a status, the accent for what matters, the problem color for
- * what blocks). Pointing at something lights it and fades the rest.
+ * beluga-graph: diagrams drawn in the window's own greys. Cards are calm and raised, lines are
+ * thin, and color is used sparingly: a soft tint on each kind's icon, a status (always with its
+ * own shape and word), the accent for what matters, the problem color for what blocks.
+ * Pointing at something lights it and fades the rest.
  */
+
+/* ---------- Palette (both themes) ---------- */
+
+.block,
+.full {
+  --graph-bg: var(--bg-sunken);
+  --graph-card: var(--bg-raised);
+  --graph-ring: rgba(0, 0, 0, 0.11);
+  --graph-ring-hot: rgba(0, 0, 0, 0.24);
+  --graph-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.04), 0 2px 8px -2px rgba(0, 0, 0, 0.06);
+  --graph-shadow-hot: 0 2px 4px rgba(0, 0, 0, 0.05), 0 10px 28px -8px rgba(0, 0, 0, 0.2);
+  --graph-line: color-mix(in srgb, var(--text-3) 72%, transparent);
+  --graph-line-hot: color-mix(in srgb, var(--text) 70%, transparent);
+  --graph-block: color-mix(in srgb, var(--error) 80%, var(--text-3));
+  --graph-dot: color-mix(in srgb, var(--text-3) 40%, transparent);
+  --graph-group: color-mix(in srgb, var(--text) 2.2%, transparent);
+  --graph-group-head: color-mix(in srgb, var(--text) 3%, transparent);
+  --graph-violet: #7357e8;
+  --graph-teal: #0e8a86;
+}
+:global(:root[data-theme='dark']) .block,
+:global(:root[data-theme='dark']) .full {
+  --graph-bg: #161618;
+  --graph-card: #232326;
+  --graph-ring: rgba(255, 255, 255, 0.09);
+  --graph-ring-hot: rgba(255, 255, 255, 0.24);
+  --graph-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 14px -4px rgba(0, 0, 0, 0.4);
+  --graph-shadow-hot: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 4px rgba(0, 0, 0, 0.4), 0 12px 32px -8px rgba(0, 0, 0, 0.65);
+  --graph-line: color-mix(in srgb, var(--text-3) 85%, transparent);
+  --graph-dot: rgba(255, 255, 255, 0.1);
+  --graph-group: rgba(255, 255, 255, 0.018);
+  --graph-group-head: rgba(255, 255, 255, 0.025);
+  --graph-violet: #a593ff;
+  --graph-teal: #4cc9c0;
+}
 
 /* ---------- The card in a conversation ---------- */
 
 .block {
-  margin: 0.55em 0 0.85em;
-  border-radius: var(--radius-l);
+  margin: 0.6em 0 0.9em;
+  border-radius: 12px;
   background: var(--bg);
-  box-shadow: 0 0 0 1px var(--hairline-strong);
+  box-shadow:
+    0 0 0 1px var(--hairline-strong),
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 6px 20px -10px rgba(0, 0, 0, 0.12);
   overflow: hidden;
   /* Selecting text around it shouldn't select the graph's labels. */
   user-select: none;
 }
 .blockHead {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 9px 12px 8px 13px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 10px 12px;
   border-bottom: 1px solid var(--hairline);
+  background: var(--bg);
+}
+.blockIcon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .blockTitles {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
-  flex-wrap: wrap;
+  flex: 1;
 }
 .blockTitle {
   font-weight: 600;
   font-size: 13px;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
   color: var(--text);
 }
 .blockSummary {
   color: var(--text-2);
   font-size: 12px;
+  line-height: 1.35;
 }
 .blockMeta {
+  flex: none;
+  align-self: center;
   margin-left: auto;
-  color: var(--text-3);
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--text-2);
+  background: var(--bg-hover);
   font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -79,21 +140,14 @@
 
 /* ---------- The canvas ---------- */
 
-.block,
-.full {
-  --graph-bg: var(--bg-sunken);
-  --graph-line: color-mix(in srgb, var(--text-3) 78%, transparent);
-  --graph-block: color-mix(in srgb, var(--error) 75%, var(--text-3));
-  --graph-dot: color-mix(in srgb, var(--text-3) 34%, transparent);
-}
 .canvas {
   position: absolute;
   inset: 0;
   outline: none;
   --xy-background-color: transparent;
   --xy-background-pattern-color: var(--graph-dot);
-  --xy-minimap-background-color: var(--bg-raised);
-  --xy-minimap-mask-background-color: color-mix(in srgb, var(--bg-sunken) 72%, transparent);
+  --xy-minimap-background-color: var(--graph-card);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--graph-bg) 70%, transparent);
   --xy-minimap-mask-stroke-color: var(--hairline-strong);
   --xy-minimap-mask-stroke-width: 1;
   --xy-minimap-node-background-color: var(--hairline-strong);
@@ -130,7 +184,7 @@
   border-radius: 5px 0 0 0;
   background: transparent;
   font-size: 9px;
-  opacity: 0.55;
+  opacity: 0.4;
 }
 .canvas :global(.react-flow__attribution a) {
   color: var(--text-3);
@@ -164,91 +218,119 @@
 
 .card {
   position: relative;
-  min-width: 156px;
-  max-width: 260px;
-  padding: 9px 11px;
-  border-radius: 10px;
-  background: var(--bg-raised);
+  min-width: 164px;
+  max-width: 264px;
+  padding: 10px 12px 10px 10px;
+  border-radius: 12px;
+  background: var(--graph-card);
   color: var(--text);
   font-size: 12.5px;
   box-shadow:
-    0 0 0 1px var(--hairline-strong),
-    0 1px 2px rgba(0, 0, 0, 0.05),
-    0 3px 10px -4px rgba(0, 0, 0, 0.08);
+    0 0 0 1px var(--graph-ring),
+    var(--graph-shadow);
   /* No transform here: inside the zoomed viewport it would composite and blur the text (sharp-zoom.ts). */
   transition: box-shadow var(--dur) var(--ease-out);
 }
+:global(.react-flow__node):hover .card,
 .nodeHot .card {
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--text) 26%, transparent),
-    0 2px 4px rgba(0, 0, 0, 0.06),
-    0 8px 22px -6px rgba(0, 0, 0, 0.18);
+    0 0 0 1px var(--graph-ring-hot),
+    var(--graph-shadow-hot);
 }
 .nodeDim {
-  opacity: 0.28;
+  opacity: 0.3;
+}
+/* What Claude marked important: an accent ring with a soft glow. */
+.emphasis,
+:global(.react-flow__node):hover .emphasis,
+.nodeHot .emphasis {
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--accent) 75%, transparent),
+    0 0 0 5px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 8px 24px -8px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 :global(.react-flow__node.selected) .card,
 :global(.react-flow__node.selected) .group {
   box-shadow:
-    0 0 0 1.5px var(--accent),
-    0 0 0 5px color-mix(in srgb, var(--accent) 16%, transparent),
-    0 8px 22px -6px rgba(0, 0, 0, 0.18);
-}
-.emphasis {
-  box-shadow:
-    0 0 0 1.5px color-mix(in srgb, var(--accent) 80%, transparent),
-    0 0 0 5px color-mix(in srgb, var(--accent) 12%, transparent),
-    0 3px 10px -4px rgba(0, 0, 0, 0.1);
+    0 0 0 2px var(--accent),
+    0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent),
+    var(--graph-shadow-hot);
 }
 .head {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
 }
+
+/* A kind's icon, softly tinted by its family. */
 .kindIcon {
+  --tint: var(--text-2);
   flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
-  color: var(--text-2);
-  background: var(--bg-sunken);
-  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 11%, var(--graph-card, var(--bg-raised)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 17%, transparent);
 }
-/* A hint of what family a node is, on its icon only. */
+.kindIconLg {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+.kindIconSm {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
 .kindIcon[data-kind='client'] {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
+  --tint: var(--accent);
+}
+.kindIcon[data-kind='service'],
+.kindIcon[data-kind='function'] {
+  --tint: var(--graph-violet);
 }
 .kindIcon[data-kind='database'],
-.kindIcon[data-kind='storage'],
-.kindIcon[data-kind='queue'] {
-  color: var(--info);
-  background: color-mix(in srgb, var(--info) 9%, var(--bg-raised));
+.kindIcon[data-kind='storage'] {
+  --tint: var(--graph-teal);
 }
-.kindIcon[data-kind='decision'] {
-  color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 10%, var(--bg-raised));
+.kindIcon[data-kind='queue'] {
+  --tint: var(--info);
+}
+.kindIcon[data-kind='decision'],
+.kindIcon[data-kind='note'] {
+  --tint: var(--warn);
 }
 .kindIcon[data-kind='milestone'],
 .kindIcon[data-kind='task'] {
-  color: var(--claude);
-  background: color-mix(in srgb, var(--claude) 10%, var(--bg-raised));
+  --tint: var(--claude);
+}
+.kindIcon[data-kind='metric'] {
+  --tint: var(--ok);
+}
+.kindIcon[data-kind='external'],
+.kindIcon[data-kind='file'],
+.kindIcon[data-kind='image'],
+.kindIcon[data-kind='group'] {
+  --tint: var(--text-2);
 }
 .kindIcon[data-kind='actor'],
 .kindIcon[data-kind='person'] {
+  --tint: var(--text-2);
   border-radius: 50%;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--text) 9%, var(--graph-card, var(--bg-raised))), color-mix(in srgb, var(--text) 4%, var(--graph-card, var(--bg-raised))));
 }
 .initial {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text);
 }
 .titles {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
@@ -256,66 +338,77 @@
   font-weight: 600;
   font-size: 12.5px;
   line-height: 1.25;
+  letter-spacing: -0.005em;
   overflow-wrap: anywhere;
 }
 .sublabel {
-  color: var(--text-2);
+  color: var(--text-3);
   font-size: 11px;
   line-height: 1.3;
   font-weight: 400;
+}
+:global(:root[data-theme='light']) .card .sublabel {
+  color: color-mix(in srgb, var(--text-2) 80%, var(--text-3));
 }
 .tag {
   flex: none;
   align-self: flex-start;
   margin-left: 4px;
-  padding: 1px 6px;
+  padding: 0 6px;
   border-radius: 5px;
   font-size: 10px;
-  font-weight: 500;
-  line-height: 15px;
+  font-weight: 550;
+  line-height: 17px;
   color: var(--text-2);
   background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--hairline);
   white-space: nowrap;
 }
 .foot {
   display: flex;
-  margin-top: 8px;
-  padding-top: 7px;
-  border-top: 1px solid var(--hairline);
+  margin-top: 9px;
+  padding-left: 38px;
 }
 /* Kinds that look different. */
 .kind_external {
-  background: color-mix(in srgb, var(--bg-raised) 55%, transparent);
+  background: color-mix(in srgb, var(--graph-card) 60%, transparent);
   box-shadow: none;
-  outline: 1px dashed var(--hairline-strong);
+  outline: 1.25px dashed color-mix(in srgb, var(--text-3) 55%, transparent);
   outline-offset: -1px;
+}
+:global(.react-flow__node):hover .kind_external,
+.nodeHot .kind_external {
+  outline-color: color-mix(in srgb, var(--text-2) 80%, transparent);
 }
 .kind_note {
   max-width: 240px;
-  background: color-mix(in srgb, var(--warn) 6%, var(--bg-raised));
+  background: color-mix(in srgb, var(--warn) 7%, var(--graph-card));
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--warn) 18%, var(--hairline)),
-    0 2px 6px -3px rgba(0, 0, 0, 0.08);
+    0 0 0 1px color-mix(in srgb, var(--warn) 20%, var(--graph-ring)),
+    var(--graph-shadow);
 }
 .kind_note .label {
   font-weight: 500;
 }
 .kind_note .kindIcon {
-  color: var(--warn);
   background: transparent;
   box-shadow: none;
   width: 18px;
 }
+.kind_note .foot {
+  padding-left: 28px;
+}
 .kind_decision {
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--warn) 34%, var(--hairline-strong)),
-    0 1px 2px rgba(0, 0, 0, 0.05);
+    0 0 0 1px color-mix(in srgb, var(--warn) 38%, var(--graph-ring)),
+    var(--graph-shadow);
 }
 .kind_milestone {
-  padding: 11px 13px;
+  padding: 12px 14px 12px 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--claude) 6%, var(--graph-card)), var(--graph-card));
   box-shadow:
-    0 0 0 1.5px color-mix(in srgb, var(--claude) 45%, var(--hairline-strong)),
-    0 3px 10px -4px rgba(0, 0, 0, 0.1);
+    0 0 0 1.5px color-mix(in srgb, var(--claude) 45%, var(--graph-ring)),
+    var(--graph-shadow);
 }
 .kind_milestone .label {
   font-size: 13.5px;
@@ -323,51 +416,71 @@
 .kind_actor,
 .kind_person {
   min-width: 0;
-  padding: 5px 14px 5px 5px;
+  padding: 5px 16px 5px 5px;
   border-radius: 999px;
 }
 .kind_actor .kindIcon,
 .kind_person .kindIcon {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
 }
 .kind_actor .foot,
 .kind_person .foot {
   display: none;
 }
+.kind_metric {
+  min-width: 140px;
+  padding: 11px 14px 12px;
+}
+.kind_metric .foot {
+  padding-left: 0;
+}
 .metric {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
-  padding: 2px 2px 1px;
+  gap: 3px;
+}
+.metricHead {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 6px;
+}
+.metricHead .tag {
+  margin-left: auto;
 }
 .metricValue {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 .metricLabel {
   color: var(--text-2);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 /* A database's fields. */
 .table {
   padding: 0;
-  min-width: 210px;
+  min-width: 220px;
   overflow: hidden;
 }
 .table .head {
-  padding: 9px 11px;
+  padding: 10px 12px 10px 10px;
   border-bottom: 1px solid var(--hairline);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--graph-teal) 5%, transparent), transparent);
 }
 .table .foot {
   margin: 0;
-  padding: 7px 11px 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--hairline);
 }
 .fields {
   margin: 0;
@@ -376,26 +489,37 @@
 }
 .fieldRow {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
-  align-items: baseline;
-  column-gap: 6px;
-  padding: 2.5px 11px 2.5px 9px;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 3px 12px 3px 10px;
   font-family: var(--font-mono);
   font-size: 11px;
-  line-height: 1.45;
+  line-height: 1.5;
+}
+.fieldRow + .fieldRow {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--hairline) 70%, transparent);
 }
 .fieldKey {
+  justify-self: start;
   font-family: var(--font);
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
+  line-height: 14px;
   color: var(--text-3);
+}
+.fieldKey[data-key] {
+  padding: 0 4px;
+  border-radius: 4px;
 }
 .fieldKey[data-key='pk'] {
   color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 13%, transparent);
 }
 .fieldKey[data-key='fk'] {
   color: var(--info);
+  background: color-mix(in srgb, var(--info) 13%, transparent);
 }
 .fieldName {
   color: var(--text);
@@ -405,6 +529,7 @@
 }
 .fieldType {
   color: var(--text-3);
+  font-size: 10.5px;
   white-space: nowrap;
 }
 .fieldNote {
@@ -412,6 +537,7 @@
   font-family: var(--font);
   color: var(--text-2);
   font-size: 11px;
+  line-height: 1.4;
 }
 
 /* A picture as proof. */
@@ -449,66 +575,89 @@
 .imageCaption {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 7px 10px 8px;
+  gap: 2px;
+  padding: 8px 12px 10px;
   border-top: 1px solid var(--hairline);
 }
 
-/* A group: a labelled box around what belongs together. */
+/* A group: a soft, labelled box around what belongs together. */
 .group {
   width: 100%;
   height: 100%;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--text) 2.4%, transparent);
-  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  border-radius: 16px;
+  background: var(--graph-group);
+  box-shadow: inset 0 0 0 1px var(--graph-ring);
+  overflow: hidden;
   transition: box-shadow var(--dur) var(--ease-out);
 }
 .group.emphasis {
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .groupHead {
+  /* GROUP_HEAD in graph-model.ts. */
+  height: 34px;
+  box-sizing: border-box;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--graph-group-head);
+}
+.groupMark {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-3) 70%, transparent);
+}
+.group.emphasis .groupMark {
+  background: var(--accent);
 }
 .groupName {
   font-size: 10.5px;
   font-weight: 650;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-2);
+  white-space: nowrap;
+}
+.groupHead .sublabel {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.groupHead .tag {
+  align-self: center;
+  margin-left: auto;
 }
 
-/* Status. */
+/* Status: a tinted pill with a shape and a word. */
 .status {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  height: 20px;
+  padding: 0 8px 0 5px;
+  border-radius: 999px;
   font-size: 10.5px;
-  font-weight: 500;
+  font-weight: 550;
   white-space: nowrap;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 16%, transparent);
 }
 .statusMark {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.status[data-status='todo'] .statusMark,
-.status[data-status='idle'] .statusMark {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px currentColor;
+  flex: none;
+  display: block;
 }
 .status[data-status='active'] .statusMark {
-  background: conic-gradient(currentColor 0 50%, transparent 50% 100%);
-  box-shadow: inset 0 0 0 1.5px currentColor;
   opacity: var(--pulse);
   animation: pulse 1.8s var(--ease-out) infinite;
-}
-.status[data-status='review'] .statusMark {
-  background: radial-gradient(circle, currentColor 0 2px, transparent 2.5px);
-  box-shadow: inset 0 0 0 1.5px currentColor;
 }
 /* A custom property, not opacity itself: an opacity animation would composite the zoomed viewport and blur it (sharp-zoom.ts). */
 @property --pulse {
@@ -522,7 +671,7 @@
   }
 }
 .tone_muted {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .tone_claude {
   color: var(--claude);
@@ -545,36 +694,39 @@
 .canvas .edge {
   fill: none;
   stroke: var(--graph-line);
-  stroke-width: 1.4;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   transition:
     stroke var(--dur) var(--ease-out),
     opacity var(--dur) var(--ease-out);
 }
 .canvas .edge_call {
-  stroke-width: 1.6;
+  stroke-width: 1.65;
 }
 .canvas .edge_async {
-  stroke-dasharray: 6 5;
+  stroke-dasharray: 5 5;
+  stroke-linecap: butt;
 }
 .canvas .edgeFlowing {
   animation: dash 1.1s linear infinite;
 }
 @keyframes dash {
   to {
-    stroke-dashoffset: -22;
+    stroke-dashoffset: -20;
   }
 }
 .canvas .edge_depends {
-  stroke-dasharray: 0.5 5;
+  stroke-dasharray: 0.1 5;
   stroke-linecap: round;
-  stroke-width: 2;
+  stroke-width: 2.2;
 }
 .canvas .edge_blocks {
   stroke: var(--graph-block);
-  stroke-width: 1.6;
+  stroke-width: 1.75;
 }
 .canvas .edgeHot {
-  stroke: color-mix(in srgb, var(--text) 62%, transparent);
+  stroke: var(--graph-line-hot);
   stroke-width: 2;
 }
 .canvas .edgeEmphasis {
@@ -582,45 +734,73 @@
   stroke-width: 2;
 }
 .canvas .edgeDim {
-  opacity: 0.16;
+  opacity: 0.14;
+}
+.markPlain,
+.markHot,
+.markAccent,
+.markBlocks {
+  stroke-width: 1;
+  stroke-linejoin: round;
 }
 .markPlain {
   fill: var(--graph-line);
+  stroke: var(--graph-line);
 }
 .markHot {
-  fill: color-mix(in srgb, var(--text) 62%, transparent);
+  fill: var(--graph-line-hot);
+  stroke: var(--graph-line-hot);
 }
 .markAccent {
   fill: var(--accent);
+  stroke: var(--accent);
 }
 .markBlocks {
   fill: var(--graph-block);
+  stroke: var(--graph-block);
 }
 .edgeDot {
-  fill: color-mix(in srgb, var(--text) 55%, transparent);
+  fill: color-mix(in srgb, var(--text) 60%, var(--graph-card));
+  stroke: var(--graph-bg);
+  stroke-width: 1.5;
 }
 .edgeDotAccent {
   fill: var(--accent);
 }
 .edgeLabel {
   position: absolute;
-  padding: 1px 7px;
-  border-radius: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
   font-size: 10.5px;
   font-weight: 500;
-  line-height: 16px;
+  line-height: 18px;
   color: var(--text-2);
-  background: var(--bg-raised);
-  box-shadow: 0 0 0 0.5px var(--hairline-strong);
+  background: var(--graph-card);
+  box-shadow:
+    0 0 0 1px var(--graph-ring),
+    0 1px 2px rgba(0, 0, 0, 0.05);
   white-space: nowrap;
   pointer-events: none;
   transition:
     opacity var(--dur) var(--ease-out),
-    color var(--dur) var(--ease-out);
+    color var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out);
+}
+.edgeLabelAccent {
+  color: var(--accent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.edgeLabelBlocks {
+  color: var(--error);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--error) 35%, transparent);
 }
 .edgeLabelHot {
   color: var(--text);
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--text) 30%, transparent);
+  box-shadow:
+    0 0 0 1px var(--graph-ring-hot),
+    0 2px 6px -2px rgba(0, 0, 0, 0.15);
 }
 .edgeLabelDim {
   opacity: 0.2;
@@ -632,13 +812,15 @@
 .zoom {
   display: flex;
   gap: 1px;
-  margin: 9px !important;
+  margin: 10px !important;
   padding: 3px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--bg-raised) 88%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--graph-card) 86%, transparent);
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  box-shadow: var(--shadow-pop);
+  box-shadow:
+    0 0 0 1px var(--graph-ring),
+    0 4px 16px -4px rgba(0, 0, 0, 0.14);
 }
 .tools {
   opacity: 0;
@@ -655,24 +837,27 @@
   transform: none;
 }
 .canvas:has(.inspector) .tools {
-  margin-right: 300px !important;
+  margin-right: 302px !important;
 }
 .canvas:has(.inspector[data-wide='true']) .tools {
-  margin-right: 362px !important;
+  margin-right: 364px !important;
 }
 .minimap {
   margin: 12px !important;
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: var(--shadow-pop);
+  box-shadow:
+    0 0 0 1px var(--graph-ring),
+    0 6px 20px -6px rgba(0, 0, 0, 0.18);
 }
 .miniNode {
-  fill: color-mix(in srgb, var(--text-3) 55%, transparent);
+  fill: color-mix(in srgb, var(--text-3) 50%, transparent);
+  rx: 4;
 }
 .miniGroup {
-  fill: transparent;
+  fill: color-mix(in srgb, var(--text) 3%, transparent);
   stroke: var(--hairline-strong);
-  stroke-width: 6;
+  stroke-width: 4;
 }
 
 /* ---------- Walkthrough ---------- */
@@ -680,23 +865,25 @@
 .walk {
   position: absolute;
   left: 50%;
-  bottom: 12px;
+  bottom: 14px;
   z-index: 7;
-  width: min(680px, calc(100% - 24px));
+  width: min(640px, calc(100% - 28px));
   transform: translateX(-50%);
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 10px 10px 14px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
-  backdrop-filter: blur(18px) saturate(1.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
-  box-shadow: var(--shadow-pop);
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 12px 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--graph-card) 92%, transparent);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  box-shadow:
+    0 0 0 1px var(--graph-ring),
+    0 12px 36px -10px rgba(0, 0, 0, 0.28);
   animation: rise var(--dur) var(--ease-out);
 }
 .canvas:has(.inspector) .walk {
-  width: min(680px, calc(100% - 320px));
+  width: min(640px, calc(100% - 324px));
   left: calc((100% - 296px) / 2);
 }
 @keyframes rise {
@@ -707,29 +894,32 @@
 }
 .walkDots {
   display: flex;
-  flex-direction: column;
   gap: 4px;
-  align-self: stretch;
-  justify-content: center;
+  padding-right: 4px;
 }
 .walkDot {
-  width: 5px;
-  height: 5px;
+  flex: 1;
+  height: 3px;
   padding: 0;
   border: 0;
-  border-radius: 3px;
-  background: var(--hairline-strong);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 11%, transparent);
   cursor: pointer;
-  transition:
-    height var(--dur) var(--ease-out),
-    background var(--dur) var(--ease-out);
+  transition: background var(--dur) var(--ease-out);
+}
+.walkDot:hover {
+  background: color-mix(in srgb, var(--text) 22%, transparent);
 }
 .walkDot[data-on='past'] {
   background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .walkDot[data-on='true'] {
-  height: 14px;
   background: var(--accent);
+}
+.walkMain {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 .walkText {
   display: flex;
@@ -739,16 +929,16 @@
   flex: 1;
 }
 .walkCount {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-3);
+  letter-spacing: 0.04em;
+  color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
 .walkTitle {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
+  letter-spacing: -0.005em;
   color: var(--text);
 }
 .walkBody {
@@ -764,44 +954,54 @@
 }
 .walkNext,
 .walkDone {
-  height: 26px;
-  padding: 0 13px;
+  height: 28px;
+  padding: 0 14px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   font: inherit;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 550;
   color: #fff;
   background: var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 1px 2px color-mix(in srgb, var(--accent) 40%, transparent);
   cursor: pointer;
 }
 .walkNext:hover,
 .walkDone:hover {
   filter: brightness(1.08);
 }
+.walkNext:focus-visible,
+.walkDone:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
 
 /* ---------- Details ---------- */
 
 .inspector {
   position: absolute;
-  top: 9px;
-  right: 9px;
-  bottom: 9px;
+  top: 10px;
+  right: 10px;
+  bottom: 10px;
   z-index: 8;
-  width: 280px;
+  width: 282px;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-raised) 95%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--graph-card) 96%, transparent);
   backdrop-filter: blur(20px) saturate(1.5);
   -webkit-backdrop-filter: blur(20px) saturate(1.5);
-  box-shadow: var(--shadow-pop);
+  box-shadow:
+    0 0 0 1px var(--graph-ring),
+    0 16px 40px -12px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   user-select: text;
   animation: slideIn var(--dur) var(--ease-out);
 }
 .inspector[data-wide='true'] {
-  width: 340px;
+  width: 344px;
 }
 @keyframes slideIn {
   from {
@@ -812,13 +1012,19 @@
 .inspectorHead {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 10px 8px 10px 12px;
+  gap: 11px;
+  padding: 12px 8px 12px 14px;
   border-bottom: 1px solid var(--hairline);
 }
+.inspectorHead .sublabel {
+  color: var(--text-3);
+  font-size: 11px;
+}
 .inspectorTitle {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
   color: var(--text);
   overflow-wrap: anywhere;
 }
@@ -827,24 +1033,26 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 11px 12px 14px;
+  gap: 16px;
+  padding: 14px 14px 16px;
   font-size: 12.5px;
+  line-height: 1.5;
 }
 .inspectorOpen {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 12px;
+  height: 28px;
+  padding: 0 13px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   font: inherit;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 550;
   color: #fff;
   background: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
   cursor: pointer;
 }
 .inspectorOpen:hover {
@@ -860,12 +1068,14 @@
   gap: 10px;
 }
 .inspectorValue {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 .inspectorText {
   font-size: 12.5px;
+  color: var(--text);
 }
 .inspectorText > :first-child > :first-child {
   margin-top: 0;
@@ -874,19 +1084,21 @@
   margin-bottom: 0;
 }
 .inspectorSection {
-  margin: 0 0 5px;
+  margin: 0 0 7px;
   font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-3);
 }
 .inspector .fields {
-  padding: 2px 0 0;
+  padding: 2px 0;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  background: color-mix(in srgb, var(--text) 1.5%, transparent);
 }
 .inspector .fieldRow {
-  padding-left: 0;
-  padding-right: 0;
+  padding: 4px 10px 4px 8px;
 }
 .inspectorEmpty {
   margin: 0;
@@ -903,17 +1115,19 @@
 .nodeLinkOff {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   max-width: 100%;
-  padding: 3px 6px;
+  padding: 4px 7px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: none;
   font: inherit;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   color: var(--accent);
   text-align: left;
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 .nodeLink span {
   overflow: hidden;
@@ -921,58 +1135,74 @@
   white-space: nowrap;
 }
 .nodeLink:hover {
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 .nodeLinkOff {
   color: var(--text-2);
   cursor: default;
 }
 .connections {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 0 -6px;
   padding: 0;
   list-style: none;
 }
 .connection {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: baseline;
-  gap: 1px 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   width: 100%;
-  padding: 5px 6px;
+  padding: 6px 7px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 9px;
   background: none;
   font: inherit;
   text-align: left;
   color: inherit;
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 .connection:hover {
   background: var(--bg-hover);
 }
+.connection:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: -2px;
+}
+.connectionText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
 .connectionVerb {
-  grid-column: 1 / -1;
   font-size: 10.5px;
+  line-height: 1.3;
   color: var(--text-3);
 }
 .connectionName {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 500;
+  font-weight: 550;
+  line-height: 1.35;
   color: var(--text);
-}
-.connectionName svg {
-  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .connectionLabel {
-  font-size: 11px;
+  flex: none;
+  max-width: 120px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  line-height: 17px;
   color: var(--text-2);
+  background: var(--bg-hover);
   font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 130px;
 }
 
 /* ---------- The whole window ---------- */
@@ -981,7 +1211,7 @@
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(10, 10, 12, 0.38);
+  background: rgba(10, 10, 12, 0.4);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   animation: fadeIn var(--dur) var(--ease-out);
@@ -992,7 +1222,7 @@
   z-index: 61;
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--bg);
   box-shadow:
     0 0 0 0.5px var(--hairline-strong),
@@ -1015,14 +1245,15 @@
 .fullHead {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 10px 10px 18px;
+  gap: 10px;
+  padding: 10px 10px 10px 14px;
   border-bottom: 1px solid var(--hairline);
 }
 .fullTitle {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .grow {
   flex: 1;

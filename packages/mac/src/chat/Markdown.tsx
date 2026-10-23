@@ -17,6 +17,9 @@ import { type MentionWorld, linkMentions, parseMentionHref } from './mentions.js
 import { quoteInBox } from './message-menu.js';
 import { GraphBlock } from '../components/graph/GraphBlock.js';
 import { isGraphFence } from '@beluga/shared/graph-spec.js';
+import { MarkdownTable, ViewBlock } from '../components/views/ViewBlock.js';
+import { InlineCode } from '../components/views/Inline.js';
+import { viewFenceType } from '@beluga/shared/view-spec.js';
 import s from './chat.module.css';
 
 /** Syntax colors load on demand (shiki is big), then stay. */
@@ -128,6 +131,12 @@ function MessageGraph({ code, localImages }: { code: string; localImages: boolea
   return <GraphBlock code={code} live={live} localImages={localImages} />;
 }
 
+/** A live element in a message (a table, chart…): its source runs only for your own Claude's. */
+function MessageView({ code, type, local }: { code: string; type: NonNullable<ReturnType<typeof viewFenceType>>; local: boolean }) {
+  const live = useContext(LiveText);
+  return <ViewBlock code={code} type={type} live={live} local={local} />;
+}
+
 type HastNode = { type: string; tagName?: string; value?: string; children?: HastNode[] };
 
 /** How many images a paragraph holds when it's nothing but images (0 otherwise). */
@@ -216,16 +225,26 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
     code: ({ className, children }) => {
       const lang = /language-([\w-]+)/.exec(className ?? '')?.[1];
       const code = String(children).replace(/\n$/, '');
-      if (!className && !code.includes('\n')) return <code className={s.inlineCode}>{children}</code>;
+      // Inline code that stands for something (a color, a status, keys…) is drawn as it (views/inline-model.ts).
+      if (!className && !code.includes('\n')) return <InlineCode text={code} fallback={<code className={s.inlineCode}>{children}</code>} />;
       // A diagram Claude drew (docs/graphs.md): only data, drawn with the window's own pieces.
       if (isGraphFence(lang)) return <MessageGraph code={code} localImages={localImages} />;
+      // Tables, charts, stats, code and colors (docs/views.md): data, drawn live.
+      const view = viewFenceType(lang);
+      if (view) return <MessageView code={code} type={view} local={localImages} />;
       return <Code code={code} {...(lang ? { lang } : {})} />;
     },
     pre: ({ children }) => <>{children}</>,
-    table: ({ children }) => (
-      <div className={s.tableWrap}>
-        <table>{children}</table>
-      </div>
+    // A plain table (the kind Claude Code prints) sorts, searches and charts like a view; one with links stays as written.
+    table: ({ node, children }) => (
+      <MarkdownTable
+        node={node}
+        fallback={
+          <div className={s.tableWrap}>
+            <table>{children}</table>
+          </div>
+        }
+      />
     ),
   }), [actions, localImages]);
   return (

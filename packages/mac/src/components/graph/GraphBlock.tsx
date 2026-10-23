@@ -8,7 +8,7 @@ import { copyText } from '../../lib/copy.js';
 import { toast, useBeluga } from '../../lib/beluga.js';
 import { type Size, fittedHeight, inlineHeight } from './graph-model.js';
 import { cachedLayout } from './layout-cache.js';
-import { KindIcon } from './marks.js';
+import { GraphGlyph } from './marks.js';
 import g from './graph.module.css';
 
 /**
@@ -27,7 +27,7 @@ export const GraphBlock = memo(function GraphBlock({ code, live = false, localIm
       return (
         <figure className={g.block} data-state="drawing" aria-label="Graph">
           <div className={g.drawing}>
-            <KindIcon kind="group" size={14} />
+            <GraphGlyph size={14} />
             Drawing a graph…
           </div>
         </figure>
@@ -78,6 +78,9 @@ function GraphCard({ graph, code, warnings, localImages }: { graph: Graph; code:
       <ActionsContext items={items}>
       <figure ref={ref} className={g.block} data-state="ready" aria-label={graph.title ? `Graph: ${graph.title}` : 'Graph'}>
         <figcaption className={g.blockHead}>
+          <span className={g.blockIcon} aria-hidden="true">
+            <GraphGlyph size={14} />
+          </span>
           <span className={g.blockTitles}>
             <span className={g.blockTitle}>{graph.title ?? 'Graph'}</span>
             {graph.summary ? <span className={g.blockSummary}>{graph.summary}</span> : null}
@@ -107,6 +110,9 @@ function FullWindow({ graph, code, localImages, onClose, onCopy }: { graph: Grap
         <Dialog.Overlay className={g.fullOverlay} />
         <Dialog.Content className={g.full} aria-describedby={undefined} onOpenAutoFocus={(e) => e.preventDefault()}>
           <header className={g.fullHead}>
+            <span className={g.blockIcon} aria-hidden="true">
+              <GraphGlyph size={14} />
+            </span>
             <Dialog.Title className={g.fullTitle}>{graph.title ?? 'Graph'}</Dialog.Title>
             {graph.summary ? <span className={g.blockSummary}>{graph.summary}</span> : null}
             <span className={g.grow} />

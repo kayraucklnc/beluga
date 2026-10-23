@@ -20,7 +20,7 @@ Claude can draw. When a picture explains better than prose, Claude adds a fenced
 - **Open in Full Window:** room to explore, a minimap, zoom buttons, two-finger scroll to pan, pinch to zoom. Esc closes.
 - **Copy as JSON** (also in the right-click menu).
 
-In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag to pan. A long chain wraps onto more rows so it stays readable. The card's height follows the graph.
+In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag to pan. A graph is laid out the way that reads biggest in its frame: as Claude drew it if it fits, else turned top-to-bottom, and a very long chain wraps onto more rows. The card's height follows the graph.
 
 ## The format
 
@@ -117,11 +117,13 @@ In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag
 - **Drawing:** `packages/mac/src/components/graph/`:
   - `GraphBlock.tsx`: the card, the errors, the full window
   - `FlowGraph.tsx`: React Flow (`@xyflow/react`); it measures nodes out of sight, lays them out, then shows them
-  - `layout.ts`: ELK (`elkjs`), layered, groups as compound nodes, orthogonal lines that ELK routes, wrapping to the frame's shape
+  - `layout.ts`: ELK (`elkjs`), layered, groups as compound nodes, orthogonal lines that ELK routes. `FlowGraph.tsx` tries both ways round, plainly and wrapped to the frame's shape, and keeps the one that reads biggest (`bestLayout` in `graph-model.ts`)
   - `graph-model.ts`: the pure parts, tested in `tests/mac-graph.test.ts`
   - `nodes.tsx`, `edges.tsx`, `Inspector.tsx`, `Walkthrough.tsx`
 - **Load time:** React Flow and ELK load the first time a graph shows.
 - **Where blocks are found:** the chat's Markdown (`chat/Markdown.tsx`) and the document reader (`components/markdown/MarkdownDoc.tsx`) both hand ```` ```beluga-graph ```` blocks to `GraphBlock`.
 - **Demo:** `beluga demo` answers "visualize…" with a payment-flow graph (`src/agent/mock-graphs.ts`).
+
+For tables, charts, stat tiles, code and colors (live from a file, database, web address or command), see [Views](views.md). Claude's `show` tool makes graphs too.
 
 Graphs are the drawing engine for [Tasks and Plans](tasks-and-plans.md): plans, dependency graphs and milestone recaps are drawn with them.

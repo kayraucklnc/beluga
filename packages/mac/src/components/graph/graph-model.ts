@@ -159,15 +159,19 @@ export function elkGraph(graph: Graph, sizes: ReadonlyMap<string, Size>, directi
     const size = sizes.get(n.id) ?? { width: 180, height: 56 };
     return { id: n.id, width: size.width, height: size.height };
   };
+  // Across, a label needs its width between two layers: ELK makes room for it. Down, a label is
+  // a short pill on a line, and the gap between layers is room enough (ELK would give each one a
+  // layer of its own, and the graph gets twice as tall).
+  const vertical = direction === 'down' || direction === 'up';
   return {
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': ELK_DIRECTION[direction],
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '72',
-      'elk.spacing.nodeNode': '32',
-      'elk.layered.spacing.edgeNodeBetweenLayers': '24',
+      'elk.layered.spacing.nodeNodeBetweenLayers': vertical ? '48' : '64',
+      'elk.spacing.nodeNode': '28',
+      'elk.layered.spacing.edgeNodeBetweenLayers': vertical ? '16' : '22',
       'elk.spacing.edgeLabel': '6',
       'elk.edgeRouting': 'ORTHOGONAL',
       'elk.edgeLabels.placement': 'CENTER',
@@ -182,7 +186,7 @@ export function elkGraph(graph: Graph, sizes: ReadonlyMap<string, Size>, directi
       ...(aspect ? { 'elk.layered.wrapping.strategy': 'MULTI_EDGE', 'elk.aspectRatio': aspect.toFixed(2), 'elk.layered.wrapping.additionalEdgeSpacing': '16' } : {}),
     },
     children: (kids.get(undefined) ?? []).map(toElk),
-    edges: graph.edges.map((e) => ({ id: e.id, sources: [e.from], targets: [e.to], ...(e.label ? { labels: [{ text: e.label, ...labelSize(e.label) }] } : {}) })),
+    edges: graph.edges.map((e) => ({ id: e.id, sources: [e.from], targets: [e.to], ...(e.label && !vertical ? { labels: [{ text: e.label, ...labelSize(e.label) }] } : {}) })),
   };
 }
 
@@ -261,6 +265,68 @@ export function roundedPath(points: readonly Point[], radius = 9): string {
     d += ` L${a.x},${a.y} Q${p.x},${p.y} ${b.x},${b.y}`;
   }
   return d;
+}
+
+export interface Box {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Every node that isn't a group, in the whole graph's coordinates (what a label mustn't cover). */
+export function nodeBoxes(out: ElkOutput): Box[] {
+  const boxes: Box[] = [];
+  const walk = (n: ElkOutput, at: Point): void => {
+    for (const c of n.children ?? []) {
+      const abs = { x: at.x + (c.x ?? 0), y: at.y + (c.y ?? 0) };
+      if (c.children?.length) walk(c, abs);
+      else boxes.push({ ...abs, width: c.width ?? 0, height: c.height ?? 0 });
+    }
+  };
+  walk(out, { x: 0, y: 0 });
+  return boxes;
+}
+
+const overlaps = (a: Box, b: Box, gap: number): boolean => a.x < b.x + b.width + gap && b.x < a.x + a.width + gap && a.y < b.y + b.height + gap && b.y < a.y + a.height + gap;
+
+/** Where along a stretch a label may sit, best first. */
+const ALONG = [0.5, 0.35, 0.65, 0.22, 0.78, 0.12, 0.88];
+
+/**
+ * A place on its line for each label ELK didn't make room for (a graph laid out down): on its
+ * longest stretch if it's free, else further along it or on another stretch, clear of the
+ * nodes and of the labels placed before it.
+ */
+export function placeLabels(routes: ReadonlyMap<string, Route>, labels: ReadonlyMap<string, string>, nodes: readonly Box[]): Map<string, Route> {
+  const placed: Box[] = [];
+  const out = new Map(routes);
+  for (const [id, route] of routes) {
+    const text = labels.get(id);
+    if (!text || route.label || route.points.length < 2) continue;
+    const size = labelSize(text);
+    const boxAt = (p: Point): Box => ({ x: p.x - size.width / 2, y: p.y - size.height / 2, ...size });
+    const stretches = route.points
+      .slice(1)
+      .map((b, i) => ({ a: route.points[i]!, b, len: Math.hypot(b.x - route.points[i]!.x, b.y - route.points[i]!.y) }))
+      .filter((s) => s.len > 0)
+      .sort((x, y) => y.len - x.len);
+    let best: Point | undefined;
+    search: for (const s of stretches) {
+      for (const t of ALONG) {
+        const p = { x: s.a.x + (s.b.x - s.a.x) * t, y: s.a.y + (s.b.y - s.a.y) * t };
+        const box = boxAt(p);
+        if (!placed.some((o) => overlaps(box, o, 4)) && !nodes.some((o) => overlaps(box, o, 2))) {
+          best = p;
+          break search;
+        }
+      }
+    }
+    const at = best ?? longestMiddle(route.points);
+    placed.push(boxAt(at));
+    out.set(id, { ...route, label: at });
+  }
+  return out;
 }
 
 /** The middle of a line's longest straight stretch. */
@@ -392,10 +458,44 @@ export function shape(graph: Graph): { readonly layers: number; readonly widest:
   return { layers: Math.max(1, perLayer.size), widest: Math.max(1, ...perLayer.values()) };
 }
 
+/** The tallest a graph's card gets in a conversation. */
+export const INLINE_MAX_HEIGHT = 680;
+
 /** How tall a laid-out graph sits in a conversation of `width`: its own shape, shrunk to fit across. */
 export function fittedHeight(laid: Size, width: number): number {
   const scale = Math.min(1, (width - 24) / Math.max(1, laid.width));
-  return Math.round(Math.max(200, Math.min(560, laid.height * scale + 28)));
+  return Math.round(Math.max(200, Math.min(INLINE_MAX_HEIGHT, laid.height * scale + 28)));
+}
+
+/** The other way round: across becomes down, down becomes across (the Turn button). */
+export const turned = (direction: GraphDirection): GraphDirection => (direction === 'right' || direction === 'left' ? 'down' : 'right');
+
+/** How big a laid-out graph shows when it's fit into `frame` (never bigger than life). */
+export const fitZoom = (laid: Size, frame: Size, pad = 10): number => Math.min(1, (frame.width - pad * 2) / Math.max(1, laid.width), (frame.height - pad * 2) / Math.max(1, laid.height));
+
+export interface LayoutChoice {
+  readonly direction: GraphDirection;
+  /** Wrapped onto more rows (or columns): its lines loop back across the graph. */
+  readonly wrapped: boolean;
+  readonly size: Size;
+}
+
+/** A wrapped layout's lines loop back across it: it has to read much bigger to be worth that. */
+const WRAPPED_WORTH = 0.7;
+/** The way Claude drew it wins unless the other way reads clearly bigger. */
+const TURNED_WORTH = 0.9;
+
+/**
+ * The layout that reads best in `frame`: the one shown biggest, a wrapped one or one turned from
+ * the way Claude drew it counting for less.
+ */
+export function bestLayout<T extends LayoutChoice>(choices: readonly T[], frame: Size, preferred: GraphDirection): T | undefined {
+  let best: { choice: T; score: number } | undefined;
+  for (const choice of choices) {
+    const score = fitZoom(choice.size, frame) * (choice.wrapped ? WRAPPED_WORTH : 1) * (choice.direction === preferred ? 1 : TURNED_WORTH);
+    if (!best || score > best.score + 1e-9) best = { choice, score };
+  }
+  return best?.choice;
 }
 
 /** The shape a frame `width` wide asks the layout for (wide, not too tall). */
