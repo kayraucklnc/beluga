@@ -1,0 +1,140 @@
+import { router } from 'expo-router';
+import { AtSign, Bell, ChevronDown, ChevronUp, CircleCheck, Hand, Info, LogOut, Monitor, Moon, MoonStar, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
+import { Segments } from '../components/Segments';
+import { useEffect, useState } from 'react';
+import { Platform, ScrollView, Switch, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Header, Screen } from '../components/Screen';
+import { Card, haptic, Pill, Row, T } from '../components/ui';
+import { appearance, type Choice } from '../lib/appearance';
+import { useLink } from '../lib/hooks';
+import { COMPANION_PROTO } from '../lib/link/protocol';
+import { type NotifyPrefs, permission, prefs, setPrefs } from '../lib/notifications';
+import { store } from '../lib/store';
+import { color, ink } from '../lib/theme';
+
+/**
+ * The phone's own settings. On top: your Mac, notifications on or off, sign out. Everything else
+ * (each kind of notification, the demo's switches, versions). Appearance sits with the basics under Advanced.
+ */
+export default function Settings() {
+  const insets = useSafeAreaInsets();
+  const link = useLink();
+  const [p, setP] = useState<NotifyPrefs>(prefs());
+  const [perm, setPerm] = useState<string>('');
+  const [asleep, setAsleep] = useState(store.demo?.sleeping ?? false);
+  const [confirm, setConfirm] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
+  const [look, setLook] = useState<Choice>(appearance.get());
+  useEffect(() => {
+    void permission(false).then(setPerm);
+  }, []);
+
+  const save = (next: NotifyPrefs) => {
+    haptic.tap();
+    setP(next);
+    setPrefs(next);
+    if ((next.needsYou || next.done || next.mentions) && perm !== 'granted') void permission(true).then(setPerm);
+  };
+  const all = p.needsYou || p.done || p.mentions;
+  const toggle = (on: boolean, onChange: () => void) => (
+    <View pointerEvents="none">
+      <Switch value={on} onValueChange={onChange} trackColor={{ true: ink.mint, false: color.hairlineStrong }} thumbColor={color.white} {...(Platform.OS === 'web' ? ({ activeThumbColor: color.white } as object) : {})} />
+    </View>
+  );
+
+  return (
+    <Screen>
+      <Header back title="Settings" />
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 20 }}>
+        <Animated.View entering={FadeInDown.duration(300)}>
+          <Card>
+            <Row first Icon={Monitor} tone="mint" label={link.mac?.name ?? link.pairing?.macName ?? 'Your Mac'} sub={link.mode === 'demo' ? 'Demo Mac' : `Beluga ${link.mac?.version ?? ''}`} right={<Pill label={link.phase === 'open' ? 'Linked' : link.phase === 'asleep' ? 'Asleep' : 'Away'} tone={link.phase === 'open' ? 'mint' : 'sky'} />} />
+            <Row Icon={Bell} tone="butter" label="Notifications" sub={perm === 'denied' ? 'Off in Android settings' : undefined} right={toggle(all, () => {})} onPress={() => save({ needsYou: !all, done: !all, mentions: !all })} chevron={false} />
+            <Row
+              Icon={LogOut}
+              tone="rose"
+              label={confirm ? 'Tap again to sign out' : link.mode === 'demo' ? 'Leave the demo' : 'Sign out'}
+              onPress={async () => {
+                if (!confirm) {
+                  haptic.warn();
+                  setConfirm(true);
+                  return;
+                }
+                const r = await store.signOut();
+                if (link.mode === 'bare' && !r.onMac) store.toast({ text: 'Signed out here. Your Mac was away: remove this phone there too (Settings › Phone).', tone: 'warn' });
+                router.replace('/pair');
+              }}
+              chevron={false}
+            />
+          </Card>
+        </Animated.View>
+
+            <View style={{ gap: 8 }}>
+              <T v="eyebrow" style={{ paddingHorizontal: 6 }}>
+                Appearance
+              </T>
+              <Segments
+                value={look}
+                onChange={(c: Choice) => {
+                  setLook(c);
+                  appearance.set(c);
+                }}
+                options={[
+                  { key: 'system', label: 'System', Icon: Smartphone },
+                  { key: 'light', label: 'Light', Icon: Sun },
+                  { key: 'dark', label: 'Dark', Icon: Moon },
+                ]}
+              />
+            </View>
+
+        <Card>
+          <Row first Icon={SlidersHorizontal} tone="lavender" label="Advanced" onPress={() => setAdvanced((a) => !a)} chevron={false} right={advanced ? <ChevronUp color={color.text3} size={18} /> : <ChevronDown color={color.text3} size={18} />} />
+        </Card>
+
+        {advanced ? (
+          <Animated.View entering={FadeIn.duration(250)} style={{ gap: 20 }}>
+            <View style={{ gap: 8 }}>
+              <T v="eyebrow" style={{ paddingHorizontal: 6 }}>
+                Notify me about
+              </T>
+              <Card>
+                <Row first Icon={Hand} tone="peach" label="Needs you" right={toggle(p.needsYou, () => {})} onPress={() => save({ ...p, needsYou: !p.needsYou })} chevron={false} />
+                <Row Icon={CircleCheck} tone="mint" label="Done" sub="Things you asked from the phone" right={toggle(p.done, () => {})} onPress={() => save({ ...p, done: !p.done })} chevron={false} />
+                <Row Icon={AtSign} tone="sky" label="Mentions" right={toggle(p.mentions, () => {})} onPress={() => save({ ...p, mentions: !p.mentions })} chevron={false} />
+              </Card>
+            </View>
+
+            {link.mode === 'demo' ? (
+              <View style={{ gap: 8 }}>
+                <T v="eyebrow" style={{ paddingHorizontal: 6 }}>
+                  Demo
+                </T>
+                <Card>
+                  <Row
+                    first
+                    Icon={MoonStar}
+                    tone="sky"
+                    label="Mac asleep"
+                    sub="See the phone without its Mac"
+                    right={toggle(asleep, () => {})}
+                    chevron={false}
+                    onPress={() => {
+                      setAsleep(!asleep);
+                      store.setDemoAsleep(!asleep);
+                    }}
+                  />
+                </Card>
+              </View>
+            ) : null}
+
+            <Card>
+              <Row first Icon={Info} tone="plain" label="About" sub={`App 0.1.0 · link ${COMPANION_PROTO.major}.${COMPANION_PROTO.minor}${link.mac ? ` · Mac ${link.mac.version}` : ''}`} />
+            </Card>
+          </Animated.View>
+        ) : null}
+      </ScrollView>
+    </Screen>
+  );
+}

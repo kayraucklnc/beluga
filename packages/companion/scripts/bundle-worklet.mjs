@@ -1,0 +1,24 @@
+// Builds the link worklet (worklet/link.ts) into the bundle the app starts in Bare
+// (worklet/dist/link.bundle.mjs, imported by lib/link/bare.ts):
+//   1. tsc compiles the worklet and what it imports from the repo (src/companion/client.ts, ...)
+//      to plain ES modules in worklet/build (bare-pack doesn't map './x.js' imports to .ts files);
+//   2. bare-pack packs that module graph for Android (and iOS), with native addons linked
+//      (`--linked`: udx-native and sodium-native come from the app, see README "The link").
+// Usage: npm run worklet:bundle [-- --ios]
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const pkg = join(dirname(fileURLToPath(import.meta.url)), '..');
+const run = (cmd, args) => execFileSync(cmd, args, { cwd: pkg, stdio: 'inherit' });
+const ios = process.argv.includes('--ios');
+
+rmSync(join(pkg, 'worklet/build'), { recursive: true, force: true });
+run('npx', ['tsc', '-p', 'worklet/tsconfig.build.json']);
+// The compiled files are ES modules.
+writeFileSync(join(pkg, 'worklet/build/package.json'), '{ "type": "module" }\n');
+mkdirSync(join(pkg, 'worklet/dist'), { recursive: true });
+const hosts = ios ? ['ios-arm64', 'ios-arm64-simulator', 'ios-x64-simulator'] : ['android-arm64', 'android-arm', 'android-x64', 'android-ia32'];
+run('npx', ['bare-pack', '--linked', ...hosts.flatMap((h) => ['--host', h]), '--out', 'worklet/dist/link.bundle.mjs', 'worklet/build/packages/companion/worklet/link.js']);
+console.log('worklet bundled: worklet/dist/link.bundle.mjs');

@@ -1,0 +1,101 @@
+import { Image } from 'expo-image';
+import { router } from 'expo-router';
+import { FileJson, FileText, FileType, Film, ImageIcon, ScrollText } from 'lucide-react-native';
+import { useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, View, type ViewStyle } from 'react-native';
+import { useFile } from '../lib/hooks';
+import type { OutputView } from '../lib/link/protocol';
+import { store } from '../lib/store';
+import { color, radius } from '../lib/theme';
+import { IconBadge, Press, T } from './ui';
+
+/**
+ * Outputs: pictures as thumbnails (fetched by ref, thumb first; the full image only when opened)
+ * and text files as tiles that open in the reader. Never source code: the Mac only hands out what
+ * `isArtifact` calls an output.
+ */
+
+export type Origin = { x: number; y: number; w: number; h: number };
+
+export const isText = (o: OutputView): boolean => o.kind === 'text' || o.kind === 'json' || o.kind === 'markdown';
+
+/** Open an output from where it is: images in the viewer (from their place), text in the reader. */
+export function openOutput(o: OutputView, group: readonly OutputView[], origin?: Origin): void {
+  if (o.kind === 'image') {
+    const items = group.filter((g) => g.kind === 'image');
+    store.gallery = { items, index: Math.max(0, items.findIndex((g) => g.ref === o.ref)), origin };
+    router.push('/viewer');
+    return;
+  }
+  if (isText(o)) {
+    router.push({ pathname: '/reader', params: { ref: o.ref, name: o.name } });
+    return;
+  }
+  store.toast({ text: `${o.name}: open it on your Mac.`, tone: 'info' });
+}
+
+const iconOf = (o: OutputView) => (o.kind === 'json' ? FileJson : o.kind === 'markdown' ? FileType : o.kind === 'video' ? Film : o.name.endsWith('.log') ? ScrollText : FileText);
+export const sizeOf = (n?: number): string => (n === undefined ? '' : n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+export function Thumb({ o, group, w, h, style }: { readonly o: OutputView; readonly group: readonly OutputView[]; readonly w: number; readonly h: number; readonly style?: ViewStyle }) {
+  const ref = useRef<React.ComponentRef<typeof View>>(null);
+  const image = o.kind === 'image';
+  const file = useFile(image ? o.ref : undefined, 'thumb');
+  const Icon = iconOf(o);
+  const open = () => {
+    if (!ref.current) return openOutput(o, group);
+    ref.current.measureInWindow((x: number, y: number, mw: number, mh: number) => openOutput(o, group, { x, y, w: mw, h: mh }));
+  };
+  return (
+    <Press onPress={open} accessibilityLabel={o.name} style={[{ width: w, height: h, borderRadius: radius.m, overflow: 'hidden', backgroundColor: color.card, borderWidth: StyleSheet.hairlineWidth, borderColor: color.hairline }, style]}>
+      <View ref={ref} collapsable={false} style={{ flex: 1 }}>
+        {image ? (
+          file?.uri ? (
+            <Image source={{ uri: file.uri }} style={{ flex: 1 }} contentFit="cover" transition={260} />
+          ) : (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>{file?.status === 'error' ? <ImageIcon color={color.text3} size={22} /> : <ActivityIndicator color={color.text3} />}</View>
+          )
+        ) : (
+          <View style={{ flex: 1, padding: 12, justifyContent: 'space-between' }}>
+            <IconBadge Icon={Icon} tone={o.kind === 'json' ? 'butter' : o.kind === 'markdown' ? 'lavender' : 'sky'} size={34} square />
+            <View>
+              <T v="callout" c={color.text} numberOfLines={2} style={{ fontWeight: '600', fontSize: 13.5 }}>
+                {o.name}
+              </T>
+              <T v="caption" style={{ marginTop: 2 }}>
+                {sizeOf(o.size)}
+              </T>
+            </View>
+          </View>
+        )}
+      </View>
+    </Press>
+  );
+}
+
+/** A strip you swipe: the newest outputs. */
+export function OutputStrip({ items, h = 132 }: { readonly items: readonly OutputView[]; readonly h?: number }) {
+  return (
+    <FlatList
+      horizontal
+      data={items as OutputView[]}
+      keyExtractor={(o) => o.ref}
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
+      decelerationRate="fast"
+      snapToInterval={h * 0.78 + 10}
+      renderItem={({ item }) => <Thumb o={item} group={items} w={item.kind === 'image' ? h * 0.78 : h * 0.78} h={h} />}
+    />
+  );
+}
+
+/** A grid (a sub-agent's outputs): fills the width it's given. */
+export function OutputGrid({ items, cols = 3, gap = 8 }: { readonly items: readonly OutputView[]; readonly cols?: number; readonly gap?: number; readonly width?: number }) {
+  const [width, setWidth] = useState(0);
+  const w = Math.floor((width - gap * (cols - 1)) / cols);
+  return (
+    <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}>
+      {width ? items.map((o) => <Thumb key={o.ref} o={o} group={items} w={w} h={Math.round(w * (o.kind === 'image' ? 1.3 : 0.8))} />) : null}
+    </View>
+  );
+}

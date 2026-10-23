@@ -105,6 +105,8 @@ const PATHS = {
   chartLine: 'M2.5 2.5v11h11 M4.5 10.5l2.5-3 2 1.5 3.5-4.5',
   chartArea: 'M2.5 2.5v11h11 M4.5 11.5V9l2.5-2.5 2 1.5 3.5-3.5v7z',
   chartBar: 'M2.5 2.5v11h11 M5 11.5V8.5 M8 11.5V5.5 M11 11.5V7.5',
+  /** Your phone (the companion): the sidebar footer's mark, Settings › Phone. */
+  phone: 'M5.5 1.75h5a1 1 0 0 1 1 1v10.5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1z M7.25 12.25h1.5',
   palette: 'M8 2.5a5.5 5.5 0 1 0 0 11c.9 0 1.3-.6 1.3-1.2 0-.8-.7-1-.7-1.8 0-.6.5-1 1.1-1h1.4A2.4 2.4 0 0 0 13.5 7c0-2.5-2.5-4.5-5.5-4.5z M5.25 7.25h.01 M7.25 5.25h.01 M10 5.5h.01',
 } as const;
 

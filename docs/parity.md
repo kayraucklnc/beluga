@@ -207,6 +207,15 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `files.save` | ✓ Edit in a file's header (files open read-only), then Save or ⌘S; asks before overwriting a change made since |
 | `files.formatter` | ✓ whether a file's Format button is on (the project's Prettier), and why not in its tooltip |
 | `files.format` | ✓ Format (the wand) in a file's header: the project's Prettier lays out the text you're editing (Save writes it) |
+| `companion.pair.start` | ✓ the sidebar footer's phone mark › Pair a Phone…: a one-time pairing (QR and code, 10 minutes, one phone) |
+| `companion.pair.approve` | ✓ the Phone popover's “Pair Kayra's Pixel 9?” with the four-picture fingerprint › Pair |
+| `companion.pair.cancel` | ✓ the Phone popover's Cancel while a pairing is open (a waiting phone hears no) |
+| `companion.devices.remove` | ✓ the Phone popover › a phone › Remove (its link drops at once, its key is refused from then on) |
+| `companion.older` | – the phone only: older turns of a conversation (or messages of a chat) as you scroll up (docs/companion.md) |
+| `companion.ask` | – the phone only: Ask your Mac (a new chat in a project, as New Chat does, or a message in a conversation), with photos and files the phone sent (`put`) |
+| `companion.post` | – the phone only: a message in a friends' chat with files from the phone |
+| `companion.askPerson` | – the phone only: ask a friend's Claude yourself, as from their card in Requests (their approval and trust rules apply) |
+| `companion.signOut` | – the phone only: Sign Out removes that phone's own certificate (the Mac's Remove is `companion.devices.remove`) |
 | `workspaces.open` | ✓ |
 | `workspaces.load` | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ |

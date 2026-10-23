@@ -9,6 +9,8 @@ interface SocketEvents {
   close: [number];
   error: [Error];
   pong: [];
+  /** The other side pinged (stream sockets only; answered with a pong by itself). */
+  ping: [];
 }
 
 /**
@@ -175,7 +177,10 @@ class StreamSocket extends EventEmitter<SocketEvents> implements MessageSocket {
 
   private onFrame(kind: number, payload: Buffer): void {
     if (kind === KIND.text) this.emit('message', payload.toString('utf8'));
-    else if (kind === KIND.ping) this.write(KIND.pong);
+    else if (kind === KIND.ping) {
+      this.write(KIND.pong);
+      this.emit('ping');
+    }
     else if (kind === KIND.pong) this.emit('pong');
     else if (kind === KIND.close) {
       if (!this.closing) this.code = payload.length >= 2 ? payload.readUInt16BE(0) : ABNORMAL_CLOSE;

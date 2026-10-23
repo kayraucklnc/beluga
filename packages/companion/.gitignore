@@ -1,0 +1,10 @@
+node_modules/
+.expo/
+dist/
+web-build/
+android/
+ios/
+worklet/dist/
+*.bundle
+expo-env.d.ts
+worklet/build/

@@ -1,0 +1,983 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the views of a known Mac > snapshot 1`] = `
+{
+  "chat:dm:bob00000000000000000000000000bob": {
+    "kind": "dm",
+    "live": [],
+    "messages": [
+      {
+        "from": "bob",
+        "id": "m1abcdefgh",
+        "mine": false,
+        "text": "see
+[[code:0]]
+here",
+        "ts": 1760000000030,
+      },
+      {
+        "from": "kayra",
+        "id": "m2abcdefgh",
+        "mine": true,
+        "text": "on it",
+        "ts": 1760000000031,
+      },
+    ],
+    "more": false,
+    "name": "bob",
+    "topic": "chat:dm:bob00000000000000000000000000bob",
+  },
+  "chats": {
+    "chats": [
+      {
+        "kind": "dm",
+        "last": "see (code) here",
+        "lastAt": 1760000000030,
+        "name": "bob",
+        "topic": "chat:dm:bob00000000000000000000000000bob",
+        "unread": 2,
+      },
+      {
+        "kind": "group",
+        "name": "team",
+        "topic": "chat:group:cccccccccccccccccccccccccccccccc",
+        "unread": 0,
+      },
+    ],
+  },
+  "conv:ws:w1": {
+    "canSend": true,
+    "more": false,
+    "needsYou": [
+      {
+        "actions": [
+          {
+            "args": [
+              "t_confirm000001",
+              true,
+            ],
+            "label": "Ask",
+            "method": "gateway.confirm",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "t_confirm000001",
+              false,
+            ],
+            "label": "Not now",
+            "method": "gateway.confirm",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000020,
+        "detail": "Can you review the landing page?",
+        "from": "your Claude",
+        "id": "confirm:t_confirm000001",
+        "kind": "confirm",
+        "title": "Ask bob's Claude?",
+        "topic": "conv:ws:w1",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "q1",
+              {
+                "answers": {
+                  "Which session store?": "Redis",
+                },
+                "kind": "answers",
+              },
+            ],
+            "label": "Redis",
+            "method": "questions.answer",
+            "tone": "plain",
+          },
+          {
+            "args": [
+              "q1",
+              {
+                "answers": {
+                  "Which session store?": "Postgres",
+                },
+                "kind": "answers",
+              },
+            ],
+            "label": "Postgres",
+            "method": "questions.answer",
+            "tone": "plain",
+          },
+          {
+            "args": [
+              "q1",
+              {
+                "kind": "skip",
+              },
+            ],
+            "label": "Skip",
+            "method": "questions.answer",
+            "tone": "danger",
+          },
+        ],
+        "answer": {
+          "args": [
+            "q1",
+            {
+              "answers": {
+                "Which session store?": "",
+              },
+              "kind": "answers",
+            },
+          ],
+          "join": ", ",
+          "label": "Send",
+          "method": "questions.answer",
+          "picks": true,
+          "slot": [
+            1,
+            "answers",
+            "Which session store?",
+          ],
+          "text": true,
+        },
+        "choices": [
+          {
+            "description": "fast",
+            "label": "Redis",
+          },
+          {
+            "description": "already there",
+            "label": "Postgres",
+          },
+        ],
+        "freeText": true,
+        "from": "your Claude",
+        "id": "question:q1",
+        "kind": "question",
+        "multi": false,
+        "title": "Which session store?",
+        "topic": "conv:ws:w1",
+      },
+    ],
+    "project": "landing",
+    "title": "auth",
+    "topic": "conv:ws:w1",
+    "turns": [
+      {
+        "id": "c1",
+        "name": "kayra",
+        "prose": {
+          "code": [],
+          "text": "How do we protect the payment routes?",
+        },
+        "ts": 1760000000001,
+        "who": "you",
+      },
+      {
+        "endTs": 1760000000006,
+        "id": "i-r1",
+        "name": "Claude",
+        "prose": {
+          "code": [
+            {
+              "lang": "ts",
+              "lines": 1,
+            },
+          ],
+          "text": "Add a middleware:
+
+[[code:0]]
+
+Then protect \`/api/payments\`.",
+        },
+        "status": "done",
+        "steps": 2,
+        "ts": 1760000000002,
+        "who": "claude",
+      },
+    ],
+    "working": false,
+  },
+  "conv:ws:w2": {
+    "canSend": true,
+    "more": false,
+    "needsYou": [
+      {
+        "actions": [
+          {
+            "args": [
+              "yes",
+              "ap1",
+            ],
+            "label": "Approve",
+            "method": "host.answerApproval",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "no",
+              "ap1",
+            ],
+            "label": "Decline",
+            "method": "host.answerApproval",
+            "tone": "danger",
+          },
+          {
+            "args": [
+              "always",
+              "ap1",
+            ],
+            "label": "Always",
+            "method": "host.answerApproval",
+            "tone": "plain",
+          },
+        ],
+        "askedAt": 1760000000015,
+        "detail": "Bash rm -rf dist",
+        "from": "your Claude",
+        "id": "approval:ap1",
+        "kind": "approval",
+        "timeoutMs": 60000,
+        "title": "Run rm -rf dist?",
+        "topic": "conv:ws:w2",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "q2",
+              {
+                "kind": "skip",
+              },
+            ],
+            "label": "Skip",
+            "method": "questions.answer",
+            "tone": "danger",
+          },
+        ],
+        "answer": {
+          "args": [
+            "q2",
+            {
+              "answers": {
+                "Which browsers?": "Chrome",
+                "Which checks?": "",
+              },
+              "kind": "answers",
+            },
+          ],
+          "join": ", ",
+          "label": "Send",
+          "method": "questions.answer",
+          "picks": true,
+          "slot": [
+            1,
+            "answers",
+            "Which checks?",
+          ],
+          "text": true,
+        },
+        "choices": [
+          {
+            "label": "Lint",
+          },
+          {
+            "label": "Types",
+          },
+        ],
+        "freeText": true,
+        "from": "your Claude",
+        "id": "question:q2",
+        "kind": "question",
+        "multi": true,
+        "title": "Which checks?",
+        "topic": "conv:ws:w2",
+      },
+    ],
+    "project": "landing",
+    "title": "tests",
+    "topic": "conv:ws:w2",
+    "turns": [
+      {
+        "id": "i-r2",
+        "name": "Claude",
+        "outputs": [
+          {
+            "kind": "text",
+            "name": "run.log",
+            "ref": "out:ref00001",
+            "size": 300,
+            "ts": 1760000000013,
+          },
+        ],
+        "prose": {
+          "code": [],
+          "text": "",
+        },
+        "status": "working",
+        "step": "Ran npm test · 137/215",
+        "steps": 1,
+        "subagents": [
+          {
+            "id": "sa1",
+            "outputs": [
+              {
+                "by": "sa1",
+                "kind": "image",
+                "name": "shot.png",
+                "ref": "out:ref00000",
+                "size": 2048,
+                "ts": 1760000000012,
+              },
+            ],
+            "status": "running",
+            "steps": [
+              "Searched for retry",
+            ],
+            "title": "Check the webhooks",
+          },
+        ],
+        "ts": 1760000000010,
+        "who": "claude",
+      },
+    ],
+    "working": true,
+  },
+  "home": {
+    "mac": {
+      "name": "Kayra’s Mac",
+      "version": "0.6.2",
+    },
+    "me": {
+      "name": "kayra",
+      "peerId": "me0000000000000000000000000000me",
+    },
+    "needsYou": [
+      {
+        "actions": [
+          {
+            "args": [
+              "yes",
+              "ap1",
+            ],
+            "label": "Approve",
+            "method": "host.answerApproval",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "no",
+              "ap1",
+            ],
+            "label": "Decline",
+            "method": "host.answerApproval",
+            "tone": "danger",
+          },
+          {
+            "args": [
+              "always",
+              "ap1",
+            ],
+            "label": "Always",
+            "method": "host.answerApproval",
+            "tone": "plain",
+          },
+        ],
+        "askedAt": 1760000000015,
+        "detail": "Bash rm -rf dist",
+        "from": "your Claude",
+        "id": "approval:ap1",
+        "kind": "approval",
+        "timeoutMs": 60000,
+        "title": "Run rm -rf dist?",
+        "topic": "conv:ws:w2",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "t_confirm000001",
+              true,
+            ],
+            "label": "Ask",
+            "method": "gateway.confirm",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "t_confirm000001",
+              false,
+            ],
+            "label": "Not now",
+            "method": "gateway.confirm",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000020,
+        "detail": "Can you review the landing page?",
+        "from": "your Claude",
+        "id": "confirm:t_confirm000001",
+        "kind": "confirm",
+        "title": "Ask bob's Claude?",
+        "topic": "conv:ws:w1",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "t_request00001",
+              {
+                "answer": "yes",
+              },
+            ],
+            "label": "Approve",
+            "method": "gateway.decide",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "t_request00001",
+              {
+                "answer": "no",
+              },
+            ],
+            "label": "Decline",
+            "method": "gateway.decide",
+            "tone": "danger",
+          },
+          {
+            "args": [
+              "t_request00001",
+              {
+                "answer": "always",
+              },
+            ],
+            "label": "Always",
+            "method": "gateway.decide",
+            "tone": "plain",
+          },
+        ],
+        "askedAt": 1760000000021,
+        "detail": "Run the e2e suite",
+        "from": "bob",
+        "id": "request:t_request00001",
+        "kind": "request",
+        "title": "bob: run the e2e suite",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "zoe00000000000000000000000000zoe",
+            ],
+            "label": "Let in",
+            "method": "invites.letIn",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "zoe00000000000000000000000000zoe",
+            ],
+            "label": "Turn away",
+            "method": "invites.decline",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000041,
+        "detail": "With one of your links",
+        "from": "Someone",
+        "id": "knock:zoe00000000000000000000000000zoe",
+        "kind": "request",
+        "title": "Someone wants to come in",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "cccccccccccccccccccccccccccccccc",
+              "zoe00000000000000000000000000zoe",
+            ],
+            "label": "Let in",
+            "method": "network.groups.approve",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "cccccccccccccccccccccccccccccccc",
+              "zoe00000000000000000000000000zoe",
+            ],
+            "label": "Decline",
+            "method": "network.groups.decline",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000042,
+        "from": "zoe",
+        "id": "join:cccccccccccccccccccccccccccccccc:zoe00000000000000000000000000zoe",
+        "kind": "request",
+        "title": "zoe asks to join team",
+        "topic": "chat:group:cccccccccccccccccccccccccccccccc",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "pl_auth",
+            ],
+            "label": "Approve",
+            "method": "plans.approve",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "pl_auth",
+            ],
+            "label": "Discard",
+            "method": "plans.discard",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000050,
+        "detail": "Protect the payment routes",
+        "from": "your plan",
+        "id": "plan:pl_auth:approve:3",
+        "kind": "decision",
+        "title": "Approve the plan “Add auth”?",
+        "topic": "plan:pl_auth",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "q1",
+              {
+                "answers": {
+                  "Which session store?": "Redis",
+                },
+                "kind": "answers",
+              },
+            ],
+            "label": "Redis",
+            "method": "questions.answer",
+            "tone": "plain",
+          },
+          {
+            "args": [
+              "q1",
+              {
+                "answers": {
+                  "Which session store?": "Postgres",
+                },
+                "kind": "answers",
+              },
+            ],
+            "label": "Postgres",
+            "method": "questions.answer",
+            "tone": "plain",
+          },
+          {
+            "args": [
+              "q1",
+              {
+                "kind": "skip",
+              },
+            ],
+            "label": "Skip",
+            "method": "questions.answer",
+            "tone": "danger",
+          },
+        ],
+        "answer": {
+          "args": [
+            "q1",
+            {
+              "answers": {
+                "Which session store?": "",
+              },
+              "kind": "answers",
+            },
+          ],
+          "join": ", ",
+          "label": "Send",
+          "method": "questions.answer",
+          "picks": true,
+          "slot": [
+            1,
+            "answers",
+            "Which session store?",
+          ],
+          "text": true,
+        },
+        "choices": [
+          {
+            "description": "fast",
+            "label": "Redis",
+          },
+          {
+            "description": "already there",
+            "label": "Postgres",
+          },
+        ],
+        "freeText": true,
+        "from": "your Claude",
+        "id": "question:q1",
+        "kind": "question",
+        "multi": false,
+        "title": "Which session store?",
+        "topic": "conv:ws:w1",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "q2",
+              {
+                "kind": "skip",
+              },
+            ],
+            "label": "Skip",
+            "method": "questions.answer",
+            "tone": "danger",
+          },
+        ],
+        "answer": {
+          "args": [
+            "q2",
+            {
+              "answers": {
+                "Which browsers?": "Chrome",
+                "Which checks?": "",
+              },
+              "kind": "answers",
+            },
+          ],
+          "join": ", ",
+          "label": "Send",
+          "method": "questions.answer",
+          "picks": true,
+          "slot": [
+            1,
+            "answers",
+            "Which checks?",
+          ],
+          "text": true,
+        },
+        "choices": [
+          {
+            "label": "Lint",
+          },
+          {
+            "label": "Types",
+          },
+        ],
+        "freeText": true,
+        "from": "your Claude",
+        "id": "question:q2",
+        "kind": "question",
+        "multi": true,
+        "title": "Which checks?",
+        "topic": "conv:ws:w2",
+      },
+    ],
+    "outputs": [
+      {
+        "kind": "text",
+        "name": "run.log",
+        "ref": "out:ref00001",
+        "size": 300,
+        "topic": "conv:ws:w2",
+        "ts": 1760000000013,
+      },
+      {
+        "by": "sa1",
+        "kind": "image",
+        "name": "shot.png",
+        "ref": "out:ref00000",
+        "size": 2048,
+        "topic": "conv:ws:w2",
+        "ts": 1760000000012,
+      },
+    ],
+    "running": [
+      {
+        "agents": 1,
+        "lastAt": 1760000000014,
+        "needsYou": true,
+        "project": "landing",
+        "status": "waiting",
+        "title": "tests",
+        "topic": "conv:ws:w2",
+        "unread": 1,
+      },
+      {
+        "last": "Add a middleware: (code) Then protect /api/payments.",
+        "lastAt": 1760000000005,
+        "needsYou": true,
+        "project": "landing",
+        "status": "waiting",
+        "title": "auth",
+        "topic": "conv:ws:w1",
+        "unread": 3,
+      },
+    ],
+    "unread": {
+      "chats": 2,
+      "work": 4,
+    },
+    "usage": [
+      {
+        "plan": "max",
+        "provider": "Claude Code",
+        "updatedAt": 1760000000000,
+        "windows": [
+          {
+            "label": "5 hours",
+            "pct": 12,
+            "resetsAt": 1760003600000,
+          },
+          {
+            "label": "Week",
+            "pct": 38,
+          },
+        ],
+      },
+    ],
+  },
+  "people": {
+    "people": [
+      {
+        "chat": "chat:dm:bob00000000000000000000000000bob",
+        "name": "bob",
+        "note": "lunch",
+        "offers": [
+          "claude",
+          "screen",
+          "shell",
+        ],
+        "peerId": "bob00000000000000000000000000bob",
+        "presence": "away",
+      },
+    ],
+  },
+  "plan:pl_auth": {
+    "goal": "Protect the payment routes",
+    "id": "pl_auth",
+    "milestones": [
+      {
+        "criteria": [
+          "Logged-out users get 401",
+        ],
+        "id": "m1",
+        "state": "draft",
+        "tasks": [
+          {
+            "id": "t1",
+            "state": "draft",
+            "title": "requireUser middleware",
+          },
+        ],
+        "title": "Sessions",
+      },
+    ],
+    "needsYou": [
+      {
+        "actions": [
+          {
+            "args": [
+              "t_confirm000001",
+              true,
+            ],
+            "label": "Ask",
+            "method": "gateway.confirm",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "t_confirm000001",
+              false,
+            ],
+            "label": "Not now",
+            "method": "gateway.confirm",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000020,
+        "detail": "Can you review the landing page?",
+        "from": "your Claude",
+        "id": "confirm:t_confirm000001",
+        "kind": "confirm",
+        "title": "Ask bob's Claude?",
+        "topic": "conv:ws:w1",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "pl_auth",
+            ],
+            "label": "Approve",
+            "method": "plans.approve",
+            "tone": "main",
+          },
+          {
+            "args": [
+              "pl_auth",
+            ],
+            "label": "Discard",
+            "method": "plans.discard",
+            "tone": "danger",
+          },
+        ],
+        "askedAt": 1760000000050,
+        "detail": "Protect the payment routes",
+        "from": "your plan",
+        "id": "plan:pl_auth:approve:3",
+        "kind": "decision",
+        "title": "Approve the plan “Add auth”?",
+        "topic": "plan:pl_auth",
+      },
+      {
+        "actions": [
+          {
+            "args": [
+              "q1",
+              {
+                "answers": {
+                  "Which session store?": "Redis",
+                },
+                "kind": "answers",
+              },
+            ],
+            "label": "Redis",
+            "method": "questions.answer",
+            "tone": "plain",
+          },
+          {
+            "args": [
+              "q1",
+              {
+                "answers": {
+                  "Which session store?": "Postgres",
+                },
+                "kind": "answers",
+              },
+            ],
+            "label": "Postgres",
+            "method": "questions.answer",
+            "tone": "plain",
+          },
+          {
+            "args": [
+              "q1",
+              {
+                "kind": "skip",
+              },
+            ],
+            "label": "Skip",
+            "method": "questions.answer",
+            "tone": "danger",
+          },
+        ],
+        "answer": {
+          "args": [
+            "q1",
+            {
+              "answers": {
+                "Which session store?": "",
+              },
+              "kind": "answers",
+            },
+          ],
+          "join": ", ",
+          "label": "Send",
+          "method": "questions.answer",
+          "picks": true,
+          "slot": [
+            1,
+            "answers",
+            "Which session store?",
+          ],
+          "text": true,
+        },
+        "choices": [
+          {
+            "description": "fast",
+            "label": "Redis",
+          },
+          {
+            "description": "already there",
+            "label": "Postgres",
+          },
+        ],
+        "freeText": true,
+        "from": "your Claude",
+        "id": "question:q1",
+        "kind": "question",
+        "multi": false,
+        "title": "Which session store?",
+        "topic": "conv:ws:w1",
+      },
+    ],
+    "state": "draft",
+    "title": "Add auth",
+    "topic": "conv:ws:w1",
+  },
+  "plans": {
+    "plans": [
+      {
+        "done": 0,
+        "id": "pl_auth",
+        "state": "draft",
+        "title": "Add auth",
+        "topic": "plan:pl_auth",
+        "total": 1,
+      },
+    ],
+  },
+  "work": {
+    "projects": [
+      {
+        "conversations": [
+          {
+            "last": "Here it is.",
+            "lastAt": 1760000000024,
+            "project": "Asked of friends · bob",
+            "status": "idle",
+            "title": "take a screenshot of your desktop",
+            "topic": "conv:task:t_screen000001",
+          },
+        ],
+        "id": "asked",
+        "name": "Asked of friends",
+      },
+      {
+        "conversations": [
+          {
+            "agents": 1,
+            "lastAt": 1760000000014,
+            "needsYou": true,
+            "project": "landing",
+            "status": "waiting",
+            "title": "tests",
+            "topic": "conv:ws:w2",
+            "unread": 1,
+          },
+          {
+            "last": "Add a middleware: (code) Then protect /api/payments.",
+            "lastAt": 1760000000005,
+            "needsYou": true,
+            "project": "landing",
+            "status": "waiting",
+            "title": "auth",
+            "topic": "conv:ws:w1",
+            "unread": 3,
+          },
+        ],
+        "id": "p1",
+        "name": "landing",
+      },
+    ],
+  },
+}
+`;
