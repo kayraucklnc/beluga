@@ -322,7 +322,7 @@ function Canvas({ view, keys, selected, onSelect, onStart, startable }: PlanCanv
         edgeTypes={EDGE_TYPES}
         colorMode={theme}
         minZoom={0.2}
-        maxZoom={1.8}
+        maxZoom={3}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable
