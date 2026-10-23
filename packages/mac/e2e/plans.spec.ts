@@ -82,7 +82,10 @@ test('the plan’s chat shows what was said there when the plan opens, after a r
   const chat = page.getByRole('complementary', { name: 'Conversation' });
   await expect(chat).toContainText('drafted the plan in three milestones', { timeout: 15_000 });
   await expect(chat).not.toContainText('Plan it together');
+  // A fresh window (a reload opens on the room, as every reload does) loads it again from the daemon.
   await page.reload();
+  await openPlans(page);
+  await main(page).getByRole('button', { name: /^Card checkout for launch,/ }).click();
   await expect(page.getByRole('textbox', { name: 'Plan name' })).toHaveValue('Card checkout for launch', { timeout: 20_000 });
   await expect(chat).toContainText('drafted the plan in three milestones', { timeout: 15_000 });
   await expect(chat.getByRole('textbox', { name: 'Message Claude about the plan' })).toHaveValue('');

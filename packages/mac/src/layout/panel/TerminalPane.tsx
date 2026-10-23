@@ -136,9 +136,16 @@ export function TerminalPane({ where, onClose }: { where: 'drawer' | 'panel'; on
   const askedFocus = usePanelRuntime((r) => r.termFocus);
   const body = useRef<HTMLDivElement>(null);
   // ⌘J puts the keyboard here (Run doesn't: you keep typing to Claude).
+  // A terminal that's just appearing is made a frame later (Xterm, KLD-68): keep looking until it's there.
   useEffect(() => {
-    if (Date.now() - askedFocus > FOCUS_WINDOW_MS) return;
-    const id = requestAnimationFrame(() => body.current?.querySelector<HTMLTextAreaElement>('.xterm-helper-textarea')?.focus());
+    let id = 0;
+    const tryFocus = (): void => {
+      if (Date.now() - askedFocus > FOCUS_WINDOW_MS) return;
+      const input = body.current?.querySelector<HTMLTextAreaElement>('.xterm-helper-textarea');
+      if (input) input.focus();
+      else id = requestAnimationFrame(tryFocus);
+    };
+    id = requestAnimationFrame(tryFocus);
     return () => cancelAnimationFrame(id);
   }, [askedFocus, tabbed.key]);
   // A terminal shows in one place at a time: the drawer or the full-size view has it.

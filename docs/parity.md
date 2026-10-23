@@ -159,6 +159,7 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `session.serveFolder` | ✓ | ✓ |
 | `session.localLocation` | ✓ | ✓ |
 | `session.testNotification` | ✓ | ✓ |
+| `session.retryConnection` | — (the terminal retries on its own and shows the status line) | ✓ Retry now in the connection status |
 | `host.answerApproval` | ✓ | ✓ |
 | `host.promote` | ✓ | ✓ |
 | `host.sendNext` | — (Mac only: the terminal has Steer) | ✓ Send Now on a queued message (runs it next, never interrupting) |
