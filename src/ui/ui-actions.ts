@@ -65,7 +65,8 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
     case 'search_hit':
       store.dispatch({ type: 'search_cursor', cursor: action.index });
       void api.workbench.openHit(action.index);
-      patchUi({ focus: 'chat', buffer: '', cursor: 0 });
+      // The box shows that chat's own unsent words (the Mac's Composer keeps each chat's).
+      patchUi({ focus: 'chat' });
       return;
     case 'ws_more':
       patchUi({ menu: { menu: { kind: 'ws_more', id: action.id, actions: action.actions }, selected: 0 } });
@@ -110,7 +111,8 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
       const latest = store.getState();
       const back = latest.view.kind === 'draft' || latest.view.kind === 'draft_worktree' ? latest.view.back : latest.view;
       store.dispatch({ type: 'view', view: { kind: 'draft_worktree', projectId: action.projectId, back } });
-      patchUi({ focus: 'chat', buffer: '', cursor: 0 });
+      // Its box starts empty, or with what you left unsent there (never another chat's words).
+      patchUi({ focus: 'chat' });
       return;
     }
     case 'new_chat': {
@@ -119,7 +121,7 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
       const back = latest.view.kind === 'draft' ? latest.view.back : latest.view;
       const dir = action.projectId === 'chats' ? client.launchDir : undefined;
       store.dispatch({ type: 'view', view: { kind: 'draft', projectId: action.projectId, dir, back } });
-      patchUi({ focus: 'chat', buffer: '', cursor: 0 });
+      patchUi({ focus: 'chat' });
       return;
     }
     case 'add_project':
