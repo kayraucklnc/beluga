@@ -16,17 +16,26 @@ import { mod } from '../../lib/system.js';
 import { STATE } from '../../views/DiffView.js';
 import { useRowItems } from '../../views/FilesView.js';
 import { type ReaderMode, initialMode, isMarkdownFile, isPdfFile } from '../../views/reader/reader-model.js';
+import { EditTools } from '../../views/reader/EditTools.js';
+import { pendingLine, revealLine } from '../../views/reader/reveal.js';
+import { ContentResultsList, FlagToggles, type SearchFlags, useContentSearch } from './ContentSearch.js';
+import { useEditSession } from '../../views/reader/edit-store.js';
 import { SCROLL_ROOT } from '../../components/markdown/md-dom.js';
 import d from '../../views/diff.module.css';
 import { ResizeHandle } from './ResizeHandle.js';
 import { type TreeRow, ancestorsOf, filterLoads, treeRows } from './tree.js';
 import s from './panel.module.css';
+import k from './content-search.module.css';
 
 /** The reader comes in its own chunk, the first time a file is opened. */
 const FileContent = lazy(() => import('../../views/reader/FileReader.js').then((m) => ({ default: m.FileContent })));
 
 /** Folders you opened in each workspace's tree, kept while the window is open. */
 const opened = new Map<string, ReadonlySet<string>>();
+
+type SearchIn = 'names' | 'contents';
+/** What the search box last searched (names or contents, and how), kept while the window is open. */
+const lastSearch: { in: SearchIn; flags: SearchFlags } = { in: 'names', flags: { caseSensitive: false, regex: false, wholeWord: false } };
 
 /** A name with the part you typed highlighted. */
 function Marked({ name, query }: { name: string; query: string }): ReactNode {
@@ -45,16 +54,18 @@ function Marked({ name, query }: { name: string; query: string }): ReactNode {
 function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: string; local: string | undefined; changed: boolean }) {
   const api = useApi();
   const { client } = useBeluga();
-  const [mode, setMode] = useState<ReaderMode>(() => initialMode(viewer));
+  const selfId = useApp((st) => st.selfId);
+  const [mode, setMode] = useState<ReaderMode>(() => (pendingLine(viewer) ? 'source' : initialMode(viewer)));
   const body = useRef<HTMLDivElement>(null);
-  // Another file: from its top, as itself.
+  // Another file: from its top, as itself (as source when it opened at a line).
   useEffect(() => {
-    setMode(initialMode(viewer));
+    setMode(pendingLine(viewer) ? 'source' : initialMode(viewer));
     body.current?.scrollTo({ top: 0 });
   }, [viewer.path]);
   const name = viewer.path.split('/').pop() || viewer.path;
   const dir = viewer.path.slice(0, viewer.path.length - name.length).replace(/\/$/, '');
-  const markdown = isMarkdownFile(viewer.path) && !viewer.image;
+  const editing = Boolean(useEditSession(viewer));
+  const markdown = isMarkdownFile(viewer.path) && !viewer.image && !editing;
   return (
     <section className={s.preview} aria-label={name}>
       <div className={s.previewHead}>
@@ -64,6 +75,7 @@ function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: 
         </span>
         {dir ? <span className={s.previewDir}>{dir}</span> : null}
         <span className={s.flex} />
+        <EditTools viewer={viewer} wsId={wsId} selfId={selfId} compact />
         {markdown ? (
           <Segmented
             label="Show as"
@@ -82,7 +94,7 @@ function Preview({ viewer, wsId, local, changed }: { viewer: ViewerState; wsId: 
       </div>
       <div ref={body} className={cx(s.previewBody, s.previewFile, 'selectable')} tabIndex={0} {...{ [SCROLL_ROOT]: '' }}>
         <Suspense fallback={<div className={s.dimPad}>Opening…</div>}>
-          <FileContent viewer={viewer} variant="panel" mode={mode} onMode={setMode} wrap onOpenInEditor={local ? () => void openWithDefaultApp(client, local) : undefined} />
+          <FileContent viewer={viewer} variant="panel" mode={mode} onMode={setMode} wrap editable onOpenInEditor={local ? () => void openWithDefaultApp(client, local) : undefined} />
         </Suspense>
       </div>
     </section>
@@ -111,9 +123,28 @@ export function FilesTab({ wsId }: { wsId: string }) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => opened.get(wsId) ?? new Set());
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState<string>();
+  const [searchIn, setSearchInNow] = useState(lastSearch.in);
+  const [flags, setFlagsNow] = useState(lastSearch.flags);
+  const setSearchIn = (v: SearchIn): void => {
+    setSearchInNow(v);
+    lastSearch.in = v;
+  };
+  const setFlags = (f: SearchFlags): void => {
+    setFlagsNow(f);
+    lastSearch.flags = f;
+  };
+  const contents = searchIn === 'contents';
+  const found = useContentSearch(wsId, query, flags, contents);
   const list = useRef<HTMLDivElement>(null);
+  const hitList = useRef<HTMLDivElement>(null);
+  const field = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const requested = useRef(new Set<string>());
+  // A line found in the contents: the file opens there.
+  const openAt = (path: string, line: number): void => {
+    revealLine(at(path), line);
+    void api.files.open(at(path));
+  };
 
   const load = (path: string): void => {
     requested.current.add(path);
@@ -130,7 +161,7 @@ export function FilesTab({ wsId }: { wsId: string }) {
   }, [wsId, expanded]);
 
   // Filtering looks a few levels deep (not into node_modules, .git, build output…).
-  const q = query.trim();
+  const q = contents ? '' : query.trim();
   useEffect(() => {
     if (!q) return;
     for (const p of filterLoads(entriesOf, requested.current)) load(p);
@@ -239,60 +270,82 @@ export function FilesTab({ wsId }: { wsId: string }) {
           <label className={s.filter}>
             <Icon name="search" size={12} />
             <input
+              ref={field}
               value={query}
-              placeholder="Filter by name"
-              aria-label="Filter files"
+              placeholder={contents ? 'Search in files' : 'Filter by name'}
+              aria-label={contents ? 'Search in the files’ contents' : 'Filter files'}
               spellCheck={false}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Escape' && query) (e.preventDefault(), e.stopPropagation(), setQuery(''));
+                else if (e.key === 'ArrowDown' && contents) (e.preventDefault(), hitList.current?.focus());
                 else if (e.key === 'ArrowDown') (e.preventDefault(), list.current?.focus(), setCursor(rows.find((r) => r.kind === 'entry')?.path));
               }}
             />
+            {contents ? <FlagToggles flags={flags} onChange={setFlags} /> : null}
           </label>
-          <IconButton icon="chevronUp" label="Collapse all folders" onClick={() => expand(new Set())} disabled={!expanded.size} />
+          {contents ? null : <IconButton icon="chevronUp" label="Collapse all folders" onClick={() => expand(new Set())} disabled={!expanded.size} />}
           <IconButton icon="folder" label="Show in Finder" onClick={() => void api.workspaces.openInFinder(wsId)} />
         </div>
-        <div ref={list} className={cx(s.list, s.tree)} role="tree" aria-label="Files" tabIndex={0} onKeyDown={onKey}>
-          {rows.map((row) => {
-            const state = changes.files.get(row.path);
-            const look = state ? STATE[state] : undefined;
-            const on = row.path === cursor;
-            return row.kind === 'loading' ? (
-              <div key={`${row.path}…`} className={s.treeNote} style={{ paddingLeft: 10 + row.depth * 14 + 18 }}>
-                Loading…
-              </div>
-            ) : (
-              <ActionsContext key={row.path} items={() => itemsFor(row)}>
-                <div
-                  role="treeitem"
-                  aria-level={row.depth + 1}
-                  aria-selected={on}
-                  aria-expanded={row.dir ? row.open : undefined}
-                  aria-label={row.name}
-                  data-cursor={on}
-                  className={cx(s.row, s.treeRow, on && s.rowOn, shown?.path === row.path && s.rowShown)}
-                  style={{ paddingLeft: 6 + row.depth * 14 }}
-                  title={row.path}
-                  onClick={() => activate(row)}
-                  onDoubleClick={() => {
-                    const p = localOf(row.path);
-                    if (!row.dir && p) void openWithDefaultApp(client, p);
-                  }}
-                >
-                  <span className={s.chevron}>{row.dir ? <Icon name={row.open ? 'chevronDown' : 'chevronRight'} size={9} /> : null}</span>
-                  <Icon name={row.dir ? 'folder' : 'file'} size={13} className={row.dir ? s.dirIcon : s.fileIcon} />
-                  <span className={cx(s.rowName, look?.tone)}>
-                    <Marked name={row.name} query={q} />
-                  </span>
-                  {look ? <span className={cx(d.letter, look.tone)}>{look.letter}</span> : row.dir && changes.dirs.has(row.path) ? <span className={s.changedDot} title="Has changes" /> : null}
-                  {!row.dir && !look && row.size !== undefined && on ? <span className={s.size}>{row.size < 1024 ? `${row.size} B` : formatBytes(row.size)}</span> : null}
-                </div>
-              </ActionsContext>
-            );
-          })}
-          {q && !rows.length ? <div className={s.treeNote}>No names with “{q}” in the folders looked at</div> : null}
+        <div className={k.modeRow}>
+          <Segmented
+            label="Search"
+            radio
+            value={searchIn}
+            onChange={(v) => {
+              setSearchIn(v);
+              field.current?.focus();
+            }}
+            options={[
+              { value: 'names', label: 'Names', hint: 'Filter the tree by file name' },
+              { value: 'contents', label: 'Contents', hint: 'Search inside the files (ripgrep)' },
+            ]}
+          />
         </div>
+        {contents ? (
+          <ContentResultsList state={found} query={query} listRef={hitList} onOpen={openAt} onEscape={() => field.current?.focus()} />
+        ) : (
+          <div ref={list} className={cx(s.list, s.tree)} role="tree" aria-label="Files" tabIndex={0} onKeyDown={onKey}>
+            {rows.map((row) => {
+              const state = changes.files.get(row.path);
+              const look = state ? STATE[state] : undefined;
+              const on = row.path === cursor;
+              return row.kind === 'loading' ? (
+                <div key={`${row.path}…`} className={s.treeNote} style={{ paddingLeft: 10 + row.depth * 14 + 18 }}>
+                  Loading…
+                </div>
+              ) : (
+                <ActionsContext key={row.path} items={() => itemsFor(row)}>
+                  <div
+                    role="treeitem"
+                    aria-level={row.depth + 1}
+                    aria-selected={on}
+                    aria-expanded={row.dir ? row.open : undefined}
+                    aria-label={row.name}
+                    data-cursor={on}
+                    className={cx(s.row, s.treeRow, on && s.rowOn, shown?.path === row.path && s.rowShown)}
+                    style={{ paddingLeft: 6 + row.depth * 14 }}
+                    title={row.path}
+                    onClick={() => activate(row)}
+                    onDoubleClick={() => {
+                      const p = localOf(row.path);
+                      if (!row.dir && p) void openWithDefaultApp(client, p);
+                    }}
+                  >
+                    <span className={s.chevron}>{row.dir ? <Icon name={row.open ? 'chevronDown' : 'chevronRight'} size={9} /> : null}</span>
+                    <Icon name={row.dir ? 'folder' : 'file'} size={13} className={row.dir ? s.dirIcon : s.fileIcon} />
+                    <span className={cx(s.rowName, look?.tone)}>
+                      <Marked name={row.name} query={q} />
+                    </span>
+                    {look ? <span className={cx(d.letter, look.tone)}>{look.letter}</span> : row.dir && changes.dirs.has(row.path) ? <span className={s.changedDot} title="Has changes" /> : null}
+                    {!row.dir && !look && row.size !== undefined && on ? <span className={s.size}>{row.size < 1024 ? `${row.size} B` : formatBytes(row.size)}</span> : null}
+                  </div>
+                </ActionsContext>
+              );
+            })}
+            {q && !rows.length ? <div className={s.treeNote}>No names with “{q}” in the folders looked at</div> : null}
+          </div>
+        )}
       </div>
       {previewed ? (
         <>

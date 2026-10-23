@@ -1,4 +1,4 @@
-import type { ViewerState } from '@beluga/core/store.js';
+import type { ViewerState } from '../../../../../src/core/store.js';
 import { isImageFile, isMarkdownPath } from '../../components/markdown/md-paths.js';
 
 /**
@@ -41,7 +41,57 @@ export const initialMode = (viewer: Pick<ViewerState, 'path' | 'content'>): Read
 export const ext = (p: string): string => /\.([\w-]+)$/.exec(p)?.[1]?.toLowerCase() ?? '';
 
 /** Extensions shiki knows by another name. */
-export const LANG: Record<string, string> = { ts: 'ts', tsx: 'tsx', js: 'js', jsx: 'jsx', mjs: 'js', json: 'json', sh: 'bash', py: 'python', go: 'go', rs: 'rust', css: 'css', html: 'html', yml: 'yaml', yaml: 'yaml', sql: 'sql', swift: 'swift', java: 'java', kt: 'kotlin', c: 'c', h: 'c', cpp: 'cpp', rb: 'ruby', toml: 'toml' };
+export const LANG: Record<string, string> = {
+  ts: 'ts',
+  tsx: 'tsx',
+  mts: 'ts',
+  cts: 'ts',
+  js: 'js',
+  jsx: 'jsx',
+  mjs: 'js',
+  cjs: 'js',
+  json: 'json',
+  jsonc: 'jsonc',
+  json5: 'json5',
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  py: 'python',
+  go: 'go',
+  rs: 'rust',
+  css: 'css',
+  scss: 'scss',
+  less: 'less',
+  html: 'html',
+  htm: 'html',
+  vue: 'vue',
+  svelte: 'svelte',
+  md: 'markdown',
+  mdx: 'mdx',
+  yml: 'yaml',
+  yaml: 'yaml',
+  sql: 'sql',
+  swift: 'swift',
+  java: 'java',
+  kt: 'kotlin',
+  kts: 'kotlin',
+  c: 'c',
+  h: 'c',
+  cpp: 'cpp',
+  cc: 'cpp',
+  hpp: 'cpp',
+  cs: 'csharp',
+  rb: 'ruby',
+  php: 'php',
+  toml: 'toml',
+  xml: 'xml',
+  graphql: 'graphql',
+  lua: 'lua',
+  dart: 'dart',
+  ex: 'elixir',
+  exs: 'elixir',
+  tf: 'hcl',
+};
 
 /** The language a file's code is colored as (from its name). */
 export const langOf = (path: string): string | undefined => {

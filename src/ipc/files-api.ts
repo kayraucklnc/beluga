@@ -16,11 +16,30 @@ export const FILES_EDIT_API = {
     args: z.tuple([
       id,
       z.string().min(1).max(1000),
-      z.object({ regex: z.boolean().optional(), caseSensitive: z.boolean().optional(), wholeWord: z.boolean().optional(), slot: z.string().max(200).optional() }).strict().optional(),
+      z
+        .object({ regex: z.boolean().optional(), caseSensitive: z.boolean().optional(), wholeWord: z.boolean().optional(), slot: z.string().max(200).optional() })
+        .strict()
+        .optional(),
     ]),
   },
   // Save a file you edited → { ok, hash } or { ok: false, conflict } (it changed since `expect`, the hash of the text you started from; `force` saves anyway).
-  'files.save': { args: z.tuple([id, rel, text, z.object({ expect: z.string().regex(/^[0-9a-f]{64}$/).optional(), force: z.boolean().optional() }).strict().optional()]) },
+  'files.save': {
+    args: z.tuple([
+      id,
+      rel,
+      text,
+      z
+        .object({
+          expect: z
+            .string()
+            .regex(/^[0-9a-f]{64}$/)
+            .optional(),
+          force: z.boolean().optional(),
+        })
+        .strict()
+        .optional(),
+    ]),
+  },
   // Whether the project's Prettier can format this file → { available, reason?, version? }.
   'files.formatter': { args: z.tuple([id, rel]) },
   // The text as Prettier lays it out (nothing is saved) → the formatted text.

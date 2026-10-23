@@ -39,8 +39,23 @@ const rgMatch = (p: string, line: string, n: number, subs: Array<[number, number
 
 describe('ripgrep output', () => {
   it('reads a match: path without ./, line, trimmed preview, ranges', () => {
-    const hit = parseRgLine(rgMatch('./src/a.ts', '    const auth = makeAuth();\n', 12, [[10, 14], [21, 25]]));
-    expect(hit).toEqual({ path: 'src/a.ts', match: { line: 12, text: 'const auth = makeAuth();', ranges: [[6, 10], [17, 21]] } });
+    const hit = parseRgLine(
+      rgMatch('./src/a.ts', '    const auth = makeAuth();\n', 12, [
+        [10, 14],
+        [21, 25],
+      ]),
+    );
+    expect(hit).toEqual({
+      path: 'src/a.ts',
+      match: {
+        line: 12,
+        text: 'const auth = makeAuth();',
+        ranges: [
+          [6, 10],
+          [17, 21],
+        ],
+      },
+    });
   });
 
   it('turns byte offsets into character offsets on non-ASCII lines', () => {
@@ -89,20 +104,33 @@ describe('previews', () => {
 
   it('drops ranges that fall outside what is shown', () => {
     const line = `a${' '.repeat(10)}${'z'.repeat(400)}a`;
-    const { ranges } = previewLine(line, [[0, 1], [411, 412]]);
+    const { ranges } = previewLine(line, [
+      [0, 1],
+      [411, 412],
+    ]);
     expect(ranges).toEqual([[0, 1]]);
   });
 
   it('finds every match on each line in the Node search', () => {
     const lines = matchLines('foo bar foo\nnone\n  FOO\n', queryRegex('foo', {}));
     expect(lines).toEqual([
-      { line: 1, text: 'foo bar foo', ranges: [[0, 3], [8, 11]] },
+      {
+        line: 1,
+        text: 'foo bar foo',
+        ranges: [
+          [0, 3],
+          [8, 11],
+        ],
+      },
       { line: 3, text: 'FOO', ranges: [[0, 3]] },
     ]);
     expect(matchLines('foo FOO', queryRegex('foo', { caseSensitive: true }))).toHaveLength(1);
     expect(matchLines('food foo', queryRegex('foo', { wholeWord: true }))[0]?.ranges).toEqual([[5, 8]]);
     expect(matchLines('a.b axb', queryRegex('a.b', {}))[0]?.ranges).toEqual([[0, 3]]);
-    expect(matchLines('a.b axb', queryRegex('a.b', { regex: true }))[0]?.ranges).toEqual([[0, 3], [4, 7]]);
+    expect(matchLines('a.b axb', queryRegex('a.b', { regex: true }))[0]?.ranges).toEqual([
+      [0, 3],
+      [4, 7],
+    ]);
   });
 });
 

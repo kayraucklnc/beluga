@@ -134,9 +134,7 @@ class Collector {
     return this.count >= MAX_LINES;
   }
   files(): FileMatches[] {
-    return [...this.byFile]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([p, matches]) => ({ path: p, matches: [...matches].sort((x, y) => x.line - y.line) }));
+    return [...this.byFile].sort(([a], [b]) => a.localeCompare(b)).map(([p, matches]) => ({ path: p, matches: [...matches].sort((x, y) => x.line - y.line) }));
   }
 }
 
@@ -231,7 +229,10 @@ function searchWithRipgrep(rg: string, root: string, query: string, opts: Conten
 
 /** ripgrep's complaint about a pattern, in one line ("regex parse error: unclosed group"). */
 function rgError(stderr: string): string {
-  const lines = stderr.split('\n').map((l) => l.trim()).filter(Boolean);
+  const lines = stderr
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
   const why = (lines.find((l) => /^error:/i.test(l)) ?? lines.at(-1) ?? 'The search couldn’t run').replace(/^error:\s*/i, '').replace(/^regex parse error:?\s*/i, '');
   return /regex parse error/i.test(stderr) ? `Not a valid pattern: ${why}` : why;
 }
@@ -494,7 +495,10 @@ export function formatWithPrettier(root: string, rel: string, content: string, m
 }
 
 function prettierError(stderr: string): string {
-  const line = stderr.split('\n').map((l) => l.replace(/^\[error\]\s*/, '').trim()).find(Boolean);
+  const line = stderr
+    .split('\n')
+    .map((l) => l.replace(/^\[error\]\s*/, '').trim())
+    .find(Boolean);
   if (!line) return 'Prettier couldn’t format this file';
   if (/No parser could be inferred/i.test(line)) return 'Prettier doesn’t format this kind of file';
   return `Prettier: ${line.replace(/^.*?:\s*SyntaxError:\s*/, 'Syntax error: ')}`.slice(0, 300);
