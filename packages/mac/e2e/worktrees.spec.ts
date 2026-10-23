@@ -110,7 +110,8 @@ test('archiving several at once keeps everything of theirs, and they leave the l
   await alert.getByRole('button', { name: 'Archive 2 Worktrees' }).click();
   await expect(row(page, 'new-hero')).toHaveCount(0, { timeout: 30_000 });
   await expect(row(page, 'add-auth')).toHaveCount(0, { timeout: 30_000 });
-  expect(existsSync(dir)).toBe(false);
+  // It leaves the list at once; the folder goes in the background.
+  await expect.poll(() => existsSync(dir), { timeout: 30_000 }).toBe(false);
   // Back from the Overview, as it was.
   await sidebar(page).getByRole('button', { name: 'Overview' }).click();
   await page.getByRole('tab', { name: /^Archived, \d+$/ }).click();

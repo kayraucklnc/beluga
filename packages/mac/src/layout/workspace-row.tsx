@@ -70,6 +70,23 @@ export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent }: { ws: Wor
     sameDeep,
   );
   const icon: IconName = ws.kind === 'chat' ? 'chat' : ws.kind === 'main' ? 'folder' : 'branch';
+  // Being made: its page opens here (the core has nothing to open yet), with nothing to do on it until it's there.
+  if (ws.pending) {
+    return (
+      <Row
+        indent={indent}
+        selected={selected}
+        className={s.pendingRow}
+        aria-label={ws.name}
+        aria-busy
+        icon={<Icon name={icon} size={14} />}
+        label={ws.name}
+        detail={`${ws.name}: making the worktree from ${ws.base ?? 'the latest origin'}…`}
+        onClick={() => client.store.dispatch({ type: 'view', view: { kind: 'workspace', id: ws.id, tab: 'chat' } })}
+        trailing={<span className={s.making} role="progressbar" aria-label="Making the worktree" />}
+      />
+    );
+  }
   // Idle: its git state (uncommitted changes, ready to merge) as before.
   const quiet = st.tone === 'warn' || st.tone === 'info' || st.tone === 'error' ? <DotMark tone={st.tone} /> : null;
   return (

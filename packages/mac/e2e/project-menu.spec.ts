@@ -67,7 +67,7 @@ test('choosing from a project’s ⋯ menu does only that, it doesn’t also ope
   await expect(page.getByRole('heading', { level: 1, name: 'bob-api' })).toHaveCount(0);
 });
 
-test('Delete Project… asks first; by default it leaves Beluga and the folder stays', async ({ page }) => {
+test('Delete Project… asks first; it leaves Beluga and the folder is never touched', async ({ page }) => {
   const dir = await addRepo(page, 'del-one');
   await project(page, 'del-one').click({ button: 'right' });
   const del = page.getByRole('menuitem', { name: 'Delete Project…' });
@@ -75,11 +75,11 @@ test('Delete Project… asks first; by default it leaves Beluga and the folder s
   const items = await page.getByRole('menuitem').allTextContents();
   expect(items.slice(-2)).toEqual(['Hide Project', 'Delete Project…']);
   await del.click();
-  const alert = page.getByRole('alertdialog', { name: 'Delete “del-one”?' });
+  const alert = page.getByRole('alertdialog', { name: 'Delete “del-one” from Beluga?' });
   await expect(alert).toBeVisible();
-  const trash = alert.getByRole('checkbox', { name: /Also move the folder to the Trash/ });
-  await expect(trash).not.toBeChecked();
-  await expect(alert).toContainText('stays where it is');
+  // No way to send the folder anywhere from here.
+  await expect(alert.getByRole('checkbox')).toHaveCount(0);
+  await expect(alert).toContainText('isn’t touched');
   await page.screenshot({ path: '../../.klaud/scratch/02-delete-project-alert.png' });
   // Cancel does nothing.
   await alert.getByRole('button', { name: 'Cancel' }).click();
@@ -87,7 +87,7 @@ test('Delete Project… asks first; by default it leaves Beluga and the folder s
 
   await project(page, 'del-one').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Delete Project…' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Remove from Beluga' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete from Beluga' }).click();
   await expect(project(page, 'del-one')).toHaveCount(0);
   // Not hidden: gone from Beluga (and still gone after a reload).
   await page.reload();

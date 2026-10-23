@@ -256,3 +256,27 @@
   font-size: 0.86em;
   white-space: nowrap;
 }
+/* A worktree being made: a small ring goes round where its state will be. */
+.making {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 3px;
+  border: 1.5px solid color-mix(in srgb, var(--text-3) 35%, transparent);
+  border-top-color: var(--text-2);
+  border-radius: 50%;
+  animation: making 800ms linear infinite;
+}
+.pendingRow {
+  opacity: 0.72;
+}
+@keyframes making {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .making {
+    animation-duration: 2400ms;
+  }
+}
