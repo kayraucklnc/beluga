@@ -122,7 +122,8 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
   const startable = useMemo(() => {
     if (!plan.body || plan.draft || view.active.length >= plan.maxParallel || !view.open.length) return new Set<string>();
     const step = new Set(view.open.filter((m) => m.autonomy === 'step').map((m) => m.milestone.id));
-    return new Set(view.ready.filter((t) => t.forYou || plan.paused || step.has(t.milestoneId)).map((t) => t.task.id));
+    // Yours never start in a worktree: they're answered in the plan's conversation.
+    return new Set(view.ready.filter((t) => !t.forYou && (plan.paused || step.has(t.milestoneId))).map((t) => t.task.id));
   }, [view, plan]);
   // The chat's width: dragged (live), else the one you left it at, never past half the plan's area.
   const split = useRef<HTMLDivElement>(null);
@@ -154,7 +155,9 @@ function Page({ view, prefs, setPrefs, picked, setPicked }: { view: PlanView; pr
       case 'resume':
         return { label: 'Resume', icon: 'play', run: () => void act(() => api.setPaused(plan.id, false)) };
       case 'start':
-        return { label: words.title, icon: 'play', run: () => next.tasks.forEach((t) => void act(() => api.startTask(plan.id, t.task.id))) };
+        // Yours: the plan's conversation, where its card asks you; Claude's: started.
+        if (next.tasks.every((t) => t.forYou)) return { label: words.title, run: () => showChat(true) };
+        return { label: words.title, icon: 'play', run: () => next.tasks.filter((t) => !t.forYou).forEach((t) => void act(() => api.startTask(plan.id, t.task.id))) };
       case 'pass':
         return { label: 'Pass Milestone', icon: 'check', run: () => void act(() => api.pass(plan.id, next.milestone.milestone.id)) };
       case 'failed':

@@ -105,6 +105,10 @@ export interface PlanTools {
   start(task: string): Promise<string>;
   /** `queue` (default): read when its current turn ends. `steer`: now, interrupting a long command or a dead run. */
   message(task: string, text: string, mode?: 'queue' | 'steer'): string;
+  /** Stop the Claude working on a started task (its queued messages too); it waits until it's told what to do. */
+  stop?(task: string): string;
+  /** Pause the plan (nothing new starts) or resume it. */
+  pause?(paused: boolean): string;
 }
 
 /**

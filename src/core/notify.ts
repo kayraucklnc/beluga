@@ -5,6 +5,7 @@ import { loudestKind, type SoundChoice, type SoundPrefs, soundFor, volumeOf } fr
 import { type Issue, issueForWorkspace } from './board/model.js';
 import { type Plan, planById, planForHome, planTitle } from './plans/model.js';
 import { type MilestoneView, planView } from './plans/progress.js';
+import { isDecisionQid } from './plans/decisions.js';
 
 /** The groups you can switch on or off in Settings → Notifications. */
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background';
@@ -113,7 +114,7 @@ function scopeToPlan(state: Pick<DomainState, 'plans' | 'board' | 'prefs'>, e: N
   const who = place.issue ? `${planTitle(place.plan)} · ${place.issue.key}` : planTitle(place.plan);
   const at = { plan: place.plan.id, ...(place.task ? { planTask: place.task } : {}) };
   if (e.kind === 'needsYou') {
-    if (e.tag === 'question') return { ...e, ...at, title: `${who} asks: ${e.body}`, body: 'Answer it to keep the plan going' };
+    if (e.tag === 'question') return { ...e, ...at, title: `${who} ${e.ref && isDecisionQid(e.ref) ? 'needs your call' : 'asks'}: ${e.body}`, body: 'Answer it to keep the plan going' };
     if (e.tag === 'plan') return { ...e, ...at, title: `${who} has a plan`, body: e.body };
     return { ...e, ...at, title: `${who} asks: ${e.title}` };
   }
@@ -304,7 +305,9 @@ export function detectNotices(prev: DomainState, next: DomainState, now = Date.n
       out.push(
         q.question.kind === 'plan'
           ? { kind: 'needsYou', tag: 'plan', ref: q.qid, title: `Claude has a plan for ${where}`, body: 'Approve it, or say what to change', channel: q.channel }
-          : { kind: 'needsYou', tag: 'question', ref: q.qid, title: `Claude asks in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel },
+          : isDecisionQid(q.qid)
+            ? { kind: 'needsYou', tag: 'question', ref: q.qid, title: `Your call in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel }
+            : { kind: 'needsYou', tag: 'question', ref: q.qid, title: `Claude asks in ${where}`, body: firstLine(q.question.questions[0]?.question ?? ''), channel: q.channel },
       );
     }
   }

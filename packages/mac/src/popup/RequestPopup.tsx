@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button } from '../components/ui.js';
 import type { PopupPort } from '../gateway/popup-bridge.js';
-import { POPUP_MAX, type PopupRequest, popupButtons, popupWho } from '../gateway/popup-model.js';
+import { POPUP_MAX, type PopupItem, type PopupNeed, type PopupRequest, isNeed, popupButtons, popupWho } from '../gateway/popup-model.js';
 import type { RequestAction } from '../gateway/request-actions.js';
 import s from './popup.module.css';
 
@@ -13,6 +13,41 @@ import s from './popup.module.css';
  */
 
 const KIND_ICON = { ask: 'claude', run: 'terminal', file: 'file' } as const;
+const NEED_ICON = { question: 'claude', decision: 'hand', plan: 'wand', approval: 'lock', milestone: 'flag' } as const;
+const NEED_LEAD = { question: 'Claude asks you', decision: 'Your call', plan: 'Claude has a plan', approval: 'Claude needs your OK', milestone: 'Ready for you' } as const;
+
+/**
+ * Your own Claude (or a plan) needs you: what, where, and Open, which takes you there in Beluga
+ * (a question's choices, your own words, the decision's card: there's room for them there).
+ */
+function NeedCard({ r, open, later }: { r: PopupNeed; open: () => void; later: () => void }) {
+  return (
+    <article className={s.card} data-testid="request-popup-card" data-need={r.tag} aria-label={`${r.title}: ${r.body}`}>
+      <header className={s.head}>
+        <span className={s.needMark} aria-hidden>
+          <Icon name={NEED_ICON[r.tag]} size={15} />
+        </span>
+        <div className={s.headText}>
+          <div className={s.who}>
+            <strong>{NEED_LEAD[r.tag]}</strong> · {r.title}
+          </div>
+          <button type="button" className={s.needBody} onClick={open}>
+            {r.body}
+          </button>
+          {r.options?.length ? <div className={s.said}>{r.options.join(' · ')}</div> : null}
+        </div>
+      </header>
+      <footer className={s.buttons}>
+        <Button size="small" variant="plain" onClick={later}>
+          Later
+        </Button>
+        <Button size="small" variant="primary" onClick={open}>
+          {r.tag === 'approval' ? 'Review in Beluga' : r.tag === 'milestone' ? 'Open the Plan' : 'Answer in Beluga'}
+        </Button>
+      </footer>
+    </article>
+  );
+}
 
 function Card({ r, act }: { r: PopupRequest; act: (action: RequestAction, r: PopupRequest) => void }) {
   const [more, setMore] = useState(false);
@@ -79,7 +114,7 @@ function Card({ r, act }: { r: PopupRequest; act: (action: RequestAction, r: Pop
 }
 
 export function RequestPopup({ port }: { port: PopupPort }) {
-  const [requests, setRequests] = useState<readonly PopupRequest[]>([]);
+  const [requests, setRequests] = useState<readonly PopupItem[]>([]);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => port.subscribe(setRequests), [port]);
   // The window is as tall as the cards.
@@ -96,13 +131,17 @@ export function RequestPopup({ port }: { port: PopupPort }) {
   const rest = requests.length - shown.length;
   if (!shown.length) return null;
   return (
-    <div ref={root} className={s.stack} role="dialog" aria-label="Requests from friends">
+    <div ref={root} className={s.stack} role="dialog" aria-label={requests.some(isNeed) ? 'Waiting for you' : 'Requests from friends'}>
       <button type="button" className={s.close} aria-label="Hide (they still wait in Beluga)" title="Hide (they still wait in Beluga)" onClick={() => port.dismiss(requests.map((r) => r.approval))}>
         <Icon name="x" size={10} />
       </button>
-      {shown.map((r) => (
-        <Card key={r.approval} r={r} act={(action, req) => port.act(action, req)} />
-      ))}
+      {shown.map((r) =>
+        isNeed(r) ? (
+          <NeedCard key={r.approval} r={r} open={() => port.act('review', r)} later={() => port.dismiss([r.approval])} />
+        ) : (
+          <Card key={r.approval} r={r} act={(action, req) => port.act(action, req)} />
+        ),
+      )}
       {rest > 0 ? (
         <button type="button" className={s.rest} onClick={() => port.act('review', { approval: '', task: '' })}>
           {rest} more waiting in Beluga

@@ -241,6 +241,8 @@ export class PlanPilot {
     const view = this.view(plan);
     const t = view.milestones.flatMap((m) => m.tasks).find((x) => x.task.id === taskId || x.issue?.key === taskId.toUpperCase());
     if (!t) throw new Error(`There's no task "${taskId}" in this plan`);
+    // Yours: it's a decision in the plan's conversation, never a worktree (see decisions.ts).
+    if (t.forYou) throw new Error(`${t.issue?.key ?? t.task.id} “${t.task.title}” is the user’s: it’s answered in the plan’s conversation, not started in a worktree`);
     // Claude starts nothing on a paused plan, nor on one you run step by step (you do).
     const autonomy = view.milestones.find((m) => m.milestone.id === t.milestoneId)?.autonomy ?? plan.autonomy;
     if (by.kind === 'claude' && (plan.paused || autonomy === 'step')) throw new Error(plan.paused ? 'The plan is paused: the user resumes it' : 'This plan runs step by step: the user starts each task');

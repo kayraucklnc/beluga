@@ -32,7 +32,7 @@ const ALWAYS_OK = new Set([
   // The task board: only your own runs have it, and it only changes your tasks (each change is in their activity).
   ...['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
   // A plan's tools: only its home conversation has them (core/plans); changes to an approved plan wait for you.
-  ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task'].map((n) => `mcp__beluga_plan__${n}`),
+  ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task', 'plan_stop_task', 'plan_pause'].map((n) => `mcp__beluga_plan__${n}`),
   // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).
   ...['screenshot', 'device_info'].map((n) => `mcp__beluga_task__${n}`),
 ]);

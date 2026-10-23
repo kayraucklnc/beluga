@@ -1,5 +1,5 @@
 import { ESTIMATES, PRIORITIES, type Priority } from '../board/model.js';
-import { AUTONOMIES, type Autonomy, MAX_MILESTONES, MAX_PLAN_TASKS, type PlanBody, type PlanMilestone, type PlanTask, allTasks } from './model.js';
+import { AUTONOMIES, type Autonomy, MAX_MILESTONES, MAX_PLAN_TASKS, type PlanBody, type PlanDecision, type PlanMilestone, type PlanTask, allTasks } from './model.js';
 
 /**
  * Writing a plan: a whole one (Claude's plan_write), or a change at a time (Claude's plan_update,
@@ -31,8 +31,23 @@ export interface TaskInput {
   readonly labels?: readonly string[];
   readonly touches?: readonly string[];
   readonly assignee?: 'claude' | 'me';
+  /** A task for you: what you're asked when it's ready (see PlanDecision). */
+  readonly decision?: PlanDecision;
   /** A task already on the board that this plan task is (adopted into the plan). */
   readonly issueId?: string;
+}
+
+/** A decision as given: trimmed and capped; none without a question. */
+function decisionOf(input: PlanDecision | undefined): PlanDecision | undefined {
+  const question = block(input?.question, 1000);
+  if (!input || !question) return undefined;
+  const seen = new Set<string>();
+  const options = input.options
+    .map((o) => ({ label: oneLine(o.label ?? '', 200), description: block(o.description, 600) }))
+    .filter((o) => o.label && !seen.has(o.label) && seen.add(o.label))
+    .slice(0, 6)
+    .map((o) => ({ label: o.label, ...(o.description ? { description: o.description } : {}) }));
+  return { question, options, ...(input.multi ? { multi: true } : {}) };
 }
 
 export interface MilestoneInput {
@@ -108,6 +123,7 @@ function task(input: TaskInput, id: string, keep?: PlanTask): PlanTask {
   const touches = [...new Set((input.touches ?? []).map((t) => oneLine(t, 200)).filter(Boolean))].slice(0, MAX_TOUCHES);
   const goal = block(input.goal, MAX_GOAL);
   const context = block(input.context, MAX_CONTEXT);
+  const decision = input.assignee === 'me' ? decisionOf(input.decision) : undefined;
   return {
     id,
     title,
@@ -121,6 +137,7 @@ function task(input: TaskInput, id: string, keep?: PlanTask): PlanTask {
     ...(labels.length ? { labels } : {}),
     ...(touches.length ? { touches } : {}),
     ...(input.assignee === 'me' ? { assignee: 'me' as const } : {}),
+    ...(decision ? { decision } : {}),
     ...((input.issueId ?? keep?.issueId) ? { issueId: (input.issueId ?? keep?.issueId)! } : {}),
   };
 }
@@ -248,6 +265,7 @@ function applyOp(body: PlanBody, op: PlanOp): PlanBody {
         ...((p.labels ?? t.labels) ? { labels: (p.labels ?? t.labels)! } : {}),
         ...((p.touches ?? t.touches) ? { touches: (p.touches ?? t.touches)! } : {}),
         ...((p.assignee ?? t.assignee) ? { assignee: (p.assignee ?? t.assignee)! } : {}),
+        ...((p.decision ?? t.decision) ? { decision: (p.decision ?? t.decision)! } : {}),
         ...(p.issueId ? { issueId: p.issueId } : {}),
       };
       return mapTasks((x) => (x.id === t.id ? task(merged, t.id, t) : x));

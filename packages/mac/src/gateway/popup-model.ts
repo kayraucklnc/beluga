@@ -1,6 +1,10 @@
-import type { Approval } from '../../../../src/core/store.js';
+import type { Approval, DomainState } from '../../../../src/core/store.js';
 import { CAP_INFO } from '../../../../src/core/gateway/access.js';
 import { type TaskView, oneLine, requestGist } from '../../../../src/core/gateway/model.js';
+import { placeName, planOfChannel } from '../../../../src/core/notify.js';
+import { isDecisionQid } from '../../../../src/core/plans/decisions.js';
+import { planTitle } from '../../../../src/core/plans/model.js';
+import { planView } from '../../../../src/core/plans/progress.js';
 import type { RequestAction } from './request-actions.js';
 
 /**
@@ -104,3 +108,137 @@ export const POPUP_BUTTONS: ReadonlyArray<{ readonly action: RequestAction; read
 
 /** The buttons one request gets: a file is allowed one at a time here (Always for files, with its folder spelled out, is on the request sheet). */
 export const popupButtons = (r: Pick<PopupRequest, 'kind'>): typeof POPUP_BUTTONS => (r.kind === 'file' ? POPUP_BUTTONS.filter((b) => b.action !== 'allow_always') : POPUP_BUTTONS);
+
+// ------------------------------------------------------------------ when your own Claude needs you
+
+/**
+ * The same card for what your own Claude (or a plan) needs from you: a question, an approval, a
+ * decision of yours in a plan, a milestone waiting for you to pass it. It says what, and Open
+ * goes there (answered in Beluga, where there's room to choose and write); Later hides it.
+ */
+export interface PopupNeed {
+  readonly need: true;
+  /** Its id on the card ("need:q:<qid>", "need:a:<approval id>", "need:pass:<plan>:<milestone>"). */
+  readonly approval: string;
+  readonly task: '';
+  readonly tag: 'question' | 'decision' | 'plan' | 'approval' | 'milestone';
+  /** "Claude asks in add-auth", "Card checkout · KLD-12: your call". */
+  readonly title: string;
+  /** The question, the command, what's ready. */
+  readonly body: string;
+  /** A question's choices, in a line (they're picked in Beluga). */
+  readonly options?: readonly string[];
+  /** Where Open goes: the conversation (a plan's opens the plan), or the plan itself. */
+  readonly channel?: string;
+  readonly plan?: string;
+}
+
+export type PopupItem = PopupRequest | PopupNeed;
+
+export const isNeed = (r: PopupItem): r is PopupNeed => 'need' in r && r.need === true;
+
+const NEED = 'need:';
+export const isNeedId = (id: string | undefined): boolean => Boolean(id?.startsWith(NEED));
+
+type NeedState = Pick<DomainState, 'approvals' | 'questions' | 'plans' | 'board' | 'projects' | 'shared' | 'peers' | 'prefs' | 'gateway'>;
+
+/** A friend's request the card shows as theirs (Allow / Decline right there), not as something your Claude needs. */
+const friendsRequest = (a: Approval, tasks: readonly TaskView[]): boolean => a.kind === 'request' && Boolean(a.peer) && Boolean(a.task) && tasks.some((t) => t.id === a.task);
+
+const firstLine = (text: string, max = 160): string => oneLine(text.replace(/[*_`#>]/g, ''), max);
+
+/** Where it's asked, in words: a plan's task ("Card checkout · KLD-12"), a plan, or the conversation's name. */
+function placeOf(state: NeedState, channel: string | undefined): string {
+  if (!channel) return 'Beluga';
+  const place = planOfChannel(state, channel);
+  if (place && place.plan.status !== 'draft') return place.issue ? `${planTitle(place.plan)} · ${place.issue.key}` : planTitle(place.plan);
+  return placeName(state as DomainState, channel);
+}
+
+/**
+ * What your own Claude and your plans wait on you for, as the card shows it (newest first). None
+ * while you're on Do Not Disturb (or appear offline), with the pop-up or "Claude needs you" off in
+ * Settings › Notifications, and nothing about what a Beluga window in front already shows you.
+ */
+export function popupNeeds(state: NeedState, opts: { readonly quiet: boolean; readonly showing?: (channel: string | undefined, plan?: string) => boolean }): PopupNeed[] {
+  const prefs = state.prefs.notify;
+  if (opts.quiet || prefs.popup === false || prefs.needsYou === false) return [];
+  const showing = opts.showing ?? (() => false);
+  const out: PopupNeed[] = [];
+  for (const q of [...state.questions].reverse()) {
+    if (showing(q.channel)) continue;
+    const where = placeOf(state, q.channel);
+    if (q.question.kind === 'plan') {
+      out.push({ need: true, approval: `${NEED}q:${q.qid}`, task: '', tag: 'plan', title: `Claude has a plan in ${where}`, body: 'Approve it, or say what to change', channel: q.channel });
+      continue;
+    }
+    const first = q.question.questions[0];
+    const decision = isDecisionQid(q.qid);
+    out.push({
+      need: true,
+      approval: `${NEED}q:${q.qid}`,
+      task: '',
+      tag: decision ? 'decision' : 'question',
+      title: decision ? `${where}: your call` : `Claude asks in ${where}`,
+      body: firstLine(first?.question ?? ''),
+      ...(first?.options.length ? { options: first.options.map((o) => oneLine(o.label, 40)).slice(0, 4) } : {}),
+      channel: q.channel,
+    });
+  }
+  const tasks = state.gateway.tasks;
+  for (const a of [...state.approvals].reverse()) {
+    if (friendsRequest(a, tasks) || showing(a.channel)) continue;
+    out.push({ need: true, approval: `${NEED}a:${a.id}`, task: '', tag: 'approval', title: a.channel ? `Approval needed in ${placeOf(state, a.channel)}` : 'Approval needed', body: firstLine(a.detail ? `${a.title}: ${a.detail}` : a.title), ...(a.channel ? { channel: a.channel } : {}) });
+  }
+  for (const plan of state.plans.plans) {
+    if (plan.status !== 'active' || !plan.body || plan.paused || showing(plan.home, plan.id)) continue;
+    const next = planView(plan, state.board).next;
+    if (next.kind !== 'pass') continue;
+    const m = next.milestone;
+    out.push({
+      need: true,
+      approval: `${NEED}pass:${plan.id}:${m.milestone.id}`,
+      task: '',
+      tag: 'milestone',
+      title: `${planTitle(plan)}: “${oneLine(m.milestone.title, 60)}” is ready for you`,
+      body: m.run.check?.verdict === 'pass' ? 'Claude checked it: pass it to go on' : 'Its tasks are finished: pass it to go on',
+      channel: plan.home,
+      plan: plan.id,
+    });
+  }
+  return out;
+}
+
+/** A pretend friend's request and a pretend decision, to see the card (⌘K › Preview Request Pop-up): their buttons do nothing. */
+export const PREVIEW_PREFIX = 'preview:';
+
+export const isPreviewId = (id: string | undefined): boolean => Boolean(id?.startsWith(PREVIEW_PREFIX));
+
+export function previewItems(now: number): PopupItem[] {
+  return [
+    {
+      approval: `${PREVIEW_PREFIX}request`,
+      task: `${PREVIEW_PREFIX}task`,
+      peerId: 'preview-mia',
+      peerName: 'Mia',
+      claude: true,
+      kind: 'ask',
+      gist: 'take a screenshot of your desktop and send it to me',
+      said: 'A preview: nothing is asked, and nothing is sent.',
+      full: 'This is how a friend’s request looks. Allow, Allow Always and Decline do nothing here.',
+      needs: ['See the screen'],
+      where: 'A new scratch folder, just for this request',
+      back: 'Files',
+      askedAt: now,
+    },
+    {
+      need: true,
+      approval: `${PREVIEW_PREFIX}need`,
+      task: '',
+      tag: 'decision',
+      title: 'Card checkout · KLD-12: your call',
+      body: 'Which payment providers should checkout offer at launch?',
+      options: ['Stripe', 'Apple Pay', 'PayPal'],
+    },
+  ];
+}

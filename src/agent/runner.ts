@@ -156,7 +156,8 @@ export function createClaudeBackend(opts: ClaudeBackendOptions): AgentBackend {
       const shelf = new ViewShelf();
       const scratchRoot = input.scratchDir ? path.resolve(cwd, input.scratchDir) : undefined;
       const syncMain = askOnly ? place?.syncMain : undefined;
-      const fixup = askOnly ? place?.fixup : undefined;
+      // A hidden worktree to fix a conflict in (a plan's head Claude, in its main-folder conversation).
+      const fixup = place?.fixup;
       const policy = { cwd, roots: [cwd, ...extraDirs, ...(fixup ? [fixup] : [])], autoEdit, scope: input.scope, guest: input.guest, askOnly: Boolean(askOnly), ...(syncMain ? { syncMain: syncProbes(cwd, syncMain) } : {}), ...(fixup ? { fixup } : {}) };
       // How the run ends, when it fails: Claude Code's stderr, a limit that said no, an API error.
       const stderr: string[] = [];

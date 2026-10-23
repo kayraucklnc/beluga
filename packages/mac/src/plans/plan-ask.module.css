@@ -1,0 +1,62 @@
+/* What's asked of you in the plan's conversation, above its box (the chat's question card, narrower). */
+.card {
+  margin: 0 10px 8px;
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.question {
+  font-size: 13px;
+}
+
+/* Your own words, instead of an option. */
+.own {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.ownInput {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+
+.ownInput:focus {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* The Stop button beside the box while the plan's Claude works. */
+.stop {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  cursor: pointer;
+}
+
+.stop:hover {
+  background: var(--bg-press);
+}
+
+.stopMark {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--text-2);
+}

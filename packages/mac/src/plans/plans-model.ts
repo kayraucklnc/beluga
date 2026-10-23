@@ -104,8 +104,13 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
       return { title: 'Apply Changes', detail: 'Claude proposed changes to the plan' };
     case 'resume':
       return { title: 'Resume', detail: 'Paused: nothing starts until you resume it' };
-    case 'start':
-      return { title: next.tasks.length === 1 ? `Start “${next.tasks[0]!.task.title}”` : `Start ${next.tasks.length} Tasks`, detail: next.tasks.length === 1 ? 'Ready to go' : 'Ready to go, side by side' };
+    case 'start': {
+      // Yours: no worktree, you answer it in the plan's conversation (see core/plans/decisions.ts).
+      const yours = next.tasks.filter((t) => t.forYou);
+      if (yours.length === next.tasks.length) return { title: yours.length === 1 ? `Answer “${yours[0]!.task.title}”` : `Answer ${yours.length} Decisions`, detail: 'Yours: answer in the plan’s conversation, and it carries on' };
+      const claude = next.tasks.length - yours.length;
+      return { title: claude === 1 ? `Start “${next.tasks.find((t) => !t.forYou)!.task.title}”` : `Start ${claude} Tasks`, detail: claude === 1 ? 'Ready to go' : 'Ready to go, side by side' };
+    }
     case 'pass':
       return { title: `Pass “${next.milestone.milestone.title}”`, detail: next.milestone.run.check ? (next.milestone.run.check.verdict === 'pass' ? 'Claude checked it: every criterion holds' : 'Claude’s check found problems') : 'Every task is finished' };
     case 'checking':
@@ -276,7 +281,8 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
     case 'idle':
       return { who: 'beluga', text: 'In progress; nobody is working on it right now' };
     case 'ready':
-      return t.forYou || m.autonomy === 'step' ? { who: 'you', text: 'Ready: start it from the plan' } : { who: 'beluga', text: 'Ready: it starts by itself' };
+      if (t.forYou) return { who: 'you', text: 'Yours: answer it in the plan’s conversation (no worktree)' };
+      return m.autonomy === 'step' ? { who: 'you', text: 'Ready: start it from the plan' } : { who: 'beluga', text: 'Ready: it starts by itself' };
     case 'blocked':
     case 'later':
       return { who: 'beluga', text: t.why ?? 'Waiting' };
