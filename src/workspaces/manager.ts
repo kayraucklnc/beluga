@@ -899,6 +899,12 @@ export class WorkspaceManager {
   }
 
   /** Pick the model for one workspace's conversation (undefined: your default). */
+  /** Carry on after a merged PR: PR `number` and older are done (see Workbench.continueAfterMerge). */
+  setPrDone(id: string, number: number): void {
+    this.require(id);
+    this.patchRecord(id, { prDone: number });
+  }
+
   setModel(id: string, model: string | undefined): void {
     this.require(id);
     this.patchRecord(id, { model: model || undefined });

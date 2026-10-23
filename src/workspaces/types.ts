@@ -57,6 +57,8 @@ export interface WorkspaceRecord {
   readonly handedFrom?: string;
   /** A conversation started for one job: 'sync_main' is Claude bringing the main folder up to date. */
   readonly purpose?: 'sync_main';
+  /** You carried on after this PR merged (Continue After Merge): it and older ones are done, so the branch can have a new one. */
+  readonly prDone?: number;
 }
 
 /** A workspace as shown in the UI: record + live git status. */

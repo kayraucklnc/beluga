@@ -238,9 +238,11 @@ export const API = {
   'workbench.setModel': args(opt(channel), z.string().max(80)),
   'workbench.createPr': args(id, opt(str)),
   'workbench.fixChecks': args(id),
+  'workbench.resolvePrConflicts': args(id),
+  'workbench.continueAfterMerge': args(id),
   'workbench.openPr': args(id),
   // Merge a worktree's PR on GitHub (gh pr merge); auto: once its checks pass. → { ok, result | reason, message }
-  'workbench.mergePr': args(id, z.object({ method: z.enum(['squash', 'merge', 'rebase']), auto: opt(bool), deleteBranch: opt(bool) }).strict()),
+  'workbench.mergePr': args(id, z.object({ method: z.enum(['squash', 'merge', 'rebase']), auto: opt(bool), deleteBranch: opt(bool), admin: opt(bool) }).strict()),
   // A worktree's PR now (or all of them; true: check gh again), or { reason } to look at what's due:
   // 'focus' (the window came forward) or 'push' (a branch was pushed; id: which worktree).
   'workbench.refreshPrs': args(opt(z.union([id, z.object({ reason: z.enum(['focus', 'push']), id: opt(id) }).strict()])), opt(bool)),

@@ -191,6 +191,8 @@ export const HANDLERS = {
   'workbench.setModel': (s, channel, value) => (s.workbench ? s.workbench.setModel(channel, value) : s.setPrefs({ model: value || undefined })),
   'workbench.createPr': (s, id, extra) => bench(s)?.createPr(id, extra),
   'workbench.fixChecks': (s, id) => bench(s)?.fixChecks(id),
+  'workbench.resolvePrConflicts': (s, id) => bench(s)?.resolvePrConflicts(id),
+  'workbench.continueAfterMerge': (s, id) => bench(s)?.continueAfterMerge(id),
   'workbench.openPr': (s, id) => bench(s)?.openPr(id),
   'workbench.mergePr': (s, id, opts) => bench(s)?.mergePr(id, opts),
   'workbench.refreshPrs': (s, only, recheckGh) => (typeof only === 'object' ? bench(s)?.pollPrs(only.reason, only.id) : bench(s)?.refreshPrs(only, recheckGh)),

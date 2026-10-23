@@ -27,11 +27,16 @@ export interface ToolAction {
   readonly tone?: 'error' | 'ok' | 'info';
   readonly danger?: boolean;
   /**
-   * A workspace action, `fix_checks` (ask Claude to fix the PR's failing checks), or what a plan's
-   * task worktree offers instead of merging (see plan-task.ts).
+   * A workspace action, a pull request's next step (`fix_checks`: Claude fixes its failing checks;
+   * `resolve_pr`: Claude resolves its conflicts with the base; `continue_after_merge`: carry on here
+   * once it merged), or what a plan's task worktree offers instead of merging (see plan-task.ts).
    */
-  readonly action: WorkspaceAction | 'fix_checks' | PlanAction;
+  readonly action: WorkspaceAction | PrStep | PlanAction;
 }
+
+/** A pull request's next steps that ask before Claude or git does them (see work-confirm.ts). */
+export type PrStep = 'fix_checks' | 'resolve_pr' | 'continue_after_merge';
+export const isPrStep = (a: string): a is PrStep => a === 'fix_checks' || a === 'resolve_pr' || a === 'continue_after_merge';
 
 export interface ToolbarActions {
   readonly primary?: ToolAction;
@@ -125,6 +130,12 @@ const toAction = (b: WorkspaceButton, pr: boolean): ToolAction => ({
   ...(b.action === 'archive' || b.action === 'delete' ? { danger: true } : {}),
 });
 
+/** Its project pushes somewhere and the GitHub CLI isn't known to be missing: PRs are the way to merge. */
+function onGitHub(state: AppState, ws: Workspace): boolean {
+  const sync = state.projects.find((p) => p.id === ws.projectId)?.sync;
+  return state.gh !== false && (!sync || Boolean(sync.upstream));
+}
+
 /** What this workspace needs next, in the order it matters. */
 function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[]): ToolAction | undefined {
   const by = (a: WorkspaceAction): ToolAction | undefined => all.find((x) => x.action === a && !x.disabled);
@@ -132,9 +143,17 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
   if (ws.archived) return by('restore');
   const solve = by('merge_claude');
   if (solve) return { ...solve, tone: 'error' };
+  // GitHub can't merge a PR that conflicts with its base: resolving that comes first.
+  if (pr?.state === 'OPEN' && pr.conflicts) {
+    return { id: 'resolve_pr', label: 'Resolve Merge Conflicts…', hint: `PR #${pr.number} conflicts with ${mergeTargetOf(state, ws)}: Claude merges it in here, resolves the conflicts and pushes`, icon: 'merge', action: 'resolve_pr', tone: 'error' };
+  }
   if (pr?.state === 'OPEN' && pr.checks === 'failing') {
     return { id: 'fix_checks', label: 'Fix Checks…', hint: `PR #${pr.number}'s checks are failing: Claude reads the logs and fixes them`, icon: 'wand', action: 'fix_checks', tone: 'error' };
   }
+  // On GitHub, a branch's next step is its pull request (Claude commits anything left as it opens it):
+  // there its checks run live and it merges into origin. Merge Locally stays under ⋯.
+  const create = !pr && onGitHub(state, ws) ? by('pr') : undefined;
+  if (create) return { ...create, label: 'Create PR…', hint: `Claude commits what’s left, pushes ${ws.branch ?? 'this branch'} and opens a pull request into ${mergeTargetOf(state, ws)}; its checks show here as they run` };
   const commit = by('commit');
   if (commit) return commit;
   if (pr?.state === 'OPEN') {
@@ -164,10 +183,10 @@ const ICONS: readonly WorkspaceAction[] = ['run', 'stop_run'];
 const SECTIONS: ReadonlyArray<readonly ToolAction['action'][]> = [
   ['open_plan', 'open_task'],
   ['run'],
-  ['commit', 'pr', 'review_claude', 'merge', 'merge_anyway', 'merge_claude'],
+  ['commit', 'pr', 'resolve_pr', 'fix_checks', 'review_claude', 'merge', 'merge_anyway', 'merge_claude'],
   ['compact', 'handoff', 'share'],
   ['finder', 'fork', 'setup'],
-  ['restore', 'archive', 'delete'],
+  ['continue_after_merge', 'restore', 'archive', 'delete'],
 ];
 
 /** Being made: nothing to do with it yet (its folder isn't there). */
@@ -190,9 +209,12 @@ export function toolbarActions(state: AppState, ws: Workspace): ToolbarActions {
   const owner = ws.archived ? undefined : planOwnerOf(state.plans, state.board, ws.id);
   const all = owner ? asPlanTask(own, owner, pr) : own;
   const primary = pickPrimary(state, ws, all);
-  const shown = (a: ToolAction): boolean => a.action !== primary?.action || primary.id === 'fix_checks';
+  const shown = (a: ToolAction): boolean => a.action !== primary?.action || isPrStep(primary.action);
   const icons = ICONS.flatMap((id) => all.filter((a) => a.action === id && shown(a)));
-  const more = inSections(all.filter((a) => !icons.includes(a) && shown(a)));
+  // A merged PR: archive it, delete it, or carry on here with a new one.
+  const merged = state.prs[ws.id]?.state === 'MERGED' && !ws.archived && !owner;
+  const after: ToolAction[] = merged ? [{ id: 'continue_after_merge', label: 'Continue After Merge…', hint: `PR #${state.prs[ws.id]!.number} is done: start this branch again from the latest base and keep the conversation; the next change gets a new PR`, icon: 'branch', action: 'continue_after_merge' }] : [];
+  const more = inSections([...all.filter((a) => !icons.includes(a) && shown(a)), ...after]);
   return { ...(primary ? { primary } : {}), icons, more };
 }
 

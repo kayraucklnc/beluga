@@ -50,3 +50,6 @@ export const MERGE_METHODS: ReadonlyArray<{ readonly method: MergeMethod; readon
 
 /** Whether "Merge When Checks Pass" makes sense: something is still to come (checks or a review). */
 export const canAutoMerge = (pr: PullRequest): boolean => pr.state === 'OPEN' && !pr.autoMerge && (pr.checks === 'pending' || pr.review === 'REVIEW_REQUIRED');
+
+/** Whether "Merge Now, Skipping Checks" makes sense: checks or a review stand in the way (a conflict can't be skipped). */
+export const canSkipChecks = (pr: PullRequest): boolean => pr.state === 'OPEN' && !pr.draft && !pr.conflicts && (pr.checks === 'pending' || pr.checks === 'failing' || pr.review === 'REVIEW_REQUIRED' || pr.review === 'CHANGES_REQUESTED');

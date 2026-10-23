@@ -258,9 +258,11 @@ Columns: **Core** is the API method or intent it uses; **Terminal** and **Mac** 
 | `workbench.setModel` | ✓ | ✓ |
 | `workbench.createPr` | ✓ | ✓ |
 | `workbench.fixChecks` | ✓ | ✓ |
+| `workbench.resolvePrConflicts` | — (Mac only) | ✓ Resolve Merge Conflicts… (toolbar, PR sheet, the PR strip above the chat) when GitHub says the PR conflicts |
+| `workbench.continueAfterMerge` | — (Mac only) | ✓ Continue After Merge… (⋯, PR sheet, the PR strip) once the PR merged |
 | `workbench.openPr` | ✓ | ✓ |
 | `workbench.refreshPrs` | ✓ | ✓ |
-| `workbench.mergePr` | — (Mac only; the terminal opens the PR on GitHub) | ✓ the PR sheet › Merge on GitHub (squash, merge or rebase; Merge When Checks Pass) |
+| `workbench.mergePr` | — (Mac only; the terminal opens the PR on GitHub) | ✓ the PR sheet › Merge on GitHub (squash, merge or rebase; Merge When Checks Pass; Merge Now, Skipping Checks), also in the PR strip above the chat |
 | `workbench.editPrPrompt` | ✓ | ✓ |
 | `workbench.resetPrPrompt` | ✓ | ✓ |
 | `workbench.measureDisk` | ✓ | ✓ |
