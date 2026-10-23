@@ -32,11 +32,11 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-function session(port: number, identity?: Identity): { session: Session; store: Store; client: PeerClient } {
+function session(port: number, identity?: Identity, opts: { reconnect?: boolean } = {}): { session: Session; store: Store; client: PeerClient } {
   const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-conn-')));
   const shares = new ShareService([{ name: 'proj', root, writable: true }]);
   const store = new Store(initialState('test', 'ask'));
-  const client = new PeerClient({ url: `ws://127.0.0.1:${port}`, keys, profile: { name: 'kayra', shares: shares.infos, agent: false }, ...(identity ? { identity } : {}) });
+  const client = new PeerClient({ url: `ws://127.0.0.1:${port}`, keys, profile: { name: 'kayra', shares: shares.infos, agent: false }, ...(identity ? { identity } : {}), ...opts });
   const s = new Session({ client, store, shares, agentCwd: root, downloadDir: path.join(root, 'downloads') });
   cleanup.push(() => s.stop());
   return { session: s, store, client };
@@ -130,6 +130,65 @@ describe('a room that turns you away says so once, in the status (KLD-72)', () =
     await waitFor(() => tries.length >= 5, 10_000);
     expect(twinStore.getState().connection).toMatchObject({ state: 'reconnecting', reason: 'Peer id already connected' });
     expect(roomLines(twinStore)).toEqual(['Peer id already connected. Retrying in the background']);
+  }, 20_000);
+});
+
+describe('what the room said is never the reason of a later, unrelated drop (KLD-80)', () => {
+  it('a refusal while joining, then in, then the room goes: "Lost connection", not the old refusal', async () => {
+    const port = await freePort();
+    const hub = await startHub({ keys, port, host: '127.0.0.1', roomName: 'test' });
+    const me = generateIdentity();
+    const first = session(port, me);
+    first.session.start();
+    await waitFor(() => first.store.getState().status === 'connected', 5_000);
+    const { session: t, store, client: twin } = session(port, me);
+    const tries: Retry[] = [];
+    twin.on('retrying', (r) => tries.push(r));
+    t.start();
+    await waitFor(() => tries.length >= 1, 5_000);
+    expect(tries[0]).toMatchObject({ reason: 'Peer id already connected', said: true });
+    // The seat frees up: the twin gets in.
+    await first.session.stop();
+    t.retryConnection();
+    await waitFor(() => store.getState().status === 'connected', 5_000);
+    tries.length = 0;
+    await hub.close();
+    await waitFor(() => tries.length >= 1, 5_000);
+    expect(tries[0]?.reason).not.toBe('Peer id already connected');
+    expect(tries[0]?.said).toBeUndefined();
+  }, 20_000);
+
+  it('a hub error frame while connected is not reused when the connection later drops', async () => {
+    const port = await freePort();
+    const hub = await startHub({ keys, port, host: '127.0.0.1', roomName: 'test' });
+    const { session: s, store, client } = session(port);
+    s.start();
+    await waitFor(() => store.getState().status === 'connected', 5_000);
+    // The hub tells you something while you're in (no close with it).
+    (client as unknown as { onFrame(f: unknown): void }).onFrame({ t: 'error', message: 'Something happened in the room' });
+    expect(roomLines(store)).toContain('Something happened in the room');
+    const tries: Retry[] = [];
+    client.on('retrying', (r) => tries.push(r));
+    await hub.close();
+    await waitFor(() => tries.length >= 1, 5_000);
+    expect(tries[0]?.reason).not.toBe('Something happened in the room');
+    expect(tries[0]?.said).toBeUndefined();
+    expect(roomLines(store).filter((x) => /connection|reach/i.test(x))).toEqual(['Lost connection to the room. Retrying in the background']);
+  }, 20_000);
+
+  it('with reconnect off, a version mismatch is said once in the chat', async () => {
+    const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+    await new Promise((resolve) => wss.once('listening', resolve));
+    cleanup.push(() => new Promise<void>((resolve) => wss.close(() => resolve())));
+    wss.on('connection', (ws) => ws.send(JSON.stringify({ t: 'challenge', v: PROTOCOL_VERSION + 1, nonce: 'n' })));
+    const { session: s, store, client } = session((wss.address() as { port: number }).port, undefined, { reconnect: false });
+    const tries: Retry[] = [];
+    client.on('retrying', (r) => tries.push(r));
+    s.start();
+    await waitFor(() => roomLines(store).some((x) => /newer klaud/.test(x)), 5_000);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(store.getState().log.filter((l) => 'text' in l && /newer klaud/.test(l.text))).toHaveLength(1);
+    expect(tries).toHaveLength(0);
   }, 20_000);
 });
 

@@ -130,7 +130,7 @@ export function useIssueMenu(): (issue: Issue) => ActionItem[] {
               { label: 'Start Worktree', icon: 'branch' as const, onSelect: () => void act(() => api.start(issue.id, {})) },
             ]
           : []),
-      // Finished (or canceled) work starts again only deliberately: back to Todo, then Start.
+      // Finished (or canceled) work starts again only deliberately: back to Ready, then Start.
       ...(startable ? [] : [{ label: 'Reopen the Task', icon: 'refresh' as const, onSelect: () => void act(() => api.update(issue.id, { status: 'todo' }), `Reopened ${issue.key}`) }]),
       {
         label: 'Status',

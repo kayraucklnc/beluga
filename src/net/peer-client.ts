@@ -217,6 +217,11 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     return this.ready;
   }
 
+  /** Whether a dropped connection is dialed again (off: it just ends). */
+  get retries(): boolean {
+    return this.opts.reconnect !== false;
+  }
+
   /** Waiting to dial again: dial now instead (the "Retry now" button). */
   retryNow(): boolean {
     if (this.closed || this.ready || !this.timer) return false;
@@ -296,6 +301,10 @@ export class PeerClient extends EventEmitter<ClientEvents> {
         }
         this.ready = true;
         this.attempt = 0;
+        // In: whatever was said while joining isn't why a later drop happens.
+        this.failure = '';
+        this.said = false;
+        this.lastError = '';
         this.emit('status', 'connected');
         this.emit('welcome', frame.you, payload.data.room);
         this.emit('peers', payload.data.peers);
@@ -319,7 +328,10 @@ export class PeerClient extends EventEmitter<ClientEvents> {
         return;
       case 'error':
         this.lastError = frame.message;
-        this.refused(frame.message);
+        // While joining it's why you're turned away (the reason of the retry that follows). Once in,
+        // it's news: the close it comes with says so (lastError), and a later, unrelated drop never reuses it.
+        if (this.ready) this.emit('error', frame.message);
+        else this.refused(frame.message);
         return;
       default:
         return;

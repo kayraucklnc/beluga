@@ -24,7 +24,7 @@ export interface TasksPrefs {
 export const DEFAULT_TASKS_PREFS: TasksPrefs = { scope: 'active', display: 'list', project: '', who: '', folded: ['canceled'] };
 
 export const SCOPES: ReadonlyArray<{ readonly value: Scope; readonly label: string; readonly hint: string }> = [
-  { value: 'active', label: 'Active', hint: 'Todo, In Progress and In Review' },
+  { value: 'active', label: 'Active', hint: 'Ready, In Progress and In Review' },
   { value: 'backlog', label: 'Backlog', hint: 'Not planned yet' },
   { value: 'all', label: 'All', hint: 'Everything open, and what finished this week' },
 ];

@@ -168,7 +168,8 @@ export const API = {
   'files.read': args(Location),
 
   // ---- projects and workspaces
-  'workspaces.open': args(id, opt(WorkspaceTab)),
+  // `req`: a screen's id for this open, echoed in the navigate intent (it showed the workspace ahead, see ClientStore.openAhead).
+  'workspaces.open': args(id, opt(WorkspaceTab), opt(z.object({ req: opt(z.string().max(64)) }))),
   // Load a workspace's saved conversation without going there (the Mac Overview's read-only look at an archived one).
   'workspaces.load': args(id),
   'workspaces.refresh': args(),

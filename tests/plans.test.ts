@@ -200,7 +200,7 @@ describe('a draft stays off the board until approved', () => {
     const issues = store.getState().board.issues;
     expect(issues).toHaveLength(5);
     const byTitle = (t: string) => issues.find((i) => i.title === t)!;
-    // The milestone being worked on is Todo; later ones wait in the Backlog.
+    // The milestone being worked on is Ready (todo); later ones wait in the Backlog.
     expect(byTitle('Auth on payment routes')).toMatchObject({ status: 'todo', origin: 'plan', estimate: 3, plan: { id: plan.id, milestone: 'safe', task: 'auth' }, assignee: { kind: 'claude' } });
     expect(byTitle('Refund endpoint').status).toBe('backlog');
     expect(byTitle('Live keys').assignee).toMatchObject({ kind: 'person', id: 'p-me' });
@@ -856,7 +856,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.plans.need(plan.id).activity.map((e) => e.text)).toContain('collects the plan’s work on plan/klaud-polish-round');
   });
 
-  it('passing a milestone merges its task branches into the plan branch: tasks In Plan, worktrees removed, no PR', async () => {
+  it('passing a milestone merges its task branches into the plan branch: tasks Merged into Plan, worktrees removed, no PR', async () => {
     const t = await running();
     await t.passSafe();
     const keys = ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once'].map((x) => t.issue(x));
@@ -963,7 +963,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.issue('Receipts once').status).toBe('in_plan');
   });
 
-  it('the last milestone passing offers Open PR; the PR merging moves every In Plan task to Done at once', async () => {
+  it('the last milestone passing offers Open PR; the PR merging moves every Merged into Plan task to Done at once', async () => {
     const t = await running();
     await t.passSafe();
     t.board.update(t.issue('Refund endpoint').id, { status: 'in_review' }, t.claude);
@@ -987,7 +987,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.view().next.kind).toBe('done');
   });
 
-  it('a PR closed without merging leaves its tasks In Plan and says so on the plan', async () => {
+  it('a PR closed without merging leaves its tasks Merged into Plan and says so on the plan', async () => {
     const t = await running();
     await t.passSafe();
     t.setPr({ number: 9, url: 'https://github.com/bob/api/pull/9', state: 'OPEN', title: 'Payments', draft: false, checks: 'none' });
@@ -999,7 +999,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.plans.need(t.plan.id).activity.map((e) => e.text)).toContain('pull request #9 was closed without merging: its tasks stay merged into the plan');
   });
 
-  it('Merge into main locally: every In Plan task is Done', async () => {
+  it('Merge into main locally: every Merged into Plan task is Done', async () => {
     const t = await running();
     await t.passSafe();
     await t.work.mergeLocal(t.plan.id);
@@ -1049,7 +1049,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(g.log.merged).toHaveLength(1);
   });
 
-  it('In Plan is a column of its own between In Review and Done; its worktree going away asks nothing', async () => {
+  it('Merged into Plan is a column of its own between In Review and Done; its worktree going away asks nothing', async () => {
     const t = await running();
     await t.passSafe();
     const i = t.issue('Auth on payment routes');

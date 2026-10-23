@@ -10,7 +10,7 @@ import { statusSlots } from '../src/workspaces/git.js';
 import { limiter } from '../src/workspaces/limit.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
-import { askedToKeep, keepsRunning, mayLeaveProcesses } from '../src/workspaces/test-procs.js';
+import { keepsRunning, mayLeaveProcesses } from '../src/workspaces/test-procs.js';
 
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
 
@@ -188,11 +188,5 @@ describe('what is kept running on purpose', () => {
   it('a command that says so (KLAUD_KEEP=1)', () => {
     for (const c of ['KLAUD_KEEP=1 npm run dev &', 'cd app && KLAUD_KEEP=1 node server.js &']) expect(keepsRunning(c), c).toBe(true);
     for (const c of ['npm run dev &', 'echo KLAUD_KEEP=10', undefined]) expect(keepsRunning(c), String(c)).toBe(false);
-  });
-
-  it('a message that asks for it', () => {
-    for (const p of ['Start the dev server and keep it running', 'leave the server up so I can try it', "run it, don't stop it afterwards", 'Keep vite running when you are done'])
-      expect(askedToKeep(p), p).toBe(true);
-    for (const p of ['Fix the flaky test', 'Stop the server', 'keep the tests short. Then run them.', undefined]) expect(askedToKeep(p), String(p)).toBe(false);
   });
 });

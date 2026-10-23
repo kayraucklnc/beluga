@@ -200,13 +200,13 @@ export class WorkspaceController {
   }
 
   /** Show a workspace (chat, files, diff or terminal), loading its saved conversation the first time. */
-  open(id: string, tab: WorkspaceTab = 'chat'): void {
+  open(id: string, tab: WorkspaceTab = 'chat', req?: string): void {
     const ws = this.deps.manager.find(id);
     if (!ws) return this.deps.toast('That workspace no longer exists', 'warn');
     const fresh = this.ensureLoaded(id);
     // A worktree from another tool re-reads its conversation each time (it may have gone on there) until you talk in it here.
     if (fresh && !ws.sessionId && (!fresh.saved || (ws.external && this.onlyImported(`${WS_PREFIX}${id}`)))) void this.importConversation(ws.id, ws.path, `${WS_PREFIX}${id}`);
-    this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab } });
+    this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab }, ...(req ? { req } : {}) });
     if (tab === 'review') void this.loadReview(id);
   }
 

@@ -72,7 +72,8 @@ export function buildKeepAppend(): string {
     '',
     'Processes you start here (dev servers, watchers, test runs) are stopped when your turn ends. To leave one',
     'running on purpose (the user asked to keep it up), start it with KLAUD_KEEP=1 in front, e.g.',
-    '`KLAUD_KEEP=1 npm run dev &`, and say in your answer that it is still running.',
+    '`KLAUD_KEEP=1 npm run dev &`, and say in your answer that it is still running. Only a server or watcher the',
+    'user asked for: never a test run (vitest, playwright, an e2e run), which is always stopped.',
   ].join('\n');
 }
 
