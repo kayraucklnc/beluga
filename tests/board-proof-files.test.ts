@@ -145,3 +145,37 @@ describe('the board keeps proof files', () => {
     expect(existsSync(proofFolder(home, issue.id))).toBe(false);
   });
 });
+
+describe('archiving lets proof files go (BLG-28)', () => {
+  it('a screenshot becomes a small JPEG, another file goes; both say how big they were', async () => {
+    const { PNG } = await import('pngjs');
+    const home = tmp('home');
+    const { dir } = worktree();
+    const png = new PNG({ width: 1600, height: 1000 });
+    for (let i = 0; i < png.data.length; i += 4) png.data.set([(i / 4) % 256, 120, 200, 255], i);
+    const shot = path.join(dir, 'big.png');
+    writeFileSync(shot, PNG.sync.write(png));
+    const log = path.join(dir, 'run.log');
+    writeFileSync(log, 'x'.repeat(5000));
+    const { board } = setup(home);
+    const t = board.create({ projectId: 'api', title: 'Shipped' }, claude);
+    board.addProof(t.key, { kind: 'image', title: 'After', path: shot }, claude);
+    board.addProof(t.key, { kind: 'file', title: 'Log', path: log }, claude);
+    const [keptShot, keptLog] = board.need(t.key).proof.map((p) => p.path!);
+    board.update(t.key, { status: 'done' }, claude);
+    board.archive(t.key, claude);
+    const [image, file] = board.need(t.key).proof;
+    expect(existsSync(keptShot!)).toBe(false);
+    expect(existsSync(keptLog!)).toBe(false);
+    expect(image).toMatchObject({ thumb: true, bytes: readFileSync(shot).length });
+    expect(image!.path).toMatch(/-thumb\.jpg$/);
+    expect(readFileSync(image!.path!).length).toBeLessThan(40_000);
+    expect(file).toMatchObject({ gone: true, bytes: 5000 });
+    expect(file!.path).toBeUndefined();
+    // The worktree's own files are never touched.
+    expect(existsSync(shot)).toBe(true);
+    // Deleting it for good leaves nothing behind.
+    board.emptyArchive();
+    expect(existsSync(proofFolder(home, t.id))).toBe(false);
+  });
+});

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Store } from '../store.js';
 import { unexplained } from './criteria.js';
-import { dropKeptFile, dropProofFolder, keepProofFile, keepProofFiles } from './proof-files.js';
+import { dropKeptFile, dropProofFolder, keepProofFile, keepProofFiles, letGoProofFile } from './proof-files.js';
 import {
   type Activity,
   type ActivityKind,
@@ -33,6 +33,7 @@ import {
   STATUS_INFO,
   byRank,
   findIssue,
+  isArchived,
   isOpen,
   prefixFor,
   rankBetween,
@@ -503,6 +504,45 @@ export class Board {
     return n;
   }
 
+  // ------------------------------------------------------------------ the archive
+
+  /**
+   * To the Archive: off the board and out of Claude's lists, its words and history kept, its proof
+   * files let go (screenshots kept as small JPEGs, see letGoProofFile). Only finished tasks (Done,
+   * Canceled) go; a parent takes its finished sub-tasks along.
+   */
+  archive(ref: string, by: Actor): Issue {
+    const issue = this.need(ref);
+    if (isArchived(issue)) return issue;
+    if (isOpen(issue.status)) throw new Error(`${issue.key} isn’t finished: only Done or Canceled tasks go to the Archive`);
+    const home = this.deps.dir;
+    const proof = home ? issue.proof.map((p) => letGoProofFile(p, home)) : issue.proof;
+    const archived = this.change(issue, { archivedAt: this.now(), proof }, [this.entry(by, 'status', 'archived this')], false);
+    for (const kid of this.issues.filter((i) => i.parent === issue.id && !isOpen(i.status) && !isArchived(i))) this.archive(kid.id, by);
+    return archived;
+  }
+
+  /** Every Done task to the Archive (in one project, or all of them). → how many went. */
+  archiveDone(by: Actor, projectId?: string): number {
+    const done = this.issues.filter((i) => i.status === 'done' && !isArchived(i) && (!projectId || i.projectId === projectId));
+    for (const issue of done) this.archive(issue.id, by);
+    return done.length;
+  }
+
+  /** Back on the board from the Archive (its proof files stay let go). */
+  unarchive(ref: string, by: Actor): Issue {
+    const issue = this.need(ref);
+    if (!isArchived(issue)) return issue;
+    return this.change(issue, { archivedAt: undefined }, [this.entry(by, 'status', 'brought this back from the Archive')]);
+  }
+
+  /** Delete every archived task for good (in one project, or all of them). → how many went. */
+  emptyArchive(projectId?: string): number {
+    const gone = this.issues.filter((i) => isArchived(i) && (!projectId || i.projectId === projectId));
+    for (const issue of gone) this.remove(issue.id);
+    return gone.length;
+  }
+
   /** Delete a task: its sub-tasks become tasks of their own, and nothing waits on it any more. */
   remove(ref: string): void {
     const issue = this.need(ref);
@@ -527,7 +567,19 @@ export class Board {
     const issue = this.need(ref);
     if (!info.shared) for (const other of this.issues) if (other.id !== issue.id && other.worktrees.includes(workspaceId)) this.change(other, { worktrees: other.worktrees.filter((w) => w !== workspaceId) }, []);
     if (issue.worktrees.at(-1) === workspaceId) return issue;
-    return this.change(issue, { worktrees: [...issue.worktrees.filter((w) => w !== workspaceId), workspaceId], ...(info.branch ? { branch: info.branch } : {}), worktreeGone: undefined }, [this.entry(by, 'worktree', info.name ? `${info.shared ? 'joined' : 'started'} worktree ${info.name}` : 'started a worktree')]);
+    return this.change(issue, { worktrees: [...issue.worktrees.filter((w) => w !== workspaceId), workspaceId], ...(info.branch ? { branch: info.branch } : {}), worktreeGone: undefined, carriedBy: undefined }, [this.entry(by, 'worktree', info.name ? `${info.shared ? 'joined' : 'started'} worktree ${info.name}` : 'started a worktree')]);
+  }
+
+  /**
+   * Claude moved this task along from a worktree that isn't doing it (one doing a bigger task, or a
+   * list of asks): that worktree carries it now, so its pull request merging makes it Done too. A
+   * task with a worktree of its own (`live`: still there) keeps following that one.
+   */
+  carry(ref: string, ws: { readonly id: string; readonly branch?: string; readonly name?: string }, live: (workspaceId: string) => boolean): Issue {
+    const issue = this.need(ref);
+    const own = issue.worktrees.at(-1);
+    if (own === ws.id || issue.carriedBy === ws.id || (own && live(own))) return issue;
+    return this.change(issue, { carriedBy: ws.id, ...(ws.branch ? { branch: ws.branch } : {}) }, [this.entry({ kind: 'beluga' }, 'worktree', `its work is being done in worktree ${ws.name ?? ws.id}`)], false);
   }
 
   /** The worktree was renamed (a small model named it): a task titled after it follows. */
@@ -560,8 +612,8 @@ export class Board {
   /** The worktree's pull request as the workbench saw it: kept on the task, and the task's status follows it. */
   prChanged(workspaceId: string, pr: IssuePr | undefined): void {
     for (const issue of this.issues) {
-      // Only the worktree doing it now: an older one's pull request is history.
-      if (issue.worktrees.at(-1) !== workspaceId || !pr) continue;
+      // Only the worktree doing it now (or carrying it): an older one's pull request is history.
+      if (!followsWorktree(issue, workspaceId) || !pr) continue;
       const before = issue.pr;
       const same = before && before.number === pr.number && before.state === pr.state && before.checks === pr.checks && before.review === pr.review && before.draft === pr.draft && before.title === pr.title;
       if (same) continue;
@@ -594,10 +646,24 @@ export class Board {
     }
   }
 
+  /**
+   * Its branch's pull request, found merged after its worktree stopped being watched (archived or
+   * gone, see BoardWork.sweepShipped): Done, like a merge seen live.
+   */
+  branchShipped(ref: string, pr: IssuePr): Issue {
+    const issue = this.need(ref);
+    if (pr.state !== 'MERGED' || !isOpen(issue.status) || isArchived(issue)) return issue;
+    const beluga: Actor = { kind: 'beluga' };
+    return this.change(issue, { pr, status: 'done', rank: this.lastRank('done'), needsChecks: undefined, worktreeGone: undefined }, [
+      this.entry(beluga, 'pr', `pull request #${pr.number} was merged`),
+      this.entry(beluga, 'status', statusText(STATUS_INFO[issue.status].label, STATUS_INFO.done.label)),
+    ]);
+  }
+
   /** The worktree was merged into the project's main folder here. */
   worktreeMerged(workspaceId: string): void {
     for (const issue of this.issues) {
-      if (issue.worktrees.at(-1) !== workspaceId || issue.status === 'done' || issue.status === 'canceled') continue;
+      if (!followsWorktree(issue, workspaceId) || issue.status === 'done' || issue.status === 'canceled') continue;
       const beluga: Actor = { kind: 'beluga' };
       this.change(issue, { status: 'done' }, [this.entry(beluga, 'worktree', 'its worktree was merged into main'), this.entry(beluga, 'status', `moved this from ${STATUS_INFO[issue.status].label} to Done`)]);
     }
@@ -673,7 +739,16 @@ export class Board {
     this.issues = this.issues.map((i) => (i.id === issue.id ? next : i));
     this.deps.store.dispatch({ type: 'board_issue', issue: next });
     this.save();
+    if (status === 'done' && issue.status !== 'done') this.doneWithParent(next);
     return next;
+  }
+
+  /** A task reached Done: its sub-tasks still open go with it (theirs with them, in turn). */
+  private doneWithParent(parent: Issue): void {
+    const beluga: Actor = { kind: 'beluga' };
+    for (const kid of this.issues.filter((i) => i.parent === parent.id && isOpen(i.status))) {
+      this.change(kid, { status: 'done', rank: this.lastRank('done'), needsChecks: undefined, worktreeGone: undefined }, [this.entry(beluga, 'status', `done with its parent ${parent.key}: ${statusText(STATUS_INFO[kid.status].label, STATUS_INFO.done.label)}`)]);
+    }
   }
 
   /** A rank after every task in a status (across projects: the board's columns mix them). */
@@ -780,6 +855,9 @@ function keepRevisions(revisions: readonly BriefRevision[]): BriefRevision[] {
   }
   return kept.reverse();
 }
+
+/** The worktree whose pull request and merge move this task: the one doing it now, or one carrying it. */
+const followsWorktree = (issue: Issue, workspaceId: string): boolean => issue.worktrees.at(-1) === workspaceId || issue.carriedBy === workspaceId;
 
 function sameAssignee(a: Assignee | undefined, b: Assignee | undefined): boolean {
   if (!a || !b) return a === b;

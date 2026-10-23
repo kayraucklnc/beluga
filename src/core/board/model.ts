@@ -24,6 +24,9 @@ export const STATUS_INFO: Readonly<Record<IssueStatus, { readonly label: string;
 
 export const isOpen = (status: IssueStatus): boolean => STATUS_INFO[status].open;
 
+/** In the Archive: off the board and out of Claude's lists, until it's restored or deleted. */
+export const isArchived = (issue: Pick<Issue, 'archivedAt'>): boolean => issue.archivedAt !== undefined;
+
 /** Its work is finished (in review, merged into its plan, or shipped): nothing to start until it's reopened. */
 export const isFinished = (status: IssueStatus): boolean => status === 'in_review' || status === 'in_plan' || status === 'done';
 
@@ -122,6 +125,10 @@ export interface Proof {
   readonly from?: string;
   /** Its file is nowhere any more (deleted with its worktree before it could be kept): screens say so. */
   readonly gone?: boolean;
+  /** Its task was archived: the full file was let go, and `path` is a small JPEG of it (images) or gone (files). */
+  readonly thumb?: boolean;
+  /** How big its file was, when it was let go on archiving. */
+  readonly bytes?: number;
   readonly url?: string;
   /** An beluga-graph's JSON, or text. */
   readonly body?: string;
@@ -169,6 +176,11 @@ export interface Issue {
   readonly revisions: readonly BriefRevision[];
   /** Worktrees doing it (workspace ids), the current one last. */
   readonly worktrees: readonly string[];
+  /**
+   * Another worktree carries its work (Claude moved it along there, while doing a bigger task or a
+   * list of asks): that worktree's pull request merging, or the worktree merging into main, makes it Done.
+   */
+  readonly carriedBy?: string;
   readonly branch?: string;
   readonly pr?: IssuePr;
   /** Its worktree went away (archived or deleted) before it was done: screens ask what's next. */
@@ -182,6 +194,8 @@ export interface Issue {
   readonly createdBy: Actor;
   /** When it reached Done or Canceled. */
   readonly closedAt?: number;
+  /** When it went to the Archive (off the board, its words kept, its proof files let go). */
+  readonly archivedAt?: number;
   /** How it started: by hand, a worktree opening, Claude, or an approved plan. */
   readonly origin: 'manual' | 'worktree' | 'claude' | 'plan';
   /** The plan it's part of: the plan, its milestone and its task there (ids). */
@@ -328,7 +342,8 @@ export function rankBetween(before: number | undefined, after: number | undefine
 export const isMine = (issue: Issue, selfId: string): boolean => (issue.assignee?.kind === 'person' && issue.assignee.id === selfId) || (issue.assignee?.kind === 'claude' && issue.assignee.owner === selfId);
 
 export interface IssueFilter {
-  readonly scope?: 'mine' | 'active' | 'backlog' | 'all';
+  /** Every scope but `archived` leaves archived tasks out. */
+  readonly scope?: 'mine' | 'active' | 'backlog' | 'all' | 'archived';
   readonly projectId?: string;
   readonly query?: string;
   readonly selfId?: string;
@@ -353,8 +368,11 @@ export function filterIssues(board: BoardState, f: IssueFilter = {}): Issue[] {
   const within = f.closedWithin ?? WEEK;
   return board.issues
     .filter((i) => (f.projectId ? i.projectId === f.projectId : true))
+    .filter((i) => (f.scope === 'archived') === isArchived(i))
     .filter((i) => {
       switch (f.scope ?? 'all') {
+        case 'archived':
+          return true;
         case 'mine':
           return Boolean(f.selfId && isMine(i, f.selfId)) && (isOpen(i.status) || now - (i.closedAt ?? i.updatedAt) < within);
         case 'active':
