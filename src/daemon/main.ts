@@ -89,7 +89,7 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
   }, { network: true });
   server = new DaemonServer({ session: core.session, token, version: opts.version, terminals: core.terminals, log, ...(opts.port ? { port: opts.port } : {}), ...(opts.allowedOrigins ? { allowedOrigins: opts.allowedOrigins } : {}) });
   const port = await server.listen();
-  writeDaemonInfo({ pid: process.pid, port, token, version: opts.version, ipc: IPC_VERSION, room: core.room, roomKey: roomKeyOf(config), startedAt: Date.now(), keepAlive: opts.keepAlive });
+  writeDaemonInfo({ pid: process.pid, port, token, version: opts.version, ipc: IPC_VERSION, room: core.room, roomKey: roomKeyOf(config), startedAt: Date.now(), keepAlive: opts.keepAlive, workspaces: core.workspacesHome });
   log(`listening on 127.0.0.1:${port} for ${core.room}${opts.keepAlive ? ' (kept alive)' : ''}`);
 
   let linger: NodeJS.Timeout | undefined;

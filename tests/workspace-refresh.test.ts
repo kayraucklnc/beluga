@@ -10,7 +10,7 @@ import { statusSlots } from '../src/workspaces/git.js';
 import { limiter } from '../src/workspaces/limit.js';
 import { WorkspaceManager } from '../src/workspaces/manager.js';
 import { WorkspaceStore } from '../src/workspaces/store.js';
-import { mayLeaveProcesses } from '../src/workspaces/test-procs.js';
+import { askedToKeep, keepsRunning, mayLeaveProcesses } from '../src/workspaces/test-procs.js';
 
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
 
@@ -147,5 +147,52 @@ describe('which commands may leave processes running', () => {
     for (const c of ['git status', 'ls -la', 'npx tsc --noEmit', 'cat src/latest.ts', 'npm run build && echo ok', 'node build.js 2>&1 | tail -5', 'make all &> build.log']) expect(mayLeaveProcesses(c), c).toBe(false);
     expect(mayLeaveProcesses('sleep 100', true)).toBe(true);
     expect(mayLeaveProcesses(undefined)).toBe(false);
+  });
+
+  it('judges what a command runs, not words in its paths or output', () => {
+    // Everyday commands that only mention dev, server, test: no ps at the turn's end.
+    for (const c of [
+      'git status 2>/dev/null',
+      'cat src/server.ts',
+      'ls packages/mac/e2e 2>/dev/null | head',
+      'grep -rn "startServer" src/server tests',
+      'sed -n 1,40p tests/test-procs.test.ts',
+      'git commit -m "start the dev server faster"',
+      'echo "npm run dev"',
+      'npx tsc --noEmit -p packages/mac 2>/dev/null',
+      'node build.js > /dev/null 2>&1',
+      'bun install',
+    ])
+      expect(mayLeaveProcesses(c), c).toBe(false);
+    // What really starts something: in the background, or a test runner, server, watcher.
+    for (const c of [
+      'node server.js &',
+      'node server.js > /dev/null 2>&1 &',
+      'PORT=3000 npm run dev',
+      'npx --yes vitest run tests/a.test.ts',
+      'pnpm exec playwright test',
+      'npx tsc --watch',
+      'bun server.ts',
+      'bun test',
+      'npx tsx src/cli.tsx daemon --keep-alive demo',
+      'node --test',
+      'cd packages/mac && npm run test:e2e',
+      'env NODE_ENV=dev nohup ./run.sh',
+    ])
+      expect(mayLeaveProcesses(c), c).toBe(true);
+    expect(mayLeaveProcesses('cat src/server.ts', true)).toBe(true); // run_in_background
+  });
+});
+
+describe('what is kept running on purpose', () => {
+  it('a command that says so (KLAUD_KEEP=1)', () => {
+    for (const c of ['KLAUD_KEEP=1 npm run dev &', 'cd app && KLAUD_KEEP=1 node server.js &']) expect(keepsRunning(c), c).toBe(true);
+    for (const c of ['npm run dev &', 'echo KLAUD_KEEP=10', undefined]) expect(keepsRunning(c), String(c)).toBe(false);
+  });
+
+  it('a message that asks for it', () => {
+    for (const p of ['Start the dev server and keep it running', 'leave the server up so I can try it', "run it, don't stop it afterwards", 'Keep vite running when you are done'])
+      expect(askedToKeep(p), p).toBe(true);
+    for (const p of ['Fix the flaky test', 'Stop the server', 'keep the tests short. Then run them.', undefined]) expect(askedToKeep(p), String(p)).toBe(false);
   });
 });
