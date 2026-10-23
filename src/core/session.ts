@@ -759,10 +759,13 @@ export class Session {
       this.system('Back online');
     });
     // Failed dials update one status (see ConnectionTrouble); the chat gets one line per outage.
-    client.on('retrying', ({ attempt, retryAt, reason }) => {
+    // The same goes for what the room says when it turns you away (a version mismatch, "already
+    // connected"): it's the status's reason, and the outage's one line says it.
+    client.on('retrying', ({ attempt, retryAt, reason, said }) => {
       const before = store.getState().connection;
       store.dispatch({ type: 'connection', connection: { state: 'reconnecting', attempt, retryAt, reason, since: before?.since ?? Date.now() } });
-      if (!before) this.system(this.everConnected ? 'Lost connection to the room. Retrying in the background' : 'Can’t reach the room yet. Retrying in the background', 'warn');
+      if (before) return;
+      this.system(said ? `${reason}. Retrying in the background` : this.everConnected ? 'Lost connection to the room. Retrying in the background' : 'Can’t reach the room yet. Retrying in the background', 'warn');
     });
     client.on('welcome', (self, room) => {
       this.everConnected = true;
@@ -787,7 +790,10 @@ export class Session {
         for (const id of gone) this.questions.cancelFor(id);
       }
     });
-    client.on('error', (message) => this.system(message, 'error'));
+    // A refusal while joining comes again as the reason of the retry (or the end) that follows it.
+    client.on('error', (message) => {
+      if (client.connected) this.system(message, 'error');
+    });
     client.on('rekey', (secret) => {
       // The host replaced the invite link; keep yours current so /invite shares one that works.
       const invite = store.getState().invite;
