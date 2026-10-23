@@ -145,7 +145,7 @@ export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Work
           <h1 className={s.focusTitle}>{agentTitle(a)}</h1>
           <div className={m.facts}>
             <span className={cx(m.status, s[`tone_${agentTone(a)}`])}>
-              {live ? <Dot tone="claude" live /> : <Icon name={a.status === 'failed' ? 'x' : a.status === 'finished' ? 'check' : 'clock'} size={10} />}
+              {live ? <Dot tone="subagent" live /> : <Icon name={a.status === 'failed' ? 'x' : a.status === 'finished' ? 'check' : 'clock'} size={10} />}
               {agentLabel(a)}
             </span>
             {facts.map((f) => (

@@ -422,7 +422,7 @@ const SubAgentRow = memo(function SubAgentRow({ sub, own, detail, toggle, load, 
           <Icon name="chevronRight" size={9} />
         </span>
       ) : null}
-      {running ? <Dot tone="claude" live /> : <Icon name={sub.status === 'failed' ? 'x' : 'check'} size={11} className={sub.status === 'failed' ? c.subFailed : c.subDone} />}
+      {running ? <Dot tone={sub.kind === 'background' ? 'claude' : 'subagent'} live /> : <Icon name={sub.status === 'failed' ? 'x' : 'check'} size={11} className={sub.status === 'failed' ? c.subFailed : c.subDone} />}
       <span className={c.subTitle}>{sub.kind === 'background' ? `Background · ${sub.title}` : sub.title}</span>
       {sub.steps.length ? <span className={c.time}>{sub.steps.length} steps</span> : null}
       <WatchAgent id={sub.id} />

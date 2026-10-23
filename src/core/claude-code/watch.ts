@@ -548,7 +548,9 @@ export class ClaudeCodeWatcher {
       const shown = agents
         .filter((a) => a.status === 'running' || now - a.lastAt <= activeMs || viewedAgent(a.id))
         .sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || b.lastAt - a.lastAt)
-        .slice(0, MAX_AGENTS);
+        .slice(0, MAX_AGENTS)
+        // Which ones are kept goes by what's live; the order they're listed in never does (BLG-21).
+        .sort((a, b) => a.startedAt - b.startedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       // Nothing in it yet (just created, or only bookkeeping lines): nothing to show.
       if (!t.count && !t.title && !shown.length) continue;
       const lastAt = t.lastAt;

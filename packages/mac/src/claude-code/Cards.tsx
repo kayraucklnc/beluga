@@ -33,7 +33,7 @@ export const AgentCard = memo(function AgentCard({ agent, selected, compact, onO
         {agent.name ? <span className={s.typeBadge}>@{agent.name}</span> : null}
         {agent.background ? null : <span className={s.typeBadge}>Foreground</span>}
         <span className={cx(s.cardStatus, s[`tone_${tone}`])}>
-          {running ? <Dot tone="claude" live /> : <Icon name={agent.status === 'failed' ? 'x' : agent.status === 'finished' ? 'check' : agent.status === 'idle' ? 'clock' : 'stop'} size={10} />}
+          {running ? <Dot tone="subagent" live /> : <Icon name={agent.status === 'failed' ? 'x' : agent.status === 'finished' ? 'check' : agent.status === 'idle' ? 'clock' : 'stop'} size={10} />}
           {agentLabel(agent)}
         </span>
       </span>

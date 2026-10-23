@@ -31,7 +31,7 @@ export const agentIdOfPath = (p: string): string | undefined => /[\\/]\.claude[\
 /** Is this worktree one a sub-agent made for itself? */
 export const isAgentWorktree = (w: Pick<Workspace, 'path' | 'kind' | 'external'>): boolean => w.kind === 'worktree' && worktreeOrigin(w) === 'agent';
 
-/** Every sub-agent being watched, newest first within each session. */
+/** Every sub-agent being watched, session by session. */
 export function allSubAgents(sessions: readonly CcSession[]): SubAgent[] {
   return sessions.flatMap((session) => session.agents.map((agent) => ({ agent, session })));
 }
@@ -55,14 +55,40 @@ export function parentWorkspace(state: Pick<AppState, 'projects'>, s: SubAgent):
 export const steerable = (s: SubAgent): boolean => Boolean(s.session.own && s.session.workspaceId);
 
 /**
- * The rows nested under a workspace in the sidebar: the sub-agents its conversation started,
- * running first; finished ones whose worktree is still there stay (from Claude Code's files).
+ * The one order sub-agents are listed in, everywhere: when they started (newest last), then by
+ * id. Nothing that changes while they work (status, last write) moves a row (BLG-21).
+ */
+export const byStart = (a: Pick<CcAgent, 'startedAt' | 'id'>, b: Pick<CcAgent, 'startedAt' | 'id'>): number => a.startedAt - b.startedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/** Agents in that order (a new array; the given one is left as it is). */
+export const inStartOrder = <T extends Pick<CcAgent, 'startedAt' | 'id'>>(agents: readonly T[]): T[] => [...agents].sort(byStart);
+
+/**
+ * Which of a list (in start order) show when only `cap` fit: the newest `cap`, plus any `keep`
+ * says must show (the one you're looking at), still in start order. Only a new agent starting
+ * (or you picking another) changes the set: an agent finishing never hides or moves a row.
+ */
+export function cappedAgents<T>(list: readonly T[], cap: number, keep: (x: T) => boolean = () => false): { shown: T[]; hidden: number } {
+  const from = Math.max(0, list.length - cap);
+  const shown = list.filter((x, i) => i >= from || keep(x));
+  return { shown, hidden: list.length - shown.length };
+}
+
+/** A folded group of sub-agents, in words: "4 sub-agents · 1 running". */
+export function subAgentsSummary(list: readonly Pick<SubAgent, 'agent'>[]): string {
+  const running = list.filter((s) => s.agent.status === 'running').length;
+  return `${list.length} sub-agent${list.length === 1 ? '' : 's'}${running ? ` · ${running} running` : ''}`;
+}
+
+/**
+ * The rows nested under a workspace in the sidebar: the sub-agents its conversation started, in
+ * start order (newest last); finished ones whose worktree is still there stay (from Claude Code's files).
  */
 export function subAgentsUnder(sessions: readonly CcSession[], workspaceId: string, origins: readonly AgentOrigin[] = []): SubAgent[] {
   const live = allSubAgents(sessions).filter((s) => s.session.workspaceId === workspaceId && !s.agent.parentAgentId);
   const followed = new Set(allSubAgents(sessions).flatMap((s) => [s.agent.id, ...(s.agent.worktree ? [s.agent.worktree.path] : [])]));
   const past = origins.filter((o) => o.workspaceId === workspaceId && !followed.has(o.agentId) && !followed.has(o.path)).map(pastAgent);
-  return [...live, ...past].sort((a, b) => Number(b.agent.status === 'running') - Number(a.agent.status === 'running') || b.agent.lastAt - a.agent.lastAt);
+  return [...live, ...past].sort((a, b) => byStart(a.agent, b.agent));
 }
 
 /**

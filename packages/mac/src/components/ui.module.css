@@ -203,6 +203,9 @@
 .dot_claude {
   background: var(--claude);
 }
+.dot_subagent {
+  background: var(--subagent);
+}
 .dot_muted {
   background: var(--text-3);
   opacity: 0.6;
@@ -222,6 +225,9 @@
 }
 .live_info {
   color: var(--info);
+}
+.live_subagent {
+  color: var(--subagent);
 }
 .live_muted {
   color: var(--text-3);
