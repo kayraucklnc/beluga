@@ -162,6 +162,47 @@ test('a worktree shows the task it’s doing, and opens it', async ({ page }) =>
   await expect(page.getByRole('region', { name: 'Proof' })).toContainText('Hero, desktop');
 });
 
+test('out of a task: Back stays at the top while scrolling; Esc, ⌘[ and a two-finger swipe right go back (BLG-5)', async ({ page }, info) => {
+  await openTasks(page);
+  await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
+  const list = page.getByRole('grid', { name: 'Tasks' });
+  const row = list.getByRole('row', { name: /Add auth to the payment routes, In Review/ });
+  const title = page.getByRole('textbox', { name: 'Title' });
+  await row.click();
+  await expect(title).toHaveValue('Add auth to the payment routes');
+  // Scrolled to the bottom, Back is still right there at the top.
+  const nav = page.getByRole('navigation', { name: 'Where this task is' });
+  const before = await nav.boundingBox();
+  await page.getByRole('region', { name: 'Activity' }).scrollIntoViewIfNeeded();
+  await page.mouse.move(400, 400);
+  await page.mouse.wheel(0, 4000);
+  const after = await nav.boundingBox();
+  expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThan(2);
+  await page.screenshot({ path: info.outputPath('task-scrolled.png') });
+  await expect(nav.getByRole('button', { name: 'Back' })).toBeInViewport();
+  // Esc: back to the list.
+  await page.locator('body').click({ position: { x: 5, y: 5 } }).catch(() => undefined);
+  await page.keyboard.press('Escape');
+  await expect(list).toBeVisible();
+  // ⌘[ too.
+  await row.click();
+  await expect(title).toBeVisible();
+  await page.keyboard.press('Meta+BracketLeft');
+  await expect(list).toBeVisible();
+  // A two-finger swipe right (horizontal wheel, deltaX < 0): an arrow comes in, and letting go goes back.
+  await row.click();
+  await expect(title).toBeVisible();
+  await page.mouse.move(500, 300);
+  for (let i = 0; i < 12; i++) await page.mouse.wheel(-20, 0);
+  await page.screenshot({ path: info.outputPath('task-swipe.png') }).catch(() => undefined);
+  await expect(list).toBeVisible();
+  // Typing in the title keeps Esc for the title.
+  await row.click();
+  await title.click();
+  await page.keyboard.press('Escape');
+  await expect(title).toBeVisible();
+});
+
 test('a file proof opens over the task page within 300 ms; ⌘-click and Show in Files go to the file', async ({ page }) => {
   const openTask = async (): Promise<void> => {
     const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });

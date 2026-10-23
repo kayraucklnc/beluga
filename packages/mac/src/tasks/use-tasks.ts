@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { BoardState, Issue } from '@beluga/core/board/model.js';
-import type { AppState } from '@beluga/core/store.js';
+import type { AppState, View } from '@beluga/core/store.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { useActions } from '../lib/actions.js';
@@ -66,13 +66,35 @@ export function projectOfView(state: AppState): string | undefined {
   return id && state.projects.some((p) => p.id === id && p.root) ? id : undefined;
 }
 
-/** Remember the project you're in, so Tasks opens on it (call once, near the top of the window). */
+/** Remember the project you're in, so Tasks opens on it, and where you came to a task from (call once, near the top of the window). */
 export function useRememberProject(): void {
   const project = useApp(projectOfView);
   useEffect(() => {
     if (project && project !== prefs.project) setTasksPrefs({ project });
   }, [project]);
+  useRememberWayBack();
 }
+
+// ---- the way back out of a task (BLG-5)
+
+/** Where you were before the task you're on (a sub-task or a linked task opened from it doesn't count). */
+let cameFrom: View | undefined;
+
+/** Places a task's Back returns to; anything else (a dialog-like view, a draft) goes to the Tasks list. */
+const RETURNABLE: ReadonlySet<View['kind']> = new Set(['tasks', 'plans', 'plan', 'workspace', 'overview', 'project', 'requests']);
+
+function useRememberWayBack(): void {
+  const view = useApp((s) => s.view);
+  const last = useRef(view);
+  useEffect(() => {
+    const prev = last.current;
+    last.current = view;
+    if (view.kind === 'task' && prev.kind !== 'task') cameFrom = RETURNABLE.has(prev.kind) ? prev : undefined;
+  }, [view]);
+}
+
+/** Where Back on a task goes: where you came from, else its project's Tasks. */
+export const wayBack = (projectId: string): View => cameFrom ?? { kind: 'tasks', projectId };
 
 // ---- the view's prefs, per window
 
@@ -126,6 +148,8 @@ export function useTaskActions() {
       open: (issue: Pick<Issue, 'id'>): void => actions.run({ type: 'view', view: { kind: 'task', id: issue.id } }),
       openList: (projectId?: string): void => actions.run({ type: 'view', view: { kind: 'tasks', ...(projectId ? { projectId } : {}) } }),
       openWorktree: (workspaceId: string): void => actions.run({ type: 'open_ws', id: workspaceId, tab: 'chat' }),
+      /** Out of a task: back where you came from (its project's Tasks when that's unknown). */
+      back: (projectId: string): void => actions.run({ type: 'view', view: wayBack(projectId) }),
     };
   }, [api, client, actions]);
 }

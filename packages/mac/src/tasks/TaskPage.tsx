@@ -17,6 +17,8 @@ import { ProofList, Relations, SubTasks } from './TaskSections.js';
 import { unexplained } from '@beluga/core/board/criteria.js';
 import { ago, dueText } from './tasks-model.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
+import { useSwipeBack } from './use-swipe-back.js';
+import { SwipeBackEdge } from './SwipeBackEdge.js';
 import t from './tasks.module.css';
 
 /**
@@ -29,9 +31,21 @@ export function TaskPage({ id }: { id: string }) {
   const issue = issueById(board, id);
   if (!board.enabled) return <Empty icon="task" title="Tasks need the Beluga app" />;
   if (!issue) return <Empty icon="task" title="This task isn’t here anymore" detail="It may have been deleted." />;
+  return <IssuePage issue={issue} />;
+}
+
+/**
+ * The page itself. Getting back out is always at hand (BLG-5): the header with Back stays at the
+ * top while the page scrolls, and a two-finger swipe right, ⌘[ or Esc go back too.
+ */
+function IssuePage({ issue }: { issue: Issue }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const { back } = useTaskActions();
+  const swipe = useSwipeBack(wrap, () => back(issue.projectId));
   const proofFirst = isFinished(issue.status) && issue.proof.length > 0;
   return (
-    <div className={t.pageWrap}>
+    <div ref={wrap} className={t.pageWrap}>
+    <SwipeBackEdge progress={swipe} />
     <div className={t.page}>
       <div className={t.pageMain}>
         <Header issue={issue} />
@@ -58,11 +72,13 @@ function Header({ issue }: { issue: Issue }) {
   const board = useBoard();
   const project = useApp((s) => s.projects.find((p) => p.id === issue.projectId));
   const parent = issue.parent ? issueById(board, issue.parent) : undefined;
-  const { open, openList } = useTaskActions();
+  const { open, openList, back } = useTaskActions();
   const menu = useIssueMenu();
+  // The bar is the page's own child (not the header's), so it stays at the top all the way down.
   return (
-    <header className={t.pageHead}>
+    <>
       <nav className={t.crumbs} aria-label="Where this task is">
+        <IconButton icon="back" label="Back" keys="⌘[" className={t.crumbBack} onClick={() => back(issue.projectId)} />
         <button type="button" className={t.crumb} onClick={() => openList(issue.projectId)}>
           Tasks
         </button>
@@ -82,11 +98,13 @@ function Header({ issue }: { issue: Issue }) {
           <IconButton icon="more" label="More" />
         </ActionsDropdown>
       </nav>
-      <Title issue={issue} />
-      <GoneBanner issue={issue} />
-      <ChecksBanner issue={issue} />
-      <NextStep issue={issue} />
-    </header>
+      <header className={t.pageHead}>
+        <Title issue={issue} />
+        <GoneBanner issue={issue} />
+        <ChecksBanner issue={issue} />
+        <NextStep issue={issue} />
+      </header>
+    </>
   );
 }
 
