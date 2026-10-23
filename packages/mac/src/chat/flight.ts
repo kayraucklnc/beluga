@@ -7,7 +7,8 @@ import { reducedMotion } from '../lib/reduced-motion.js';
  * like the screen just jumped (a FLIP animation): when you press Return the box's spot and the
  * words are noted; when the message's row (in the chat, or in the queue tray when Claude is
  * busy) appears, a copy of it starts where the box was and settles into place, then the row
- * itself shows. With reduced motion, the row just fades in quickly. For a message to Claude,
+ * itself shows. With reduced motion, or landing above other rows (said while Claude works), the
+ * row just fades in where it goes. For a message to Claude,
  * "Claude is starting…" shows under it until Claude's card appears.
  */
 
@@ -91,16 +92,34 @@ function claim(channel: string, target: Flight['target'], text: string): Flight 
   return hit;
 }
 
+/**
+ * Whether the row lands with others below it: a message said while Claude works goes in above
+ * the turn's live part (BLG-22). A copy flying up from the box would cross over that.
+ */
+function landsAboveOthers(row: HTMLElement): boolean {
+  const holder = row.closest<HTMLElement>('[data-index]');
+  const at = Number(holder?.dataset.index);
+  if (!holder?.parentElement || Number.isNaN(at)) return false;
+  return [...holder.parentElement.children].some((el) => Number((el as HTMLElement).dataset.index) > at);
+}
+
 /** Fly a copy of `row` from where the box was into the row's place, then show the row. */
 function land(flight: Flight, row: HTMLElement): void {
+  // Landing among other rows: it just fades in where it goes, over nothing else.
+  if (landsAboveOthers(row)) {
+    row.dataset.flown = 'in-place';
+    if (!reducedMotion()) row.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+    return;
+  }
   if (reducedMotion()) {
     row.dataset.flown = 'instant';
     row.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: 'ease-out' });
     return;
   }
   row.classList.add(WAITING);
-  // One frame later: the virtualized list has measured and placed the row.
-  requestAnimationFrame(() => {
+  // Two frames later: the virtualized list has measured the rows that changed with it (a turn
+  // split around it, BLG-22) and placed it; a frame earlier its place can still be the old one.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
     const to = row.getBoundingClientRect();
     const show = (): void => {
       row.classList.remove(WAITING);
@@ -128,7 +147,7 @@ function land(flight: Flight, row: HTMLElement): void {
       show();
     };
     anim.finished.then(done, done);
-  });
+  }));
 }
 
 /** For a row that may be the message you just sent: it lands with the flight. */

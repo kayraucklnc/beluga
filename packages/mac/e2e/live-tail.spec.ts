@@ -26,6 +26,30 @@ const rowsInOrder = (page: Page) =>
       .sort((a, b) => a.i - b.i),
   );
 
+/**
+ * Watches every frame (after it's laid out) for rows of the chat drawn over one another, and for
+ * a sent message's flying copy.
+ */
+async function watchFrames(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { seen: { overlaps: string[]; flights: number } };
+    w.seen = { overlaps: [], flights: 0 };
+    const look = () => {
+      const rows = [...document.querySelectorAll<HTMLElement>('[data-index]')]
+        .map((el) => ({ i: Number(el.dataset.index), r: el.getBoundingClientRect() }))
+        .sort((a, b) => a.i - b.i);
+      for (let k = 1; k < rows.length; k++) {
+        const over = rows[k - 1]!.r.bottom - rows[k]!.r.top;
+        if (over > 1) w.seen.overlaps.push(`${rows[k - 1]!.i}/${rows[k]!.i} by ${Math.round(over)}px`);
+      }
+      w.seen.flights += document.querySelectorAll('[data-send-flight]').length;
+      requestAnimationFrame(() => setTimeout(look));
+    };
+    requestAnimationFrame(() => setTimeout(look));
+  });
+}
+const frames = (page: Page) => page.evaluate(() => (window as unknown as { seen: { overlaps: string[]; flights: number } }).seen);
+
 test('a message steered in mid-turn lands above Claude’s live part, which stays the last thing in the chat; answered, nothing moves', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto('/');
@@ -45,6 +69,7 @@ test('a message steered in mid-turn lands above Claude’s live part, which stay
   await expect(card.locator('[data-step]').nth(1)).toBeVisible({ timeout: 15_000 });
 
   // Steered in (⌥↩): it goes into the turn; the turn's live part moves below it.
+  await watchFrames(page);
   await composer(page).fill('also look at the retry logic');
   await composer(page).press('Alt+Enter');
   const tail = page.locator('[data-turn-part="tail"]');
@@ -60,6 +85,9 @@ test('a message steered in mid-turn lands above Claude’s live part, which stay
   // The head keeps what was done before you spoke; what Claude does now is below.
   await expect(tail.locator('[data-current="true"]')).toHaveCount(1, { timeout: 5000 });
   await expect(head.locator('[data-current="true"]')).toHaveCount(0);
+  // The moment it split was clean: no row drawn over another, and no copy of the message flying over the live part.
+  await page.waitForTimeout(600);
+  expect(await frames(page)).toEqual({ overlaps: [], flights: 0 });
   await page.screenshot({ path: `${OUT}/01-steered-live-at-bottom.png` });
 
   // Again: still below the newest message.
