@@ -1,5 +1,6 @@
 import type { Assignee, BoardState, Issue, IssueStatus } from '../../../../src/core/board/model.js';
 import { ISSUE_STATUSES, STATUS_INFO, childrenOf, filterIssues, isOpen, openBlockers } from '../../../../src/core/board/model.js';
+import { type Tally, parseCriterion, tally } from '../../../../src/core/board/criteria.js';
 import type { Graph, GraphNode, GraphEdge } from '../../../../src/shared/graph-spec.js';
 
 /**
@@ -207,13 +208,12 @@ export function dueText(day: string, now = Date.now()): { readonly text: string;
   return { text: new Date(due).toLocaleDateString([], { month: 'short', day: 'numeric' }), late: false };
 }
 
-/** Acceptance criteria ticked out of all of them ("- [x]" lines). */
-export function checklist(text: string | undefined): { readonly done: number; readonly total: number } {
-  const lines = (text ?? '').split('\n').filter((l) => /^\s*[-*]\s+\[[ xX]\]/.test(l));
-  return { done: lines.filter((l) => /\[[xX]\]/.test(l)).length, total: lines.length };
+/** Acceptance criteria: ticked, deferred and not done (with a reason), and open, out of all of them. */
+export function checklist(text: string | undefined): Tally {
+  return tally(text);
 }
 
-/** Tick or untick the n-th checkbox in Markdown (clicking it on a task page). */
+/** Tick or untick the n-th checkbox in Markdown (clicking it on a task page). Ticking drops its reason: it's met now. */
 export function toggleCheck(text: string, index: number): string {
   let n = -1;
   return text
@@ -222,7 +222,10 @@ export function toggleCheck(text: string, index: number): string {
       const m = /^(\s*[-*]\s+\[)([ xX])(\].*)$/.exec(line);
       if (!m) return line;
       n++;
-      return n === index ? `${m[1]}${m[2] === ' ' ? 'x' : ' '}${m[3]}` : line;
+      if (n !== index) return line;
+      if (m[2] !== ' ') return `${m[1]} ${m[3]}`;
+      const c = parseCriterion(line);
+      return c?.reason ? `${m[1]}x] ${c.text}` : `${m[1]}x${m[3]}`;
     })
     .join('\n');
 }

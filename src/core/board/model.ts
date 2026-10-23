@@ -156,6 +156,8 @@ export interface Issue {
   readonly pr?: IssuePr;
   /** Its worktree went away (archived or deleted) before it was done: screens ask what's next. */
   readonly worktreeGone?: boolean;
+  /** It was kept out of review: an acceptance criterion is neither ticked nor explained (see criteria.ts). */
+  readonly needsChecks?: boolean;
   readonly proof: readonly Proof[];
   readonly activity: readonly Activity[];
   readonly createdAt: number;

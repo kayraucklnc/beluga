@@ -4,6 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { readJson, writeJson } from '../../net/mesh/files.js';
 import type { Store } from '../store.js';
+import { unexplained } from './criteria.js';
 import {
   type Activity,
   type ActivityKind,
@@ -260,6 +261,8 @@ export class Board {
       notes.push({ kind: 'status', text: statusText(STATUS_INFO[issue.status].label, STATUS_INFO[patch.status].label), was: STATUS_INFO[issue.status].label, now: STATUS_INFO[patch.status].label });
       next.status = patch.status;
       next.rank = this.lastRank(patch.status);
+      // It moved on (a person's choice, or every criterion settled): no longer held for its checks.
+      if (issue.needsChecks) next.needsChecks = undefined;
     }
     if (patch.priority && patch.priority !== issue.priority) {
       next.priority = patch.priority;
@@ -382,7 +385,29 @@ export class Board {
     const revision = { id: short('r'), at: this.now(), by, section, before, after, ...(reason ? { reason } : {}) };
     const brief = { ...issue.brief, [section]: after };
     if (!after) delete brief[section];
-    return this.change(issue, { brief, revisions: keepRevisions([...issue.revisions, revision]) }, [this.entry(by, 'brief', `${before ? 'updated' : 'wrote'} ${SECTION_INFO[section].label}${reason ? ` — ${reason}` : ''}`)]);
+    const edited = this.change(issue, { brief, revisions: keepRevisions([...issue.revisions, revision]) }, [this.entry(by, 'brief', `${before ? 'updated' : 'wrote'} ${SECTION_INFO[section].label}${reason ? ` — ${reason}` : ''}`)]);
+    return section === 'acceptance' ? this.checksSettled(edited) : edited;
+  }
+
+  /**
+   * Kept out of review: a criterion is neither ticked nor explained (task_update refused it, or its
+   * pull request opened). The board shows "Needs its checks" until they're settled.
+   */
+  holdForChecks(ref: string): Issue {
+    const issue = this.need(ref);
+    return issue.needsChecks ? issue : this.change(issue, { needsChecks: true }, [], false);
+  }
+
+  /** Every criterion ticked or explained now: no longer held, and a pull request that waited moves it to In Review. */
+  private checksSettled(issue: Issue): Issue {
+    if (!issue.needsChecks || unexplained(issue.brief.acceptance).length) return issue;
+    const pr = issue.pr;
+    const waiting = pr?.state === 'OPEN' && !pr.draft && pr.review !== 'CHANGES_REQUESTED' && (issue.status === 'backlog' || issue.status === 'todo' || issue.status === 'in_progress');
+    if (!waiting) return this.change(issue, { needsChecks: undefined }, [], false);
+    const klaud: Actor = { kind: 'klaud' };
+    return this.change(issue, { needsChecks: undefined, status: 'in_review', rank: this.lastRank('in_review') }, [
+      this.entry(klaud, 'status', `every criterion is ticked or explained: ${statusText(STATUS_INFO[issue.status].label, STATUS_INFO.in_review.label)}`),
+    ]);
   }
 
   /** Put a section back the way a revision found it (that's a new revision too). */
@@ -518,8 +543,15 @@ export class Board {
         if (pr.checks === 'failing' && before?.checks !== 'failing') notes.push(this.entry(klaud, 'pr', 'checks are failing'));
         if (!status && pr.review !== 'CHANGES_REQUESTED' && (issue.status === 'backlog' || issue.status === 'todo' || issue.status === 'in_progress') && (!before || before.number !== pr.number || pr.draft !== before.draft) && !pr.draft) status = 'in_review';
       }
+      // Not to review while a criterion is neither ticked nor explained: held until it is (see checksSettled).
+      const open = status === 'in_review' ? unexplained(issue.brief.acceptance) : [];
+      if (open.length) {
+        status = undefined;
+        notes.push(this.entry(klaud, 'pr', `kept this out of In Review: ${open.length === 1 ? 'a criterion is' : `${open.length} criteria are`} neither ticked nor explained (${open.map((c) => `“${c.text}”`).join('; ')})`));
+      }
       if (status && status !== issue.status) notes.push(this.entry(klaud, 'status', `moved this from ${STATUS_INFO[issue.status].label} to ${STATUS_INFO[status].label}`));
-      this.change(issue, { pr, ...(status && status !== issue.status ? { status, rank: this.lastRank(status) } : {}) }, notes);
+      const moved = status && status !== issue.status;
+      this.change(issue, { pr, ...(moved ? { status, rank: this.lastRank(status!), needsChecks: undefined } : {}), ...(open.length ? { needsChecks: true } : {}) }, notes);
     }
   }
 

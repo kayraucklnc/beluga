@@ -13,6 +13,7 @@ import { AssigneeMark, LabelChip, PrChip, PriorityIcon, StatusIcon } from './mar
 import { useIssueMenu } from './parts.js';
 import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker } from './pickers.js';
 import { ProofList, Relations, SubTasks } from './TaskSections.js';
+import { unexplained } from '@klaud/core/board/criteria.js';
 import { ago, dueText } from './tasks-model.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -79,6 +80,7 @@ function Header({ issue }: { issue: Issue }) {
       </nav>
       <Title issue={issue} />
       <GoneBanner issue={issue} />
+      <ChecksBanner issue={issue} />
       <NextStep issue={issue} />
     </header>
   );
@@ -120,6 +122,21 @@ function Title({ issue }: { issue: Issue }) {
         }
       }}
     />
+  );
+}
+
+/** Kept out of review: which criteria still need a tick or a reason. */
+function ChecksBanner({ issue }: { issue: Issue }) {
+  if (!issue.needsChecks || !STATUS_INFO[issue.status].open) return null;
+  const open = unexplained(issue.brief.acceptance);
+  if (!open.length) return null;
+  return (
+    <div className={t.banner} role="status">
+      <Icon name="alert" size={14} />
+      <span className={t.bannerText}>
+        <strong>Needs its checks.</strong> {open.length === 1 ? 'A criterion is' : `${open.length} criteria are`} neither ticked nor explained, so it stays out of review: tick each one, or add “— deferred: why” after it.
+      </span>
+    </div>
   );
 }
 

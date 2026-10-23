@@ -96,7 +96,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
       labels: ['security', 'api'],
       brief: {
         goal: 'Only signed-in users can reach `/api/payments/*`.',
-        acceptance: '- [x] `requireUser()` rejects missing sessions with 401\n- [x] Payment routes use it\n- [ ] Expired sessions are rejected too\n- [ ] Tests for missing, expired and valid sessions',
+        acceptance: '- [x] `requireUser()` rejects missing sessions with 401\n- [x] Payment routes use it\n- [ ] Expired sessions are rejected too — not done: next turn, see the handoff\n- [ ] Tests for missing, expired and valid sessions — deferred: the expired one comes with that fix',
       },
     },
     me,

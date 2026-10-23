@@ -1,3 +1,4 @@
+import { tallyWords } from '@klaud/core/board/criteria.js';
 import { issueForWorkspace } from '@klaud/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Tip } from '../components/ui.js';
@@ -23,9 +24,10 @@ export function TaskStrip({ workspaceId }: { workspaceId: string }) {
           {ticks.total ? (
             <span className={t.stripTicks}>
               <Icon name="check" size={10} />
-              {ticks.done}/{ticks.total}
+              {tallyWords(ticks)}
             </span>
           ) : null}
+          {issue.needsChecks ? <span className={t.needsChecks}>Needs its checks</span> : null}
         </button>
       </Tip>
       {issue.pr ? <PrChip pr={issue.pr} /> : null}
