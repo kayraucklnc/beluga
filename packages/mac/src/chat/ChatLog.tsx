@@ -9,7 +9,6 @@ import { Icon } from '../components/Icon.js';
 import { Avatar, Dot, Empty, Working } from '../components/ui.js';
 import { useApp } from '../lib/beluga.js';
 import { keepSameLists, sameItems } from '../lib/stable.js';
-import { Lightbox } from './ChatImages.js';
 import { FindBar } from './FindBar.js';
 import { AgentCard, ChatRow, ShellCard, SystemRow } from './Items.js';
 import { CompactDivider } from './CompactDivider.js';
@@ -234,7 +233,6 @@ export function ChatLog({ channel, empty }: { channel: string; empty?: React.Rea
           Latest
         </button>
       )}
-      <Lightbox />
     </div>
   );
 }

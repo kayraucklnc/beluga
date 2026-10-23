@@ -35,6 +35,7 @@ import { useIdleAway, useTrayPresence } from './network/net-native.js';
 import { useUpdateActivity } from './lib/updates.js';
 import { useState } from 'react';
 import { Onboarding, useOnboarding } from './onboarding/Onboarding.js';
+import { Lightbox } from './chat/ChatImages.js';
 import s from './layout/Shell.module.css';
 
 const TOAST_MS = 3500;
@@ -248,6 +249,8 @@ export function App() {
       <RequestSheet />
       <StripeSheet />
       {joining ? <JoinSheet invite={joining} onCancel={() => setJoining(undefined)} onJoin={() => void joinRoom(joining)} /> : null}
+      {/* One per window, over whatever opened it (a chat, a sub-agent's activity, a graph). */}
+      <Lightbox />
       <Toasts />
       <UndoToast />
       {welcome.open ? <Onboarding onClose={welcome.close} onArrive={welcome.arrive} /> : null}
