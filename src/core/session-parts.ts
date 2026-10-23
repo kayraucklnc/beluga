@@ -44,7 +44,7 @@ export interface SessionParts {
 export function createSessionParts(session: Session, opts: SessionOptions): SessionParts {
   let workspaces: WorkspaceController | undefined;
   let workbench: Workbench | undefined;
-  const env = new EnvVars({ store: opts.store });
+  const env = new EnvVars({ store: opts.store, onChange: () => workbench?.envChanged() });
   // Database views find the project's connection string (its variables, its .env).
   useViewEnv((dir) => env.viewEnv(dir));
     if (opts.workspaces) {

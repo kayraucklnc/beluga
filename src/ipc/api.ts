@@ -258,6 +258,8 @@ export const API = {
   'terminals.shell': args(id, opt(TermSize)),
   'terminals.global': args(id, path, opt(TermSize)),
   'terminals.close': args(id),
+  // Start a shell or the run command again with your variables as they are now (its name stays).
+  'terminals.restart': args(id),
   'terminals.rename': args(id, z.string().max(200)),
 
   // ---- your environment variables (no project: yours everywhere; else that project's)

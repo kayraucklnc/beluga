@@ -952,6 +952,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'terminal':
     case 'terminal_exit':
     case 'terminal_name':
+    case 'terminal_env_stale':
     case 'shell_choices':
     case 'env_keys':
     case 'pr_custom':

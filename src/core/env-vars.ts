@@ -91,6 +91,8 @@ export interface EnvPlace {
 export interface EnvVarsDeps {
   readonly store: Store;
   readonly file?: string;
+  /** Your variables changed: terminals already running still have the old ones (see Workbench.envChanged). */
+  readonly onChange?: () => void;
 }
 
 const inside = (dir: string, root: string): boolean => dir === root || dir.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
@@ -175,6 +177,7 @@ export class EnvVars {
     }
     saveEnvFile(this.data, this.deps.file);
     this.publish();
+    this.deps.onChange?.();
   }
 
   /** Set (or with an empty value, remove) one of your variables, or one of a project's. */

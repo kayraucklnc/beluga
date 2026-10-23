@@ -273,6 +273,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `terminals.shell` | ✓ |
 | `terminals.global` | ✓ |
 | `terminals.close` | ✓ |
+| `terminals.restart` | ✓ the terminal's "started before your variables changed · Restart" |
 | `terminals.rename` | ✓ double-click a shell tab, or right-click › Rename… (Return saves, Escape cancels, empty resets) |
 | `env.get` | ✓ Settings › Environment (values only go to the screen that asks) |
 | `env.set` | ✓ Settings › Environment |

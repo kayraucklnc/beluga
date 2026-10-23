@@ -242,7 +242,7 @@ export function EnvironmentSettings() {
   return (
     <>
       <p className={e.intro}>
-        Given to your shells, setup and run commands, and your Claude, never to a friend’s request. They stay on this Mac. New shells and Claude runs pick up changes.
+        Given to your shells, setup and run commands, and your Claude, never to a friend’s request. They stay on this Mac. Changes apply right away to your Claude’s next message and to new shells; a shell or dev server already running offers to restart with them.
       </p>
       <Group>
         <Row label="Variables for" detail={scope ? 'This project’s workspaces. They win over yours.' : 'Every shell, script and Claude run.'}>

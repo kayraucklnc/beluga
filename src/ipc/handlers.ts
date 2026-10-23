@@ -207,6 +207,7 @@ export const HANDLERS = {
   'terminals.shell': (s, wsId, size) => started(bench(s)?.shell(wsId, size)),
   'terminals.global': (s, key, dir, size) => started(bench(s)?.globalShell(key, dir, size)),
   'terminals.close': (s, key) => bench(s)?.closeTerminal(key),
+  'terminals.restart': (s, key) => started(bench(s)?.restartTerminal(key)),
   'terminals.rename': (s, key, name) => bench(s)?.renameTerminal(key, name),
 
   // The values go back only to the screen that asked (Settings), never into the shared state.

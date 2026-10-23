@@ -120,6 +120,8 @@ async function inPool(tasks: ReadonlyArray<() => Promise<void>>, limit: number):
 }
 
 const samePr = (a: PullRequest | undefined, b: PullRequest | undefined): boolean => JSON.stringify(a) === JSON.stringify(b);
+/** Variables as text in one order, to tell whether they changed (kept only in memory, on this Mac). */
+const envText = (vars: Readonly<Record<string, string>>): string => JSON.stringify(Object.entries(vars).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 
 
 /**
@@ -130,6 +132,12 @@ export class Workbench {
   private diskTimer?: NodeJS.Timeout;
   private prTimer?: NodeJS.Timeout;
   private readonly watchers = new Map<string, () => void>();
+  /**
+   * What each terminal started with: where (for its variables now) and the variables as text.
+   * A program's variables are fixed when it starts, so after you change
+   * them (Settings › Environment) the ones still running are marked for a restart.
+   */
+  private readonly started = new Map<string, { place: EnvPlace; env: string }>();
   private prsSeeded = false;
   /** Worktrees you asked Claude to open a PR for: their PR appearing is worth a notification. */
   private readonly prAsked = new Set<string>();
@@ -491,7 +499,9 @@ export class Workbench {
     const prefs = this.deps.store.getState().prefs;
     // Commands are written for sh, so they run in an sh-like shell even if yours is fish or nu.
     const shell = command ? scriptShell(prefs.shell) : prefs.shell;
-    const env = { ...this.deps.envFor?.('id' in ws ? { workspaceId: ws.id } : { dir: ws.path }), ...('projectRoot' in ws ? scriptEnv(ws) : {}) };
+    const place: EnvPlace = 'id' in ws ? { workspaceId: ws.id } : { dir: ws.path };
+    const vars = this.deps.envFor?.(place) ?? {};
+    const env = { ...vars, ...('projectRoot' in ws ? scriptEnv(ws) : {}) };
     const session = terminals.open(key, {
       cwd: ws.path,
       cols: size.cols,
@@ -501,9 +511,14 @@ export class Workbench {
       ...(command ? { args: ['-l', '-c', command], title: command } : { args: shellArgs({ login: prefs.shellLogin, extra: prefs.shellArgs }) }),
     });
     this.deps.store.dispatch({ type: 'terminal', id: key, title: session.title });
+    // A setup is over in a moment: only shells and the run command are worth a restart later.
+    if (!key.endsWith(':setup')) this.started.set(key, { place, env: envText(vars) });
+    this.envChanged();
     // Every screen sees when it ends (the tab shows its exit code; clicking starts it again).
     const report = (code: number | null): void => {
-      if (this.deps.terminals?.get(key) === session) this.deps.store.dispatch({ type: 'terminal_exit', id: key, code });
+      if (this.deps.terminals?.get(key) !== session) return;
+      this.deps.store.dispatch({ type: 'terminal_exit', id: key, code });
+      this.envChanged();
     };
     if (session.exited) report(session.exited.code);
     else session.onExit((exit) => report(exit.code));
@@ -543,12 +558,48 @@ export class Workbench {
     this.deps.store.dispatch({ type: 'terminal_name', id: key, ...(clean ? { name: clean } : {}) });
   }
 
+  /**
+   * Your variables changed (Settings › Environment, /env): mark the terminals still running with
+   * the ones they started with. Claude and new terminals already get the new ones.
+   */
+  envChanged(): void {
+    const stale = [...this.started]
+      .filter(([key, s]) => this.deps.terminals?.get(key)?.running && envText(this.deps.envFor?.(s.place) ?? {}) !== s.env)
+      .map(([key]) => key)
+      .sort();
+    this.deps.store.dispatch({ type: 'terminal_env_stale', ids: stale });
+  }
+
+  /** Start a shell or the run command again, so it has your variables as they are now (its name stays). */
+  restartTerminal(key: string): PtyProcess | undefined {
+    const was = this.started.get(key);
+    const name = this.deps.store.getState().termNames[key];
+    const keepName = (session: PtyProcess | undefined): PtyProcess | undefined => {
+      if (session && name) this.deps.store.dispatch({ type: 'terminal_name', id: key, name });
+      return session;
+    };
+    if (isGlobalShell(key)) {
+      if (!was?.place.dir) return undefined;
+      this.closeTerminal(key);
+      return keepName(this.globalShell(key, was.place.dir));
+    }
+    if (key.endsWith(':setup')) return undefined;
+    if (key.endsWith(':run')) {
+      const wsId = key.slice(0, -':run'.length);
+      this.closeTerminal(key);
+      return this.run(wsId);
+    }
+    this.closeTerminal(key);
+    return keepName(this.shell(key));
+  }
+
   /** Close a terminal session (shell, setup or run). */
   closeTerminal(key: string): void {
     this.watchers.get(key)?.();
     this.watchers.delete(key);
     this.deps.terminals?.close(key);
     this.deps.store.dispatch({ type: 'terminal', id: key });
+    if (this.started.delete(key)) this.envChanged();
     // A setup that was closed before it finished isn't "setting up" anymore.
     const wsId = key.endsWith(':setup') ? key.slice(0, -':setup'.length) : undefined;
     if (wsId && this.deps.store.getState().setup[wsId]?.status === 'running') this.deps.store.dispatch({ type: 'setup', id: wsId });
