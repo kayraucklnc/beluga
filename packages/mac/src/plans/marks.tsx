@@ -149,6 +149,16 @@ export function Said({ line, className }: { line: Headline; className?: string }
   );
 }
 
+/** A padlock, shut (a milestone waits on gates not passed yet) or open (they passed). */
+export function LockMark({ open = false, size = 12 }: { open?: boolean; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x={3.5} y={7} width={9} height={6.5} rx={1.6} fill="currentColor" stroke="none" />
+      <path d={open ? 'M5.5 7V5a2.5 2.5 0 0 1 4.9-.7' : 'M5.5 7V5a2.5 2.5 0 0 1 5 0v2'} />
+    </svg>
+  );
+}
+
 /**
  * A task's chat, as the sidebar would mark it (a plan keeps its tasks off the sidebar): a dot when
  * its Claude waits on you, else how many new messages. Nothing when there's nothing new.
