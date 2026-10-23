@@ -3,7 +3,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { readJson, writeJson } from '../../net/mesh/files.js';
-import type { Actor, IssuePr } from '../board/model.js';
+import { type Actor, type IssuePr, renamedActors } from '../board/model.js';
 import type { Store } from '../store.js';
 import { type BodyInput, type PlanOp, PlanError, applyOps, normalizeBody } from './edit.js';
 import {
@@ -33,9 +33,9 @@ import {
 } from './model.js';
 
 /**
- * Plans, kept in ~/.klaud/plans.json (readable only by you) and mirrored into the shared state.
+ * Plans, kept in ~/.beluga/plans.json (readable only by you) and mirrored into the shared state.
  * A draft stays here, with its conversation: nothing reaches the board until it's approved (see
- * apply.ts). Your planning style is ~/.klaud/planning.md. Without a folder (tests) it's memory only.
+ * apply.ts). Your planning style is ~/.beluga/planning.md. Without a folder (tests) it's memory only.
  */
 
 export interface PlansDeps {
@@ -257,7 +257,7 @@ export class Plans {
   /** The head Claude was asked to check a milestone (a new round of checking). */
   checkAsked(id: string, milestone: string): Plan {
     const plan = this.need(id);
-    return this.change(plan, { runs: withRun(plan, milestone, { checkAsked: this.now() }) }, [event({ kind: 'klaud' }, 'gate', `${milestoneName(plan, milestone)}: every task is finished, Claude is checking its pass criteria`, this.now())]);
+    return this.change(plan, { runs: withRun(plan, milestone, { checkAsked: this.now() }) }, [event({ kind: 'beluga' }, 'gate', `${milestoneName(plan, milestone)}: every task is finished, Claude is checking its pass criteria`, this.now())]);
   }
 
   /** Work came back to a milestone (a task reopened, fix tasks added): its next check is a new one. */
@@ -286,7 +286,7 @@ export class Plans {
     const at = this.now();
     const next = this.change(plan, { runs: withRun(plan, milestone, { passedAt: at, passedBy: by }) }, [event(by, 'passed', `passed ${milestoneName(plan, milestone)}`, at)]);
     const left = (next.body?.milestones ?? []).filter((m) => !next.runs[m.id]?.passedAt);
-    return left.length ? next : this.change(next, { status: 'done', doneAt: at }, [event({ kind: 'klaud' }, 'done', 'every milestone passed: the plan is done', at)]);
+    return left.length ? next : this.change(next, { status: 'done', doneAt: at }, [event({ kind: 'beluga' }, 'done', 'every milestone passed: the plan is done', at)]);
   }
 
   /** Back to a milestone that passed (more work turned up). */
@@ -319,7 +319,7 @@ export class Plans {
   setBranch(id: string, branch: string, made: boolean): Plan {
     const plan = this.need(id);
     if (plan.branch === branch) return plan;
-    return this.change(plan, { branch }, [event({ kind: 'klaud' }, 'note', made ? `made the plan’s branch ${branch} from main` : `collects the plan’s work on ${branch}`, this.now())]);
+    return this.change(plan, { branch }, [event({ kind: 'beluga' }, 'note', made ? `made the plan’s branch ${branch} from main` : `collects the plan’s work on ${branch}`, this.now())]);
   }
 
   /** A passed milestone being merged into the plan's branch (undefined: no longer). */
@@ -337,15 +337,15 @@ export class Plans {
     if (before && before.number === pr.number && before.state === pr.state && before.checks === pr.checks && before.review === pr.review && before.title === pr.title && before.draft === pr.draft) return plan;
     const notes: PlanEvent[] = [];
     const at = this.now();
-    if (!before || before.number !== pr.number) notes.push(event({ kind: 'klaud' }, 'note', `pull request #${pr.number} is open for ${plan.branch ?? 'the plan'}`, at));
-    if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') notes.push(event({ kind: 'klaud' }, 'problem', `pull request #${pr.number} was closed without merging: its tasks stay In Plan`, at));
+    if (!before || before.number !== pr.number) notes.push(event({ kind: 'beluga' }, 'note', `pull request #${pr.number} is open for ${plan.branch ?? 'the plan'}`, at));
+    if (pr.state === 'CLOSED' && before?.state !== 'CLOSED') notes.push(event({ kind: 'beluga' }, 'problem', `pull request #${pr.number} was closed without merging: its tasks stay In Plan`, at));
     return this.change(plan, { pr }, notes);
   }
 
   setShipped(id: string, shipped: PlanShipped): Plan {
     const plan = this.need(id);
     if (plan.shipped) return plan;
-    return this.change(plan, { shipped }, [event({ kind: 'klaud' }, 'done', shipped.how === 'pr' ? `merged into main via #${shipped.number}` : 'merged into main here', shipped.at)]);
+    return this.change(plan, { shipped }, [event({ kind: 'beluga' }, 'done', shipped.how === 'pr' ? `merged into main via #${shipped.number}` : 'merged into main here', shipped.at)]);
   }
 
   setCaughtUp(id: string): Plan {
@@ -409,7 +409,7 @@ export class Plans {
     }
     const file = path.join(this.deps.dir, 'plans.json');
     if (!existsSync(file)) return;
-    const parsed = PlansFile.safeParse(readJson(file));
+    const parsed = PlansFile.safeParse(renamedActors(readJson(file)));
     if (!parsed.success) {
       try {
         renameSync(file, `${file}.unreadable-${this.now()}`);

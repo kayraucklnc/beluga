@@ -1,13 +1,14 @@
 import { execFile } from 'node:child_process';
-import { readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { belugaEnv } from '../core/beluga-env.js';
 
 /**
- * Test runs a worktree left behind: when its Claude stops or it's archived, klaud stops them, so
+ * Test runs a worktree left behind: when its Claude stops or it's archived, Beluga stops them, so
  * interrupted e2e runs never pile up demo daemons, vite servers and browsers on the Mac.
  *
- * What counts: every process the worktree's Claude started (klaud gives its runs KLAUD_WORKTREE, and
+ * What counts: every process the worktree's Claude started (Beluga gives its runs BELUGA_WORKTREE, and
  * their commands inherit it) that is a test runner or what one starts (vitest, playwright, vite, the
  * demo daemon, the browser); the e2e run holding the machine-wide lock (scripts/e2e-lock.mjs) from that
  * worktree, everything it started included; and, when the worktree is going away, any test runner
@@ -15,7 +16,18 @@ import path from 'node:path';
  */
 
 /** The machine-wide e2e lock (scripts/e2e-lock.mjs keeps it there). */
-export const e2eLockFile = (): string => path.join(process.env.KLAUD_E2E_DIR || path.join(os.homedir(), '.klaud', 'e2e'), 'lock.json');
+export const e2eLockFile = (): string => path.join(belugaEnv('E2E_DIR') || e2eHomeDir(), 'lock.json');
+
+/** ~/.beluga/e2e, or the old ~/.klaud/e2e while only that home exists (same folder once it moved). */
+function e2eHomeDir(): string {
+  const beluga = path.join(os.homedir(), '.beluga');
+  const klaud = path.join(os.homedir(), '.klaud');
+  return path.join(!existsSync(beluga) && existsSync(klaud) ? klaud : beluga, 'e2e');
+}
+
+/** The line carries `<NAME>=<value>` in its environment, under the Beluga name or the old klaud one. */
+const carries = (line: string, name: string, value: string): boolean =>
+  [`BELUGA_${name}`, `KLAUD_${name}`].some((key) => line.includes(` ${key}=${value} `) || line.endsWith(` ${key}=${value}`));
 
 export interface ProcRow {
   readonly pid: number;
@@ -40,12 +52,11 @@ const inside = (child: string, dir: string): boolean => child === dir || child.s
  * away, so test runners installed in it go too, whoever started them.
  */
 export function testProcessesIn(rows: readonly ProcRow[], dir: string, leaving = false): number[] {
-  const tag = ` KLAUD_WORKTREE=${dir}`;
   const hits = rows.filter((r) => {
     if (r.pid === process.pid) return false;
-    const tagged = r.line.includes(`${tag} `) || r.line.endsWith(tag);
+    const tagged = carries(r.line, 'WORKTREE', dir);
     const installed = leaving && r.line.includes(path.join(dir, 'node_modules') + path.sep);
-    const e2e = tagged && r.line.includes(' KLAUD_E2E_RUN=');
+    const e2e = tagged && / (BELUGA|KLAUD)_E2E_RUN=/.test(r.line);
     return e2e || ((tagged || installed) && isTestRunner(r.line, dir)) || (installed && SERVER.test(r.line.split(dir).join('<worktree>')));
   });
   const kids = new Map<number, number[]>();
@@ -127,9 +138,8 @@ export function lockTargets(run: LockedRun, rows: readonly ProcRow[]): { pids: n
   const holder = row(run.pid);
   const verified = Boolean(holder && /e2e-lock\.mjs(\s|$)/.test(holder.line) && holder.line.includes(run.worktree));
   if (!verified) return { pids: [], groups: [] };
-  const tag = run.id ? ` KLAUD_E2E_RUN=${run.id}` : undefined;
   const daemon = row(run.daemon);
-  const daemonOurs = Boolean(daemon && tag && (daemon.line.includes(`${tag} `) || daemon.line.endsWith(tag)));
+  const daemonOurs = Boolean(daemon && run.id && carries(daemon.line, 'E2E_RUN', run.id));
   return { pids: [run.pid, ...(daemonOurs ? [run.daemon!] : [])], groups: [...run.groups] };
 }
 

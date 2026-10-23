@@ -1,5 +1,5 @@
 /**
- * What the klaud network looks like to a screen: people, groups, messages and invitations.
+ * What the Beluga network looks like to a screen: people, groups, messages and invitations.
  * Plain data only (no keys, no secrets): this is what goes into the shared state.
  * Browser-safe: types only.
  */
@@ -107,13 +107,13 @@ export interface InvitationView {
   readonly groupId?: string;
   /** e.g. K7QM-4XPA-R2TD (works until `codeExpiresAt`, an hour at most). */
   readonly code: string;
-  /** klaud://add#… or klaud://join#… (works until `expiresAt`). */
+  /** beluga://add#… or beluga://join#… (works until `expiresAt`). */
   readonly link: string;
   readonly expiresAt: number;
   readonly uses: number;
   /** When the code stops working (the link keeps working until `expiresAt`). */
   readonly codeExpiresAt: number;
-  /** The code as a link: klaud://add?code=K7QM-4XPA-R2TD (same lifetime as the code). */
+  /** The code as a link: beluga://add?code=K7QM-4XPA-R2TD (same lifetime as the code). */
   readonly codeLink: string;
 }
 
@@ -134,7 +134,7 @@ export interface NetworkSelf {
 
 /** Everything about the network except the messages (they're kept per conversation). */
 export interface NetworkSummary {
-  /** The network is turned on (settings `network: true` or KLAUD_NETWORK=1). */
+  /** The network is turned on (settings `network: true` or BELUGA_NETWORK=1). */
   readonly enabled: boolean;
   readonly self?: NetworkSelf;
   readonly friends: readonly FriendView[];

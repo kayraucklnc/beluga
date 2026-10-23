@@ -3,13 +3,15 @@ import { z } from 'zod';
 /** Direct dial addresses look like `p2p://<z-base-32 public key>`. */
 export const P2P_SCHEME = 'p2p://';
 const LEGACY_PREFIX = 'klaude:';
-const DIRECT_PREFIX = 'klaud://';
+/** New direct invites use beluga://; klaud:// links from before the rename still open. */
+const DIRECT_PREFIX = 'beluga://';
+const DIRECT_PREFIXES = [DIRECT_PREFIX, 'klaud://'];
 const Z32_KEY = '[ybndrfg8ejkmcpqxot1uwisza345h769]{52}';
 const WS_URL = /^wss?:\/\/[^\s#@]+$/;
 const P2P_URL = new RegExp(`^p2p://${Z32_KEY}$`);
-/** `klaud://<key>[?relay=<https url>]#<secret>`; the relay may be percent-encoded or not. */
-const DIRECT_LINK = new RegExp(`^klaud://(${Z32_KEY})/?(?:\\?relay=([^\\s#]+))?#([\\w-]+)$`);
-const DIRECT_IN_TEXT = new RegExp(`klaud://${Z32_KEY}/?(?:\\?relay=[^\\s#]+)?#[\\w-]{16,256}`);
+/** `beluga://<key>[?relay=<https url>]#<secret>` (or `klaud://…`); the relay may be percent-encoded or not. */
+const DIRECT_LINK = new RegExp(`^(?:beluga|klaud)://(${Z32_KEY})/?(?:\\?relay=([^\\s#]+))?#([\\w-]+)$`);
+const DIRECT_IN_TEXT = new RegExp(`(?:beluga|klaud)://${Z32_KEY}/?(?:\\?relay=[^\\s#]+)?#[\\w-]{16,256}`);
 const RELAY = /^(https?|wss?):\/\/([^\s#/@?]+)\/?$/;
 
 const InvitePayload = z.object({
@@ -33,7 +35,7 @@ const toHttpUrl = (wsUrl: string): string => wsUrl.replace(/^ws(s?):\/\//, 'http
 
 /**
  * Invites are plain links. Direct ones name the host's public key, e.g.
- * `klaud://yry…bo?relay=https://calm-river.trycloudflare.com#k3Jd…`; relay-only ones are
+ * `beluga://yry…bo?relay=https://calm-river.trycloudflare.com#k3Jd…`; relay-only ones are
  * `https://calm-river.trycloudflare.com#k3Jd…`. The secret lives in the #fragment,
  * which browsers and proxies never send to servers (and the DHT never sees it).
  */
@@ -58,7 +60,7 @@ function relayUrl(raw: string): string {
 
 function decodeDirect(code: string): Invite {
   const m = DIRECT_LINK.exec(code);
-  if (!m) throw new Error('That does not look like a klaud invite (expected klaud://…#secret)');
+  if (!m) throw new Error('That does not look like a Beluga invite (expected beluga://…#secret)');
   const parsed = InvitePayload.safeParse({ url: `${P2P_SCHEME}${m[1]}`, ...(m[2] ? { relay: relayUrl(m[2]) } : {}), secret: m[3] });
   if (!parsed.success) throw new Error('Invite code is invalid');
   return parsed.data;
@@ -66,10 +68,10 @@ function decodeDirect(code: string): Invite {
 
 export function decodeInvite(code: string): Invite {
   const trimmed = code.trim();
-  if (trimmed.startsWith(DIRECT_PREFIX)) return decodeDirect(trimmed);
+  if (DIRECT_PREFIXES.some((p) => trimmed.startsWith(p))) return decodeDirect(trimmed);
   if (trimmed.startsWith(LEGACY_PREFIX)) return decodeLegacy(trimmed);
   const m = /^(https?|wss?):\/\/([^\s#/@]+)\/?#([\w-]+)$/.exec(trimmed);
-  if (!m) throw new Error('That does not look like a klaud invite (expected https://…#secret)');
+  if (!m) throw new Error('That does not look like a Beluga invite (expected https://…#secret)');
   const scheme = m[1] === 'https' || m[1] === 'wss' ? 'wss' : 'ws';
   const parsed = InvitePayload.safeParse({ url: `${scheme}://${m[2]}`, secret: m[3] });
   if (!parsed.success) throw new Error('Invite code is invalid');
@@ -88,7 +90,7 @@ function decodeLegacy(code: string): Invite {
   return parsed.data;
 }
 
-/** Find an invite inside arbitrary pasted text (e.g. "klaud join https://…#abc"). */
+/** Find an invite inside arbitrary pasted text (e.g. "beluga join https://…#abc"). */
 export function findInvite(text: string): string | undefined {
   // First: a direct link's relay is itself an https URL followed by the secret.
   const direct = DIRECT_IN_TEXT.exec(text);

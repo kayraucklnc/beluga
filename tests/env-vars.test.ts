@@ -128,15 +128,15 @@ describe('environment variables never leave this computer', () => {
   const keys = deriveKeys(generateSecret());
   let hub: Hub;
   const sessions: Session[] = [];
-  const home = process.env.KLAUD_HOME;
+  const home = process.env.BELUGA_HOME;
 
   beforeEach(() => {
-    process.env.KLAUD_HOME = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-env-home-')));
+    process.env.BELUGA_HOME = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-env-home-')));
   });
   afterEach(async () => {
     for (const s of sessions.splice(0)) await s.stop();
     await hub?.close();
-    process.env.KLAUD_HOME = home;
+    process.env.BELUGA_HOME = home;
   });
 
   function peer(name: string) {
@@ -172,7 +172,7 @@ describe('environment variables never leave this computer', () => {
     kay.store.onAction((a) => void kaySaw.push(a));
 
     await HANDLERS['env.set'](kay.session, undefined, [{ key: 'STRIPE_KEY', value: 'sk_live_TOPSECRET' }], undefined);
-    expect(readFileSync(path.join(process.env.KLAUD_HOME!, 'env.json'), 'utf8')).toContain('sk_live_TOPSECRET');
+    expect(readFileSync(path.join(process.env.BELUGA_HOME!, 'env.json'), 'utf8')).toContain('sk_live_TOPSECRET');
 
     kay.session.askOwnClaude('deploy it', 'room');
     await waitFor(() => kay.runs.length === 1, 4000);

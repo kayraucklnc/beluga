@@ -28,8 +28,8 @@ describe('invite', () => {
   });
 
   it('finds invites inside pasted text', () => {
-    expect(findInvite(`hey join me: klaud join https://a-b.trycloudflare.com#${secret} !`)).toBe(`https://a-b.trycloudflare.com#${secret}`);
-    expect(findInvite("klaud join klaude:eyJ1cmwiOiJ3c3M6Ly94In0abc")).toBe("klaude:eyJ1cmwiOiJ3c3M6Ly94In0abc");
+    expect(findInvite(`hey join me: beluga join https://a-b.trycloudflare.com#${secret} !`)).toBe(`https://a-b.trycloudflare.com#${secret}`);
+    expect(findInvite("beluga join klaude:eyJ1cmwiOiJ3c3M6Ly94In0abc")).toBe("klaude:eyJ1cmwiOiJ3c3M6Ly94In0abc");
     expect(findInvite('nothing here')).toBeUndefined();
   });
 
@@ -38,9 +38,9 @@ describe('invite', () => {
     const relay = 'wss://calm-river.trycloudflare.com';
 
     it('encode the host key, an optional relay, and keep the secret in the fragment', () => {
-      expect(encodeInvite({ url: `p2p://${key}`, secret })).toBe(`klaud://${key}#${secret}`);
+      expect(encodeInvite({ url: `p2p://${key}`, secret })).toBe(`beluga://${key}#${secret}`);
       const withRelay = encodeInvite({ url: `p2p://${key}`, relay, secret });
-      expect(withRelay).toBe(`klaud://${key}?relay=https://calm-river.trycloudflare.com#${secret}`);
+      expect(withRelay).toBe(`beluga://${key}?relay=https://calm-river.trycloudflare.com#${secret}`);
       expect(new URL(withRelay).hash).toBe(`#${secret}`);
       expect(decodeInvite(withRelay)).toEqual({ url: `p2p://${key}`, relay, secret });
       expect(decodeInvite(`klaud://${key}#${secret}`)).toEqual({ url: `p2p://${key}`, secret });
@@ -61,8 +61,8 @@ describe('invite', () => {
 
     it('are found inside pasted text, relay and all', () => {
       const link = `klaud://${key}?relay=https://a-b.trycloudflare.com#${secret}`;
-      expect(findInvite(`join me: klaud join ${link} thanks`)).toBe(link);
-      expect(findInvite(`klaud join klaud://${key}#${secret}.`)).toBe(`klaud://${key}#${secret}`);
+      expect(findInvite(`join me: beluga join ${link} thanks`)).toBe(link);
+      expect(findInvite(`beluga join klaud://${key}#${secret}.`)).toBe(`klaud://${key}#${secret}`);
     });
   });
 

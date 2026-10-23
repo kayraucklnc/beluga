@@ -2,7 +2,7 @@ import type { LogItem } from '../core/store.js';
 
 /**
  * Words about a Claude card that aren't Claude's answer: Claude Code's own notice that a plan
- * limit was hit, klaud's note on a queued message Claude read mid-turn, and what an answered
+ * limit was hit, Beluga's note on a queued message Claude read mid-turn, and what an answered
  * turn still waits on. Browser-safe (the core writes them, the Mac app shows them).
  */
 

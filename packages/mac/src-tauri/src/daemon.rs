@@ -400,8 +400,8 @@ pub async fn restart(app: &AppHandle, args: &[String]) -> Result<Endpoint, Strin
 
 /// Only joining a friend's room is allowed: `join <invite link>`.
 fn check_join(args: &[String]) -> Result<(), String> {
-    const PREFIXES: [&str; 6] = [
-        "klaud://", "https://", "http://", "wss://", "ws://", "klaude:",
+    const PREFIXES: [&str; 7] = [
+        "beluga://", "klaud://", "https://", "http://", "wss://", "ws://", "klaude:",
     ];
     let [verb, invite] = args else {
         return Err("That isn't something Klaud can start with.".into());

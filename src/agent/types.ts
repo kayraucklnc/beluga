@@ -28,7 +28,7 @@ export interface AgentRunInput {
   /** Model for this run (an alias like "sonnet" or a full id); unset: the default. */
   readonly model?: string;
   readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-  /** Your environment variables for this run, over klaud's own (only for runs you asked for). */
+  /** Your environment variables for this run, over Beluga's own (only for runs you asked for). */
   readonly env?: Readonly<Record<string, string>>;
   /** Auto-compact threshold (percent) for Claude Code's own compaction; unset: auto-compact is off. */
   readonly autoCompactAt?: number;
@@ -96,7 +96,7 @@ export interface TaskDefinition {
   readonly labels?: readonly string[];
 }
 
-/** A plan as Claude's tools (agent/plan-tools.ts, server `klaud_plan`): each answers in words. */
+/** A plan as Claude's tools (agent/plan-tools.ts, server `beluga_plan`): each answers in words. */
 export interface PlanTools {
   get(): string;
   write(body: import('../core/plans/edit.js').BodyInput): string;
@@ -260,7 +260,7 @@ export interface PeerSummary {
   readonly projects: readonly string[];
   /** Their workspaces shared with you (ask_agent with project=<name> works there). */
   readonly workspaces: ReadonlyArray<{ name: string; project: string; role: string }>;
-  /** What they let you do on their computer (as they told you; unknown for older klaud). */
+  /** What they let you do on their computer (as they told you; unknown for older Beluga). */
   readonly lets_you?: { trust: string; means: string };
 }
 
@@ -271,7 +271,7 @@ export interface RoomBridge {
   listPeers(): readonly PeerInfo[];
   /** `project`: one of their projects (from list_peers) to work in. */
   askAgent(peerName: string, prompt: string, project?: string): Promise<string>;
-  /** Run a shell command on a peer's computer through their klaud; returns exit code and output. */
+  /** Run a shell command on a peer's computer through their Beluga; returns exit code and output. */
   runOnPeer?(peerName: string, command: string, opts?: { cwd?: string; project?: string; timeoutSec?: number; why?: string }): Promise<string>;
   /** People with what they offer you and what their trust in you lets you do (for list_peers). */
   describePeers?(): readonly PeerSummary[];
@@ -284,6 +284,6 @@ export interface RoomBridge {
   getPeerFile(peerName: string, path: string, saveTo?: string, why?: string): Promise<string>;
   /** Send a file from this computer to a peer; it's saved on their side. */
   sendFile(peerName: string, path: string, note?: string): Promise<string>;
-  /** Tasks between Claudes (the klaud app only; see agent/gateway-tools.ts). */
+  /** Tasks between Claudes (the Beluga app only; see agent/gateway-tools.ts). */
   readonly gateway?: import('./gateway-tools.js').GatewayBridge;
 }

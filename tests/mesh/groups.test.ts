@@ -193,7 +193,7 @@ describe('groups without a host', () => {
     const [lea, max] = people as [Person, Person];
     const nia = await net.add('nia');
     const auto = await lea.mesh.groupInvite(groupId, { auto: true });
-    expect(auto.link).toMatch(/^klaud:\/\/join#/);
+    expect(auto.link).toMatch(/^beluga:\/\/join#/);
     expect(await nia.mesh.accept(auto.link)).toMatchObject({ kind: 'group', groupId, status: 'joined' });
     await settle(() => nia.group(groupId)?.active);
     await settle(() => max.group(groupId)?.members.some((m) => m.peerId === id(nia) && m.online));

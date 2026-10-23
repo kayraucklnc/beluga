@@ -16,7 +16,7 @@ export interface StepSummary {
   /** The tool call's id (tool_use id), or `think-<n>` for thinking. */
   readonly id: string;
   readonly kind: StepKind;
-  /** The tool's name ("Bash", "Read", "mcp__klaud__send_chat"). */
+  /** The tool's name ("Bash", "Read", "mcp__beluga__send_chat"). */
   readonly tool?: string;
   /** The one-line text the chat already shows ("Bash npm test", "Thought for 12s"). */
   readonly title: string;
@@ -26,7 +26,7 @@ export interface StepSummary {
   readonly doing?: string;
   /** Someone else involved (their name, for their avatar). */
   readonly person?: string;
-  /** A task between Claudes (klaud's gateway) this step is about. */
+  /** A task between Claudes (Beluga's gateway) this step is about. */
   readonly task?: string;
   /** Claude waits on someone here (the waiting row). */
   readonly wait?: boolean;
@@ -60,7 +60,7 @@ export interface StepPage {
   readonly version: number;
   /** Nothing changed since `after`: `steps` is empty, keep yours. */
   readonly unchanged?: boolean;
-  /** No details on this computer (someone else's Claude, or from before klaud kept them). */
+  /** No details on this computer (someone else's Claude, or from before Beluga kept them). */
   readonly missing?: boolean;
 }
 

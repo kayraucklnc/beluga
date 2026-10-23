@@ -13,7 +13,7 @@ import { PLANS_API } from './plans-api.js';
 import { GIT_API } from './git-api.js';
 
 /**
- * Everything a client can ask klaud to do, in one list. The daemon validates every call
+ * Everything a client can ask Beluga to do, in one list. The daemon validates every call
  * against it (handlers.ts implements each one), and both clients call through it, so the
  * terminal UI and the Mac app can't drift apart. Browser-safe: no Node imports.
  *
@@ -156,7 +156,7 @@ export const API = {
   'files.loadDir': args(Location),
   'files.open': args(Location, opt(z.object({ by: opt(z.string().max(80)), broadcast: opt(bool) }))),
   'files.openSpec': args(z.string().max(4096)),
-  // `to`: save exactly there (an absolute path from a Save dialog) instead of ~/Downloads/klaud.
+  // `to`: save exactly there (an absolute path from a Save dialog) instead of ~/Downloads/Beluga.
   'files.download': args(Location, opt(z.object({ to: opt(path) }))),
   'files.downloadSpec': args(z.string().max(4096)),
   'files.closeViewer': args(),
@@ -204,10 +204,10 @@ export const API = {
   'workspaces.newGroup': args(z.string().min(1).max(80), opt(z.object({ before: opt(ArrangeTarget.nullable()), project: opt(id) }).strict())),
   'workspaces.showProject': args(path),
   'workspaces.hideProject': args(id),
-  // Delete Project: out of Klaud (worktrees archived losslessly); `trash`: its folder to the Trash too.
+  // Delete Project: out of Beluga (worktrees archived losslessly); `trash`: its folder to the Trash too.
   'workspaces.removeProject': args(id, opt(z.object({ trash: opt(bool) }).strict())),
   'workspaces.cleanAgentWorktrees': args(id),
-  // Worktrees klaud didn't make (Conductor's, Claude Code's, a script's): who made them, their info page, tidying up.
+  // Worktrees Beluga didn't make (Conductor's, Claude Code's, a script's): who made them, their info page, tidying up.
   'workspaces.otherOrigins': args(id),
   // When each one last changed (git's view): the Mac sidebar lists them most recent first.
   'workspaces.otherActivity': args(id),
@@ -221,7 +221,7 @@ export const API = {
   'workspaces.selectFile': args(z.number().int().min(0)),
   // Load (or reload) what changed in a workspace without going to it (the Mac app's Changes panel).
   'workspaces.review': args(id),
-  // A workspace's scratch folder (.klaud/scratch/): where it is and its files, newest first. → { root, dir, files: [{ path, size, mtime }] }
+  // A workspace's scratch folder (.beluga/scratch/): where it is and its files, newest first. → { root, dir, files: [{ path, size, mtime }] }
   'workspaces.scratch': args(id),
 
   // ---- runs, scripts, pull requests, models, search, templates
@@ -266,7 +266,7 @@ export const API = {
   'attachments.read': args(id, z.string().min(1).max(255)),
   'attachments.open': args(id, z.string().min(1).max(255)),
 
-  // ---- klaud itself
+  // ---- Beluga itself
   'daemon.stop': args(),
 
   // ---- projects on this computer: their icons, adding them
@@ -284,7 +284,7 @@ export const API = {
   // Pasted paths: is each a file, a folder, or nothing? (Read-only.) → [{ path, name, kind, size, image }]
   'local.statFiles': args(z.array(path).min(1).max(20)),
 
-  // ---- the klaud network: friends, direct messages, groups, your status (network-api.ts)
+  // ---- the Beluga network: friends, direct messages, groups, your status (network-api.ts)
   ...NETWORK_API,
 
   // ---- earnings from Stripe, per project (stripe-api.ts)

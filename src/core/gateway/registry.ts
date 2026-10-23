@@ -10,6 +10,6 @@ export const gatewayOf = (session: object): Gateway | undefined => gateways.get(
 /** The session's gateway, or a clear error where there is none (the terminal on its own). */
 export function needGateway(session: object): Gateway {
   const gw = gateways.get(session);
-  if (!gw) throw new Error('Tasks between Claudes need the klaud app (its daemon): they are not available here.');
+  if (!gw) throw new Error('Tasks between Claudes need the Beluga app (its daemon): they are not available here.');
   return gw;
 }

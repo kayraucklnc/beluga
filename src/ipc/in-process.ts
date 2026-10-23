@@ -6,7 +6,7 @@ import type { Session } from '../core/session.js';
 import type { ScreenState } from '../core/store.js';
 import { type PtyLink, localLink } from '../terminal/emulator.js';
 import { type Args, type Method, isMethod, parseArgs } from './api.js';
-import { type ApiProxy, type ClientKind, type KlaudClient, apiProxy } from './client.js';
+import { type ApiProxy, type ClientKind, type BelugaClient, apiProxy } from './client.js';
 import { HANDLERS, type Handlers, type Result } from './handlers.js';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -29,7 +29,7 @@ export interface InProcessOptions {
 }
 
 /** A screen attached to a core running in the same process (the terminal UI on its own, and tests). */
-export class InProcessClient implements KlaudClient {
+export class InProcessClient implements BelugaClient {
   readonly id: string;
   readonly kind: ClientKind;
   readonly store: ClientStore;

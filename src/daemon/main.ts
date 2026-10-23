@@ -47,7 +47,7 @@ export interface RunningDaemon {
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
- * `klaud daemon`: build the core once and serve it to every screen on this computer. Leaves the
+ * `beluga daemon`: build the core once and serve it to every screen on this computer. Leaves the
  * room a few seconds after the last screen closes (so quitting the terminal UI still means
  * "leave"), unless it's kept alive for the Mac app.
  */
@@ -58,7 +58,7 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
   let stopping: Promise<void> | undefined;
   let resolveDone!: () => void;
   const done = new Promise<void>((r) => (resolveDone = r));
-  const stop = (reason = 'klaud is shutting down'): Promise<void> => {
+  const stop = (reason = 'Beluga is shutting down'): Promise<void> => {
     stopping ??= (async () => {
       log(`stopping: ${reason}`);
       clearTimeout(linger);

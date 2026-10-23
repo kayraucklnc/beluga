@@ -338,7 +338,7 @@ describe('on your own', () => {
     expect(kay.state().log.some((l) => l.type === 'system' && l.text.includes('Sent to the Claude in add-auth'))).toBe(true);
   });
 
-  it("opening a workspace klaud hasn't used shows its Claude Code conversation and continues it", async () => {
+  it("opening a workspace Beluga hasn't used shows its Claude Code conversation and continues it", async () => {
     hub = await startHub({ keys });
     const mgr = demo;
     const seen: string[] = [];

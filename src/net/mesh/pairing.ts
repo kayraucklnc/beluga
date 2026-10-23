@@ -137,7 +137,7 @@ export class PairingHost {
         this.opts.book.update(id, { failures: record.failures + 1 });
         return refuse("That invitation couldn't be verified");
       }
-      if (msg.proto !== PROTO) return refuse('Update klaud to pair with this person');
+      if (msg.proto !== PROTO) return refuse('Update Beluga to pair with this person');
       if (record.kind === 'friend' && record.uses > 0) return refuse('That invitation was already used');
       let decision: PairingDecision;
       try {
@@ -190,7 +190,7 @@ export async function pairWith(node: DHT, keyPair: KeyPair, me: Profile, ticket:
       const msg = parsePair(text);
       const hh = stream.handshakeHash;
       if (msg?.t === 'pair_refused') return settle(() => reject(new Error(msg.reason)));
-      if (msg?.t !== 'pair_ok' || !hh) return settle(() => reject(new Error('The other side answered something klaud does not understand')));
+      if (msg?.t !== 'pair_ok' || !hh) return settle(() => reject(new Error('The other side answered something Beluga does not understand')));
       if (!checkProof(secrets.auth, 'inviter', hh, canonical(msg.profile), msg.mac) || !verifyCard(msg.profile.card)) return settle(() => reject(new Error("The other side couldn't prove it made that invitation")));
       settle(() => resolve({ profile: msg.profile, kind: msg.kind, ...(msg.group ? { group: msg.group } : {}) }));
     });

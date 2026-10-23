@@ -49,7 +49,7 @@ export interface ProjectInvitesDeps {
   readonly toast: (text: string, level?: 'info' | 'success' | 'warn' | 'error') => void;
   readonly system: (text: string, level?: 'info' | 'warn' | 'error') => void;
   readonly copy: (text: string, success: string) => Promise<void>;
-  /** Open remote access (klaud starts solo); the link is copied once it's ready. */
+  /** Open remote access (Beluga starts solo); the link is copied once it's ready. */
   readonly startInvite?: () => void;
   readonly now?: () => number;
 }
@@ -57,7 +57,7 @@ export interface ProjectInvitesDeps {
 /**
  * Links that let someone into one project (all its worktrees and chats) or the whole room.
  * They knock unless the link says otherwise, see only what they were invited to, and can be
- * given more (or less) any time without a new link. Only the host's klaud can make them.
+ * given more (or less) any time without a new link. Only the host's Beluga can make them.
  */
 export class ProjectInvites {
   private readonly secrets = new Map<string, { secret: string; keys: RoomKeys }>();
@@ -93,7 +93,7 @@ export class ProjectInvites {
   /** Make a link and copy it (opening remote access first if needed); `copy: false` only makes it (the demo). */
   async create(opts: LinkOptions, { copy = true } = {}): Promise<ProjectLink | undefined> {
     if (!this.deps.room) {
-      this.deps.toast('Project links work in rooms you host. Start klaud yourself to invite people into a project', 'warn');
+      this.deps.toast('Project links work in rooms you host. Start Beluga yourself to invite people into a project', 'warn');
       return undefined;
     }
     const secret = generateSecret();
@@ -131,7 +131,7 @@ export class ProjectInvites {
       this.deps.toast('Opening a secure link… it will be copied when ready');
       return;
     }
-    await this.deps.copy(`klaud join ${url}`, `Link for ${link.label} copied (${CAN_INFO[link.can].short}${link.knock ? ', knocks first' : ''})`);
+    await this.deps.copy(`beluga join ${url}`, `Link for ${link.label} copied (${CAN_INFO[link.can].short}${link.knock ? ', knocks first' : ''})`);
   }
 
   /** The link stops working; people already in keep their place until you remove them. */

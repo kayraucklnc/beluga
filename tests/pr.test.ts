@@ -51,7 +51,7 @@ describe('buildPrPrompt', () => {
 
   it('appends trimmed project guidelines and extra instructions', () => {
     const out = buildPrPrompt({ ...ctx, projectPrompt: '  Link the Linear ticket.  ', extra: '  mention the migration ' }, 'T');
-    expect(out).toBe('T\n\nProject guidelines for pull requests (from klaud.json):\nLink the Linear ticket.\n\nFor this pull request, also: mention the migration');
+    expect(out).toBe('T\n\nProject guidelines for pull requests (from the project\'s beluga.json):\nLink the Linear ticket.\n\nFor this pull request, also: mention the migration');
   });
 
   it('skips blank project prompt and extra', () => {
@@ -155,17 +155,17 @@ describe('custom PR prompt file', () => {
   let home: string;
 
   beforeEach(() => {
-    prev = process.env.KLAUD_HOME;
+    prev = process.env.BELUGA_HOME;
     home = mkdtempSync(path.join(os.tmpdir(), 'klaud-pr-home-'));
-    process.env.KLAUD_HOME = home;
+    process.env.BELUGA_HOME = home;
   });
 
   afterEach(() => {
-    if (prev === undefined) delete process.env.KLAUD_HOME;
-    else process.env.KLAUD_HOME = prev;
+    if (prev === undefined) delete process.env.BELUGA_HOME;
+    else process.env.BELUGA_HOME = prev;
   });
 
-  it('lives under KLAUD_HOME/prompts, read at call time', () => {
+  it('lives under BELUGA_HOME/prompts, read at call time', () => {
     expect(prPromptFile()).toBe(path.join(home, 'prompts', 'pull-request.md'));
   });
 

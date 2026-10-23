@@ -34,7 +34,7 @@ export function classifyFetchError(raw: string, remote = 'origin'): FetchFailure
   if (AUTH.test(raw))
     return {
       reason: 'auth',
-      message: `${remote} wants you to sign in, and Klaud never asks for passwords. Run “git fetch” once in Terminal (or check your SSH key or credential helper), then try again.`,
+      message: `${remote} wants you to sign in, and Beluga never asks for passwords. Run “git fetch” once in Terminal (or check your SSH key or credential helper), then try again.`,
       detail,
     };
   if (/no such remote|does not appear to be a git repository|not a valid remote/i.test(raw)) return { reason: 'no_remote', message: `There’s no remote called ${remote} to fetch from.`, detail };
@@ -240,7 +240,7 @@ export interface Stashed {
 
 /** Stash everything uncommitted (untracked files too); undefined when there was nothing to stash. */
 export async function stashPush(dir: string, label: string): Promise<Stashed | undefined> {
-  const message = `klaud: ${label} (${new Date().toISOString().slice(0, 16).replace('T', ' ')} ${randomUUID().slice(0, 6)})`;
+  const message = `beluga: ${label} (${new Date().toISOString().slice(0, 16).replace('T', ' ')} ${randomUUID().slice(0, 6)})`;
   const before = (await tryGit(dir, ['rev-parse', '--verify', '--quiet', 'refs/stash']))?.trim();
   await git(dir, ['stash', 'push', '--include-untracked', '-m', message]);
   const after = (await tryGit(dir, ['rev-parse', '--verify', '--quiet', 'refs/stash']))?.trim();
@@ -251,7 +251,7 @@ export async function stashPush(dir: string, label: string): Promise<Stashed | u
     .split('\n')
     .map((l) => l.split('\t'))
     .find(([, subject]) => subject?.endsWith(message))?.[0];
-  if (!sha) throw new GitError(`Your changes were stashed (“${message}”), but Klaud couldn’t find the entry again. They’re safe: see git stash list.`);
+  if (!sha) throw new GitError(`Your changes were stashed (“${message}”), but Beluga couldn’t find the entry again. They’re safe: see git stash list.`);
   return { sha, message };
 }
 
@@ -283,7 +283,7 @@ export async function stashDrop(dir: string, sha: string): Promise<void> {
   const dropped = /\(([0-9a-f]{7,40})\)/.exec(out)?.[1];
   if (dropped && !sha.startsWith(dropped)) {
     const full = (await tryGit(dir, ['rev-parse', '--verify', '--quiet', `${dropped}^{commit}`]))?.trim();
-    if (full) await git(dir, ['stash', 'store', '-m', 'restored by klaud', full]);
+    if (full) await git(dir, ['stash', 'store', '-m', 'restored by Beluga', full]);
   }
 }
 

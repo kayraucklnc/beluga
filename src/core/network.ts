@@ -5,17 +5,18 @@ import type { Identity } from '../net/crypto.js';
 import { Mesh } from '../net/mesh/mesh.js';
 import type { Timing } from '../net/mesh/links.js';
 import type { Store } from './store.js';
+import { belugaEnv } from './beluga-env.js';
 
 /**
- * The klaud network as a core service: starts your Mac's mesh node (src/net/mesh) next to
+ * The Beluga network as a core service: starts your Mac's mesh node (src/net/mesh) next to
  * today's rooms, mirrors what it knows into the shared state for screens, and answers the
- * `network.*` API. Off unless turned on (settings `network: true`, or KLAUD_NETWORK=1), and only
- * one klaud process per computer runs it (a lock file), so it can't disturb rooms.
+ * `network.*` API. Off unless turned on (settings `network: true`, or BELUGA_NETWORK=1), and only
+ * one Beluga process per computer runs it (a lock file), so it can't disturb rooms.
  */
 
-const OFF = 'The klaud network is off. Turn it on with "network": true in ~/.klaud/settings.json (or start with KLAUD_NETWORK=1).';
+const OFF = 'The Beluga network is off. Turn it on with "network": true in ~/.beluga/settings.json (or start with BELUGA_NETWORK=1).';
 
-export const networkEnabled = (settings: { readonly network?: boolean }): boolean => process.env.KLAUD_NETWORK === '1' || (settings.network === true && process.env.KLAUD_NETWORK !== '0');
+export const networkEnabled = (settings: { readonly network?: boolean }): boolean => belugaEnv('NETWORK') === '1' || (settings.network === true && belugaEnv('NETWORK') !== '0');
 
 export interface NetworkService {
   readonly mesh: Mesh;
@@ -26,7 +27,7 @@ export interface NetworkOptions {
   readonly store: Store;
   readonly identity: Identity;
   readonly name: string;
-  /** Where the network keeps its files (normally ~/.klaud). */
+  /** Where the network keeps its files (normally ~/.beluga). */
   readonly dir: string;
   readonly bootstrap?: readonly BootstrapNode[];
   readonly host?: string;
@@ -47,7 +48,7 @@ const held = new Set<string>();
 
 function lock(dir: string): () => void {
   const file = path.join(dir, 'network.lock');
-  if (held.has(file)) throw new Error('This klaud is already on the network');
+  if (held.has(file)) throw new Error('This Beluga is already on the network');
   let holder: number | undefined;
   let exists = false;
   try {
@@ -57,14 +58,14 @@ function lock(dir: string): () => void {
   } catch {
     holder = undefined;
   }
-  if (holder && holder !== process.pid && isAlive(holder)) throw new Error(`Another klaud (process ${holder}) is already on the network`);
+  if (holder && holder !== process.pid && isAlive(holder)) throw new Error(`Another Beluga (process ${holder}) is already on the network`);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   // A stale lock (its process is gone) is replaced; two starting at once can't both win ('wx').
   if (exists) rmSync(file, { force: true });
   try {
     writeFileSync(file, `${process.pid}\n`, { mode: 0o600, flag: 'wx' });
   } catch {
-    throw new Error('Another klaud is starting on the network');
+    throw new Error('Another Beluga is starting on the network');
   }
   held.add(file);
   return () => {
@@ -170,7 +171,7 @@ export interface NetworkHost {
   readonly store: Store;
   readonly identity: Identity;
   readonly name: string;
-  /** Where the network keeps its files (normally ~/.klaud). */
+  /** Where the network keeps its files (normally ~/.beluga). */
   readonly dir: string;
   /** Demo mode: a simulated network (bob and mia) instead of the real one. */
   readonly demo: boolean;
@@ -188,7 +189,7 @@ interface Launch {
 function launch(host: NetworkHost): Launch {
   let stopped = false;
   let error: string | undefined;
-  const name = host.name.trim().slice(0, 64) || 'klaud';
+  const name = host.name.trim().slice(0, 64) || 'Beluga';
   const ready = (host.demo ? import('./network-demo.js').then((m) => m.startDemoNetwork(host.store, name)) : startNetwork({ store: host.store, identity: host.identity, name, dir: host.dir }))
     .then((service) => {
       if (stopped) {
@@ -200,7 +201,7 @@ function launch(host: NetworkHost): Launch {
     })
     .catch((err: unknown) => {
       error = err instanceof Error ? err.message : String(err);
-      host.warn(`The klaud network didn't start: ${error}`);
+      host.warn(`The Beluga network didn't start: ${error}`);
       return undefined;
     });
   return {
@@ -225,7 +226,7 @@ export function launchNetwork(host: NetworkHost, settings: { readonly network?: 
   return launch(host).stop;
 }
 
-/** Turning the network on and off while klaud runs (Settings, the Mac app's "Turn On"). */
+/** Turning the network on and off while Beluga runs (Settings, the Mac app's "Turn On"). */
 export interface NetworkSwitch {
   /** Start or stop it now; starting resolves once it's up (or fails with why it didn't). */
   set(on: boolean): Promise<void>;
@@ -244,7 +245,7 @@ export function networkSwitch(host: NetworkHost, settings: { readonly network?: 
       current = started;
       if (await started.ready) return;
       if (current === started) current = undefined;
-      throw new Error(started.error() ?? "The klaud network didn't start");
+      throw new Error(started.error() ?? "The Beluga network didn't start");
     }
     if (!on && current) {
       const running = current;

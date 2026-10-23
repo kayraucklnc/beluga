@@ -18,15 +18,18 @@ import { buildCore } from './daemon/core.js';
 import { roomKeyOf, runDaemon } from './daemon/main.js';
 import { runningDaemon } from './daemon/files.js';
 import { APP_ORIGINS } from './daemon/server.js';
-import type { KlaudClient } from './ipc/client.js';
+import type { BelugaClient } from './ipc/client.js';
 import { InProcessClient } from './ipc/in-process.js';
 import { connectOrSpawn, listening } from './ipc/launch.js';
 import type { SocketClient } from './ipc/socket-client.js';
+import { belugaEnv } from './core/beluga-env.js';
+import { belugaHome } from './core/home.js';
+import { renameNote } from './core/rename-note.js';
 
 const RESTORE = MOUSE_OFF + FOCUS_OFF + PASTE_OFF + '\x1b[?1049l';
 
 /** The terminal UI on a client: takes over the terminal, draws the App, gives the terminal back on the way out. */
-function runTui(client: KlaudClient, config: Config, leave: () => Promise<void>, farewell: string): (message?: string) => Promise<void> {
+function runTui(client: BelugaClient, config: Config, leave: () => Promise<void>, farewell: string): (message?: string) => Promise<void> {
   let shuttingDown = false;
   const shutdown = async (message = farewell): Promise<void> => {
     if (shuttingDown) return;
@@ -75,7 +78,7 @@ function runTui(client: KlaudClient, config: Config, leave: () => Promise<void>,
 
   process.stdout.write('\x1b[?1049h\x1b[H');
   if (config.mouse) process.stdout.write(MOUSE_ON);
-  // Know when klaud is in the background, so notifications only fire when they help.
+  // Know when Beluga is in the background, so notifications only fire when they help.
   process.stdout.write(FOCUS_ON);
   // Pastes arrive marked, so an image paste (which sends no text) can attach the clipboard's image.
   if (process.stdin.isTTY) process.stdout.write(PASTE_ON);
@@ -91,7 +94,7 @@ function runTui(client: KlaudClient, config: Config, leave: () => Promise<void>,
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGHUP', () => void shutdown()); // terminal window closed
-  // A background task failing (a git call, a config write…) shouldn't kill klaud: say so and carry on.
+  // A background task failing (a git call, a config write…) shouldn't kill Beluga: say so and carry on.
   process.on('unhandledRejection', (err) => client.store.dispatch({ type: 'toast', text: `Something went wrong: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200), level: 'error' }));
   // Whatever happens, leave the terminal as we found it (no stray mouse codes, normal screen).
   process.on('exit', () => {
@@ -100,7 +103,7 @@ function runTui(client: KlaudClient, config: Config, leave: () => Promise<void>,
   return shutdown;
 }
 
-/** klaud in this process: the core and its one screen together (quitting leaves the room). */
+/** Beluga in this process: the core and its one screen together (quitting leaves the room). */
 async function inProcess(config: Config): Promise<void> {
   const desktop = await createDesktopNotifier((data) => process.stdout.write(data)).catch(() => undefined);
   let shutdown: (message?: string) => Promise<void> = async () => undefined;
@@ -118,12 +121,12 @@ async function inProcess(config: Config): Promise<void> {
       client.close();
       await core.stop();
     },
-    'klaud: left the room. See you soon!',
+    'Beluga: left the room. See you soon!',
   );
   core.start();
 }
 
-/** klaud as one screen of the daemon (started if it isn't running): other screens can attach too. */
+/** Beluga as one screen of the daemon (started if it isn't running): other screens can attach too. */
 async function attached(config: Config, args: readonly string[]): Promise<void> {
   const version = installedVersion();
   const desktop = await createDesktopNotifier((data) => process.stdout.write(data)).catch(() => undefined);
@@ -142,23 +145,26 @@ async function attached(config: Config, args: readonly string[]): Promise<void> 
       openExternal: (target: string) => openWithSystem(target),
     },
   });
-  // A daemon from the Mac app carries its build too (0.4.0+mac.0.5.1): only klaud's own version counts.
+  // A daemon from the Mac app carries its build too (0.4.0+mac.0.5.1): only Beluga's own version counts.
   if (client.daemonVersion.split('+')[0] !== version) {
     const others = client.clients - 1;
     const text =
       others > 0
-        ? `klaud ${client.daemonVersion} is running (you have ${version}). Restart to update (${others} other window${others === 1 ? '' : 's'} attached)`
-        : `klaud ${client.daemonVersion} is running (you have ${version}). Quit and start again to update`;
+        ? `Beluga ${client.daemonVersion} is running (you have ${version}). Restart to update (${others} other window${others === 1 ? '' : 's'} attached)`
+        : `Beluga ${client.daemonVersion} is running (you have ${version}). Quit and start again to update`;
     client.store.dispatch({ type: 'toast', text, level: 'warn' });
   }
-  const shutdown = runTui(client, config, async () => client.close(), 'klaud: closed this window. The room stays open while other windows are.');
-  client.onClose((reason) => void shutdown(`klaud: ${reason}`));
+  const shutdown = runTui(client, config, async () => client.close(), 'Beluga: closed this window. The room stays open while other windows are.');
+  client.onClose((reason) => void shutdown(`Beluga: ${reason}`));
 }
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  // Started as `klaud`, its old name: say once that it's Beluga now (the daemon only writes to its log).
+  const note = args[0] === 'daemon' ? undefined : renameNote(process.argv[1], belugaHome());
+  if (note) process.stderr.write(note);
   if (args[0] === '--version' || args[0] === '-v' || args[0] === 'version') {
-    process.stdout.write(`klaud ${installedVersion()}\n`);
+    process.stdout.write(`Beluga ${installedVersion()}\n`);
     return;
   }
   if (args[0] === 'view') {
@@ -166,8 +172,8 @@ async function main(): Promise<void> {
     return;
   }
   if (args[0] === 'update') {
-    // The running daemon has the old code; it stops first so the next klaud starts the new one.
-    // Only if it really is klaud: a crash can leave the file, and its process id reused.
+    // The running daemon has the old code; it stops first so the next Beluga starts the new one.
+    // Only if it really is Beluga: a crash can leave the file, and its process id reused.
     const daemon = runningDaemon();
     if (daemon && (await listening(daemon.port))) process.kill(daemon.pid, 'SIGTERM');
     process.exitCode = await runUpdate({ checkOnly: args.includes('--check') });
@@ -175,9 +181,9 @@ async function main(): Promise<void> {
   }
   if (args[0] === 'daemon') {
     const rest = args.slice(1).filter((a) => a !== '--keep-alive');
-    // The Mac app's web view; KLAUD_ALLOW_ORIGINS adds more (its dev server while developing).
-    const extra = (process.env.KLAUD_ALLOW_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean);
-    await runDaemon(parseConfig(rest), { version: installedVersion(), keepAlive: args.includes('--keep-alive') || process.env.KLAUD_KEEP_ALIVE === '1', allowedOrigins: [...APP_ORIGINS, ...extra] });
+    // The Mac app's web view; BELUGA_ALLOW_ORIGINS adds more (its dev server while developing).
+    const extra = (belugaEnv('ALLOW_ORIGINS') ?? '').split(',').map((o) => o.trim()).filter(Boolean);
+    await runDaemon(parseConfig(rest), { version: installedVersion(), keepAlive: args.includes('--keep-alive') || belugaEnv('KEEP_ALIVE') === '1', allowedOrigins: [...APP_ORIGINS, ...extra] });
     return;
   }
   const config = parseConfig(args);
@@ -186,12 +192,12 @@ async function main(): Promise<void> {
     return;
   }
   applyTheme(config.theme);
-  if (process.env.KLAUD_DAEMON === '1') await attached(config, args);
+  if (belugaEnv('DAEMON') === '1') await attached(config, args);
   else await inProcess(config);
 }
 
 main().catch((err: unknown) => {
   process.stdout.write(RESTORE);
-  process.stderr.write(`klaud: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.stderr.write(`beluga: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });

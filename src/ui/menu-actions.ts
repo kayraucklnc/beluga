@@ -1,4 +1,4 @@
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import type { Policy } from '../core/store.js';
 import { THEMES } from '../shared/settings-schema.js';
 import type { UiState } from './keymap.js';
@@ -14,7 +14,7 @@ export const POLICY_INDEX: Record<Policy, number> = { ask: 0, auto: 1, deny: 2 }
 
 /** What a menu needs from the app to act. */
 export interface MenuContext {
-  readonly client: KlaudClient;
+  readonly client: BelugaClient;
   readonly patchUi: (patch: Partial<UiState>) => void;
   readonly typeInto: (buffer: string) => void;
   readonly askForName: (kind: 'worktree' | 'chat' | 'group', projectId: string) => void;

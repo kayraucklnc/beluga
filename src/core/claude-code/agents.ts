@@ -3,7 +3,7 @@ import type { CcAgentStatus } from './model.js';
 import type { TaskNotice, ToolResult } from './transcript.js';
 
 /**
- * A sub-agent's side file (agent-<id>.meta.json) and how klaud tells whether it's still working:
+ * A sub-agent's side file (agent-<id>.meta.json) and how Beluga tells whether it's still working:
  * the session's word on it (a task notification, or the result of a foreground agent's call)
  * when it's newer than the agent's last write, else the agent's own transcript.
  */

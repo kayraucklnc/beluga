@@ -1,7 +1,7 @@
 import { GRAPH_FENCE } from '../shared/graph-spec.js';
 
 /**
- * The demo's graph (`klaud demo`, README recordings, screenshots): how a payment goes through
+ * The demo's graph (`beluga demo`, README recordings, screenshots): how a payment goes through
  * the demo project's small API, with the two risky spots marked and a walkthrough.
  */
 export const PAYMENT_FLOW = {

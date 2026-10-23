@@ -3,8 +3,10 @@ import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** The name klaud is published under on npm (the command is still `klaud`). */
-export const NPM_PACKAGE = 'klaudcode';
+/** The name Beluga is published under on npm (the command is `beluga`, and `beluga` still works). */
+export const NPM_PACKAGE = 'beluga-code';
+/** The name it had on npm before the rename: an install under it moves to NPM_PACKAGE on update. */
+export const LEGACY_NPM_PACKAGE = 'klaudcode';
 
 /** Runs a command in the install folder and resolves with its stdout. */
 export type Run = (cmd: string, args: readonly string[]) => Promise<string>;
@@ -31,18 +33,27 @@ export type Decision =
   | { readonly kind: 'available'; readonly count: number }
   | { readonly kind: 'blocked'; readonly reason: string };
 
-/** The folder klaud runs from (dist/update/check.js → repo root). */
+/** The folder Beluga runs from (dist/update/check.js → repo root). */
 export function installRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 }
 
+const packageOf = (root: string): { name?: string; version?: string } => {
+  try {
+    return JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as { name?: string; version?: string };
+  } catch {
+    return {};
+  }
+};
+
 /** The installed version, from package.json. */
 export function installedVersion(root = installRoot()): string {
-  try {
-    return (JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as { version?: string }).version ?? 'unknown';
-  } catch {
-    return 'unknown';
-  }
+  return packageOf(root).version ?? 'unknown';
+}
+
+/** The name it's installed under: beluga-code, or klaudcode from before the rename. */
+export function installedName(root = installRoot()): string {
+  return packageOf(root).name ?? NPM_PACKAGE;
 }
 
 export function makeRun(cwd: string): Run {
@@ -65,7 +76,7 @@ const canonical = (p: string): string => {
 };
 
 /**
- * True only when `root` is itself the top of a git checkout. A klaud installed inside
+ * True only when `root` is itself the top of a git checkout. An Beluga installed inside
  * someone's project (node_modules) sits *inside* their repo; updating that would
  * pull and install into their project, so it must not count.
  */
@@ -77,16 +88,17 @@ export async function isGitCheckout(run: Run, root: string): Promise<boolean> {
   }
 }
 
-/** Is `root` the global npm install of klaud (npm install -g klaudcode)? */
+/** Is `root` the global npm install of Beluga (npm install -g beluga-code, or the older klaudcode)? */
 export async function isGlobalNpmInstall(run: Run, root: string): Promise<boolean> {
   try {
-    return canonical(path.join((await run('npm', ['root', '-g'])).trim(), NPM_PACKAGE)) === canonical(root);
+    const globals = (await run('npm', ['root', '-g'])).trim();
+    return [NPM_PACKAGE, LEGACY_NPM_PACKAGE].some((name) => canonical(path.join(globals, name)) === canonical(root));
   } catch {
     return false;
   }
 }
 
-/** The newest klaud on npm. */
+/** The newest Beluga on npm. */
 export async function latestOnNpm(run: Run): Promise<string> {
   return (await run('npm', ['view', NPM_PACKAGE, 'version'])).trim();
 }
@@ -145,10 +157,10 @@ export async function readStatus(run: Run): Promise<Status> {
   return { branch, upstream, head, behind, ahead, dirty, incoming, depsChanged };
 }
 
-/** What `klaud update` can do from here. */
+/** What `beluga update` can do from here. */
 export function decide(s: Status): Decision {
   if (s.behind === 0) return { kind: 'latest' };
-  if (s.dirty) return { kind: 'blocked', reason: 'You have local edits in the klaud folder. Commit or discard them, then run klaud update again.' };
-  if (s.ahead > 0) return { kind: 'blocked', reason: `Your copy has ${s.ahead} commit(s) that aren't on ${s.upstream}. Pull or rebase by hand, then run klaud update again.` };
+  if (s.dirty) return { kind: 'blocked', reason: 'You have local edits in the Beluga folder. Commit or discard them, then run beluga update again.' };
+  if (s.ahead > 0) return { kind: 'blocked', reason: `Your copy has ${s.ahead} commit(s) that aren't on ${s.upstream}. Pull or rebase by hand, then run beluga update again.` };
   return { kind: 'available', count: s.behind };
 }

@@ -1,6 +1,6 @@
 /**
  * Environment variables you set for your shells, setup and run commands, and your Claude:
- * your own (everywhere) and per project (over yours). They're kept in ~/.klaud/env.json,
+ * your own (everywhere) and per project (over yours). They're kept in ~/.beluga/env.json,
  * readable only by you, and never leave this computer: screens get their names, and the
  * values only when one asks (Settings), never in the shared state or anything sent to the room.
  */
@@ -9,7 +9,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { ENV_KEY, type EnvKeys, type EnvVar, MAX_ENV_VALUE, MAX_ENV_VARS, envProblems, envRecord, mergeEnv, parseEnvText } from '../shared/env-vars.js';
 import type { Project } from '../workspaces/types.js';
-import { klaudHome } from './home.js';
+import { belugaHome } from './home.js';
 import type { Store } from './store.js';
 
 const Vars = z.record(z.string().regex(ENV_KEY), z.string().max(MAX_ENV_VALUE));
@@ -26,7 +26,7 @@ const EMPTY: EnvFile = { global: {}, projects: {} };
 /** A .env bigger than this isn't read. */
 const MAX_DOTENV_BYTES = 256 * 1024;
 
-export const envPath = (): string => path.join(klaudHome(), 'env.json');
+export const envPath = (): string => path.join(belugaHome(), 'env.json');
 
 export function loadEnvFile(file: string = envPath()): EnvFile {
   try {

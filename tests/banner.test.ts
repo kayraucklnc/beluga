@@ -32,7 +32,7 @@ describe('inviteBanner', () => {
   it('shows the copyable join command, then hides once friends arrive', () => {
     const ready = reduce(hosting(withPeers(1), 'ready', undefined, true), { type: 'invite', invite: 'https://x.trycloudflare.com#abc' });
     const out = text(inviteBanner(ready, 70, 0));
-    expect(out).toContain('klaud join https://x.trycloudflare.com#abc');
+    expect(out).toContain('beluga join https://x.trycloudflare.com#abc');
     expect(out).toContain('copied to your clipboard');
     expect(text(inviteBanner(hosting(ready, 'ready', undefined, false), 70, 0))).toContain('Type /invite to copy it');
     expect(text(inviteBanner(hosting(ready, 'local'), 70, 0))).toContain('Local network only');

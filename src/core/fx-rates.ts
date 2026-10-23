@@ -1,14 +1,14 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { FxRates } from './earnings-store.js';
-import { klaudHome } from './home.js';
+import { belugaHome } from './home.js';
 import type { Store } from './store.js';
 
 /**
  * Exchange rates for adding up earnings in several currencies: the European Central Bank's daily
  * rates from frankfurter.app (free, no account; the request says nothing about you). Fetched
  * only while some project has Stripe connected, alongside the daily Stripe count, at most once
- * every 20 hours, kept in ~/.klaud/fx.json so the last ones work offline (and a newly chosen
+ * every 20 hours, kept in ~/.beluga/fx.json so the last ones work offline (and a newly chosen
  * currency converts right away with them).
  */
 
@@ -25,7 +25,7 @@ export interface FxDeps {
   readonly now?: () => number;
 }
 
-const fxFile = (): string => path.join(klaudHome(), 'fx.json');
+const fxFile = (): string => path.join(belugaHome(), 'fx.json');
 
 /** Rates from frankfurter's answer ({ base: 'USD', rates: { EUR: 0.92, … } }), checked. */
 export function parseRates(body: unknown, at: number): FxRates | undefined {

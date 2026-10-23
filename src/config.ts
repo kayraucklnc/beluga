@@ -6,24 +6,24 @@ import { type ShareConfig, parseShareSpec } from './core/shares.js';
 import type { Policy } from './core/store.js';
 import type { TunnelKind } from './net/tunnel.js';
 
-export const USAGE = `klaud — a multiplayer terminal for you, your friends, and everyone's Claude
+export const USAGE = `Beluga — a multiplayer terminal for you, your friends, and everyone's Claude
 
 Usage:
-  klaud                           start a room with your saved settings (same as: klaud host)
-  klaud host [options]            start a room and get an invite link
-  klaud join [invite] [options]   join a friend's room (reads the invite from your clipboard if omitted)
-  klaud demo                      try everything alone with a pretend friend and simulated Claude
-  klaud view <image> [--ascii]    show a PNG, JPEG, GIF or SVG right in the terminal
-  klaud update [--check]          get the latest klaud (or just check whether you have it)
-  klaud daemon [--keep-alive]     run klaud in the background for other windows (the Mac app)
-                                  KLAUD_DAEMON=1 klaud attaches this window to it (or starts it)
+  beluga                           start a room with your saved settings (same as: beluga host)
+  beluga host [options]            start a room and get an invite link
+  beluga join [invite] [options]   join a friend's room (reads the invite from your clipboard if omitted)
+  beluga demo                      try everything alone with a pretend friend and simulated Claude
+  beluga view <image> [--ascii]    show a PNG, JPEG, GIF or SVG right in the terminal
+  beluga update [--check]          get the latest Beluga (or just check whether you have it)
+  beluga daemon [--keep-alive]     run Beluga in the background for other windows (the Mac app)
+                                   BELUGA_DAEMON=1 beluga attaches this window to it (or starts it)
 
 Options:
   -n, --name <name>        display name (default: your OS username)
   -s, --share <spec>       share a folder with the room: [name=]path[:rw]  (repeatable)
                            :rw lets your claude edit there without asking
       --invite             open remote access and copy an invite right away
-                           (otherwise klaud starts solo; click Invite when you want company)
+                           (otherwise Beluga starts solo; click Invite when you want company)
       --no-agent           don't offer your claude to the room
       --policy <p>         requests from friends for your claude: ask | auto | deny (default ask)
       --model <id>         model for your claude (default: your Claude Code default)
@@ -35,8 +35,8 @@ Options:
   -h, --help               show this help
   -v, --version            show the installed version
 
-Your name, theme and other choices are saved in ~/.klaud/settings.json.
-Change them any time inside klaud with /settings.
+Your name, theme and other choices are saved in ~/.beluga/settings.json.
+Change them any time inside Beluga with /settings.
 `;
 
 export interface Config {
@@ -68,7 +68,7 @@ export function sanitizeName(raw: string): string {
   return raw.replace(/[^\w.-]/g, '').slice(0, 32) || 'anon';
 }
 
-/** Folders too broad to share implicitly: someone ran klaud from ~ or /. */
+/** Folders too broad to share implicitly: someone ran Beluga from ~ or /. */
 function isTooBroad(dir: string, home: string): boolean {
   const resolved = path.resolve(dir);
   return resolved === path.resolve(home) || resolved === path.parse(resolved).root;
@@ -100,9 +100,9 @@ export function parseConfig(
   });
 
   const [command, invite] = positionals;
-  // Bare `klaud` means "host a room with my usual settings".
+  // Bare `beluga` means "host a room with my usual settings".
   const mode = values.help || command === 'help' ? 'help' : (command ?? 'host');
-  if (mode !== 'help' && mode !== 'host' && mode !== 'join' && mode !== 'demo') throw new Error(`Unknown command "${command}". Try klaud --help`);
+  if (mode !== 'help' && mode !== 'host' && mode !== 'join' && mode !== 'demo') throw new Error(`Unknown command "${command}". Try beluga --help`);
 
   const tunnel = (values.tunnel ?? saved.tunnel) as TunnelKind;
   if (!TUNNELS.includes(tunnel)) throw new Error(`--tunnel must be one of ${TUNNELS.join(', ')}`);
@@ -112,7 +112,7 @@ export function parseConfig(
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('--port must be 0-65535');
 
   const notes: string[] = [];
-  // Nothing is shared unless you ask: pass --share, or use /share inside klaud.
+  // Nothing is shared unless you ask: pass --share, or use /share inside Beluga.
   const specs = values['no-share'] ? [] : (values.share ?? []);
   if (specs.some((spec) => isTooBroad(parseShareSpec(spec, cwd).root, home))) {
     notes.push('Sharing your whole home folder or disk exposes a lot. Consider sharing a project folder instead.');

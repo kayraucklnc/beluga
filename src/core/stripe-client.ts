@@ -5,7 +5,7 @@ import type { EarningsErrorCode } from './earnings-store.js';
  * 100, patience when Stripe says slow down. What counts as earned: every successful charge,
  * what was captured minus what was refunded (gross, before Stripe's fees; disputes aren't
  * taken off). The key goes into the Authorization header and nowhere else: errors carry
- * klaud's own words, never Stripe's (which can quote part of the key).
+ * Beluga's own words, never Stripe's (which can quote part of the key).
  */
 
 export const STRIPE_API = 'https://api.stripe.com';
@@ -18,7 +18,7 @@ export type FetchLike = (
 
 export interface StripeOptions {
   readonly fetch?: FetchLike;
-  /** Where the API is (KLAUD_STRIPE_API, for a fake Stripe). */
+  /** Where the API is (BELUGA_STRIPE_API, for a fake Stripe). */
   readonly base?: string;
   readonly timeoutMs?: number;
   readonly sleep?: (ms: number) => Promise<void>;
@@ -32,9 +32,9 @@ export interface StripeOptions {
 const MESSAGES: Record<EarningsErrorCode, string> = {
   revoked: 'Stripe doesn’t accept this key anymore (it was revoked or rolled). Connect a new one.',
   permission: 'No permission to read charges — add Charges: Read to the key.',
-  offline: 'Couldn’t reach Stripe. The last total stays until klaud can try again.',
-  rate_limited: 'Stripe asked klaud to slow down. It tries again later.',
-  stripe: 'Stripe had a problem answering. klaud tries again later.',
+  offline: 'Couldn’t reach Stripe. The last total stays until Beluga can try again.',
+  rate_limited: 'Stripe asked Beluga to slow down. It tries again later.',
+  stripe: 'Stripe had a problem answering. Beluga tries again later.',
   unknown: 'Couldn’t read the earnings from Stripe.',
 };
 
@@ -111,7 +111,7 @@ async function* list<T extends { readonly id: string }>(key: string, path: strin
     if (!body.has_more || !last) return;
     after = last.id;
   }
-  throw new StripeError('unknown', 'This account has more charges than klaud counts in one go.');
+  throw new StripeError('unknown', 'This account has more charges than Beluga counts in one go.');
 }
 
 /** The fields of a charge this reads. */
@@ -143,7 +143,7 @@ export function chargeNet(c: Charge): number {
   return Math.max(0, captured - (c.amount_refunded ?? 0));
 }
 
-/** The running count kept between refreshes (in ~/.klaud/stripe.json, beside the key). */
+/** The running count kept between refreshes (in ~/.beluga/stripe.json, beside the key). */
 export interface Tally {
   /** Smallest currency unit, by lowercase currency. */
   readonly totals: Readonly<Record<string, number>>;
@@ -214,7 +214,7 @@ export async function catchUp(key: string, prev: Tally, opts: StripeOptions = {}
   return { totals, newest: newestOf(prev.newest, fresh), syncedAt, seenRefunds: seen, fullAt: prev.fullAt };
 }
 
-/** The key may read charges (the one permission klaud needs): throws a StripeError if not. */
+/** The key may read charges (the one permission Beluga needs): throws a StripeError if not. */
 export async function checkKey(key: string, opts: StripeOptions = {}): Promise<void> {
   await get(key, '/v1/charges?limit=1', opts);
 }

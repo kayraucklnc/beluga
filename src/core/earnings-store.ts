@@ -1,7 +1,7 @@
 /**
  * What each project earned, from its Stripe account, in the shared state: whether Stripe is
  * connected, the account's name, all-time totals per currency, when they were counted, and
- * what went wrong. Never the key itself (that stays in ~/.klaud/stripe.json, see
+ * what went wrong. Never the key itself (that stays in ~/.beluga/stripe.json, see
  * core/stripe-earnings.ts). Browser-safe: the Mac app runs it.
  */
 

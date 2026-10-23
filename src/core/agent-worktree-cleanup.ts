@@ -26,7 +26,7 @@ const same = (p: string): string => {
   }
 };
 
-/** An agent that wrote this lately may still be working (in a session Klaud doesn't follow): its worktree stays. */
+/** An agent that wrote this lately may still be working (in a session Beluga doesn't follow): its worktree stays. */
 export const QUIET_MS = 5 * 60_000;
 
 /** The sub-agent worktrees in a project that conversations in `parent`'s folder started (with when each agent last wrote). */

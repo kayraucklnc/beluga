@@ -76,7 +76,7 @@ export const CAP_LEVEL_INFO: Readonly<Record<CapLevel, string>> = { allow: 'Allo
 /** What one capability is for someone at this trust level. */
 export const capFor = (caps: Capabilities, need: Need, trust: string): CapLevel => (trust === 'blocked' ? 'off' : (caps.levels[need][trust as CapTrust] ?? 'off'));
 
-/** What your klaud offers someone at this trust level (on your card: their Claude sees it). */
+/** What your Beluga offers someone at this trust level (on your card: their Claude sees it). */
 export const offersFor = (caps: Capabilities, trust: string): Need[] => (trust === 'blocked' ? [] : NEEDS.filter((n) => capFor(caps, n, trust) !== 'off'));
 
 // ------------------------------------------------------------------ rules
@@ -185,7 +185,7 @@ export function decideAccess(input: { trust: string; caps: Capabilities; rules: 
 /** Why a request was declined, in words for the person who sent it. */
 export function declineReason(d: AccessDecision, owner: string): string {
   if (d.by === 'blocked') return `${owner} doesn't take requests from you`;
-  if (d.by === 'capability') return `${owner}'s klaud doesn't let you ${(d.caps ?? []).map((n) => CAP_INFO[n].doing).join(' or ')}`;
+  if (d.by === 'capability') return `${owner}'s Beluga doesn't let you ${(d.caps ?? []).map((n) => CAP_INFO[n].doing).join(' or ')}`;
   if (d.by === 'rule') return `${owner} has a rule that declines requests like this one`;
   return `${owner} declined`;
 }

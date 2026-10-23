@@ -26,11 +26,11 @@ let hub: Hub;
 let base: string;
 let terminals: TerminalManager;
 const sessions: Session[] = [];
-const home = process.env.KLAUD_HOME;
+const home = process.env.BELUGA_HOME;
 
 beforeEach(async () => {
   base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-move-')));
-  process.env.KLAUD_HOME = path.join(base, 'klaud-home');
+  process.env.BELUGA_HOME = path.join(base, 'klaud-home');
   terminals = new TerminalManager();
   hub = await startHub({ keys });
 });
@@ -39,7 +39,7 @@ afterEach(async () => {
   for (const s of sessions.splice(0)) await s.stop();
   terminals.closeAll();
   await hub?.close();
-  process.env.KLAUD_HOME = home;
+  process.env.BELUGA_HOME = home;
 });
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();

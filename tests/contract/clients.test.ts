@@ -7,7 +7,7 @@ import { Session } from '../../src/core/session.js';
 import { ShareService } from '../../src/core/shares.js';
 import { Store, initialState } from '../../src/core/store.js';
 import { DaemonServer } from '../../src/daemon/server.js';
-import type { KlaudClient } from '../../src/ipc/client.js';
+import type { BelugaClient } from '../../src/ipc/client.js';
 import { InProcessClient } from '../../src/ipc/in-process.js';
 import { SocketClient } from '../../src/ipc/socket-client.js';
 import { deriveKeys, generateSecret } from '../../src/net/crypto.js';
@@ -75,12 +75,12 @@ async function core(): Promise<Core> {
 }
 
 const MODES = {
-  inprocess: async (c: Core): Promise<KlaudClient> => {
+  inprocess: async (c: Core): Promise<BelugaClient> => {
     const client = new InProcessClient(c.session, { kind: 'test' });
     cleanups.push(() => client.close());
     return client;
   },
-  socket: async (c: Core): Promise<KlaudClient> => {
+  socket: async (c: Core): Promise<BelugaClient> => {
     const token = generateSecret();
     server ??= new DaemonServer({ session: c.session, token, version: 'test', terminals: c.terminals });
     const port = await server.listen();

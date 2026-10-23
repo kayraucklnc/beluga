@@ -6,7 +6,7 @@ import type { Project, Workspace } from '../workspaces/types.js';
 
 /**
  * Keeping each project's main folder current, for the project home's Update main / Fetch: a
- * quiet fetch every ~15 minutes while Klaud runs (and when you open a project), fast-forwarding
+ * quiet fetch every ~15 minutes while Beluga runs (and when you open a project), fast-forwarding
  * the default branch, setting uncommitted changes aside or into a worktree, and handing anything
  * harder to Claude in a run that may only sync git. Never pushes; never discards.
  */
@@ -33,7 +33,7 @@ export interface MainSyncDeps {
 
 /** A quiet fetch for every project, this often. */
 export const BACKGROUND_FETCH_MS = 15 * 60_000;
-/** The first background pass, once Klaud has settled. */
+/** The first background pass, once Beluga has settled. */
 const FIRST_PASS_MS = 20_000;
 /** Opening a project fetches when the last fetch is older than this. */
 export const STALE_FETCH_MS = 2 * 60_000;
@@ -91,7 +91,7 @@ export class MainSync {
 
   /** Run one change to a project's main folder at a time (a double click, or two windows, wait their turn: no). */
   private async alone<T>(projectId: string, job: () => Promise<T>): Promise<T> {
-    if (this.exclusive.has(projectId)) throw new Error('Klaud is already updating this project’s main folder');
+    if (this.exclusive.has(projectId)) throw new Error('Beluga is already updating this project’s main folder');
     this.exclusive.add(projectId);
     try {
       return await job();
@@ -230,7 +230,7 @@ export class MainSync {
 
   /**
    * "Let Claude handle it": a conversation in the main folder whose run may sync git (and only
-   * that), with the task and what Klaud found. Shows in the project's Questions.
+   * that), with the task and what Beluga found. Shows in the project's Questions.
    */
   async askClaude(projectId: string, situation?: string): Promise<string | undefined> {
     const project = this.project(projectId);
@@ -279,7 +279,7 @@ const strip = (s: GitHubState & { at: number; url: string }): GitHubState => {
   return rest;
 };
 
-/** What Klaud sees, in a sentence, for Claude's task. */
+/** What Beluga sees, in a sentence, for Claude's task. */
 export function describe(line: sync.DefaultBranch): string {
   const parts = [
     line.operation ? `a ${line.operation} is stopped halfway in the main folder` : '',

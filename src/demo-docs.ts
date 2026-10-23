@@ -164,7 +164,7 @@ Merges to \`main\` deploy on their own. A deploy:
 > Migrations run before the new code takes traffic. Never drop a column the running version still
 > reads: add first, deploy, then remove in a later change.
 
-To ship by hand, press <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>P</kbd> in klaud and pick **Create PR**, or:
+To ship by hand, press <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>P</kbd> in Beluga and pick **Create PR**, or:
 
 \`\`\`bash
 git push origin HEAD

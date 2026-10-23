@@ -7,13 +7,13 @@ import { z } from 'zod';
 export const MAC_SOUNDS = ['Glass', 'Ping', 'Pop', 'Purr', 'Tink', 'Hero', 'Funk', 'Submarine', 'Blow', 'Bottle', 'Frog', 'Morse', 'Sosumi', 'Basso'] as const;
 export type MacSound = (typeof MAC_SOUNDS)[number];
 
-/** Klaud's own 8-bit sounds (made by packages/mac/src/lib/sounds/chip.ts). */
+/** Beluga's own 8-bit sounds (made by packages/mac/src/lib/sounds/chip.ts). */
 export const CHIP_SOUNDS = ['blip', 'coin', 'chime', 'powerUp', 'arpUp', 'arpDown', 'ping', 'done'] as const;
 export type ChipSound = (typeof CHIP_SOUNDS)[number];
 
 const SEED = z.number().int().min(0).max(0xffffffff);
 
-/** One sound: none, a Mac sound, a Klaud 8-bit sound, or one generated from a seed. */
+/** One sound: none, a Mac sound, a Beluga 8-bit sound, or one generated from a seed. */
 export const SoundChoice = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }),
   z.object({ kind: z.literal('mac'), id: z.enum(MAC_SOUNDS) }),

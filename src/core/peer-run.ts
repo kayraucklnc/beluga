@@ -130,7 +130,7 @@ type Reply = (r: Omit<BodyInput & { kind: 'shell_result' }, 'kind' | 'reqId'>) =
 type Waiter = { peer: string; item: ShellItem; resolve: (r: BodyOf<'shell_result'>) => void; reject: (e: Error) => void; timer: NodeJS.Timeout };
 
 /**
- * Commands on each other's computers, run by the klaud of whoever owns the computer: with full
+ * Commands on each other's computers, run by the Beluga of whoever owns the computer: with full
  * trust right away, otherwise after they say yes. Also tells each friend how much you trust
  * them, so they (and their Claude) know what they may ask for.
  */
@@ -162,7 +162,7 @@ export class PeerRun {
     return this.deps.store.getState();
   }
 
-  /** Decide by your rules and capabilities too (and "Always" writes a rule instead of lasting until klaud quits). */
+  /** Decide by your rules and capabilities too (and "Always" writes a rule instead of lasting until Beluga quits). */
   useAccess(access: PeerRunAccess | undefined): void {
     this.access = access;
   }
@@ -348,7 +348,7 @@ export class PeerRun {
       dir = full ? this.home : (shared?.root ?? this.deps.agentCwd);
     }
     const real = await fs.realpath(dir).catch(() => dir);
-    if (isSecretPath(dir) || isSecretPath(real)) throw new Error('that folder holds secrets, so klaud never runs commands there');
+    if (isSecretPath(dir) || isSecretPath(real)) throw new Error('that folder holds secrets, so Beluga never runs commands there');
     const stat = await fs.stat(real).catch(() => undefined);
     if (!stat?.isDirectory()) throw new Error(`there is no folder at ${clean(body.cwd ?? dir)}`);
     return real;
@@ -361,7 +361,7 @@ export class PeerRun {
     let gate = shellGate(level);
     if (gate === 'decline' || from === this.deps.selfId()) return reply({ ok: false, error: `${owner} declined (blocked)` });
     // Secrets stay off-limits at every trust level, like for Claude's own commands.
-    if (mentionsSecret(body.command)) return reply({ ok: false, error: 'klaud never runs commands that touch secrets (.env files, keys, credentials)' });
+    if (mentionsSecret(body.command)) return reply({ ok: false, error: 'Beluga never runs commands that touch secrets (.env files, keys, credentials)' });
     if ((this.running.get(from) ?? 0) >= MAX_RUNNING_PER_PERSON) return reply({ ok: false, error: 'too many of your commands are already running there; wait for them to finish' });
     // Counted before any wait, so a burst of requests can't slip past the limit.
     this.running.set(from, (this.running.get(from) ?? 0) + 1);
@@ -389,7 +389,7 @@ export class PeerRun {
       hooks.asking?.();
       const answer = await this.deps.approve(
         `${name} (#${from.slice(0, 6)})${body.viaAgent ? "'s Claude" : ''} wants to run a command on your computer`,
-        `in ${tilde(cwd, this.home)}\n$ ${clean(body.command)}\nstops after ${formatDuration(body.timeoutSec * 1000)} · no input${body.why ? `\nwhy: ${clean(body.why)}` : ''}\n${this.access ? `Always = run this command from ${name} in this folder without asking (a rule you can change in Settings › People & access)` : `Always = run ${name}'s commands without asking until klaud quits`}`,
+        `in ${tilde(cwd, this.home)}\n$ ${clean(body.command)}\nstops after ${formatDuration(body.timeoutSec * 1000)} · no input${body.why ? `\nwhy: ${clean(body.why)}` : ''}\n${this.access ? `Always = run this command from ${name} in this folder without asking (a rule you can change in Settings › People & access)` : `Always = run ${name}'s commands without asking until Beluga quits`}`,
         from,
       );
       if (answer === 'no') return reply({ ok: false, error: `${owner} declined` });

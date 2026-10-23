@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { readJson, writeJson } from './files.js';
 
 /**
- * Invitations: a one-time link (`klaud://add#…`, or `klaud://join#…` for a group) and a short
+ * Invitations: a one-time link (`beluga://add#…`, or `beluga://join#…` for a group) and a short
  * code (`K7QM-4XPA-R2TD`) that do the same thing. Neither names your address: the secret in them
  * is stretched into a temporary key pair you listen on while the invitation is open, so only
  * someone holding the secret can even find you, and both sides prove they know it.
@@ -48,7 +48,7 @@ export const InvitationRecord = z.object({
 export type InvitationRecord = z.infer<typeof InvitationRecord>;
 
 export const formatCode = (code: string): string => (code.match(/.{1,4}/g) ?? []).join('-');
-export const linkOf = (r: Pick<InvitationRecord, 'kind' | 'secret'>): string => `klaud://${r.kind === 'friend' ? 'add' : 'join'}#${r.secret}`;
+export const linkOf = (r: Pick<InvitationRecord, 'kind' | 'secret'>): string => `beluga://${r.kind === 'friend' ? 'add' : 'join'}#${r.secret}`;
 
 export function newInvitation(kind: InviteKind, opts: { groupId?: string; auto?: boolean; ttlMs?: number; codeTtlMs?: number } = {}): InvitationRecord {
   const now = Date.now();
@@ -82,14 +82,14 @@ function readCode(typed: string): string | undefined {
   return compact.length === CODE_LENGTH && [...compact].every((c) => ALPHABET.includes(c)) ? compact : undefined;
 }
 
-/** The code as a link (`klaud://add?code=K7QM-4XPA-R2TD`): clicking it is the same as typing it. */
-export const codeLinkOf = (r: Pick<InvitationRecord, 'kind' | 'code'>): string => `klaud://${r.kind === 'friend' ? 'add' : 'join'}?code=${formatCode(r.code)}`;
+/** The code as a link (`beluga://add?code=K7QM-4XPA-R2TD`): clicking it is the same as typing it. */
+export const codeLinkOf = (r: Pick<InvitationRecord, 'kind' | 'code'>): string => `beluga://${r.kind === 'friend' ? 'add' : 'join'}?code=${formatCode(r.code)}`;
 
-/** Read an invitation out of pasted text ("klaud://add#…", "klaud://add?code=…", "K7QM-4XPA-R2TD", "k7qm 4xpa r2td"…). */
+/** Read an invitation out of pasted text ("beluga://add#…", "beluga://add?code=…", the same with klaud:// from before the rename, "K7QM-4XPA-R2TD", "k7qm 4xpa r2td"…). */
 export function parseTicket(text: string): Ticket | undefined {
-  const link = /klaud:\/\/(?:add|join)\/?#([\w-]{22})(?![\w-])/.exec(text);
+  const link = /(?:beluga|klaud):\/\/(?:add|join)\/?#([\w-]{22})(?![\w-])/.exec(text);
   if (link) return { via: 'link', secret: link[1]! };
-  const codeLink = /klaud:\/\/(?:add|join)\/?\?code=([0-9A-Za-z%+-]{12,40})/.exec(text);
+  const codeLink = /(?:beluga|klaud):\/\/(?:add|join)\/?\?code=([0-9A-Za-z%+-]{12,40})/.exec(text);
   if (codeLink) {
     let raw = codeLink[1]!;
     try {
@@ -133,7 +133,7 @@ export function checkProof(auth: Buffer, role: 'invitee' | 'inviter', handshakeH
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
-/** Your open invitations, kept in ~/.klaud/invitations.json (0600: they hold secrets). */
+/** Your open invitations, kept in ~/.beluga/invitations.json (0600: they hold secrets). */
 export class InvitationBook {
   private list: readonly InvitationRecord[];
 

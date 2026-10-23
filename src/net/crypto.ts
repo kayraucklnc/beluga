@@ -82,7 +82,7 @@ function identityFrom(privateKey: KeyObject): Identity {
 }
 
 /**
- * Your long-lived identity, kept in ~/.klaud/identity.json (readable only by you). It lets
+ * Your long-lived identity, kept in ~/.beluga/identity.json (readable only by you). It lets
  * friends recognize you across sessions, so the trust level they gave you comes back.
  */
 export function loadIdentity(file: string): Identity {

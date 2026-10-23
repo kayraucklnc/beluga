@@ -18,7 +18,7 @@ import { findAnchor, scrollToElement } from './md-dom.js';
 import { metaRows, splitFrontMatter, type MetaRow } from './md-frontmatter.js';
 import { resolveLink } from './md-paths.js';
 import { GraphBlock } from '../graph/GraphBlock.js';
-import { GRAPH_FENCE } from '@klaud/shared/graph-spec.js';
+import { isGraphFence } from '@klaud/shared/graph-spec.js';
 import m from './markdown.module.css';
 
 /**
@@ -147,7 +147,7 @@ function makeComponents(ctx: { current: Ctx }): Components {
         ?.slice('language-'.length);
       if (lang === 'math') return <MathTex tex={text} display />;
       if (lang === 'mermaid') return <Diagram code={text} />;
-      if (lang === GRAPH_FENCE) return <GraphBlock code={text} />;
+      if (isGraphFence(lang)) return <GraphBlock code={text} />;
       return <CodeBlock code={text} lang={lang} />;
     },
     code: ({ className, children }) =>

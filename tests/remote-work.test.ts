@@ -19,17 +19,17 @@ const keys = deriveKeys(generateSecret());
 let hub: Hub;
 let base: string;
 const sessions: Session[] = [];
-const home = process.env.KLAUD_HOME;
+const home = process.env.BELUGA_HOME;
 
 beforeEach(() => {
   base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-remote-')));
-  process.env.KLAUD_HOME = path.join(base, 'klaud-home');
+  process.env.BELUGA_HOME = path.join(base, 'klaud-home');
 });
 
 afterEach(async () => {
   for (const s of sessions.splice(0)) await s.stop();
   await hub?.close();
-  process.env.KLAUD_HOME = home;
+  process.env.BELUGA_HOME = home;
 });
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
@@ -52,7 +52,7 @@ function repos(...names: string[]): Record<string, string> {
     mkdirSync(path.dirname(dir), { recursive: true });
     execFileSync('git', ['clone', '-q', origin, dir], { stdio: 'pipe' });
     git(dir, 'remote', 'set-head', 'origin', 'main');
-    // klaud commits with plain `git commit`; keep this machine's signing setup out of the test.
+    // Beluga commits with plain `git commit`; keep this machine's signing setup out of the test.
     git(dir, 'config', 'commit.gpgsign', 'false');
     git(dir, 'config', 'user.email', `${name}@test`);
     git(dir, 'config', 'user.name', name);
@@ -153,9 +153,9 @@ describe('files between computers', () => {
     const missing = kay.session.remote.getFile(bob.id(), path.join(base, 'nope.txt'));
     await approve(bob);
     await expect(missing).rejects.toThrow(/no file/);
-    // klaud's own key and settings never leave, whatever the trust.
+    // Beluga's own key and settings never leave, whatever the trust.
     bob.session.people.setTrust(kay.id(), 'full', true);
-    await expect(kay.session.remote.getFile(bob.id(), path.join(process.env.KLAUD_HOME!, 'identity.json'))).rejects.toThrow(/secrets/);
+    await expect(kay.session.remote.getFile(bob.id(), path.join(process.env.BELUGA_HOME!, 'identity.json'))).rejects.toThrow(/secrets/);
     // A link with a harmless name pointing at a secret is caught too.
     symlinkSync(env, path.join(base, 'notes.txt'));
     await expect(kay.session.remote.getFile(bob.id(), path.join(base, 'notes.txt'))).rejects.toThrow(/secrets/);
@@ -221,7 +221,7 @@ describe('work on a friend’s computer', () => {
     await waitFor(() => bob.runs.length === 1, 4000);
     expect(bob.runs[0]).toMatchObject({ prompt: 'add a health check endpoint', requesterName: 'kay' });
     const ws = bob.workspaces!.list.flatMap((p) => p.workspaces).find((w) => w.kind === 'worktree');
-    expect(ws?.branch).toMatch(/^klaud\/add-.*health-check/);
+    expect(ws?.branch).toMatch(/^beluga\/add-.*health-check/);
     // kay is in it (SHARED WITH ME), and her screen opened it.
     await waitFor(() => kay.state().shared.some((w) => w.id === ws?.id), 4000);
     await waitFor(() => kay.screen.store.getState().view.kind === 'shared', 4000);

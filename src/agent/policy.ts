@@ -25,15 +25,15 @@ const ALWAYS_OK = new Set([
   'TodoWrite',
   'ToolSearch',
   // continue_in_worktree is only offered in main folders, and decides who must confirm itself.
-  ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report', 'continue_in_worktree'].map((n) => `mcp__klaud__${n}`),
+  ...['send_chat', 'list_peers', 'list_peer_files', 'read_peer_file', 'write_report', 'continue_in_worktree'].map((n) => `mcp__beluga__${n}`),
   // The gateway's look-and-wait tools (core/gateway); ask_person and run_on ask, and the gateway checks trust itself.
-  ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__klaud__${n}`),
+  ...['who_can', 'wait_for', 'check', 'cancel', 'answer_question'].map((n) => `mcp__beluga__${n}`),
   // The task board: only your own runs have it, and it only changes your tasks (each change is in their activity).
-  ...['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__klaud_board__${n}`),
+  ...['task_define', 'task_get', 'task_list', 'task_create', 'task_update', 'task_brief_edit', 'task_note', 'task_relate', 'task_attach_proof'].map((n) => `mcp__beluga_board__${n}`),
   // A plan's tools: only its home conversation has them (core/plans); changes to an approved plan wait for you.
-  ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task'].map((n) => `mcp__klaud_plan__${n}`),
+  ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task'].map((n) => `mcp__beluga_plan__${n}`),
   // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).
-  ...['screenshot', 'device_info'].map((n) => `mcp__klaud_task__${n}`),
+  ...['screenshot', 'device_info'].map((n) => `mcp__beluga_task__${n}`),
 ]);
 
 /**
@@ -87,10 +87,10 @@ const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, t
  */
 export function decideTool(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): Decision {
   if (ctx.askOnly && changesMain(toolName, input, ctx)) return 'deny';
-  if (ctx.guest && toolName.startsWith('mcp__klaud__')) return 'deny';
+  if (ctx.guest && toolName.startsWith('mcp__beluga__')) return 'deny';
   if (ALWAYS_OK.has(toolName)) return 'allow';
   // Sending a file reads it: same rules as Read (secrets never leave; outside shared folders asks).
-  if (toolName === 'mcp__klaud__send_file') {
+  if (toolName === 'mcp__beluga__send_file') {
     const raw = typeof input.path === 'string' ? input.path.replace(/^~(?=$|\/)/, process.env.HOME ?? '~') : '';
     // Only full paths: the same file is checked here and read when it's sent.
     if (!path.isAbsolute(raw)) return 'deny';
@@ -99,8 +99,8 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
     if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
     return ctx.scope === 'full' ? 'allow' : 'ask';
   }
-  // Commands on a friend's computer: their klaud decides; secrets are refused on both ends.
-  if (toolName === 'mcp__klaud__run_on_peer' || toolName === 'mcp__klaud__run_on') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
+  // Commands on a friend's computer: their Beluga decides; secrets are refused on both ends.
+  if (toolName === 'mcp__beluga__run_on_peer' || toolName === 'mcp__beluga__run_on') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
   if (toolName === 'Bash') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
   const readField = READ_TOOLS[toolName];
   if (readField) {
@@ -131,16 +131,16 @@ function changesMain(toolName: string, input: Record<string, unknown>, ctx: Poli
   }
   if (toolName === 'Bash') return !(typeof input.command === 'string' && (isReadOnlyCommand(input.command) || (ctx.syncMain !== undefined && isSyncMainCommand(input.command, ctx.syncMain))));
   // A file fetched from a friend may not land in the main folder.
-  if (toolName === 'mcp__klaud__get_peer_file') return typeof input.save_to === 'string' && inside(path.resolve(ctx.cwd), resolveTarget(ctx.cwd, input.save_to.replace(/^~(?=$|\/)/, process.env.HOME ?? '~')));
+  if (toolName === 'mcp__beluga__get_peer_file') return typeof input.save_to === 'string' && inside(path.resolve(ctx.cwd), resolveTarget(ctx.cwd, input.save_to.replace(/^~(?=$|\/)/, process.env.HOME ?? '~')));
   return false;
 }
 
-export const DENY_REASON = 'klaud blocked this: credential files are off-limits, and this request may only use the shared folders.';
+export const DENY_REASON = 'Beluga blocked this: credential files are off-limits, and this request may only use the shared folders.';
 
 /** Why an ask-only run can't do it, and what to do instead. */
 export const ASK_ONLY_REASON =
-  "klaud blocked this: you're in the project's main folder, which is read-only (questions only; work happens in worktrees). " +
-  "Don't try another way to change it here. If a change is wanted, call mcp__klaud__continue_in_worktree with the task.";
+  "Beluga blocked this: you're in the project's main folder, which is read-only (questions only; work happens in worktrees). " +
+  "Don't try another way to change it here. If a change is wanted, call mcp__beluga__continue_in_worktree with the task.";
 
 /** The reason to give Claude for a denied tool call. */
 export function denyReason(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): string {

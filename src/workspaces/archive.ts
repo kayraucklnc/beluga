@@ -207,7 +207,7 @@ export function archiveWorktree(o: ArchiveOptions): Promise<ArchiveManifest> {
         o.onPhase?.('saving');
         const plan = await planArchive(o.dir);
         const branch = await tryGit(o.dir, ['symbolic-ref', '--short', '--quiet', 'HEAD']);
-        const snap = await snapshot(o.dir, `Klaud archive of ${path.basename(o.dir)}`);
+        const snap = await snapshot(o.dir, `Beluga archive of ${path.basename(o.dir)}`);
         const keep = outermost([...plan.keep, ...snap.nested.map((n) => `${n}/`), ...empty]);
         const print = fingerprint(o.dir, keep);
         o.onPhase?.('compressing');

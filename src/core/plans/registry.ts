@@ -10,6 +10,6 @@ export const plansOf = (session: object): PlansWork | undefined => all.get(sessi
 /** The session's plans, or a clear error where there are none (the terminal on its own). */
 export function needPlans(session: object): PlansWork {
   const plans = all.get(session);
-  if (!plans) throw new Error('Plans need the Klaud app (its daemon): they are not available here.');
+  if (!plans) throw new Error('Plans need the Beluga app (its daemon): they are not available here.');
   return plans;
 }

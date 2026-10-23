@@ -8,7 +8,7 @@ import { type StaleReason, type WorktreeFacts, bornAt, removeWorktreeKeepingBran
 import type { Project, Workspace } from '../workspaces/types.js';
 
 /**
- * Worktrees klaud didn't make (Conductor's, Claude Code's, a script's): who made them, what's
+ * Worktrees Beluga didn't make (Conductor's, Claude Code's, a script's): who made them, what's
  * in them, and tidying them away. Nothing is removed without being asked for, by id, and a
  * removal never deletes a branch.
  */
@@ -56,7 +56,7 @@ export interface OtherDeps {
 const DAY = 86_400_000;
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** A worktree klaud didn't make and hasn't talked in (listed after klaud's own in the Mac sidebar). */
+/** A worktree Beluga didn't make and hasn't talked in (listed after Beluga's own in the Mac sidebar). */
 export const isOther = (w: Workspace): boolean => w.kind === 'worktree' && w.external && !w.archived;
 
 export class OtherWorktrees {
@@ -149,7 +149,7 @@ export class OtherWorktrees {
   async remove(id: string, force = false): Promise<boolean> {
     const at = this.located(id);
     if (!at) {
-      this.deps.toast('Only worktrees made outside Klaud can be removed here', 'warn');
+      this.deps.toast('Only worktrees made outside Beluga can be removed here', 'warn');
       return false;
     }
     const { ws, project } = at;

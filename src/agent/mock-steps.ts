@@ -121,14 +121,14 @@ function bashOf(command: string): { input: Record<string, unknown>; output: stri
 
 const unquote = (s: string): string => s.replace(/^"(.*)"$/, '$1');
 
-/** klaud's tools in the demo's lines: which input the line's words are. */
+/** Beluga's tools in the demo's lines: which input the line's words are. */
 const KLAUD_ARG: Readonly<Record<string, string>> = { ask_person: 'person', wait_for: 'task', run_on_peer: 'command', write_report: 'title', continue_in_worktree: 'task' };
 const KLAUD_OUT: Readonly<Record<string, (arg: string) => string>> = {
   who_can: () => JSON.stringify([{ name: 'bob', status: 'online', offers: ['project', 'shell'] }, { name: 'mia', status: 'away', offers: ['project'] }], null, 2),
   ask_person: (who) => `Task t_demo sent to ${who}'s Claude. Call wait_for to get the answer.`,
   wait_for: () => 'status: done\nsummary:\nAll 24 tests pass on their Mac.',
   list_peers: () => JSON.stringify([{ name: 'bob', you: false, agent: true }], null, 2),
-  write_report: (title) => `Saved .klaud/reports/${title.toLowerCase().replace(/\W+/g, '-')}.md`,
+  write_report: (title) => `Saved .beluga/reports/${title.toLowerCase().replace(/\W+/g, '-')}.md`,
 };
 
 /** A demo line can carry more input than its words: "ask_person bob\u0000{\"ask\":\"…\"}". */
@@ -173,7 +173,7 @@ export function mockTool(step: string, cwd = '/Users/kay/demo-api'): { tool: str
       };
     default: {
       const key = KLAUD_ARG[name];
-      return { tool: `mcp__klaud__${name}`, input: key && arg ? { [key]: arg } : {}, output: KLAUD_OUT[name]?.(arg) ?? 'ok' };
+      return { tool: `mcp__beluga__${name}`, input: key && arg ? { [key]: arg } : {}, output: KLAUD_OUT[name]?.(arg) ?? 'ok' };
     }
   }
 }

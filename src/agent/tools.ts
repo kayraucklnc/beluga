@@ -29,7 +29,7 @@ export const ROOM_TOOL_NAMES = [
   'get_peer_file',
   'send_file',
   'write_report',
-].map((n) => `mcp__klaud__${n}`);
+].map((n) => `mcp__beluga__${n}`);
 
 export function createRoomToolDefs(bridge: RoomBridge) {
   return [
@@ -60,7 +60,7 @@ export function createRoomToolDefs(bridge: RoomBridge) {
       ),
       tool(
         'run_on_peer',
-        "Run a shell command on a friend's computer through their klaud (non-interactive, no input). They approve it unless they fully trust you; commands touching secrets are refused. Returns the exit code and output (its end, up to 64 KB).",
+        "Run a shell command on a friend's computer through their Beluga (non-interactive, no input). They approve it unless they fully trust you; commands touching secrets are refused. Returns the exit code and output (its end, up to 64 KB).",
         {
           peer: z.string().describe('Peer name from list_peers'),
           command: z.string().min(1).max(8000),
@@ -93,14 +93,14 @@ export function createRoomToolDefs(bridge: RoomBridge) {
         {
           peer: z.string().describe('Peer name from list_peers'),
           path: z.string().min(1).max(4096).describe('Path on their computer; ~ means their home folder'),
-          save_to: z.string().max(4096).optional().describe('Folder on THIS computer to save into (e.g. ~/Desktop). Default: ~/Downloads/klaud/<peer>'),
+          save_to: z.string().max(4096).optional().describe('Folder on THIS computer to save into (e.g. ~/Desktop). Default: ~/Downloads/Beluga/<peer>'),
           why: z.string().max(500).optional().describe('One line shown to them when they approve'),
         },
         (a) => guarded(async () => `Saved to ${await bridge.getPeerFile(a.peer, a.path, a.save_to, a.why)}`),
       ),
       tool(
         'send_file',
-        "Send a file from this computer to a peer (for example the result of work they asked for). It's saved in their Downloads/klaud folder. Use it to send results back to whoever asked you.",
+        "Send a file from this computer to a peer (for example the result of work they asked for). It's saved in their Downloads folder. Use it to send results back to whoever asked you.",
         {
           peer: z.string().describe('Peer name from list_peers'),
           path: z
@@ -115,26 +115,26 @@ export function createRoomToolDefs(bridge: RoomBridge) {
       ),
       tool(
         'write_report',
-        'Write a Markdown report to .klaud/reports/ and announce it so everyone can follow it live.',
+        'Write a Markdown report to .beluga/reports/ and announce it so everyone can follow it live.',
         { title: z.string().min(1).max(200), markdown: z.string().min(1).max(200_000) },
         (a) => guarded(async () => `Report written to ${await bridge.writeReport(a.title, a.markdown)}`),
       ),
   ];
 }
 
-export const CONTINUE_TOOL = 'mcp__klaud__continue_in_worktree';
+export const CONTINUE_TOOL = 'mcp__beluga__continue_in_worktree';
 
 /** For runs in a project's main folder: move the conversation into a new worktree and work there. */
 export function continueInWorktreeToolDef(move: (task: string) => Promise<string>) {
   return tool(
     'continue_in_worktree',
-    "You're in the project's read-only main folder. Call this as soon as the request needs any change: klaud makes a new worktree from the latest origin, carries this conversation over and you continue the task there. Then end your turn with one short line.",
+    "You're in the project's read-only main folder. Call this as soon as the request needs any change: Beluga makes a new worktree from the latest origin, carries this conversation over and you continue the task there. Then end your turn with one short line.",
     { task: z.string().min(1).max(8000).describe('The change to make, as a complete instruction (it starts the work in the new worktree)') },
     (a) => guarded(() => move(a.task)),
   );
 }
 
-/** The klaud tools for one run: the room's, plus continue_in_worktree in a main folder. */
+/** The Beluga tools for one run: the room's, plus continue_in_worktree in a main folder. */
 export function createRoomTools(bridge: RoomBridge, move?: (task: string) => Promise<string>) {
-  return createSdkMcpServer({ name: 'klaud', version: '0.1.0', tools: [...createRoomToolDefs(bridge), ...createGatewayToolDefs(bridge), ...(move ? [continueInWorktreeToolDef(move)] : [])] });
+  return createSdkMcpServer({ name: 'beluga', version: '0.1.0', tools: [...createRoomToolDefs(bridge), ...createGatewayToolDefs(bridge), ...(move ? [continueInWorktreeToolDef(move)] : [])] });
 }

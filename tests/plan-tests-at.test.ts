@@ -8,7 +8,7 @@ import { Store, initialState } from '../src/core/store.js';
 
 /** When a plan runs its test suites: proof sized to the task, the full suites once per milestone or at the end. */
 
-const me = { kind: 'klaud' } as const;
+const me = { kind: 'beluga' } as const;
 
 describe('when to run tests', () => {
   it('starts each milestone by default, can be set at creation, changes with a note, and is saved', async () => {

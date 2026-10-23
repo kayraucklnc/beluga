@@ -97,12 +97,12 @@ describe('decideTool in a main folder (ask-only)', () => {
   it('can still read, and offers continue_in_worktree', () => {
     expect(decideTool('Read', { file_path: 'src/a.ts' }, main)).toBe('allow');
     expect(decideTool('Grep', { pattern: 'TODO' }, main)).toBe('allow');
-    expect(decideTool('mcp__klaud__continue_in_worktree', { task: 'x' }, main)).toBe('allow');
+    expect(decideTool('mcp__beluga__continue_in_worktree', { task: 'x' }, main)).toBe('allow');
   });
 
   it('keeps fetched files out of the main folder', () => {
-    expect(decideTool('mcp__klaud__get_peer_file', { peer: 'bob', path: '~/x', save_to: '/work/app/vendor' }, main)).toBe('deny');
-    expect(decideTool('mcp__klaud__get_peer_file', { peer: 'bob', path: '~/x', save_to: '/tmp' }, main)).toBe('ask');
+    expect(decideTool('mcp__beluga__get_peer_file', { peer: 'bob', path: '~/x', save_to: '/work/app/vendor' }, main)).toBe('deny');
+    expect(decideTool('mcp__beluga__get_peer_file', { peer: 'bob', path: '~/x', save_to: '/tmp' }, main)).toBe('ask');
   });
 
   it('tells Claude why, and what to do instead', () => {
@@ -118,7 +118,7 @@ describe('the system prompt for a main folder', () => {
   it('says it is read-only and to move changes to a worktree right away', () => {
     const text = buildAskOnlyAppend('api', true);
     expect(text).toContain("You're in the main folder of api");
-    expect(text).toContain('mcp__klaud__continue_in_worktree right away');
+    expect(text).toContain('mcp__beluga__continue_in_worktree right away');
     expect(buildAskOnlyAppend('api', false)).not.toContain('continue_in_worktree');
   });
 });

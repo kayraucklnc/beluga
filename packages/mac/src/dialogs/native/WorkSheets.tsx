@@ -47,7 +47,7 @@ function ForkSheet({ wsId, close }: { wsId: string; close: () => void }) {
       onCancel={close}
       width={500}
     >
-      <Field label="Name" htmlFor="fork-name" error={taken ? 'A workspace in this project has this name.' : undefined} hint={slug(name) ? <>Branch <code>klaud/{slug(name)}</code></> : undefined}>
+      <Field label="Name" htmlFor="fork-name" error={taken ? 'A workspace in this project has this name.' : undefined} hint={slug(name) ? <>Branch <code>beluga/{slug(name)}</code></> : undefined}>
         <TextInput id="fork-name" value={name} onChange={setName} maxLength={120} invalid={taken} />
       </Field>
     </FormSheet>

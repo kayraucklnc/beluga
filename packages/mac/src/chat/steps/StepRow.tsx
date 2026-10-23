@@ -33,7 +33,7 @@ const ICONS: Record<ToolFamily, IconName> = {
 const KLAUD_ICONS: Readonly<Record<string, IconName>> = { who_can: 'people', list_peers: 'people', send_chat: 'chat', write_report: 'file', continue_in_worktree: 'branch', screenshot: 'image', device_info: 'info', wait_for: 'clock', check: 'clock', cancel: 'x' };
 
 export const iconOf = (step: Pick<StepSummary, 'kind' | 'tool'>): IconName =>
-  step.kind === 'thinking' ? 'bulb' : (KLAUD_ICONS[(step.tool ?? '').replace(/^mcp__klaud(_task)?__/, '')] ?? ICONS[toolFamily(step.tool)]);
+  step.kind === 'thinking' ? 'bulb' : (KLAUD_ICONS[(step.tool ?? '').replace(/^mcp__(?:beluga|klaud)(_task)?__/, '')] ?? ICONS[toolFamily(step.tool)]);
 
 const durationOf = (step: StepSummary, now: number, live: boolean): string | undefined => {
   if (step.durationMs !== undefined && step.status !== 'running') return step.durationMs < 1000 ? '<1s' : formatDuration(step.durationMs);

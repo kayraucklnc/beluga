@@ -1,17 +1,17 @@
 import type { WorkState } from '../core/work-store.js';
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import { TerminalEmulator } from '../terminal/index.js';
 
 /**
- * This screen's emulators for the terminal programs klaud runs (one per key, made when first
+ * This screen's emulators for the terminal programs Beluga runs (one per key, made when first
  * shown). A program that ended and started again gets a fresh emulator; one that's gone is freed.
  */
 export class TerminalScreens {
   private readonly emulators = new Map<string, TerminalEmulator>();
 
-  constructor(private readonly client: KlaudClient) {}
+  constructor(private readonly client: BelugaClient) {}
 
-  /** The emulator for `key`, if klaud runs (or ran) a program by that name. */
+  /** The emulator for `key`, if Beluga runs (or ran) a program by that name. */
   get(key: string, size: { cols: number; rows: number }, state: Pick<WorkState, 'terminals' | 'termExits'>): TerminalEmulator | undefined {
     this.prune(state);
     if (!(key in state.terminals)) return undefined;
@@ -28,7 +28,7 @@ export class TerminalScreens {
     return emu;
   }
 
-  /** Free emulators of programs klaud no longer has. */
+  /** Free emulators of programs Beluga no longer has. */
   prune(state: Pick<WorkState, 'terminals'>): void {
     for (const [key, emu] of this.emulators) {
       if (key in state.terminals) continue;

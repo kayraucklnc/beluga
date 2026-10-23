@@ -4,7 +4,7 @@ import { editDiff } from './line-diff.js';
  * A step in words people use, never a tool's name or an id: "Read src/auth.ts", "Ran npm test",
  * "Asked bob's Claude: run the tests", "Edited src/auth.ts (+12 −3)". `done` is how it reads once
  * it's finished, `doing` while it's the step Claude is on. Steps that involve someone say who
- * (`person`, for their avatar) and, for klaud's tasks between Claudes, which task (`task`).
+ * (`person`, for their avatar) and, for Beluga's tasks between Claudes, which task (`task`).
  * Browser-safe: the core names steps with it, and the Mac app names the one-line steps it
  * gets from someone else's Claude.
  */
@@ -14,7 +14,7 @@ export interface HumanStep {
   readonly doing: string;
   /** Someone else involved (their name): their avatar shows. */
   readonly person?: string;
-  /** A task between Claudes (klaud's gateway): its live state can be shown. */
+  /** A task between Claudes (Beluga's gateway): its live state can be shown. */
   readonly task?: string;
   /** Claude waits on someone (the waiting row). */
   readonly wait?: boolean;
@@ -62,8 +62,8 @@ function commandOf(input: Readonly<Record<string, unknown>>): string {
 /** The words for an MCP tool's name: "query_docs" → "query docs". */
 const spaced = (name: string): string => name.replace(/[_-]+/g, ' ').trim();
 
-/** klaud's own tools (the room, and asking other people's Claudes). */
-function klaudTool(name: string, input: Readonly<Record<string, unknown>>): HumanStep | undefined {
+/** Beluga's own tools (the room, and asking other people's Claudes). */
+function belugaTool(name: string, input: Readonly<Record<string, unknown>>): HumanStep | undefined {
   const person = str(input.person) || str(input.peer);
   const who = person || 'someone';
   switch (name) {
@@ -179,11 +179,13 @@ export function humanizeTool(tool: string, input: Readonly<Record<string, unknow
     default: {
       const mcp = /^mcp__(.+?)__(.+)$/.exec(tool);
       if (mcp) {
-        const own = klaudTool(mcp[2]!, input);
-        if (own && (mcp[1] === 'klaud' || mcp[1] === 'klaud_task')) return own;
-        return both(`Used ${spaced(mcp[2]!)} from ${spaced(mcp[1]!)}`, `Using ${spaced(mcp[2]!)} from ${spaced(mcp[1]!)}`);
+        // Steps kept from before the rename name the servers klaud, klaud_task, klaud_board…
+        const server = mcp[1]!.replace(/^klaud(?=_|$)/, 'beluga');
+        const own = belugaTool(mcp[2]!, input);
+        if (own && (server === 'beluga' || server === 'beluga_task')) return own;
+        return both(`Used ${spaced(mcp[2]!)} from ${spaced(server)}`, `Using ${spaced(mcp[2]!)} from ${spaced(server)}`);
       }
-      return klaudTool(tool, input) ?? both(`Used ${spaced(tool)}`, `Using ${spaced(tool)}`);
+      return belugaTool(tool, input) ?? both(`Used ${spaced(tool)}`, `Using ${spaced(tool)}`);
     }
   }
 }

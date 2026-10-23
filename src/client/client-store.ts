@@ -12,7 +12,7 @@ const sameAttention = (a: Attention, b: Attention): boolean =>
   a.files === b.files && a.front === b.front && a.shown.join('\n') === b.shown.join('\n') && a.visible.join('\n') === b.visible.join('\n');
 
 /**
- * One client's view of klaud: the shared state plus this client's own screen, composed into
+ * One client's view of Beluga: the shared state plus this client's own screen, composed into
  * the AppState it draws. Screen actions apply here; everything else goes through the API.
  * Render-agnostic (the terminal UI and the Mac app both use it).
  */

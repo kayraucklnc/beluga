@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -110,21 +110,21 @@ describe('detectRun', () => {
 
 describe('readProjectFile', () => {
   it('returns nothing for missing or invalid files', () => {
-    expect(readProjectFile(dir)).toEqual({ file: undefined, conductor: undefined });
-    touch('klaud.json', '{oops');
+    expect(readProjectFile(dir)).toEqual({ file: undefined, name: 'beluga.json', conductor: undefined });
+    touch('beluga.json', '{oops');
     touch('conductor.json', JSON.stringify({ scripts: { setup: '' } }));
-    expect(readProjectFile(dir)).toEqual({ file: undefined, conductor: undefined });
+    expect(readProjectFile(dir)).toEqual({ file: undefined, name: 'beluga.json', conductor: undefined });
   });
 
   it('defaults scripts to {} and trims commands', () => {
-    touch('klaud.json', JSON.stringify({ prPrompt: 'hi' }));
+    touch('beluga.json', JSON.stringify({ prPrompt: 'hi' }));
     touch('conductor.json', JSON.stringify({ scripts: { run: '  make  ' } }));
-    expect(readProjectFile(dir)).toEqual({ file: { scripts: {}, prPrompt: 'hi' }, conductor: { run: 'make' } });
+    expect(readProjectFile(dir)).toEqual({ file: { scripts: {}, prPrompt: 'hi' }, name: 'beluga.json', conductor: { run: 'make' } });
   });
 });
 
 describe('resolveScripts', () => {
-  it('prefers yours > klaud.json > conductor.json > detected', () => {
+  it('prefers yours > beluga.json > conductor.json > detected', () => {
     touch('package-lock.json');
     pkg({ dev: 'vite' });
     expect(resolveScripts(dir)).toEqual({ setup: { command: 'npm install', source: 'detected' }, run: { command: 'npm run dev', source: 'detected' } });
@@ -132,63 +132,79 @@ describe('resolveScripts', () => {
     touch('conductor.json', JSON.stringify({ scripts: { setup: 'c-setup', run: 'c-run' } }));
     expect(resolveScripts(dir)).toEqual({ setup: { command: 'c-setup', source: 'conductor.json' }, run: { command: 'c-run', source: 'conductor.json' } });
 
-    touch('klaud.json', JSON.stringify({ scripts: { setup: 'k-setup' } }));
-    expect(resolveScripts(dir)).toEqual({ setup: { command: 'k-setup', source: 'klaud.json' }, run: { command: 'c-run', source: 'conductor.json' } });
+    touch('beluga.json', JSON.stringify({ scripts: { setup: 'b-setup' } }));
+    expect(resolveScripts(dir)).toEqual({ setup: { command: 'b-setup', source: 'beluga.json' }, run: { command: 'c-run', source: 'conductor.json' } });
 
-    expect(resolveScripts(dir, { run: 'mine' })).toEqual({ setup: { command: 'k-setup', source: 'klaud.json' }, run: { command: 'mine', source: 'yours' } });
+    expect(resolveScripts(dir, { run: 'mine' })).toEqual({ setup: { command: 'b-setup', source: 'beluga.json' }, run: { command: 'mine', source: 'yours' } });
   });
 
   it('treats an empty string of yours as unset', () => {
-    touch('klaud.json', JSON.stringify({ scripts: { setup: 'k-setup' } }));
-    expect(resolveScripts(dir, { setup: '' }).setup).toEqual({ command: 'k-setup', source: 'klaud.json' });
+    touch('beluga.json', JSON.stringify({ scripts: { setup: 'b-setup' } }));
+    expect(resolveScripts(dir, { setup: '' }).setup).toEqual({ command: 'b-setup', source: 'beluga.json' });
   });
 
   it('omits keys when nothing is found', () => {
     expect(resolveScripts(dir)).toEqual({});
   });
 
-  it('includes prPrompt from klaud.json', () => {
-    touch('klaud.json', JSON.stringify({ prPrompt: 'Link the ticket.' }));
+  it('includes prPrompt from beluga.json', () => {
+    touch('beluga.json', JSON.stringify({ prPrompt: 'Link the ticket.' }));
     expect(resolveScripts(dir)).toEqual({ prPrompt: 'Link the ticket.' });
   });
 
   it('ignores an empty prPrompt', () => {
-    touch('klaud.json', JSON.stringify({ prPrompt: '' }));
+    touch('beluga.json', JSON.stringify({ prPrompt: '' }));
     expect(resolveScripts(dir)).not.toHaveProperty('prPrompt');
   });
 });
 
 describe('saveProjectFile', () => {
-  const read = () => JSON.parse(readFileSync(path.join(dir, 'klaud.json'), 'utf8')) as Record<string, unknown>;
+  const read = () => JSON.parse(readFileSync(path.join(dir, 'beluga.json'), 'utf8')) as Record<string, unknown>;
 
-  it('creates klaud.json with a trailing newline', () => {
+  it('creates beluga.json with a trailing newline', () => {
     saveProjectFile(dir, { setup: 'npm ci' });
-    const text = readFileSync(path.join(dir, 'klaud.json'), 'utf8');
+    const text = readFileSync(path.join(dir, 'beluga.json'), 'utf8');
     expect(text.endsWith('}\n')).toBe(true);
     expect(read()).toEqual({ scripts: { setup: 'npm ci' } });
   });
 
   it('keeps other fields and existing scripts', () => {
-    touch('klaud.json', JSON.stringify({ prPrompt: 'p', other: 1, scripts: { setup: 'old', run: 'keep' } }));
+    touch('beluga.json', JSON.stringify({ prPrompt: 'p', other: 1, scripts: { setup: 'old', run: 'keep' } }));
     saveProjectFile(dir, { setup: 'new' });
     expect(read()).toEqual({ prPrompt: 'p', other: 1, scripts: { setup: 'new', run: 'keep' } });
   });
 
   it('overwrites an unreadable file', () => {
-    touch('klaud.json', '{nope');
+    touch('beluga.json', '{nope');
     saveProjectFile(dir, { run: 'go' });
     expect(read()).toEqual({ scripts: { run: 'go' } });
   });
 
+  it('keeps writing an old klaud.json while it is the only one there (teammates on klaud still read it)', () => {
+    touch('klaud.json', JSON.stringify({ prPrompt: 'p', scripts: { run: 'keep' } }));
+    expect(saveProjectFile(dir, { setup: 'new' })).toBe('klaud.json');
+    expect(JSON.parse(readFileSync(path.join(dir, 'klaud.json'), 'utf8'))).toEqual({ prPrompt: 'p', scripts: { setup: 'new', run: 'keep' } });
+    expect(existsSync(path.join(dir, 'beluga.json'))).toBe(false);
+    expect(resolveScripts(dir)).toEqual({ setup: { command: 'new', source: 'klaud.json' }, run: { command: 'keep', source: 'klaud.json' }, prPrompt: 'p' });
+    // Once a beluga.json is there, it wins.
+    touch('beluga.json', JSON.stringify({ scripts: { run: 'b-run' } }));
+    expect(resolveScripts(dir).run).toEqual({ command: 'b-run', source: 'beluga.json' });
+  });
+
   it('round-trips through resolveScripts', () => {
     saveProjectFile(dir, { setup: 's', run: 'r' });
-    expect(resolveScripts(dir)).toEqual({ setup: { command: 's', source: 'klaud.json' }, run: { command: 'r', source: 'klaud.json' } });
+    expect(resolveScripts(dir)).toEqual({ setup: { command: 's', source: 'beluga.json' }, run: { command: 'r', source: 'beluga.json' } });
   });
 });
 
 describe('scriptEnv', () => {
-  it('sets klaud and conductor variables', () => {
+  it('sets Beluga and conductor variables', () => {
     expect(scriptEnv({ path: '/w', name: 'tokyo', projectRoot: '/p', branch: 'feat/x' })).toEqual({
+      BELUGA_WORKSPACE_PATH: '/w',
+      BELUGA_WORKSPACE_NAME: 'tokyo',
+      BELUGA_ROOT_PATH: '/p',
+      BELUGA_BRANCH: 'feat/x',
+      // The names from before the rename, for scripts that still read them.
       KLAUD_WORKSPACE_PATH: '/w',
       KLAUD_WORKSPACE_NAME: 'tokyo',
       KLAUD_ROOT_PATH: '/p',
@@ -199,9 +215,9 @@ describe('scriptEnv', () => {
     });
   });
 
-  it('omits KLAUD_BRANCH without a branch', () => {
+  it('omits BELUGA_BRANCH without a branch', () => {
     expect(Object.keys(scriptEnv({ path: '/w', name: 'n', projectRoot: '/p' })).sort()).toEqual(
-      ['CONDUCTOR_ROOT_PATH', 'CONDUCTOR_WORKSPACE_NAME', 'CONDUCTOR_WORKSPACE_PATH', 'KLAUD_ROOT_PATH', 'KLAUD_WORKSPACE_NAME', 'KLAUD_WORKSPACE_PATH'],
+      ['BELUGA_ROOT_PATH', 'BELUGA_WORKSPACE_NAME', 'BELUGA_WORKSPACE_PATH', 'CONDUCTOR_ROOT_PATH', 'CONDUCTOR_WORKSPACE_NAME', 'CONDUCTOR_WORKSPACE_PATH', 'KLAUD_ROOT_PATH', 'KLAUD_WORKSPACE_NAME', 'KLAUD_WORKSPACE_PATH'],
     );
   });
 });

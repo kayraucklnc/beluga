@@ -13,7 +13,7 @@ function repo(): string {
   return dir;
 }
 
-describe('the scratch folder (.klaud/scratch/)', () => {
+describe('the scratch folder (.beluga/scratch/)', () => {
   it('is made once and kept out of git, also from a worktree, without touching .gitignore', async () => {
     const dir = repo();
     await ensureScratch(dir);
@@ -21,7 +21,7 @@ describe('the scratch folder (.klaud/scratch/)', () => {
     writeFileSync(path.join(dir, SCRATCH_DIR, 'shot.png'), 'x');
     expect(git(dir, 'status', '--porcelain')).toBe('');
     const exclude = readFileSync(path.join(dir, '.git', 'info', 'exclude'), 'utf8');
-    expect(exclude.match(/^\/\.klaud\/scratch\/$/gm)).toHaveLength(1);
+    expect(exclude.match(/^\/\.beluga\/scratch\/$/gm)).toHaveLength(1);
     // Never Conductor's (or anyone's) .context/.
     expect(exclude).not.toContain('.context');
     // A worktree shares the main checkout's exclude file.
@@ -52,22 +52,26 @@ describe('the scratch folder (.klaud/scratch/)', () => {
     at('shots/new.png', 3000, 'abc');
     at('mid.md', 2000);
     const list = await listScratch(dir);
-    expect(list.map((f) => f.path)).toEqual(['.klaud/scratch/shots/new.png', '.klaud/scratch/mid.md', '.klaud/scratch/old.json']);
+    expect(list.map((f) => f.path)).toEqual(['.beluga/scratch/shots/new.png', '.beluga/scratch/mid.md', '.beluga/scratch/old.json']);
     expect(list[0]).toMatchObject({ size: 3, mtime: 3_000_000 });
   });
 
-  it('refuses a scratch folder (or its .klaud) that is a link to somewhere else', async () => {
+  it('refuses a scratch folder (or its .beluga, or an old .klaud) that is a link to somewhere else', async () => {
     const outside = mkdtempSync(path.join(os.tmpdir(), 'klaud-scratch-outside-'));
     writeFileSync(path.join(outside, 'secret.png'), 'x');
     const a = repo();
-    mkdirSync(path.join(a, '.klaud'));
+    mkdirSync(path.join(a, '.beluga'));
     symlinkSync(outside, path.join(a, SCRATCH_DIR));
     expect(await ensureScratch(a)).toBeUndefined();
     expect(await listScratch(a)).toEqual([]);
     const b = repo();
-    symlinkSync(outside, path.join(b, '.klaud'));
+    symlinkSync(outside, path.join(b, '.beluga'));
     expect(await ensureScratch(b)).toBeUndefined();
     expect(await listScratch(b)).toEqual([]);
+    // The folder from before the rename is only read, and never through a link either.
+    const c = repo();
+    symlinkSync(outside, path.join(c, '.klaud'));
+    expect(await listScratch(c)).toEqual([]);
   });
 
   it('also lists .context/ (Claude saves there under other tools), mixed in newest first, without making it', async () => {

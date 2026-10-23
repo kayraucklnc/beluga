@@ -5,7 +5,7 @@ export interface DesktopNotice {
   readonly title: string;
   readonly body: string;
   readonly sound: boolean;
-  /** The sound chosen in Settings: a Mac sound plays as itself; Klaud's own sounds need the Mac app. */
+  /** The sound chosen in Settings: a Mac sound plays as itself; Beluga's own sounds need the Mac app. */
   readonly tone?: SoundChoice;
 }
 
@@ -49,15 +49,15 @@ export function plan(route: NotifyRoute, n: DesktopNotice, env: NodeJS.ProcessEn
     case 'osc9':
       return { write: `\x1b]9;${title}: ${body}\x07${bell}` };
     case 'osc99':
-      return { write: `\x1b]99;i=klaud:d=0;${title}\x1b\\\x1b]99;i=klaud:d=1:p=body;${body}\x1b\\${bell}` };
+      return { write: `\x1b]99;i=beluga:d=0;${title}\x1b\\\x1b]99;i=beluga:d=1:p=body;${body}\x1b\\${bell}` };
     case 'terminal-notifier': {
       const app = env.__CFBundleIdentifier;
-      return { cmd: 'terminal-notifier', args: ['-title', 'klaud', '-subtitle', title, '-message', body || ' ', '-group', 'klaud', ...(n.sound ? ['-sound', macSound(n, 'default')] : []), ...(app ? ['-activate', app] : [])] };
+      return { cmd: 'terminal-notifier', args: ['-title', 'Beluga', '-subtitle', title, '-message', body || ' ', '-group', 'beluga', ...(n.sound ? ['-sound', macSound(n, 'default')] : []), ...(app ? ['-activate', app] : [])] };
     }
     case 'osascript':
-      return { cmd: 'osascript', args: ['-e', `display notification ${appleString(body || ' ')} with title "klaud" subtitle ${appleString(title)}${n.sound ? ` sound name "${macSound(n, 'Glass')}"` : ''}`] };
+      return { cmd: 'osascript', args: ['-e', `display notification ${appleString(body || ' ')} with title "Beluga" subtitle ${appleString(title)}${n.sound ? ` sound name "${macSound(n, 'Glass')}"` : ''}`] };
     case 'notify-send':
-      return { cmd: 'notify-send', args: ['-a', 'klaud', '--', title, body] };
+      return { cmd: 'notify-send', args: ['-a', 'Beluga', '--', title, body] };
     case 'bell':
       return { write: bell };
   }

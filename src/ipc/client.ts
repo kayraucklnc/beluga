@@ -5,10 +5,10 @@ import type { Args, Method } from './api.js';
 import type { Result } from './handlers.js';
 
 /**
- * How a screen talks to klaud, whether klaud runs in the same process (the terminal UI on its
+ * How a screen talks to Beluga, whether Beluga runs in the same process (the terminal UI on its
  * own) or in the daemon (several screens at once, the Mac app). Browser-safe.
  */
-export interface KlaudClient {
+export interface BelugaClient {
   /** Which kind of screen this is. */
   readonly kind: ClientKind;
   /** The shared state plus this screen's own (what it draws). */

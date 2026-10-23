@@ -3,7 +3,7 @@ import type { KeyPair } from 'hyperdht';
 import { type Identity, peerIdFor } from '../crypto.js';
 
 /**
- * Your keys on the klaud network, all derived from your identity (~/.klaud/identity.json), so
+ * Your keys on the Beluga network, all derived from your identity (~/.beluga/identity.json), so
  * they're the same on every run and friends always find you at the same address:
  * - the address: the Noise key your Mac listens on in the peer-to-peer network;
  * - the box key: an X25519 key others seal group keys to.

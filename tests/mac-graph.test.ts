@@ -21,7 +21,7 @@ import {
 } from '../packages/mac/src/components/graph/graph-model.js';
 import { layout } from '../packages/mac/src/components/graph/layout.js';
 
-/** Drawing a klaud-graph: the layout request and answer, what lights up, and how tall it sits. */
+/** Drawing a beluga-graph: the layout request and answer, what lights up, and how tall it sits. */
 
 const graphOf = (json: unknown): Graph => {
   const r = parseGraph(JSON.stringify(json));
@@ -46,7 +46,7 @@ const small = graphOf({
 });
 
 const demo = (): Graph => {
-  const json = /```klaud-graph\n([\s\S]*?)```/.exec(MOCK_GRAPH_ANSWER)?.[1] ?? '';
+  const json = /```beluga-graph\n([\s\S]*?)```/.exec(MOCK_GRAPH_ANSWER)?.[1] ?? '';
   const r = parseGraph(json);
   if (!r.ok) throw new Error(r.error);
   return r.graph;

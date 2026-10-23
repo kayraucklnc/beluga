@@ -330,7 +330,7 @@ export class PlansWork {
         if (!steer) return `Queued for the Claude working on ${issue.key}: it reads it when its current turn ends (its card shows it waiting; use mode "steer" if it can't wait)`;
         // Steered: in now (interrupting a long command or a dead run), and followed until it's read.
         if (id) this.pilot.steer(planId, hit.task.id, id, prompt);
-        return `Steered into ${issue.key}: its Claude gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Klaud delivers it again`;
+        return `Steered into ${issue.key}: its Claude gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Beluga delivers it again`;
       },
     };
   }

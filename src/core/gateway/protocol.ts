@@ -15,10 +15,10 @@ import { z } from 'zod';
 export const NEEDS = ['project', 'shell', 'files', 'screen', 'device'] as const;
 export type Need = (typeof NEEDS)[number];
 
-/** Everything a klaud can offer (what one person is offered depends on its owner's settings). */
+/** Everything a Beluga can offer (what one person is offered depends on its owner's settings). */
 export const OFFERED: readonly Need[] = NEEDS;
 
-/** ask: their Claude does it. run: one command, directly on their Mac. file: one file, sent by their klaud. */
+/** ask: their Claude does it. run: one command, directly on their Mac. file: one file, sent by their Beluga. */
 export const TASK_KINDS = ['ask', 'run', 'file'] as const;
 export type TaskKind = (typeof TASK_KINDS)[number];
 
@@ -170,7 +170,7 @@ export const FileChunk = z.object({
 });
 export type FileChunk = z.infer<typeof FileChunk>;
 
-/** What my klaud offers you, told to you so your Claude knows whom to ask for what. */
+/** What my Beluga offers you, told to you so your Claude knows whom to ask for what. */
 export const PeerCardMsg = z.object({
   t: z.literal('card'),
   /** "Ask me for…": a short note other Claudes see. */

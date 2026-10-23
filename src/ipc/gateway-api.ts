@@ -23,7 +23,7 @@ const ruleInput = z.object({
 });
 
 export const GATEWAY_API = {
-  // Your tasks (sent and received) and what people's klauds offer you.
+  // Your tasks (sent and received) and what people's Belugas offer you.
   'gateway.list': { args: z.tuple([]) },
   // Your answer on an "Ask Alice's Claude?" card: send it (maybe reworded), or not now.
   'gateway.confirm': { args: z.tuple([taskId, z.boolean(), z.string().max(16_000).optional()]) },

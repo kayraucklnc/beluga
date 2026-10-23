@@ -48,7 +48,7 @@ const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' 
 
 function madeBy(state: State, ws: Workspace, origin: AgentOrigin | undefined): MadeBy {
   const from = worktreeOrigin(ws);
-  if (from === 'klaud') return { kind: 'klaud', label: 'Klaud' };
+  if (from === 'beluga') return { kind: 'klaud', label: 'Klaud' };
   if (from === 'external') return { kind: 'outside', label: 'Made outside Klaud' };
   if (!origin) return { kind: 'agent', label: 'Sub-agent, origin unknown', orphan: true };
   const parent = origin.workspaceId ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === origin.workspaceId && !w.archived) : undefined;
@@ -97,7 +97,7 @@ export function archivedRows(state: State): WorktreeRow[] {
         const kept = a ? { keptBytes: a.keptBytes, freedBytes: a.freedBytes, at: a.at } : { keptBytes: 0, freedBytes: 0 };
         // Who made it still matters (deleting another tool's keeps its branch); not the sub-agent's conversation.
         const by = worktreeOrigin(ws);
-        const made: MadeBy = by === 'klaud' ? { kind: 'klaud', label: 'Klaud' } : by === 'agent' ? { kind: 'agent', label: 'Sub-agent' } : { kind: 'outside', label: 'Made outside Klaud' };
+        const made: MadeBy = by === 'beluga' ? { kind: 'klaud', label: 'Klaud' } : by === 'agent' ? { kind: 'agent', label: 'Sub-agent' } : { kind: 'outside', label: 'Made outside Klaud' };
         return { ws, project, madeBy: made, work: { done: true, label: 'Archived' }, archived: { ...kept, restorable: Boolean(a || ws.branch) } };
       }),
   );

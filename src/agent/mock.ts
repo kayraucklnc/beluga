@@ -61,7 +61,7 @@ const SCRIPTS: readonly Script[] = [
   {
     match: /report|write up|summary|summarize/i,
     steps: ['Glob **/*.md', 'Read README.md', 'write_report Project overview'],
-    answer: 'Wrote **Project overview** to `.klaud/reports/`. Open it from the files panel.',
+    answer: 'Wrote **Project overview** to `.beluga/reports/`. Open it from the files panel.',
     report: {
       title: 'Project overview',
       markdown: '# Project overview\n\n- **Stack:** Node + TypeScript\n- **Status:** payments in progress, auth not started\n- **Next:** add auth middleware, then deploy\n',
@@ -383,7 +383,7 @@ export function createMockBackend(bridge: RoomBridge, pace = 1): AgentBackend {
     // Plan mode, and questions back to you, work in the demo too.
     if (input.plan) return mockPlan(input, pace);
     // A friend's Claude answered after this conversation's turn ended: carry on with it.
-    if (/^\[klaud\] /.test(input.prompt)) {
+    if (/^\[(?:beluga|klaud)\] /.test(input.prompt)) {
       await sleep(500 * pace, input.signal);
       const result = readResult(input.prompt);
       return `Picking this back up: ${result?.summary ?? 'they answered.'}${tableOf(result?.data)}`;

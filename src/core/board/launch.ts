@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { klaudHome } from '../home.js';
+import { belugaHome } from '../home.js';
 import type { Session } from '../session.js';
 import type { Store } from '../store.js';
 import type { DraftContext } from '../../agent/task-drafter.js';
@@ -15,8 +15,8 @@ import { attachPlans, detachPlans } from '../plans/registry.js';
 import { seedDemoPlan } from '../plans/demo.js';
 
 /**
- * Start the board and plans for the daemon (the Mac app's klaud): tasks in ~/.klaud/board.json,
- * moved by pull requests, kept true by Claude; plans in ~/.klaud/plans.json. The demo's board lives in a temporary
+ * Start the board and plans for the daemon (the Mac app's Beluga): tasks in ~/.beluga/board.json,
+ * moved by pull requests, kept true by Claude; plans in ~/.beluga/plans.json. The demo's board lives in a temporary
  * folder and starts with tasks to show.
  */
 
@@ -28,7 +28,7 @@ export interface BoardHost {
 
 export function launchBoard(host: BoardHost): () => void {
   const { session, store } = host;
-  const dir = host.demo ? mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-board-')) : klaudHome();
+  const dir = host.demo ? mkdtempSync(path.join(os.tmpdir(), 'beluga-demo-board-')) : belugaHome();
   // The demo's tasks are made "in the past", so their history reads like a real one.
   let back = 0;
   const board = new Board({

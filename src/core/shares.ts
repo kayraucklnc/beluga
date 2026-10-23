@@ -2,6 +2,7 @@ import { promises as fs, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import { type FsEntry, MAX_DOWNLOAD_BYTES, MAX_FILE_BYTES, type ShareInfo } from '../protocol.js';
+import { belugaEnv } from './beluga-env.js';
 
 export interface ShareConfig {
   readonly name: string;
@@ -33,8 +34,8 @@ const MAX_WATCHED = 200;
 
 const segmentsOf = (p: string): string[] => p.split(/[\\/]/).filter(Boolean).map((s) => s.toLowerCase());
 
-/** klaud's own home (~/.klaud): your identity key, settings and trust choices live there. */
-const klaudHomeDir = (): string => path.resolve(process.env.KLAUD_HOME ?? process.env.KLAUDE_HOME ?? path.join(process.env.HOME ?? '~', '.klaud'));
+/** Beluga's own home (~/.beluga): your identity key, settings and trust choices live there. */
+const belugaHomeDir = (): string => path.resolve(belugaEnv('HOME') ?? process.env.KLAUDE_HOME ?? path.join(process.env.HOME ?? '~', '.beluga'));
 
 /** The Mac's file system ignores case: compare paths the way it does. */
 const fold = (p: string): string => (process.platform === 'darwin' || process.platform === 'win32' ? p.toLowerCase() : p);
@@ -52,22 +53,22 @@ function realOf(p: string): string {
   }
 }
 
-/** klaud's home in every form it can be reached by: as named, really, and the old ~/.klaude. */
-function klaudHomes(): string[] {
-  const named = klaudHomeDir();
-  const legacy = path.resolve(process.env.HOME ?? '~', '.klaude');
-  return [...new Set([named, realOf(named), legacy, realOf(legacy)].map(fold))];
+/** Beluga's home in every form it can be reached by: as named, really, and the old ~/.klaud and ~/.klaude. */
+function belugaHomes(): string[] {
+  const named = belugaHomeDir();
+  const legacy = ['.beluga', '.klaud', '.klaude'].map((name) => path.resolve(process.env.HOME ?? '~', name));
+  return [...new Set([named, realOf(named), ...legacy.flatMap((p) => [p, realOf(p)])].map(fold))];
 }
 
 /**
- * Inside klaud's home, what stays usable: worktrees, chat folders, files put in the outbox, and
+ * Inside Beluga's home, what stays usable: worktrees, chat folders, files put in the outbox, and
  * friends' tasks (the scratch folders they run in, and the files their results brought).
  */
 const OPEN_IN_HOME = [['workspaces'], ['chats'], ['outbox'], ['tasks', 'work'], ['tasks', 'files']];
 
 function secretInHome(abs: string): boolean {
   for (const candidate of new Set([fold(abs), fold(realOf(abs))])) {
-    for (const home of klaudHomes()) {
+    for (const home of belugaHomes()) {
       if (candidate === home) return true;
       if (!candidate.startsWith(home + path.sep)) continue;
       const parts = candidate.slice(home.length + 1).split(path.sep);
@@ -82,7 +83,7 @@ export function isSecretPath(p: string): boolean {
   const segments = segmentsOf(p);
   if (segments.some((s) => SECRET_SEGMENTS.has(s))) return true;
   if (SECRET_PATHS.some((re) => re.test(p))) return true;
-  // klaud's own files in ~/.klaud (identity key, settings, rules, trust choices, history).
+  // Beluga's own files in ~/.beluga (identity key, settings, rules, trust choices, history).
   if (path.isAbsolute(p) && secretInHome(path.resolve(p))) return true;
   const base = segments.at(-1) ?? '';
   return SECRET_FILE.some((re) => re.test(base));

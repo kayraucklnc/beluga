@@ -2,10 +2,11 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { PROJECT_DIR } from '../shared/scratch-dir.js';
 
 export class GitError extends Error {}
 
-/** Git must never ask for a password on klaud's screen: fail instead, and say why. */
+/** Git must never ask for a password on Beluga's screen: fail instead, and say why. */
 const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes' };
 
 /** Run git in a directory; resolves stdout, rejects with git's own message. */
@@ -316,14 +317,14 @@ export async function currentBranch(dir: string): Promise<string | undefined> {
   return (await tryGit(dir, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim();
 }
 
-/** Keep klaud's per-workspace folder out of git without touching the repo's .gitignore. */
-export async function excludeKlaudDir(dir: string): Promise<void> {
+/** Keep Beluga's per-workspace folder (.beluga/) out of git without touching the repo's .gitignore. */
+export async function excludeOrcaDir(dir: string): Promise<void> {
   const gitDir = (await tryGit(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']))?.trim();
   if (!gitDir) return;
   const { appendFile, readFile, mkdir } = await import('node:fs/promises');
   const file = `${gitDir}/info/exclude`;
   const current = await readFile(file, 'utf8').catch(() => '');
-  if (current.split('\n').includes('.klaud/')) return;
+  if (current.split('\n').includes(`${PROJECT_DIR}/`)) return;
   await mkdir(`${gitDir}/info`, { recursive: true });
-  await appendFile(file, `${current && !current.endsWith('\n') ? '\n' : ''}.klaud/\n`);
+  await appendFile(file, `${current && !current.endsWith('\n') ? '\n' : ''}${PROJECT_DIR}/\n`);
 }

@@ -5,7 +5,7 @@ export interface ShellChoice {
   readonly path: string;
   /** "zsh", "bash", "fish", "Nushell"… */
   readonly name: string;
-  /** Your login shell ($SHELL): what klaud uses when you haven't picked one. */
+  /** Your login shell ($SHELL): what Beluga uses when you haven't picked one. */
   readonly isDefault: boolean;
 }
 

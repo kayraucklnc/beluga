@@ -225,7 +225,7 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     switch (frame.t) {
       case 'challenge':
         if (frame.v !== PROTOCOL_VERSION) {
-          this.emit('error', frame.v > PROTOCOL_VERSION ? 'The host has a newer klaud. Run klaud update, then join again' : 'The host has an older klaud. Ask them to run klaud update');
+          this.emit('error', frame.v > PROTOCOL_VERSION ? 'The host has a newer Beluga. Run beluga update, then join again' : 'The host has an older Beluga. Ask them to run beluga update');
           return;
         }
         this.sendHello(frame.nonce);

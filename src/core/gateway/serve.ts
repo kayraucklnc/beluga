@@ -118,7 +118,7 @@ export class TaskServer {
   private readonly approvals = new Map<string, () => void>();
   /** Answers given on the request sheet (with the scope of "Always"), by task. */
   private readonly deciders = new Map<string, (d: Decision) => void>();
-  /** "person:tool" pairs you said Always to (until klaud quits). */
+  /** "person:tool" pairs you said Always to (until Beluga quits). */
   private readonly alwaysTools = new Set<string>();
   /** Screenshots a task took (they go back with its result). */
   private readonly artifacts = new Map<string, string[]>();
@@ -130,7 +130,7 @@ export class TaskServer {
     this.offers = new FileOffers(ctx.now);
   }
 
-  /** Stop everything (klaud quits): runs end, approvals are withdrawn. */
+  /** Stop everything (Beluga quits): runs end, approvals are withdrawn. */
   stop(): void {
     for (const c of this.controllers.values()) c.abort();
     for (const w of this.approvals.values()) w();
@@ -187,7 +187,7 @@ export class TaskServer {
       await this.admit(task, req, level);
     } catch (err) {
       // Whatever went wrong here, the requester hears it (nothing is left waiting).
-      if (!this.isOver(task.id)) this.finish(this.current(task), 'failed', `${me}'s klaud couldn't take it: ${errorText(err)}`);
+      if (!this.isOver(task.id)) this.finish(this.current(task), 'failed', `${me}'s Beluga couldn't take it: ${errorText(err)}`);
     }
   }
 
@@ -203,10 +203,10 @@ export class TaskServer {
     if (open > MAX_OPEN_PER_PERSON) return this.finish(task, 'declined', `Too many of your requests are already waiting on ${me}'s Mac; try again when they're done`);
     if (req.kind === 'run' && !req.command) return this.finish(task, 'failed', 'It named no command to run');
     // Secrets stay off-limits at every trust level: refused before anyone is asked.
-    if (req.kind === 'run' && mentionsSecret(req.command ?? '')) return this.finish(task, 'failed', 'klaud never runs commands that touch secrets (.env files, keys, credentials)');
+    if (req.kind === 'run' && mentionsSecret(req.command ?? '')) return this.finish(task, 'failed', 'Beluga never runs commands that touch secrets (.env files, keys, credentials)');
     if (req.kind === 'file' && !req.path) return this.finish(task, 'failed', 'It named no file');
     // A secret file is refused before anyone is asked too (the read checks again, links followed).
-    if (req.kind === 'file' && isSecretPath(req.path ?? '')) return this.finish(task, 'declined', `${path.basename(req.path ?? '')}: not allowed (klaud never sends secrets: .env files, keys, credentials)`);
+    if (req.kind === 'file' && isSecretPath(req.path ?? '')) return this.finish(task, 'declined', `${path.basename(req.path ?? '')}: not allowed (Beluga never sends secrets: .env files, keys, credentials)`);
     const facts = await this.factsFor(from, req);
     // It may have been stopped (or cancelled) meanwhile.
     if (this.isOver(task.id)) return;
@@ -322,7 +322,7 @@ export class TaskServer {
   }
 
   private detail(req: TaskRequest, name: string, decided: AccessDecision): string {
-    const where = req.kind === 'file' ? `from ${req.path}` : req.project ? `in your project ${req.project}` : req.kind === 'run' ? `in ${req.cwd ?? 'your shared folder'}` : 'in a new scratch folder (~/.klaud/tasks/work)';
+    const where = req.kind === 'file' ? `from ${req.path}` : req.project ? `in your project ${req.project}` : req.kind === 'run' ? `in ${req.cwd ?? 'your shared folder'}` : 'in a new scratch folder (~/.beluga/tasks/work)';
     const needs = req.needs.length ? req.needs.map((n) => NEED_WORDS[n]).join(', ') : 'nothing special';
     const back = req.kind === 'run' ? 'the output' : req.kind === 'file' ? 'the file' : req.expects === 'files' ? 'files' : req.expects ? 'structured data (JSON)' : 'a summary';
     const why = decided.by === 'rule' ? ' · a rule of yours says to ask' : decided.caps?.length ? ` · you asked to be asked before friends’ Claudes ${decided.caps.map((n) => NEED_WORDS[n]).join(' or ')}` : '';
@@ -524,7 +524,7 @@ export class TaskServer {
     const scope = `${task.peerId}:${tool}`;
     if (this.alwaysTools.has(scope)) return true;
     const detail = typeof input.command === 'string' ? input.command : JSON.stringify(input).slice(0, 2000);
-    const answer = await this.ask(task, 'tool', `Your Claude (working on ${task.peerName}'s request) wants to use ${tool.replace(/^mcp__klaud__/, '')}`, detail);
+    const answer = await this.ask(task, 'tool', `Your Claude (working on ${task.peerName}'s request) wants to use ${tool.replace(/^mcp__beluga__/, '')}`, detail);
     if (!this.isOver(task.id)) this.update(task.id, { state: 'working' });
     if (answer.answer === 'always') this.alwaysTools.add(scope);
     return answer.answer !== 'no';
@@ -532,7 +532,7 @@ export class TaskServer {
 
   private async runCommand(task: TaskView, req: TaskRequest): Promise<void> {
     const { ctx } = this;
-    if (!ctx.serveShell || !req.command) return this.finish(task, 'failed', `${ctx.selfName()}'s klaud can't run commands for others here`);
+    if (!ctx.serveShell || !req.command) return this.finish(task, 'failed', `${ctx.selfName()}'s Beluga can't run commands for others here`);
     try {
       const reply = await ctx.serveShell(
         task.peerId,
@@ -556,12 +556,12 @@ export class TaskServer {
     }
   }
 
-  /** One file, sent by klaud itself: from the folders you chose (anywhere with full trust), never secrets. */
+  /** One file, sent by Beluga itself: from the folders you chose (anywhere with full trust), never secrets. */
   private async sendFile(task: TaskView, req: TaskRequest, facts: RequestFacts, youChose: boolean): Promise<void> {
     try {
       await this.readAndSend(task, req, facts, youChose);
     } catch (err) {
-      if (!this.isOver(task.id)) this.finish(this.current(task), 'failed', `${this.ctx.selfName()}'s klaud couldn't read it: ${errorText(err)}`);
+      if (!this.isOver(task.id)) this.finish(this.current(task), 'failed', `${this.ctx.selfName()}'s Beluga couldn't read it: ${errorText(err)}`);
     }
   }
 
@@ -578,7 +578,7 @@ export class TaskServer {
     const file = files[0];
     if (!file?.b64 && !file?.ref) {
       const why = skipped[0] ?? `${name} (not found)`;
-      return this.finish(this.current(task), /not allowed|outside/.test(why) ? 'declined' : 'failed', `${me}'s klaud didn't send it: ${why}`);
+      return this.finish(this.current(task), /not allowed|outside/.test(why) ? 'declined' : 'failed', `${me}'s Beluga didn't send it: ${why}`);
     }
     this.finish(this.current(task), 'done', `${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB) from ${me}'s Mac.`, { files: [file] });
   }
@@ -653,4 +653,4 @@ export class TaskServer {
   }
 }
 
-export const defaultScratch = (): string => path.join(os.tmpdir(), 'klaud-tasks');
+export const defaultScratch = (): string => path.join(os.tmpdir(), 'beluga-tasks');

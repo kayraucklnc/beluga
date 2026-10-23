@@ -93,7 +93,7 @@ export class DaemonServer {
     return (wss.address() as AddressInfo).port;
   }
 
-  async close(reason = 'klaud is shutting down'): Promise<void> {
+  async close(reason = 'Beluga is shutting down'): Promise<void> {
     for (const off of this.offs.splice(0)) off();
     for (const c of this.capCalls.values()) {
       clearTimeout(c.timer);
@@ -141,7 +141,7 @@ export class DaemonServer {
     const attached = new Map<string, () => void>();
     const send = (frame: DaemonFrame): void => {
       if (ws.readyState !== ws.OPEN) return;
-      // A screen that stopped reading (asleep, hung) would make klaud hold everything for it.
+      // A screen that stopped reading (asleep, hung) would make Beluga hold everything for it.
       if (ws.bufferedAmount > MAX_BUFFERED_BYTES) {
         this.opts.log?.(`${client?.id ?? 'a screen'} fell too far behind; letting it go`);
         return ws.terminate();
@@ -160,7 +160,7 @@ export class DaemonServer {
       try {
         handle(raw.toString());
       } catch (err) {
-        // One bad frame must not take klaud (and everyone's screens) down.
+        // One bad frame must not take Beluga (and everyone's screens) down.
         this.opts.log?.(`frame from ${client?.id ?? 'a new screen'} failed: ${errorText(err)}`);
       }
     });
@@ -173,7 +173,7 @@ export class DaemonServer {
         clearTimeout(helloTimer);
         if (!this.tokenOk(frame.token)) return ws.close(4003, 'Wrong token');
         if (frame.ipc !== IPC_VERSION) {
-          send({ t: 'bye', reason: `This klaud speaks version ${IPC_VERSION} of the protocol, the screen ${frame.ipc}. Update both to the same version.` });
+          send({ t: 'bye', reason: `This Beluga speaks version ${IPC_VERSION} of the protocol, the screen ${frame.ipc}. Update both to the same version.` });
           return ws.close(4004, 'IPC version mismatch');
         }
         client = this.clients.add({ kind: frame.kind, version: frame.version, ...(frame.launchDir ? { launchDir: frame.launchDir } : {}), caps: frame.caps, send });

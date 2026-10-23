@@ -292,11 +292,11 @@ describe('Session', () => {
     await waitFor(() => kay.state().viewer?.content === 'B');
 
     kay.session.submit('@claude:bob audit');
-    await waitFor(() => kay.state().viewer?.path.startsWith('.klaud/reports/') && kay.state().viewer?.content.includes('all good'));
+    await waitFor(() => kay.state().viewer?.path.startsWith('.beluga/reports/') && kay.state().viewer?.content.includes('all good'));
     expect(kay.state().viewer?.by).toBe("bob's Claude");
-    const reports = readdirSync(path.join(bob.root, '.klaud', 'reports'));
-    expect(readFileSync(path.join(bob.root, '.klaud', 'reports', reports[0]!), 'utf8')).toBe('# Audit Results\n\nall good');
-    expect(systemText(kay.state()).some((t) => t.includes("bob's Claude wrote a report. Open it with /open bob:proj/.klaud/reports/"))).toBe(true);
+    const reports = readdirSync(path.join(bob.root, '.beluga', 'reports'));
+    expect(readFileSync(path.join(bob.root, '.beluga', 'reports', reports[0]!), 'utf8')).toBe('# Audit Results\n\nall good');
+    expect(systemText(kay.state()).some((t) => t.includes("bob's Claude wrote a report. Open it with /open bob:proj/.beluga/reports/"))).toBe(true);
 
     kay.session.submit(':unfollow');
     expect(kay.state().follow).toBeUndefined();
@@ -381,7 +381,7 @@ describe('Session', () => {
     kay.session.store.dispatch({ type: 'invite', invite: 'https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx' });
     kay.session.submit('/invite');
     await waitFor(() => kay.copied.length === 1);
-    expect(kay.copied[0]).toBe('klaud join https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx');
+    expect(kay.copied[0]).toBe('beluga join https://x.trycloudflare.com#abcdefghijklmnopqrstuvwx');
     expect(kay.toasts).toContain('Invite copied. Paste it to a friend');
 
     kay.session.submit('/copy');

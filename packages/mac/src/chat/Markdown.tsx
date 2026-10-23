@@ -16,7 +16,7 @@ import { MentionPill } from './Mention.js';
 import { type MentionWorld, linkMentions, parseMentionHref } from './mentions.js';
 import { quoteInBox } from './message-menu.js';
 import { GraphBlock } from '../components/graph/GraphBlock.js';
-import { GRAPH_FENCE } from '@klaud/shared/graph-spec.js';
+import { isGraphFence } from '@klaud/shared/graph-spec.js';
 import s from './chat.module.css';
 
 /** Syntax colors load on demand (shiki is big), then stay. */
@@ -218,7 +218,7 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       const code = String(children).replace(/\n$/, '');
       if (!className && !code.includes('\n')) return <code className={s.inlineCode}>{children}</code>;
       // A diagram Claude drew (docs/graphs.md): only data, drawn with the window's own pieces.
-      if (lang === GRAPH_FENCE) return <MessageGraph code={code} localImages={localImages} />;
+      if (isGraphFence(lang)) return <MessageGraph code={code} localImages={localImages} />;
       return <Code code={code} {...(lang ? { lang } : {})} />;
     },
     pre: ({ children }) => <>{children}</>,

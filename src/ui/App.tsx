@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Box, useApp, useInput, usePaste, useStdout } from 'ink';
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import { type AppState, type Location, peerName } from '../core/store.js';
 import { shareNameOf } from '../core/workspace-controller.js';
 import { localDirKey } from '../core/local.js';
@@ -67,8 +67,8 @@ const BUTTON_HINTS: Record<string, string> = {
 const COMPOSER_HINT = 'Enter sends · Ctrl+J new line · ⌥⌫ deletes a word (hold ⌫ to speed up) · ⌥←→ moves by word';
 
 export interface AppProps {
-  /** klaud, in this process or in the daemon. */
-  readonly client: KlaudClient;
+  /** Beluga, in this process or in the daemon. */
+  readonly client: BelugaClient;
   /** Show the welcome screen asking who may use your Claude. */
   readonly onboarding?: boolean;
   /** Subscribe to mouse events (clicks and wheel). Omit to run keyboard-only. */

@@ -23,7 +23,7 @@ export type TaskState =
   | 'asking'
   /** In progress, but nobody is working on it right now (its Claude stopped without finishing). */
   | 'idle'
-  /** Its Claude stopped again soon after Klaud woke it: it waits for you (see watchdog.ts). */
+  /** Its Claude stopped again soon after Beluga woke it: it waits for you (see watchdog.ts). */
   | 'stalled'
   | 'review'
   /** Its milestone passed: merged into the plan's branch, waiting for the plan's PR. */

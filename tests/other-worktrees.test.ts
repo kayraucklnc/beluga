@@ -153,14 +153,14 @@ describe('labelling worktrees by who made them', () => {
 
   it('names each origin', () => {
     // Another app's worktrees are told apart (to keep its live ones safe) but never named.
-    expect(describeOrigin({ path: '/h/conductor/workspaces/app/berlin' })).toMatchObject({ source: 'conductor', label: 'Made outside Klaud' });
+    expect(describeOrigin({ path: '/h/conductor/workspaces/app/berlin' })).toMatchObject({ source: 'conductor', label: 'Made outside Beluga' });
     const archived = describeOrigin({ path: '/custom/place/berlin', conductor: { name: 'Open Source Strategy', state: 'archived', prTitle: 'feat: x' } });
-    expect(archived).toMatchObject({ source: 'conductor', label: 'Made outside Klaud', detail: expect.stringContaining('put it away') });
+    expect(archived).toMatchObject({ source: 'conductor', label: 'Made outside Beluga', detail: expect.stringContaining('put it away') });
     expect(archived.detail).toContain('Pull request: feat: x');
     for (const o of [archived, describeOrigin({ path: '/h/conductor/workspaces/app/berlin' })]) expect(`${o.label} ${o.detail}`).not.toMatch(/conductor/i);
     expect(describeOrigin({ path: '/r/.claude/worktrees/agent-1' })).toMatchObject({ source: 'claude', label: 'Claude Code sub-agent' });
     expect(describeOrigin({ path: '/d/rc210-replay', creator: { title: 'RC-210 epic', cwd: '/d/ratel-cloud' } })).toMatchObject({ source: 'claude', label: 'Made by Claude in “RC-210 epic”', detail: expect.stringContaining('ratel-cloud') });
-    expect(describeOrigin({ path: '/d/scratch' })).toMatchObject({ source: 'other', label: 'Made outside Klaud' });
+    expect(describeOrigin({ path: '/d/scratch' })).toMatchObject({ source: 'other', label: 'Made outside Beluga' });
   });
 
   it("reads Conductor's rows: the live workspace wins over archived ones at the same folder", () => {
@@ -231,13 +231,13 @@ describe('worktrees from other tools, end to end in a real repo', () => {
 
   it('describes one: origin, dates, merged, uncommitted', async () => {
     const info = await others.info(ext('busy').id);
-    expect(info).toMatchObject({ name: 'busy', branch: 'busy', base: 'origin/main', ahead: 1, changed: 0, merged: false, missing: false, origin: { source: 'other', label: 'Made outside Klaud' }, conversations: [] });
+    expect(info).toMatchObject({ name: 'busy', branch: 'busy', base: 'origin/main', ahead: 1, changed: 0, merged: false, missing: false, origin: { source: 'other', label: 'Made outside Beluga' }, conversations: [] });
     expect(info?.createdAt).toBeGreaterThan(0);
     expect(info?.lastCommit?.subject).toBe('work');
     expect(info?.stale).toBeUndefined();
     expect((await others.info(ext('done').id))?.stale).toBe('merged');
     expect((await worktreeFacts({ path: path.join(base, 'gone'), branch: 'gone' }, 'origin/main')).missing).toBe(true);
-    // Klaud's own main folder isn't one of these.
+    // Beluga's own main folder isn't one of these.
     expect(await others.info(mgr.list.find((p) => p.root)!.workspaces.find((w) => w.kind === 'main')!.id)).toBeUndefined();
   });
 
@@ -280,7 +280,7 @@ describe('worktrees from other tools, end to end in a real repo', () => {
     expect(sh(repo, 'branch', '--list', 'dirty')).toContain('dirty');
   });
 
-  it("deleting one you've talked in from klaud never deletes its branch or forces it", async () => {
+  it("deleting one you've talked in from Beluga never deletes its branch or forces it", async () => {
     const busy = ext('busy');
     mgr.rememberSession(busy.id, 'sess-1'); // adopted: now one of yours
     await mgr.refresh();

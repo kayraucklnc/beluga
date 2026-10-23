@@ -216,7 +216,7 @@ describe('Do Not Disturb', () => {
 describe('desktopAllowed', () => {
   const st = (patch: Partial<NotifySettings>, front: boolean): DomainState => apply(initialState('r'), notify(patch), { type: 'attention', attention: { shown: [], visible: [], files: false, front } });
 
-  it('follows the desktop switch, Do Not Disturb and "only when klaud isn\'t in front"', () => {
+  it('follows the desktop switch, Do Not Disturb and "only when Beluga isn\'t in front"', () => {
     expect(desktopAllowed(st({}, true))).toBe(true);
     expect(desktopAllowed(st({ desktop: false }, false))).toBe(false);
     expect(desktopAllowed(st({ dnd: {} }, false))).toBe(false);
@@ -264,7 +264,7 @@ describe('Notifier settings', () => {
     expect(desktop).toHaveBeenCalledTimes(1);
   });
 
-  it('"only when klaud isn\'t in front" waits until no screen is in front', () => {
+  it('"only when Beluga isn\'t in front" waits until no screen is in front', () => {
     start(apply(base(), notify({ onlyAway: true })));
     screen.dispatch({ type: 'view', view: { kind: 'overview' } });
     finish('r1');
@@ -320,7 +320,7 @@ describe('Notifier settings', () => {
 describe('combine', () => {
   it('goes to the one place a burst is about, else nowhere in particular', () => {
     expect(combine([{ kind: 'done', title: 'a', body: 'x', channel: 'room' }], false)).toEqual({ title: 'a', body: 'x', sound: false, channel: 'room' });
-    expect(combine([{ kind: 'done', title: 'a', body: '', channel: 'room' }, { kind: 'done', title: 'b', body: '', channel: 'room' }], true)).toMatchObject({ title: '2 updates in klaud', channel: 'room' });
+    expect(combine([{ kind: 'done', title: 'a', body: '', channel: 'room' }, { kind: 'done', title: 'b', body: '', channel: 'room' }], true)).toMatchObject({ title: '2 updates in Beluga', channel: 'room' });
     expect(combine([{ kind: 'done', title: 'a', body: '', channel: 'room' }, { kind: 'pr', title: 'b', body: '' }], true)).not.toHaveProperty('channel');
   });
 });
@@ -334,7 +334,7 @@ describe('attention', () => {
     expect(attentionOf({ ...initialScreen, view: { kind: 'workspace', id: 'w1', tab: 'chat' }, away: true })).toEqual({ shown: ['ws:w1'], visible: [], files: false, front: false });
   });
 
-  it('klaud is in front when any screen is', () => {
+  it('Beluga is in front when any screen is', () => {
     const store = new Store(initialState('r'));
     const reg = new AttentionRegistry(store);
     reg.set('mac', { shown: ['room'], visible: [], files: false, front: false });

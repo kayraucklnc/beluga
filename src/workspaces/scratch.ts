@@ -6,7 +6,7 @@ import { SCRATCH_DIR, SHOWN_SCRATCH_DIRS } from '../shared/scratch-dir.js';
 
 /**
  * A workspace's scratch folder: where Claude keeps the screenshots, logs and intermediate output it
- * makes while it works (not the work itself). It lives in the workspace as `.klaud/scratch/`, kept
+ * makes while it works (not the work itself). It lives in the workspace as `.beluga/scratch/`, kept
  * out of git through the repo's own exclude file (never a change to .gitignore), and the Mac app
  * shows it live (the panel's Scratch tab), together with the `.context/` folder Claude saves to
  * when another tool runs it in the same worktree (looked at, never written).
@@ -21,7 +21,7 @@ const MAX_DEPTH = 4;
 const run = promisify(execFile);
 
 export interface ScratchFile {
-  /** From the workspace's folder, e.g. `.klaud/scratch/shots/home.png`. */
+  /** From the workspace's folder, e.g. `.beluga/scratch/shots/home.png`. */
   readonly path: string;
   readonly size: number;
   /** Last written (ms). */
@@ -58,7 +58,7 @@ async function excludeOnce(dir: string): Promise<void> {
   const current = await fs.readFile(exclude, 'utf8').catch(() => '');
   if (current.split('\n').some((l) => l.trim() === EXCLUDE_LINE)) return;
   await fs.mkdir(path.dirname(exclude), { recursive: true });
-  await fs.appendFile(exclude, `${current && !current.endsWith('\n') ? '\n' : ''}# klaud: Claude's scratch folder\n${EXCLUDE_LINE}\n`);
+  await fs.appendFile(exclude, `${current && !current.endsWith('\n') ? '\n' : ''}# beluga: Claude's scratch folder\n${EXCLUDE_LINE}\n`);
 }
 
 /** Make the folder and keep it out of git. Never throws: a run goes ahead without it. */
@@ -80,7 +80,7 @@ export async function ensureScratch(dir: string): Promise<string | undefined> {
   }
 }
 
-/** What's in the shown folders (klaud's and `.context/`), newest first (no links followed). */
+/** What's in the shown folders (Beluga's and `.context/`), newest first (no links followed). */
 export async function listScratch(dir: string): Promise<ScratchFile[]> {
   const files: ScratchFile[] = [];
   const walk = async (rel: string, depth: number): Promise<void> => {

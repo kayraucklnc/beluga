@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { klaudHome } from './home.js';
+import { belugaHome } from './home.js';
 
 /**
  * A project's own icon, for screens to show next to its name: one you chose, else the one the
@@ -30,6 +30,8 @@ const MIME: Record<string, string> = {
 
 /** Where projects keep their icon, best first (paths are relative to the project folder). */
 const CANDIDATES: readonly string[] = [
+  '.beluga/icon.png',
+  '.beluga/icon.svg',
   '.klaud/icon.png',
   '.klaud/icon.svg',
   // Tauri, Electron, desktop apps
@@ -213,7 +215,7 @@ function siblingIcon(root: string): string | undefined {
   return undefined;
 }
 
-const iconsDir = (): string => path.join(klaudHome(), 'project-icons');
+const iconsDir = (): string => path.join(belugaHome(), 'project-icons');
 const keyOf = (root: string): string => createHash('sha1').update(path.resolve(root)).digest('hex').slice(0, 16);
 
 /** The icon you chose for a project, if you did. */

@@ -96,7 +96,7 @@ export async function captureScreen(sys: SystemPort, dir: string, opts: { app?: 
   const res = await sys.exec('screencapture', ['-x', '-t', 'png', ...target, file], 20_000);
   const stat = await fs.stat(file).catch(() => undefined);
   if (res.code !== 0 || !stat?.size) {
-    throw new Error(`The screenshot didn't work${res.stderr.trim() ? `: ${res.stderr.trim().slice(0, 200)}` : ''}. macOS may need klaud allowed in System Settings › Privacy & Security › Screen Recording.`);
+    throw new Error(`The screenshot didn't work${res.stderr.trim() ? `: ${res.stderr.trim().slice(0, 200)}` : ''}. macOS may need Beluga allowed in System Settings › Privacy & Security › Screen Recording.`);
   }
   // A smaller copy for Claude's eyes (the PNG of a Retina display is several MB).
   const view = file.replace(/\.png$/, '-view.jpg');

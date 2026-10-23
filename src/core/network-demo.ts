@@ -10,6 +10,7 @@ import { ChatClaude } from './chat/claude.js';
 import { demoAnswerFromPrompt } from './chat/demo-answers.js';
 import { ChatFiles } from './chat/files.js';
 import type { Store } from './store.js';
+import { belugaEnv } from './beluga-env.js';
 
 const CHECKLIST = `# Friday release
 
@@ -45,15 +46,15 @@ async function until(ok: () => boolean): Promise<boolean> {
 }
 
 /**
- * The demo's klaud network: you, bob and mia as real mesh nodes on a private DHT inside this
- * process (nothing touches the internet or your ~/.klaud). bob and mia are your friends, the
+ * The demo's Beluga network: you, bob and mia as real mesh nodes on a private DHT inside this
+ * process (nothing touches the internet or your ~/.beluga). bob and mia are your friends, the
  * three of you share a group, and they answer when you write to them.
  */
 export async function startDemoNetwork(store: Store, name: string): Promise<NetworkService> {
   const createTestnet = (await import('hyperdht/testnet.js')).default;
   const { demoResponder } = await import('./gateway/demo.js');
   const testnet = await createTestnet(3, { host: '127.0.0.1' });
-  const base = mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-network-'));
+  const base = mkdtempSync(path.join(os.tmpdir(), 'beluga-demo-network-'));
   const where = { bootstrap: testnet.bootstrap, host: '127.0.0.1' };
   const friend = (n: string): Promise<Mesh> => Mesh.start({ identity: generateIdentity(), name: n, dir: path.join(base, n), ...where });
   const [bob, mia] = await Promise.all([friend('bob'), friend('mia')]);
@@ -64,7 +65,7 @@ export async function startDemoNetwork(store: Store, name: string): Promise<Netw
   await mia.accept((await bob.createInvite()).code);
   mia.setPresence({ state: 'away', note: 'in a meeting' });
   let stopped = false;
-  const pace = Number(process.env.KLAUD_DEMO_PACE) || 1;
+  const pace = Number(belugaEnv('DEMO_PACE')) || 1;
   const chats = { bob: demoChat(bob, path.join(base, 'bob'), pace), mia: demoChat(mia, path.join(base, 'mia'), pace) };
   const group = bob.createGroup('launch', [meId, mia.peerId]);
   bob.sendGroup(group.id, 'Morning! Staging is green, ready when you are.');

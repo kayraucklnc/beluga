@@ -1,13 +1,13 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { klaudHome } from './home.js';
+import { belugaHome } from './home.js';
 
 export { THEMES, TRUST_LEVELS, EFFORTS, NotifySettings, Settings } from '../shared/settings-schema.js';
 export type { ThemeName, TrustLevel, Effort } from '../shared/settings-schema.js';
 import { NotifySettings, Settings } from '../shared/settings-schema.js';
 
-export const settingsPath = (): string => path.join(klaudHome(), 'settings.json');
+export const settingsPath = (): string => path.join(belugaHome(), 'settings.json');
 
 export function loadSettings(file: string = settingsPath()): Settings {
   let raw: unknown;

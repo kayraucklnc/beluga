@@ -60,7 +60,7 @@ export function inviteMenu(state: AppState, c: InviteChoice, available: boolean)
     ...CAN_ORDER.map((can, i) => ({ id: `il-can:${can}`, label: row(i === 0 ? 'They can' : '', `${radio(c.can === can)} ${CAN_INFO[can].label}`), hint: CAN_INFO[can].detail })),
     { id: 'il-knock', label: row('The link', `${check(c.knock)} Knock first`), hint: c.knock ? 'you let them in from a card' : 'they come straight in' },
     { id: 'il-single', label: row('', `${check(c.singleUse)} One person only`), hint: c.singleUse ? 'stops working after the first person' : 'anyone with the link can come' },
-    { id: 'il-expires', label: row('', `${check(c.expires)} Expires in 24 hours`), hint: c.expires ? '' : 'works until you turn it off or quit klaud' },
+    { id: 'il-expires', label: row('', `${check(c.expires)} Expires in 24 hours`), hint: c.expires ? '' : 'works until you turn it off or quit Beluga' },
     { id: 'il-copy', label: `▸ Copy invite link`, hint: `${projectName(state, c.scope)} · ${CAN_INFO[c.can].short}${c.knock ? ' · knocks first' : ''}` },
     ...linkOptions(state),
     ...(state.invite ? [{ id: 'invite', label: "Copy the room's open link instead", hint: 'anyone with it joins everything, no knock' }] : []),
@@ -68,7 +68,7 @@ export function inviteMenu(state: AppState, c: InviteChoice, available: boolean)
   ];
   return {
     title: 'Invite someone',
-    intro: ['They run klaud join <link>. Files stream as they open them; secrets (.env, keys) never leave.'],
+    intro: ['They run beluga join <link>. Files stream as they open them; secrets (.env, keys) never leave.'],
     options,
   };
 }

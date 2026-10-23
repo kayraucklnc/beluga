@@ -38,7 +38,7 @@ const HEARTBEAT_MS = 60_000;
 export interface ChatClaudeOptions {
   readonly mesh: Mesh;
   readonly files?: ChatFiles;
-  /** Your Claude's answer (undefined: this klaud has no Claude to answer with). */
+  /** Your Claude's answer (undefined: this Beluga has no Claude to answer with). */
   readonly answer: ((req: ChatAnswerRequest) => Promise<string>) | undefined;
   readonly policy: () => ChatClaudePolicy;
   readonly trustOf: (peerId: string) => TrustLevel;
