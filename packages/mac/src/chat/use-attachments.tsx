@@ -1,6 +1,9 @@
-import { type RefObject, useEffect, useState } from 'react';
+import { type RefObject, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon.js';
+import { inApp } from '../lib/boot.js';
 import { toast, useApi, useBeluga } from '../lib/beluga.js';
+import { type Box, MAX_DROPPED, dropHits, droppedFiles, sameBox } from './drop-model.js';
 import { keepPreview, previewOf } from './images.js';
 import { type ImageInText, type PathInfo, insertText, usePastePaths } from './paste-paths.js';
 import s from './composer.module.css';
@@ -11,6 +14,9 @@ import img from './images.module.css';
  * and a plan's): images pasted, dropped, or named by their path in pasted text wait as thumbnails,
  * with an "[image N]" in the words where they go; other files whose paths were pasted wait as
  * chips. Kept per conversation, so switching away and back keeps them.
+ *
+ * Files dragged from Finder anywhere on the conversation (the element marked `data-drop-zone`
+ * around the box) go in the same way: the app takes the drop and hands over their paths.
  */
 
 /** Images waiting to be sent, per conversation. */
@@ -28,8 +34,10 @@ const imagesOf = (items: DataTransferItemList | undefined): File[] =>
 export interface Attachments {
   readonly images: readonly number[];
   readonly files: readonly PathInfo[];
-  /** Something is being dragged over the box. */
+  /** Something is being dragged over the box (or, from Finder, over the conversation). */
   readonly dropping: boolean;
+  /** Over the conversation while files from Finder are dragged on it: where they'll go. */
+  readonly dropTarget: React.ReactNode;
   /** For the box around the words: drop images on it. */
   readonly dropProps: Pick<React.HTMLAttributes<HTMLElement>, 'onDragOver' | 'onDragLeave' | 'onDrop'>;
   /** For the text field. */
@@ -116,18 +124,72 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     }
   };
 
+  /** Files on this Mac: images wait as thumbnails (referenced at `at`, else where the cursor is), others as chips. */
+  const addPaths = async (picked: readonly PathInfo[], at?: number): Promise<void> => {
+    const others = picked.filter((f) => !f.image);
+    if (others.length) setFiles([...(waitingFiles.get(channel) ?? []), ...others.filter((f) => !(waitingFiles.get(channel) ?? []).some((w) => w.path === f.path))]);
+    let cursor = at;
+    for (const f of picked.filter((x) => x.image)) {
+      const n = await addImageFile(f);
+      if (n !== undefined) cursor = placeRef(n, cursor);
+    }
+  };
+
+  /** Paths dropped from Finder: the files among them go as a paste of their paths would. */
+  const dropPaths = async (paths: readonly string[]): Promise<void> => {
+    let infos: readonly PathInfo[];
+    try {
+      infos = await api.local.statFiles(paths.slice(0, MAX_DROPPED));
+    } catch (err) {
+      return toast(client, `Couldn't add what you dropped: ${errorText(err)}`, 'error');
+    }
+    const { files: picked, skipped } = droppedFiles(infos);
+    if (skipped) toast(client, picked.length ? `Only files go with a message: ${skipped} left out` : 'Only files go with a message (not folders)', 'warn');
+    if (!picked.length) return;
+    await addPaths(picked);
+    box.current?.focus();
+  };
+  const latestDrop = useRef(dropPaths);
+  latestDrop.current = dropPaths;
+
+  // Finder drops: the app takes them (the page never sees the files), so listen to it. Each box
+  // answers for its own conversation only, and not while it can't be written in.
+  const [dragOver, setDragOver] = useState<Box>();
+  useEffect(() => {
+    if (!inApp()) return;
+    let off: (() => void) | undefined;
+    let alive = true;
+    const zoneAt = (x: number, y: number): Box | undefined => {
+      const el = box.current;
+      if (!el || el.disabled || el.readOnly) return undefined;
+      const r = (el.closest('[data-drop-zone]') ?? el.parentElement)?.getBoundingClientRect();
+      const at = r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : undefined;
+      return dropHits(at, x, y, window.devicePixelRatio || 1) ? at : undefined;
+    };
+    void import('@tauri-apps/api/webview').then(async ({ getCurrentWebview }) => {
+      const un = await getCurrentWebview().onDragDropEvent((e) => {
+        const p = e.payload;
+        if (p.type === 'leave') return setDragOver(undefined);
+        const here = zoneAt(p.position.x, p.position.y);
+        if (p.type === 'drop') {
+          setDragOver(undefined);
+          if (here && p.paths.length) void latestDrop.current(p.paths);
+        } else setDragOver((was) => (sameBox(was, here) ? was : here));
+      });
+      if (alive) off = un;
+      else un();
+    });
+    return () => {
+      alive = false;
+      off?.();
+      setDragOver(undefined);
+    };
+  }, [channel]);
+
   const pastePaths = usePastePaths(
     box,
     // Only paths of files on this Mac: images wait as thumbnails (referenced where the cursor was), others as chips.
-    async (picked, at) => {
-      const others = picked.filter((f) => !f.image);
-      if (others.length) setFiles([...(waitingFiles.get(channel) ?? []), ...others.filter((f) => !(waitingFiles.get(channel) ?? []).some((w) => w.path === f.path))]);
-      let cursor = at;
-      for (const f of picked.filter((x) => x.image)) {
-        const n = await addImageFile(f);
-        if (n !== undefined) cursor = placeRef(n, cursor);
-      }
-    },
+    (picked, at) => void addPaths(picked, at),
     // Words naming images: the words go in, each image's path (quotes and all) becomes its reference.
     async (pasted: string, found: readonly ImageInText[], at) => {
       let words = '';
@@ -201,10 +263,23 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     </>
   );
 
+  const dropTarget = dragOver
+    ? createPortal(
+        <div className={s.dropTarget} style={{ left: dragOver.left, top: dragOver.top, width: dragOver.right - dragOver.left, height: dragOver.bottom - dragOver.top }} aria-hidden>
+          <div className={s.dropTargetLabel}>
+            <Icon name="image" size={16} />
+            Drop to attach
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+
   return {
     images: pendingImages,
     files,
-    dropping,
+    dropping: dropping || Boolean(dragOver),
+    dropTarget,
     dropProps: {
       onDragOver: (e) => {
         if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) {

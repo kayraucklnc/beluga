@@ -281,6 +281,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
 
   return (
     <div className={s.wrap}>
+      {att.dropTarget}
       {sug.list}
       <QueueTray queue={queue} selfName={state.self?.name ?? ''} onEdit={editQueued} />
       <div
