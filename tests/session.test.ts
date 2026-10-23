@@ -885,4 +885,22 @@ describe('Session hardening', () => {
     // None of it went through the room.
     expect(relayed.filter((b) => 'requestId' in b)).toEqual([]);
   });
+
+  it('a plan chat Retry of a message that went is said and asked once (KLD-69)', async () => {
+    hub = await startHub({ keys });
+    const kay = peer('kay', { script: async (input) => `did ${input.prompt}` });
+    await room(kay);
+    const plan = 'ws:plan-home';
+    (kay.session.host as unknown as { deps: { workspaces: unknown } }).deps.workspaces = { place: () => ({ cwd: kay.root, additionalDirectories: [], autoEdit: false, onSession: () => undefined }), refresh: async () => undefined };
+    // The first send went (said in the chat, Claude asked), but its answer never reached the screen; Retry sends it again with the same id.
+    expect(kay.session.submit('tighten the plan', { channel: plan, id: 'send-1' })).toBe(true);
+    expect(kay.session.submit('tighten the plan', { channel: plan, id: 'send-1' })).toBe(true);
+    await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.channel === plan && a.status === 'done'));
+    const said = () => kay.state().log.filter((l) => l.type === 'chat' && l.channel === plan).map((l) => (l.type === 'chat' ? l.text : ''));
+    expect(said()).toEqual(['tighten the plan']);
+    expect(kay.runs.map((r) => r.prompt)).toEqual(['tighten the plan']);
+    // A new message with the same words is a new send.
+    expect(kay.session.submit('tighten the plan', { channel: plan, id: 'send-2' })).toBe(true);
+    expect(said()).toEqual(['tighten the plan', 'tighten the plan']);
+  });
 });

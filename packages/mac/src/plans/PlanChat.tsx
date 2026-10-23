@@ -10,7 +10,7 @@ import { Empty, IconButton, Tip, Working, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp } from '../lib/klaud.js';
 import { LiveDot } from './marks.js';
-import { sendPlanMessage } from './plan-send.js';
+import { type PlanMessage, planMessage, sendPlanMessage } from './plan-send.js';
 import { useConversationLoaded } from './use-plans.js';
 import s from '../chat/composer.module.css';
 import p from './plans.module.css';
@@ -46,7 +46,7 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
   const wsId = channel.startsWith('ws:') ? channel.slice(3) : undefined;
   const loading = !useConversationLoaded(channel);
   /** A message that didn't go: said under the box, with Retry. */
-  const [failed, setFailed] = useState<{ text: string; error: string }>();
+  const [failed, setFailed] = useState<{ message: PlanMessage; error: string }>();
   const att = useAttachments({
     channel,
     box,
@@ -66,18 +66,19 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
   }, [text]);
 
   /**
-   * Send `message` as typed (its image references are expanded on the way); when it doesn't go,
-   * it's kept, and said, for Retry. The box isn't refilled, so it can't go twice.
+   * Send `message` (its image references are expanded on the way); when it doesn't go, it's
+   * kept, and said, for Retry, which sends that same message (see plan-send.ts). The box isn't
+   * refilled, so it can't go twice.
    */
-  const deliver = (message: string): void => {
+  const deliver = (message: PlanMessage): void => {
     setFailed(undefined);
-    sendPlanMessage(api, message, channel).catch((err: unknown) => setFailed({ text: message, error: errorText(err) }));
+    sendPlanMessage(api, message, channel).catch((err: unknown) => setFailed({ message, error: errorText(err) }));
   };
   const send = (): void => {
     const { text: message } = att.take(text.trim());
     if (!message) return;
     setText('');
-    deliver(message);
+    deliver(planMessage(message));
   };
   const editQueued = (prompt: string): void => {
     const current = words.current.trim();
@@ -132,7 +133,7 @@ export function PlanChat({ channel, draft, drafting, onClose }: { channel: strin
         <div className={p.chatFailed} role="alert">
           <Icon name="alert" size={12} />
           <span className={p.chatFailedText}>Your message wasn’t sent: {failed.error}</span>
-          <button type="button" className={p.chatRetry} onClick={() => deliver(failed.text)}>
+          <button type="button" className={p.chatRetry} onClick={() => deliver(failed.message)}>
             Retry
           </button>
         </div>
