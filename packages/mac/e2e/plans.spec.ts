@@ -196,6 +196,46 @@ test('the plan stays sharp zoomed in, and its name never clips (KLD-25)', async 
   const shot = info.outputPath('zoomed-canvas.png');
   await main(page).locator('.react-flow').screenshot({ path: shot });
   await info.attach('zoomed canvas', { path: shot, contentType: 'image/png' });
+
+  // At 200% and 300% too (KLD-70): once settled, the view keeps no layer hint, sits on whole device pixels,
+  // and every title shows whole lines: its last shown line (descenders included) lies inside the box.
+  for (const target of [2, 3]) {
+    for (let i = 0; i < 12 && (await scale()) < target - 0.05; i++) {
+      await main(page).getByRole('button', { name: 'Zoom In' }).click();
+      await page.waitForTimeout(260);
+    }
+    expect(await scale()).toBeGreaterThanOrEqual(target - 0.05);
+    await expect
+      .poll(() =>
+        viewport.evaluate((el) => {
+          const css = getComputedStyle(el);
+          const [x, y] = [...el.style.transform.matchAll(/(-?[\d.]+)px/g)].map((m) => Number(m[1]) * devicePixelRatio);
+          return { willChange: css.willChange, nudged: el.style.transform.includes('translateZ'), whole: Math.abs(x - Math.round(x)) < 0.01 && Math.abs(y - Math.round(y)) < 0.01 };
+        }),
+      )
+      .toEqual({ willChange: 'auto', nudged: false, whole: true });
+    const cut = await main(page)
+      .locator('.react-flow__node-task [class*="taskTitle"]')
+      .evaluateAll((els) =>
+        els.flatMap((el) => {
+          const box = el.getBoundingClientRect();
+          const zoom = box.height / el.clientHeight;
+          const line = parseFloat(getComputedStyle(el).lineHeight);
+          const text = document.createRange();
+          text.selectNodeContents(el);
+          // One rect per line fragment (the glyphs' full height, ascent to descent); keep the lines it shows.
+          const rects = [...text.getClientRects()].filter((r) => r.top < box.bottom - 1);
+          const lines = new Set([...text.getClientRects()].map((r) => Math.round((r.top - box.top) / zoom / line))).size;
+          const problems = [];
+          if (Math.max(...rects.map((r) => r.bottom)) > box.bottom + 0.5) problems.push('last line cut');
+          // Not cut by more than the clamp: as tall as its lines, two at most, whatever is hidden is whole lines.
+          if (Math.abs(el.clientHeight - Math.min(lines, 2) * line) > 1) problems.push(`box ${el.clientHeight} for ${lines} lines`);
+          if (el.scrollHeight > lines * line + 1) problems.push(`scroll ${el.scrollHeight} for ${lines} lines`);
+          return problems.length ? [`${el.textContent}: ${problems.join(', ')}`] : [];
+        }),
+      );
+    expect(cut).toEqual([]);
+  }
 });
 
 test('New Plan with no project known (⌘K) asks which project, and the title follows it', async ({ page }) => {

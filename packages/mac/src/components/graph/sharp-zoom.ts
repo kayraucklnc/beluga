@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useOnViewportChange, useStoreApi } from '@xyflow/react';
+import { useOnViewportChange, useStore, useStoreApi } from '@xyflow/react';
 
 /** How long the view must sit still before it's redrawn sharp. */
 export const SETTLE_MS = 120;
@@ -22,13 +22,32 @@ export function useSharpZoom(): void {
   const settle = (): void => {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      const el = store.getState().domNode?.querySelector<HTMLElement>('.react-flow__viewport');
+      const { domNode, panZoom, transform } = store.getState();
+      // A view left between device pixels draws every glyph soft: snap it to whole ones (KLD-70). Moving it
+      // fires another change, so this settles once more with nothing left to snap, and is redrawn then.
+      const [x, y, zoom] = transform;
+      const sx = snap(x);
+      const sy = snap(y);
+      if (panZoom && (sx !== x || sy !== y)) return void panZoom.setViewport({ x: sx, y: sy, zoom });
+      const el = domNode?.querySelector<HTMLElement>('.react-flow__viewport');
       if (el) sharpen(el);
     }, SETTLE_MS);
   };
   useOnViewportChange({ onChange: settle, onEnd: settle });
+  // Nodes that glided to a new place (a re-cut plan) were composited while they moved: redraw once they stop.
+  const dom = useStore((s) => s.domNode);
+  useEffect(() => {
+    const moved = (e: TransitionEvent): void => {
+      if (e.propertyName === 'transform') settle();
+    };
+    dom?.addEventListener('transitionend', moved);
+    return () => dom?.removeEventListener('transitionend', moved);
+  }, [dom]);
   useEffect(() => () => clearTimeout(timer.current), []);
 }
+
+/** The nearest whole device pixel. */
+export const snap = (v: number, dpr = globalThis.devicePixelRatio || 1): number => Math.round(v * dpr) / dpr;
 
 /** Re-rasterize a scaled layer at its current scale. */
 export function sharpen(el: HTMLElement): void {
