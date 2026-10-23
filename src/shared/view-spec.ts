@@ -124,6 +124,8 @@ const sourceSchema = z.discriminatedUnion('kind', [
     env: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(200).optional(),
     url: z.string().max(2000).optional(),
     query: z.string().trim().min(1).max(20_000),
+    /** The folder whose project's variables (and .env) hold the connection string. Neither env nor url: found there. */
+    cwd: z.string().max(4096).optional(),
   }),
   z.object({
     kind: z.literal('http'),

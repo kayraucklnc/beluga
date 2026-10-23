@@ -1,5 +1,6 @@
 import { runId, setupId, shellId, terminalLabel } from '@beluga/shared/terminal-keys.js';
 import { findWorkspace } from '@beluga/ui/workspace-models.js';
+import { Icon } from '../components/Icon.js';
 import { Button, Dot, Empty, IconButton, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
@@ -19,7 +20,7 @@ export function TerminalView() {
   const shells = useGlobalShells();
   const owners = useShellOwners();
   const view = state.view;
-  const { terminals, termExits, termNames } = state;
+  const { terminals, termExits, termNames, termEnvStale } = state;
   const running = (k: string): boolean => k in terminals && !(k in termExits);
 
   if (view.kind === 'workspace') {
@@ -73,7 +74,8 @@ export function TerminalView() {
             Commands…
           </Button>
         </div>
-        <Xterm key={`${key}:${key in termExits ? 'x' : 'live'}`} termKey={key} start={(size) => (key === shellId(ws.id) ? void api.terminals.shell(ws.id, size) : extra.includes(key) ? void api.terminals.global(key, ws.path, size) : undefined)} />
+        <Xterm key={`${key}:${key in termExits ? 'x' : 'live'}${termEnvStale.includes(key) ? ':old' : ''}`} termKey={key} start={(size) => (key === shellId(ws.id) ? void api.terminals.shell(ws.id, size) : extra.includes(key) ? void api.terminals.global(key, ws.path, size) : undefined)} />
+        <EnvStale termKey={key} />
         {key in termExits && key === shellId(ws.id) ? (
           <div className={s.restart}>
             <Button size="small" onClick={() => void api.terminals.shell(ws.id)}>
@@ -96,7 +98,8 @@ export function TerminalView() {
       </div>
       {key ? (
         <>
-          <Xterm key={`${key}:${key in termExits ? 'x' : 'live'}`} termKey={key} start={(size) => void api.terminals.global(key, dir, size)} />
+          <Xterm key={`${key}:${key in termExits ? 'x' : 'live'}${termEnvStale.includes(key) ? ':old' : ''}`} termKey={key} start={(size) => void api.terminals.global(key, dir, size)} />
+          <EnvStale termKey={key} />
           {key in termExits ? (
             <div className={s.restart}>
               <Button size="small" onClick={() => void api.terminals.global(key, dir)}>
@@ -125,6 +128,29 @@ export function ShellTabs({ shells }: { shells: GlobalShells }) {
 }
 
 /** Every shell is closed. */
+/** Whether a running terminal started before you changed its variables (it remounts once restarted). */
+export const useEnvStale = (termKey: string | undefined): boolean => useApp((st) => Boolean(termKey && st.termEnvStale.includes(termKey)));
+
+/**
+ * A running shell (or the run command) keeps the variables it started with: after you change them
+ * in Settings › Environment, this offers to start it again with the new ones.
+ */
+export function EnvStale({ termKey }: { termKey: string }) {
+  const api = useApi();
+  const stale = useEnvStale(termKey);
+  if (!stale) return null;
+  const what = termKey.endsWith(':run') ? 'It' : 'This shell';
+  return (
+    <div className={s.envStale} role="status">
+      <Icon name="refresh" size={12} />
+      <span>{what} started before your variables changed.</span>
+      <Button size="small" onClick={() => void api.terminals.restart(termKey)}>
+        Restart
+      </Button>
+    </div>
+  );
+}
+
 export function NoShells({ open }: { open: () => void }) {
   return (
     <div className={s.none}>

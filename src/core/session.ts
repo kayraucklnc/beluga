@@ -21,7 +21,7 @@ import type { Settings } from './settings.js';
 import { runCommand } from './commands.js';
 import { People } from './people.js';
 import { ReplayGuard } from './replay.js';
-import { AgentHost } from './agent-host.js';
+import { AgentHost, type ApprovalAnswer } from './agent-host.js';
 import { RoomFiles, dirKey } from './room-files.js';
 import { createRoomBridge } from './agent-bridge.js';
 import { createSessionParts } from './session-parts.js';
@@ -461,7 +461,7 @@ export class Session {
     this.host.runOnBehalf(from, channel, prompt);
   }
 
-  answerApproval(answer: 'yes' | 'no' | 'always', id?: string): boolean {
+  answerApproval(answer: ApprovalAnswer, id?: string): boolean {
     return this.host.answerApproval(answer, id);
   }
 

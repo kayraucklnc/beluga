@@ -146,6 +146,34 @@ function npmReads(args: readonly string[]): boolean {
  */
 const SAFE_ENV = /^(GIT_PAGER|PAGER|LESS|LANG|LC_ALL|LC_CTYPE|TERM|NO_COLOR|COLUMNS|TZ)=[\w.:/=-]*$/;
 
+/** A line or a range of lines: `12`, `$`, `/pattern/`, `12,40`, `/a/,/b/`. */
+const SED_ADDRESS = String.raw`(\d+|\$|/(?:\\.|[^/\\])*/)`;
+/** Scripts that only print or stop: `12,40p`, `/x/p`, `5q`, `=` (sed's `w`, `e`, `r` and `s///w` write or run things). */
+const SED_PRINT = new RegExp(String.raw`^(${SED_ADDRESS}(,${SED_ADDRESS})?)?\s*[pq=]$`);
+
+/** `sed` that only prints (`sed -n '12,40p' file`): never in place, and only print scripts. */
+function sedPrints(args: readonly string[]): boolean {
+  let script = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === '-n' || a === '--quiet' || a === '--silent' || a === '-E' || a === '-r' || a === '--regexp-extended') continue;
+    if (a === '-e' || a === '--expression') {
+      const next = args[++i];
+      if (next === undefined || !SED_PRINT.test(next)) return false;
+      script = true;
+      continue;
+    }
+    // -i, -f (a script file), -s… anything else isn't plainly a read.
+    if (a.startsWith('-')) return false;
+    // The first word that isn't a flag is the script (when -e gave none); the rest are files.
+    if (!script) {
+      if (!SED_PRINT.test(a)) return false;
+      script = true;
+    }
+  }
+  return script;
+}
+
 function simpleReads(segment: string): boolean {
   const all = words(segment);
   const start = all.findIndex((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
@@ -157,6 +185,10 @@ function simpleReads(segment: string): boolean {
   if (program === 'git') return gitReads(args);
   if (program === 'npm' || program === 'pnpm' || program === 'yarn') return npmReads(args);
   if (program === 'node' || program === 'python3' || program === 'python') return args.length === 1 && (args[0] === '--version' || args[0] === '-v' || args[0] === '-V');
+  if (program === 'sed') return sedPrints(args);
+  // The variables' names and values, printed (with a program after it, env would run that).
+  if (program === 'env') return args.every((a) => a === '-0' || a === '--null');
+  if (program === 'printenv') return args.every((a) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(a) || a === '-0' || a === '--null');
   const banned = PROGRAMS[program];
   if (!banned) return false;
   return !args.some((a) => banned.some((b) => a === b || a.startsWith(`${b}=`)));

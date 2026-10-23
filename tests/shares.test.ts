@@ -34,6 +34,22 @@ describe('isDenied', () => {
       expect(isDenied(p)).toBe(true);
     }
     expect(isDenied('src/env.ts')).toBe(false);
+    expect(isDenied('.env.example')).toBe(false);
+  });
+
+  it('shows you your own .env files, and nothing else secret', () => {
+    expect(isDenied('.env', true)).toBe(false);
+    expect(isDenied('apps/web/.env.local', true)).toBe(false);
+    for (const p of ['.ssh/.env', 'k.pem', '.ssh/id_rsa', '.git/config', 'node_modules/x/.env']) expect(isDenied(p, true)).toBe(true);
+  });
+});
+
+describe('your own files', () => {
+  it('lists and reads your .env, which friends never see', async () => {
+    expect((await svc.list('proj', '')).map((e) => e.name)).not.toContain('.env');
+    expect((await svc.list('proj', '', true)).map((e) => e.name)).toContain('.env');
+    expect((await svc.read('proj', '.env', true)).content).toBe('SECRET=1');
+    await expect(svc.read('proj', '.env')).rejects.toThrow('private');
   });
 });
 

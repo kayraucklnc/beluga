@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { isSecretPath } from '../core/shares.js';
+import { isDotenvPath, isSecretPath } from '../core/shares.js';
 import { isReadOnlyCommand } from './read-only.js';
 import { SourceSchema } from '../shared/view-spec.js';
 import { SYNC_MAIN_REASON, type SyncScope, isSyncMainCommand } from './sync-main.js';
@@ -40,13 +40,21 @@ const ALWAYS_OK = new Set([
 /**
  * Shell commands that mention credential stores are refused outright. A name counts when it isn't
  * part of a longer word, so shell punctuation around it (`cat .env|base64`, `(cat .env)`) still matches.
+ * A project's .env asks you instead, when it's your own Claude (see Decision 'secret'); its
+ * templates (.env.example…) hold no secrets and are just files.
  */
-export const SECRET_IN_COMMAND = /(?<![\w.-])(\.env(\.[\w-]+)?|id_(rsa|ed25519|ecdsa|dsa)|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.npmrc|\.netrc|\.git-credentials|credentials(\.json)?)(?![\w-])/;
+const DOTENV_IN_COMMAND = /(?<![\w.-])\.env(?!\.(?:example|sample|template|dist|defaults)(?![\w-]))(\.[\w-]+)?(?![\w-])/;
+const CREDENTIAL_IN_COMMAND = /(?<![\w.-])(id_(rsa|ed25519|ecdsa|dsa)|\.ssh|\.aws|\.gnupg|\.kube|\.docker|\.npmrc|\.netrc|\.git-credentials|credentials(\.json)?)(?![\w-])/;
+export const SECRET_IN_COMMAND = new RegExp(`${DOTENV_IN_COMMAND.source}|${CREDENTIAL_IN_COMMAND.source}`);
 
+const mentions = (re: RegExp, command: string): boolean => re.test(command) || re.test(command.replace(/['"\\]/g, ''));
 /** True when a shell command touches secrets, also through quoting tricks like `".e"nv` or `\.env`. */
-export const mentionsSecret = (command: string): boolean => SECRET_IN_COMMAND.test(command) || SECRET_IN_COMMAND.test(command.replace(/['"\\]/g, ''));
+export const mentionsSecret = (command: string): boolean => mentions(SECRET_IN_COMMAND, command);
+/** The only secret a shell command touches is a .env file. */
+export const mentionsOnlyDotenv = (command: string): boolean => mentions(DOTENV_IN_COMMAND, command) && !mentions(CREDENTIAL_IN_COMMAND, command);
 
-export type Decision = 'allow' | 'deny' | 'ask';
+/** 'secret': your own Claude wants a .env file; you're asked even when nothing else asks (see AgentRunInput.canUseSecret). */
+export type Decision = 'allow' | 'deny' | 'ask' | 'secret';
 
 export interface PolicyContext {
   readonly cwd: string;
@@ -72,6 +80,8 @@ export interface PolicyContext {
   readonly fixup?: string;
   /** A guest invited into one project asked: they never reach the room through your Claude. */
   readonly guest?: boolean;
+  /** Your own Claude, on your own computer: a .env file asks you (Decision 'secret') instead of being refused. */
+  readonly dotenv?: boolean;
 }
 
 const inside = (root: string, target: string): boolean => target === root || target.startsWith(root + path.sep);
@@ -82,11 +92,39 @@ const resolveTarget = (cwd: string, raw: unknown): string => path.resolve(cwd, t
  * This runs as a PreToolUse hook, so it applies even to tools Claude Code would
  * auto-approve on its own (e.g. "read-only" shell commands).
  *  - credential files (by path or in a shell command) are always denied
+ *  - except a .env file for your own Claude: that asks you ('secret'), and is never sent anywhere
  *  - read-only tools inside the shared folders are allowed; outside them the owner is asked
  *  - edits inside a :rw share are allowed
  *  - everything else (Bash, web, other edits, reads outside shares, ask_agent) asks the owner
  */
 export function decideTool(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): Decision {
+  const decision = decideToolPlain(toolName, input, ctx);
+  if (decision === 'deny' || !ctx.dotenv || !touchesDotenv(toolName, input, ctx)) return decision;
+  return 'secret';
+}
+
+/** A file tool on a .env file, or a shell command whose only secret is one. */
+function touchesDotenv(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): boolean {
+  if (toolName === 'Bash') return typeof input.command === 'string' && mentionsOnlyDotenv(input.command);
+  const field = READ_TOOLS[toolName] ?? WRITE_TOOLS[toolName];
+  if (field === undefined) return false;
+  if (isDotenvPath(resolveTarget(ctx.cwd, input[field]))) return true;
+  return READ_TOOLS[toolName] !== undefined && namesOf(input).some(isDotenvPath);
+}
+
+/**
+ * The file names a search is limited to (Glob's pattern, Grep's glob), each alternative of a
+ * `{a,b}` on its own and with its wildcards out, so `.env*` names .env and `*.pem` a key.
+ */
+const namesOf = (input: Record<string, unknown>): string[] =>
+  [input.pattern, input.glob]
+    .filter((v): v is string => typeof v === 'string')
+    .flatMap((g) => [g, ...g.split(/[{},]/).map((part) => part.split(/[\\/]/).at(-1)?.replace(/[*?[\]!]/g, '') ?? '')])
+    .filter(Boolean);
+
+function decideToolPlain(toolName: string, input: Record<string, unknown>, ctx: PolicyContext): Decision {
+  // Your own Claude's .env: judged as any file there, then it asks you (decideTool).
+  const dotenv = ctx.dotenv === true && touchesDotenv(toolName, input, ctx);
   if (ctx.askOnly && changesMain(toolName, input, ctx)) return 'deny';
   if (ctx.guest && toolName.startsWith('mcp__beluga__')) return 'deny';
   if (ALWAYS_OK.has(toolName)) return 'allow';
@@ -102,12 +140,13 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
   }
   // Commands on a friend's computer: their Beluga decides; secrets are refused on both ends.
   if (toolName === 'mcp__beluga__run_on_peer' || toolName === 'mcp__beluga__run_on') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
-  if (toolName === 'Bash') return typeof input.command === 'string' && mentionsSecret(input.command) ? 'deny' : 'ask';
+  if (toolName === 'Bash') return typeof input.command === 'string' && mentionsSecret(input.command) && !dotenv ? 'deny' : 'ask';
   if (toolName === 'mcp__beluga_view__show') return decideShow(input, ctx);
   const readField = READ_TOOLS[toolName];
   if (readField) {
     const target = resolveTarget(ctx.cwd, input[readField]);
-    if (isSecretPath(target) || (typeof input.pattern === 'string' && isSecretPath(input.pattern))) return 'deny';
+    if (!dotenv && (isSecretPath(target) || namesOf(input).some(isSecretPath))) return 'deny';
+    if ([target, ...namesOf(input)].some((n) => isSecretPath(n) && !isDotenvPath(n))) return 'deny';
     if (ctx.roots.some((r) => inside(path.resolve(r), target))) return 'allow';
     // Outside the shared folders the owner decides (or it just runs, with full trust).
     return ctx.scope === 'full' ? 'allow' : 'ask';
@@ -115,7 +154,7 @@ export function decideTool(toolName: string, input: Record<string, unknown>, ctx
   const writeField = WRITE_TOOLS[toolName];
   if (writeField) {
     const target = resolveTarget(ctx.cwd, input[writeField]);
-    if (isSecretPath(target)) return 'deny';
+    if (isSecretPath(target) && !dotenv) return 'deny';
     if (ctx.autoEdit && inside(path.resolve(ctx.cwd), target)) return 'allow';
     if (ctx.fixup && inside(path.resolve(ctx.fixup), target)) return 'allow';
     if (ctx.scope !== 'full' && !ctx.roots.some((r) => inside(path.resolve(r), target))) return 'deny';
@@ -151,12 +190,23 @@ function changesMain(toolName: string, input: Record<string, unknown>, ctx: Poli
     return !(ctx.fixup && inside(path.resolve(ctx.fixup), target)) && !ctx.syncMain?.conflicted?.(target);
   }
   if (toolName === 'Bash') return !(typeof input.command === 'string' && (isReadOnlyCommand(input.command) || (ctx.syncMain !== undefined && isSyncMainCommand(input.command, ctx.syncMain))));
+  // A view whose command could change something (so the refusal says why, not "credential files").
+  if (toolName === 'mcp__beluga_view__show') {
+    const view = input.view && typeof input.view === 'object' ? (input.view as Record<string, unknown>) : {};
+    const source = SourceSchema.safeParse(view.source);
+    return source.success && source.data.kind === 'command' && !mentionsSecret(source.data.command) && !isReadOnlyCommand(source.data.command);
+  }
   // A file fetched from a friend may not land in the main folder.
   if (toolName === 'mcp__beluga__get_peer_file') return typeof input.save_to === 'string' && inside(path.resolve(ctx.cwd), resolveTarget(ctx.cwd, input.save_to.replace(/^~(?=$|\/)/, process.env.HOME ?? '~')));
   return false;
 }
 
 export const DENY_REASON = 'Beluga blocked this: credential files are off-limits, and this request may only use the shared folders.';
+
+/** The owner said no to a .env file: what Claude can do instead. */
+export const SECRET_DECLINED =
+  "The machine owner didn't allow this .env file. Don't try another way to read it. If you need a value from it, ask them in chat: " +
+  'they can add it in Settings › Environment (your commands and database views get it without you seeing it).';
 
 /** Why an ask-only run can't do it, and what to do instead. */
 export const ASK_ONLY_REASON =
