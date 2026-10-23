@@ -79,6 +79,37 @@ test('makes a task, then works on its page', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Activity' })).toContainText('ECB updates once a day anyway.');
 });
 
+test('a task merged into its plan looks finished: no Start, what happened instead; Reopen brings Start back', async ({ page }) => {
+  await openTasks(page);
+  await page.getByRole('button', { name: 'New Task', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'New Task' });
+  await sheet.getByRole('button', { name: 'Write title and goal myself' }).click();
+  await sheet.getByLabel('Title').fill('Merged already');
+  await sheet.getByRole('button', { name: 'Create Task' }).click();
+  await expect(sheet).toBeHidden();
+  await page.getByRole('row', { name: /Merged already, Todo/ }).click();
+  const start = page.getByRole('button', { name: 'Start with Claude' });
+  await expect(start).toBeVisible();
+
+  // Merged into the plan: its outcome, no Start on the page or in its ⋯ menu.
+  const props = page.getByRole('complementary', { name: 'Properties' });
+  await props.getByRole('button', { name: /^Todo$/ }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: /Merged into Plan/ }).click();
+  await expect(props).toContainText('Merged into Plan');
+  await expect(page.getByTestId('task-outcome')).toContainText('Merged into the plan · ships with the plan’s pull request');
+  await expect(start).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Start Worktree' })).toHaveCount(0);
+  await page.getByRole('navigation', { name: 'Where this task is' }).getByRole('button', { name: 'More' }).click();
+  const menu = page.getByRole('menu');
+  await expect(menu.getByRole('menuitem', { name: /Start with Claude|Start Worktree/ })).toHaveCount(0);
+
+  // ⋯ › Reopen the Task: back to Todo, and Start is back.
+  await menu.getByRole('menuitem', { name: /Reopen the Task/ }).click();
+  await expect(props).toContainText('Todo');
+  await expect(start).toBeVisible();
+  await expect(page.getByTestId('task-outcome')).toHaveCount(0);
+});
+
 test('a column’s +: describe it, pick a priority, Create; the card lands there and Claude writes its title', async ({ page }) => {
   await openTasks(page);
   await page.getByRole('tablist', { name: 'Show' }).getByRole('tab', { name: /^All/ }).click();
