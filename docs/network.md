@@ -1,16 +1,16 @@
-# The klaud network (Mac app)
+# The Orca network (Mac app)
 
 Friends, direct messages, groups and presence with **no server and no host**: every Mac is its
 own infrastructure. It runs in the daemon only when turned on (`"network": true` in
-`~/.klaud/settings.json`, or `KLAUD_NETWORK=1`), next to today's rooms, which are unchanged.
-The Mac app turns it on and off while klaud runs (`network.setEnabled`: saved in settings, started
+`~/.orca/settings.json`, or `ORCA_NETWORK=1`), next to today's rooms, which are unchanged.
+The Mac app turns it on and off while Orca runs (`network.setEnabled`: saved in settings, started
 or stopped at once, no restart).
 Code: `src/net/mesh/` (the node), `src/core/network.ts` (the core service and the `network.*`
 API), `src/core/network-store.ts` (the shared state's `network`).
 
 ## Your address
 
-Everything is derived from your identity (`~/.klaud/identity.json`) with HKDF, so it is the same
+Everything is derived from your identity (`~/.orca/identity.json`) with HKDF, so it is the same
 on every run:
 
 - the **address**: an Ed25519 Noise key pair your Mac listens on in the Hyperswarm DHT;
@@ -23,9 +23,9 @@ observers can tell when that address is online.
 
 ## Adding a friend
 
-An invitation is a one-time link (`klaud://add#<22 chars>`, 128 bits, works for 24 h) and a
+An invitation is a one-time link (`orca://add#<22 chars>`, 128 bits, works for 24 h) and a
 short code (`K7QM-4XPA-R2TD`, 60 bits, works for 1 h). The code can also be sent as a link,
-`klaud://add?code=K7QM-4XPA-R2TD`. Codes are typed loosely: any case, dashes or spaces anywhere,
+`orca://add?code=K7QM-4XPA-R2TD`. Codes are typed loosely: any case, dashes or spaces anywhere,
 O for 0, I or L for 1. Neither form contains your address: the inviter listens on a temporary key
 pair made from the secret (HKDF for the link; scrypt for the code, see below), so only someone
 holding it can find you. On that connection:
@@ -38,7 +38,7 @@ inviter → pair_ok    { profile, proof }   (or pair_refused)
 The proofs bind both cards to that one connection (no replay, no one in the middle without the
 secret), and the invitee must dial with the address on its card. Friend invitations are
 single-use and last 24 h; five bad proofs in a minute pause an invitation for the rest of it.
-Group invitations (`klaud://join#…`, `klaud://join?code=…`) work the same, are multi-use (the
+Group invitations (`orca://join#…`, `orca://join?code=…`) work the same, are multi-use (the
 link for 7 days, the code for an hour), and either let people in at once (`auto`) or leave a
 request for an admin (`network.groups.approve`). Someone who was removed always needs an admin.
 
@@ -73,7 +73,7 @@ nothing went through for 5 minutes are dropped.
 
 ## Groups
 
-A group is a signed, append-only log kept on every member's Mac (`~/.klaud/groups/<id>.jsonl`):
+A group is a signed, append-only log kept on every member's Mac (`~/.orca/groups/<id>.jsonl`):
 
 - entry: `{ id, group, author, lamport, parents, type, ts, body, sig }`; `id` = SHA-256 of the
   canonical JSON of the rest, `sig` = the author's identity signature over `id`, `lamport` = 1 +
@@ -105,7 +105,7 @@ before. Keys never leave the daemon; the shared state and the API only carry vie
 
 ## Offline
 
-Direct messages to an offline friend wait in your outbox (`~/.klaud/outbox.json`, 7 days) and
+Direct messages to an offline friend wait in your outbox (`~/.orca/outbox.json`, 7 days) and
 are sent when a link comes up; the receiver acknowledges and de-duplicates. Group entries are
 held by every member, so you catch up from whoever is online.
 
@@ -131,12 +131,12 @@ offline.
 - Open invitations (their link and code) are in the shared state, so any screen attached to
   your daemon can show and copy them, as with room invites.
 - Appear offline only changes what others are shown: your Mac still links and acknowledges
-  messages, so a friend's klaud could tell you're connected.
+  messages, so a friend's Orca could tell you're connected.
 - The relay learns who talks to whom and how much (not what).
 - A join request reaches the admin whose invitation was used, not every admin.
 - Groups you didn't ask for are only fetched from friends (an admin adding you directly) and
   from the admin whose invite you used; at most 500 groups and 100 people per group.
-- One Mac per identity: a second klaud process with the same `~/.klaud` doesn't start the network.
+- One Mac per identity: a second Orca process with the same `~/.orca` doesn't start the network.
 
 ## Chats: channels, files and Claudes
 
@@ -158,7 +158,7 @@ preferences). Your **main channel** ("All Friends" to you, "kay’s friends" to 
 your friends, made the first time you open it (nobody gets a group they didn't expect before that); every
 friend you add later joins it (you're its admin). Its id is `mainChannel` in settings.
 
-**Files.** Attaching a file takes it into `~/.klaud/chat-files/<sha>/<name>` (an APFS clone: instant, no space;
+**Files.** Attaching a file takes it into `~/.orca/chat-files/<sha>/<name>` (an APFS clone: instant, no space;
 a copy elsewhere), so Send is instant and later edits to the original don't change what friends get. Folders
 are refused (compress them first); there's no size limit, 20 files per message; pasted media goes to the daemon
 in 4 MB parts. Friends pull a file straight from a Mac that has it over the same Noise links as messages:
@@ -194,7 +194,7 @@ chats** says (`chatClaude`: friends in the chat (default), people you trust, onl
 who isn't your friend needs your trust either way), never someone you blocked; 20 asks per person an hour
 and 60 from everyone together, two answers at a time, 20 waiting. Chat text and files can't open or close
 the prompt's own sections (`<chat>`, `<message>`, `<file>` in them are defused). An ask older than 10 minutes when
-it reaches you (you were offline) isn't answered, and each is answered once (`~/.klaud/chat-claude.json`).
+it reaches you (you were offline) isn't answered, and each is answered once (`~/.orca/chat-claude.json`).
 If your Claude can't answer, you get a notification; the others just see it stop.
 
 ## Tasks between Claudes (the gateway)
@@ -209,19 +209,19 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
   cancelled, summary, data?, files[{name, size, b64? | ref + sha256, image?}], log}`, `task_cancel`,
   `task_question {id, qid, questions}` / `task_answer {id, qid, answers? | skip}`,
   `file_get {id, ref, offset}` / `file_chunk {id, ref, offset, b64, eof, error?}`, and `card` (your
-  trust in them, what your klaud offers them, your projects, your "Ask me for…" note). Each rides in a frame `{f, m}` that
+  trust in them, what your Orca offers them, your projects, your "Ask me for…" note). Each rides in a frame `{f, m}` that
   the other side acknowledges (`{ack}`): over a mesh link as `gw`, in a room as a `gateway` body
-  sent to one person. Requests, results and cancels wait in `~/.klaud/tasks/outbox.json` until
+  sent to one person. Requests, results and cancels wait in `~/.orca/tasks/outbox.json` until
   acknowledged (resent every 20 s while reachable, 7 days at most); updates and cards are only
   sent to someone reachable now. Over the network only friends are heard; a result is only taken
   from the person the task went to, and only once.
 - **Receiving**: your rules and capability settings decide (see *Approvals and rules* below):
   declined (with the reason), let in at once (you trust them, or a rule of yours covers it), or you
   are asked. It runs in the project it names (if there is one) or a scratch folder
-  (`~/.klaud/tasks/work/<task>`), with the usual tool approvals (none with full trust; commands
+  (`~/.orca/tasks/work/<task>`), with the usual tool approvals (none with full trust; commands
   without asking where Run commands is Allow for their trust level). `run` tasks go through
-  PeerRun (`serveTask`: secrets never, limits per person); `file` tasks are sent by klaud itself.
-  Claude ends its answer with a fenced `klaud-result` block for data and files; data is checked
+  PeerRun (`serveTask`: secrets never, limits per person); `file` tasks are sent by Orca itself.
+  Claude ends its answer with a fenced `orca-result` block for data and files; data is checked
   against `expects` on both sides; files only from the folder it ran in (and the folders you chose;
   anywhere with full trust), never secrets: up to 512 KB in all inline, bigger ones fetched in
   pieces (see *Big files*). A file request someone said yes to (or that a rule of theirs covers) may
@@ -236,13 +236,13 @@ Code: `src/core/gateway/` (protocol, the gateway, the receiving side, files), `s
   "Ask Alice's Claude?" card in the conversation (Ask / Edit / Not now, 10 minutes). Results reach
   your Claude as data in a `<task_result>` block, marked untrusted. If its turn ended before the
   result came (or it didn't wait for it), a new turn starts in that conversation with it.
-- **Inside `~/.klaud`** everything stays private to friends' tasks (`isSecretPath`, compared as
-  the Mac compares names: any case, links followed, the old `~/.klaude` too) except the scratch
+- **Inside `~/.orca`** everything stays private to friends' tasks (`isSecretPath`, compared as
+  the Mac compares names: any case, links followed, the older homes too) except the scratch
   folders tasks run in (`tasks/work/`) and the files results brought (`tasks/files/`).
-- **Files**: `~/.klaud/tasks/tasks.json` (the last 200 tasks, friends' cards, and results whose
+- **Files**: `~/.orca/tasks/tasks.json` (the last 200 tasks, friends' cards, and results whose
   big files are still coming), `outbox.json`, `files/<task>/` (what results brought),
-  `work/<task>/` (and `work/<task>/screens/`); `~/.klaud/rules.json` (your rules, 0600); your
-  capability settings are `capabilities` in `~/.klaud/settings.json`.
+  `work/<task>/` (and `work/<task>/screens/`); `~/.orca/rules.json` (your rules, 0600); your
+  capability settings are `capabilities` in `~/.orca/settings.json`.
 
 ### Approvals and rules
 
@@ -250,7 +250,7 @@ A request from a friend is decided in this order; the first that applies wins:
 
 1. you blocked them: declined;
 2. it needs a capability that is **Off** for their trust level: declined, saying which
-   ("kay's klaud doesn't let you see the screen");
+   ("kay's Orca doesn't let you see the screen");
 3. a **Decline** or **Ask** rule of yours catches it: declined, or you're asked. Rules can always
    narrow what trust allows;
 4. you trust them (Trusted or Full trust) and every capability it needs is **Allow**: it runs
@@ -294,12 +294,12 @@ terminal on its own), trust alone decides as before.
 corner of the screen, above whatever app you're in, without taking the keyboard from it (the app
 shell's `request-popup` window, `src-tauri/src/popup.rs`; the card is `src/popup/`, what it shows is
 `gateway/popup-model.ts`): "mia's Claude wants to take a screenshot of your desktop", what it needs,
-**See more** (everything their Claude sent, where it would run, what goes back, and "Open in Klaud
+**See more** (everything their Claude sent, where it would run, what goes back, and "Open in Orca
 for more choices…"), and **Decline** / **Allow Always** / **Allow**. Allow Always writes the same
 rule as the approval card's Always (this project, this command, until you change it). Up to three
-requests show at once ("2 more waiting in Klaud"); × hides them until something new comes (they
-still wait in Klaud and the menu bar). In place of a banner, only the notification's sound plays.
-On Do Not Disturb (Klaud's, or your status) or while you appear offline it stays away. In a browser
+requests show at once ("2 more waiting in Orca"); × hides them until something new comes (they
+still wait in Orca and the menu bar). In place of a banner, only the notification's sound plays.
+On Do Not Disturb (Orca's, or your status) or while you appear offline it stays away. In a browser
 (development, tests) `popup.html` in another tab hears the window over a BroadcastChannel.
 
 **Notifications.** In the Mac app a friend's task request gets the pop-up instead of a banner. The
@@ -330,11 +330,11 @@ nothing). Defaults:
 
 Your card tells each friend what you offer them (their Claude sees it in `who_can`).
 
-- **See the screen**: the task's Claude gets a `screenshot` tool (MCP server `klaud_task`, only in
+- **See the screen**: the task's Claude gets a `screenshot` tool (MCP server `orca_task`, only in
   runs for a request that needed `screen` and was let in): `screencapture -x` of the main display,
   or of one app's front window (found through CoreGraphics' window list). It sees a smaller JPEG
   (`sips`); the PNG goes back with the result as an image. At most 4 per request. macOS asks you
-  once to allow Screen Recording for klaud.
+  once to allow Screen Recording for Orca.
 - **Device info**: a `device_info` tool: macOS version and build, model and chip (from
   `system_profiler`, never the serial number), cores, memory, disk space, battery (`pmset`),
   uptime, local network addresses (no MAC addresses, nothing looked up outside), and the apps in
