@@ -3,6 +3,8 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* A wide right panel narrows the page: what's on it follows its own width, not the window's. */
+  container-type: inline-size;
 }
 .column {
   max-width: 60rem;
@@ -146,6 +148,7 @@ button.stat:disabled {
 }
 .bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px 14px;
   padding: 6px 8px 8px 14px;
@@ -172,6 +175,10 @@ button.stat:disabled {
 }
 .bar [role='combobox'] {
   max-width: 180px;
+}
+/* Narrow: the button goes under the fields, still on the right. */
+.bar > :last-child {
+  margin-left: auto;
 }
 
 /* ---- lists */
@@ -411,4 +418,32 @@ button.rowPr:focus-visible {
 .rowState.tone_ok,
 .rowState.tone_muted {
   color: var(--text-3);
+}
+
+/* A narrow page (a wide right panel beside it): less margin, and the rows keep their names. */
+@container (max-width: 640px) {
+  .column {
+    padding: 22px 16px 32px;
+    gap: 22px;
+  }
+  .sectionHint {
+    display: none;
+  }
+  .rowWhen {
+    width: auto;
+    min-width: 40px;
+  }
+  .rowBranch {
+    display: none;
+  }
+}
+@container (max-width: 460px) {
+  .rowState,
+  .rowWhen {
+    display: none;
+  }
+}
+/* Images and files waiting to go, above the words. */
+.waiting {
+  min-width: 0;
 }

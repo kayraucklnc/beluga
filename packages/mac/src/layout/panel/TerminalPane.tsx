@@ -130,7 +130,9 @@ export function TerminalPane({ where, onClose }: { where: 'drawer' | 'panel'; on
   const exits = useApp((st) => st.termExits);
   const prefs = usePrefs();
   const wsId = view.kind === 'workspace' ? view.id : undefined;
-  const tabbed = useTabbed(wsId);
+  // On a project's home the terminal is its main folder's, so it starts in the project you're looking at.
+  const mainId = useApp((st) => (view.kind === 'project' ? st.projects.find((p) => p.id === view.id)?.workspaces.find((w) => w.kind === 'main')?.id : undefined));
+  const tabbed = useTabbed(wsId ?? mainId);
   const items = useMenuItems(where, wsId);
   const focus = usePanelRuntime((r) => (wsId && r.focus?.wsId === wsId ? r.focus.kind : undefined));
   const askedFocus = usePanelRuntime((r) => r.termFocus);
