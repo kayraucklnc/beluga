@@ -2,7 +2,7 @@ import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { APP_VERSION } from '../lib/boot.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { usePrefs } from '../lib/prefs.js';
 import { Backdrop } from './Backdrop.js';
 import { Glass, GlassBackdrop } from './Glass.js';
@@ -71,12 +71,12 @@ function Progress({ step, go }: { readonly step: Step; readonly go: (to: Step) =
 }
 
 /**
- * The first time Klaud opens: a welcome, a five-part tour of what it does, a look and a few
+ * The first time Beluga opens: a welcome, a five-part tour of what it does, a look and a few
  * settings, then the app. A full window of its own over the app (which is already there
  * underneath, so finishing simply lifts this away).
  */
 export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'finished' | 'skipped') => void; readonly onArrive?: () => void }) {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const prefs = usePrefs();
   const projects = useApp((st) => st.projects.filter((p) => p.root).length);
   const still = (useReducedMotion() ?? false) || prefs.reduceMotion;
@@ -180,7 +180,7 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
         data-clear={step === 'ready' && !still ? '' : undefined}
         role="dialog"
         aria-modal="true"
-        aria-label="Welcome to Klaud"
+        aria-label="Welcome to Beluga"
         initial={{ opacity: 0 }}
         animate={finale ? { opacity: inside ? 0 : 1 } : leaving ? { opacity: 0, scale: 1.04, filter: 'blur(14px)' } : { opacity: 1, scale: 1, filter: 'blur(0px)' }}
         transition={finale ? { duration: 0.12 } : { duration: leaving ? 0.6 : 0.8, ease: EASE_OUT }}

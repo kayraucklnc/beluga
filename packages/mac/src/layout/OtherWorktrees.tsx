@@ -1,7 +1,7 @@
-import type { Project } from '@klaud/workspaces/types.js';
+import type { Project } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
-import { useApp, useUi } from '../lib/klaud.js';
+import { useApp, useUi } from '../lib/beluga.js';
 import { useOtherActivity } from '../views/worktree-info-state.js';
 import { orderOutside, outsideActivity, outsideOf, visibleOutside } from './outside-model.js';
 import { Row } from './sidebar-parts.js';
@@ -12,7 +12,7 @@ import { Fragment } from 'react';
 import o from './other-worktrees.module.css';
 
 /**
- * A project's worktrees made outside Klaud, listed after Klaud's own as ordinary rows: each
+ * A project's worktrees made outside Beluga, listed after Beluga's own as ordinary rows: each
  * with its name and, quietly, where it is; most recently active first. With many, the most
  * recent few show, then "Show N more". Cleaning them up is on the Worktrees page.
  */
@@ -49,7 +49,7 @@ export function OutsideWorktrees({ p, indent }: { p: Project; indent: number }) 
           aria-expanded={expanded}
           icon={<Icon name={expanded ? 'chevronUp' : 'chevronDown'} size={10} />}
           label={expanded ? 'Show Fewer' : `Show ${hidden.length} more`}
-          detail={expanded ? 'Show only the most recent worktrees made outside Klaud' : `${hidden.length} more worktree${hidden.length === 1 ? '' : 's'} made outside Klaud, less recently active`}
+          detail={expanded ? 'Show only the most recent worktrees made outside Beluga' : `${hidden.length} more worktree${hidden.length === 1 ? '' : 's'} made outside Beluga, less recently active`}
           onClick={toggle}
         />
       ) : null}

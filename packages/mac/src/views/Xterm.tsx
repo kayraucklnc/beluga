@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef } from 'react';
-import { useKlaud } from '../lib/klaud.js';
+import { useBeluga } from '../lib/beluga.js';
 import { getPrefs, usePrefs } from '../lib/prefs.js';
 import { terminalOptions } from '../lib/terminal-look.js';
 import { openExternal } from '../lib/system.js';
@@ -14,9 +14,9 @@ import s from '../views/terminal.module.css';
 const css = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const themeNow = () => ({ background: css('--term-bg') || css('--bg'), foreground: css('--text'), cursor: css('--accent') === 'AccentColor' ? css('--text') : css('--accent'), selectionBackground: 'rgba(120,140,190,0.35)' });
 
-/** One terminal program, drawn by xterm.js from its raw bytes (the program runs in klaud). */
+/** One terminal program, drawn by xterm.js from its raw bytes (the program runs in Beluga). */
 export function Xterm({ termKey, start, focus = true }: { termKey: string; start: (size: { cols: number; rows: number }) => void; focus?: boolean }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const box = useRef<HTMLDivElement>(null);
   const live = useRef<{ term: Terminal; refit: () => void } | undefined>(undefined);
   const look = terminalOptions(usePrefs());

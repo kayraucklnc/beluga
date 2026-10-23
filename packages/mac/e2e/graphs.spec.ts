@@ -72,7 +72,7 @@ test('a broken graph says what is wrong and shows its JSON', async ({ page }) =>
   await openWorkspace(page, 'webhook-retries');
   await untilIdle(page);
   // Your own message is Markdown too: a block with a mistake in it.
-  await composer(page).fill('```klaud-graph\n{"nodes": [{"id": "a"}]}\n```');
+  await composer(page).fill('```beluga-graph\n{"nodes": [{"id": "a"}]}\n```');
   await composer(page).press('Enter');
   await expect(page.getByText(/Can’t draw this graph: nodes\[0\]\.label/).last()).toBeVisible({ timeout: 10_000 });
 });

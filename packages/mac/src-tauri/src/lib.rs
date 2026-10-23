@@ -1,13 +1,15 @@
-//! klaud for macOS: the native shell around the web view.
+//! Beluga for macOS: the native shell around the web view.
 //!
 //! The app owns only what the operating system is for: the window (vibrancy, traffic lights),
-//! the menu bar, the tray, notifications, `klaud://` links, and keeping klaud's daemon running.
-//! Everything klaud does happens in the daemon, which the terminal app attaches to as well.
+//! the menu bar, the tray, notifications, `beluga://` (and the older `klaud://`) links, and
+//! keeping Beluga's daemon running. Everything Beluga does happens in the daemon, which the
+//! terminal app attaches to as well.
 
 mod daemon;
 mod focus;
 mod menu;
 mod popup;
+mod rename;
 mod requests;
 mod sounds;
 mod update_rules;
@@ -23,7 +25,7 @@ use tauri_plugin_notification::NotificationExt;
 
 /// What the app keeps track of while it runs.
 pub struct AppState {
-    /// Held while klaud is started or restarted, so two requests never start two daemons.
+    /// Held while Beluga is started or restarted, so two requests never start two daemons.
     pub lock: tokio::sync::Mutex<()>,
     /// The daemon this app started (it stops it on quit), if any.
     pub child: Mutex<Option<Child>>,
@@ -38,7 +40,7 @@ async fn daemon_endpoint(app: tauri::AppHandle) -> Result<daemon::Endpoint, Stri
     daemon::ensure(&app, &[]).await
 }
 
-/// Start klaud again with these arguments (joining a friend's room from a link): the current
+/// Start Beluga again with these arguments (joining a friend's room from a link): the current
 /// room is left first. Only `["join", "<invite link>"]` is accepted.
 #[tauri::command]
 async fn restart_daemon(
@@ -48,7 +50,7 @@ async fn restart_daemon(
     daemon::restart(&app, &args).await
 }
 
-/// The klaud:// links that opened the app before the window was ready to hear about them
+/// The beluga:// (and klaud://) links that opened the app before the window was ready to hear about them
 /// (handed over once).
 #[tauri::command]
 fn take_pending_links(state: tauri::State<'_, AppState>) -> Vec<String> {
@@ -81,7 +83,7 @@ fn set_menu_state(
 #[tauri::command]
 fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32, unread: Option<u32>) {
     let unread = unread.unwrap_or(waiting);
-    if let Some(tray) = app.tray_by_id("klaud") {
+    if let Some(tray) = app.tray_by_id("beluga") {
         let _ = tray.set_title(if unread > 0 {
             Some(unread.to_string())
         } else {
@@ -94,7 +96,7 @@ fn set_tray_status(app: tauri::AppHandle, waiting: u32, working: u32, unread: Op
     }
 }
 
-/// Your klaud network status in the menu-bar menu (`None`: the network is off, no status items).
+/// Your Beluga network status in the menu-bar menu (`None`: the network is off, no status items).
 #[tauri::command]
 fn set_tray_presence(app: tauri::AppHandle, presence: Option<menu::TrayPresence>) {
     requests::set_presence(&app, presence);
@@ -123,9 +125,9 @@ fn system_idle_seconds() -> Option<f64> {
     }
 }
 
-/// "Klaud · 2 waiting for you · 3 new · 1 Claude working", leaving out what's zero.
+/// "Beluga · 2 waiting for you · 3 new · 1 Claude working", leaving out what's zero.
 fn tray_tip(waiting: u32, working: u32, unread: u32) -> String {
-    let mut parts = vec!["Klaud".to_string()];
+    let mut parts = vec!["Beluga".to_string()];
     if waiting > 0 {
         parts.push(format!("{waiting} waiting for you"));
     }
@@ -154,7 +156,14 @@ fn focus_main(app: &tauri::AppHandle) {
 pub fn run() {
     // The quiet relaunch after an update installed while you were away: no window, no focus.
     let background = updater::launched_in_background();
+    // The update from Klaud lands in Klaud.app: it becomes Beluga.app and starts from there.
+    let bundle = updater::bundle_path();
+    if rename::move_bundle(bundle.as_deref(), &updater::kept_env()) {
+        return;
+    }
     let mut context = tauri::generate_context!();
+    // Klaud's settings, window place and localStorage, before anything reads them.
+    rename::migrate_data(&context.config().identifier, bundle.is_some());
     if background {
         for w in &mut context.config_mut().app.windows {
             w.visible = false;
@@ -168,7 +177,7 @@ pub fn run() {
     };
     let app = tauri::Builder::default()
         .activate_ignoring_other_apps(!background)
-        // A klaud:// link opened while klaud runs is passed on to the link handler below.
+        // A beluga:// link opened while Beluga runs is passed on to the link handler below.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             focus_main(app);
         }))
@@ -243,7 +252,7 @@ pub fn run() {
                 }
             }
             menu::tray(&handle)?;
-            // Banners (and their sound) even while Klaud is in front.
+            // Banners (and their sound) even while Beluga is in front.
             sounds::present_in_front();
             // A friend's request on a notification: Review… / Approve / Always Allow / Decline.
             requests::register_actions(&handle)?;
@@ -264,7 +273,7 @@ pub fn run() {
                     .map(str::to_owned);
                 let _ = taps.emit("notification-tap", channel);
             })?;
-            // klaud:// links: join a friend's room.
+            // beluga:// and klaud:// links: join a friend's room.
             let links = handle.clone();
             app.deep_link().on_open_url(move |event| {
                 for url in event.urls() {
@@ -278,7 +287,7 @@ pub fn run() {
                     let _ = links.emit("deep-link", url.to_string());
                 }
             });
-            // Start klaud's daemon right away, so the window has something to show.
+            // Start Beluga's daemon right away, so the window has something to show.
             tauri::async_runtime::spawn(async move {
                 let _ = daemon::ensure(&handle, &[]).await;
             });
@@ -286,7 +295,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window keeps klaud (and your room) running in the menu bar.
+            // Closing the window keeps Beluga (and your room) running in the menu bar.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
@@ -295,12 +304,12 @@ pub fn run() {
             }
         })
         .build(context)
-        .expect("Klaud couldn't start");
+        .expect("Beluga couldn't start");
 
     app.run(|app, event| match event {
         // Clicking the Dock icon brings the window back.
         RunEvent::Reopen { .. } => focus_main(app),
-        // Quitting leaves the room (unless the terminal app started klaud; it decides then),
+        // Quitting leaves the room (unless the terminal app started Beluga; it decides then),
         // then puts a downloaded update in place.
         RunEvent::Exit => {
             daemon::stop(app);
@@ -316,12 +325,12 @@ mod tests {
 
     #[test]
     fn the_tray_tip_says_only_what_is_there() {
-        assert_eq!(tray_tip(0, 0, 0), "Klaud");
-        assert_eq!(tray_tip(2, 0, 2), "Klaud · 2 waiting for you");
+        assert_eq!(tray_tip(0, 0, 0), "Beluga");
+        assert_eq!(tray_tip(2, 0, 2), "Beluga · 2 waiting for you");
         assert_eq!(
             tray_tip(1, 2, 4),
-            "Klaud · 1 waiting for you · 3 new · 2 Claudes working"
+            "Beluga · 1 waiting for you · 3 new · 2 Claudes working"
         );
-        assert_eq!(tray_tip(0, 1, 0), "Klaud · 1 Claude working");
+        assert_eq!(tray_tip(0, 1, 0), "Beluga · 1 Claude working");
     }
 }

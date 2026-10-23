@@ -54,7 +54,7 @@ function Chevrons() {
 }
 
 /**
- * Klaud's pop-up button: shows the chosen value; opens a menu with a checkmark on it, like a Mac
+ * Beluga's pop-up button: shows the chosen value; opens a menu with a checkmark on it, like a Mac
  * pop-up (the chosen row over the button when it fits). Long lists get a search field. Keys:
  * ↑↓ / Return / Space open it; in it ↑↓ Home End PageUp PageDown move, Return picks, Esc closes,
  * typing jumps to an option (or filters, with the search field). Typing on the closed button

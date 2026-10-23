@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import type { WsRole } from '@klaud/protocol.js';
-import { inviteChoice } from '@klaud/ui/invite-menus.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import type { WsRole } from '@beluga/protocol.js';
+import { inviteChoice } from '@beluga/ui/invite-menus.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Avatar, Button } from '../../components/ui.js';
-import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { Select } from '../settings-controls.js';
 import type { NativeMenuProps } from './index.js';
 import { Choice, Section, Sheet, Tag } from './parts.js';
@@ -24,7 +24,7 @@ const ACCESS: ReadonlyArray<{ value: Access; label: string }> = [
  */
 export function WorkspaceShareSheet({ menu, close }: NativeMenuProps<'ws_share'>) {
   const api = useApi();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const ws = useApp((st) => findWorkspace(st.projects, menu.id));
   const project = useApp((st) => st.projects.find((p) => p.workspaces.some((w) => w.id === menu.id)));
   const members = useApp((st) => st.members[menu.id]);

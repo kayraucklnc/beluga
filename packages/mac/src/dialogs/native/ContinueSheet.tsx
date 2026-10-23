@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Field, FormSheet, Popup, TextArea, TextInput } from '../../components/FormSheet.js';
-import { useApi, useApp } from '../../lib/klaud.js';
+import { useApi, useApp } from '../../lib/beluga.js';
 
 /**
  * Continue a questions-only chat (a project's main folder) in a new worktree: what Claude should

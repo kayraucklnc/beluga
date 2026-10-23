@@ -1,9 +1,9 @@
-import type { AppState } from '@klaud/core/store.js';
-import type { Workspace } from '@klaud/workspaces/types.js';
-import { formatBytes } from '@klaud/shared/format.js';
+import type { AppState } from '@beluga/core/store.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { Icon } from '../../components/Icon.js';
 import { useActions } from '../../lib/actions.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import { Row } from '../../layout/sidebar-parts.js';
 import s from '../../layout/Sidebar.module.css';
 

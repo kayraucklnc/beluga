@@ -6,7 +6,7 @@ import type { Project, Workspace } from '../src/workspaces/types.js';
 import { OUTSIDE_MANY, OUTSIDE_SHOWN, folderTail, isOutside, orderOutside, outsideActivity, outsideLocation, outsideOf, tildePath, visibleOutside } from '../packages/mac/src/layout/outside-model.js';
 import { asksBeforeWork } from '../packages/mac/src/lib/work-asked.js';
 
-/** Worktrees made outside Klaud in the Mac sidebar (packages/mac/src/layout/outside-model.ts), and what asks before it starts work. */
+/** Worktrees made outside Beluga in the Mac sidebar (packages/mac/src/layout/outside-model.ts), and what asks before it starts work. */
 
 const ws = (over: Partial<Workspace>): Workspace => ({
   id: 'w', projectRoot: '/p', name: 'w', path: '/Users/k/code/w', kind: 'worktree', branch: 'w', base: 'origin/main',
@@ -15,8 +15,8 @@ const ws = (over: Partial<Workspace>): Workspace => ({
 const many = (n: number): Workspace[] => Array.from({ length: n }, (_, i) => ws({ id: `o${i}`, name: `wt-${String(i).padStart(2, '0')}` }));
 const log = [] as unknown as AppState['log'];
 
-describe('worktrees made outside Klaud', () => {
-  it('are the external, live worktrees: not Klaud’s own, chats, the main folder or archived ones', () => {
+describe('worktrees made outside Beluga', () => {
+  it('are the external, live worktrees: not Beluga’s own, chats, the main folder or archived ones', () => {
     const p: Project = {
       id: 'p1', name: 'app', root: '/p', base: 'origin/main',
       workspaces: [ws({ id: 'mine', external: false }), ws({ id: 'main', kind: 'main', external: false }), ws({ id: 'chat', kind: 'chat', external: false }), ws({ id: 'old', archived: true }), ws({ id: 'madrid' })],
@@ -34,8 +34,8 @@ describe('worktrees made outside Klaud', () => {
     expect(outsideLocation({ home }, ws({ external: false }))).toBeUndefined();
     expect(tildePath(home, '/Users/kay/x')).toBe('/Users/kay/x');
     expect(tildePath('', '/Users/k/x')).toBe('/Users/k/x');
-    // Klaud's folder by its name, even where it's really the old ~/.klaude.
-    expect(tildePath(home, '/Users/k/.klaude/workspaces/api-1/fix')).toBe('~/.klaud/workspaces/api-1/fix');
+    // Beluga's folder by its name, even where it's really the old ~/.klaude.
+    expect(tildePath(home, '/Users/k/.klaude/workspaces/api-1/fix')).toBe('~/.beluga/workspaces/api-1/fix');
     expect(tildePath(home, '/Users/k/.klauder/x')).toBe('~/.klauder/x');
     expect(folderTail('/private/var/folders/x')).toBe('…/folders/x');
   });

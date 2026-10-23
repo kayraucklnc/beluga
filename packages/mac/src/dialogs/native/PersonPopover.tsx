@@ -1,9 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Popover from '@radix-ui/react-popover';
 import { type ReactNode, useState } from 'react';
-import type { PeerInfo } from '@klaud/protocol.js';
-import { useApp } from '../../lib/klaud.js';
-import type { UiStore } from '../../lib/klaud.js';
+import type { PeerInfo } from '@beluga/protocol.js';
+import { useApp } from '../../lib/beluga.js';
+import type { UiStore } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 import { Alert } from './parts.js';
 import { RunCommandSheet } from './PeerSheets.js';

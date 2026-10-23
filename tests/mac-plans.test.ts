@@ -120,7 +120,7 @@ describe('the plan’s one sentence, its bar and its feed (KLD-22)', () => {
   it('from a task’s worktree: done, and what the milestone waits on', () => {
     const v = planView(active({ runs: { api: { checkAsked: 1 } } }), NO_BOARD);
     const asReview = { ...v, milestones: v.milestones.map((m) => ({ ...m, tasks: m.tasks.map((t) => ({ ...t, state: 'review' as const })) })) };
-    expect(taskHeadline(asReview, 'a')).toEqual({ who: 'claude', text: 'Done. Claude is checking “API”; Klaud merges this into the plan' });
+    expect(taskHeadline(asReview, 'a')).toEqual({ who: 'claude', text: 'Done. Claude is checking “API”; Beluga merges this into the plan' });
   });
 
   it('switching to Autopilot says what changes from now on, and what happens at once', () => {

@@ -38,11 +38,11 @@ const pidIn = (file: string): number | undefined => {
 export async function freshHome(home: string): Promise<string[]> {
   const cleaned: string[] = [];
   if (existsSync(home) && readdirSync(home).length && !existsSync(path.join(home, MARK))) {
-    throw new Error(`Won't use ${home} as the demo home: it isn't an e2e home (no ${MARK}), so it may be real klaud data`);
+    throw new Error(`Won't use ${home} as the demo home: it isn't an e2e home (no ${MARK}), so it may be real Beluga data`);
   }
   for (const name of ['daemon.json', 'daemon.lock']) {
     const pid = pidIn(path.join(home, name));
-    // A pid can be reused: only stop it if it's still a klaud daemon.
+    // A pid can be reused: only stop it if it's still a Beluga daemon.
     if (pid && pid !== process.pid && alive(pid) && /daemon/.test(commandOf(pid))) {
       await stopGroups({ pids: [pid] }, { graceMs: 2000 });
       cleaned.push(`stopped the demo daemon pid ${pid} an earlier run left (${name})`);
@@ -50,7 +50,7 @@ export async function freshHome(home: string): Promise<string[]> {
   }
   rmSync(home, { recursive: true, force: true });
   mkdirSync(home, { recursive: true });
-  writeFileSync(path.join(home, MARK), 'A demo home for klaud e2e runs: emptied at the start of each run.\n');
+  writeFileSync(path.join(home, MARK), 'A demo home for Beluga e2e runs: emptied at the start of each run.\n');
   return cleaned;
 }
 
@@ -65,7 +65,11 @@ const tail = (file: string, lines = 15): string => {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** A running demo daemon: where the page finds it (what the dev server's /__klaud/endpoint would say). */
+/** Each variable as BELUGA_<name> and as the KLAUD_<name> it was before the rename. */
+const both = (vars: Record<string, string>): Record<string, string> =>
+  Object.fromEntries(Object.entries(vars).flatMap(([name, value]) => [[`BELUGA_${name}`, value], [`KLAUD_${name}`, value]]));
+
+/** A running demo daemon: where the page finds it (what the dev server's /__beluga/endpoint would say). */
 export interface Demo {
   readonly home: string;
   readonly claude: string;
@@ -74,7 +78,7 @@ export interface Demo {
 }
 
 /**
- * Start klaud's demo (simulated friends and Claudes) as a daemon in its own e2e home, with its own
+ * Start Beluga's demo (simulated friends and Claudes) as a daemon in its own e2e home, with its own
  * pretend ~/.claude and fake gh, and wait until it's ready: bob and mia are in the room and zoe knocks.
  * Its temp folders (the demo's projects, chats, tasks) are in its home too, so they go with it.
  */
@@ -88,7 +92,7 @@ export async function startDemo({ home, claude, port }: { home: string; claude: 
 
   const log = path.join(home, 'e2e-daemon.log');
   const out = openSync(log, 'a');
-  // Its temp folder is its own, but tsx's compile cache is shared (or each daemon compiles klaud again).
+  // Its temp folder is its own, but tsx's compile cache is shared (or each daemon compiles Beluga again).
   const cache = `tsx-${process.getuid?.() ?? 0}`;
   mkdirSync(path.join(os.tmpdir(), cache), { recursive: true });
   symlinkSync(path.join(os.tmpdir(), cache), path.join(tmp, cache));
@@ -96,7 +100,12 @@ export async function startDemo({ home, claude, port }: { home: string; claude: 
   const child = spawn(process.execPath, ['--import', 'tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'], {
     cwd: repo,
     // GitHub is a stand-in (e2e/fake-gh.mjs): its PRs are whatever a test writes to fake-gh.json.
-    env: { ...process.env, KLAUD_HOME: home, KLAUD_CLAUDE_HOME: claude, TMPDIR: `${tmp}/`, KLAUD_GH: path.join(import.meta.dirname, 'fake-gh.mjs'), KLAUD_FAKE_GH: path.join(home, 'fake-gh.json'), KLAUD_DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', KLAUD_ALLOW_ORIGINS: `http://localhost:${port}` },
+    // Under both names: the core reads BELUGA_* first, so an inherited BELUGA_HOME (the run's) must not win.
+    env: {
+      ...process.env,
+      TMPDIR: `${tmp}/`,
+      ...both({ HOME: home, CLAUDE_HOME: claude, GH: path.join(import.meta.dirname, 'fake-gh.mjs'), FAKE_GH: path.join(home, 'fake-gh.json'), DEMO_PACE: process.env.E2E_DEMO_PACE ?? '0.3', ALLOW_ORIGINS: `http://localhost:${port}` }),
+    },
     stdio: ['ignore', out, out],
   });
   const stop = () => stopDaemon(home, child.pid);

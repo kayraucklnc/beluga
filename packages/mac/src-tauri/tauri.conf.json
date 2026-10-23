@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Klaud",
+  "productName": "Beluga",
   "version": "0.9.0",
-  "identifier": "sh.klaud.mac",
+  "identifier": "io.github.kayraucklnc.beluga",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Klaud",
+        "title": "Beluga",
         "width": 1320,
         "height": 860,
         "minWidth": 860,
@@ -33,10 +33,10 @@
     }
   },
   "plugins": {
-    "deep-link": { "desktop": { "schemes": ["klaud"] } },
+    "deep-link": { "desktop": { "schemes": ["beluga", "klaud"] } },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZBNTczOTFEMDA3MThFNDIKUldSQ2puRUFIVGxYYW1jeXhaT0tISG5CQXh3dWJibUJ0MVMvVm5TWDFNNzN4UXY4OHNHaENwR3kK",
-      "endpoints": ["https://github.com/kayraucklnc/klaud/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/kayraucklnc/beluga/releases/latest/download/latest.json"],
       "requireSignedVersion": true
     }
   },
@@ -46,7 +46,7 @@
     "targets": ["app", "dmg"],
     "category": "DeveloperTool",
     "shortDescription": "Every project and the Claude working in it, with friends",
-    "longDescription": "Klaud for macOS: the same Klaud as the terminal app — worktrees per task, Claude you can watch, and friends with their own Claude in the same room.",
+    "longDescription": "Beluga for macOS: the same Beluga as the terminal app — worktrees per task, Claude you can watch, and friends with their own Claude in the same room.",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.png"],
     "resources": { "resources/daemon/": "daemon/" },
     "externalBin": ["binaries/node"],

@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { inApp } from '../lib/boot.js';
-import { dndActive } from '@klaud/shared/quiet.js';
+import { dndActive } from '@beluga/shared/quiet.js';
 import { popupPublisher } from './popup-bridge.js';
 import { popupRequests } from './popup-model.js';
 import { REQUEST_NOTIFICATION, type RequestAction, outsideStep, parseRequestMenuId, trayRequests } from './request-actions.js';
@@ -76,7 +76,7 @@ export function runRequestMenuItem(id: string, client: SocketClient): boolean {
   return true;
 }
 
-/** Do Not Disturb (Klaud's or your status), or appearing offline: friends' requests wait quietly. */
+/** Do Not Disturb (Beluga's or your status), or appearing offline: friends' requests wait quietly. */
 const quietNow = (st: ReturnType<SocketClient['store']['getState']>): boolean =>
   dndActive(st.prefs.notify) || Boolean(st.network.self && (st.network.self.appearOffline || st.network.self.presence.state === 'dnd'));
 

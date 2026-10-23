@@ -1,9 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import s from './sheet.module.css';
 
-/** Someone sent you a klaud:// link: join their room (and leave the one you're in)? */
+/** Someone sent you a beluga:// link: join their room (and leave the one you're in)? */
 export function JoinSheet({ invite, onJoin, onCancel }: { invite: string; onJoin: () => void; onCancel: () => void }) {
   const room = useApp((st) => st.room);
   const others = useApp((st) => st.peers.length - 1);

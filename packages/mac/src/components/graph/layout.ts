@@ -21,7 +21,7 @@ let threaded: Promise<Elk> | undefined;
 let local: Promise<Elk> | undefined;
 
 function inWorker(graph: ElkInput, timeoutMs: number): Promise<ElkOutput> {
-  threaded ??= import('elkjs/lib/elk-api.js').then((mod) => new (classOf(mod))({ workerFactory: () => new Worker(new URL('./elk.worker.ts', import.meta.url), { type: 'module', name: 'klaud-graph-layout' }) }));
+  threaded ??= import('elkjs/lib/elk-api.js').then((mod) => new (classOf(mod))({ workerFactory: () => new Worker(new URL('./elk.worker.ts', import.meta.url), { type: 'module', name: 'beluga-graph-layout' }) }));
   const mine = threaded;
   return mine.then(
     (elk) =>

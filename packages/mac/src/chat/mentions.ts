@@ -91,7 +91,7 @@ export function splitMentions(text: string, world: MentionWorld): MentionPiece[]
 }
 
 /** The link a mention becomes in a message's Markdown (the renderer draws it as a pill). */
-export const MENTION_SCHEME = 'klaud-mention:';
+export const MENTION_SCHEME = 'beluga-mention:';
 
 export const mentionHref = (ref: MentionRef): string => `${MENTION_SCHEME}${encodeURIComponent(JSON.stringify(ref))}`;
 

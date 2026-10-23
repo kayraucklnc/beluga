@@ -1,4 +1,4 @@
-import { formatBytes } from '@klaud/shared/format.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { Alert } from '../../components/Alert.js';
 import type { WorktreeRow } from './worktrees-model.js';
 
@@ -34,7 +34,7 @@ export function BatchAlert({ batch, rows, rebuildable, onConfirm, onCancel }: { 
     );
   }
   if (batch === 'delete') {
-    const branches = rows.filter((r) => r.madeBy.kind === 'klaud' && r.ws.branch).length;
+    const branches = rows.filter((r) => r.madeBy.kind === 'beluga' && r.ws.branch).length;
     const saved = rows.filter((r) => r.ws.archive).length;
     return (
       <Alert
@@ -46,7 +46,7 @@ export function BatchAlert({ batch, rows, rebuildable, onConfirm, onCancel }: { 
             <p>
               {saved ? `${saved === n ? 'Their archives' : plural(saved, 'archive')} (uncommitted work and files of yours kept when archived) ` : ''}
               {saved && branches ? 'and ' : ''}
-              {branches ? `${branches === 1 ? 'the branch' : `${branches} branches`} Klaud made (commits only there) ` : ''}
+              {branches ? `${branches === 1 ? 'the branch' : `${branches} branches`} Beluga made (commits only there) ` : ''}
               {saved || branches ? 'go, with their conversations.' : 'Their conversations go.'} Branches other tools made are kept.
             </p>
             <p>You can’t undo this.</p>
@@ -66,7 +66,7 @@ export function BatchAlert({ batch, rows, rebuildable, onConfirm, onCancel }: { 
         <>
           <p>Everything of yours in them is kept: uncommitted work, new files and ignored files like .env. Their build files are removed ({freed}), and the folders go.</p>
           <p>Their branches and conversations stay. Restore any of them from Archived on this page, as it was.</p>
-          {outside ? <p>{outside === 1 ? 'One was' : `${outside} were`} made outside Klaud: the app that made {outside === 1 ? 'it' : 'them'} may still have {outside === 1 ? 'it' : 'them'} open.</p> : null}
+          {outside ? <p>{outside === 1 ? 'One was' : `${outside} were`} made outside Beluga: the app that made {outside === 1 ? 'it' : 'them'} may still have {outside === 1 ? 'it' : 'them'} open.</p> : null}
         </>
       }
       confirm={{ label: `Archive ${plural(n, 'Worktree')}`, onClick: onConfirm }}

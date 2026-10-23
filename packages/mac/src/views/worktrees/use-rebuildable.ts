@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import type { ArchivePreview } from '@klaud/workspaces/archive.js';
-import type { ApiProxy as KlaudApi } from '@klaud/ipc/client.js';
+import type { ArchivePreview } from '@beluga/workspaces/archive.js';
+import type { ApiProxy as BelugaApi } from '@beluga/ipc/client.js';
 
 /**
  * How much of each worktree is dependencies, builds and caches (what archiving or Free Up Space
@@ -30,7 +30,7 @@ export function forgetRebuildable(ids: readonly string[]): void {
   changed();
 }
 
-async function lookAt(api: KlaudApi, queue: ReadonlyArray<{ id: string; size: number | undefined }>): Promise<void> {
+async function lookAt(api: BelugaApi, queue: ReadonlyArray<{ id: string; size: number | undefined }>): Promise<void> {
   if (running) return;
   running = true;
   try {
@@ -46,7 +46,7 @@ async function lookAt(api: KlaudApi, queue: ReadonlyArray<{ id: string; size: nu
 }
 
 /** Plans for these worktrees (as they come in): by id. */
-export function useRebuildable(api: KlaudApi, rows: ReadonlyArray<{ id: string; size: number | undefined }>): ReadonlyMap<string, ArchivePreview> {
+export function useRebuildable(api: BelugaApi, rows: ReadonlyArray<{ id: string; size: number | undefined }>): ReadonlyMap<string, ArchivePreview> {
   useSyncExternalStore(
     (l) => {
       listeners.add(l);

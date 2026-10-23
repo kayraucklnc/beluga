@@ -5,7 +5,7 @@ import { expect, test, type Page } from './fixtures.js';
  * event draws again only the card it's about (the chat's other cards, and a running card's
  * finished steps, stay as they were drawn), and clicking a sidebar row answers within 100 ms (the
  * median; none past 150 ms).
- * Rows count their renders into `window.__KLAUD_RENDERS__` (lib/render-count.ts).
+ * Rows count their renders into `window.__BELUGA_RENDERS__` (lib/render-count.ts).
  */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
@@ -13,7 +13,7 @@ const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textar
 const NAMES = Array.from({ length: 8 }, (_, i) => `calm-${i + 1}`);
 
 type Renders = Record<string, number>;
-const renders = (page: Page): Promise<Renders> => page.evaluate(() => ({ ...window.__KLAUD_RENDERS__ }));
+const renders = (page: Page): Promise<Renders> => page.evaluate(() => ({ ...window.__BELUGA_RENDERS__ }));
 
 /** A second connection to the demo daemon from the page (the app's own boot code), for driving it. */
 async function daemon<T>(page: Page, fn: string, arg: unknown): Promise<T> {
@@ -30,7 +30,7 @@ async function daemon<T>(page: Page, fn: string, arg: unknown): Promise<T> {
 
 test('eight chats streaming: only the card an event is about draws again, and the sidebar answers within 100 ms', async ({ page }) => {
   test.setTimeout(120_000);
-  await page.addInitScript(() => (window.__KLAUD_RENDERS__ = {}));
+  await page.addInitScript(() => (window.__BELUGA_RENDERS__ = {}));
   // Without StrictMode's second render (development only): timed as the shipped app runs.
   await page.goto('/?nostrict');
   await expect(sidebar(page)).toBeVisible();

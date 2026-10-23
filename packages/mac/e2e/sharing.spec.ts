@@ -78,7 +78,7 @@ test("Ask Claude addresses the message with a chip, not typed text", async ({ pa
 });
 
 test('Share a Folder: share with one person, see it listed, stop sharing', async ({ page }) => {
-  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-share-')), 'sketches');
+  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-share-')), 'sketches');
   mkdirSync(dir);
   writeFileSync(path.join(dir, 'idea.md'), '# idea\n');
   await page.keyboard.press('Meta+K');

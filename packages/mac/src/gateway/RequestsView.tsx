@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { type TaskView, isFinal, oneLine, stateLabel, stateTone, targetLabel } from '@klaud/core/gateway/model.js';
+import { type TaskView, isFinal, oneLine, stateLabel, stateTone, targetLabel } from '@beluga/core/gateway/model.js';
 import { Select } from '../components/Select.js';
 import { Avatar, Button, Dot, Empty, Segmented, cx } from '../components/ui.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { TaskCard } from './TaskCard.js';
 import s from './gateway.module.css';
 
@@ -69,7 +69,7 @@ function Row({ task, open, onToggle }: { task: TaskView; open: boolean; onToggle
 /** Your "Ask me for…" note: what friends' Claudes see when they look for who can help. */
 function Note() {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const saved = useApp((st) => st.gateway.note);
   const [text, setText] = useState<string | undefined>();
   const value = text ?? saved;
@@ -102,7 +102,7 @@ function Note() {
 /** Ask someone's Claude yourself (it goes straight to them: you're the one asking). */
 function Compose({ onDone }: { onDone: () => void }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const people = useApp((st) => {
     const self = st.selfId;
     const friends = st.network.enabled ? st.network.friends.map((f) => ({ id: f.peerId, name: f.name })) : [];
@@ -145,7 +145,7 @@ export function RequestsView() {
   const [open, setOpen] = useState<string | undefined>();
   const [composing, setComposing] = useState(false);
   if (!gateway.enabled) {
-    return <Empty icon="hand" title="Requests need the Klaud app" detail="Tasks between Claudes run in the Klaud app's daemon." />;
+    return <Empty icon="hand" title="Requests need the Beluga app" detail="Tasks between Claudes run in the Beluga app's daemon." />;
   }
   const list = gateway.tasks.filter((t) => t.direction === tab).slice().reverse();
   const count = (d: Tab): number => gateway.tasks.filter((t) => t.direction === d).length;

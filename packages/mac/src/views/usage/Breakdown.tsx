@@ -1,13 +1,13 @@
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
-import type { AppState } from '@klaud/core/store.js';
-import { formatBytes } from '@klaud/shared/format.js';
-import { activityOf, stateOf } from '@klaud/ui/workspace-models.js';
+import type { AppState } from '@beluga/core/store.js';
+import { formatBytes } from '@beluga/shared/format.js';
+import { activityOf, stateOf } from '@beluga/ui/workspace-models.js';
 import { Icon } from '../../components/Icon.js';
 import { ProjectIcon } from '../../components/ProjectIcon.js';
 import { ActionsContext } from '../../components/SpecMenu.js';
 import { Dot, IconButton, Segmented, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useKlaud } from '../../lib/klaud.js';
+import { useBeluga } from '../../lib/beluga.js';
 import { workspaceItems } from '../../layout/Sidebar.js';
 import { Bar, Shimmer, slotColor } from './parts.js';
 import { projectAnchor } from './StorageCard.js';
@@ -70,7 +70,7 @@ function Trailing({ when, children }: { when: string; children: ReactNode }) {
 
 function Row({ r, state, scale, color, measured, now }: { r: WsRow; state: AppState; scale: Scale; color: string; measured: boolean; now: number }) {
   const actions = useActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const w = r.ws;
   const st = stateOf(state, w, 0, now);
   const running = activityOf(state.log, `ws:${w.id}`).running;
@@ -125,7 +125,7 @@ function Row({ r, state, scale, color, measured, now }: { r: WsRow; state: AppSt
 }
 
 function AgentsRow({ p, scale, color }: { p: ProjectRow; scale: Scale; color: string }) {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const agents = p.agents!;
   const clean = (): void => ui.openMenu({ kind: 'agents', projectId: p.project.id });
   return (

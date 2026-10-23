@@ -1,4 +1,4 @@
-import type { ProjectEarnings } from '@klaud/core/earnings-store.js';
+import type { ProjectEarnings } from '@beluga/core/earnings-store.js';
 import { useEffect, useRef, useState } from 'react';
 import { formatMoney, missingNote, openStripe, ratesWhen, updatedAgo, useConverted, useMoney, useProjectEarnings } from '../lib/earnings.js';
 import { brandText } from '../lib/brand.js';

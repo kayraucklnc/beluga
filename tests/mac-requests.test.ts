@@ -12,8 +12,8 @@ const tool: Approval = { id: 'ap3', kind: 'tool', title: 'Your Claude wants to u
 
 describe('buttons outside the window', () => {
   it('only a friend’s request gets Approve / Always / Decline on its notification; anything else only Review', () => {
-    expect(notificationActions({ approval: 'ap1', task: 't_abcdefghijk' })).toEqual({ actionTypeId: 'klaud-request' });
-    expect(notificationActions({ approval: 'ap3' })).toEqual({ actionTypeId: 'klaud-review' });
+    expect(notificationActions({ approval: 'ap1', task: 't_abcdefghijk' })).toEqual({ actionTypeId: 'beluga-request' });
+    expect(notificationActions({ approval: 'ap3' })).toEqual({ actionTypeId: 'beluga-review' });
     expect(notificationActions({})).toEqual({});
   });
 

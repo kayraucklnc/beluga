@@ -19,7 +19,7 @@ export function Hello({ onStart }: { readonly onStart: () => void }) {
     <div className={s.hello}>
       <Mark size={124} />
       <Rise delay={1.5} className={s.wordmark}>
-        Klaud
+        Beluga
       </Rise>
       <h1 className={s.heroTitle}>
         <Words text="Every project. Every agent." delay={1.75} />
@@ -132,12 +132,12 @@ export function Ready({ projects, onAddProject, onOpen }: { readonly projects: n
       <Rise delay={0.8} className={s.heroBody}>
         {has
           ? `Your ${projects === 1 ? 'project is' : `${projects} projects are`} here. Start a worktree from any of them, and Claude gets to work on its own branch.`
-          : 'Add a project to begin. Klaud finds its branches and worktrees, and every new task gets its own.'}
+          : 'Add a project to begin. Beluga finds its branches and worktrees, and every new task gets its own.'}
       </Rise>
       <Rise delay={1.05} className={s.readyButtons}>
         {has ? (
           <GlowButton onClick={onOpen} autoFocus>
-            Open Klaud <Icon name="arrowRight" size={13} />
+            Open Beluga <Icon name="arrowRight" size={13} />
           </GlowButton>
         ) : (
           <>

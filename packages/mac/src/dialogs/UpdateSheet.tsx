@@ -67,7 +67,7 @@ function Ready() {
   const released = day(available.date);
   return (
     <>
-      <Head icon="download" title={`Klaud ${shortVersion(available.version)} is ready`} sub={`You have ${state.current}${released ? ` · released ${released}` : ''}`} />
+      <Head icon="download" title={`Beluga ${shortVersion(available.version)} is ready`} sub={`You have ${state.current}${released ? ` · released ${released}` : ''}`} />
       <Notes text={available.notes} />
       {claude > 0 && !installing ? (
         <p className={cx(s.line, s.warn)}>
@@ -83,7 +83,7 @@ function Ready() {
         </label>
       ) : null}
       <div className={s.foot}>
-        <Button variant="quiet" onClick={() => void updateLater()} disabled={installing} title="Installs the next time you quit Klaud">
+        <Button variant="quiet" onClick={() => void updateLater()} disabled={installing} title="Installs the next time you quit Beluga">
           Later
         </Button>
         <span className={s.spacer} />
@@ -104,7 +104,7 @@ function News() {
   const news = state.news!;
   return (
     <>
-      <Head icon="check" title={`Klaud is now ${shortVersion(news.version)}`} sub="Updated while you were away." />
+      <Head icon="check" title={`Beluga is now ${shortVersion(news.version)}`} sub="Updated while you were away." />
       <Notes text={news.notes} />
       <div className={s.foot}>
         <Button variant="primary" onClick={() => void dismissNews()}>
@@ -124,10 +124,10 @@ function Status() {
     downloading: ['download', 'Downloading the update…'],
     error: ['alert', 'Couldn’t check for updates'],
   };
-  const [icon, title] = head[state.phase] ?? ['check', 'Klaud is up to date'];
+  const [icon, title] = head[state.phase] ?? ['check', 'Beluga is up to date'];
   return (
     <>
-      <Head icon={icon} title={title} sub={`Klaud ${state.current} · last checked ${lastCheckedLabel(state.lastCheck).toLowerCase()}`} />
+      <Head icon={icon} title={title} sub={`Beluga ${state.current} · last checked ${lastCheckedLabel(state.lastCheck).toLowerCase()}`} />
       {state.phase === 'downloading' ? (
         <div className={s.bar} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((state.progress ?? 0) * 100)}>
           <div className={s.barFill} style={{ width: `${Math.round((state.progress ?? 0) * 100)}%` }} />
@@ -165,7 +165,7 @@ export function UpdateSheet() {
 }
 
 /**
- * Klaud's updates in the window, whether or not klaud itself is reachable: the sheet, and the
+ * Beluga's updates in the window, whether or not Beluga itself is reachable: the sheet, and the
  * pill in a corner when there's no sidebar to hold it (see Sidebar for the usual place).
  */
 export function UpdateLayer({ connected }: { connected: boolean }) {

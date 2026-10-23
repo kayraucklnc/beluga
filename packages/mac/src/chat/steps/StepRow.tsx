@@ -1,10 +1,10 @@
 import { type ReactNode, memo, useRef } from 'react';
-import type { StepRecord, StepSummary, ToolFamily } from '@klaud/shared/steps.js';
-import { toolFamily } from '@klaud/shared/steps.js';
-import { formatDuration } from '@klaud/shared/text.js';
+import type { StepRecord, StepSummary, ToolFamily } from '@beluga/shared/steps.js';
+import { toolFamily } from '@beluga/shared/steps.js';
+import { formatDuration } from '@beluga/shared/text.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Avatar, Dot, cx } from '../../components/ui.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import { useLive } from '../../lib/live-motion.js';
 import { countRender } from '../../lib/render-count.js';
 import { StepDetail } from './StepDetail.js';
@@ -30,11 +30,11 @@ const ICONS: Record<ToolFamily, IconName> = {
   other: 'wand',
 };
 
-/** klaud's own tools, by what they do. */
-const KLAUD_ICONS: Readonly<Record<string, IconName>> = { who_can: 'people', list_peers: 'people', send_chat: 'chat', write_report: 'file', continue_in_worktree: 'branch', screenshot: 'image', device_info: 'info', wait_for: 'clock', check: 'clock', cancel: 'x' };
+/** Beluga's own tools, by what they do. */
+const BELUGA_ICONS: Readonly<Record<string, IconName>> = { who_can: 'people', list_peers: 'people', send_chat: 'chat', write_report: 'file', continue_in_worktree: 'branch', screenshot: 'image', device_info: 'info', wait_for: 'clock', check: 'clock', cancel: 'x' };
 
 export const iconOf = (step: Pick<StepSummary, 'kind' | 'tool'>): IconName =>
-  step.kind === 'thinking' ? 'bulb' : (KLAUD_ICONS[(step.tool ?? '').replace(/^mcp__(?:beluga|klaud)(_task)?__/, '')] ?? ICONS[toolFamily(step.tool)]);
+  step.kind === 'thinking' ? 'bulb' : (BELUGA_ICONS[(step.tool ?? '').replace(/^mcp__(?:beluga|klaud)(_task)?__/, '')] ?? ICONS[toolFamily(step.tool)]);
 
 const durationOf = (step: StepSummary, now: number, live: boolean): string | undefined => {
   if (step.durationMs !== undefined && step.status !== 'running') return step.durationMs < 1000 ? '<1s' : formatDuration(step.durationMs);
@@ -125,7 +125,7 @@ export const StepRow = memo(function StepRow({ step: given, open, onToggle, load
         record ? (
           <StepDetail record={record} />
         ) : (
-          <div className={cx(s.detail, s.quiet)}>{loading ? 'Loading…' : gone ? 'Klaud no longer has the details of this step.' : null}</div>
+          <div className={cx(s.detail, s.quiet)}>{loading ? 'Loading…' : gone ? 'Beluga no longer has the details of this step.' : null}</div>
         )
       ) : null}
     </div>

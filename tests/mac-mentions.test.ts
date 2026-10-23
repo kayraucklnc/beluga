@@ -41,11 +41,11 @@ describe('what a mention names', () => {
   it('becomes a link the message draws as a pill; code stays code', () => {
     const md = linkMentions('@mia look at @bob-api\n```\n@mia in code\n```\nand `@mia` inline', world);
     const [first, ...rest] = md.split('\n');
-    expect(first).toMatch(/^\[@mia\]\(klaud-mention:[^)]+\) look at \[@bob-api\]\(klaud-mention:[^)]+\)$/);
+    expect(first).toMatch(/^\[@mia\]\(beluga-mention:[^)]+\) look at \[@bob-api\]\(beluga-mention:[^)]+\)$/);
     expect(rest).toEqual(['```', '@mia in code', '```', 'and `@mia` inline']);
-    const href = /\((klaud-mention:[^)]+)\)/.exec(first!)![1]!;
+    const href = /\((beluga-mention:[^)]+)\)/.exec(first!)![1]!;
     expect(parseMentionHref(href)).toEqual({ kind: 'friend', label: 'mia', id: 'mia-peer-0001' });
-    expect(parseMentionHref('klaud-mention:%7Bnope')).toBeUndefined();
+    expect(parseMentionHref('beluga-mention:%7Bnope')).toBeUndefined();
   });
 });
 

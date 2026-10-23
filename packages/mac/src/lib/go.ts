@@ -1,5 +1,5 @@
-import type { AppState } from '@klaud/core/store.js';
-import { type TopTab, topTabs } from '@klaud/ui/workspace-models.js';
+import type { AppState } from '@beluga/core/store.js';
+import { type TopTab, topTabs } from '@beluga/ui/workspace-models.js';
 
 /**
  * The Mac app's places: Overview, Tasks and Chat (the sidebar's top), then Search, Usage,

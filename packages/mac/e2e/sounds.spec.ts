@@ -43,7 +43,7 @@ test('picks an 8-bit sound, with a ▶ preview for each, and keeps it', async ({
   await page.keyboard.press('Meta+,');
   await settings(page).getByRole('button', { name: 'Notifications', exact: true }).click();
   await expect(settings(page).getByText('8-bit · Coin', { exact: true })).toBeVisible();
-  await expect(settings(page).getByRole('slider', { name: 'Volume of Klaud’s sounds' })).toBeVisible();
+  await expect(settings(page).getByRole('slider', { name: 'Volume of Beluga’s sounds' })).toBeVisible();
   await reset(page);
 });
 
@@ -110,15 +110,15 @@ test('a different sound for each kind of notification', async ({ page }) => {
 
 /**
  * Whether notifications reach you. The browser has no app shell to ask macOS, so a test seeds
- * what macOS says in window.__KLAUD_NOTIFY_ACCESS__ and reads what the buttons asked the shell
- * for back from window.__KLAUD_NOTIFY_CALLS__ (lib/sounds/access.ts).
+ * what macOS says in window.__BELUGA_NOTIFY_ACCESS__ and reads what the buttons asked the shell
+ * for back from window.__BELUGA_NOTIFY_CALLS__ (lib/sounds/access.ts).
  */
 const soundGroup = (page: Page) => settings(page).locator('section', { has: page.getByRole('heading', { name: 'Sound' }) });
 const status = (page: Page) => settings(page).getByRole('status', { name: 'Notification status' });
-const shellCalls = (page: Page) => page.evaluate(() => window.__KLAUD_NOTIFY_CALLS__ ?? []);
+const shellCalls = (page: Page) => page.evaluate(() => window.__BELUGA_NOTIFY_CALLS__ ?? []);
 
 async function seedAccess(page: Page, access: object): Promise<void> {
-  await page.addInitScript((a) => void (window.__KLAUD_NOTIFY_ACCESS__ = a as never), access);
+  await page.addInitScript((a) => void (window.__BELUGA_NOTIFY_ACCESS__ = a as never), access);
 }
 
 test('Send Test Notification sits right under the sound, near the top', async ({ page }) => {
@@ -141,7 +141,7 @@ test('Send Test Notification sits right under the sound, near the top', async ({
   await send.click();
   const result = soundGroup(page).getByRole('status', { name: 'Test result' });
   await expect(result).toContainText('the banner shows at the top right of your screen');
-  await expect(result).toContainText('clicking in Klaud closes it');
+  await expect(result).toContainText('clicking in Beluga closes it');
   await expect(result).toContainText('You heard “Glass” here.');
   await expect(result).toContainText('Do Not Disturb');
   await result.getByRole('button', { name: 'Open Notification Settings' }).click();

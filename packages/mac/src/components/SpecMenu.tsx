@@ -1,9 +1,9 @@
 import * as Context from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import type { MouseEvent, ReactNode } from 'react';
-import { type MenuKind, menuSpec } from '@klaud/ui/menus.js';
+import { type MenuKind, menuSpec } from '@beluga/ui/menus.js';
 import { useActions } from '../lib/actions.js';
-import { useKlaud } from '../lib/klaud.js';
+import { useBeluga } from '../lib/beluga.js';
 import { Icon, type IconName } from './Icon.js';
 import { guiHint } from '../lib/gui-copy.js';
 import s from './SpecMenu.module.css';
@@ -13,7 +13,7 @@ import s from './SpecMenu.module.css';
  * options, the same ids, the same actions when picked. "Close" isn't needed here.
  */
 function useItems(menu: MenuKind, hide?: (id: string) => boolean) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const spec = menuSpec(client.store.getState(), menu);
   return (spec?.options ?? []).map((o, index) => ({ ...o, index })).filter((o) => o.id !== 'close' && !hide?.(o.id));
 }

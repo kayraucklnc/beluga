@@ -14,7 +14,7 @@ import { expect, test, type Page } from './fixtures.js';
 test.describe.configure({ mode: 'serial' });
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
-const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.email=e2e@klaud.dev', '-c', 'user.name=E2E Teammate', ...args], { cwd, stdio: 'pipe' }).toString();
+const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.email=e2e@beluga.dev', '-c', 'user.name=E2E Teammate', ...args], { cwd, stdio: 'pipe' }).toString();
 const LINES = Array.from({ length: 12 }, (_, i) => `note ${i + 1}`);
 const notes = (edits: Record<number, string> = {}) => `${LINES.map((l, i) => edits[i] ?? l).join('\n')}\n`;
 
@@ -30,7 +30,7 @@ async function openLanding(page: Page): Promise<string> {
 /** A teammate's clone of landing's origin that pushes a commit. */
 function teammatePushes(root: string, file: string, content: string, message: string): void {
   const origin = git(root, 'remote', 'get-url', 'origin').trim();
-  const clone = mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-mate-'));
+  const clone = mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-mate-'));
   git(clone, 'clone', '-q', origin, '.');
   writeFileSync(path.join(clone, file), content);
   git(clone, 'add', '.');
@@ -90,7 +90,7 @@ test('a commit shows its message, files and diff, and what to do with it', async
   await expect(detail.getByText('Sam Okafor')).toBeVisible();
   await expect(detail.getByText('sam@okafor.dev')).toBeVisible();
   await expect(detail.getByText('1 file changed')).toBeVisible();
-  await expect(detail.getByText('export const GET = () => rss({ title: "klaud blog" });')).toBeVisible();
+  await expect(detail.getByText('export const GET = () => rss({ title: "Beluga blog" });')).toBeVisible();
   for (const name of ['Copy Hash', 'Ask Claude About This Commit', 'Start a Worktree Here']) await expect(detail.getByRole('button', { name })).toBeVisible();
   // A parent opens that commit.
   await detail.locator('dd').getByRole('button').first().click();

@@ -113,7 +113,7 @@ test('the plan chat never scrolls sideways: long paths, code and tables wrap or 
 });
 
 test('an image path pasted in a sentence goes with the message as the image', async ({ page }) => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud plan-paste-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga plan-paste-'));
   const shot = path.join(dir, 'CleanShot 2026-10-22 at 00.08.43@2x.png');
   writeFileSync(shot, PNG);
   await newPlan(page, 'A plan to talk about a screenshot');

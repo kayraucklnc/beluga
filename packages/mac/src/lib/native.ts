@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { inApp } from './boot.js';
 import type { Actions } from './actions.js';
-import type { UiStore } from './klaud.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { UiStore } from './beluga.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { setPrefs, getPrefs, zoom } from './prefs.js';
 import { byMenu, showPanelTab, togglePanel, toggleTerminal } from './panel.js';
 import { PANEL_LABELS, PANEL_TABS, type PanelTab } from './panel-model.js';
@@ -63,7 +63,7 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'share-folder':
       return ui.openMenu({ kind: 'share_folder', launchDir: state.home, mine: state.myShares });
     case 'invite':
-      return void document.dispatchEvent(new CustomEvent('klaud:invite'));
+      return void document.dispatchEvent(new CustomEvent('beluga:invite'));
     case 'inbox':
       return ui.patch({ notices: true });
     case 'toggle-sidebar':
@@ -99,13 +99,13 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
       zoom(id.slice('zoom-'.length) as 'in' | 'out' | 'reset');
       return;
     case 'help-log':
-      return void client.api.local.openFolder(`${state.home}/.klaud/logs`);
+      return void client.api.local.openFolder(`${state.home}/.beluga/logs`);
   }
 }
 
 /**
- * A klaud:// link that joins a friend's room: "klaud://join/<invite>", or an invite itself
- * ("klaud://<host key>…#secret", what Invite copies), so clicking the link a friend sent works.
+ * A beluga:// link that joins a friend's room: "beluga://join/<invite>", or an invite itself
+ * ("beluga://<host key>…#secret", what Invite copies), so clicking the link a friend sent works.
  */
 export function inviteOf(url: string): string | undefined {
   const m = /^(?:beluga|klaud):\/\/join\/(.+)$/.exec(url);
@@ -113,7 +113,7 @@ export function inviteOf(url: string): string | undefined {
   return /^(?:beluga|klaud):\/\/[ybndrfg8ejkmcpqxot1uwisza345h769]{52}\/?(\?relay=[^\s#]+)?#[\w-]{16,256}$/.test(url) ? url : undefined;
 }
 
-/** Listen to the menu bar and to klaud:// links (only in the app). */
+/** Listen to the menu bar and to beluga:// links (only in the app). */
 export function useNative(client: SocketClient, ui: UiStore, actions: Actions, onInvite: (invite: string) => void): void {
   useEffect(() => {
     if (!inApp()) return;
@@ -125,7 +125,7 @@ export function useNative(client: SocketClient, ui: UiStore, actions: Actions, o
       const handled = new Set<string>();
       const open = (url: string): void => {
         if (handled.has(url)) return;
-        // klaud://add… and klaud://join#…: a friend's or a group's invitation (the klaud network).
+        // beluga://add… and beluga://join#…: a friend's or a group's invitation (the Beluga network).
         if (openNetworkLink(url)) return void handled.add(url);
         const invite = inviteOf(url);
         if (!invite) return;
@@ -192,8 +192,8 @@ export function useTrayStatus(client: SocketClient): void {
 }
 
 /**
- * Tell klaud whether this window is in front: what it shows isn't announced while it is, and
- * "Only when klaud isn't in front" waits until it isn't. Coming to the front refreshes PRs.
+ * Tell Beluga whether this window is in front: what it shows isn't announced while it is, and
+ * "Only when Beluga isn't in front" waits until it isn't. Coming to the front refreshes PRs.
  */
 export function useWindowFocus(client: SocketClient): void {
   useEffect(() => {

@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { channelOf } from '@klaud/core/store.js';
-import { currentQuestion } from '@klaud/ui/collab-actions.js';
-import { TRUST_INFO } from '@klaud/core/trust.js';
+import { channelOf } from '@beluga/core/store.js';
+import { currentQuestion } from '@beluga/ui/collab-actions.js';
+import { TRUST_INFO } from '@beluga/core/trust.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Dot, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { brandText } from '../lib/brand.js';
 import { Markdown } from './Markdown.js';
 import { useNow } from './Items.js';
@@ -84,7 +84,7 @@ function Approvals() {
 
 function Question() {
   const actions = useActions();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const state = useApp((st) => st);
   const q = state.questions[0];
   if (!q || q.channel !== channelOf(state.view)) return null;

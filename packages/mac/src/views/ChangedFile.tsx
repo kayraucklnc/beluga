@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import type { AppState, Location, ViewerState } from '@klaud/core/store.js';
-import type { ChangedFile as Change } from '@klaud/workspaces/git.js';
-import { shareNameOf } from '@klaud/shared/share-names.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import type { AppState, Location, ViewerState } from '@beluga/core/store.js';
+import type { ChangedFile as Change } from '@beluga/workspaces/git.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import type { DocVariant } from '../components/markdown/MarkdownDoc.js';
 import { isMarkdownFile, isVisualFile } from './reader/reader-model.js';
 import r from './reader/reader.module.css';

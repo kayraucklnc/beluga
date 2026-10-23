@@ -6,7 +6,7 @@ test.use({ storageState: { cookies: [], origins: [] } });
 
 test('a fresh install walks through the welcome, picks a look, and never sees it again', async ({ page }) => {
   await page.goto('/');
-  const welcome = page.getByRole('dialog', { name: 'Welcome to Klaud' });
+  const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
   await expect(welcome).toBeVisible();
   // The beluga opens the welcome, and comes back on the last step.
   await expect(welcome.getByRole('img', { name: 'Beluga' })).toBeVisible();
@@ -21,13 +21,13 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
 
   // The settings apply as they're changed.
   await welcome.getByRole('radio', { name: '⌘ Return' }).click();
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('klaud.prefs.v1') ?? '{}').sendWith)).toBe('cmd-enter');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('beluga.prefs.v1') ?? '{}').sendWith)).toBe('cmd-enter');
   await welcome.getByRole('button', { name: 'Finish', exact: true }).click();
   await expect(welcome.getByRole('img', { name: 'Beluga' })).toBeVisible();
 
-  await welcome.getByRole('button', { name: /Open Klaud|Look Around First/ }).click();
+  await welcome.getByRole('button', { name: /Open Beluga|Look Around First/ }).click();
   await expect(welcome).toHaveCount(0);
-  const mark = await page.evaluate(() => JSON.parse(localStorage.getItem('klaud.onboarding.v1') ?? '{}').how);
+  const mark = await page.evaluate(() => JSON.parse(localStorage.getItem('beluga.onboarding.v1') ?? '{}').how);
   expect(mark).toBe('finished');
 
   await page.reload();
@@ -37,10 +37,10 @@ test('a fresh install walks through the welcome, picks a look, and never sees it
 
 test('Skip Setup leaves at once, and the palette brings the welcome back', async ({ page }) => {
   await page.goto('/');
-  const welcome = page.getByRole('dialog', { name: 'Welcome to Klaud' });
+  const welcome = page.getByRole('dialog', { name: 'Welcome to Beluga' });
   await welcome.getByRole('button', { name: 'Skip Setup' }).click();
   await expect(welcome).toHaveCount(0);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('klaud.onboarding.v1') ?? '{}').how)).toBe('skipped');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('beluga.onboarding.v1') ?? '{}').how)).toBe('skipped');
 
   await page.keyboard.press('Meta+k');
   await page.keyboard.type('Onboard Again');

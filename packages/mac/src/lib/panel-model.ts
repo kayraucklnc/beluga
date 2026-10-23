@@ -94,7 +94,7 @@ type WsKind = 'chat' | 'main' | 'worktree' | string;
 
 /** The panel's tabs for what's on screen, in their fixed order. */
 export function panelTabsFor(view: View, wsKind?: WsKind): PanelTab[] {
-  // Scratch: what Claude saves to the workspace's .klaud/scratch/ while it works, live.
+  // Scratch: what Claude saves to the workspace's .beluga/scratch/ while it works, live.
   // Background: the commands Claude and its agents run there in the background (dev servers, tests), live.
   if (view.kind === 'workspace') return wsKind === 'chat' ? ['files', 'terminal', 'info', 'scratch', 'background'] : [...PANEL_TABS];
   // A project's home (and its History page): the project's history too.

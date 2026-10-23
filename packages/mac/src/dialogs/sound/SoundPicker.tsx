@@ -10,7 +10,7 @@ import s from './sound.module.css';
 const FAMILIES: readonly SoundFamily[] = ['chip', 'gen', 'mac', 'none'];
 
 const FAMILY_HINTS: Readonly<Record<SoundFamily, string>> = {
-  chip: 'Short 8-bit sounds, made by Klaud',
+  chip: 'Short 8-bit sounds, made by Beluga',
   gen: 'Soft sounds generated just for you',
   mac: 'The sounds that come with your Mac',
   none: 'Notifications stay silent',

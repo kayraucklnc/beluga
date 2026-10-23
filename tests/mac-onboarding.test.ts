@@ -13,7 +13,7 @@ describe('when the welcome shows', () => {
     expect(shouldShow(memory())).toBe(true);
   });
 
-  it('never shows to someone who used Klaud before it existed', () => {
+  it('never shows to someone who used Beluga before it existed', () => {
     expect(shouldShow(memory({ [PREFS_KEY]: '{}' }))).toBe(false);
   });
 

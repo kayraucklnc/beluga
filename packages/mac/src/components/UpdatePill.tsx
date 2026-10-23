@@ -4,7 +4,7 @@ import { cx } from './ui.js';
 import s from './update.module.css';
 
 /**
- * "Klaud 0.5 is ready": a small pill at the bottom of the sidebar once an update has
+ * "Beluga 0.5 is ready": a small pill at the bottom of the sidebar once an update has
  * downloaded (or, after one installed, "What's new"). Clicking it opens the update sheet.
  * Nothing at all the rest of the time. `floating`: no sidebar to sit in, so a corner.
  */

@@ -1,14 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { type AppState, channelOf, peerName } from '@klaud/core/store.js';
-import { localDirKey } from '@klaud/core/local-key.js';
-import { workspaceMentions } from '@klaud/core/mentions.js';
-import { composeState, queueIn } from '@klaud/ui/compose.js';
-import { localDirOf, mentionDir, openTarget, suggest, type Suggestion } from '@klaud/ui/suggest.js';
-import { shareNameOf } from '@klaud/shared/share-names.js';
+import { type AppState, channelOf, peerName } from '@beluga/core/store.js';
+import { localDirKey } from '@beluga/core/local-key.js';
+import { workspaceMentions } from '@beluga/core/mentions.js';
+import { composeState, queueIn } from '@beluga/ui/compose.js';
+import { localDirOf, mentionDir, openTarget, suggest, type Suggestion } from '@beluga/ui/suggest.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
 import { Icon } from '../components/Icon.js';
 import { Kbd, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { recipientLabel, recipientPrefix, toast, useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { recipientLabel, recipientPrefix, toast, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { ModelPicker } from './ModelPicker.js';
@@ -24,7 +24,7 @@ import { useMentionWorld, worktreeOf } from './Mention.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { openSheet } from '../lib/sheets.js';
 import { type ComposeMode, MODE_INFO, nextMode } from './compose-mode.js';
-import { isPlanHome, planForHome } from '@klaud/core/plans/model.js';
+import { isPlanHome, planForHome } from '@beluga/core/plans/model.js';
 import s from './composer.module.css';
 import d from './draft.module.css';
 
@@ -60,7 +60,7 @@ function placeholderOf(state: AppState, ui: { pending?: { kind: string; projectI
 }
 
 export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
-  const { ui, client } = useKlaud();
+  const { ui, client } = useBeluga();
   const api = useApi();
   const actions = useActions();
   const prefs = usePrefs();
@@ -158,8 +158,8 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
   }, [buffer]);
   useEffect(() => {
     const focus = (): void => ref.current?.focus();
-    document.addEventListener('klaud:focus-composer', focus);
-    return () => document.removeEventListener('klaud:focus-composer', focus);
+    document.addEventListener('beluga:focus-composer', focus);
+    return () => document.removeEventListener('beluga:focus-composer', focus);
   }, []);
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
@@ -198,7 +198,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
       if (compose.typing && !compose.busy) expectClaude(channel, state.log.filter((l) => l.type === 'agent' && l.channel === channel).length);
     }
     ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, typed].slice(-200), historyIndex: -1 });
-    // Image chips become links to the images (klaud keeps them) before the message goes.
+    // Image chips become links to the images (Beluga keeps them) before the message goes.
     if (text.includes('[image ') && !text.startsWith('/')) {
       api.attachments.expand(text, channel).then(
         (expanded) => deliver(expanded, urgent),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Dot } from '../../components/ui.js';
-import { useApi, useApp } from '../../lib/klaud.js';
+import { useApi, useApp } from '../../lib/beluga.js';
 import { connectionHint, connectionLine } from './connection-model.js';
 import s from './connection.module.css';
 

@@ -1,18 +1,18 @@
-import { activityOf } from '@klaud/ui/workspace-models.js';
-import { liveFrom } from '@klaud/core/plans/progress.js';
-import { pulseOf, pulseWords } from '@klaud/core/plans/watchdog.js';
-import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isFinished, isOpen, openBlockers, progressOf } from '@klaud/core/board/model.js';
+import { activityOf } from '@beluga/ui/workspace-models.js';
+import { liveFrom } from '@beluga/core/plans/progress.js';
+import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
+import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isFinished, isOpen, openBlockers, progressOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, Tip, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useApp, useKlaud, toast } from '../lib/klaud.js';
+import { useApp, useBeluga, toast } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { useClock } from '../plans/use-plans.js';
 import { WaitingLine } from '../plans/WaitingLine.js';
 import { LabelChip, PrChip } from './marks.js';
 import { dueText } from './tasks-model.js';
-import type { LogItem } from '@klaud/core/store.js';
+import type { LogItem } from '@beluga/core/store.js';
 import { useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
@@ -118,7 +118,7 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
 /** Right-click (and ⋯) on a task: open it, its worktree, start one (or reopen a finished one), change it, copy, delete. */
 export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const { api, act, open, openWorktree } = useTaskActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const projects = useApp((s) => s.projects);
   return (issue) => {
     // Only a worktree that's still here (an archived one can be restored from its page).

@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
-import type { AgentOrigin, CcSession } from '@klaud/core/claude-code/model.js';
-import type { Project, Workspace } from '@klaud/workspaces/types.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { AgentOrigin, CcSession } from '@beluga/core/claude-code/model.js';
+import type { Project, Workspace } from '@beluga/workspaces/types.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
 import { Dot, cx } from '../components/ui.js';
 import { type Actions, useActions } from '../lib/actions.js';
-import { toast, useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { showUndo } from '../lib/undo-toast.js';
 import { agentElapsed, agentLabel, openActivity, typeLabel } from '../claude-code/cc-model.js';
 import { type Residue, type SubAgent, agentResidue, agentTitle, isAgentWorktree, modelLabel, subAgentsUnder } from '../claude-code/subagents-model.js';
@@ -19,7 +19,7 @@ import s from './subagents.module.css';
  * Sub-agents in the sidebar: Claude's helpers, not your work. They sit under the conversation
  * that started them (a small robot, quieter than a worktree), running ones first; a few show,
  * the rest behind "N more". Their own worktrees aren't listed as worktrees: they open as the
- * agent. A sub-agent shows only under what started it, and only while Klaud follows it: old
+ * agent. A sub-agent shows only under what started it, and only while Beluga follows it: old
  * agent worktrees with nothing to tie them to aren't listed (the Worktrees page has them). A
  * project's main folder has no row of its own: its sub-agents gather behind one "Agents" row.
  */
@@ -54,13 +54,13 @@ function AgentMark({ status }: { status: SubAgent['agent']['status'] }) {
 }
 
 function AgentRow({ s: sub, indent, worktree, residue, menu }: { s: SubAgent; indent: number; worktree?: Workspace; residue?: Residue; menu?: readonly ActionItem[] }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   const selected = useSelectedAgent();
   const now = useNow(sub.agent.status === 'running');
   const a = sub.agent;
   const on = selected.agent === a.id || (worktree !== undefined && selected.ws === worktree.id);
-  // Finished a while ago: when, and who started it (Klaud no longer follows it live).
+  // Finished a while ago: when, and who started it (Beluga no longer follows it live).
   const facts = sub.past ? [typeLabel(a.type), `Finished ${agoText(a.lastAt, now)}`, `started by “${sub.session.title}”`].join(' · ') : [typeLabel(a.type), modelLabel(a.model), agentLabel(a), agentElapsed(a, now)].filter(Boolean).join(' · ');
   // Done: what it left behind, plainly (running: how it's doing).
   const left = residue && a.status !== 'running' && residue.short ? residue : undefined;
@@ -121,14 +121,14 @@ const clearedKey = (sub: SubAgent): string => `cleared-agent:${sub.session.id}:$
 
 /**
  * A project's loose sub-agents: the ones a conversation in its main folder started (Claude Code
- * there, or Klaud's own questions), which belong to none of your worktrees or chats. One quiet
+ * there, or Beluga's own questions), which belong to none of your worktrees or chats. One quiet
  * "Agents" row holds them (it unfolds in place); each says what it left behind, and the done
  * ones that left nothing clear in one go: hidden when they never had a worktree, their worktree
  * removed when it has no commits or changes (its branch is kept). Anything with work in it stays.
  */
 export function ProjectAgents({ p, ws, indent }: { p: Project; ws: Workspace; indent: number }) {
   const api = useApi();
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const actions = useActions();
   const sessions = useCcSessions();
   const origins = useAgentOrigins();

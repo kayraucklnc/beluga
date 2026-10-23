@@ -150,7 +150,7 @@ export function TextArea({ value, onChange, mono, className, rows = 4, ...rest }
   return <textarea {...rest} rows={rows} className={cx(s.input, s.area, mono && s.mono, className)} value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
-/** A pop-up button (NSPopUpButton): Klaud's own Select, at least as wide as a field's start. */
+/** A pop-up button (NSPopUpButton): Beluga's own Select, at least as wide as a field's start. */
 export function Popup<T extends string>({ value, options, onChange, label, id }: { value: T; options: ReadonlyArray<SelectEntry<T>>; onChange: (v: T) => void; label?: string; id?: string }) {
   return <Select id={id} className={s.popup} value={value} options={options} label={label ?? ''} onChange={onChange} />;
 }
@@ -178,7 +178,7 @@ export function FolderInput({ value, onChange, title = 'Choose a folder', placeh
   );
 }
 
-/** A tag saying where a value comes from ("klaud.json", "your settings"). */
+/** A tag saying where a value comes from ("beluga.json", "your settings"). */
 export function SourceTag({ children, tone }: { children: ReactNode; tone?: 'team' | 'mine' | 'guess' }) {
   return <span className={cx(s.tag, tone && s[`tag_${tone}`])}>{children}</span>;
 }

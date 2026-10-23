@@ -5,7 +5,7 @@ import { usePrefs } from '../../lib/prefs.js';
 /**
  * A scene's beats: each lasts its own time (ms), then the next one plays, round and round
  * (`onLoop` when it starts over).
- * With Reduce Motion (the Mac's, or Klaud's own) the scene holds on `rest`, the beat that
+ * With Reduce Motion (the Mac's, or Beluga's own) the scene holds on `rest`, the beat that
  * explains it best on its own.
  */
 export function useBeats(durations: readonly number[], rest = durations.length - 1, onLoop?: () => void): number {

@@ -39,7 +39,7 @@ async function above(row: Locator): Promise<[number, number]> {
 }
 
 async function addRepo(page: Page, name: string): Promise<void> {
-  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-arrange-')), name);
+  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-arrange-')), name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 'README.md'), `# ${name}\n`);
   execFileSync('git', ['init', '-q', '-b', 'main', dir]);

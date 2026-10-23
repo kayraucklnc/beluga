@@ -1,13 +1,13 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useState } from 'react';
-import type { Location } from '@klaud/core/store.js';
-import type { Proof } from '@klaud/core/board/model.js';
+import type { Location } from '@beluga/core/store.js';
+import type { Proof } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Button, IconButton, cx } from '../components/ui.js';
 import { SCROLL_ROOT } from '../components/markdown/md-dom.js';
 import { useActions } from '../lib/actions.js';
 import { openWithDefaultApp } from '../lib/files.js';
-import { useKlaud } from '../lib/klaud.js';
+import { useBeluga } from '../lib/beluga.js';
 import { ChangedFileView } from '../views/ChangedFile.js';
 import r from '../views/reader/reader.module.css';
 import s from './proof-preview.module.css';
@@ -22,7 +22,7 @@ import s from './proof-preview.module.css';
 export const preloadReader = (): void => void import('../views/reader/FileReader.js');
 
 export function ProofPreview({ proof, onClose }: { proof: Proof & { path: string }; onClose: () => void }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   const [at, setAt] = useState<Location>();
   const [error, setError] = useState<string>();

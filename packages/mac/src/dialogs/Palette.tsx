@@ -1,12 +1,12 @@
 import { Command } from 'cmdk';
 import * as Dialog from '@radix-ui/react-dialog';
-import { findWorkspace, workspaceButtons } from '@klaud/ui/workspace-models.js';
+import { findWorkspace, workspaceButtons } from '@beluga/ui/workspace-models.js';
 import { macTabs } from '../lib/go.js';
-import { worktreeOrigin } from '@klaud/workspaces/origin.js';
+import { worktreeOrigin } from '@beluga/workspaces/origin.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
 import { asksBeforeWork } from '../lib/work-confirm.js';
-import { useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { setPrefs, usePrefs, zoom } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { showPanelTab, tabsOf, togglePanel, toggleTerminal } from '../lib/panel.js';
@@ -32,7 +32,7 @@ const VIEW_ICONS: Record<string, IconName> = { room: 'chat', files: 'folder', ov
  * new, any /command, people, and this window's settings. Type to filter.
  */
 export function Palette() {
-  const { ui, client } = useKlaud();
+  const { ui, client } = useBeluga();
   const actions = useActions();
   const open = useUi((u) => u.palette);
   const state = useApp((st) => st);
@@ -71,14 +71,14 @@ export function Palette() {
     ]),
     { id: 'add-project', label: 'Add a project…', icon: 'plus', run: () => actions.run({ type: 'add_project' }) },
     { id: 'share-folder', label: 'Share a folder…', icon: 'share', run: () => ui.openMenu({ kind: 'share_folder', launchDir: state.home, mine: state.myShares }) },
-    { id: 'invite', label: 'Invite someone…', icon: 'link', run: () => document.dispatchEvent(new CustomEvent('klaud:invite')) },
+    { id: 'invite', label: 'Invite someone…', icon: 'link', run: () => document.dispatchEvent(new CustomEvent('beluga:invite')) },
     { id: 'templates', label: 'Start from a template…', icon: 'wand', run: () => ui.openMenu({ kind: 'templates' }) },
   ];
   const people: Item[] = state.peers
     .map((p, index) => ({ p, index }))
     .filter(({ p }) => p.peerId !== state.selfId)
     .map(({ p, index }) => ({ id: `person:${p.peerId}`, label: p.name, hint: 'trust, follow, run a command, share…', icon: 'person' as IconName, run: () => ui.openMenu({ kind: 'person', index }) }));
-  // Friends and groups (the klaud network), and adding a friend or a group.
+  // Friends and groups (the Beluga network), and adding a friend or a group.
   const net = networkPaletteItems(state, client);
   // The /commands as things to do (no `<arg>` syntax); the ones that need more open their sheet.
   const commands: Item[] = paletteCommands({ client, ui, actions, state });

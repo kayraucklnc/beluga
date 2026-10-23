@@ -1,8 +1,8 @@
 import '@xyflow/react/dist/base.css';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Background, BackgroundVariant, BaseEdge, type Edge, type EdgeProps, Handle, type Node, type NodeProps, Panel, Position, ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import { AUTONOMY_INFO } from '@klaud/core/plans/model.js';
-import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progress.js';
+import { AUTONOMY_INFO } from '@beluga/core/plans/model.js';
+import type { MilestoneView, PlanView, TaskView } from '@beluga/core/plans/progress.js';
 import { IconButton, cx } from '../components/ui.js';
 import { Icon } from '../components/Icon.js';
 import { useDocTheme } from '../components/markdown/use-doc-theme.js';

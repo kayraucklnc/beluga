@@ -1,12 +1,12 @@
 import { memo, useEffect, useState } from 'react';
-import { type TaskView, approvalTitle, isFinal, stateLabel, stateTone, targetLabel } from '@klaud/core/gateway/model.js';
-import { formatDuration } from '@klaud/shared/text.js';
+import { type TaskView, approvalTitle, isFinal, stateLabel, stateTone, targetLabel } from '@beluga/core/gateway/model.js';
+import { formatDuration } from '@beluga/shared/text.js';
 import { Markdown } from '../chat/Markdown.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot } from '../components/ui.js';
 import { revealInFinder } from '../lib/files.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { openRequest } from './request-native.js';
 import a from './access.module.css';
 import s from './gateway.module.css';
@@ -21,7 +21,7 @@ import s from './gateway.module.css';
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 function useCall(): (what: string, call: Promise<unknown>) => void {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   return (what, call) => void call.catch((err: unknown) => client.store.dispatch({ type: 'toast', text: `Couldn't ${what}: ${message(err)}`, level: 'error' }));
 }
 
@@ -76,7 +76,7 @@ const kb = (n: number): string => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Ma
 /** A screenshot a result brought: a thumbnail; clicking shows it in Finder. */
 function Shot({ task, name, path }: { task: TaskView; name: string; path: string }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [url, setUrl] = useState<string>();
   useEffect(() => {
     let alive = true;
@@ -103,7 +103,7 @@ export const relayed = (t: Pick<TaskView, 'direction' | 'by' | 'conversation' | 
   t.direction === 'sent' && t.by === 'agent' && Boolean(t.conversation) && t.delivered === true && t.state === 'done';
 
 function Result({ task }: { task: TaskView }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [open, setOpen] = useState(false);
   const r = task.result;
   if (!r) return null;

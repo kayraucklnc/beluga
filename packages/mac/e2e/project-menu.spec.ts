@@ -15,7 +15,7 @@ const background = (l: Locator): Promise<string> => l.evaluate((el) => getComput
 const CLEAR = 'rgba(0, 0, 0, 0)';
 
 async function addRepo(page: Page, name: string): Promise<string> {
-  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-menu-')), name);
+  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-menu-')), name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 'README.md'), `# ${name}\n`);
   execFileSync('git', ['init', '-q', '-b', 'main', dir]);
@@ -67,7 +67,7 @@ test('choosing from a project’s ⋯ menu does only that, it doesn’t also ope
   await expect(page.getByRole('heading', { level: 1, name: 'bob-api' })).toHaveCount(0);
 });
 
-test('Delete Project… asks first; by default it leaves Klaud and the folder stays', async ({ page }) => {
+test('Delete Project… asks first; by default it leaves Beluga and the folder stays', async ({ page }) => {
   const dir = await addRepo(page, 'del-one');
   await project(page, 'del-one').click({ button: 'right' });
   const del = page.getByRole('menuitem', { name: 'Delete Project…' });
@@ -87,9 +87,9 @@ test('Delete Project… asks first; by default it leaves Klaud and the folder st
 
   await project(page, 'del-one').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Delete Project…' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Remove from Klaud' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Remove from Beluga' }).click();
   await expect(project(page, 'del-one')).toHaveCount(0);
-  // Not hidden: gone from Klaud (and still gone after a reload).
+  // Not hidden: gone from Beluga (and still gone after a reload).
   await page.reload();
   await expect(sidebar(page)).toBeVisible();
   await expect(project(page, 'bob-api')).toBeVisible();

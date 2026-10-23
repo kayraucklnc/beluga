@@ -1,5 +1,5 @@
 import type { AppState } from '../../../../src/core/store.js';
-// Relative (not @klaud/…), so the root's unit tests can load it (as lib/plan-merge.ts and sheets.ts).
+// Relative (not @beluga/…), so the root's unit tests can load it (as lib/plan-merge.ts and sheets.ts).
 import { planTitle } from '../../../../src/core/plans/model.js';
 import { planOwnerOf } from '../../../../src/core/plans/owner.js';
 import type { UiAction } from '../../../../src/ui/workspace-models.js';
@@ -24,7 +24,7 @@ export function runPlanAction(state: AppState, wsId: string, action: PlanAction,
   openSheet({
     kind: 'confirm',
     title: `Merge ${owner.issue.key} by hand?`,
-    message: `It’s part of “${name}”: when “${owner.milestone.title}” passes, Klaud merges it into the plan’s branch, and the plan opens one PR at the end. Merging it yourself skips the plan’s checks.`,
+    message: `It’s part of “${name}”: when “${owner.milestone.title}” passes, Beluga merges it into the plan’s branch, and the plan opens one PR at the end. Merging it yourself skips the plan’s checks.`,
     confirm: 'Merge Anyway',
     run: () => {
       confirmMerge(wsId);

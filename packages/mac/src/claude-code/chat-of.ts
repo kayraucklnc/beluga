@@ -2,10 +2,10 @@ import type { CcSession } from '../../../../src/core/claude-code/model.js';
 import type { AppState } from '../../../../src/core/store.js';
 
 /**
- * The chat a session opens in Klaud: the chat of the folder it runs in (a project's main folder or
- * any worktree Klaud knows, not archived). A session there is often a separate conversation (a
- * terminal's), so that chat shows it live as a strip at the top (LiveStrip) beside Klaud's own.
- * A session in a folder Klaud doesn't know has no chat: it opens as its transcript.
+ * The chat a session opens in Beluga: the chat of the folder it runs in (a project's main folder or
+ * any worktree Beluga knows, not archived). A session there is often a separate conversation (a
+ * terminal's), so that chat shows it live as a strip at the top (LiveStrip) beside Beluga's own.
+ * A session in a folder Beluga doesn't know has no chat: it opens as its transcript.
  */
 export function chatOf(state: Pick<AppState, 'projects'>, s: Pick<CcSession, 'workspaceId'>): string | undefined {
   const ws = s.workspaceId ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === s.workspaceId) : undefined;

@@ -1,9 +1,9 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { modelLabel, modelOf } from '@klaud/ui/menus.js';
-import { clampThreshold, contextWindowFor, formatTokenCount } from '@klaud/shared/context-usage.js';
+import { modelLabel, modelOf } from '@beluga/ui/menus.js';
+import { clampThreshold, contextWindowFor, formatTokenCount } from '@beluga/shared/context-usage.js';
 import { cx } from '../components/ui.js';
-import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { type MeterModel, breakdownRows, meterModel, usageLine, whenText } from './context-model.js';
 import s from './context.module.css';
 
@@ -85,7 +85,7 @@ export function ContextMeter({ channel }: { channel: string }) {
 /** The popover: the numbers, where they come from, the model's window, compactions, Compact now. */
 function MeterDetails({ channel, model }: { channel: string; model: MeterModel }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const prefs = useApp((st) => st.prefs);
   const picked = useApp((st) => modelOf(st, channel));
   const modelName = useApp((st) => modelLabel(st, picked));

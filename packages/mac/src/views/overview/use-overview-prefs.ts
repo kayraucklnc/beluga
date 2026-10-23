@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { type OverviewPrefs, readOverviewPrefs } from './overview-model.js';
 
-const KEY = 'klaud.overview.v1';
+const KEY = 'beluga.overview.v1';
 
 function load(): OverviewPrefs {
   try {
@@ -11,7 +11,7 @@ function load(): OverviewPrefs {
   }
 }
 
-const CHANGED = 'klaud:overview-prefs';
+const CHANGED = 'beluga:overview-prefs';
 
 /**
  * Set the Overview's segment and project from elsewhere (a project's "Show Archived"): kept like

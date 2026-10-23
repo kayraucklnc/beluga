@@ -1,5 +1,5 @@
-import { globalShellDir, globalShellId, globalShellNumber, isGlobalShell, terminalLabel } from '@klaud/shared/terminal-keys.js';
-import { useApi, useApp, useKlaud, useUi } from './klaud.js';
+import { globalShellDir, globalShellId, globalShellNumber, isGlobalShell, terminalLabel } from '@beluga/shared/terminal-keys.js';
+import { useApi, useApp, useBeluga, useUi } from './beluga.js';
 
 /** Picked after the last shell is closed: show "no shells" instead of starting a new one. */
 const NONE = 'shell:none';
@@ -22,7 +22,7 @@ export interface GlobalShells {
 /** Your own shells (the Terminal tab and the dock show the same ones). */
 export function useGlobalShells(): GlobalShells {
   const api = useApi();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const terminals = useApp((st) => st.terminals);
   const termExits = useApp((st) => st.termExits);
   const names = useApp((st) => st.termNames);

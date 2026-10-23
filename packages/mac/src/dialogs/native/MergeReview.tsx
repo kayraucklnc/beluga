@@ -1,11 +1,11 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Popover from '@radix-ui/react-popover';
 import { type ReactNode, useEffect, useState } from 'react';
-import type { MergePreview } from '@klaud/workspaces/merge-preview.js';
-import type { Workspace } from '@klaud/workspaces/types.js';
+import type { MergePreview } from '@beluga/workspaces/merge-preview.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Button, cx } from '../../components/ui.js';
-import { useApi, useApp } from '../../lib/klaud.js';
+import { useApi, useApp } from '../../lib/beluga.js';
 import { type CheckTone, reviewMerge } from '../../lib/merge-review.js';
 import { askBeforeWork } from '../../lib/work-confirm.js';
 import { timeAgo } from '../../views/history/history-model.js';

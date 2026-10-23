@@ -18,7 +18,7 @@ describe('the Mac app version', () => {
     const pkg = JSON.parse(readFileSync('packages/mac/package.json', 'utf8')) as { version: string };
     expect(conf.version).toBe(pkg.version);
     expect(conf.bundle.createUpdaterArtifacts).toBe(true);
-    expect(conf.plugins.updater.endpoints).toEqual(['https://github.com/kayraucklnc/klaud/releases/latest/download/latest.json']);
+    expect(conf.plugins.updater.endpoints).toEqual(['https://github.com/kayraucklnc/beluga/releases/latest/download/latest.json']);
     expect(Buffer.from(conf.plugins.updater.pubkey, 'base64').toString()).toContain('minisign public key');
   });
 
@@ -38,14 +38,14 @@ describe('what the window says', () => {
   it('shows the pill only for a downloaded update or what just changed', () => {
     expect(pillOf(state())).toBeUndefined();
     expect(pillOf(state({ phase: 'downloading', progress: 0.4 }))).toBeUndefined();
-    expect(pillOf(ready)).toEqual({ label: 'Klaud 0.5 is ready', kind: 'ready' });
+    expect(pillOf(ready)).toEqual({ label: 'Beluga 0.5 is ready', kind: 'ready' });
     // Looking again while one is downloaded doesn't make it blink away.
     expect(pillOf({ ...ready, phase: 'checking' })?.kind).toBe('ready');
-    expect(pillOf({ ...ready, phase: 'installing' })?.label).toBe('Updating Klaud…');
+    expect(pillOf({ ...ready, phase: 'installing' })?.label).toBe('Updating Beluga…');
     expect(pillOf(state({ news: { version: '0.5.0' } }))).toEqual({ label: 'Updated to 0.5 · What’s new', kind: 'news' });
   });
 
-  it('says when Klaud last looked', () => {
+  it('says when Beluga last looked', () => {
     const now = new Date(2026, 9, 18, 15, 0).getTime();
     expect(lastCheckedLabel(undefined, now)).toBe('Never');
     expect(lastCheckedLabel(null, now)).toBe('Never');
@@ -67,10 +67,10 @@ describe('what the window says', () => {
     expect(statusLine(state())).toBe('');
     expect(statusLine(state({ phase: 'checking' }))).toBe('Checking…');
     expect(statusLine(state({ phase: 'downloading', progress: 0.42 }))).toBe('Downloading · 42%');
-    expect(statusLine(state({ phase: 'current' }))).toBe('Klaud is up to date.');
+    expect(statusLine(state({ phase: 'current' }))).toBe('Beluga is up to date.');
     expect(statusLine(state({ phase: 'error', error: 'Offline' }))).toBe('Offline');
-    expect(statusLine(ready)).toBe('Klaud 0.5 is ready · installs when you quit');
-    expect(statusLine({ ...ready, choice: 'idle' })).toBe('Klaud 0.5 is ready · installs when you’re idle');
+    expect(statusLine(ready)).toBe('Beluga 0.5 is ready · installs when you quit');
+    expect(statusLine({ ...ready, choice: 'idle' })).toBe('Beluga 0.5 is ready · installs when you’re idle');
   });
 });
 

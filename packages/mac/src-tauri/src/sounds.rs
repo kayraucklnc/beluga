@@ -1,16 +1,18 @@
-//! Notification sounds, and whether macOS lets Klaud notify at all.
+//! Notification sounds, and whether macOS lets Beluga notify at all.
 //!
-//! Klaud's own sounds (8-bit, generated) are made in the web view and handed over as WAV
-//! files; they go to `~/Library/Sounds/Klaud-….wav`, where the system finds them by name and
+//! Beluga's own sounds (8-bit, generated) are made in the web view and handed over as WAV
+//! files; they go to `~/Library/Sounds/Beluga-….wav`, where the system finds them by name and
 //! plays them with the banner (so Focus and the per-app "Play sound" switch apply). Only
-//! that folder and only `Klaud-…` names are ever written or removed.
+//! that folder and only `Beluga-…` names are ever written or removed.
 
 use crate::focus::{self, Focus};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
-/// Every sound file Klaud writes starts with this.
-const PREFIX: &str = "Klaud-";
+/// Every sound file Beluga writes starts with this.
+const PREFIX: &str = "Beluga-";
+/// What Klaud's sound files started with (before the rename): pruned, never written.
+const OLD_PREFIX: &str = "Klaud-";
 /// Longest name after the prefix.
 const MAX_NAME: usize = 48;
 /// A few seconds of 16-bit audio is far below this; anything bigger isn't one of ours.
@@ -33,9 +35,14 @@ const SYSTEM_SOUNDS: [&str; 14] = [
     "Basso",
 ];
 
-/// `Klaud-` and then lowercase letters, digits and dashes: a file name that can't go anywhere else.
+/// `Beluga-` and then lowercase letters, digits and dashes: a file name that can't go anywhere else.
 fn valid_name(name: &str) -> bool {
-    name.strip_prefix(PREFIX).is_some_and(|rest| {
+    named(name, PREFIX)
+}
+
+/// `prefix` and then lowercase letters, digits and dashes.
+fn named(name: &str, prefix: &str) -> bool {
+    name.strip_prefix(prefix).is_some_and(|rest| {
         !rest.is_empty()
             && rest.len() <= MAX_NAME
             && rest
@@ -61,10 +68,10 @@ fn sounds_dir() -> Result<PathBuf, String> {
 /// Write `name.wav` into `dir` (atomically; unchanged files are left alone).
 fn install_in(dir: &Path, name: &str, wav: &[u8]) -> Result<(), String> {
     if !valid_name(name) {
-        return Err(format!("Not a Klaud sound name: {name}"));
+        return Err(format!("Not a Beluga sound name: {name}"));
     }
     if !is_wav(wav) {
-        return Err("That isn't a WAV file Klaud made".to_string());
+        return Err("That isn't a WAV file Beluga made".to_string());
     }
     std::fs::create_dir_all(dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
     let file = dir.join(format!("{name}.wav"));
@@ -76,7 +83,8 @@ fn install_in(dir: &Path, name: &str, wav: &[u8]) -> Result<(), String> {
     std::fs::rename(&tmp, &file).map_err(|e| format!("Couldn't save {}: {e}", file.display()))
 }
 
-/// Remove Klaud's sound files in `dir` that aren't in `keep`. Returns how many went.
+/// Remove Beluga's sound files in `dir` that aren't in `keep` (and every one Klaud left). Returns
+/// how many went.
 fn prune_in(dir: &Path, keep: &[String]) -> u32 {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
@@ -87,24 +95,22 @@ fn prune_in(dir: &Path, keep: &[String]) -> u32 {
         let Some(stem) = file.to_str().and_then(|f| f.strip_suffix(".wav")) else {
             continue;
         };
-        if valid_name(stem)
-            && !keep.iter().any(|k| k == stem)
-            && std::fs::remove_file(entry.path()).is_ok()
-        {
+        let ours = valid_name(stem) && !keep.iter().any(|k| k == stem);
+        if (ours || named(stem, OLD_PREFIX)) && std::fs::remove_file(entry.path()).is_ok() {
             removed += 1;
         }
     }
     removed
 }
 
-/// Put one of Klaud's sounds where notifications can play it; returns the name to ask for.
+/// Put one of Beluga's sounds where notifications can play it; returns the name to ask for.
 #[tauri::command]
 pub async fn sound_install(name: String, wav: Vec<u8>) -> Result<String, String> {
     install_in(&sounds_dir()?, &name, &wav)?;
     Ok(name)
 }
 
-/// Remove Klaud's sounds nobody chose any more.
+/// Remove Beluga's sounds nobody chose any more.
 #[tauri::command]
 pub async fn sound_prune(keep: Vec<String>) -> Result<u32, String> {
     Ok(prune_in(&sounds_dir()?, &keep))
@@ -126,7 +132,7 @@ pub fn sound_play_system(name: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether macOS lets Klaud notify, as Settings › Notifications shows it.
+/// Whether macOS lets Beluga notify, as Settings › Notifications shows it.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Access {
@@ -137,7 +143,7 @@ pub struct Access {
     /// "Play sound for notifications" is on.
     pub sound: bool,
     /// A Focus (Do Not Disturb…) holding banners now: "on", "off", or "unknown" (macOS keeps
-    /// that to itself unless Klaud has Full Disk Access; see focus.rs).
+    /// that to itself unless Beluga has Full Disk Access; see focus.rs).
     pub focus: &'static str,
     /// The Focus that's on, by name ("Do Not Disturb").
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -168,7 +174,7 @@ impl Access {
     }
 }
 
-/// What macOS says about Klaud's notifications right now.
+/// What macOS says about Beluga's notifications right now.
 #[tauri::command]
 pub async fn notification_access() -> Access {
     tauri::async_runtime::spawn_blocking(|| mac::access().with_focus(focus::current()))
@@ -176,14 +182,14 @@ pub async fn notification_access() -> Access {
         .unwrap_or(Access::UNKNOWN)
 }
 
-/// Which System Settings pane to open: Klaud's notifications, or Focus.
+/// Which System Settings pane to open: Beluga's notifications, or Focus.
 fn settings_url(pane: &str, id: &str) -> Result<String, String> {
     match pane {
         "notifications" => Ok(format!(
             "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id={id}"
         )),
         "focus" => Ok("x-apple.systempreferences:com.apple.Focus-Settings.extension".to_string()),
-        other => Err(format!("Not a settings pane Klaud opens: {other}")),
+        other => Err(format!("Not a settings pane Beluga opens: {other}")),
     }
 }
 
@@ -195,19 +201,19 @@ fn open_settings(pane: &str, id: &str) -> Result<(), String> {
         .map_err(|e| format!("Couldn't open System Settings: {e}"))
 }
 
-/// Open System Settings › Notifications (at Klaud, where macOS supports that).
+/// Open System Settings › Notifications (at Beluga, where macOS supports that).
 #[tauri::command]
 pub fn open_notification_settings(app: tauri::AppHandle) -> Result<(), String> {
     open_settings("notifications", &app.config().identifier)
 }
 
-/// Open System Settings › Focus (to turn one off, or allow Klaud in it).
+/// Open System Settings › Focus (to turn one off, or allow Beluga in it).
 #[tauri::command]
 pub fn open_focus_settings(app: tauri::AppHandle) -> Result<(), String> {
     open_settings("focus", &app.config().identifier)
 }
 
-/// Show notifications even while Klaud is the app in front (see `mac::present_in_front`).
+/// Show notifications even while Beluga is the app in front (see `mac::present_in_front`).
 pub fn present_in_front() {
     mac::present_in_front();
 }
@@ -240,12 +246,12 @@ mod mac {
 
     /// macOS only shows a banner (and plays its sound) while the app is in the background,
     /// unless the delegate's `userNotificationCenter:shouldPresentNotification:` says yes, and
-    /// the plugin's delegate doesn't have one. Klaud already decides what's worth showing (it
-    /// never notifies about what you're looking at; "Only when Klaud isn't in front" is a
+    /// the plugin's delegate doesn't have one. Beluga already decides what's worth showing (it
+    /// never notifies about what you're looking at; "Only when Beluga isn't in front" is a
     /// setting), so it always says yes.
     pub fn present_in_front() {
         let Some(class) = AnyClass::get(DELEGATE) else {
-            eprintln!("klaud: the notification delegate wasn't found; banners only show while Klaud is in the background");
+            eprintln!("beluga: the notification delegate wasn't found; banners only show while Beluga is in the background");
             return;
         };
         let Ok(types) = CString::new(format!("{}@:@@", Bool::ENCODING)) else {
@@ -299,7 +305,7 @@ mod mac {
 
     fn read(s: &UNNotificationSettings) -> Access {
         let status = s.authorizationStatus();
-        // Klaud's banners go through macOS's older notification service (the notification
+        // Beluga's banners go through macOS's older notification service (the notification
         // plugin), which this API doesn't describe: "not determined" here only means it won't
         // say, and asking it for permission does nothing. Only a clear answer counts.
         if status == UNAuthorizationStatus::NotDetermined {
@@ -340,28 +346,28 @@ mod tests {
     }
 
     fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("klaud-sounds-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("beluga-sounds-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
 
     #[test]
-    fn only_klaud_names_are_accepted() {
-        assert!(valid_name("Klaud-chip-coin-70"));
-        assert!(valid_name("Klaud-gen-0a1b2c3d-55"));
+    fn only_beluga_names_are_accepted() {
+        assert!(valid_name("Beluga-chip-coin-70"));
+        assert!(valid_name("Beluga-gen-0a1b2c3d-55"));
         for bad in [
-            "Klaud-",
+            "Beluga-",
             "Glass",
-            "klaud-x",
-            "Klaud-../x",
-            "Klaud-a/b",
-            "Klaud-A",
-            "Klaud-a.wav",
-            "Klaud-a b",
+            "beluga-x",
+            "Beluga-../x",
+            "Beluga-a/b",
+            "Beluga-A",
+            "Beluga-a.wav",
+            "Beluga-a b",
         ] {
             assert!(!valid_name(bad), "{bad}");
         }
-        assert!(!valid_name(&format!("Klaud-{}", "a".repeat(MAX_NAME + 1))));
+        assert!(!valid_name(&format!("Beluga-{}", "a".repeat(MAX_NAME + 1))));
     }
 
     #[test]
@@ -375,23 +381,26 @@ mod tests {
     }
 
     #[test]
-    fn installs_and_prunes_only_klaud_sounds() {
+    fn installs_and_prunes_only_beluga_sounds() {
         let dir = scratch("prune");
-        install_in(&dir, "Klaud-chip-coin-70", &wav(100)).unwrap();
-        install_in(&dir, "Klaud-gen-00000001-70", &wav(120)).unwrap();
+        install_in(&dir, "Beluga-chip-coin-70", &wav(100)).unwrap();
+        install_in(&dir, "Beluga-gen-00000001-70", &wav(120)).unwrap();
         // The same file again is fine (left alone).
-        install_in(&dir, "Klaud-chip-coin-70", &wav(100)).unwrap();
+        install_in(&dir, "Beluga-chip-coin-70", &wav(100)).unwrap();
         std::fs::write(dir.join("Mine.aiff"), b"x").unwrap();
-        std::fs::write(dir.join("Klaud-Other.wav"), b"x").unwrap();
+        std::fs::write(dir.join("Beluga-Other.wav"), b"x").unwrap();
+        // What Klaud installed before the rename goes too.
+        std::fs::write(dir.join("Klaud-chip-coin-70.wav"), b"x").unwrap();
         assert!(install_in(&dir, "../evil", &wav(100)).is_err());
-        assert!(install_in(&dir, "Klaud-x", b"not a wav").is_err());
+        assert!(install_in(&dir, "Beluga-x", b"not a wav").is_err());
 
-        assert_eq!(prune_in(&dir, &["Klaud-chip-coin-70".to_string()]), 1);
-        assert!(dir.join("Klaud-chip-coin-70.wav").exists());
-        assert!(!dir.join("Klaud-gen-00000001-70.wav").exists());
-        // Not ours (or not a name Klaud makes): never touched.
+        assert_eq!(prune_in(&dir, &["Beluga-chip-coin-70".to_string()]), 2);
+        assert!(dir.join("Beluga-chip-coin-70.wav").exists());
+        assert!(!dir.join("Klaud-chip-coin-70.wav").exists());
+        assert!(!dir.join("Beluga-gen-00000001-70.wav").exists());
+        // Not ours (or not a name Beluga makes): never touched.
         assert!(dir.join("Mine.aiff").exists());
-        assert!(dir.join("Klaud-Other.wav").exists());
+        assert!(dir.join("Beluga-Other.wav").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -417,14 +426,14 @@ mod tests {
     #[test]
     fn opens_only_the_two_settings_panes() {
         assert_eq!(
-            settings_url("notifications", "sh.klaud.mac").unwrap(),
-            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=sh.klaud.mac"
+            settings_url("notifications", "io.github.kayraucklnc.beluga").unwrap(),
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=io.github.kayraucklnc.beluga"
         );
         assert_eq!(
-            settings_url("focus", "sh.klaud.mac").unwrap(),
+            settings_url("focus", "io.github.kayraucklnc.beluga").unwrap(),
             "x-apple.systempreferences:com.apple.Focus-Settings.extension"
         );
-        assert!(settings_url("../evil", "sh.klaud.mac").is_err());
+        assert!(settings_url("../evil", "io.github.kayraucklnc.beluga").is_err());
     }
 
     #[test]

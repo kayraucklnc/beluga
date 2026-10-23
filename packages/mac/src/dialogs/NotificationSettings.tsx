@@ -1,7 +1,7 @@
-import type { NotifySettings } from '@klaud/shared/settings-schema.js';
-import { DND_CHOICES, type DndChoice, dndActive, dndFor, dndLabel } from '@klaud/shared/quiet.js';
+import type { NotifySettings } from '@beluga/shared/settings-schema.js';
+import { DND_CHOICES, type DndChoice, dndActive, dndFor, dndLabel } from '@beluga/shared/quiet.js';
 import { Button } from '../components/ui.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import { runAccessAction, useNotificationAccess } from '../lib/sounds/access.js';
 import { type AccessAction, notifyStatus } from '../lib/sounds/access-model.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
@@ -43,8 +43,8 @@ export function NotificationSettings() {
         <Row label="Desktop notifications" detail="The bell in the toolbar lists everything either way.">
           <Switch label="Desktop notifications" on={n.desktop} onChange={(v) => save({ desktop: v })} />
         </Row>
-        <Row label="Only when Klaud isn’t in front" detail="Stay quiet while you’re using Klaud. Nothing is ever announced about the conversation you’re looking at.">
-          <Switch label="Only when Klaud isn’t in front" on={n.onlyAway} onChange={(v) => save({ onlyAway: v })} />
+        <Row label="Only when Beluga isn’t in front" detail="Stay quiet while you’re using Beluga. Nothing is ever announced about the conversation you’re looking at.">
+          <Switch label="Only when Beluga isn’t in front" on={n.onlyAway} onChange={(v) => save({ onlyAway: v })} />
         </Row>
       </Group>
       <SoundSettings n={n} save={save} test={<TestNotification n={n} onChecked={recheck} onAction={act} />} />

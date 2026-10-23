@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
-import { type CcSession, outsideSessions } from '@klaud/core/claude-code/model.js';
+import { type CcSession, outsideSessions } from '@beluga/core/claude-code/model.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { Button, Dot, Empty } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { AgentCard, SessionChip } from './Cards.js';
 import { chatOf } from './chat-of.js';
 import { LiveTranscript } from './LiveTranscript.js';
@@ -16,17 +16,17 @@ import { activitySummary, groupByProject, openActivity, placeLabel, plural, sess
 import s from './claude-code.module.css';
 
 /**
- * Activity: every Claude Code session running outside klaud (a terminal, another app), by project,
+ * Activity: every Claude Code session running outside Beluga (a terminal, another app), by project,
  * with its sub-agents as cards. Everything opens where it lives: a session the chat of its folder
  * (with the session live in a strip at the top), an agent its worktree's chat or its own page. Only
- * a session in a folder Klaud doesn't know opens as a live transcript.
+ * a session in a folder Beluga doesn't know opens as a live transcript.
  */
 
-export const OUTSIDE = 'Running in Claude Code, outside Klaud';
+export const OUTSIDE = 'Running in Claude Code, outside Beluga';
 
 /** Open where a session lives (its folder's chat, else its transcript here), or one of its agents (openSubAgent). */
 function useOpenSession(session: CcSession): (agentId?: string) => void {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   const chat = useApp((st) => chatOf(st, session));
   return (agentId) => {
@@ -94,7 +94,7 @@ function ActivityList() {
       <div className={s.inner}>
         <header className={s.summary}>
           <h1 className={s.summaryTitle}>{activitySummary(sessions)}</h1>
-          <p className={s.summaryText}>Claude Code sessions running outside Klaud, and the agents they started. Open one to follow it where it lives; they keep running where they are.</p>
+          <p className={s.summaryText}>Claude Code sessions running outside Beluga, and the agents they started. Open one to follow it where it lives; they keep running where they are.</p>
         </header>
         {groups.map((g) => (
           <section key={g.key} className={s.group} aria-label={g.name}>
@@ -115,11 +115,11 @@ function ActivityList() {
 
 /**
  * One session's transcript (the chat's live strip opens it; Activity does for a session in a folder
- * Klaud doesn't know), titled by its folder, with its agents in a row. An agent that went quiet
+ * Beluga doesn't know), titled by its folder, with its agents in a row. An agent that went quiet
  * lands here too.
  */
 export function SessionPage({ session, agentId }: { session: CcSession; agentId?: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const open = useOpenSession(session);
   const actions = useActions();
   const chat = useApp((st) => chatOf(st, session));
@@ -145,7 +145,7 @@ export function SessionPage({ session, agentId }: { session: CcSession; agentId?
             Open Chat
           </Button>
         ) : (
-          <span className={s.readOnly} title="It runs in a terminal or another app; Klaud shows it live">
+          <span className={s.readOnly} title="It runs in a terminal or another app; Beluga shows it live">
             <Icon name="eye" size={12} />
             {OUTSIDE}
           </span>
@@ -160,7 +160,7 @@ export function SessionPage({ session, agentId }: { session: CcSession; agentId?
         </div>
       ) : null}
       {agentId ? (
-        <Empty icon="clock" title="This agent went quiet" detail="Klaud stops watching agents a while after they finish." action={<Button onClick={() => openActivity(client, session.id)}>Show the Conversation</Button>} />
+        <Empty icon="clock" title="This agent went quiet" detail="Beluga stops watching agents a while after they finish." action={<Button onClick={() => openActivity(client, session.id)}>Show the Conversation</Button>} />
       ) : (
         <LiveTranscript key={session.id} sessionId={session.id} version={`${session.lastAt}:${session.steps}:${session.status}`} live={session.status === 'working'} label={`Claude Code session ${session.title}`} />
       )}
@@ -169,7 +169,7 @@ export function SessionPage({ session, agentId }: { session: CcSession; agentId?
 }
 
 export function ActivityView() {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const view = useApp((st) => st.view);
   const sessionId = view.kind === 'claude_code' ? view.session : undefined;
   const agentId = view.kind === 'claude_code' ? view.agent : undefined;
@@ -178,7 +178,7 @@ export function ActivityView() {
   if (!session) {
     return (
       <div className={s.page}>
-        <Empty icon="clock" title="This session went quiet" detail="Klaud shows Claude Code sessions while they work, and for a while after." action={<Button onClick={() => openActivity(client)}>Show All Activity</Button>} />
+        <Empty icon="clock" title="This session went quiet" detail="Beluga shows Claude Code sessions while they work, and for a while after." action={<Button onClick={() => openActivity(client)}>Show All Activity</Button>} />
       </div>
     );
   }

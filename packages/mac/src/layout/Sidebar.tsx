@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { trustOf } from '@klaud/core/trust.js';
-import { overviewNews } from '@klaud/ui/workspace-models.js';
+import { trustOf } from '@beluga/core/trust.js';
+import { overviewNews } from '@beluga/ui/workspace-models.js';
 import { macTabs } from '../lib/go.js';
-import { newShares } from '@klaud/core/store.js';
+import { newShares } from '@beluga/core/store.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { SpecContext } from '../components/SpecMenu.js';
 import { Avatar, Badge, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { inApp } from '../lib/boot.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { openPerson } from '../dialogs/native/PersonPopover.js';
@@ -45,13 +45,13 @@ const NAV: ReadonlyArray<{ kind: 'overview' | 'room'; icon: IconName }> = [
 export { workspaceItems } from './workspace-row.js';
 
 function People() {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const people = useApp(
     (state) => state.peers.map((p) => ({ p, me: p.peerId === state.self?.peerId, trust: p.peerId === state.self?.peerId ? undefined : trustOf(state, p.peerId), following: state.follow === p.peerId })),
     sameDeep,
   );
   if (people.length <= 1) {
-    return <Row className={s.hintRow} icon={<Icon name="link" size={13} />} label="Invite someone…" onClick={() => document.dispatchEvent(new CustomEvent('klaud:invite'))} />;
+    return <Row className={s.hintRow} icon={<Icon name="link" size={13} />} label="Invite someone…" onClick={() => document.dispatchEvent(new CustomEvent('beluga:invite'))} />;
   }
   return (
     <>
@@ -91,7 +91,7 @@ function People() {
  */
 function useFolderDrop(): { ref: React.RefObject<HTMLElement | null>; over: boolean } {
   const api = useApi();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const ref = useRef<HTMLElement>(null);
   const [over, setOver] = useState(false);
   useEffect(() => {
@@ -230,7 +230,7 @@ export function Sidebar() {
         <FriendsSection />
         <GroupsSection />
 
-        {/* The current room's people (today's rooms), apart from your friends on the klaud network. */}
+        {/* The current room's people (today's rooms), apart from your friends on the Beluga network. */}
         <Section id="people" title="In this room">
           <People />
         </Section>
@@ -264,7 +264,7 @@ function SidebarFooter() {
   return (
     <div className={s.footer}>
       <RoomStatus label={label} tone={tone} />
-      <button type="button" className={s.invite} onClick={() => document.dispatchEvent(new CustomEvent('klaud:invite'))}>
+      <button type="button" className={s.invite} onClick={() => document.dispatchEvent(new CustomEvent('beluga:invite'))}>
         Invite
       </button>
     </div>

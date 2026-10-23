@@ -1,4 +1,4 @@
-import type { ViewerState } from '@klaud/core/store.js';
+import type { ViewerState } from '@beluga/core/store.js';
 import { isImageFile, isMarkdownPath } from '../../components/markdown/md-paths.js';
 
 /**
@@ -28,7 +28,7 @@ export function prettyJson(path: string, content: string): string | undefined {
   }
 }
 
-/** What klaud reads for a file that isn't text (a null byte in it). */
+/** What Beluga reads for a file that isn't text (a null byte in it). */
 export const BINARY_TEXT = '[binary file]';
 
 /** The file has text to copy, find in and show as source. */

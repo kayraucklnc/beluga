@@ -1,27 +1,29 @@
 /**
- * The product is "Klaud" in this app. Messages from the core are shared with the terminal app,
- * which writes "klaud"; where this window shows them as its own words (toasts, notices, system
- * lines, Stripe errors) they go through `brandText`. Never for chat content: what people and
- * Claude wrote stays as written.
+ * The product is "Beluga" in this app. Messages from the core are shared with the terminal app,
+ * which writes "beluga" (and peers on a version from before the rename write "klaud"); where this
+ * window shows them as its own words (toasts, notices, system lines, Stripe errors) they go
+ * through `brandText`, which makes both "Beluga". Never for chat content: what people and Claude
+ * wrote stays as written.
  *
- * The `klaud` command and everything that is a name stays lowercase: `klaud join …`, klaud://
- * links, ~/.klaud and other paths, klaud.json, klaud/<branch>, klaud-… identifiers, and
- * anything inside `code`.
+ * The `beluga` command and everything that is a name stays as it is: `beluga join …`, beluga://
+ * and klaud:// links, ~/.beluga and other paths, beluga.json, beluga/<branch>, beluga-…
+ * identifiers (and their klaud spellings), and anything inside `code`.
  */
 
-const WORD = /\bklaud\b/g;
+const WORD = /\b(?:beluga|klaud)\b/g;
 
 /**
- * "~/code/api" for a path under your home folder. Klaud's own folder reads ~/.klaud even where it
- * really is the old ~/.klaude (from before the rename, linked in place so nothing moved).
+ * "~/code/api" for a path under your home folder. Beluga's own folder reads ~/.beluga even where
+ * it really is the old ~/.klaud or ~/.klaude (from before the renames, linked to it), as the core
+ * writes it (src/core/paths.ts).
  */
 export const tildePath = (home: string, p: string): string =>
-  (home && (p === home || p.startsWith(`${home}/`)) ? `~${p.slice(home.length)}` : p).replace(/^~\/\.klaude(?=\/|$)/, '~/.klaud');
+  (home && (p === home || p.startsWith(`${home}/`)) ? `~${p.slice(home.length)}` : p).replace(/^~\/\.klaude?(?=\/|$)/, '~/.beluga');
 /** Right before the word: part of a path, a file name or an identifier. */
 const NAME_BEFORE = /[/~.\-@_]/;
-/** Right after the word: a link, a file name, a branch or an identifier (klaud://, klaud.json, klaud/x, klaud-x). */
+/** Right after the word: a link, a file name, a branch or an identifier (beluga://, beluga.json, beluga/x, beluga-x). */
 const NAME_AFTER = /^(?::\/\/|[./\-_@]\w)/;
-/** A command you type: `klaud join <link>`, `klaud update`, `klaud --help`. */
+/** A command you type: `beluga join <link>`, `beluga update`, `beluga --help`. */
 const COMMAND_AFTER = /^ (?:(?:join|update|view|host|demo|daemon|get)\b|--?\w)/;
 /** Code spans and blocks are left exactly as they are. */
 const CODE = /(```[\s\S]*?```|`[^`\n]*`)/;
@@ -31,13 +33,13 @@ function brandProse(text: string): string {
     const before = text[at - 1] ?? '';
     const after = text.slice(at + word.length);
     if (NAME_BEFORE.test(before) || NAME_AFTER.test(after) || COMMAND_AFTER.test(after)) return word;
-    return 'Klaud';
+    return 'Beluga';
   });
 }
 
-/** A core message as this window shows it: "klaud" in prose becomes "Klaud" (see above for what stays). */
+/** A core message as this window shows it: "beluga" (or "klaud") in prose becomes "Beluga" (see above for what stays). */
 export function brandText(text: string): string {
-  if (!text.includes('klaud')) return text;
+  if (!text.includes('beluga') && !text.includes('klaud')) return text;
   return text
     .split(CODE)
     .map((part, i) => (i % 2 ? part : brandProse(part)))

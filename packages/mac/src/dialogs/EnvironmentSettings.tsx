@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { type EnvVar, envProblems, importEnv, parseEnvText } from '@klaud/shared/env-vars.js';
+import { type EnvVar, envProblems, importEnv, parseEnvText } from '@beluga/shared/env-vars.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Tip, cx } from '../components/ui.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
 import s from './settings.module.css';
 import e from './env-settings.module.css';
@@ -204,7 +204,7 @@ function Editor({ projectId }: { projectId: string }) {
 }
 
 /**
- * Settings › Environment: variables klaud gives your shells, setup and run commands, and your
+ * Settings › Environment: variables Beluga gives your shells, setup and run commands, and your
  * Claude. Yours apply everywhere; a project's apply in its workspaces, over yours.
  */
 export function EnvironmentSettings() {

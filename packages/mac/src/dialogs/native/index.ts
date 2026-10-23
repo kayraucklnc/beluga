@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import type { MenuKind } from '@klaud/ui/menus.js';
+import type { MenuKind } from '@beluga/ui/menus.js';
 // Inviting, people and sharing.
 import { InviteSheet } from './InviteSheet.js';
 import { PersonPopover } from './PersonPopover.js';

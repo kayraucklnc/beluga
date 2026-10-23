@@ -3,7 +3,7 @@ import { Button, Tip, cx } from '../components/ui.js';
 import { EarningsTipBody } from '../components/EarningsPill.js';
 import { formatMoney, openStripe, updatedAgo, useConverted, useProjectEarnings } from '../lib/earnings.js';
 import { brandText } from '../lib/brand.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import s from './Inspector.module.css';
 import e from '../components/earnings.module.css';
 

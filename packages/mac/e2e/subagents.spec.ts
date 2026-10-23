@@ -47,7 +47,7 @@ test('a sub-agent shows under what started it, as a robot, not as a worktree', a
   await expect(row).toBeVisible();
   root = path.join(path.dirname((await row.getAttribute('title'))!), 'bob-api');
   const worktree = path.join(root, '.claude', 'worktrees', `agent-${AGENT}`);
-  const folder = path.join(process.env.KLAUD_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
+  const folder = path.join(process.env.BELUGA_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
   const agents = path.join(folder, SID, 'subagents');
   mkdirSync(agents, { recursive: true });
   const now = Date.now();
@@ -80,10 +80,10 @@ test('a sub-agent shows under what started it, as a robot, not as a worktree', a
 });
 
 test('a sub-agent that finished long ago stays under what started it, and stays put when opened', async ({ page }) => {
-  // The demo's other agent worktree: an old session in bob-api started it (Klaud no longer follows that session).
+  // The demo's other agent worktree: an old session in bob-api started it (Beluga no longer follows that session).
   const other = readdirSync(path.join(root, '.claude', 'worktrees')).find((n) => n.startsWith('agent-') && n !== `agent-${AGENT}`)!;
   const wt = path.join(root, '.claude', 'worktrees', other);
-  const folder = path.join(process.env.KLAUD_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
+  const folder = path.join(process.env.BELUGA_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
   const old = '9b1c2d3e-4f50-4a6b-8c7d-8e9f00a1b2c4';
   const then = Date.now() - 3 * 86_400_000;
   mkdirSync(path.join(folder, old, 'subagents'), { recursive: true });
@@ -115,7 +115,7 @@ test('its page follows it live: who started it, model, effort, thinking and tool
   // Clicking it doesn't move it: its row stays where it was, selected (a fixed wait, on purpose).
   await page.waitForTimeout(1500);
   await expect(row).toBeVisible();
-  await expect(monitor).toContainText('a Claude Code session outside Klaud in bob-api');
+  await expect(monitor).toContainText('a Claude Code session outside Beluga in bob-api');
   await expect(monitor).toContainText('Write the webhook tests');
   await expect(monitor).toContainText('Sonnet 5.5');
   await expect(monitor).toContainText('High effort');
@@ -126,8 +126,8 @@ test('its page follows it live: who started it, model, effort, thinking and tool
   // New lines show as they're written.
   appendFileSync(agentFile, line({ type: 'assistant', timestamp: iso(Date.now()), sessionId: SID, agentId: AGENT, isSidechain: true, cwd: path.join(root, '.claude', 'worktrees', `agent-${AGENT}`), effort: 'high', message: { role: 'assistant', model: 'claude-sonnet-5-5', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'r2', name: 'Bash', input: { command: 'npm test -- webhooks' } }] } }));
   await expect(log).toContainText('npm test', { timeout: 15_000 });
-  // Started outside Klaud: you can watch, not steer from here.
-  await expect(monitor).toContainText('started outside Klaud');
+  // Started outside Beluga: you can watch, not steer from here.
+  await expect(monitor).toContainText('started outside Beluga');
   // Never a place to start a conversation of your own.
   await expect(page.getByRole('button', { name: 'Start a Conversation Here' })).toHaveCount(0);
   await shot(page, 'subagent-monitor');
@@ -139,7 +139,7 @@ test('its Outputs: the screenshot and test log it made, wherever it put them, to
   const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
   await expect(monitor).toBeVisible({ timeout: 15_000 });
   // It takes a screenshot (a real one: of this page) and runs the tests into a log, both in /tmp.
-  const tmp = mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-out-'));
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-out-'));
   const png = path.join(tmp, '01-webhooks-page.png');
   await page.screenshot({ path: png });
   writeFileSync(path.join(tmp, 'tests.log'), ' FAIL  src/webhooks.test.ts > retries 3 times\n   expected 3 calls, got 2\n\n Tests  1 failed | 11 passed (12)\n');

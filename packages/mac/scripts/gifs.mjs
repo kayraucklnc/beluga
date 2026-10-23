@@ -1,5 +1,5 @@
 // The README's GIFs, recorded from the Mac app's web view against `vite` + a demo daemon.
-//   KLAUD_URL=http://localhost:1420 node scripts/gifs.mjs [scene…]   → assets/mac/<scene>.gif
+//   BELUGA_URL=http://localhost:1420 node scripts/gifs.mjs [scene…]   → assets/mac/<scene>.gif
 // Needs ffmpeg. Each scene is recorded as a video, then turned into a GIF with its own palette.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 const repo = path.resolve(import.meta.dirname, '../../..');
 const out = path.join(repo, 'assets/mac');
 const tmp = path.join(repo, '.context/gifs');
-const url = process.env.KLAUD_URL ?? 'http://localhost:1420';
+const url = process.env.BELUGA_URL ?? process.env.KLAUD_URL ?? 'http://localhost:1420';
 const only = process.argv.slice(2);
 
 const side = (page) => page.getByRole('navigation', { name: 'Sidebar' });

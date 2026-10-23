@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import type { FriendView } from '@klaud/net/mesh/views.js';
+import type { FriendView } from '@beluga/net/mesh/views.js';
 import { Alert, Checkbox } from '../components/Alert.js';
 import { Button } from '../components/ui.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { Sheet } from '../dialogs/native/parts.js';
 import { AddFriendSheet, JoinGroupSheet } from './AddFriendSheet.js';
 import { closeChat } from './ChatTabs.js';
@@ -45,7 +45,7 @@ const chosenLine = (n: number): string => (n ? `${n} friend${n === 1 ? '' : 's'}
 
 /** New Group: a name, friends to start with, Create. */
 function NewGroupSheet({ preset }: { preset: readonly string[] }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const friends = sortFriends(useApp((st) => st.network.friends));
   const [name, setName] = useState('');
   const [chosen, setChosen] = useState<Set<string>>(new Set(preset));
@@ -111,7 +111,7 @@ function NewGroupSheet({ preset }: { preset: readonly string[] }) {
 
 /** Add People: friends who aren't in the group yet. */
 function AddPeopleSheet({ groupId }: { groupId: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const group = useApp((st) => st.network.groups.find((g) => g.id === groupId));
   const friends = useApp((st) => st.network.friends);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
@@ -156,7 +156,7 @@ function AddPeopleSheet({ groupId }: { groupId: string }) {
 
 /** Leave a channel, and maybe delete what was said from this Mac in the same go. */
 function LeaveGroupAlert({ groupId: id }: { groupId: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const g = useApp((st) => st.network.groups.find((x) => x.id === id));
   const shown = useShownConversation();
   const say = useSay();
@@ -194,7 +194,7 @@ function LeaveGroupAlert({ groupId: id }: { groupId: string }) {
 
 /** Delete a channel you're no longer in from this Mac (the others keep theirs). */
 function DeleteGroupAlert({ groupId: id }: { groupId: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const g = useApp((st) => st.network.groups.find((x) => x.id === id));
   const shown = useShownConversation();
   const say = useSay();
@@ -221,7 +221,7 @@ function DeleteGroupAlert({ groupId: id }: { groupId: string }) {
 
 /** Remove a friend, leave a group, remove someone from a group: an alert each. */
 function Confirmations() {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const sheet = useNetSheet();
   const net = useApp((st) => st.network);
   const shown = useShownConversation();

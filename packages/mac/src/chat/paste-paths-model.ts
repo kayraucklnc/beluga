@@ -1,7 +1,7 @@
 /**
  * Which pasted text is file paths: "/Users/…/CleanShot … .png" quoted (straight or “smart”), with
  * escaped spaces, ~/…, or a file:// URL; one or more, one per line. And, in any other text, where
- * an image's path sits in it. (Pure: paste-paths.ts asks klaud about them.)
+ * an image's path sits in it. (Pure: paste-paths.ts asks Beluga about them.)
  */
 
 const MAX_TEXT = 8000;
@@ -55,7 +55,7 @@ export function pathsInPaste(text: string): string[] | undefined {
 /**
  * Where an image's path may sit in some text: `start`–`end` (quotes included) is what it replaces,
  * and `paths` are the ways to read it, longest first. A path with plain spaces in a sentence can
- * end at any ".png" along the line ("see /a/Shot 1.png and /a/b.png"): klaud says which is a file.
+ * end at any ".png" along the line ("see /a/Shot 1.png and /a/b.png"): Beluga says which is a file.
  */
 export interface PathSpot {
   readonly start: number;
@@ -115,7 +115,7 @@ export function imagePathsIn(text: string): PathSpot[] {
   return spots.sort((a, b) => a.start - b.start);
 }
 
-/** Every way of reading the spots, to ask klaud about at once. */
+/** Every way of reading the spots, to ask Beluga about at once. */
 export const candidatePaths = (spots: readonly PathSpot[]): string[] => [...new Set(spots.flatMap((s) => s.paths.map((p) => p.path)))].slice(0, MAX_PATHS);
 
 /** The images in the text: per spot its longest reading that is an image file here, none overlapping. */

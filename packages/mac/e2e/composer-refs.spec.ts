@@ -42,7 +42,7 @@ const pasteText = (box: ReturnType<typeof composer>, text: string) =>
   }, text);
 
 test('a pasted path of a picture becomes the picture; a path to nothing stays words', async ({ page }) => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud paste-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga paste-'));
   const shot = path.join(dir, 'CleanShot 2026-10-21 at 22.11.43@2x.png');
   writeFileSync(shot, Buffer.from(PNG, 'base64'));
   await page.goto('/');
@@ -60,7 +60,7 @@ test('a pasted path of a picture becomes the picture; a path to nothing stays wo
   await page.screenshot({ path: path.join(import.meta.dirname, '../../../.klaud/scratch/01-pasted-path-thumbnail.png') });
   await box.press('Enter');
   await expect(tray).toBeHidden();
-  // The message carries the picture (a link to klaud's copy, shown as a thumbnail).
+  // The message carries the picture (a link to Beluga's copy, shown as a thumbnail).
   const sent = page.getByRole('button', { name: /^Open image \d+/ }).last();
   await expect(sent).toBeVisible();
   await expect(sent.locator('img')).toHaveJSProperty('complete', true);
@@ -68,7 +68,7 @@ test('a pasted path of a picture becomes the picture; a path to nothing stays wo
 });
 
 test('an image path inside pasted words becomes the image; the words stay (plain, quoted, smart quoted, escaped)', async ({ page }) => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud paste-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga paste-'));
   const shot = path.join(dir, 'CleanShot 2026-10-22 at 00.08.43@2x.png');
   writeFileSync(shot, Buffer.from(PNG, 'base64'));
   const notes = path.join(dir, 'notes.md');
@@ -90,7 +90,7 @@ test('an image path inside pasted words becomes the image; the words stay (plain
 });
 
 test('the plan chat takes pasted images, image paths in words, and files like any chat', async ({ page }) => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud paste-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga paste-'));
   const shot = path.join(dir, 'shot one.png');
   writeFileSync(shot, Buffer.from(PNG, 'base64'));
   const notes = path.join(dir, 'release notes.md');
@@ -132,7 +132,7 @@ test('the plan chat takes pasted images, image paths in words, and files like an
 });
 
 test('a pasted path of another file waits as a chip and goes as its path; a folder stays words', async ({ page }) => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud paste-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga paste-'));
   const notes = path.join(dir, 'release notes.md');
   writeFileSync(notes, '# Notes');
   await page.goto('/');
@@ -152,7 +152,7 @@ test('a pasted path of another file waits as a chip and goes as its path; a fold
 });
 
 test('⌘⇧V keeps a pasted path as words', async ({ page }) => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud paste-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga paste-'));
   const shot = path.join(dir, 'shot.png');
   writeFileSync(shot, Buffer.from(PNG, 'base64'));
   await page.goto('/');

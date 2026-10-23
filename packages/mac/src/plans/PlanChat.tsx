@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { queueIn } from '@klaud/ui/compose.js';
-import { activityOf } from '@klaud/ui/workspace-models.js';
+import { queueIn } from '@beluga/ui/compose.js';
+import { activityOf } from '@beluga/ui/workspace-models.js';
 import { ChatLog } from '../chat/ChatLog.js';
 import { PaneLook } from '../chat/Items.js';
 import { QueueTray } from '../chat/QueueTray.js';
@@ -8,7 +8,7 @@ import { useAttachments } from '../chat/use-attachments.js';
 import { Icon } from '../components/Icon.js';
 import { Empty, IconButton, Tip, Working, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import { LiveDot } from './marks.js';
 import { type PlanMessage, planMessage, sendPlanMessage } from './plan-send.js';
 import { useConversationLoaded } from './use-plans.js';

@@ -1,11 +1,11 @@
-import type { AppState } from '@klaud/core/store.js';
-import type { CcAgent, CcAgentStatus, CcSession } from '@klaud/core/claude-code/model.js';
-import { sessionLive } from '@klaud/core/claude-code/model.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { AppState } from '@beluga/core/store.js';
+import type { CcAgent, CcAgentStatus, CcSession } from '@beluga/core/claude-code/model.js';
+import { sessionLive } from '@beluga/core/claude-code/model.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { tildePath } from '../lib/brand.js';
 
 /**
- * Words, tones and groupings for Claude Code sessions running outside klaud (the Activity place,
+ * Words, tones and groupings for Claude Code sessions running outside Beluga (the Activity place,
  * the strip above a workspace's chat, the Inspector). Pure helpers over the shared state.
  */
 
@@ -52,7 +52,7 @@ export function activitySummary(sessions: readonly CcSession[]): string {
 /** "~/code/api/madrid" for a path under your home folder. */
 export const tildify = (state: Pick<AppState, 'home'>, p: string): string => tildePath(state.home, p);
 
-/** Where it runs, in klaud's words: the workspace's name, else the folder. */
+/** Where it runs, in Beluga's words: the workspace's name, else the folder. */
 export function placeLabel(state: Pick<AppState, 'projects' | 'home'>, s: CcSession): string {
   const ws = s.workspaceId ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === s.workspaceId) : undefined;
   return ws ? ws.name : tildify(state, s.cwd) || 'Unknown folder';
@@ -66,7 +66,7 @@ export interface ProjectGroup {
   readonly running: number;
 }
 
-/** Sessions by klaud project (folders outside every project last, by their folder's name). */
+/** Sessions by Beluga project (folders outside every project last, by their folder's name). */
 export function groupByProject(state: Pick<AppState, 'projects'>, sessions: readonly CcSession[]): ProjectGroup[] {
   const groups = new Map<string, { projectId?: string; name: string; sessions: CcSession[] }>();
   for (const s of sessions) {

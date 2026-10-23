@@ -1,13 +1,13 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { type ReactNode, useState } from 'react';
-import { TRUST_INFO, trustOf } from '@klaud/core/trust.js';
-import { EFFORTS, TRUST_LEVELS, type TrustLevel } from '@klaud/shared/settings-schema.js';
-import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@klaud/ui/settings-menus.js';
+import { TRUST_INFO, trustOf } from '@beluga/core/trust.js';
+import { EFFORTS, TRUST_LEVELS, type TrustLevel } from '@beluga/shared/settings-schema.js';
+import { HIDEABLE_BUTTONS, TUNNEL_LABELS, TUNNEL_ORDER } from '@beluga/ui/settings-menus.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Avatar, Button, cx } from '../components/ui.js';
 import { APP_VERSION } from '../lib/boot.js';
 import { revealInFinder } from '../lib/files.js';
-import { type SettingsPane, useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { type SettingsPane, useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { ACCENTS, type Accent, setPrefs, usePrefs } from '../lib/prefs.js';
 import { EnvironmentSettings } from './EnvironmentSettings.js';
 import { ContextSettings } from './ContextSettings.js';
@@ -165,7 +165,7 @@ function Appearance() {
 function ClaudePane() {
   const api = useApi();
   const macPrefs = usePrefs();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const state = useApp((st) => st);
   const p = state.prefs;
   return (
@@ -197,7 +197,7 @@ function ClaudePane() {
       </Group>
       <ContextSettings />
       <Group title="Scratch folder">
-        <Row label="Give Claude a scratch folder" detail="Screenshots, JSON, logs and notes Claude makes while it works go to the workspace’s .klaud/scratch/ folder (kept out of git; never touches other tools’ .context/).">
+        <Row label="Give Claude a scratch folder" detail="Screenshots, JSON, logs and notes Claude makes while it works go to the workspace’s .beluga/scratch/ folder (kept out of git; never touches other tools’ .context/).">
           <Switch label="Scratch folder" on={p.scratchFolder} onChange={(v) => void api.session.setPrefs({ scratchFolder: v })} />
         </Row>
         <Row label="Show the Scratch tab" detail="Watch that folder live in the right panel, newest first (⌥⌘6).">
@@ -324,18 +324,18 @@ function People() {
 }
 
 function About() {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const home = useApp((st) => st.home);
-  const logPath = `${home}/.klaud/logs/daemon.log`;
+  const logPath = `${home}/.beluga/logs/daemon.log`;
   return (
     <Group>
-      <Row label="Klaud for Mac">{APP_VERSION}</Row>
+      <Row label="Beluga for Mac">{APP_VERSION}</Row>
       <UpdateAboutRow />
-      <Row label="Klaud (the part that runs your room)">{client.daemonVersion}</Row>
+      <Row label="Beluga (the part that runs your room)">{client.daemonVersion}</Row>
       <Row label="Windows attached" detail="The terminal app and this one share the same room.">
         {client.clients}
       </Row>
-      <Row label="Log" detail="~/.klaud/logs/daemon.log">
+      <Row label="Log" detail="~/.beluga/logs/daemon.log">
         <Button size="small" onClick={() => void client.api.local.openFolder(logPath)}>
           Open in Console
         </Button>
@@ -349,9 +349,9 @@ function About() {
 
 const BODY: Record<SettingsPane, () => ReactNode> = { general: General, appearance: Appearance, claude: ClaudePane, notifications: NotificationSettings, workspaces: Workspaces, terminal: TerminalSettings, environment: EnvironmentSettings, people: People, about: About };
 
-/** klaud's settings: this window's look on the left panes, klaud's shared settings on the rest. */
+/** Beluga's settings: this window's look on the left panes, Beluga's shared settings on the rest. */
 export function Settings() {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const pane = useUi((u) => u.settings);
   if (!pane) return null;
   const Body = BODY[pane];

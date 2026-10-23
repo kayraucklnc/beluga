@@ -14,12 +14,12 @@ function paint(ranges: readonly Range[], current: number): void {
   const H = HighlightClass();
   if (!reg || !H) return;
   if (!ranges.length) {
-    reg.delete('klaud-find');
-    reg.delete('klaud-find-current');
+    reg.delete('beluga-find');
+    reg.delete('beluga-find-current');
     return;
   }
-  reg.set('klaud-find', new H(...ranges.filter((_r, i) => i !== current)));
-  reg.set('klaud-find-current', new H(...(ranges[current] ? [ranges[current]] : [])));
+  reg.set('beluga-find', new H(...ranges.filter((_r, i) => i !== current)));
+  reg.set('beluga-find-current', new H(...(ranges[current] ? [ranges[current]] : [])));
 }
 
 /** Scroll the page so a match sits a third of the way down, unless it's already in view. */
@@ -59,11 +59,11 @@ export function DocFind({ root, version }: { root: RefObject<HTMLElement | null>
       setOpen(true);
       setAt((a) => a + delta);
     };
-    document.addEventListener('klaud:find', show);
-    document.addEventListener('klaud:find-step', step);
+    document.addEventListener('beluga:find', show);
+    document.addEventListener('beluga:find-step', step);
     return () => {
-      document.removeEventListener('klaud:find', show);
-      document.removeEventListener('klaud:find-step', step);
+      document.removeEventListener('beluga:find', show);
+      document.removeEventListener('beluga:find-step', step);
     };
   }, []);
 

@@ -1,8 +1,8 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import { type FxRates, type MoneyTotal, type ProjectEarnings, convertParts, currencyChoices, earningsCurrency, mainCurrency } from '@klaud/core/earnings-store.js';
-import type { Project } from '@klaud/workspaces/types.js';
+import { type FxRates, type MoneyTotal, type ProjectEarnings, convertParts, currencyChoices, earningsCurrency, mainCurrency } from '@beluga/core/earnings-store.js';
+import type { Project } from '@beluga/workspaces/types.js';
 import { type ConvertedSummary, convertSummary, currencyName } from './money.js';
-import { useApi, useApp } from './klaud.js';
+import { useApi, useApp } from './beluga.js';
 
 /**
  * Earnings from Stripe in this window: the currency they're shown in (yours, or the one most was
@@ -40,7 +40,7 @@ export const AUTOMATIC = '';
 
 /**
  * "Show earnings in": its options (Automatic, then the currencies the rates cover, common ones
- * first), its value, and setting it (saved in ~/.klaud/settings.json, for every window).
+ * first), its value, and setting it (saved in ~/.beluga/settings.json, for every window).
  */
 export function useCurrencyChoice(): { value: string; options: Array<{ value: string; label: string; short?: string }>; onChange: (v: string) => void } {
   const api = useApi();
@@ -169,7 +169,7 @@ export function stripeMenuItem(project: Project, connected: boolean): { label: s
 
 // ---- the one-time hint ("Track this project's earnings")
 
-const HINT_KEY = 'klaud.earnings.hint.v1';
+const HINT_KEY = 'beluga.earnings.hint.v1';
 let hintDismissed = ((): boolean => {
   try {
     return localStorage.getItem(HINT_KEY) === 'dismissed';
@@ -199,7 +199,7 @@ export const useEarningsHintDismissed = (): boolean =>
   );
 
 /** Where to create a key that can only read charges (and, optionally, the account's name). */
-export const STRIPE_KEY_URL = 'https://dashboard.stripe.com/apikeys/create?name=klaud&permissions%5B%5D=rak_charge_read&permissions%5B%5D=rak_connected_account_read';
+export const STRIPE_KEY_URL = 'https://dashboard.stripe.com/apikeys/create?name=Beluga&permissions%5B%5D=rak_charge_read&permissions%5B%5D=rak_connected_account_read';
 
 /** Test or live, and whether it's a full secret key, from what was typed (before asking Stripe). */
 export function keyKind(key: string): { mode?: 'test' | 'live'; secret: boolean; publishable: boolean } {

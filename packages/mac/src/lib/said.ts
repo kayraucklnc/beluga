@@ -1,4 +1,4 @@
-import type { LogItem } from '@klaud/core/store.js';
+import type { LogItem } from '@beluga/core/store.js';
 
 /**
  * The earlier conversation of a workspace someone shared with you arrives as system lines

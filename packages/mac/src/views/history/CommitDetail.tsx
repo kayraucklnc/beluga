@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { parseDiff } from '@klaud/shared/diff-lines.js';
-import type { CommitDetail as Detail, CommitFile } from '@klaud/workspaces/history.js';
+import { parseDiff } from '@beluga/shared/diff-lines.js';
+import type { CommitDetail as Detail, CommitFile } from '@beluga/workspaces/history.js';
 import { Icon } from '../../components/Icon.js';
 import { Button, Empty, IconButton, Tip, cx } from '../../components/ui.js';
 import { quoteInBox } from '../../chat/message-menu.js';
 import { useActions } from '../../lib/actions.js';
 import { copyText } from '../../lib/copy.js';
-import { toast, useApi, useKlaud } from '../../lib/klaud.js';
+import { toast, useApi, useBeluga } from '../../lib/beluga.js';
 import { openExternal } from '../../lib/system.js';
 import { STATE, UnifiedDiff } from '../DiffView.js';
 import { AuthorAvatar, type RefContext, RefPill } from './HistoryList.js';
@@ -83,7 +83,7 @@ export interface CommitDetailProps {
 /** One commit: its message, who and when, its parents, what it changed (with the diffs), and what to do with it. */
 export function CommitDetail({ target, projectId, hash, refs, onSelect, onClose, compact }: CommitDetailProps) {
   const { detail, error } = useCommit(target, hash);
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const api = useApi();
   const actions = useActions();
   const { state: gh } = useGitHub(projectId);

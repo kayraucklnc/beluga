@@ -1,12 +1,12 @@
 import { memo, useEffect, useState } from 'react';
-import type { ChatFile, ChatFileState } from '@klaud/net/mesh/views.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { ChatFile, ChatFileState } from '@beluga/net/mesh/views.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
 import { cx } from '../components/ui.js';
 import { inApp } from '../lib/boot.js';
 import { copyText } from '../lib/copy.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { type Pending, removePending } from './attachments.js';
 import { kindLabel, sizeLabel } from './chat-model.js';
 import { useSay } from './use-net.js';
@@ -58,7 +58,7 @@ function fileItems(f: ChatFile, state: ChatFileState | undefined, ctx: { client:
 
 /** A picture in the chat, read from the store once it's here. */
 function Picture({ f, state }: { f: ChatFile; state: ChatFileState | undefined }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [url, setUrl] = useState(() => previews.get(f.sha));
   const here = state?.state === 'here';
   useEffect(() => {
@@ -86,7 +86,7 @@ function Picture({ f, state }: { f: ChatFile; state: ChatFileState | undefined }
 
 /** One file of a message. */
 export const FileCard = memo(function FileCard({ f, conversation, mine }: { f: ChatFile; conversation: string; mine: boolean }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const say = useSay();
   const state = useFileState(f.sha);
   const here = state?.state === 'here';

@@ -4,14 +4,14 @@ import { Empty, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { ActionsContext } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import s from './lists.module.css';
 
 /** Search every conversation (yours and the ones shared with you), and jump to a result. */
 export function SearchView() {
   const api = useApi();
   const actions = useActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const search = useApp((st) => st.search);
   const [query, setQuery] = useState(search.query);
   const input = useRef<HTMLInputElement>(null);

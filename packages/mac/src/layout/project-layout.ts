@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
-import type { AppState } from '@klaud/core/store.js';
-import type { Project } from '@klaud/workspaces/types.js';
-import { type Item, type Layout, groupKey, groupOfKey, isGroupKey, move, topLevel } from '@klaud/workspaces/arrange.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import type { AppState } from '@beluga/core/store.js';
+import type { Project } from '@beluga/workspaces/types.js';
+import { type Item, type Layout, groupKey, groupOfKey, isGroupKey, move, topLevel } from '@beluga/workspaces/arrange.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 
 /**
  * The Projects section as it's arranged: the top level (loose projects and groups, in your
@@ -133,7 +133,7 @@ export function useLayout(): { layout: Required<Layout>; entries: Entry[] } {
 /** Arrange the sidebar: shows at once, then asks the daemon (which has the last word). */
 export function useArrange(): (item: Target, place: Place) => void {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   return useCallback((item, place) => {
     const state = client.store.getState();
     const layout = pending ?? publishedLayout(state);

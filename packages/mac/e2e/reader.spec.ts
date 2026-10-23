@@ -194,7 +194,7 @@ test('mermaid draws its diagrams, KaTeX typesets math, and images next to the fi
   await expect(diagrams.nth(1).locator('svg')).toBeAttached({ timeout: 20_000 });
   await expect(diagrams.first()).toContainText('charge.succeeded');
   // No script from a diagram ran, and nothing it left behind is in the page.
-  await expect(page.locator('body > [id^="dklaud-mermaid"], body > [id^="klaud-mermaid"]')).toHaveCount(0);
+  await expect(page.locator('body > [id^="dbeluga-mermaid"], body > [id^="beluga-mermaid"]')).toHaveCount(0);
   await expect(doc.locator('.katex').first()).toBeAttached({ timeout: 15_000 });
   await expect(doc.locator('.katex-display')).toHaveCount(1);
   expect(await doc.locator('.katex').count()).toBeGreaterThan(5);

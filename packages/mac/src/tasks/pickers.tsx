@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { type Assignee, type Issue, type IssueStatus, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, type Priority, STATUS_INFO } from '@klaud/core/board/model.js';
+import { type Assignee, type Issue, type IssueStatus, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, type Priority, STATUS_INFO } from '@beluga/core/board/model.js';
 import { Avatar } from '../components/ui.js';
 import { Icon } from '../components/Icon.js';
 import { PickMenu } from './PickMenu.js';

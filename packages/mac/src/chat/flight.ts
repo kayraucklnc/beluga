@@ -79,7 +79,7 @@ export function launchFlight(input: { channel: string; target: 'chat' | 'queue';
   // The box empties with a soft fade instead of blinking clear.
   if (!reducedMotion()) input.from.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
   // Make sure the chat is at its newest message, where this one lands.
-  if (input.target === 'chat') document.dispatchEvent(new CustomEvent('klaud:chat-bottom'));
+  if (input.target === 'chat') document.dispatchEvent(new CustomEvent('beluga:chat-bottom'));
 }
 
 /** The flight for a row that just appeared, if it's the message you just sent (taken: it lands once). */

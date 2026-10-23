@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { type DiffLine as Line, parseDiff } from '@klaud/shared/diff-lines.js';
-import type { ChangedFile } from '@klaud/workspaces/git.js';
+import { type DiffLine as Line, parseDiff } from '@beluga/shared/diff-lines.js';
+import type { ChangedFile } from '@beluga/workspaces/git.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Empty, Segmented, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
-import { shareNameOf } from '@klaud/shared/share-names.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
 import { revealInFinder } from '../lib/files.js';
@@ -61,7 +61,7 @@ export type Commit = { readonly hash: string; readonly subject: string };
 
 /** A commit's menu (click or right-click): copy it, or ask Claude about it. */
 export function useCommitItems(): (c: Commit) => ActionItem[] {
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const actions = useActions();
   const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
   return (c) => {
@@ -81,7 +81,7 @@ export function useCommitItems(): (c: Commit) => ActionItem[] {
 
 /** A changed file's right-click menu: open it, find it in Finder, copy its path, ask Claude. */
 export function useFileItems(): (f: ChangedFile, index: number) => ActionItem[] {
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const actions = useActions();
   const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
   return (f, index) => {
@@ -106,7 +106,7 @@ export function useFileItems(): (f: ChangedFile, index: number) => ActionItem[] 
         const current = ui.get().buffer;
         const buffer = `${current}${current && !current.endsWith(' ') ? ' ' : ''}${f.path} `;
         ui.patch({ buffer, cursor: buffer.length });
-        document.dispatchEvent(new CustomEvent('klaud:focus-composer'));
+        document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
       }, 60);
     };
     return [

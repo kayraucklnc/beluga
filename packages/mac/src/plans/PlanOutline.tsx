@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
-import { AUTONOMIES, AUTONOMY_INFO, type Plan } from '@klaud/core/plans/model.js';
-import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progress.js';
+import { AUTONOMIES, AUTONOMY_INFO, type Plan } from '@beluga/core/plans/model.js';
+import type { MilestoneView, PlanView, TaskView } from '@beluga/core/plans/progress.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext, ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
 import { IconButton, cx } from '../components/ui.js';

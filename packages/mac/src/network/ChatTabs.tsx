@@ -1,11 +1,11 @@
 import { type ReactNode, useEffect } from 'react';
-import type { NetworkState } from '@klaud/net/mesh/views.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { NetworkState } from '@beluga/net/mesh/views.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsContext, ActionsDropdown } from '../components/SpecMenu.js';
 import { Badge, Tip, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useKlaud } from '../lib/klaud.js';
+import { useBeluga } from '../lib/beluga.js';
 import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { GroupAvatar, PersonAvatar } from './Avatars.js';
 import { MAIN_TAB, channelName, chatTabs, closeTab, openTab } from './chat-model.js';
@@ -54,7 +54,7 @@ function tabInfo(id: string, net: NetworkState): { name: string; unread: number;
 }
 
 export function ChatTabs({ shown }: { shown: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const net = useNetwork();
   const prefs = usePrefs();
   const say = useSay();

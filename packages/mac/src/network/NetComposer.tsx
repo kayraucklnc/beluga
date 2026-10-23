@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ChatFile } from '@klaud/net/mesh/views.js';
+import type { ChatFile } from '@beluga/net/mesh/views.js';
 import { Icon } from '../components/Icon.js';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
 import { IconButton, Tip, cx } from '../components/ui.js';
 import { inApp } from '../lib/boot.js';
-import { useKlaud } from '../lib/klaud.js';
+import { useBeluga } from '../lib/beluga.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { quoted } from '../chat/message-menu.js';
@@ -21,9 +21,9 @@ import s from './network.module.css';
 const drafts = new Map<string, string>();
 
 /** Put a quote in the message box of the conversation on screen. */
-export const QUOTE_EVENT = 'klaud:net-quote';
+export const QUOTE_EVENT = 'beluga:net-quote';
 /** Ask a Claude with the next message (the menu, a message's "Ask Claude About This"). */
-export const ASK_EVENT = 'klaud:net-ask';
+export const ASK_EVENT = 'beluga:net-ask';
 
 const MAX = 8000;
 
@@ -39,7 +39,7 @@ export interface Person {
 }
 
 /** Pick files with the standard Open panel (in a browser, the page's file picker). */
-async function pickFiles(client: ReturnType<typeof useKlaud>['client'], id: string, input: HTMLInputElement | null): Promise<void> {
+async function pickFiles(client: ReturnType<typeof useBeluga>['client'], id: string, input: HTMLInputElement | null): Promise<void> {
   if (!inApp()) return void input?.click();
   const { open } = await import('@tauri-apps/plugin-dialog');
   const picked = await open({ multiple: true, title: 'Send Files' });
@@ -86,7 +86,7 @@ function AskButton({ ask, setAsk, people, me }: { ask: Ask | undefined; setAsk: 
  * (or ⌘Return, as in Settings); a failed send puts everything back.
  */
 export function NetComposer({ id, placeholder, people, me, send, addPeople }: { id: string; placeholder: string; people: readonly Person[]; me?: Person; send: (out: Outgoing) => Promise<unknown>; addPeople?: () => void }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const prefs = usePrefs();
   const [text, setText] = useState(() => drafts.get(id) ?? '');
   const [ask, setAsk] = useState<Ask>();
@@ -139,11 +139,11 @@ export function NetComposer({ id, placeholder, people, me, send, addPeople }: { 
     const focus = (): void => ref.current?.focus();
     document.addEventListener(QUOTE_EVENT, quote);
     document.addEventListener(ASK_EVENT, asked);
-    document.addEventListener('klaud:focus-composer', focus);
+    document.addEventListener('beluga:focus-composer', focus);
     return () => {
       document.removeEventListener(QUOTE_EVENT, quote);
       document.removeEventListener(ASK_EVENT, asked);
-      document.removeEventListener('klaud:focus-composer', focus);
+      document.removeEventListener('beluga:focus-composer', focus);
     };
   }, []);
   const over = text.length > MAX;

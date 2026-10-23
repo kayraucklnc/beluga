@@ -16,7 +16,7 @@ describe('what a project has inside', () => {
     expect(hasRowsInside(project(ws('old', { archived: true })), [])).toBe(false);
   });
 
-  it('its worktrees and chats, worktrees made outside Klaud', () => {
+  it('its worktrees and chats, worktrees made outside Beluga', () => {
     expect(hasRowsInside(project(ws('feature')), [])).toBe(true);
     expect(hasRowsInside(project(ws('chat', { kind: 'chat' as Workspace['kind'] })), [])).toBe(true);
     expect(hasRowsInside(project(ws('theirs', { external: true, path: '/elsewhere/theirs' })), [])).toBe(true);

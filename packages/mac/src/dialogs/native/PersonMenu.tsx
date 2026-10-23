@@ -1,11 +1,11 @@
 import * as Context from '@radix-ui/react-context-menu';
 import { type ReactNode, useState } from 'react';
-import { TRUST_INFO, canRunOn, trustOf } from '@klaud/core/trust.js';
-import { TRUST_LEVELS, type TrustLevel } from '@klaud/shared/settings-schema.js';
+import { TRUST_INFO, canRunOn, trustOf } from '@beluga/core/trust.js';
+import { TRUST_LEVELS, type TrustLevel } from '@beluga/shared/settings-schema.js';
 import { Icon } from '../../components/Icon.js';
 import { cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { Alert, optionIndex } from './parts.js';
 import { RunCommandSheet, addressTo } from './PeerSheets.js';
 import { presetShareWith } from './ShareFolderSheet.js';
@@ -56,7 +56,7 @@ export function PersonContextMenu({ index, children }: { index: number; children
 function Items({ index, onRemove, onRun }: { index: number; onRemove: (r: { name: string; guest: boolean; run: () => void }) => void; onRun: () => void }) {
   const api = useApi();
   const actions = useActions();
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const state = useApp((st) => st);
   const peer = state.peers[index];
   if (!peer) return null;

@@ -5,7 +5,7 @@ import { Alert } from '../../components/Alert.js';
 import { Icon } from '../../components/Icon.js';
 import { ProjectIcon } from '../../components/ProjectIcon.js';
 import { Empty, cx } from '../../components/ui.js';
-import { useApi } from '../../lib/klaud.js';
+import { useApi } from '../../lib/beluga.js';
 import type { OverviewItem } from './overview-model.js';
 import f from '../../components/form.module.css';
 import s from './peek.module.css';
@@ -106,7 +106,7 @@ export function DeleteArchivedAlert({ item, onCancel, onDelete }: { item: Overvi
                 This deletes its branch <code>{w.branch}</code> and the conversation. Commits that aren’t on another branch are lost.
               </>
             ) : (
-              'This deletes the conversation and removes it from Klaud.'
+              'This deletes the conversation and removes it from Beluga.'
             )}
           </p>
           <p>You can’t undo this.</p>

@@ -1,9 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, MAX_PARALLEL, type Plan, TESTS_AT, TESTS_AT_INFO, shownBody } from '@klaud/core/plans/model.js';
-import { type PlanView, tidyOffer } from '@klaud/core/plans/progress.js';
-import { CONTINUE_PROMPT, decodeFailure, resetWords } from '@klaud/shared/run-failure.js';
-import { formatDuration } from '@klaud/shared/text.js';
-import { activityOf } from '@klaud/ui/workspace-models.js';
+import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, MAX_PARALLEL, type Plan, TESTS_AT, TESTS_AT_INFO, shownBody } from '@beluga/core/plans/model.js';
+import { type PlanView, tidyOffer } from '@beluga/core/plans/progress.js';
+import { CONTINUE_PROMPT, decodeFailure, resetWords } from '@beluga/shared/run-failure.js';
+import { formatDuration } from '@beluga/shared/text.js';
+import { activityOf } from '@beluga/ui/workspace-models.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown, type ActionItem } from '../components/SpecMenu.js';
@@ -13,7 +13,7 @@ import { ResizeHandle } from '../layout/panel/ResizeHandle.js';
 import { taskChatsItem } from '../layout/plan-task-chats.js';
 import { Button, Empty, IconButton, Segmented, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { mod, openExternal } from '../lib/system.js';
 import { MilestoneBar, PlanProgress, Said, TonePill } from './marks.js';
@@ -70,13 +70,13 @@ export function PlanPage({ id, task }: { id: string; task?: string }) {
 }
 
 /**
- * Your usage limit stopped the plan: when it goes on by itself, and Resume now. Klaud resumes the
+ * Your usage limit stopped the plan: when it goes on by itself, and Resume now. Beluga resumes the
  * head Claude and each paused task once the limit resets (see core/plans/watchdog.ts).
  */
 function LimitPause({ view }: { view: PlanView }) {
   const { plan } = view;
   const { api, act } = usePlanActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const paused = view.active.filter((t) => t.pulse?.kind === 'paused');
   // The head Claude's own last turn, when your limit stopped it.
   const home = useApp((st) => {

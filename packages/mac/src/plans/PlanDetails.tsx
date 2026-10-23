@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { type Criterion, criteria } from '@klaud/core/board/criteria.js';
-import type { Plan } from '@klaud/core/plans/model.js';
-import type { MilestoneView, PlanView, TaskView } from '@klaud/core/plans/progress.js';
+import { type Criterion, criteria } from '@beluga/core/board/criteria.js';
+import type { Plan } from '@beluga/core/plans/model.js';
+import type { MilestoneView, PlanView, TaskView } from '@beluga/core/plans/progress.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
 import { Button, IconButton, cx } from '../components/ui.js';

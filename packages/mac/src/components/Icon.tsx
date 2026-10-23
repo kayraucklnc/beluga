@@ -24,7 +24,7 @@ const PATHS = {
   people: 'M6 7.5a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5z M2 13c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5 M10.5 7a2 2 0 1 0 0-4 M12 9.6c1.3.4 2 1.6 2 3.1',
   person: 'M8 7.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5z M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4',
   branch: 'M5 3v10 M5 10c0-3 6-2 6-5 M11 2.5v2.5 M5 13a1.25 1.25 0 1 0 0-.01 M5 3a1.25 1.25 0 1 0 0-.01 M11 5a1.25 1.25 0 1 0 0-.01',
-  /** Claude in klaud: the logo's prompt and cursor, at the logo's proportions. */
+  /** Claude in Beluga: the logo's prompt and cursor, at the logo's proportions. */
   claude: 'M3 4.5L6.7 8 3 11.5 M9.15 10.8h3.9',
   /** The old name for Claude's mark (kept so every use shows the same one). */
   spark: 'M3 4.5L6.7 8 3 11.5 M9.15 10.8h3.9',
@@ -68,7 +68,7 @@ const PATHS = {
   pulse: 'M1.5 8.5h2.8l1.9-4.8 3.1 8.6 1.9-3.8h3.3',
   /** Open in full (the focus view): two corners pulled out. */
   expand: 'M9.5 2.5h4v4 M13.5 2.5L9 7 M6.5 13.5h-4v-4 M2.5 13.5L7 9',
-  /** Open outside klaud (in the file's own app): an arrow leaving a box. */
+  /** Open outside Beluga (in the file's own app): an arrow leaving a box. */
   external: 'M9 2.5h4.5V7 M13.5 2.5L7.5 8.5 M11.5 9.5v4h-9v-9h4',
   /** The window with its bottom drawer (the terminal under the chat). */
   panelBottom: 'M2.5 3.5h11v9h-11z M2.5 9.5h11',

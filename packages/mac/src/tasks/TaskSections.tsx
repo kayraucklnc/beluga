@@ -1,5 +1,5 @@
 import { type MouseEvent, useState } from 'react';
-import { type Issue, type Proof, STATUS_INFO, blocking, childrenOf, issueById, progressOf } from '@klaud/core/board/model.js';
+import { type Issue, type Proof, STATUS_INFO, blocking, childrenOf, issueById, progressOf } from '@beluga/core/board/model.js';
 import { Thumb } from '../chat/ChatImages.js';
 import { localImage } from '../chat/md-images.js';
 import { GraphBlock } from '../components/graph/GraphBlock.js';
@@ -213,7 +213,7 @@ export function ProofItems({ issue, readOnly = false }: { issue: Issue; readOnly
 function ProofItem({ proof, images, onRemove }: { proof: Proof; images: ReturnType<typeof localImage>[]; onRemove: (() => void) | undefined }) {
   const actions = useActions();
   const [preview, setPreview] = useState(false);
-  const by = `${proof.by.kind === 'claude' ? 'Claude' : proof.by.kind === 'person' ? proof.by.name : 'Klaud'} · ${ago(proof.at)}`;
+  const by = `${proof.by.kind === 'claude' ? 'Claude' : proof.by.kind === 'person' ? proof.by.name : 'Beluga'} · ${ago(proof.at)}`;
   const remove = onRemove ? <IconButton icon="x" label={`Remove ${proof.title}`} className={t.proofRemove} onClick={onRemove} /> : null;
   if (proof.kind === 'graph' && proof.body) {
     return (

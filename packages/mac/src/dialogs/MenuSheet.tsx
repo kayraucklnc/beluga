@@ -2,11 +2,11 @@ import * as Dialog from '@radix-ui/react-dialog';
 import type { ComponentType } from 'react';
 import { NATIVE_MENUS, type NativeMenuProps } from './native/index.js';
 import { useEffect, useRef, useState } from 'react';
-import { menuSpec } from '@klaud/ui/menus.js';
+import { menuSpec } from '@beluga/ui/menus.js';
 import { Icon } from '../components/Icon.js';
 import { Button, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { guiHint, paragraphs } from '../lib/gui-copy.js';
 import s from './sheet.module.css';
 
@@ -17,7 +17,7 @@ import s from './sheet.module.css';
  * instead (dialogs/native); this is for the rest.
  */
 export function MenuSheet() {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const actions = useActions();
   const open = useUi((u) => u.menu);
   const state = useApp((st) => st);

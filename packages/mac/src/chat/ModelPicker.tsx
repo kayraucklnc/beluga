@@ -1,9 +1,9 @@
 import * as Popover from '@radix-ui/react-popover';
-import { EFFORTS, type Effort } from '@klaud/shared/settings-schema.js';
-import { modelLabel, modelOf } from '@klaud/ui/menus.js';
+import { EFFORTS, type Effort } from '@beluga/shared/settings-schema.js';
+import { modelLabel, modelOf } from '@beluga/ui/menus.js';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import s from './picker.module.css';
 
 /** Effort, named as Claude Code names it, with what it means. */

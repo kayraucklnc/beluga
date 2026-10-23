@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import type { Template } from '@klaud/core/work-store.js';
+import type { Template } from '@beluga/core/work-store.js';
 import { Alert } from '../../components/Alert.js';
 import { Checkbox, Field, FormSheet, TextArea, TextInput, formStyles as f } from '../../components/FormSheet.js';
 import { Icon } from '../../components/Icon.js';
-import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { openSheet } from '../../lib/sheets.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
@@ -26,7 +26,7 @@ const PICKER = { kind: 'templates' } as const;
  * In "manage" your own ones can be removed; New Template… makes one.
  */
 export function TemplatesSheet({ menu, close }: NativeMenuProps<'templates'>) {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const pick = usePick(menu);
   const use = usePick(PICKER);
   const templates = useApp((st) => st.templates);

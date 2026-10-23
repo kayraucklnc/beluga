@@ -115,11 +115,11 @@ html[data-app='tauri'] body {
 }
 
 /* Find in this conversation (⌘F): every match, and the one you're on. */
-::highlight(klaud-find) {
+::highlight(beluga-find) {
   background-color: color-mix(in srgb, #ffd60a 45%, transparent);
   color: inherit;
 }
-::highlight(klaud-find-current) {
+::highlight(beluga-find-current) {
   background-color: #ffd60a;
   color: #1d1d1f;
 }

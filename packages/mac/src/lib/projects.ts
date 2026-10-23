@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { BelugaClient } from '@klaud/ipc/client.js';
+import type { BelugaClient } from '@beluga/ipc/client.js';
 import { inApp } from './boot.js';
-import { useKlaud } from './klaud.js';
+import { useBeluga } from './beluga.js';
 
 /** A project's icon as an image URL, or null when it has none (it gets its initial instead). */
 type Icon = string | null;
@@ -31,7 +31,7 @@ export function reloadProjectIcon(projectId: string): void {
 }
 
 export function useProjectIcon(projectId: string): Icon | undefined {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [icon, setIcon] = useState<Icon | undefined>(undefined);
   const [version, setVersion] = useState(0);
   useEffect(() => {

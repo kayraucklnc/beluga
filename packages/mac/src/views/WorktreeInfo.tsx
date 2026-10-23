@@ -1,20 +1,20 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import type { AgentOrigin } from '@klaud/core/claude-code/model.js';
-import type { WorktreeInfo } from '@klaud/core/other-worktrees.js';
-import { formatBytes } from '@klaud/shared/format.js';
-import { type WorktreeSource, sourceFromPath } from '@klaud/workspaces/origin.js';
-import type { Workspace } from '@klaud/workspaces/types.js';
+import type { AgentOrigin } from '@beluga/core/claude-code/model.js';
+import type { WorktreeInfo } from '@beluga/core/other-worktrees.js';
+import { formatBytes } from '@beluga/shared/format.js';
+import { type WorktreeSource, sourceFromPath } from '@beluga/workspaces/origin.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
 import { Alert } from '../components/Alert.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Button, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { setWorktreeFlag, useWorktreeInfo } from './worktree-info-state.js';
 import s from './worktree-info.module.css';
 import { LivePanel } from '../claude-code/Live.js';
 
 /**
- * What a worktree made outside Klaud is (another app's, Claude Code's, a script's): where it
+ * What a worktree made outside Beluga is (another app's, Claude Code's, a script's): where it
  * is, its branch and state, the Claude Code conversations that ran in it, and what you can do
  * with it. Shown instead of an empty chat, and from "About This Worktree" over one with a
  * conversation. Another app is never named: the worktree's name and location say enough.
@@ -22,7 +22,7 @@ import { LivePanel } from '../claude-code/Live.js';
 
 /** Claude's mark for one Claude made; a branch for the rest. */
 const iconOf = (source: WorktreeSource): IconName => (source === 'claude' ? 'claude' : 'branch');
-const MADE_OUTSIDE = 'Made outside Klaud';
+const MADE_OUTSIDE = 'Made outside Beluga';
 const MADE_OUTSIDE_DETAIL = 'Made by hand, by a script or by another app.';
 
 const day = (ms: number): string => new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
@@ -47,7 +47,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Asks before removing a worktree made outside Klaud; with uncommitted changes the button says what's lost. */
+/** Asks before removing a worktree made outside Beluga; with uncommitted changes the button says what's lost. */
 export function RemoveWorktreeAlert({ ws, info, onDone, onCancel }: { ws: Workspace; info?: WorktreeInfo; onDone: (removed: boolean) => void; onCancel: () => void }) {
   const api = useApi();
   const [busy, setBusy] = useState(false);
@@ -70,7 +70,7 @@ export function RemoveWorktreeAlert({ ws, info, onDone, onCancel }: { ws: Worksp
       message={
         <>
           <p>
-            Klaud deletes its folder and git’s record of it.{' '}
+            Beluga deletes its folder and git’s record of it.{' '}
             {branch ? (
               <>
                 The branch <strong>{branch}</strong> stays, so nothing committed is lost.
@@ -149,7 +149,7 @@ function useSize(id: string): number | undefined {
 export function WorktreeInfoPage({ ws, agent, origin }: { ws: Workspace; agent?: boolean; origin?: AgentOrigin }) {
   const actions = useActions();
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const statusKey = `${ws.status?.changed ?? '-'}:${ws.status?.ahead ?? '-'}:${ws.status?.behind ?? '-'}:${ws.branch ?? ''}`;
   const { info, loading, error } = useWorktreeInfo(ws.id, statusKey);
   const hasChat = useApp((st) => st.log.some((l) => l.channel === `ws:${ws.id}`));
@@ -159,7 +159,7 @@ export function WorktreeInfoPage({ ws, agent, origin }: { ws: Workspace; agent?:
   const start = (): void => {
     setWorktreeFlag('started', ws.id, true);
     setWorktreeFlag('about', ws.id, false);
-    setTimeout(() => document.dispatchEvent(new CustomEvent('klaud:focus-composer')), 30);
+    setTimeout(() => document.dispatchEvent(new CustomEvent('beluga:focus-composer')), 30);
   };
   return (
     <div className={s.page} data-testid="worktree-info">
@@ -269,12 +269,12 @@ export function WorktreeInfoPage({ ws, agent, origin }: { ws: Workspace; agent?:
   );
 }
 
-/** Above a conversation shown from a worktree made outside Klaud: what it is, and its info page. */
+/** Above a conversation shown from a worktree made outside Beluga: what it is, and its info page. */
 export function OtherWorktreeBanner({ ws }: { ws: Workspace }) {
   return (
     <div className={s.banner}>
       <Icon name={iconOf(sourceFromPath(ws.path))} size={13} />
-      <span className={s.bannerText}>A worktree made outside Klaud. It becomes one of yours once you send a message here.</span>
+      <span className={s.bannerText}>A worktree made outside Beluga. It becomes one of yours once you send a message here.</span>
       <Button size="small" variant="quiet" onClick={() => setWorktreeFlag('about', ws.id, true)}>
         About This Worktree
       </Button>

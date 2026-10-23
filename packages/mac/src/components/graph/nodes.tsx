@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { Handle, type Node, type NodeProps, type Position } from '@xyflow/react';
-import type { GraphNode, NodeKind } from '@klaud/shared/graph-spec.js';
-import { useKlaud } from '../../lib/klaud.js';
+import type { GraphNode, NodeKind } from '@beluga/shared/graph-spec.js';
+import { useBeluga } from '../../lib/beluga.js';
 import { imageSource, localImage } from '../../chat/md-images.js';
 import { openLightbox, useImage } from '../../chat/images.js';
 import type { Side } from './graph-model.js';
@@ -126,7 +126,7 @@ export const ImageNode = memo(function ImageNode({ data }: NodeProps<FlowNode>) 
 });
 
 function Picture({ path, label }: { path: string; label: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const image = localImage(path, label);
   const state = useImage(client.api, image);
   if (state.status !== 'ready') return <div className={g.noPicture}>{state.status === 'loading' ? 'Loading…' : 'Can’t open this picture'}</div>;

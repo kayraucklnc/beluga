@@ -1,4 +1,4 @@
-import { formatBytes } from '@klaud/shared/format.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { ProjectIcon } from '../../components/ProjectIcon.js';
 import { IconButton, Tip, cx } from '../../components/ui.js';
 import { Card, Shimmer, slotColor } from './parts.js';

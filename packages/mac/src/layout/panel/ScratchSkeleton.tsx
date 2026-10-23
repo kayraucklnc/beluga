@@ -15,7 +15,7 @@ interface ScratchSkeletonProps {
   readonly folders: readonly string[];
   /** Claude is given no scratch folder (Settings › Claude). */
   readonly off: boolean;
-  /** klaud's own folder (where Show in Finder goes). */
+  /** Beluga's own folder (where Show in Finder goes). */
   readonly dir: string;
   readonly onReveal: () => void;
 }

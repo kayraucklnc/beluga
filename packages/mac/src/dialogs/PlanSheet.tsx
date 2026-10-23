@@ -4,12 +4,12 @@ import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
 import { Button } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import s from './plan.module.css';
 
 /** Claude's plan, full size: read it, approve it, or say what to change. */
 export function PlanSheet() {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const api = useApi();
   const actions = useActions();
   const qid = useUi((u) => u.planFull);

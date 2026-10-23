@@ -7,7 +7,7 @@ import { reducedMotion } from './reduced-motion.js';
  * spinners, the dot matrices, the step on now (KLD-40). A CSS animation makes WebKit draw the
  * whole window 60 times a second for as long as it runs, however small it is; this clock writes
  * each live mark's style about 15 times a second instead, so the window draws a quarter as often.
- * Only marks on screen are painted; while you're not looking at Klaud (lib/window-active.ts) the
+ * Only marks on screen are painted; while you're not looking at Beluga (lib/window-active.ts) the
  * clock stops, and with Reduce Motion every mark rests at its still frame.
  */
 

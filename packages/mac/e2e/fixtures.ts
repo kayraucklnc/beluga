@@ -8,14 +8,14 @@ export * from '@playwright/test';
  * Every spec file gets a demo daemon of its own: fresh state, whatever the files before it in this
  * worker archived, merged or turned off. The worker keeps the next one warming up in its other home
  * while a file runs, so switching costs nothing. The page finds its daemon through the dev server's
- * /__klaud/endpoint (src/lib/boot.ts), which is answered here instead.
+ * /__beluga/endpoint (src/lib/boot.ts), which is answered here instead.
  *
- * Specs read process.env.KLAUD_HOME (its fake-gh.json) and KLAUD_CLAUDE_HOME (the pretend ~/.claude):
+ * Specs read process.env.BELUGA_HOME (its fake-gh.json) and BELUGA_CLAUDE_HOME (the pretend ~/.claude):
  * in a worker they're the current daemon's. Import `test` and `expect` from here, not @playwright/test.
  */
 
 // The run's homes (scripts/e2e-lock.mjs, or playwright.config.ts without the lock): this worker's are next to them.
-const run = { home: process.env.KLAUD_HOME!, claude: process.env.KLAUD_CLAUDE_HOME! };
+const run = { home: process.env.BELUGA_HOME!, claude: process.env.BELUGA_CLAUDE_HOME! };
 const port = Number(process.env.E2E_PORT);
 
 class Demos {
@@ -40,8 +40,8 @@ class Demos {
     await old?.demo.stop();
     const ready = await demo;
     this.current = { demo: ready, file, slot };
-    process.env.KLAUD_HOME = ready.home;
-    process.env.KLAUD_CLAUDE_HOME = ready.claude;
+    process.env.BELUGA_HOME = process.env.KLAUD_HOME = ready.home;
+    process.env.BELUGA_CLAUDE_HOME = process.env.KLAUD_CLAUDE_HOME = ready.claude;
     const other = slot === 0 ? 1 : 0;
     const warming = this.start(other);
     // Its failure is the next file's (it's awaited there), not an unhandled rejection now.
@@ -67,7 +67,7 @@ export const test = base.extend<{ demo: Demo }, { demos: Demos }>({
   ],
   demo: [async ({ demos }, use, info) => use(await demos.for(info.file)), { auto: true, timeout: 120_000 }],
   context: async ({ context, demo }, use) => {
-    await context.route('**/__klaud/endpoint', (route) => route.fulfill({ json: demo.endpoint }));
+    await context.route('**/__beluga/endpoint', (route) => route.fulfill({ json: demo.endpoint }));
     await use(context);
   },
 });

@@ -3,12 +3,12 @@ import type { PopupRequest } from './popup-model.js';
 import { REQUEST_NOTIFICATION, type RequestAction } from './request-actions.js';
 
 /**
- * Between Klaud's window and the request pop-up. In the app the shell carries it (a floating
+ * Between Beluga's window and the request pop-up. In the app the shell carries it (a floating
  * window of its own, see src-tauri/src/popup.rs); in a browser (development, tests, the README's
  * recordings) popup.html in another tab hears the window over a BroadcastChannel.
  */
 
-const CHANNEL = 'klaud-request-popup';
+const CHANNEL = 'beluga-request-popup';
 
 type Message =
   | { readonly t: 'requests'; readonly requests: readonly PopupRequest[] }
@@ -17,7 +17,7 @@ type Message =
 
 const channel = (): BroadcastChannel | undefined => (typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel(CHANNEL));
 
-// ------------------------------------------------------------------ Klaud's window
+// ------------------------------------------------------------------ Beluga's window
 
 /** Keep the pop-up showing these (none hides it). Returns a function that stops listening. */
 export function popupPublisher(): { publish: (requests: readonly PopupRequest[]) => void; close: () => void } {
@@ -53,7 +53,7 @@ export interface PopupPort {
   readonly subscribe: (on: (requests: readonly PopupRequest[]) => void) => () => void;
   readonly act: (action: RequestAction, r: Pick<PopupRequest, 'approval' | 'task'>) => void;
   readonly resize: (height: number) => void;
-  /** × : hide these until something new comes (they still wait in Klaud). */
+  /** × : hide these until something new comes (they still wait in Beluga). */
   readonly dismiss: (approvals: readonly string[]) => void;
 }
 
