@@ -18,6 +18,7 @@ import { type OverviewFilter, readOverviewPrefs } from './overview/overview-mode
 import { type HomeModel, agoText, homeModel, lastActive } from './project/home-model.js';
 import { branchOptions } from '../chat/WorktreeDraft.js';
 import { useBoxSuggestions } from '../chat/BoxSuggestions.js';
+import { useAttachments } from '../chat/use-attachments.js';
 import { HomeHistory } from './history/HomeHistory.js';
 import { GitHubRow } from './project/GitHubRow.js';
 import { MainSyncBar } from './project/MainSyncBar.js';
@@ -26,6 +27,7 @@ import { openSheet } from '../lib/sheets.js';
 import { TonePill } from '../plans/marks.js';
 import { planStatus, plansOf, titleOf } from '../plans/plans-model.js';
 import { usePlanActions, usePlanView, usePlans } from '../plans/use-plans.js';
+import c from '../chat/composer.module.css';
 import d from '../chat/draft.module.css';
 import s from './project-home.module.css';
 
@@ -159,6 +161,19 @@ function HomeComposer({ project }: { project: Project }) {
   const plansOn = usePlans().enabled;
   const branches = useBranches(project.id);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const words = useRef(text);
+  words.current = text;
+  // Pasted and dropped images wait as thumbnails with an "[image N]" in the words, as in every message box.
+  const att = useAttachments({
+    channel: `home:${project.id}`,
+    box: ref,
+    text: () => words.current,
+    setText: (next, cursor) => {
+      words.current = next;
+      setText(next);
+      requestAnimationFrame(() => ref.current?.setSelectionRange(cursor, cursor));
+    },
+  });
   useEffect(() => {
     setText('');
     setName('');
@@ -177,7 +192,7 @@ function HomeComposer({ project }: { project: Project }) {
   const plan = mode === 'plan';
   const task = text.trim();
   // A plan with no goal yet opens the sheet, so the button is always ready.
-  const ready = worktree ? Boolean(task || name.trim()) : plan || Boolean(task);
+  const ready = worktree ? Boolean(task || name.trim() || att.images.length) : plan || Boolean(task || att.images.length);
   const chosen = base ?? branches?.base ?? project.base;
   const options = branches?.branches.length ? branches.branches : chosen ? [chosen] : [];
   const sendKeys = prefs.sendWith === 'enter' ? '↩' : `${mod()}↩`;
@@ -195,16 +210,29 @@ function HomeComposer({ project }: { project: Project }) {
       if (!ready) toast(client, worktree ? 'Describe the task, or give the worktree a name' : 'Type your question first', 'info');
       return;
     }
-    if (plan) {
-      if (!task) {
-        openSheet({ kind: 'new_plan', projectId: project.id });
+    if (plan && !task && !att.images.length) {
+      openSheet({ kind: 'new_plan', projectId: project.id });
+      return;
+    }
+    // Images go where their "[image N]" is (as links to them); they come back to the box if it fails.
+    const { text: typed, images, putBack } = att.take(task);
+    let message = typed;
+    if (images.length) {
+      try {
+        message = await api.attachments.expand(typed, `home:${project.id}`, [...images]);
+      } catch (err) {
+        putBack();
+        toast(client, `Couldn’t send the images: ${errorText(err)}`, 'error');
         return;
       }
+    }
+    if (plan) {
       // The plan's page and chat open on their own; Claude starts planning from the text.
       setBusy(true);
-      const made = await plans.act(() => plans.api.create({ projectId: project.id, goal: task, autonomy }));
+      const made = await plans.act(() => plans.api.create({ projectId: project.id, goal: message, autonomy }));
       setBusy(false);
       if (made) setText('');
+      else putBack();
       return;
     }
     if (worktree) {
@@ -212,15 +240,16 @@ function HomeComposer({ project }: { project: Project }) {
       const named = name.trim();
       setText('');
       setName('');
-      void api.workspaces.startWorktree(project.id, task, { ...(base ? { base } : {}), ...(named ? { name: named } : {}) }).catch((err: unknown) => toast(client, `Couldn’t create the worktree: ${errorText(err)}`, 'error'));
+      void api.workspaces.startWorktree(project.id, message, { ...(base ? { base } : {}), ...(named ? { name: named } : {}) }).catch((err: unknown) => toast(client, `Couldn’t create the worktree: ${errorText(err)}`, 'error'));
       return;
     }
     setBusy(true);
     try {
-      await api.workspaces.startChat(project.id, task);
+      await api.workspaces.startChat(project.id, message);
       setText('');
       setName('');
     } catch (err) {
+      putBack();
       toast(client, `Couldn’t start the chat: ${errorText(err)}`, 'error');
     } finally {
       setBusy(false);
@@ -229,6 +258,7 @@ function HomeComposer({ project }: { project: Project }) {
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (box.onKey(e)) return;
+    if (att.onRefKey(e)) return;
     if (e.key !== 'Enter') return;
     const modKey = e.metaKey || e.ctrlKey;
     const sends = prefs.sendWith === 'enter' ? !e.shiftKey && !modKey : modKey;
@@ -238,7 +268,8 @@ function HomeComposer({ project }: { project: Project }) {
   };
 
   return (
-    <section className={s.composer} aria-label="Start something">
+    <section className={s.composer} aria-label="Start something" data-drop-zone>
+      {att.dropTarget}
       <div className={s.composerHead}>
         <h2 className={s.prompt}>What do you want to do in {project.name}?</h2>
         <Segmented<Mode>
@@ -256,8 +287,9 @@ function HomeComposer({ project }: { project: Project }) {
           ]}
         />
       </div>
-      <div className={cx(s.box, busy && s.busy)}>
+      <div className={cx(s.box, busy && s.busy, att.dropping && c.dropping)} {...att.dropProps}>
         {box.list}
+        {att.images.length || att.files.length ? <div className={s.waiting}>{att.waiting}</div> : null}
         <textarea
           ref={ref}
           className={`${s.input} selectable`}
@@ -266,6 +298,7 @@ function HomeComposer({ project }: { project: Project }) {
           value={text}
           rows={3}
           onChange={(e) => setText(e.target.value)}
+          onPaste={att.onPaste}
           onKeyDown={onKey}
           spellCheck
         />
