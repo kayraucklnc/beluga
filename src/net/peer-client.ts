@@ -41,6 +41,8 @@ export interface Retry {
   readonly retryAt: number;
   /** Why the last one failed, e.g. "Opening handshake has timed out". */
   readonly reason: string;
+  /** The room answered and said why (a version mismatch, a refusal), rather than not being reached. */
+  readonly said?: boolean;
 }
 
 export interface IncomingMessage {
@@ -58,7 +60,7 @@ interface ClientEvents {
   welcome: [PeerInfo, string | undefined];
   peers: [readonly PeerInfo[]];
   message: [IncomingMessage];
-  /** Something the room told you (a refusal, a version mismatch). Dial failures come as `retrying`. */
+  /** Something the room told you (a refusal, a version mismatch). It's also the reason of the `retrying` or `ended` that follows. */
   error: [string];
   /** The connection is down and will be tried again; one per failed dial, for a status (never the chat log). */
   retrying: [Retry];
@@ -106,6 +108,8 @@ export class PeerClient extends EventEmitter<ClientEvents> {
   private lastError = '';
   /** Why the last dial or connection failed. */
   private failure = '';
+  /** The room said why (see Retry.said). */
+  private said = false;
   private readonly identity: Identity;
 
   constructor(private readonly opts: PeerClientOptions) {
@@ -132,6 +136,7 @@ export class PeerClient extends EventEmitter<ClientEvents> {
 
   private dial(index: number): void {
     this.failure = '';
+    this.said = false;
     const url = this.targets[index] as string;
     if (!url.startsWith(P2P_SCHEME)) {
       // Our own handshake deadline, not ws's: it would fire after any long stall of this process.
@@ -269,7 +274,9 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     switch (frame.t) {
       case 'challenge':
         if (frame.v !== PROTOCOL_VERSION) {
-          this.emit('error', frame.v > PROTOCOL_VERSION ? 'The host has a newer klaud. Run klaud update, then join again' : 'The host has an older klaud. Ask them to run klaud update');
+          // Hang up now (not at the room's auth timeout): the retry says why, and tries again later.
+          this.refused(frame.v > PROTOCOL_VERSION ? 'The host has a newer klaud. Run klaud update, then join again' : 'The host has an older klaud. Ask them to run klaud update');
+          this.socket?.close();
           return;
         }
         this.sendHello(frame.nonce);
@@ -277,7 +284,8 @@ export class PeerClient extends EventEmitter<ClientEvents> {
       case 'welcome': {
         const payload = WelcomePayload.safeParse(open(this.inviteKeys, frame.box));
         if (!payload.success) {
-          this.emit('error', 'Could not decrypt room state (wrong secret?)');
+          this.refused('Could not decrypt room state (wrong secret?)');
+          this.socket?.close();
           return;
         }
         this.roomKeys = payload.data.roomKey ? { enc: Buffer.from(payload.data.roomKey, 'base64'), auth: this.inviteKeys.auth } : this.inviteKeys;
@@ -311,11 +319,18 @@ export class PeerClient extends EventEmitter<ClientEvents> {
         return;
       case 'error':
         this.lastError = frame.message;
-        this.emit('error', frame.message);
+        this.refused(frame.message);
         return;
       default:
         return;
     }
+  }
+
+  /** The room said why it won't have you (for now): the reason of the retry (or end) that follows. */
+  private refused(message: string): void {
+    this.failure = message;
+    this.said = true;
+    this.emit('error', message);
   }
 
   private deliver(frame: MsgFrame): void {
@@ -342,6 +357,6 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     if (this.closed || this.opts.reconnect === false) return;
     const delay = Math.min(MAX_BACKOFF_MS, 500 * 2 ** this.attempt++);
     this.timer = setTimeout(() => this.connect(), delay);
-    this.emit('retrying', { attempt: this.attempt, retryAt: Date.now() + delay, reason: this.failure || 'The connection dropped' });
+    this.emit('retrying', { attempt: this.attempt, retryAt: Date.now() + delay, reason: this.failure || 'The connection dropped', ...(this.said ? { said: true } : {}) });
   }
 }

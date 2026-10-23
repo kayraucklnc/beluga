@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { SubAgent } from '../src/core/store.js';
 import type { StepSummary } from '../src/shared/steps.js';
-import { foldOf, timelineOf } from '../packages/mac/src/chat/steps/timeline.js';
+import { foldOf, movedTogether, ownStepsOf, subRowView, timelineOf } from '../packages/mac/src/chat/steps/timeline.js';
+import { sameFields } from '../packages/mac/src/lib/stable.js';
 
 /** A card's steps with sub-agents and background work where they started, and which rows fold (KLD-51). */
 
@@ -41,5 +42,63 @@ describe('foldOf', () => {
     const { older, shown } = foldOf(t, 2);
     expect(ids(older)).toEqual(['a', 'b', 'sub:done', 'c']);
     expect(ids(shown)).toEqual(['sub:bg', 'd', 'e']);
+  });
+});
+
+describe('a sub-agent row on clock ticks (KLD-72)', () => {
+  const toggle = (): void => undefined;
+  const load = async (): Promise<undefined> => undefined;
+  const subs = [sub('bg', 5, 'running'), sub('agent', 6, 'running')];
+  const steps = (status: StepSummary['status']): StepSummary[] => [step('a', 1), { ...step('own1', 7, status), parent: 'agent' }];
+
+  /** How often a memo'd SubAgentRow draws over `ticks` seconds: each time a prop isn't the same (React.memo's own check). */
+  function renders(rich: () => StepSummary[], isOpen: (id: string) => boolean, ticks = 30): Record<string, number> {
+    let own: ReturnType<typeof ownStepsOf> | undefined;
+    const last = new Map<string, Record<string, unknown>>();
+    const count: Record<string, number> = {};
+    for (let t = 0; t < ticks; t++) {
+      // Each tick the card draws again: the daemon's records come back as new objects.
+      own = ownStepsOf(own, rich().map((x) => ({ ...x })), subs);
+      for (const x of subs) {
+        const mine = own.get(x.id)!;
+        const props = { sub: x, own: mine, detail: 'full', toggle, load, live: true, ...subRowView(x, mine, isOpen, true, 1000 * t) };
+        const was = last.get(x.id);
+        if (!was || !sameFields(was, props)) count[x.id] = (count[x.id] ?? 0) + 1;
+        last.set(x.id, props);
+      }
+    }
+    return count;
+  }
+
+  it('draws once over 30 ticks when nothing changed, running or not, open or closed', () => {
+    expect(renders(() => steps('done'), () => false)).toEqual({ bg: 1, agent: 1 });
+    expect(renders(() => steps('running'), () => false)).toEqual({ bg: 1, agent: 1 });
+    // Open, with its own steps finished: nothing on it moves.
+    expect(renders(() => steps('done'), (id) => id === 'sub:agent')).toEqual({ bg: 1, agent: 1 });
+  });
+
+  it('follows the clock only while it is open on a running step of its own', () => {
+    expect(renders(() => steps('running'), (id) => id === 'sub:agent')).toEqual({ bg: 1, agent: 30 });
+  });
+
+  it('draws again when one of its own steps changes, and only that row', () => {
+    let t = 0;
+    const r = renders(() => (t++ < 10 ? steps('running') : steps('done')), () => false);
+    expect(r).toEqual({ bg: 1, agent: 2 });
+  });
+
+  it('opening one of its own steps draws it again', () => {
+    const own = ownStepsOf(undefined, steps('done'), subs).get('agent')!;
+    expect(subRowView(subs[1]!, own, (id) => id === 'own1', true, 0)).toEqual({ open: false, opened: 'own1', now: 0 });
+  });
+});
+
+describe('movedTogether', () => {
+  it('one row folding slides; several at once move as one', () => {
+    expect(movedTogether(['a', 'b'], ['a', 'b', 'c'])).toBe(false);
+    expect(movedTogether(['a', 'b'], ['a', 'b', 'c', 'd'])).toBe(true);
+    // The answer lands: more rows show again.
+    expect(movedTogether(['a', 'b', 'c'], ['a'])).toBe(true);
+    expect(movedTogether(['a'], ['a'])).toBe(false);
   });
 });

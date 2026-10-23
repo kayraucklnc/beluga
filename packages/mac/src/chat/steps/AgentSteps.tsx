@@ -12,13 +12,14 @@ import { Avatar, Button, Dot, cx } from '../../components/ui.js';
 import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
 import { usePrefs } from '../../lib/prefs.js';
 import { useDisclosure } from './step-memory.js';
-import { type Entry, foldOf, timelineOf } from './timeline.js';
+import { type Entry, foldOf, movedTogether, ownStepsOf, subRowView, timelineOf } from './timeline.js';
 import { usePresence } from '../../layout/panel/ResizeHandle.js';
 import { Shimmer, StepRow, usePersonId } from './StepRow.js';
 import { useAgentSteps } from './use-steps.js';
 import { useActions } from '../../lib/actions.js';
 import { useClock } from '../../lib/window-active.js';
-import { keepSameById, sameItems } from '../../lib/stable.js';
+import { countRender } from '../../lib/render-count.js';
+import { keepSameById, sameDeep, sameItems } from '../../lib/stable.js';
 import { useLive } from '../../lib/live-motion.js';
 import { agentOfToolUse, allSubAgents } from '../../claude-code/subagents-model.js';
 import { openSubAgent } from '../../layout/SubAgents.js';
@@ -47,6 +48,7 @@ function Progress() {
 }
 
 const NO_TASKS: readonly TaskView[] = [];
+const NO_STEPS: readonly StepSummary[] = [];
 
 /** The clock for a step's row: only a running step's time moves, so only its row is drawn again as the clock ticks. */
 const clockFor = (step: StepSummary, live: boolean, now: number): number => (live && step.status === 'running' ? now : 0);
@@ -90,7 +92,15 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
   const open = useDisclosure(`${item.channel}/${item.id}`);
   const [earlier, setEarlier] = useState(false);
   const api = useApi();
-  const subIds = useMemo(() => new Set(item.subagents.map((x) => x.id)), [item.subagents]);
+  // The sub-agents, each the same object while it reads the same (a fresh copy of the card
+  // shouldn't draw its sub-agents' rows again).
+  const subsBefore = useRef<readonly SubAgent[]>([]);
+  const subagents = useMemo(() => {
+    const old = new Map(subsBefore.current.map((x) => [x.id, x]));
+    const next = item.subagents.map((x) => (sameDeep(old.get(x.id), x) ? old.get(x.id)! : x));
+    return (subsBefore.current = sameItems(subsBefore.current, next) ? subsBefore.current : next);
+  }, [item.subagents]);
+  const subIds = useMemo(() => new Set(subagents.map((x) => x.id)), [subagents]);
   const richOnes = Boolean(rich?.length);
   // The main thread's steps: your own Claude's records, else its one-line steps in words.
   // A step that reads as it did stays the same object, so its row isn't drawn again (KLD-48).
@@ -115,17 +125,24 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
   // The step Claude is on: the last one, while it runs.
   const lastRow = rows.at(-1);
   const current = working && lastRow?.status === 'running' ? lastRow : undefined;
-  const finished = current ? rows.slice(0, -1) : rows;
+  const finished = useMemo(() => (current ? rows.slice(0, -1) : rows), [current, rows]);
   // Sub-agents and background work sit where they started (KLD-51); hidden, they're one line at the end.
-  const timeline = useMemo(() => timelineOf(finished, detail === 'hidden' ? [] : item.subagents, (id) => rich?.find((x) => x.id === id)?.startedAt), [finished, detail, item.subagents, rich]);
+  const timeline = useMemo(() => timelineOf(finished, detail === 'hidden' ? [] : subagents, (id) => rich?.find((x) => x.id === id)?.startedAt), [finished, detail, subagents, rich]);
+  const ownBefore = useRef<ReadonlyMap<string, readonly StepSummary[]>>(undefined);
+  const own = useMemo(() => (ownBefore.current = ownStepsOf(ownBefore.current, rich, subagents)), [rich, subagents]);
   const keep = running ? RECENT_LIVE : DONE_STEPS;
-  const split = foldOf(timeline, keep);
+  const split = useMemo(() => foldOf(timeline, keep), [timeline, keep]);
+  // Several rows changing sides of the fold at once (the answer landing, sub-agents finishing
+  // together) move as one: they don't each slide (KLD-72).
+  const folded = useRef<{ ids: readonly string[]; together: boolean }>({ ids: [], together: false });
+  const olderIds = split.older.map((e) => e.id);
+  if (!sameItems(folded.current.ids, olderIds)) folded.current = { ids: olderIds, together: movedTogether(folded.current.ids, olderIds) };
+  const together = folded.current.together;
   const folds = split.older.length > 0 && !open.all;
   const older = folds && !earlier ? split.older : [];
   const shown = folds && !earlier ? split.shown : timeline;
   const still = useStill();
   const taskOf = (step: StepSummary): TaskView | undefined => (step.task ? tasks.find((t) => t.id === step.task) : undefined);
-  const stepsOf = (sub: SubAgent): StepSummary[] => (rich ?? []).filter((x) => x.parent === sub.id);
 
   const row = (step: StepSummary, isCurrent: boolean) => {
     const task = step.wait ? taskOf(step) : undefined;
@@ -145,7 +162,11 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
       />
     );
   };
-  const entry = (e: Entry) => (e.kind === 'step' ? row(e.step, false) : <SubAgentRow sub={e.sub} own={richOnes ? stepsOf(e.sub) : []} detail={detail} open={open} toggle={toggle} load={load} live={running} now={now} />);
+  const entry = (e: Entry) => {
+    if (e.kind === 'step') return row(e.step, false);
+    const mineToo = (richOnes && own.get(e.sub.id)) || NO_STEPS;
+    return <SubAgentRow sub={e.sub} own={mineToo} detail={detail} toggle={toggle} load={load} live={running} {...subRowView(e.sub, mineToo, open.isOpen, running, now)} />;
+  };
   const olderSteps = older.flatMap((e) => (e.kind === 'step' ? [e.step] : []));
   const span = olderSteps.length === older.length ? spanOf(olderSteps) : undefined;
 
@@ -156,7 +177,7 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
         {/* One keyed list with the step Claude is on: when it finishes it stays the same row (no
             remount, so nothing blinks or restarts) and only changes how it reads. A row leaving the
             last few closes up into the fold above it, whose count ticks up (KLD-51). */}
-        <AnimatePresence initial={false}>
+        <AnimatePresence initial={false} custom={still || together}>
           {folds ? (
             <Slot key="fold" still={still}>
               <div className={s.bar}>
@@ -187,7 +208,7 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
             </Slot>
           ) : null}
           {shown.map((e) => (
-            <Slot key={e.id} still={still} id={e.id}>
+            <Slot key={e.id} still={still || together} id={e.id}>
               {entry(e)}
             </Slot>
           ))}
@@ -215,9 +236,13 @@ export const AgentSteps = memo(function AgentSteps({ item, running }: { item: Ag
 /** How long a row takes to close into the fold, or open out of it. */
 const SLIDE = { duration: 0.3, ease: [0.32, 0.72, 0, 1] } as const;
 
+/** Leaving: how is up to the list (AnimatePresence's custom), as it is when the row goes, not when it was last drawn. */
+const LEAVE = { gone: (still: boolean) => ({ height: 0, opacity: 0, overflow: 'hidden', transition: still ? { duration: 0 } : SLIDE }) };
+
 /**
  * A row of the steps that opens (height, then in) as it arrives and closes (out, and the height)
- * as it leaves for the fold. With reduced motion it's just there, or gone.
+ * as it leaves for the fold. With reduced motion it's just there, or gone; so are rows that move
+ * together (see movedTogether).
  */
 function Slot({ still, id, children }: { still: boolean; id?: string; children: ReactNode }) {
   const t = still ? { duration: 0 } : SLIDE;
@@ -225,9 +250,10 @@ function Slot({ still, id, children }: { still: boolean; id?: string; children: 
     <motion.div
       className={s.slot}
       data-slot={id}
+      variants={LEAVE}
       initial={{ height: 0, opacity: 0, overflow: 'hidden' }}
       animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
-      exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
+      exit="gone"
       transition={t}
     >
       {children}
@@ -365,10 +391,28 @@ function WatchAgent({ id }: { id: string }) {
   );
 }
 
-/** A sub-agent or background work, in the place it started: a live dot while it runs; your own Claude's open to their steps. */
-function SubAgentRow({ sub, own, detail, open, toggle, load, live, now }: { sub: SubAgent; own: readonly StepSummary[]; detail: string; open: ReturnType<typeof useDisclosure>; toggle: (id: string) => void; load: (id: string) => Promise<StepRecord | undefined>; live: boolean; now: number }) {
+interface SubAgentRowProps {
+  sub: SubAgent;
+  own: readonly StepSummary[];
+  detail: string;
+  toggle: (id: string) => void;
+  load: (id: string) => Promise<StepRecord | undefined>;
+  live: boolean;
+  /** Its row is open. */
+  open: boolean;
+  /** Which of its own steps are open (their ids, space-separated). */
+  opened: string;
+  /** The clock, or 0 when nothing on the row moves with it (see subRowView). */
+  now: number;
+}
+
+/**
+ * A sub-agent or background work, in the place it started: a live dot while it runs; your own
+ * Claude's open to their steps. Drawn again only when what it shows changes, not every second (KLD-72).
+ */
+const SubAgentRow = memo(function SubAgentRow({ sub, own, detail, toggle, load, live, open: isOpen, opened, now }: SubAgentRowProps) {
+  countRender(`sub:${sub.id}`);
   const key = `sub:${sub.id}`;
-  const isOpen = open.isOpen(key);
   const running = sub.status === 'running';
   const canOpen = own.length > 0;
   const head = (
@@ -387,7 +431,7 @@ function SubAgentRow({ sub, own, detail, open, toggle, load, live, now }: { sub:
   return (
     <div className={cx(c.sub, s.sub)} data-subagent={sub.id} data-running={running || undefined}>
       {canOpen ? (
-        <button type="button" className={cx(c.subHead, s.subHead)} aria-expanded={isOpen} onClick={() => open.toggle(key)}>
+        <button type="button" className={cx(c.subHead, s.subHead)} aria-expanded={isOpen} onClick={() => toggle(key)}>
           {head}
         </button>
       ) : (
@@ -396,7 +440,7 @@ function SubAgentRow({ sub, own, detail, open, toggle, load, live, now }: { sub:
       {isOpen ? (
         <div className={s.subBody}>
           {own.map((step) => (
-            <StepRow key={step.id} step={step} open={open.isOpen(step.id)} onToggle={toggle} load={load} live={live} now={clockFor(step, live, now)} />
+            <StepRow key={step.id} step={step} open={opened.split(' ').includes(step.id)} onToggle={toggle} load={load} live={live} now={clockFor(step, live, now)} />
           ))}
         </div>
       ) : running && detail === 'full' && sub.steps.length ? (
@@ -406,4 +450,4 @@ function SubAgentRow({ sub, own, detail, open, toggle, load, live, now }: { sub:
       ) : null}
     </div>
   );
-}
+});

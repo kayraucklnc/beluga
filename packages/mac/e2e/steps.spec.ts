@@ -33,6 +33,15 @@ async function send(page: Page, text: string): Promise<void> {
   await composer(page).press('Enter');
 }
 
+/** Sends a message and waits for its answer (not an earlier one in the same chat). */
+async function answer(page: Page, text: string) {
+  const done = page.locator('[data-turn="done"]');
+  const before = await done.count();
+  await send(page, text);
+  await expect(done).toHaveCount(before + 1, { timeout: 30_000 });
+  return done.last();
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(sidebar(page)).toBeVisible();
@@ -40,9 +49,7 @@ test.beforeEach(async ({ page }) => {
 
 test('once Claude answers, its steps fold away; Show Steps opens them, and Hide Steps folds them again', async ({ page }) => {
   await openWorkspace(page, 'new-hero', 'landing');
-  await send(page, 'run the tests please');
-  const card = page.locator('[data-turn="done"]').last();
-  await expect(card).toBeVisible({ timeout: 30_000 });
+  const card = await answer(page, 'run the tests please');
   // The answer stands on its own: no steps, no "Done in 2m".
   await expect(card.getByRole('list', { name: "Claude's steps" })).toHaveCount(0);
   await expect(card).not.toContainText(/Done in|steps ·/);
@@ -57,9 +64,7 @@ test('once Claude answers, its steps fold away; Show Steps opens them, and Hide 
 
 test('a Bash step opens to show its command and output, and thinking opens to show the thinking', async ({ page }) => {
   await openWorkspace(page, 'new-hero', 'landing');
-  await send(page, 'run the tests please');
-  const card = page.locator('[data-turn="done"]').last();
-  await expect(card).toBeVisible({ timeout: 30_000 });
+  const card = await answer(page, 'run the tests please');
   await card.hover();
   await card.getByRole('button', { name: 'Show Steps' }).click();
   const steps = lastSteps(page);
@@ -89,7 +94,10 @@ test('a Bash step opens to show its command and output, and thinking opens to sh
   await expect(thinking.locator('[data-step-detail="thinking"]')).toContainText('They asked');
 });
 
-/** Notes every step row seen part way through closing or opening (its opacity between none and full). */
+/**
+ * Notes every step row seen part way through closing or opening: its opacity between none and
+ * full, or an animation running on it (caught on any frame of it, even when frames are few).
+ */
 async function watchSlides(page: Page): Promise<void> {
   await page.evaluate(() => {
     const w = window as unknown as { slid: string[] };
@@ -97,13 +105,21 @@ async function watchSlides(page: Page): Promise<void> {
     const look = () => {
       for (const el of document.querySelectorAll<HTMLElement>('[data-slot]')) {
         const op = Number.parseFloat(getComputedStyle(el).opacity);
-        if (op > 0.02 && op < 0.98 && !w.slid.includes(el.dataset.slot!)) w.slid.push(el.dataset.slot!);
+        const moving = (op > 0.02 && op < 0.98) || el.getAnimations().some((a) => a.playState === 'running');
+        if (moving && !w.slid.includes(el.dataset.slot!)) w.slid.push(el.dataset.slot!);
       }
       requestAnimationFrame(look);
     };
     requestAnimationFrame(look);
   });
 }
+
+/** The oldest row shown below the fold, and the fold's count, read together. */
+const tail = (page: Page) =>
+  lastSteps(page).evaluate((list) => ({
+    oldest: list.querySelector<HTMLElement>('[data-slot]')?.dataset.slot ?? '',
+    count: Number(list.querySelector('[data-folded-count]')?.getAttribute('data-folded-count') ?? 0),
+  }));
 const slid = (page: Page) => page.evaluate(() => (window as unknown as { slid: string[] }).slid);
 const foldedCount = async (page: Page): Promise<number> => Number(await lastSteps(page).getByRole('button', { name: /^Show \d+ earlier steps/ }).getAttribute('data-folded-count'));
 
@@ -114,11 +130,16 @@ test('while Claude works, a finished step closes up into the fold, whose count t
   const fold = steps.getByRole('button', { name: /^Show \d+ earlier steps/ });
   await expect(fold).toBeVisible({ timeout: 20_000 });
   await watchSlides(page);
-  const before = await foldedCount(page);
-  // The next step finishing pushes the oldest shown one into the fold: it fades and closes as it goes.
-  await expect.poll(() => foldedCount(page), { timeout: 10_000 }).toBeGreaterThan(before);
-  await expect.poll(async () => (await slid(page)).length, { timeout: 3000 }).toBeGreaterThan(0);
-  const went = await slid(page);
+  const before = await tail(page);
+  expect(before.oldest).not.toBe('');
+  // The next step finishing pushes the oldest shown one into the fold: it leaves the last few
+  // (fading and closing as it goes), and the fold's count ticks up.
+  await expect(steps.locator(`[data-slot="${before.oldest}"]`)).toHaveCount(0, { timeout: 10_000 });
+  await expect.poll(() => foldedCount(page), { timeout: 3000 }).toBeGreaterThan(before.count);
+  const counter = fold.locator('[class*="countNow"]');
+  await expect.poll(async () => Number(await counter.textContent()), { timeout: 3000 }).toBeGreaterThan(before.count);
+  expect(await slid(page)).toContain(before.oldest);
+  const went = [before.oldest];
   // The last few rows are all still in sight: two finished ones and the one Claude is on.
   await expect(steps.locator('[data-current="true"]')).toHaveCount(1);
   // Open the fold: every step shows, and it closes again.
