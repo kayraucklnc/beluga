@@ -52,3 +52,23 @@
   overflow: auto;
   outline: none;
 }
+
+/* Its file is gone: a calm note in the proof's place (a thumbnail's, a card's, the sheet's). */
+.gone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 120px;
+  padding: 12px;
+  border-radius: 9px;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: center;
+}
+.goneLarge {
+  flex: 1;
+  margin: 24px;
+}
