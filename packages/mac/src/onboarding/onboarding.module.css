@@ -720,3 +720,15 @@
 .overlay[data-clear] .content {
   will-change: transform, opacity;
 }
+
+/* A button in a setup row (Show Me a Sample, Allow Notifications). */
+.rowButton {
+  width: auto;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+.rowButton:disabled {
+  color: var(--text-3);
+  cursor: default;
+}

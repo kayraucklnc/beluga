@@ -47,6 +47,8 @@ export interface DesktopNote {
   readonly approval?: string;
   /** The friend's request that approval is about. */
   readonly task?: string;
+  /** Only what Claude needs from you, and the Mac's on-screen pop-up shows it: a banner would say it twice (its sound still plays). */
+  readonly popup?: boolean;
 }
 
 /** Your network status says not now (Do Not Disturb, or appearing offline): notices still arrive, silently. */
@@ -454,7 +456,8 @@ export class Notifier {
       this.queue = [];
       if (!batch.length) return;
       this.lastSent = this.now();
-      this.deps.desktop(combine(batch, this.deps.store.getState().prefs.notify));
+      const prefs = this.deps.store.getState().prefs.notify;
+      this.deps.desktop(combine(batch, prefs, prefs.popup !== false && prefs.needsYou !== false));
     }, wait);
     this.timer.unref?.();
   }
@@ -468,9 +471,9 @@ function soundOf(batch: readonly NoticeEvent[], prefs: boolean | SoundPrefs): Pi
 }
 
 /** One desktop notification for a burst; clicking it goes where they all are, if that's one place. */
-export function combine(batch: readonly NoticeEvent[], prefs: boolean | SoundPrefs): DesktopNote {
+export function combine(batch: readonly NoticeEvent[], prefs: boolean | SoundPrefs, popup = false): DesktopNote {
   const first = batch[0]!;
-  const sound = soundOf(batch, prefs);
+  const sound = { ...soundOf(batch, prefs), ...(popup && batch.every((e) => e.kind === 'needsYou') ? { popup: true } : {}) };
   const channel = first.channel !== undefined && batch.every((e) => e.channel === first.channel) ? { channel: first.channel } : {};
   // One approval on its own can be answered from the notification itself.
   const approval = first.tag === 'approval' && first.ref ? { approval: first.ref, ...(first.task ? { task: first.task } : {}) } : {};

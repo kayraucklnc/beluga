@@ -9,6 +9,7 @@ import { Store, initialState } from '../src/core/store.js';
 import type { WorkspaceController } from '../src/core/workspace-controller.js';
 import type { Project, Workspace } from '../src/workspaces/types.js';
 import { NotifySettings } from '../src/shared/settings-schema.js';
+import { combine } from '../src/core/notify.js';
 import { isNeed, isNeedId, isPreviewId, popupNeeds, popupRequests, previewItems } from '../packages/mac/src/gateway/popup-model.js';
 import { chosenOf, planAskOf } from '../packages/mac/src/plans/plan-ask-model.js';
 import { nextWords } from '../packages/mac/src/plans/plans-model.js';
@@ -146,5 +147,15 @@ describe('answering in the plan’s conversation', () => {
     expect(nextWords({ kind: 'start', tasks: [yours] }).title).toBe('Answer “Live keys”');
     expect(nextWords({ kind: 'start', tasks: [yours, yours] }).title).toBe('Answer 2 Decisions');
     expect(nextWords({ kind: 'start', tasks: [yours, claude] }).title).toBe('Start “Checkout”');
+  });
+});
+
+describe('a banner and the pop-up never say the same thing twice', () => {
+  it('only what Claude needs is marked for the pop-up (its sound still plays), and only with popups on', () => {
+    const need = { kind: 'needsYou' as const, title: 'Claude asks', body: '' };
+    const done = { kind: 'done' as const, title: 'Claude finished', body: '' };
+    expect(combine([need], true, true)).toMatchObject({ popup: true, sound: true });
+    expect(combine([need, done], true, true)).not.toHaveProperty('popup');
+    expect(combine([need], true, false)).not.toHaveProperty('popup');
   });
 });

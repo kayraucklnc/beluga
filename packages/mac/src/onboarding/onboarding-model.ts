@@ -14,7 +14,10 @@ export const FORCE_PARAM = 'welcome';
 /** The document event File › Onboard Again, Help › Welcome to Beluga and the palette send to show it again. */
 export const SHOW_WELCOME = 'beluga:welcome';
 
-export const STEPS = ['hello', 'parallel', 'agents', 'friends', 'earnings', 'archive', 'look', 'setup', 'ready'] as const;
+export const STEPS = ['hello', 'parallel', 'agents', 'friends', 'earnings', 'archive', 'look', 'setup', 'popups', 'ready'] as const;
+
+/** The last step before the app (its button says Finish). */
+export const LAST_SETTING: Step = 'popups';
 export type Step = (typeof STEPS)[number];
 
 /** The tour: what Beluga does, one idea a step (Skip Tour goes past all of them). */

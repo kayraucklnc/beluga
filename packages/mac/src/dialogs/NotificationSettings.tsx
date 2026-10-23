@@ -44,8 +44,8 @@ export function NotificationSettings() {
         <Row label="Desktop notifications" detail="The bell in the toolbar lists everything either way.">
           <Switch label="Desktop notifications" on={n.desktop} onChange={(v) => save({ desktop: v })} />
         </Row>
-        <Row label="On-screen pop-up when Claude needs you" detail="A question, an approval, a decision of yours in a plan, or a milestone to pass: a card in the corner of the screen, on top of other apps, as friends’ requests get. Not on Do Not Disturb.">
-          <Switch label="On-screen pop-up when Claude needs you" on={n.popup !== false} onChange={(v) => save({ popup: v })} />
+        <Row label="Show on-screen popups when something needs me" detail="A question, an approval, a decision of yours in a plan, or a milestone to pass: a card in the corner of the screen, on top of other apps, as friends’ requests get. Not on Do Not Disturb.">
+          <Switch label="Show on-screen popups when something needs me" on={n.popup !== false} onChange={(v) => save({ popup: v })} />
         </Row>
         <Row label="See the pop-up" detail="A pretend friend’s request and a pretend decision, in the corner of the screen for a minute. Their buttons do nothing.">
           <Button onClick={previewRequestPopup}>Preview Pop-up</Button>

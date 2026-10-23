@@ -9,13 +9,13 @@ import { Glass, GlassBackdrop } from './Glass.js';
 import { type Prepared, prepareWormhole } from './finale-sound.js';
 import { WORMHOLE, WORMHOLE_TOTAL, Wormhole } from './Wormhole.js';
 import { EASE_OUT, SPRING } from './fx.js';
-import { SHOW_WELCOME, STEPS, type Step, afterTour, inTour, saveMark, shouldShow, stepBy, stepIndex, tourPlace } from './onboarding-model.js';
-import { Look, Setup } from './SetupSteps.js';
+import { LAST_SETTING, SHOW_WELCOME, STEPS, type Step, afterTour, inTour, saveMark, shouldShow, stepBy, stepIndex, tourPlace } from './onboarding-model.js';
+import { Look, Popups, Setup } from './SetupSteps.js';
 import { Hello, Ready, Tour } from './Steps.js';
 import s from './onboarding.module.css';
 
 /** How lit the backdrop is on each step: bright for the welcome and the end, calm behind settings. */
-const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.9, agents: 0.9, friends: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, setup: 0.65, ready: 1 };
+const ENERGY: Record<Step, number> = { hello: 1, parallel: 0.9, agents: 0.9, friends: 0.9, earnings: 0.9, archive: 0.9, look: 0.75, setup: 0.65, popups: 0.6, ready: 1 };
 
 /** How long the app takes to settle into place as the wormhole clears (Shell.module.css, `arrive`). */
 const ARRIVE_S = 1.6;
@@ -219,6 +219,7 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
               {inTour(step) ? <Tour step={step} /> : null}
               {step === 'look' ? <Look /> : null}
               {step === 'setup' ? <Setup /> : null}
+              {step === 'popups' ? <Popups /> : null}
               {step === 'ready' ? <Ready projects={projects} onOpen={() => finish('finished')} onAddProject={() => finish('finished', () => ui.patch({ addProject: true }))} /> : null}
             </motion.section>
           </AnimatePresence>
@@ -239,7 +240,7 @@ export function Onboarding({ onClose, onArrive }: { readonly onClose: (how: 'fin
                   </button>
                 ) : null}
                 <motion.button type="button" className={s.navNext} onClick={next} whileTap={{ scale: 0.96 }}>
-                  {step === 'setup' ? 'Finish' : 'Continue'}
+                  {step === LAST_SETTING ? 'Finish' : 'Continue'}
                   <Icon name="arrowRight" size={13} />
                 </motion.button>
               </div>
