@@ -9,7 +9,7 @@ import { Session } from '../src/core/session.js';
 import { ShareService } from '../src/core/shares.js';
 import { Store, initialState } from '../src/core/store.js';
 import { type Identity, deriveKeys, generateIdentity, generateSecret } from '../src/net/crypto.js';
-import { startHub, type Hub } from '../src/net/hub.js';
+import { ALREADY_HERE, startHub, type Hub } from '../src/net/hub.js';
 import { patientTimeout } from '../src/net/patient-timer.js';
 import { PeerClient, type Retry } from '../src/net/peer-client.js';
 import { PROTOCOL_VERSION } from '../src/protocol.js';
@@ -111,7 +111,7 @@ describe('a room that turns you away says so once, in the status (KLD-72)', () =
     expect(store.getState().log.filter((l) => 'text' in l && /newer Beluga/.test(l.text))).toHaveLength(1);
   }, 20_000);
 
-  it('a non-fatal refusal from the hub ("Peer id already connected") on every try is one line too', async () => {
+  it('a non-fatal refusal from the hub ("already in this room") on every try is one line too', async () => {
     const port = await freePort();
     const hub = await startHub({ keys, port, host: '127.0.0.1', roomName: 'test' });
     cleanup.push(() => hub.close());
@@ -128,8 +128,8 @@ describe('a room that turns you away says so once, in the status (KLD-72)', () =
     });
     t.start();
     await waitFor(() => tries.length >= 5, 10_000);
-    expect(twinStore.getState().connection).toMatchObject({ state: 'reconnecting', reason: 'Peer id already connected' });
-    expect(roomLines(twinStore)).toEqual(['Peer id already connected. Retrying in the background']);
+    expect(twinStore.getState().connection).toMatchObject({ state: 'reconnecting', reason: ALREADY_HERE });
+    expect(roomLines(twinStore)).toEqual([`${ALREADY_HERE}. Retrying in the background`]);
   }, 20_000);
 });
 
@@ -146,7 +146,7 @@ describe('what the room said is never the reason of a later, unrelated drop (KLD
     twin.on('retrying', (r) => tries.push(r));
     t.start();
     await waitFor(() => tries.length >= 1, 5_000);
-    expect(tries[0]).toMatchObject({ reason: 'Peer id already connected', said: true });
+    expect(tries[0]).toMatchObject({ reason: ALREADY_HERE, said: true });
     // The seat frees up: the twin gets in.
     await first.session.stop();
     t.retryConnection();
@@ -154,7 +154,7 @@ describe('what the room said is never the reason of a later, unrelated drop (KLD
     tries.length = 0;
     await hub.close();
     await waitFor(() => tries.length >= 1, 5_000);
-    expect(tries[0]?.reason).not.toBe('Peer id already connected');
+    expect(tries[0]?.reason).not.toBe(ALREADY_HERE);
     expect(tries[0]?.said).toBeUndefined();
   }, 20_000);
 

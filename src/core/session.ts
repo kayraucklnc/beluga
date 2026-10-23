@@ -81,6 +81,8 @@ export interface SessionOptions {
   readonly hasGh?: () => Promise<boolean>;
   /** Trust levels you chose for people before (by key-derived id). */
   readonly savedPeople?: Settings['people'];
+  /** Re-reads the saved trust levels (another Beluga with your identity, in another room, may have changed them). */
+  readonly loadPeople?: () => Settings['people'];
   /** Where recent requests are remembered across restarts (omit in tests: memory only). */
   readonly replayFile?: string;
   /** Where the details of Claude's steps are kept across restarts (omit in tests: memory only). */
