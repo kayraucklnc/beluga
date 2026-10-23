@@ -24,14 +24,14 @@ export type NativeSheet =
   | { readonly kind: 'confirm'; readonly title: string; readonly message: string; readonly confirm: string; readonly destructive?: boolean; readonly run: () => void }
   /** What a workspace action that starts Claude or changes git will do, before it does (see work-confirm.ts). */
   | { readonly kind: 'work'; readonly wsId: string; readonly action: AskedWork }
-  /** A project's worktrees made outside Klaud that can go, ticked, before removing them. */
+  /** A project's worktrees made outside Beluga that can go, ticked, before removing them. */
   | { readonly kind: 'clean_up_worktrees'; readonly projectId: string }
-  /** Delete Project…: out of Klaud (worktrees archived), the folder to the Trash only if ticked. */
+  /** Delete Project…: out of Beluga (worktrees archived), the folder to the Trash only if ticked. */
   | { readonly kind: 'delete_project'; readonly projectId: string }
   /** A new task (in a project, a status, under a parent). */
   | { readonly kind: 'new_task'; readonly projectId?: string; readonly status?: import('../../../../src/core/board/model.js').IssueStatus; readonly parent?: string }
-  /** A new plan with Claude: what it's for (`goal` prefills it), the project (unset: pick one), how far it runs on its own. */
-  | { readonly kind: 'new_plan'; readonly projectId?: string; readonly goal?: string }
+  /** A new plan with Claude: what it's for, the project (unset: pick one), how far it runs on its own. */
+  | { readonly kind: 'new_plan'; readonly projectId?: string }
   /** Your planning style (how you like plans cut). */
   | { readonly kind: 'plan_style' }
   /** Not yet: what a milestone still needs, for the plan's head Claude. */

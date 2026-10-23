@@ -26,7 +26,7 @@ describe('what counts as something an agent made', () => {
     expect(isArtifact('/private/var/folders/x/T/out.json', CWD)).toBe(true);
     expect(isArtifact(`${CWD}/README.md`, CWD)).toBe(false);
     expect(isArtifact(`${CWD}/package.json`, CWD)).toBe(false);
-    expect(isArtifact(`${CWD}/.klaud/scratch/notes.md`, CWD)).toBe(true);
+    expect(isArtifact(`${CWD}/.beluga/scratch/notes.md`, CWD)).toBe(true);
     expect(isArtifact(`${CWD}/test-results/run/error-context.md`, CWD)).toBe(true);
     expect(isArtifact(`${CWD}/coverage/summary.txt`, CWD)).toBe(true);
     expect(isArtifact(`${CWD}/.context/screens.json`, CWD)).toBe(true);
@@ -103,18 +103,18 @@ describe("a sub-agent's own scratch folder", () => {
     expect(agentScratchName('toolu_01AbCdEf9876543210')).toBe('9876543210');
     expect(agentScratchName('call/../../x')).toBe('callx');
     expect(agentScratchName('')).toBe('agent');
-    expect(AGENT_SCRATCH_DIR).toBe('.klaud/scratch/agents');
+    expect(AGENT_SCRATCH_DIR).toBe('.beluga/scratch/agents');
   });
 
   it('is handed to each sub-agent in its prompt', () => {
-    const patched = withAgentScratch('Agent', { description: 'Check the UI', prompt: 'Take screenshots.' }, 'toolu_01xyz0123456789', '/work/app/.klaud/scratch');
+    const patched = withAgentScratch('Agent', { description: 'Check the UI', prompt: 'Take screenshots.' }, 'toolu_01xyz0123456789', '/work/app/.beluga/scratch');
     expect(patched?.prompt).toContain('Take screenshots.');
-    expect(patched?.prompt).toContain('/work/app/.klaud/scratch/agents/0123456789/');
+    expect(patched?.prompt).toContain('/work/app/.beluga/scratch/agents/0123456789/');
     expect(patched?.description).toBe('Check the UI');
     // Only sub-agent launches, only with a prompt, only once.
     expect(withAgentScratch('Bash', { command: 'ls' }, 'toolu_1', '/s')).toBeUndefined();
     expect(withAgentScratch('Task', {}, 'toolu_1', '/s')).toBeUndefined();
-    expect(withAgentScratch('Task', { prompt: patched!.prompt }, 'toolu_01xyz0123456789', '/work/app/.klaud/scratch')).toBeUndefined();
+    expect(withAgentScratch('Task', { prompt: patched!.prompt }, 'toolu_01xyz0123456789', '/work/app/.beluga/scratch')).toBeUndefined();
   });
 });
 
@@ -139,7 +139,7 @@ describe('the watcher: what a sub-agent made, to look at', () => {
     return p;
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-outputs-')));
     cwd = path.join(root, 'app');
     tmp = path.join(root, 'tmp');
@@ -153,7 +153,7 @@ describe('the watcher: what a sub-agent made, to look at', () => {
     const shot = file(path.join(tmp, 'shot.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]), now - 3000);
     file(path.join(tmp, 'test.log'), 'FAIL login.spec.ts\nexport ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789\n', now - 2000);
     file(path.join(tmp, 'pw', 'trace-1.png'), 'png', now - 1500);
-    file(path.join(cwd, '.klaud/scratch/agents/0123456789/notes.md'), '# Notes', now - 1000);
+    file(path.join(cwd, '.beluga/scratch/agents/0123456789/notes.md'), '# Notes', now - 1000);
     // A link dressed up as a log, to a key; Claude Code's own login file.
     file(path.join(root, '.ssh', 'id_rsa'), 'PRIVATE KEY', now - 900);
     symlinkSync(path.join(root, '.ssh', 'id_rsa'), path.join(tmp, 'k.log'));
@@ -170,7 +170,7 @@ describe('the watcher: what a sub-agent made, to look at', () => {
     );
     const store = new Store(initialState('room'));
     w = new ClaudeCodeWatcher({ home, store, watch: false, publishMs: 0 });
-    w.scan();
+    await w.scan();
     w.poll();
   });
   afterEach(() => {
@@ -180,9 +180,9 @@ describe('the watcher: what a sub-agent made, to look at', () => {
 
   it('lists what it made or looked at that is still there, newest first, its own folder included', () => {
     const out = w.outputs(SID, 'a1');
-    expect(out.scratch).toBe(path.join(cwd, '.klaud/scratch/agents/0123456789'));
+    expect(out.scratch).toBe(path.join(cwd, '.beluga/scratch/agents/0123456789'));
     expect(out.outputs.map((o) => [path.relative(root, o.path), o.how, o.kind])).toEqual([
-      ['app/.klaud/scratch/agents/0123456789/notes.md', 'wrote', 'markdown'],
+      ['app/.beluga/scratch/agents/0123456789/notes.md', 'wrote', 'markdown'],
       ['tmp/pw/trace-1.png', 'ran', 'image'],
       ['tmp/test.log', 'ran', 'text'],
       ['tmp/shot.png', 'wrote', 'image'],

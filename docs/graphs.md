@@ -1,9 +1,9 @@
-# Graphs (`klaud-graph`, Mac app)
+# Graphs (`beluga-graph`, Mac app)
 
-Claude can draw. When a picture explains better than prose, Claude adds a fenced block tagged `klaud-graph` with JSON in it, and the Mac app draws it as an interactive diagram. Examples: architecture, how parts talk, a request or data flow, a pipeline, a data model, dependencies, a plan, what a change touched.
+Claude can draw. When a picture explains better than prose, Claude adds a fenced block tagged `beluga-graph` with JSON in it, and the Mac app draws it as an interactive diagram. Examples: architecture, how parts talk, a request or data flow, a pipeline, a data model, dependencies, a plan, what a change touched.
 
 - **How to ask:** `/visualize <what>` (or ⌘K › *Draw This as a Graph*). Words like "visualize", "diagram" or "map out" in any message work too, and Claude also draws on its own when it helps.
-- **Where graphs show:** answers in any conversation, reports, and Markdown files opened in klaud.
+- **Where graphs show:** answers in any conversation, reports, and Markdown files opened in Beluga.
 - **In the terminal app:** the same block shows as JSON.
 
 ## What you can do with one
@@ -12,7 +12,7 @@ Claude can draw. When a picture explains better than prose, Claude adds a fenced
 - **Click** a node for its details:
   - Claude's notes (Markdown)
   - a database's fields
-  - links: files open in klaud, pages in the browser
+  - links: files open in Beluga, pages in the browser
   - its connections: click one to go there
 - **Walk Me Through It** (▶) steps through the walkthrough Claude wrote. Each step frames a few nodes, with a caption. Use ← and → to move, Esc to leave.
 - **Turn the layout** between left-to-right and top-to-bottom.
@@ -25,7 +25,7 @@ In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag
 ## The format
 
 ````
-```klaud-graph
+```beluga-graph
 {
   "title": "How login works",
   "summary": "One short line under the title",
@@ -121,7 +121,7 @@ In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag
   - `graph-model.ts`: the pure parts, tested in `tests/mac-graph.test.ts`
   - `nodes.tsx`, `edges.tsx`, `Inspector.tsx`, `Walkthrough.tsx`
 - **Load time:** React Flow and ELK load the first time a graph shows.
-- **Where blocks are found:** the chat's Markdown (`chat/Markdown.tsx`) and the document reader (`components/markdown/MarkdownDoc.tsx`) both hand ```` ```klaud-graph ```` blocks to `GraphBlock`.
-- **Demo:** `klaud demo` answers "visualize…" with a payment-flow graph (`src/agent/mock-graphs.ts`).
+- **Where blocks are found:** the chat's Markdown (`chat/Markdown.tsx`) and the document reader (`components/markdown/MarkdownDoc.tsx`) both hand ```` ```beluga-graph ```` blocks to `GraphBlock`.
+- **Demo:** `beluga demo` answers "visualize…" with a payment-flow graph (`src/agent/mock-graphs.ts`).
 
 Graphs are the drawing engine for [Tasks and Plans](tasks-and-plans.md): plans, dependency graphs and milestone recaps are drawn with them.

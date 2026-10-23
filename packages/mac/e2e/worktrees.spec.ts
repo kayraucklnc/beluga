@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * The Worktrees page: every worktree in your projects, who made it, whether its work is done,
@@ -17,6 +17,7 @@ const grid = (page: Page) => page.getByRole('grid', { name: 'Worktrees' });
 const row = (page: Page, name: string) => grid(page).getByRole('row', { name, exact: true });
 const shot = async (page: Page, name: string): Promise<void> => {
   if (!process.env.SHOTS) return;
+  // Screenshots only: let animations settle so the picture is still.
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
 };
@@ -38,11 +39,11 @@ function addDependencies(dir: string): void {
 }
 
 /**
- * A project with a worktree a Claude Code sub-agent left (in .claude/worktrees), added to Klaud.
+ * A project with a worktree a Claude Code sub-agent left (in .claude/worktrees), added to Beluga.
  * Its own, since usage.spec's Clean Up… removes the demo's finished sub-agent worktrees.
  */
 async function addAgentProject(page: Page): Promise<void> {
-  const repo = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-agents-')), 'agents-app');
+  const repo = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-agents-')), 'agents-app');
   const git = (...args: string[]): void => void execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd: repo, stdio: 'pipe' });
   mkdirSync(repo, { recursive: true });
   git('init', '-q', '-b', 'main');
@@ -70,7 +71,7 @@ test('lists every worktree with who made it and whether it’s done; filters nar
   await sidebar(page).getByRole('button', { name: 'Worktrees' }).click();
   await expect(page.getByRole('heading', { name: 'Worktrees' })).toBeVisible();
   await expect(row(page, 'add-auth')).toBeVisible();
-  await expect(row(page, 'add-auth')).toContainText('Klaud');
+  await expect(row(page, 'add-auth')).toContainText('Beluga');
   // Sub-agent worktrees: Claude's, with who started them (or that nothing says).
   await page.getByRole('tab', { name: /^Sub-agents/ }).click();
   await expect(grid(page).getByRole('row').filter({ hasText: 'Sub-agent' }).first()).toBeVisible();

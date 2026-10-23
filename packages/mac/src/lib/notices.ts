@@ -1,6 +1,6 @@
-import type { DomainState } from '@klaud/core/store.js';
-import { planMilestonesOnly, planOfChannel } from '@klaud/core/notify.js';
-import { type NoticeTarget, noticeTarget } from '@klaud/ui/notice-models.js';
+import type { DomainState } from '@beluga/core/store.js';
+import { planMilestonesOnly, planOfChannel } from '@beluga/core/notify.js';
+import { type NoticeTarget, noticeTarget } from '@beluga/ui/notice-models.js';
 import type { Actions } from './actions.js';
 
 /** Where a notification goes in this window: the shared places, a conversation with friends, or a plan (at one of its tasks). */
@@ -32,4 +32,4 @@ export function openNoticeTarget(actions: Actions, target: MacNoticeTarget, go?:
 }
 
 /** A desktop notification was clicked (the app shell or the browser says so with this event). */
-export const NOTIFICATION_TAP = 'klaud:notification-tap';
+export const NOTIFICATION_TAP = 'beluga:notification-tap';

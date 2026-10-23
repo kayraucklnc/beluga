@@ -3,7 +3,7 @@ import type { Actor, Issue } from '../board/model.js';
 import type { BoardWork } from '../board/work.js';
 import type { CombineResult } from '../../workspaces/git.js';
 import type { Intent } from '../intents.js';
-import type { Store } from '../store.js';
+import type { LogItem, Store } from '../store.js';
 import type { WorkspaceController } from '../workspace-controller.js';
 import { ApplyError, applyDraft } from './apply.js';
 import type { BodyInput, PlanOp, TaskInput } from './edit.js';
@@ -114,10 +114,12 @@ export class PlansWork {
     if (ws?.kind === 'chat' && (ws.name === UNTITLED || ws.name === was.slice(0, 40))) void this.deps.controller?.renameChat(ws.id, title);
   }
 
-  /** A plan's own conversation, made quietly (the demo's plan). */
-  async homeFor(projectId: string, title: string): Promise<string | undefined> {
+  /** A plan's own conversation, made quietly (the demo's plan), with what was said there saved (as after a restart: it loads when it's opened). */
+  async homeFor(projectId: string, title: string, said?: (channel: string) => readonly LogItem[]): Promise<string | undefined> {
     const chat = await this.deps.controller?.newChat(projectId, `Plan: ${title}`, undefined, { quiet: true });
-    return chat ? `${WS}${chat.id}` : undefined;
+    if (!chat) return undefined;
+    if (said) this.deps.controller?.manager.saveHistory(chat.id, said(`${WS}${chat.id}`));
+    return `${WS}${chat.id}`;
   }
 
   /** Plan in the conversation you're in (the composer's Plan with Tasks): an empty draft, written from what you say next. */
@@ -330,7 +332,7 @@ export class PlansWork {
         if (!steer) return `Queued for the Claude working on ${issue.key}: it reads it when its current turn ends (its card shows it waiting; use mode "steer" if it can't wait)`;
         // Steered: in now (interrupting a long command or a dead run), and followed until it's read.
         if (id) this.pilot.steer(planId, hit.task.id, id, prompt);
-        return `Steered into ${issue.key}: its Claude gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Klaud delivers it again`;
+        return `Steered into ${issue.key}: its Claude gets it now (a long command or a stuck turn is interrupted). If it isn't read within 2 minutes, Beluga delivers it again`;
       },
     };
   }

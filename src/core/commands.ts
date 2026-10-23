@@ -43,7 +43,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: 'follow', args: '<name>', desc: "follow someone's screen and their Claude" },
   { name: 'unfollow', desc: 'stop following' },
   { name: 'open', args: '<file>', desc: 'open a shared file live, e.g. /open bob:api/README.md' },
-  { name: 'get', args: '<file>', desc: 'download a shared file to ~/Downloads/klaud' },
+  { name: 'get', args: '<file>', desc: 'download a shared file to ~/Downloads/Beluga' },
   { name: 'close', desc: 'close the file viewer' },
   { name: 'stop', desc: 'stop your Claude' },
   { name: 'policy', args: 'ask|auto|deny', desc: "how friends' requests for your Claude are handled" },
@@ -72,7 +72,7 @@ export function visualizePrompt(what: string): string {
   const subject = what.trim() || 'what we are working on in this conversation (or, if nothing yet, this project\'s architecture)';
   return [
     `Visualize ${subject} as an interactive graph.`,
-    'Look at the real code first if you need to. Answer with one klaud-graph block (more only if one would be',
+    'Look at the real code first if you need to. Answer with one beluga-graph block (more only if one would be',
     'crowded), with a walkthrough when there is a flow to follow, and at most two sentences of prose.',
   ].join(' ');
 }

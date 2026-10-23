@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ShellLine } from '@klaud/core/collab-store.js';
+import type { ShellLine } from '@beluga/core/collab-store.js';
 import { Icon } from '../components/Icon.js';
 import { Empty, Working, cx } from '../components/ui.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import f from './files.module.css';
 import s from './shared-search.module.css';
 
@@ -64,7 +64,7 @@ function Marked({ text, query }: { text: string; query: string }) {
 
 /**
  * What the search found in a shared workspace: files whose name matches, then lines that
- * contain it. It's served by the owner's klaud, read-only (the same search as the terminal UI's
+ * contain it. It's served by the owner's Beluga, read-only (the same search as the terminal UI's
  * `find` and `grep`); a click opens the file beside the list.
  */
 export function SearchResults({ id, owner, share, query }: { id: string; owner: string; share: string; query: string }) {

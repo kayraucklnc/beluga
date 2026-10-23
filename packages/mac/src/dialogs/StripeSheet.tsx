@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import type { ProjectEarnings } from '@klaud/core/earnings-store.js';
-import type { Project } from '@klaud/workspaces/types.js';
-import { stripeKeyKind, stripeKeyProblem } from '@klaud/shared/stripe-keys.js';
+import type { ProjectEarnings } from '@beluga/core/earnings-store.js';
+import type { Project } from '@beluga/workspaces/types.js';
+import { stripeKeyKind, stripeKeyProblem } from '@beluga/shared/stripe-keys.js';
 import { Alert } from '../components/Alert.js';
 import { Field, FormSheet, Popup, TextInput, formStyles as f } from '../components/FormSheet.js';
 import { Icon } from '../components/Icon.js';
@@ -9,7 +9,7 @@ import { cx } from '../components/ui.js';
 import { STRIPE_KEY_URL, closeStripe, formatMoney, missingNote, updatedAgo, useConverted, useProjectEarnings, useStripeSheet } from '../lib/earnings.js';
 import { CurrencySelect } from './EarningsSettings.js';
 import { brandText } from '../lib/brand.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import { openExternal } from '../lib/system.js';
 import s from './stripe.module.css';
 
@@ -55,7 +55,7 @@ function ConnectForm({ project, projects, onProject, replacing, onBack }: { proj
       icon="coin"
       intro={
         <p>
-          See {project.name}’s all-time earnings beside it in the sidebar. Klaud reads your charges once a day; the key stays on this Mac.
+          See {project.name}’s all-time earnings beside it in the sidebar. Beluga reads your charges once a day; the key stays on this Mac.
         </p>
       }
       submitLabel="Connect"
@@ -135,7 +135,7 @@ function ConnectForm({ project, projects, onProject, replacing, onBack }: { proj
         </div>
         <ol className={s.steps}>
           <li>
-            Set <b>Charges</b> to <b>Read</b>: all Klaud needs, refunds included.
+            Set <b>Charges</b> to <b>Read</b>: all Beluga needs, refunds included.
           </li>
           <li>
             Optional: under Connect, set <b>Accounts</b> to <b>Read</b> to show the account’s name here.
@@ -164,7 +164,7 @@ function Connected({ project, earnings, onReplace }: { project: Project; earning
     return (
       <Alert
         title={`Disconnect Stripe from ${project.name}?`}
-        message="Klaud forgets the key and the totals. Your Stripe account isn’t touched; you can delete the key in Stripe too."
+        message="Beluga forgets the key and the totals. Your Stripe account isn’t touched; you can delete the key in Stripe too."
         tone="danger"
         confirm={{
           label: 'Disconnect',
@@ -244,7 +244,7 @@ function Connected({ project, earnings, onReplace }: { project: Project; earning
           This is a full secret key. A restricted key that only reads charges is safer: Replace Key… to switch.
         </div>
       ) : null}
-      <div className={s.counted}>Successful charges, captured minus refunds, before Stripe’s fees. Klaud refreshes once a day by itself.</div>
+      <div className={s.counted}>Successful charges, captured minus refunds, before Stripe’s fees. Beluga refreshes once a day by itself.</div>
     </FormSheet>
   );
 }

@@ -1,18 +1,18 @@
-import { activityOf } from '@klaud/ui/workspace-models.js';
-import { liveFrom } from '@klaud/core/plans/progress.js';
-import { pulseOf, pulseWords } from '@klaud/core/plans/watchdog.js';
-import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, openBlockers, progressOf } from '@klaud/core/board/model.js';
+import { activityOf } from '@beluga/ui/workspace-models.js';
+import { liveFrom } from '@beluga/core/plans/progress.js';
+import { pulseOf, pulseWords } from '@beluga/core/plans/watchdog.js';
+import { type Issue, ISSUE_STATUSES, PRIORITIES, PRIORITY_INFO, STATUS_INFO, isFinished, isOpen, openBlockers, progressOf } from '@beluga/core/board/model.js';
 import type { ActionItem } from '../components/SpecMenu.js';
 import { Icon } from '../components/Icon.js';
 import { Dot, Tip, cx } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useApp, useKlaud, toast } from '../lib/klaud.js';
+import { useApp, useBeluga, toast } from '../lib/beluga.js';
 import { openSheet } from '../lib/sheets.js';
 import { useClock } from '../plans/use-plans.js';
 import { WaitingLine } from '../plans/WaitingLine.js';
 import { LabelChip, PrChip } from './marks.js';
 import { dueText } from './tasks-model.js';
-import type { LogItem } from '@klaud/core/store.js';
+import type { LogItem } from '@beluga/core/store.js';
 import { useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
 
@@ -55,6 +55,11 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
           <Dot tone="claude" live />
           Claude is writing…
         </span>
+      ) : null}
+      {issue.needsChecks && STATUS_INFO[issue.status].open ? (
+        <Tip label="Kept out of review: an acceptance criterion is neither ticked nor explained">
+          <span className={t.needsChecks}>Needs its checks</span>
+        </Tip>
       ) : null}
       {plan && milestone ? (
         <Tip label={`Part of the plan “${(plan.body ?? plan.draft)?.title ?? ''}”, milestone “${milestone}”`}>
@@ -110,21 +115,28 @@ export function IssueMeta({ issue, compact, labels = true }: { issue: Issue; com
   );
 }
 
-/** Right-click (and ⋯) on a task: open it, its worktree, start one, change it, copy, delete. */
+/** Right-click (and ⋯) on a task: open it, its worktree, start one (or reopen a finished one), change it, copy, delete. */
 export function useIssueMenu(): (issue: Issue) => ActionItem[] {
   const { api, act, open, openWorktree } = useTaskActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const projects = useApp((s) => s.projects);
   return (issue) => {
     // Only a worktree that's still here (an archived one can be restored from its page).
     const last = issue.worktrees.at(-1);
     const worktree = last && projects.some((p) => p.workspaces.some((w) => w.id === last && !w.archived)) ? last : undefined;
+    const startable = isOpen(issue.status) && !isFinished(issue.status);
     return [
       { label: 'Open', icon: 'task', onSelect: () => open(issue) },
-      worktree
-        ? { label: 'Open Worktree', icon: 'branch', onSelect: () => openWorktree(worktree) }
-        : { label: 'Start with Claude', icon: 'claude', hint: 'A new worktree, Claude working on it', onSelect: () => void act(() => api.start(issue.id, { claude: true })) },
-      ...(worktree ? [] : [{ label: 'Start Worktree', icon: 'branch' as const, onSelect: () => void act(() => api.start(issue.id, {})) }]),
+      ...(worktree
+        ? [{ label: 'Open Worktree', icon: 'branch' as const, onSelect: () => openWorktree(worktree) }]
+        : startable
+          ? [
+              { label: 'Start with Claude', icon: 'claude' as const, hint: 'A new worktree, Claude working on it', onSelect: () => void act(() => api.start(issue.id, { claude: true })) },
+              { label: 'Start Worktree', icon: 'branch' as const, onSelect: () => void act(() => api.start(issue.id, {})) },
+            ]
+          : []),
+      // Finished (or canceled) work starts again only deliberately: back to Ready, then Start.
+      ...(startable ? [] : [{ label: 'Reopen the Task', icon: 'refresh' as const, onSelect: () => void act(() => api.update(issue.id, { status: 'todo' }), `Reopened ${issue.key}`) }]),
       {
         label: 'Status',
         separate: true,

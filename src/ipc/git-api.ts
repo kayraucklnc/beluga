@@ -46,6 +46,6 @@ export const GIT_API = {
   'git.commit': { args: z.tuple([id, hash]) },
   // History's filter choices: branches, tags, recent authors, what's checked out.
   'git.filters': { args: z.tuple([id]) },
-  // Start a worktree from a commit (on a new klaud/<name> branch) → its workspace id; it opens.
+  // Start a worktree from a commit (on a new beluga/<name> branch) → its workspace id; it opens.
   'git.worktreeAt': { args: z.tuple([id, hash, name.optional()]) },
 } as const;

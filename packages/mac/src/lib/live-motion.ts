@@ -1,27 +1,26 @@
 import { type RefObject, useEffect, useRef } from 'react';
 import { onWindowActive, windowActive } from './window-active.js';
+import { reducedMotion } from './reduced-motion.js';
 
 /**
  * One slow clock for everything that moves while Claude works: the plan's glowing cards and
  * spinners, the dot matrices, the step on now (KLD-40). A CSS animation makes WebKit draw the
  * whole window 60 times a second for as long as it runs, however small it is; this clock writes
  * each live mark's style about 15 times a second instead, so the window draws a quarter as often.
- * Only marks on screen are painted; while you're not looking at Klaud (lib/window-active.ts) the
+ * Only marks on screen are painted; while you're not looking at Beluga (lib/window-active.ts) the
  * clock stops, and with Reduce Motion every mark rests at its still frame.
  */
 
 /** Paints a mark at `t` ms (a shared clock: marks that look alike move together). `t` null: rest, still. */
 export type LivePaint = (t: number | null) => void;
 
-export const LIVE_FPS = 15;
+const LIVE_FPS = 15;
 
 const marks = new Map<Element, LivePaint>();
 const seen = new Set<Element>();
 let timer: ReturnType<typeof setInterval> | undefined;
 let watching = false;
 let observer: IntersectionObserver | undefined;
-
-export const still = (): boolean => document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function tick(): void {
   const t = performance.now();
@@ -30,7 +29,7 @@ function tick(): void {
 
 /** Runs the clock when there's something on screen to move and someone to see it; otherwise stops it. */
 function wake(): void {
-  const run = seen.size > 0 && windowActive() && !still();
+  const run = seen.size > 0 && windowActive() && !reducedMotion();
   if (run && !timer) {
     tick();
     timer = setInterval(tick, 1000 / LIVE_FPS);
@@ -38,7 +37,7 @@ function wake(): void {
     clearInterval(timer);
     timer = undefined;
   }
-  if (still()) for (const el of seen) marks.get(el)?.(null);
+  if (reducedMotion()) for (const el of seen) marks.get(el)?.(null);
 }
 
 function watch(): void {
@@ -70,7 +69,7 @@ export function joinLive(el: Element, paint: LivePaint): () => void {
   watch();
   marks.set(el, paint);
   observe(el);
-  paint(still() ? null : performance.now());
+  paint(reducedMotion() ? null : performance.now());
   return () => {
     marks.delete(el);
     seen.delete(el);

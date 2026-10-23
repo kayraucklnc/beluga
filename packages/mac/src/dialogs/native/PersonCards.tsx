@@ -1,16 +1,16 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { type ReactNode, useState } from 'react';
-import type { Guest } from '@klaud/core/collab-store.js';
-import { TRUST_INFO, canRunOn, trustOf } from '@klaud/core/trust.js';
-import type { GuestCan, PeerInfo, Usage } from '@klaud/protocol.js';
-import { CAN_INFO } from '@klaud/shared/invites.js';
-import { TRUST_LEVELS, type TrustLevel } from '@klaud/shared/settings-schema.js';
-import { CAN_ORDER } from '@klaud/ui/invite-menus.js';
-import type { MenuKind } from '@klaud/ui/menus.js';
+import type { Guest } from '@beluga/core/collab-store.js';
+import { TRUST_INFO, canRunOn, trustOf } from '@beluga/core/trust.js';
+import type { GuestCan, PeerInfo, Usage } from '@beluga/protocol.js';
+import { CAN_INFO } from '@beluga/shared/invites.js';
+import { TRUST_LEVELS, type TrustLevel } from '@beluga/shared/settings-schema.js';
+import { CAN_ORDER } from '@beluga/ui/invite-menus.js';
+import type { MenuKind } from '@beluga/ui/menus.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Avatar, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { Select } from '../settings-controls.js';
 import type { Confirm } from './PersonPopover.js';
 import { Choice, Tag, optionIndex } from './parts.js';
@@ -40,7 +40,7 @@ const GRANTED: Record<TrustLevel, string> = {
 
 /** Run a person-menu option exactly as the terminal UI does (by its id). */
 function usePick(menu: MenuKind) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   return (id: string): void => {
     const i = optionIndex(client.store.getState(), menu, id);
@@ -112,7 +112,7 @@ function UsageMeters({ usage }: { usage: Usage | undefined }) {
 export function FriendCard({ peer, menu, confirm, onRun }: CardProps & { menu: Extract<MenuKind, { kind: 'person' }> }) {
   const api = useApi();
   const actions = useActions();
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const address = (claude: boolean): void => addressTo(ui, actions, client.store.getState().view, { peerId: peer.peerId, name: peer.name, claude });
   const pick = usePick(menu);
   const trust = useApp((st) => trustOf(st, peer.peerId));
@@ -241,7 +241,7 @@ export function GuestCard({ peer, guest, close, confirm }: CardProps & { guest: 
 export function AccountCard({ peer, menu, close, confirm }: CardProps & { menu: Extract<MenuKind, { kind: 'person' }> }) {
   const api = useApi();
   const actions = useActions();
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const pick = usePick(menu);
   const room = useApp((st) => st.room);
   const host = useApp((st) => st.self?.host === true);
@@ -306,7 +306,7 @@ export function AccountCard({ peer, menu, close, confirm }: CardProps & { menu: 
             ui.patch({ settings: 'general' });
           }}
         />
-        {host ? null : <Row icon="x" danger label="Leave the Room…" onClick={() => confirm({ title: `Leave ${room}?`, message: 'Klaud closes and you leave the room. Your projects and chats stay on this Mac.', confirm: 'Leave', run: () => pick('leave-room') })} />}
+        {host ? null : <Row icon="x" danger label="Leave the Room…" onClick={() => confirm({ title: `Leave ${room}?`, message: 'Beluga closes and you leave the room. Your projects and chats stay on this Mac.', confirm: 'Leave', run: () => pick('leave-room') })} />}
       </div>
     </>
   );

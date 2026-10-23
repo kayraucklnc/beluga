@@ -2,7 +2,7 @@
 
 ## Both clients
 
-klaud has two screens on one core (see `docs/parity.md`). For a new feature:
+Beluga has two screens on one core (see `docs/parity.md`). For a new feature:
 
 - [ ] API entry (`src/ipc/api.ts`) and handler
 - [ ] Core behavior + contract test (`tests/contract/`)

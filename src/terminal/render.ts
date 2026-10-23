@@ -1,5 +1,5 @@
 /**
- * Convert xterm buffer lines into klaud's styled `Line` model.
+ * Convert xterm buffer lines into Beluga's styled `Line` model.
  *
  * Adjacent cells with identical style are merged into one `Seg`. Default
  * fg/bg map to `undefined` so the app theme shows through. Trailing blank,

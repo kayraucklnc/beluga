@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * The request pop-up (a friend’s Claude “wants to…”) against the demo with the network on: mention a screenshot to mia and her
@@ -54,9 +54,9 @@ test('Decline answers it too, and × only hides the card', async ({ page }) => {
   await askMia(page, 'Claude, can you help me with something?');
   await expect(cards(popup)).toHaveCount(1, { timeout: 20_000 });
   await expect(cards(popup).first()).toContainText('tell me what auth returns for an expired session');
-  await popup.getByRole('button', { name: 'Hide (they still wait in Klaud)' }).click({ force: true });
+  await popup.getByRole('button', { name: 'Hide (they still wait in Beluga)' }).click({ force: true });
   await expect(cards(popup)).toHaveCount(0);
-  // Still waiting in Klaud.
+  // Still waiting in Beluga.
   await sidebar(page).getByRole('button', { name: /^Requests/ }).click();
   await page.getByRole('radio', { name: /^Received/ }).or(page.getByRole('tab', { name: /^Received/ })).first().click();
   const row = page.getByRole('list', { name: 'Received requests' }).getByRole('button', { name: /^From mia’s Claude: .*Waiting for you to approve$/ }).first();

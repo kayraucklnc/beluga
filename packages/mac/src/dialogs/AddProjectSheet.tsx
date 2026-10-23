@@ -4,7 +4,7 @@ import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { Button, cx } from '../components/ui.js';
 import { inApp } from '../lib/boot.js';
-import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { pickFolders } from '../lib/projects.js';
 import s from './add-project.module.css';
 
@@ -27,7 +27,7 @@ const ago = (ts: number): string => {
  * git projects already on this Mac (most recently worked on first).
  */
 export function AddProjectSheet() {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const api = useApi();
   const open = useUi((u) => u.addProject ?? false);
   const home = useApp((st) => st.home);

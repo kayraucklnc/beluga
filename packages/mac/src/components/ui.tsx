@@ -97,7 +97,7 @@ export const personColor = (id: string): string => {
   return PEOPLE[h % PEOPLE.length]!;
 };
 
-/** Ids that are no one's Claude in particular (a Claude Code session outside Klaud): Claude's own color. */
+/** Ids that are no one's Claude in particular (a Claude Code session outside Beluga): Claude's own color. */
 const NOBODY = new Set(['claude-code']);
 
 /**
@@ -106,7 +106,7 @@ const NOBODY = new Set(['claude-code']);
  */
 export const claudeColor = (owner: string | undefined): string | undefined => (owner && !NOBODY.has(owner) ? personColor(owner) : undefined);
 
-/** A person's initial in their color; their Claude gets its mark (the klaud prompt), tinted the same. */
+/** A person's initial in their color; their Claude gets its mark (the Beluga prompt), tinted the same. */
 export function Avatar({ name, id, claude, size = 22 }: { name: string; id: string; claude?: boolean; size?: number }) {
   const tint = claude ? claudeColor(id) : undefined;
   return (

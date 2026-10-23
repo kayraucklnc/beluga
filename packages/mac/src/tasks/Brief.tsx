@@ -1,6 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useRef, useState } from 'react';
-import { BRIEF_SECTIONS, type BriefSection, type Issue, SECTION_INFO, actorName } from '@klaud/core/board/model.js';
+import { parseCriterion } from '@beluga/core/board/criteria.js';
+import { BRIEF_SECTIONS, type BriefSection, type Issue, SECTION_INFO, actorName } from '@beluga/core/board/model.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon } from '../components/Icon.js';
 import { Button, IconButton, Tip, cx } from '../components/ui.js';
@@ -81,6 +82,8 @@ function Section({ issue, section, startEditing, onDone }: { issue: Issue; secti
         {ticks?.total ? (
           <span className={cx(t.sectionCount, ticks.done === ticks.total && t.sectionCountDone)}>
             {ticks.done} of {ticks.total}
+            {ticks.deferred ? ` · ${ticks.deferred} deferred` : ''}
+            {ticks.notDone ? ` · ${ticks.notDone} not done` : ''}
           </span>
         ) : null}
         <span className={t.grow} />
@@ -109,7 +112,7 @@ function Section({ issue, section, startEditing, onDone }: { issue: Issue; secti
             }}
           />
           <div className={t.editorBar}>
-            <span className={t.editorHint}>Markdown{section === 'acceptance' ? ' · “- [ ]” makes a checkbox' : ''}</span>
+            <span className={t.editorHint}>Markdown{section === 'acceptance' ? ' · “- [ ]” makes a checkbox · “— deferred: why” after one explains it' : ''}</span>
             <span className={t.grow} />
             <Button size="small" variant="quiet" onClick={cancel}>
               Cancel
@@ -136,24 +139,34 @@ function Section({ issue, section, startEditing, onDone }: { issue: Issue; secti
   );
 }
 
-/** Acceptance criteria: each "- [ ]" line a checkbox you click; other lines as they are. */
+/**
+ * Acceptance criteria: each "- [ ]" line a checkbox you click; one not ticked yet but explained
+ * ("— deferred: why", "— not done: why") shows its own state and the reason; other lines as they are.
+ */
 function Checklist({ text, onToggle, onEdit }: { text: string; onToggle: (index: number) => void; onEdit: () => void }) {
   let n = -1;
   return (
     <ul className={t.checklist} onDoubleClick={onEdit}>
       {text.split('\n').map((line, i) => {
-        const m = /^\s*[-*]\s+\[([ xX])\]\s*(.*)$/.exec(line);
-        if (!m) return line.trim() ? <li key={i} className={t.checkNote}>{line.replace(/^\s*[-*]\s+/, '')}</li> : null;
+        const c = parseCriterion(line);
+        if (!c) return line.trim() ? <li key={i} className={t.checkNote}>{line.replace(/^\s*[-*]\s+/, '')}</li> : null;
         n++;
         const index = n;
-        const done = m[1] !== ' ';
+        const done = c.state === 'done';
+        const deferred = c.state === 'deferred';
+        const notDone = c.state === 'not_done';
         return (
-          <li key={i} className={cx(t.check, done && t.checkDone)}>
-            <button type="button" role="checkbox" aria-checked={done} className={t.checkBox} onClick={() => onToggle(index)}>
-              {done ? <Icon name="check" size={10} /> : null}
+          <li key={i} className={cx(t.check, done && t.checkDone, deferred && t.checkDeferred, notDone && t.checkNotDone)} data-state={c.state}>
+            <button type="button" role="checkbox" aria-checked={done} aria-label={deferred ? 'Deferred: tick it when it’s true' : notDone ? 'Not done: tick it when it’s true' : undefined} className={t.checkBox} onClick={() => onToggle(index)}>
+              {done ? <Icon name="check" size={10} /> : deferred ? <Icon name="clock" size={10} /> : notDone ? <Icon name="minus" size={10} /> : null}
             </button>
             <span className={t.checkText}>
-              <Markdown text={m[2] ?? ''} />
+              <Markdown text={c.text} />
+              {c.reason ? (
+                <span className={t.checkReason}>
+                  <span className={t.checkReasonLabel}>{deferred ? 'Deferred' : 'Not done'}</span> · {c.reason}
+                </span>
+              ) : null}
             </span>
           </li>
         );

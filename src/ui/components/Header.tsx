@@ -24,7 +24,7 @@ export function Header({ state, width }: { state: AppState; width: number }) {
         _{' '}
       </Text>
       <Text bold color={theme.text}>
-        klaud
+        Beluga
       </Text>
       <Text color={theme.muted}>{'  '}</Text>
       <Text bold>{state.room}</Text>

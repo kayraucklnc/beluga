@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { cx } from '../components/ui.js';
 import s from './settings.module.css';
 
-/** The pop-up button of a Settings row: Klaud's own (components/Select). */
+/** The pop-up button of a Settings row: Beluga's own (components/Select). */
 export { Select } from '../components/Select.js';
 
 /** The building blocks of every Settings pane: grouped rows with a label, a detail and a control. */

@@ -1,23 +1,23 @@
 /**
- * The first time Klaud opens: a welcome, a short tour, a few settings, then the app. It shows
+ * The first time Beluga opens: a welcome, a short tour, a few settings, then the app. It shows
  * once per Mac. Updating the app never brings it back (the mark is kept with this window's own
- * storage, which an update leaves alone), and someone who used Klaud before it existed never
- * sees it either. File › Onboard Again (or Help › Welcome to Klaud, or the palette) shows it again.
+ * storage, which an update leaves alone), and someone who used Beluga before it existed never
+ * sees it either. File › Onboard Again (or Help › Welcome to Beluga, or the palette) shows it again.
  */
 
 /** Where the mark that you've been through it is kept. */
-export const DONE_KEY = 'klaud.onboarding.v1';
-/** Klaud's own window preferences (lib/prefs.ts): there only once someone has used the app. */
-export const PREFS_KEY = 'klaud.prefs.v1';
+export const DONE_KEY = 'beluga.onboarding.v1';
+/** Beluga's own window preferences (lib/prefs.ts): there only once someone has used the app. */
+export const PREFS_KEY = 'beluga.prefs.v1';
 /** `?welcome` in the address shows it whatever the mark says (screenshots, development). */
 export const FORCE_PARAM = 'welcome';
-/** The document event File › Onboard Again, Help › Welcome to Klaud and the palette send to show it again. */
-export const SHOW_WELCOME = 'klaud:welcome';
+/** The document event File › Onboard Again, Help › Welcome to Beluga and the palette send to show it again. */
+export const SHOW_WELCOME = 'beluga:welcome';
 
 export const STEPS = ['hello', 'parallel', 'agents', 'friends', 'earnings', 'archive', 'look', 'setup', 'ready'] as const;
 export type Step = (typeof STEPS)[number];
 
-/** The tour: what Klaud does, one idea a step (Skip Tour goes past all of them). */
+/** The tour: what Beluga does, one idea a step (Skip Tour goes past all of them). */
 export const TOUR: readonly Step[] = ['parallel', 'agents', 'friends', 'earnings', 'archive'];
 
 export interface DoneMark {
@@ -46,7 +46,7 @@ function readMark(raw: string | null): DoneMark | undefined {
 
 /**
  * Whether to show it now: asked for, or never finished it. Someone with preferences but no mark
- * used Klaud before the onboarding existed, and isn't shown it. (Picking a theme in it writes
+ * used Beluga before the onboarding existed, and isn't shown it. (Picking a theme in it writes
  * preferences too, so it marks itself `started` first: quit halfway and it's back next time.)
  */
 export function shouldShow(store: Store, search = ''): boolean {

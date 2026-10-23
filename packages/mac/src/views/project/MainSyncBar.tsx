@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { activityOf } from '@klaud/ui/workspace-models.js';
-import type { StashUpdateOutcome, UpdateOutcome } from '@klaud/workspaces/sync.js';
-import type { Project } from '@klaud/workspaces/types.js';
+import { activityOf } from '@beluga/ui/workspace-models.js';
+import type { StashUpdateOutcome, UpdateOutcome } from '@beluga/workspaces/sync.js';
+import type { Project } from '@beluga/workspaces/types.js';
 import { Alert } from '../../components/Alert.js';
 import { Icon } from '../../components/Icon.js';
 import { Button, Dot, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { type MainLine, agoText } from './home-model.js';
 import s from './main-sync.module.css';
 
@@ -42,7 +42,7 @@ function useClaudeUpdating(project: Project): string | undefined {
 
 export function MainSyncBar({ project, line }: { project: Project; line: MainLine }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   const sync = project.sync;
   const [busy, setBusy] = useState<'update' | 'switch' | 'claude'>();
@@ -74,7 +74,7 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
   /** What an update came back with that needs you (the rest the core already said in a toast). */
   const decide = (out: UpdateOutcome | StashUpdateOutcome): void => {
     if ('restored' in out && !out.restored) {
-      setDialog({ kind: 'conflicts', files: out.conflicts ?? [], message: `${branch} is up to date, but putting your changes back conflicted with the new commits. Your changes are safe in the stash “${out.stash?.message ?? 'klaud'}”, and the files have conflict markers.` });
+      setDialog({ kind: 'conflicts', files: out.conflicts ?? [], message: `${branch} is up to date, but putting your changes back conflicted with the new commits. Your changes are safe in the stash “${out.stash?.message ?? 'beluga'}”, and the files have conflict markers.` });
       return;
     }
     switch (out.kind) {
@@ -157,7 +157,7 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
           </Tip>
         ) : null}
         {sync.upstream ? (
-          <Tip label={`Fetch ${sync.remote ?? 'origin'} now (Klaud also fetches quietly every 15 minutes)`}>
+          <Tip label={`Fetch ${sync.remote ?? 'origin'} now (Beluga also fetches quietly every 15 minutes)`}>
             <Button size="small" variant="quiet" icon="refresh" className={cx(sync.fetching && s.spinning)} disabled={sync.fetching} onClick={fetchNow}>
               Fetch
             </Button>
@@ -180,7 +180,7 @@ export function MainSyncBar({ project, line }: { project: Project; line: MainLin
         <Alert
           title="Your uncommitted changes are in the way"
           icon="alert"
-          message={`${upstream} has ${plural(dialog.behind, 'new commit')}, and some change files you’ve edited in main. Klaud can stash your changes, update, and put them back, or move them to a worktree of their own first.`}
+          message={`${upstream} has ${plural(dialog.behind, 'new commit')}, and some change files you’ve edited in main. Beluga can stash your changes, update, and put them back, or move them to a worktree of their own first.`}
           table={{ caption: 'Changed in main', columns: ['File'], rows: dialog.files.slice(0, 8).map((f) => [<code key={f}>{f}</code>]) }}
           confirm={{ label: 'Stash and Update', onClick: stashAndUpdate }}
           alternative={{ label: 'Move to Worktree', onClick: moveAndUpdate }}

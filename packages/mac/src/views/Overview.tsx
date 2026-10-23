@@ -1,11 +1,11 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { Project } from '@klaud/workspaces/types.js';
+import type { Project } from '@beluga/workspaces/types.js';
 import { Icon } from '../components/Icon.js';
 import { ProjectIcon } from '../components/ProjectIcon.js';
 import { SpecContext } from '../components/SpecMenu.js';
 import { Button, Empty, EmptyActions } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { EarningsCard } from './EarningsCard.js';
 import { ConversationPeek, DeleteArchivedAlert } from './overview/ConversationPeek.js';
 import { FilterBar } from './overview/FilterBar.js';
@@ -23,7 +23,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
  */
 export function OverviewView() {
   const actions = useActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const api = client.api;
   const state = useApp((st) => st);
   const [prefs, setPrefs] = useOverviewPrefs();

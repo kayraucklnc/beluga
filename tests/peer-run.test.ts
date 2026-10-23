@@ -33,8 +33,8 @@ describe('run_on_peer gating', () => {
 
   it('refuses commands that touch secrets before they leave this computer', () => {
     const ctx = { cwd: '/p', roots: ['/p'], autoEdit: false };
-    expect(decideTool('mcp__klaud__run_on_peer', { command: 'cat .env' }, ctx)).toBe('deny');
-    expect(decideTool('mcp__klaud__run_on_peer', { command: 'npm test' }, ctx)).toBe('ask');
+    expect(decideTool('mcp__beluga__run_on_peer', { command: 'cat .env' }, ctx)).toBe('deny');
+    expect(decideTool('mcp__beluga__run_on_peer', { command: 'npm test' }, ctx)).toBe('ask');
   });
 
   it('keeps the tail of long output and describes results for Claude', () => {

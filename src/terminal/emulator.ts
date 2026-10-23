@@ -1,6 +1,6 @@
 /**
  * A screen's own copy of a terminal: a headless xterm fed with the program's raw bytes,
- * exposed as klaud `Line[]` snapshots. The program itself runs in the daemon (pty-host.ts);
+ * exposed as Beluga `Line[]` snapshots. The program itself runs in the daemon (pty-host.ts);
  * a PtyLink carries bytes both ways, so this works in the same process or over a socket.
  */
 import path from 'node:path';

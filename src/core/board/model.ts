@@ -13,16 +13,19 @@ export type StatusTone = 'muted' | 'neutral' | 'claude' | 'info' | 'ok' | 'error
 
 export const STATUS_INFO: Readonly<Record<IssueStatus, { readonly label: string; readonly tone: StatusTone; readonly open: boolean }>> = {
   backlog: { label: 'Backlog', tone: 'muted', open: true },
-  todo: { label: 'Todo', tone: 'neutral', open: true },
+  todo: { label: 'Ready', tone: 'neutral', open: true },
   in_progress: { label: 'In Progress', tone: 'claude', open: true },
   in_review: { label: 'In Review', tone: 'info', open: true },
   /** A plan's task whose milestone passed: merged into the plan's branch, waiting for the plan's PR. */
-  in_plan: { label: 'In Plan', tone: 'info', open: true },
+  in_plan: { label: 'Merged into Plan', tone: 'info', open: true },
   done: { label: 'Done', tone: 'ok', open: false },
   canceled: { label: 'Canceled', tone: 'muted', open: false },
 };
 
 export const isOpen = (status: IssueStatus): boolean => STATUS_INFO[status].open;
+
+/** Its work is finished (in review, merged into its plan, or shipped): nothing to start until it's reopened. */
+export const isFinished = (status: IssueStatus): boolean => status === 'in_review' || status === 'in_plan' || status === 'done';
 
 /** Linear's order: urgent first; "none" sorts last. */
 export const PRIORITIES = ['urgent', 'high', 'medium', 'low', 'none'] as const;
@@ -52,13 +55,26 @@ export const SECTION_INFO: Readonly<Record<BriefSection, { readonly label: strin
 export const ESTIMATES = [1, 2, 3, 5, 8] as const;
 
 /**
- * Who did something: a person (you or a friend, by peer id), someone's Claude, or klaud itself
+ * Who did something: a person (you or a friend, by peer id), someone's Claude, or Beluga itself
  * (a worktree opened, a pull request merged). Peer ids, not "you": boards are shared later.
  */
 export type Actor =
   | { readonly kind: 'person'; readonly id: string; readonly name: string }
   | { readonly kind: 'claude'; readonly owner: string; readonly ownerName: string }
-  | { readonly kind: 'klaud' };
+  | { readonly kind: 'beluga' };
+
+/**
+ * Saved boards and plans from before the rename say `{ kind: 'klaud' }` for Beluga itself: read them as
+ * `{ kind: 'beluga' }`, wherever they sit (activity, proof, revisions…). Only an object that is exactly
+ * that one key counts, so other `kind` fields are never touched. Returns a copy; the input stays as is.
+ */
+export function renamedActors(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(renamedActors);
+  if (!value || typeof value !== 'object') return value;
+  const entries = Object.entries(value);
+  if (entries.length === 1 && entries[0]![0] === 'kind' && entries[0]![1] === 'klaud') return { kind: 'beluga' };
+  return Object.fromEntries(entries.map(([k, v]) => [k, renamedActors(v)]));
+}
 
 /** Who a task is for: a person, or someone's Claude. */
 export type Assignee = { readonly kind: 'person'; readonly id: string; readonly name: string } | { readonly kind: 'claude'; readonly owner: string; readonly ownerName: string };
@@ -103,7 +119,7 @@ export interface Proof {
   /** A file on this Mac (image, file). */
   readonly path?: string;
   readonly url?: string;
-  /** A klaud-graph's JSON, or text. */
+  /** An beluga-graph's JSON, or text. */
   readonly body?: string;
   readonly at: number;
   readonly by: Actor;
@@ -153,6 +169,8 @@ export interface Issue {
   readonly pr?: IssuePr;
   /** Its worktree went away (archived or deleted) before it was done: screens ask what's next. */
   readonly worktreeGone?: boolean;
+  /** It was kept out of review: an acceptance criterion is neither ticked nor explained (see criteria.ts). */
+  readonly needsChecks?: boolean;
   readonly proof: readonly Proof[];
   readonly activity: readonly Activity[];
   readonly createdAt: number;
@@ -352,7 +370,7 @@ export function byStatus(issues: readonly Issue[]): ReadonlyArray<{ readonly sta
   return ISSUE_STATUSES.map((status) => ({ status, issues: issues.filter((i) => i.status === status).sort((a, b) => PRIORITY_INFO[a.priority].rank - PRIORITY_INFO[b.priority].rank || byRank(a, b)) }));
 }
 
-/** Whose name to show for an actor, from where you look ("You", "Your Claude", "bob", "bob's Claude", "Klaud"). */
+/** Whose name to show for an actor, from where you look ("You", "Your Claude", "bob", "bob's Claude", "Beluga"). */
 export function actorName(actor: Actor, selfId: string): string {
   switch (actor.kind) {
     case 'person':
@@ -360,7 +378,7 @@ export function actorName(actor: Actor, selfId: string): string {
     case 'claude':
       return actor.owner === selfId ? 'Your Claude' : `${actor.ownerName}’s Claude`;
     default:
-      return 'Klaud';
+      return 'Beluga';
   }
 }
 

@@ -1,6 +1,6 @@
 import os from 'node:os';
 import { useEffect, useMemo, useState, type MutableRefObject } from 'react';
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import type { AppState } from '../core/store.js';
 import { globalShellDir, globalShellId, globalShellNumber, isGlobalShell, runId, setupId, shellId } from '../core/workbench.js';
 import { terminalLabel } from '../shared/terminal-keys.js';
@@ -14,7 +14,7 @@ import type { Model } from './workspace-models.js';
 import { splitPaste } from './mouse.js';
 
 export interface TerminalPaneInput {
-  readonly client: KlaudClient;
+  readonly client: BelugaClient;
   readonly state: AppState;
   readonly ui: UiState;
   readonly uiRef: MutableRefObject<UiState>;
@@ -110,7 +110,7 @@ export function useTerminalPane({ client, state, ui, uiRef, patchUi, focus, geom
     };
     setRawInput((data) => {
       if (uiRef.current.terminalScroll) patchUi({ terminalScroll: 0 });
-      // Pastes arrive bracketed (klaud asks for it); hand them on bracketed only if the program wants that.
+      // Pastes arrive bracketed (Beluga asks for it); hand them on bracketed only if the program wants that.
       const split = splitPaste(data, inPaste);
       inPaste = split.inPaste;
       for (const part of split.parts) {

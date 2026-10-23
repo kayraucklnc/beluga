@@ -64,7 +64,7 @@ function writeTree(root: string, files: Record<string, string | Uint8Array>): vo
 
 /** Sample folders for the demo: yours and a pretend friend's. */
 export function createDemoFolders(): { mine: string; bob: string } {
-  const base = mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-'));
+  const base = mkdtempSync(path.join(os.tmpdir(), 'beluga-demo-'));
   const mine = path.join(base, 'landing');
   const bob = path.join(base, 'api');
   writeTree(mine, YOUR_FILES);
@@ -154,7 +154,7 @@ const DEMO_PATCH = `@@ -1,4 +1,9 @@
 `;
 
 /**
- * bob's demo klaud has no real worktree, so it answers the Diff tab with a small, fixed change.
+ * bob's demo Beluga has no real worktree, so it answers the Diff tab with a small, fixed change.
  * It listens ahead of the session, so this answer arrives first.
  */
 function answerDemoDiff(session: Session, client: PeerClient): void {
@@ -181,7 +181,7 @@ function shareDemoWorkspace(session: Session, shares: ShareService, folder: stri
 
 /** bob sends the room a screenshot (the way a pasted image goes out), so the demo shows images in the chat. */
 function sendDemoScreenshot(session: Session): void {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-images-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga-demo-images-'));
   const file = 'checkout-error.png';
   const png = demoScreenshot();
   writeFileSync(path.join(dir, file), png);
@@ -206,7 +206,7 @@ export function startDemoGuest(url: string, keys: RoomKeys, name = 'zoe'): Sessi
 
 
 const gitIn = (cwd: string, ...args: string[]): void => {
-  execFileSync('git', ['-c', 'user.email=demo@klaud.dev', '-c', 'user.name=klaud demo', ...args], { cwd, stdio: 'ignore' });
+  execFileSync('git', ['-c', 'user.email=demo@beluga.dev', '-c', 'user.name=Beluga demo', ...args], { cwd, stdio: 'ignore' });
 };
 
 function demoRepo(base: string, name: string, files: Record<string, string>): string {
@@ -219,7 +219,7 @@ function demoRepo(base: string, name: string, files: Record<string, string>): st
   gitIn(dir, 'add', '.');
   // Two weeks back, so the demo's history reads like a real project's.
   const start = new Date(Date.now() - 14 * 86_400_000).toISOString();
-  execFileSync('git', ['-c', 'user.email=demo@klaud.dev', '-c', 'user.name=klaud demo', 'commit', '-q', '-m', 'Initial commit'], { cwd: dir, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: start, GIT_COMMITTER_DATE: start } });
+  execFileSync('git', ['-c', 'user.email=demo@beluga.dev', '-c', 'user.name=Beluga demo', 'commit', '-q', '-m', 'Initial commit'], { cwd: dir, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: start, GIT_COMMITTER_DATE: start } });
   gitIn(dir, 'remote', 'add', 'origin', origin);
   gitIn(dir, 'push', '-u', 'origin', 'main');
   gitIn(dir, 'remote', 'set-head', 'origin', 'main');
@@ -228,7 +228,7 @@ function demoRepo(base: string, name: string, files: Record<string, string>): st
 
 /** Two sample projects with worktrees in different states, plus saved conversations. */
 export async function createDemoWorkspaces(): Promise<WorkspaceManager> {
-  const base = mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-projects-'));
+  const base = mkdtempSync(path.join(os.tmpdir(), 'beluga-demo-projects-'));
   demoRepo(base, 'bob-api', BOB_FILES);
   const landingDir = demoRepo(base, 'landing', YOUR_FILES);
   // History with several people and merged branches, and a teammate's push you haven't pulled yet.

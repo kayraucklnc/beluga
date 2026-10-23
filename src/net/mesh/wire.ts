@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { NameSchema, PeerIdSchema, PresenceSchema, ProfileSchema } from './schemas.js';
 
 /**
- * The messages two klaud Macs send each other over a link (JSON, one per frame). `hello` says
+ * The messages two Beluga Macs send each other over a link (JSON, one per frame). `hello` says
  * which protocol version each side speaks; a different major version closes the link. Kinds a
  * side doesn't know are ignored, so new ones can be added without breaking older Macs.
  */

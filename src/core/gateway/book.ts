@@ -6,7 +6,7 @@ import { KEEP_TASKS, type PeerCard, type TaskView, isFinal } from './model.js';
 import { type Frame, MAX_FILE_TOTAL, type ResultFile, TaskResult } from './protocol.js';
 
 /**
- * The gateway's files under ~/.klaud/tasks/ (readable only by you): tasks.json (your last
+ * The gateway's files under ~/.beluga/tasks/ (readable only by you): tasks.json (your last
  * KEEP_TASKS tasks, sent and received, and the cards friends told you), outbox.json (what waits
  * for someone to come online, 7 days at most), files/<task>/ (what results brought back) and
  * work/<task>/ (the scratch folder a friend's task runs in when it names no project).

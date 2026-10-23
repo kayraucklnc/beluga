@@ -1,5 +1,5 @@
 import type { MutableRefObject } from 'react';
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import { globalShellId, globalShellNumber, isGlobalShell, runId, setupId } from '../shared/terminal-keys.js';
 import { runCollabUiAction } from './collab-actions.js';
 import type { UiState } from './keymap.js';
@@ -9,7 +9,7 @@ import { type UiAction, findWorkspace, toggleProject } from './workspace-models.
 
 /** What clicking things (and pressing Enter on them) needs from the app. */
 export interface UiActionContext {
-  readonly client: KlaudClient;
+  readonly client: BelugaClient;
   readonly patchUi: (patch: Partial<UiState>) => void;
   readonly uiRef: MutableRefObject<UiState>;
   readonly toggle: (key: string) => void;
@@ -28,11 +28,14 @@ export function runUiActionWith(c: UiActionContext, action: UiAction): void {
   const { api, store } = client;
   if (runCollabUiAction(c.menuCtx(), action)) return;
   switch (action.type) {
-    case 'open_ws':
-      void api.workspaces.open(action.id, action.tab);
+    case 'open_ws': {
+      // Shown at once, not after the daemon's answer (behind whatever else it's sending while Claudes stream).
+      const req = findWorkspace(store.getDomain().projects, action.id) ? store.openAhead(action.id, action.tab ?? 'chat') : undefined;
+      void api.workspaces.open(action.id, action.tab ?? 'chat', req ? { req } : undefined);
       // Opening a view puts you inside it: the file list, the diff, the terminal, or the chat.
       patchUi(action.tab === 'review' ? { focus: 'main', entered: true } : action.tab === 'files' ? { focus: 'files', entered: true } : action.tab === 'terminal' ? { focus: 'terminal', terminalScroll: 0 } : { focus: 'chat', entered: false });
       return;
+    }
     case 'open_link':
       c.openLink(action.link);
       return;

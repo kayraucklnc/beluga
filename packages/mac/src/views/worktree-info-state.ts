@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import type { WorktreeInfo } from '@klaud/core/other-worktrees.js';
-import { useApi } from '../lib/klaud.js';
+import type { WorktreeInfo } from '@beluga/core/other-worktrees.js';
+import { useApi } from '../lib/beluga.js';
 
 /**
- * This window's memory for worktrees made outside Klaud: which ones you chose to start a
+ * This window's memory for worktrees made outside Beluga: which ones you chose to start a
  * conversation in (the chat shows instead of the info page) and which show their info page
  * over the conversation. Plus the lookups the info page and the sidebar make.
  */
@@ -55,7 +55,7 @@ const ACTIVITY_FRESH_MS = 60_000;
 const activityCache = new Map<string, { readonly at: number; readonly times: Record<string, number> }>();
 
 /**
- * When git last saw something happen in each of a project's worktrees made outside Klaud (a
+ * When git last saw something happen in each of a project's worktrees made outside Beluga (a
  * commit, a checkout, staging): how the sidebar orders them. Asked again when the set of
  * worktrees changes, or after a minute. Empty until it's known.
  */

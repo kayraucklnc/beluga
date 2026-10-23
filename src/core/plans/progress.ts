@@ -23,7 +23,7 @@ export type TaskState =
   | 'asking'
   /** In progress, but nobody is working on it right now (its Claude stopped without finishing). */
   | 'idle'
-  /** Its Claude stopped again soon after Klaud woke it: it waits for you (see watchdog.ts). */
+  /** Its Claude stopped again soon after Beluga woke it: it waits for you (see watchdog.ts). */
   | 'stalled'
   | 'review'
   /** Its milestone passed: merged into the plan's branch, waiting for the plan's PR. */
@@ -34,7 +34,7 @@ export type TaskState =
   | 'missing';
 
 export const FINISHED: ReadonlySet<TaskState> = new Set(['review', 'planned', 'done', 'canceled', 'missing']);
-export const ACTIVE: ReadonlySet<TaskState> = new Set(['running', 'asking', 'idle', 'stalled']);
+const ACTIVE: ReadonlySet<TaskState> = new Set(['running', 'asking', 'idle', 'stalled']);
 
 export interface TaskView {
   readonly task: PlanTask;
@@ -162,7 +162,7 @@ function taskState(board: BoardState, issue: Issue | undefined, live: Live): { r
 }
 
 /** What a task being combined shows: “Combining KLD-9 and KLD-27 …”, or the conflict being fixed. */
-export function combiningStep(c: Combining): string {
+function combiningStep(c: Combining): string {
   const names = c.from.length > 1 ? `${c.from.slice(0, -1).join(', ')} and ${c.from.at(-1)}` : (c.from[0] ?? 'its branches');
   if (!c.conflict) return `Combining ${names} …`;
   if (c.conflict.stuck) return `Combining ${names}: fix the conflict in ${c.conflict.files.slice(0, 3).join(', ')} (in ${c.conflict.dir}): it starts once no markers are left`;
@@ -171,7 +171,7 @@ export function combiningStep(c: Combining): string {
 }
 
 /** What a milestone merging into the plan's branch shows. */
-export function mergingText(m: PlanMerge, title: string, branch: string | undefined): string {
+function mergingText(m: PlanMerge, title: string, branch: string | undefined): string {
   const c = m.conflict;
   const what = c?.key ?? c?.merging ?? '';
   if (!c) return `Merging “${title}” into ${branch ?? 'the plan’s branch'} …`;
@@ -413,14 +413,15 @@ const NOTHING_WAITING: readonly WaitingMessage[] = [];
 
 /** Who's working in a conversation now, read from the shared state. */
 export function liveFrom(state: {
-  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[]; readonly requestId?: string; readonly ts: number; readonly text?: string; readonly prompt?: string; readonly lastAt?: number; readonly stepAt?: number; readonly progress?: string }>;
+  readonly log: ReadonlyArray<{ readonly type: string; readonly channel: string; readonly status?: string; readonly steps?: readonly string[]; readonly requestId?: string; readonly ts: number; readonly text?: string; readonly prompt?: string; readonly lastAt?: number; readonly stepAt?: number; readonly progress?: string; readonly between?: 'thinking' | 'writing'; readonly betweenAt?: number; readonly subagents?: ReadonlyArray<{ readonly status: string; readonly kind?: string }> }>;
   readonly questions: ReadonlyArray<{ readonly channel: string }>;
   readonly approvals: ReadonlyArray<{ readonly channel?: string }>;
 }): Live {
   type Item = (typeof state.log)[number];
   const last = new Map<string, Item>();
-  /** The latest run in each conversation that isn't a message still waiting behind it. */
+  /** The newest run in each conversation (the one Claude did something in last) that isn't a message still waiting behind it. */
   const runs = new Map<string, Item>();
+  const heard = (l: Item): number => Math.max(l.ts, l.lastAt ?? 0);
   const waiting = new Map<string, WaitingMessage[]>();
   for (const l of state.log) {
     if (l.type !== 'agent') continue;
@@ -430,7 +431,7 @@ export function liveFrom(state: {
       const list = waiting.get(l.channel) ?? [];
       list.push({ requestId: l.requestId ?? '', prompt: l.prompt ?? '', queued: m === 'queued' });
       waiting.set(l.channel, list);
-    } else runs.set(l.channel, l);
+    } else if (heard(l) >= heard(runs.get(l.channel) ?? l)) runs.set(l.channel, l);
   }
   const made = new Map<string, RunInfo | undefined>();
   const asking = new Set([...state.questions.map((q) => q.channel), ...state.approvals.flatMap((a) => (a.channel ? [a.channel] : []))]);
@@ -461,6 +462,8 @@ export function liveFrom(state: {
       ...(l.stepAt !== undefined ? { stepAt: l.stepAt } : {}),
       ...(l.progress ? { progress: l.progress } : {}),
       ...(command ? { command } : {}),
+      ...(l.between ? { between: l.between, ...(l.betweenAt !== undefined ? { betweenAt: l.betweenAt } : {}) } : {}),
+      ...(l.subagents?.some((sub) => sub.status === 'running' && sub.kind !== 'background') ? { subOpen: true } : {}),
     };
   }
 }

@@ -115,7 +115,7 @@ export class Compactor {
   }
 }
 
-/** Claude Code always calls /compact "manual"; say auto when Klaud started it. */
+/** Claude Code always calls /compact "manual"; say auto when Beluga started it. */
 function withTrigger(text: string, trigger: Trigger): string {
   try {
     const data = JSON.parse(text) as Record<string, unknown>;

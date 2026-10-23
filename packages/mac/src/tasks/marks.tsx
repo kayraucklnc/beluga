@@ -1,5 +1,5 @@
-import { type Assignee, type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, labelHue } from '@klaud/core/board/model.js';
-import type { IssuePr } from '@klaud/core/board/model.js';
+import { type Assignee, type IssueStatus, PRIORITY_INFO, type Priority, STATUS_INFO, labelHue } from '@beluga/core/board/model.js';
+import type { IssuePr } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Tip, cx } from '../components/ui.js';
 import t from './tasks.module.css';

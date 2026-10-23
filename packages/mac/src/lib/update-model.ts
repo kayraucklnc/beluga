@@ -2,7 +2,7 @@ import type { LogItem, View } from '../../../../src/core/store.js';
 import { isRunning } from '../../../../src/ui/format.js';
 
 /**
- * Klaud's own updates, as the window shows them: what the app shell (src-tauri/src/updater.rs)
+ * Beluga's own updates, as the window shows them: what the app shell (src-tauri/src/updater.rs)
  * reports, and the words for it. Pure, so tests/mac-updates.test.ts covers it.
  */
 
@@ -16,7 +16,7 @@ export interface UpdateState {
   readonly current: string;
   readonly mode: UpdateMode;
   readonly phase: UpdatePhase;
-  /** When Klaud last looked successfully (ms since the epoch). */
+  /** When Beluga last looked successfully (ms since the epoch). */
   readonly lastCheck?: number | null;
   /** A downloaded update, ready to install. */
   readonly available?: { readonly version: string; readonly notes?: string | null; readonly date?: string | null } | null;
@@ -41,7 +41,7 @@ export function shortVersion(version: string): string {
 /** Whether there's something to show in the sidebar: a downloaded update, or what just changed. */
 export function pillOf(state: UpdateState): { readonly label: string; readonly kind: 'ready' | 'news' } | undefined {
   if (state.available) {
-    return { label: state.phase === 'installing' ? 'Updating Klaud…' : `Klaud ${shortVersion(state.available.version)} is ready`, kind: 'ready' };
+    return { label: state.phase === 'installing' ? 'Updating Beluga…' : `Beluga ${shortVersion(state.available.version)} is ready`, kind: 'ready' };
   }
   if (state.news) return { label: `Updated to ${shortVersion(state.news.version)} · What’s new`, kind: 'news' };
   return undefined;
@@ -76,7 +76,7 @@ const BLOCKER_WORDS: Record<UpdateBlocker, string> = {
 
 /** "Installs when you step away", or what it still waits for. */
 export function idleLine(waitingOn: readonly UpdateBlocker[]): string {
-  if (!waitingOn.length) return 'Installs as soon as you step away. Klaud reopens in the background.';
+  if (!waitingOn.length) return 'Installs as soon as you step away. Beluga reopens in the background.';
   const words = waitingOn.map((b) => BLOCKER_WORDS[b]);
   const list = words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words.at(-1)}` : words[0];
   return `Waiting for ${list}.`;
@@ -94,8 +94,8 @@ export function statusLine(state: UpdateState): string {
     case 'error':
       return state.error ?? 'Couldn’t check for updates.';
     default:
-      if (state.available) return `Klaud ${shortVersion(state.available.version)} is ready${state.choice === 'idle' ? ' · installs when you’re idle' : ' · installs when you quit'}`;
-      return state.phase === 'current' ? 'Klaud is up to date.' : '';
+      if (state.available) return `Beluga ${shortVersion(state.available.version)} is ready${state.choice === 'idle' ? ' · installs when you’re idle' : ' · installs when you quit'}`;
+      return state.phase === 'current' ? 'Beluga is up to date.' : '';
   }
 }
 

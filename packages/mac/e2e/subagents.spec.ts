@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * Sub-agents are Claude's helpers, not your worktrees: a pretend Claude Code session in the demo's
@@ -20,6 +20,7 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 const line = (o: unknown): string => `${JSON.stringify(o)}\n`;
 const shot = async (page: Page, name: string): Promise<void> => {
   if (!process.env.SHOTS) return;
+  // Screenshots only: let animations settle so the picture is still.
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
 };
@@ -46,7 +47,7 @@ test('a sub-agent shows under what started it, as a robot, not as a worktree', a
   await expect(row).toBeVisible();
   root = path.join(path.dirname((await row.getAttribute('title'))!), 'bob-api');
   const worktree = path.join(root, '.claude', 'worktrees', `agent-${AGENT}`);
-  const folder = path.join(process.env.KLAUD_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
+  const folder = path.join(process.env.BELUGA_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
   const agents = path.join(folder, SID, 'subagents');
   mkdirSync(agents, { recursive: true });
   const now = Date.now();
@@ -79,10 +80,10 @@ test('a sub-agent shows under what started it, as a robot, not as a worktree', a
 });
 
 test('a sub-agent that finished long ago stays under what started it, and stays put when opened', async ({ page }) => {
-  // The demo's other agent worktree: an old session in bob-api started it (Klaud no longer follows that session).
+  // The demo's other agent worktree: an old session in bob-api started it (Beluga no longer follows that session).
   const other = readdirSync(path.join(root, '.claude', 'worktrees')).find((n) => n.startsWith('agent-') && n !== `agent-${AGENT}`)!;
   const wt = path.join(root, '.claude', 'worktrees', other);
-  const folder = path.join(process.env.KLAUD_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
+  const folder = path.join(process.env.BELUGA_CLAUDE_HOME!, 'projects', root.replace(/[^a-zA-Z0-9]/g, '-'));
   const old = '9b1c2d3e-4f50-4a6b-8c7d-8e9f00a1b2c4';
   const then = Date.now() - 3 * 86_400_000;
   mkdirSync(path.join(folder, old, 'subagents'), { recursive: true });
@@ -99,7 +100,7 @@ test('a sub-agent that finished long ago stays under what started it, and stays 
   await expect(row).toHaveAttribute('title', /started by “Split the API work into packages”/);
   await row.click();
   await expect(page.locator('main')).toContainText('Retry policy package', { timeout: 15_000 });
-  // Opening it follows it live again: same place, same row.
+  // Opening it follows it live again: same place, same row (a fixed wait, on purpose: it doesn't move meanwhile).
   await page.waitForTimeout(2500);
   await expect(row).toBeVisible();
   await expect(sidebar(page).getByRole('button', { name: /^Sub-agent Retry policy package/ })).toHaveCount(1);
@@ -111,10 +112,10 @@ test('its page follows it live: who started it, model, effort, thinking and tool
   await row.click();
   const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
   await expect(monitor).toBeVisible({ timeout: 15_000 });
-  // Clicking it doesn't move it: its row stays where it was, selected.
+  // Clicking it doesn't move it: its row stays where it was, selected (a fixed wait, on purpose).
   await page.waitForTimeout(1500);
   await expect(row).toBeVisible();
-  await expect(monitor).toContainText('a Claude Code session outside Klaud in bob-api');
+  await expect(monitor).toContainText('a Claude Code session outside Beluga in bob-api');
   await expect(monitor).toContainText('Write the webhook tests');
   await expect(monitor).toContainText('Sonnet 5.5');
   await expect(monitor).toContainText('High effort');
@@ -125,8 +126,8 @@ test('its page follows it live: who started it, model, effort, thinking and tool
   // New lines show as they're written.
   appendFileSync(agentFile, line({ type: 'assistant', timestamp: iso(Date.now()), sessionId: SID, agentId: AGENT, isSidechain: true, cwd: path.join(root, '.claude', 'worktrees', `agent-${AGENT}`), effort: 'high', message: { role: 'assistant', model: 'claude-sonnet-5-5', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'r2', name: 'Bash', input: { command: 'npm test -- webhooks' } }] } }));
   await expect(log).toContainText('npm test', { timeout: 15_000 });
-  // Started outside Klaud: you can watch, not steer from here.
-  await expect(monitor).toContainText('started outside Klaud');
+  // Started outside Beluga: you can watch, not steer from here.
+  await expect(monitor).toContainText('started outside Beluga');
   // Never a place to start a conversation of your own.
   await expect(page.getByRole('button', { name: 'Start a Conversation Here' })).toHaveCount(0);
   await shot(page, 'subagent-monitor');
@@ -138,7 +139,7 @@ test('its Outputs: the screenshot and test log it made, wherever it put them, to
   const monitor = page.locator(`[data-agent-monitor="${AGENT}"]`);
   await expect(monitor).toBeVisible({ timeout: 15_000 });
   // It takes a screenshot (a real one: of this page) and runs the tests into a log, both in /tmp.
-  const tmp = mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-out-'));
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-out-'));
   const png = path.join(tmp, '01-webhooks-page.png');
   await page.screenshot({ path: png });
   writeFileSync(path.join(tmp, 'tests.log'), ' FAIL  src/webhooks.test.ts > retries 3 times\n   expected 3 calls, got 2\n\n Tests  1 failed | 11 passed (12)\n');
@@ -159,6 +160,52 @@ test('its Outputs: the screenshot and test log it made, wherever it put them, to
   // Back to what it does.
   await monitor.getByRole('tab', { name: 'Activity' }).click();
   await expect(page.getByRole('log', { name: 'Sub-agent Write the webhook tests' })).toBeVisible();
+});
+
+test('in the chat, background work sits where it started: a live dot while it runs, then it folds with the other steps', async ({ page }) => {
+  const composer = page.locator('textarea:not(.xterm-helper-textarea)');
+  const row = sidebar(page).getByRole('button', { name: 'new-hero', exact: true });
+  if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'landing' }).first().click({ position: { x: 60, y: 10 } });
+  await sidebar(page).getByRole('button', { name: 'new-hero', exact: true }).click();
+  await expect(composer).toHaveAttribute('placeholder', /new-hero/);
+  // Earlier specs answered here too: wait for this answer, not one of theirs.
+  const done = page.locator('[data-turn="done"]');
+  const answered = await done.count();
+  await composer.fill('run the tests and keep them watching');
+  await composer.press('Enter');
+  // The demo's Claude runs the tests, leaves them watching in the background, and reads on.
+  const steps = page.getByRole('list', { name: "Claude's steps" }).last();
+  const live = steps.locator('[data-subagent][data-running="true"]');
+  await expect(live).toContainText('Background · npm test --watch', { timeout: 20_000 });
+  // Running: its live dot, never folded away.
+  await expect(live.locator('[class*="live_claude"]')).toBeVisible();
+  await shot(page, 'subagent-in-chat-running');
+
+  // Answered: shown again, it's a finished row among the steps, folded with the older ones.
+  await expect(done).toHaveCount(answered + 1, { timeout: 30_000 });
+  const card = done.last();
+  await card.hover();
+  await card.getByRole('button', { name: 'Show Steps' }).click();
+  const shown = card.getByRole('list', { name: "Claude's steps" });
+  const earlier = shown.getByRole('button', { name: /^Show \d+ earlier steps/ });
+  // With the fold closed it's inside it (finished, with steps after it), not among the last few.
+  // (Its full record is read back first: wait for the steps after it.)
+  await expect.poll(async () => Number(await earlier.getAttribute('data-folded-count').catch(() => '0')), { timeout: 10_000 }).toBeGreaterThanOrEqual(4);
+  await expect(shown.locator('[data-step-kind="read"]').filter({ hasText: 'README' })).toHaveCount(1);
+  await expect(shown.locator('[data-subagent]')).toHaveCount(0);
+  await expect(earlier).toHaveAttribute('aria-expanded', 'false');
+  // In the timeline, right after the step that started it (not trailing below the rest).
+  // (Its full record is read back first; then the earlier steps open.)
+  const kinds = async (): Promise<string[]> => {
+    if (await earlier.isVisible()) await earlier.click();
+    return shown.locator('[data-slot]').evaluateAll((els) => els.map((el) => (el.querySelector('[data-subagent]') ? 'sub' : ((el.querySelector('[data-step-kind]') as HTMLElement | null)?.dataset.stepKind ?? '?'))));
+  };
+  await expect.poll(kinds, { timeout: 10_000 }).toEqual(expect.arrayContaining(['bash', 'sub']));
+  await expect(shown.locator('[data-subagent]')).toHaveCount(1);
+  await expect(shown.locator('[data-subagent][data-running]')).toHaveCount(0);
+  const now = await kinds();
+  expect(now.indexOf('sub')).toBe(now.lastIndexOf('bash') + 1);
+  await shot(page, 'subagent-in-chat-done');
 });
 
 test('its background commands: listed with how they run, and their output followed live (on its page and in the panel)', async ({ page }) => {

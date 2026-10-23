@@ -1,7 +1,7 @@
 import type { ChatFileState, LiveClaude, MessageView, NetworkState, NetworkSummary } from '../net/mesh/views.js';
 
 /**
- * The klaud network in the shared state: friends with their status, groups with members,
+ * The Beluga network in the shared state: friends with their status, groups with members,
  * unread counts and last messages, open invitations, and the latest messages per conversation.
  * No keys or secrets ever get here (see net/mesh/views.ts). Browser-safe: the Mac app runs it.
  */

@@ -91,7 +91,7 @@ export function presenceFor(state: PresenceState, opts: { note?: string; duratio
 
 const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
-/** A typed code as klaud reads it (case, dashes, spaces, O/0 and I/L/1 don't matter), or undefined. */
+/** A typed code as Beluga reads it (case, dashes, spaces, O/0 and I/L/1 don't matter), or undefined. */
 export function readCode(text: string): string | undefined {
   const compact = text
     .trim()
@@ -105,13 +105,13 @@ export function readCode(text: string): string | undefined {
 export interface FoundInvitation {
   /** What to hand to `network.friends.accept` (the link, or the code as typed). */
   readonly text: string;
-  /** A group's invitation (klaud://join…); a code can be either, so it says friend. */
+  /** A group's invitation (beluga://join…); a code can be either, so it says friend. */
   readonly group: boolean;
 }
 
-/** A klaud network invitation in some text (a pasted link, a code, a message with one in it). */
+/** A Beluga network invitation in some text (a pasted link, a code, a message with one in it). */
 export function findInvitation(text: string): FoundInvitation | undefined {
-  const link = /klaud:\/\/(add|join)\/?(?:#[\w-]{22}(?![\w-])|\?code=[0-9A-Za-z%+-]{8,40})/.exec(text);
+  const link = /(?:beluga|klaud):\/\/(add|join)\/?(?:#[\w-]{22}(?![\w-])|\?code=[0-9A-Za-z%+-]{8,40})/.exec(text);
   if (link) return { text: link[0], group: link[1] === 'join' };
   const trimmed = text.trim();
   if (trimmed.length <= 20 && readCode(trimmed)) return { text: trimmed, group: false };
@@ -150,7 +150,7 @@ export function openGroupInvitation(invitations: readonly InvitationView[], id: 
 export function acceptError(message: string): string {
   if (/Nobody is waiting/i.test(message)) return 'That invitation expired or was already used. Ask for a new one.';
   if (/own invitation/i.test(message)) return 'That’s your own invitation. Send it to a friend instead.';
-  if (/isn.t a klaud invitation/i.test(message)) return 'That doesn’t look like a Klaud invitation. Paste the link or type the code (like K7QM-4XPA-R2TD).';
+  if (/isn.t a (?:beluga|klaud) invitation/i.test(message)) return 'That doesn’t look like a Beluga invitation. Paste the link or type the code (like K7QM-4XPA-R2TD).';
   if (/network is off/i.test(message)) return 'Turn on talking with friends first.';
   return message.replace(/^Something went wrong: /, '');
 }

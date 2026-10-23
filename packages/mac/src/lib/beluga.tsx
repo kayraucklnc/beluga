@@ -1,8 +1,8 @@
 import { createContext, useContext, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
-import type { AppState } from '@klaud/core/store.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
-import { type UiState, initialUi } from '@klaud/ui/keymap.js';
-import type { MenuKind } from '@klaud/ui/menus.js';
+import type { AppState } from '@beluga/core/store.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
+import { type UiState, initialUi } from '@beluga/ui/keymap.js';
+import type { MenuKind } from '@beluga/ui/menus.js';
 import { onWindowActive, windowActive } from './window-active.js';
 
 /**
@@ -37,7 +37,7 @@ export interface Recipient {
   readonly self?: boolean;
 }
 
-/** What a message addressed to `to` starts with when it's sent (how klaud reads who it's for). */
+/** What a message addressed to `to` starts with when it's sent (how Beluga reads who it's for). */
 export const recipientPrefix = (to: Recipient): string => (to.claude ? (to.self ? '@claude ' : `@claude:${to.name} `) : `@${to.name} `);
 
 /** "bob's Claude", "your Claude", "bob". */
@@ -66,31 +66,31 @@ export class UiStore {
   openMenu = (menu: MenuKind): void => this.patch({ menu: { menu, selected: 0 } });
 }
 
-interface Klaud {
+interface Beluga {
   readonly client: SocketClient;
   readonly ui: UiStore;
 }
 
-const Ctx = createContext<Klaud | null>(null);
+const Ctx = createContext<Beluga | null>(null);
 
-export function KlaudProvider({ client, children }: { client: SocketClient; children: ReactNode }) {
+export function BelugaProvider({ client, children }: { client: SocketClient; children: ReactNode }) {
   const ui = useRef(new UiStore()).current;
   const value = useMemo(() => ({ client, ui }), [client, ui]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-export function useKlaud(): Klaud {
+export function useBeluga(): Beluga {
   const k = useContext(Ctx);
-  if (!k) throw new Error('useKlaud outside KlaudProvider');
+  if (!k) throw new Error('useBeluga outside BelugaProvider');
   return k;
 }
 
-/** While you're not looking at Klaud, views catch up with the shared state at most this often. */
+/** While you're not looking at Beluga, views catch up with the shared state at most this often. */
 const AWAY_MS = 1000;
 const views = new WeakMap<object, (listener: () => void) => () => void>();
 
 /**
- * How this window's views hear the shared state change: at once while you're looking at Klaud;
+ * How this window's views hear the shared state change: at once while you're looking at Beluga;
  * while you're not (lib/window-active.ts), at most once a second, so a Claude streaming for hours
  * doesn't redraw a window nobody's watching (KLD-40). Looking back catches up at once. The Dock,
  * tray and notifications listen to the store itself and never wait.
@@ -120,18 +120,29 @@ function viewSubscribe(store: { subscribe: (listener: () => void) => () => void 
   return subscribe;
 }
 
-/** The shared state seen through this window (re-renders when the picked part changes). */
-export function useApp<T>(pick: (s: AppState) => T): T {
-  const { client } = useKlaud();
-  return useSyncExternalStore(viewSubscribe(client.store), () => pick(client.store.getState()));
+/**
+ * The shared state seen through this window (re-renders when the picked part changes). A pick
+ * that builds something new each time (a filtered list) passes `equal` (e.g. sameItems, lib/stable.ts):
+ * while it says the new pick is the same, the view keeps the old one and isn't drawn again.
+ */
+export function useApp<T>(pick: (s: AppState) => T, equal?: (a: T, b: T) => boolean): T {
+  const { client } = useBeluga();
+  const last = useRef<{ readonly value: T } | undefined>(undefined);
+  return useSyncExternalStore(viewSubscribe(client.store), () => {
+    const next = pick(client.store.getState());
+    if (!equal) return next;
+    if (last.current && equal(last.current.value, next)) return last.current.value;
+    last.current = { value: next };
+    return next;
+  });
 }
 
 export function useUi<T>(pick: (s: MacUi) => T): T {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   return useSyncExternalStore(ui.subscribe, () => pick(ui.get()));
 }
 
-export const useApi = () => useKlaud().client.api;
+export const useApi = () => useBeluga().client.api;
 
 /** Say something briefly in this window. */
 export function toast(client: SocketClient, text: string, level: 'info' | 'success' | 'warn' | 'error' = 'info'): void {

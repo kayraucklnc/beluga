@@ -18,17 +18,32 @@ import {
 import { type Identity, type RoomKeys, deriveKeys, generateIdentity, open, proveNonce, seal, signBox, signNonce, verifyBox } from './crypto.js';
 import { P2P_SCHEME } from './invite.js';
 import { type P2POptions, createNode, dialP2P } from './p2p.js';
+import { isLate, patientTimeout } from './patient-timer.js';
 import { type MessageSocket, fromWebSocket } from './transport.js';
 
 const SealedMessage = z.object({ f: z.string(), b: Body });
 const HEARTBEAT_MS = 25_000;
 const SEEN_LIMIT = 10_000;
 const MAX_INCOMING = 4 * 1024 * 1024;
+const HANDSHAKE_MS = 15_000;
+const MAX_BACKOFF_MS = 15_000;
 
 /** Hub rejections that retrying won't fix: bad secret, bad profile, room full. */
 const FATAL_CLOSE_CODES = new Set([4001, 4002, 4004, 4008, 4010]);
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
+
+/** A dial failed; the next one is planned. */
+export interface Retry {
+  /** Failed dials in a row (1 for the first). */
+  readonly attempt: number;
+  /** When the next dial starts (ms since the epoch). */
+  readonly retryAt: number;
+  /** Why the last one failed, e.g. "Opening handshake has timed out". */
+  readonly reason: string;
+  /** The room answered and said why (a version mismatch, a refusal), rather than not being reached. */
+  readonly said?: boolean;
+}
 
 export interface IncomingMessage {
   /** Unique per message (the AES-GCM IV), stable across history replays. */
@@ -45,7 +60,10 @@ interface ClientEvents {
   welcome: [PeerInfo, string | undefined];
   peers: [readonly PeerInfo[]];
   message: [IncomingMessage];
+  /** Something the room told you (a refusal, a version mismatch). It's also the reason of the `retrying` or `ended` that follows. */
   error: [string];
+  /** The connection is down and will be tried again; one per failed dial, for a status (never the chat log). */
+  retrying: [Retry];
   /** The host replaced the invite; this is the new secret (for showing or re-sharing the link). */
   rekey: [string];
   /** The connection ended for good: removed by the host, room closed, or the invite stopped working. */
@@ -88,6 +106,10 @@ export class PeerClient extends EventEmitter<ClientEvents> {
   /** Seals every message (stays the same for the life of the room). */
   private roomKeys: RoomKeys;
   private lastError = '';
+  /** Why the last dial or connection failed. */
+  private failure = '';
+  /** The room said why (see Retry.said). */
+  private said = false;
   private readonly identity: Identity;
 
   constructor(private readonly opts: PeerClientOptions) {
@@ -102,6 +124,7 @@ export class PeerClient extends EventEmitter<ClientEvents> {
 
   connect(): void {
     this.closed = false;
+    this.timer = undefined;
     this.emit('status', 'connecting');
     this.dial(0);
   }
@@ -112,9 +135,19 @@ export class PeerClient extends EventEmitter<ClientEvents> {
   }
 
   private dial(index: number): void {
+    this.failure = '';
+    this.said = false;
     const url = this.targets[index] as string;
     if (!url.startsWith(P2P_SCHEME)) {
-      this.attach(fromWebSocket(new WebSocket(url, { maxPayload: MAX_INCOMING, handshakeTimeout: 15_000 })), url, index);
+      // Our own handshake deadline, not ws's: it would fire after any long stall of this process.
+      const socket = fromWebSocket(new WebSocket(url, { maxPayload: MAX_INCOMING }));
+      const cancel = patientTimeout(HANDSHAKE_MS, () => {
+        this.failure = 'Opening handshake has timed out';
+        socket.terminate();
+      });
+      socket.once('open', cancel);
+      socket.once('close', cancel);
+      this.attach(socket, url, index);
       return;
     }
     const node = (this.node ??= createNode(this.opts.p2p));
@@ -128,7 +161,7 @@ export class PeerClient extends EventEmitter<ClientEvents> {
         this.node = undefined;
         if (index + 1 < this.targets.length) this.dial(index + 1);
         else {
-          this.emit('error', `Direct connections are unavailable: ${err.message}`);
+          this.failure = `Direct connections are unavailable: ${err.message}`;
           this.onClose(1006);
         }
       },
@@ -152,8 +185,9 @@ export class PeerClient extends EventEmitter<ClientEvents> {
       else this.onClose(code);
     });
     socket.on('error', (err) => {
-      // A failed direct dial isn't worth reporting when there's still the relay to try.
-      if (opened || !hasNext) this.emit('error', `Connection error: ${err.message}`);
+      // A failed direct dial isn't worth reporting when there's still the relay to try. When our
+      // handshake deadline cut it, that already said why (ws then adds "closed before…").
+      if ((opened || !hasNext) && !err.message.startsWith('WebSocket was closed before')) this.failure = err.message;
     });
   }
 
@@ -183,6 +217,20 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     return this.ready;
   }
 
+  /** Whether a dropped connection is dialed again (off: it just ends). */
+  get retries(): boolean {
+    return this.opts.reconnect !== false;
+  }
+
+  /** Waiting to dial again: dial now instead (the "Retry now" button). */
+  retryNow(): boolean {
+    if (this.closed || this.ready || !this.timer) return false;
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    this.connect();
+    return true;
+  }
+
   close(): void {
     this.closed = true;
     clearTimeout(this.timer);
@@ -197,8 +245,14 @@ export class PeerClient extends EventEmitter<ClientEvents> {
   private startHeartbeat(ws: MessageSocket): void {
     clearInterval(this.heartbeat);
     this.alive = true;
+    let last = Date.now();
     this.heartbeat = setInterval(() => {
-      if (!this.alive) {
+      const now = Date.now();
+      // Stalled or asleep: the pong may be waiting to be read, so ask again instead of hanging up.
+      const late = isLate(now - last, HEARTBEAT_MS);
+      last = now;
+      if (!this.alive && !late) {
+        this.failure = 'The room stopped answering';
         ws.terminate();
         return;
       }
@@ -225,7 +279,9 @@ export class PeerClient extends EventEmitter<ClientEvents> {
     switch (frame.t) {
       case 'challenge':
         if (frame.v !== PROTOCOL_VERSION) {
-          this.emit('error', frame.v > PROTOCOL_VERSION ? 'The host has a newer klaud. Run klaud update, then join again' : 'The host has an older klaud. Ask them to run klaud update');
+          // Hang up now (not at the room's auth timeout): the retry says why, and tries again later.
+          this.refused(frame.v > PROTOCOL_VERSION ? 'The host has a newer Beluga. Run beluga update, then join again' : 'The host has an older Beluga. Ask them to run beluga update');
+          this.socket?.close();
           return;
         }
         this.sendHello(frame.nonce);
@@ -233,7 +289,8 @@ export class PeerClient extends EventEmitter<ClientEvents> {
       case 'welcome': {
         const payload = WelcomePayload.safeParse(open(this.inviteKeys, frame.box));
         if (!payload.success) {
-          this.emit('error', 'Could not decrypt room state (wrong secret?)');
+          this.refused('Could not decrypt room state (wrong secret?)');
+          this.socket?.close();
           return;
         }
         this.roomKeys = payload.data.roomKey ? { enc: Buffer.from(payload.data.roomKey, 'base64'), auth: this.inviteKeys.auth } : this.inviteKeys;
@@ -244,6 +301,10 @@ export class PeerClient extends EventEmitter<ClientEvents> {
         }
         this.ready = true;
         this.attempt = 0;
+        // In: whatever was said while joining isn't why a later drop happens.
+        this.failure = '';
+        this.said = false;
+        this.lastError = '';
         this.emit('status', 'connected');
         this.emit('welcome', frame.you, payload.data.room);
         this.emit('peers', payload.data.peers);
@@ -267,11 +328,21 @@ export class PeerClient extends EventEmitter<ClientEvents> {
         return;
       case 'error':
         this.lastError = frame.message;
-        this.emit('error', frame.message);
+        // While joining it's why you're turned away (the reason of the retry that follows). Once in,
+        // it's news: the close it comes with says so (lastError), and a later, unrelated drop never reuses it.
+        if (this.ready) this.emit('error', frame.message);
+        else this.refused(frame.message);
         return;
       default:
         return;
     }
+  }
+
+  /** The room said why it won't have you (for now): the reason of the retry (or end) that follows. */
+  private refused(message: string): void {
+    this.failure = message;
+    this.said = true;
+    this.emit('error', message);
   }
 
   private deliver(frame: MsgFrame): void {
@@ -296,7 +367,8 @@ export class PeerClient extends EventEmitter<ClientEvents> {
       this.emit('ended', this.lastError || 'The connection was closed');
     }
     if (this.closed || this.opts.reconnect === false) return;
-    const delay = Math.min(15_000, 500 * 2 ** this.attempt++);
+    const delay = Math.min(MAX_BACKOFF_MS, 500 * 2 ** this.attempt++);
     this.timer = setTimeout(() => this.connect(), delay);
+    this.emit('retrying', { attempt: this.attempt, retryAt: Date.now() + delay, reason: this.failure || 'The connection dropped', ...(this.said ? { said: true } : {}) });
   }
 }

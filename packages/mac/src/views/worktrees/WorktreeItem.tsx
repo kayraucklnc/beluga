@@ -1,14 +1,14 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
-import type { ArchivePreview } from '@klaud/workspaces/archive.js';
-import { formatBytes } from '@klaud/shared/format.js';
-import { planTitle } from '@klaud/core/plans/model.js';
-import { planOwnerOf } from '@klaud/core/plans/owner.js';
+import type { ArchivePreview } from '@beluga/workspaces/archive.js';
+import { formatBytes } from '@beluga/shared/format.js';
+import { planTitle } from '@beluga/core/plans/model.js';
+import { planOwnerOf } from '@beluga/core/plans/owner.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { ProjectIcon } from '../../components/ProjectIcon.js';
 import { type ActionItem, ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
 import { Button, IconButton, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import { outsideLocation } from '../../layout/outside-model.js';
 import { agoText } from '../project/home-model.js';
 import { type MadeBy, type WorktreeRow, archivedText } from './worktrees-model.js';
@@ -25,11 +25,11 @@ export interface ItemActions {
   readonly remove: (rows: readonly WorktreeRow[]) => void;
 }
 
-/** Who made it, as a small tinted tag: Klaud's own, a sub-agent's (Claude's colour), or another tool's. */
+/** Who made it, as a small tinted tag: Beluga's own, a sub-agent's (Claude's colour), or another tool's. */
 const MADE: Record<MadeBy['kind'], { icon: IconName; short: string }> = {
-  klaud: { icon: 'terminal', short: 'Klaud' },
+  beluga: { icon: 'terminal', short: 'Beluga' },
   agent: { icon: 'bot', short: 'Sub-agent' },
-  outside: { icon: 'external', short: 'Outside Klaud' },
+  outside: { icon: 'external', short: 'Outside Beluga' },
 };
 
 function MadeByTag({ by }: { by: MadeBy }) {
@@ -106,7 +106,7 @@ function NameCell({ row }: { row: WorktreeRow }) {
         </span>
         <span className={s.sub} title={where?.path ?? w.path}>
           {plan ? (
-            <span className={s.planTag} title={`Part of the plan “${plan}”: Klaud merges it into the plan`}>
+            <span className={s.planTag} title={`Part of the plan “${plan}”: Beluga merges it into the plan`}>
               <Icon name="flag" size={10} />
               {plan}
             </span>

@@ -1,10 +1,10 @@
 import type { BoardState, Issue } from '../board/model.js';
-import { type Plan, type PlanMilestone, type PlanTask, type PlansState, allTasks, planById } from './model.js';
+import { type Plan, type PlanMilestone, type PlanTask, type PlansState, allTasks, planById, planForHome } from './model.js';
 
 /**
  * Which plan a worktree belongs to: one doing a task of a plan that's still running (its task not
  * canceled). Such a worktree is part of the plan, not something of its own: the sidebar shows the
- * plan instead of it, and Klaud (not you) merges it into the plan. Pure and browser-safe
+ * plan instead of it, and Beluga (not you) merges it into the plan. Pure and browser-safe
  * (tests/plan-owner.test.ts).
  */
 
@@ -84,6 +84,6 @@ export function planConversations(state: { readonly plans: PlansState; readonly 
 export function planOfPlace(plans: PlansState, board: BoardState, view: { readonly kind: string; readonly id?: string }): string | undefined {
   if (view.kind === 'plan') return view.id;
   if (view.kind !== 'workspace' || !view.id) return undefined;
-  const home = [...plans.plans].reverse().find((p) => p.home === `ws:${view.id}`);
+  const home = planForHome(plans, `ws:${view.id}`);
   return home?.id ?? planOwnerOf(plans, board, view.id)?.plan.id;
 }

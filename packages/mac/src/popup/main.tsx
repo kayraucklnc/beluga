@@ -1,3 +1,5 @@
+// First: Beluga's storage keys become Beluga's before any module reads them.
+import '../lib/storage-rename.js';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { inApp } from '../lib/boot.js';

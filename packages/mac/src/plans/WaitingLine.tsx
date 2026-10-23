@@ -1,6 +1,6 @@
-import { type WaitingMessage, waitingWords } from '@klaud/core/plans/watchdog.js';
+import { type WaitingMessage, waitingWords } from '@beluga/core/plans/watchdog.js';
 import { Tip } from '../components/ui.js';
-import { toast, useApi, useKlaud } from '../lib/klaud.js';
+import { toast, useApi, useBeluga } from '../lib/beluga.js';
 import p from './plans.module.css';
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -13,7 +13,7 @@ const snippet = (prompt: string): string => prompt.replace(/\s+/g, ' ').slice(0,
  */
 function SendOrSteer({ requestId }: { requestId: string }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const run = (call: Promise<unknown>): void => void call.catch((err: unknown) => toast(client, errorText(err), 'error'));
   return (
     <>

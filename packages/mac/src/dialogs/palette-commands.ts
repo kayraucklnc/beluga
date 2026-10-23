@@ -1,10 +1,10 @@
-import { type AppState, channelOf } from '@klaud/core/store.js';
-import { canRunOn } from '@klaud/core/trust.js';
-import { type WorkspaceAction, findWorkspace, workspaceButtons } from '@klaud/ui/workspace-models.js';
+import { type AppState, channelOf } from '@beluga/core/store.js';
+import { canRunOn } from '@beluga/core/trust.js';
+import { type WorkspaceAction, findWorkspace, workspaceButtons } from '@beluga/ui/workspace-models.js';
 import type { IconName } from '../components/Icon.js';
 import type { Actions } from '../lib/actions.js';
-import type { UiStore } from '../lib/klaud.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { UiStore } from '../lib/beluga.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { openSettings } from '../lib/native-routes.js';
 import { openSheet } from '../lib/sheets.js';
 import { openStripe } from '../lib/earnings.js';
@@ -103,7 +103,7 @@ export function paletteCommands(ctx: Ctx): PaletteCommand[] {
             openSheet({ kind: 'confirm', title: 'Make a new invite link?', message: 'The current link stops working. People already in the room stay.', confirm: 'New Link', run: () => void api.session.newInviteLink() }),
           ),
         ]
-      : [cmd('quit', 'quit', 'Leave the Room…', 'x', () => openSheet({ kind: 'confirm', title: 'Leave the room?', message: 'Klaud disconnects and closes. You can come back with the invite link.', confirm: 'Leave', destructive: true, run: () => void api.session.quit() }))]),
+      : [cmd('quit', 'quit', 'Leave the Room…', 'x', () => openSheet({ kind: 'confirm', title: 'Leave the room?', message: 'Beluga disconnects and closes. You can come back with the invite link.', confirm: 'Leave', destructive: true, run: () => void api.session.quit() }))]),
   ];
 }
 

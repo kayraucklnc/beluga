@@ -1,12 +1,12 @@
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ViewerState } from '@klaud/core/store.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import type { ViewerState } from '@beluga/core/store.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Icon } from '../../components/Icon.js';
 import { IconButton, Kbd, Segmented } from '../../components/ui.js';
 import { DocFind } from '../../components/markdown/DocFind.js';
 import type { DocNav } from '../../components/markdown/MarkdownDoc.js';
 import { useCopied } from '../../components/markdown/CodeBlock.js';
-import { useApp, useKlaud } from '../../lib/klaud.js';
+import { useApp, useBeluga } from '../../lib/beluga.js';
 import { localPathOf, openWithDefaultApp, revealInFinder, saveFile } from '../../lib/files.js';
 import { closeFocus, showPanelTab } from '../../lib/panel.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
@@ -42,7 +42,7 @@ function usePageKeys(page: RefObject<HTMLDivElement | null>): void {
  * in it; Esc goes back to the chat).
  */
 export function FileFocus({ viewer, wsId }: { viewer: ViewerState; wsId: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const prefs = usePrefs();
   const wsName = useApp((st) => findWorkspace(st.projects, wsId)?.name);
   const local = useApp((st) => localPathOf(st, viewer));

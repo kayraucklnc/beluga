@@ -3,7 +3,7 @@ import { ProjectIcon } from '../components/ProjectIcon.js';
 import { Button, IconButton, Tip, cx } from '../components/ui.js';
 import { EarningsTipBody } from '../components/EarningsPill.js';
 import { dismissEarningsHint, formatMoney, missingNote, openStripe, updatedAgo, useConvertedEarnings, useEarningsHintDismissed } from '../lib/earnings.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import s from './earnings-card.module.css';
 
 /**

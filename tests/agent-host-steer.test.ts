@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentBackend, AgentRunInput, FollowUp, LiveStatus, Steer } from '../src/agent/types.js';
-import { AgentHost, READS_AFTER_STEP, planSteer } from '../src/core/agent-host.js';
+import { AgentHost, planSteer } from '../src/core/agent-host.js';
+import { READS_AFTER_STEP } from '../src/shared/claude-notices.js';
 import { Store, initialState } from '../src/core/store.js';
 import type { BodyOf } from '../src/protocol.js';
 import { STEERED_IN } from '../src/shared/claude-notices.js';
@@ -127,8 +128,8 @@ describe('planSteer', () => {
   });
 
   it('a quiet spell spent thinking says so, and is never taken for dead', () => {
-    expect(planSteer({ lastEventAt: now - 90_000, between: false, thinking: true }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was thinking for 2m; reading your message' });
-    expect(planSteer({ lastEventAt: now - 90_000, between: false }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was quiet for 2m; reading your message' });
+    expect(planSteer({ lastEventAt: now - 90_000, between: false, thinking: true }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was thinking for 1m; reading your message' });
+    expect(planSteer({ lastEventAt: now - 90_000, between: false }, now)).toEqual({ kind: 'interrupt', note: 'Interrupted: Claude was quiet for 1m; reading your message' });
     expect(planSteer({ lastEventAt: now - 8 * MIN, between: false, thinking: true }, now).kind).toBe('interrupt');
   });
 });
@@ -355,9 +356,9 @@ describe('the watchdog taking over a run (KLD-37 on KLD-43’s stop)', () => {
     expect(waited).toEqual(['later', 'after that']);
     // Killed before the wake could start: no second Claude in the folder, and nothing ran in between.
     expect(b.timeline).toEqual(['run slow', 'killed slow']);
-    expect(t.card('r1')?.text).toBe('Stopped by Klaud to wake Claude');
-    expect(t.card('r2')?.text).toBe('Sent along with Klaud’s wake-up');
-    expect(t.card('r3')?.text).toBe('Sent along with Klaud’s wake-up');
+    expect(t.card('r1')?.text).toBe('Stopped by Beluga to wake Claude');
+    expect(t.card('r2')?.text).toBe('Sent along with Beluga’s wake-up');
+    expect(t.card('r3')?.text).toBe('Sent along with Beluga’s wake-up');
     expect(t.h.runningIn('room')).toBe(false);
   }, 9_000);
 

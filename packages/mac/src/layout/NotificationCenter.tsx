@@ -1,17 +1,17 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useEffect, useState } from 'react';
-import type { Notice } from '@klaud/core/work-store.js';
-import { unreadCount } from '@klaud/core/work-store.js';
-import { dndActive, dndLabel } from '@klaud/shared/quiet.js';
-import { type NoticeFilter, type NoticeLook, NOTICE_FILTERS, filterNotices, foldPlanNotices, groupNotices, noticeAgo, noticeLook } from '@klaud/ui/notice-models.js';
-import { planTitle } from '@klaud/core/plans/model.js';
+import type { Notice } from '@beluga/core/work-store.js';
+import { unreadCount } from '@beluga/core/work-store.js';
+import { dndActive, dndLabel } from '@beluga/shared/quiet.js';
+import { type NoticeFilter, type NoticeLook, NOTICE_FILTERS, filterNotices, foldPlanNotices, groupNotices, noticeAgo, noticeLook } from '@beluga/ui/notice-models.js';
+import { planTitle } from '@beluga/core/plans/model.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
 import { brandNotice } from '../lib/brand.js';
-import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { macNoticeTarget, openNoticeTarget } from '../lib/notices.js';
 import s from './notifications.module.css';
 
@@ -131,7 +131,7 @@ function PlanFold({ plan, notices, now, onOpen }: { plan: string; notices: reado
 
 function Empty({ filter, any }: { filter: NoticeFilter; any: boolean }) {
   const title = !any ? 'You’re all caught up' : filter === 'unread' ? 'Nothing unread' : filter === 'needsYou' ? 'Nothing waiting for you' : 'No mentions';
-  const detail = !any ? 'Klaud lists here when Claude finishes or needs you, and when friends come and go.' : 'The rest are under All.';
+  const detail = !any ? 'Beluga lists here when Claude finishes or needs you, and when friends come and go.' : 'The rest are under All.';
   return (
     <div className={s.empty}>
       <Icon name="bell" size={20} />
@@ -145,7 +145,7 @@ function Empty({ filter, any }: { filter: NoticeFilter; any: boolean }) {
 function Center({ close }: { close: () => void }) {
   const api = useApi();
   const actions = useActions();
-  const { ui, client } = useKlaud();
+  const { ui, client } = useBeluga();
   const inbox = useApp((st) => st.inbox);
   const notify = useApp((st) => st.prefs.notify);
   const places = useApp((st) => st);
@@ -221,7 +221,7 @@ function Center({ close }: { close: () => void }) {
 
 /** The bell in the toolbar: how many things are new, and the notification centre under it. */
 export function NotificationBell() {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const open = useUi((u) => u.notices);
   const unread = useApp((st) => unreadCount(st));
   const quiet = useApp((st) => dndActive(st.prefs.notify));

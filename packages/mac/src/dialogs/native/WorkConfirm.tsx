@@ -1,12 +1,12 @@
 import * as Popover from '@radix-ui/react-popover';
 import { type ReactNode, useRef } from 'react';
-import type { AppState } from '@klaud/core/store.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
-import type { Workspace } from '@klaud/workspaces/types.js';
+import type { AppState } from '@beluga/core/store.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
 import { Alert } from '../../components/Alert.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Button } from '../../components/ui.js';
-import { useApi, useApp } from '../../lib/klaud.js';
+import { useApi, useApp } from '../../lib/beluga.js';
 import type { AskedWork } from '../../lib/work-confirm.js';
 import { MergeReview } from './MergeReview.js';
 import s from './work-confirm.module.css';
@@ -50,7 +50,7 @@ export function wordsFor(state: AppState, ws: Workspace, action: AskedWork): Wor
         title: 'Commit all changes?',
         message: (
           <p>
-            Commits {plural(changed, 'changed file')} on <strong>{branch}</strong> with the message “Work from klaud”. Nothing is pushed.
+            Commits {plural(changed, 'changed file')} on <strong>{branch}</strong> with the message “Work from Beluga”. Nothing is pushed.
           </p>
         ),
         confirm: 'Commit',

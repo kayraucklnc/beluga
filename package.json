@@ -1,5 +1,5 @@
 {
-  "name": "klaudcode",
+  "name": "beluga-code",
   "version": "0.6.2",
   "description": "A terminal home for all your projects and the Claude working in them: a worktree per task, sub-agents you can watch, and friends with their own Claude in the same room.",
   "keywords": [
@@ -14,18 +14,19 @@
     "pair-programming",
     "multiplayer"
   ],
-  "homepage": "https://github.com/kayraucklnc/klaud#readme",
+  "homepage": "https://github.com/kayraucklnc/beluga#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kayraucklnc/klaud.git"
+    "url": "git+https://github.com/kayraucklnc/beluga.git"
   },
   "bugs": {
-    "url": "https://github.com/kayraucklnc/klaud/issues"
+    "url": "https://github.com/kayraucklnc/beluga/issues"
   },
   "author": "Kayra Uckilinc",
   "license": "MIT",
   "type": "module",
   "bin": {
+    "beluga": "dist/cli.js",
     "klaud": "dist/cli.js"
   },
   "files": [
@@ -43,6 +44,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "release:npm": "node scripts/release-npm.mjs",
+    "release:klaudcode": "node scripts/release-klaudcode.mjs",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
   "publishConfig": {

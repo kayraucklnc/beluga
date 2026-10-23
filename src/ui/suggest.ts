@@ -24,7 +24,7 @@ export interface SuggestContext {
   readonly listLocalDirs?: (dir: string) => readonly FsEntry[];
   /** "@workspace" targets, offered in the main chat. */
   readonly workspaces?: ReadonlyArray<{ readonly label: string; readonly hint: string }>;
-  /** Friends on the klaud network: "@mia" anywhere in a message asks your Claude to reach mia's Claude. */
+  /** Friends on the Beluga network: "@mia" anywhere in a message asks your Claude to reach mia's Claude. */
   readonly friends?: ReadonlyArray<{ readonly name: string; readonly online: boolean }>;
   /** Your projects ("@bob-api"). */
   readonly projects?: ReadonlyArray<{ readonly name: string }>;

@@ -12,7 +12,7 @@
  * relying on a postinstall chmod; `@homebridge/node-pty-prebuilt-multiarch`
  * needs its install script (prebuild-install download / node-gyp fallback).
  *
- * The native module is loaded lazily so importing klaud never fails on a
+ * The native module is loaded lazily so importing Beluga never fails on a
  * platform without a prebuild; only opening a terminal does.
  */
 import { accessSync, chmodSync, constants, existsSync, statSync } from 'node:fs';
@@ -101,5 +101,5 @@ const DROPPED_ENV = [
 export function childEnv(overrides: Record<string, string> = {}, base: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(base)) if (v !== undefined && !DROPPED_ENV.includes(k)) env[k] = v;
-  return { ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'klaud', ...overrides };
+  return { ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'beluga', ...overrides };
 }

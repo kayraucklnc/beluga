@@ -77,9 +77,9 @@ describe('projects', () => {
 describe('worktree lifecycle', () => {
   it('creates a worktree from origin, tracks status, reviews and merges it', async () => {
     const ws = await mgr.createWorktree(repos()[0]!.id, 'Fix Auth!');
-    expect(ws).toMatchObject({ name: 'fix-auth', branch: 'klaud/fix-auth', base: 'origin/main', kind: 'worktree', external: false });
+    expect(ws).toMatchObject({ name: 'fix-auth', branch: 'beluga/fix-auth', base: 'origin/main', kind: 'worktree', external: false });
     expect(existsSync(path.join(ws.path, 'README.md'))).toBe(true);
-    expect(readFileSync(path.join(repo, '.git', 'info', 'exclude'), 'utf8')).toContain('.klaud/');
+    expect(readFileSync(path.join(repo, '.git', 'info', 'exclude'), 'utf8')).toContain('.beluga/');
 
     writeFileSync(path.join(ws.path, 'new.txt'), 'x');
     await mgr.refresh();
@@ -122,7 +122,7 @@ describe('worktree lifecycle', () => {
     await mgr.refresh();
 
     const fork = await mgr.fork(ws.id, 'idea 2');
-    expect(fork).toMatchObject({ name: 'idea-2', forkedFrom: ws.id, forkFromSession: 'session-1', branch: 'klaud/idea-2' });
+    expect(fork).toMatchObject({ name: 'idea-2', forkedFrom: ws.id, forkFromSession: 'session-1', branch: 'beluga/idea-2' });
     expect(existsSync(path.join(fork.path, 'idea.txt'))).toBe(true); // starts from the parent's state
     expect(mgr.loadHistory(fork.id)).toEqual([{ text: 'hello' }]);
     mgr.rememberSession(fork.id, 'session-2');
@@ -141,7 +141,7 @@ describe('worktree lifecycle', () => {
 
     await mgr.remove(fork.id);
     expect(mgr.find(fork.id)).toBeUndefined();
-    expect(sh(repo, 'branch', '--list', 'klaud/idea-2')).toBe('');
+    expect(sh(repo, 'branch', '--list', 'beluga/idea-2')).toBe('');
     await expect(mgr.archive(repos()[0]!.workspaces[0]!.id)).rejects.toThrow(/main folder/);
     const again = await mgr.createWorktree(repos()[0]!.id, 'idea'); // name taken by a live worktree → idea-2
     expect(again.name).toBe('idea');
@@ -156,7 +156,7 @@ describe('worktree lifecycle', () => {
     expect(existsSync(path.join(base, 'home', 'archives', ws.id))).toBe(true);
     await mgr.remove(ws.id);
     expect(existsSync(path.join(base, 'home', 'archives', ws.id))).toBe(false);
-    expect(sh(repo, 'for-each-ref', 'refs/klaud/')).toBe('');
+    expect(sh(repo, 'for-each-ref', 'refs/beluga/')).toBe('');
   });
 
   it('creates chats in the main folder without a worktree', async () => {
@@ -235,7 +235,7 @@ describe('env files and safe merges', () => {
     await mgr.remove(ws.id);
     await mgr.refresh();
     expect(repos()[0]!.workspaces.some((w) => w.name === 'gone')).toBe(false);
-    expect(sh(repo, 'branch', '--list', 'klaud/gone').trim()).toBe('');
+    expect(sh(repo, 'branch', '--list', 'beluga/gone').trim()).toBe('');
   });
 
   it("reports why a merge failed when it isn't a conflict", async () => {
@@ -259,7 +259,7 @@ describe('choosing the base branch', () => {
   it('creates a worktree on the chosen branch and compares against it', async () => {
     const tip = pushFeature();
     const ws = await mgr.createWorktree(repos()[0]!.id, 'on feature', 'origin/feature');
-    expect(ws).toMatchObject({ branch: 'klaud/on-feature', base: 'origin/feature' });
+    expect(ws).toMatchObject({ branch: 'beluga/on-feature', base: 'origin/feature' });
     expect(sh(ws.path, 'rev-parse', 'HEAD').trim()).toBe(tip);
     expect(existsSync(path.join(ws.path, 'feature.txt'))).toBe(true);
     commitIn(ws.path, 'more.txt', 'm', 'more');

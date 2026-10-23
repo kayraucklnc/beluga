@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * Images a message shows by their path on this Mac (`![shot](</Users/…/shot.png>)`, the way Claude
@@ -15,7 +15,7 @@ const composer = (page: Page) => page.locator('textarea:not(.xterm-helper-textar
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==', 'base64');
 
 test('a message’s local screenshots show as thumbnails that open full size', async ({ page }) => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'klaud e2e shots-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'beluga e2e shots-'));
   writeFileSync(path.join(dir, 'first.png'), PNG);
   writeFileSync(path.join(dir, 'second.png'), PNG);
   await page.goto('/');
@@ -28,7 +28,7 @@ test('a message’s local screenshots show as thumbnails that open full size', a
   await expect(first).toBeVisible();
   await expect(first.locator('img')).toHaveJSProperty('complete', true);
   await expect(page.getByRole('button', { name: 'Open second.png' }).last()).toBeVisible();
-  // A web image is a chip that opens in the browser (the window loads only what klaud reads).
+  // A web image is a chip that opens in the browser (the window loads only what Beluga reads).
   await expect(page.getByRole('link', { name: 'logo' }).last()).toBeVisible();
 
   await first.click();
@@ -48,4 +48,32 @@ test('a message’s local screenshots show as thumbnails that open full size', a
   await expect(box).toContainText('second.png');
   await page.keyboard.press('Escape');
   await expect(box).toBeHidden();
+});
+
+test('the plan chat takes a dropped image, and shows a message’s screenshots as thumbnails, like any chat', async ({ page }) => {
+  await page.goto('/');
+  await sidebar(page).getByRole('button', { name: /^Plans/ }).click();
+  if (!(await page.getByRole('button', { name: 'Project: bob-api' }).isVisible())) {
+    await page.getByRole('button', { name: /^Project: / }).click();
+    await page.getByRole('menuitem', { name: /bob-api/ }).click();
+  }
+  await page.locator('main').getByRole('button', { name: /^Card checkout for launch,/ }).click();
+  const chat = page.getByRole('complementary', { name: 'Conversation' });
+  const box = chat.getByRole('textbox', { name: 'Message Claude about the plan' });
+  await box.fill('this one:');
+  // Dropped on the box: it waits as a thumbnail, referenced in the words.
+  await chat.locator('form').evaluate((form, b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const data = new DataTransfer();
+    data.items.add(new File([bytes], 'dropped.png', { type: 'image/png' }));
+    form.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }));
+    form.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }));
+  }, PNG.toString('base64'));
+  await expect(box).toHaveValue(/^this one: \[image \d+\] $/);
+  const tray = chat.getByRole('group', { name: 'Images to send' });
+  await expect(tray.locator('img')).toHaveCount(1);
+  await expect(tray.locator('img')).toHaveJSProperty('complete', true);
+  // Nothing is sent (the demo's plan stays as it is): taking it out empties the tray.
+  await chat.getByRole('button', { name: /Remove image/ }).click({ force: true });
+  await expect(tray).toBeHidden();
 });

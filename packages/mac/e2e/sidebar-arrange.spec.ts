@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './fixtures.js';
 
 /**
  * Arranging the sidebar's projects Finder-style: drag to reorder (it stays after a reload), drop
@@ -39,7 +39,7 @@ async function above(row: Locator): Promise<[number, number]> {
 }
 
 async function addRepo(page: Page, name: string): Promise<void> {
-  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-arrange-')), name);
+  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-arrange-')), name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 'README.md'), `# ${name}\n`);
   execFileSync('git', ['init', '-q', '-b', 'main', dir]);

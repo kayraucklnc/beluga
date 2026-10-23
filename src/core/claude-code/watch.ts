@@ -1,4 +1,5 @@
 import { type FSWatcher, mkdirSync, readFileSync, readdirSync, renameSync, statSync, watch, writeFileSync } from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { Project } from '../../workspaces/types.js';
 import { worktreeOrigin } from '../../workspaces/origin.js';
@@ -15,7 +16,7 @@ import type { Facts } from './transcript.js';
 /**
  * Watches the transcripts Claude Code writes (~/.claude/projects/<folder>/<session>.jsonl, and
  * each session's subagents/agent-<id>.jsonl with its .meta.json) for sessions running outside
- * klaud, and keeps `claudeCode.sessions` in the shared state up to date: live sessions, where
+ * Beluga, and keeps `claudeCode.sessions` in the shared state up to date: live sessions, where
  * they run, what they do, and their sub-agents. Reads only: never writes, moves or deletes
  * anything there. fs.watch makes it quick; a slow poll keeps it right when events don't come.
  * The state stays on this computer (screens only; friends never get it).
@@ -34,6 +35,10 @@ export interface WatcherOptions {
   readonly pollMs?: number;
   /** How often the folders are scanned for new sessions and agents (default 10 s). */
   readonly scanMs?: number;
+  /** Asks to scan within this long of each other make one scan (default 250 ms). */
+  readonly scanDebounceMs?: number;
+  /** How often every transcript's time is read again, even in folders that didn't change (default 60 s). */
+  readonly sweepMs?: number;
   /** The most often screens hear about changes (default 250 ms: at most 4 a second). */
   readonly publishMs?: number;
   /** Use fs.watch (default true; tests drive it by hand). */
@@ -41,13 +46,13 @@ export interface WatcherOptions {
   /** Tell you a background agent finished (through the notifier, which minds your settings). */
   readonly notify?: (note: { title: string; body: string; failed: boolean }) => void;
   /**
-   * Where klaud remembers the Claude sessions it ran, so they stay out of Activity after their
+   * Where Beluga remembers the Claude sessions it ran, so they stay out of Activity after their
    * conversation is archived or deleted (undefined: memory only).
    */
   readonly ownFile?: string;
 }
 
-/** The most sessions remembered as klaud's own (the oldest are forgotten first). */
+/** The most sessions remembered as Beluga's own (the oldest are forgotten first). */
 const MAX_OWN = 5000;
 
 interface AgentEntry {
@@ -70,7 +75,7 @@ interface SessionEntry {
   readonly agents: Map<string, AgentEntry>;
   /** When a screen last asked for its steps (kept watched a while after it goes quiet). */
   viewedAt: number;
-  /** One of klaud's own conversations: watched for its sub-agents, kept out of Activity. */
+  /** One of Beluga's own conversations: watched for its sub-agents, kept out of Activity. */
   readonly own: boolean;
 }
 
@@ -88,6 +93,11 @@ const TEAM_MESSAGES = 12;
 const AGENT_FILE = /^agent-([\w-]+)\.jsonl$/;
 const SESSION_FILE = /^([0-9a-f-]{8,})\.jsonl$/i;
 
+const SCAN_DEBOUNCE_MS = 250;
+const SWEEP_MS = 60_000;
+/** Files looked at at once while scanning. */
+const SCAN_PARALLEL = 16;
+
 const mtimeOf = (file: string): number => {
   try {
     return statSync(file).mtimeMs;
@@ -104,13 +114,59 @@ const list = (dir: string): string[] => {
   }
 };
 
-/** One of klaud's own sessions: the workspace whose conversation it is (else where its folder is). */
+const mtimeAsync = async (file: string): Promise<number> => {
+  try {
+    return (await stat(file)).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
+
+/** Run `fn` over `items`, `limit` at a time. */
+async function eachLimit<T>(items: readonly T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) await fn(items[next++]!);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+/** Folder listings, read again only when the folder's time changed (a file added or removed). */
+export class Listings {
+  private readonly cache = new Map<string, { readonly mtime: number; readonly names: readonly string[] }>();
+
+  /** `changed`: the folder is new here or its entries changed since it was last listed. */
+  async list(dir: string): Promise<{ readonly names: readonly string[]; readonly changed: boolean }> {
+    const mtime = await mtimeAsync(dir);
+    if (!mtime) {
+      this.cache.delete(dir);
+      return { names: [], changed: false };
+    }
+    const known = this.cache.get(dir);
+    if (known?.mtime === mtime) return { names: known.names, changed: false };
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return { names: [], changed: false };
+    }
+    this.cache.set(dir, { mtime, names });
+    return { names, changed: true };
+  }
+
+  /** Forget folders not in `keep` (gone, or no longer looked at). */
+  keepOnly(keep: ReadonlySet<string>): void {
+    for (const dir of [...this.cache.keys()]) if (!keep.has(dir)) this.cache.delete(dir);
+  }
+}
+
+/** One of Beluga's own sessions: the workspace whose conversation it is (else where its folder is). */
 function ownPlace(projects: readonly Project[], sessionId: string, cwd: string): { projectId?: string; workspaceId?: string } {
   for (const p of projects) for (const w of p.workspaces) if (w.sessionId === sessionId) return { projectId: p.id, workspaceId: w.id };
   return cwd ? placeOf(projects, cwd) : {};
 }
 
-/** The klaud project and workspace a folder belongs to (the deepest workspace folder containing it). */
+/** The Beluga project and workspace a folder belongs to (the deepest workspace folder containing it). */
 export function placeOf(projects: readonly Project[], cwd: string): { projectId?: string; workspaceId?: string } {
   const within = (root: string): boolean => Boolean(root) && (cwd === root || cwd.startsWith(`${root}/`));
   let best: { projectId: string; workspaceId: string; len: number } | undefined;
@@ -137,6 +193,16 @@ export class ClaudeCodeWatcher {
   private lastPublishAt = 0;
   private offStore?: () => void;
   private stopped = false;
+  /** The scan under way (one at a time), whether another was asked for meanwhile, and the debounce. */
+  private scanning?: Promise<void>;
+  private rescan = false;
+  private scanTimer?: NodeJS.Timeout;
+  private readonly listings = new Listings();
+  /** Each transcript's time when last read: old ones aren't read again until something says so. */
+  private readonly mtimes = new Map<string, number>();
+  /** Transcripts fs.watch saw written since the last scan (read again even if old). */
+  private hints = new Set<string>();
+  private sweptAt = -Infinity;
 
   constructor(private readonly opts: WatcherOptions) {}
 
@@ -149,9 +215,8 @@ export class ClaudeCodeWatcher {
   }
 
   start(): void {
-    this.scan();
-    this.poll();
-    this.timers.push(setInterval(() => this.poll(), this.opts.pollMs ?? 2000), setInterval(() => this.scan(), this.opts.scanMs ?? 10_000));
+    void this.scan().then(() => this.poll());
+    this.timers.push(setInterval(() => this.poll(), this.opts.pollMs ?? 2000), setInterval(() => this.requestScan(), this.opts.scanMs ?? 10_000));
     for (const t of this.timers) t.unref?.();
     // Projects found or changed: sessions map to their workspaces again.
     let projects = this.opts.store.getState().projects;
@@ -159,7 +224,7 @@ export class ClaudeCodeWatcher {
       const next = this.opts.store.getState().projects;
       if (next === projects) return;
       projects = next;
-      this.scan();
+      this.requestScan();
       this.schedulePublish();
     });
   }
@@ -169,6 +234,7 @@ export class ClaudeCodeWatcher {
     for (const t of this.timers.splice(0)) clearInterval(t);
     clearTimeout(this.publishTimer);
     clearTimeout(this.pollSoon);
+    clearTimeout(this.scanTimer);
     this.watcher?.close();
     this.offStore?.();
   }
@@ -178,10 +244,14 @@ export class ClaudeCodeWatcher {
     try {
       this.watcher = watch(this.projectsDir, { recursive: true, persistent: false }, (_event, name) => {
         if (!name || !String(name).endsWith('.jsonl')) return;
+        const file = path.join(this.projectsDir, String(name));
+        // A file we don't know yet (a new session or agent, or an old one going on): look for it soon.
+        if (!this.knows(file)) {
+          this.hints.add(file);
+          this.requestScan();
+        }
         clearTimeout(this.pollSoon);
         this.pollSoon = setTimeout(() => {
-          // A file we don't know yet (a new session or agent): look for it now.
-          if (!this.knows(path.join(this.projectsDir, String(name)))) this.scan();
           this.poll();
         }, 120);
         this.pollSoon.unref?.();
@@ -206,7 +276,7 @@ export class ClaudeCodeWatcher {
   private remembered?: Set<string>;
 
   /**
-   * klaud's own conversations (its workspaces) show in klaud's chat already, and stay out of
+   * Beluga's own conversations (its workspaces) show in Beluga's chat already, and stay out of
    * Activity for good: once seen they're remembered, even after the conversation is deleted.
    */
   private ownSessions(): Set<string> {
@@ -241,44 +311,108 @@ export class ClaudeCodeWatcher {
     return this.remembered;
   }
 
-  /** Find sessions written lately (or with agents still writing), and forget ones gone quiet. */
-  scan(): void {
-    if (this.stopped) return;
-    // Claude Code's folder may appear after klaud starts: watch it once it's there.
+  /** Scan soon: asks close together make one scan. */
+  requestScan(): void {
+    if (this.stopped || this.scanTimer) return;
+    this.scanTimer = setTimeout(() => {
+      this.scanTimer = undefined;
+      void this.scan();
+    }, this.opts.scanDebounceMs ?? SCAN_DEBOUNCE_MS);
+    this.scanTimer.unref?.();
+  }
+
+  /**
+   * Find sessions written lately (or with agents still writing), and forget ones gone quiet. Never
+   * two at once: asked for during one, it scans once more after it (and resolves after that).
+   */
+  scan(): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    if (this.scanning) {
+      this.rescan = true;
+      return this.scanning;
+    }
+    const run = (async () => {
+      try {
+        do {
+          this.rescan = false;
+          await this.scanOnce();
+        } while (this.rescan && !this.stopped);
+      } finally {
+        this.scanning = undefined;
+      }
+    })();
+    this.scanning = run;
+    return run;
+  }
+
+  /** Whether a scan is under way (tests). */
+  get scanBusy(): boolean {
+    return this.scanning !== undefined;
+  }
+
+  private async scanOnce(): Promise<void> {
+    // Claude Code's folder may appear after Beluga starts: watch it once it's there.
     if (this.opts.watch !== false && !this.watcher) this.watchFolder();
     const now = this.now;
     const activeMs = this.opts.activeMs ?? ACTIVE_MS;
     const own = this.ownSessions();
+    // Old transcripts are read again only in folders that changed, when fs.watch saw them written, or once a sweep.
+    const sweep = now - this.sweptAt >= (this.opts.sweepMs ?? SWEEP_MS);
+    if (sweep) this.sweptAt = now;
+    const hints = this.hints;
+    this.hints = new Set();
     const found = new Set<string>();
-    for (const folder of list(this.projectsDir)) {
+    const listed = new Set<string>();
+    const dirs = new Set<string>([this.projectsDir]);
+    for (const folder of (await this.listings.list(this.projectsDir)).names) {
+      if (this.stopped) return;
       const dir = path.join(this.projectsDir, folder);
-      for (const name of list(dir)) {
+      dirs.add(dir);
+      const { names, changed } = await this.listings.list(dir);
+      await eachLimit(names, SCAN_PARALLEL, async (name) => {
         const id = SESSION_FILE.exec(name)?.[1];
-        if (!id) continue;
+        if (!id) return;
         const file = path.join(dir, name);
-        const mtime = mtimeOf(file);
+        listed.add(file);
         const known = this.sessions.get(id);
         const viewed = Boolean(known && now - known.viewedAt <= VIEWED_MS);
-        if (now - mtime > AGENT_LOOKBACK_MS && !viewed) continue;
+        let mtime = this.mtimes.get(file);
+        if (mtime === undefined || now - mtime <= AGENT_LOOKBACK_MS || changed || sweep || known || hints.has(file)) {
+          mtime = await mtimeAsync(file);
+          this.mtimes.set(file, mtime);
+        }
+        if (now - mtime > AGENT_LOOKBACK_MS && !viewed) return;
         const agentsDir = path.join(dir, id, 'subagents');
-        const recent = now - mtime <= activeMs || list(agentsDir).some((f) => AGENT_FILE.test(f) && now - mtimeOf(path.join(agentsDir, f)) <= activeMs);
-        if (!recent && !viewed) continue;
+        dirs.add(agentsDir);
+        const recent = now - mtime <= activeMs || (await this.agentsWrittenSince(agentsDir, now - activeMs));
+        if (!recent && !viewed) return;
         found.add(id);
-        if (!known) this.sessions.set(id, { id, file, dir, tracker: new TranscriptTracker(file), agents: new Map(), viewedAt: 0, own: own.has(id) });
-      }
+        if (!this.sessions.has(id)) this.sessions.set(id, { id, file, dir, tracker: new TranscriptTracker(file), agents: new Map(), viewedAt: 0, own: own.has(id) });
+      });
     }
-    for (const id of [...this.sessions.keys()]) if (!found.has(id)) this.sessions.delete(id);
-    for (const s of this.sessions.values()) this.scanAgents(s);
-    this.publishOrigins(own);
+    if (this.stopped) return;
+    for (const file of [...this.mtimes.keys()]) if (!listed.has(file)) this.mtimes.delete(file);
+    this.listings.keepOnly(dirs);
+    // Kept: sessions found, and any a screen asked for while this scan ran.
+    for (const [id, s] of [...this.sessions]) if (!found.has(id) && s.viewedAt < now) this.sessions.delete(id);
+    for (const s of [...this.sessions.values()]) await this.scanAgents(s);
+    if (this.stopped) return;
+    await this.publishOrigins(own);
     this.schedulePublish();
   }
 
+  /** Whether an agent in this folder wrote since `since`. */
+  private async agentsWrittenSince(agentsDir: string, since: number): Promise<boolean> {
+    for (const f of (await this.listings.list(agentsDir)).names) if (AGENT_FILE.test(f) && (await mtimeAsync(path.join(agentsDir, f))) >= since) return true;
+    return false;
+  }
+
   /** Who started each sub-agent worktree in the projects (from Claude Code's files), when that changed. */
-  private publishOrigins(own: ReadonlySet<string>): void {
+  private async publishOrigins(own: ReadonlySet<string>): Promise<void> {
     const projects = this.opts.store.getState().projects;
     const paths = projects.flatMap((p) => p.workspaces.filter((w) => !w.archived && worktreeOrigin(w) === 'agent').map((w) => w.path));
     this.origins ??= new AgentOrigins(this.opts.home, this.opts.now ? { now: this.opts.now } : {});
-    const origins: AgentOrigin[] = this.origins.find(paths).map((o) => {
+    const origins: AgentOrigin[] = (await this.origins.find(paths)).map((o) => {
       const mine = own.has(o.sessionId);
       const place = mine ? ownPlace(projects, o.sessionId, o.sessionCwd ?? '') : o.sessionCwd ? placeOf(projects, o.sessionCwd) : {};
       // Never its own worktree's conversation (a session that ran there isn't what started it).
@@ -292,17 +426,17 @@ export class ClaudeCodeWatcher {
   }
 
   /** A session's agents written lately (their transcripts are read; older ones are left alone). */
-  private scanAgents(s: SessionEntry): void {
+  private async scanAgents(s: SessionEntry): Promise<void> {
     const now = this.now;
     const activeMs = this.opts.activeMs ?? ACTIVE_MS;
     const dir = path.join(s.dir, s.id, 'subagents');
     const seen = new Set<string>();
-    for (const name of list(dir)) {
+    for (const name of (await this.listings.list(dir)).names) {
       const id = AGENT_FILE.exec(name)?.[1];
       if (!id) continue;
       const file = path.join(dir, name);
       const known = s.agents.get(id);
-      const mtime = mtimeOf(file);
+      const mtime = await mtimeAsync(file);
       const viewed = known?.viewedAt !== undefined && now - known.viewedAt <= VIEWED_MS;
       if (now - mtime > activeMs && known?.last !== 'running' && !viewed) continue;
       seen.add(id);
@@ -366,7 +500,7 @@ export class ClaudeCodeWatcher {
       this.label(s);
       const facts = s.tracker.update();
       // It started an agent: its transcript appears any moment.
-      if (facts.some((f: Facts) => f.launches.length)) this.scanAgents(s);
+      if (facts.some((f: Facts) => f.launches.length)) void this.scanAgents(s).then(() => this.schedulePublish());
       for (const a of s.agents.values()) {
         a.tracker ??= new TranscriptTracker(a.file);
         a.tracker.labeler ??= (who) => this.labelOf(s, who);
@@ -529,7 +663,7 @@ export class ClaudeCodeWatcher {
     return undefined;
   }
 
-  /** One step of a session (or of one of its agents) with its details, while klaud keeps them. */
+  /** One step of a session (or of one of its agents) with its details, while Beluga keeps them. */
   step(sessionId: string, agentId: string | undefined, seq: number): StepRecord | undefined {
     const s = this.sessions.get(sessionId);
     if (!s) return undefined;

@@ -62,7 +62,7 @@ export interface WorkspaceRecord {
 /** A workspace as shown in the UI: record + live git status. */
 export interface Workspace extends WorkspaceRecord {
   readonly projectId: string;
-  /** A worktree that exists in git but wasn't created by klaud (e.g. by another tool). */
+  /** A worktree that exists in git but wasn't created by Beluga (e.g. by another tool). */
   readonly external: boolean;
   readonly status?: Status;
   /**
@@ -85,7 +85,7 @@ export interface Project {
   readonly sync?: ProjectSync;
 }
 
-/** How a project's default branch stands, plus Klaud's fetching of it. */
+/** How a project's default branch stands, plus Beluga's fetching of it. */
 export interface ProjectSync extends DefaultBranch {
   /** A fetch is running now. */
   readonly fetching?: boolean;
@@ -107,7 +107,7 @@ export interface ProjectsConfig {
   /** Projects you chose to hide. */
   readonly hidden: readonly string[];
   /**
-   * Projects you removed from Klaud (Delete Project) that a scanned root would otherwise find
+   * Projects you removed from Beluga (Delete Project) that a scanned root would otherwise find
    * again. Unlike hidden ones they aren't offered back; adding the project again clears it.
    */
   readonly removed?: readonly string[];
@@ -118,8 +118,8 @@ export interface ProjectsConfig {
    * Missing until you arrange something (then: projects alphabetically, then groups).
    */
   readonly order?: readonly string[];
-  /** Setup / run commands you set per project (by project root), over klaud.json and guesses. */
+  /** Setup / run commands you set per project (by project root), over beluga.json and guesses. */
   readonly scripts?: Readonly<Record<string, ProjectScripts>>;
-  /** Setup commands from a project's own klaud.json/conductor.json you allowed to run (by root → command hashes). */
+  /** Setup commands from a project's own beluga.json/conductor.json you allowed to run (by root → command hashes). */
   readonly approvedScripts?: Readonly<Record<string, readonly string[]>>;
 }

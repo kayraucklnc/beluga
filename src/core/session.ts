@@ -3,13 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AgentBackend, RoomBridge } from '../agent/types.js';
 import type { IncomingMessage, PeerClient } from '../net/peer-client.js';
-import { type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
+import { Body, type BodyInput, type BodyOf, type FsEntry, MAX_TEXT, type PeerInfo, type Profile, type Usage } from '../protocol.js';
 import { parseInput, parseWorkspaceMention, workspaceMentions } from './mentions.js';
 import { type ShareService, parseShareSpec } from './shares.js';
 import { existsSync } from 'node:fs';
 import { type Attention, type Location, type MyShare, type Prefs, type Store, peerName } from './store.js';
 import { WorkspaceController } from './workspace-controller.js';
 import { QuestionBroker } from './questions.js';
+import { isPlanHome } from './plans/model.js';
 import type { Conversation } from '../agent/transcript.js';
 import { slugify } from '../agent/namer.js';
 import type { SetupFix } from '../agent/setup-fixer.js';
@@ -51,15 +52,15 @@ export interface SessionOptions {
   readonly agentCwd: string;
   readonly requestTimeoutMs?: number;
   readonly agentTimeoutMs?: number;
-  /** Folder klaud was started in; new stand-alone chats run here. */
+  /** Folder Beluga was started in; new stand-alone chats run here. */
   readonly launchDir?: string;
   /** Clipboard writer (injected so tests don't touch the real clipboard). */
   readonly copy?: (text: string) => Promise<unknown>;
-  /** Where downloads are saved (default ~/Downloads/klaud). */
+  /** Where downloads are saved (default ~/Downloads/Beluga). */
   readonly downloadDir?: string;
   /** Persist a settings change (name, policy, theme…). */
   readonly saveSettings?: (patch: Partial<Settings>) => void;
-  /** Open remote access and create an invite (klaud starts solo; this runs on first Invite). */
+  /** Open remote access and create an invite (Beluga starts solo; this runs on first Invite). */
   readonly startInvite?: () => void;
   /** How long an unanswered approval waits before it's declined (default 5 minutes). */
   readonly approvalTimeoutMs?: number;
@@ -86,11 +87,11 @@ export interface SessionOptions {
   readonly stepsDir?: string;
   /** Read Claude Code conversations from other tools (omitted in tests and the demo). */
   readonly findConversation?: (dir: string, self: { id: string; name: string }, opts?: { sessionId?: string; prefer?: string }) => Promise<Conversation | undefined>;
-  /** Read Conductor's and Claude Code's data about worktrees klaud didn't make (omitted in tests and the demo). */
+  /** Read Conductor's and Claude Code's data about worktrees Beluga didn't make (omitted in tests and the demo). */
   readonly otherTools?: import('./other-worktrees.js').OtherTools;
   /** How friends' commands run on this computer (the demo injects canned output). */
   readonly runShell?: ShellRunner;
-  /** Stop klaud itself (the daemon, or the terminal UI running it). */
+  /** Stop Beluga itself (the daemon, or the terminal UI running it). */
   readonly shutdown?: () => void;
 }
 
@@ -151,8 +152,12 @@ export class Session {
   private workspaceTimer?: NodeJS.Timeout;
   private readonly agent?: AgentBackend;
   private readonly agentWaiters = new Map<string, AgentWaiter>();
+  /** Messages a screen sent with an id (a plan chat's), and the request each went as: a Retry of one that went doesn't go twice. */
+  private readonly sentById = new Map<string, string>();
   private usageTimer?: NodeJS.Timeout;
   private usageFetched = false;
+  /** The room welcomed you at least once (a later outage is "lost", not "can’t reach yet"). */
+  private everConnected = false;
   readonly questions: QuestionBroker;
   readonly sharing: WorkspaceSharing;
   readonly people: People;
@@ -251,7 +256,9 @@ export class Session {
   }
 
   async stop(): Promise<void> {
-    this.host.abort();
+    await this.host.abort();
+    // A run that didn't end in time (or whose end never came back) won't now: not saved as running.
+    this.store.dispatch({ type: 'runs_interrupted', owner: this.selfId });
     this.opts.client.close();
     await this.opts.shares.close();
     clearInterval(this.usageTimer);
@@ -276,7 +283,7 @@ export class Session {
     this.intend({ type: 'quit' });
   }
 
-  /** Stop klaud entirely (every screen closes). */
+  /** Stop Beluga entirely (every screen closes). */
   shutdown(): void {
     if (this.opts.shutdown) this.opts.shutdown();
     else this.intend({ type: 'quit' });
@@ -298,18 +305,29 @@ export class Session {
 
   /**
    * Handle a line from the composer, typed in `channel` (the conversation on screen). `urgent`
-   * (Alt/Ctrl+Enter) interrupts your Claude instead of queueing.
+   * (Alt/Ctrl+Enter) interrupts your Claude instead of queueing. False when a message for a
+   * conversation's Claude couldn't go (why is said in a toast), so the box can keep it. `id`: the
+   * same for every Retry of one message, so it's said in the chat and asked of Claude once.
    */
-  submit(raw: string, { channel = 'room', urgent = false }: { channel?: string; urgent?: boolean } = {}): void {
+  submit(raw: string, { channel = 'room', urgent = false, id }: { channel?: string; urgent?: boolean; id?: string } = {}): boolean {
     const state = this.store.getState();
     // "/run @bob <command>": the command exactly as typed (spacing and quotes kept).
     const peerRun = /^\/run\s+@([\w.-]+)\s+([\s\S]+)$/.exec(raw.trim());
-    if (peerRun) return this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim(), channel);
+    if (peerRun) {
+      this.runOnPeerByHand(peerRun[1]!, peerRun[2]!.trim(), channel);
+      return true;
+    }
     const parsed = parseInput(raw, this.selfId, state.peers);
     // In a workspace, you're talking to your Claude working in that folder.
     if (channel !== 'room' && (parsed.kind === 'chat' || parsed.kind === 'agent')) {
-      this.askOwnClaude(parsed.kind === 'agent' ? parsed.prompt : parsed.text, channel, urgent);
-      return;
+      const prompt = parsed.kind === 'agent' ? parsed.prompt : parsed.text;
+      if (!id) return this.askOwnClaude(prompt, channel, urgent) !== undefined;
+      if (this.sentById.has(id)) return true;
+      const requestId = this.askOwnClaude(prompt, channel, urgent);
+      if (requestId === undefined) return false;
+      this.sentById.set(id, requestId);
+      if (this.sentById.size > 200) this.sentById.delete(this.sentById.keys().next().value!);
+      return true;
     }
     // "@add-auth fix the test" from the main chat goes to the Claude working in that workspace.
     const toWorkspace = parsed.kind !== 'command' ? parseWorkspaceMention(raw, workspaceMentions(state.projects)) : undefined;
@@ -317,25 +335,25 @@ export class Session {
       this.askOwnClaude(toWorkspace.prompt, `ws:${toWorkspace.id}`, urgent);
       this.store.dispatch({ type: 'chat', id: randomUUID(), from: this.selfId, text: raw.slice(0, MAX_TEXT), ts: Date.now(), byAgent: false });
       this.system(`Sent to the Claude in ${toWorkspace.label.slice(1)}. Open it in the sidebar to follow along.`);
-      return;
+      return true;
     }
     switch (parsed.kind) {
       case 'empty':
-        return;
+        return true;
       case 'command':
         runCommand(this, parsed.name, parsed.args, channel);
-        return;
+        return true;
       case 'chat':
         this.sendChat(parsed.text, false);
         // On your own, the chat is a conversation with your Claude: no @claude needed.
         if (state.peers.length <= 1 && this.agent) this.requestAgent(this.selfId, parsed.text, false, 'room', urgent);
-        return;
+        return true;
       case 'agent':
         this.sendChat(parsed.text, false);
         for (const name of parsed.unknown) this.toast(`Nobody named "${name}" is here`, 'warn');
         for (const target of parsed.targets) this.requestAgent(target, parsed.prompt, false, 'room', urgent && target === this.selfId);
         if (parsed.targets.length === 0 && parsed.unknown.length === 0) this.toast('No Claude is online', 'warn');
-        return;
+        return true;
     }
   }
 
@@ -361,7 +379,7 @@ export class Session {
       this.toast('Opening a secure link for friends… it will be copied when ready');
       return;
     }
-    await this.copyOrShow(`klaud join ${invite}`, 'Invite copied. Paste it to a friend');
+    await this.copyOrShow(`beluga join ${invite}`, 'Invite copied. Paste it to a friend');
   }
 
   async copyLastAnswer(): Promise<void> {
@@ -481,7 +499,7 @@ export class Session {
     });
   }
 
-  /** Run a command on a friend's computer (through their klaud) and show it with its output here. */
+  /** Run a command on a friend's computer (through their Beluga) and show it with its output here. */
   async runOnPeer(name: string, command: string, opts: { cwd?: string; project?: string; timeoutSec?: number; why?: string; viaAgent?: boolean; channel?: string } = {}): Promise<string> {
     const peer = this.findPeer(name);
     if (!peer || peer.peerId === this.selfId) throw new Error(`No friend named "${name}" is here. Call list_peers first.`);
@@ -576,6 +594,8 @@ export class Session {
 
   /** Plan first in this conversation: Claude investigates read-only, then proposes a plan. */
   setPlanMode(channel: string, on: boolean): void {
+    // A plan's own conversation: its head Claude runs the plan, and stopping to have a plan of its own approved would stall it.
+    if (on && isPlanHome(this.store.getState().plans, channel)) return this.toast('A plan’s own conversation has no plan mode: talk the plan through on its page', 'info');
     this.store.dispatch({ type: 'plan_mode', channel, on });
     this.toast(on ? 'Plan mode: Claude looks first and asks you to approve a plan before changing anything' : 'Plan mode off: Claude works right away', 'success');
   }
@@ -604,7 +624,7 @@ export class Session {
     return this.files.browserUp();
   }
 
-  /** Download a shared file to ~/Downloads/klaud/<friend>/, or to `opts.to` (an absolute path). */
+  /** Download a shared file to ~/Downloads/Beluga/<friend>/, or to `opts.to` (an absolute path). */
   download(at: Location, opts: { to?: string } = {}): Promise<string | undefined> {
     return this.files.download(at, opts);
   }
@@ -664,6 +684,13 @@ export class Session {
     void this.copyInvite();
   }
 
+  /** Dial the room now instead of waiting for the next try. */
+  retryConnection(): void {
+    if (!this.opts.client.retryNow()) return;
+    const trouble = this.store.getState().connection;
+    if (trouble?.state === 'reconnecting') this.store.dispatch({ type: 'connection', connection: { ...trouble, retryAt: Date.now() } });
+  }
+
   /** Host only: stop (or start again) letting new people in. */
   setRoomOpen(open: boolean): void {
     if (!this.opts.room) return this.toast('Only the host can close the room', 'warn');
@@ -705,6 +732,11 @@ export class Session {
   // -------------------------------------------------------------------------
 
   send(body: BodyInput, opts: { to?: string; keep?: boolean } = {}): boolean {
+    // To yourself (your Claude in your own conversations, its events back to you): handled right
+    // here, never through the room. A dropped or half-open room connection (after sleep, a network
+    // change, offline) used to swallow these silently: the plan chat's message never reached Claude
+    // and its replies went missing until the connection came back (KLD-64).
+    if (opts.to !== undefined && opts.to === this.selfId) return this.loopback(body);
     try {
       return this.opts.client.send(body, opts);
     } catch (err) {
@@ -713,10 +745,40 @@ export class Session {
     }
   }
 
+  /** A message to yourself, delivered on the next turn (as one from the room would be). */
+  private loopback(input: BodyInput): boolean {
+    let body: Body;
+    try {
+      body = Body.parse(input);
+    } catch (err) {
+      this.system(`Could not send ${input.kind}: ${errorText(err)}`, 'error');
+      return false;
+    }
+    const now = Date.now();
+    const msg: IncomingMessage = { id: `local-${randomUUID()}`, from: this.selfId, ts: now, sentAt: now, body };
+    setImmediate(() => void this.handle(msg).catch((err: unknown) => this.system(`Error handling ${body.kind}: ${errorText(err)}`, 'error')));
+    return true;
+  }
+
   private wire(): void {
     const { client, store } = this.opts;
-    client.on('status', (status) => store.dispatch({ type: 'status', status }));
+    client.on('status', (status) => {
+      store.dispatch({ type: 'status', status });
+      if (status !== 'connected' || !store.getState().connection) return;
+      store.dispatch({ type: 'connection' });
+      this.system('Back online');
+    });
+    // Failed dials update one status (see ConnectionTrouble); the chat gets one line per outage.
+    // The same goes for what the room says when it turns you away (a version mismatch, "already
+    // connected"): it's the status's reason, and the outage's one line says it.
+    client.on('retrying', ({ attempt, retryAt, reason, said }) => {
+      const before = store.getState().connection;
+      store.dispatch({ type: 'connection', connection: { state: 'reconnecting', attempt, retryAt, reason, since: before?.since ?? Date.now() } });
+      if (before) return;
+      this.system(said ? `${reason}. Retrying in the background` : this.everConnected ? 'Lost connection to the room. Retrying in the background' : 'Can’t reach the room yet. Retrying in the background', 'warn');
+    });
     client.on('welcome', (self, room) => {
+      this.everConnected = true;
       store.dispatch({ type: 'welcome', self });
       if (room) store.dispatch({ type: 'room', room });
       if (self.guest && !store.getState().shared.length) this.system(`You came in with a link to ${room ?? 'a project'}. Waiting for them to let you in…`);
@@ -738,14 +800,20 @@ export class Session {
         for (const id of gone) this.questions.cancelFor(id);
       }
     });
-    client.on('error', (message) => this.system(message, 'error'));
+    // A refusal while joining comes again as the reason of the retry (or the end) that follows it;
+    // with no retry to follow (reconnect off), it's said here, once.
+    client.on('error', (message) => {
+      if (client.connected || !client.retries) this.system(message, 'error');
+    });
     client.on('rekey', (secret) => {
       // The host replaced the invite link; keep yours current so /invite shares one that works.
       const invite = store.getState().invite;
       if (invite && /#[\w-]+$/.test(invite)) store.dispatch({ type: 'invite', invite: invite.replace(/#[\w-]+$/, `#${secret}`) });
     });
     client.on('ended', (why) => {
-      this.system(`${why}. You can keep working on your own; restart klaud to join a room again.`, 'warn');
+      const before = store.getState().connection;
+      store.dispatch({ type: 'connection', connection: { state: 'offline', attempt: before?.attempt ?? 0, reason: why, since: before?.since ?? Date.now() } });
+      this.system(`${why}. You can keep working on your own; restart Beluga to join a room again.`, 'warn');
       this.toast(why, 'warn');
       store.dispatch({ type: 'shared_clear' });
     });

@@ -98,7 +98,7 @@ export function tally(signals: readonly Signal[]): Tally {
 }
 
 /** The conversations a project's row stands for: its live worktrees and chats (the main folder isn't listed), a plan's own not on their own. */
-export const projectConversations = (state: Pick<Source, 'plans' | 'board'>, p: Project): readonly Workspace[] => p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && !isPlanOwned(state, w.id));
+const projectConversations = (state: Pick<Source, 'plans' | 'board'>, p: Project): readonly Workspace[] => p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && !isPlanOwned(state, w.id));
 
 /** A project's live plans (each one item, however many tasks it runs). */
 export const projectPlans = (state: Pick<Source, 'plans'>, p: Project): readonly Plan[] => state.plans.plans.filter((x) => x.projectId === p.id && isLivePlan(x));
@@ -146,8 +146,8 @@ export function planSignal(state: Source, plan: Plan): Signal & { readonly at?: 
 }
 
 /**
- * Claude is at work somewhere in a project: a klaud run or a Claude Code session, in any of its
- * live workspaces (its main folder and worktrees made outside klaud too). Folded, its row shows it.
+ * Claude is at work somewhere in a project: a Beluga run or a Claude Code session, in any of its
+ * live workspaces (its main folder and worktrees made outside Beluga too). Folded, its row shows it.
  */
 export const projectWorking = (state: Source, p: Project): boolean => p.workspaces.some((w) => !w.archived && workspaceSignal(state, w).working);
 
@@ -210,6 +210,15 @@ export function unreadEntries(state: ListSource): UnreadEntry[] {
   }
   const rank = (e: UnreadEntry): number => (e.signal.level === 'needs' ? 0 : 1);
   return out.sort((a, b) => rank(a) - rank(b) || b.ts - a.ts);
+}
+
+/**
+ * The menu bar's "working" count: conversations where your own Claude is at work, read the way
+ * the sidebar reads them (activityOf), so the two never disagree about what runs.
+ */
+export function workingCount(state: Pick<AppState, 'log' | 'selfId'>): number {
+  const mine = new Set(state.log.flatMap((l) => (l.type === 'agent' && l.owner === state.selfId ? [l.channel] : [])));
+  return [...mine].filter((channel) => activityOf(state.log, channel).running).length;
 }
 
 /**

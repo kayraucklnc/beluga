@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Button } from '../../components/ui.js';
-import type { View } from '@klaud/core/store.js';
-import type { PeerInfo } from '@klaud/protocol.js';
+import type { View } from '@beluga/core/store.js';
+import type { PeerInfo } from '@beluga/protocol.js';
 import type { Actions } from '../../lib/actions.js';
 import { useActions } from '../../lib/actions.js';
-import { type Recipient, type UiStore, toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { type Recipient, type UiStore, toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { Field, Sheet } from './parts.js';
 import s from './sharing.module.css';
 
@@ -19,14 +19,14 @@ const chatShown = (v: View): boolean => v.kind === 'room' || ((v.kind === 'works
 export function addressTo(ui: UiStore, actions: Actions, view: View, to: Recipient): void {
   if (!to.claude || !chatShown(view)) actions.run({ type: 'view', view: { kind: 'room' } });
   ui.patch({ to, menu: undefined, focus: 'chat' });
-  setTimeout(() => document.dispatchEvent(new CustomEvent('klaud:focus-composer')), 30);
+  setTimeout(() => document.dispatchEvent(new CustomEvent('beluga:focus-composer')), 30);
 }
 
 /** Run a command on a friend's computer: type it here, they approve (unless they fully trust you). */
 export function RunCommandSheet({ peer, close }: { peer: PeerInfo; close: () => void }) {
   const api = useApi();
   const actions = useActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const level = useApp((st) => st.granted[peer.peerId]?.level);
   const [cmd, setCmd] = useState('');
   const run = (): void => {

@@ -5,8 +5,8 @@ import { worktreeOrigin } from '../../../../src/workspaces/origin.js';
 
 /**
  * Sub-agents as the Mac app shows them: Claude's helpers, never your own work. Each is tied to
- * the conversation that started it (a Klaud worktree's chat, or a Claude Code session outside
- * Klaud), with its own worktree when it was started in isolation. Pure: no React, no daemon
+ * the conversation that started it (a Beluga worktree's chat, or a Claude Code session outside
+ * Beluga), with its own worktree when it was started in isolation. Pure: no React, no daemon
  * (tests/mac-subagents.test.ts).
  */
 
@@ -42,16 +42,16 @@ export function agentOfWorktree(sessions: readonly CcSession[], w: Pick<Workspac
   return allSubAgents(sessions).find(({ agent }) => agent.worktree?.path === w.path || (id !== undefined && agent.id === id));
 }
 
-/** The sub-agent Klaud's chat knows by the tool call that started it. */
+/** The sub-agent Beluga's chat knows by the tool call that started it. */
 export const agentOfToolUse = (sessions: readonly CcSession[], toolUseId: string): SubAgent | undefined => allSubAgents(sessions).find(({ agent }) => agent.toolUseId === toolUseId);
 
-/** Where a sub-agent's conversation is in Klaud: the workspace whose chat started it (Klaud's own), or the folder its session runs in. */
+/** Where a sub-agent's conversation is in Beluga: the workspace whose chat started it (Beluga's own), or the folder its session runs in. */
 export function parentWorkspace(state: Pick<AppState, 'projects'>, s: SubAgent): Workspace | undefined {
   if (!s.session.workspaceId) return undefined;
   return state.projects.flatMap((p) => p.workspaces).find((w) => w.id === s.session.workspaceId && !w.archived);
 }
 
-/** Can you steer it (through the Claude that started it)? Only when that Claude is one of Klaud's conversations. */
+/** Can you steer it (through the Claude that started it)? Only when that Claude is one of Beluga's conversations. */
 export const steerable = (s: SubAgent): boolean => Boolean(s.session.own && s.session.workspaceId);
 
 /**
@@ -86,7 +86,7 @@ export interface Residue {
 
 const count = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-/** What `s` left: from its worktree's git status (`worktree`: the workspace at its worktree's path, if Klaud has it). */
+/** What `s` left: from its worktree's git status (`worktree`: the workspace at its worktree's path, if Beluga has it). */
 export function agentResidue(s: SubAgent, worktree?: Pick<Workspace, 'status'>): Residue {
   const done = s.agent.status !== 'running' && s.agent.status !== 'idle';
   if (!s.agent.worktree) {

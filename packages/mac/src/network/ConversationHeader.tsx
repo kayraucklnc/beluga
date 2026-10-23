@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { type ActionItem, ActionsDropdown } from '../components/SpecMenu.js';
 import { IconButton } from '../components/ui.js';
 import { copyText } from '../lib/copy.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { GroupAvatar, PersonAvatar, PresenceDot } from './Avatars.js';
 import { MembersButton } from './GroupInfo.js';
 import { conversationOf, membersLine, openGroupInvitation, presenceLine, shownState } from './net-model.js';
@@ -19,7 +19,7 @@ export interface HeaderParts {
 
 /** The toolbar of a conversation with friends: who it's with and their status, the group's people, a ⋯ menu. */
 export function useConversationHeader(id: string): HeaderParts {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const say = useSay();
   const net = useApp((st) => st.network);
   const target = conversationOf(id);

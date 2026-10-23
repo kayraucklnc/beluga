@@ -7,7 +7,7 @@ import type { Location, Store } from './store.js';
 
 export type Requester = <T>(to: string, body: BodyInput & { reqId: string }) => Promise<T>;
 
-export const DEFAULT_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads', 'klaud');
+export const DEFAULT_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads', 'Beluga');
 
 /** Strip anything that could escape the download folder or confuse the OS. */
 export function safeFileName(name: string): string {
@@ -50,7 +50,7 @@ export async function fetchBytes(at: Location, request: Requester, max: number, 
 
 /**
  * Pulls a file from a friend's share in end-to-end encrypted chunks and saves it
- * under ~/Downloads/klaud/<friend>/, or exactly at `opts.to` (an absolute path you picked in a
+ * under ~/Downloads/Beluga/<friend>/, or exactly at `opts.to` (an absolute path you picked in a
  * Save dialog, which already asked about replacing a file there). Progress is mirrored into the store.
  */
 export async function downloadFile(

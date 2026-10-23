@@ -96,7 +96,7 @@ export const AgentEventKind = z.enum([
   'denied',
   /** The first answer is ready (the run may go on for background agents); lets the asker stop waiting. */
   'answered',
-  /** How far the step Claude is on has got, from its output ("137/215"; see progressCount). */
+  /** How far the step Claude is on has got, from its output ("137/215"; see progressCount). Empty: the step's tools returned, Claude thinks. */
   'progress',
   /** Sub-agent progress; text is JSON {id, phase, title?, step?}. */
   'sub',
@@ -295,7 +295,7 @@ export const FileOfferBody = z.object({
   note: z.string().max(1000).default(''),
 });
 
-// ---- Running a command on someone's computer (through their klaud) ----
+// ---- Running a command on someone's computer (through their Beluga) ----
 
 /** Most output a command sends back (its tail is kept). */
 export const MAX_SHELL_OUTPUT = 64 * 1024;

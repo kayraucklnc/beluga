@@ -1,10 +1,10 @@
 // How much CPU the Mac app's web view uses with the demo's plan running (KLD-40).
 //   node scripts/cpu-bench.mjs [label] [--headed] [--secs=20] [--scenes=plan,board,chat] [--pace=10] [--port=1491]
 // Starts the demo daemon (slowed, so the plan's task keeps working) and a dev server of its own,
-// opens the app in Playwright's WebKit (the engine Klaud's window runs; --headed draws it on
+// opens the app in Playwright's WebKit (the engine Beluga's window runs; --headed draws it on
 // screen, which is what counts), sets the plan's in-progress task to work, and for each scene
 // measures CPU while the window is in front and while it's in the background (blurred and hidden,
-// as when you switch apps or cover Klaud). Results print and land in .klaud/scratch/cpu-<label>.json.
+// as when you switch apps or cover Beluga). Results print and land in .klaud/scratch/cpu-<label>.json.
 // To find what costs what: --peek (screenshots, running animations, DOM changes and socket
 // traffic while away), --kill=<selector> / --css=<rules> (inject style), --still (Reduce Motion),
 // --sample=<front|background> (a macOS `sample` of the web content process).
@@ -24,7 +24,7 @@ const port = Number(flag('port', 1491));
 const repo = path.resolve(import.meta.dirname, '../../..');
 const out = path.join(repo, '.klaud/scratch');
 
-const home = mkdtempSync(path.join(os.tmpdir(), 'klaud-bench-'));
+const home = mkdtempSync(path.join(os.tmpdir(), 'beluga-bench-'));
 const children = [];
 const start = (cmd, argv, opts) => {
   const child = spawn(cmd, argv, { stdio: 'ignore', detached: true, ...opts });
@@ -42,8 +42,8 @@ process.on('exit', stop);
 process.on('SIGINT', () => process.exit(1));
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const env = { ...process.env, KLAUD_HOME: home };
-start('npx', ['tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'], { cwd: repo, env: { ...env, KLAUD_DEMO_PACE: flag('pace', '10'), KLAUD_ALLOW_ORIGINS: `http://localhost:${port}` } });
+const env = { ...process.env, BELUGA_HOME: home, KLAUD_HOME: home };
+start('npx', ['tsx', 'src/cli.tsx', 'daemon', '--keep-alive', 'demo'], { cwd: repo, env: { ...env, BELUGA_DEMO_PACE: flag('pace', '10'), BELUGA_ALLOW_ORIGINS: `http://localhost:${port}` } });
 for (let i = 0; i < 120 && !existsSync(path.join(home, 'daemon.json')); i++) await wait(250);
 start('npx', ['vite', '--port', String(port), '--strictPort'], { cwd: path.resolve(import.meta.dirname, '..'), env });
 for (let i = 0; i < 120; i++) {
@@ -91,7 +91,7 @@ async function measure(name) {
 }
 
 const browser = await webkit.launch({ headless: !headed });
-const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: { cookies: [], origins: [{ origin: `http://localhost:${port}`, localStorage: [{ name: 'klaud.onboarding.v1', value: JSON.stringify({ version: 'bench', at: 0, how: 'finished' }) }] }] } });
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: { cookies: [], origins: [{ origin: `http://localhost:${port}`, localStorage: [{ name: 'beluga.onboarding.v1', value: JSON.stringify({ version: 'bench', at: 0, how: 'finished' }) }] }] } });
 const page = await context.newPage();
 // Background, as WebKit tells the page when you switch apps or cover the window.
 await page.addInitScript(() => {
@@ -106,8 +106,8 @@ await page.addInitScript(() => {
 const kill = flag('kill');
 const css = (kill ? `${kill} { animation: none !important; }` : '') + (args.find((a) => a.startsWith('--css='))?.slice(6) ?? '');
 if (css) await page.addInitScript((text) => document.addEventListener('DOMContentLoaded', () => document.head.append(Object.assign(document.createElement('style'), { textContent: text }))), css);
-// --still: Klaud's Reduce Motion on (a floor: nothing moves, only live states render).
-if (args.includes('--still')) await page.addInitScript(() => localStorage.setItem('klaud.prefs.v1', JSON.stringify({ reduceMotion: true })));
+// --still: Beluga's Reduce Motion on (a floor: nothing moves, only live states render).
+if (args.includes('--still')) await page.addInitScript(() => localStorage.setItem('beluga.prefs.v1', JSON.stringify({ reduceMotion: true })));
 if (args.includes('--peek'))
   await page.addInitScript(() => {
     const w = window;

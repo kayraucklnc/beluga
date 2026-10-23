@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
-import { type MenuKind, menuSpec } from '@klaud/ui/menus.js';
+import { type MenuKind, menuSpec } from '@beluga/ui/menus.js';
 import { useActions } from '../../lib/actions.js';
-import { useKlaud } from '../../lib/klaud.js';
+import { useBeluga } from '../../lib/beluga.js';
 
 /**
  * Pick a menu option by its id, the way the terminal UI does when you choose it from the list:
@@ -9,7 +9,7 @@ import { useKlaud } from '../../lib/klaud.js';
  */
 export function usePick(menu: MenuKind): (id: string, confirmed?: boolean) => boolean {
   const actions = useActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   return useCallback(
     (id, confirmed = true) => {
       const index = menuSpec(client.store.getState(), menu)?.options.findIndex((o) => o.id === id) ?? -1;

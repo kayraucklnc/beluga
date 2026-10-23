@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Workspace } from '@klaud/workspaces/types.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
 import { useNow } from '../chat/Items.js';
 import { Icon } from '../components/Icon.js';
 import { Button, Dot, Empty, Segmented, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { usePrefs } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { RemoveWorktreeAlert, WorktreeInfoPage } from '../views/WorktreeInfo.js';
@@ -27,9 +27,9 @@ import o from './agent-outputs.module.css';
  * conversation stays the one story of the work.
  */
 
-/** Tell the lead Claude something for this sub-agent (only when the lead is one of Klaud's conversations). */
+/** Tell the lead Claude something for this sub-agent (only when the lead is one of Beluga's conversations). */
 function Steer({ sub, parent, leadName }: { sub: SubAgent; parent: Workspace | undefined; leadName?: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const prefs = usePrefs();
   const [text, setText] = useState('');
   const [sent, setSent] = useState<string>();
@@ -50,7 +50,7 @@ function Steer({ sub, parent, leadName }: { sub: SubAgent; parent: Workspace | u
     return (
       <div className={m.steerOff}>
         <Icon name="info" size={12} />
-        {sub.session.own ? 'The conversation that started it is gone, so nobody can pass anything on.' : 'It was started outside Klaud: steer it from where its session runs.'}
+        {sub.session.own ? 'The conversation that started it is gone, so nobody can pass anything on.' : 'It was started outside Beluga: steer it from where its session runs.'}
       </div>
     );
   }
@@ -88,10 +88,10 @@ function Steer({ sub, parent, leadName }: { sub: SubAgent; parent: Workspace | u
 
 /** The live page of one sub-agent (with its worktree when it has one). */
 export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Workspace }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   const a = sub.agent;
-  // Only Klaud's own conversations are a chat to go back to (a session outside Klaud isn't).
+  // Only Beluga's own conversations are a chat to go back to (a session outside Beluga isn't).
   const parent = useApp((st) => (sub.session.own ? parentWorkspace(st, sub) : undefined));
   const projectName = useApp((st) => st.projects.find((p) => p.id === sub.session.projectId)?.name);
   const parentAgent = a.parentAgentId ? sub.session.agents.find((x) => x.id === a.parentAgentId) : undefined;
@@ -135,7 +135,7 @@ export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Work
               <>
                 {' of “'}
                 {sub.session.title}
-                {'”, a Claude Code session outside Klaud'}
+                {'”, a Claude Code session outside Beluga'}
                 {projectName ? ` in ${projectName}` : ''}
               </>
             )}
@@ -208,13 +208,13 @@ export function AgentMonitor({ sub, worktree }: { sub: SubAgent; worktree?: Work
  * has that agent (long gone), what the worktree is, without offering to start a conversation in it.
  */
 export function AgentWorktreePage({ ws }: { ws: Workspace }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const sessions = useApp((st) => st.claudeCode.sessions);
   const origin = useApp((st) => st.claudeCode.origins.find((o) => o.path === ws.path));
   const sub = useMemo(() => agentOfWorktree(sessions, ws), [sessions, ws]);
   const [looked, setLooked] = useState(false);
   const id = agentIdOfPath(ws.path);
-  // Not watched now (finished a while ago): ask klaud to find it, so it can be followed again.
+  // Not watched now (finished a while ago): ask Beluga to find it, so it can be followed again.
   useEffect(() => {
     if (sub || !id) return void setLooked(true);
     let alive = true;

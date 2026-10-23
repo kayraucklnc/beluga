@@ -135,7 +135,7 @@ describe('the network as a core service', () => {
   }, 60_000);
 });
 
-describe('turning the network on and off while klaud runs', () => {
+describe('turning the network on and off while Beluga runs', () => {
   it('starts it live, stops it, and says why when it can’t start', async () => {
     const before = process.env.KLAUD_NETWORK;
     delete process.env.KLAUD_NETWORK;
@@ -144,7 +144,7 @@ describe('turning the network on and off while klaud runs', () => {
       const session = {} as Session;
       const sw = networkSwitch({ session, store, identity: generateIdentity(), name: 'you', dir: '/nonexistent', demo: true, warn: () => undefined }, {});
       expect(networkSwitchOf(session)).toBe(sw);
-      await expect(call({} as Session, 'network.setEnabled', true)).rejects.toThrow(/Only the klaud app/);
+      await expect(call({} as Session, 'network.setEnabled', true)).rejects.toThrow(/Only the Beluga app/);
       expect(() => networkOf(session)).toThrow(/off/);
       await sw.set(true);
       await settle(() => store.getState().network.friends.length === 2);

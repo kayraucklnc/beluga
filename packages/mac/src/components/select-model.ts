@@ -1,5 +1,5 @@
 /**
- * The logic behind Klaud's pop-up button (components/Select.tsx), kept free of React and the DOM
+ * The logic behind Beluga's pop-up button (components/Select.tsx), kept free of React and the DOM
  * so it's tested on its own: which rows a menu shows, filtering, moving through the options with
  * the keyboard, type-ahead and where the menu opens.
  */

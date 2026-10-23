@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import type { GuestCan } from '@klaud/protocol.js';
-import { CAN_INFO, DAY_MS, expiresIn } from '@klaud/shared/invites.js';
-import { CAN_ORDER, type InviteChoice } from '@klaud/ui/invite-menus.js';
+import type { GuestCan } from '@beluga/protocol.js';
+import { CAN_INFO, DAY_MS, expiresIn } from '@beluga/shared/invites.js';
+import { CAN_ORDER, type InviteChoice } from '@beluga/ui/invite-menus.js';
 import { Icon } from '../../components/Icon.js';
+import { BELUGA } from '../../components/beluga-path.js';
 import { Avatar, Button, Tip, cx } from '../../components/ui.js';
-import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { Select } from '../settings-controls.js';
 import type { NativeMenuProps } from './index.js';
 import { Check, Choice, Field, Section, Sheet, Tag, useFlash } from './parts.js';
@@ -18,7 +19,7 @@ function hostingNote(phase: string | undefined, detail: string | undefined): str
   if (phase === 'failed') return detail ?? 'Couldn’t open remote access. Try again, or pick another way in Settings › People & access.';
   if (phase === 'local') return 'Only people on this network can join right now.';
   if (phase) return 'Opening a secure link… it’s copied as soon as it’s ready.';
-  return 'Klaud opens a secure link the first time you copy one.';
+  return 'Beluga opens a secure link the first time you copy one.';
 }
 
 /**
@@ -34,7 +35,7 @@ export function InviteSheet({ menu, close }: NativeMenuProps<'invite_link'>) {
 
 function HostInvite({ menu, close }: NativeMenuProps<'invite_link'>) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const projects = useApp((st) => st.projects);
   const links = useApp((st) => st.links);
   const invite = useApp((st) => st.invite);
@@ -99,7 +100,7 @@ function HostInvite({ menu, close }: NativeMenuProps<'invite_link'>) {
       <Field label="The link">
         <Check checked={c.knock} onChange={(knock) => set({ knock })} label="Knock first" detail={c.knock ? 'You let them in from a card in the chat.' : 'They come straight in.'} />
         <Check checked={c.singleUse} onChange={(singleUse) => set({ singleUse })} label="One person only" detail={c.singleUse ? 'It stops working after the first person.' : 'Anyone with the link can come.'} />
-        <Check checked={c.expires} onChange={(expires) => set({ expires })} label="Expires in 24 hours" detail={c.expires ? undefined : 'Works until you revoke it or quit Klaud.'} />
+        <Check checked={c.expires} onChange={(expires) => set({ expires })} label="Expires in 24 hours" detail={c.expires ? undefined : 'Works until you revoke it or quit Beluga.'} />
       </Field>
       {!invite ? <div className={v.status}>{hostingNote(hosting?.phase, hosting?.detail)}</div> : null}
       <HowTheyJoin knock={c.knock} />
@@ -146,9 +147,12 @@ function HowTheyJoin({ knock }: { knock: boolean }) {
         <span><strong>Send the link</strong> any way you like: Messages, Slack, email.</span>
       </li>
       <li>
-        <span className={v.stepIcon}><Icon name="claude" size={13} /></span>
+        <span className={v.stepIcon}>
+          {/* The app's beluga: this step is about the app, not Claude. */}
+          <svg width="15" height="12" viewBox="56 147 912 730" aria-hidden="true"><path d={BELUGA} fill="currentColor" fillRule="evenodd" /></svg>
+        </span>
         <span>
-          <strong>They open it in Klaud.</strong> With Klaud for Mac a click on the link is enough; in a terminal they paste it (it starts with <code>klaud join</code>).
+          <strong>They open it in Beluga.</strong> With Beluga for Mac a click on the link is enough; in a terminal they paste it (it starts with <code>beluga join</code>).
         </span>
       </li>
       <li>

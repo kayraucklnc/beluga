@@ -4,12 +4,12 @@ import type { BodyInput, MilestoneInput, PlanOp, TaskInput } from '../core/plans
 import type { PlanTools } from './types.js';
 
 /**
- * A plan as Claude's tools (server `klaud_plan`), in the plan's home conversation: write the plan
+ * A plan as Claude's tools (server `beluga_plan`), in the plan's home conversation: write the plan
  * and change it (a draft the user approves), see where it stands, check a milestone, start a ready
- * task, and talk to a task's Claude. Starting and passing go through klaud's scheduler.
+ * task, and talk to a task's Claude. Starting and passing go through Beluga's scheduler.
  */
 
-export const PLAN_TOOL_NAMES = ['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task'].map((n) => `mcp__klaud_plan__${n}`);
+export const PLAN_TOOL_NAMES = ['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task'].map((n) => `mcp__beluga_plan__${n}`);
 
 const id = z.string().min(1).max(40).describe('A short stable id, like "auth-api" (letters, digits, dashes)');
 const lines = (max: number) => z.array(z.string().min(1).max(400)).max(max);
@@ -138,10 +138,10 @@ export function createPlanToolDefs(plan: PlanTools) {
       { milestone: z.string().min(1).max(200), verdict: z.enum(['pass', 'fail']), notes: z.string().min(1).max(8000) },
       (a) => guarded(() => plan.gate(a.milestone, a.verdict, a.notes)),
     ),
-    tool('plan_start_task', 'Start a ready task now (a worktree with Claude on it). Only when the user asks: klaud starts ready tasks by itself unless the plan goes step by step.', { task: z.string().min(1).max(40).describe('Its id in the plan, or its board key') }, (a) => guarded(() => plan.start(a.task))),
+    tool('plan_start_task', 'Start a ready task now (a worktree with Claude on it). Only when the user asks: Beluga starts ready tasks by itself unless the plan goes step by step.', { task: z.string().min(1).max(40).describe('Its id in the plan, or its board key') }, (a) => guarded(() => plan.start(a.task))),
     tool(
       'plan_message_task',
-      'Tell the Claude working on a started task something: a decision, a heads-up about another task, a correction. mode "queue" (default) waits until its current turn ends (it may be behind a 15-minute test run); "steer" reaches it now: a long command or a stuck turn is interrupted, and Klaud delivers it again if it isn’t read within 2 minutes.',
+      'Tell the Claude working on a started task something: a decision, a heads-up about another task, a correction. mode "queue" (default) waits until its current turn ends (it may be behind a 15-minute test run); "steer" reaches it now: a long command or a stuck turn is interrupted, and Beluga delivers it again if it isn’t read within 2 minutes.',
       {
         task: z.string().min(1).max(40),
         text: z.string().min(1).max(8000),
@@ -153,5 +153,5 @@ export function createPlanToolDefs(plan: PlanTools) {
 }
 
 export function createPlanTools(plan: PlanTools) {
-  return createSdkMcpServer({ name: 'klaud_plan', version: '0.1.0', tools: createPlanToolDefs(plan) });
+  return createSdkMcpServer({ name: 'beluga_plan', version: '0.1.0', tools: createPlanToolDefs(plan) });
 }

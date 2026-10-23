@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Release the terminal app to npm (`klaudcode`) from this Mac, instead of CI.
+// Release the terminal app to npm (`beluga-code`; it was `klaudcode` before the rename) from this Mac, instead of CI.
 //
 //   npm run release:npm              typecheck, test, build, publish, tag v<version>, push
 //   npm run release:npm -- --dry-run do everything but publish and push
@@ -7,7 +7,8 @@
 // If package.json's version is already on npm (or tagged), the patch number goes up
 // (0.6.2 -> 0.6.3) and that bump is committed. For a minor or major release, set the version
 // in package.json first. Needs `npm login` (once) and a clean checkout of main.
-// Klaud for Mac has its own: packages/mac, npm run release (scripts/release-mac.mjs).
+// Beluga for Mac has its own: packages/mac, npm run release (scripts/release-mac.mjs).
+// The one last klaudcode (the old name, pointing here) is npm run release:klaudcode, right after this.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

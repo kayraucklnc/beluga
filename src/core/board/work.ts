@@ -6,8 +6,9 @@ import type { Action, LogItem, Store } from '../store.js';
 import type { Workspace } from '../../workspaces/types.js';
 import type { WorkspaceController, WorktreeEvent } from '../workspace-controller.js';
 import { Board, type IssuePatch, type NewIssue } from './board.js';
+import { needsChecksText, unexplained } from './criteria.js';
 import { briefPrompt, boardNote, definePrompt, describeIssue, describeList } from './prompt.js';
-import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, filterIssues, isOpen, issueForWorkspace, titleFromName } from './model.js';
+import { type Actor, type Assignee, BRIEF_SECTIONS, type BriefSection, type Issue, STATUS_INFO, filterIssues, isFinished, isOpen, issueForWorkspace, titleFromName } from './model.js';
 
 /**
  * The board at work: tasks open with worktrees and follow their pull requests, a task can start
@@ -118,6 +119,8 @@ export class BoardWork {
     // Claude still writing it: its worktree is named after, and Claude starts with, the real words.
     await this.drafts.get(this.board.need(ref).id);
     const issue = this.board.need(ref);
+    // Finished work starts again only deliberately: reopened (back to Ready) first.
+    if (isFinished(issue.status)) throw new Error(`${issue.key} is ${STATUS_INFO[issue.status].label.toLowerCase()}: reopen it to start it again`);
     // One worktree per task at a time: another one already doing it is where to go.
     const doing = issue.worktrees.at(-1);
     const live = doing && !issue.worktreeGone ? this.workspaces().find((w) => w.id === doing && !w.archived) : undefined;
@@ -265,7 +268,7 @@ export class BoardWork {
     if (ws.kind !== 'worktree') return;
     const state = this.board.state();
     const linked = (id: string): Issue | undefined => issueForWorkspace(state, id);
-    const klaud: Actor = { kind: 'klaud' };
+    const beluga: Actor = { kind: 'beluga' };
     // Started from a task: the worktree opened under its name (perhaps with "-2" when taken).
     const at = this.expecting.findIndex((e) => e.projectId === ws.projectId && (ws.name === e.name || ws.name.startsWith(`${e.name}-`)));
     if (at >= 0) {
@@ -278,14 +281,14 @@ export class BoardWork {
     const source = from ? (linked(from) ?? (carried ? this.board.get(carried) : undefined)) : undefined;
     if (source) {
       if (carried) this.carried.delete(from!);
-      this.board.linkWorktree(source.id, ws.id, { branch: ws.branch, name: ws.name }, klaud);
-      if (source.status === 'todo' || source.status === 'backlog') this.board.update(source.id, { status: 'in_progress' }, klaud);
+      this.board.linkWorktree(source.id, ws.id, { branch: ws.branch, name: ws.name }, beluga);
+      if (source.status === 'todo' || source.status === 'backlog') this.board.update(source.id, { status: 'in_progress' }, beluga);
       return;
     }
     // Only when you asked for a task per worktree (tasks come from plans). Claude writes its brief: what you said isn't pasted in.
     if (!this.board.autoTasksOn || !this.deps.store.getState().projects.some((p) => p.id === ws.projectId && p.root)) return;
-    const issue = this.board.create({ projectId: ws.projectId, title: titleFromName(ws.name), autoTitle: true, status: 'in_progress', assignee: this.myClaude() }, klaud, 'worktree');
-    this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name }, klaud);
+    const issue = this.board.create({ projectId: ws.projectId, title: titleFromName(ws.name), autoTitle: true, status: 'in_progress', assignee: this.myClaude() }, beluga, 'worktree');
+    this.board.linkWorktree(issue.id, ws.id, { branch: ws.branch, name: ws.name }, beluga);
   }
 
   private onAction(action: Action): void {
@@ -402,6 +405,12 @@ export class BoardWork {
       update: (key, patch) => {
         const issue = pick(key);
         const assignee = assign(patch.assign);
+        // To review only when every criterion is ticked or explained: its Claude is told which aren't.
+        const open = patch.status === 'in_review' && issue.status !== 'in_review' ? unexplained(issue.brief.acceptance) : [];
+        if (open.length) {
+          board.holdForChecks(issue.id);
+          throw new Error(needsChecksText(issue.key, open));
+        }
         const next = board.update(issue.id, { ...(patch.title ? { title: patch.title } : {}), ...(patch.status ? { status: patch.status } : {}), ...(patch.priority ? { priority: patch.priority } : {}), ...(patch.labels ? { labels: patch.labels } : {}), ...(patch.estimate !== undefined ? { estimate: patch.estimate } : {}), ...(assignee !== undefined ? { assignee } : {}) }, by());
         return `${next.key} is now: ${next.title} · ${next.status} · priority ${next.priority}${next.estimate ? ` · ${next.estimate} points` : ''}`;
       },

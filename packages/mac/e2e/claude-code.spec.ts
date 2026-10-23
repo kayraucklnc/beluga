@@ -1,10 +1,10 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
- * Claude Code running outside klaud, live and read-only: a pretend session with background agents
- * is written where the demo daemon looks (KLAUD_CLAUDE_HOME, see playwright.config.ts), in the
+ * Claude Code running outside Beluga, live and read-only: a pretend session with background agents
+ * is written where the demo daemon looks (BELUGA_CLAUDE_HOME, see playwright.config.ts), in the
  * demo's "landing" project. Activity lists it with its agents; an agent opens its own page, which
  * follows new lines as they're written, and turns Finished when the session hears it's done; the
  * session opens the landing chat, with itself live in a strip at the top.
@@ -33,7 +33,7 @@ test('a Claude Code session and its agents show in Activity, live', async ({ pag
   const row = sidebar(page).locator('[title$="/landing"]').first();
   await expect(row).toBeVisible();
   cwd = (await row.getAttribute('title'))!;
-  const home = process.env.KLAUD_CLAUDE_HOME!;
+  const home = process.env.BELUGA_CLAUDE_HOME!;
   folder = path.join(home, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
   const agents = path.join(folder, SID, 'subagents');
   mkdirSync(agents, { recursive: true });

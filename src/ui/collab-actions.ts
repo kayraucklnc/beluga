@@ -1,5 +1,5 @@
 import type { PendingQuestion } from '../core/collab-store.js';
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import type { SharedTab } from '../core/store.js';
 import { runInviteUiAction } from './invite-actions.js';
 import type { MenuContext } from './menu-actions.js';
@@ -15,7 +15,7 @@ export function currentQuestion(q: PendingQuestion) {
 }
 
 /** Record one answer; when every question has one, send them all to Claude. */
-function record(client: KlaudClient, q: PendingQuestion, question: string, answer: string): void {
+function record(client: BelugaClient, q: PendingQuestion, question: string, answer: string): void {
   // Work out the answers from what's picked so far plus this one, so it doesn't depend on when the pick arrives.
   const picked = { ...q.picked, [question]: answer };
   void client.api.questions.pick(q.qid, question, answer);
@@ -27,7 +27,7 @@ function record(client: KlaudClient, q: PendingQuestion, question: string, answe
 }
 
 /** A click (or number key) on a question card. */
-export function answerQuestion(client: KlaudClient, action: Extract<UiAction, { type: 'answer' }>): void {
+export function answerQuestion(client: BelugaClient, action: Extract<UiAction, { type: 'answer' }>): void {
   const q = client.store.getState().questions.find((x) => x.qid === action.qid);
   if (!q) return;
   const answer = client.api.questions.answer;
@@ -57,14 +57,14 @@ export function answerQuestion(client: KlaudClient, action: Extract<UiAction, { 
 }
 
 /** Typed text while a card is waiting: your own answer, or what to change in the plan. */
-export function answerTyped(client: KlaudClient, q: PendingQuestion, text: string): void {
+export function answerTyped(client: BelugaClient, q: PendingQuestion, text: string): void {
   if (q.question.kind === 'plan') return void client.api.questions.answer(q.qid, { kind: 'plan', approve: false, feedback: text });
   const current = currentQuestion(q);
   if (current) record(client, q, current.question, text);
 }
 
 /** Number keys pick options on the card (1 = first option). */
-export function answerByNumber(client: KlaudClient, q: PendingQuestion, n: number): boolean {
+export function answerByNumber(client: BelugaClient, q: PendingQuestion, n: number): boolean {
   const current = currentQuestion(q);
   const option = current?.options[n - 1];
   if (!option) return false;
@@ -73,7 +73,7 @@ export function answerByNumber(client: KlaudClient, q: PendingQuestion, n: numbe
 }
 
 /** Open a workspace someone shared with you: its chat, files, read-only shell, or what changed. */
-export function openShared(client: KlaudClient, owner: string, id: string, tab: SharedTab = 'chat'): void {
+export function openShared(client: BelugaClient, owner: string, id: string, tab: SharedTab = 'chat'): void {
   const latest = client.store.getState();
   const w = latest.shared.find((x) => x.owner === owner && x.id === id);
   if (!w) return;

@@ -1,6 +1,6 @@
-import type { TaskView } from '@klaud/core/gateway/model.js';
-import { isFinal } from '@klaud/core/gateway/model.js';
-import { humanizeLine } from '@klaud/shared/step-titles.js';
+import type { TaskView } from '@beluga/core/gateway/model.js';
+import { isFinal } from '@beluga/core/gateway/model.js';
+import { humanizeLine } from '@beluga/shared/step-titles.js';
 
 /**
  * What Claude is waiting on when it asked someone else's Claude (or Mac), in words, from the

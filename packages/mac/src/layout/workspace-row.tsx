@@ -1,11 +1,13 @@
-import type { AppState } from '@klaud/core/store.js';
-import type { Workspace } from '@klaud/workspaces/types.js';
-import { stateOf } from '@klaud/ui/workspace-models.js';
+import type { AppState } from '@beluga/core/store.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
+import { stateOf } from '@beluga/ui/workspace-models.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp } from '../lib/klaud.js';
+import { memo } from 'react';
+import { useApp, useBeluga } from '../lib/beluga.js';
+import { sameDeep } from '../lib/stable.js';
 import { workspaceSignal } from './attention-model.js';
 import { DotMark, SignalMark, nameClass, signalClass } from './signal-marks.js';
 import { inSections, toolbarActions } from './toolbar-actions.js';
@@ -51,21 +53,27 @@ const ARCHIVING: Record<NonNullable<AppState['archiving'][string]>, string> = {
  * when it needs you (the row faintly tinted), a count and a bold name when Claude finished or
  * someone wrote while you were elsewhere, Claude's pulse while it works; otherwise its git state.
  */
-export function WorkspaceRow({ ws, indent }: { ws: Workspace; indent: number }) {
+export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent }: { ws: Workspace; indent: number }) {
   const actions = useActions();
-  const state = useApp((st) => st);
-  const selected = state.view.kind === 'workspace' && state.view.id === ws.id;
-  const st = stateOf(state, ws, 0);
-  const signal = workspaceSignal(state, ws);
+  const { client } = useBeluga();
+  // Only what the row shows: another conversation streaming doesn't draw it again (KLD-48).
+  const { selected, st, signal, where, archiving } = useApp(
+    (state) => ({
+      selected: state.view.kind === 'workspace' && state.view.id === ws.id,
+      st: stateOf(state, ws, 0),
+      signal: workspaceSignal(state, ws),
+      // Made outside Beluga: where it is, quietly after its name (the full path in the tooltip).
+      where: outsideLocation(state, ws),
+      // Being archived: how far along (it leaves the sidebar when done).
+      archiving: state.archiving[ws.id],
+    }),
+    sameDeep,
+  );
   const icon: IconName = ws.kind === 'chat' ? 'chat' : ws.kind === 'main' ? 'folder' : 'branch';
   // Idle: its git state (uncommitted changes, ready to merge) as before.
   const quiet = st.tone === 'warn' || st.tone === 'info' || st.tone === 'error' ? <DotMark tone={st.tone} /> : null;
-  // Made outside Klaud: where it is, quietly after its name (the full path in the tooltip).
-  const where = outsideLocation(state, ws);
-  // Being archived: how far along (it leaves the sidebar when done).
-  const archiving = state.archiving[ws.id];
   return (
-    <ActionsContext items={workspaceItems(state, ws, actions.run)}>
+    <ActionsContext items={() => workspaceItems(client.store.getState(), ws, actions.run)}>
       <Row
         indent={indent}
         selected={selected}
@@ -86,4 +94,4 @@ export function WorkspaceRow({ ws, indent }: { ws: Workspace; indent: number }) 
       />
     </ActionsContext>
   );
-}
+});

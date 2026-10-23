@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Claude Code sessions running outside klaud (see api.ts): their recent steps, for a screen
+ * Claude Code sessions running outside Beluga (see api.ts): their recent steps, for a screen
  * showing one live. The list itself is in the shared state (`claudeCode.sessions`). Read-only.
  * Browser-safe: zod only.
  */

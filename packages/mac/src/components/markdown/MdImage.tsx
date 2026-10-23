@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Location } from '@klaud/core/store.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { Location } from '@beluga/core/store.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { Icon } from '../Icon.js';
-import { useKlaud } from '../../lib/klaud.js';
+import { useBeluga } from '../../lib/beluga.js';
 import { resolveImage } from './md-paths.js';
 import m from './markdown.module.css';
 
 /**
- * Images in a document. Next to the file (`![](assets/flow.svg)`): read through klaud, with the
+ * Images in a document. Next to the file (`![](assets/flow.svg)`): read through Beluga, with the
  * same rules as opening the file. On the web: only over https. Anything else shows its alt text.
  */
 
@@ -39,7 +39,7 @@ export function imageUrl(client: SocketClient, at: Location, version?: string | 
 
 /** The object URL of an image file once it's read (undefined meanwhile), or the error. */
 export function useImageUrl(at: Location | undefined, version?: string | number): { url?: string; error?: string } {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [state, setState] = useState<{ key: string; url?: string; error?: string }>();
   const key = at ? keyOf(at, version) : '';
   // While a newer version loads, the last picture stays (no flash).

@@ -8,7 +8,8 @@ import type { Overlay, Toast, View } from './store.js';
  */
 export type Intent =
   /** `unless`: leave the screen alone when it already shows this kind of view. */
-  | { readonly type: 'navigate'; readonly view: View; readonly unless?: View['kind'] }
+  /** `req`: the request id a screen sent with its own open (workspaces.open), echoed so it knows its answer. */
+  | { readonly type: 'navigate'; readonly view: View; readonly unless?: View['kind']; readonly req?: string }
   | { readonly type: 'overlay'; readonly overlay: Overlay }
   | { readonly type: 'toast'; readonly text: string; readonly level: Toast['level'] }
   /** A workspace (yours, or one shared with you) is gone: close its tab, and leave it if it's showing. */

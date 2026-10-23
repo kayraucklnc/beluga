@@ -1,4 +1,4 @@
-// Relative paths (not @klaud/…) so the unit tests at the repo root can load this model too.
+// Relative paths (not @beluga/…) so the unit tests at the repo root can load this model too.
 import type { AppState, CompactMark, ContextInfo, LogItem } from '../../../../src/core/store.js';
 import { type ContextTone, contextPct, contextTone, formatTokenCount } from '../../../../src/shared/context-usage.js';
 

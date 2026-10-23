@@ -4,7 +4,7 @@ import path from 'node:path';
 import * as g from './git.js';
 
 /**
- * Facts about a worktree klaud didn't make (from Conductor, Claude Code, a script): when it
+ * Facts about a worktree Beluga didn't make (from Conductor, Claude Code, a script): when it
  * was made, its last commit, whether everything on it is already merged, and whether it's
  * safe to tidy away. Removing one keeps its branch, so nothing committed is ever lost.
  */

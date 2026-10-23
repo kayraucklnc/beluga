@@ -1,4 +1,4 @@
-//! Keeping Klaud up to date: look for a new version on GitHub now and then (never on every
+//! Keeping Beluga up to date: look for a new version on GitHub now and then (never on every
 //! launch), download it in the background, and install it when you say so: right away, when
 //! you've stepped away and nothing is running, or the next time you quit.
 //!
@@ -21,7 +21,9 @@ const TICK: Duration = Duration::from_secs(60);
 /// Let the window and the daemon start before the first look.
 const FIRST_TICK: Duration = Duration::from_secs(20);
 /// Passed to the relaunched app when it should come back without its window.
-pub const BACKGROUND_ARG: &str = "--klaud-background";
+pub const BACKGROUND_ARG: &str = "--beluga-background";
+/// The same, from a Klaud that installed the update to Beluga.
+const OLD_BACKGROUND_ARG: &str = "--klaud-background";
 
 /// Automatically when idle / Ask me / Off (Settings › General › Updates).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,14 +68,15 @@ struct Pending {
     choice: Choice,
 }
 
-/// What Klaud was updated to, shown once after the relaunch ("What's new").
+/// What Beluga was updated to, shown once after the relaunch ("What's new").
 #[derive(Clone, Serialize, Deserialize)]
 struct News {
     version: String,
     notes: Option<String>,
 }
 
-/// Kept in ~/Library/Application Support/sh.klaud.mac/updates.json.
+/// Kept in ~/Library/Application Support/io.github.kayraucklnc.beluga/updates.json (Klaud's
+/// sh.klaud.mac one is brought over on the first launch: rename.rs).
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct Saved {
@@ -170,7 +173,7 @@ fn save(app: &AppHandle, saved: &Saved) {
         std::fs::rename(tmp, &path)
     };
     if let Err(e) = write() {
-        eprintln!("klaud: couldn't save the update settings: {e}");
+        eprintln!("beluga: couldn't save the update settings: {e}");
     }
 }
 
@@ -216,7 +219,7 @@ fn forget_download(pending: Option<&Pending>) {
 
 /// Whether this launch is the quiet relaunch after an idle install.
 pub fn launched_in_background() -> bool {
-    std::env::args().any(|a| a == BACKGROUND_ARG)
+    std::env::args().any(|a| a == BACKGROUND_ARG || a == OLD_BACKGROUND_ARG)
 }
 
 /// Load what's saved, pick up an update downloaded before, and start looking now and then.
@@ -235,21 +238,44 @@ pub fn start(app: &AppHandle) {
     });
 }
 
+/// A development setting: BELUGA_<name>, else the KLAUD_<name> it had before the rename.
+#[cfg(debug_assertions)]
+fn env(name: &str) -> Option<String> {
+    std::env::var(format!("BELUGA_{name}"))
+        .or_else(|_| std::env::var(format!("KLAUD_{name}")))
+        .ok()
+}
+
+/// What a relaunch keeps from this one's environment: a custom home (and, in development, the
+/// test endpoint), under the names from before the rename too.
+pub fn kept_env() -> Vec<&'static str> {
+    let mut keep = vec!["BELUGA_HOME", "KLAUD_HOME"];
+    if cfg!(debug_assertions) {
+        keep.extend([
+            "BELUGA_UPDATE_ENDPOINT",
+            "BELUGA_UPDATE_IDLE_SECS",
+            "KLAUD_UPDATE_ENDPOINT",
+            "KLAUD_UPDATE_IDLE_SECS",
+        ]);
+    }
+    keep
+}
+
 fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
     #[allow(unused_mut)]
     let mut builder = app.updater_builder();
     // Development only: try a release served from this computer (see docs/updates.md).
     #[cfg(debug_assertions)]
-    if let Ok(url) = std::env::var("KLAUD_UPDATE_ENDPOINT") {
+    if let Some(url) = env("UPDATE_ENDPOINT") {
         let url = url
             .parse()
-            .map_err(|e| format!("KLAUD_UPDATE_ENDPOINT: {e}"))?;
+            .map_err(|e| format!("BELUGA_UPDATE_ENDPOINT: {e}"))?;
         builder = builder.endpoints(vec![url]).map_err(|e| e.to_string())?;
     }
     builder.build().map_err(|e| e.to_string())
 }
 
-/// An update downloaded before Klaud was quit (or crashed): still newer, file still intact?
+/// An update downloaded before Beluga was quit (or crashed): still newer, file still intact?
 async fn restore_pending(app: &AppHandle) {
     let Some(pending) = with(app, |i| i.saved.pending.clone()) else {
         return;
@@ -375,7 +401,7 @@ pub async fn check(app: &AppHandle, manual: bool) {
             }
         }
         Err(e) => {
-            eprintln!("klaud: looking for an update failed: {e}");
+            eprintln!("beluga: looking for an update failed: {e}");
             change(app, |i| {
                 i.phase = if had_ready {
                     Phase::Ready
@@ -425,7 +451,7 @@ async fn download(app: &AppHandle, update: Update) {
     let stored = result.map_err(|e| e.to_string()).and_then(|bytes| {
         let dir = download_dir(app).ok_or("no cache folder")?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let file = dir.join(format!("Klaud-{}.app.tar.gz", update.version));
+        let file = dir.join(format!("Beluga-{}.app.tar.gz", update.version));
         std::fs::write(&file, bytes).map_err(|e| e.to_string())?;
         Ok(file)
     });
@@ -458,11 +484,11 @@ async fn download(app: &AppHandle, update: Update) {
             save(app, &i.saved);
         }),
         Err(e) => {
-            eprintln!("klaud: downloading the update failed: {e}");
+            eprintln!("beluga: downloading the update failed: {e}");
             change(app, |i| {
                 i.phase = Phase::Error;
                 i.progress = None;
-                i.error = Some("The update didn't download. Klaud will try again later.".into());
+                i.error = Some("The update didn't download. Beluga will try again later.".into());
             });
         }
     }
@@ -483,16 +509,13 @@ fn unfocused_secs(app: &AppHandle, focused: bool) -> Option<f64> {
 /// How long you must be away before an idle install (development can shorten it to try it).
 fn idle_for() -> f64 {
     #[cfg(debug_assertions)]
-    if let Some(secs) = std::env::var("KLAUD_UPDATE_IDLE_SECS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-    {
+    if let Some(secs) = env("UPDATE_IDLE_SECS").and_then(|s| s.parse().ok()) {
         return secs;
     }
     update_rules::IDLE_FOR_SECS
 }
 
-/// klaud's terminals running a program right now (`None`: couldn't tell).
+/// Beluga's terminals running a program right now (`None`: couldn't tell).
 async fn terminal_programs(daemon_pid: u32) -> Option<usize> {
     let out = tauri::async_runtime::spawn_blocking(|| {
         Command::new("/bin/ps")
@@ -532,13 +555,13 @@ async fn install_if_idle(app: &AppHandle) {
     };
     let waiting = update_rules::blockers(&inputs);
     if with(app, |i| i.waiting != waiting) {
-        eprintln!("klaud: the update waits for {waiting:?}");
+        eprintln!("beluga: the update waits for {waiting:?}");
         change(app, |i| i.waiting.clone_from(&waiting));
     }
     if waiting.is_empty() {
         // Away from a window you weren't looking at: it comes back hidden, in the menu bar.
         if let Err(e) = install_and_relaunch(app, !focused).await {
-            eprintln!("klaud: installing the update failed: {e}");
+            eprintln!("beluga: installing the update failed: {e}");
         }
     }
 }
@@ -581,7 +604,7 @@ fn install_files(app: &AppHandle, update: &Update, pending: &Pending) -> Result<
     result
 }
 
-/// Install now and open the new Klaud (`background`: without its window, not taking focus).
+/// Install now and open the new Beluga (`background`: without its window, not taking focus).
 async fn install_and_relaunch(app: &AppHandle, background: bool) -> Result<(), String> {
     let (update, pending) = ready_update(app).ok_or("No update is ready.")?;
     change(app, |i| i.phase = Phase::Installing);
@@ -604,7 +627,7 @@ async fn install_and_relaunch(app: &AppHandle, background: bool) -> Result<(), S
 }
 
 /// The .app this runs from (`None` when it isn't one: `tauri dev`).
-fn bundle_path() -> Option<PathBuf> {
+pub fn bundle_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let macos = exe.parent()?;
     let contents = macos.parent()?;
@@ -622,12 +645,7 @@ fn open_args(bundle: &Path, background: bool) -> Vec<String> {
     if background {
         args.push("-g".into());
     }
-    // Keep a custom klaud home (and, in development, the test endpoint) across the relaunch.
-    let mut keep = vec!["KLAUD_HOME"];
-    if cfg!(debug_assertions) {
-        keep.extend(["KLAUD_UPDATE_ENDPOINT", "KLAUD_UPDATE_IDLE_SECS"]);
-    }
-    for name in keep {
+    for name in kept_env() {
         if let Ok(value) = std::env::var(name) {
             args.push("--env".into());
             args.push(format!("{name}={value}"));
@@ -641,8 +659,8 @@ fn open_args(bundle: &Path, background: bool) -> Vec<String> {
     args
 }
 
-/// Quit, and start the new Klaud once this one is gone (so only one ever runs, and the menu-bar
-/// icon and klaud:// links go to the new one).
+/// Quit, and start the new Beluga once this one is gone (so only one ever runs, and the menu-bar
+/// icon and beluga:// links go to the new one).
 fn relaunch(app: &AppHandle, background: bool) {
     let Some(bundle) = bundle_path() else {
         app.restart();
@@ -653,7 +671,7 @@ fn relaunch(app: &AppHandle, background: bool) {
     let mut cmd = Command::new("/bin/sh");
     cmd.arg("-c")
         .arg(WAIT_THEN_OPEN)
-        .arg("klaud-relaunch")
+        .arg("beluga-relaunch")
         .arg(std::process::id().to_string())
         .args(open_args(&bundle, background))
         .stdin(Stdio::null())
@@ -664,12 +682,12 @@ fn relaunch(app: &AppHandle, background: bool) {
         cmd.process_group(0);
     }
     if let Err(e) = cmd.spawn() {
-        eprintln!("klaud: couldn't arrange the relaunch: {e}");
+        eprintln!("beluga: couldn't arrange the relaunch: {e}");
     }
     app.exit(0);
 }
 
-/// Quitting with an update downloaded: put it in place, so the next launch is the new Klaud.
+/// Quitting with an update downloaded: put it in place, so the next launch is the new Beluga.
 pub fn on_exit(app: &AppHandle) {
     let off = with(app, |i| {
         i.saved.mode == Mode::Off || i.phase == Phase::Installing
@@ -679,7 +697,7 @@ pub fn on_exit(app: &AppHandle) {
     }
     if let Some((update, pending)) = ready_update(app) {
         if let Err(e) = install_files(app, &update, &pending) {
-            eprintln!("klaud: installing the update on quit failed: {e}");
+            eprintln!("beluga: installing the update on quit failed: {e}");
         }
     }
 }
@@ -697,7 +715,7 @@ pub fn update_check(app: AppHandle) {
     tauri::async_runtime::spawn(async move { check(&app, true).await });
 }
 
-/// Klaud › Check for Updates…: look, and open the sheet to show what was found.
+/// Beluga › Check for Updates…: look, and open the sheet to show what was found.
 pub fn check_from_menu(app: &AppHandle) {
     let _ = app.emit("update-show", ());
     update_check(app.clone());
@@ -746,7 +764,7 @@ pub async fn update_choose(app: AppHandle, choice: String) -> Result<(), String>
     Ok(())
 }
 
-/// What's going on in klaud, from the window (`None`: it isn't connected).
+/// What's going on in Beluga, from the window (`None`: it isn't connected).
 #[tauri::command]
 pub fn update_activity(app: AppHandle, activity: Option<Activity>) {
     with(&app, |i| i.activity = activity);
@@ -767,13 +785,13 @@ mod tests {
 
     #[test]
     fn relaunches_quietly_only_when_asked() {
-        let bundle = Path::new("/Applications/Klaud.app");
+        let bundle = Path::new("/Applications/Beluga.app");
         let loud = open_args(bundle, false);
         assert_eq!(loud.first().map(String::as_str), Some("-n"));
         assert!(!loud.iter().any(|a| a == "-g" || a == BACKGROUND_ARG));
         assert_eq!(
             loud.last().map(String::as_str),
-            Some("/Applications/Klaud.app")
+            Some("/Applications/Beluga.app")
         );
         let quiet = open_args(bundle, true);
         assert!(quiet.iter().any(|a| a == "-g"));

@@ -41,7 +41,7 @@ svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{
   <text x="107" y="146" text-anchor="middle" font-size="14" font-weight="700" fill="#1d1d1f">📁 bob-api</text>
   <text x="107" y="165" text-anchor="middle" font-size="11" fill="#8e8e93">main stays untouched</text>
   {"".join(rows)}
-  <text x="480" y="284" text-anchor="middle" font-size="11" fill="#8e8e93">say what you want · Klaud makes a worktree (folder + branch + Claude) named for it · they all work at once</text>
+  <text x="480" y="284" text-anchor="middle" font-size="11" fill="#8e8e93">say what you want · Beluga makes a worktree (folder + branch + Claude) named for it · they all work at once</text>
 </svg>
 '''
 out = Path(__file__).resolve().parents[2] / 'assets' / 'worktrees.svg'

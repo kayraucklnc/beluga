@@ -1,13 +1,13 @@
 import { useEffect } from 'react';
-import type { PresenceState } from '@klaud/net/mesh/views.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { PresenceState } from '@beluga/net/mesh/views.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { inApp } from '../lib/boot.js';
 import { IDLE_AWAY_MS, findInvitation, idleStep, presenceFor, selfLine } from './net-model.js';
 import { openNet } from './net-sheets.js';
 
 /**
  * Friends and groups in the app shell: the File menu's Add a Friend… / New Group…, your status
- * in the menu-bar menu, klaud://add and klaud://join links, and Away when you're idle.
+ * in the menu-bar menu, beluga://add and beluga://join links, and Away when you're idle.
  */
 
 const STATUS: Record<string, PresenceState> = { 'status-online': 'online', 'status-away': 'away', 'status-dnd': 'dnd', 'status-offline': 'offline' };
@@ -33,10 +33,10 @@ export function runNetworkMenuItem(id: string, client: SocketClient): boolean {
   return false;
 }
 
-/** A klaud:// link that adds a friend or joins a group: open the sheet ready to accept it. True if it was one. */
+/** A beluga:// link that adds a friend or joins a group: open the sheet ready to accept it. True if it was one. */
 export function openNetworkLink(url: string): boolean {
   const found = findInvitation(url);
-  if (!found || !/^klaud:\/\/(add|join)\/?[#?]/.test(url)) return false;
+  if (!found || !/^(?:beluga|klaud):\/\/(add|join)\/?[#?]/.test(url)) return false;
   openNet(found.group ? { kind: 'join_group', accept: found.text } : { kind: 'add_friend', accept: found.text });
   return true;
 }

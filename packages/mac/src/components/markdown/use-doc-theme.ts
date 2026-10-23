@@ -15,5 +15,4 @@ export function useDocTheme(): DocTheme {
   return useSyncExternalStore(subscribe, read, () => 'light');
 }
 
-/** Whether the window asks for less motion (Settings › Appearance or the system). */
-export const reducedMotion = (): boolean => document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+export { reducedMotion } from '../../lib/reduced-motion.js';

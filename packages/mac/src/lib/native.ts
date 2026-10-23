@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
 import { inApp } from './boot.js';
 import type { Actions } from './actions.js';
-import type { UiStore } from './klaud.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { UiStore } from './beluga.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { setPrefs, getPrefs, zoom } from './prefs.js';
 import { byMenu, showPanelTab, togglePanel, toggleTerminal } from './panel.js';
 import { PANEL_LABELS, PANEL_TABS, type PanelTab } from './panel-model.js';
-import { dockCount } from '../layout/attention-model.js';
+import { dockCount, workingCount } from '../layout/attention-model.js';
 import { NOTIFICATION_TAP, macNoticeTarget, openNoticeTarget } from './notices.js';
 import { COMMAND_IDS, type CommandId, commandState, runCommand } from './commands.js';
 import { openNetworkLink, runNetworkMenuItem } from '../network/net-native.js';
@@ -14,6 +14,8 @@ import { runRequestMenuItem } from '../gateway/request-native.js';
 import { SHOW_WELCOME } from '../onboarding/onboarding-model.js';
 import { pastePlain } from '../chat/paste-paths.js';
 import type { PlaceKind } from './go.js';
+import { throttle } from './throttle.js';
+import { windowActive } from './window-active.js';
 
 const isCommand = (id: string): id is CommandId => (COMMAND_IDS as readonly string[]).includes(id);
 
@@ -61,7 +63,7 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
     case 'share-folder':
       return ui.openMenu({ kind: 'share_folder', launchDir: state.home, mine: state.myShares });
     case 'invite':
-      return void document.dispatchEvent(new CustomEvent('klaud:invite'));
+      return void document.dispatchEvent(new CustomEvent('beluga:invite'));
     case 'inbox':
       return ui.patch({ notices: true });
     case 'toggle-sidebar':
@@ -73,7 +75,7 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
         if (why) client.store.dispatch({ type: 'toast', text: why, level: 'info' });
       });
     case 'toggle-inspector':
-      return byMenu('panel', togglePanel);
+      return byMenu('panel', () => togglePanel(state.view));
     case 'panel-changes':
     case 'panel-files':
     case 'panel-terminal':
@@ -97,21 +99,21 @@ export function runMenuItem(id: string, client: SocketClient, ui: UiStore, actio
       zoom(id.slice('zoom-'.length) as 'in' | 'out' | 'reset');
       return;
     case 'help-log':
-      return void client.api.local.openFolder(`${state.home}/.klaud/logs`);
+      return void client.api.local.openFolder(`${state.home}/.beluga/logs`);
   }
 }
 
 /**
- * A klaud:// link that joins a friend's room: "klaud://join/<invite>", or an invite itself
- * ("klaud://<host key>…#secret", what Invite copies), so clicking the link a friend sent works.
+ * A beluga:// link that joins a friend's room: "beluga://join/<invite>", or an invite itself
+ * ("beluga://<host key>…#secret", what Invite copies), so clicking the link a friend sent works.
  */
 export function inviteOf(url: string): string | undefined {
-  const m = /^klaud:\/\/join\/(.+)$/.exec(url);
+  const m = /^(?:beluga|klaud):\/\/join\/(.+)$/.exec(url);
   if (m) return decodeURIComponent(m[1]!);
-  return /^klaud:\/\/[ybndrfg8ejkmcpqxot1uwisza345h769]{52}\/?(\?relay=[^\s#]+)?#[\w-]{16,256}$/.test(url) ? url : undefined;
+  return /^(?:beluga|klaud):\/\/[ybndrfg8ejkmcpqxot1uwisza345h769]{52}\/?(\?relay=[^\s#]+)?#[\w-]{16,256}$/.test(url) ? url : undefined;
 }
 
-/** Listen to the menu bar and to klaud:// links (only in the app). */
+/** Listen to the menu bar and to beluga:// links (only in the app). */
 export function useNative(client: SocketClient, ui: UiStore, actions: Actions, onInvite: (invite: string) => void): void {
   useEffect(() => {
     if (!inApp()) return;
@@ -123,7 +125,7 @@ export function useNative(client: SocketClient, ui: UiStore, actions: Actions, o
       const handled = new Set<string>();
       const open = (url: string): void => {
         if (handled.has(url)) return;
-        // klaud://add… and klaud://join#…: a friend's or a group's invitation (the klaud network).
+        // beluga://add… and beluga://join#…: a friend's or a group's invitation (the Beluga network).
         if (openNetworkLink(url)) return void handled.add(url);
         const invite = inviteOf(url);
         if (!invite) return;
@@ -154,29 +156,44 @@ export async function joinRoom(invite: string): Promise<void> {
  * Keep the Dock icon's badge and the menu-bar icon in step with what's new for you: the
  * sidebar's Unread conversations (one each), plus other unread notifications and anything
  * still waiting on you (see dockCount).
+ *
+ * The store changes many times a second while Claudes stream, and counting is a walk over every
+ * conversation: at most once a second in front, once every 5 s behind other windows (KLD-48),
+ * nothing counted when the state hasn't changed, and nothing sent when the counts haven't.
  */
+export const TRAY_GAP_MS = 1000;
+export const TRAY_GAP_AWAY_MS = 5000;
+
 export function useTrayStatus(client: SocketClient): void {
   useEffect(() => {
     if (!inApp()) return;
     let last = '';
+    let seen: unknown;
     const update = (): void => {
       const st = client.store.getState();
+      if (st === seen) return;
+      seen = st;
       const waiting = st.approvals.length + st.questions.length + st.knocks.length;
-      const working = new Set(st.log.filter((l) => l.type === 'agent' && l.owner === st.selfId && ['started', 'text', 'tool', 'sub'].includes(l.status)).map((l) => l.channel)).size;
+      const working = workingCount(st);
       const unread = dockCount(st);
       const key = `${waiting}:${working}:${unread}`;
       if (key === last) return;
       last = key;
       void import('@tauri-apps/api/core').then(({ invoke }) => invoke('set_tray_status', { waiting, working, unread })).catch(() => undefined);
     };
-    update();
-    return client.store.subscribe(update);
+    const tick = throttle(update, () => (windowActive() ? TRAY_GAP_MS : TRAY_GAP_AWAY_MS));
+    tick.request();
+    const off = client.store.subscribe(tick.request);
+    return () => {
+      off();
+      tick.stop();
+    };
   }, [client]);
 }
 
 /**
- * Tell klaud whether this window is in front: what it shows isn't announced while it is, and
- * "Only when klaud isn't in front" waits until it isn't. Coming to the front refreshes PRs.
+ * Tell Beluga whether this window is in front: what it shows isn't announced while it is, and
+ * "Only when Beluga isn't in front" waits until it isn't. Coming to the front refreshes PRs.
  */
 export function useWindowFocus(client: SocketClient): void {
   useEffect(() => {

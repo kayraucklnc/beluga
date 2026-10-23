@@ -22,7 +22,7 @@ export const TASK_STATE: Readonly<Record<TaskState, { readonly label: string; re
   idle: { label: 'Stopped without finishing', tone: 'warn' },
   stalled: { label: 'Needs you', tone: 'warn' },
   review: { label: 'In review', tone: 'info' },
-  planned: { label: 'In plan', tone: 'info' },
+  planned: { label: 'Merged into plan', tone: 'info' },
   done: { label: 'Done', tone: 'ok' },
   canceled: { label: 'Canceled', tone: 'muted' },
   missing: { label: 'Deleted', tone: 'muted' },
@@ -124,7 +124,7 @@ export function nextWords(next: NextStep): { readonly title: string; readonly de
       return { title: next.text, detail: `“${next.milestone.milestone.title}” passes once its work is merged into the plan’s branch` };
     case 'ship':
       if (next.pr?.state === 'OPEN') return { title: `Pull request #${next.pr.number} is open`, detail: `${next.branch} → main: its tasks are Done once it merges` };
-      if (next.pr?.state === 'CLOSED') return { title: `Pull request #${next.pr.number} was closed`, detail: 'Closed without merging: the plan’s tasks stay In Plan' };
+      if (next.pr?.state === 'CLOSED') return { title: `Pull request #${next.pr.number} was closed`, detail: 'Closed without merging: the plan’s tasks stay merged into the plan' };
       return { title: 'Open PR', detail: `Every milestone passed: ${next.branch} has all the plan’s work` };
     case 'done':
       return { title: 'Done', detail: 'Every milestone passed' };
@@ -173,8 +173,8 @@ export function barColumns(view: PlanView): ReadonlyArray<ReturnType<typeof bars
 
 // ---- the plan's one sentence
 
-/** Who a sentence is about: you (something waits for you), Claude (it's at work), Klaud (the plan itself). */
-export type Who = 'you' | 'claude' | 'klaud';
+/** Who a sentence is about: you (something waits for you), Claude (it's at work), Beluga (the plan itself). */
+export type Who = 'you' | 'claude' | 'beluga';
 
 export interface Headline {
   readonly who: Who;
@@ -204,12 +204,12 @@ function mergingLine(view: PlanView): Headline | undefined {
   const first = entries[0];
   if (!first) return undefined;
   const m = view.milestones.find((x) => x.milestone.id === first[0]);
-  return { who: 'klaud', text: `Merging ${m ? quoted(m) : 'a milestone'} into ${branchBits(view.plan).branch ?? 'the plan’s branch'}` };
+  return { who: 'beluga', text: `Merging ${m ? quoted(m) : 'a milestone'} into ${branchBits(view.plan).branch ?? 'the plan’s branch'}` };
 }
 
 /**
  * The plan in one sentence, with who it's about: what waits for you (“You: pass “API” — Claude
- * checked all 4 criteria”), else what Claude or Klaud is doing (“Claude is checking “API””, “3
+ * checked all 4 criteria”), else what Claude or Beluga is doing (“Claude is checking “API””, “3
  * tasks running in 2 milestones”).
  */
 export function headline(view: PlanView): Headline {
@@ -244,11 +244,11 @@ export function headline(view: PlanView): Headline {
     case 'checking':
       return { who: 'claude', text: `Claude is checking ${quoted(next.milestone)}${alsoRunning}` };
     case 'working':
-      return running.length ? { who: 'claude', text: `${count(running.length, 'task')} running${inMilestones > 1 ? ` in ${inMilestones} milestones` : ''}` } : { who: 'klaud', text: 'Starting the next tasks' };
+      return running.length ? { who: 'claude', text: `${count(running.length, 'task')} running${inMilestones > 1 ? ` in ${inMilestones} milestones` : ''}` } : { who: 'beluga', text: 'Starting the next tasks' };
     case 'waiting':
-      return { who: 'klaud', text: next.why };
+      return { who: 'beluga', text: next.why };
     case 'merging':
-      return { who: next.milestone.merging?.conflict?.stuck ? 'you' : 'klaud', text: next.text };
+      return { who: next.milestone.merging?.conflict?.stuck ? 'you' : 'beluga', text: next.text };
     case 'stalled':
       return { who: 'you', text: `Resume ${next.tasks.map((t) => t.issue?.key ?? `“${t.task.title}”`).join(', ')}: its Claude stopped again without finishing` };
     case 'ship':
@@ -256,7 +256,7 @@ export function headline(view: PlanView): Headline {
       if (next.pr?.state === 'CLOSED') return { who: 'you', text: `#${next.pr.number} was closed without merging: open it again, or merge locally` };
       return { who: 'you', text: `Open the plan’s pull request: ${next.branch} → main` };
     case 'done':
-      return { who: 'klaud', text: 'Done: every milestone passed' };
+      return { who: 'beluga', text: 'Done: every milestone passed' };
   }
 }
 
@@ -265,26 +265,26 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
   const t = view.milestones.flatMap((m) => m.tasks).find((x) => x.task.id === taskId);
   const m = t && view.milestones.find((x) => x.milestone.id === t.milestoneId);
   if (!t || !m) return undefined;
-  const into = 'Klaud merges this into the plan';
+  const into = 'Beluga merges this into the plan';
   const state = t.state as string;
-  if (state === 'planned') return { who: 'klaud', text: 'Merged into the plan; done when the plan’s pull request merges' };
+  if (state === 'planned') return { who: 'beluga', text: 'Merged into the plan; done when the plan’s pull request merges' };
   switch (t.state) {
     case 'running':
       return { who: 'claude', text: t.step ? `Claude is working on this: ${t.step}` : 'Claude is working on this' };
     case 'asking':
       return { who: 'you', text: 'Claude asked you something here' };
     case 'idle':
-      return { who: 'klaud', text: 'In progress; nobody is working on it right now' };
+      return { who: 'beluga', text: 'In progress; nobody is working on it right now' };
     case 'ready':
-      return t.forYou || m.autonomy === 'step' ? { who: 'you', text: 'Ready: start it from the plan' } : { who: 'klaud', text: 'Ready: it starts by itself' };
+      return t.forYou || m.autonomy === 'step' ? { who: 'you', text: 'Ready: start it from the plan' } : { who: 'beluga', text: 'Ready: it starts by itself' };
     case 'blocked':
     case 'later':
-      return { who: 'klaud', text: t.why ?? 'Waiting' };
+      return { who: 'beluga', text: t.why ?? 'Waiting' };
     case 'done':
-      return { who: 'klaud', text: m.state === 'passed' ? 'Done and in the plan' : `Done. Waiting for ${quoted(m)} to pass` };
+      return { who: 'beluga', text: m.state === 'passed' ? 'Done and in the plan' : `Done. Waiting for ${quoted(m)} to pass` };
     case 'canceled':
     case 'missing':
-      return { who: 'klaud', text: 'Taken out of the plan' };
+      return { who: 'beluga', text: 'Taken out of the plan' };
     case 'draft':
       return { who: 'you', text: 'A draft: approve the plan first' };
     case 'review':
@@ -292,11 +292,11 @@ export function taskHeadline(view: PlanView, taskId: string): Headline | undefin
   }
   // Done here: what's left is the milestone's.
   const others = m.tasks.filter((x) => x !== t && !['review', 'done', 'canceled', 'missing', 'planned'].includes(x.state)).length;
-  if (m.state === 'running') return { who: 'klaud', text: `Done. Waiting for ${count(others, 'other task')} of ${quoted(m)}, then the milestone check; ${into}` };
+  if (m.state === 'running') return { who: 'beluga', text: `Done. Waiting for ${count(others, 'other task')} of ${quoted(m)}, then the milestone check; ${into}` };
   if (m.state === 'checking' || (m.state === 'gate' && m.milestone.criteria.length && !m.run.check)) return { who: 'claude', text: `Done. Claude is checking ${quoted(m)}; ${into}` };
-  if (m.state === 'gate') return m.autonomy === 'autopilot' ? { who: 'klaud', text: `Done. ${quoted(m)} passes by itself; ${into}` } : { who: 'you', text: `Done. Pass ${quoted(m)} in the plan; ${into}` };
+  if (m.state === 'gate') return m.autonomy === 'autopilot' ? { who: 'beluga', text: `Done. ${quoted(m)} passes by itself; ${into}` } : { who: 'you', text: `Done. Pass ${quoted(m)} in the plan; ${into}` };
   if (m.state === 'failed') return { who: 'you', text: `Done, but ${quoted(m)} didn’t pass Claude’s check` };
-  return { who: 'klaud', text: `Done. Waiting for the milestone check; ${into}` };
+  return { who: 'beluga', text: `Done. Waiting for the milestone check; ${into}` };
 }
 
 // ---- changing how a plan runs
@@ -375,7 +375,7 @@ const FOLD_MS = 30 * 60 * 1000;
 /**
  * What the plan did, newest first: started / finished / checked / merged / passed / the mode
  * changed (and the few other things worth seeing). A run of the same thing by the same one is one
- * line (“Klaud started 3 tasks”); the same line again and again says ×3.
+ * line (“Beluga started 3 tasks”); the same line again and again says ×3.
  */
 export function feedOf(activity: readonly PlanEvent[]): readonly FeedItem[] {
   const out: FeedItem[] = [];
@@ -413,8 +413,8 @@ export function changeWords(plan: Plan): string {
 // ---- the graph's structure
 
 export interface PlanGraphShape {
-  /** Milestones as boxes (in order), each with its tasks and a gate at its end. */
-  readonly milestones: ReadonlyArray<{ readonly id: string; readonly tasks: readonly string[] }>;
+  /** Milestones as boxes (in order), each with its tasks and a gate at its end listing its criteria (they size it). */
+  readonly milestones: ReadonlyArray<{ readonly id: string; readonly tasks: readonly string[]; readonly criteria: readonly string[] }>;
   /** Milestones by row: those in a row run side by side (milestoneRows). */
   readonly rows: ReadonlyArray<readonly string[]>;
   /** Lines: task → task (waits on), task → gate (finishes the milestone), gate → a milestone that waits on it. */
@@ -430,7 +430,7 @@ export const taskNodeId = (taskId: string): string => `t:${taskId}`;
 /** The plan graph's structure from what's shown (the draft while there is one). */
 export function graphShape(plan: Plan): PlanGraphShape {
   const body = shownBody(plan);
-  const milestones = (body?.milestones ?? []).map((m) => ({ id: m.id, tasks: m.tasks.map((t) => t.id) }));
+  const milestones = (body?.milestones ?? []).map((m) => ({ id: m.id, tasks: m.tasks.map((t) => t.id), criteria: m.criteria }));
   const edges: Array<PlanGraphShape['edges'][number]> = [];
   for (const m of body?.milestones ?? []) {
     const inside = new Set(m.tasks.map((t) => t.id));
@@ -441,9 +441,14 @@ export function graphShape(plan: Plan): PlanGraphShape {
       if (!needed.has(t.id)) edges.push({ id: `${t.id}->gate`, from: taskNodeId(t.id), to: gateId(m.id), kind: 'finish' });
     }
   }
-  // A milestone's gate opens the milestones that wait on it (only those: the others run alongside).
+  // A milestone's gate opens the milestones that wait on it (only those: the others run alongside),
+  // and only the nearest: one that waits on A and on B (which waits on A) gets its line from B alone.
+  const deps = new Map((body?.milestones ?? []).map((m) => [m.id, milestoneDeps(body, m)] as const));
+  const reaches = (from: string, to: string, seen = new Set<string>()): boolean =>
+    (deps.get(from) ?? []).some((d) => d === to || (!seen.has(d) && (seen.add(d), reaches(d, to, seen))));
   for (const m of body?.milestones ?? []) {
-    for (const d of milestoneDeps(body, m)) edges.push({ id: `ms:${d}->${m.id}`, from: gateId(d), to: groupId(m.id), kind: 'next' });
+    const mine = deps.get(m.id) ?? [];
+    for (const d of mine) if (!mine.some((o) => o !== d && reaches(o, d))) edges.push({ id: `ms:${d}->${m.id}`, from: gateId(d), to: groupId(m.id), kind: 'next' });
   }
   const rows = milestoneRows(body);
   return { milestones, rows, edges, key: JSON.stringify({ milestones, rows, edges: edges.map((e) => e.id) }) };

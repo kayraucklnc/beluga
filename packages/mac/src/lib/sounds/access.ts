@@ -6,26 +6,26 @@ export type { NotificationAccess } from './access-model.js';
 
 /**
  * Asking the app shell (src-tauri/src/sounds.rs) what macOS allows. In a browser (developing,
- * end-to-end tests) there's no shell: a test seeds `window.__KLAUD_NOTIFY_ACCESS__` before the
- * page loads, and what the buttons ask for is recorded in `window.__KLAUD_NOTIFY_CALLS__`.
+ * end-to-end tests) there's no shell: a test seeds `window.__BELUGA_NOTIFY_ACCESS__` before the
+ * page loads, and what the buttons ask for is recorded in `window.__BELUGA_NOTIFY_CALLS__`.
  */
 declare global {
   interface Window {
-    __KLAUD_NOTIFY_ACCESS__?: NotificationAccess;
-    __KLAUD_NOTIFY_CALLS__?: string[];
+    __BELUGA_NOTIFY_ACCESS__?: NotificationAccess;
+    __BELUGA_NOTIFY_CALLS__?: string[];
   }
 }
 
 async function shell<T>(cmd: string, fallback: T): Promise<T> {
   if (!inApp()) {
-    (window.__KLAUD_NOTIFY_CALLS__ ??= []).push(cmd);
+    (window.__BELUGA_NOTIFY_CALLS__ ??= []).push(cmd);
     return fallback;
   }
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<T>(cmd);
 }
 
-const browserAccess = (): NotificationAccess => (typeof window !== 'undefined' && window.__KLAUD_NOTIFY_ACCESS__) || UNKNOWN_ACCESS;
+const browserAccess = (): NotificationAccess => (typeof window !== 'undefined' && window.__BELUGA_NOTIFY_ACCESS__) || UNKNOWN_ACCESS;
 
 /** What macOS says now (`unknown` outside the app: a browser's permission isn't macOS's). */
 export async function notificationAccess(): Promise<NotificationAccess> {
@@ -33,7 +33,7 @@ export async function notificationAccess(): Promise<NotificationAccess> {
   return shell<NotificationAccess>('notification_access', UNKNOWN_ACCESS).catch(() => UNKNOWN_ACCESS);
 }
 
-/** Open System Settings › Notifications, at Klaud. */
+/** Open System Settings › Notifications, at Beluga. */
 export async function openNotificationSettings(): Promise<void> {
   await shell('open_notification_settings', undefined);
 }

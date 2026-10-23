@@ -2,7 +2,7 @@ import type { FetchLike } from './stripe-client.js';
 
 /**
  * A pretend Stripe for the demo (and the Mac app's end-to-end tests): it answers the three
- * calls klaud makes with made-up charges and refunds, so the earnings show without a real
+ * calls Beluga makes with made-up charges and refunds, so the earnings show without a real
  * key and nothing leaves the computer. Keys with "revoked" in them are refused, keys with
  * "nocharges" may not read charges, keys with "noaccount" may not read the account.
  */

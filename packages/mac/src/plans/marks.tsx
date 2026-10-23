@@ -1,9 +1,9 @@
-import type { Actor } from '@klaud/core/board/model.js';
-import type { TaskState } from '@klaud/core/plans/progress.js';
+import type { Actor } from '@beluga/core/board/model.js';
+import type { TaskState } from '@beluga/core/plans/progress.js';
 import { useRef } from 'react';
 import { Icon } from '../components/Icon.js';
 import { Avatar, cx } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { breath, turn, useLive } from '../lib/live-motion.js';
 import { type Need, type Signal, signalOf } from '../layout/attention-model.js';
 import { SignalMark } from '../layout/signal-marks.js';
@@ -116,14 +116,14 @@ export function PlanProgress({ columns }: { columns: ReadonlyArray<readonly Bar[
   );
 }
 
-/** Whose turn a sentence is: your initial, Claude's mark, or Klaud's (the plan itself). */
-export function WhoMark({ who, size = 20 }: { who: Who; size?: number }) {
+/** Whose turn a sentence is: your initial, Claude's mark, or Beluga's (the plan itself). */
+function WhoMark({ who, size = 20 }: { who: Who; size?: number }) {
   const id = useApp((s) => s.selfId);
   const name = useApp((s) => s.self?.name ?? s.network.self?.name ?? 'You');
   if (who === 'you') return <Avatar name={name} id={id} size={size} />;
   if (who === 'claude') return <Avatar name="Claude" id={id} claude size={size} />;
   return (
-    <span className={p.klaudMark} style={{ width: size, height: size }} aria-hidden="true">
+    <span className={p.belugaMark} style={{ width: size, height: size }} aria-hidden="true">
       <Icon name="claude" size={Math.round(size * 0.55)} />
     </span>
   );
@@ -133,7 +133,7 @@ export function WhoMark({ who, size = 20 }: { who: Who; size?: number }) {
 export function ActorMark({ by, size = 18 }: { by: Actor; size?: number }) {
   if (by.kind === 'person') return <Avatar name={by.name} id={by.id} size={size} />;
   if (by.kind === 'claude') return <Avatar name={by.ownerName} id={by.owner} claude size={size} />;
-  return <WhoMark who="klaud" size={size} />;
+  return <WhoMark who="beluga" size={size} />;
 }
 
 /** The plan's sentence: who, then what (“You: pass “API” — Claude checked all 4 criteria”). */

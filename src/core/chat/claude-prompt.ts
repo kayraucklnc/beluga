@@ -1,4 +1,5 @@
 import type { ChatFile, MessageView } from '../../net/mesh/views.js';
+import { hhmm } from '../../shared/clock.js';
 
 /**
  * What a Claude called into a chat reads: the same conversation every member's Mac holds (the
@@ -60,17 +61,12 @@ export const speaker = (m: Pick<MessageView, 'name' | 'mine' | 'claude'>, owner:
   return m.claude ? `${person}'s Claude` : person;
 };
 
-const clock = (ts: number): string => {
-  const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
-
 /** Text from the chat or a file can't open or close the prompt's own sections (<chat>, <message>, <file>). */
 export const fence = (text: string): string => text.replace(/<(\/?)(chat|message|file)\b/gi, '‹$1$2');
 
 function line(m: MessageView, owner: string): string {
   const files = m.files?.length ? ` [attached: ${m.files.map((f) => `${f.name} (${sizeLabel(f.size)})`).join(', ')}]` : '';
-  return fence(`[${clock(m.ts)}] ${speaker(m, owner)}: ${m.text.trim()}${files}`);
+  return fence(`[${hhmm(m.ts)}] ${speaker(m, owner)}: ${m.text.trim()}${files}`);
 }
 
 /** The transcript lines before the message to answer: the latest ones that fit. */
@@ -90,7 +86,7 @@ export function historyLines(before: readonly MessageView[], owner: string): str
 export function systemPrompt(scene: ChatScene): string {
   const others = scene.people.filter((p) => p !== scene.owner);
   return [
-    `You are ${scene.owner}'s Claude, answering in a Klaud chat: ${scene.where}, with ${others.length ? others.join(', ') : 'nobody else yet'} and ${scene.owner}.`,
+    `You are ${scene.owner}'s Claude, answering in a Beluga chat: ${scene.where}, with ${others.length ? others.join(', ') : 'nobody else yet'} and ${scene.owner}.`,
     "People chat here on their own and call Claudes in only when they want one. Each person's Claude runs on its own owner's Mac;",
     'several Claudes may answer the same message, each on its own owner’s behalf.',
     scene.askedAll ? `${scene.asker} asked everyone's Claude to answer their message.` : `${scene.asker} asked you to answer their message.`,

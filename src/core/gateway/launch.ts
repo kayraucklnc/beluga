@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Mesh } from '../../net/mesh/mesh.js';
-import { klaudHome } from '../home.js';
+import { belugaHome } from '../home.js';
 import { watchNetwork } from '../network.js';
 import type { Session } from '../session.js';
 import { loadSettings, saveSettings } from '../settings.js';
@@ -13,9 +13,9 @@ import { attachGateway, detachGateway } from './registry.js';
 import type { Pending } from './serve.js';
 
 /**
- * Start the gateway for the daemon (the Mac app's klaud): tasks between Claudes over today's
- * room at once, and over the klaud network whenever it's on. The demo keeps its tasks in a
- * temporary folder; otherwise they live in ~/.klaud/tasks/.
+ * Start the gateway for the daemon (the Mac app's Beluga): tasks between Claudes over today's
+ * room at once, and over the Beluga network whenever it's on. The demo keeps its tasks in a
+ * temporary folder; otherwise they live in ~/.beluga/tasks/.
  */
 
 /** The mesh node as the gateway sees it. */
@@ -58,7 +58,7 @@ export interface GatewayHost {
 
 export function launchGateway(host: GatewayHost): () => void {
   const { session, store } = host;
-  const dir = host.demo ? mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-tasks-')) : path.join(klaudHome(), 'tasks');
+  const dir = host.demo ? mkdtempSync(path.join(os.tmpdir(), 'beluga-demo-tasks-')) : path.join(belugaHome(), 'tasks');
   let note = host.demo ? 'a review of the landing page, or anything in my projects' : (loadSettings().askMeFor ?? '');
   let caps: unknown;
   const projects = (): Array<{ name: string; root: string }> => (session.workspaces?.manager.list ?? []).filter((p) => p.root && !p.error).map((p) => ({ name: p.name, root: p.root }));
@@ -70,7 +70,7 @@ export function launchGateway(host: GatewayHost): () => void {
     selfName: () => store.getState().self?.name ?? store.getState().network.self?.name ?? 'me',
     agent: () => session.backend,
     approve: approvals(session),
-    rulesFile: path.join(host.demo ? dir : klaudHome(), 'rules.json'),
+    rulesFile: path.join(host.demo ? dir : belugaHome(), 'rules.json'),
     loadCaps: () => (host.demo ? caps : loadSettings().capabilities),
     saveCaps: (next) => {
       if (host.demo) caps = next;
@@ -81,7 +81,7 @@ export function launchGateway(host: GatewayHost): () => void {
     // The demo never looks at your real screen.
     ...(host.demo ? { system: pretendSystem() } : {}),
     resume: (channel, prompt) => {
-      const name = /^\[klaud\] (.+?) \(task/.exec(prompt)?.[1] ?? 'A reply came';
+      const name = /^\[(?:beluga|klaud)\] (.+?) \(task/.exec(prompt)?.[1] ?? 'A reply came';
       store.dispatch({ type: 'system', text: `${name}. Claude continues with it.`, channel });
       session.runFor(session.selfId, channel, prompt);
     },

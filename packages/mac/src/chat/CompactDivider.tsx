@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { type CompactItem, dividerText } from './context-model.js';
 import { Markdown } from './Markdown.js';
 import s from './context.module.css';

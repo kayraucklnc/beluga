@@ -1,12 +1,12 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CcStep } from '@klaud/core/claude-code/model.js';
-import type { StepSummary } from '@klaud/shared/steps.js';
+import type { CcStep } from '@beluga/core/claude-code/model.js';
+import type { StepSummary } from '@beluga/shared/steps.js';
 import { Markdown } from '../chat/Markdown.js';
 import { StepRow } from '../chat/steps/StepRow.js';
 import { type Disclosure, useDisclosure } from '../chat/steps/step-memory.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Working, cx } from '../components/ui.js';
-import { useApi } from '../lib/klaud.js';
+import { useApi } from '../lib/beluga.js';
 import { useClock } from '../lib/window-active.js';
 import { useSteps } from './use-steps.js';
 import s from './claude-code.module.css';
@@ -182,7 +182,7 @@ export function LiveTranscript({ sessionId, agentId, version, live, label }: { s
               Show earlier steps
             </button>
           ) : steps.length ? (
-            <div className={s.earliest}>Klaud shows the newest part of this transcript</div>
+            <div className={s.earliest}>Beluga shows the newest part of this transcript</div>
           ) : null}
           {blocks(steps).map((b) =>
             b.kind === 'tools' ? (
@@ -203,7 +203,7 @@ export function LiveTranscript({ sessionId, agentId, version, live, label }: { s
               <Working />
             </div>
           ) : null}
-          {!steps.length && !loading ? <div className={s.quiet}>{missing ? 'Klaud isn’t watching this one any more (it went quiet).' : error ? `Couldn’t read it: ${error}` : 'Nothing written yet.'}</div> : null}
+          {!steps.length && !loading ? <div className={s.quiet}>{missing ? 'Beluga isn’t watching this one any more (it went quiet).' : error ? `Couldn’t read it: ${error}` : 'Nothing written yet.'}</div> : null}
         </div>
       </div>
       {away ? (

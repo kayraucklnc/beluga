@@ -13,7 +13,7 @@ import { type EarningsAction, type EarningsSlice, initialEarnings, reduceEarning
 import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceClaudeCode } from './claude-code/model.js';
 import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
-import { type PlansAction, type PlansSlice, initialPlans, reducePlans } from './plans/model.js';
+import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
 import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
 
@@ -28,6 +28,24 @@ export interface SubAgent {
   readonly status: 'running' | 'done' | 'failed';
   /** Sub-agent, or background work (a background terminal or agent). */
   readonly kind?: 'agent' | 'background';
+  /** When it started (missing on items saved before it was kept): where it sits among the steps. */
+  readonly startedAt?: number;
+}
+
+/**
+ * A run's card: what its last event said, or 'interrupted': klaud stopped (quit, crashed) while it
+ * ran and no end came, so it's not running any more (see settleRun). Never sent; only ever local.
+ */
+export type AgentItemStatus = AgentEventKind | 'interrupted';
+
+/** A card whose run is still going: waiting its turn or for approval, or working. */
+export const isRunning = (status: AgentItemStatus): boolean =>
+  status === 'started' || status === 'text' || status === 'tool' || status === 'sub' || status === 'awaiting_approval' || status === 'queued';
+
+/** A card that says it's running but has no live run behind it any more: interrupted, its sub-agents done. */
+export function settleRun(item: LogItem): LogItem {
+  if (item.type !== 'agent' || !isRunning(item.status)) return item;
+  return { ...item, status: 'interrupted', endTs: item.endTs ?? item.lastAt ?? item.ts, subagents: item.subagents.map((s) => (s.status === 'running' ? { ...s, status: 'done' as const } : s)) };
 }
 
 export type LogItem =
@@ -46,7 +64,7 @@ export type LogItem =
       readonly requester?: string;
       /** What was asked, once known (sent with the "queued" event, for the queue). */
       readonly prompt?: string;
-      readonly status: AgentEventKind;
+      readonly status: AgentItemStatus;
       readonly text: string;
       readonly steps: readonly string[];
       readonly ts: number;
@@ -58,6 +76,10 @@ export type LogItem =
       readonly stepAt?: number;
       /** How far that step has got, when its output says ("137/215"). */
       readonly progress?: string;
+      /** Between steps: Claude thinks (its turn began, or the step's tools returned) or wrote last; unset while a step runs. */
+      readonly between?: 'thinking' | 'writing';
+      /** Since when it has been `between` that way. */
+      readonly betweenAt?: number;
     }
   | ShellItem;
 
@@ -76,7 +98,7 @@ export interface SaidBy {
   readonly ts: number;
 }
 
-/** A command run on someone's computer (through their klaud), with its output. */
+/** A command run on someone's computer (through their Beluga), with its output. */
 export interface ShellItem {
   readonly id: string;
   readonly type: 'shell';
@@ -179,7 +201,7 @@ export interface Toast {
 
 export type Overlay = 'help' | 'settings' | 'welcome' | 'clear' | 'model' | 'inbox' | 'templates' | 'handoff';
 
-/** Preferences mirrored from ~/.klaud/settings.json (every key here is a settings key). */
+/** Preferences mirrored from ~/.beluga/settings.json (every key here is a settings key). */
 export interface Prefs {
   readonly theme: ThemeName;
   readonly mouse: boolean;
@@ -195,7 +217,7 @@ export interface Prefs {
   /** Compact a conversation on its own when its context passes `autoCompactAt` percent. */
   readonly autoCompact: boolean;
   readonly autoCompactAt: number;
-  /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.klaud/scratch/` folder (watched live in the Mac app). */
+  /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder (watched live in the Mac app). */
   readonly scratchFolder: boolean;
   readonly subagents: Settings['subagents'];
   readonly hiddenButtons: readonly string[];
@@ -240,9 +262,9 @@ export type View =
   | { readonly kind: 'draft_worktree'; readonly projectId: string; readonly back: View }
   /** Someone else's workspace that they shared with you. */
   | { readonly kind: 'shared'; readonly owner: string; readonly id: string; readonly tab: SharedTab }
-  /** A conversation on the klaud network (Mac app): with a friend (`dm:<peerId>`) or in a group (`group:<id>`). */
+  /** A conversation on the Beluga network (Mac app): with a friend (`dm:<peerId>`) or in a group (`group:<id>`). */
   | { readonly kind: 'conversation'; readonly id: string }
-  /** Claude Code sessions running outside klaud, live and read-only (Mac app): all of them, or one session or agent. */
+  /** Claude Code sessions running outside Beluga, live and read-only (Mac app): all of them, or one session or agent. */
   | { readonly kind: 'claude_code'; readonly session?: string; readonly agent?: string }
   /** A project's home (Mac app): start work in a new worktree or ask about it; its worktrees and chats. */
   | { readonly kind: 'project'; readonly id: string; readonly page?: 'history' }
@@ -291,7 +313,7 @@ export const channelOf = (view: View): string =>
 export const shownChannel = (view: View): string | undefined =>
   view.kind === 'conversation' ? view.id : view.kind === 'room' || view.kind === 'workspace' || view.kind === 'shared' ? channelOf(view) : undefined;
 
-/** What the screens attached to this computer's klaud are looking at (all of them together). */
+/** What the screens attached to this computer's Beluga are looking at (all of them together). */
 export interface Attention {
   /** Conversations some screen shows: new messages there aren't unread. */
   readonly shown: readonly string[];
@@ -299,7 +321,7 @@ export interface Attention {
   readonly visible: readonly string[];
   /** Some screen shows Shared files (every folder there counts as seen). */
   readonly files: boolean;
-  /** Some klaud window is in front (focused, or a terminal that was used lately). */
+  /** Some Beluga window is in front (focused, or a terminal that was used lately). */
   readonly front: boolean;
 }
 
@@ -316,7 +338,7 @@ export interface MyShare {
 }
 
 /**
- * Everything klaud knows that isn't about a screen: the room, people, projects, conversations,
+ * Everything Beluga knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
 export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice {
@@ -351,6 +373,8 @@ export interface DomainState extends CollabState, WorkState, NetworkSlice, Earni
   readonly myShares: readonly MyShare[];
   readonly attention: Attention;
   readonly status: ConnectionStatus;
+  /** While the room can't be reached: what's happening and when the next try is (never in the log). */
+  readonly connection?: ConnectionTrouble;
   readonly self?: PeerInfo;
   readonly peers: readonly PeerInfo[];
   readonly log: readonly LogItem[];
@@ -400,8 +424,22 @@ export interface AppState extends Omit<DomainState, 'browser' | 'viewer' | 'revi
   readonly search: SearchState & { readonly cursor: number };
 }
 
+/** The room is out of reach: retrying (attempt and next try) or offline for good. */
+export interface ConnectionTrouble {
+  readonly state: 'reconnecting' | 'offline';
+  /** Failed tries in a row. */
+  readonly attempt: number;
+  /** When the next try starts (ms since the epoch); none when offline. */
+  readonly retryAt?: number;
+  readonly reason: string;
+  /** When this outage began. */
+  readonly since: number;
+}
+
 export type Action =
   | { type: 'status'; status: ConnectionStatus }
+  /** Leave out `connection` when you're connected again. */
+  | { type: 'connection'; connection?: ConnectionTrouble }
   | { type: 'invite'; invite: string }
   | { type: 'room'; room: string }
   | { type: 'hosting'; hosting: Hosting }
@@ -419,6 +457,8 @@ export type Action =
   | { type: 'conflicts'; id: string; files: readonly string[] }
   | { type: 'review'; review?: ReviewDomain }
   | { type: 'history'; channel: string; items: readonly LogItem[] }
+  /** klaud is stopping: `owner`'s runs that haven't ended (their end won't come now) are interrupted. */
+  | { type: 'runs_interrupted'; owner: string }
   | { type: 'env_changes'; id: string; changes: readonly EnvChange[] }
   | { type: 'approval_add'; approval: Approval }
   | { type: 'approval_remove'; id: string }
@@ -627,13 +667,19 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     ts: a.ts,
   };
   // A new step starts with no count; a count says how far the step it's on has got.
-  const { progress: was, ...rest } = base as typeof base & { progress?: string };
+  const { progress: was, between: wasBetween, betweenAt: wasAt, ...rest } = base as typeof base & { progress?: string; between?: 'thinking' | 'writing'; betweenAt?: number };
   const progress = a.event === 'progress' ? a.text.slice(0, 40) : a.event === 'tool' || a.event === 'done' || a.event === 'error' ? undefined : was;
+  // What it does after its step: a turn starting or an empty progress (the step's tools returned) is thinking, words are writing; a step (or its count) ends that.
+  // A sub-agent it launched still at work keeps it in its step (an older runner says its tools returned while one runs).
+  const subOpen = base.subagents.some((sub) => sub.status === 'running' && sub.kind !== 'background');
+  const between = a.event === 'started' || (a.event === 'progress' && !a.text && !subOpen) ? 'thinking' : a.event === 'text' ? 'writing' : a.event === 'tool' || a.event === 'progress' ? undefined : wasBetween;
+  const betweenAt = between === undefined ? undefined : between === wasBetween && wasAt !== undefined ? wasAt : a.ts;
   const updated = {
     ...rest,
     ...(progress ? { progress } : {}),
+    ...(between ? { between, betweenAt } : {}),
     status: a.event === 'text' || a.event === 'tool' || a.event === 'sub' || a.event === 'progress' ? 'started' : a.event,
-    subagents: a.event === 'sub' ? applySub(base.subagents, a.text) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
+    subagents: a.event === 'sub' ? applySub(base.subagents, a.text, a.ts) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
     text:
       a.event === 'text'
         ? (base.text ? `${base.text}\n` : '') + a.text
@@ -662,7 +708,7 @@ function reduceContext(state: DomainState, a: Extract<Action, { type: 'agent_eve
 export const formatTokens = (n: number): string => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 
 /** Apply one sub-agent event (JSON from the runner) to the list. */
-function applySub(list: readonly SubAgent[], json: string): readonly SubAgent[] {
+function applySub(list: readonly SubAgent[], json: string, ts: number): readonly SubAgent[] {
   let e: { id?: string; phase?: string; title?: string; step?: string; kind?: 'agent' | 'background'; failed?: boolean };
   try {
     e = JSON.parse(json) as typeof e;
@@ -671,7 +717,7 @@ function applySub(list: readonly SubAgent[], json: string): readonly SubAgent[] 
   }
   if (!e.id) return list;
   const existing = list.find((s) => s.id === e.id);
-  if (e.phase === 'start' && !existing) return [...list, { id: e.id, title: e.title ?? 'sub-agent', steps: [], status: 'running', kind: e.kind ?? 'agent' }];
+  if (e.phase === 'start' && !existing) return [...list, { id: e.id, title: e.title ?? 'sub-agent', steps: [], status: 'running', kind: e.kind ?? 'agent', startedAt: ts }];
   return list.map((s) => {
     if (s.id !== e.id) return s;
     if (e.phase === 'step' && e.step) return { ...s, steps: [...s.steps, e.step].slice(-MAX_STEPS) };
@@ -712,6 +758,10 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
   switch (action.type) {
     case 'status':
       return { ...state, status: action.status };
+    case 'connection': {
+      const { connection: _gone, ...rest } = state;
+      return action.connection ? { ...state, connection: action.connection } : rest;
+    }
     case 'invite':
       return { ...state, invite: action.invite };
     case 'room':
@@ -764,6 +814,10 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
       return { ...state, review: action.review };
     case 'env_changes':
       return { ...state, envChanges: { ...state.envChanges, [action.id]: action.changes } };
+    case 'runs_interrupted': {
+      const log = state.log.map((l) => (l.type === 'agent' && l.owner === action.owner ? settleRun(l) : l));
+      return log.every((l, i) => l === state.log[i]) ? state : { ...state, log };
+    }
     case 'history': {
       const others = state.log.filter((l) => l.channel !== action.channel);
       return { ...state, log: [...action.items.slice(-LOG_LIMIT).map((i) => ({ ...i, channel: action.channel })), ...others] };
@@ -935,7 +989,7 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'plan_remove':
     case 'plans_style':
     case 'plans_off':
-      return { ...state, ...reducePlans(state, action) };
+      return offPlanHomes({ ...state, ...reducePlans(state, action) });
     case 'context_reset': {
       const { [action.channel]: _gone, ...context } = state.context;
       return { ...state, context };
@@ -947,6 +1001,16 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     default:
       return state;
   }
+}
+
+/**
+ * A plan's own conversation has no plan mode (KLD-66): one that had it on before it became a
+ * plan's home (or when plans load) has it turned off, so its banner can't get stuck with no way out.
+ */
+function offPlanHomes<S extends DomainState>(state: S): S {
+  const stuck = Object.keys(state.planMode).filter((channel) => isPlanHome(state.plans, channel));
+  if (!stuck.length) return state;
+  return { ...state, planMode: Object.fromEntries(Object.entries(state.planMode).filter(([channel]) => !stuck.includes(channel))) };
 }
 
 /** Minimal observable store of the domain state. `onAction` sees every (stamped) action that changed it. */

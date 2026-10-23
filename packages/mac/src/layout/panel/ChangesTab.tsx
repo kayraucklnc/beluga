@@ -1,12 +1,12 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { Review } from '@klaud/workspaces/git.js';
-import { parseDiff } from '@klaud/shared/diff-lines.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import type { Review } from '@beluga/workspaces/git.js';
+import { parseDiff } from '@beluga/shared/diff-lines.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Icon } from '../../components/Icon.js';
 import { ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
 import { Button, Empty, IconButton, Segmented, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { focusFor, openFocus, showPanelTab, forgetChangeAsk, peekChangeAsk, usePanelRuntime } from '../../lib/panel.js';
 import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel-model.js';
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
@@ -138,7 +138,7 @@ function Actions({ wsId }: { wsId: string }) {
  */
 function FileDiff({ wsId, path, onClose }: { wsId: string; path: string; onClose: () => void }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const prefs = usePrefs();
   const review = useApp((st) => st.review);
   const at = useChangeLocation(path);

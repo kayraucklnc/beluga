@@ -4,7 +4,7 @@ import { type OutputRef, pathsInText, refsOfTool } from './outputs.js';
 import { type BgLaunch, bgLaunchOf, outputFileOf, taskIdOf } from './tasks.js';
 
 /**
- * Claude Code's transcript lines → what klaud shows: readable steps ("Reading src/app.ts", Claude's
+ * Claude Code's transcript lines → what Beluga shows: readable steps ("Reading src/app.ts", Claude's
  * words, your messages), the session's title and folder, sub-agents it started and how they
  * ended. Pure: no files (tail.ts reads them, sessions.ts keeps the state), so anything showing
  * Claude Code's conversations can reuse it. Unknown entry types are ignored.

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
-import type { StaleWorktree } from '@klaud/core/other-worktrees.js';
-import { formatBytes } from '@klaud/shared/format.js';
+import type { StaleWorktree } from '@beluga/core/other-worktrees.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { Alert, Checkbox } from '../../components/Alert.js';
 import { tildePath } from '../../layout/outside-model.js';
-import { useApi, useApp } from '../../lib/klaud.js';
+import { useApi, useApp } from '../../lib/beluga.js';
 import s from './clean-up.module.css';
 
 /**
- * Clean Up Worktrees…: a project's worktrees made outside Klaud that can go without losing
+ * Clean Up Worktrees…: a project's worktrees made outside Beluga that can go without losing
  * anything (nothing uncommitted, and merged, or their remote branch or folder is gone), all
  * ticked, each with why and how big. Removing keeps every branch.
  */
@@ -43,7 +43,7 @@ export function CleanUpWorktreesAlert({ projectId, close }: { projectId: string;
         icon="check"
         tone="info"
         title="Nothing to clean up"
-        message={<p>Every worktree made outside Klaud in {project.name} still has work of its own, or is still in use: uncommitted changes, or commits that aren’t in its base branch yet. Remove one from its page if you’re sure.</p>}
+        message={<p>Every worktree made outside Beluga in {project.name} still has work of its own, or is still in use: uncommitted changes, or commits that aren’t in its base branch yet. Remove one from its page if you’re sure.</p>}
         confirm={{ label: 'OK', onClick: close }}
         cancel={false}
         onCancel={close}
@@ -60,7 +60,7 @@ export function CleanUpWorktreesAlert({ projectId, close }: { projectId: string;
       title={`Clean up worktrees in ${project.name}?`}
       message={
         <p>
-          These have nothing of their own: no uncommitted changes, and their work is merged or their folder is gone. Klaud removes the ones you tick; branches stay, so nothing committed is lost.
+          These have nothing of their own: no uncommitted changes, and their work is merged or their folder is gone. Beluga removes the ones you tick; branches stay, so nothing committed is lost.
           {frees ? (
             <>
               {' '}

@@ -1,7 +1,7 @@
-import type { Capabilities } from '@klaud/ipc/socket-client.js';
-import { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { Capabilities } from '@beluga/ipc/socket-client.js';
+import { SocketClient } from '@beluga/ipc/socket-client.js';
 import { brandNotice, isTestNotice } from './brand.js';
-import type { SoundChoice } from '@klaud/shared/notify-sound.js';
+import type { SoundChoice } from '@beluga/shared/notify-sound.js';
 import { NOTIFICATION_TAP } from './notices.js';
 import { REQUEST_NOTIFICATION, notificationActions } from '../gateway/request-actions.js';
 import { version } from '../../src-tauri/tauri.conf.json';
@@ -20,13 +20,13 @@ export async function endpoint(): Promise<Endpoint> {
     const { invoke } = await import('@tauri-apps/api/core');
     return invoke<Endpoint>('daemon_endpoint');
   }
-  const res = await fetch('/__klaud/endpoint');
+  const res = await fetch('/__beluga/endpoint');
   const body = (await res.json()) as Endpoint & { error?: string };
-  if (!res.ok || body.error) throw new Error(body.error ?? 'Klaud is not running');
+  if (!res.ok || body.error) throw new Error(body.error ?? 'Beluga is not running');
   return body;
 }
 
-/** What only this window can do for klaud: its clipboard, notifications, links and text size. */
+/** What only this window can do for Beluga: its clipboard, notifications, links and text size. */
 export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boolean; message: string }): Capabilities {
   return {
     copyText: async (text: string) => {
@@ -46,7 +46,7 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
         // A friend's request gets the floating pop-up (gateway/popup-bridge.ts) instead of a
         // banner: only its sound here, so it's heard once.
         const { playSound } = await import('./sounds/player.js');
-        const { DEFAULT_SOUND, DEFAULT_VOLUME, NO_SOUND } = await import('@klaud/shared/notify-sound.js');
+        const { DEFAULT_SOUND, DEFAULT_VOLUME, NO_SOUND } = await import('@beluga/shared/notify-sound.js');
         void playSound(n.tone ?? (n.sound ? DEFAULT_SOUND : NO_SOUND), n.volume ?? DEFAULT_VOLUME).catch(() => undefined);
         return;
       }
@@ -84,7 +84,7 @@ export function capabilities(setZoom: (dir: 'in' | 'out' | 'reset') => { ok: boo
 /** This app's version: tauri.conf.json's, the one the updater compares with new releases. */
 export const APP_VERSION: string = version;
 
-/** Attach to klaud. */
+/** Attach to Beluga. */
 export async function connect(caps: Capabilities): Promise<SocketClient> {
   const { url, token } = await endpoint();
   return SocketClient.connect({ url, token, kind: 'mac', version: APP_VERSION, caps });

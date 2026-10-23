@@ -92,7 +92,7 @@ describe('store: channels, views and sub-agents', () => {
     s = reduce(s, ev('sub', 'not json'));
     s = reduce(s, ev('sub', JSON.stringify({ phase: 'start' })));
     const item = s.log[0];
-    expect(item?.type === 'agent' && item.subagents).toEqual([{ id: 'a', title: 'Explore', steps: ['Grep x'], status: 'running', kind: 'agent' }]);
+    expect(item?.type === 'agent' && item.subagents).toEqual([{ id: 'a', title: 'Explore', steps: ['Grep x'], status: 'running', kind: 'agent', startedAt: 1 }]);
     expect(activityOf(s.log, 'ws:w1')).toMatchObject({ running: true, subagents: 1 });
     s = reduce(s, ev('done', 'all good'));
     const done = s.log[0];

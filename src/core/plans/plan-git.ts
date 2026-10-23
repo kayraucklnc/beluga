@@ -1,5 +1,5 @@
 import type { CombineResult, MergeResult } from '../../workspaces/git.js';
-import { createPr, findPr, mergePrOnGitHub } from '../../workspaces/pr.js';
+import { createPr, findPr, hasGh, mergePr } from '../../workspaces/pr.js';
 import type { IssuePr } from '../board/model.js';
 import type { WorkspaceController } from '../workspace-controller.js';
 
@@ -40,7 +40,11 @@ export function planGitOf(controller: WorkspaceController): PlanGit {
     },
     findPr: (projectId, branch) => findPr(root(projectId), branch),
     openPr: async (projectId, branch, title, body) => createPr(root(projectId), { base: await m.defaultBranchName(projectId), head: branch, title, body }),
-    mergePr: (projectId, number) => mergePrOnGitHub(root(projectId), number),
+    // A merge commit, keeping each milestone's merges.
+    mergePr: async (projectId, number) => {
+      if (!(await hasGh())) throw new Error('Merging on GitHub needs the GitHub CLI (gh), signed in');
+      await mergePr(root(projectId), number, { method: 'merge' });
+    },
     mergeLocal: (projectId, branch) => m.mergeBranchIntoMain(projectId, branch),
   };
 }

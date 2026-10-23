@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-    <img src="assets/banner-light.svg" alt="Klaud: your projects, your friends, and everyone's Claude" width="720">
+    <img src="assets/banner-light.svg" alt="Beluga: your projects, your friends, and everyone's Claude" width="720">
   </picture>
 </p>
 
@@ -10,10 +10,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kayraucklnc/klaud/releases/latest"><img src="https://img.shields.io/github/v/release/kayraucklnc/klaud?label=Download%20for%20Mac&logo=apple&color=0a84ff&style=for-the-badge" alt="Download Klaud for Mac"></a>
+  <a href="https://github.com/kayraucklnc/beluga/releases/latest"><img src="https://img.shields.io/github/v/release/kayraucklnc/beluga?label=Download%20for%20Mac&logo=apple&color=0a84ff&style=for-the-badge" alt="Download Beluga for Mac"></a>
 </p>
 <p align="center">
-  <sub>Apple Silicon · macOS 13+ · updates itself &nbsp;·&nbsp; Prefer the terminal? <a href="#-klaud-lite-in-your-terminal">Klaud Lite</a></sub>
+  <sub>Apple Silicon · macOS 13+ · updates itself &nbsp;·&nbsp; Prefer the terminal? <a href="#-beluga-lite-in-your-terminal">Beluga Lite</a></sub>
+</p>
+<p align="center">
+  <sub><b>Klaud is now Beluga.</b> Same app, new name: updating keeps everything (<a href="#license">more</a>).</sub>
 </p>
 
 ---
@@ -31,7 +34,7 @@ Tag a friend in a message, say what you need, and your Claude asks **their** Cla
 Type `@` and pick from the list: a friend (`@bob`), a project (`@bob-api`), a folder or a file in this worktree (`@src/auth.ts`). Whatever names something real turns into a pill, in the box as you type and in the conversation, where a click opens it. Tag a friend and your Claude finds them, asks their Claude, waits, and carries on with the answer (results with data come back as a table).
 
 <p align="center">
-  <img src="assets/mac/ask-a-friend.gif" alt="Typing '@bob run the tests in bob-api' in Klaud: your Claude asks bob's Claude, bob's Claude runs the tests on his Mac, and the result (27 passed) comes back into the conversation" width="900">
+  <img src="assets/mac/ask-a-friend.gif" alt="Typing '@bob run the tests in bob-api' in Beluga: your Claude asks bob's Claude, bob's Claude runs the tests on his Mac, and the result (27 passed) comes back into the conversation" width="900">
 </p>
 
 ### 🔔 On their side: a pop-up, wherever they are
@@ -56,7 +59,7 @@ Trust someone completely? Mark them **Trusted** or **Full trust** and their requ
 | You type | What happens on their Mac |
 |---|---|
 | 📸 `@mia send me a screenshot of your desktop` | Her Claude takes it; the picture lands in your chat. |
-| 📁 `@bob send me the contract PDF on your Desktop` | Klaud sends the file itself (big files come in pieces, checked end to end). |
+| 📁 `@bob send me the contract PDF on your Desktop` | Beluga sends the file itself (big files come in pieces, checked end to end). |
 | 🧪 `@bob run the tests in bob-api` | His Claude runs them in his project and sends back passed / failed / skipped. |
 | 🔑 `@mia make me an admin on mia/site on GitHub` | Her Claude does it with **her** GitHub login (`gh`), after she allows it. |
 | 🖥️ `@ali what macOS, chip and free disk does your Mac have?` | Device info: versions, memory, disk, battery. Never serial numbers. |
@@ -88,7 +91,7 @@ More: [tasks between Claudes](docs/network.md#tasks-between-claudes-the-gateway)
 
 ## 🌿 A worktree per task, a Claude in each
 
-Say what you want done and Klaud makes a fresh worktree for it (its own folder, branch and Claude), named for the task. Your main folder stays untouched, and every task runs at the same time.
+Say what you want done and Beluga makes a fresh worktree for it (its own folder, branch and Claude), named for the task. Your main folder stays untouched, and every task runs at the same time.
 
 <p align="center">
   <img src="assets/worktrees.svg" alt="One project, three worktrees: add-auth, fix-webhooks and new-hero, each with its own Claude working at once, each ready to merge when done" width="900">
@@ -107,7 +110,7 @@ Say what you want done and Klaud makes a fresh worktree for it (its own folder, 
 ## 👀 A real Mac app
 
 <p align="center">
-  <img src="assets/mac/hero.png" alt="Klaud for Mac: a worktree with Claude's finished run in the middle, its changes and diff in the right panel, projects and friends in the sidebar" width="900">
+  <img src="assets/mac/hero.png" alt="Beluga for Mac: a worktree with Claude's finished run in the middle, its changes and diff in the right panel, projects and friends in the sidebar" width="900">
 </p>
 <p align="center"><sub>The conversation in the middle, the changes on the right, projects and friends on the left.</sub></p>
 
@@ -124,7 +127,7 @@ Say what you want done and Klaud makes a fresh worktree for it (its own folder, 
 <details>
 <summary><b>More screenshots</b></summary>
 <br>
-<p align="center"><img src="assets/mac/project-home.png" alt="A project's home page" width="900"><br><sub>🏠 <b>Project home</b>: describe a task and Klaud makes the worktree, or just ask about the code.</sub></p>
+<p align="center"><img src="assets/mac/project-home.png" alt="A project's home page" width="900"><br><sub>🏠 <b>Project home</b>: describe a task and Beluga makes the worktree, or just ask about the code.</sub></p>
 <p align="center"><img src="assets/mac/friends.png" alt="A conversation with a friend" width="900"><br><sub>💬 <b>Friends</b>: direct, end-to-end encrypted, no server.</sub></p>
 <p align="center"><img src="assets/mac/terminal-dark.png" alt="A terminal in the right panel, dark mode" width="900"><br><sub>🖥️ <b>Terminals</b> beside the chat, or in a drawer with ⌘J.</sub></p>
 <p align="center"><img src="assets/mac/overview.png" alt="Overview of every worktree and chat" width="900"><br><sub>🗂️ <b>Overview</b>: every worktree and chat, filtered by what needs you.</sub></p>
@@ -138,55 +141,55 @@ Light and dark, your accent colour, right-click everywhere, drag and drop, ⌘K 
 
 ## 📦 Install
 
-1. **[Download Klaud](https://github.com/kayraucklnc/klaud/releases/latest)**, open the `.dmg` and drag Klaud into Applications.
-2. The first time, right-click Klaud in Applications and choose **Open** (it isn't notarized by Apple yet).
-3. Sign in to [Claude Code](https://claude.com/claude-code) if you haven't (`claude`, then `/login`). Klaud brings everything else.
+1. **[Download Beluga](https://github.com/kayraucklnc/beluga/releases/latest)**, open the `.dmg` and drag Beluga into Applications.
+2. The first time, right-click Beluga in Applications and choose **Open** (it isn't notarized by Apple yet).
+3. Sign in to [Claude Code](https://claude.com/claude-code) if you haven't (`claude`, then `/login`). Beluga brings everything else.
 4. To work with friends: **Friends › Turn On**, then **Add a Friend** and send them the code.
 
-## 🧑‍💻 Klaud Lite, in your terminal
+## 🧑‍💻 Beluga Lite, in your terminal
 
-The same Klaud as a lightweight terminal app: projects, worktrees, every Claude and your friends, everything clickable. Great over SSH.
+The same Beluga as a lightweight terminal app: projects, worktrees, every Claude and your friends, everything clickable. Great over SSH.
 
 ```bash
-npm install -g klaudcode   # the command is `klaud`
-klaud                      # your projects
-klaud demo                 # look around with two pretend friends
+npm install -g beluga-code   # the command is `beluga`
+beluga                       # your projects
+beluga demo                  # look around with two pretend friends
 ```
 
 <p align="center">
-  <img src="assets/terminal/overview.png" alt="Klaud Lite in the terminal: two worktrees working at once" width="760">
+  <img src="assets/terminal/overview.png" alt="Beluga Lite in the terminal: two worktrees working at once" width="760">
 </p>
 
-Klaud Lite and the Mac app can run at the same time on the same projects. The full guide: [docs/terminal.md](docs/terminal.md).
+Beluga Lite and the Mac app can run at the same time on the same projects. The full guide: [docs/terminal.md](docs/terminal.md).
 
 ## ⚙️ How it works
 
-One engine, two faces. The engine (projects, Claude, terminals, friends) runs in the background on your Mac; the Mac app and Klaud Lite are windows onto it. Each Claude runs on its owner's computer through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview), with their own subscription.
+One engine, two faces. The engine (projects, Claude, terminals, friends) runs in the background on your Mac; the Mac app and Beluga Lite are windows onto it. Each Claude runs on its owner's computer through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview), with their own subscription.
 
 More: [how it works](docs/how-it-works.md) · [security](docs/security.md) · [peer-to-peer connections](docs/p2p.md) · [the friends network](docs/network.md) · [updates](docs/updates.md) · [what each app offers](docs/parity.md).
 
 ## 🛠️ Development
 
 ```bash
-git clone https://github.com/kayraucklnc/klaud.git && cd klaud
+git clone https://github.com/kayraucklnc/beluga.git && cd beluga
 npm install && npm test
 
 cd packages/mac && npm install
-npm run app:dev            # the Mac app, running Klaud from this repo
+npm run app:dev            # the Mac app, running Beluga from this repo
 npm run e2e                # Playwright tests against the demo
 npm run app:build          # the .app and the designed .dmg
 npm run release            # build, sign and publish a release (see docs/updates.md)
-node scripts/gifs.mjs      # re-record the README's GIFs (vite + `klaud daemon demo`, needs ffmpeg)
+node scripts/gifs.mjs      # re-record the README's GIFs (vite + `beluga daemon demo`, needs ffmpeg)
 ```
 
 ```
 packages/mac/   the Mac app (React UI in src/, the native shell in src-tauri/)
-src/            the engine (core, friends network, Claude, terminals) and Klaud Lite (src/ui)
+src/            the engine (core, friends network, Claude, terminals) and Beluga Lite (src/ui)
 docs/           guides and design notes
 scripts/readme/ the README's animated diagrams (python3 scripts/readme/*.py)
 ```
 
-Klaud used to be called klaude. Your `~/.klaude` settings, projects and worktrees carry over automatically.
+**Klaud is now Beluga.** Same app, new name, nothing to do: updating keeps your settings, projects and worktrees (`~/.klaud` moves to `~/.beluga`, with a link back), old `klaud://` invite links still open, and the `klaud` command still works. Older still, it was klaude, and `~/.klaude` carries over too.
 
 ## License
 

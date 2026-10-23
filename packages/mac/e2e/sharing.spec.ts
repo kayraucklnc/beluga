@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 import { pick } from './helpers.js';
 
 /** Inviting, people and sharing, the Mac way: sheets, cards and real controls (against the demo). */
@@ -78,7 +78,7 @@ test("Ask Claude addresses the message with a chip, not typed text", async ({ pa
 });
 
 test('Share a Folder: share with one person, see it listed, stop sharing', async ({ page }) => {
-  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-share-')), 'sketches');
+  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-share-')), 'sketches');
   mkdirSync(dir);
   writeFileSync(path.join(dir, 'idea.md'), '# idea\n');
   await page.keyboard.press('Meta+K');

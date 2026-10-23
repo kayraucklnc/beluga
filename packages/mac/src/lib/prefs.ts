@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { DEFAULT_LAYOUT, DRAWER_DEFAULT, PANEL_DEFAULT, PANES_DEFAULT, type PanelLayout, type PanelTab, SPLIT_DEFAULT, type TerminalPlace, migratePrefs, normalizeLayout } from './panel-model.js';
 
 /**
- * How this window looks and behaves: kept on this Mac only (klaud's shared settings, like the
+ * How this window looks and behaves: kept on this Mac only (Beluga's shared settings, like the
  * model or notifications, live in the core and apply to every screen).
  */
 export interface UiPrefs {
@@ -61,7 +61,7 @@ export interface UiPrefs {
   readonly chatTabs: readonly string[];
   /** A changed file shows its diff, or the file as itself (Markdown formatted). Pictures and PDFs always as themselves. */
   readonly changeLook: 'diff' | 'file';
-  /** The panel has a Scratch tab: the workspace's .klaud/scratch/ folder, live. */
+  /** The panel has a Scratch tab: the workspace's .beluga/scratch/ folder, live. */
   readonly scratchTab: boolean;
   /** The icon you picked for each sidebar group (by name; unset: a folder). */
   readonly groupIcons: Readonly<Record<string, string>>;
@@ -121,7 +121,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   planTaskChats: [],
 };
 
-const KEY = 'klaud.prefs.v1';
+const KEY = 'beluga.prefs.v1';
 const listeners = new Set<() => void>();
 
 function load(): UiPrefs {

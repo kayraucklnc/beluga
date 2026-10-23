@@ -61,7 +61,7 @@ describe('project links (pure parts)', () => {
     expect(toolInside('Bash', { command: 'npm test' }, '/p')).toBe(false);
     expect(toolInside('Bash', { command: 'cat src/../../../../Users/kay/.zsh_history' }, '/p')).toBe(false);
     // So do tools without a file: the web, room tools, sub-agents.
-    for (const tool of ['WebFetch', 'Task', 'mcp__klaud__run_on_peer', 'mcp__klaud__ask_agent', 'mcp__klaud__get_peer_file']) expect(toolInside(tool, {}, '/p'), tool).toBe(false);
+    for (const tool of ['WebFetch', 'Task', 'mcp__beluga__run_on_peer', 'mcp__beluga__ask_agent', 'mcp__beluga__get_peer_file']) expect(toolInside(tool, {}, '/p'), tool).toBe(false);
     expect(toolInside('Grep', { pattern: 'x', path: 'src' }, '/p')).toBe(true);
     expect(toolInside('Bash', { command: 'cat ~/.zshrc' }, '/p')).toBe(false);
     expect(toolInside('Bash', { command: 'ls ../other' }, '/p')).toBe(false);

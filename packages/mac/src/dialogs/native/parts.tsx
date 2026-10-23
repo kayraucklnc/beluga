@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import type { AppState } from '@klaud/core/store.js';
-import { type MenuKind, menuSpec } from '@klaud/ui/menus.js';
+import type { AppState } from '@beluga/core/store.js';
+import { type MenuKind, menuSpec } from '@beluga/ui/menus.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Button, cx } from '../../components/ui.js';
 import { tildePath } from '../../lib/brand.js';

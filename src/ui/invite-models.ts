@@ -88,7 +88,7 @@ export function guestShellModel(state: AppState, w: SharedWorkspace, width: numb
   for (const [i, e] of shell.entries.entries()) {
     body.push({ line: [{ text: `${shownPath(e.cwd)} `, color: theme.muted }, { text: '$ ', color: theme.accent, bold: true }, { text: e.cmd, color: theme.text }] });
     const last = i === shell.entries.length - 1;
-    if (last && shell.busy && !e.out.length) body.push({ line: plain(`${SPINNER[frame % SPINNER.length]} asking ${owner}'s klaud…`, { color: theme.muted }) });
+    if (last && shell.busy && !e.out.length) body.push({ line: plain(`${SPINNER[frame % SPINNER.length]} asking ${owner}'s Beluga…`, { color: theme.muted }) });
     for (const o of e.out) body.push({ line: plain(o.text, { color: TONE[o.tone ?? 'file'] }), ...(o.open !== undefined ? { open: o } : {}) });
   }
   if (!body.length) body.push({ line: plain(`A read-only view of ${owner}'s ${w.name}. Type a command below, or click ls.`, { color: theme.muted }) });

@@ -2,9 +2,12 @@ import type { LogItem } from '../core/store.js';
 
 /**
  * Words about a Claude card that aren't Claude's answer: Claude Code's own notice that a plan
- * limit was hit, klaud's note on a queued message Claude read mid-turn, and what an answered
+ * limit was hit, Beluga's note on a queued message Claude read mid-turn, and what an answered
  * turn still waits on. Browser-safe (the core writes them, the Mac app shows them).
  */
+
+/** What a steered message's card says while it waits in the running turn for Claude's next step. */
+export const READS_AFTER_STEP = 'Claude reads this after its current step';
 
 /** What a queued message's card says when Claude took it in while it worked (see AgentHost.steer). */
 export const STEERED_IN = 'Claude read this while it worked; the answer above covers it.';

@@ -4,12 +4,12 @@ import { checkForUpdates, openUpdateSheet, setUpdateMode, useUpdates } from '../
 import { Group, Row, Select } from './settings-controls.js';
 
 const MODE_DETAIL: Record<UpdateMode, string> = {
-  idle: 'Downloads in the background and installs once you step away and nothing is running. Klaud reopens without taking focus.',
+  idle: 'Downloads in the background and installs once you step away and nothing is running. Beluga reopens without taking focus.',
   ask: 'Downloads in the background, then asks. Otherwise it installs the next time you quit.',
-  off: 'Klaud only looks when you click Check Now.',
+  off: 'Beluga only looks when you click Check Now.',
 };
 
-/** Check Now, and what's happening (or when Klaud last looked). */
+/** Check Now, and what's happening (or when Beluga last looked). */
 function CheckRow({ label }: { label: string }) {
   const { state } = useUpdates();
   const busy = state.phase === 'checking' || state.phase === 'downloading' || state.phase === 'installing';
@@ -45,7 +45,7 @@ export function UpdateSettingsGroup() {
           ]}
         />
       </Row>
-      <CheckRow label={`Klaud ${state.current}`} />
+      <CheckRow label={`Beluga ${state.current}`} />
     </Group>
   );
 }

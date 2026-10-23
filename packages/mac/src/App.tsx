@@ -1,23 +1,23 @@
-import type { SettingsSection } from '@klaud/ui/settings-menus.js';
+import type { SettingsSection } from '@beluga/ui/settings-menus.js';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { useEffect } from 'react';
-import { channelOf } from '@klaud/core/store.js';
+import { channelOf } from '@beluga/core/store.js';
 import { placeForKey, stepPlace } from './lib/go.js';
 import { useRememberProject } from './tasks/use-tasks.js';
-import { inviteChoice } from '@klaud/ui/invite-menus.js';
-import { projectInView } from '@klaud/ui/invite-actions.js';
+import { inviteChoice } from '@beluga/ui/invite-menus.js';
+import { projectInView } from '@beluga/ui/invite-actions.js';
 import { Icon } from './components/Icon.js';
 import { MenuSheet } from './dialogs/MenuSheet.js';
 import { Palette } from './dialogs/Palette.js';
 import { Settings } from './dialogs/Settings.js';
 import { PlanSheet } from './dialogs/PlanSheet.js';
-import type { SettingsPane } from './lib/klaud.js';
+import type { SettingsPane } from './lib/beluga.js';
 import { RightPanel } from './layout/RightPanel.js';
 import { Main } from './layout/Main.js';
 import { Sidebar } from './layout/Sidebar.js';
 import { useActions } from './lib/actions.js';
 import { commandForKey, runCommand } from './lib/commands.js';
-import { useApp, useKlaud } from './lib/klaud.js';
+import { useApp, useBeluga } from './lib/beluga.js';
 import { setPrefs, usePrefs, zoom } from './lib/prefs.js';
 import { byKey, showPanelTab, togglePanel, toggleTerminal } from './lib/panel.js';
 import { PANEL_LABELS, PANEL_TABS } from './lib/panel-model.js';
@@ -40,7 +40,7 @@ import s from './layout/Shell.module.css';
 const TOAST_MS = 3500;
 
 function Toasts() {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const toast = useApp((st) => st.toast);
   useEffect(() => {
     if (!toast) return;
@@ -63,11 +63,12 @@ function Toasts() {
 
 /** What the core asks to open (from a /command, or the first invite) shows as this window's own dialog. */
 function useOverlays() {
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const overlay = useApp((st) => st.overlay);
-  const state = useApp((st) => st);
   useEffect(() => {
     if (!overlay) return;
+    // Read here, not watched: watching the whole state redrew the whole window on every streamed event (KLD-48).
+    const state = client.store.getState();
     client.store.dispatch({ type: 'overlay', overlay: undefined });
     const channel = channelOf(state.view);
     const wsId = state.view.kind === 'workspace' ? state.view.id : undefined;
@@ -95,7 +96,7 @@ function useOverlays() {
 
 /** Keys that work everywhere in the window (menus show the same ones). */
 function useShortcuts() {
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const actions = useActions();
   const prefs = usePrefs();
   useEffect(() => {
@@ -122,7 +123,7 @@ function useShortcuts() {
       } else if (e.altKey && e.metaKey && !e.shiftKey && e.code === 'Digit0') {
         // ⌥⌘0 shows and hides the right panel, as in Xcode (⌥⌘I still does too).
         e.preventDefault();
-        byKey('panel', togglePanel);
+        byKey('panel', () => togglePanel(state.view));
       } else if (e.altKey && e.metaKey && !e.shiftKey && /^Digit[1-7]$/.test(e.code)) {
         // ⌥⌘1…7: the panel's Changes, Files, Terminal, Info, History, Scratch and Background.
         e.preventDefault();
@@ -144,7 +145,7 @@ function useShortcuts() {
         zoom('reset');
       } else if (e.altKey && cmd && e.code === 'KeyI') {
         e.preventDefault();
-        byKey('panel', togglePanel);
+        byKey('panel', () => togglePanel(state.view));
       } else if (e.ctrlKey && e.metaKey && e.code === 'KeyS') {
         e.preventDefault();
         setPrefs({ sidebar: !prefs.sidebar });
@@ -174,12 +175,12 @@ function useShortcuts() {
   useEffect(() => {
     // The Invite sheet, set to the project you're looking at (as the terminal UI's Invite is).
     const invite = (): void => ui.openMenu({ kind: 'invite_link', ...inviteChoice(projectInView(client)) });
-    document.addEventListener('klaud:invite', invite);
+    document.addEventListener('beluga:invite', invite);
     const palette = (): void => ui.patch({ palette: true });
-    document.addEventListener('klaud:palette', palette);
+    document.addEventListener('beluga:palette', palette);
     return () => {
-      document.removeEventListener('klaud:invite', invite);
-      document.removeEventListener('klaud:palette', palette);
+      document.removeEventListener('beluga:invite', invite);
+      document.removeEventListener('beluga:palette', palette);
     };
   }, []);
 }
@@ -188,7 +189,7 @@ const PANE_OF: Record<SettingsSection, SettingsPane> = { claude: 'claude', notif
 
 /** The shared code opens the settings menu (from a person's menu, onboarding…): here it's the Settings window. */
 function useSettingsWindow() {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   useEffect(
     () =>
       ui.subscribe(() => {
@@ -212,7 +213,7 @@ function typingIn(target: EventTarget | null): boolean {
 
 export function App() {
   const prefs = usePrefs();
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const actions = useActions();
   const [joining, setJoining] = useState<string>();
   const welcome = useOnboarding();

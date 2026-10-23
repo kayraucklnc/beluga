@@ -40,6 +40,27 @@ describe('the plan graph’s shape', () => {
     expect(next).toEqual([`${gateId('one')}>${groupId('two')}`, `${gateId('one')}>${groupId('four')}`]);
   });
 
+  it('one that waits on several gets lines only from the nearest (no line past a milestone in between)', () => {
+    const fan = normalizeBody({
+      ...body,
+      milestones: [
+        { id: 'a', title: 'A', dependsOn: [], tasks: [{ id: 'ta', title: 'TA' }] },
+        { id: 'b', title: 'B', dependsOn: [], tasks: [{ id: 'tb', title: 'TB' }] },
+        { id: 'c', title: 'C', dependsOn: [], tasks: [{ id: 'tc', title: 'TC' }] },
+        { id: 'left', title: 'Leftovers', dependsOn: ['a', 'b'], tasks: [{ id: 'tl', title: 'TL' }] },
+        { id: 'end', title: 'End', dependsOn: ['a', 'b', 'c', 'left'], tasks: [{ id: 'te', title: 'TE' }] },
+      ],
+    });
+    const next = graphShape(plan({ draft: fan })).edges.filter((e) => e.kind === 'next').map((e) => `${e.from}>${e.to}`);
+    expect(next).toEqual([`${gateId('a')}>${groupId('left')}`, `${gateId('b')}>${groupId('left')}`, `${gateId('c')}>${groupId('end')}`, `${gateId('left')}>${groupId('end')}`]);
+  });
+
+  it('its criteria are part of its shape (they size the criteria node)', () => {
+    const a = graphShape(plan());
+    const more = normalizeBody({ ...body, milestones: [{ ...body.milestones[0]!, criteria: ['works', 'and is fast'] }, body.milestones[1]!] });
+    expect(graphShape(plan({ draft: more })).key).not.toBe(a.key);
+  });
+
   it('its key changes with the shape only (status moving on never re-lays it out)', () => {
     const a = graphShape(plan());
     expect(graphShape(plan({ draft: { ...body, title: 'Renamed' } })).key).toBe(a.key);
@@ -99,7 +120,7 @@ describe('the plan’s one sentence, its bar and its feed (KLD-22)', () => {
   it('from a task’s worktree: done, and what the milestone waits on', () => {
     const v = planView(active({ runs: { api: { checkAsked: 1 } } }), NO_BOARD);
     const asReview = { ...v, milestones: v.milestones.map((m) => ({ ...m, tasks: m.tasks.map((t) => ({ ...t, state: 'review' as const })) })) };
-    expect(taskHeadline(asReview, 'a')).toEqual({ who: 'claude', text: 'Done. Claude is checking “API”; Klaud merges this into the plan' });
+    expect(taskHeadline(asReview, 'a')).toEqual({ who: 'claude', text: 'Done. Claude is checking “API”; Beluga merges this into the plan' });
   });
 
   it('switching to Autopilot says what changes from now on, and what happens at once', () => {
@@ -115,7 +136,7 @@ describe('the plan’s one sentence, its bar and its feed (KLD-22)', () => {
   });
 
   it('the feed: newest first, the same thing in a row folded into one line', () => {
-    const klaud = { kind: 'klaud' } as const;
+    const klaud = { kind: 'beluga' } as const;
     const e = (id: string, at: number, kind: PlanEvent['kind'], text: string, by: PlanEvent['by'] = klaud): PlanEvent => ({ id, at, by, kind, text });
     const feed = feedOf([
       e('1', 1, 'started', 'started KLD-1 “A”'),

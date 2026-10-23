@@ -8,7 +8,7 @@ import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { type MergeOptions, type MergeProblem, buildPrPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
-import { checkSetup, scriptEnv } from '../workspaces/scripts.js';
+import { PROJECT_FILES, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import type { SetupFix } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
 import { type SearchSource, searchConversations } from './search.js';
@@ -336,7 +336,7 @@ export class Workbench {
   /** Your worktrees whose PRs are watched: with commits, or a PR already (or just `only`). Other tools' worktrees are theirs to watch. */
   private prWorktrees(only?: string): Workspace[] {
     const prs = this.deps.store.getState().prs;
-    return this.manager.list.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && w.branch && !w.archived && worktreeOrigin(w) === 'klaud' && (only ? w.id === only : (w.status?.ahead ?? 0) > 0 || prs[w.id]));
+    return this.manager.list.flatMap((p) => p.workspaces).filter((w) => w.kind === 'worktree' && w.branch && !w.archived && worktreeOrigin(w) === 'beluga' && (only ? w.id === only : (w.status?.ahead ?? 0) > 0 || prs[w.id]));
   }
 
   /** Whether the branch moved on origin since last time (pushed, or fetched after someone pushed). */
@@ -513,7 +513,7 @@ export class Workbench {
 
   /**
    * Run the project's setup in a new worktree (visible in its Terminal tab). A command that comes
-   * from the repository itself (klaud.json / conductor.json) asks you the first time it would
+   * from the repository itself (beluga.json / conductor.json) asks you the first time it would
    * run by itself, and again whenever it changes. A command that doesn't fit the project (an
    * install with no package.json, the wrong package manager) is skipped or corrected, and remembered.
    */
@@ -536,7 +536,7 @@ export class Workbench {
       this.learnSetup(project.id, { command: fit.command }, `Setup for ${project.name} is now \`${fit.command}\`: ${fit.reason}`);
       return this.startSetup(ws, fit.command);
     }
-    const fromRepo = setup.source === 'klaud.json' || setup.source === 'conductor.json';
+    const fromRepo = setup.source === 'beluga.json' || setup.source === 'klaud.json' || setup.source === 'conductor.json';
     if (auto && fromRepo && !this.manager.isScriptApproved(project.id, command)) {
       if (!this.deps.confirm) return;
       void this.deps.confirm(`${project.name}'s ${setup.source} wants to run its setup in new worktrees`, `${command}\n\nThis comes from the repository. Allow it if you trust what's in it. "Always" remembers this exact command.`).then((answer) => {
@@ -633,7 +633,7 @@ export class Workbench {
   }
 
   /**
-   * Set a project's setup or run command for you, or (`team`) in its klaud.json so everyone on
+   * Set a project's setup or run command for you, or (`team`) in its beluga.json so everyone on
    * the project gets it; then your own one for it is dropped, so the shared one applies.
    */
   setScript(projectId: string, kind: 'setup' | 'run', command: string, team = false): void {
@@ -647,19 +647,20 @@ export class Workbench {
       } else this.manager.setScripts(projectId, { [kind]: value, ...learned });
       void this.deps.controller.refresh();
       const label = kind === 'setup' ? 'Setup' : 'Run';
-      this.deps.toast(value ? `${label}: ${value}${team ? ' (saved to klaud.json)' : ''}` : `${label} command cleared`, 'success');
+      const root = this.manager.list.find((x) => x.id === projectId)?.root;
+      this.deps.toast(value ? `${label}: ${value}${team ? ` (saved to ${root ? projectFileName(root) : PROJECT_FILES[0]})` : ''}` : `${label} command cleared`, 'success');
     } catch (err) {
       this.deps.toast(err instanceof Error ? err.message : String(err), 'error');
     }
   }
 
-  /** Put your commands in the project's klaud.json so teammates get them. */
+  /** Put your commands in the project's beluga.json (or its older klaud.json) so teammates get them. */
   shareScripts(projectId: string): void {
     const p = this.manager.list.find((x) => x.id === projectId);
     if (!p?.scripts) return;
     this.manager.setScripts(projectId, { setup: p.scripts.setup?.command, run: p.scripts.run?.command }, { inRepo: true });
     void this.deps.controller.refresh();
-    this.deps.toast(`Saved to ${p.name}/klaud.json. Commit it to share it`, 'success');
+    this.deps.toast(`Saved to ${p.name}/${projectFileName(p.root)}. Commit it to share it`, 'success');
   }
 
   // ------------------------------------------------------- usage & space

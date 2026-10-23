@@ -53,7 +53,7 @@ describe('adding friends without a server', () => {
     const gus = await net.add('gus');
     await fay.mesh.createInvite();
     await expect(gus.mesh.accept('ZZZZ-ZZZZ-ZZZZ')).rejects.toThrow(/Nobody is waiting/);
-    await expect(gus.mesh.accept('not an invitation')).rejects.toThrow(/isn’t a klaud invitation/);
+    await expect(gus.mesh.accept('not an invitation')).rejects.toThrow(/isn’t a Beluga invitation/);
     const short = await fay.mesh.createInvite({ ttlMs: 200 });
     await settle(() => !fay.mesh.summary().invitations.some((i) => i.id === short.id));
     await expect(gus.mesh.accept(short.link)).rejects.toThrow(/Nobody is waiting|expired/);

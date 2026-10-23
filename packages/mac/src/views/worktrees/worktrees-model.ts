@@ -5,15 +5,15 @@ import { worktreeOrigin } from '../../../../../src/workspaces/origin.js';
 import type { Project, Workspace } from '../../../../../src/workspaces/types.js';
 
 /**
- * The Worktrees page: every worktree in your projects in one list (Klaud's, sub-agents', those
- * made outside Klaud), who made it, whether its work is done, and the space it takes, so the
+ * The Worktrees page: every worktree in your projects in one list (Beluga's, sub-agents', those
+ * made outside Beluga), who made it, whether its work is done, and the space it takes, so the
  * ones you're done with can be archived or cleaned in one go. Pure (tests/mac-worktrees.test.ts).
  */
 
 export type MadeBy =
-  | { readonly kind: 'klaud'; readonly label: string }
+  | { readonly kind: 'beluga'; readonly label: string }
   | { readonly kind: 'outside'; readonly label: string }
-  /** A sub-agent's: what it was asked, the conversation that started it (its workspace when Klaud has it), or that it's gone. */
+  /** A sub-agent's: what it was asked, the conversation that started it (its workspace when Beluga has it), or that it's gone. */
   | { readonly kind: 'agent'; readonly label: string; readonly task?: string; readonly parentId?: string; readonly orphan?: true };
 
 export interface WorktreeRow {
@@ -38,7 +38,7 @@ export const FILTERS: ReadonlyArray<{ readonly id: WorktreeFilter; readonly labe
   { id: 'done', label: 'Done', hint: 'Merged, or nothing in them that isn’t in main yet' },
   { id: 'agents', label: 'Sub-agents', hint: 'Worktrees Claude Code’s sub-agents made for themselves' },
   { id: 'orphaned', label: 'Orphaned', hint: 'Sub-agent worktrees whose conversation is gone' },
-  { id: 'outside', label: 'Made Outside Klaud', hint: 'By sub-agents, other apps, scripts or by hand' },
+  { id: 'outside', label: 'Made Outside Beluga', hint: 'By sub-agents, other apps, scripts or by hand' },
   { id: 'archived', label: 'Archived', hint: 'Put away: restore them as they were, or delete them for good' },
 ];
 
@@ -48,8 +48,8 @@ const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' 
 
 function madeBy(state: State, ws: Workspace, origin: AgentOrigin | undefined): MadeBy {
   const from = worktreeOrigin(ws);
-  if (from === 'klaud') return { kind: 'klaud', label: 'Klaud' };
-  if (from === 'external') return { kind: 'outside', label: 'Made outside Klaud' };
+  if (from === 'beluga') return { kind: 'beluga', label: 'Beluga' };
+  if (from === 'external') return { kind: 'outside', label: 'Made outside Beluga' };
   if (!origin) return { kind: 'agent', label: 'Sub-agent, origin unknown', orphan: true };
   const parent = origin.workspaceId ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === origin.workspaceId && !w.archived) : undefined;
   const task = origin.description ? { task: origin.description } : {};
@@ -97,7 +97,7 @@ export function archivedRows(state: State): WorktreeRow[] {
         const kept = a ? { keptBytes: a.keptBytes, freedBytes: a.freedBytes, at: a.at } : { keptBytes: 0, freedBytes: 0 };
         // Who made it still matters (deleting another tool's keeps its branch); not the sub-agent's conversation.
         const by = worktreeOrigin(ws);
-        const made: MadeBy = by === 'klaud' ? { kind: 'klaud', label: 'Klaud' } : by === 'agent' ? { kind: 'agent', label: 'Sub-agent' } : { kind: 'outside', label: 'Made outside Klaud' };
+        const made: MadeBy = by === 'beluga' ? { kind: 'beluga', label: 'Beluga' } : by === 'agent' ? { kind: 'agent', label: 'Sub-agent' } : { kind: 'outside', label: 'Made outside Beluga' };
         return { ws, project, madeBy: made, work: { done: true, label: 'Archived' }, archived: { ...kept, restorable: Boolean(a || ws.branch) } };
       }),
   );
@@ -106,7 +106,7 @@ export function archivedRows(state: State): WorktreeRow[] {
 
 /**
  * For an archived worktree: whether it can come back and how, and what deleting it for good
- * loses (its archive holds what was uncommitted, new or ignored of yours; Klaud's own branches go
+ * loses (its archive holds what was uncommitted, new or ignored of yours; Beluga's own branches go
  * too, another tool's stay).
  */
 export function archivedText(r: WorktreeRow, format: (bytes: number) => string): { restore: string; remove: string } {
@@ -114,7 +114,7 @@ export function archivedText(r: WorktreeRow, format: (bytes: number) => string):
   if (!a) return { restore: '', remove: '' };
   const restore = !a.restorable ? 'Can’t come back: there’s no archive and no branch to make it from' : r.ws.archive ? 'Restore brings it back as it was, uncommitted work included' : `Restore makes it again from its branch ${r.ws.branch ?? ''}`.trim();
   const saved = r.ws.archive ? `its archive (uncommitted work and files of yours${a.keptBytes ? `, ${format(a.keptBytes)}` : ''})` : '';
-  const branch = r.ws.branch && r.madeBy.kind === 'klaud' ? `its branch ${r.ws.branch} (commits only there)` : '';
+  const branch = r.ws.branch && r.madeBy.kind === 'beluga' ? `its branch ${r.ws.branch} (commits only there)` : '';
   const lost = [saved, branch, 'its conversation'].filter(Boolean);
   return { restore, remove: `Deleting loses ${lost.length > 1 ? `${lost.slice(0, -1).join(', ')} and ${lost.at(-1)}` : lost[0]}.` };
 }
@@ -128,7 +128,7 @@ export function filterRows(rows: readonly WorktreeRow[], filter: WorktreeFilter,
     if (filter === 'done') return r.work.done;
     if (filter === 'agents') return r.madeBy.kind === 'agent';
     if (filter === 'orphaned') return r.madeBy.kind === 'agent' && Boolean(r.madeBy.orphan);
-    if (filter === 'outside') return r.madeBy.kind !== 'klaud';
+    if (filter === 'outside') return r.madeBy.kind !== 'beluga';
     return true;
   });
 }

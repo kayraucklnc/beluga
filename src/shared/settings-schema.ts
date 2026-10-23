@@ -23,7 +23,7 @@ export const NotifySettings = z.object({
   desktop: z.boolean().default(true),
   /** The sound notifications make (was on/off: `true` reads as the default sound, `false` as none). */
   sound: z.preprocess((v) => (v === undefined ? v : coerceSound(v)), SoundChoice).default(DEFAULT_SOUND),
-  /** How loud Klaud's own sounds (8-bit, generated) are, 0–1. Mac sounds play at the system's alert volume. */
+  /** How loud Beluga's own sounds (8-bit, generated) are, 0–1. Mac sounds play at the system's alert volume. */
   soundVolume: z.number().min(0).max(1).default(DEFAULT_VOLUME),
   /** A sound for each kind of notification (`null`: the same sound for all). */
   perKind: z.preprocess((v) => (v === undefined ? v : coercePerKind(v)), PerKindSounds.partial().nullable()).default(null),
@@ -45,7 +45,7 @@ export const NotifySettings = z.object({
   background: z.boolean().default(true),
   /** A plan speaks for its tasks: you hear at milestones and when it needs you; its tasks' news goes quietly into the inbox. */
   planMilestones: z.boolean().default(true),
-  /** Desktop notifications only while no klaud window is in front. */
+  /** Desktop notifications only while no Beluga window is in front. */
   onlyAway: z.boolean().default(false),
   /** Do Not Disturb: no desktop notifications (the inbox still fills). Ends at `until` (ms), or when you turn it off. */
   dnd: z.object({ until: z.number().int().positive().optional() }).nullable().default(null),
@@ -54,7 +54,7 @@ export type NotifySettings = z.infer<typeof NotifySettings>;
 
 const peerKey = z.string().regex(/^[\w-]{8,64}$/);
 
-/** Choices that persist between runs in ~/.klaud/settings.json. */
+/** Choices that persist between runs in ~/.beluga/settings.json. */
 export const Settings = z.object({
   name: z.string().regex(/^[\w.-]{1,32}$/).optional(),
   theme: z.enum(THEMES).default('calm'),
@@ -78,7 +78,7 @@ export const Settings = z.object({
   autoCompactChosen: z.boolean().optional(),
   /** How full (percent) a conversation gets before it's compacted. */
   autoCompactAt: z.number().int().min(AUTO_COMPACT_MIN).max(AUTO_COMPACT_MAX).catch(AUTO_COMPACT_DEFAULT),
-  /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.klaud/scratch/` folder. */
+  /** Claude keeps screenshots and scratch output in the workspace's git-ignored `.beluga/scratch/` folder. */
   scratchFolder: z.boolean().default(true),
   /** How much of Claude's sub-agent work the chat shows. */
   subagents: z.enum(['full', 'compact', 'hidden']).default('full'),
@@ -100,7 +100,7 @@ export const Settings = z.object({
   shellArgs: z.array(z.string().max(200)).max(20).default([]),
   /** Show every earnings total in this currency (lowercase ISO code; unset: the one most was earned in). */
   earningsCurrency: z.string().regex(/^[a-z]{3}$/).optional(),
-  /** Be on the klaud network (friends, groups, presence) while the Mac app's daemon runs. Off by default for now. */
+  /** Be on the Beluga network (friends, groups, presence) while the Mac app's daemon runs. Off by default for now. */
   network: z.boolean().optional(),
   /** "Ask me for…": a short note friends' Claudes see on your card (the gateway, Mac app). */
   askMeFor: z.string().max(280).optional(),

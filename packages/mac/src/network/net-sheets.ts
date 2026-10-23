@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 /**
  * The sheets and alerts of friends and groups (one open at a time), opened from the sidebar,
- * menus, the palette, the menu bar and klaud:// links.
+ * menus, the palette, the menu bar and beluga:// links.
  */
 export type NetSheet =
   /** Add Friend: invite someone, or use a code or link (`accept`: one that came in a link). */
@@ -49,4 +49,4 @@ const subscribe = (l: () => void): (() => void) => {
 export const useNetSheet = (): NetSheet | undefined => useSyncExternalStore(subscribe, () => current);
 
 /** "Add Friend…" from anywhere (the File menu, the palette, a link). */
-export const ADD_FRIEND_EVENT = 'klaud:add-friend';
+export const ADD_FRIEND_EVENT = 'beluga:add-friend';

@@ -139,7 +139,7 @@ export interface PlanMerge {
 
 /**
  * A started task whose Claude stopped without finishing (see watchdog.ts): the latest stall, and
- * what Klaud did about it. Woken once; stalling again soon after, it waits for you.
+ * what Beluga did about it. Woken once; stalling again soon after, it waits for you.
  */
 export interface TaskWatch {
   /** When it was last seen stalled, and why (“it ended its turn without handing off”). */
@@ -147,7 +147,7 @@ export interface TaskWatch {
   readonly reason: string;
   /** The run it stalled on (its request id): one run is one stall. */
   readonly run?: string;
-  /** When Klaud woke it (or you resumed it). */
+  /** When Beluga woke it (or you resumed it). */
   readonly wokeAt?: number;
   /** It stalled again soon after a wake: it waits for you (Resume, or Open Chat). */
   readonly needsYou?: boolean;
@@ -279,6 +279,16 @@ export const planById = (state: PlansState, id: string): Plan | undefined => sta
 /** The plan a conversation is the home of (the newest, when several were). */
 export const planForHome = (state: PlansState, channel: string): Plan | undefined => [...state.plans].reverse().find((p) => p.home === channel);
 
+/**
+ * The conversation is a live plan's own (its head Claude plans and runs it there): it has no
+ * Act/Plan modes, so plan mode is never switched there (Claude asking to approve a plan of its own
+ * would stall the plan).
+ */
+export const isPlanHome = (state: PlansState, channel: string): boolean => {
+  const plan = planForHome(state, channel);
+  return Boolean(plan && plan.status !== 'done');
+};
+
 /** What a screen shows of a plan: the draft while there is one, else what was approved. */
 export const shownBody = (plan: Plan): PlanBody | undefined => plan.draft ?? plan.body;
 
@@ -331,7 +341,7 @@ export function openMilestones(plan: Plan): readonly string[] {
 
 /**
  * The branch a plan's work collects on: a plan/<name> its text names (one kept by hand before),
- * else plan/ and its title up to a colon ("Klaud polish round: menus…" → plan/klaud-polish-round).
+ * else plan/ and its title up to a colon ("Beluga polish round: menus…" → plan/beluga-polish-round).
  */
 export function planBranchName(plan: Plan): string {
   const body = plan.body ?? plan.draft;

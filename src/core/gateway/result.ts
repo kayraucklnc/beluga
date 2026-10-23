@@ -12,7 +12,9 @@ import { validate } from './schema.js';
  * your Claude (as data from that person, never as instructions).
  */
 
-const RESULT_FENCE = 'klaud-result';
+const RESULT_FENCE = 'beluga-result';
+/** The result block's tag, or `klaud-result` from before the rename. */
+const RESULT_FENCES = `(?:${RESULT_FENCE}|klaud-result)`;
 
 const NEED_WORDS: Readonly<Record<string, string>> = {
   project: 'work in one of your projects',
@@ -27,11 +29,11 @@ export { oneLine };
 /** What the friend's Claude is told (after "Request from Kayra (another Claude agent):"). */
 export function taskPrompt(req: TaskRequest, ownerName: string, where: string, extra: { tools?: readonly string[]; folders?: readonly string[] } = {}): string {
   const lines = [
-    `This request came to ${ownerName}'s klaud from another person's Claude (task ${req.id}). Work on it here, on ${ownerName}'s Mac (${where}).`,
+    `This request came to ${ownerName}'s Beluga from another person's Claude (task ${req.id}). Work on it here, on ${ownerName}'s Mac (${where}).`,
     'Your final answer is sent back to them only (nobody else sees it), so make it a clear, self-contained summary of what you did and found.',
     req.needs.length ? `They said it needs: ${req.needs.map((n) => NEED_WORDS[n] ?? n).join(', ')}.` : '',
-    extra.tools?.includes('screenshot') ? `${ownerName} lets you see the screen: the screenshot tool (mcp__klaud_task__screenshot) shows you the main display or one app's window, and each screenshot is sent back with your answer.` : '',
-    extra.tools?.includes('device_info') ? 'For facts about this Mac (macOS version, model, memory, disk, battery, network, apps), use the device_info tool (mcp__klaud_task__device_info).' : '',
+    extra.tools?.includes('screenshot') ? `${ownerName} lets you see the screen: the screenshot tool (mcp__beluga_task__screenshot) shows you the main display or one app's window, and each screenshot is sent back with your answer.` : '',
+    extra.tools?.includes('device_info') ? 'For facts about this Mac (macOS version, model, memory, disk, battery, network, apps), use the device_info tool (mcp__beluga_task__device_info).' : '',
     extra.folders?.length ? `You may also read and write in these folders ${ownerName} chose: ${extra.folders.join(', ')}.` : '',
     'If something is unclear and it matters, ask with AskUserQuestion: the question goes back to whoever asked (their Claude answers, or them). Otherwise use your best judgment and say what you assumed.',
     '',
@@ -66,9 +68,9 @@ export interface ParsedAnswer {
   readonly problems: readonly string[];
 }
 
-/** Claude's final answer → summary, data and file paths (the last klaud-result block wins). */
+/** Claude's final answer → summary, data and file paths (the last beluga-result block wins). */
 export function parseAnswer(text: string, expects: TaskRequest['expects']): ParsedAnswer {
-  const fence = new RegExp('```' + RESULT_FENCE + '\\s*\\n([\\s\\S]*?)```', 'g');
+  const fence = new RegExp('```' + RESULT_FENCES + '\\s*\\n([\\s\\S]*?)```', 'g');
   const blocks = [...text.matchAll(fence)];
   const last = blocks.at(-1);
   const summary = (last ? text.replace(fence, '') : text).trim().slice(0, MAX_SUMMARY) || '(no summary)';
@@ -204,11 +206,11 @@ export function describeQuestion(task: TaskView): string {
 
 /** The prompt that starts a new turn when a question arrives after your Claude's turn ended. */
 export function questionPrompt(task: TaskView): string {
-  return [`[klaud] ${task.peerName}'s Claude has a question about task ${task.id}, which you sent earlier in this conversation.`, '', describeQuestion(task)].join('\n');
+  return [`[beluga] ${task.peerName}'s Claude has a question about task ${task.id}, which you sent earlier in this conversation.`, '', describeQuestion(task)].join('\n');
 }
 
 /** The prompt that starts a new turn when a result arrives after your Claude's turn ended. */
 export function resumePrompt(task: TaskView): string {
   const who = task.kind === 'run' ? `The command you ran on ${task.peerName}'s Mac finished` : task.kind === 'file' ? `${task.peerName}'s Mac answered your file request` : `${task.peerName}'s Claude replied`;
-  return [`[klaud] ${who} (task ${task.id}, which you sent earlier in this conversation: "${oneLine(task.ask, 200)}").`, '', describeForClaude(task), '', 'Continue where you left off with this information. If more is needed from someone, you can ask again.'].join('\n');
+  return [`[beluga] ${who} (task ${task.id}, which you sent earlier in this conversation: "${oneLine(task.ask, 200)}").`, '', describeForClaude(task), '', 'Continue where you left off with this information. If more is needed from someone, you can ask again.'].join('\n');
 }

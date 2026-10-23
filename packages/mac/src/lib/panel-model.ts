@@ -94,15 +94,20 @@ type WsKind = 'chat' | 'main' | 'worktree' | string;
 
 /** The panel's tabs for what's on screen, in their fixed order. */
 export function panelTabsFor(view: View, wsKind?: WsKind): PanelTab[] {
-  // Scratch: what Claude saves to the workspace's .klaud/scratch/ while it works, live.
+  // Scratch: what Claude saves to the workspace's .beluga/scratch/ while it works, live.
   // Background: the commands Claude and its agents run there in the background (dev servers, tests), live.
   if (view.kind === 'workspace') return wsKind === 'chat' ? ['files', 'terminal', 'info', 'scratch', 'background'] : [...PANEL_TABS];
   // A project's home (and its History page): the project's history too.
   if (view.kind === 'project') return ['terminal', 'info', 'history'];
+  // A plan's page is the plan and its chat, side by side: no panel (its facts are in its header).
+  if (!panelFits(view)) return [];
   // A shared workspace's shell is its owner's; the Terminal view is already all shells.
   if (view.kind === 'shared' || view.kind === 'terminal') return ['info'];
   return ['terminal', 'info'];
 }
+
+/** The right panel shows beside this view: everywhere but a plan's page, whose right side is its chat. */
+export const panelFits = (view: View): boolean => view.kind !== 'plan';
 
 /** Where a view's last tab is remembered: per workspace, one for everything else. */
 export const panelKey = (view: View): string => (view.kind === 'workspace' ? `ws:${view.id}` : 'app');

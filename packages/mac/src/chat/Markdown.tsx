@@ -1,9 +1,9 @@
 import { createContext, memo, useContext, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ATTACHMENT_SCHEME } from '@klaud/core/attachment-share.js';
-import type { LinkTarget } from '@klaud/shared/link-target.js';
-import { parseAttachmentHref } from '@klaud/shared/attachment-links.js';
+import { ATTACHMENT_SCHEME } from '@beluga/core/attachment-share.js';
+import type { LinkTarget } from '@beluga/shared/link-target.js';
+import { parseAttachmentHref } from '@beluga/shared/attachment-links.js';
 import { Icon } from '../components/Icon.js';
 import { type ChatImage, openLightbox } from './images.js';
 import { Thumb } from './ChatImages.js';
@@ -11,12 +11,12 @@ import { imageSource, localImage, messageImages } from './md-images.js';
 import { useActions } from '../lib/actions.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
 import { copyText } from '../lib/copy.js';
-import { useKlaud } from '../lib/klaud.js';
+import { useBeluga } from '../lib/beluga.js';
 import { MentionPill } from './Mention.js';
 import { type MentionWorld, linkMentions, parseMentionHref } from './mentions.js';
 import { quoteInBox } from './message-menu.js';
 import { GraphBlock } from '../components/graph/GraphBlock.js';
-import { GRAPH_FENCE } from '@klaud/shared/graph-spec.js';
+import { isGraphFence } from '@beluga/shared/graph-spec.js';
 import s from './chat.module.css';
 
 /** Syntax colors load on demand (shiki is big), then stay. */
@@ -44,7 +44,7 @@ function Code({ code, lang }: { code: string; lang?: string }) {
       alive = false;
     };
   }, [code, lang]);
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const say = (text: string): void => client.store.dispatch({ type: 'toast', text, level: 'success' });
   const copy = (text: string, what: string): void => void copyText(text).then(() => say(`Copied ${what}`));
   const fence = `\`\`\`${lang ?? ''}\n${code}\n\`\`\``;
@@ -96,7 +96,7 @@ function MdImage({ src, alt, all, local }: { src: string; alt: string; all: read
     const image = all[index] ?? localImage(source.path, alt);
     return <Thumb image={image} all={index < 0 ? [image] : all} index={Math.max(0, index)} tiled={false} />;
   }
-  // The window only loads what klaud reads for it, so a web image opens in the browser instead.
+  // The window only loads what Beluga reads for it, so a web image opens in the browser instead.
   if (source.kind === 'remote') {
     return (
       <a href={source.url} className={s.imageRef} title={source.url} onClick={(e) => (e.preventDefault(), actions.openLink({ kind: 'url', url: source.url }))}>
@@ -149,7 +149,7 @@ function linkifyPaths(text: string): string {
       if (/^\s*```/.test(line)) fenced = !fenced;
       // Leave code, existing links and inline code alone.
       if (fenced || line.includes('](') || line.includes('`')) return line;
-      return line.replace(PATH, (_m, lead: string, p: string, n?: string) => `${lead}[${p}${n ? `:${n}` : ''}](klaud-path:${encodeURIComponent(p)}${n ? `#${n}` : ''})`);
+      return line.replace(PATH, (_m, lead: string, p: string, n?: string) => `${lead}[${p}${n ? `:${n}` : ''}](beluga-path:${encodeURIComponent(p)}${n ? `#${n}` : ''})`);
     })
     .join('\n');
 }
@@ -200,8 +200,8 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
         href={href}
         onClick={(e) => {
           e.preventDefault();
-          if (href.startsWith('klaud-path:')) {
-            const [raw, line] = href.slice('klaud-path:'.length).split('#');
+          if (href.startsWith('beluga-path:')) {
+            const [raw, line] = href.slice('beluga-path:'.length).split('#');
             const p = decodeURIComponent(raw ?? '');
             actions.openLink({ kind: 'local', path: p, dir: p.endsWith('/'), ...(line ? { line: Number(line) } : {}) });
             return;
@@ -218,7 +218,7 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       const code = String(children).replace(/\n$/, '');
       if (!className && !code.includes('\n')) return <code className={s.inlineCode}>{children}</code>;
       // A diagram Claude drew (docs/graphs.md): only data, drawn with the window's own pieces.
-      if (lang === GRAPH_FENCE) return <MessageGraph code={code} localImages={localImages} />;
+      if (isGraphFence(lang)) return <MessageGraph code={code} localImages={localImages} />;
       return <Code code={code} {...(lang ? { lang } : {})} />;
     },
     pre: ({ children }) => <>{children}</>,

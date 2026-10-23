@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHIP_SOUNDS, NO_SOUND } from '../src/shared/notify-sound.js';
 import { CHIP_LABELS, chipSpec } from '../packages/mac/src/lib/sounds/chip.js';
-import { CHIP_CHOICES, MAC_CHOICES, choiceFromKey, choiceKey, filesInUse, klaudMade, renderChoice, soundFileName, soundName, soundTitle, soundsInUse } from '../packages/mac/src/lib/sounds/catalog.js';
+import { CHIP_CHOICES, MAC_CHOICES, choiceFromKey, choiceKey, filesInUse, belugaMade, renderChoice, soundFileName, soundName, soundTitle, soundsInUse } from '../packages/mac/src/lib/sounds/catalog.js';
 import { generatedName, generatedSpec, randomSeed, rng } from '../packages/mac/src/lib/sounds/generated.js';
 import { LOUDNESS, PEAK, SAMPLE_RATE, midi, render } from '../packages/mac/src/lib/sounds/synth.js';
 import { encodeWav } from '../packages/mac/src/lib/sounds/wav.js';
@@ -141,23 +141,23 @@ describe('the sound catalog', () => {
     expect(CHIP_CHOICES).toHaveLength(8);
   });
 
-  it('gives Klaud’s sounds file names the app shell accepts (Klaud-[a-z0-9-])', () => {
+  it('gives Beluga’s sounds file names the app shell accepts (Beluga-[a-z0-9-])', () => {
     for (const c of [...CHIP_CHOICES, gen, { kind: 'gen', seed: 0 } as const, { kind: 'gen', seed: 0xffffffff } as const]) {
-      expect(soundFileName(c, 0.7)).toMatch(/^Klaud-[a-z0-9-]{1,48}$/);
+      expect(soundFileName(c, 0.7)).toMatch(/^Beluga-[a-z0-9-]{1,48}$/);
     }
-    expect(soundFileName({ kind: 'chip', id: 'powerUp' }, 0.7)).toBe('Klaud-chip-powerup-70');
-    expect(soundFileName(gen, 1)).toBe('Klaud-gen-00a1b2c3-100');
+    expect(soundFileName({ kind: 'chip', id: 'powerUp' }, 0.7)).toBe('Beluga-chip-powerup-70');
+    expect(soundFileName(gen, 1)).toBe('Beluga-gen-00a1b2c3-100');
     expect(soundFileName({ kind: 'mac', id: 'Glass' }, 0.7)).toBeNull();
     expect(renderChoice({ kind: 'mac', id: 'Glass' }, 1)).toBeNull();
     expect(renderChoice(NO_SOUND, 1)).toBeNull();
-    expect(klaudMade(gen)).toBe(true);
-    expect(klaudMade(NO_SOUND)).toBe(false);
+    expect(belugaMade(gen)).toBe(true);
+    expect(belugaMade(NO_SOUND)).toBe(false);
   });
 
   it('knows which files the settings need (per kind too, each once)', () => {
     const prefs = { sound: { kind: 'chip', id: 'coin' }, soundVolume: 0.5, perKind: { needsYou: gen, done: { kind: 'mac', id: 'Purr' }, people: gen } };
     expect(soundsInUse(prefs)).toHaveLength(3);
-    expect(filesInUse(prefs).sort()).toEqual(['Klaud-chip-coin-50', 'Klaud-gen-00a1b2c3-50']);
+    expect(filesInUse(prefs).sort()).toEqual(['Beluga-chip-coin-50', 'Beluga-gen-00a1b2c3-50']);
     expect(filesInUse({ sound: false })).toEqual([]);
   });
 

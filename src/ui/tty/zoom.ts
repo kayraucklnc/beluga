@@ -11,7 +11,7 @@ export interface TerminalInfo {
   readonly name: string;
 }
 
-/** Work out which terminal klaud is running in. */
+/** Work out which terminal Beluga is running in. */
 export function detectTerminal(env: NodeJS.ProcessEnv = process.env): TerminalInfo {
   const program = env.TERM_PROGRAM ?? '';
   if (env.KITTY_WINDOW_ID) return { id: 'kitty', name: 'kitty' };
@@ -83,7 +83,7 @@ export function zoomCommand(term: TerminalId, dir: ZoomDir): ZoomCommand | undef
 export function zoomHelp(term: TerminalInfo): string {
   switch (term.id) {
     case 'kitty':
-      return 'Enable kitty remote control (allow_remote_control yes) so klaud can change text size.';
+      return 'Enable kitty remote control (allow_remote_control yes) so Beluga can change text size.';
     case 'wezterm':
     case 'ghostty':
     case 'alacritty':

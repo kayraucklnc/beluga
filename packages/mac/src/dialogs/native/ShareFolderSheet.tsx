@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import type { MyShare } from '@klaud/core/store.js';
+import type { MyShare } from '@beluga/core/store.js';
 import { Icon } from '../../components/Icon.js';
 import { Avatar, Button, cx } from '../../components/ui.js';
 import { inApp } from '../../lib/boot.js';
-import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { pickFolders } from '../../lib/projects.js';
-import type { MenuKind } from '@klaud/ui/menus.js';
+import type { MenuKind } from '@beluga/ui/menus.js';
 import { Check, Choice, Field, Section, Sheet, Tag, tilde } from './parts.js';
 import s from './sharing.module.css';
 import f from './share.module.css';
@@ -22,7 +22,7 @@ export function presetShareWith(...peerIds: string[]): void {
 
 const norm = (p: string): string => (p.length > 1 ? p.replace(/\/+$/, '') : p);
 const baseName = (p: string): string => norm(p).split('/').pop() || p;
-/** A long path with its middle left out: "/private/var/…/klaud-demo-4y/landing". */
+/** A long path with its middle left out: "/private/var/…/beluga-demo-4y/landing". */
 const shortPath = (p: string): string => (p.length > 56 ? `${p.slice(0, 18)}…${p.slice(-36)}` : p);
 
 /**
@@ -31,7 +31,7 @@ const shortPath = (p: string): string => (p.length > 56 ? `${p.slice(0, 18)}…$
  */
 export function ShareFolderSheet({ menu, close }: { readonly menu: Extract<MenuKind, { kind: 'share_folder' | 'share_who' }>; readonly close: () => void }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const home = useApp((st) => st.home);
   const selfId = useApp((st) => st.selfId);
   const peers = useApp((st) => st.peers);
@@ -71,7 +71,7 @@ export function ShareFolderSheet({ menu, close }: { readonly menu: Extract<MenuK
   const share = (): void => {
     if (!ready) return;
     api.session.shareFolder(dir, writable, who === 'some' ? [...only] : undefined).then(
-      // Shared (it's in the list now): ready for the next one. Otherwise klaud said why.
+      // Shared (it's in the list now): ready for the next one. Otherwise Beluga said why.
       () => {
         if (!client.store.getState().myShares.some((x) => norm(x.root) === norm(dir))) return;
         setPath('');

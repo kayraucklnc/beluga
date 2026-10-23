@@ -93,7 +93,7 @@ export const clampThreshold = (pct: number | undefined): number =>
   Math.min(AUTO_COMPACT_MAX, Math.max(AUTO_COMPACT_MIN, Math.round(Number.isFinite(pct) ? (pct as number) : AUTO_COMPACT_DEFAULT)));
 
 /**
- * Should Klaud compact this conversation now? Only with auto-compact on, the context known and at
+ * Should Beluga compact this conversation now? Only with auto-compact on, the context known and at
  * or past the threshold, nothing compacting already, and not again before Claude has run since
  * the last try (a conversation whose summary is still big would otherwise loop).
  */

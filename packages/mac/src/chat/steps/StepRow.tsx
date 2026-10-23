@@ -1,11 +1,12 @@
 import { type ReactNode, memo, useRef } from 'react';
-import type { StepRecord, StepSummary, ToolFamily } from '@klaud/shared/steps.js';
-import { toolFamily } from '@klaud/shared/steps.js';
-import { formatDuration } from '@klaud/shared/text.js';
+import type { StepRecord, StepSummary, ToolFamily } from '@beluga/shared/steps.js';
+import { toolFamily } from '@beluga/shared/steps.js';
+import { formatDuration } from '@beluga/shared/text.js';
 import { Icon, type IconName } from '../../components/Icon.js';
 import { Avatar, Dot, cx } from '../../components/ui.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import { useLive } from '../../lib/live-motion.js';
+import { countRender } from '../../lib/render-count.js';
 import { StepDetail } from './StepDetail.js';
 import { useStepDetail } from './use-steps.js';
 import s from './steps.module.css';
@@ -29,11 +30,11 @@ const ICONS: Record<ToolFamily, IconName> = {
   other: 'wand',
 };
 
-/** klaud's own tools, by what they do. */
-const KLAUD_ICONS: Readonly<Record<string, IconName>> = { who_can: 'people', list_peers: 'people', send_chat: 'chat', write_report: 'file', continue_in_worktree: 'branch', screenshot: 'image', device_info: 'info', wait_for: 'clock', check: 'clock', cancel: 'x' };
+/** Beluga's own tools, by what they do. */
+const BELUGA_ICONS: Readonly<Record<string, IconName>> = { who_can: 'people', list_peers: 'people', send_chat: 'chat', write_report: 'file', continue_in_worktree: 'branch', screenshot: 'image', device_info: 'info', wait_for: 'clock', check: 'clock', cancel: 'x' };
 
 export const iconOf = (step: Pick<StepSummary, 'kind' | 'tool'>): IconName =>
-  step.kind === 'thinking' ? 'bulb' : (KLAUD_ICONS[(step.tool ?? '').replace(/^mcp__klaud(_task)?__/, '')] ?? ICONS[toolFamily(step.tool)]);
+  step.kind === 'thinking' ? 'bulb' : (BELUGA_ICONS[(step.tool ?? '').replace(/^mcp__(?:beluga|klaud)(_task)?__/, '')] ?? ICONS[toolFamily(step.tool)]);
 
 const durationOf = (step: StepSummary, now: number, live: boolean): string | undefined => {
   if (step.durationMs !== undefined && step.status !== 'running') return step.durationMs < 1000 ? '<1s' : formatDuration(step.durationMs);
@@ -66,12 +67,19 @@ export const wordsFor = (step: StepSummary, live: boolean): string => (live ? (s
 export interface StepRowProps {
   readonly step: StepSummary;
   readonly open: boolean;
-  readonly onToggle: () => void;
-  /** Reads the step's details (when it's opened). */
-  readonly load: () => Promise<StepRecord | undefined>;
+  /**
+   * Opens or closes the step (given its id). Like `load`, the same function for every row and
+   * every second, so a row is drawn again only when it changes (KLD-48).
+   */
+  readonly onToggle: (id: string) => void;
+  /** Reads a step's details, by id (when it's opened). */
+  readonly load: (id: string) => Promise<StepRecord | undefined>;
   /** The run is going on (a running step's clock ticks). */
   readonly live: boolean;
+  /** The clock, for a running step's time (others needn't be given it: they don't redraw as it ticks). */
   readonly now: number;
+  /** Who the step is with, when the step itself doesn't say (a wait on a friend's Claude). */
+  readonly person?: string | undefined;
   /** Details exist to open (false: just the line). */
   readonly openable?: boolean;
   /** The step Claude is on now: prominent, in the present tense, softly shimmering. */
@@ -80,12 +88,14 @@ export interface StepRowProps {
   readonly words?: string;
 }
 
-export const StepRow = memo(function StepRow({ step, open, onToggle, load, live, now, openable = true, current = false, words }: StepRowProps) {
+export const StepRow = memo(function StepRow({ step: given, open, onToggle, load, live, now, openable = true, current = false, words, person }: StepRowProps) {
+  countRender(`step:${given.id}`);
+  const step = person && !given.person ? { ...given, person } : given;
   const thinking = step.kind === 'thinking';
   const personId = usePersonId(step.person);
   const canOpen = openable && !step.hidden;
   const running = step.status === 'running' && live;
-  const { record, loading, gone } = useStepDetail(load, open && canOpen, `${step.status}:${step.durationMs ?? ''}:${step.endedAt ?? ''}`);
+  const { record, loading, gone } = useStepDetail(() => load(step.id), open && canOpen, `${step.status}:${step.durationMs ?? ''}:${step.endedAt ?? ''}`);
   const time = thinking ? undefined : durationOf(step, now, live);
   const head = (
     <>
@@ -105,7 +115,7 @@ export const StepRow = memo(function StepRow({ step, open, onToggle, load, live,
   return (
     <div className={cx(s.row, open && s.rowOpen, step.status === 'error' && s.rowError, current && s.rowCurrent)} data-step={step.id} data-current={current || undefined} data-step-kind={thinking ? 'thinking' : toolFamily(step.tool)}>
       {canOpen ? (
-        <button type="button" className={s.head} aria-expanded={open} onClick={onToggle} title={open ? 'Hide details' : 'Show what ran and what came back'}>
+        <button type="button" className={s.head} aria-expanded={open} onClick={() => onToggle(step.id)} title={open ? 'Hide details' : 'Show what ran and what came back'}>
           {head}
         </button>
       ) : (
@@ -115,7 +125,7 @@ export const StepRow = memo(function StepRow({ step, open, onToggle, load, live,
         record ? (
           <StepDetail record={record} />
         ) : (
-          <div className={cx(s.detail, s.quiet)}>{loading ? 'Loading…' : gone ? 'Klaud no longer has the details of this step.' : null}</div>
+          <div className={cx(s.detail, s.quiet)}>{loading ? 'Loading…' : gone ? 'Beluga no longer has the details of this step.' : null}</div>
         )
       ) : null}
     </div>

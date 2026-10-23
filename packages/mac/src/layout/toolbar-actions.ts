@@ -1,8 +1,8 @@
-import type { AppState } from '@klaud/core/store.js';
-import { type PlanOwner, planOwnerOf } from '@klaud/core/plans/owner.js';
-import { planTitle } from '@klaud/core/plans/model.js';
-import { type WorkspaceAction, type WorkspaceButton, workspaceButtons } from '@klaud/ui/workspace-models.js';
-import type { Workspace } from '@klaud/workspaces/types.js';
+import type { AppState } from '@beluga/core/store.js';
+import { type PlanOwner, planOwnerOf } from '@beluga/core/plans/owner.js';
+import { planTitle } from '@beluga/core/plans/model.js';
+import { type WorkspaceAction, type WorkspaceButton, workspaceButtons } from '@beluga/ui/workspace-models.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
 import type { IconName } from '../components/Icon.js';
 import { COMMAND_KEYS, runRunning } from '../lib/commands.js';
 import { mergeTargetOf } from '../lib/merge-review.js';
@@ -145,7 +145,7 @@ function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[])
     const archive = all.find((x) => x.action === 'archive');
     if (archive) return { ...archive, label: 'Archive Worktree', danger: false, hint: `PR #${pr.number} is merged: put this worktree away (the branch and conversation are kept)` };
   }
-  // Part of a plan: Klaud merges it into the plan, so the next thing is the plan, never Merge.
+  // Part of a plan: Beluga merges it into the plan, so the next thing is the plan, never Merge.
   const plan = all.find((x) => x.action === 'open_plan');
   if (plan) return plan;
   const merge = by('merge');
@@ -198,21 +198,21 @@ export function inSections(list: readonly ToolAction[]): ToolAction[][] {
 
 /**
  * A worktree doing a plan's task is part of the plan: Open Plan and Open Task lead, and Merge
- * becomes 'Merge Anyway…' (Klaud merges it into the plan when its milestone passes). No PR of its
+ * becomes 'Merge Anyway…' (Beluga merges it into the plan when its milestone passes). No PR of its
  * own either: the plan opens one PR at the end (one already open stays reachable).
  */
 function asPlanTask(all: readonly ToolAction[], owner: PlanOwner, pr: boolean): ToolAction[] {
   const name = planTitle(owner.plan);
   const lead: ToolAction[] = [
-    { id: 'open_plan', label: 'Open Plan', hint: `Part of “${name}”: Klaud merges it into the plan when “${owner.milestone.title}” passes`, icon: 'flag', action: 'open_plan' },
+    { id: 'open_plan', label: 'Open Plan', hint: `Part of “${name}”: Beluga merges it into the plan when “${owner.milestone.title}” passes`, icon: 'flag', action: 'open_plan' },
     { id: 'open_task', label: 'Open Task', hint: `The task this worktree does (${owner.issue.key})`, icon: 'task', action: 'open_task' },
   ];
   const rest = all.flatMap((a): ToolAction[] => {
     if (a.action === 'pr' && !pr) return [];
     // Solving a conflict finishes a local merge: it stays, but says so and warns first (actions.run).
-    if (a.action === 'merge_claude') return [{ ...a, hint: `Claude finishes this merge by hand, which skips “${name}”: Klaud merges it into the plan itself` }];
+    if (a.action === 'merge_claude') return [{ ...a, hint: `Claude finishes this merge by hand, which skips “${name}”: Beluga merges it into the plan itself` }];
     if (a.action !== 'merge') return [a];
-    return [{ ...a, id: 'merge_anyway', label: 'Merge Anyway…', action: 'merge_anyway', hint: `Klaud merges this into “${name}” itself; merging it by hand skips the plan` }];
+    return [{ ...a, id: 'merge_anyway', label: 'Merge Anyway…', action: 'merge_anyway', hint: `Beluga merges this into “${name}” itself; merging it by hand skips the plan` }];
   });
   return [...lead, ...rest];
 }

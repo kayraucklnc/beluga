@@ -114,6 +114,26 @@ describe('a new plan’s name (KLD-28)', () => {
   });
 });
 
+describe('the demo plan’s own conversation (KLD-53)', () => {
+  it('is saved, not loaded: as after a restart, it shows once the plan page loads it', async () => {
+    const store = new Store(initialState('room'));
+    store.dispatch({ type: 'projects', projects: [project('api', 'bob-api')] });
+    const saved = new Map<string, readonly unknown[]>();
+    const controller = {
+      onWorktree: () => () => undefined,
+      newChat: async (projectId: string, title: string) => ws('c1', projectId, title, 'chat'),
+      manager: { saveHistory: (id: string, items: readonly unknown[]) => void saved.set(id, items) },
+    } as unknown as WorkspaceController;
+    const board = new Board({ store, dir: null, projectName: () => 'bob-api' });
+    const boardWork = new BoardWork({ store, board, controller, selfId: () => 'p-me', selfName: () => 'Kay', askClaude: () => undefined });
+    const work = new PlansWork({ store, plans: new Plans({ store, dir: null }), board: boardWork, controller, git: null, askClaude: () => undefined, intend: () => undefined, delayMs: 0 });
+    const home = await work.homeFor('api', 'Card checkout', (channel) => [{ id: 'a', type: 'chat', channel, from: 'p-me', name: 'Kay', text: 'Plan it', ts: 1, byAgent: false }]);
+    expect(home).toBe('ws:c1');
+    expect(saved.get('c1')).toEqual([expect.objectContaining({ channel: 'ws:c1', text: 'Plan it' })]);
+    expect(store.getState().log.filter((l) => l.channel === home)).toEqual([]);
+  });
+});
+
 const BODY: BodyInput = {
   title: 'Payments',
   goal: 'Take payments',
@@ -180,7 +200,7 @@ describe('a draft stays off the board until approved', () => {
     const issues = store.getState().board.issues;
     expect(issues).toHaveLength(5);
     const byTitle = (t: string) => issues.find((i) => i.title === t)!;
-    // The milestone being worked on is Todo; later ones wait in the Backlog.
+    // The milestone being worked on is Ready (todo); later ones wait in the Backlog.
     expect(byTitle('Auth on payment routes')).toMatchObject({ status: 'todo', origin: 'plan', estimate: 3, plan: { id: plan.id, milestone: 'safe', task: 'auth' }, assignee: { kind: 'claude' } });
     expect(byTitle('Refund endpoint').status).toBe('backlog');
     expect(byTitle('Live keys').assignee).toMatchObject({ kind: 'person', id: 'p-me' });
@@ -421,7 +441,7 @@ describe('making a plan', () => {
     const t = setup();
     t.work.here('ws:main');
     const defs = createPlanToolDefs(t.work.forRun('ws:main', 'p-me')!.tools!);
-    expect(defs.map((d) => `mcp__klaud_plan__${d.name}`)).toEqual(PLAN_TOOL_NAMES);
+    expect(defs.map((d) => `mcp__beluga_plan__${d.name}`)).toEqual(PLAN_TOOL_NAMES);
     for (const name of PLAN_TOOL_NAMES) expect(decideTool(name, {}, { cwd: '/tmp', roots: [], autoEdit: false, askOnly: true })).toBe('allow');
   });
 });
@@ -836,7 +856,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.plans.need(plan.id).activity.map((e) => e.text)).toContain('collects the plan’s work on plan/klaud-polish-round');
   });
 
-  it('passing a milestone merges its task branches into the plan branch: tasks In Plan, worktrees removed, no PR', async () => {
+  it('passing a milestone merges its task branches into the plan branch: tasks Merged into Plan, worktrees removed, no PR', async () => {
     const t = await running();
     await t.passSafe();
     const keys = ['Auth on payment routes', 'Idempotent webhooks', 'Receipts once'].map((x) => t.issue(x));
@@ -943,7 +963,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.issue('Receipts once').status).toBe('in_plan');
   });
 
-  it('the last milestone passing offers Open PR; the PR merging moves every In Plan task to Done at once', async () => {
+  it('the last milestone passing offers Open PR; the PR merging moves every Merged into Plan task to Done at once', async () => {
     const t = await running();
     await t.passSafe();
     t.board.update(t.issue('Refund endpoint').id, { status: 'in_review' }, t.claude);
@@ -967,7 +987,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.view().next.kind).toBe('done');
   });
 
-  it('a PR closed without merging leaves its tasks In Plan and says so on the plan', async () => {
+  it('a PR closed without merging leaves its tasks Merged into Plan and says so on the plan', async () => {
     const t = await running();
     await t.passSafe();
     t.setPr({ number: 9, url: 'https://github.com/bob/api/pull/9', state: 'OPEN', title: 'Payments', draft: false, checks: 'none' });
@@ -976,10 +996,10 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     await t.work.pilot.pollPrs();
     expect(t.issue('Auth on payment routes').status).toBe('in_plan');
     expect(t.plans.need(t.plan.id).shipped).toBeUndefined();
-    expect(t.plans.need(t.plan.id).activity.map((e) => e.text)).toContain('pull request #9 was closed without merging: its tasks stay In Plan');
+    expect(t.plans.need(t.plan.id).activity.map((e) => e.text)).toContain('pull request #9 was closed without merging: its tasks stay merged into the plan');
   });
 
-  it('Merge into main locally: every In Plan task is Done', async () => {
+  it('Merge into main locally: every Merged into Plan task is Done', async () => {
     const t = await running();
     await t.passSafe();
     await t.work.mergeLocal(t.plan.id);
@@ -1029,7 +1049,7 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(g.log.merged).toHaveLength(1);
   });
 
-  it('In Plan is a column of its own between In Review and Done; its worktree going away asks nothing', async () => {
+  it('Merged into Plan is a column of its own between In Review and Done; its worktree going away asks nothing', async () => {
     const t = await running();
     await t.passSafe();
     const i = t.issue('Auth on payment routes');
@@ -1037,6 +1057,6 @@ describe('the plan’s branch: tasks start from it, milestones merge into it, on
     expect(t.issue(i.title).worktreeGone).toBeUndefined();
     const { ISSUE_STATUSES, STATUS_INFO } = await import('../src/core/board/model.js');
     expect(ISSUE_STATUSES.slice(3, 6)).toEqual(['in_review', 'in_plan', 'done']);
-    expect(STATUS_INFO.in_plan.label).toBe('In Plan');
+    expect(STATUS_INFO.in_plan.label).toBe('Merged into Plan');
   });
 });

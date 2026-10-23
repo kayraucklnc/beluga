@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { chipText, registerAttachment, roomAttachmentsDir } from '../src/core/attachments.js';
-import type { KlaudClient } from '../src/ipc/client.js';
+import type { BelugaClient } from '../src/ipc/client.js';
 import { ClientStore } from '../src/client/client-store.js';
 import { Store, initialState } from '../src/core/store.js';
 import { expandOutgoing } from '../src/ui/attach-actions.js';
@@ -42,7 +42,7 @@ describe('sending pasted images', () => {
     if (view === 'ws') store.dispatch({ type: 'view', view: { kind: 'workspace', id: 'w1', tab: 'chat' } } as never);
     const served: Array<[string, string, string[]]> = [];
     domain.dispatch({ type: 'identity', selfId: 'me', isHost: true });
-    const session = { store, api: { session: { serveFolder: async (share: string, dir: string, to: string[]) => void served.push([share, dir, to]) } } } as unknown as KlaudClient;
+    const session = { store, api: { session: { serveFolder: async (share: string, dir: string, to: string[]) => void served.push([share, dir, to]) } } } as unknown as BelugaClient;
     return { session, served };
   }
   const image = () => {

@@ -1,15 +1,14 @@
 import type { ReactNode } from 'react';
-import { findWorkspace, stateOf } from '@klaud/ui/workspace-models.js';
-import { formatTokens } from '@klaud/ui/work-models.js';
-import { formatBytes } from '@klaud/shared/format.js';
-import { contextPct, contextTone, formatTokenCount } from '@klaud/shared/context-usage.js';
-import { unreadCount } from '@klaud/core/work-store.js';
-import { AUTONOMY_INFO, planTitle } from '@klaud/core/plans/model.js';
-import { noticeAgo, noticeLook } from '@klaud/ui/notice-models.js';
+import { findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
+import { formatTokens } from '@beluga/ui/work-models.js';
+import { formatBytes } from '@beluga/shared/format.js';
+import { contextPct, contextTone, formatTokenCount } from '@beluga/shared/context-usage.js';
+import { unreadCount } from '@beluga/core/work-store.js';
+import { noticeAgo, noticeLook } from '@beluga/ui/notice-models.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { openExternal } from '../lib/system.js';
 import { Switch } from '../dialogs/settings-controls.js';
 import { openPerson } from '../dialogs/native/PersonPopover.js';
@@ -17,8 +16,6 @@ import r from '../dialogs/native/room.module.css';
 import { ConversationDetails } from '../network/ConversationInspector.js';
 import { EarningsPanel } from './EarningsPanel.js';
 import { ClaudeCodeInspector } from '../claude-code/Live.js';
-import { planStatus } from '../plans/plans-model.js';
-import { usePlanView } from '../plans/use-plans.js';
 import s from './Inspector.module.css';
 
 function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
@@ -97,7 +94,7 @@ function NeedsYou() {
 function WorkspaceDetails({ id }: { id: string }) {
   const api = useApi();
   const actions = useActions();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const state = useApp((st) => st);
   const ws = findWorkspace(state.projects, id);
   if (!ws) return null;
@@ -190,10 +187,10 @@ function WorkspaceDetails({ id }: { id: string }) {
 
 function Room() {
   const api = useApi();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const state = useApp((st) => st);
   const hosting = state.hosting;
-  const invite = (): void => void document.dispatchEvent(new CustomEvent('klaud:invite'));
+  const invite = (): void => void document.dispatchEvent(new CustomEvent('beluga:invite'));
   const inviteState = hosting?.phase === 'ready' || state.invite ? 'Ready to share' : hosting?.phase === 'local' ? 'Local network only' : hosting?.phase === 'failed' ? (hosting.detail ?? 'Couldn’t open remote access') : hosting ? 'Opening…' : 'Not open yet';
   return (
     <Panel
@@ -240,39 +237,9 @@ function Room() {
   );
 }
 
-/** On a plan's page: the plan (where it runs, how, and how far along), not the room. */
-function PlanInspector({ id }: { id: string }) {
-  const plan = useApp((st) => st.plans.plans.find((x) => x.id === id));
-  const view = usePlanView(plan);
-  const project = useApp((st) => (plan ? st.projects.find((x) => x.id === plan.projectId) : undefined));
-  const home = useApp((st) => (plan?.home.startsWith('ws:') ? findWorkspace(st.projects, plan.home.slice(3)) : undefined));
-  if (!plan || !view) return <Room />;
-  const writing = !plan.body && !view.milestones.length;
-  const passed = view.milestones.filter((m) => m.state === 'passed').length;
-  const status = planStatus(view);
-  return (
-    <Panel title="This plan">
-      <Field label="Plan">{planTitle(plan)}</Field>
-      <Field label="Project">{project?.name ?? 'Gone'}</Field>
-      <Field label="Branch">{home?.branch ?? project?.base ?? '—'}</Field>
-      <Field label="Runs">{AUTONOMY_INFO[plan.autonomy].label}</Field>
-      <Field label="Progress">
-        {writing ? (
-          <span className={s.dim}>Claude is writing it</span>
-        ) : plan.body ? (
-          `${passed} of ${view.milestones.length} milestones · ${view.done} of ${view.total} tasks done`
-        ) : (
-          `${view.milestones.length} milestones · ${view.total} tasks, not approved yet`
-        )}
-      </Field>
-      {writing ? null : <Field label="Status">{status.label}</Field>}
-    </Panel>
-  );
-}
-
 /** The newest unread notification; the rest are under the bell in the toolbar. */
 function Inbox() {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const unread = useApp((st) => unreadCount(st));
   const latest = useApp((st) => st.inbox.find((n) => !n.read));
   if (!unread || !latest) return null;
@@ -307,7 +274,7 @@ export function Inspector() {
       <div className={s.scroll}>
         <NeedsYou />
         <ClaudeCodeInspector />
-        {view.kind === 'workspace' ? <WorkspaceDetails id={view.id} /> : view.kind === 'conversation' ? <ConversationDetails id={view.id} /> : view.kind === 'plan' ? <PlanInspector id={view.id} /> : <Room />}
+        {view.kind === 'workspace' ? <WorkspaceDetails id={view.id} /> : view.kind === 'conversation' ? <ConversationDetails id={view.id} /> : <Room />}
         <Inbox />
       </div>
     </aside>

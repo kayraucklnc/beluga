@@ -1,5 +1,5 @@
 /**
- * What the klaud network looks like to a screen: people, groups, messages and invitations.
+ * What the Beluga network looks like to a screen: people, groups, messages and invitations.
  * Plain data only (no keys, no secrets): this is what goes into the shared state.
  * Browser-safe: types only.
  */
@@ -134,7 +134,7 @@ export interface NetworkSelf {
 
 /** Everything about the network except the messages (they're kept per conversation). */
 export interface NetworkSummary {
-  /** The network is turned on (settings `network: true` or KLAUD_NETWORK=1). */
+  /** The network is turned on (settings `network: true` or BELUGA_NETWORK=1). */
   readonly enabled: boolean;
   readonly self?: NetworkSelf;
   readonly friends: readonly FriendView[];

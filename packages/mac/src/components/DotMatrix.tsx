@@ -6,7 +6,7 @@ import s from './dot-matrix.module.css';
  * Claude at work: a tiny 5×5 dot matrix (corners off, so it reads round) whose dots brighten in
  * turning petals and rings, after dotmatrix's "circular 7" loader. Every one on screen moves with
  * the live clock (lib/live-motion.ts), writing its dots' opacity directly (no React renders). With
- * Reduce Motion it holds still, half lit; while you're not looking at Klaud it rests where it is.
+ * Reduce Motion it holds still, half lit; while you're not looking at Beluga it rests where it is.
  */
 
 const N = 5;

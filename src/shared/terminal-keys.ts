@@ -1,4 +1,4 @@
-// The names of terminal programs klaud runs (a workspace's shell, setup and run; the global shells).
+// The names of terminal programs Beluga runs (a workspace's shell, setup and run; the global shells).
 
 export const shellId = (wsId: string): string => wsId;
 export const setupId = (wsId: string): string => `${wsId}:setup`;
@@ -10,7 +10,7 @@ export const globalShellNumber = (key: string): number => Number(key.slice('shel
 
 /**
  * Where a new global shell starts: the project you last opened a workspace in, else the
- * project klaud was started in, else your home folder.
+ * project Beluga was started in, else your home folder.
  */
 export function globalShellDir(projects: readonly { root: string; workspaces: readonly { id: string }[] }[], openTabs: readonly string[], launchDir: string, home: string): string {
   for (const id of [...openTabs].reverse()) {

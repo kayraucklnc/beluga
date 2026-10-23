@@ -1,4 +1,4 @@
-//! Keeping klaud's daemon running: find the one that runs (the terminal app may have started
+//! Keeping Beluga's daemon running: find the one that runs (the terminal app may have started
 //! it), else start the bundled one, and tell the web view where it is.
 
 use serde::{Deserialize, Serialize};
@@ -12,13 +12,13 @@ use tauri::{AppHandle, Manager};
 
 use crate::AppState;
 
-/// How long klaud gets to start before we give up.
+/// How long Beluga gets to start before we give up.
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long a daemon gets to quit on its own before it's forced.
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long your shell gets to say what your PATH is.
 const SHELL_TIMEOUT: Duration = Duration::from_secs(4);
-const PATH_MARK: &str = "__KLAUD_PATH__";
+const PATH_MARK: &str = "__BELUGA_PATH__";
 
 #[derive(Serialize, Clone)]
 pub struct Endpoint {
@@ -31,7 +31,7 @@ struct Info {
     pid: u32,
     port: u16,
     token: String,
-    /// The klaud version it runs (missing only in daemon.json files from very old versions).
+    /// The Beluga version it runs (missing only in daemon.json files from very old versions).
     #[serde(default)]
     version: Option<String>,
     /// Started to stay up for the Mac app (`--keep-alive`), not by a terminal window.
@@ -53,10 +53,33 @@ pub fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn klaud_home() -> PathBuf {
-    std::env::var_os("KLAUD_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".klaud"))
+/// Where Beluga keeps its things, as the core decides it (src/core/home.ts): $BELUGA_HOME (or the
+/// $KLAUD_HOME / $KLAUDE_HOME of before the rename), else ~/.beluga. Until the core has moved an
+/// older ~/.klaud there (it does on its first start), that one is read.
+pub fn beluga_home() -> PathBuf {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    let set = var("BELUGA_HOME")
+        .or_else(|| var("KLAUD_HOME"))
+        .or_else(|| var("KLAUDE_HOME"));
+    home_in(
+        set.map(PathBuf::from),
+        &dirs::home_dir().unwrap_or_default(),
+    )
+}
+
+fn home_in(set: Option<PathBuf>, user_home: &std::path::Path) -> PathBuf {
+    if let Some(dir) = set {
+        return dir;
+    }
+    let home = user_home.join(".beluga");
+    if home.exists() {
+        return home;
+    }
+    [".klaud", ".klaude"]
+        .iter()
+        .map(|name| user_home.join(name))
+        .find(|old| old.exists())
+        .unwrap_or(home)
 }
 
 /// Send a signal to a process (0 only checks that it's there and ours).
@@ -76,14 +99,14 @@ fn alive(pid: u32) -> bool {
     signal(pid, 0)
 }
 
-/// Whether something answers on klaud's port (a leftover pid could belong to anything).
+/// Whether something answers on Beluga's port (a leftover pid could belong to anything).
 fn listening(port: u16) -> bool {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
 }
 
 fn read_info() -> Option<Info> {
-    let text = std::fs::read_to_string(klaud_home().join("daemon.json")).ok()?;
+    let text = std::fs::read_to_string(beluga_home().join("daemon.json")).ok()?;
     serde_json::from_str(&text).ok()
 }
 
@@ -97,7 +120,7 @@ pub fn running_pid() -> Option<u32> {
     up().map(|info| info.pid)
 }
 
-/// The klaud version bundled in this app (its package.json), `None` in development.
+/// The Beluga version bundled in this app (its package.json), `None` in development.
 fn bundled_version(app: &AppHandle) -> Option<String> {
     let resources = app.path().resource_dir().ok()?;
     let text = std::fs::read_to_string(resources.join("daemon").join("package.json")).ok()?;
@@ -105,7 +128,7 @@ fn bundled_version(app: &AppHandle) -> Option<String> {
     json.get("version")?.as_str().map(str::to_owned)
 }
 
-/// Whether a running daemon is an older (or other) klaud this app should replace with its
+/// Whether a running daemon is an older (or other) Beluga this app should replace with its
 /// own: only a kept-alive one (a Mac app started it, maybe the version before an update),
 /// never one a terminal window started and still uses.
 fn outdated(running: Option<&str>, keep_alive: bool, bundled: Option<&str>) -> bool {
@@ -126,7 +149,7 @@ fn running(app: &AppHandle) -> Option<Info> {
     up()
 }
 
-/// Apps opened from Finder get a bare PATH; klaud needs yours (git, gh, claude, node tools).
+/// Apps opened from Finder get a bare PATH; Beluga needs yours (git, gh, claude, node tools).
 async fn login_path() -> String {
     static PATH: OnceLock<String> = OnceLock::new();
     if let Some(path) = PATH.get() {
@@ -197,7 +220,7 @@ fn fallback_path() -> String {
 }
 
 fn log_file() -> Option<std::fs::File> {
-    let dir = klaud_home().join("logs");
+    let dir = beluga_home().join("logs");
     std::fs::create_dir_all(&dir).ok()?;
     std::fs::OpenOptions::new()
         .create(true)
@@ -206,10 +229,10 @@ fn log_file() -> Option<std::fs::File> {
         .ok()
 }
 
-/// The end of the daemon's log written since `from` (for saying why klaud didn't start).
+/// The end of the daemon's log written since `from` (for saying why Beluga didn't start).
 fn log_tail(from: u64) -> String {
     let read = || -> Option<String> {
-        let mut file = std::fs::File::open(klaud_home().join("logs").join("daemon.log")).ok()?;
+        let mut file = std::fs::File::open(beluga_home().join("logs").join("daemon.log")).ok()?;
         let len = file.metadata().ok()?.len();
         file.seek(SeekFrom::Start(from.min(len).max(len.saturating_sub(2000))))
             .ok()?;
@@ -223,7 +246,7 @@ fn log_tail(from: u64) -> String {
     }
 }
 
-/// The command that runs klaud's daemon, and whether its pid is the daemon's own pid (it isn't
+/// The command that runs Beluga's daemon, and whether its pid is the daemon's own pid (it isn't
 /// when a launcher like `npx` sits in between).
 fn base_command(app: &AppHandle) -> Result<(Command, bool), String> {
     if let Some((node, script)) = bundled(app) {
@@ -234,22 +257,22 @@ fn base_command(app: &AppHandle) -> Result<(Command, bool), String> {
     dev_command().map(|c| (c, false))
 }
 
-/// Development: run klaud from the repository with tsx.
+/// Development: run Beluga from the repository with tsx.
 #[cfg(debug_assertions)]
 fn dev_command() -> Result<Command, String> {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let mut c = Command::new("npx");
     c.current_dir(&repo).args(["tsx", "src/cli.tsx"]);
-    c.env("KLAUD_ALLOW_ORIGINS", "http://localhost:1420");
+    c.env("BELUGA_ALLOW_ORIGINS", "http://localhost:1420");
     Ok(c)
 }
 
 #[cfg(not(debug_assertions))]
 fn dev_command() -> Result<Command, String> {
-    Err("Klaud's engine is missing from this app. Please reinstall Klaud.".into())
+    Err("Beluga's engine is missing from this app. Please reinstall Beluga.".into())
 }
 
-/// The Node binary and klaud's bundled entry inside the app, when they're there.
+/// The Node binary and Beluga's bundled entry inside the app, when they're there.
 fn bundled(app: &AppHandle) -> Option<(PathBuf, PathBuf)> {
     let resources = app.path().resource_dir().ok()?;
     let script = resources.join("daemon").join("dist").join("cli.js");
@@ -277,7 +300,7 @@ async fn start(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
     let began = SystemTime::now();
     let child = cmd
         .spawn()
-        .map_err(|e| format!("Couldn't start Klaud: {e}"))?;
+        .map_err(|e| format!("Couldn't start Beluga: {e}"))?;
     let pid = child.id();
     if let Some(state) = app.try_state::<AppState>() {
         *locked(&state.child) = Some(child);
@@ -287,7 +310,7 @@ async fn start(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
         if own_pid {
             info.pid == pid
         } else {
-            std::fs::metadata(klaud_home().join("daemon.json"))
+            std::fs::metadata(beluga_home().join("daemon.json"))
                 .and_then(|m| m.modified())
                 .is_ok_and(|t| t >= began)
         }
@@ -295,12 +318,12 @@ async fn start(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
     let deadline = Instant::now() + START_TIMEOUT;
     while Instant::now() < deadline {
         if let Some(status) = reap(app) {
-            // Another klaud may have won the start (only one daemon runs): use that one.
+            // Another Beluga may have won the start (only one daemon runs): use that one.
             if let Some(info) = up() {
                 return Ok(info.into());
             }
             return Err(format!(
-                "klaud stopped while starting ({status}). See ~/.klaud/logs/daemon.log{}",
+                "Beluga stopped while starting ({status}). See ~/.beluga/logs/daemon.log{}",
                 log_tail(log_from)
             ));
         }
@@ -315,7 +338,7 @@ async fn start(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
     if let Some(child) = child {
         terminate_child(child).await;
     }
-    Err("klaud didn't start in time. See ~/.klaud/logs/daemon.log".into())
+    Err("Beluga didn't start in time. See ~/.beluga/logs/daemon.log".into())
 }
 
 /// Ask a daemon we started to quit; force it if it doesn't.
@@ -363,13 +386,13 @@ async fn stop_running(app: &AppHandle) -> Result<(), String> {
     }
     if let Some(info) = up() {
         if !terminate_pid(info.pid).await {
-            return Err("Couldn't stop the Klaud that's running.".into());
+            return Err("Couldn't stop the Beluga that's running.".into());
         }
     }
     Ok(())
 }
 
-/// Make sure klaud runs, and say where it listens.
+/// Make sure Beluga runs, and say where it listens.
 pub async fn ensure(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
     let state = app.state::<AppState>();
     let _one_at_a_time = state.lock.lock().await;
@@ -380,7 +403,7 @@ pub async fn ensure(app: &AppHandle, args: &[String]) -> Result<Endpoint, String
         }
         // After an update: the screens reconnect to the new one by themselves.
         eprintln!(
-            "klaud: replacing klaud {} with this app's {}",
+            "beluga: replacing Beluga {} with this app's {}",
             info.version.as_deref().unwrap_or("?"),
             bundled.as_deref().unwrap_or("?")
         );
@@ -389,7 +412,7 @@ pub async fn ensure(app: &AppHandle, args: &[String]) -> Result<Endpoint, String
     start(app, args).await
 }
 
-/// Start klaud again with these arguments (a link to a friend's room): the running one stops first.
+/// Start Beluga again with these arguments (a link to a friend's room): the running one stops first.
 pub async fn restart(app: &AppHandle, args: &[String]) -> Result<Endpoint, String> {
     check_join(args)?;
     let state = app.state::<AppState>();
@@ -400,11 +423,17 @@ pub async fn restart(app: &AppHandle, args: &[String]) -> Result<Endpoint, Strin
 
 /// Only joining a friend's room is allowed: `join <invite link>`.
 fn check_join(args: &[String]) -> Result<(), String> {
-    const PREFIXES: [&str; 6] = [
-        "klaud://", "https://", "http://", "wss://", "ws://", "klaude:",
+    const PREFIXES: [&str; 7] = [
+        "beluga://",
+        "klaud://",
+        "https://",
+        "http://",
+        "wss://",
+        "ws://",
+        "klaude:",
     ];
     let [verb, invite] = args else {
-        return Err("That isn't something Klaud can start with.".into());
+        return Err("That isn't something Beluga can start with.".into());
     };
     let plain = |c: char| c.is_ascii_alphanumeric() || "-._~:/?#=&%".contains(c);
     if verb != "join"
@@ -412,7 +441,7 @@ fn check_join(args: &[String]) -> Result<(), String> {
         || !PREFIXES.iter().any(|p| invite.starts_with(p))
         || !invite.chars().all(plain)
     {
-        return Err("That doesn't look like a Klaud invite.".into());
+        return Err("That doesn't look like a Beluga invite.".into());
     }
     Ok(())
 }
@@ -452,6 +481,7 @@ mod tests {
             format!("klaud://{key}?relay=https%3A%2F%2Fcalm-river.trycloudflare.com#k3Jd-abc_123"),
             "https://calm-river.trycloudflare.com#k3Jd-abc_123".to_string(),
             "klaude:eyJ1cmwiOiJ3cyJ9".to_string(),
+            format!("beluga://{key}?relay=https%3A%2F%2Fcalm-river.trycloudflare.com#k3Jd-abc_123"),
         ] {
             assert!(check_join(&args(&["join", &invite])).is_ok(), "{invite}");
         }
@@ -504,5 +534,26 @@ mod tests {
     fn never_signals_process_zero_or_one() {
         assert!(!signal(0, 0));
         assert!(!signal(1, 0));
+    }
+
+    #[test]
+    fn home_follows_the_core() {
+        let tmp = std::env::temp_dir().join(format!("beluga-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        // A fresh Mac: ~/.beluga, even before it exists.
+        assert_eq!(home_in(None, &tmp), tmp.join(".beluga"));
+        // Before the core's first start moved it: the old ~/.klaud.
+        std::fs::create_dir(tmp.join(".klaud")).unwrap();
+        assert_eq!(home_in(None, &tmp), tmp.join(".klaud"));
+        // Once ~/.beluga is there, always that.
+        std::fs::create_dir(tmp.join(".beluga")).unwrap();
+        assert_eq!(home_in(None, &tmp), tmp.join(".beluga"));
+        // A home set in the environment wins.
+        assert_eq!(
+            home_in(Some(PathBuf::from("/x")), &tmp),
+            PathBuf::from("/x")
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

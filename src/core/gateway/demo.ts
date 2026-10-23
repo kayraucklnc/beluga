@@ -111,7 +111,7 @@ function demoClaude(persona: Persona): AgentBackend {
       } catch {
         data = null;
       }
-      return `${summary}\n\n\`\`\`klaud-result\n${JSON.stringify({ data })}\n\`\`\``;
+      return `${summary}\n\n\`\`\`beluga-result\n${JSON.stringify({ data })}\n\`\`\``;
     },
   };
 }

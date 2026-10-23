@@ -3,7 +3,7 @@ import { type StepRecord, boundInput, boundText, redactSecrets, resultText, thin
 import { summarizeTool } from './prompt.js';
 
 /**
- * Claude Code transcripts → klaud's chat. Pure: no files, no SDK (reading the files is
+ * Claude Code transcripts → Beluga's chat. Pure: no files, no SDK (reading the files is
  * claude-sessions.ts), so anything that shows Claude Code conversations can reuse it.
  */
 
@@ -63,7 +63,7 @@ export function typedText(message: unknown): string {
 type TranscriptOptions = { selfId: string; selfName: string; cwd: string; start: number; end: number };
 
 /**
- * Turn a Claude Code conversation into klaud's chat: your messages, and one Claude card
+ * Turn a Claude Code conversation into Beluga's chat: your messages, and one Claude card
  * per turn with its steps (tool calls, in words) and final words. Sub-agent chatter and
  * tool output are left out.
  */
@@ -74,7 +74,7 @@ export function transcriptToLog(messages: readonly TranscriptMessage[], opts: Tr
 /**
  * The chat (see transcriptToLog) plus each Claude turn's steps in detail: every tool call with
  * its input and result, and Claude's thinking (when the transcript has its words), the same
- * records a run in klaud keeps (shared/steps.ts). Times are spread over the conversation, so
+ * records a run in Beluga keeps (shared/steps.ts). Times are spread over the conversation, so
  * no durations are claimed.
  */
 export function transcriptToTurns(messages: readonly TranscriptMessage[], opts: TranscriptOptions): { items: LogItem[]; steps: Record<string, StepRecord[]> } {

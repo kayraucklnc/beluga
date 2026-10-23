@@ -26,9 +26,9 @@ function seconds(ms: number): string {
   return ms < 1000 ? '' : ink.muted(` ${(ms / 1000).toFixed(1)}s`);
 }
 
-/** The klaud prompt mark, typed out one letter at a time with a blinking coral cursor. */
+/** The Beluga prompt mark, typed out one letter at a time with a blinking coral cursor. */
 export async function title(out: Out, subtitle: string): Promise<void> {
-  const word = 'klaud';
+  const word = 'beluga';
   if (!out.tty) {
     out.write(`\n  ❯ ${word}  ${subtitle}\n\n`);
     return;

@@ -56,6 +56,7 @@ export const HANDLERS = {
   'session.removePerson': (s, peerId) => s.removePerson(peerId),
   'session.newInviteLink': (s) => s.newInviteLink(),
   'session.setRoomOpen': (s, open) => s.setRoomOpen(open),
+  'session.retryConnection': (s) => s.retryConnection(),
   'session.setFriendWorktrees': (s, value) => s.setFriendWorktrees(value),
   'session.setAccess': (s, peerId, scope) => s.setAccess(peerId, scope),
   'session.runOnPeerByHand': (s, name, command, channel) => s.runOnPeerByHand(name, command, channel),
@@ -133,7 +134,7 @@ export const HANDLERS = {
   },
   'files.read': (s, at) => s.files.readFile(at),
 
-  'workspaces.open': (s, id, tab) => ctl(s)?.open(id, tab),
+  'workspaces.open': (s, id, tab, o) => ctl(s)?.open(id, tab, o?.req),
   'workspaces.load': (s, id) => void ctl(s)?.ensureLoaded(id),
   'workspaces.refresh': (s) => ctl(s)?.refresh(),
   'workspaces.newWorktree': async (s, projectId, name, opts) => (await ctl(s)?.newWorktree(projectId, name, opts?.base ? { base: opts.base } : {}))?.id,

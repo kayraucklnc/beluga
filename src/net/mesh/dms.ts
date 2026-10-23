@@ -6,8 +6,8 @@ import { appendLine, readJson, readLines, safeName, writeJson } from './files.js
 import type { ChatExtras } from './views.js';
 
 /**
- * Direct messages with friends: each conversation kept in ~/.klaud/dms/<peer>.jsonl, and what
- * you sent while they were offline in your outbox (~/.klaud/outbox.json) until their Mac says
+ * Direct messages with friends: each conversation kept in ~/.beluga/dms/<peer>.jsonl, and what
+ * you sent while they were offline in your outbox (~/.beluga/outbox.json) until their Mac says
  * it got it, or until it expires.
  */
 

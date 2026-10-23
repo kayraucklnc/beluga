@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { Icon } from '../components/Icon.js';
 import { Button, Kbd, Tip, cx } from '../components/ui.js';
-import { toast, useApi, useKlaud } from '../lib/klaud.js';
+import { toast, useApi, useBeluga } from '../lib/beluga.js';
 import { mod } from '../lib/system.js';
 import { usePinchZoom } from '../components/usePinchZoom.js';
 import { useEffect, useRef, useState } from 'react';
@@ -80,7 +80,7 @@ function Full({ image }: { image: ChatImage }) {
 
 /** An image full size: Esc or a click outside closes, ⌘C copies it, Open shows it in Preview. */
 export function Lightbox() {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const api = useApi();
   const box = useLightbox();
   const image = box?.images[box.index];

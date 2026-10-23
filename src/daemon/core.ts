@@ -25,12 +25,13 @@ import { PeerClient } from '../net/peer-client.js';
 import { closeAllTunnels, offersDirect, openTunnel, waitUntilReachable } from '../net/tunnel.js';
 import { TerminalManager } from '../terminal/index.js';
 import { WorkspaceManager } from '../workspaces/manager.js';
-import { klaudHome } from '../workspaces/store.js';
+import { belugaHome } from '../workspaces/store.js';
+import { belugaEnv } from '../core/beluga-env.js';
 
 /**
- * Everything klaud is apart from its screens: your identity, the room (hosted or joined),
+ * Everything Beluga is apart from its screens: your identity, the room (hosted or joined),
  * remote access, projects, terminals and the Session that ties them together. The terminal UI
- * builds one in its own process; `klaud daemon` builds one and serves it to every screen.
+ * builds one in its own process; `beluga daemon` builds one and serves it to every screen.
  */
 
 interface Room {
@@ -68,7 +69,7 @@ async function hostRoom(config: Config, identity: Identity): Promise<Room> {
 async function resolveJoinInvite(config: Config): Promise<string> {
   if (config.invite) return config.invite;
   const found = findInvite((await pasteText()) ?? '');
-  if (!found) throw new Error('No invite given and none found on your clipboard. Copy the link your friend sent, then run: klaud join');
+  if (!found) throw new Error('No invite given and none found on your clipboard. Copy the link your friend sent, then run: beluga join');
   return found;
 }
 
@@ -106,7 +107,7 @@ async function addFallbackRelay(room: Room, session: Session, isClosing: () => b
     if (isClosing() || !after) return;
     store.dispatch({ type: 'invite', invite: after });
     // Refresh the clipboard only if it still holds the link we put there.
-    if (before && (await pasteText().catch(() => undefined))?.trim() === `klaud join ${before}`) await copyNative(`klaud join ${after}`).catch(() => false);
+    if (before && (await pasteText().catch(() => undefined))?.trim() === `beluga join ${before}`) await copyNative(`beluga join ${after}`).catch(() => false);
   };
   try {
     const tunnel = await openTunnel('auto', room.hub?.port ?? 0, {
@@ -136,7 +137,7 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
     store.dispatch({ type: 'invite', invite });
     store.dispatch({ type: 'hosting', hosting: { phase } });
     // Only auto-copy with a real clipboard tool; never silently push secrets through the terminal.
-    const copied = await copyNative(`klaud join ${invite}`).catch(() => false);
+    const copied = await copyNative(`beluga join ${invite}`).catch(() => false);
     if (!isClosing()) store.dispatch({ type: 'hosting', hosting: { phase, copied } });
   };
 
@@ -162,7 +163,7 @@ async function publish(config: Config, room: Room, session: Session, isClosing: 
       onProgress: (detail) => store.dispatch({ type: 'hosting', hosting: { phase: 'tunnel', detail } }),
       onDied: (reason) => {
         if (isClosing()) return;
-        store.dispatch({ type: 'hosting', hosting: { phase: 'failed', detail: `${reason}. Restart klaud host to get a new invite.` } });
+        store.dispatch({ type: 'hosting', hosting: { phase: 'failed', detail: `${reason}. Restart beluga host to get a new invite.` } });
         session.toast('Remote access stopped: the tunnel closed', 'error');
       },
     });
@@ -192,23 +193,25 @@ export interface Core {
   readonly terminals: TerminalManager;
   /** The room's name (one room per core). */
   readonly room: string;
+  /** Where its workspaces' records and saved conversations are kept. */
+  readonly workspacesHome: string;
   /** Start everything: the connection, timers, remote access when asked for, the demo's friends. */
   start(): void;
   /** Leave the room and stop everything. */
   stop(): Promise<void>;
 }
 
-/** Build klaud's core for this config (hosting a room, or joining one). */
+/** Build Beluga's core for this config (hosting a room, or joining one). */
 export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonly network?: boolean } = {}): Promise<Core> {
   let config = input;
   const demo = config.mode === 'demo' ? createDemoFolders() : undefined;
   if (demo) config = { ...config, tunnel: 'none', policyChosen: true, shares: [{ name: 'landing', root: demo.mine, writable: true }] };
   // Your own key, kept between runs: friends recognize you, and the trust they gave you comes back.
-  const identity = loadIdentity(path.join(klaudHome(), 'identity.json'));
+  const identity = loadIdentity(path.join(belugaHome(), 'identity.json'));
   const saved = loadSettings();
   const room = config.mode === 'join' ? await joinRoom(config) : await hostRoom(config, identity);
   const shares = new ShareService(config.shares);
-  // Remember an explicitly chosen name, so plain `klaud` uses it next time.
+  // Remember an explicitly chosen name, so plain `beluga` uses it next time.
   if (process.argv.includes('--name') || process.argv.includes('-n')) saveSettings({ name: config.name });
   const store = new Store(initialState(room.room, config.policy, { ...prefsFrom(saved), theme: config.theme, mouse: config.mouse, tunnel: config.tunnel, selfApproval: config.selfApproval }));
   if (room.invite) store.dispatch({ type: 'invite', invite: room.invite });
@@ -269,7 +272,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     },
     saveSettings: (patch) => void saveSettings(patch),
     createAgent: demo
-      ? (bridge) => createMockBackend(bridge, Number(process.env.KLAUD_DEMO_PACE) || 2.6) // unhurried, so you can watch workspaces run side by side
+      ? (bridge) => createMockBackend(bridge, Number(belugaEnv('DEMO_PACE')) || 2.6) // unhurried, so you can watch workspaces run side by side
       : config.agent
         ? (bridge) =>
             createClaudeBackend({
@@ -278,14 +281,14 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
               additionalDirectories: config.shares.slice(1).map((s) => s.root),
               bridge,
               model: config.model,
-              claudePath: process.env.KLAUD_CLAUDE_PATH,
+              claudePath: belugaEnv('CLAUDE_PATH'),
             })
         : undefined,
     launchDir: process.cwd(),
     terminals,
     savedPeople: saved.people,
-    replayFile: path.join(klaudHome(), 'seen.json'),
-    stepsDir: path.join(klaudHome(), 'steps'),
+    replayFile: path.join(belugaHome(), 'seen.json'),
+    stepsDir: path.join(belugaHome(), 'steps'),
     ...(demo ? {} : { findConversation, otherTools }),
     ...(roomControl ? { room: roomControl } : {}),
   });
@@ -301,12 +304,12 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
   let stopBoard = (): void => undefined;
   const start = (): void => {
     session.start();
-    // The klaud network (friends, groups, presence): only the daemon runs it, and only when it's turned on.
+    // The Beluga network (friends, groups, presence): only the daemon runs it, and only when it's turned on.
     // It can be turned on and off later too (`network.setEnabled`).
-    if (opts.network) stopNetwork = networkSwitch({ session, store, identity, name: config.name, dir: klaudHome(), demo: Boolean(demo), warn: (text) => session.system(text, 'warn') }, saved).stop;
+    if (opts.network) stopNetwork = networkSwitch({ session, store, identity, name: config.name, dir: belugaHome(), demo: Boolean(demo), warn: (text) => session.system(text, 'warn') }, saved).stop;
     // Earnings from Stripe per project (the Mac app shows them): the daemon counts them in the background.
     if (opts.network) stopEarnings = launchEarnings({ session, store, demo: Boolean(demo) });
-    // Claude Code sessions running outside klaud (Conductor, a terminal): the Mac app shows them live, read-only.
+    // Claude Code sessions running outside Beluga (Conductor, a terminal): the Mac app shows them live, read-only.
     // Tasks between Claudes (the gateway): over this room now, and over the network whenever it's on.
     if (opts.network) stopGateway = launchGateway({ session, store, demo: Boolean(demo) });
     // Chats: files shared Mac to Mac, Claudes called into a conversation, your main channel.
@@ -322,9 +325,10 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     session.system('Demo mode: bob, mia and every Claude are simulated. Nothing leaves your computer.');
     seedDemoContext(store);
     setTimeout(() => session.updateUsage({ plan: 'max', fiveHour: { pct: 12 }, week: { pct: 38 } }), 300);
-    // bob "arrives" a moment later so you first see how inviting works.
-    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob, 'bob'), 2500);
-    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.mine, 'mia'), 3500);
+    // bob "arrives" a moment later so you first see how inviting works (sooner at a faster pace: the e2e tests).
+    const soon = (ms: number): number => ms * Math.min(1, Number(process.env.KLAUD_DEMO_PACE) || 1);
+    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.bob, 'bob'), soon(2500));
+    setTimeout(() => startDemoFriend(room.url, deriveKeys(room.secret), demo.mine, 'mia'), soon(3500));
     // zoe got a link to bob-api and knocks, so you see the card for letting someone in.
     setTimeout(() => {
       const project = store.getState().projects.find((p) => p.name === 'bob-api');
@@ -333,7 +337,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
         const secret = link && session.invites.urlOf(link.id)?.match(/#([\w-]+)$/)?.[1];
         if (secret) startDemoGuest(room.url, deriveKeys(secret));
       });
-    }, 5500);
+    }, soon(5500));
   };
 
   const stop = async (): Promise<void> => {
@@ -351,5 +355,5 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     await room.hub?.close();
   };
 
-  return { config, session, store, terminals, room: room.room, start, stop };
+  return { config, session, store, terminals, room: room.room, workspacesHome: workspaces.store.home, start, stop };
 }

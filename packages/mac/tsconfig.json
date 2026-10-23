@@ -21,7 +21,7 @@
       "node"
     ],
     "paths": {
-      "@klaud/*": [
+      "@beluga/*": [
         "../../src/*"
       ]
     }

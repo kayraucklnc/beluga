@@ -7,7 +7,7 @@ import { readJson, writeJson } from '../../net/mesh/files.js';
 import { type AccessDecision, type Capabilities, type Decision, type RequestFacts, Rule, capabilitiesFrom, decideAccess, ruleExpired, ruleFor } from './access.js';
 
 /**
- * Your rules and capability settings, kept on this Mac: rules in ~/.klaud/rules.json (readable
+ * Your rules and capability settings, kept on this Mac: rules in ~/.beluga/rules.json (readable
  * only by you), capabilities in your settings. Expired rules are dropped as they're met. Without
  * a file (tests, the demo's simulated friends) everything stays in memory.
  */
@@ -39,7 +39,7 @@ function checkScope(rule: Rule): void {
 }
 
 export interface RuleBookDeps {
-  /** ~/.klaud/rules.json (null: memory only). */
+  /** ~/.beluga/rules.json (null: memory only). */
   readonly file: string | null;
   readonly loadCaps: () => unknown;
   readonly saveCaps: (caps: Capabilities) => void;

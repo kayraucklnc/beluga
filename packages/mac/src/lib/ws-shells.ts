@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { globalShellId, globalShellNumber, isGlobalShell } from '@klaud/shared/terminal-keys.js';
+import { globalShellId, globalShellNumber, isGlobalShell } from '@beluga/shared/terminal-keys.js';
 
 /**
  * More shells in a workspace: + in its terminal starts one of your own shells (shell:N) in the
@@ -7,7 +7,7 @@ import { globalShellId, globalShellNumber, isGlobalShell } from '@klaud/shared/t
  * on this Mac (they're your shells: the Terminal view lists them too).
  */
 
-const KEY = 'klaud.wsShells.v1';
+const KEY = 'beluga.wsShells.v1';
 type Owners = Readonly<Record<string, string>>;
 
 function load(): Owners {

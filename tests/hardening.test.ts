@@ -10,19 +10,19 @@ import type { PullRequest } from '../src/core/work-store.js';
 import { QuestionBroker } from '../src/core/questions.js';
 import { Store, initialState } from '../src/core/store.js';
 
-const home = process.env.KLAUD_HOME;
+const home = process.env.BELUGA_HOME;
 let base: string;
 beforeEach(() => {
   base = mkdtempSync(path.join(os.tmpdir(), 'klaud-hard-'));
-  process.env.KLAUD_HOME = path.join(base, '.klaud');
+  process.env.BELUGA_HOME = path.join(base, '.klaud');
 });
 afterEach(() => {
-  process.env.KLAUD_HOME = home;
+  process.env.BELUGA_HOME = home;
 });
 
 describe('secrets', () => {
-  it("covers klaud's own key and settings, but not worktrees, chats or the outbox", () => {
-    const k = process.env.KLAUD_HOME!;
+  it("covers Beluga's own key and settings, but not worktrees, chats or the outbox", () => {
+    const k = process.env.BELUGA_HOME!;
     expect(isSecretPath(path.join(k, 'identity.json'))).toBe(true);
     expect(isSecretPath(path.join(k, 'settings.json'))).toBe(true);
     expect(isSecretPath(path.join(k, 'history', 'x.json'))).toBe(true);
@@ -72,7 +72,7 @@ describe('pull request news', () => {
     expect(prNews('w', 'ws:w', pr, { ...pr, review: 'APPROVED' })[0]?.title).toBe('PR #3 was approved');
   });
 
-  it("doesn't announce PRs you didn't ask klaud for (they already existed)", () => {
+  it("doesn't announce PRs you didn't ask Beluga for (they already existed)", () => {
     expect(prNews('w', 'ws:w', undefined, pr)).toEqual([]);
     expect(prNews('w', 'ws:w', undefined, { ...pr, state: 'MERGED' }, true)).toEqual([]);
   });

@@ -1,8 +1,8 @@
-// The install window: Klaud's .dmg with its own background, the two icons placed on it,
+// The install window: Beluga's .dmg with its own background, the two icons placed on it,
 // the ".app" hidden, and the volume's hidden files moved out of view (so they stay out of
 // sight even for people who show hidden files in Finder).
 //
-//   node scripts/make-dmg.mjs [path/to/Klaud.app] [out.dmg]
+//   node scripts/make-dmg.mjs [path/to/Beluga.app] [out.dmg]
 //
 // Defaults to the app `tauri build` made. Needs macOS (hdiutil, osascript, tiffutil, SetFile).
 import { execFileSync } from 'node:child_process';
@@ -29,7 +29,7 @@ const AWAY = [WINDOW.width + 200, WINDOW.height + 200];
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], ...opts }).toString().trim();
 
 if (!existsSync(app)) throw new Error(`No app at ${app}: run tauri build first`);
-const work = mkdtempSync(path.join(os.tmpdir(), 'klaud-dmg-'));
+const work = mkdtempSync(path.join(os.tmpdir(), 'beluga-dmg-'));
 const stage = path.join(work, 'stage');
 mkdirSync(path.join(stage, '.background'), { recursive: true });
 cpSync(app, path.join(stage, `${name}.app`), { recursive: true, verbatimSymlinks: true });

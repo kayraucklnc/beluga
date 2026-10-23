@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './fixtures.js';
 
 /**
  * A plan while Claude writes it (KLD-28): a name that isn't your message, one placeholder inside
@@ -90,21 +90,17 @@ test('a plan being written: calm, clipped, one status (KLD-28)', async ({ page }
   await expect(chat.getByText(/Read src\/server\.ts|Glob src/).first()).toBeVisible({ timeout: 15_000 });
   expect(await overflowRight(chat)).toEqual([]);
 
-  // The Inspector shows the plan, not the room.
-  if (!(await page.getByRole('complementary', { name: 'Inspector' }).isVisible())) await page.getByRole('button', { name: /^Show the panel/ }).click();
-  const info = page.getByRole('tab', { name: 'Info' });
-  if (await info.isVisible()) await info.click();
-  const inspector = page.getByRole('complementary', { name: 'Inspector' });
-  await expect(inspector).toContainText('This plan');
-  await expect(inspector).toContainText('bob-api');
-  await expect(inspector).toContainText('Claude is writing it');
-  await expect(inspector).not.toContainText('New people');
+  // No right panel beside a plan (KLD-54): its project is in the toolbar, and the panel's button is off.
+  await expect(page.locator('aside[aria-label="Panel"]')).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.getByRole('button', { name: /^No panel on a plan/ })).toBeDisabled();
+  await expect(page.locator('header').filter({ hasText: 'bob-api' }).first()).toBeVisible();
 
   const dir = process.env.SHOTS;
   if (dir) {
     await line.waitFor();
     await page.screenshot({ path: `${dir}/kld-28-drafting-light.png` });
     await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
+    // Screenshots only: the theme's colors fade over; let them land.
     await page.waitForTimeout(150);
     await page.screenshot({ path: `${dir}/kld-28-drafting-dark.png` });
     await page.evaluate(() => (document.documentElement.dataset.theme = 'light'));

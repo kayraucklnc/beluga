@@ -13,7 +13,7 @@ const bridge: RoomBridge = {
   readPeerFile: async () => {
     throw new Error('private');
   },
-  writeReport: async (title) => `proj/.klaud/reports/${title}.md`,
+  writeReport: async (title) => `proj/.beluga/reports/${title}.md`,
   reportUsage: () => undefined,
   getPeerFile: async (peer, file, saveTo) => `${saveTo ?? '~/Downloads/klaud'}/${peer}/${file}`,
   sendFile: async (peer, file) => `Offered ${file} to ${peer}`,
@@ -24,9 +24,9 @@ describe('room tools', () => {
   const call = (name: string, args: Record<string, unknown>) =>
     (defs.find((d) => d.name === name)!.handler as (a: unknown, e: unknown) => Promise<{ content: { text: string }[]; isError?: boolean }>)(args, {});
 
-  it('exposes every tool under the klaud MCP namespace', () => {
-    expect(defs.map((d) => `mcp__klaud__${d.name}`)).toEqual(ROOM_TOOL_NAMES);
-    expect(createRoomTools(bridge)).toMatchObject({ type: 'sdk', name: 'klaud' });
+  it('exposes every tool under the Beluga MCP namespace', () => {
+    expect(defs.map((d) => `mcp__beluga__${d.name}`)).toEqual(ROOM_TOOL_NAMES);
+    expect(createRoomTools(bridge)).toMatchObject({ type: 'sdk', name: 'beluga' });
   });
 
   it('proxies calls to the bridge', async () => {
@@ -56,7 +56,7 @@ describe('prompts', () => {
 
   it('summarizes tool calls for the live feed', () => {
     expect(summarizeTool('Read', { file_path: '/a/b.ts' })).toBe('Read /a/b.ts');
-    expect(summarizeTool('mcp__klaud__ask_agent', { peer: 'bob' })).toBe('ask_agent bob');
+    expect(summarizeTool('mcp__beluga__ask_agent', { peer: 'bob' })).toBe('ask_agent bob');
     expect(summarizeTool('Bash', { command: 'x'.repeat(100) })).toHaveLength(85);
     expect(summarizeTool('TodoWrite', {})).toBe('TodoWrite');
     expect(summarizeTool('Read', { file_path: '/home/kay/proj/src/a.ts' }, '/home/kay/proj')).toBe('Read src/a.ts');

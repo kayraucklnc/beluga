@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { NEEDS, type Need, type TaskKind } from './protocol.js';
+import { hhmm } from '../../shared/clock.js';
 
 /**
  * Who may have their Claude do what on this Mac: per-capability settings by trust level, and
@@ -76,7 +77,7 @@ export const CAP_LEVEL_INFO: Readonly<Record<CapLevel, string>> = { allow: 'Allo
 /** What one capability is for someone at this trust level. */
 export const capFor = (caps: Capabilities, need: Need, trust: string): CapLevel => (trust === 'blocked' ? 'off' : (caps.levels[need][trust as CapTrust] ?? 'off'));
 
-/** What your klaud offers someone at this trust level (on your card: their Claude sees it). */
+/** What your Beluga offers someone at this trust level (on your card: their Claude sees it). */
 export const offersFor = (caps: Capabilities, trust: string): Need[] => (trust === 'blocked' ? [] : NEEDS.filter((n) => capFor(caps, n, trust) !== 'off'));
 
 // ------------------------------------------------------------------ rules
@@ -185,7 +186,7 @@ export function decideAccess(input: { trust: string; caps: Capabilities; rules: 
 /** Why a request was declined, in words for the person who sent it. */
 export function declineReason(d: AccessDecision, owner: string): string {
   if (d.by === 'blocked') return `${owner} doesn't take requests from you`;
-  if (d.by === 'capability') return `${owner}'s klaud doesn't let you ${(d.caps ?? []).map((n) => CAP_INFO[n].doing).join(' or ')}`;
+  if (d.by === 'capability') return `${owner}'s Beluga doesn't let you ${(d.caps ?? []).map((n) => CAP_INFO[n].doing).join(' or ')}`;
   if (d.by === 'rule') return `${owner} has a rule that declines requests like this one`;
   return `${owner} declined`;
 }
@@ -247,8 +248,7 @@ export function expiryLabel(rule: Pick<Rule, 'expiresAt'>, now = Date.now()): st
   if (rule.expiresAt === undefined) return 'never expires';
   if (rule.expiresAt <= now) return 'expired';
   const d = new Date(rule.expiresAt);
-  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  return `until ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+  return `until ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${hhmm(rule.expiresAt)}`;
 }
 
 export const DECISION_INFO: Readonly<Record<RuleDecision, string>> = { allow: 'Allow', ask: 'Ask me', decline: 'Decline' };

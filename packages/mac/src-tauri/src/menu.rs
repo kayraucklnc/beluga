@@ -20,17 +20,17 @@ fn item<R: Runtime>(
 
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let about = AboutMetadata {
-        name: Some("Klaud".into()),
+        name: Some("Beluga".into()),
         version: Some(app.package_info().version.to_string()),
         ..Default::default()
     };
     let app_menu = Submenu::with_items(
         app,
-        "Klaud",
+        "Beluga",
         true,
         &[
-            &PredefinedMenuItem::about(app, Some("About Klaud"), Some(about))?,
-            // Handled in lib.rs (updater.rs): it works even while the window can't reach klaud.
+            &PredefinedMenuItem::about(app, Some("About Beluga"), Some(about))?,
+            // Handled in lib.rs (updater.rs): it works even while the window can't reach Beluga.
             &item(app, "check-updates", "Check for Updates…", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item(app, "settings", "Settings…", Some("CmdOrCtrl+,"))?,
@@ -41,7 +41,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::hide_others(app, None)?,
             &PredefinedMenuItem::show_all(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            &item(app, "quit", "Quit Klaud", Some("CmdOrCtrl+Q"))?,
+            &item(app, "quit", "Quit Beluga", Some("CmdOrCtrl+Q"))?,
         ],
     )?;
     let file = Submenu::with_items(
@@ -138,7 +138,12 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &item(app, "panel-info", "Info", Some("Alt+CmdOrCtrl+4"))?,
             &item(app, "panel-history", "History", Some("Alt+CmdOrCtrl+5"))?,
             &item(app, "panel-scratch", "Scratch", Some("Alt+CmdOrCtrl+6"))?,
-            &item(app, "panel-background", "Background", Some("Alt+CmdOrCtrl+7"))?,
+            &item(
+                app,
+                "panel-background",
+                "Background",
+                Some("Alt+CmdOrCtrl+7"),
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &item(app, "toggle-dock", "Toggle Terminal", Some("CmdOrCtrl+J"))?,
             &PredefinedMenuItem::separator(app)?,
@@ -185,7 +190,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::minimize(app, None)?,
             &PredefinedMenuItem::maximize(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            &item(app, "show", "Klaud", None)?,
+            &item(app, "show", "Beluga", None)?,
         ],
     )?;
     let help = Submenu::with_items(
@@ -193,7 +198,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "Help",
         true,
         &[
-            &item(app, "help-welcome", "Welcome to Klaud", None)?,
+            &item(app, "help-welcome", "Welcome to Beluga", None)?,
             &PredefinedMenuItem::separator(app)?,
             &item(app, "help-keys", "Keys and Commands", Some("CmdOrCtrl+/"))?,
             &item(app, "help-log", "Open the Log", None)?,
@@ -339,7 +344,7 @@ pub fn on_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     }
 }
 
-/// Your status on the klaud network, as the menu-bar menu shows it (see `set_tray_presence`).
+/// Your status on the Beluga network, as the menu-bar menu shows it (see `set_tray_presence`).
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct TrayPresence {
     /// online, away, dnd or offline (appear offline).
@@ -409,8 +414,8 @@ fn request_item<R: Runtime>(
     Submenu::with_items(app, &r.title, true, &refs)
 }
 
-/// The menu-bar menu: requests waiting for you, your status (while you're on the klaud
-/// network), open klaud, quit.
+/// The menu-bar menu: requests waiting for you, your status (while you're on the Beluga
+/// network), open Beluga, quit.
 pub fn tray_menu<R: Runtime>(
     app: &AppHandle<R>,
     presence: Option<&TrayPresence>,
@@ -440,24 +445,24 @@ pub fn tray_menu<R: Runtime>(
             menu.append(&it)?;
         }
     }
-    menu.append(&item(app, "show", "Open Klaud", None)?)?;
+    menu.append(&item(app, "show", "Open Beluga", None)?)?;
     menu.append(&item(app, "new-chat", "New Chat", None)?)?;
     if presence.is_some() {
         menu.append(&item(app, "add-friend", "Add a Friend…", None)?)?;
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    menu.append(&item(app, "quit", "Quit Klaud", None)?)?;
+    menu.append(&item(app, "quit", "Quit Beluga", None)?)?;
     Ok(menu)
 }
 
-/// The icon in the menu bar: open klaud, or quit it (leaving the room).
+/// The icon in the menu bar: open Beluga, or quit it (leaving the room).
 pub fn tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let menu = tray_menu(app, None, &[])?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
-    TrayIconBuilder::with_id("klaud")
+    TrayIconBuilder::with_id("beluga")
         .icon(icon)
         .icon_as_template(true)
-        .tooltip("Klaud")
+        .tooltip("Beluga")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| on_event(app, event.id().as_ref()))

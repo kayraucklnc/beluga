@@ -1,10 +1,10 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import type { CcOutput, CcOutputFile, CcOutputs } from '@klaud/core/claude-code/model.js';
-import { formatBytes } from '@klaud/shared/format.js';
+import type { CcOutput, CcOutputFile, CcOutputs } from '@beluga/core/claude-code/model.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { Button, Empty, EmptyActions, IconButton, Segmented, cx } from '../components/ui.js';
-import { useApi, useKlaud } from '../lib/klaud.js';
+import { useApi, useBeluga } from '../lib/beluga.js';
 import { openWithDefaultApp, revealInFinder } from '../lib/files.js';
 import { followed, isFresh, timeAgo } from '../layout/panel/scratch-model.js';
 import { type Places, howLabel, outputsKey, placeOf } from './outputs-model.js';
@@ -79,7 +79,7 @@ function Contents({ file }: { file: CcOutputFile }) {
 
 function Preview({ sessionId, agentId, item, places, onClose }: { sessionId: string; agentId: string; item: CcOutput; places: Places; onClose: () => void }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const now = useNow();
   const [file, setFile] = useState<CcOutputFile | null>();
   useEffect(() => {
@@ -140,7 +140,7 @@ function Preview({ sessionId, agentId, item, places, onClose }: { sessionId: str
 
 /** The Outputs of one sub-agent (its page's second tab). */
 export function AgentOutputs({ sessionId, agentId, list, cwd }: { sessionId: string; agentId: string; list: CcOutputs | undefined; cwd?: string }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const now = useNow();
   const [follow, setFollow] = useState(true);
   const [picked, setPicked] = useState<string>();

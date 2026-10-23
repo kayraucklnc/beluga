@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { HistoryFilters as Filters } from '@klaud/workspaces/history.js';
+import type { HistoryFilters as Filters } from '@beluga/workspaces/history.js';
 import { Icon } from '../../components/Icon.js';
 import { Select, type SelectEntry } from '../../components/Select.js';
 import { IconButton, cx } from '../../components/ui.js';

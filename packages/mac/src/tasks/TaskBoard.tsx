@@ -1,7 +1,7 @@
 import { type PointerEvent as ReactPointerEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { animate, motion, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity } from 'motion/react';
-import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank } from '@klaud/core/board/model.js';
+import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank } from '@beluga/core/board/model.js';
 import { type ActionItem, ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, cx } from '../components/ui.js';
 import { openSheet } from '../lib/sheets.js';
@@ -474,7 +474,7 @@ const Card = memo(function Card({
   );
 });
 
-/** In Plan waits for its plans' pull requests: a link to each once it's open. */
+/** Merged into Plan waits for its plans' pull requests: a link to each once it's open. */
 function PlanPrs({ issues }: { issues: readonly Issue[] }) {
   const { plans } = usePlans();
   const ids = new Set(issues.flatMap((i) => (i.plan ? [i.plan.id] : [])));

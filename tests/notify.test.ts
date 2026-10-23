@@ -87,8 +87,8 @@ describe('detectNotices: runs', () => {
     expect(detectNotices(forMe, apply(forMe, ev('b', 'me', 'done', 'ok', 'room')))).toEqual([
       { kind: 'done', title: "bob's Claude finished in the group chat", body: 'ok', channel: 'room' },
     ]);
-    const forCat = apply(withCat, ev('b', 'c', 'started', '', 'room'));
-    expect(detectNotices(forCat, apply(forCat, ev('b', 'c', 'done', 'ok', 'room')))).toEqual([]);
+    const catRun = apply(withCat, ev('b', 'c', 'started', '', 'room'));
+    expect(detectNotices(catRun, apply(catRun, ev('b', 'c', 'done', 'ok', 'room')))).toEqual([]);
   });
 
   it('reports errors and denials as problems', () => {
@@ -284,7 +284,7 @@ describe('Notifier', () => {
     vi.advanceTimersByTime(0);
     expect(desktop).toHaveBeenCalledTimes(1);
     const arg = desktop.mock.calls[0]![0];
-    expect(arg.title).toBe('5 updates in klaud');
+    expect(arg.title).toBe('5 updates in Beluga');
     expect(arg.body.split(' · ')).toHaveLength(4);
     expect(arg.sound).toBe(false);
     expect(store.getState().inbox).toHaveLength(5);
@@ -302,7 +302,7 @@ describe('Notifier', () => {
     expect(desktop).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(1);
     expect(desktop).toHaveBeenCalledTimes(2);
-    expect(desktop.mock.calls[1]![0]).toMatchObject({ title: '2 updates in klaud' });
+    expect(desktop.mock.calls[1]![0]).toMatchObject({ title: '2 updates in Beluga' });
   });
 
   it('marks notices read when you open their conversation or come back', () => {
@@ -387,7 +387,7 @@ describe('plan', () => {
 
   it('writes OSC 99 title and body', () => {
     expect(plan('osc99', { ...n, sound: false })).toEqual({
-      write: '\x1b]99;i=klaud:d=0;Claude finished\x1b\\\x1b]99;i=klaud:d=1:p=body;All good\x1b\\',
+      write: '\x1b]99;i=beluga:d=0;Claude finished\x1b\\\x1b]99;i=beluga:d=1:p=body;All good\x1b\\',
     });
     expect(plan('osc99', n).write?.endsWith('\x1b\\\x07')).toBe(true);
   });
@@ -402,23 +402,23 @@ describe('plan', () => {
   it('builds terminal-notifier args with sound and activation', () => {
     expect(plan('terminal-notifier', n, { __CFBundleIdentifier: 'com.googlecode.iterm2' })).toEqual({
       cmd: 'terminal-notifier',
-      args: ['-title', 'klaud', '-subtitle', 'Claude finished', '-message', 'All good', '-group', 'klaud', '-sound', 'default', '-activate', 'com.googlecode.iterm2'],
+      args: ['-title', 'Beluga', '-subtitle', 'Claude finished', '-message', 'All good', '-group', 'beluga', '-sound', 'default', '-activate', 'com.googlecode.iterm2'],
     });
     expect(plan('terminal-notifier', { ...n, body: '', sound: false }, {})).toEqual({
       cmd: 'terminal-notifier',
-      args: ['-title', 'klaud', '-subtitle', 'Claude finished', '-message', ' ', '-group', 'klaud'],
+      args: ['-title', 'Beluga', '-subtitle', 'Claude finished', '-message', ' ', '-group', 'beluga'],
     });
   });
 
   it('builds an AppleScript with quotes and backslashes escaped', () => {
     const p = plan('osascript', { title: 'say "hi"', body: 'path C:\\x "q"', sound: true });
     expect(p.cmd).toBe('osascript');
-    expect(p.args).toEqual(['-e', 'display notification "path C:\\\\x \\"q\\"" with title "klaud" subtitle "say \\"hi\\"" sound name "Glass"']);
-    expect(plan('osascript', { title: 't', body: '', sound: false }).args).toEqual(['-e', 'display notification " " with title "klaud" subtitle "t"']);
+    expect(p.args).toEqual(['-e', 'display notification "path C:\\\\x \\"q\\"" with title "Beluga" subtitle "say \\"hi\\"" sound name "Glass"']);
+    expect(plan('osascript', { title: 't', body: '', sound: false }).args).toEqual(['-e', 'display notification " " with title "Beluga" subtitle "t"']);
   });
 
   it('builds notify-send args', () => {
-    expect(plan('notify-send', n)).toEqual({ cmd: 'notify-send', args: ['-a', 'klaud', '--', 'Claude finished', 'All good'] });
+    expect(plan('notify-send', n)).toEqual({ cmd: 'notify-send', args: ['-a', 'Beluga', '--', 'Claude finished', 'All good'] });
     // A name that looks like an option can't become one.
     expect(plan('notify-send', { ...n, title: '--wait bob joined' }).args?.[3]).toBe('wait bob joined');
   });
@@ -429,7 +429,7 @@ describe('plan', () => {
   });
 });
 
-describe('the klaud network: messages from friends and groups', () => {
+describe('the Beluga network: messages from friends and groups', () => {
   type Net = DomainState['network'];
   const selfNet = { peerId: 'me'.padEnd(32, 'x'), name: 'kay', presence: { state: 'online' as const }, appearOffline: false };
   const msg = (id: string, conversation: string, text: string, extra: Partial<Net['messages'][string][number]> = {}) => ({ id, conversation, from: 'b'.padEnd(32, 'x'), name: 'bob', text, ts: 1_000_000, mine: false, ...extra });
@@ -500,7 +500,7 @@ describe('plans: you hear from the plan, not each task', () => {
     activity: [],
     createdAt: 0,
     updatedAt: 0,
-    createdBy: { kind: 'klaud' },
+    createdBy: { kind: 'beluga' },
     origin: 'plan',
     plan: { id: 'pl1', milestone: 'm1', task: 't1' },
     ...over,
@@ -566,7 +566,7 @@ describe('plans: you hear from the plan, not each task', () => {
 
   it('a milestone passing is one notice that says what is next', () => {
     const before = inPlan();
-    const after = apply(before, { type: 'plan_put', plan: plan({ runs: { m1: { passedAt: 5, passedBy: { kind: 'klaud' } } } }) });
+    const after = apply(before, { type: 'plan_put', plan: plan({ runs: { m1: { passedAt: 5, passedBy: { kind: 'beluga' } } } }) });
     expect(detectNotices(before, after)).toEqual([{ kind: 'done', tag: 'milestone', title: 'Auth: “API” passed', body: 'Next: “UI”', channel: 'ws:home', plan: 'pl1', key: 'plan:pl1:m1:passed:5' }]);
   });
 
@@ -576,7 +576,7 @@ describe('plans: you hear from the plan, not each task', () => {
     const before = inPlan(gated);
     const waiting = apply(before, { type: 'board_issue', issue: done });
     expect(detectNotices(before, waiting)).toMatchObject([{ kind: 'needsYou', tag: 'milestone', title: 'Auth: “API” is ready for you' }]);
-    const failed = apply(waiting, { type: 'plan_put', plan: plan({ autonomy: 'gated', runs: { m1: { checkAsked: 1, check: { at: 2, by: { kind: 'klaud' }, verdict: 'fail', notes: 'Two tests fail' } } } }) });
+    const failed = apply(waiting, { type: 'plan_put', plan: plan({ autonomy: 'gated', runs: { m1: { checkAsked: 1, check: { at: 2, by: { kind: 'beluga' }, verdict: 'fail', notes: 'Two tests fail' } } } }) });
     expect(detectNotices(waiting, failed)).toMatchObject([{ kind: 'problems', tag: 'milestone', title: 'Auth: “API” didn’t pass its check', body: 'Two tests fail' }]);
     const finished = apply(failed, { type: 'plan_put', plan: plan({ status: 'done', doneAt: 9 }) }, { type: 'board_issue', issue: issue({ status: 'in_review', pr: { number: 3, url: '', state: 'OPEN', title: 'x', draft: false, checks: 'passing' } }) });
     expect(detectNotices(failed, finished)).toEqual([{ kind: 'done', tag: 'milestone', title: 'Auth is done', body: 'Its pull request is ready to merge', channel: 'ws:home', plan: 'pl1', key: 'plan:pl1:done:9' }]);

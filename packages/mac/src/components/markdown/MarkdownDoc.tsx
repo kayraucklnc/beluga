@@ -1,10 +1,10 @@
 import { type ReactNode, memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import type { Element, ElementContent } from 'hast';
-import type { Location } from '@klaud/core/store.js';
+import type { Location } from '@beluga/core/store.js';
 import { Icon, type IconName } from '../Icon.js';
 import { cx } from '../ui.js';
-import { useKlaud } from '../../lib/klaud.js';
+import { useBeluga } from '../../lib/beluga.js';
 import { copyText } from '../../lib/copy.js';
 import { openExternal } from '../../lib/system.js';
 import { CodeBlock } from './CodeBlock.js';
@@ -18,7 +18,7 @@ import { findAnchor, scrollToElement } from './md-dom.js';
 import { metaRows, splitFrontMatter, type MetaRow } from './md-frontmatter.js';
 import { resolveLink } from './md-paths.js';
 import { GraphBlock } from '../graph/GraphBlock.js';
-import { GRAPH_FENCE } from '@klaud/shared/graph-spec.js';
+import { isGraphFence } from '@beluga/shared/graph-spec.js';
 import m from './markdown.module.css';
 
 /**
@@ -147,7 +147,7 @@ function makeComponents(ctx: { current: Ctx }): Components {
         ?.slice('language-'.length);
       if (lang === 'math') return <MathTex tex={text} display />;
       if (lang === 'mermaid') return <Diagram code={text} />;
-      if (lang === GRAPH_FENCE) return <GraphBlock code={text} />;
+      if (isGraphFence(lang)) return <GraphBlock code={text} />;
       return <CodeBlock code={text} lang={lang} />;
     },
     code: ({ className, children }) =>
@@ -187,7 +187,7 @@ export interface MarkdownDocProps {
 }
 
 export const MarkdownDoc = memo(function MarkdownDoc({ text, at, variant, nav }: MarkdownDocProps) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const article = useRef<HTMLElement>(null);
   const { yaml, body } = useMemo(() => splitFrontMatter(text), [text]);
   // A big file re-renders behind whatever you're doing, not in its way.

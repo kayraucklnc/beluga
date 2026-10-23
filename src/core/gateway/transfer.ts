@@ -84,7 +84,7 @@ export class FileOffers {
     }
   }
 
-  /** A task was cancelled or klaud stops: what it offered goes. */
+  /** A task was cancelled or Beluga stops: what it offered goes. */
   drop(taskId?: string): void {
     for (const [ref, o] of this.offers) if (!taskId || o.taskId === taskId) this.offers.delete(ref);
   }
@@ -196,7 +196,7 @@ export class FileFetcher {
   /** Ask for one piece, again a few times if it doesn't come. */
   private async ask(from: string, taskId: string, ref: string, offset: number): Promise<FileChunk> {
     for (let attempt = 0; attempt < CHUNK_TRIES; attempt++) {
-      if (this.stopped) throw new Error('klaud stopped');
+      if (this.stopped) throw new Error('Beluga stopped');
       const got = await new Promise<FileChunk | undefined>((resolve) => {
         const key = `${from}:${taskId}:${ref}:${offset}`;
         const timer = setTimeout(() => {

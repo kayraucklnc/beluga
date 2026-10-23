@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, issueById } from '@klaud/core/board/model.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { type Issue, PRIORITY_INFO, STATUS_INFO, actorName, assigneeName, isFinished, issueById } from '@beluga/core/board/model.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Empty, IconButton, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
+import { usePlanActions } from '../plans/use-plans.js';
 import { ActivityFeed } from './Activity.js';
 import { Brief } from './Brief.js';
 import { AssigneeMark, LabelChip, PrChip, PriorityIcon, StatusIcon } from './marks.js';
 import { useIssueMenu } from './parts.js';
 import { AssigneePicker, LabelsPicker, PriorityPicker, StatusPicker, TaskPicker } from './pickers.js';
 import { ProofList, Relations, SubTasks } from './TaskSections.js';
+import { unexplained } from '@beluga/core/board/criteria.js';
 import { ago, dueText } from './tasks-model.js';
 import { useBoard, useSelfId, useSolo, useTaskActions } from './use-tasks.js';
 import t from './tasks.module.css';
@@ -24,7 +26,7 @@ import t from './tasks.module.css';
 export function TaskPage({ id }: { id: string }) {
   const board = useBoard();
   const issue = issueById(board, id);
-  if (!board.enabled) return <Empty icon="task" title="Tasks need the Klaud app" />;
+  if (!board.enabled) return <Empty icon="task" title="Tasks need the Beluga app" />;
   if (!issue) return <Empty icon="task" title="This task isn’t here anymore" detail="It may have been deleted." />;
   return (
     <div className={t.pageWrap}>
@@ -78,6 +80,7 @@ function Header({ issue }: { issue: Issue }) {
       </nav>
       <Title issue={issue} />
       <GoneBanner issue={issue} />
+      <ChecksBanner issue={issue} />
       <NextStep issue={issue} />
     </header>
   );
@@ -122,6 +125,21 @@ function Title({ issue }: { issue: Issue }) {
   );
 }
 
+/** Kept out of review: which criteria still need a tick or a reason. */
+function ChecksBanner({ issue }: { issue: Issue }) {
+  if (!issue.needsChecks || !STATUS_INFO[issue.status].open) return null;
+  const open = unexplained(issue.brief.acceptance);
+  if (!open.length) return null;
+  return (
+    <div className={t.banner} role="status">
+      <Icon name="alert" size={14} />
+      <span className={t.bannerText}>
+        <strong>Needs its checks.</strong> {open.length === 1 ? 'A criterion is' : `${open.length} criteria are`} neither ticked nor explained, so it stays out of review: tick each one, or add “— deferred: why” after it.
+      </span>
+    </div>
+  );
+}
+
 /** Its worktree was archived or deleted before it was done: what now? */
 function GoneBanner({ issue }: { issue: Issue }) {
   const { api, act } = useTaskActions();
@@ -143,28 +161,29 @@ function GoneBanner({ issue }: { issue: Issue }) {
   );
 }
 
-/** What to do next: open the worktree doing it (and its pull request), or start one. */
+/** What to do next: open the worktree doing it (and its pull request), or start one; finished work shows how it ended. */
 function NextStep({ issue }: { issue: Issue }) {
   const { api, act, openWorktree } = useTaskActions();
   const workspaceId = issue.worktreeGone ? undefined : issue.worktrees.at(-1);
   const ws = useApp((s) => (workspaceId ? findWorkspace(s.projects, workspaceId) : undefined));
-  const actions = useActions();
   const [starting, setStarting] = useState(false);
   const start = async (claude: boolean): Promise<void> => {
     setStarting(true);
     await act(() => api.start(issue.id, { claude }));
     setStarting(false);
   };
-  if (!STATUS_INFO[issue.status].open && !ws) return null;
+  if (isFinished(issue.status)) return <Outcome issue={issue} conversation={ws?.id} />;
+  const live = ws && !ws.archived ? ws : undefined;
+  if (!STATUS_INFO[issue.status].open && !live) return null;
   return (
     <div className={t.nextStep}>
-      {ws && !ws.archived ? (
+      {live ? (
         <>
-          <Button variant="primary" size="small" icon="branch" onClick={() => openWorktree(ws.id)}>
+          <Button variant="primary" size="small" icon="branch" onClick={() => openWorktree(live.id)}>
             Open Worktree
           </Button>
           <span className={t.nextInfo}>
-            <span className={t.mono}>{ws.name}</span>
+            <span className={t.mono}>{live.name}</span>
             {issue.branch ? <span className={t.nextBranch}>on {issue.branch}</span> : null}
           </span>
         </>
@@ -180,14 +199,58 @@ function NextStep({ issue }: { issue: Issue }) {
         </>
       )}
       <span className={t.grow} />
-      {issue.pr ? (
-        <button type="button" className={t.prLink} onClick={() => actions.openLink({ kind: 'url', url: issue.pr!.url })}>
-          <PrChip pr={issue.pr} />
-          <span className={t.prTitle}>{issue.pr.title}</span>
-          <Icon name="external" size={11} />
-        </button>
+      {issue.pr ? <PrLink pr={issue.pr} /> : null}
+    </div>
+  );
+}
+
+/**
+ * A finished task (in review, merged into its plan, or shipped): what happened, where its work is
+ * (branch, pull request, plan) and its conversation, to ask it things still. Starting again is
+ * ⋯ › Reopen the Task.
+ */
+function Outcome({ issue, conversation }: { issue: Issue; conversation: string | undefined }) {
+  const { openWorktree } = useTaskActions();
+  const plan = useApp((s) => (issue.plan ? s.plans.plans.find((p) => p.id === issue.plan!.id) : undefined));
+  const { open: openPlan } = usePlanActions();
+  const what =
+    issue.status === 'in_review'
+      ? issue.pr ? 'In review · its pull request is open' : 'In review'
+      : issue.status === 'in_plan'
+        ? 'Merged into the plan · ships with the plan’s pull request'
+        : plan ? 'Done · shipped with the plan' : 'Done';
+  const pr = issue.status === 'in_plan' ? (plan?.pr ?? issue.pr) : issue.pr;
+  return (
+    <div className={t.nextStep} data-testid="task-outcome">
+      <span className={t.outcome}>
+        <StatusIcon status={issue.status} />
+        {what}
+      </span>
+      {issue.branch ? <span className={t.mono}>{issue.branch}</span> : null}
+      <span className={t.grow} />
+      {pr ? <PrLink pr={pr} /> : null}
+      {plan ? (
+        <Button size="small" variant="quiet" icon="graph" onClick={() => openPlan(plan.id)}>
+          Open the Plan
+        </Button>
+      ) : null}
+      {conversation ? (
+        <Button size="small" icon="chat" onClick={() => openWorktree(conversation)}>
+          Open the Conversation
+        </Button>
       ) : null}
     </div>
+  );
+}
+
+function PrLink({ pr }: { pr: NonNullable<Issue['pr']> }) {
+  const actions = useActions();
+  return (
+    <button type="button" className={t.prLink} onClick={() => actions.openLink({ kind: 'url', url: pr.url })}>
+      <PrChip pr={pr} />
+      <span className={t.prTitle}>{pr.title}</span>
+      <Icon name="external" size={11} />
+    </button>
   );
 }
 

@@ -38,7 +38,7 @@ function getWorker(): Worker | undefined {
   });
   w.on('error', (err: unknown) => failAll(err instanceof Error ? err : new Error(String(err))));
   w.on('exit', () => failAll(new Error('The image decoder stopped')));
-  // An idle decoder must never keep klaud running (unref after listeners, which re-ref).
+  // An idle decoder must never keep Beluga running (unref after listeners, which re-ref).
   w.unref();
   worker = w;
   return w;

@@ -1,16 +1,16 @@
 import { Command } from 'cmdk';
 import * as Dialog from '@radix-ui/react-dialog';
-import { findWorkspace, workspaceButtons } from '@klaud/ui/workspace-models.js';
+import { findWorkspace, workspaceButtons } from '@beluga/ui/workspace-models.js';
 import { macTabs } from '../lib/go.js';
-import { worktreeOrigin } from '@klaud/workspaces/origin.js';
+import { worktreeOrigin } from '@beluga/workspaces/origin.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
 import { asksBeforeWork } from '../lib/work-confirm.js';
-import { useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { setPrefs, usePrefs, zoom } from '../lib/prefs.js';
 import { mod } from '../lib/system.js';
 import { showPanelTab, tabsOf, togglePanel, toggleTerminal } from '../lib/panel.js';
-import { PANEL_LABELS, panelDigit } from '../lib/panel-model.js';
+import { PANEL_LABELS, panelDigit, panelFits } from '../lib/panel-model.js';
 import { paletteCommands } from './palette-commands.js';
 import { networkPaletteItems } from '../network/net-palette.js';
 import s from './palette.module.css';
@@ -32,7 +32,7 @@ const VIEW_ICONS: Record<string, IconName> = { room: 'chat', files: 'folder', ov
  * new, any /command, people, and this window's settings. Type to filter.
  */
 export function Palette() {
-  const { ui, client } = useKlaud();
+  const { ui, client } = useBeluga();
   const actions = useActions();
   const open = useUi((u) => u.palette);
   const state = useApp((st) => st);
@@ -71,14 +71,14 @@ export function Palette() {
     ]),
     { id: 'add-project', label: 'Add a project…', icon: 'plus', run: () => actions.run({ type: 'add_project' }) },
     { id: 'share-folder', label: 'Share a folder…', icon: 'share', run: () => ui.openMenu({ kind: 'share_folder', launchDir: state.home, mine: state.myShares }) },
-    { id: 'invite', label: 'Invite someone…', icon: 'link', run: () => document.dispatchEvent(new CustomEvent('klaud:invite')) },
+    { id: 'invite', label: 'Invite someone…', icon: 'link', run: () => document.dispatchEvent(new CustomEvent('beluga:invite')) },
     { id: 'templates', label: 'Start from a template…', icon: 'wand', run: () => ui.openMenu({ kind: 'templates' }) },
   ];
   const people: Item[] = state.peers
     .map((p, index) => ({ p, index }))
     .filter(({ p }) => p.peerId !== state.selfId)
     .map(({ p, index }) => ({ id: `person:${p.peerId}`, label: p.name, hint: 'trust, follow, run a command, share…', icon: 'person' as IconName, run: () => ui.openMenu({ kind: 'person', index }) }));
-  // Friends and groups (the klaud network), and adding a friend or a group.
+  // Friends and groups (the Beluga network), and adding a friend or a group.
   const net = networkPaletteItems(state, client);
   // The /commands as things to do (no `<arg>` syntax); the ones that need more open their sheet.
   const commands: Item[] = paletteCommands({ client, ui, actions, state });
@@ -87,7 +87,9 @@ export function Palette() {
     { id: 'inbox', label: 'Notifications', hint: 'What happened while you were elsewhere', icon: 'bell', run: () => ui.patch({ notices: true }) },
     { id: 'appearance', label: `Appearance: ${prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark'}`, icon: 'eye', run: () => setPrefs({ appearance: prefs.appearance === 'dark' ? 'light' : prefs.appearance === 'light' ? 'system' : 'dark' }) },
     { id: 'sidebar', label: prefs.sidebar ? 'Hide the sidebar' : 'Show the sidebar', keys: '⌃⌘S', icon: 'sidebar', run: () => setPrefs({ sidebar: !prefs.sidebar }) },
-    { id: 'inspector', label: prefs.inspector ? 'Hide the panel' : 'Show the panel', hint: 'Changes, files, terminal, info', keys: `⌥${mod()}0`, icon: 'panelRight', run: togglePanel },
+    panelFits(state.view)
+      ? { id: 'inspector', label: prefs.inspector ? 'Hide the panel' : 'Show the panel', hint: 'Changes, files, terminal, info', keys: `⌥${mod()}0`, icon: 'panelRight', run: () => togglePanel(state.view) }
+      : { id: 'inspector', label: 'Show or hide the plan’s chat', keys: `⌥${mod()}0`, icon: 'claude', run: () => togglePanel(state.view) },
     { id: 'terminal-toggle', label: 'Show or hide the terminal', hint: prefs.termIn === 'drawer' ? 'under the chat' : 'in the panel', keys: `${mod()}J`, icon: 'terminal', run: () => void toggleTerminal(client.store.getState()) },
     { id: 'bigger', label: 'Bigger text', keys: `${mod()}+`, icon: 'plus', run: () => zoom('in') },
     { id: 'smaller', label: 'Smaller text', keys: `${mod()}−`, icon: 'x', run: () => zoom('out') },

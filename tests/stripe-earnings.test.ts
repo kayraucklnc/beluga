@@ -195,7 +195,7 @@ describe('the earnings service', () => {
     // Kept only in the file, readable only by you.
     expect(loadStripeFile(file!).projects['/code/shop']?.key).toBe(KEY);
     expect(statSync(file!).mode & 0o777).toBe(0o600);
-    // A new service (klaud restarting) shows the same, without asking Stripe.
+    // A new service (Beluga restarting) shows the same, without asking Stripe.
     const store2 = new Store(initialState('room'));
     const again = new StripeEarnings({ store: store2, file: file!, stripe: { fetch: stripe.fetch } });
     expect(store2.getState().earnings['/code/shop']?.totals).toEqual(shown.totals);
@@ -300,8 +300,8 @@ describe('the earnings service', () => {
     const { store, stripe, service } = setup();
     stripe.charge(1, 4200);
     const session = { store } as unknown as Session;
-    expect(() => earningsOf(session)).toThrow(/klaud app for Mac/);
-    await expect(HANDLERS['stripe.connect'](session, 'p1', KEY)).rejects.toThrow(/klaud app for Mac/);
+    expect(() => earningsOf(session)).toThrow(/Beluga app for Mac/);
+    await expect(HANDLERS['stripe.connect'](session, 'p1', KEY)).rejects.toThrow(/Beluga app for Mac/);
     attachEarnings(session, service);
     const refused = await HANDLERS['stripe.connect'](session, ...parseArgs('stripe.connect', ['p1', 'pk_live_51abcdefghijklmnopqrstu']));
     expect(refused).toEqual({ ok: false, error: expect.stringMatching(/publishable/) });

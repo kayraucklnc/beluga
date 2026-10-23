@@ -4,8 +4,8 @@ import type { Action, DomainState } from '../core/store.js';
 import { decode, encode } from '../shared/codec.js';
 
 /**
- * How screens talk to the klaud daemon on this computer: one WebSocket on 127.0.0.1, a token
- * from $KLAUD_HOME/daemon.json, then a snapshot of the shared state followed by the stream of
+ * How screens talk to the beluga daemon on this computer: one WebSocket on 127.0.0.1, a token
+ * from $BELUGA_HOME/daemon.json, then a snapshot of the shared state followed by the stream of
  * actions that change it (every client replays them with the same reducer). Browser-safe.
  */
 export const IPC_VERSION = 1;
@@ -43,7 +43,7 @@ export const ClientFrame = z.discriminatedUnion('t', [
 ]);
 export type ClientFrame = z.input<typeof ClientFrame>;
 
-/** Daemon → screen (trusted: the daemon is this computer's own klaud). */
+/** Daemon → screen (trusted: the daemon is this computer's own Beluga). */
 export type DaemonFrame =
   | { readonly t: 'welcome'; readonly clientId: string; readonly version: string; readonly ipc: number; readonly snapshot: DomainState; readonly seq: number; readonly clients: number }
   | { readonly t: 'snapshot'; readonly snapshot: DomainState; readonly seq: number }
@@ -73,7 +73,7 @@ export function parseClientFrame(text: string): z.output<typeof ClientFrame> | u
 
 export const parseDaemonFrame = (text: string): DaemonFrame => decode(text) as DaemonFrame;
 
-/** What $KLAUD_HOME/daemon.json says about the running daemon. */
+/** What $BELUGA_HOME/daemon.json says about the running daemon. */
 export const DaemonInfo = z.object({
   pid: z.number().int().min(2),
   port: z.number().int().min(1).max(65535),
@@ -85,5 +85,7 @@ export const DaemonInfo = z.object({
   roomKey: z.string().default('host'),
   startedAt: z.number(),
   keepAlive: z.boolean().optional(),
+  /** Where its workspaces' records and saved conversations are (history/<id>.json): the demo's own folder, else $KLAUD_HOME. */
+  workspaces: z.string().optional(),
 });
 export type DaemonInfo = z.infer<typeof DaemonInfo>;

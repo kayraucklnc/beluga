@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { KlaudClient } from '@klaud/ipc/client.js';
+import type { BelugaClient } from '@beluga/ipc/client.js';
 import { inApp } from './boot.js';
-import { useKlaud } from './klaud.js';
+import { useBeluga } from './beluga.js';
 
 /** A project's icon as an image URL, or null when it has none (it gets its initial instead). */
 type Icon = string | null;
@@ -10,7 +10,7 @@ type Icon = string | null;
 const cache = new Map<string, Promise<Icon>>();
 const listeners = new Set<(projectId: string) => void>();
 
-function load(client: KlaudClient, key: string): Promise<Icon> {
+function load(client: BelugaClient, key: string): Promise<Icon> {
   let p = cache.get(key);
   if (!p) {
     // "path:/…" is a folder that isn't a project yet.
@@ -31,7 +31,7 @@ export function reloadProjectIcon(projectId: string): void {
 }
 
 export function useProjectIcon(projectId: string): Icon | undefined {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const [icon, setIcon] = useState<Icon | undefined>(undefined);
   const [version, setVersion] = useState(0);
   useEffect(() => {

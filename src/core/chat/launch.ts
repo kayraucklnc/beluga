@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { asks } from '../../net/mesh/extras.js';
 import type { Mesh } from '../../net/mesh/mesh.js';
-import { klaudHome } from '../home.js';
+import { belugaHome } from '../home.js';
 import { watchNetwork } from '../network.js';
 import type { Session } from '../session.js';
 import { loadSettings, saveSettings } from '../settings.js';
@@ -14,9 +14,9 @@ import { ChatFiles } from './files.js';
 import { MainChannel } from './main-channel.js';
 
 /**
- * Chats for the daemon (the Mac app's klaud), whenever the network is on: files in chats,
+ * Chats for the daemon (the Mac app's Beluga), whenever the network is on: files in chats,
  * Claudes called into chats, and your main channel. The demo keeps its files in a temporary
- * folder; otherwise they live in ~/.klaud/chat-files/.
+ * folder; otherwise they live in ~/.beluga/chat-files/.
  */
 
 export interface Chat {
@@ -96,7 +96,7 @@ export function startChat(opts: { mesh: Mesh; store: Store; session?: Session; d
 
 export function launchChat(host: ChatHost): () => void {
   const { session, store } = host;
-  const dir = host.demo ? mkdtempSync(path.join(os.tmpdir(), 'klaud-demo-chat-')) : klaudHome();
+  const dir = host.demo ? mkdtempSync(path.join(os.tmpdir(), 'beluga-demo-chat-')) : belugaHome();
   let demoMain: string | undefined;
   let current: Chat | undefined;
   const off = watchNetwork(session, (service) => {

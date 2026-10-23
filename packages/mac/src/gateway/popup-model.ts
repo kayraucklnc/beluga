@@ -63,7 +63,7 @@ const fullOf = (t: TaskView): string => {
 
 /**
  * Friends' requests waiting for you, newest first, as the card shows them. Nothing while you're
- * on Do Not Disturb or appear offline: they still wait in Klaud and the menu bar, quietly.
+ * on Do Not Disturb or appear offline: they still wait in Beluga and the menu bar, quietly.
  */
 export function popupRequests(approvals: readonly Approval[], tasks: readonly TaskView[], quiet: boolean): PopupRequest[] {
   if (quiet) return [];

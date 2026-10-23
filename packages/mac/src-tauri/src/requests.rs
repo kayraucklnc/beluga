@@ -1,6 +1,6 @@
 //! Friends' requests outside the window: Approve / Always / Decline on the macOS notification,
 //! and the requests waiting for you in the menu-bar menu. The window decides what each answer
-//! means (it asks klaud); this side only shows the buttons and says which one was pressed.
+//! means (it asks Beluga); this side only shows the buttons and says which one was pressed.
 
 use std::sync::Mutex;
 
@@ -32,7 +32,7 @@ pub struct TrayState(pub Mutex<TrayModel>);
 
 /// Build the menu-bar menu again from what it shows now.
 pub fn rebuild<R: Runtime>(app: &AppHandle<R>) {
-    let Some(tray) = app.tray_by_id("klaud") else {
+    let Some(tray) = app.tray_by_id("beluga") else {
         return;
     };
     let Some(state) = app.try_state::<TrayState>() else {
@@ -47,7 +47,7 @@ pub fn rebuild<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Your klaud network status changed (`None`: the network is off).
+/// Your Beluga network status changed (`None`: the network is off).
 pub fn set_presence<R: Runtime>(app: &AppHandle<R>, presence: Option<TrayPresence>) {
     if let Some(state) = app.try_state::<TrayState>() {
         state
@@ -85,7 +85,7 @@ pub const MAX_LISTED: usize = 6;
 pub fn action_sets() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
     vec![
         (
-            "klaud-request",
+            "beluga-request",
             vec![
                 ("review", "Review…"),
                 ("approve", "Approve"),
@@ -93,7 +93,7 @@ pub fn action_sets() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
                 ("decline", "Decline"),
             ],
         ),
-        ("klaud-review", vec![("review", "Review…")]),
+        ("beluga-review", vec![("review", "Review…")]),
     ]
 }
 
@@ -168,11 +168,15 @@ mod tests {
     #[test]
     fn only_a_friends_request_can_be_answered_from_a_notification() {
         let sets = super::action_sets();
-        let review = &sets.iter().find(|(id, _)| *id == "klaud-review").unwrap().1;
+        let review = &sets
+            .iter()
+            .find(|(id, _)| *id == "beluga-review")
+            .unwrap()
+            .1;
         assert_eq!(review, &vec![("review", "Review…")]);
         let request = &sets
             .iter()
-            .find(|(id, _)| *id == "klaud-request")
+            .find(|(id, _)| *id == "beluga-request")
             .unwrap()
             .1;
         assert_eq!(request[0].0, "review");

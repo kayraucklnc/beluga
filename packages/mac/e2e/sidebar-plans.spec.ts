@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
  * A plan is one row under its project (KLD-23): its task worktrees stay off the sidebar, the row
@@ -69,7 +69,7 @@ test('in a task’s worktree (from the plan) the plan row stays marked; it offer
   await expect(page.getByRole('menuitem', { name: /^Merge…/ })).toHaveCount(0);
   await page.getByRole('menuitem', { name: /^Merge Anyway/ }).click();
   const alert = page.getByRole('alertdialog', { name: /by hand\?/ });
-  await expect(alert).toContainText('Klaud merges it into the plan');
+  await expect(alert).toContainText('Beluga merges it into the plan');
   await alert.getByRole('button', { name: 'Cancel' }).click();
   await expect(alert).toBeHidden();
   // The strip at the top leads back to the plan.

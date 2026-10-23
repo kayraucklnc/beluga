@@ -1,6 +1,6 @@
 import { Button } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import { HistoryList } from './HistoryList.js';
 import { useRefContext } from './HistoryView.js';
 import { showCommitNext } from './history-nav.js';

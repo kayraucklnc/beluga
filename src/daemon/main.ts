@@ -6,6 +6,7 @@ import { openWithSystem } from '../core/local.js';
 import { IPC_VERSION } from '../ipc/protocol.js';
 import { type Core, buildCore } from './core.js';
 import { clearDaemonInfo, writeDaemonInfo } from './files.js';
+import { watchEventLoop } from './lag.js';
 import { DaemonServer } from './server.js';
 
 /** How long the daemon waits after the last screen closes before leaving the room. */
@@ -31,6 +32,8 @@ export interface DaemonOptions {
   /** Override LINGER_MS / FIRST_CLIENT_MS (tests). */
   readonly lingerMs?: number;
   readonly firstClientMs?: number;
+  /** How often the event-loop delay is logged (default 30 s, see lag.ts). */
+  readonly lagEveryMs?: number;
 }
 
 export interface RunningDaemon {
@@ -47,7 +50,7 @@ export interface RunningDaemon {
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
- * `klaud daemon`: build the core once and serve it to every screen on this computer. Leaves the
+ * `beluga daemon`: build the core once and serve it to every screen on this computer. Leaves the
  * room a few seconds after the last screen closes (so quitting the terminal UI still means
  * "leave"), unless it's kept alive for the Mac app.
  */
@@ -57,12 +60,14 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
   let server!: DaemonServer;
   let stopping: Promise<void> | undefined;
   let resolveDone!: () => void;
+  let stopLag = (): void => undefined;
   const done = new Promise<void>((r) => (resolveDone = r));
-  const stop = (reason = 'klaud is shutting down'): Promise<void> => {
+  const stop = (reason = 'Beluga is shutting down'): Promise<void> => {
     stopping ??= (async () => {
       log(`stopping: ${reason}`);
       clearTimeout(linger);
       clearTimeout(firstClient);
+      stopLag();
       clearDaemonInfo();
       await server.close(reason).catch(() => undefined);
       await core.stop().catch((err: unknown) => log(`stop failed: ${errorText(err)}`));
@@ -84,7 +89,7 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
   }, { network: true });
   server = new DaemonServer({ session: core.session, token, version: opts.version, terminals: core.terminals, log, ...(opts.port ? { port: opts.port } : {}), ...(opts.allowedOrigins ? { allowedOrigins: opts.allowedOrigins } : {}) });
   const port = await server.listen();
-  writeDaemonInfo({ pid: process.pid, port, token, version: opts.version, ipc: IPC_VERSION, room: core.room, roomKey: roomKeyOf(config), startedAt: Date.now(), keepAlive: opts.keepAlive });
+  writeDaemonInfo({ pid: process.pid, port, token, version: opts.version, ipc: IPC_VERSION, room: core.room, roomKey: roomKeyOf(config), startedAt: Date.now(), keepAlive: opts.keepAlive, workspaces: core.workspacesHome });
   log(`listening on 127.0.0.1:${port} for ${core.room}${opts.keepAlive ? ' (kept alive)' : ''}`);
 
   let linger: NodeJS.Timeout | undefined;
@@ -111,6 +116,7 @@ export async function startDaemon(config: Config, opts: DaemonOptions): Promise<
   });
 
   core.start();
+  stopLag = watchEventLoop(log, opts.lagEveryMs);
   return { core, server, port, token, stop, done };
 }
 

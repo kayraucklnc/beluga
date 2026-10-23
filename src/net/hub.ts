@@ -10,6 +10,7 @@ import {
 } from '../protocol.js';
 import { type RoomKeys, newNonce, open as openBox, seal, verifyNonce, verifyProof } from './crypto.js';
 import { type P2POptions, type P2PServer, listenP2P } from './p2p.js';
+import { isLate } from './patient-timer.js';
 import { type MessageSocket, fromWebSocket } from './transport.js';
 
 export interface HubOptions {
@@ -35,7 +36,7 @@ export interface GuestAccess {
   readonly contacts: readonly string[];
 }
 
-/** Decides who may come in with a project link (the host's klaud keeps the links). */
+/** Decides who may come in with a project link (the host's Beluga keeps the links). */
 export interface GuestGate {
   /** Keys of the links that work right now (each derived from its own secret). */
   keys(): ReadonlyArray<{ readonly id: string; readonly keys: RoomKeys }>;
@@ -228,7 +229,7 @@ export function startHub(opts: HubOptions): Promise<Hub> {
     const peer: PeerInfo = { ...profile.data, name: uniqueName(profile.data.name), peerId: frame.peerId, ...(frame.peerId === opts.hostId ? { host: true } : {}), ...(admission && !admission.full ? { guest: true } : {}) };
     conn.peer = peer;
     if (admission) conn.guest = { full: admission.full, contacts: new Set(admission.contacts) };
-    // Guests reconnect with their link (the host's klaud decides); members may come back with an older room link.
+    // Guests reconnect with their link (the host's Beluga decides); members may come back with an older room link.
     else members.add(frame.peerId);
     // The welcome is sealed with the invite's key and carries the room key, which differs once the invite was replaced.
     const roomKey = helloKeys === roomKeys ? {} : { roomKey: roomKeys.enc.toString('base64') };
@@ -311,9 +312,14 @@ export function startHub(opts: HubOptions): Promise<Hub> {
     return p2p.then((server) => (p2pKey = server.publicKey));
   };
 
+  let lastBeat = Date.now();
   const heartbeat = setInterval(() => {
+    const now = Date.now();
+    // Stalled or asleep (the host's daemon runs this hub): pongs may be waiting to be read, so ask again.
+    const late = isLate(now - lastBeat, HEARTBEAT_MS);
+    lastBeat = now;
     for (const c of conns) {
-      if (!c.alive) {
+      if (!c.alive && !late) {
         c.ws.terminate();
         continue;
       }

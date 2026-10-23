@@ -1,3 +1,4 @@
+import { type Criterion, criteria, criterionLine } from '../board/criteria.js';
 import { type BoardState, STATUS_INFO, filterIssues } from '../board/model.js';
 import { AUTONOMY_INFO, type Plan, type PlanBody, TESTS_AT_INFO, diffBodies, milestoneDeps, shownBody } from './model.js';
 import { type MilestoneView, type PlanView, type TaskView, overlaps } from './progress.js';
@@ -15,8 +16,8 @@ const STATE_WORDS: Readonly<Record<TaskView['state'], string>> = {
   ready: 'ready to start',
   running: 'Claude working',
   asking: 'waiting for an answer',
-  idle: 'stopped without finishing (Klaud wakes it once)',
-  stalled: 'stopped again after Klaud woke it: waits for the user',
+  idle: 'stopped without finishing (Beluga wakes it once)',
+  stalled: 'stopped again after Beluga woke it: waits for the user',
   review: 'in review',
   planned: 'merged into the plan’s branch',
   done: 'done',
@@ -95,9 +96,9 @@ export function planningBrief(plan: Plan, board: BoardState, style: string): str
   const body = shownBody(plan);
   return [
     '',
-    '<klaud_plan_mode>',
-    `This conversation is planning in klaud's Plans: ${plan.body ? 'an approved plan (changes you make are proposed; the user approves them)' : 'a new plan, a draft only you and the user see'}.`,
-    'Write the plan with the plan tools (mcp__klaud_plan__*): plan_write for the whole plan, plan_update for changes,',
+    '<beluga_plan_mode>',
+    `This conversation is planning in Beluga's Plans: ${plan.body ? 'an approved plan (changes you make are proposed; the user approves them)' : 'a new plan, a draft only you and the user see'}.`,
+    'Write the plan with the plan tools (mcp__beluga_plan__*): plan_write for the whole plan, plan_update for changes,',
     'plan_get to see it. Nothing reaches the task board until the user approves the plan; you can\'t approve it yourself.',
     plan.body && plan.autonomy === 'autopilot' ? 'This plan runs on autopilot: changes you make to it now apply at once and can start work, so change only what the plan needs.' : '',
     'Don\'t move to a worktree or change code here: this conversation is for planning.',
@@ -108,7 +109,7 @@ export function planningBrief(plan: Plan, board: BoardState, style: string): str
     HOW_TO_PLAN,
     style.trim() ? `\nThe user's planning style (follow it):\n<planning_style>\n${style.replace(/<\/?planning_style>/gi, '').trim()}\n</planning_style>` : '',
     existing.length ? `\nTasks already on this project's board (don't duplicate them; a plan task can say it builds on one in its context):\n${existing.join('\n')}` : '',
-    '</klaud_plan_mode>',
+    '</beluga_plan_mode>',
   ]
     .filter((l) => l !== undefined)
     .join('\n');
@@ -122,16 +123,16 @@ export function headBrief(view: PlanView): string {
   const warnings = overlaps(view).map(([a, b, files]) => `- “${a.task.title}” and “${b.task.title}” both touch ${files.join(', ')}`);
   return [
     '',
-    '<klaud_plan_head>',
-    `You are the head of the plan “${shownBody(plan)?.title ?? 'plan'}” in klaud's Plans (${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].label}: ${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].hint.toLowerCase()}).`,
-    'Each task runs in its own worktree with its own Claude; klaud starts what\'s ready (up to the plan\'s limit) and',
+    '<beluga_plan_head>',
+    `You are the head of the plan “${shownBody(plan)?.title ?? 'plan'}” in Beluga's Plans (${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].label}: ${AUTONOMY_INFO[m?.autonomy ?? plan.autonomy].hint.toLowerCase()}).`,
+    'Each task runs in its own worktree with its own Claude; Beluga starts what\'s ready (up to the plan\'s limit) and',
     'opens every milestone whose dependencies have passed, so independent milestones run side by side, each with',
     'its own check. You coordinate:',
     '- plan_get: the plan and the state of every task (who\'s working, what waits on what).',
     '- plan_message_task: tell a task\'s Claude something. mode "queue" (default) waits until its current turn',
     '  ends, which can be after a 15-minute test run: for a heads-up, a decision it needs later, an FYI.',
     '  mode "steer" reaches it now, interrupting a long command or a stuck turn: only when waiting wastes',
-    '  work: stop a run going the wrong way, or a correction that changes what it does. Klaud delivers a',
+    '  work: stop a run going the wrong way, or a correction that changes what it does. Beluga delivers a',
     '  steered message again if it isn\'t read within 2 minutes; don\'t send it twice.',
     '- plan_start_task: start a ready task now (when the user asks).',
     '- plan_gate: after checking a finished milestone\'s pass criteria, pass or fail it with notes per criterion.',
@@ -143,7 +144,7 @@ export function headBrief(view: PlanView): string {
     plan.paused ? 'The plan is paused: nothing starts until the user resumes it.' : '',
     now.length ? `Now: ${now.length > 1 ? 'milestones' : 'milestone'} ${now.join(', ')}${now.length > 1 ? ', side by side' : ''}; ${view.active.length} tasks in progress, ${view.ready.length} ready.` : 'Every milestone has passed.',
     warnings.length ? `Running side by side and touching the same files (watch for conflicts):\n${warnings.join('\n')}` : '',
-    '</klaud_plan_head>',
+    '</beluga_plan_head>',
   ]
     .filter(Boolean)
     .join('\n');
@@ -207,28 +208,67 @@ function runsWith(body: PlanBody, id: string, titleOf: ReadonlyMap<string, strin
   return `${after}${beside.length ? `; runs alongside ${beside.map(name).join(', ')}` : ''}.`;
 }
 
+/** A task's criteria for a check: its board checklist (ticks and reasons), else the plan's list. */
+const taskCriteria = (t: TaskView): Criterion[] => (t.issue?.brief.acceptance ? criteria(t.issue.brief.acceptance) : t.task.acceptance.map((text) => ({ text, state: 'open' as const })));
+
+const checkLine = (c: Criterion): string => `  ${criterionLine(c)}${c.state === 'open' ? ' (not ticked, no reason)' : ''}`;
+
+/** The plan's deferred criteria, by task: what its final check must settle. */
+export function deferredItems(view: PlanView): Array<{ readonly task: TaskView; readonly criterion: Criterion }> {
+  return view.milestones.flatMap((m) => m.tasks.flatMap((task) => (task.state === 'canceled' ? [] : taskCriteria(task).filter((c) => c.state === 'deferred').map((criterion) => ({ task, criterion })))));
+}
+
+/**
+ * Whether a milestone needs Claude's check even with no pass criteria of its own: one of its tasks
+ * has a criterion neither ticked nor explained, or it's the plan's last and something was deferred.
+ */
+export function criteriaNeedCheck(view: PlanView, m: MilestoneView): boolean {
+  const last = m.index === view.milestones.length - 1;
+  return m.tasks.some((t) => t.state !== 'canceled' && taskCriteria(t).some((c) => c.state === 'open')) || (last && deferredItems(view).length > 0);
+}
+
 /** Ask the head Claude to check a finished milestone. */
 export function checkPrompt(view: PlanView, m: MilestoneView): string {
-  const tasks = m.tasks.map((t) => `- ${t.issue?.key ?? t.task.id} “${t.task.title}” (${STATE_WORDS[t.state]}${t.state === 'stalled' && t.watch ? `: ${t.watch.reason}` : ''}${t.issue?.pr ? `, PR #${t.issue.pr.number} ${t.issue.pr.state.toLowerCase()}` : ''}${t.issue?.branch ? `, branch ${t.issue.branch}` : ''})`);
+  const last = m.index === view.milestones.length - 1;
+  const tasks = m.tasks.flatMap((t) => [
+    `- ${t.issue?.key ?? t.task.id} “${t.task.title}” (${STATE_WORDS[t.state]}${t.state === 'stalled' && t.watch ? `: ${t.watch.reason}` : ''}${t.issue?.pr ? `, PR #${t.issue.pr.number} ${t.issue.pr.state.toLowerCase()}` : ''}${t.issue?.branch ? `, branch ${t.issue.branch}` : ''})`,
+    ...taskCriteria(t).map(checkLine),
+  ]);
+  const deferred = last ? deferredItems(view) : [];
   return [
     `Every task of milestone “${m.milestone.title}” is finished. Check its pass criteria for real, one by one:`,
-    ...m.milestone.criteria.map((c, i) => `${i + 1}. ${c}`),
+    ...(m.milestone.criteria.length ? m.milestone.criteria.map((c, i) => `${i + 1}. ${c}`) : ['(It has none of its own: check its tasks\' acceptance criteria below.)']),
     '',
-    'Its tasks:',
+    'Its tasks, each with its acceptance criteria as its brief has them (ticked, deferred or not done with a reason):',
     ...tasks,
     '',
     'Read their briefs (task_get), handoffs, proof and diffs.',
-    checkTestsNote(view.plan, m.index === view.milestones.length - 1),
+    'A criterion neither ticked nor explained is a gap: fail the milestone on it, unless you check it is true and tick it',
+    '(task_brief_edit with the task\'s key). A "not done" one: say whether the milestone can pass without it.',
+    last ? '' : 'A "deferred" one is checked again at the end of the plan: don\'t fail on it now.',
+    ...(deferred.length
+      ? [
+          '',
+          'This is the plan\'s final check: every criterion deferred along the way must be settled now, against the full suite run:',
+          ...deferred.map((d) => `- ${d.task.issue?.key ?? d.task.task.id}: ${d.criterion.text} (deferred: ${d.criterion.reason})`),
+          'For each one: true on the combined work, tick it ("- [x]", task_brief_edit with that key); not true, fail the',
+          'check and add a fix task for it with plan_update (name the criterion in its goal). Don\'t pass while one is still deferred.',
+        ]
+      : []),
+    '',
+    checkTestsNote(view.plan, last),
     'Then call plan_gate with pass or fail and notes that say,',
     `per criterion, what you checked and found.${m.autonomy === 'autopilot' ? ' On pass, the plan moves on by itself.' : ' The user decides whether it passes.'} If it fails, add the`,
     'fix tasks with plan_update.',
-  ].join('\n');
+  ]
+    .filter((l, i, all) => l !== '' || (all[i - 1] !== '' && i > 0))
+    .join('\n');
 }
 
 /** A task's start couldn't be combined from the branches it builds on: the head Claude fixes the conflict. */
 export function fixupPrompt(key: string, title: string, from: readonly string[], c: { readonly dir: string; readonly merging: string; readonly files: readonly string[] }): string {
   return [
-    `${key} “${title}” builds on ${from.join(' and ')}, which aren't merged yet, so klaud is combining their branches into its start. Merging ${c.merging} conflicted, in a hidden worktree only for this:`,
+    `${key} “${title}” builds on ${from.join(' and ')}, which aren't merged yet, so Beluga is combining their branches into its start. Merging ${c.merging} conflicted, in a hidden worktree only for this:`,
     '',
     c.dir,
     '',
@@ -236,14 +276,14 @@ export function fixupPrompt(key: string, title: string, from: readonly string[],
     ...c.files.map((f) => `- ${f}`),
     '',
     'Fix each conflict there with Read and Edit, by its full path: keep what both tasks meant (read their briefs with task_get if you need to), and remove every conflict marker.',
-    "Change nothing else, and don't run git: when no markers are left, klaud commits the merge, finishes combining and starts the task by itself. End your turn with one short line.",
+    "Change nothing else, and don't run git: when no markers are left, Beluga commits the merge, finishes combining and starts the task by itself. End your turn with one short line.",
   ].join('\n');
 }
 
 /** A passed milestone's merge into the plan's branch conflicted: the head Claude fixes it there. */
 export function mergeFixupPrompt(milestone: string, branch: string, key: string, c: { readonly dir: string; readonly merging: string; readonly files: readonly string[] }): string {
   return [
-    `Milestone “${milestone}” passed, so klaud is merging its tasks' branches into the plan's branch ${branch}. Merging ${key} (${c.merging}) conflicted, in a worktree only for this:`,
+    `Milestone “${milestone}” passed, so Beluga is merging its tasks' branches into the plan's branch ${branch}. Merging ${key} (${c.merging}) conflicted, in a worktree only for this:`,
     '',
     c.dir,
     '',
@@ -251,7 +291,7 @@ export function mergeFixupPrompt(milestone: string, branch: string, key: string,
     ...c.files.map((f) => `- ${f}`),
     '',
     'Fix each conflict there with Read and Edit, by its full path: keep what both sides meant (read the tasks\' briefs with task_get if you need to), and remove every conflict marker.',
-    "Change nothing else, and don't run git: when no markers are left, klaud commits the merge, merges the rest and passes the milestone by itself. End your turn with one short line.",
+    "Change nothing else, and don't run git: when no markers are left, Beluga commits the merge, merges the rest and passes the milestone by itself. End your turn with one short line.",
   ].join('\n');
 }
 
@@ -259,7 +299,7 @@ export function mergeFixupPrompt(milestone: string, branch: string, key: string,
 export function recapPrompt(view: PlanView): string {
   return [
     `Every milestone of “${view.body?.title ?? 'the plan'}” has passed. Write a short recap for the user: what was built, per`,
-    'milestone, with the plan’s pull request if there is one, what was decided along the way, and anything left over. Include a klaud-graph',
+    'milestone, with the plan’s pull request if there is one, what was decided along the way, and anything left over. Include a beluga-graph',
     'of what changed when it helps.',
   ].join('\n');
 }
@@ -277,8 +317,10 @@ export function workerNote(view: PlanView, taskId: string): string {
     me.task.touches?.length ? `This task's area: ${me.task.touches.join(', ')}.` : '',
     beside.length ? `Running beside it now, each in its own worktree (stay out of their areas):\n${beside.join('\n')}` : '',
     taskTestsNote(view.plan),
-    'When every acceptance criterion is true and the checks pass, commit your work, rewrite the handoff, and call',
-    'task_update with status in_review: that tells the plan this task is finished. Ask the user only what you must.',
+    'When every acceptance criterion is ticked and the checks pass, commit your work, rewrite the handoff, and call',
+    'task_update with status in_review: that tells the plan this task is finished. One you can\'t make true here',
+    'gets a short reason on its own line instead ("- [ ] … — deferred: suites run at the end of the plan", or',
+    '"— not done: why"): task_update refuses in_review while one is neither. Ask the user only what you must.',
   ]
     .filter(Boolean)
     .join('\n');

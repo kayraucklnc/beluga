@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { GitHubRepo } from '@klaud/workspaces/github.js';
+import type { GitHubRepo } from '@beluga/workspaces/github.js';
 import type { ActionItem } from '../../components/SpecMenu.js';
-import { useApi } from '../../lib/klaud.js';
-import type { GitHubInfo } from '@klaud/workspaces/github.js';
+import { useApi } from '../../lib/beluga.js';
+import type { GitHubInfo } from '@beluga/workspaces/github.js';
 import { CommandLine, FormSheet } from '../../components/FormSheet.js';
 import { Icon } from '../../components/Icon.js';
 import { Button, IconButton, Tip, cx } from '../../components/ui.js';
@@ -19,7 +19,7 @@ function ConnectGitHub({ onCheck, onClose }: { onCheck: () => Promise<boolean>; 
     <FormSheet
       title="Connect GitHub"
       icon="pr"
-      intro="Klaud reads a repository’s details (public or private, people, open pull requests) with GitHub’s command-line tool. Set it up once, in Terminal:"
+      intro="Beluga reads a repository’s details (public or private, people, open pull requests) with GitHub’s command-line tool. Set it up once, in Terminal:"
       submitLabel="Check Again"
       onSubmit={async () => ((await onCheck()) ? onClose() : 'Still no answer from GitHub. Run both commands in Terminal (and make sure your account can see this repository), then check again.')}
       onCancel={onClose}

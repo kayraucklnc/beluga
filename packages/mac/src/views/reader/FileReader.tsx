@@ -1,12 +1,12 @@
 import { type MouseEvent, type ReactNode, useRef, useState } from 'react';
-import type { ViewerState } from '@klaud/core/store.js';
-import { formatBytes } from '@klaud/shared/format.js';
+import type { ViewerState } from '@beluga/core/store.js';
+import { formatBytes } from '@beluga/shared/format.js';
 import { Icon } from '../../components/Icon.js';
 import { Button, Empty, EmptyActions, IconButton, cx } from '../../components/ui.js';
 import { CodeLines } from '../../components/markdown/CodeLines.js';
 import { type DocNav, type DocVariant, MarkdownDoc } from '../../components/markdown/MarkdownDoc.js';
 import { useImageUrl } from '../../components/markdown/MdImage.js';
-import { MAX_FILE_BYTES } from '@klaud/protocol.js';
+import { MAX_FILE_BYTES } from '@beluga/protocol.js';
 import { Bitmap } from '../FilesView.js';
 import { isImageFile } from '../../components/markdown/md-paths.js';
 import { BINARY_TEXT, LARGE_MARKDOWN, prettyJson, type ReaderMode, isMarkdownFile, isPdfFile, langOf } from './reader-model.js';
@@ -35,7 +35,7 @@ const ZOOMS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
 /**
  * An image as wide as the space it has (never blown up past its own size), so a tall one scrolls;
  * zoom in and out, or double-click for actual size. The original file is shown (sharp at any
- * zoom), not the small preview klaud decoded for the terminal.
+ * zoom), not the small preview Beluga decoded for the terminal.
  */
 function ImageView({ viewer, controls, version }: { viewer: ViewerState; controls: boolean; version?: string | number }) {
   const { url, error } = useImageUrl({ owner: viewer.owner, share: viewer.share, path: viewer.path }, version);

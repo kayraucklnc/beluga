@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Checkbox, Field, FormSheet, Popup, TextArea } from '../../components/FormSheet.js';
-import { useApi, useApp } from '../../lib/klaud.js';
+import { useApi, useApp } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 
 /**

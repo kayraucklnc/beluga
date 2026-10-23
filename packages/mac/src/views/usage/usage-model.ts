@@ -1,8 +1,8 @@
-import type { AppState } from '@klaud/core/store.js';
-import { activityOf } from '@klaud/ui/workspace-models.js';
-import { worktreeOrigin } from '@klaud/workspaces/origin.js';
-import type { Project, Workspace } from '@klaud/workspaces/types.js';
-import { tokensOf } from '@klaud/workspaces/usage-days.js';
+import type { AppState } from '@beluga/core/store.js';
+import { activityOf } from '@beluga/ui/workspace-models.js';
+import { worktreeOrigin } from '@beluga/workspaces/origin.js';
+import type { Project, Workspace } from '@beluga/workspaces/types.js';
+import { tokensOf } from '@beluga/workspaces/usage-days.js';
 
 /** What the breakdown is ordered by. */
 export type SortKey = 'size' | 'tokens' | 'recent';

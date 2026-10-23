@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
-import type { Workspace } from '@klaud/workspaces/types.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
+import type { Workspace } from '@beluga/workspaces/types.js';
 import { BackgroundTasks } from '../../claude-code/BackgroundTasks.js';
 import { tasksForWorkspace } from '../../claude-code/background-model.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 
 /**
  * The right panel's Background: the commands Claude and its agents run in this workspace in the

@@ -5,7 +5,7 @@ import type { Actor, Assignee, BriefSection } from './model.js';
 import type { BoardWork } from './work.js';
 
 /**
- * The demo's board (`klaud demo`, screenshots, the README): a payments API mid-launch and a
+ * The demo's board (`beluga demo`, screenshots, the README): a payments API mid-launch and a
  * landing page, with the demo's worktrees doing three of the tasks, a pull request in review,
  * blockers, sub-tasks, briefs Claude kept, proof and a few days of history.
  */
@@ -55,7 +55,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
   const board = work.board;
   const me = work.me();
   const claude = work.myClaude();
-  const klaud: Actor = { kind: 'klaud' };
+  const beluga: Actor = { kind: 'beluga' };
   const when = (ago: number): void => travel(ago);
   const brief = (key: string, section: BriefSection, text: string, by: Actor, reason: string, mode: 'replace' | 'append' = 'replace'): void => void board.editBrief(key, section, text, by, { reason, mode });
 
@@ -96,7 +96,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
       labels: ['security', 'api'],
       brief: {
         goal: 'Only signed-in users can reach `/api/payments/*`.',
-        acceptance: '- [x] `requireUser()` rejects missing sessions with 401\n- [x] Payment routes use it\n- [ ] Expired sessions are rejected too\n- [ ] Tests for missing, expired and valid sessions',
+        acceptance: '- [x] `requireUser()` rejects missing sessions with 401\n- [x] Payment routes use it\n- [ ] Expired sessions are rejected too — not done: next turn, see the handoff\n- [ ] Tests for missing, expired and valid sessions — deferred: the expired one comes with that fix',
       },
     },
     me,
@@ -171,7 +171,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
       assignee: me,
       labels: ['design', 'launch'],
       brief: {
-        goal: 'A hero that says what Klaud is in one line, with a real screenshot.',
+        goal: 'A hero that says what Beluga is in one line, with a real screenshot.',
         acceptance: '- [x] New headline and line under it\n- [x] Screenshot of the app\n- [ ] Looks right on phones\n- [ ] mia signs off on the copy',
       },
     },
@@ -182,6 +182,7 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
   board.update(hero.id, { status: 'in_progress' }, me);
   when(DAY + 2 * HOUR);
   board.addProof(hero.id, { kind: 'image', title: 'Hero, desktop', path: path.join(at.hero.path, 'public', 'hero-shot.png') }, claude);
+  board.addProof(hero.id, { kind: 'file', title: 'Hero copy', path: path.join(at.hero.path, 'content', 'hero.md') }, claude);
   when(20 * HOUR);
   board.comment(hero.id, 'Love the screenshot. “Build together” might undersell the Claude part, though?', mia);
   when(3 * HOUR);
@@ -189,5 +190,5 @@ function seed(work: BoardWork, travel: (msAgo: number) => void, at: Places): voi
   board.relate(pricing.id, 'blocked_by', hero.id, true, mia);
   when(2 * HOUR);
   board.create({ projectId: at.landing, title: 'Open Graph images for every page', status: 'backlog', labels: ['design'] }, me);
-  board.create({ projectId: at.landing, title: 'Lighthouse 95+ on mobile', status: 'backlog', priority: 'low', labels: ['performance'] }, klaud);
+  board.create({ projectId: at.landing, title: 'Lighthouse 95+ on mobile', status: 'backlog', priority: 'low', labels: ['performance'] }, beluga);
 }

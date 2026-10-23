@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { actorName } from '@klaud/core/board/model.js';
-import type { Plan } from '@klaud/core/plans/model.js';
+import { actorName } from '@beluga/core/board/model.js';
+import type { Plan } from '@beluga/core/plans/model.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { ago } from '../tasks/tasks-model.js';
 import { ActorMark } from './marks.js';
 import { type FeedKind, feedOf } from './plans-model.js';
@@ -11,7 +11,7 @@ import p from './plans.module.css';
 
 /**
  * What the plan did, newest first: tasks started and finished, milestones checked, merged and
- * passed, the run mode changed. Repeats fold into one line (“Klaud started 3 tasks: KLD-4, …”).
+ * passed, the run mode changed. Repeats fold into one line (“Beluga started 3 tasks: KLD-4, …”).
  */
 
 const KIND_ICON: Record<FeedKind, IconName> = {

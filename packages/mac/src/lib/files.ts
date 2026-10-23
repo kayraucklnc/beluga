@@ -1,11 +1,11 @@
-import type { AppState, Location } from '@klaud/core/store.js';
-import { peerName } from '@klaud/core/store.js';
-import { shareNameOf } from '@klaud/shared/share-names.js';
-import type { SocketClient } from '@klaud/ipc/socket-client.js';
+import type { AppState, Location } from '@beluga/core/store.js';
+import { peerName } from '@beluga/core/store.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
+import type { SocketClient } from '@beluga/ipc/socket-client.js';
 import { inApp } from './boot.js';
 
 /**
- * Files you see in klaud, the Mac way: where one is on this Mac (to show it in Finder or copy
+ * Files you see in Beluga, the Mac way: where one is on this Mac (to show it in Finder or copy
  * its path), and saving a friend's file where you choose with the standard Save panel.
  */
 
@@ -55,7 +55,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 
 /**
  * Download a shared file: the Save panel picks where (starting in Downloads, with its name), then
- * klaud fetches it there. Cancelling the panel does nothing. Outside the app it goes to ~/Downloads/klaud.
+ * Beluga fetches it there. Cancelling the panel does nothing. Outside the app it goes to ~/Downloads/Beluga.
  */
 export async function saveFile(client: SocketClient, at: Location): Promise<void> {
   const name = at.path.split('/').pop() || 'download';

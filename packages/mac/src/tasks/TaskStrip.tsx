@@ -1,7 +1,8 @@
-import { issueForWorkspace } from '@klaud/core/board/model.js';
+import { tallyWords } from '@beluga/core/board/criteria.js';
+import { issueForWorkspace } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Tip } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { PrChip, StatusIcon } from './marks.js';
 import { checklist } from './tasks-model.js';
 import { useTaskActions } from './use-tasks.js';
@@ -23,9 +24,10 @@ export function TaskStrip({ workspaceId }: { workspaceId: string }) {
           {ticks.total ? (
             <span className={t.stripTicks}>
               <Icon name="check" size={10} />
-              {ticks.done}/{ticks.total}
+              {tallyWords(ticks)}
             </span>
           ) : null}
+          {issue.needsChecks ? <span className={t.needsChecks}>Needs its checks</span> : null}
         </button>
       </Tip>
       {issue.pr ? <PrChip pr={issue.pr} /> : null}

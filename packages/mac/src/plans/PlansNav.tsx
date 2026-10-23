@@ -1,8 +1,8 @@
-import type { Plan } from '@klaud/core/plans/model.js';
+import type { Plan } from '@beluga/core/plans/model.js';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { Row } from '../layout/sidebar-parts.js';
 import { DotMark } from '../layout/signal-marks.js';
 import { projectOfView } from '../tasks/use-tasks.js';
@@ -55,7 +55,7 @@ export function ProgressRing({ share, live }: { share: number; live?: boolean })
  * One plan as a sidebar row: its name, a progress ring (in Claude’s color while tasks run), and a dot when it
  * needs you (why, in the tooltip). Clicking opens the plan. Used under Plans, and under a project.
  */
-export function PlanSideRow({ plan, indent = 0 }: { plan: Plan; indent?: number }) {
+function PlanSideRow({ plan, indent = 0 }: { plan: Plan; indent?: number }) {
   const view = usePlanView(plan)!;
   const { open } = usePlanActions();
   const selected = useApp((s) => s.view.kind === 'plan' && s.view.id === plan.id);

@@ -1,15 +1,16 @@
-import { useEffect, useState } from 'react';
-import type { PrCheck, PullRequest } from '@klaud/core/work-store.js';
-import type { MergeMethod } from '@klaud/workspaces/pr.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { useState } from 'react';
+import type { PrCheck, PullRequest } from '@beluga/core/work-store.js';
+import type { MergeMethod } from '@beluga/workspaces/pr.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { CommandLine, Field, FormSheet, TextArea, formStyles as f } from '../../components/FormSheet.js';
 import { Icon } from '../../components/Icon.js';
 import { ActionsDropdown } from '../../components/SpecMenu.js';
 import { Button, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { toast, useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { toast, useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { MERGE_METHODS, canAutoMerge, checkDuration, checkTone, checksSummary, sortChecks } from '../../lib/pr-checks.js';
 import { openExternal } from '../../lib/system.js';
+import { useClock } from '../../lib/window-active.js';
 import type { NativeMenuProps } from './index.js';
 import { usePick } from './pick.js';
 import s from './menus.module.css';
@@ -24,7 +25,7 @@ const CHECKS: Record<PullRequest['checks'], { label: string; tone?: string; icon
 const REVIEW = { APPROVED: { label: 'Approved', tone: s.pillOk }, CHANGES_REQUESTED: { label: 'Changes requested', tone: s.pillBad }, REVIEW_REQUIRED: { label: 'Waiting for review', tone: undefined } } as const;
 
 /** The way you last merged (squash until you pick another). */
-const METHOD_KEY = 'klaud.mergeMethod';
+const METHOD_KEY = 'beluga.mergeMethod';
 function lastMethod(): MergeMethod {
   try {
     const m = localStorage.getItem(METHOD_KEY);
@@ -34,21 +35,11 @@ function lastMethod(): MergeMethod {
   }
 }
 
-/** A clock that ticks every second while `on` (running checks count up). */
-function useNow(on: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!on) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [on]);
-  return now;
-}
-
 /** Each CI check, live: spinner while it runs, ✓ or ✗ when done, how long, and its page. */
 function CheckList({ checks }: { checks: readonly PrCheck[] }) {
   const running = checks.some((c) => c.state === 'in_progress');
-  const now = useNow(running);
+  // Running checks count up, only while you're looking (KLD-40).
+  const now = useClock(running);
   return (
     <div className={s.checks}>
       <div className={s.checksHead}>{checksSummary(checks)}</div>
@@ -204,7 +195,7 @@ function PrCard({ wsId, pr, pick, refresh }: { wsId: string; pr: PullRequest; pi
  */
 export function PullRequestSheet({ menu, close }: NativeMenuProps<'pr'>) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const pick = usePick(menu);
   const ws = useApp((st) => findWorkspace(st.projects, menu.id));
   const pr = useApp((st) => st.prs[menu.id]);
@@ -228,7 +219,7 @@ export function PullRequestSheet({ menu, close }: NativeMenuProps<'pr'>) {
       toast(client, 'GitHub is connected', 'success');
     };
     return (
-      <FormSheet title="Connect GitHub" icon="pr" intro="Klaud opens pull requests with GitHub’s command-line tool. Set it up once, in Terminal:" submitLabel={checking ? 'Checking…' : 'Check Again'} canSubmit={!checking} onSubmit={check} onCancel={close}>
+      <FormSheet title="Connect GitHub" icon="pr" intro="Beluga opens pull requests with GitHub’s command-line tool. Set it up once, in Terminal:" submitLabel={checking ? 'Checking…' : 'Check Again'} canSubmit={!checking} onSubmit={check} onCancel={close}>
         <div className={s.ghSteps}>
           <div className={s.ghStep}>
             <div className={s.ghStepTitle}>

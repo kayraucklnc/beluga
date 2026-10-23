@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { LogItem } from '@klaud/core/store.js';
+import type { LogItem } from '@beluga/core/store.js';
 import { Icon } from '../components/Icon.js';
 import { IconButton } from '../components/ui.js';
 import s from './find.module.css';
@@ -46,8 +46,8 @@ function paint(log: HTMLElement | null, query: string, current: number | undefin
   const H = Highlight();
   if (!reg || !H) return;
   if (!log || !query) {
-    reg.delete('klaud-find');
-    reg.delete('klaud-find-current');
+    reg.delete('beluga-find');
+    reg.delete('beluga-find-current');
     return;
   }
   const all: Range[] = [];
@@ -56,8 +56,8 @@ function paint(log: HTMLElement | null, query: string, current: number | undefin
     const ranges = rangesIn(row, query);
     (Number(row.dataset.index) === current ? now : all).push(...ranges);
   }
-  reg.set('klaud-find', new H(...all));
-  reg.set('klaud-find-current', new H(...now));
+  reg.set('beluga-find', new H(...all));
+  reg.set('beluga-find-current', new H(...now));
 }
 
 export interface FindState {
@@ -91,11 +91,11 @@ export function FindBar({ items, logRef, onGo }: { items: readonly LogItem[]; lo
       const delta = (e as CustomEvent<number>).detail || 1;
       setFind((f) => (f.open ? { ...f, at: f.at + delta } : { ...f, open: true }));
     };
-    document.addEventListener('klaud:find', open);
-    document.addEventListener('klaud:find-step', step);
+    document.addEventListener('beluga:find', open);
+    document.addEventListener('beluga:find-step', step);
     return () => {
-      document.removeEventListener('klaud:find', open);
-      document.removeEventListener('klaud:find-step', step);
+      document.removeEventListener('beluga:find', open);
+      document.removeEventListener('beluga:find-step', step);
     };
   }, []);
   // Go to the current match when it changes (not on every streamed word).
@@ -112,7 +112,7 @@ export function FindBar({ items, logRef, onGo }: { items: readonly LogItem[]; lo
   if (!find.open) return null;
   const close = (): void => {
     setFind({ open: false, query: find.query, at: 0 });
-    document.dispatchEvent(new CustomEvent('klaud:focus-composer'));
+    document.dispatchEvent(new CustomEvent('beluga:focus-composer'));
   };
   const step = (delta: number): void => setFind((f) => ({ ...f, at: f.at + delta }));
   return (

@@ -1,5 +1,5 @@
-import type { PeerInfo, Usage } from '@klaud/protocol.js';
-import type { AppState } from '@klaud/core/store.js';
+import type { PeerInfo, Usage } from '@beluga/protocol.js';
+import type { AppState } from '@beluga/core/store.js';
 import { Avatar } from '../../components/ui.js';
 import { Card, Meter } from './parts.js';
 import { ago, resetsAt } from './usage-model.js';

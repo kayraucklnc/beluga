@@ -1,8 +1,8 @@
 import { Fragment, memo, useEffect, useMemo, useRef } from 'react';
-import type { Project } from '@klaud/workspaces/types.js';
-import { worktreeOrigin } from '@klaud/workspaces/origin.js';
-import { planConversations, planOf, planOfPlace } from '@klaud/core/plans/owner.js';
-import type { UiAction } from '@klaud/ui/workspace-models.js';
+import type { Project } from '@beluga/workspaces/types.js';
+import { worktreeOrigin } from '@beluga/workspaces/origin.js';
+import { isPlanOwned, planConversations, planOfPlace } from '@beluga/core/plans/owner.js';
+import type { UiAction } from '@beluga/ui/workspace-models.js';
 import { setOverviewView } from '../views/overview/use-overview-prefs.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext, ActionsDropdown, SpecContext, SpecDropdown, type ActionItem } from '../components/SpecMenu.js';
@@ -13,7 +13,8 @@ import { Badge, Dot, IconButton, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
 import { inApp } from '../lib/boot.js';
 import { newEmptyGroup, useGroupEdit } from '../lib/group-edit.js';
-import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
+import { sameDeep } from '../lib/stable.js';
 import { openProjectHome } from '../lib/project-home.js';
 import { openSheet } from '../lib/sheets.js';
 import { getPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
@@ -54,7 +55,7 @@ const SPRING_MS = 700;
 /** Hide a project, with Undo (it comes back where it was). */
 function useHide(): (p: Project) => void {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   return (p) => {
     void api.workspaces.hideProject(p.id).then(() => {
       // The core's note says how to bring it back from the terminal; here Undo does.
@@ -68,7 +69,7 @@ function useHide(): (p: Project) => void {
 /** "Change Icon…" for a project, and going back to the one it ships. */
 function useIconItems(p: Project): readonly ActionItem[] {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const change = async (image: string | undefined): Promise<void> => {
     try {
       await api.projects.setIcon(p.id, image);
@@ -102,7 +103,7 @@ function showArchivedOf(run: (a: UiAction) => void, projectId: string): void {
  * the item you're in visible under it until you go somewhere else.
  */
 function useProjectFold(projectId: string): { folded: boolean; toggle: (all: boolean) => void; peek: () => void } {
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const open = usePrefs().openProjects.includes(projectId);
   const peeked = useUi((u) => u.peek === projectId);
   const folded = !open && !peeked;
@@ -142,7 +143,7 @@ function useProjectFold(projectId: string): { folded: boolean; toggle: (all: boo
  */
 const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: { p: Project; depth: 0 | 1; entries: readonly Entry[]; arrange: Arrange }) {
   const actions = useActions();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const view = useApp((st) => st.view);
   // Only the plans and the board (not the whole state): an open menu here isn't rebuilt on every change.
   const plansState = useApp((st) => st.plans);
@@ -171,11 +172,10 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
   // from the plan). A finished plan's conversation shows only while you're in it.
   const plans = projectPlans(state, p);
   const planHomes = new Set(plansState.plans.map((x) => x.home));
-  const ofPlan = (w: { id: string }): boolean => planOf(state, w.id) !== undefined;
   // A plan you asked to show its tasks' chats: they sit under its row (its home is the plan's page).
   const showTasks = usePrefs().planTaskChats;
   const taskChats = (planId: string) => (showTasks.includes(planId) ? live.filter((w) => !planHomes.has(`ws:${w.id}`) && planConversations(state, planId).includes(w.id)) : []);
-  const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'klaud' && !ofPlan(w) && (!planHomes.has(`ws:${w.id}`) || w.id === here));
+  const mine = live.filter((w) => w.kind !== 'main' && worktreeOrigin(w) === 'beluga' && !isPlanOwned(state, w.id) && (!planHomes.has(`ws:${w.id}`) || w.id === here));
   const inPlan = planOfPlace(plansState, board, view);
   // You're in this project: on its home page, in one of its worktrees or chats, or in one of its plans.
   const current = onHome || (here !== undefined && p.workspaces.some((w) => w.id === here)) || plans.some((x) => x.id === inPlan);
@@ -185,7 +185,7 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
   const githubItems = useGitHubMenuItems(p.id, Boolean(p.root));
   // Archived work stays out of the sidebar: the Overview's Archived list has it.
   const showArchivedItem: ActionItem[] = archived.length ? [{ label: `Show Archived (${archived.length})`, onSelect: () => showArchivedOf(actions.run, p.id) }] : [];
-  // Everything about its worktrees (archiving, restoring, cleaning up those made outside Klaud) is on the Worktrees page.
+  // Everything about its worktrees (archiving, restoring, cleaning up those made outside Beluga) is on the Worktrees page.
   const cleanUpItem: ActionItem[] = p.workspaces.some((w) => w.kind === 'worktree') ? [{ label: 'Manage Worktrees…', onSelect: () => actions.run({ type: 'view', view: { kind: 'worktrees', projectId: p.id } }) }] : [];
   const extra: ActionItem[] = [...showArchivedItem, ...cleanUpItem, ...moveItems(entries, item, arrange), ...groupItems(p, entries, arrange), stripeMenuItem(p, earning), ...githubItems, ...iconItems, { label: 'Hide Project', danger: true, onSelect: () => hide(p) }, { label: 'Delete Project…', danger: true, onSelect: () => openSheet({ kind: 'delete_project', projectId: p.id }) }];
   const kids = depth + 2;
@@ -266,7 +266,7 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
         // Folded: only the item you're in stays (its plan, when it's part of one), until you go elsewhere.
         <>
           {plans.filter((x) => x.id === inPlan).map((x) => <PlanRow key={x.id} plan={x} indent={kids} />)}
-          {live.filter((w) => w.id === here && w.kind !== 'main' && !ofPlan(w)).map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)}
+          {live.filter((w) => w.id === here && w.kind !== 'main' && !isPlanOwned(state, w.id)).map((w) => <WorkspaceRow key={w.id} ws={w} indent={kids} />)}
         </>
       ) : (
         <>
@@ -284,7 +284,7 @@ const ProjectBlock = memo(function ProjectBlock({ p, depth, entries, arrange }: 
               <SubAgentRows ws={w} indent={kids + 1} />
             </Fragment>
           ))}
-          {/* Worktrees made outside Klaud: after Klaud's own, most recent first, each with where it is. */}
+          {/* Worktrees made outside Beluga: after Beluga's own, most recent first, each with where it is. */}
           <OutsideWorktrees p={p} indent={kids} />
           {/* Sub-agents the main folder's conversations started (Claude's helpers, none of your worktrees or chats): behind one row. */}
           {main ? <ProjectAgents p={p} ws={main} indent={kids} /> : null}
@@ -374,7 +374,8 @@ export function Projects() {
   const arrange = useArrange();
   const tree = useRef<HTMLDivElement>(null);
   const collapsed = useUi((u) => u.collapsed);
-  const state = useApp((st) => st);
+  // Each group's pulse and counts, not the whole state: the tree isn't drawn again on every streamed event (KLD-48).
+  const groups = useApp((st) => Object.fromEntries(entries.flatMap((e) => (e.kind === 'group' ? [[e.name, { busy: groupWorking(st, e.projects), tally: groupTally(st, e.projects) }]] : []))), sameDeep);
   const { creating } = useGroupEdit();
   const { dragging, onPointerDown } = useArrangeDrag(tree, entries, arrange, s.ghost ?? '');
   const hover = dragging?.hover;
@@ -415,8 +416,8 @@ export function Projects() {
                       name={e.name}
                       count={e.projects.length}
                       open={!collapsed.includes(`group:${e.name}`)}
-                      busy={groupWorking(state, e.projects)}
-                      tally={groupTally(state, e.projects)}
+                      busy={groups[e.name]?.busy ?? false}
+                      tally={groups[e.name]?.tally ?? { unread: 0, needs: 0, working: false }}
                       dropOn={intoGroup === e.name}
                       menu={moveItems(entries, { group: e.name }, arrange)}
                       onToggle={() => actions.run({ type: 'toggle_group', name: e.name })}

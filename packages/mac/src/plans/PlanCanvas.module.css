@@ -1,0 +1,175 @@
+/*
+ * The plan canvas's own parts (PlanCanvas.tsx): a milestone's criteria node and the lines.
+ * The cards and milestone boxes it shares with the outline stay in plans.module.css.
+ * Sizes here match CRITERIA in PlanCanvas.tsx (the layout is worked out from them).
+ */
+
+/* ---------- Criteria: a milestone's gate ---------- */
+
+.criteria {
+  width: 264px;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--hairline-strong),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  transition: box-shadow 220ms var(--ease-out), background 220ms var(--ease-out);
+}
+.criteria:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--text) 24%, transparent),
+    0 8px 22px -12px rgba(0, 0, 0, 0.28);
+}
+.criteriaHead {
+  flex: none;
+  height: 18px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+}
+.criteriaMark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--text-3);
+  background: var(--bg-hover);
+}
+.criteriaTitle {
+  font-weight: 650;
+  color: var(--text);
+}
+.criteriaState {
+  margin-left: auto;
+  font-weight: 550;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.criteriaList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.criterion {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 15.5px;
+  color: var(--text-2);
+}
+/* A plain bullet: whether each criterion holds isn't known on its own (the head says how the milestone stands). */
+.criterionMark {
+  flex: none;
+  width: 4px;
+  height: 4px;
+  margin: 6px 4px 0 2px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.criterionText {
+  color: var(--text-3);
+}
+.criterionText {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.criteriaNone {
+  font-size: 11.5px;
+  line-height: 15.5px;
+  color: var(--text-3);
+}
+
+/* The milestone being worked on: its criteria a little firmer. */
+.criteriaCurrent {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--text) 22%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+}
+/* Waiting for you to pass it: the one thing in the accent, a soft ring breathing out. */
+@property --beckon {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+.criteria_gate {
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    0 0 0 calc(6px + 3px * var(--beckon)) color-mix(in srgb, var(--accent) 11%, transparent);
+}
+.criteria_gate .criteriaMark {
+  color: var(--bg);
+  background: var(--accent);
+}
+.criteria_gate .criteriaState {
+  color: var(--accent);
+}
+.criteria_checking .criteriaMark {
+  color: var(--claude);
+  background: color-mix(in srgb, var(--claude) 14%, transparent);
+}
+.criteria_checking .criteriaState {
+  color: var(--claude);
+}
+.criteria_failed {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--error) 70%, transparent);
+}
+.criteria_failed .criteriaMark {
+  color: var(--bg);
+  background: var(--error);
+}
+.criteria_failed .criteriaState {
+  color: var(--error);
+}
+.criteria_passed {
+  background: color-mix(in srgb, var(--ok) 4%, var(--bg-raised));
+}
+.criteria_passed .criteriaMark {
+  color: var(--bg);
+  background: var(--ok);
+}
+.criteria_passed .criteriaState {
+  color: var(--ok);
+}
+.criteriaSelected,
+.criteriaSelected:hover {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 8px 22px -12px rgba(0, 0, 0, 0.28);
+}
+
+/* ---------- Lines: one thin stroke everywhere ---------- */
+
+.line {
+  fill: none;
+  stroke: var(--hairline-strong);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 400ms var(--ease-out);
+}
+.lineCurrent {
+  stroke: color-mix(in srgb, var(--text) 42%, transparent);
+}
+.line_done {
+  stroke: color-mix(in srgb, var(--ok) 60%, var(--hairline-strong));
+}
+.line_live {
+  stroke: color-mix(in srgb, var(--claude) 70%, transparent);
+}

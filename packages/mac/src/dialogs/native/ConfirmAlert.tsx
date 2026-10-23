@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { ArchivePreview } from '@klaud/workspaces/archive.js';
-import { formatBytes } from '@klaud/shared/format.js';
-import type { EnvChange } from '@klaud/workspaces/env.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import type { ArchivePreview } from '@beluga/workspaces/archive.js';
+import { formatBytes } from '@beluga/shared/format.js';
+import type { EnvChange } from '@beluga/workspaces/env.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Alert, Checkbox } from '../../components/Alert.js';
-import { useApi, useApp } from '../../lib/klaud.js';
+import { useApi, useApp } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 import { count, usePick } from './pick.js';
 import s from './menus.module.css';
@@ -92,7 +92,7 @@ export function ConfirmAlert({ menu, close }: NativeMenuProps<'confirm'>) {
                   This deletes the worktree folder, its branch <code>{ws.branch ?? ''}</code> and the conversation.
                 </>
               ) : (
-                'This removes it from Klaud and deletes the conversation.'
+                'This removes it from Beluga and deletes the conversation.'
               )}
             </p>
             <p>You can’t undo this.</p>

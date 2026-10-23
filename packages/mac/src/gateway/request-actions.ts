@@ -8,7 +8,7 @@ import type { Approval } from '../../../../src/core/store.js';
  */
 
 /** A notification's button was pressed (or it was clicked): the app shell's "notification-request", or this in a browser. */
-export const REQUEST_NOTIFICATION = 'klaud:request-notification';
+export const REQUEST_NOTIFICATION = 'beluga:request-notification';
 
 /** `always`: a rule for a week (a notification, the menu bar). `allow_always`: a rule until you change it (the pop-up, where the full ask is one click away). */
 export type RequestAction = 'review' | 'approve' | 'always' | 'allow_always' | 'decline';
@@ -22,7 +22,7 @@ export const ALWAYS_FROM_POPUP = { answer: 'always', scope: 'this', command: 'th
 /** The buttons a notification gets: a friend's request (Approve / Always for a week / Decline), anything else Review only. */
 export function notificationActions(n: { readonly approval?: string; readonly task?: string }): { actionTypeId?: string } {
   if (!n.approval) return {};
-  return { actionTypeId: n.task ? 'klaud-request' : 'klaud-review' };
+  return { actionTypeId: n.task ? 'beluga-request' : 'beluga-review' };
 }
 
 /** A friend's request (from someone else, about something they asked): it may be answered from outside the window. */

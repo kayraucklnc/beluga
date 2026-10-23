@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
 /**
- * Klaud's pop-up buttons (components/Select.tsx) aren't native <select>s, so Playwright's
+ * Beluga's pop-up buttons (components/Select.tsx) aren't native <select>s, so Playwright's
  * selectOption and toHaveValue don't apply: click it, then the option; the value is `data-value`.
  */
 

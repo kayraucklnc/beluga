@@ -1,7 +1,7 @@
 //! Whether a macOS Focus (Do Not Disturb, Work, Sleep…) is on right now.
 //!
-//! While one is, macOS holds Klaud's banners in Notification Center and mutes their sound
-//! (unless Klaud is one of its allowed apps). There's no public API for this without an
+//! While one is, macOS holds Beluga's banners in Notification Center and mutes their sound
+//! (unless Beluga is one of its allowed apps). There's no public API for this without an
 //! entitlement an ad-hoc signed app can't have, so this reads the files the Focus daemon keeps
 //! in ~/Library/DoNotDisturb/DB. macOS protects that folder: without Full Disk Access the read
 //! fails and the answer is "can't tell", which the window turns into a quiet hint instead.

@@ -10,6 +10,6 @@ export const boardOf = (session: object): BoardWork | undefined => boards.get(se
 /** The session's board, or a clear error where there is none (the terminal on its own). */
 export function needBoard(session: object): BoardWork {
   const board = boards.get(session);
-  if (!board) throw new Error('Tasks need the Klaud app (its daemon): they are not available here.');
+  if (!board) throw new Error('Tasks need the Beluga app (its daemon): they are not available here.');
   return board;
 }

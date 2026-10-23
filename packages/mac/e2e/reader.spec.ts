@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './fixtures.js';
 
 /**
  * The file reader: a file from the panel's Files opened full size takes the center (the panel
@@ -107,7 +107,17 @@ test('the page scrolls with the wheel and the keyboard', async ({ page }) => {
   await pageEl.focus();
   await page.keyboard.press('PageDown');
   await expect.poll(async () => (await scrollOf(pageEl)).top).toBeGreaterThan(start.view / 2);
-  const afterPage = (await scrollOf(pageEl)).top;
+  // Page Down scrolls smoothly: Space goes on from where it stops.
+  let last = -1;
+  await expect
+    .poll(async () => {
+      const top = (await scrollOf(pageEl)).top;
+      const still = top === last;
+      last = top;
+      return still;
+    }, { intervals: [100] })
+    .toBe(true);
+  const afterPage = last;
   await page.keyboard.press('Space');
   await expect.poll(async () => (await scrollOf(pageEl)).top).toBeGreaterThan(afterPage + 100);
   await page.keyboard.press('End');
@@ -184,7 +194,7 @@ test('mermaid draws its diagrams, KaTeX typesets math, and images next to the fi
   await expect(diagrams.nth(1).locator('svg')).toBeAttached({ timeout: 20_000 });
   await expect(diagrams.first()).toContainText('charge.succeeded');
   // No script from a diagram ran, and nothing it left behind is in the page.
-  await expect(page.locator('body > [id^="dklaud-mermaid"], body > [id^="klaud-mermaid"]')).toHaveCount(0);
+  await expect(page.locator('body > [id^="dbeluga-mermaid"], body > [id^="beluga-mermaid"]')).toHaveCount(0);
   await expect(doc.locator('.katex').first()).toBeAttached({ timeout: 15_000 });
   await expect(doc.locator('.katex-display')).toHaveCount(1);
   expect(await doc.locator('.katex').count()).toBeGreaterThan(5);

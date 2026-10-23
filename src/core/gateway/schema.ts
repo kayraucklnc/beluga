@@ -2,7 +2,7 @@
  * Checking a task's structured result against what was asked for: the useful part of JSON
  * Schema (type, properties, required, additionalProperties, items, enum, const, min/max,
  * minLength/maxLength, minItems/maxItems, anyOf). Keywords it doesn't know are ignored, so a
- * richer schema still checks what it can. Both sides check: the friend's klaud before sending,
+ * richer schema still checks what it can. Both sides check: the friend's Beluga before sending,
  * and yours again on arrival (never trusting the other side). Browser-safe.
  */
 

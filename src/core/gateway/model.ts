@@ -98,7 +98,7 @@ export interface TaskView {
   readonly answerDraft?: { readonly qid: string; readonly answers: readonly string[] };
 }
 
-/** What someone's klaud offers you (their card), as they told you. */
+/** What someone's Beluga offers you (their card), as they told you. */
 export interface PeerCard {
   readonly note?: string;
   /** How much they trust you. */

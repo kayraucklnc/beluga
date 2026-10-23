@@ -1,6 +1,6 @@
 import { Icon } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { Row } from '../layout/sidebar-parts.js';
 import { useTasksPrefs } from './use-tasks.js';
 

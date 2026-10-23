@@ -158,10 +158,10 @@ describe('words', () => {
 
   it('checklists: counted, and ticked one at a time', () => {
     const text = '- [x] One\n- [ ] Two\nnote\n* [ ] Three';
-    expect(checklist(text)).toEqual({ done: 1, total: 3 });
+    expect(checklist(text)).toEqual({ done: 1, deferred: 0, notDone: 0, open: 2, total: 3 });
     expect(toggleCheck(text, 1)).toBe('- [x] One\n- [x] Two\nnote\n* [ ] Three');
     expect(toggleCheck(text, 0)).toBe('- [ ] One\n- [ ] Two\nnote\n* [ ] Three');
-    expect(checklist(undefined)).toEqual({ done: 0, total: 0 });
+    expect(checklist(undefined)).toMatchObject({ done: 0, total: 0 });
   });
 });
 

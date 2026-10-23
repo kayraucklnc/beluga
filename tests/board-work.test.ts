@@ -11,7 +11,7 @@ import { decideTool } from '../src/agent/policy.js';
 
 /** The board at work: worktrees open tasks, pull requests move them, Claude keeps them true. */
 
-const ws = (id: string, projectId: string, name: string, kind: Workspace['kind'] = 'worktree'): Workspace => ({ id, projectId, name, path: `/tmp/${name}`, kind, projectRoot: '/tmp/p', branch: `klaud/${name}`, createdAt: 0, external: false }) as unknown as Workspace;
+const ws = (id: string, projectId: string, name: string, kind: Workspace['kind'] = 'worktree'): Workspace => ({ id, projectId, name, path: `/tmp/${name}`, kind, projectRoot: '/tmp/p', branch: `beluga/${name}`, createdAt: 0, external: false }) as unknown as Workspace;
 const project = (id: string, name: string, workspaces: Workspace[] = []): Project => ({ id, name, root: `/tmp/${name}`, base: 'main', workspaces });
 
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -56,7 +56,7 @@ describe('worktrees open tasks', () => {
     const { store, board, open } = setup({ autoTasks: true });
     open(ws('w1', 'api', 'add-rate-limiting'));
     const issue = issueForWorkspace(store.getState().board, 'w1')!;
-    expect(issue).toMatchObject({ key: 'BOB-1', title: 'Add rate limiting', autoTitle: true, status: 'in_progress', origin: 'worktree', assignee: { kind: 'claude', owner: 'p-me' }, branch: 'klaud/add-rate-limiting' });
+    expect(issue).toMatchObject({ key: 'BOB-1', title: 'Add rate limiting', autoTitle: true, status: 'in_progress', origin: 'worktree', assignee: { kind: 'claude', owner: 'p-me' }, branch: 'beluga/add-rate-limiting' });
     store.dispatch({ type: 'chat', id: 'c1', from: 'p-me', text: 'what is this made out of?', ts: 1, byAgent: false, channel: 'ws:w1' });
     await tick();
     expect(board.need('BOB-1').brief.goal).toBeUndefined();
@@ -142,7 +142,7 @@ describe('Claude and the board', () => {
     expect(run.tools!.create({ title: 'Expired sessions', parent: 'BOB-2', acceptance: '- [ ] 401' })).toBe('Created BOB-3: Expired sessions (todo)');
     expect(board.need('BOB-3').origin).toBe('claude');
     expect(run.tools!.relate(undefined, 'blocks', 'BOB-3')).toBe('BOB-2 now blocks BOB-3');
-    expect(run.tools!.list({})).toContain('BOB-3 · Todo · Expired sessions');
+    expect(run.tools!.list({})).toContain('BOB-3 · Ready · Expired sessions');
     expect(run.tools!.get('bob-3')).toContain('Blocked by: BOB-2');
     expect(() => run.tools!.attachProof(undefined, { kind: 'file', title: 'env', path: '/tmp/add-auth/.env' })).toThrow(/secrets/);
     expect(run.tools!.attachProof(undefined, { kind: 'url', title: 'Preview', url: 'https://preview.example' })).toBe('Attached “Preview” to BOB-2');
@@ -151,7 +151,7 @@ describe('Claude and the board', () => {
   it('elsewhere: a note that the board is there, and tools that need a key', () => {
     const { work } = setup();
     const run = work.forRun('room', 'p-me')!;
-    expect(run.brief).toContain('klaud has a task board');
+    expect(run.brief).toContain('Beluga has a task board');
     expect(() => run.tools!.note(undefined, 'x')).toThrow(/Name a task/);
   });
 
@@ -163,7 +163,7 @@ describe('Claude and the board', () => {
   it('the tools are all allowed, under their own server', async () => {
     const { work } = setup();
     const defs = createBoardToolDefs(work.forRun('room', 'p-me')!.tools!);
-    expect(defs.map((d) => `mcp__klaud_board__${d.name}`)).toEqual(BOARD_TOOL_NAMES);
+    expect(defs.map((d) => `mcp__beluga_board__${d.name}`)).toEqual(BOARD_TOOL_NAMES);
     for (const name of BOARD_TOOL_NAMES) expect(decideTool(name, {}, { cwd: '/tmp', roots: [], autoEdit: false })).toBe('allow');
     const call = defs.find((d) => d.name === 'task_get')!.handler as (a: unknown, e: unknown) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
     expect(await call({ key: 'NOPE-1' }, {})).toMatchObject({ isError: true, content: [{ text: "There's no task NOPE-1" }] });
@@ -177,7 +177,7 @@ describe('plan mode defines the task', () => {
     const { store, board, work, open } = setup();
     open(ws('w1', 'api', 'login-limit'));
     const run = work.forRun('ws:w1', 'p-me', { plan: true })!;
-    expect(run.brief).toContain('call mcp__klaud_board__task_define');
+    expect(run.brief).toContain('call mcp__beluga_board__task_define');
     expect(run.needsDefinition!()).toBe(true);
     expect(run.tools!.define(def)).toContain('when the user approves your plan');
     expect(store.getState().board.issues).toHaveLength(0);
@@ -215,8 +215,8 @@ describe('plan mode defines the task', () => {
     open(ws('w2', 'api', 'retries'));
     store.dispatch({ type: 'agent_event', owner: 'p-me', requestId: 'r1', requester: 'p-me', event: 'started', text: '', ts: 1, channel: 'ws:w2' });
     const brief = work.forRun('ws:w1', 'p-me')!.brief!;
-    expect(brief).toContain('BOB-2 “Retries” (in progress) in worktree retries on klaud/retries, its Claude is working now');
-    expect(work.forRun('ws:w1', 'p-me')!.tools!.get('BOB-2')).toContain('Being worked on in worktree retries (klaud/retries), its Claude is working there now');
+    expect(brief).toContain('BOB-2 “Retries” (in progress) in worktree retries on beluga/retries, its Claude is working now');
+    expect(work.forRun('ws:w1', 'p-me')!.tools!.get('BOB-2')).toContain('Being worked on in worktree retries (beluga/retries), its Claude is working there now');
     void board;
   });
 
@@ -225,6 +225,19 @@ describe('plan mode defines the task', () => {
     const t = board.create({ projectId: 'api', title: 'Once' }, work.me());
     await work.start(t.key);
     await expect(work.start(t.key)).rejects.toThrow(/already being worked on/);
+  });
+
+  it('finished work (in review, merged into the plan, done) isn’t started again until it’s reopened', async () => {
+    const { board, work } = setup();
+    for (const status of ['in_review', 'in_plan', 'done'] as const) {
+      const t = board.create({ projectId: 'api', title: `Finished ${status}`, status }, work.me());
+      await expect(work.start(t.key)).rejects.toThrow(/reopen it/);
+      expect(board.need(t.key).worktrees).toEqual([]);
+      // Reopened: back to Ready, and it starts.
+      board.update(t.key, { status: 'todo' }, work.me());
+      await work.start(t.key);
+      expect(board.need(t.key).status).toBe('in_progress');
+    }
   });
 });
 

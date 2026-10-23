@@ -1,11 +1,11 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
-import { activityOf, stateOf } from '@klaud/ui/workspace-models.js';
-import { describePr, formatBytes } from '@klaud/shared/format.js';
+import { activityOf, stateOf } from '@beluga/ui/workspace-models.js';
+import { describePr, formatBytes } from '@beluga/shared/format.js';
 import { Icon } from '../../components/Icon.js';
 import { type ActionItem, ActionsContext, ActionsDropdown } from '../../components/SpecMenu.js';
 import { Button, Dot, IconButton, Tip, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import { workspaceItems } from '../../layout/workspace-row.js';
 import type { OverviewItem } from './overview-model.js';
 import s from '../overview.module.css';

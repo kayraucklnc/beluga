@@ -26,10 +26,10 @@ export function soundName(choice: SoundChoice): string {
 /** "8-bit · Coin": the name with where it's from. */
 export const soundTitle = (choice: SoundChoice): string => (choice.kind === 'none' || choice.kind === 'mac' ? soundName(choice) : `${FAMILY_LABELS[choice.kind]} · ${soundName(choice)}`);
 
-/** Whether Klaud makes this sound itself (and the volume slider applies). */
-export const klaudMade = (choice: SoundChoice): choice is Extract<SoundChoice, { kind: 'chip' | 'gen' }> => choice.kind === 'chip' || choice.kind === 'gen';
+/** Whether Beluga makes this sound itself (and the volume slider applies). */
+export const belugaMade = (choice: SoundChoice): choice is Extract<SoundChoice, { kind: 'chip' | 'gen' }> => choice.kind === 'chip' || choice.kind === 'gen';
 
-/** The samples of one of Klaud's sounds at `volume` (`null`: macOS plays it, or there's none). */
+/** The samples of one of Beluga's sounds at `volume` (`null`: macOS plays it, or there's none). */
 export function renderChoice(choice: SoundChoice, volume: number, rate = SAMPLE_RATE): Float32Array<ArrayBuffer> | null {
   if (choice.kind === 'chip') return render(chipSpec(choice.id), volume, rate);
   if (choice.kind === 'gen') return render(generatedSpec(choice.seed), volume, rate);
@@ -37,13 +37,13 @@ export function renderChoice(choice: SoundChoice, volume: number, rate = SAMPLE_
 }
 
 /**
- * The file name macOS finds it by in ~/Library/Sounds (`Klaud-chip-coin-70`). The volume is
+ * The file name macOS finds it by in ~/Library/Sounds (`Beluga-chip-coin-70`). The volume is
  * part of the name: a sound at a new volume is a new file (the old one is pruned).
  */
 export function soundFileName(choice: SoundChoice, volume: number): string | null {
   const pct = Math.round(Math.min(1, Math.max(0, volume)) * 100);
-  if (choice.kind === 'chip') return `Klaud-chip-${choice.id.toLowerCase()}-${pct}`;
-  if (choice.kind === 'gen') return `Klaud-gen-${choice.seed.toString(16).padStart(8, '0')}-${pct}`;
+  if (choice.kind === 'chip') return `Beluga-chip-${choice.id.toLowerCase()}-${pct}`;
+  if (choice.kind === 'gen') return `Beluga-gen-${choice.seed.toString(16).padStart(8, '0')}-${pct}`;
   return null;
 }
 
@@ -53,7 +53,7 @@ export function soundsInUse(prefs: SoundPrefs): SoundChoice[] {
   return all.filter((c, i) => all.findIndex((o) => JSON.stringify(o) === JSON.stringify(c)) === i);
 }
 
-/** The ~/Library/Sounds files the settings need (everything else of Klaud's there can go). */
+/** The ~/Library/Sounds files the settings need (everything else of Beluga's there can go). */
 export const filesInUse = (prefs: SoundPrefs): string[] => soundsInUse(prefs).flatMap((c) => soundFileName(c, volumeOf(prefs)) ?? []);
 
 export const CHIP_CHOICES: readonly SoundChoice[] = CHIP_SOUNDS.map((id) => ({ kind: 'chip', id }));

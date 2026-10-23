@@ -12,12 +12,12 @@ import {
   roomAttachmentsDir,
   saveClipboardImage,
 } from '../core/attachments.js';
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import { channelOf } from '../core/store.js';
 import type { UiState } from './keymap.js';
 
 export interface AttachContext {
-  readonly client: KlaudClient;
+  readonly client: BelugaClient;
   readonly uiRef: { readonly current: UiState };
   readonly patchUi: (patch: Partial<UiState>) => void;
 }
@@ -69,7 +69,7 @@ export function pasteDroppedImages(c: AttachContext, text: string): boolean {
  * Before sending: "[image N]" chips become links to the images. Sent to the room with friends
  * there, a copy goes where they (and only they) can fetch it.
  */
-export function expandOutgoing(client: KlaudClient, text: string): string {
+export function expandOutgoing(client: BelugaClient, text: string): string {
   if (!text.includes('[image ') || text.startsWith('/')) return text;
   const state = client.store.getState();
   // People in the room only: guests invited into one project never get room images.

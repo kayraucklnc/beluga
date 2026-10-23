@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { ResolvedScripts } from '@klaud/workspaces/scripts.js';
+import type { ResolvedScripts } from '@beluga/workspaces/scripts.js';
 import { Checkbox, Field, FormSheet, SourceTag, TextInput } from '../../components/FormSheet.js';
-import { useApi, useApp } from '../../lib/klaud.js';
+import { useApi, useApp } from '../../lib/beluga.js';
 import type { NativeMenuProps } from './index.js';
 
 type Kind = 'setup' | 'run';
@@ -9,14 +9,15 @@ type Source = NonNullable<ResolvedScripts['setup']>['source'];
 
 const SOURCE: Record<Source, { label: string; tone: 'team' | 'mine' | 'guess'; detail: string }> = {
   yours: { label: 'Your settings', tone: 'mine', detail: 'Only you have it' },
+  'beluga.json': { label: 'beluga.json', tone: 'team', detail: 'Shared with everyone on the project' },
   'klaud.json': { label: 'klaud.json', tone: 'team', detail: 'Shared with everyone on the project' },
   'conductor.json': { label: 'conductor.json', tone: 'team', detail: 'A setup file in the project, shared with everyone on it' },
-  detected: { label: 'Guessed', tone: 'guess', detail: 'Klaud guessed it from the project. Change it if it’s wrong' },
+  detected: { label: 'Guessed', tone: 'guess', detail: 'Beluga guessed it from the project. Change it if it’s wrong' },
 };
 
 /**
  * A project's Setup and Run commands, as a form: where each one comes from now, and whether to
- * keep yours to yourself or save them in the project's klaud.json for the whole team.
+ * keep yours to yourself or save them in the project's beluga.json for the whole team.
  */
 export function ProjectSettingsSheet({ menu, close }: NativeMenuProps<'scripts'>) {
   const api = useApi();
@@ -39,7 +40,7 @@ export function ProjectSettingsSheet({ menu, close }: NativeMenuProps<'scripts'>
   const edited = (kind: Kind): boolean => values[kind].trim() !== saved(kind);
   const tag = (kind: Kind) => {
     const s = scripts[kind];
-    if (edited(kind)) return <SourceTag tone={team ? 'team' : 'mine'}>{team ? 'Will go in klaud.json' : 'Will be yours'}</SourceTag>;
+    if (edited(kind)) return <SourceTag tone={team ? 'team' : 'mine'}>{team ? 'Will go in beluga.json' : 'Will be yours'}</SourceTag>;
     return s ? (
       <span title={SOURCE[s.source].detail}>
         <SourceTag tone={SOURCE[s.source].tone}>{SOURCE[s.source].label}</SourceTag>
@@ -55,7 +56,7 @@ export function ProjectSettingsSheet({ menu, close }: NativeMenuProps<'scripts'>
   const save = (): void => {
     for (const kind of ['setup', 'run'] as const) {
       const value = values[kind].trim();
-      // Saving for the team writes both commands into klaud.json (and drops your own ones).
+      // Saving for the team writes both commands into beluga.json, or the older klaud.json it has (and drops your own ones).
       if (team && (value || scripts[kind])) void api.workbench.setScript(project.id, kind, value, true);
       else if (!team && edited(kind)) void api.workbench.setScript(project.id, kind, value);
     }
@@ -73,7 +74,7 @@ export function ProjectSettingsSheet({ menu, close }: NativeMenuProps<'scripts'>
       onSubmit={save}
       onCancel={close}
       width={560}
-      footer={<Checkbox checked={team} onChange={setTeam} label="Save to klaud.json" detail="Everyone on the project gets them (commit the file)" />}
+      footer={<Checkbox checked={team} onChange={setTeam} label="Save to beluga.json" detail="Everyone on the project gets them (commit the file)" />}
     >
       <Field label="Setup" htmlFor="script-setup" hint={hint('setup', 'Runs in each new worktree, e.g. to install dependencies.')} aside={tag('setup')}>
         <TextInput id="script-setup" value={values.setup} onChange={(v) => (setTouched(true), setValues({ ...values, setup: v }))} mono placeholder="npm install" />

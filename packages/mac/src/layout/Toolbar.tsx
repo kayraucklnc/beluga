@@ -1,18 +1,19 @@
-import { planForHome } from '@klaud/core/plans/model.js';
+import { planForHome } from '@beluga/core/plans/model.js';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { agentOfWorktree, agentTitle, isAgentWorktree } from '../claude-code/subagents-model.js';
-import { findWorkspace, stateOf } from '@klaud/ui/workspace-models.js';
-import { describePr } from '@klaud/shared/format.js';
+import { findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
+import { describePr } from '@beluga/shared/format.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
 import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { toast, useApp, useKlaud } from '../lib/klaud.js';
+import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { type ToolAction, toolbarActions } from './toolbar-actions.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
 import { togglePanel } from '../lib/panel.js';
+import { panelFits } from '../lib/panel-model.js';
 import { mod } from '../lib/system.js';
 import { NotificationBell } from './NotificationCenter.js';
 import { ContinueButton } from '../chat/AskBanner.js';
@@ -49,6 +50,9 @@ function SearchButton() {
 
 function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode; subtitle?: ReactNode; center?: ReactNode; right?: ReactNode; headerRef: React.RefObject<HTMLElement | null> }) {
   const prefs = usePrefs();
+  const view = useApp((st) => st.view);
+  // A plan's page has no panel: its chat is its right side (the plan's header shows and hides it, ⌥⌘0 too).
+  const fits = panelFits(view);
   // Only what every view needs: search, what's new, the panel. The terminal (⌘J) is a panel tab,
   // and everything you can do is ⌘K and the menu bar.
   return (
@@ -69,7 +73,14 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
         {right}
         <SearchButton />
         <NotificationBell />
-        <IconButton icon="panelRight" label={prefs.inspector ? 'Hide the panel' : 'Show the panel: changes, files, terminal, info'} keys={`⌥${mod()}0`} active={prefs.inspector} onClick={togglePanel} />
+        <IconButton
+          icon="panelRight"
+          label={!fits ? 'No panel on a plan’s page: its chat is beside the plan' : prefs.inspector ? 'Hide the panel' : 'Show the panel: changes, files, terminal, info'}
+          {...(fits ? { keys: `⌥${mod()}0` } : {})}
+          active={fits && prefs.inspector}
+          disabled={!fits}
+          onClick={() => togglePanel(view)}
+        />
       </div>
     </header>
   );
@@ -78,8 +89,8 @@ function Shell({ title, subtitle, center, right, headerRef }: { title: ReactNode
 export function Toolbar() {
   const [headerRef, width] = useToolbarWidth();
   const actions = useActions();
-  const klaud = useKlaud();
-  const { client } = klaud;
+  const beluga = useBeluga();
+  const { client } = beluga;
   const state = useApp((st) => st);
   const view = state.view;
 
@@ -186,7 +197,7 @@ export function Toolbar() {
 
   if (view.kind === 'shared') {
     const w = state.shared.find((x) => x.id === view.id);
-    const ui = klaud.ui;
+    const ui = beluga.ui;
     const owner = state.peers.find((p) => p.peerId === view.owner)?.name ?? 'Someone';
     return (
       <Shell
@@ -244,6 +255,8 @@ export function Toolbar() {
   if (view.kind === 'plan') {
     const plan = state.plans.plans.find((x) => x.id === view.id);
     const project = plan ? state.projects.find((p) => p.id === plan.projectId) : undefined;
+    // Where it runs: its project, and the branch its work comes together on (the panel's Info used to say).
+    const branch = plan?.branch ?? (plan?.home.startsWith('ws:') ? findWorkspace(state.projects, plan.home.slice(3))?.branch : undefined) ?? project?.base;
     return (
       <Shell
         headerRef={headerRef}
@@ -253,6 +266,7 @@ export function Toolbar() {
             <span className={s.name}>Plan</span>
           </>
         }
+        {...(branch ? { subtitle: branch } : {})}
       />
     );
   }
@@ -293,7 +307,7 @@ export function Toolbar() {
     return <Shell headerRef={headerRef} title={project?.name ?? 'Project'} subtitle={<span className={s.meta}>Work happens in worktrees · the main folder is for questions</span>} />;
   }
 
-  return <Shell headerRef={headerRef} title={TITLES[view.kind] ?? 'Klaud'} />;
+  return <Shell headerRef={headerRef} title={TITLES[view.kind] ?? 'Beluga'} />;
 }
 
 /** A conversation with friends or a group: who it's with, their status, the group's people. */

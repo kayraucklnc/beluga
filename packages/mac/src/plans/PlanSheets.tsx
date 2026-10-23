@@ -1,9 +1,9 @@
 import { type KeyboardEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, TESTS_AT, TESTS_AT_INFO, type TestsAt } from '@klaud/core/plans/model.js';
+import { AUTONOMIES, AUTONOMY_INFO, type Autonomy, DEFAULT_AUTONOMY, TESTS_AT, TESTS_AT_INFO, type TestsAt } from '@beluga/core/plans/model.js';
 import { Field, FormSheet, Popup, TextArea } from '../components/FormSheet.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import { useTasksPrefs } from '../tasks/use-tasks.js';
 import { modeChange } from './plans-model.js';
 import { usePlanActions, usePlanView, usePlans } from './use-plans.js';
@@ -13,14 +13,14 @@ const AUTONOMY_ICON: Record<Autonomy, IconName> = { step: 'hand', gated: 'flag',
 
 /**
  * A new plan: what it's for (Claude plans from it, reading the code) and how far it runs on its
- * own. Opened from a project it's that project's (no picker); `goal` prefills the box.
+ * own. Opened from a project it's that project's (no picker).
  */
-export function NewPlanSheet({ projectId, goal: initialGoal, close }: { projectId?: string; goal?: string; close: () => void }) {
+export function NewPlanSheet({ projectId, close }: { projectId?: string; close: () => void }) {
   const prefs = useTasksPrefs();
   const all = useApp((s) => s.projects);
   const projects = useMemo(() => all.filter((p) => p.root && !p.error), [all]);
   const { api, act } = usePlanActions();
-  const [goal, setGoal] = useState(initialGoal ?? '');
+  const [goal, setGoal] = useState('');
   const known = projectId !== undefined && projects.some((p) => p.id === projectId);
   const [project, setProject] = useState((known ? projectId : projects.some((p) => p.id === prefs.project) ? prefs.project : projects[0]?.id) ?? '');
   const [autonomy, setAutonomy] = useState<Autonomy>(DEFAULT_AUTONOMY);
@@ -190,7 +190,7 @@ export function PlanStyleSheet({ close }: { close: () => void }) {
         await act(() => api.setStyle(text), 'Planning style saved');
       }}
     >
-      <Field label="Style" htmlFor="plan-style" hint="Markdown. Kept in ~/.klaud/planning.md.">
+      <Field label="Style" htmlFor="plan-style" hint="Markdown. Kept in ~/.beluga/planning.md.">
         <TextArea id="plan-style" value={text} onChange={setText} rows={9} placeholder={'- Tasks are at most a day of work\n- Every milestone ends with screenshots of what changed\n- Tests before code; no task without them'} data-autofocus />
       </Field>
     </FormSheet>

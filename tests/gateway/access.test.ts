@@ -22,7 +22,7 @@ describe('deciding a request', () => {
     const screenOff: Capabilities = { ...DEFAULT_CAPABILITIES, levels: { ...DEFAULT_CAPABILITIES.levels, screen: { ask: 'off', trusted: 'ask', full: 'allow' } } };
     const d = decide('ask', task({ needs: ['screen'] }), [rule({ needs: ['screen'] })], screenOff);
     expect(d).toMatchObject({ verdict: 'decline', by: 'capability', caps: ['screen'] });
-    expect(declineReason(d, 'bob')).toBe("bob's klaud doesn't let you see the screen");
+    expect(declineReason(d, 'bob')).toBe("bob's Beluga doesn't let you see the screen");
   });
 
   it('trust decides first for trusted and full trust when every capability it needs is Allow', () => {

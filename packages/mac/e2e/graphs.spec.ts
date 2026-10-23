@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /** Graphs Claude draws (docs/graphs.md): /visualize in the demo, then point, click, walk through, open in full. */
 
@@ -9,9 +9,10 @@ async function openWorkspace(page: Page, name: string): Promise<void> {
   const row = sidebar(page).getByRole('button', { name, exact: true });
   if (!(await row.isVisible())) await sidebar(page).getByRole('button', { name: 'bob-api' }).first().click({ position: { x: 60, y: 10 } });
   await sidebar(page).getByRole('button', { name, exact: true }).click();
+  await expect(composer(page)).toHaveAttribute('placeholder', new RegExp(name));
 }
 
-/** Earlier specs leave Claude busy here (a long run, queued messages): wait until it's free. */
+/** The demo's Claude may be busy here (a long run, queued messages): wait until it's free. */
 async function untilIdle(page: Page): Promise<void> {
   await expect(page.getByRole('button', { name: 'Stop Claude' })).toHaveCount(0, { timeout: 90_000 });
 }
@@ -71,7 +72,7 @@ test('a broken graph says what is wrong and shows its JSON', async ({ page }) =>
   await openWorkspace(page, 'webhook-retries');
   await untilIdle(page);
   // Your own message is Markdown too: a block with a mistake in it.
-  await composer(page).fill('```klaud-graph\n{"nodes": [{"id": "a"}]}\n```');
+  await composer(page).fill('```beluga-graph\n{"nodes": [{"id": "a"}]}\n```');
   await composer(page).press('Enter');
   await expect(page.getByText(/Can’t draw this graph: nodes\[0\]\.label/).last()).toBeVisible({ timeout: 10_000 });
 });

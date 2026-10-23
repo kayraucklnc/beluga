@@ -2,9 +2,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
-/** Worktrees made outside Klaud: plain rows after Klaud's own (name, then where), an info page instead of an empty chat, and nothing removed without asking. */
+/** Worktrees made outside Beluga: plain rows after Beluga's own (name, then where), an info page instead of an empty chat, and nothing removed without asking. */
 
 const sidebar = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' });
 
@@ -19,7 +19,7 @@ const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c
 
 /** A project with two worktrees a script made: one with a commit of its own, one with nothing new (stale). */
 function makeRepo(): { repo: string; ext: string; stale: string } {
-  const base = mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-others-'));
+  const base = mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-others-'));
   const repo = path.join(base, 'outside-app');
   execFileSync('git', ['init', '-q', '-b', 'main', repo]);
   writeFileSync(path.join(repo, 'README.md'), '# hi\n');
@@ -55,7 +55,7 @@ test.beforeEach(async ({ page }) => {
 
 /** A project with `n` worktrees a script made, one after another (the last made is the most recent). */
 function makeBusyRepo(n: number): { repo: string; trees: string[] } {
-  const base = mkdtempSync(path.join(os.tmpdir(), 'klaud-e2e-many-'));
+  const base = mkdtempSync(path.join(os.tmpdir(), 'beluga-e2e-many-'));
   const repo = path.join(base, 'many-app');
   execFileSync('git', ['init', '-q', '-b', 'main', repo]);
   writeFileSync(path.join(repo, 'README.md'), '# hi\n');
@@ -69,7 +69,7 @@ function makeBusyRepo(n: number): { repo: string; trees: string[] } {
   return { repo, trees };
 }
 
-test('a worktree made outside Klaud is a plain row with where it is; its page says what it is, and removing it asks first', async ({ page }) => {
+test('a worktree made outside Beluga is a plain row with where it is; its page says what it is, and removing it asks first', async ({ page }) => {
   const { repo, ext, stale } = makeRepo();
   await addProject(page, repo);
   // No folds by what made them: just the worktrees, by name.
@@ -78,13 +78,13 @@ test('a worktree made outside Klaud is a plain row with where it is; its page sa
   await expect(sidebar(page).getByRole('button', { name: 'old-spike', exact: true })).toBeVisible();
   await expect(sidebar(page).getByRole('button', { name: /^(Other Worktrees|Conductor|Claude Code)\b/ })).toHaveCount(0);
   // Where it is: quietly after the name, the whole path in the tooltip.
-  await expect(row).toHaveAttribute('title', /klaud-e2e-others-[^/]+\/review-154$/);
-  await expect(row).toContainText(/klaud-e2e-others-|…\//);
+  await expect(row).toHaveAttribute('title', /beluga-e2e-others-[^/]+\/review-154$/);
+  await expect(row).toContainText(/beluga-e2e-others-|…\//);
   await row.click();
 
   const info = page.getByTestId('worktree-info');
   await expect(info).toBeVisible();
-  await expect(info.getByText('Made outside Klaud')).toBeVisible();
+  await expect(info.getByText('Made outside Beluga')).toBeVisible();
   await expect(info.getByText('pr-154', { exact: true })).toBeVisible();
   await expect(info.getByText('Fix the catalog')).toBeVisible();
   await expect(info.getByText(/1 commit ahead/)).toBeVisible();
@@ -120,14 +120,14 @@ test('a worktree made outside Klaud is a plain row with where it is; its page sa
   await clean.getByRole('button', { name: 'Remove 1' }).click();
   await expect.poll(() => existsSync(stale)).toBe(false);
   expect(git(repo, 'branch', '--list', 'spike')).toContain('spike');
-  // Nothing made outside Klaud is left: the project's menu stops offering it.
+  // Nothing made outside Beluga is left: the project's menu stops offering it.
   await sidebar(page).getByRole('button', { name: 'outside-app', exact: true }).click({ button: 'right' });
   await expect(page.getByRole('menuitem', { name: /Show in Finder|Hide Project/ }).first()).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Clean Up Worktrees…' })).toHaveCount(0);
   await page.keyboard.press('Escape');
 });
 
-test('many worktrees made outside Klaud: the five most recent, then "Show N more" opens the rest in place', async ({ page }) => {
+test('many worktrees made outside Beluga: the five most recent, then "Show N more" opens the rest in place', async ({ page }) => {
   const { repo, trees } = makeBusyRepo(8);
   // The first one made gets a commit last: now it's the most recently active.
   writeFileSync(path.join(trees[0]!, 'late.txt'), 'x\n');

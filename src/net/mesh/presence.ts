@@ -3,7 +3,7 @@ import { PresenceSchema } from './schemas.js';
 import type { Presence } from './views.js';
 
 /**
- * Your status, kept in ~/.klaud/presence.json so "appear offline" survives a restart.
+ * Your status, kept in ~/.beluga/presence.json so "appear offline" survives a restart.
  * Choosing `offline` means appear offline: your Mac stays connected and keeps receiving,
  * but everyone sees you as offline. A status with `until` goes back to online by itself.
  */

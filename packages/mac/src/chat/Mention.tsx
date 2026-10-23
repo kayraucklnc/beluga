@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { workspaceMentions } from '@klaud/core/mentions.js';
-import { shareNameOf } from '@klaud/shared/share-names.js';
+import { workspaceMentions } from '@beluga/core/mentions.js';
+import { shareNameOf } from '@beluga/shared/share-names.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { type MentionKind, type MentionRef, type MentionWorld } from './mentions.js';
 import s from './mention.module.css';
 
@@ -40,7 +40,7 @@ export function useMentionWorld(channel: string | undefined): MentionWorld {
 }
 
 export function MentionPill({ mention }: { mention: MentionRef }) {
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const actions = useActions();
   const open = (): void => {
     const go = (view: Parameters<typeof client.store.dispatch>[0] & { type: 'view' }): void => void client.store.dispatch(view);

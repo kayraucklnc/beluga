@@ -1,5 +1,5 @@
 import { type KeyboardEvent, memo, useEffect, useRef, useState } from 'react';
-import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank } from '@klaud/core/board/model.js';
+import { type Issue, type IssueStatus, PRIORITY_INFO, STATUS_INFO, byRank } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsContext } from '../components/SpecMenu.js';
 import { IconButton, cx } from '../components/ui.js';

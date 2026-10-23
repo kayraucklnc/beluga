@@ -1,11 +1,11 @@
 import { type AppState, channelOf, peerName } from '../core/store.js';
-import type { KlaudClient } from '../ipc/client.js';
+import type { BelugaClient } from '../ipc/client.js';
 import { answerTyped } from './collab-actions.js';
 import type { UiState } from './keymap.js';
 import type { UiAction } from './workspace-models.js';
 
 export interface SubmitContext {
-  readonly client: KlaudClient;
+  readonly client: BelugaClient;
   /** The screen's latest UI state (what the box is asking for, a plan open full screen). */
   readonly ui: () => Pick<UiState, 'pending' | 'planFull'>;
   readonly patchUi: (patch: Partial<UiState>) => void;

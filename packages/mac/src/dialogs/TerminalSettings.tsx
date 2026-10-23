@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { joinArgs, shellName, splitArgs } from '@klaud/shared/shells.js';
+import { joinArgs, shellName, splitArgs } from '@beluga/shared/shells.js';
 import { Segmented, cx } from '../components/ui.js';
-import { useApi, useApp } from '../lib/klaud.js';
+import { useApi, useApp } from '../lib/beluga.js';
 import { type UiPrefs, setPrefs, usePrefs } from '../lib/prefs.js';
 import { SCROLLBACK_CHOICES, fontChoices, fontStack } from '../lib/terminal-look.js';
 import { Group, Row, Select, Switch } from './settings-controls.js';
@@ -10,7 +10,7 @@ import t from './terminal-settings.module.css';
 
 const OTHER = '__other';
 
-/** Which shell new terminals run, and how it starts (klaud's setting: the terminal app uses it too). */
+/** Which shell new terminals run, and how it starts (Beluga's setting: the terminal app uses it too). */
 function ShellGroup() {
   const api = useApi();
   const p = useApp((st) => st.prefs);
@@ -79,7 +79,7 @@ function Preview({ prefs }: { prefs: UiPrefs }) {
   return (
     <div className={t.preview} aria-hidden style={{ fontFamily: fontStack(prefs.termFont), fontSize: `${prefs.termFontSize}px`, lineHeight: prefs.termLineHeight }}>
       <div>
-        <span className={t.dim}>~/Projects/</span>klaud <span className={t.branch}>main</span>
+        <span className={t.dim}>~/Projects/</span>Beluga <span className={t.branch}>main</span>
       </div>
       <div>
         <span className={t.prompt}>❯</span> npm run dev

@@ -15,7 +15,7 @@ export interface MainLine {
   /** "Up to date with origin/main", "3 behind origin/main"… */
   readonly label: string;
   readonly tone: Tone;
-  /** "4 uncommitted changes in main" (they were made outside klaud). */
+  /** "4 uncommitted changes in main" (they were made outside Beluga). */
   readonly dirty?: string;
   /** The default branch the line is about ("main" or "master"). */
   readonly branch?: string;
@@ -30,7 +30,7 @@ export interface HomeModel {
   /** The main checkout (its branch and status). */
   readonly main?: Workspace;
   readonly mainLine: MainLine;
-  /** Worktrees klaud made, still around: the most recently active first. */
+  /** Worktrees Beluga made, still around: the most recently active first. */
   readonly worktrees: readonly Workspace[];
   /** Questions asked in the main folder (ask-only chats), the most recent first. */
   readonly asks: readonly Workspace[];
@@ -89,7 +89,7 @@ export function homeModel(state: Pick<AppState, 'log' | 'conflicts' | 'prs'>, pr
   const recent = (a: Workspace, b: Workspace): number => lastActive(state, b) - lastActive(state, a);
   const live = project.workspaces.filter((w) => !w.archived);
   const main = project.workspaces.find((w) => w.kind === 'main');
-  const worktrees = live.filter((w) => w.kind === 'worktree' && worktreeOrigin(w) === 'klaud').sort(recent);
+  const worktrees = live.filter((w) => w.kind === 'worktree' && worktreeOrigin(w) === 'beluga').sort(recent);
   // The main checkout's own conversation (from before) counts as a question asked there.
   const asks = live.filter((w) => w.askOnly && (w.kind === 'chat' || (w.kind === 'main' && Boolean(w.sessionId)))).sort(recent);
   const archived = project.workspaces.filter((w) => w.archived).sort((a, b) => b.createdAt - a.createdAt);

@@ -2,7 +2,7 @@ import * as Context from '@radix-ui/react-context-menu';
 import { type ReactNode, useRef, useState } from 'react';
 import { Icon } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
-import { useApi } from '../lib/klaud.js';
+import { useApi } from '../lib/beluga.js';
 import m from '../components/SpecMenu.module.css';
 import s from './terminal.module.css';
 

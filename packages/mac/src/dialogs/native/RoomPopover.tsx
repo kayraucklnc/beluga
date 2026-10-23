@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { Avatar, Button, Dot } from '../../components/ui.js';
-import { useApi, useApp, useKlaud } from '../../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { Switch } from '../settings-controls.js';
 import { openPerson } from './PersonPopover.js';
 import { useFlash } from './parts.js';
@@ -9,7 +9,7 @@ import r from './room.module.css';
 
 type Tone = 'ok' | 'warn' | 'error';
 
-const invite = (): void => void document.dispatchEvent(new CustomEvent('klaud:invite'));
+const invite = (): void => void document.dispatchEvent(new CustomEvent('beluga:invite'));
 
 /** What remote access is doing, in words. */
 function reach(phase: string | undefined, detail: string | undefined, hasLink: boolean): string {
@@ -26,7 +26,7 @@ function reach(phase: string | undefined, detail: string | undefined, hasLink: b
  */
 export function RoomStatus({ label, tone }: { label: string; tone: Tone }) {
   const api = useApi();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const room = useApp((st) => st.room);
   const peers = useApp((st) => st.peers);
   const selfId = useApp((st) => st.selfId);

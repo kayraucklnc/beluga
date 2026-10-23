@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Release Klaud for Mac by hand: build it, sign the update, and put it on GitHub so every
-// installed Klaud finds it (they read releases/latest/download/latest.json).
+// Release Beluga for Mac by hand: build it, sign the update, and put it on GitHub so every
+// installed copy finds it (they read releases/latest/download/latest.json).
 //
 //   node scripts/release-mac.mjs --notes notes.md            build, then create the release
 //   node scripts/release-mac.mjs --notes-text "Faster" --dry-run   build only; print what it would upload
@@ -12,8 +12,8 @@
 //   --skip-build       reuse what the last `npm run app:build` made
 //   --dry-run          build and write latest.json, but don't touch GitHub
 //   --force            release even if GitHub's latest release isn't older
-//   --key <file>       the updater's private key (default ~/.tauri/klaud-updater.key, or
-//                      $TAURI_SIGNING_PRIVATE_KEY); its password, if any, from
+//   --key <file>       the updater's private key (default ~/.tauri/beluga-updater.key, else
+//                      ~/.tauri/klaud-updater.key from before the rename, or $TAURI_SIGNING_PRIVATE_KEY); its password, if any, from
 //                      $TAURI_SIGNING_PRIVATE_KEY_PASSWORD or <key>.password
 //
 // A maintainer's tool: nothing runs it automatically. Needs macOS, gh (logged in) and the key.
@@ -23,7 +23,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const REPO = 'kayraucklnc/klaud';
+export const REPO = 'kayraucklnc/beluga';
+/** What people download is named for the app, whatever the build's productName still says. */
+export const APP = 'Beluga';
 const root = path.resolve(import.meta.dirname, '..');
 const mac = path.join(root, 'packages/mac');
 const confFile = path.join(mac, 'src-tauri/tauri.conf.json');
@@ -46,10 +48,11 @@ export function isNewer(next, prev) {
 }
 
 export const archOf = (nodeArch = process.arch) => (nodeArch === 'arm64' ? 'aarch64' : 'x64');
-export const updateAsset = (version, arch) => `Klaud_${version}_${arch}.app.tar.gz`;
+export const updateAsset = (version, arch) => `${APP}_${version}_${arch}.app.tar.gz`;
+export const dmgAsset = (version, arch) => `${APP}_${version}_${arch}.dmg`;
 export const assetUrl = (tag, name) => `https://github.com/${REPO}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
 
-/** The file every installed Klaud reads to learn about this release (tauri-plugin-updater's format). */
+/** The file every installed copy reads to learn about this release (tauri-plugin-updater's format). */
 export function latestJson({ version, notes, pubDate, signature, url, arch }) {
   return { version, notes, pub_date: pubDate, platforms: { [`darwin-${arch}`]: { signature: signature.trim(), url } } };
 }
@@ -76,12 +79,19 @@ function setVersion(version) {
     const text = readFileSync(file, 'utf8');
     writeFileSync(file, text.replace(/("version":\s*")[^"]+(")/, `$1${version}$2`));
   }
-  console.log(`Klaud for Mac is now ${version} (tauri.conf.json, package.json). Commit it, then release.`);
+  console.log(`${APP} for Mac is now ${version} (tauri.conf.json, package.json). Commit it, then release.`);
+}
+
+/** The updater's key: its name since the rename, else the one it had before (the same key). */
+function defaultKey() {
+  const dir = path.join(os.homedir(), '.tauri');
+  const named = path.join(dir, 'beluga-updater.key');
+  return existsSync(named) ? named : path.join(dir, 'klaud-updater.key');
 }
 
 function signingEnv(opts) {
   if (process.env.TAURI_SIGNING_PRIVATE_KEY) return {};
-  const key = opts.key ?? path.join(os.homedir(), '.tauri/klaud-updater.key');
+  const key = opts.key ?? defaultKey();
   if (!existsSync(key)) throw new Error(`No updater key at ${key}. See docs/updates.md (or pass --key).`);
   const passFile = `${key}.password`;
   const password = process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? (existsSync(passFile) ? readFileSync(passFile, 'utf8').trim() : '');
@@ -116,19 +126,21 @@ function main() {
   if (!dry) {
     const published = publishedVersion();
     if (published && !isNewer(version, published) && !opts.flags.has('force')) {
-      throw new Error(`GitHub's latest release is ${published}; ${version} isn't newer, so no Klaud would update. Bump it: --set-version.`);
+      throw new Error(`GitHub's latest release is ${published}; ${version} isn't newer, so no installed copy would update. Bump it: --set-version.`);
     }
   }
 
   const arch = archOf();
   if (!opts.flags.has('skip-build')) {
-    console.log(`Building Klaud ${version} (${arch}) with update signing…`);
+    console.log(`Building ${APP} ${version} (${arch}) with update signing…`);
     run('npm', ['run', 'app:build'], { cwd: mac, env: { ...process.env, ...signingEnv(opts) } });
   }
 
+  // The build names its files for tauri.conf.json's productName; the release names them for the app.
+  const built = readJson(confFile).productName;
   const bundle = path.join(mac, 'src-tauri/target/release/bundle');
-  const app = path.join(bundle, 'macos/Klaud.app.tar.gz');
-  const dmg = path.join(bundle, `dmg/Klaud_${version}_${arch}.dmg`);
+  const app = path.join(bundle, `macos/${built}.app.tar.gz`);
+  const dmg = path.join(bundle, `dmg/${built}_${version}_${arch}.dmg`);
   for (const f of [app, `${app}.sig`, dmg]) if (!existsSync(f)) throw new Error(`Missing ${f}: did the build sign the update? (createUpdaterArtifacts, the key)`);
 
   const out = path.join(bundle, 'release');
@@ -137,12 +149,12 @@ function main() {
   const name = updateAsset(version, arch);
   copyFileSync(app, path.join(out, name));
   copyFileSync(`${app}.sig`, path.join(out, `${name}.sig`));
-  copyFileSync(dmg, path.join(out, path.basename(dmg)));
+  copyFileSync(dmg, path.join(out, dmgAsset(version, arch)));
   const signature = readFileSync(`${app}.sig`, 'utf8');
   const latest = latestJson({ version, notes, pubDate: new Date().toISOString(), signature, url: assetUrl(tag, name), arch });
   writeFileSync(path.join(out, 'latest.json'), `${JSON.stringify(latest, null, 2)}\n`);
   writeFileSync(path.join(out, 'notes.md'), `${notes}\n`);
-  const files = ['latest.json', name, `${name}.sig`, path.basename(dmg)].map((f) => path.join(out, f));
+  const files = ['latest.json', name, `${name}.sig`, dmgAsset(version, arch)].map((f) => path.join(out, f));
   console.log(`\nReady in ${out}:\n${files.map((f) => `  ${path.basename(f)}`).join('\n')}`);
   if (dry) return console.log(`\nDry run: nothing uploaded. The release would be ${tag} on ${REPO}, marked latest.`);
 
@@ -156,9 +168,9 @@ function main() {
     run('gh', ['release', 'upload', tag, ...files, '--repo', REPO, '--clobber']);
     run('gh', ['release', 'edit', tag, '--repo', REPO, '--latest', '--notes-file', path.join(out, 'notes.md')]);
   } else {
-    run('gh', ['release', 'create', tag, ...files, '--repo', REPO, '--latest', '--title', `Klaud ${version}`, '--notes-file', path.join(out, 'notes.md')]);
+    run('gh', ['release', 'create', tag, ...files, '--repo', REPO, '--latest', '--title', `${APP} ${version}`, '--notes-file', path.join(out, 'notes.md')]);
   }
-  console.log(`\nReleased Klaud ${version}: https://github.com/${REPO}/releases/tag/${tag}`);
+  console.log(`\nReleased ${APP} ${version}: https://github.com/${REPO}/releases/tag/${tag}`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

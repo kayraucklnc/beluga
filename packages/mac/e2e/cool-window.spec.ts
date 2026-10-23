@@ -1,8 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures.js';
 
 /**
- * Klaud's window stays cool while Claude works (KLD-40): what moves while Claude works moves with
- * one slow clock (lib/live-motion.ts), not CSS animations; while you're not looking at Klaud it
+ * Beluga's window stays cool while Claude works (KLD-40): what moves while Claude works moves with
+ * one slow clock (lib/live-motion.ts), not CSS animations; while you're not looking at Beluga it
  * all rests, and the moment you look back it moves again. (Measured with scripts/cpu-bench.mjs.)
  */
 
@@ -45,6 +45,7 @@ test('what moves while Claude works rests while you look away, and moves again w
   await expect(page.locator('html')).toHaveAttribute('data-window', 'idle');
   if (await progress(page).isVisible()) {
     const resting = await travel(page);
+    // A fixed wait, on purpose: it shows that nothing moves for a while.
     await page.waitForTimeout(500);
     expect(await travel(page)).toBe(resting);
   }

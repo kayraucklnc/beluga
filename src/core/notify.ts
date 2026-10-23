@@ -38,7 +38,7 @@ export interface DesktopNote {
   readonly body: string;
   /** Whether it makes a sound (screens that can't play `tone` use their default sound). */
   readonly sound: boolean;
-  /** Which sound (Settings › Notifications), and how loud Klaud's own sounds are (0–1). */
+  /** Which sound (Settings › Notifications), and how loud Beluga's own sounds are (0–1). */
   readonly tone?: SoundChoice;
   readonly volume?: number;
   readonly channel?: string;
@@ -106,7 +106,7 @@ export const planMilestonesOnly = (prefs: NotifySettings): boolean => prefs.plan
  * The plan's home counts while the plan runs (its head Claude checking milestones). People talking
  * to you are never the plan's.
  */
-export function scopeToPlan(state: Pick<DomainState, 'plans' | 'board' | 'prefs'>, e: NoticeEvent): NoticeEvent {
+function scopeToPlan(state: Pick<DomainState, 'plans' | 'board' | 'prefs'>, e: NoticeEvent): NoticeEvent {
   if (e.plan || e.kind === 'mentions' || e.kind === 'people' || e.tag === 'test') return e;
   const place = planOfChannel(state, e.channel);
   if (!place || place.plan.status === 'draft' || (!place.issue && place.plan.status !== 'active')) return e;
@@ -250,7 +250,7 @@ function messagesForYou(prev: DomainState, next: DomainState): NoticeEvent[] {
 const STALE_MESSAGE_MS = 12 * 60 * 60_000;
 
 /**
- * A friend writes to you, or someone writes in one of your groups (the klaud network). Quiet
+ * A friend writes to you, or someone writes in one of your groups (the Beluga network). Quiet
  * while your status is Do Not Disturb or you appear offline: the inbox still has them.
  */
 function networkMessages(prev: DomainState, next: DomainState, now: number): NoticeEvent[] {
@@ -385,7 +385,7 @@ export class Notifier {
 
   /** Show a test notification whatever the settings say (you asked for it). */
   test(): void {
-    const e: NoticeEvent = { kind: 'done', tag: 'test', title: 'Notifications work', body: 'This is how klaud tells you Claude finished or needs you' };
+    const e: NoticeEvent = { kind: 'done', tag: 'test', title: 'Notifications work', body: 'This is how Beluga tells you Claude finished or needs you' };
     this.deps.store.dispatch({ type: 'notice_add', notice: { kind: e.kind, tag: e.tag, title: e.title, body: e.body } });
     this.queue.push(e);
     this.flush();
@@ -472,7 +472,7 @@ export function combine(batch: readonly NoticeEvent[], prefs: boolean | SoundPre
   // One approval on its own can be answered from the notification itself.
   const approval = first.tag === 'approval' && first.ref ? { approval: first.ref, ...(first.task ? { task: first.task } : {}) } : {};
   if (batch.length === 1) return { title: first.title, body: first.body, ...sound, ...channel, ...approval };
-  return { title: `${batch.length} updates in klaud`, body: batch.map((e) => e.title).slice(0, 4).join(' · '), ...sound, ...channel };
+  return { title: `${batch.length} updates in Beluga`, body: batch.map((e) => e.title).slice(0, 4).join(' · '), ...sound, ...channel };
 }
 
 /** Whether you want to hear about this kind (missing in old settings: yes). */

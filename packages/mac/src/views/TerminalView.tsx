@@ -1,8 +1,8 @@
-import { runId, setupId, shellId, terminalLabel } from '@klaud/shared/terminal-keys.js';
-import { findWorkspace } from '@klaud/ui/workspace-models.js';
+import { runId, setupId, shellId, terminalLabel } from '@beluga/shared/terminal-keys.js';
+import { findWorkspace } from '@beluga/ui/workspace-models.js';
 import { Button, Dot, Empty, IconButton, Tip } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApi, useApp, useKlaud, useUi } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga, useUi } from '../lib/beluga.js';
 import { type GlobalShells, useGlobalShells } from '../lib/shells.js';
 import { extraShells, useShellOwners } from '../lib/ws-shells.js';
 import s from './terminal.module.css';
@@ -13,7 +13,7 @@ import { Xterm } from './Xterm.js';
 export function TerminalView() {
   const api = useApi();
   const actions = useActions();
-  const { ui } = useKlaud();
+  const { ui } = useBeluga();
   const state = useApp((st) => st);
   const picked = useUi((u) => u.termKey);
   const shells = useGlobalShells();

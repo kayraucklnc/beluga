@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Empty, cx } from '../../components/ui.js';
 import { useActions } from '../../lib/actions.js';
-import { useApp } from '../../lib/klaud.js';
+import { useApp } from '../../lib/beluga.js';
 import { CommitDetail } from './CommitDetail.js';
 import { HistoryFilters } from './HistoryFilters.js';
 import { HistoryList, type RefContext } from './HistoryList.js';

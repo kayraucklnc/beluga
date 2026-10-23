@@ -1,13 +1,16 @@
 import { z } from 'zod';
 
 /**
- * `klaud-graph`: the diagrams Claude draws for you (a fenced block of JSON in an answer, a report
+ * `beluga-graph`: the diagrams Claude draws for you (a fenced block of JSON in an answer, a report
  * or a task's brief). Only data, never code: the window lays it out and draws it with its own
  * pieces. Browser-safe (the Mac app parses it; the core teaches Claude the format).
  * Spec and examples: docs/graphs.md.
  */
 
-export const GRAPH_FENCE = 'klaud-graph';
+export const GRAPH_FENCE = 'beluga-graph';
+
+/** A fence tag that holds a graph: `beluga-graph`, or `klaud-graph` from before the rename (older messages and peers). */
+export const isGraphFence = (lang: string | undefined): boolean => lang === GRAPH_FENCE || lang === 'klaud-graph';
 
 export const NODE_KINDS = [
   'client',

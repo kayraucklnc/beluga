@@ -22,11 +22,11 @@ let hub: Hub;
 let base: string;
 let terminals: TerminalManager;
 const sessions: Session[] = [];
-const home = process.env.KLAUD_HOME;
+const home = process.env.BELUGA_HOME;
 
 beforeEach(() => {
   base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'klaud-bench-')));
-  process.env.KLAUD_HOME = path.join(base, 'klaud-home');
+  process.env.BELUGA_HOME = path.join(base, 'klaud-home');
   terminals = new TerminalManager();
 });
 
@@ -34,7 +34,7 @@ afterEach(async () => {
   for (const s of sessions.splice(0)) await s.stop();
   terminals.closeAll();
   await hub?.close();
-  process.env.KLAUD_HOME = home;
+  process.env.BELUGA_HOME = home;
 });
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=T', ...args], { cwd, stdio: 'pipe' }).toString();
@@ -175,7 +175,7 @@ describe('setup and run scripts', () => {
     await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.command === 'touch .ready', 4000);
   });
 
-  it('lets you set the commands for yourself or for the team (klaud.json)', async () => {
+  it('lets you set the commands for yourself or for the team (beluga.json)', async () => {
     hub = await startHub({ keys });
     const dir = repo({ 'package-lock.json': '{}', 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
     const kay = await solo(dir);
@@ -185,10 +185,10 @@ describe('setup and run scripts', () => {
     await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.source === 'yours', 4000);
     kay.bench.shareScripts(id);
     await waitFor(() => projectOf(kay.workspaces).scripts?.setup?.command === 'npm ci', 4000);
-    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaud.json')]).toString())).toEqual({ scripts: { setup: 'npm ci', run: 'npm run dev' } });
+    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'beluga.json')]).toString())).toEqual({ scripts: { setup: 'npm ci', run: 'npm run dev' } });
   });
 
-  it('saves one command straight to klaud.json, dropping your own one for it', async () => {
+  it('saves one command straight to beluga.json, dropping your own one for it', async () => {
     hub = await startHub({ keys });
     const dir = repo({ 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
     const kay = await solo(dir);
@@ -196,12 +196,12 @@ describe('setup and run scripts', () => {
     kay.bench.setScript(id, 'run', 'npm start');
     await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source === 'yours', 4000);
     kay.bench.setScript(id, 'run', 'npm run serve', true);
-    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source === 'klaud.json', 4000);
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source === 'beluga.json', 4000);
     expect(projectOf(kay.workspaces).scripts?.run?.command).toBe('npm run serve');
-    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaud.json')]).toString())).toEqual({ scripts: { run: 'npm run serve' } });
+    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'beluga.json')]).toString())).toEqual({ scripts: { run: 'npm run serve' } });
     kay.bench.setScript(id, 'run', '', true);
-    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source !== 'klaud.json', 4000);
-    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'klaud.json')]).toString())).toEqual({ scripts: {} });
+    await waitFor(() => projectOf(kay.workspaces).scripts?.run?.source !== 'beluga.json', 4000);
+    expect(JSON.parse(execFileSync('cat', [path.join(dir, 'beluga.json')]).toString())).toEqual({ scripts: {} });
   });
 });
 
@@ -214,7 +214,7 @@ describe('pull requests', () => {
     const ws = await kay.session.workspaces!.newWorktree(projectOf(kay.workspaces).id, 'auth');
     kay.bench.createPr(ws!.id, 'mention the migration');
     await waitFor(() => kay.runs.length === 1, 4000);
-    expect(kay.runs[0]?.prompt).toContain('gh pr create --base main --head klaud/auth');
+    expect(kay.runs[0]?.prompt).toContain('gh pr create --base main --head beluga/auth');
     expect(kay.runs[0]?.prompt).toContain('For this pull request, also: mention the migration');
     expect(kay.runs[0]?.prompt).toContain('## Why');
 
@@ -372,7 +372,7 @@ describe('your shell, its names and your variables', () => {
     await waitFor(() => shell.backlog().includes('got:mine:project:'), 8000);
     expect(shell.shell).toBe('/bin/bash');
 
-    // Setup and run commands get them too (alongside klaud's own).
+    // Setup and run commands get them too (alongside Beluga's own).
     const ws = await kay.session.workspaces!.newWorktree(project.id, 'envy');
     kay.bench.setScript(project.id, 'run', 'echo "run:$KLAUD_T_BOTH:$KLAUD_WORKSPACE_NAME"; sleep 5');
     await waitFor(() => kay.workspaces.list.find((p) => p.id === project.id)?.scripts?.run?.source === 'yours', 4000);

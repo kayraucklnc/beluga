@@ -46,11 +46,11 @@ describe('settings', () => {
     expect(loadSettings(file).autoCompact).toBe(false);
   });
 
-  it('respects KLAUD_HOME', () => {
-    const before = process.env.KLAUD_HOME;
-    process.env.KLAUD_HOME = '/tmp/kh';
+  it('respects BELUGA_HOME', () => {
+    const before = process.env.BELUGA_HOME;
+    process.env.BELUGA_HOME = '/tmp/kh';
     expect(settingsPath()).toBe('/tmp/kh/settings.json');
-    process.env.KLAUD_HOME = before;
+    process.env.BELUGA_HOME = before;
   });
 });
 

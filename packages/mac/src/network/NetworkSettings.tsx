@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Button } from '../components/ui.js';
-import { useApp, useKlaud } from '../lib/klaud.js';
+import { useApp, useBeluga } from '../lib/beluga.js';
 import { Group, Row, Select, Switch } from '../dialogs/settings-controls.js';
 import { openNet } from './net-sheets.js';
 import { errorText, quietly, useNetwork } from './use-net.js';
 
-/** Settings › People & access: talking with friends directly (the klaud network), on or off. */
+/** Settings › People & access: talking with friends directly (the Beluga network), on or off. */
 export function NetworkSettings() {
-  const { client, ui } = useKlaud();
+  const { client, ui } = useBeluga();
   const net = useNetwork();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();

@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { CAP_INFO, EXPIRY_INFO, type Expiry, type RequestFacts, capFor, ruleFor, ruleKindOf, ruleLabel, scopeChoices } from '@klaud/core/gateway/access.js';
-import { type TaskView, isFinal, oneLine, stateLabel, stateTone } from '@klaud/core/gateway/model.js';
-import { TRUST_INFO } from '@klaud/core/trust.js';
+import { CAP_INFO, EXPIRY_INFO, type Expiry, type RequestFacts, capFor, ruleFor, ruleKindOf, ruleLabel, scopeChoices } from '@beluga/core/gateway/access.js';
+import { type TaskView, isFinal, oneLine, stateLabel, stateTone } from '@beluga/core/gateway/model.js';
+import { TRUST_INFO } from '@beluga/core/trust.js';
 import { Icon } from '../components/Icon.js';
 import { Avatar, Button, Dot } from '../components/ui.js';
 import { Choice, Sheet } from '../dialogs/native/parts.js';
-import { useApi, useApp, useKlaud } from '../lib/klaud.js';
+import { useApi, useApp, useBeluga } from '../lib/beluga.js';
 import { backLine, whereLine } from './popup-model.js';
 import { closeRequest, useRequestSheet } from './request-native.js';
 import s from './access.module.css';
@@ -36,7 +36,7 @@ type Mode = 'choose' | 'always' | 'decline';
 
 function Body({ task }: { task: TaskView }) {
   const api = useApi();
-  const { client } = useKlaud();
+  const { client } = useBeluga();
   const level = useApp((st) => st.levels[task.peerId] ?? st.remembered[task.peerId]?.trust ?? (st.policy === 'deny' ? 'blocked' : st.policy === 'auto' ? 'trusted' : 'ask'));
   const caps = useApp((st) => st.gateway.capabilities);
   const [mode, setMode] = useState<Mode>('choose');

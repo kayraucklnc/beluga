@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { readJson, writeJson } from '../files.js';
 
 /**
- * Channels you deleted from this Mac, kept in ~/.klaud/groups/forgotten.json, so a member who
+ * Channels you deleted from this Mac, kept in ~/.beluga/groups/forgotten.json, so a member who
  * still has the channel doesn't hand it back to you on the next catch-up. Each one remembers the
  * entry that took you out: the channel comes back only from a copy that knows you left and has
  * you in it again (someone added you back). Asking to join again forgets the deletion.

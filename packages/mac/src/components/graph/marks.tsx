@@ -1,4 +1,4 @@
-import type { GraphNode, NodeKind } from '@klaud/shared/graph-spec.js';
+import type { GraphNode, NodeKind } from '@beluga/shared/graph-spec.js';
 import { KIND_ICON, STATUS_INFO } from './graph-model.js';
 import g from './graph.module.css';
 

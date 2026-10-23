@@ -1,11 +1,11 @@
-import { channelOf } from '@klaud/core/store.js';
-import { planForHome } from '@klaud/core/plans/model.js';
+import { channelOf } from '@beluga/core/store.js';
+import { planForHome } from '@beluga/core/plans/model.js';
 import { Attention } from '../chat/Attention.js';
 import { ChatLog } from '../chat/ChatLog.js';
 import { Composer } from '../chat/Composer.js';
 import { Button, Empty, EmptyActions } from '../components/ui.js';
 import { useActions } from '../lib/actions.js';
-import { useApp } from '../lib/klaud.js';
+import { useApp } from '../lib/beluga.js';
 import s from './views.module.css';
 import { OtherWorktreeBanner, WorktreeInfoPage } from './WorktreeInfo.js';
 import { AgentWorktreePage } from '../claude-code/AgentMonitor.js';
@@ -15,6 +15,7 @@ import { TaskStrip } from '../tasks/TaskStrip.js';
 import { PlanStrip } from '../plans/PlanStrip.js';
 import { useWorktreeFlag } from './worktree-info-state.js';
 import { AskBanner } from '../chat/AskBanner.js';
+import { ConnectionStatus } from './room/ConnectionStatus.js';
 
 /** A conversation and the box to add to it: the room, a workspace, a shared workspace, a draft. */
 /** One-click ways to begin, under an empty conversation. */
@@ -88,13 +89,13 @@ export function ChatView() {
     ) : ws?.askOnly ? (
       <Empty icon="eye" title={`Ask about ${projectName ?? 'this project'}`} detail="Claude reads the main folder and answers; it won’t change anything here. Ask for a change and it continues in a new worktree." action={<Starters />} />
     ) : view.kind === 'draft_worktree' ? (
-      <Empty icon="branch" title="A new worktree" detail="Describe the task below. Klaud makes a branch and a folder for it from the branch you pick, and Claude starts right away." />
+      <Empty icon="branch" title="A new worktree" detail="Describe the task below. Beluga makes a branch and a folder for it from the branch you pick, and Claude starts right away." />
     ) : view.kind === 'room' ? (
       <Empty icon="claude" title={solo ? 'Talk to your Claude' : 'Say hi to the room'} detail={solo ? 'Ask anything here, or give Claude a task in a worktree of its own.' : 'Everyone here sees this chat. Mention @claude to ask your Claude.'} action={<Starters />} />
     ) : (
       <Empty icon="chat" title="Tell Claude what to do here" detail="It works in this folder and remembers the conversation. Start with one of these, or write your own below." action={<Starters />} />
     );
-  // A worktree made outside Klaud: its info page until there's a conversation (or you start one).
+  // A worktree made outside Beluga: its info page until there's a conversation (or you start one).
   const other = ws?.kind === 'worktree' && ws.external && !ws.archived ? ws : undefined;
   const hasItems = useApp((st) => st.log.some((l) => l.channel === channel));
   // A plan's own conversation plans: it never moves to a worktree.
@@ -107,6 +108,7 @@ export function ChatView() {
   const chat = (
     <div className={s.chat}>
       {other ? <OtherWorktreeBanner ws={other} /> : null}
+      {view.kind === 'room' ? <ConnectionStatus /> : null}
       {view.kind === 'workspace' ? <PlanStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <TaskStrip workspaceId={view.id} /> : null}
       {view.kind === 'workspace' ? <LiveStrip workspaceId={view.id} /> : null}
