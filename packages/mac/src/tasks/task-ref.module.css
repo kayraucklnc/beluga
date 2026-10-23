@@ -1,0 +1,119 @@
+/* Tasks in an answer: a chip small enough to sit in a line of text, and a quiet stack of cards. */
+
+.key {
+  flex: none;
+  font-size: 0.88em;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: min(24em, 100%);
+  height: 1.5em;
+  padding: 0 7px 0 5px;
+  border: 0;
+  border-radius: 6px;
+  vertical-align: -0.25em;
+  font: inherit;
+  color: var(--text);
+  background: var(--code-bg);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  cursor: default;
+}
+.chip:hover {
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.chipTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92em;
+  font-weight: 500;
+}
+
+.missing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 1.5em;
+  padding: 0 7px;
+  border-radius: 6px;
+  vertical-align: -0.25em;
+  font-size: 0.92em;
+  color: var(--text-3);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  margin: 8px 0;
+  border-radius: var(--radius-l);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  overflow: hidden;
+}
+.cards > * + * {
+  border-top: 1px solid var(--hairline);
+}
+.card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+}
+.card:hover {
+  background: var(--bg-hover);
+}
+.card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.card .key {
+  min-width: 52px;
+  font-size: 12px;
+}
+.cardTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+.cardEnd {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.missingRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 12px 6px 34px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.missingRow .key {
+  min-width: 52px;
+  font-size: 12px;
+}
