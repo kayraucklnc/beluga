@@ -17,12 +17,15 @@ export const STATUS_INFO: Readonly<Record<IssueStatus, { readonly label: string;
   in_progress: { label: 'In Progress', tone: 'claude', open: true },
   in_review: { label: 'In Review', tone: 'info', open: true },
   /** A plan's task whose milestone passed: merged into the plan's branch, waiting for the plan's PR. */
-  in_plan: { label: 'In Plan', tone: 'info', open: true },
+  in_plan: { label: 'Merged into Plan', tone: 'info', open: true },
   done: { label: 'Done', tone: 'ok', open: false },
   canceled: { label: 'Canceled', tone: 'muted', open: false },
 };
 
 export const isOpen = (status: IssueStatus): boolean => STATUS_INFO[status].open;
+
+/** Its work is finished (in review, merged into its plan, or shipped): nothing to start until it's reopened. */
+export const isFinished = (status: IssueStatus): boolean => status === 'in_review' || status === 'in_plan' || status === 'done';
 
 /** Linear's order: urgent first; "none" sorts last. */
 export const PRIORITIES = ['urgent', 'high', 'medium', 'low', 'none'] as const;
