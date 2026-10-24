@@ -6,7 +6,7 @@ import { Confetti } from '../components/Confetti.js';
 import { Icon, type IconName } from '../components/Icon.js';
 import { cx } from '../components/ui.js';
 import { useApi, useApp } from '../lib/beluga.js';
-import { COFFEE_AMOUNTS, COFFEE_LINKS, COFFEE_WORDS, type CoffeeAmount, GITHUB_URL, MAINTAINER, closeSupport, useOpenedSupport } from '../lib/support.js';
+import { COFFEE_AMOUNTS, COFFEE_LINKS, COFFEE_WORDS, type CoffeeAmount, GITHUB_URL, exactLink, MAINTAINER, closeSupport, useOpenedSupport } from '../lib/support.js';
 import { openExternal } from '../lib/system.js';
 import { useClock, windowActive } from '../lib/window-active.js';
 import s from './support.module.css';
@@ -194,7 +194,7 @@ function CoffeeSheet({ merges, byHand, onAnswer }: { merges: number; byHand: boo
       </button>
       <div className={s.fine}>
         <Icon name="lock" size={11} />
-        Secure checkout by Stripe, in your browser
+        {exactLink(amount) ? 'Secure checkout by Stripe, in your browser' : `Secure checkout by Stripe: enter $${amount} there`}
       </div>
       <div className={s.quiet}>
         <button type="button" className={s.quietButton} onClick={() => onAnswer('later')}>

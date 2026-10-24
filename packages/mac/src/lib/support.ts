@@ -18,18 +18,22 @@ export type CoffeeAmount = (typeof COFFEE_AMOUNTS)[number];
 export const COFFEE_WORDS: Readonly<Record<CoffeeAmount, string>> = { 5: 'A coffee', 10: 'Coffee & cake', 20: 'Lunch', 50: 'A whole day' };
 
 /**
- * Stripe Payment Links, one per amount and one where you choose the amount (Stripe's "customers
- * choose what to pay"). These are public checkout pages anyone may open: no keys, nothing secret,
- * safe in a public repo. Make them in the Stripe Dashboard › Payment Links and paste them here;
- * until then the placeholders open as they are.
+ * Stripe Payment Links: public checkout pages anyone may open (no keys, nothing secret, safe in a
+ * public repo). A link can't be opened with an amount filled in, so an amount without a link of its
+ * own goes to the one where you choose what to pay, and the sheet says what to type there. Give an
+ * amount its own link (Stripe Dashboard › Payment Links) to make it one click.
  */
+const PICK_AMOUNT = 'https://buy.stripe.com/6oU5kC1Xeg669in9tyfjG00';
 export const COFFEE_LINKS: Readonly<Record<CoffeeAmount | 'other', string>> = {
-  5: 'https://buy.stripe.com/REPLACE_5',
-  10: 'https://buy.stripe.com/REPLACE_10',
-  20: 'https://buy.stripe.com/REPLACE_20',
-  50: 'https://buy.stripe.com/REPLACE_50',
-  other: 'https://buy.stripe.com/REPLACE_CUSTOM',
+  5: 'https://buy.stripe.com/dRmaEW1Xe7zAcuz49efjG01',
+  10: PICK_AMOUNT,
+  20: PICK_AMOUNT,
+  50: PICK_AMOUNT,
+  other: PICK_AMOUNT,
 };
+
+/** Whether this amount's link is set to it (else you type the amount on Stripe's page). */
+export const exactLink = (amount: CoffeeAmount): boolean => COFFEE_LINKS[amount] !== PICK_AMOUNT;
 
 // ---- a sheet opened by hand (one at a time)
 
