@@ -10,7 +10,7 @@ import { Sheet } from '../components/Sheet';
 import { Avatar, haptic, IconBadge, Press, T, type Tone, toneBg, toneInk } from '../components/ui';
 import { useView } from '../lib/hooks';
 import { type Call, calls } from '../lib/link/calls';
-import type { HomeView, PeopleView, Topic, WorkView } from '../lib/link/protocol';
+import { type HomeView, type PeopleView, type Topic, type WorkView, isMacTopic } from '../lib/link/protocol';
 import { pickPhoto, upload } from '../lib/pick';
 import { sends } from '../lib/sends';
 import { store } from '../lib/store';
@@ -57,11 +57,13 @@ export default function Ask() {
 
   const targets = useMemo<Target[]>(() => {
     const t: Target[] = [];
-    if (store.supports('assistant')) t.push({ kind: 'mac', topic: ASSISTANT, label: 'Your Mac' });
+    // Your Mac: the chat open on the Mac (it has tabs since BLG-102); its other chats working now are below, by their names.
+    const mac = home?.data.assistant?.topic && isMacTopic(home.data.assistant.topic) ? home.data.assistant.topic : ASSISTANT;
+    if (store.supports('assistant')) t.push({ kind: 'mac', topic: mac, label: 'Your Mac' });
     // Only your own projects take a new chat: not the room, a friend's shared project or "Asked of
     // friends" (views.ts groups those under 'room', 'shared:…' and 'asked').
     for (const p of work?.data.projects ?? []) if (p.id !== 'room' && p.id !== 'asked' && !p.id.startsWith('shared:')) t.push({ kind: 'project', id: p.id, label: p.name, ...(p.icon ? { icon: p.icon } : {}) });
-    for (const c of home?.data.running ?? []) if (c.topic !== ASSISTANT) t.push({ kind: 'conv', topic: c.topic, label: c.title, ...(c.project ? { project: c.project } : {}), ...(c.icon ? { icon: c.icon } : {}) });
+    for (const c of home?.data.running ?? []) if (c.topic !== mac) t.push({ kind: 'conv', topic: c.topic, label: c.title, ...(c.project ? { project: c.project } : {}), ...(c.icon ? { icon: c.icon } : {}) });
     for (const p of people?.data.people ?? []) if (p.presence !== 'offline') t.push({ kind: 'friend', id: p.peerId, name: p.name, label: `${p.name}'s Claude` });
     return t;
   }, [work, home, people]);

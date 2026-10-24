@@ -73,6 +73,12 @@ export const Topic = z.union([
 ]);
 export type Topic = z.infer<typeof Topic>;
 
+/**
+ * One of Your Mac's chats: `conv:mac:assistant`, and since BLG-102 (the Mac's chat tabs) also
+ * `conv:mac:assistant:<id>`. Home's `assistant` names the one open on the Mac.
+ */
+export const isMacTopic = (topic: string | undefined): boolean => topic === 'conv:mac:assistant' || Boolean(topic?.startsWith('conv:mac:assistant:'));
+
 // ---- what views are made of
 
 /** A file the phone sent the Mac (`put`): named by this ref in `companion.ask` / `companion.post`. */
@@ -281,7 +287,7 @@ export const HomeView = z.object({
    */
   outputs: z.array(OutputView.extend({ topic: Topic.optional() })).max(30),
   unread: z.object({ work: z.number().int().min(0), chats: z.number().int().min(0) }),
-  /** 1.5: "Your Mac" (`conv:mac:assistant`): its last line and whether it works, for Home's "Ask your Mac". */
+  /** 1.5: "Your Mac" (`conv:mac:assistant`): its last line and whether it works, for Home's "Ask your Mac". Since BLG-102 the chat open on the Mac (its topic may be `conv:mac:assistant:<id>`, see isMacTopic). */
   assistant: ConvSummary.optional(),
   /** 1.3: tasks waiting for your review (Home links to them). */
   review: z.object({ count: z.number().int().min(0), first: z.object({ topic: Topic, key: z.string().max(40), title: z.string().max(300) }).optional() }).optional(),

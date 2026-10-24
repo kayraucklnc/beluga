@@ -3,23 +3,29 @@ import { Icon } from '../components/Icon.js';
 import { useActions } from '../lib/actions.js';
 import { useApp } from '../lib/beluga.js';
 import { sameDeep } from '../lib/stable.js';
-import { signalOf } from './attention-model.js';
+import { type Signal, signalOf } from './attention-model.js';
 import { SignalMark } from './signal-marks.js';
 import { Row } from './sidebar-parts.js';
 
+const RANK: Record<Signal['level'], number> = { needs: 3, unread: 2, working: 1, idle: 0 };
+
 /**
  * The sidebar's top row: "Your Mac" (core/assistant), your Claude for the whole Mac, not one
- * project. The same conversation as the phone's Ask your Mac: what you say on either shows on both.
+ * project. Its chats are tabs on its page (BLG-102); the row shows what matters most among them
+ * (one waiting for you, then news, then working). The open one is the phone's Ask your Mac.
  */
 export function AssistantNav() {
   const actions = useActions();
   const selected = useApp((s) => s.view.kind === 'assistant');
-  const signal = useApp((s) => signalOf(s, ASSISTANT_CHANNEL), sameDeep);
+  const signal = useApp((s) => {
+    const channels = s.assistant.chats.length ? s.assistant.chats.map((c) => c.channel) : [ASSISTANT_CHANNEL];
+    return channels.map((c) => signalOf(s, c)).reduce((a, b) => (RANK[b.level] > RANK[a.level] ? b : a));
+  }, sameDeep);
   return (
     <Row
       icon={<Icon name="laptop" size={14} />}
       label={ASSISTANT_TITLE}
-      detail={signal.tip || 'Ask your Mac anything: screenshots, what’s running, start a worktree or a task. The same conversation as on your phone'}
+      detail={signal.tip || 'Ask your Mac anything: screenshots, what’s running, start a worktree or a task. Several chats as tabs; the open one is on your phone too'}
       selected={selected}
       onClick={() => actions.run({ type: 'view', view: { kind: 'assistant' } })}
       trailing={<SignalMark signal={signal} />}

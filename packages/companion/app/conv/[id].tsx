@@ -19,7 +19,7 @@ import { Sheet } from '../../components/Sheet';
 import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone } from '../../components/ui';
 import { ago, elapsed, useSince, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
-import type { ConvView, OutputView, SubAgentView, Topic, TurnView } from '../../lib/link/protocol';
+import { type ConvView, type OutputView, type SubAgentView, type Topic, type TurnView, isMacTopic } from '../../lib/link/protocol';
 import { type Send as Pending, sends, useSends } from '../../lib/sends';
 import { SendStatus } from '../../components/SendStatus';
 import { store } from '../../lib/store';
@@ -32,8 +32,6 @@ import { router } from 'expo-router';
  * step, sub-agents as chips (tap: a sheet with their steps and outputs), what it waits on you for,
  * and a composer with Send and Stop.
  */
-/** Your Mac's conversation (1.5): your Claude for the whole Mac. */
-const ASSISTANT = 'conv:mac:assistant' as Topic;
 
 /** An empty Your Mac: three first things to ask, one tap each (the composer is there too). */
 function MacStarters({ topic }: { readonly topic: Topic }) {
@@ -103,7 +101,7 @@ export default function Conversation() {
 
   return (
     <Screen>
-      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} lead={topic === ASSISTANT ? <IconBadge Icon={Laptop} tone="sky" size={30} /> : c?.project ? <ProjectMark name={c.project} icon={c.icon} size={30} /> : undefined} right={
+      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} lead={isMacTopic(topic) ? <IconBadge Icon={Laptop} tone="sky" size={30} /> : c?.project ? <ProjectMark name={c.project} icon={c.icon} size={30} /> : undefined} right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {c?.working && !all.length ? <Pill label="Working" tone="peach" /> : null}
             {all.length ? (
@@ -153,7 +151,7 @@ export default function Conversation() {
             </Press>
           ) : null}
           {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
-          {c && topic === ASSISTANT && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
+          {c && isMacTopic(topic) && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
           {turns.map((t, i) => (
             <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
               {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}

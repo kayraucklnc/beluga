@@ -1,5 +1,5 @@
 import type { DomainState, View } from '../core/store.js';
-import { ASSISTANT_CHANNEL } from '../shared/assistant.js';
+import { FIRST_CHAT, assistantChatOf } from '../shared/assistant.js';
 import { viewFor } from '../client/screen.js';
 
 /**
@@ -23,7 +23,12 @@ export function macViewFor(state: DomainState, target: OpenTarget): View | undef
     if (topic.startsWith('conv:')) {
       const channel = topic.slice(5);
       if (channel === 'room') return { kind: 'room' };
-      if (channel === ASSISTANT_CHANNEL) return { kind: 'assistant' };
+      const chat = assistantChatOf(channel);
+      if (chat) {
+        // One of Your Mac's chats (BLG-102); the first after it was deleted is the one open.
+        if (state.assistant.chats.some((c) => c.id === chat)) return { kind: 'assistant', chat };
+        return chat === FIRST_CHAT ? { kind: 'assistant' } : undefined;
+      }
       if (channel.startsWith('task:')) return { kind: 'requests' };
       if (channel.startsWith('ws:')) {
         const id = channel.slice(3);

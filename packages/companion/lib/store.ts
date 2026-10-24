@@ -4,7 +4,7 @@ import { kv } from './kv';
 import { BareTransport } from './link/bare';
 import { type Call, calls } from './link/calls';
 import { DemoTransport } from './link/demo/transport';
-import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, SINCE, MAX_UPLOAD_BYTES, type MacFrame, type NeedsYou, type OutputView, type Topic, viewSchema } from './link/protocol';
+import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, SINCE, MAX_UPLOAD_BYTES, isMacTopic, type MacFrame, type NeedsYou, type OutputView, type Topic, viewSchema } from './link/protocol';
 import { type Diagnosis, type PairRefusal, diagnose } from './link/diagnose';
 import { checkOnline } from './link/online';
 import { graceExpired, onResume, PROBE_TIMEOUT_MS, retryDelay } from './link/resume';
@@ -514,7 +514,7 @@ class Store {
     return v.major > COMPANION_PROTO.major || (v.major === COMPANION_PROTO.major && v.minor >= SINCE[what]);
   }
   private knows(topic: Topic): boolean {
-    if (topic === 'conv:mac:assistant') return this.supports('assistant');
+    if (isMacTopic(topic)) return this.supports('assistant');
     return topic === 'tasks' || topic.startsWith('task:') ? this.supports('tasks') : true;
   }
 

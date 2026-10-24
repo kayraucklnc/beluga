@@ -469,9 +469,19 @@ bug", "Open a task to fix X". The same conversation on both screens: the Ask she
 and Home's compact **Ask your Mac** row on the phone (`conv:mac:assistant`, live steps, Steer and
 Queue, outputs, as any conversation), the sidebar's top row on the Mac (the `assistant` view).
 
-- **Where it runs.** `~/.beluga/assistant/work/` is its Claude's folder; its scratch folder is
-  `work/.beluga/scratch/`. Its Claude session id (`state.json`) and its history (`history.json`) sit
-  beside it. Everything in Beluga's home is secret to the phone (`isSecretPath`) except the folders
+- **Its chats (BLG-102).** Several at once, tabs on its page on the Mac: + starts one, × deletes
+  one for good after asking (its messages here and on the phone, its folder, its Claude transcript;
+  there's no archive; deleting the last leaves a fresh one). Each is its own conversation: the first
+  keeps `conv:mac:assistant`, the others are `conv:mac:assistant:<id>` (`isMacTopic`). The tab open
+  on the Mac is Home's `assistant` (its topic), so Ask your Mac talks to it; the others are listed
+  by name ("Your Mac · …") wherever conversations are (working now, what needs you). An older
+  phone, knowing only `conv:mac:assistant`, reaches the open chat once the first one is deleted
+  (`phoneChannel`), and a message it sends there brings the first chat back as a tab.
+- **Where it runs.** `~/.beluga/assistant/work/` is its Claude's folder, shared by its chats; its
+  scratch folder is `work/.beluga/scratch/`. Each chat's Claude session id and history sit beside
+  it (`chats/<id>/state.json`, `history.json`; `chats.json` lists them in tab order with the one
+  open). The one chat from before BLG-102 (`state.json`, `history.json`) moves into `chats/main/`
+  on the first start. Everything in Beluga's home is secret to the phone (`isSecretPath`) except the folders
   Claude works in (`workspaces`, `chats`, `tasks/work`…): `assistant/work` joins them, narrowly, the
   way friends' tasks' `tasks/work` did, and nothing beside it does. Credentials are secret anywhere,
   so a `.env` in it still never leaves. Outside the home (`~/Beluga Assistant`) would have put a
