@@ -19,6 +19,8 @@ import {
 import type { DeviceSecret, LinkPhase } from '../rpc';
 import { Emitter, type PairInput, type PairStep, type Transport } from '../transport';
 import { type DemoWorld, e2eLine, makeWorld, ref, turn } from './data';
+import { demoRows } from './render-demo';
+import type { ViewQuery } from '../../render';
 import { DEMO_IMAGES } from './images.generated';
 
 /**
@@ -439,6 +441,13 @@ export class DemoTransport implements Transport {
             this.touch(c.topic);
           }
         return ok(true);
+      }
+
+      // ---- a live view's rows (the demo's shop.db), paged, sorted and filtered as the Mac does
+      case 'companion.viewFetch': {
+        const a = args[0] as { source?: { query?: string }; query: ViewQuery };
+        this.later(260, () => ok(demoRows(a.source?.query ?? '', a.query)));
+        return;
       }
 
       // ---- open on your Mac, project icons

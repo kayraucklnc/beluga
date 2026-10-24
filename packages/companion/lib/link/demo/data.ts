@@ -1,3 +1,4 @@
+import { dashboardConv } from './render-demo';
 import type { ChatMessageView, ConvView, MergeView, NeedsYou, OutputView, PeopleView, PlanView, TaskPageView, TurnView, UsageView } from '../protocol';
 import { DEMO_IMAGES, type DemoImage } from './images.generated';
 
@@ -290,7 +291,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
     ],
   };
 
-  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky].map((c) => [c.topic, c]));
+  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now)].map((c) => [c.topic, c]));
 
   // ---- what needs you, one of each kind (and one this phone doesn't know)
   // Shaped exactly as src/companion/views.ts makes them (the same methods, args and templates).
@@ -573,6 +574,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
     projects: [
       { id: 'beluga', name: 'beluga', convs: ['conv:beluga.onboarding', 'conv:beluga.push'] },
       { id: 'pixel-weather', name: 'pixel-weather', convs: ['conv:weather.radar', 'conv:weather.ci'] },
+      { id: 'shop', name: 'shop', convs: ['conv:shop.dashboard'] },
       { id: 'asked', name: 'Asked of friends', convs: [] },
     ],
     files,

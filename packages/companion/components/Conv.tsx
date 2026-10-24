@@ -2,10 +2,15 @@ import { router } from 'expo-router';
 import { Bot, Check, ChevronRight, CircleAlert, Code, Hourglass, Images, MessageSquare } from 'lucide-react-native';
 import { ProjectMark } from './ProjectMark';
 import { Fragment, type ReactNode } from 'react';
-import { Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { Linking, Text, View } from 'react-native';
+import { Block } from './render/Block';
+import { InlineThing } from './render/Inline';
+import { ViewCard } from './render/ViewCard';
+import { readInline, tableView } from '../lib/render';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 import { ago } from '../lib/hooks';
-import type { ConvSummary, ProseView, SubAgentView } from '../lib/link/protocol';
+import type { ConvSummary, ProseView, SubAgentView, Topic } from '../lib/link/protocol';
 import { store } from '../lib/store';
 import { color, tint, type } from '../lib/theme';
 import { Card, IconBadge, Press, T, type Tone, toneInk } from './ui';
@@ -15,10 +20,10 @@ import { Card, IconBadge, Press, T, type Tone, toneInk } from './ui';
 export const convHref = (topic: string): string => `/conv/${encodeURIComponent(topic.replace(/^conv:/, ''))}`;
 export const chatHref = (topic: string): string => `/chat/${encodeURIComponent(topic.replace(/^chat:/, ''))}`;
 
-/** Inline: **bold** and `code` (a word in code is text; a code block never comes). */
+/** Inline: **bold**, `code` (an inline element when it reads as one: docs/views.md), [links](…). */
 function inline(s: string, base: object): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]\n]+\]\([^)\s]+\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
@@ -26,7 +31,25 @@ function inline(s: string, base: object): ReactNode[] {
     if (m.index > last) out.push(s.slice(last, m.index));
     const tok = m[0];
     if (tok.startsWith('**')) out.push(<Text key={i++} style={[base, { fontWeight: '700', color: color.text }]}>{tok.slice(2, -2)}</Text>);
-    else out.push(<Text key={i++} style={[base, type.mono, { fontSize: 13.5, color: color.claude, backgroundColor: tint.claude }]}>{` ${tok.slice(1, -1)} `}</Text>);
+    else if (tok.startsWith('[')) {
+      const lm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok)!;
+      const href = lm[2]!;
+      // A web link opens; anything else (a path on the Mac) reads as its words.
+      out.push(
+        /^https?:\/\//.test(href) ? (
+          <Text key={i++} onPress={() => void Linking.openURL(href)} style={[base, { color: color.info, textDecorationLine: 'underline' }]}>
+            {lm[1]}
+          </Text>
+        ) : (
+          <Text key={i++} style={[base, { fontWeight: '600' }]}>
+            {lm[1]}
+          </Text>
+        ),
+      );
+    } else {
+      const el = readInline(tok.slice(1, -1));
+      out.push(el ? <InlineThing key={i++} el={el} /> : <Text key={i++} style={[base, type.mono, { fontSize: 13.5, color: color.claude, backgroundColor: tint.claude }]}>{` ${tok.slice(1, -1)} `}</Text>);
+    }
     last = m.index + tok.length;
   }
   if (last < s.length) out.push(s.slice(last));
@@ -45,19 +68,42 @@ export function CodeChip({ lang, lines }: { readonly lang?: string; readonly lin
   );
 }
 
-export function Prose({ prose, color: tone = color.text, size = 15.5 }: { readonly prose: ProseView; readonly color?: string; readonly size?: number }) {
+/** A Markdown table's cells (`| a | b |`). */
+const cells = (line: string): string[] =>
+  line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((c) => c.trim().replace(/\*\*/g, '').replace(/`/g, ''));
+const isRule = (line: string): boolean => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+
+/**
+ * Claude's words: paragraphs, bullets, headings, Markdown tables (drawn as table views, as on the
+ * Mac), pictures from the web, and what it drew (views, graphs, tasks: components/render), with
+ * any other code folded into a chip. `at`: the conversation and turn, for a live view's rows.
+ */
+export function Prose({ prose, color: tone = color.text, size = 15.5, at }: { readonly prose: ProseView; readonly color?: string; readonly size?: number; readonly at?: { topic: Topic; turn: string } }) {
   const base = { ...type.body, fontSize: size, lineHeight: size * 1.42, color: tone };
-  // Blocks: paragraphs, runs of bullets, headings, and code markers (each a chip).
-  type Block = { kind: 'p'; lines: string[] } | { kind: 'ul'; items: string[] } | { kind: 'h'; text: string } | { kind: 'code'; n: number };
+  type Block = { kind: 'p'; lines: string[] } | { kind: 'ul'; items: string[] } | { kind: 'h'; text: string } | { kind: 'code'; n: number } | { kind: 'table'; lines: string[] } | { kind: 'img'; alt: string; src: string };
   const blocks: Block[] = [];
-  for (const raw of prose.text.split('\n')) {
-    const line = raw.trimEnd();
+  const lines = prose.text.split('\n');
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li]!.trimEnd();
     const last = blocks.at(-1);
     const marker = /^\s*\[\[code:(\d+)\]\]\s*$/.exec(line);
     const bullet = /^\s*(?:[-*]|\d+\.) (.*)/.exec(line);
     const heading = /^#{1,3} (.*)/.exec(line) ?? /^\*\*([^*]+)\*\*:?$/.exec(line);
-    if (!line.trim()) blocks.push({ kind: 'p', lines: [] });
+    const img = /^\s*!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)\s*$/.exec(line);
+    if (/^\s*\|.*\|\s*$/.test(line) && isRule(lines[li + 1] ?? '')) {
+      // A table: its heading, the rule, and the rows after it.
+      const t: string[] = [line];
+      li += 1;
+      while (li + 1 < lines.length && /^\s*\|.*\|\s*$/.test(lines[li + 1]!)) t.push(lines[++li]!);
+      blocks.push({ kind: 'table', lines: t });
+    } else if (!line.trim()) blocks.push({ kind: 'p', lines: [] });
     else if (marker) blocks.push({ kind: 'code', n: Number(marker[1]) });
+    else if (img) blocks.push({ kind: 'img', alt: img[1]!, src: img[2]! });
     else if (heading) blocks.push({ kind: 'h', text: heading[1]! });
     else if (bullet) {
       if (last?.kind === 'ul') last.items.push(bullet[1]!);
@@ -71,8 +117,15 @@ export function Prose({ prose, color: tone = color.text, size = 15.5 }: { readon
       {shown.map((b, bi) => {
         if (b.kind === 'code') {
           const c = prose.code[b.n];
+          if (c?.block) return <Block key={bi} entry={c} {...(at ? { at: { ...at, block: b.n } } : {})} />;
           return <CodeChip key={bi} lang={c?.lang} lines={c?.lines ?? 0} />;
         }
+        if (b.kind === 'table') {
+          const [head, ...rows] = b.lines;
+          const view = tableView({ columns: cells(head!), rows: rows.map(cells) });
+          return view ? <ViewCard key={bi} view={view} /> : <Text key={bi} style={base}>{b.lines.join('\n')}</Text>;
+        }
+        if (b.kind === 'img') return <WebImage key={bi} src={b.src} alt={b.alt} />;
         if (b.kind === 'h') {
           return (
             <Text key={bi} style={[base, { fontWeight: '700', marginTop: bi ? 4 : 0, marginBottom: -3 }]}>
@@ -106,6 +159,17 @@ export function Prose({ prose, color: tone = color.text, size = 15.5 }: { readon
     </View>
   );
 }
+
+/** A picture from the web in Claude's words (a path on the Mac comes as an output instead). */
+function WebImage({ src, alt }: { readonly src: string; readonly alt: string }) {
+  return (
+    <View style={{ borderRadius: 14, overflow: 'hidden', backgroundColor: color.sunken }}>
+      <Image source={{ uri: src }} style={{ width: '100%', aspectRatio: 16 / 10 }} contentFit="cover" transition={200} accessibilityLabel={alt} />
+      {alt ? <T v="caption" style={{ padding: 8 }}>{alt}</T> : null}
+    </View>
+  );
+}
+
 
 /** The live step: a calm dot, and each new step rolls up into place (counts change in place). */
 export function StepTicker({ step, tone = 'peach', size = 13.5 }: { readonly step?: string; readonly tone?: Tone; readonly size?: number }) {

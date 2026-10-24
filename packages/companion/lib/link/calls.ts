@@ -57,6 +57,8 @@ export const calls = {
   /** A task described in words: Claude's draft first, then it's added. */
   draftTask: (projectId: string, text: string): Call => make('companion.draftTask', [{ projectId, text }], 'Draft a task'),
   addTask: (projectId: string, d: { title: string; goal: string; acceptance: string[]; labels: string[]; priority?: 'urgent' | 'high' | 'medium' | 'low' }): Call => make('companion.addTask', [{ projectId, ...d }], `Add "${short(d.title)}"`),
+  /** A live view's rows: the Mac runs its source (one your own Claude's view names) and sends the page. */
+  viewFetch: (a: { topic: Topic; turn: string; block: number; query: object; source?: object; confirm?: boolean; fresh?: boolean; text?: boolean }): Call => make('companion.viewFetch', [a as never], 'View rows'),
   /** Merging a worktree (its conversation): look first, merge, Claude resolves the conflicts. */
   mergeCheck: (topic: Topic): Call => make('companion.mergeCheck', [topic], 'Check the merge'),
   merge: (topic: Topic): Call => make('companion.merge', [topic], 'Merge'),

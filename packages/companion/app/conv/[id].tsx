@@ -106,7 +106,7 @@ export default function Conversation() {
           {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
           {turns.map((t, i) => (
             <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
-              {t.who === 'you' ? <YourTurn t={t} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} />}
+              {t.who === 'you' ? <YourTurn t={t} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
             </Animated.View>
           ))}
           {needs.map((n) => (
@@ -203,7 +203,7 @@ function YourTurn({ t }: { t: TurnView }) {
   );
 }
 
-function ClaudeTurn({ t, all, onAgent }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void }) {
+function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]; onAgent: (a: SubAgentView) => void; topic: Topic }) {
   const working = t.status === 'working';
   const { width } = useWindowDimensions();
   const outs = t.outputs ?? [];
@@ -222,7 +222,7 @@ function ClaudeTurn({ t, all, onAgent }: { t: TurnView; all: OutputView[]; onAge
         </T>
         <T v="caption">{ago(t.ts)}</T>
       </View>
-      {t.prose.text ? <Prose prose={t.prose} /> : null}
+      {t.prose.text ? <Prose prose={t.prose} at={{ topic, turn: t.id }} /> : null}
       {working ? <LivePanel t={t} /> : <StepsFold t={t} />}
       {t.subagents?.length ? (
         working || t.subagents.length <= 3 ? (
