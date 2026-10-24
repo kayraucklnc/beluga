@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config';
 import { workerCount } from './scripts/test-lock.mjs';
 
 export default defineConfig({
+  // The tests load a few of the phone app's files (packages/companion, an Expo app): read them with
+  // this tsconfig, not theirs, which extends expo/tsconfig.base (not installed where only the root is).
+  tsconfig: 'tsconfig.json',
   test: {
     include: ['tests/**/*.test.ts'],
     setupFiles: ['tests/setup.ts'],
