@@ -149,7 +149,7 @@ export default function Settings() {
             ) : null}
 
             <Card>
-              <Row first Icon={Info} tone="plain" label="About" sub={`App 0.15.0 · link ${COMPANION_PROTO.major}.${COMPANION_PROTO.minor}${link.mac ? ` · Mac ${link.mac.version}` : ''}`} />
+              <Row first Icon={Info} tone="plain" label="About" sub={`App 0.16.0 · link ${COMPANION_PROTO.major}.${COMPANION_PROTO.minor}${link.mac ? ` · Mac ${link.mac.version}` : ''}`} />
             </Card>
           </Animated.View>
         ) : null}

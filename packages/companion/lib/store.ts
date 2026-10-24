@@ -84,7 +84,7 @@ type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 export type TermFrame = Extract<MacFrame, { t: 'term_data' | 'term_status' }>;
 type Fetch = { key: string; ref: string; variant: 'thumb' | 'full' | 'text'; parts: string[]; base: string; got: number };
 
-const APP = 'beluga-companion/0.15.0';
+const APP = 'beluga-companion/0.16.0';
 const PLATFORM: 'android' | 'ios' = Platform.OS === 'ios' ? 'ios' : 'android';
 
 class Store {

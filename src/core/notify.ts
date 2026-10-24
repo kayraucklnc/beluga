@@ -1,11 +1,12 @@
 import type { NotifySettings } from './settings.js';
-import { type DomainState, type LogItem, type Store } from './store.js';
+import { type DomainState, type LogItem, type Store, isRunning } from './store.js';
 import { dndActive } from '../shared/quiet.js';
 import { loudestKind, type SoundChoice, type SoundPrefs, soundFor, volumeOf } from '../shared/notify-sound.js';
 import { type Issue, issueForWorkspace } from './board/model.js';
 import { type Plan, planById, planForHome, planTitle } from './plans/model.js';
 import { type MilestoneView, planView } from './plans/progress.js';
 import { isDecisionQid } from './plans/decisions.js';
+import { ASSISTANT_TITLE, isAssistant } from '../shared/assistant.js';
 
 /** The groups you can switch on or off in Settings → Notifications. */
 export type NoticeKind = 'done' | 'needsYou' | 'problems' | 'people' | 'pr' | 'mentions' | 'background';
@@ -31,6 +32,8 @@ export interface NoticeEvent {
   readonly planTask?: string;
   /** What happened, once: a notice with the same key is never raised again (a plan's milestone passing…). */
   readonly key?: string;
+  /** Worth a desktop notification even while a screen in front shows its conversation (a long run of yours ended there). */
+  readonly watched?: boolean;
 }
 
 /** A desktop notification: what it says, and where clicking it goes (when it's about one place). */
@@ -60,6 +63,8 @@ export function presenceQuiet(state: Pick<DomainState, 'network'>): boolean {
 /** Runs that end like this were your own doing, so they're not worth a notification. */
 const QUIET_ERRORS = /^(Interrupted by a newer message|Cancelled by owner|Stopped by owner)/;
 const RECENT_LOG = 200;
+/** A run of yours this long is one you stopped watching: its end is announced even in the conversation on screen. */
+export const WATCHED_RUN_MS = 20_000;
 
 type AgentItem = Extract<LogItem, { type: 'agent' }>;
 type ChatItem = Extract<LogItem, { type: 'chat' }>;
@@ -75,6 +80,7 @@ const firstLine = (text: string, max = 140): string => {
 /** "add-auth", "the group chat", or a shared workspace's name. */
 export function placeName(state: DomainState, channel: string): string {
   if (channel === 'room') return state.peers.length > 1 ? 'the group chat' : 'your chat';
+  if (isAssistant(channel)) return ASSISTANT_TITLE;
   const id = channel.slice(3);
   const ws = state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) ?? state.shared.find((w) => w.id === id);
   return ws?.name ?? 'a workspace';
@@ -196,10 +202,16 @@ function finishedRuns(prev: DomainState, next: DomainState): NoticeEvent[] {
     if (!mine && item.requesterName !== selfName) continue;
     const who = mine ? 'Claude' : `${item.ownerName}'s Claude`;
     const where = placeName(next, item.channel);
-    if (item.status === 'done') out.push({ kind: 'done', title: `${who} finished in ${where}`, body: firstLine(item.text) || 'Done', channel: item.channel });
+    if (item.status === 'done') out.push({ kind: 'done', title: `${who} finished in ${where}`, body: firstLine(item.text) || 'Done', channel: item.channel, ...(mine && allDone(next, item) ? { watched: true } : {}) });
     else if (!QUIET_ERRORS.test(item.text)) out.push({ kind: 'problems', title: `${who} stopped in ${where}`, body: firstLine(item.text) || item.status, channel: item.channel });
   }
   return [...out, ...finishedTasks(next, before)];
+}
+
+/** A long run of yours ended and nothing else runs or waits its turn in that conversation: everything there is finished. */
+function allDone(state: DomainState, item: AgentItem): boolean {
+  if (item.endTs === undefined || item.endTs - item.ts < WATCHED_RUN_MS) return false;
+  return !state.log.slice(-RECENT_LOG).some((l) => l.type === 'agent' && l.channel === item.channel && l.id !== item.id && isRunning(l.status));
 }
 
 /** A task your Claude started in the background (a test run, a build) ending while it works on. */
@@ -430,8 +442,10 @@ export class Notifier {
         this.told.add(e.key);
       }
       // A screen in front shows it: a direct notice (it isn't in the chat) still shows as a toast.
+      // A long run of yours ending there still reaches the desktop (you may have looked away), not the bell.
       if (e.channel !== undefined && state.attention.visible.includes(e.channel)) {
         if (direct) this.deps.toast?.(`${e.title}${e.body ? `: ${e.body}` : ''}`, e.kind === 'problems' ? 'warn' : 'info');
+        else if (e.watched && prefs.doneHere !== false && desktop && !e.quiet) this.queue.push(e);
         continue;
       }
       const { kind, tag, ref, title, body, channel, plan, planTask, key } = e;
