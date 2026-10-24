@@ -53,6 +53,15 @@ const GAP = 6;
 const SPRING = { type: 'spring', stiffness: 560, damping: 44, mass: 0.75 } as const;
 const SETTLE = { type: 'spring', stiffness: 420, damping: 36, mass: 0.8 } as const;
 
+/** The nearest element (the board or one around it) that scrolls sideways; the board itself if none does. */
+function sideScroller(el: HTMLElement): HTMLElement {
+  for (let at: HTMLElement | null = el; at; at = at.parentElement) {
+    const { overflowX } = getComputedStyle(at);
+    if ((overflowX === 'auto' || overflowX === 'scroll') && at.scrollWidth > at.clientWidth) return at;
+  }
+  return el;
+}
+
 const order = (a: Issue, b: Issue): number => byRank(a, b) || PRIORITY_INFO[a.priority].rank - PRIORITY_INFO[b.priority].rank;
 
 export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Issue[]; statuses: readonly IssueStatus[]; projectId?: string }) {
@@ -124,7 +133,8 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
     let spot = over;
     let pointer = { x: lift.originX + lift.grabX, y: lift.originY + lift.grabY };
     let tick = 0;
-    const board = boardRef.current;
+    // What scrolls sideways is the board's container, not the board itself.
+    const board = boardRef.current && sideScroller(boardRef.current);
     const edges = board?.getBoundingClientRect();
     const spotAt = (px: number, py: number): Spot | undefined => {
       const at = spotIn(px, py, geometry.current);
@@ -205,14 +215,15 @@ export function TaskBoard({ issues, statuses, projectId }: { issues: readonly Is
     window.addEventListener('pointerup', up, { once: true });
     window.addEventListener('pointercancel', up, { once: true });
     window.addEventListener('keydown', key, true);
-    board?.addEventListener('scroll', scrolled, { capture: true, passive: true });
+    // Any scroll (the board sideways, a column up or down): scroll events don't bubble, so catch them on the way down.
+    window.addEventListener('scroll', scrolled, { capture: true, passive: true });
     return () => {
       cancelAnimationFrame(tick);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       window.removeEventListener('keydown', key, true);
-      board?.removeEventListener('scroll', scrolled, { capture: true });
+      window.removeEventListener('scroll', scrolled, { capture: true });
     };
     // `over` is read once (the spot to start from); it's tracked inside after that.
   }, [lift, settling]);
