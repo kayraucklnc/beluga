@@ -344,7 +344,9 @@ export function RightPanel() {
   const windowWidth = useWindowWidth();
   const [drag, setDrag] = useState<number>();
   const inner = useRef<HTMLDivElement>(null);
-  const width = clampPanelWidth(drag ?? prefs.panelWidth, windowWidth);
+  // The center keeps its room beside the sidebar (when it shows): the panel stops growing there.
+  const sidebarWidth = prefs.sidebar ? prefs.sidebarWidth : 0;
+  const width = clampPanelWidth(drag ?? prefs.panelWidth, windowWidth, sidebarWidth);
   // Not beside a plan: its chat is the page's right side (your choice stays for everywhere else).
   const open = prefs.inspector && panelFits(view);
   const presence = usePresence(open, SLIDE_MS);
@@ -365,14 +367,14 @@ export function RightPanel() {
             onEnd={() => {
               if (drag !== undefined)
                 setPrefs({
-                  panelWidth: clampPanelWidth(drag, window.innerWidth),
+                  panelWidth: clampPanelWidth(drag, window.innerWidth, sidebarWidth),
                 });
               setDrag(undefined);
             }}
             onReset={() => setPrefs({ panelWidth: PANEL_DEFAULT })}
             onStep={(dir) =>
               setPrefs({
-                panelWidth: clampPanelWidth(width + dir * STEP, window.innerWidth),
+                panelWidth: clampPanelWidth(width + dir * STEP, window.innerWidth, sidebarWidth),
               })
             }
           />
