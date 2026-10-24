@@ -280,8 +280,9 @@ function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]
   const working = t.status === 'working';
   const outs = t.outputs ?? [];
   const mins = t.endTs ? Math.max(1, Math.round((t.endTs - t.ts) / 60000)) : undefined;
+  // No card around Claude's answer: it takes the screen's full width, your bubbles sit on the right.
   return (
-    <Card style={{ padding: 16, gap: 12 }}>
+    <View style={{ gap: 12, paddingTop: 2 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
         <Avatar name={t.name} size={26} claude={t.who === 'claude'} />
         <T v="callout" c={color.text} style={{ fontWeight: '700' }}>
@@ -320,7 +321,7 @@ function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]
           </T>
         </View>
       ) : null}
-    </Card>
+    </View>
   );
 }
 
