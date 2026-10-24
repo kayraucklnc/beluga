@@ -8,7 +8,8 @@ import { Block } from './render/Block';
 import { CodeChip } from './render/CodeChip';
 import { InlineThing } from './render/Inline';
 import { ViewCard } from './render/ViewCard';
-import { readInline, splitInlineMath, tableView } from '../lib/render';
+import { TASK_LINK_SCHEME, linkTaskKeys, readInline, splitInlineMath, tableView } from '../lib/render';
+import { TaskChip, type TaskRef, useTaskIndex } from './render/TaskChip';
 import { InlineMath, type MathMap } from './render/MathBlock';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 import { ago } from '../lib/hooks';
@@ -35,23 +36,34 @@ function withMath(s: string, base: Base, math: MathMap | undefined, key: () => n
 
 /**
  * Inline: **bold**, `code` (an inline element when it reads as one: docs/views.md), [links](…),
- * and `$math$` in the words and bold around them (never inside code).
+ * and `$math$` in the words and bold around them (never inside code). `tasks`: the board's keys
+ * (BLG-109); a bare "BLG-12" or "@BLG-12" it has is a task chip, as on the Mac (shared linkTaskKeys).
  */
-function inline(s: string, base: Base, math?: MathMap): ReactNode[] {
+function inline(s: string, base: Base, math?: MathMap, tasks?: ReadonlyMap<string, TaskRef>): ReactNode[] {
+  const words = tasks?.size ? linkTaskKeys(s, (k) => tasks.has(k), { mentions: true }) : s;
+  return pieces(words, base, math, tasks, false);
+}
+
+function pieces(s: string, base: Base, math: MathMap | undefined, tasks: ReadonlyMap<string, TaskRef> | undefined, bold: boolean): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]\n]+\]\([^)\s]+\))/g;
+  const re = bold ? /(`[^`]+`|\[[^\]\n]+\]\([^)\s]+\))/g : /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]\n]+\]\([^)\s]+\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
   const key = () => i++;
   while ((m = re.exec(s))) {
-    if (m.index > last) out.push(...withMath(s.slice(last, m.index), base, math, key));
+    if (m.index > last) out.push(...withMath(s.slice(last, m.index), base, math, key, bold));
     const tok = m[0];
-    if (tok.startsWith('**')) out.push(<Text key={i++} style={[base, { fontWeight: '700', color: color.text }]}>{withMath(tok.slice(2, -2), base, math, key, true)}</Text>);
+    // Bold: its words, and what's inside it (a task chip, code, a link) drawn as anywhere else.
+    if (tok.startsWith('**')) out.push(<Text key={i++} style={[base, { fontWeight: '700', color: color.text }]}>{pieces(tok.slice(2, -2), base, math, tasks, true)}</Text>);
     else if (tok.startsWith('[')) {
       const lm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok)!;
       const href = lm[2]!;
-      // A web link opens; anything else (a path on the Mac) reads as its words.
+      // A task key (linkTaskKeys): its chip. A web link opens; anything else (a path on the Mac) reads as its words.
+      if (href.startsWith(TASK_LINK_SCHEME)) {
+        const k = href.slice(TASK_LINK_SCHEME.length);
+        out.push(<TaskChip key={i++} k={k} task={tasks?.get(k)} />);
+      } else
       out.push(
         /^https?:\/\//.test(href) ? (
           <Text key={i++} onPress={() => void Linking.openURL(href)} style={[base, { color: color.info, textDecorationLine: 'underline' }]}>
@@ -69,7 +81,7 @@ function inline(s: string, base: Base, math?: MathMap): ReactNode[] {
     }
     last = m.index + tok.length;
   }
-  if (last < s.length) out.push(...withMath(s.slice(last), base, math, key));
+  if (last < s.length) out.push(...withMath(s.slice(last), base, math, key, bold));
   return out;
 }
 
@@ -89,9 +101,13 @@ const isRule = (line: string): boolean => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?
  * Claude's words: paragraphs, bullets, headings, Markdown tables (drawn as table views, as on the
  * Mac), pictures from the web, and what it drew (views, graphs, tasks: components/render), with
  * any other code folded into a chip. `at`: the conversation and turn, for a live view's rows.
+ * `tasks`: a bare task key the board has ("BLG-98", "@BLG-98") is a live chip (BLG-109): your own
+ * words and your own Claude's only, as on the Mac (someone else's key may be on their board).
  */
-export function Prose({ prose, color: tone = color.text, size = 15.5, at }: { readonly prose: ProseView; readonly color?: string; readonly size?: number; readonly at?: { topic: Topic; turn: string } }) {
+export function Prose({ prose, color: tone = color.text, size = 15.5, at, tasks: withTasks = false }: { readonly prose: ProseView; readonly color?: string; readonly size?: number; readonly at?: { topic: Topic; turn: string }; readonly tasks?: boolean }) {
   const base = { ...type.body, fontSize: size, lineHeight: size * 1.42, color: tone };
+  const index = useTaskIndex(withTasks);
+  const tasks = withTasks && index.size ? index : undefined;
   type Block = { kind: 'p'; lines: string[] } | { kind: 'ul'; items: string[] } | { kind: 'h'; text: string } | { kind: 'code'; n: number } | { kind: 'table'; lines: string[] } | { kind: 'img'; alt: string; src: string };
   const blocks: Block[] = [];
   const lines = prose.text.split('\n');
@@ -136,7 +152,7 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at }: { re
         if (b.kind === 'h') {
           return (
             <Text key={bi} style={[base, { fontWeight: '700', marginTop: bi ? 4 : 0, marginBottom: -3 }]}>
-              {inline(b.text, base, prose.math)}
+              {inline(b.text, base, prose.math, tasks)}
             </Text>
           );
         }
@@ -146,7 +162,7 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at }: { re
               {b.items.map((item, li) => (
                 <View key={li} style={{ flexDirection: 'row', gap: 10, paddingRight: 6 }}>
                   <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: color.text3, marginTop: size * 0.6 }} />
-                  <Text style={[base, { flex: 1 }]}>{inline(item, base, prose.math)}</Text>
+                  <Text style={[base, { flex: 1 }]}>{inline(item, base, prose.math, tasks)}</Text>
                 </View>
               ))}
             </View>
@@ -157,7 +173,7 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at }: { re
             {b.lines.map((l, li) => (
               <Fragment key={li}>
                 {li > 0 ? '\n' : ''}
-                {inline(l.replace(/\[\[code:(\d+)\]\]/g, (_, n) => `‹code · ${prose.code[Number(n)]?.lines ?? 0} lines›`), base, prose.math)}
+                {inline(l.replace(/\[\[code:(\d+)\]\]/g, (_, n) => `‹code · ${prose.code[Number(n)]?.lines ?? 0} lines›`), base, prose.math, tasks)}
               </Fragment>
             ))}
           </Text>

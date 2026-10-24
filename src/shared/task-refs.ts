@@ -55,8 +55,8 @@ const LINE_PIECE = /(`+)[^`]*?\1|!?\[[^\]]*\]\([^)]*\)|<[^>\s]+>|https?:\/\/\S+|
  * the board knows: anything else ("UTF-8", "ISO-8601", a key on someone else's board) stays
  * text. Code blocks, inline code and existing links are left alone.
  */
-export function linkTaskKeys(markdown: string, has: (key: string) => boolean): string {
-  if (!/[A-Z]-\d/.test(markdown)) return markdown;
+export function linkTaskKeys(markdown: string, has: (key: string) => boolean, opts: { readonly mentions?: boolean } = {}): string {
+  if (!(opts.mentions ? /[A-Za-z]-\d/ : /[A-Z]-\d/).test(markdown)) return markdown;
   let fenced = false;
   return markdown
     .split('\n')
@@ -64,11 +64,41 @@ export function linkTaskKeys(markdown: string, has: (key: string) => boolean): s
       const fence = /^\s*(```|~~~)/.test(line);
       if (fence) fenced = !fenced;
       if (fence || fenced) return line;
-      return line.replace(LINE_PIECE, (whole, _ticks: string | undefined, lead: string | undefined, key: string | undefined) =>
+      // "@BLG-24" first (any case, the @ goes into the chip), then the bare keys around it.
+      const said = opts.mentions && line.includes('@') ? line.replace(MENTION_PIECE, (whole, _ticks: string | undefined, lead: string | undefined, key: string | undefined) => {
+        const k = key?.toUpperCase();
+        return k && has(k) ? `${lead ?? ''}[${k}](${TASK_LINK_SCHEME}${k})` : whole;
+      }) : line;
+      return said.replace(LINE_PIECE, (whole, _ticks: string | undefined, lead: string | undefined, key: string | undefined) =>
         key && has(key) ? `${lead ?? ''}[${key}](${TASK_LINK_SCHEME}${key})` : whole,
       );
     })
     .join('\n');
+}
+
+/** As LINE_PIECE, for "@BLG-24" standing on its own (as MENTIONED: not in an e-mail address). */
+const MENTION_PIECE = /(`+)[^`]*?\1|!?\[[^\]]*\]\([^)]*\)|<[^>\s]+>|https?:\/\/\S+|(^|[\s({"'“])@([A-Za-z][A-Za-z0-9]{0,11}-\d{1,6})(?=$|[\s.,;:!?)\]}"'”])/g;
+
+export type TaskKeyPiece = { readonly text: string } | { readonly key: string };
+
+/**
+ * A line of plain words (no Markdown: a chat message as the phone shows it) cut into words and the
+ * task keys the board has, read as linkTaskKeys reads them (bare keys and, with `mentions`, "@BLG-24").
+ */
+export function splitTaskKeys(text: string, has: (key: string) => boolean, opts: { readonly mentions?: boolean } = {}): TaskKeyPiece[] {
+  const linked = linkTaskKeys(text, has, opts);
+  if (linked === text) return text ? [{ text }] : [];
+  const out: TaskKeyPiece[] = [];
+  const link = /\[([^\]\n]*)\]\(beluga-task:([^)\s]+)\)/g;
+  let last = 0;
+  for (const m of linked.matchAll(link)) {
+    const at = m.index ?? 0;
+    if (at > last) out.push({ text: linked.slice(last, at) });
+    out.push({ key: m[2]! });
+    last = at + m[0].length;
+  }
+  if (last < linked.length) out.push({ text: linked.slice(last) });
+  return out;
 }
 
 /**

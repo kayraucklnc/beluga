@@ -138,7 +138,10 @@ already cut down for the phone (code stripped, steps in words, paths as opaque r
   (`dependsOn`), each task its goal, acceptance, the tasks it waits on (`blockedBy`) and why.
 - `tasks` and `task:<id>` (1.3): the board by project and status (key, title, priority, who has
   it); a task's goal, acceptance with ticks, activity, worktree and pull request, and where it may
-  be moved.
+  be moved. `tasks.others` (optional, BLG-109): the tasks the lists leave out (older done,
+  canceled), by key, title and status only, so a task key in words is a live chip on the phone
+  as on the Mac: `task:BLG-12` in inline code, a bare `BLG-12` the board has, `@BLG-12`, read by
+  the Mac's own `linkTaskKeys` (src/shared/task-refs.ts). An older Mac leaves it out.
 
 **Drawn blocks (1.3).** What Claude drew for the screen in an answer (a `beluga-view`: table,
 chart, stats, code, colors; a `beluga-graph`; `beluga-tasks`) goes along with its code chip entry

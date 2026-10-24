@@ -266,7 +266,7 @@ function YourTurn({ t, onLongPress }: { t: TurnView; onLongPress?: (() => void) 
   return (
     <Press onLongPress={onLongPress} disabled={!onLongPress} scaleTo={0.99} style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
       <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14, opacity: waiting ? 0.6 : 1 }}>
-        <Prose prose={t.prose} size={15} />
+        <Prose prose={t.prose} size={15} tasks />
       </View>
       {waiting ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4, marginRight: 4 }}>
@@ -314,7 +314,7 @@ function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]
         </T>
         <T v="caption">{ago(t.ts)}</T>
       </View>
-      {t.prose.text ? <Prose prose={t.prose} at={{ topic, turn: t.id }} /> : null}
+      {t.prose.text ? <Prose prose={t.prose} at={{ topic, turn: t.id }} tasks /> : null}
       {working ? <LivePanel t={t} /> : <StepsFold t={t} />}
       {t.subagents?.length ? (
         working || t.subagents.length <= 3 ? (

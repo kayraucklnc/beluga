@@ -6,7 +6,7 @@
 export { type Cell, type Column, type Control, type Row, type Source, type Stat, type View, type ViewFetchResult, type ViewPage, type ViewQuery, columnsFor, pageOf, parseView, sourceKey, viewFenceType } from '../../../src/shared/view-spec';
 export { type ControlState, columnChoices, initialState, resolveControls } from '../../../src/shared/view-controls';
 export { type Graph, type GraphNode, parseGraph } from '../../../src/shared/graph-spec';
-export { readTaskKeys } from '../../../src/shared/task-refs';
+export { TASK_LINK_SCHEME, type TaskKeyPiece, linkTaskKeys, readTaskKeys, splitTaskKeys } from '../../../src/shared/task-refs';
 export { type ChartPlan, planChart } from '../../../src/shared/render/chart-model';
 export { SERIES_DARK, SERIES_LIGHT, alignOf, contrast, formatCell, formatNumber, headingOf, inkOn, isNumeric, parseColor, toDate, toHex, toneOf } from '../../../src/shared/render/format';
 export { type InlineElement, readInline, relative } from '../../../src/shared/render/inline-model';

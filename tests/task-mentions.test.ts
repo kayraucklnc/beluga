@@ -7,7 +7,9 @@ import { AgentHost } from '../src/core/agent-host.js';
 import type { Issue } from '../src/core/board/model.js';
 import { Store, initialState } from '../src/core/store.js';
 import { waitFor } from './helpers.js';
-import { type TaskMention, explainTaskMentions, linkTaskKeys, matchTasks, taskByKey } from '../src/shared/task-refs.js';
+import { TASK_LINK_SCHEME, type TaskMention, explainTaskMentions, linkTaskKeys, matchTasks, splitTaskKeys, taskByKey } from '../src/shared/task-refs.js';
+import { readInline } from '../src/shared/render/inline-model.js';
+import { stripCode } from '../src/companion/strip.js';
 import { suggest } from '../src/ui/suggest.js';
 import { gatewayTarget } from '../src/agent/mock.js';
 import { linkMentions, parseMentionHref, resolveMention, splitMentions, tasksIn, type MentionWorld } from '../packages/mac/src/chat/mentions.js';
@@ -190,5 +192,48 @@ describe('bare task keys in an answer', () => {
 
   it('links outside the code on a line that has some', () => {
     expect(linkTaskKeys('BLG-72 fixed in `chat.ts`', has)).toBe(`${link('BLG-72')} fixed in \`chat.ts\``);
+  });
+
+  it('with mentions: "@BLG-72" (any case) is a chip too, but not in an address, code or a link (BLG-109)', () => {
+    const o = { mentions: true };
+    expect(linkTaskKeys('see @BLG-72 and @blg-73.', has, o)).toBe(`see ${link('BLG-72')} and ${link('BLG-73')}.`);
+    expect(linkTaskKeys('@BLG-72, BLG-73', has, o)).toBe(`${link('BLG-72')}, ${link('BLG-73')}`);
+    expect(linkTaskKeys('me@BLG-72.dev `@BLG-72` [@BLG-72](https://x.dev) @BLG-99', has, o)).toBe('me@BLG-72.dev `@BLG-72` [@BLG-72](https://x.dev) @BLG-99');
+    // Without the option "@BLG-72" stays as the Mac's mentions read it.
+    expect(linkTaskKeys('@BLG-72', has)).toBe('@BLG-72');
+  });
+
+  it('leaves fenced code alone', () => {
+    const md = 'BLG-72\n```\nBLG-72\n```\n~~~\n@BLG-73\n~~~';
+    expect(linkTaskKeys(md, has, { mentions: true })).toBe(`${link('BLG-72')}\n\`\`\`\nBLG-72\n\`\`\`\n~~~\n@BLG-73\n~~~`);
+  });
+});
+
+/** The phone's words with chips in them (BLG-109): the same reading, cut into pieces. */
+describe('splitTaskKeys', () => {
+  const has = (k: string): boolean => k === 'BLG-98' || k === 'BLG-12';
+
+  it('cuts words around the keys the board has', () => {
+    expect(splitTaskKeys('BLG-98 is done, @blg-12 next', has, { mentions: true })).toEqual([{ key: 'BLG-98' }, { text: ' is done, ' }, { key: 'BLG-12' }, { text: ' next' }]);
+  });
+
+  it('leaves unknown keys and look-alikes as words', () => {
+    expect(splitTaskKeys('BLG-7, UTF-8 and ISO-8601', has)).toEqual([{ text: 'BLG-7, UTF-8 and ISO-8601' }]);
+    expect(splitTaskKeys('', has)).toEqual([]);
+  });
+
+  it('task: in inline code is the inline element’s, not a bare key (shared readInline)', () => {
+    expect(splitTaskKeys('`task:BLG-98` and src/BLG-98.ts', has)).toEqual([{ text: '`task:BLG-98` and src/BLG-98.ts' }]);
+    expect(readInline('task:BLG-98')).toEqual({ kind: 'task', key: 'BLG-98' });
+  });
+
+  it('stripCode keeps `task:KEY` in a sentence for the phone to draw, and folds keys inside code blocks away', () => {
+    const prose = stripCode('Fixed `task:BLG-98` and BLG-12.\n\n```ts\nconst k = "BLG-12";\n```\n\n```beluga-tasks\nBLG-98\n```');
+    expect(prose.text.split('\n')[0]).toBe('Fixed `task:BLG-98` and BLG-12.');
+    expect(prose.code[0]).toEqual({ lang: 'ts', lines: 1 });
+    expect(prose.code[1]).toEqual({ lang: 'beluga-tasks', lines: 1, block: { kind: 'tasks', text: 'BLG-98' } });
+    // What the phone then links: the bare key, not the code's, not the inline element's.
+    expect(linkTaskKeys(prose.text, has)).toContain(`and [BLG-12](${TASK_LINK_SCHEME}BLG-12).`);
+    expect(linkTaskKeys(prose.text, has)).toContain('`task:BLG-98`');
   });
 });
