@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 2 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 3 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -147,6 +147,11 @@ export const TurnView = z.object({
   subagents: z.array(SubAgentView).max(40).optional(),
   outputs: z.array(OutputView).max(50).optional(),
   endTs: ts.optional(),
+  /**
+   * Your message, steered into Claude's running turn, that Claude hasn't read yet (1.3): it waits
+   * for Claude's next step (Send now: host.steerNow with `request`), or for its step to stop.
+   */
+  steer: z.object({ request: id, waiting: z.enum(['next_step', 'stopping']) }).optional(),
 });
 export type TurnView = z.infer<typeof TurnView>;
 

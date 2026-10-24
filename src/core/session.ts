@@ -408,11 +408,15 @@ export class Session {
     }
   }
 
-  sendChat(text: string, byAgent: boolean, channel = 'room'): void {
+  /**
+   * `request`: the request to your Claude the message is (kept on it here, so its card's state can
+   * show on it); `steer`: it steers the turn your Claude is on (shown as not read yet from the start).
+   */
+  sendChat(text: string, byAgent: boolean, channel = 'room', request?: string, steer = false): void {
     if (channel !== 'room') {
       // Workspace conversations stay on this computer, plus the people you invited into them.
       const id = randomUUID();
-      this.store.dispatch({ type: 'chat', id, from: this.selfId, text: text.slice(0, MAX_TEXT), ts: Date.now(), byAgent, channel });
+      this.store.dispatch({ type: 'chat', id, from: this.selfId, text: text.slice(0, MAX_TEXT), ts: Date.now(), byAgent, channel, ...(request ? { request } : {}), ...(steer ? { steer: true as const } : {}) });
       for (const to of this.sharing.recipients(channel)) this.send({ kind: 'chat', text: text.slice(0, MAX_TEXT), byAgent, channel }, { to });
       return;
     }
@@ -426,8 +430,7 @@ export class Session {
   }
 
   /** Ask an agent (ours or a peer's) to do something. Returns the request id. */
-  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string): string {
-    const requestId = randomUUID();
+  requestAgent(target: string, prompt: string, viaAgent: boolean, channel = 'room', urgent = false, project?: string, requestId: string = randomUUID()): string {
     const plan = this.store.getState().planMode[channel] === true;
     this.questions.track(requestId, target, channel);
     this.send({ kind: 'agent_request', requestId, prompt: prompt.slice(0, MAX_TEXT), viaAgent, channel, urgent, plan, ...(project ? { project: project.slice(0, 80) } : {}) }, { to: target });
@@ -447,8 +450,10 @@ export class Session {
     }
     // Load the saved conversation first, so what's said now is kept with it.
     if (!shared && channel.startsWith('ws:')) this.workspaces?.ensureLoaded(channel.slice(3));
-    if (echo) this.sendChat(prompt, false, channel);
-    return this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent);
+    const requestId = randomUUID();
+    // Steering your own Claude at work here: the message says it isn't read yet from the moment it's drawn.
+    if (echo) this.sendChat(prompt, false, channel, requestId, urgent && !shared && this.host.runningIn(channel));
+    return this.requestAgent(shared ? shared.owner : this.selfId, prompt, false, channel, urgent, undefined, requestId);
   }
 
   /** Run your Claude for someone else in one of your workspaces (they were invited to work there). */

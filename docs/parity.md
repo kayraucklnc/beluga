@@ -163,6 +163,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `host.answerApproval` | ✓ |
 | `host.promote` | ✓ |
 | `host.sendNext` | ✓ Send Now on a queued message (runs it next, never interrupting) |
+| `host.steerNow` | ✓ Send now on a steered message Claude hasn't read yet · ⇧⌥↩ (stops its step, your message is next) |
 | `host.stopRun` | ■ Stop beside Queue/Steer · ⌘. · Conversation › Stop Claude · Stop on a running answer |
 | `host.cancelQueued` | ✓ |
 | `host.reorderQueued` | ✓ queue tray ↑ ↓ |
@@ -424,6 +425,8 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | Steer: Claude reads it at its next step without stopping (a run that can't take it: stop it, run this next) | `session.submit` with `urgent` | Option+Return · the split button's **Steer** |
 | What waits, in run order (text, who asked) | `queueIn` (`src/ui/compose.ts`), the prompt comes with the `queued` event | the queue above the box |
 | Run a waiting message now (steering, as above) | `host.promote` | queue › Steer |
+| A steered message Claude hasn't read yet: sent, not read (its card is a note till Claude reads it: `READS_AFTER_STEP`, `STOPPING_FOR`, then `STEERED_IN` or its own turn) | `steerWaiting` (`src/shared/claude-notices.ts`), the message's `request` | your message dimmed, a clock and “Sent · waiting for Claude to read it” |
+| Send it now: Claude's step stops (its interrupt, as Stop does) and the conversation goes on from your message | `host.steerNow` | **Send now** on that message · ⇧⌥↩ |
 | Drop a waiting message | `host.cancelQueued` | queue › ✕ |
 | Edit a waiting message (back into the box) | `host.cancelQueued`, then the box | queue › ✎ |
 | Change the order | `host.reorderQueued` (yours only; friends' keep their places) | queue › ↑ ↓ |

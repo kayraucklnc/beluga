@@ -16,7 +16,7 @@ import { Compactor } from './compactor.js';
 import { SCRATCH_DIR, ensureScratch } from '../workspaces/scratch.js';
 import { isImportedItem } from '../agent/transcript.js';
 import type { StepPage, StepRecord } from '../shared/steps.js';
-import { READS_AFTER_STEP, STEERED_IN } from '../shared/claude-notices.js';
+import { READS_AFTER_STEP, STEERED_IN, STOPPING_FOR } from '../shared/claude-notices.js';
 import { span } from '../shared/clock.js';
 import { RunFailedError, decodeFailure } from '../shared/run-failure.js';
 import { e2eLockedIn, keepsRunning, mayLeaveProcesses } from '../workspaces/test-procs.js';
@@ -142,6 +142,8 @@ interface Lane {
   steer?: Steer;
   /** Set while a steer interrupts the current run: the next steer waits for it (see rush). */
   interrupting?: Promise<void>;
+  /** Your messages steered into the running turn that Claude hasn't read yet, by request (Send now: see steerNow). */
+  steered?: Map<string, FollowUp>;
   /**
    * The last run failed (a usage limit, a crash): what waits here stays waiting, in order, until
    * you go on (Continue, or any message of yours) or Beluga resumes it (see shared/run-failure.ts).
@@ -534,7 +536,7 @@ export class AgentHost {
       const [item] = lane.waiting.splice(i, 1);
       // Your go-ahead: a queue held after a failed run goes on (see Lane.held).
       lane.held = undefined;
-      this.rush(lane, item!, true);
+      this.rush(lane, item!);
       return true;
     }
     this.toast('That message isn’t waiting any more', 'warn');
@@ -562,10 +564,7 @@ export class AgentHost {
       const { from, body } = item;
       const live = lane.current && !lane.current.signal.aborted && !lane.interrupting;
       const steer = live && lane.steer && lane.runFrom === from && !body.plan && !body.project && !item.compact ? lane.steer : undefined;
-      if (steer && steer(this.followUp(lane, item, true))) {
-        this.emitAgent(body.requestId, from, 'text', READS_AFTER_STEP, body.channel);
-        return true;
-      }
+      if (steer && this.steerIn(lane, item, steer)) return true;
       const at = lane.waiting.findIndex((w) => !w.urgent);
       lane.waiting.splice(at === -1 ? lane.waiting.length : at, 0, { ...item, urgent: true });
       this.store.dispatch({ type: 'queue_order', owner: this.selfId, ids: lane.waiting.filter((w) => w.from === this.selfId && !w.compact).map((w) => w.body.requestId) });
@@ -583,10 +582,10 @@ export class AgentHost {
    * message goes first in line and the current run stops, so a fresh turn starts with it. The
    * card says which; nothing is lost when a step fails (it goes back in line).
    */
-  private rush(lane: Lane, item: Waiting, queued: boolean): void {
+  private rush(lane: Lane, item: Waiting): void {
     // Another steer is interrupting the run: this one goes after it, so they're answered in the order you sent them.
     if (lane.interrupting) {
-      void lane.interrupting.then(() => this.rush(lane, item, queued));
+      void lane.interrupting.then(() => this.rush(lane, item));
       return;
     }
     const { from, body } = item;
@@ -594,16 +593,12 @@ export class AgentHost {
     const steer = live && lane.steer && lane.runFrom === from && !body.plan && !body.project && !item.compact ? lane.steer : undefined;
     const plan = steer ? planSteer(steer.status?.(), Date.now()) : undefined;
     const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
-    if (steer && plan?.kind === 'steer' && steer(this.followUp(lane, item, queued))) {
-      // Shown at once: a queued card says so (and leaves the queue); a new message, a toast.
-      if (queued) emit('text', READS_AFTER_STEP);
-      else this.toast(READS_AFTER_STEP);
-      return;
-    }
+    if (steer && plan?.kind === 'steer' && this.steerIn(lane, item, steer)) return;
     if (steer?.interrupt && plan?.kind === 'interrupt') {
       const run = lane.current;
-      const followUp = this.followUp(lane, item, true);
-      emit('started');
+      const followUp = this.followUp(lane, item);
+      // Sent, not read yet: Claude's step is being stopped for it (its turn starts once it is).
+      emit('text', STOPPING_FOR);
       const interrupting: Promise<void> = steer
         .interrupt(followUp, plan.note)
         .catch(() => false)
@@ -734,7 +729,7 @@ export class AgentHost {
     if (from === this.selfId) lane.held = undefined;
     if (this.sendFollowUp(lane, from, body)) return;
     const urgent = body.urgent && from === this.selfId;
-    if (urgent) return this.rush(lane, { from, body }, false);
+    if (urgent) return this.rush(lane, { from, body });
     const queued = [...this.lanes.values()].reduce((n, l) => n + l.waiting.filter((w) => w.from === from).length, 0);
     if (queued >= MAX_QUEUED_PER_PERSON) {
       this.emitAgent(body.requestId, from, 'denied', 'Too many requests waiting; try again when the current ones finish.', body.channel);
@@ -780,10 +775,11 @@ export class AgentHost {
    * a queued message says so); else it's answered in a turn of its own. Only your own messages
    * into your own run: approvals are judged for its requester.
    */
-  private followUp(lane: Lane, item: Waiting, queued: boolean): FollowUp {
+  private followUp(lane: Lane, item: Waiting): FollowUp {
     const { from, body } = item;
     const emit = (event: BodyOf<'agent_event'>['event'], text = ''): void => this.emitAgent(body.requestId, from, event, text, body.channel);
     let read = false;
+    const settled = (): void => void lane.steered?.delete(body.requestId);
     return {
       prompt: this.promptOf(body),
       requesterName: peerName(this.store.getState(), from),
@@ -797,22 +793,75 @@ export class AgentHost {
       onStep: (record) => this.steps.put(runKey(body.requestId), record),
       onStart: () => {
         read = true;
+        settled();
         emit('started');
       },
+      // Read: the message's card says so (it was "sent, not read yet" till now: see steerIn).
       onFolded: () => {
         read = true;
-        if (queued) emit('done', STEERED_IN);
+        settled();
+        emit('done', STEERED_IN);
       },
       onDone: (final) => {
+        settled();
         this.steps.flush(runKey(body.requestId));
         emit('done', final || '(done)');
       },
       onError: (reason) => {
+        settled();
         // The run ended before Claude read it (and you didn't stop it): it goes back in line, first.
         if (read || lane.stopping) return emit('error', reason);
         this.jump(lane, item, 'Claude’s run ended before it read your message: it runs next', undefined);
       },
     };
+  }
+
+  /**
+   * Into the running turn, read at Claude's next step. Its card is a note until then (sent, not
+   * read yet: the chat shows that on your message, with Send now), and says so once Claude read it.
+   */
+  private steerIn(lane: Lane, item: Waiting, steer: Steer): boolean {
+    const followUp = this.followUp(lane, item);
+    if (!steer(followUp)) return false;
+    (lane.steered ??= new Map()).set(item.body.requestId, followUp);
+    this.emitAgent(item.body.requestId, item.from, 'text', READS_AFTER_STEP, item.body.channel);
+    return true;
+  }
+
+  /**
+   * Send now (BLG-54): a message of yours steered into the running turn, that Claude hasn't read
+   * yet, is answered at once. The step Claude is on stops (Claude Code's interrupt, as Stop does)
+   * and the conversation goes on from your message, nothing lost. When Claude can't be
+   * interrupted the run is stopped and your message runs next. False, with a toast, when it isn't
+   * waiting any more.
+   */
+  async steerNow(requestId: string): Promise<boolean> {
+    const lane = [...this.lanes.values()].find((l) => l.steered?.has(requestId));
+    const followUp = lane?.steered?.get(requestId);
+    if (!lane || !followUp) {
+      this.toast('Claude has read that message already', 'info');
+      return false;
+    }
+    const steer = lane.steer;
+    const run = lane.current;
+    const tool = steer?.status?.().tool;
+    const note = tool ? `Interrupted: ${tool.label} to read your message` : 'Interrupted to read your message';
+    // Sent, not read yet: Claude's step is being stopped for it.
+    this.emitAgent(requestId, this.selfId, 'text', STOPPING_FOR, lane.channel);
+    if (steer?.force && (await steer.force(followUp, note).catch(() => false))) return true;
+    // Read meanwhile (its turn started, or Claude took it in): nothing to do.
+    if (!lane.steered?.has(requestId)) return true;
+    // Claude couldn't be interrupted: its run stops, and your message (never read) runs next, first in line.
+    if (run && lane.current === run && !run.signal.aborted) {
+      lane.interruptedBy = requestId;
+      lane.interruptNote = STOPPED_FOR_YOU;
+      run.abort();
+      return true;
+    }
+    // No run to stop: it still waits for Claude's next step.
+    this.emitAgent(requestId, this.selfId, 'text', READS_AFTER_STEP, lane.channel);
+    this.toast('Claude couldn’t be stopped: it reads your message at its next step', 'warn');
+    return false;
   }
 
   private async pump(lane: Lane): Promise<void> {

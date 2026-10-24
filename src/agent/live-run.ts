@@ -162,6 +162,23 @@ export class TurnRouter {
     return true;
   }
 
+  /**
+   * A steered message to be answered in a turn of its own (Send now): never taken as folded into
+   * the turn it was sent during unless that turn says it took it. False: not waiting any more.
+   */
+  unsteer(uuid: string): boolean {
+    const p = this.pending.find((x) => x.uuid === uuid);
+    if (!p) return false;
+    p.steer = false;
+    return true;
+  }
+
+  /** Back to being folded in at Claude's next step (Send now couldn't interrupt). */
+  resteer(uuid: string): void {
+    const p = this.pending.find((x) => x.uuid === uuid);
+    if (p) p.steer = true;
+  }
+
   /** `uuid`: the prompt's id (see PromptQueue.push); `steer`: sent while Claude works, to be folded in. */
   queue(route: TurnRoute, uuid?: string, steer = false): void {
     this.pending.push({ route, ...(uuid ? { uuid } : {}), steer });

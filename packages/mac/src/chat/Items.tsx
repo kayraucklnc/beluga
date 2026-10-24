@@ -3,12 +3,12 @@ import type { LogItem, ShellItem } from '@beluga/core/store.js';
 import { isRunning } from '@beluga/ui/format.js';
 import { formatDuration } from '@beluga/shared/text.js';
 import { splitImages } from '@beluga/shared/attachment-links.js';
-import { READS_AFTER_STEP, STEERED_IN, isLimitNotice } from '@beluga/shared/claude-notices.js';
+import { READS_AFTER_STEP, STEERED_IN, STOPPING_FOR, type SteeredMessage, isLimitNotice } from '@beluga/shared/claude-notices.js';
 import { CONTINUE_PROMPT, type RunFailure, decodeFailure, failureTitle } from '@beluga/shared/run-failure.js';
 import { Icon } from '../components/Icon.js';
-import { Avatar, Button, Dot, claudeColor, cx } from '../components/ui.js';
+import { Avatar, Button, Dot, Tip, claudeColor, cx } from '../components/ui.js';
 import { ActionsContext, type ActionItem } from '../components/SpecMenu.js';
-import { stopClaude } from '../lib/commands.js';
+import { sendSteerNow, stopClaude } from '../lib/commands.js';
 import { copyText } from '../lib/copy.js';
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
@@ -79,8 +79,31 @@ function Folding({ children }: { children: ReactNode }) {
   );
 }
 
-/** A message from a person (or a Claude speaking in the chat). `continued`: same author, shortly after. */
-export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: ChatItem; continued: boolean; mine: boolean }) {
+/**
+ * Under a message you steered in that Claude hasn't read yet: sent, not read, and (while it waits
+ * for Claude's next step) Send now. Once Claude reads it the line goes and the message reads as any other.
+ */
+function SteerWaiting({ steer }: { steer: SteeredMessage }) {
+  const { client } = useBeluga();
+  const stopping = steer.waiting === 'stopping';
+  return (
+    <div className={s.steerWaiting} data-steer-waiting={steer.waiting} role="status">
+      <Icon name="clock" size={11} />
+      <span>{stopping ? 'Sent · Claude is stopping its step to read it' : 'Sent · waiting for Claude to read it'}</span>
+      {stopping ? null : (
+        <Tip label="Stop Claude’s current step so it reads this now" keys="⇧⌥↩">
+          <button type="button" className={s.steerNow} onClick={() => sendSteerNow(client, steer.request)}>
+            <Icon name="send" size={10} />
+            Send now
+          </button>
+        </Tip>
+      )}
+    </div>
+  );
+}
+
+/** A message from a person (or a Claude speaking in the chat). `continued`: same author, shortly after. `steer`: steered in, not read yet. */
+export const ChatRow = memo(function ChatRow({ item, continued, mine, steer }: { item: ChatItem; continued: boolean; mine: boolean; steer?: SteeredMessage | undefined }) {
   countRender(`chat:${item.id}`);
   const prefs = usePrefs();
   // Screenshots and other images sent with the message show as pictures, under its words.
@@ -93,7 +116,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
   useFlightLanding(row, item.channel, 'chat', item.text, mine && !item.byAgent);
   return (
     <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
-      <div ref={row} className={cx(s.message, continued && s.continued)} data-mine={mine && !item.byAgent ? 'true' : undefined}>
+      <div ref={row} className={cx(s.message, continued && s.continued, steer && s.unread)} data-mine={mine && !item.byAgent ? 'true' : undefined} data-steer={steer ? 'waiting' : undefined}>
         <div className={s.gutter}>{continued ? null : <Avatar name={item.name} id={item.from} claude={item.byAgent} size={26} />}</div>
         <div className={s.body}>
           {continued ? null : (
@@ -114,6 +137,7 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine }: { item: 
             )
           ) : null}
           <ImageGrid images={images} />
+          {steer ? <SteerWaiting steer={steer} /> : null}
         </div>
       </div>
     </ActionsContext>
@@ -214,29 +238,69 @@ function TurnHead({ item, part, mine }: { item: AgentItem; part: TurnPart; mine:
   );
 }
 
+/**
+ * What a turn left running once another turn of its Claude took over (see live-tail.ts): its
+ * sub-agents and background jobs still at work, at the very bottom with the working line.
+ */
+function LivePart({ item, working }: { item: AgentItem; working: AgentItem | undefined }) {
+  const { quietWorking } = useContext(PaneLook);
+  return (
+    <div className={cx(s.message, s.agent, s.livePart)} data-turn={item.status} data-turn-part="live">
+      <div className={s.gutter} />
+      <div className={s.body}>
+        <AgentSteps item={item} running part={{ side: 'live', cut: item.ts }} subs="running" />
+        {working ? <WorkingLine item={working} quiet={Boolean(quietWorking)} /> : null}
+      </div>
+    </div>
+  );
+}
+
 /** What Claude is doing (or did): its steps, sub-agents and background work, then its answer. */
 export const AgentCard = memo(function AgentCard({
   item,
   tasks,
   latest = false,
   part,
+  working,
+  subs,
 }: {
   item: AgentItem;
   tasks?: readonly TaskView[] | undefined;
   /** The newest Claude card in its conversation. */
   latest?: boolean;
-  /** Drawn in two parts, things having been said while it worked (see live-tail.ts). */
+  /** Drawn in parts, things having been said while it worked or another turn having taken over (see live-tail.ts). */
   part?: TurnPart | undefined;
+  /** The working line at its end, for that turn (its Claude's one: see live-tail.ts). */
+  working?: AgentItem | undefined;
+  /** Which of its sub-agents and background work it draws (see live-tail.ts). */
+  subs?: 'running' | 'settled' | undefined;
 }) {
   countRender(`card:${item.id}`);
   const selfId = useApp((st) => st.selfId);
   if (part?.side === 'head') return <TurnHead item={item} part={part} mine={item.owner === selfId} />;
-  return <TurnCard item={item} tasks={tasks} latest={latest} part={part} selfId={selfId} />;
+  if (part?.side === 'live') return <LivePart item={item} working={working} />;
+  return <TurnCard item={item} tasks={tasks} latest={latest} part={part} selfId={selfId} working={working} subs={subs} />;
 });
 
-function TurnCard({ item, tasks, latest, part, selfId }: { item: AgentItem; tasks: readonly TaskView[] | undefined; latest: boolean; part: TurnPart | undefined; selfId: string }) {
-  // A steered message's card waiting for Claude's next step isn't a turn at work: a note.
-  const waitingNote = item.text === READS_AFTER_STEP;
+function TurnCard({
+  item,
+  tasks,
+  latest,
+  part,
+  selfId,
+  working,
+  subs,
+}: {
+  item: AgentItem;
+  tasks: readonly TaskView[] | undefined;
+  latest: boolean;
+  part: TurnPart | undefined;
+  selfId: string;
+  working: AgentItem | undefined;
+  subs: 'running' | 'settled' | undefined;
+}) {
+  // A steered message's card waiting for Claude's next step (or for its step to stop) isn't a turn at work: a note.
+  const waitingNote = item.text === READS_AFTER_STEP || item.text === STOPPING_FOR;
   const running = isRunning(item.status) && item.status !== 'queued' && !waitingNote;
   const st = statusOf(item);
   const { quietWorking } = useContext(PaneLook);
@@ -305,7 +369,7 @@ function TurnCard({ item, tasks, latest, part, selfId }: { item: AgentItem; task
           </div>
           {/* Steps open to show what ran and what came back (see steps/AgentSteps.tsx). */}
           <StepsFold folded={folded}>
-            <AgentSteps item={item} running={running} part={part} />
+            <AgentSteps item={item} running={running} part={part} subs={subs} />
           </StepsFold>
           {/* What it asked other people's Claudes, before its answer (which comes last). */}
           {tasks?.map((t) => (
@@ -330,7 +394,7 @@ function TurnCard({ item, tasks, latest, part, selfId }: { item: AgentItem; task
               </Button>
             </div>
           ) : null}
-          {running ? <WorkingLine item={item} quiet={Boolean(quietWorking)} /> : null}
+          {working ? <WorkingLine item={working} quiet={Boolean(quietWorking)} /> : null}
         </div>
       </div>
     </ActionsContext>

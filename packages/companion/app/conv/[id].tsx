@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Bot, CircleCheck, CircleX, History, Monitor, OctagonX, Sparkles, Square } from 'lucide-react-native';
+import { Bot, CircleCheck, CircleX, Clock, History, Monitor, OctagonX, Send, Sparkles, Square } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { Platform, ScrollView, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeInUp, LinearTransition } from 'react-native-reanimated';
@@ -38,6 +38,8 @@ export default function Conversation() {
   const [agent, setAgent] = useState<SubAgentView | undefined>();
   const [olderBusy, setOlderBusy] = useState(false);
   const [menu, setMenu] = useState(false);
+  /** A steered message of yours Claude hasn't read yet, long-pressed: its sheet offers Send now. */
+  const [unread, setUnread] = useState<TurnView | undefined>();
   const older = async () => {
     if (!c) return;
     setOlderBusy(true);
@@ -87,7 +89,7 @@ export default function Conversation() {
           {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
           {c?.turns.map((t, i) => (
             <Animated.View key={t.id} entering={i > c.turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
-              {t.who === 'you' ? <YourTurn t={t} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} />}
+              {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} />}
             </Animated.View>
           ))}
           {needs.map((n) => (
@@ -113,6 +115,23 @@ export default function Conversation() {
       </KeyboardLift>
       <AgentSheet agent={liveAgent} onClose={() => setAgent(undefined)} />
       <Options
+        visible={Boolean(unread)}
+        onClose={() => setUnread(undefined)}
+        title="Claude hasn't read this yet"
+        options={[
+          {
+            Icon: Send,
+            label: 'Send now',
+            sub: 'Stops Claude’s current step so it reads this next',
+            tone: 'peach',
+            onPress: () => {
+              const request = unread?.steer?.request;
+              if (request) void store.call(calls.steerNow(request)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+            },
+          },
+        ]}
+      />
+      <Options
         visible={menu}
         onClose={() => setMenu(false)}
         title={c?.title}
@@ -127,16 +146,25 @@ export default function Conversation() {
   );
 }
 
-function YourTurn({ t }: { t: TurnView }) {
+/** Your message. Steered into Claude's turn and not read yet: dimmed, with a clock (long-press: Send now). */
+function YourTurn({ t, onLongPress }: { t: TurnView; onLongPress?: (() => void) | undefined }) {
+  const waiting = t.steer?.waiting;
   return (
-    <View style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
-      <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14 }}>
+    <Press onLongPress={onLongPress} disabled={!onLongPress} scaleTo={0.99} style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
+      <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14, opacity: waiting ? 0.6 : 1 }}>
         <Prose prose={t.prose} size={15} />
       </View>
-      <T v="caption" style={{ marginTop: 4, marginRight: 4 }}>
-        {ago(t.ts)}
-      </T>
-    </View>
+      {waiting ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4, marginRight: 4 }}>
+          <Clock color={color.text2} size={12} />
+          <T v="caption">{waiting === 'stopping' ? 'Sent · Claude is stopping its step to read it' : 'Sent · waiting for Claude to read it'}</T>
+        </View>
+      ) : (
+        <T v="caption" style={{ marginTop: 4, marginRight: 4 }}>
+          {ago(t.ts)}
+        </T>
+      )}
+    </Press>
   );
 }
 

@@ -241,6 +241,64 @@ describe('interrupting a long tool for a message', () => {
   });
 });
 
+describe('Send now: a steered message Claude hasn’t read yet, answered at once (BLG-54)', () => {
+  const route = (got: string[], name: string) => ({ onEvent: () => undefined, onStart: () => void got.push(`${name} started`), onFolded: () => void got.push(`${name} folded`), onDone: (t: string) => void got.push(`${name}:${t}`), onError: (r: string) => void got.push(`${name}!${r}`) });
+
+  it('a message sent to be answered in its own turn isn’t taken as folded in when Claude Code doesn’t say', () => {
+    const got: string[] = [];
+    const turns = new TurnRouter({ onEvent: () => undefined });
+    turns.current();
+    turns.queue(route(got, 'a'), 'ua', true);
+    expect(turns.unsteer('ua')).toBe(true);
+    expect(turns.unsteer('nope')).toBe(false);
+    turns.end(true, 'interrupted');
+    expect(got).toEqual([]);
+    turns.current();
+    expect(got).toEqual(['a started']);
+  });
+
+  it('stops the step; the message, still in Claude Code’s queue, is the next turn, its own', async () => {
+    let steer: Steer | undefined;
+    const got: string[] = [];
+    script.prompts = [];
+    script.turns = [
+      () => [
+        { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'npm run test:all' } }] } },
+        // The suite runs until Claude Code is interrupted; the turn took nothing of ours in.
+        new Promise<object>((resolve) => (script.interrupt = () => resolve({ ...result(''), subtype: 'error_during_execution', user_message_uuids: [] }))),
+      ],
+      () => [text('looked at the retries'), result('looked at the retries')],
+    ];
+    const input = runInput({ onSteer: (s) => void (steer = s) });
+    const running = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(input);
+    for (let i = 0; i < 50 && !steer?.status?.().tool; i++) await new Promise((r) => setTimeout(r, 5));
+    const followUp = { prompt: 'look at the retries first', requesterName: 'kay', viaAgent: false, context: [], ...route(got, 'f') };
+    // Steered in: it waits for Claude's next step.
+    expect(steer!(followUp)).toBe(true);
+    const note = 'Interrupted: npm run test:all to read your message';
+    expect(await steer!.force!(followUp, note)).toBe(true);
+    expect(await running).toBe(note);
+    expect(input.events).toContain(note);
+    expect(got).toEqual(['f started', 'f:looked at the retries']);
+    // Sent once: the message Claude reads next is the one already in its queue.
+    expect(script.prompts).toHaveLength(2);
+    expect(script.prompts[1]).toContain('look at the retries first');
+    script.interrupt = undefined;
+  });
+
+  it('nothing to force for a message the run never took as a steer', async () => {
+    let steer: Steer | undefined;
+    script.prompts = [];
+    let end: (() => void) | undefined;
+    script.turns = [() => [new Promise<object>((resolve) => (end = () => resolve(result('done'))))]];
+    const running = createClaudeBackend({ cwd: '/tmp', autoEdit: false, additionalDirectories: [], bridge }).run(runInput({ onSteer: (s) => void (steer = s) }));
+    for (let i = 0; i < 50 && !end; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(await steer!.force!({ prompt: 'x', requesterName: 'kay', viaAgent: false, context: [], ...route([], 'x') }, 'n')).toBe(false);
+    end!();
+    expect(await running).toBe('done');
+  });
+});
+
 describe('interrupting: the interrupted turn’s result comes late', () => {
   const route = (got: string[], name: string) => ({ onEvent: () => undefined, onStart: () => void got.push(`${name} started`), onFolded: () => void got.push(`${name} folded`), onDone: (t: string) => void got.push(`${name}:${t}`), onError: (r: string) => void got.push(`${name}!${r}`) });
   /** The ids of the prompts sent but not read yet (what Claude Code could list in the result). */

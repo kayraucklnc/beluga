@@ -112,6 +112,8 @@ export const API = {
   'host.promote': args(id),
   // Send a waiting message next, never interrupting (Send Now).
   'host.sendNext': args(id),
+  // Send now a message steered into the running turn that Claude hasn't read yet: its step stops, your message is next (BLG-54).
+  'host.steerNow': args(id),
   // Stop your Claude in one conversation: → { stopped, returned: your queued prompts, in order }.
   'host.stopRun': args(channel),
   'host.cancelQueued': args(id),
