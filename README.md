@@ -15,9 +15,6 @@
 <p align="center">
   <sub>Apple Silicon · macOS 13+ · updates itself</sub>
 </p>
-<p align="center">
-  <sub><b>Klaud is now Beluga.</b> Same app, new name: updating keeps everything (<a href="#license">more</a>).</sub>
-</p>
 
 ---
 
@@ -142,7 +139,11 @@ Light and dark, your accent colour, right-click everywhere, drag and drop, ⌘K 
 ## 📦 Install
 
 1. **[Download Beluga](https://github.com/kayraucklnc/beluga/releases/latest)**, open the `.dmg` and drag Beluga into Applications.
-2. The first time, right-click Beluga in Applications and choose **Open** (it isn't notarized by Apple yet).
+2. The first time, open Beluga, click **Done** on the warning, then go to **System Settings › Privacy & Security** and click **Open Anyway** (Beluga isn't notarized by Apple yet).
+   If macOS says Beluga **"is damaged"** (older downloads), run this once in Terminal, then open it again:
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/Beluga.app
+   ```
 3. Sign in to [Claude Code](https://claude.com/claude-code) if you haven't (`claude`, then `/login`). Beluga brings everything else.
 4. To work with friends: **Friends › Turn On**, then **Add a Friend** and send them the code.
 
@@ -172,8 +173,6 @@ src/            the engine (core, friends network, Claude, terminals) and the ap
 docs/           guides and design notes
 scripts/readme/ the README's animated diagrams (python3 scripts/readme/*.py)
 ```
-
-**Klaud is now Beluga.** Same app, new name, nothing to do: updating keeps your settings, projects and worktrees (`~/.klaud` moves to `~/.beluga`, with a link back), and old `klaud://` invite links still open. Older still, it was klaude, and `~/.klaude` carries over too.
 
 ## License
 

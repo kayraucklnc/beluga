@@ -185,7 +185,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
           { tool: 'test', text: 'Ran the tests' },
         ],
         prose: {
-          text: 'Done with the first pass. The pairing screen now rises out of the dark like the Mac\'s welcome: the tile comes up, the beluga leaps in, and the glow settles.\n\n**What changed**\n- The backdrop is the same silk shader, ported to Skia\n- Every press springs (320 / 32), and commits tick a haptic\n- The fingerprint step shows four emoji, big, with the Mac\'s name\n\nThe spring settings live in one place:\n\n[[code:0]]\n\nAnd the scanner now accepts both `beluga://` and `klaud://` links:\n\n[[code:1]]\n\nI ran the unit tests too: 104 passed.',
+          text: 'Done with the first pass. The pairing screen now rises out of the dark like the Mac\'s welcome: the tile comes up, the beluga leaps in, and the glow settles.\n\n**What changed**\n- The backdrop is the same silk shader, ported to Skia\n- Every press springs (320 / 32), and commits tick a haptic\n- The fingerprint step shows four emoji, big, with the Mac\'s name\n\nThe spring settings live in one place:\n\n[[code:0]]\n\nAnd the scanner now accepts `beluga://` links:\n\n[[code:1]]\n\nI ran the unit tests too: 104 passed.',
           code: [{ lang: 'ts', lines: 24 }, { lang: 'ts', lines: 9 }],
         },
         outputs: [unitLog],

@@ -142,6 +142,12 @@ function main() {
   const app = path.join(bundle, `macos/${built}.app.tar.gz`);
   const dmg = path.join(bundle, `dmg/${built}_${version}_${arch}.dmg`);
   for (const f of [app, `${app}.sig`, dmg]) if (!existsSync(f)) throw new Error(`Missing ${f}: did the build sign the update? (createUpdaterArtifacts, the key)`);
+  // A bundle whose signature doesn't seal its resources opens here but is "damaged" once downloaded.
+  try {
+    read('codesign', ['--verify', '--deep', '--strict', path.join(bundle, `macos/${built}.app`)]);
+  } catch (e) {
+    throw new Error(`${built}.app's code signature doesn't verify, so downloaded copies would say "damaged" (signingIdentity in tauri.conf.json):\n${e.stderr ?? e.message}`);
+  }
 
   const out = path.join(bundle, 'release');
   rmSync(out, { recursive: true, force: true });

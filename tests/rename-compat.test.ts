@@ -12,17 +12,22 @@ import { parseTicket as oldParseTicket } from './fixtures/pre-rename/invitations
 
 /** Klaud → Beluga without breaking anyone: a Klaud from before the rename still talks to Beluga (KLD-87). */
 
-describe('an older Klaud opens the invites Beluga makes', () => {
+/**
+ * Links are made as beluga:// now, which a Klaud from before the rename can't open (it updates
+ * itself to Beluga first). What still crosses: the links it makes, and the short code typed in.
+ */
+describe('invites across the rename', () => {
   const key = encodeKey(Buffer.alloc(32, 7));
   const secret = 'tVh65bTGibnD1mD3ofr75-PD';
 
-  it('room invites, direct and with a relay, as the pre-rename parser reads them', () => {
+  it('room invites are made as beluga://, and the klaud:// ones an older Klaud makes still open', () => {
     for (const invite of [{ url: `p2p://${key}`, secret }, { url: `p2p://${key}`, relay: 'wss://calm-river.trycloudflare.com', secret }]) {
       const link = encodeInvite(invite);
-      expect(old.decodeInvite(link)).toEqual(invite);
-      expect(old.findInvite(`klaud join ${link}`)).toBe(link);
-      // And Beluga reads its own link the same way.
+      expect(link.startsWith('beluga://')).toBe(true);
       expect(decodeInvite(link)).toEqual(invite);
+      const theirs = old.encodeInvite(invite);
+      expect(decodeInvite(theirs)).toEqual(invite);
+      expect(findInvite(`klaud join ${theirs}`)).toBe(theirs);
     }
   });
 
@@ -31,17 +36,13 @@ describe('an older Klaud opens the invites Beluga makes', () => {
     expect(old.decodeInvite(link)).toEqual({ url: 'wss://calm-river.trycloudflare.com', secret });
   });
 
-  it('friend and group invitations: the link and the code as a link', () => {
+  it('friend and group invitations: beluga:// links, and the code still works on an older Klaud', () => {
     const s = 'AAAAAAAAAAAAAAAAAAAAAA';
     for (const kind of ['friend', 'group'] as const) {
-      expect(oldParseTicket(linkOf({ kind, secret: s }))).toEqual({ via: 'link', secret: s });
-      expect(oldParseTicket(codeLinkOf({ kind, code: 'K7QM4XPAR2TD' }))).toEqual({ via: 'code', code: 'K7QM4XPAR2TD' });
+      expect(linkOf({ kind, secret: s }).startsWith('beluga://')).toBe(true);
+      expect(codeLinkOf({ kind, code: 'K7QM4XPAR2TD' }).startsWith('beluga://')).toBe(true);
     }
-  });
-
-  it('Beluga still reads beluga:// links, should anyone send one', () => {
-    expect(decodeInvite(`beluga://${key}#${secret}`)).toEqual({ url: `p2p://${key}`, secret });
-    expect(findInvite(`beluga join beluga://${key}#${secret}`)).toBe(`beluga://${key}#${secret}`);
+    expect(oldParseTicket('K7QM-4XPA-R2TD')).toEqual({ via: 'code', code: 'K7QM4XPAR2TD' });
   });
 });
 

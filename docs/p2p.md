@@ -22,13 +22,12 @@ direct-only link can still join directly; they just have no fallback.
 ## Invite format
 
 ```
-klaud://<host key>#<secret>                           direct only
-klaud://<host key>?relay=https://x.trycloudflare.com#<secret>   direct + fallback relay
+beluga://<host key>#<secret>                           direct only
+beluga://<host key>?relay=https://x.trycloudflare.com#<secret>   direct + fallback relay
 https://x.trycloudflare.com#<secret>                  relay only (unchanged, still accepted)
 ```
 
-Invites are made as `klaud://` so a Klaud from before the rename can open them; `beluga://` is
-read the same way.
+Invites are made as `beluga://`; `klaud://` ones from before the rename are read the same way.
 
 - `<host key>` is the host's 32-byte Ed25519 DHT public key in z-base-32 (52 characters).
 - The secret stays in the `#fragment`. Browsers and proxies never send fragments, and the

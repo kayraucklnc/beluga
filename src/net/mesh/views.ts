@@ -107,13 +107,13 @@ export interface InvitationView {
   readonly groupId?: string;
   /** e.g. K7QM-4XPA-R2TD (works until `codeExpiresAt`, an hour at most). */
   readonly code: string;
-  /** klaud://add#… or klaud://join#… (works until `expiresAt`). */
+  /** beluga://add#… or beluga://join#… (works until `expiresAt`). */
   readonly link: string;
   readonly expiresAt: number;
   readonly uses: number;
   /** When the code stops working (the link keeps working until `expiresAt`). */
   readonly codeExpiresAt: number;
-  /** The code as a link: klaud://add?code=K7QM-4XPA-R2TD (same lifetime as the code). */
+  /** The code as a link: beluga://add?code=K7QM-4XPA-R2TD (same lifetime as the code). */
   readonly codeLink: string;
 }
 
