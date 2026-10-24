@@ -211,6 +211,13 @@ export interface Steer {
    * `note`, and answer `followUp` in the next turn. Resolves false when the run couldn't be interrupted.
    */
   readonly interrupt?: (followUp: FollowUp, note: string) => Promise<boolean>;
+  /**
+   * Send now: a message already steered in (this steer took it) that Claude hasn't read yet is
+   * answered at once. The running step and turn stop (Claude Code's interrupt, the turn ending
+   * with `note`) and the message, still in Claude Code's queue, is the next turn. Resolves false
+   * when Claude read it already, or the run couldn't be interrupted.
+   */
+  readonly force?: (followUp: FollowUp, note: string) => Promise<boolean>;
 }
 
 export interface AgentPlace {

@@ -46,6 +46,8 @@ export const PHONE: Record<Method, Side> = {
   'host.answerApproval': 'phone',
   'host.promote': 'phone',
   'host.sendNext': 'phone',
+  // Your steered message Claude hasn't read yet, answered now: like Stop, phone-sized.
+  'host.steerNow': 'phone',
   'host.stopRun': 'phone',
   'host.cancelQueued': 'phone',
   'host.reorderQueued': 'mac',

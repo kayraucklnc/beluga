@@ -1,7 +1,7 @@
 // Relative paths (not @beluga/…) so the unit tests at the repo root can load this model too.
 import type { LogItem } from '../../../../src/core/store.js';
 import type { StepSummary } from '../../../../src/shared/steps.js';
-import { READS_AFTER_STEP, STEERED_IN, backgroundWait } from '../../../../src/shared/claude-notices.js';
+import { READS_AFTER_STEP, STEERED_IN, STOPPING_FOR, backgroundWait } from '../../../../src/shared/claude-notices.js';
 import { HIDDEN_STEPS, isRunning } from '../../../../src/ui/format.js';
 
 /**
@@ -23,9 +23,13 @@ export interface RowLike {
   readonly ts: number;
 }
 
-/** Which part of a split turn a row draws: the head (where it began) or the tail (after what was said since). */
+/**
+ * Which part of a turn a row draws: the head (where it began), the tail (after what was said
+ * since), or its live part: the work it left running (sub-agents, background jobs) once another
+ * turn of the same Claude took over, drawn at the very bottom (BLG-54).
+ */
 export interface TurnPart {
-  readonly side: 'head' | 'tail';
+  readonly side: 'head' | 'tail' | 'live';
   /** When the first message said during the turn came: the head keeps the steps finished before it. */
   readonly cut: number;
 }
@@ -35,13 +39,20 @@ export interface Shown<R extends RowLike> {
   readonly row: R;
   readonly key: string;
   readonly part?: TurnPart;
+  /**
+   * The working line goes at the end of this row, saying what this turn does (the one its Claude
+   * is on: this row's, or another's when this is a live part). One per Claude at work: its last row.
+   */
+  readonly working?: AgentItem;
+  /** Which of its sub-agents and background work the row draws: `settled` (the running ones are in its live part), or only the `running` ones (the live part). All, when unset. */
+  readonly subs?: 'running' | 'settled';
 }
 
 const isAgent = (r: RowLike): r is RowLike & AgentItem => r.type === 'agent';
 
 /** A card that's a note about a message (queued, read mid-turn, about to be read), not a turn of its own. */
 export function isTurnNote(card: Pick<AgentItem, 'status' | 'text'>): boolean {
-  return card.status === 'queued' || card.text === STEERED_IN || card.text === READS_AFTER_STEP;
+  return card.status === 'queued' || card.text === STEERED_IN || card.text === READS_AFTER_STEP || card.text === STOPPING_FOR;
 }
 
 /** A turn Claude is working on now (not waiting in the queue, not a note). */
@@ -49,31 +60,50 @@ export function isLiveTurn(card: Pick<AgentItem, 'status' | 'text'>): boolean {
   return isRunning(card.status) && !isTurnNote(card);
 }
 
+const isTurn = (r: RowLike): r is RowLike & AgentItem => isAgent(r) && !isTurnNote(r);
+const leftRunning = (card: AgentItem): boolean => card.subagents.some((x) => x.status === 'running');
+
 /**
  * The chat's rows with each turn that had things said during it split in two: its head in
  * place, its tail after them (the very end while it runs). A turn nobody spoke during is drawn
  * whole, as before. What counts as said during a turn: rows after its card from before it ended
  * (messages, notes about them, tasks, system lines), up to the next turn of its own.
+ *
+ * A Claude is on one turn at a time (BLG-54). A card still running when a later turn of the same
+ * Claude began (your message got a turn of its own, a follow-up went into its run) was taken
+ * over: it's drawn as if it ended there (its tail before that turn) and never with a working
+ * line; what it left running (sub-agents, background jobs) is its live part, at the very bottom.
+ * There is one working line per Claude at work, on the last row of its live work, saying what
+ * the turn it's on does.
  */
 export function withLiveTails<R extends RowLike>(rows: readonly R[]): Shown<R>[] {
+  /** A running turn's index → the later turn of the same Claude that took over from it. */
+  const takenOver = new Map<number, number>();
+  rows.forEach((row, i) => {
+    if (!isAgent(row) || !isLiveTurn(row)) return;
+    const next = rows.findIndex((r, j) => j > i && isTurn(r) && r.owner === row.owner);
+    if (next >= 0) takenOver.set(i, next);
+  });
   /** Tails to draw after a row's index; -1: at the very end. */
   const after = new Map<number, Shown<R>[]>();
   const heads = new Map<number, Shown<R>>();
   rows.forEach((row, i) => {
-    if (!isAgent(row) || isTurnNote(row)) return;
-    const live = isLiveTurn(row);
-    const end = live ? Infinity : row.endTs;
+    if (!isTurn(row)) return;
+    const over = takenOver.get(i);
+    const live = isLiveTurn(row) && over === undefined;
+    const end = live ? Infinity : over !== undefined ? rows[over]!.ts : row.endTs;
     if (end === undefined) return;
     let first = -1;
     let last = -1;
     for (let j = i + 1; j < rows.length; j++) {
       const r = rows[j]!;
-      if (isAgent(r) && !isTurnNote(r)) {
+      if (isTurn(r)) {
         // Another turn: a finished one's tail goes before it; a running one's still goes to the end.
         if (!live) break;
         continue;
       }
-      if (r.ts >= end) break;
+      // Taken over: what was said up to when the next turn began (in the same moment, your message and its card) counts.
+      if (over !== undefined ? r.ts > end : r.ts >= end) break;
       if (first < 0) first = j;
       last = j;
     }
@@ -83,14 +113,47 @@ export function withLiveTails<R extends RowLike>(rows: readonly R[]): Shown<R>[]
     const at = live ? -1 : last;
     after.set(at, [...(after.get(at) ?? []), { row, key: `${row.id}:tail`, part: { side: 'tail', cut } }]);
   });
-  if (!heads.size) return rows.map((row) => ({ row, key: row.id }));
   const out: Shown<R>[] = [];
   rows.forEach((row, i) => {
     out.push(heads.get(i) ?? { row, key: row.id });
     out.push(...(after.get(i) ?? []));
   });
   out.push(...(after.get(-1) ?? []));
-  return out;
+  return withWorkingLines(rows, out, takenOver);
+}
+
+/**
+ * Each Claude at work gets one working line, on the last of its rows still at work: the turn it's
+ * on, or the live part of a turn it left work running in, drawn at the very end (see withLiveTails).
+ */
+function withWorkingLines<R extends RowLike>(rows: readonly R[], out: Shown<R>[], takenOver: ReadonlyMap<number, number>): Shown<R>[] {
+  const claudes = new Map<string, { on?: AgentItem; newest?: AgentItem; left: AgentItem[] }>();
+  rows.forEach((row, i) => {
+    if (!isAgent(row) || !isLiveTurn(row)) return;
+    const c = claudes.get(row.owner) ?? { left: [] };
+    if (!takenOver.has(i)) c.on = row;
+    else if (leftRunning(row)) c.left.push(row);
+    c.newest = row;
+    claudes.set(row.owner, c);
+  });
+  if (!claudes.size) return out;
+  const left = new Set([...claudes.values()].flatMap((c) => c.left.map((x) => x.id)));
+  const shown: Shown<R>[] = left.size ? out.map((x) => (left.has(x.row.id) ? { ...x, subs: 'settled' as const } : x)) : out;
+  for (const c of claudes.values()) {
+    // Every running card taken over and nothing left running: the newest still has its line, at the end.
+    const live = c.left.length ? c.left : c.on ? [] : c.newest ? [c.newest] : [];
+    for (const card of live) shown.push({ row: card as unknown as R, key: `${card.id}:live`, part: { side: 'live', cut: card.ts }, subs: 'running' });
+  }
+  for (const [owner, c] of claudes) {
+    const speaksFor = c.on ?? c.newest;
+    let at = shown.length - 1;
+    for (; at >= 0; at--) {
+      const x = shown[at]!;
+      if (isAgent(x.row) && x.row.owner === owner && (x.part?.side === 'live' || (x.row.id === c.on?.id && x.part?.side !== 'head'))) break;
+    }
+    if (speaksFor && at >= 0) shown[at] = { ...shown[at]!, working: speaksFor };
+  }
+  return shown;
 }
 
 /** When a step ended (its start, when it never said). */

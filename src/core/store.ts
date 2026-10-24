@@ -16,6 +16,7 @@ import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './
 import { type PlansAction, type PlansSlice, initialPlans, isPlanHome, reducePlans } from './plans/model.js';
 import { type CompactMark, type ContextInfo, applyContextEvent, parseContextEvent } from './context-log.js';
 import { AUTO_COMPACT_DEFAULT } from '../shared/context-usage.js';
+import { READS_AFTER_STEP, STOPPING_FOR } from '../shared/claude-notices.js';
 import type { CompanionSlice } from '../companion/protocol.js';
 
 export type { CompactMark, ContextInfo } from './context-log.js';
@@ -50,7 +51,20 @@ export function settleRun(item: LogItem): LogItem {
 }
 
 export type LogItem =
-  | { readonly id: string; readonly type: 'chat'; readonly channel: string; readonly from: string; readonly name: string; readonly text: string; readonly ts: number; readonly byAgent: boolean }
+  | {
+      readonly id: string;
+      readonly type: 'chat';
+      readonly channel: string;
+      readonly from: string;
+      readonly name: string;
+      readonly text: string;
+      readonly ts: number;
+      readonly byAgent: boolean;
+      /** The request this message is to your Claude (its card's requestId): how its card's state shows on it (a steer Claude hasn't read yet). */
+      readonly request?: string;
+      /** Sent to steer the turn your Claude is on (⌥↩): sent but not read until Claude reads it (see shared/claude-notices.ts steeredMessages). */
+      readonly steer?: true;
+    }
   | { readonly id: string; readonly type: 'system'; readonly channel: string; readonly text: string; readonly ts: number; readonly level: 'info' | 'warn' | 'error'; readonly said?: SaidBy; readonly compact?: CompactMark }
   | {
       readonly id: string;
@@ -449,7 +463,7 @@ export type Action =
   | { type: 'hosting'; hosting: Hosting }
   | { type: 'welcome'; self: PeerInfo }
   | { type: 'peers'; peers: readonly PeerInfo[] }
-  | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string }
+  | { type: 'chat'; id: string; from: string; text: string; ts: number; byAgent: boolean; channel?: string; request?: string; steer?: true }
   /** `id`/`ts` are stamped before reducing (see stampAction). */
   | { type: 'system'; text: string; level?: 'info' | 'warn' | 'error'; channel?: string; id?: string; ts?: number; said?: SaidBy }
   | { type: 'shell'; item: ShellItem }
@@ -681,6 +695,7 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
   const subOpen = base.subagents.some((sub) => sub.status === 'running' && sub.kind !== 'background');
   const between = a.event === 'started' || (a.event === 'progress' && !a.text && !subOpen) ? 'thinking' : a.event === 'text' ? 'writing' : a.event === 'tool' || a.event === 'progress' ? undefined : wasBetween;
   const betweenAt = between === undefined ? undefined : between === wasBetween && wasAt !== undefined ? wasAt : a.ts;
+  const noted = base.text === READS_AFTER_STEP || base.text === STOPPING_FOR;
   const updated = {
     ...rest,
     ...(progress ? { progress } : {}),
@@ -688,8 +703,11 @@ function reduceAgent(state: DomainState, raw: Extract<Action, { type: 'agent_eve
     status: a.event === 'text' || a.event === 'tool' || a.event === 'sub' || a.event === 'progress' ? 'started' : a.event,
     subagents: a.event === 'sub' ? applySub(base.subagents, a.text, a.ts) : a.event === 'done' || a.event === 'error' ? base.subagents.map((s) => ({ ...s, status: 'done' as const })) : base.subagents,
     text:
-      // Each thing Claude says between steps is its own paragraph (one newline would run them into one blob).
-      a.event === 'text'
+      // A steered message's note ("reads this after its current step") isn't Claude's words: its own turn starting (or going back in line) ends it, a newer note replaces it.
+      noted && (a.event === 'started' || a.event === 'text' || a.event === 'queued')
+        ? a.event === 'text' ? a.text : ''
+        : // Each thing Claude says between steps is its own paragraph (one newline would run them into one blob).
+          a.event === 'text'
         ? (base.text ? `${base.text}\n\n` : '') + a.text
         : a.event === 'done' || a.event === 'error' || a.event === 'denied'
           ? a.text || base.text
@@ -799,6 +817,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
           text: clean(action.text),
           ts: action.ts,
           byAgent: action.byAgent,
+          ...(action.request ? { request: action.request } : {}),
+          ...(action.steer ? { steer: true as const } : {}),
         }),
       }, action.channel ?? 'room', true);
     case 'system':

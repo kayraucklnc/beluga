@@ -35,6 +35,8 @@ export const calls = {
   /** Ask your Mac in a project: a new conversation there (its topic comes back). */
   ask: (project: string, text: string, files?: Files): Call => make('companion.ask', [{ target: { project }, text, ...withFiles(files) }], `Ask "${short(text)}"`),
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
+  /** Your steered message Claude hasn't read yet, now: its step stops and it reads it next. */
+  steerNow: (request: string): Call => make('host.steerNow', [request], 'Send now'),
   older: (topic: Topic, before: string): Call => make('companion.older', [topic, { before }], 'Load older'),
   /** Write in a friends' chat (with photos, or asking Claude). */
   /** `ask`: whose Claude answers too: everyone's ('all') or the chosen people's (peer ids, you included). */

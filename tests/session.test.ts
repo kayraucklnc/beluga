@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentBackend, AgentRunInput, RoomBridge } from '../src/agent/types.js';
 import { Session } from '../src/core/session.js';
+import { STEERED_IN } from '../src/shared/claude-notices.js';
 import { ShareService } from '../src/core/shares.js';
 import { Store, initialState, type DomainState, type Policy } from '../src/core/store.js';
 import { deriveKeys, generateSecret } from '../src/net/crypto.js';
@@ -766,8 +767,8 @@ describe('Session hardening', () => {
     await waitFor(() => agentItems(kay.state()).some((a) => a.type === 'agent' && a.text === 'slow done'));
     expect(steered).toEqual(['use pnpm', 'later']);
     expect(kay.runs.map((r) => r.prompt)).toEqual(['slow']);
-    // Taken in mid-turn: no card of its own, and nothing was interrupted.
-    expect(agentItems(kay.state()).filter((a) => a.type === 'agent').map((a) => a.text)).toEqual(['slow done', 'did later']);
+    // Taken in mid-turn: no turn of its own (its card only says Claude read it), and nothing was interrupted.
+    expect(agentItems(kay.state()).filter((a) => a.type === 'agent').map((a) => a.text)).toEqual(['slow done', STEERED_IN, 'did later']);
   });
 
   it('shares folders at runtime and opens invites on demand', async () => {
