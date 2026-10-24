@@ -201,7 +201,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `files.downloadSpec` | ✓ |
 | `files.closeViewer` | ✓ |
 | `files.readImage` | ✓ |
-| `files.readImageFile` | ✓ images in the Markdown reader (`![](diagram.png)` next to the file); PDFs drawn page by page in Files, Changes and the reader |
+| `files.readImageFile` | ✓ images in the Markdown reader (`![](diagram.png)` next to the file); PDFs drawn page by page in Files, Changes and the reader; videos (MP4, M4V, MOV, WebM, up to 64 MB) played inline in the reader with play, pause and seek |
 | `workspaces.scratch` | ✓ the panel's Scratch tab: the workspace's `.beluga/scratch/` and `.context/` folders, newest first, live; the preview shows the newest until you pick one, and a file scrolled to its end (or Follow the End) follows what's written to it; drawn in outline (moving while Claude works) until something lands |
 | `files.read` | ✓ a changed file as itself in Changes (Markdown formatted), without moving the Files tab's open file |
 | `files.searchContent` | ✓ the Files tab's search box on Contents: lines by file (ripgrep, else Node), Match Case / Whole Word / Regular Expression; a line opens the file there |
@@ -422,7 +422,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `claudeCode.step` | ✓ opening a tool call or thinking line in that transcript: the command and its output, the file, the diff, the thinking |
 | `claudeCode.findAgent` | ✓ opening a sub-agent's own worktree whose agent finished a while ago: it's found again and followed live |
 | `claudeCode.outputs` | ✓ a sub-agent's Outputs tab: the screenshots, test output, logs and JSON it made or looked at (from its transcript, wherever it put them, plus its own `.beluga/scratch/agents/<name>/`), still on disk, newest first |
-| `claudeCode.output` | ✓ looking at one of them: pictures inline, text with secrets redacted (only files that agent made or looked at) |
+| `claudeCode.output` | ✓ looking at one of them: pictures inline (GIFs animate), videos playing inline up to 64 MB, text with secrets redacted (only files that agent made or looked at) |
 | `claudeCode.taskOutput` | ✓ following a background command or watch Claude or a sub-agent started (the panel's Background tab, below the terminal; a sub-agent's Background): the end of its output, live, cleaned of terminal codes and secrets; its own log when it writes to one |
 | `agent.steps` | ✓ a Claude card's steps as disclosure rows (an icon per tool, ✓/✗, how long it took), thinking as “Thought for 12s”, sub-agents' steps |
 | `agent.step` | ✓ opening a step on a Claude card: Bash's command and output (colours kept), the file read, an edit's diff, a search's matches, a page fetched, an MCP tool's input and output as JSON, the thinking |

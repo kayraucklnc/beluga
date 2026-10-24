@@ -6,9 +6,10 @@ import { Button, Empty, EmptyActions, IconButton, cx } from '../../components/ui
 import { CodeLines } from '../../components/markdown/CodeLines.js';
 import { type DocNav, type DocVariant, MarkdownDoc } from '../../components/markdown/MarkdownDoc.js';
 import { useImageUrl } from '../../components/markdown/MdImage.js';
+import { VideoPlayer } from '../../components/VideoPlayer.js';
 import { MAX_FILE_BYTES } from '@beluga/protocol.js';
 import { Bitmap } from '../FilesView.js';
-import { isImageFile } from '../../components/markdown/md-paths.js';
+import { isImageFile, isVideoFile } from '../../components/markdown/md-paths.js';
 import { BINARY_TEXT, LARGE_MARKDOWN, prettyJson, type ReaderMode, isMarkdownFile, isPdfFile, langOf } from './reader-model.js';
 import { PdfView } from './PdfView.js';
 import { usePinchZoom } from '../../components/usePinchZoom.js';
@@ -86,6 +87,14 @@ function ImageView({ viewer, controls, version }: { viewer: ViewerState; control
   );
 }
 
+/** A video, played from its bytes (read like a picture, up to MAX_DOC_VIDEO_BYTES). */
+function VideoFile({ viewer, version, fallback }: { viewer: ViewerState; version?: string | number; fallback?: ReactNode }) {
+  const { url, error } = useImageUrl({ owner: viewer.owner, share: viewer.share, path: viewer.path }, version);
+  if (error) return <Empty icon="play" title="Can’t play this video here" detail={/too large/i.test(error) ? 'It’s too big to play here (up to 64 MB).' : error} action={fallback ? <EmptyActions>{fallback}</EmptyActions> : undefined} />;
+  if (!url) return <div className={r.opening}>Opening…</div>;
+  return <VideoPlayer url={url} name={viewer.path} fallback={fallback} />;
+}
+
 export interface FileContentProps {
   readonly viewer: ViewerState;
   readonly variant: DocVariant;
@@ -120,6 +129,18 @@ export function FileContent({ viewer, variant, mode, onMode, wrap, onOpenInEdito
   }, [reveal?.seq, viewer.path, viewer.loading, viewer.content.length, mode, Boolean(editing)]);
   // PDFs and pictures are read as themselves (their bytes), whatever the text read made of them.
   if (isPdfFile(viewer.path)) return <PdfView at={{ owner: viewer.owner, share: viewer.share, path: viewer.path }} controls={variant !== 'panel'} version={version} />;
+  if (isVideoFile(viewer.path)) {
+    const out = onOpenInEditor ? (
+      <Button size="small" variant="quiet" icon="external" onClick={onOpenInEditor}>
+        Open in Editor
+      </Button>
+    ) : onSaveCopy ? (
+      <Button size="small" variant="quiet" icon="download" onClick={onSaveCopy}>
+        Save a Copy…
+      </Button>
+    ) : undefined;
+    return <VideoFile viewer={viewer} fallback={out} {...(typeof version === 'string' || typeof version === 'number' ? { version } : {})} />;
+  }
   if (viewer.image || (isImageFile(viewer.path) && !viewer.error)) return <ImageView viewer={viewer} controls={variant !== 'panel'} {...(typeof version === 'string' || typeof version === 'number' ? { version } : {})} />;
   if (viewer.loading && !viewer.content) return <div className={r.opening}>Opening…</div>;
   if (viewer.error) return <Empty icon="alert" title="Can’t open this file" detail={viewer.error} />;

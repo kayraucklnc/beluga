@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, realpathSync } from 'node:fs';
-import { open, stat } from 'node:fs/promises';
+import { mkdtemp, open, readdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { isArtifact, outputKind } from '../core/claude-code/outputs.js';
 import { isSecretPath } from '../core/shares.js';
@@ -15,7 +15,7 @@ import { COMPANION_PIECE, type OutputView } from './protocol.js';
  * project or where outputs go; never source code) and not a secret (`isSecretPath`, by the path
  * given and where it really leads). The phone never learns a path.
  *
- * Variants: `thumb` (a picture's longest side 640 px, JPEG, made with `sips` and cached under
+ * Variants: `thumb` (a picture's longest side 640 px, or a video's first frame (Quick Look), JPEG, made with `sips` and cached under
  * ~/.beluga/companion/thumbs), `full` (the bytes), `text` (a text output, secrets redacted). Each
  * answer is one piece of at most COMPANION_PIECE bytes from `off`; the phone asks for the next.
  */
@@ -38,6 +38,7 @@ const MIME: Readonly<Record<string, string>> = {
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
   '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
   '.json': 'application/json',
   '.jsonl': 'application/x-ndjson',
   '.ndjson': 'application/x-ndjson',
@@ -129,11 +130,33 @@ export const sipsThumbnailer: Thumbnailer = (src, dest) =>
     execFile('sips', ['-Z', '640', '-s', 'format', 'jpeg', src, '--out', dest], { timeout: 20_000 }, (err) => (err ? reject(new Error('Could not make a thumbnail')) : resolve()));
   });
 
+/**
+ * A video's poster frame, the way Finder makes it (Quick Look), then a JPEG like a picture's. Only
+ * the formats Quick Look draws (MP4, M4V, MOV): it can hang on others, so it's never asked, and
+ * it's stopped after a while.
+ */
+export const quickLookPoster: Thumbnailer = async (src, dest) => {
+  if (!/\.(mp4|m4v|mov)$/i.test(src)) throw new Error('No poster for this kind of video');
+  const dir = await mkdtemp(path.join(path.dirname(dest), 'ql-'));
+  try {
+    await new Promise<void>((resolve, reject) => {
+      execFile('qlmanage', ['-t', '-s', '640', '-o', dir, src], { timeout: 15_000 }, (err) => (err ? reject(new Error('Could not make a poster')) : resolve()));
+    });
+    const made = (await readdir(dir)).find((n) => n.endsWith('.png'));
+    if (!made) throw new Error('Could not make a poster');
+    await sipsThumbnailer(path.join(dir, made), dest);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
 export interface FileServerOptions {
   readonly refs: RefTable;
   /** ~/.beluga/companion/thumbs */
   readonly thumbsDir: string;
   readonly thumbnail?: Thumbnailer;
+  /** A video's poster frame (quickLookPoster). */
+  readonly poster?: Thumbnailer;
 }
 
 async function readPiece(file: string, off: number, max: number): Promise<{ bytes: Buffer; size: number }> {
@@ -162,8 +185,8 @@ export class FileServer {
     if (!allowed(entry.path, entry.cwd)) throw new Error("That file can't be opened on the phone");
     const kind = outputKind(entry.path);
     if (variant === 'thumb') {
-      if (kind !== 'image') throw new Error('Only pictures have thumbnails');
-      const thumb = await this.thumb(entry.path);
+      if (kind !== 'image' && kind !== 'video') throw new Error('Only pictures and videos have thumbnails');
+      const thumb = await this.thumb(entry.path, kind === 'video' ? (this.opts.poster ?? quickLookPoster) : (this.opts.thumbnail ?? sipsThumbnailer));
       const { bytes, size } = await readPiece(thumb, off, COMPANION_PIECE);
       return { off, b64: bytes.toString('base64'), eof: off + bytes.length >= size, size, mime: 'image/jpeg' };
     }
@@ -179,7 +202,7 @@ export class FileServer {
   }
 
   /** The cached thumbnail of a picture (made once per version of the file). */
-  private async thumb(src: string): Promise<string> {
+  private async thumb(src: string, make: Thumbnailer): Promise<string> {
     const st = await stat(src);
     const key = createHash('sha256').update(`${src}\0${st.size}\0${st.mtimeMs}`).digest('hex').slice(0, 32);
     const dest = path.join(this.opts.thumbsDir, `${key}.jpg`);
@@ -191,7 +214,7 @@ export class FileServer {
     let pending = this.making.get(dest);
     if (!pending) {
       mkdirSync(this.opts.thumbsDir, { recursive: true, mode: 0o700 });
-      pending = (this.opts.thumbnail ?? sipsThumbnailer)(src, dest).then(() => dest);
+      pending = make(src, dest).then(() => dest);
       this.making.set(dest, pending);
       void pending.finally(() => this.making.delete(dest)).catch(() => undefined);
     }

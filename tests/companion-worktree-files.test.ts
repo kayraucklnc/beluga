@@ -51,6 +51,12 @@ describe('the companion’s file gate', () => {
     expect(top.entries.find((e) => e.name === 'logo.png')?.ref).toBe('out:abcdefghijkl');
     const src = await listFolder(root, 'src');
     expect(src.entries.map((e) => e.name)).toEqual(['core', 'index.ts']);
+    // A video too (it streams in the viewer); source never gets one.
+    writeFileSync(path.join(root, 'src', 'demo.mov'), Buffer.alloc(16));
+    let n = 0;
+    const withVideo = await listFolder(root, 'src', new RefTable(() => `vid${n++}`));
+    expect(withVideo.entries.find((e) => e.name === 'demo.mov')?.ref).toBe('out:vid0');
+    expect(withVideo.entries.find((e) => e.name === 'index.ts')?.ref).toBeUndefined();
     expect(JSON.stringify(top)).not.toContain(root);
   });
 

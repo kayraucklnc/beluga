@@ -910,13 +910,11 @@ export class DemoTransport implements Transport {
     }
     if (f.image || f.b64) {
       const b64 = f.b64 ?? DEMO_IMAGES[f.image!].b64;
-      // Pieces of COMPANION_PIECE bytes, as the Mac sends them.
+      // One piece of COMPANION_PIECE bytes from `off`, as the Mac sends it (the phone asks for the next).
       const piece = (COMPANION_PIECE / 3) * 4;
-      const size = Math.floor((b64.length * 3) / 4);
-      for (let at = 0; at < b64.length; at += piece) {
-        const part = b64.slice(at, at + piece);
-        this.frames.emit({ t: 'chunk', id, off: (at / 4) * 3, b64: part, eof: at + piece >= b64.length, size, mime: f.mime });
-      }
+      const size = Math.floor((b64.length * 3) / 4) - (b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0);
+      const at = (Math.floor(off / COMPANION_PIECE) * piece);
+      this.frames.emit({ t: 'chunk', id, off, b64: b64.slice(at, at + piece), eof: at + piece >= b64.length, size, mime: f.mime });
       return;
     }
     const bytes = utf8(f.text ?? '');

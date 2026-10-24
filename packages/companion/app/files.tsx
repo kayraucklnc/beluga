@@ -11,6 +11,7 @@ import { Card, Hairline, IconBadge, Press, T } from '../components/ui';
 import { useLink } from '../lib/hooks';
 import { calls } from '../lib/link/calls';
 import type { FileEntryView, FolderView, FoundView, OutputView, Topic } from '../lib/link/protocol';
+import { videoFormat } from '../lib/media';
 import { store } from '../lib/store';
 import { color, tint } from '../lib/theme';
 
@@ -101,7 +102,8 @@ export default function Files() {
       return setPath(rel);
     }
     if (entry?.ref) {
-      const o: OutputView = { ref: entry.ref, name: entry.name, kind: 'image', ...(entry.size !== undefined ? { size: entry.size } : {}) };
+      // Pictures and videos come with a ref (the Mac's file gate decides); the name says which.
+      const o: OutputView = { ref: entry.ref, name: entry.name, kind: videoFormat(entry.name) ? 'video' : 'image', ...(entry.size !== undefined ? { size: entry.size } : {}) };
       return openOutput(o, [o]);
     }
     router.push({ pathname: '/source', params: { topic: t, path: rel } });

@@ -88,7 +88,7 @@ function shown(realRoot: string, dirReal: string, name: string, relDir: string):
   return { abs, real };
 }
 
-/** A folder of the worktree: folders first, then files, by name. Pictures carry a ref for the image viewer. */
+/** A folder of the worktree: folders first, then files, by name. Pictures and videos carry a ref for the viewer. */
 export async function listFolder(root: string, rel: string, refs?: RefTable): Promise<FolderView> {
   const g = gate(root, rel);
   const realRoot = rootOf(root);
@@ -107,7 +107,9 @@ export async function listFolder(root: string, rel: string, refs?: RefTable): Pr
     }
     if (!s.isDirectory() && !s.isFile()) continue;
     const dir = s.isDirectory();
-    const ref = !dir && outputKind(name) === 'image' ? refs?.refFor(ok.abs, root) : undefined;
+    // Pictures and videos open in the viewer (videos streamed: src/companion/media-stream.ts).
+    const kind = dir ? undefined : outputKind(name);
+    const ref = kind === 'image' || kind === 'video' ? refs?.refFor(ok.abs, root) : undefined;
     entries.push({ name: name.slice(0, 256), dir, ...(dir ? {} : { size: s.size }), ...(ref ? { ref: ref as FileEntryView['ref'] } : {}) });
   }
   entries.sort((a, b) => Number(b.dir) - Number(a.dir));

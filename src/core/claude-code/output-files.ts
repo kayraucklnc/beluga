@@ -14,6 +14,8 @@ import { MAX_OUTPUTS, type OutputRef, outputKind } from './outputs.js';
 
 /** Pictures bigger than this aren't sent to the screen (open them with their app). */
 const MAX_IMAGE = 20 * 1024 * 1024;
+/** Videos up to this play in the Mac's Outputs (bigger: open them with their app). */
+export const MAX_VIDEO = 64 * 1024 * 1024;
 /** Text shown from the start of a file. */
 const MAX_TEXT = 512 * 1024;
 const SCRATCH_DEPTH = 3;
@@ -33,6 +35,8 @@ const realOf = (p: string): string | undefined => {
 const off = (p: string, real: string): boolean => [p, real].some((x) => isSecretPath(x) || CLAUDE_OWN.test(x));
 
 const MIME: Readonly<Record<string, string>> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+/** What the Mac's web view plays (BLG-100); a codec it lacks shows the fallback there. */
+const VIDEO_MIME: Readonly<Record<string, string>> = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm' };
 
 /** A sub-agent's own scratch folder, from where its session runs and the call that started it. */
 export const agentScratchDir = (sessionCwd: string, toolUseId: string): string => path.join(sessionCwd, AGENT_SCRATCH_DIR, agentScratchName(toolUseId));
@@ -132,6 +136,11 @@ export function readOutput(o: CcOutput): CcOutputFile {
       const mime = MIME[path.extname(o.path).toLowerCase()];
       const got = mime && o.size <= MAX_IMAGE ? head(real, MAX_IMAGE + 1) : undefined;
       return got && got.size <= MAX_IMAGE ? { ...o, mime, data: got.buf.toString('base64') } : o;
+    }
+    if (o.kind === 'video') {
+      const mime = VIDEO_MIME[path.extname(o.path).toLowerCase()];
+      const got = mime && o.size <= MAX_VIDEO ? head(real, MAX_VIDEO + 1) : undefined;
+      return got && got.size <= MAX_VIDEO ? { ...o, mime, data: got.buf.toString('base64') } : o;
     }
     if (o.kind === 'json' || o.kind === 'markdown' || o.kind === 'text') {
       const got = head(real, MAX_TEXT);

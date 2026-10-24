@@ -72,7 +72,9 @@ export type UiToWorklet =
   | { readonly op: 'pair'; readonly id: number; readonly link?: string; readonly code?: string; readonly name: string; readonly platform: 'android' | 'ios'; readonly secret?: DeviceSecret; readonly hints?: LinkHints }
   /** The relay's WebSocket, which the screens' side opens (React Native has one; Bare doesn't). */
   | { readonly op: 'ws.event'; readonly id: number; readonly kind: 'open' | 'message' | 'close'; readonly b64?: string; readonly code?: number }
-  | { readonly op: 'pair.cancel'; readonly id: number };
+  | { readonly op: 'pair.cancel'; readonly id: number }
+  /** The loopback media server's base URL (started on first ask), for the video player (src/companion/media-stream.ts). */
+  | { readonly op: 'media'; readonly id: number };
 
 export type LinkPhase = 'dialing' | 'open' | 'closed' | 'unreachable' | 'refused';
 
@@ -92,7 +94,9 @@ export type WorkletToUi =
   | { readonly ev: 'pair.wait'; readonly id: number; readonly fingerprint: string; readonly secret: DeviceSecret }
   | { readonly ev: 'pair.ok'; readonly id: number; readonly pairing: Pairing; readonly secret: DeviceSecret }
   | { readonly ev: 'pair.fail'; readonly id: number; readonly reason: string; readonly report?: DialReportJson; readonly refusal?: string }
-  | { readonly ev: 'log'; readonly line: string };
+  | { readonly ev: 'log'; readonly line: string }
+  /** `base`: http://127.0.0.1:<port>/<token>, the player's URLs go under it; `error` when it couldn't start. */
+  | { readonly ev: 'media'; readonly id: number; readonly base?: string; readonly error?: string };
 
 /** Newline-delimited JSON over a byte stream, both ways. */
 export function lineDecoder(onLine: (line: string) => void): (chunk: Uint8Array | string) => void {
