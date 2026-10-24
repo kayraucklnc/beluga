@@ -123,4 +123,8 @@ export const COMPANION_API = {
   'companion.terminals': { args: z.tuple([wsTopic]) },
   'companion.termOpen': { args: z.tuple([wsTopic, z.object({ key: termKey.optional(), fresh: z.boolean().optional() }).strict().optional()]) },
   'companion.termClose': { args: z.tuple([termKey]) },
+  // 1.10 (BLG-110): one sub-agent of a conversation's turn (its id as the turn's view names it):
+  // its activity in words and, once it ended, the report it gave back with code stripped →
+  // SubAgentDetailView. Reads only; never its prompt, its tools' input or output, or a file.
+  'companion.subAgent': { args: z.tuple([z.string().regex(/^conv:[\w:.-]{1,200}$/), z.string().min(1).max(200), z.string().min(1).max(200)]) },
 } as const;

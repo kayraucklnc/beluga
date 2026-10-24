@@ -2,6 +2,8 @@ import { branchStep } from '../companion/branch-steps.js';
 import { merge, mergeCheck, resolve } from '../companion/merge.js';
 import { macViewFor } from '../companion/open-on-mac.js';
 import { stripCode } from '../companion/strip.js';
+import { subAgentDetail } from '../companion/sub-agent.js';
+import { claudeCodeOf } from '../core/claude-code/launch.js';
 import { type ViewFetchArgs, viewFetch } from '../companion/view-fetch.js';
 import { needBoard } from '../core/board/registry.js';
 import { needCompanion } from '../companion/registry.js';
@@ -56,4 +58,10 @@ export const COMPANION_HANDLERS = {
   'companion.terminals': (s, topic) => needCompanion(s).terminalsOf(topic),
   'companion.termOpen': (s, topic, opts) => needCompanion(s).termOpen(callerOf(), topic, opts ?? {}),
   'companion.termClose': (s, key) => needCompanion(s).termClose(callerOf(), key),
+  'companion.subAgent': (s, topic, turn, id) =>
+    subAgentDetail(s.store.getState(), {
+      steps: (channel, itemId) => s.host.stepsFor(channel, itemId),
+      step: (channel, itemId, stepId) => s.host.stepFor(channel, itemId, stepId),
+      ccSteps: (sessionId, agentId) => claudeCodeOf(s).steps(sessionId, agentId, { limit: 200 }),
+    }, topic, turn, id),
 } satisfies CompanionHandlers;

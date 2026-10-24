@@ -380,6 +380,8 @@ export const PHONE: Record<Method, Side> = {
   'companion.terminals': 'phone',
   'companion.termOpen': 'phone',
   'companion.termClose': 'phone',
+  // A sub-agent opened on the phone (BLG-110): its steps in words and its report, code stripped.
+  'companion.subAgent': 'phone',
 };
 
 /** A method the phone may call (unknown names are not). */

@@ -512,19 +512,22 @@ function ccAgents(state: DomainState, channel: string): Map<string, CcAgent> {
 function subView(sub: SubAgent, outputs: readonly OutputView[], cc?: CcAgent): SubAgentView {
   const steps = sub.steps.filter((s) => !HIDDEN_STEP.test(s));
   const last = steps.at(-1);
+  // Still at work when Claude Code sees it working, though its run counted it done (BLG-110: its
+  // turn ended while it works on in the background): the phone shouldn't say nothing happens.
+  const status = sub.status === 'done' && cc?.status === 'running' ? 'running' : sub.status;
   // What it's doing now: Claude Code's own words for it when it's watched, else its last step.
-  const now = sub.status !== 'running' ? undefined : cc?.step ? humanizeDoing(cc.step) : last ? (({ doing, tool }) => ({ text: doing, tool }))(stepWords(last)) : undefined;
+  const now = status !== 'running' ? undefined : cc?.step ? humanizeDoing(cc.step) : last ? (({ doing, tool }) => ({ text: doing, tool }))(stepWords(last)) : undefined;
   return {
     id: clip(sub.id, 200),
     title: clip(plainLine(sub.title, 300) || 'Sub-agent', 300),
-    status: sub.status,
+    status,
     steps: sub.steps.slice(-30).map(humanizeStep),
     outputs: outputs.filter((o) => o.by === sub.id).slice(0, 50),
     trail: trailOf(sub.steps, 30),
     ...(now ? { step: clip(now.text, 300), tool: now.tool } : {}),
     ...(cc?.type ? { type: clip(cc.type, 60) } : {}),
     ...((sub.startedAt ?? cc?.startedAt) !== undefined ? { startedAt: Math.round((sub.startedAt ?? cc?.startedAt)!) } : {}),
-    ...(cc?.endedAt !== undefined && sub.status !== 'running' ? { endTs: Math.round(cc.endedAt) } : {}),
+    ...(cc?.endedAt !== undefined && status !== 'running' ? { endTs: Math.round(cc.endedAt) } : {}),
     count: Math.max(steps.length, cc?.steps ?? 0),
   };
 }

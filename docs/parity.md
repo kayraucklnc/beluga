@@ -232,6 +232,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.terminals` | – the phone only: a worktree's terminals, as the terminal dock's tabs list them |
 | `companion.termOpen` | – the phone only: a worktree's shell (or a new one) for the phone to stream, the session the dock shows (`terminals.shell`, `terminals.global`) |
 | `companion.termClose` | – the phone only: ends a worktree's terminal for every screen, as the dock's × (`terminals.close`) |
+| `companion.subAgent` | – the phone only: a sub-agent's sheet, its activity in words and the report it gave back (the Mac's sub-agent page reads its transcript itself) |
 | `workspaces.open` | ✓ |
 | `workspaces.load` | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ |

@@ -728,6 +728,16 @@ export class DemoTransport implements Transport {
       case 'companion.termClose':
         this.shells.delete(str(0));
         return ok({ closed: true });
+      // ---- a sub-agent opened (BLG-110): its activity from the view, and a report once it's done
+      case 'companion.subAgent': {
+        const turn = w.convs.get(str(0) as Topic)?.turns.find((t) => t.id === str(1));
+        const a = turn?.subagents?.find((x) => x.id === str(2));
+        if (!a) return ok({ id: str(2), timeline: [], missing: true });
+        const at = a.startedAt ?? Date.now();
+        const timeline = (a.trail ?? a.steps.map((text) => ({ tool: 'tool', text }))).map((s, i) => ({ ...s, at: at + i * 40_000 }));
+        const report = a.status === 'running' ? undefined : a.status === 'failed' ? 'It stopped before it finished: the emulator went away.' : `**Done.** ${a.steps.at(-1) ?? 'Finished'}.\n\n- ${a.steps.slice(0, 3).join('\n- ')}\n\n[[code:0]]`;
+        return ok({ id: a.id, timeline, count: a.count ?? timeline.length, ...(report ? { result: { text: report, code: report.includes('[[code:0]]') ? [{ lang: 'ts', lines: 4 }] : [] } } : {}) });
+      }
       case 'companion.signOut':
         ok({ signedOut: true });
         this.later(50, () => this.frames.emit({ t: 'bye', reason: 'signed out' }));

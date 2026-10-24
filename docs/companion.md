@@ -203,6 +203,12 @@ and the rest under Other Steps, the very steps of the Mac's toolbar (`BranchView
 `companion.branchStep`. Steps Claude does, and the ones that can't be undone, ask first; Merge into
 the main folder keeps its sheet, and Open PR opens GitHub. That band is the one place for them: the
 conversation's ••• doesn't repeat Merge. An older Mac's band only says the next step.
+1.10 (BLG-110) brought a sub-agent opened on the phone (`SINCE.subAgent`): `companion.subAgent(topic,
+turn, id)` → `SubAgentDetailView`, its whole activity in words (up to 200 steps, from your Claude's
+step records of the turn, else the transcript Claude Code keeps of it) and, once it ended, the report
+it gave back, through `stripCode` like any answer of Claude's (never its prompt, its tools' input or
+output, or a file). A sub-agent Claude Code still sees working stays `running` in the view though its
+turn ended (one left working in the background). An older Mac's sheet shows the view's steps.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 
@@ -444,11 +450,13 @@ Advanced at the bottom. Learn it once and it works everywhere.
 - **Work**: Conversations · Plans · Tasks. A conversation reads as cards: your message, Claude's
   answer (code folded into chips; views and graphs drawn), and while it works a live panel: thinking
   or writing with a soft shimmer, the step it's on with its tool, time and progress, the steps
-  before it sliding in. Sub-agents are rows with their own live step; tap one for a sheet with its
-  steps and its outputs. The composer's field takes the width and grows to seven lines; its photo
-  button is always there (photos go along as `companion.ask` files). While Claude works its one
-  round button queues (after) and a long-press offers Steer (now, words only); what's queued sits
-  above it. The header's outputs button (and ••• › Outputs) shows everything the
+  before it sliding in. Sub-agents are rows in the turn that started them, with their own live step
+  and how long they've been at it; while any works, a strip under the header says "3 agents · 2
+  running" with a chip each, wherever their turn has scrolled to. Tap one for a sheet with what it's
+  doing now, its activity, the report it gave back and its outputs (BLG-110). The composer's field
+  takes the width and grows to seven lines; its photo button is always there (photos go along as
+  `companion.ask` files). While Claude works its one round button queues (after) and a long-press
+  offers Steer (now, words only); what's queued sits above it. The header's outputs button (and ••• › Outputs) shows everything the
   worktree made; ••• › Merge… checks, merges and gets conflicts resolved; ••• › Files reads the
   worktree's files and ••• › Terminal is its terminal, shared with the Mac (BLG-42). Images open full screen from where they are (shared
   transition): pinch, swipe between them, swipe down to put back; GIFs animate. Videos show their

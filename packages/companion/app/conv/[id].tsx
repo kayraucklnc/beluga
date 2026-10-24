@@ -22,6 +22,7 @@ import { calls } from '../../lib/link/calls';
 import { type ConvView, type OutputView, type SubAgentView, type Topic, type TurnView, isMacTopic } from '../../lib/link/protocol';
 import { type Send as Pending, sends, useSends } from '../../lib/sends';
 import { SendStatus } from '../../components/SendStatus';
+import { AgentStrip, SubAgentSheet } from '../../components/SubAgents';
 import { store } from '../../lib/store';
 import { upload } from '../../lib/pick';
 import { color } from '../../lib/theme';
@@ -128,6 +129,8 @@ export default function Conversation() {
             <BranchBand topic={topic} branch={c.branch} canMerge={Boolean(c.mergeable) && store.supports('merge')} onMerge={() => setMergeOpen(true)} />
           </View>
         ) : null}
+        {/* Its sub-agents at work stay in view, wherever their turn is (BLG-110). */}
+        <AgentStrip turns={turns} onOpen={setAgent} />
         <ScrollView
           ref={scroll}
           onContentSizeChange={follow}
@@ -206,7 +209,7 @@ export default function Conversation() {
           }
         />
       </KeyboardLift>
-      <AgentSheet agent={liveAgent} onClose={() => setAgent(undefined)} />
+      <SubAgentSheet topic={topic} turn={agent ? c?.turns.find((t) => t.subagents?.some((a) => a.id === agent.id))?.id : undefined} agent={liveAgent} onClose={() => setAgent(undefined)} />
       <Sheet
         visible={outputsOpen}
         onDismiss={() => setOutputsOpen(false)}
@@ -344,99 +347,5 @@ function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]
         </View>
       ) : null}
     </View>
-  );
-}
-
-/** What a sub-agent is doing now, breathing, with how long it has been at work. */
-function AgentNow({ a }: { a: SubAgentView }) {
-  const secs = useSince(a.startedAt);
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
-      <Breathe>
-        <ToolBadge kind={a.tool ?? 'agent'} size={22} />
-      </Breathe>
-      <T v="callout" c={color.subagent} numberOfLines={1} style={{ flex: 1, fontWeight: '600' }}>
-        {a.step ?? 'Working'}
-      </T>
-      <TypingDots tone="lavender" />
-      {secs !== undefined ? <T v="caption">{elapsed(secs)}</T> : null}
-    </View>
-  );
-}
-
-function AgentSheet({ agent, onClose }: { agent?: SubAgentView; onClose: () => void }) {
-  const { width } = useWindowDimensions();
-  const [last, setLast] = useState<SubAgentView | undefined>(agent);
-  if (agent && agent !== last) setLast(agent);
-  const a = agent ?? last;
-  const tone: Tone = a?.status === 'running' ? 'lavender' : a?.status === 'failed' ? 'rose' : 'mint';
-  return (
-    <Sheet
-      visible={!!agent}
-      onDismiss={onClose}
-      header={
-        a ? (
-          <View style={{ paddingHorizontal: 20, paddingBottom: 12, gap: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <IconBadge Icon={Bot} tone="lavender" size={30} />
-              <T v="callout" style={{ flex: 1 }}>
-                Sub-agent{a.type ? ` · ${a.type}` : ''}
-              </T>
-              <Pill label={a.status === 'running' ? 'Working' : a.status === 'failed' ? 'Failed' : 'Done'} tone={tone} />
-            </View>
-            <T v="title" style={{ fontSize: 20, lineHeight: 26 }}>
-              {a.title}
-            </T>
-          </View>
-        ) : null
-      }
-    >
-      {a ? (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, gap: 18 }}>
-          <View>
-            <T v="eyebrow" style={{ marginBottom: 10 }}>
-              Steps{a.count ? ` · ${a.count}` : ''}
-            </T>
-            {a.trail ? (
-              <View style={{ gap: 6 }}>
-                {a.trail.length ? <StepList steps={a.trail} shown={10} /> : null}
-                {a.status === 'running' ? <AgentNow a={a} /> : null}
-              </View>
-            ) : null}
-            {a.trail ? null : a.steps.map((s, i) => {
-              const lastStep = i === a.steps.length - 1;
-              const live = lastStep && a.status === 'running';
-              return (
-                <View key={i} style={{ flexDirection: 'row', gap: 12 }}>
-                  <View style={{ alignItems: 'center', width: 14 }}>
-                    <View style={{ width: 9, height: 9, borderRadius: 5, marginTop: 6, backgroundColor: live ? color.subagent : color.ok }} />
-                    {!lastStep ? <View style={{ width: 1.5, flex: 1, backgroundColor: color.hairlineStrong, marginVertical: 3 }} /> : null}
-                  </View>
-                  <View style={{ flex: 1, paddingBottom: 12 }}>
-                    {live ? <StepTicker step={s} tone="lavender" size={14} /> : <T v="callout" c={color.text}>{s}</T>}
-                  </View>
-                </View>
-              );
-            })}
-            {a.status === 'done' ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                <CircleCheck color={color.ok} size={15} />
-                <T v="caption" c={color.ok}>
-                  Done
-                </T>
-              </View>
-            ) : null}
-          </View>
-          {a.outputs.length ? (
-            <View>
-              <T v="eyebrow" style={{ marginBottom: 10 }}>
-                Outputs · {a.outputs.length}
-              </T>
-              <OutputGrid items={a.outputs} cols={2} width={Math.min(width, 520) - 40} />
-            </View>
-          ) : null}
-        </ScrollView>
-      ) : null}
-    </Sheet>
   );
 }
