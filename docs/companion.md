@@ -166,6 +166,12 @@ sideways, or cards (one per row, its columns as label and value).
 **What came when.** A phone checks the Mac's minor (`welcome.v`, `SINCE` in protocol.ts) before it
 subscribes to a newer topic or makes a newer call: an older Mac drops a whole `sub` frame that names a
 topic it doesn't know. 1.7 brought a worktree's Files and Terminal (`SINCE.files`, `SINCE.terminal`).
+1.8 brought a branch's every step from the phone (`SINCE.branchSteps`): the band at the top of a
+worktree's conversation shows its state (Merged #7, Conflicts…), the step it needs next as a button
+and the rest under Other Steps, the very steps of the Mac's toolbar (`BranchView.steps`), done with
+`companion.branchStep`. Steps Claude does, and the ones that can't be undone, ask first; Merge into
+the main folder keeps its sheet, and Open PR opens GitHub. That band is the one place for them: the
+conversation's ••• doesn't repeat Merge. An older Mac's band only says the next step.
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 
@@ -227,7 +233,7 @@ tuple (the API's own zod) and its result; the app imports it rather than keeping
 
 ## Files and Terminal (BLG-42)
 
-A worktree's ••• menu has **Files** and **Terminal** next to Outputs and Merge (1.7, `SINCE.files`
+A worktree's ••• menu has **Files** and **Terminal** next to Outputs (1.7, `SINCE.files`
 and `SINCE.terminal`: a Mac too old just doesn't offer them).
 
 **Files, read-only.** `companion.files.list(topic, path)` → a folder (folders first, pictures with a

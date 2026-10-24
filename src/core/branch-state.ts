@@ -110,11 +110,10 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
   });
 
   const commit: BranchStep | false = changed > 0 && { id: 'commit', label: 'Commit…', hint: `Claude commits the ${plural(changed, 'uncommitted change')} with a message`, claude: true };
-  const finish: BranchStep[] = [
-    { id: 'continue_after_merge', label: 'Continue After Merge…', hint: `Start ${ws.branch} again from the latest ${into} and keep the conversation; the next change gets a new PR` },
-    { id: 'archive', label: 'Archive Worktree', hint: 'Put it away: the branch and the conversation are kept' },
-    { id: 'delete', label: 'Delete Worktree…', hint: 'Remove the folder and its branch for good', danger: true },
-  ];
+  // Merged is done: putting it away leads; carrying on here (a new PR next) is the other way.
+  const archive: BranchStep = { id: 'archive', label: 'Archive Worktree', hint: 'It’s done: put it away (the branch and the conversation are kept)' };
+  const remove: BranchStep = { id: 'delete', label: 'Delete Worktree…', hint: 'Remove the folder and its branch for good', danger: true };
+  const finish: BranchStep[] = [archive, { id: 'continue_after_merge', label: 'Continue After Merge…', hint: `Keep working here instead: start ${ws.branch} again from the latest ${into}, keeping the conversation; the next change gets a new PR` }, remove];
   const auto: BranchStep = { id: 'merge_auto', label: 'Merge When Ready', hint: `GitHub merges PR #${pr?.number} as soon as its checks and reviews pass` };
   const admin: BranchStep = { id: 'merge_admin', label: 'Merge Now, Skipping Checks', hint: 'Past its checks and reviews (needs admin rights on the repository)', danger: true };
   const openPr: BranchStep | false = Boolean(pr) && { id: 'open_pr', label: `Open PR #${pr?.number}`, hint: 'Its checks, review and every way to merge' };
@@ -127,11 +126,11 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
   }
 
   if (pr?.state === 'MERGED') {
-    return at('merged', 'Merged', 'merged', `PR #${pr.number} merged into ${into} on GitHub${changed ? ` · ${plural(changed, 'change')} since` : ''}`, planned ? [] : finish);
+    return at('merged', 'Merged', 'merged', `PR #${pr.number} merged into ${into} on GitHub, so this worktree is done: archive it, or continue here with a new PR${changed ? ` (${plural(changed, 'change')} since)` : ''}`, planned ? [] : finish);
   }
   // Merged outside Beluga (on GitHub with no PR it knows of, squashed, or by hand).
   if (st?.landed && pr?.state !== 'OPEN' && !changed) {
-    return at('merged', 'Merged', 'merged', `Its commits are already in ${into}`, planned ? [] : finish);
+    return at('merged', 'Merged', 'merged', `Its commits are already in ${into}, so this worktree is done: archive it, or continue here`, planned ? [] : finish);
   }
 
   if (pr?.state === 'OPEN') {
@@ -180,7 +179,7 @@ export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' |
   const ship: BranchStep | false = !planned && (github
     ? { id: 'pr', label: 'Create PR…', hint: `Claude commits what’s left, pushes ${ws.branch} and opens a pull request into ${into}`, claude: true }
     : { id: 'merge', label: `Merge into ${into}…`, hint: `Shows what would merge into ${into} on this Mac and checks it first` });
-  if (pr?.state === 'CLOSED' && !changed && !ahead) return at('closed', 'PR closed', 'muted', `PR #${pr.number} was closed without merging`, planned ? [] : finish.slice(1));
+  if (pr?.state === 'CLOSED' && !changed && !ahead) return at('closed', 'PR closed', 'muted', `PR #${pr.number} was closed without merging`, planned ? [] : [archive, remove]);
   if (changed) return at('uncommitted', plural(changed, 'change'), 'warn', `${plural(changed, 'uncommitted change')}${ahead ? ` and ${plural(ahead, 'commit')}` : ''} not in ${into} yet`, [github ? ship : commit, github ? commit : ship]);
   if (ahead) return at('unshipped', github ? `${plural(ahead, 'commit')} · no PR` : 'Ready to merge', github ? 'info' : 'ok', `${plural(ahead, 'commit')} on ${ws.branch} not in ${into} yet`, [ship]);
   return at('clean', 'No changes', 'muted', `Nothing on ${ws.branch} that isn’t in ${into}`, []);

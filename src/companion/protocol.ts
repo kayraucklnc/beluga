@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 7 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 8 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -22,9 +22,10 @@ export const COMPANION_PROTO = { major: 1, minor: 7 } as const;
  * a plan's dependencies, criteria and autonomy (`PlanView`, `plans.setAutonomy`). 1.6: a
  * worktree's branch state in its conversation (`ConvView.branch`). 1.7 (BLG-42): a worktree's
  * files, read-only (`companion.files.list` / `find` / `read`), and its terminals, shared with the
- * Mac (`companion.terminals` / `termOpen` / `termClose`, the `term_*` frames).
+ * Mac (`companion.terminals` / `termOpen` / `termClose`, the `term_*` frames). 1.8: a branch's every
+ * step from the phone, as the Mac's toolbar has them (`BranchView.steps`, `companion.branchStep`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -290,6 +291,26 @@ export const MergeView = z.object({
 });
 export type MergeView = z.infer<typeof MergeView>;
 
+/**
+ * 1.8: the branch steps the phone can ask the Mac for (companion.branchStep): all of the Mac's
+ * (core/branch-state.ts) but Merge into the main folder (its own sheet, companion.merge) and Open
+ * PR (the phone's browser).
+ */
+export const PHONE_BRANCH_STEPS = ['merge_pr', 'merge_auto', 'merge_admin', 'update_branch', 'mark_ready', 'resolve_pr', 'fix_checks', 'merge_claude', 'review_claude', 'commit', 'pr', 'continue_after_merge', 'archive', 'delete'] as const;
+export type PhoneBranchStep = (typeof PHONE_BRANCH_STEPS)[number];
+
+/** 1.8: one of a branch's steps (core/branch-state.ts BranchStep). */
+export const BranchStepView = z.object({
+  id: z.string().max(40),
+  label: z.string().max(80),
+  hint: z.string().max(300),
+  /** Claude does it, in the worktree's conversation. */
+  claude: z.boolean().optional(),
+  /** Can't be undone (Delete Worktree, merging past the checks): the phone asks first. */
+  danger: z.boolean().optional(),
+});
+export type BranchStepView = z.infer<typeof BranchStepView>;
+
 /** 1.6: where a worktree's branch stands, as the Mac's toolbar shows it (core/branch-state.ts), and its next step in words. */
 export const BranchView = z.object({
   kind: z.string().max(40),
@@ -299,9 +320,12 @@ export const BranchView = z.object({
   detail: z.string().max(300),
   branch: z.string().max(250),
   into: z.string().max(250),
-  pr: z.object({ number: z.number().int().min(0), state: z.string().max(10) }).optional(),
+  /** 1.8: `url`, its page on GitHub (Open PR opens it on the phone). */
+  pr: z.object({ number: z.number().int().min(0), state: z.string().max(10), url: z.string().max(500).optional() }).optional(),
   /** The Mac's next step: "Squash and Merge", and whether Claude does it. */
   next: z.object({ id: z.string().max(40), label: z.string().max(80), claude: z.boolean().optional() }).optional(),
+  /** 1.8: every step, the main one first (the Mac's toolbar button, then its menu); the phone does them with companion.branchStep. */
+  steps: z.array(BranchStepView).max(20).optional(),
 });
 export type BranchView = z.infer<typeof BranchView>;
 

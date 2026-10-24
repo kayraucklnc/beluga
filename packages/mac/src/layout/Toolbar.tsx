@@ -2,7 +2,7 @@ import { planForHome } from '@beluga/core/plans/model.js';
 import { ASSISTANT_TITLE } from '@beluga/shared/assistant.js';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { agentOfWorktree, agentTitle, isAgentWorktree } from '../claude-code/subagents-model.js';
-import { findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
+import { activityOf, findWorkspace, stateOf } from '@beluga/ui/workspace-models.js';
 import { describePr } from '@beluga/shared/format.js';
 import { Icon } from '../components/Icon.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
@@ -119,7 +119,7 @@ export function Toolbar() {
     const st = stateOf(state, ws, 0);
     const { branch, primary, icons, more } = toolbarActions(state, ws);
     // A narrow window: the icons that don't fit move under ⋯ (the everyday action and the branch keep their place).
-    const lead = branch ? branch.label.length * 6.6 + 40 + (branch.steps[0] ? branch.steps[0].label.length * 7.4 + 76 : 0) : 0;
+    const lead = branch ? branch.label.length * 6.6 + 40 + (branch.pr ? 28 : 0) + (branch.steps[0] ? branch.steps[0].label.length * 7.4 + 76 : 0) : 0;
     const fixed = TITLE_MIN + RIGHT_FIXED + lead + (primary ? primary.label.length * 7.4 + 48 : 0) + 34;
     const fit = Math.max(0, Math.min(icons.length, Math.floor((width - fixed) / 30)));
     // Icons that don't fit lead ⋯ as a section of their own.
@@ -132,6 +132,10 @@ export function Toolbar() {
       actions.run({ type: 'ws', id: ws.id, action: a.action });
     };
     const pr = state.prs[ws.id];
+    // Where the branch stands (Merged, Conflicts, its PR) is said once, by the branch pill on the
+    // right: the subtitle keeps to what Claude is doing, or what needs you.
+    const act = activityOf(state.log, `ws:${ws.id}`);
+    const live = !branch || act.running || act.awaiting;
     return (
       <Shell
         headerRef={headerRef}
@@ -143,10 +147,12 @@ export function Toolbar() {
         }
         subtitle={
           <>
-            <span className={cx(s.meta, s.metaState, s[`tone_${st.tone}`])}>
-              <Dot tone={st.tone === 'claude' ? 'claude' : st.tone === 'muted' ? 'muted' : st.tone} live={st.tone === 'claude'} />
-              {st.label}
-            </span>
+            {live ? (
+              <span className={cx(s.meta, s.metaState, s[`tone_${st.tone}`])}>
+                <Dot tone={st.tone === 'claude' ? 'claude' : st.tone === 'muted' ? 'muted' : st.tone} live={st.tone === 'claude'} />
+                {st.label}
+              </span>
+            ) : null}
             {/* Never cut: past 70% it's worth seeing (the branch and the rest give way). */}
             <ContextNote channel={`ws:${ws.id}`} className={s.meta} />
             {ws.branch ? (
@@ -157,7 +163,7 @@ export function Toolbar() {
             ) : ws.kind === 'chat' ? (
               <span className={s.meta}>{ws.askOnly ? (planForHome(state.plans, `ws:${ws.id}`) ? 'The plan’s conversation · main folder' : 'Questions only · main folder') : 'Claude chat'}</span>
             ) : null}
-            {pr ? (
+            {pr && !branch ? (
               <span className={cx(s.meta, s.metaPr, pr.state === 'MERGED' && s.metaMerged)} title={describePr(pr)} data-pr-state={pr.state}>
                 <Icon name={pr.state === 'MERGED' ? 'merge' : 'pr'} size={11} />
                 <span className={s.ellipsis}>{pr.state === 'MERGED' ? `PR #${pr.number}` : describePr(pr)}</span>

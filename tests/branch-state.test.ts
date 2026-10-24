@@ -15,10 +15,10 @@ const at = (w: Workspace, p?: PullRequest, extra: { gh?: boolean; conflicts?: st
   branchState({ projects: [project(w)], gh: extra.gh ?? true, prs: p ? { [w.id]: p } : {}, conflicts: extra.conflicts ? { [w.id]: extra.conflicts } : {} }, w);
 
 describe('branchState', () => {
-  it('a merged PR is purple Merged, with Continue After Merge first and Archive next', () => {
+  it('a merged PR is purple Merged, with Archive first and Continue After Merge next', () => {
     const b = at(ws(), pr({ state: 'MERGED' }))!;
     expect([b.kind, b.label, b.tone]).toEqual(['merged', 'Merged', 'merged']);
-    expect(b.steps.map((s) => s.id)).toEqual(['continue_after_merge', 'archive', 'delete']);
+    expect(b.steps.map((s) => s.id)).toEqual(['archive', 'continue_after_merge', 'delete']);
   });
 
   it('work merged outside Beluga reads as Merged too', () => {

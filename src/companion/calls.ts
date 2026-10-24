@@ -95,6 +95,8 @@ export const PhoneCalls = {
   'companion.mergeCheck': entry('companion.mergeCheck', MergeCheckView),
   'companion.merge': entry('companion.merge', MergeView),
   'companion.resolve': entry('companion.resolve', MergeView),
+  // 1.8: a branch's step, the Mac's own way: how it went, in a line.
+  'companion.branchStep': entry('companion.branchStep', z.object({ ok: z.boolean(), message: z.string() })),
   'companion.viewFetch': entry('companion.viewFetch', done),
   'companion.draftTask': entry('companion.draftTask', TaskDraftResult),
   'companion.addTask': entry('companion.addTask', z.object({ id: z.string(), key: z.string() })),

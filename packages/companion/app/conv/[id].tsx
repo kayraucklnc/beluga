@@ -242,7 +242,7 @@ export default function Conversation() {
         options={[
           { Icon: Square, label: 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(calls.stop(topic)) },
           { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
-          { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge'), onPress: () => setMergeOpen(true) },
+          { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge') || Boolean(c?.branch), onPress: () => setMergeOpen(true) },
           { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },
           { Icon: SquareTerminal, label: 'Terminal', sub: 'The same terminal as on your Mac', tone: 'lavender', hidden: !hasFolder || !store.supports('terminal'), onPress: () => router.push({ pathname: '/terminal', params: { topic, title: c?.title ?? '' } }) },
           { Icon: Sparkles, label: 'Ask with a photo', sub: 'Opens Ask, aimed here', tone: 'peach', onPress: () => router.push({ pathname: '/ask', params: { topic } }) },
