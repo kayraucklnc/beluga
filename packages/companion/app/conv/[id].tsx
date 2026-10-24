@@ -20,6 +20,8 @@ import { Avatar, Card, IconBadge, More, Pill, Press, T, type Tone } from '../../
 import { ago, elapsed, useSince, useView, useVisibleNeeds } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
 import type { ConvView, OutputView, SubAgentView, Topic, TurnView } from '../../lib/link/protocol';
+import { type Send as Pending, sends, useSends } from '../../lib/sends';
+import { SendStatus } from '../../components/SendStatus';
 import { store } from '../../lib/store';
 import { color } from '../../lib/theme';
 import { router } from 'expo-router';
@@ -48,7 +50,7 @@ function MacStarters({ topic }: { readonly topic: Topic }) {
       </T>
       <View style={{ gap: 8, alignSelf: 'stretch', marginTop: 6 }}>
         {starters.map((s) => (
-          <Press key={s.label} scaleTo={0.985} onPress={() => void store.call(calls.send(topic, s.text)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))}>
+          <Press key={s.label} scaleTo={0.985} onPress={() => sends.message(topic, s.text, calls.send(topic, s.text))}>
             <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 }}>
               <IconBadge Icon={s.Icon} tone={s.tone} size={30} />
               <T v="body">{s.label}</T>
@@ -67,6 +69,8 @@ export default function Conversation() {
   const conv = useView<ConvView>(topic);
   const c = conv?.data;
   const needs = useVisibleNeeds(c?.needsYou);
+  /** What you sent that the Mac's view doesn't show yet (lib/sends.ts). */
+  const pending = useSends(topic);
   const insets = useSafeAreaInsets();
   const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const atEnd = useRef(true);
@@ -148,10 +152,15 @@ export default function Conversation() {
             </Press>
           ) : null}
           {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
-          {c && topic === ASSISTANT && !turns.length ? <MacStarters topic={topic} /> : null}
+          {c && topic === ASSISTANT && !turns.length && !pending.length ? <MacStarters topic={topic} /> : null}
           {turns.map((t, i) => (
             <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
               {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
+            </Animated.View>
+          ))}
+          {pending.map((p) => (
+            <Animated.View key={p.id} entering={FadeInUp.springify().stiffness(220).damping(22)} layout={LinearTransition.springify().stiffness(220).damping(26)}>
+              <PendingTurn s={p} />
             </Animated.View>
           ))}
           {needs.map((n) => (
@@ -171,17 +180,14 @@ export default function Conversation() {
             atEnd.current = true;
             // While Claude works, Send queues (after), as on the Mac; Steer is beside it.
             const call = c?.working && !topic.startsWith('conv:task:') ? calls.queue(topic, text) : calls.send(topic, text);
-            void store.call(call).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+            sends.message(topic, text, call);
           }}
           onSteer={
             topic.startsWith('conv:task:')
               ? undefined
               : (text) => {
                   atEnd.current = true;
-                  void store.call(calls.steer(topic, text)).then(
-                    () => store.toast({ text: 'Claude reads it at its next step', tone: 'ok' }),
-                    (e: Error) => store.toast({ text: e.message, tone: 'error' }),
-                  );
+                  sends.message(topic, text, calls.steer(topic, text));
                 }
           }
           onStop={() => void store.call(calls.stop(topic))}
@@ -273,6 +279,20 @@ function YourTurn({ t, onLongPress }: { t: TurnView; onLongPress?: (() => void) 
         </T>
       )}
     </Press>
+  );
+}
+
+/** Yours, before the Mac's view has it: sending, waiting for the Mac, or not sent (Retry, Remove). */
+function PendingTurn({ s }: { s: Pending }) {
+  return (
+    <View style={{ alignItems: 'flex-end', paddingLeft: 48 }}>
+      <View style={{ backgroundColor: color.card, borderRadius: 20, borderBottomRightRadius: 6, paddingVertical: 10, paddingHorizontal: 14, opacity: s.state === 'failed' ? 1 : 0.6, borderWidth: s.state === 'failed' ? 1 : 0, borderColor: color.error }}>
+        <T v="body" style={{ fontSize: 15 }}>
+          {s.text}
+        </T>
+      </View>
+      <SendStatus s={s} />
+    </View>
   );
 }
 

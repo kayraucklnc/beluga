@@ -425,6 +425,17 @@ Advanced at the bottom. Learn it once and it works everywhere.
 Everything has a state for "your Mac is asleep": the last views stay (cached on the phone, marked
 "as of 10:42"), actions wait in a small outbox and go when the Mac answers (or you discard them).
 
+**What you send shows at once; the Mac confirms it** (`packages/companion/lib/sends.ts`). A message
+in a conversation or chat is drawn as yours straight away ("Sending…"). It counts as sent only when
+the Mac answers the call, and its bubble goes only when the Mac's view has the message, so it is never
+missing in between. A refusal leaves it "Not sent" with Retry and Remove, your words kept. If the link
+drops before the answer, it says "Checking…" until the Mac's next view shows whether it arrived. A
+start from Ask (a new worktree, a plan, a question, a friend's Claude) closes the sheet and opens its
+Starting screen at once. That screen becomes the conversation or the plan when the Mac answers, or
+goes back to Ask with your words and the reason. While the Mac is away, sends wait (kept across
+launches) and go when it answers. `workspaces.startWorktree` answers once the worktree is made; the
+model's name for it follows (the id stays).
+
 ## Your Mac (BLG-47)
 
 One conversation with your own Claude for the whole Mac, not one project or worktree: "Take a
