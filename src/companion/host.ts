@@ -16,6 +16,9 @@ import { ProjectIcons, type SmallIcon } from './icons.js';
 import type { MergeBook } from './merge.js';
 import { DevicePairing, type PairingInfo } from './pair.js';
 import { Uploads } from './uploads.js';
+import type { TerminalManager } from '../terminal/pty-host.js';
+import { TermRelay, isWorkspaceTerminal, keysOf, nextShellKey, terminalView, workspaceOf } from './terminals.js';
+import { findByName, listFolder, readPage } from './worktree-files.js';
 import { Reach, type RelayTunnel } from './reach.js';
 import { pathNote } from './diagnose.js';
 import {
@@ -29,6 +32,8 @@ import {
   type MergeView,
   type NeedsYou,
   type PhoneFrame,
+  type TerminalView,
+  type TerminalsView,
   type Topic,
   VIEW_COALESCE_MS,
   VIEW_TURNS,
@@ -90,6 +95,10 @@ export interface CompanionHostOptions {
   readonly refs?: RefTable;
   /** Projects' small icons for the phone (default: made with sips next to the thumbnails). */
   readonly icons?: ProjectIcons;
+  /** The daemon's terminal programs: a worktree's terminals, shared with the phone (BLG-42). */
+  readonly terminals?: TerminalManager;
+  /** Tests: how long terminal output is coalesced. */
+  readonly termCoalesceMs?: number;
 }
 
 /** The companion address's key pair: HKDF of your identity's seed, 'companion-v1'. */
@@ -117,6 +126,8 @@ class PhoneLink {
   heard = Date.now();
   /** It came through the relay (an older app doesn't say how it came). */
   overRelay = false;
+  /** The terminals on its screen (BLG-42). */
+  readonly terms: TermRelay;
   private readonly beat: NodeJS.Timeout;
   private readonly helloTimer: NodeJS.Timeout;
   private closed = false;
@@ -127,6 +138,7 @@ class PhoneLink {
     private readonly host: CompanionHost,
   ) {
     this.clientId = `phone:${deviceId(device.cert)}`;
+    this.terms = host.termRelay(this);
     socket.on('message', (text) => {
       this.heard = Date.now();
       try {
@@ -171,6 +183,7 @@ class PhoneLink {
     clearTimeout(this.helloTimer);
     clearInterval(this.beat);
     for (const t of this.topics.values()) clearTimeout(t.timer);
+    this.terms.closeAll();
     this.host.unlinked(this);
   }
 
@@ -212,7 +225,15 @@ class PhoneLink {
         return this.host.setPush(this, { platform: frame.platform, token: frame.token, relayKey: frame.relayKey });
       case 'focus':
         this.inFront = frame.on;
+        // Nothing streams to a phone in the background: its terminal screen attaches again when it's back.
+        if (!frame.on) this.terms.closeAll();
         return;
+      case 'term_attach':
+        return this.terms.attach(frame.term);
+      case 'term_detach':
+        return this.terms.detach(frame.term);
+      case 'term_input':
+        return this.terms.input(frame.term, frame.data);
       case 'bye':
         this.socket.close(1000, 'bye');
         return;
@@ -498,6 +519,83 @@ export class CompanionHost {
     }, 200);
     t.unref();
     return { signedOut: true };
+  }
+
+  // ---- a worktree's files, read-only, and its terminals, shared with the Mac (BLG-42)
+
+  /** A folder of a worktree (its conversation's topic), through the file gate (worktree-files.ts). */
+  filesList(topic: string, rel: string): Promise<unknown> {
+    return listFolder(workspaceOf(this.state(), topic).path, rel, this.refs);
+  }
+
+  filesFind(topic: string, query: string): Promise<unknown> {
+    return findByName(workspaceOf(this.state(), topic).path, query);
+  }
+
+  filesRead(topic: string, rel: string, off = 0): Promise<unknown> {
+    return readPage(workspaceOf(this.state(), topic).path, rel, off);
+  }
+
+  /** A worktree's terminals: its shell, setup and run, and shells started in its folder. */
+  terminalsOf(topic: string): TerminalsView {
+    const state = this.state();
+    const ws = workspaceOf(state, topic);
+    return { terminals: keysOf(state, this.opts.terminals, ws).slice(0, 40).map((k) => terminalView(state, this.opts.terminals, k)) };
+  }
+
+  /**
+   * Open a worktree's terminal from the phone: one of its own (`key`), its shell (started as the
+   * Mac's dock starts it, at the Mac's size), or a new shell in its folder (`fresh`). The phone
+   * then attaches with `term_attach`. Started through the same API calls as the Mac's.
+   */
+  async termOpen(caller: string, topic: string, opts: { key?: string | undefined; fresh?: boolean | undefined } = {}): Promise<TerminalView> {
+    const state = this.state();
+    const ws = workspaceOf(state, topic);
+    const who = this.deviceName(caller);
+    if (opts.key) {
+      if (!keysOf(state, this.opts.terminals, ws).includes(opts.key)) throw new Error('That terminal isn’t one of this worktree’s');
+      const pty = this.opts.terminals?.get(opts.key);
+      // An ended shell starts again, as clicking it on the Mac does.
+      if (!pty?.running) await this.must(caller, 'terminals.restart', [opts.key]);
+      return terminalView(this.state(), this.opts.terminals, opts.key);
+    }
+    let key: string;
+    if (opts.fresh) {
+      key = nextShellKey(state);
+      await this.must(caller, 'terminals.global', [key, ws.path]);
+    } else {
+      const got = await this.must(caller, 'terminals.shell', [ws.id]);
+      if (typeof got !== 'string') throw new Error('Couldn’t start a shell there');
+      key = got;
+    }
+    this.logLine(`${who} started the terminal ${key} in ${ws.id}`);
+    return terminalView(this.state(), this.opts.terminals, key);
+  }
+
+  /** End a worktree's terminal session, for every screen (the phone asks first). */
+  async termClose(caller: string, key: string): Promise<{ closed: boolean }> {
+    if (!isWorkspaceTerminal(this.state(), this.opts.terminals, key)) throw new Error('That terminal isn’t one of your worktrees’');
+    this.logLine(`${this.deviceName(caller)} closed the terminal ${key}`);
+    await this.must(caller, 'terminals.close', [key]);
+    return { closed: true };
+  }
+
+  private deviceName(caller: string): string {
+    const id = this.deviceOf(caller);
+    const name = id ? this.opts.devices.get(id)?.cert.name : undefined;
+    return name ? `the phone “${name}”` : 'a phone';
+  }
+
+  /** A linked phone's terminals (its attachments, coalesced output and keys). */
+  termRelay(link: PhoneLink): TermRelay {
+    return new TermRelay({
+      terminals: () => this.opts.terminals,
+      allowed: (key) => isWorkspaceTerminal(this.state(), this.opts.terminals, key),
+      send: (frame) => link.send(frame),
+      log: (line) => this.logLine(line),
+      who: `the phone “${link.device.cert.name}”`,
+      ...(this.opts.termCoalesceMs !== undefined ? { coalesceMs: this.opts.termCoalesceMs } : {}),
+    });
   }
 
   // ---- links

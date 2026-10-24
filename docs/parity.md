@@ -225,6 +225,12 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.viewFetch` | – the phone only: a live view's rows in a conversation, run here as `view.fetch` runs them for the window |
 | `companion.draftTask` | – the phone only: New task by describing it, Claude's draft shown before it's added (the Mac's describe-to-create is `board.create`) |
 | `companion.addTask` | – the phone only: the draft added as a task |
+| `companion.files.list` | – the phone only: a worktree's folder, read-only, through the companion's file gate (the Mac's Files tab reads the folder itself) |
+| `companion.files.find` | – the phone only: a worktree's files by name (the Mac's Files tab filters its tree) |
+| `companion.files.read` | – the phone only: a page of a worktree's file, read-only, secrets refused |
+| `companion.terminals` | – the phone only: a worktree's terminals, as the terminal dock's tabs list them |
+| `companion.termOpen` | – the phone only: a worktree's shell (or a new one) for the phone to stream, the session the dock shows (`terminals.shell`, `terminals.global`) |
+| `companion.termClose` | – the phone only: ends a worktree's terminal for every screen, as the dock's × (`terminals.close`) |
 | `workspaces.open` | ✓ |
 | `workspaces.load` | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ |

@@ -23,6 +23,7 @@ import { type DemoWorld, e2eLine, makeWorld, ref, turn } from './data';
 import { demoRows } from './render-demo';
 import type { ViewQuery } from '../../render';
 import { DEMO_IMAGES } from './images.generated';
+import { DemoShell, demoAttach, demoFind, demoFolder, demoRead } from './worktree';
 
 /**
  * A Mac inside the app, for exploring without one: it answers the protocol exactly as
@@ -61,6 +62,9 @@ export class DemoTransport implements Transport {
   private readonly uploads = new Map<string, OutputView>();
   private readonly puts = new Map<number, { name: string; mime: string; parts: string[] }>();
   private convSeq = 0;
+  /** A worktree's terminals (by key) and the ones on screen now (BLG-42). */
+  private readonly shells = new Map<string, { shell: DemoShell; topic: Topic }>();
+  private readonly termsOn = new Set<string>();
 
   /** Let the demo Mac sleep (it stops answering) or wake. */
   setAsleep(asleep: boolean): void {
@@ -119,12 +123,42 @@ export class DemoTransport implements Transport {
       case 'put':
         this.later(40, () => this.put(frame));
         return;
+      case 'term_attach': {
+        const s = this.shells.get(frame.term);
+        this.termsOn.add(frame.term);
+        this.later(90, () => {
+          if (!s) return this.frames.emit({ t: 'term_status', term: frame.term, running: false, exit: null, cols: 80, rows: 24, gone: true });
+          for (const f of demoAttach(s.shell)) this.frames.emit(f);
+        });
+        return;
+      }
+      case 'term_detach':
+        this.termsOn.delete(frame.term);
+        return;
+      case 'term_input': {
+        const s = this.shells.get(frame.term);
+        if (!s) return;
+        const out = s.shell.input(frame.data);
+        // As over a real link: the echo comes back a moment later.
+        if (out) this.later(25, () => this.termsOn.has(frame.term) && this.frames.emit({ t: 'term_data', term: frame.term, data: out }));
+        return;
+      }
       case 'bye':
         this.close();
         return;
       default:
         return;
     }
+  }
+
+  /** A worktree's shells: its own Shell is there from the start, as if the Mac's dock had opened it. */
+  private shellsOf(topic: Topic): DemoShell[] {
+    const key = topic.replace(/^conv:(ws:)?/, '');
+    if (![...this.shells.values()].some((s) => s.topic === topic)) {
+      const c = this.world.convs.get(topic);
+      this.shells.set(key, { shell: new DemoShell(key, 'Shell', c?.project, c?.project === 'pixel-weather' ? 'beluga/login-redirect-bug' : `beluga/${key.split('.').pop() ?? 'work'}`), topic });
+    }
+    return [...this.shells.values()].filter((s) => s.topic === topic).map((s) => s.shell);
   }
 
   onFrame(listener: (frame: MacFrame) => void): () => void {
@@ -661,6 +695,35 @@ export class DemoTransport implements Transport {
         });
         return ok({ phase: 'resolving', at: Date.now(), conflicts });
       }
+      // ---- a worktree's files (read-only) and terminals (shared with the Mac), BLG-42
+      case 'companion.files.list':
+      case 'companion.files.find':
+      case 'companion.files.read': {
+        const project = w.convs.get(str(0) as Topic)?.project;
+        try {
+          return ok(method === 'companion.files.list' ? demoFolder(project, str(1)) : method === 'companion.files.find' ? demoFind(project, str(1)) : demoRead(project, str(1)));
+        } catch (e) {
+          return this.frames.emit({ t: 'result', id, ok: false, error: (e as Error).message });
+        }
+      }
+      case 'companion.terminals':
+        return ok({ terminals: this.shellsOf(str(0) as Topic).map((s) => s.view()) });
+      case 'companion.termOpen': {
+        const topic = str(0) as Topic;
+        const shells = this.shellsOf(topic);
+        const o = (args[1] ?? {}) as { key?: string; fresh?: boolean };
+        if (o.fresh) {
+          const n = Math.max(1, ...[...this.shells.keys()].filter((k) => /^shell:\d+$/.test(k)).map((k) => Number(k.slice(6)))) + 1;
+          const c = w.convs.get(topic);
+          const s = new DemoShell(`shell:${n}`, `Shell ${n}`, c?.project, c?.project === 'pixel-weather' ? 'beluga/login-redirect-bug' : 'beluga/work');
+          this.shells.set(s.key, { shell: s, topic });
+          return ok(s.view());
+        }
+        return ok((shells.find((s) => s.key === o.key) ?? shells[0]!).view());
+      }
+      case 'companion.termClose':
+        this.shells.delete(str(0));
+        return ok({ closed: true });
       case 'companion.signOut':
         ok({ signedOut: true });
         this.later(50, () => this.frames.emit({ t: 'bye', reason: 'signed out' }));

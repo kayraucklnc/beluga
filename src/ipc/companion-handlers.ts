@@ -48,4 +48,10 @@ export const COMPANION_HANDLERS = {
     const issue = needBoard(s).addDraft(a.projectId, { title: a.title, goal: a.goal, acceptance: a.acceptance, labels: a.labels, ...(a.priority ? { priority: a.priority } : {}) });
     return { id: issue.id, key: issue.key };
   },
+  'companion.files.list': (s, topic, rel) => needCompanion(s).filesList(topic, rel),
+  'companion.files.find': (s, topic, query) => needCompanion(s).filesFind(topic, query),
+  'companion.files.read': (s, topic, rel, opts) => needCompanion(s).filesRead(topic, rel, opts?.off ?? 0),
+  'companion.terminals': (s, topic) => needCompanion(s).terminalsOf(topic),
+  'companion.termOpen': (s, topic, opts) => needCompanion(s).termOpen(callerOf(), topic, opts ?? {}),
+  'companion.termClose': (s, key) => needCompanion(s).termClose(callerOf(), key),
 } satisfies CompanionHandlers;

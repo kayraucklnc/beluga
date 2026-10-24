@@ -105,6 +105,7 @@ function open(msg: Extract<UiToWorklet, { op: 'open' }>): void {
   client = c;
   c.on('view', (topic, data, rev) => frame({ t: 'view', topic, rev, data }));
   c.on('nudge', (f) => frame(f));
+  c.on('term', (f) => frame(f));
   c.on('close', (code, reason) => {
     if (client !== c) return;
     client = undefined;
@@ -163,6 +164,12 @@ function onFrame(json: string): void {
     }
     case 'focus':
       return c.focus(f.on);
+    case 'term_attach':
+      return c.termAttach(f.term);
+    case 'term_detach':
+      return c.termDetach(f.term);
+    case 'term_input':
+      return c.termInput(f.term, f.data);
     case 'push':
       return c.registerPush(f.platform, f.token, f.relayKey);
     case 'bye':

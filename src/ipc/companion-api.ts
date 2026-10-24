@@ -13,6 +13,9 @@ const topic = z.string().regex(/^(conv|chat):[\w:.-]{1,200}$/);
 const files = z.array(UploadRef).max(MAX_UPLOADS);
 /** A worktree's conversation. */
 const wsTopic = z.string().regex(/^conv:ws:[\w.-]{1,200}$/);
+/** A path inside a worktree ('' is its top); the Mac's file gate checks it (companion/worktree-files.ts). */
+const rel = z.string().max(4096);
+const termKey = z.string().min(1).max(200);
 const conversation = z.string().regex(/^(dm:[\w-]{32}|group:[0-9a-f]{32})$/);
 
 export const COMPANION_API = {
@@ -106,4 +109,16 @@ export const COMPANION_API = {
         .strict(),
     ]),
   },
+  // A worktree's files, read-only (BLG-42), through the file gate: never outside the worktree (links
+  // followed and checked again), never a secret. A folder → FolderView; names that match → FoundView;
+  // a page of a file (512 KB, from `off`) → FilePageView. Nothing on the phone can change a file.
+  'companion.files.list': { args: z.tuple([wsTopic, rel]) },
+  'companion.files.find': { args: z.tuple([wsTopic, z.string().min(1).max(200)]) },
+  'companion.files.read': { args: z.tuple([wsTopic, rel.min(1), z.object({ off: z.number().int().min(0).optional() }).strict().optional()]) },
+  // A worktree's terminals (BLG-42), the very sessions the Mac shows → TerminalsView. Open one of
+  // them (`key`), its shell, or a new shell in its folder (`fresh`) → TerminalView; the phone then
+  // streams it with `term_attach` and types with `term_input`. Close ends the session for every screen.
+  'companion.terminals': { args: z.tuple([wsTopic]) },
+  'companion.termOpen': { args: z.tuple([wsTopic, z.object({ key: termKey.optional(), fresh: z.boolean().optional() }).strict().optional()]) },
+  'companion.termClose': { args: z.tuple([termKey]) },
 } as const;

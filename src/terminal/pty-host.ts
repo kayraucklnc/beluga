@@ -46,6 +46,7 @@ export class PtyProcess {
   private kept = 0;
   private readonly dataListeners = new Set<(data: string) => void>();
   private readonly exitListeners = new Set<(exit: PtyExit) => void>();
+  private readonly resizeListeners = new Set<(size: { cols: number; rows: number }) => void>();
   private disposed = false;
 
   constructor(opts: PtyOptions) {
@@ -123,6 +124,13 @@ export class PtyProcess {
     } catch {
       // The process may have exited between the check and the call.
     }
+    for (const l of [...this.resizeListeners]) l({ cols: c, rows: r });
+  }
+
+  /** Called with its new size whenever a screen resizes it (the phone draws the Mac's grid). */
+  onResize(listener: (size: { cols: number; rows: number }) => void): () => void {
+    this.resizeListeners.add(listener);
+    return () => void this.resizeListeners.delete(listener);
   }
 
   onData(listener: (data: string) => void): () => void {
@@ -151,6 +159,7 @@ export class PtyProcess {
     this.disposed = true;
     this.dataListeners.clear();
     this.exitListeners.clear();
+    this.resizeListeners.clear();
     this.chunks = [];
   }
 }

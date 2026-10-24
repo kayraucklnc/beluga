@@ -74,6 +74,14 @@ export const calls = {
   resolve: (topic: Topic): Call => make('companion.resolve', [topic], 'Ask Claude to resolve'),
   /** Your steered message Claude hasn't read yet, now: its step stops and it reads it next. */
   steerNow: (request: string): Call => make('host.steerNow', [request], 'Send now'),
+  /** 1.7: a worktree's files, read-only: a folder ('' is the top), names that match, a page of a file. */
+  filesList: (topic: Topic, path: string): Call => make('companion.files.list', [topic, path], 'Files'),
+  filesFind: (topic: Topic, query: string): Call => make('companion.files.find', [topic, query], 'Find files'),
+  filesRead: (topic: Topic, path: string, off = 0): Call => make('companion.files.read', [topic, path, ...(off ? [{ off }] : [])] as never, 'Read a file'),
+  /** 1.7: a worktree's terminals, shared with the Mac: list, open (its shell, one of them, or a new one), close for everyone. */
+  terminals: (topic: Topic): Call => make('companion.terminals', [topic], 'Terminals'),
+  termOpen: (topic: Topic, opts: { key?: string; fresh?: boolean } = {}): Call => make('companion.termOpen', [topic, opts], 'Open a terminal'),
+  termClose: (key: string): Call => make('companion.termClose', [key], 'Close the terminal'),
   older: (topic: Topic, before: string): Call => make('companion.older', [topic, { before }], 'Load older'),
   /** Write in a friends' chat (with photos, or asking Claude). */
   /** `ask`: whose Claude answers too: everyone's ('all') or the chosen people's (peer ids, you included). */

@@ -322,6 +322,8 @@ interface ClientEvents extends Record<string, unknown[]> {
   /** A finished view for a topic (replacing the last one). */
   view: [Topic, unknown, number];
   nudge: [Extract<MacFrame, { t: 'nudge' }>];
+  /** 1.7: a terminal's output or status (BLG-42). */
+  term: [Extract<MacFrame, { t: 'term_data' | 'term_status' }>];
   /** The link closed: its code (4002: a version this Mac or app doesn't answer; 4010: this phone was removed) and why. */
   close: [number, string];
 }
@@ -512,6 +514,19 @@ export class CompanionClient extends Emitter<ClientEvents> {
     this.send({ t: 'focus', on });
   }
 
+  /** 1.7: stream a worktree's terminal (a key companion.terminals or termOpen gave), type into it, stop. */
+  termAttach(term: string): void {
+    this.send({ t: 'term_attach', term });
+  }
+
+  termDetach(term: string): void {
+    this.send({ t: 'term_detach', term });
+  }
+
+  termInput(term: string, data: string): void {
+    for (let at = 0; at < data.length; at += 64_000) this.send({ t: 'term_input', term, data: data.slice(at, at + 64_000) });
+  }
+
   /** Where to push to this phone while it's closed (Beluga Push). */
   registerPush(platform: 'fcm' | 'apns', token: string, relayKey: string): void {
     this.send({ t: 'push', platform, token, relayKey });
@@ -546,6 +561,9 @@ export class CompanionClient extends Emitter<ClientEvents> {
         return this.emit('view', f.topic, f.data, f.rev);
       case 'nudge':
         return this.emit('nudge', f);
+      case 'term_data':
+      case 'term_status':
+        return this.emit('term', f);
       case 'result': {
         const c = this.calls.get(f.id);
         if (!c) return;

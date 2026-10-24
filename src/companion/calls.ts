@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { API, type Method } from '../ipc/api.js';
-import { ChatMessageView, MergeCheckView, MergeView, TurnView } from './protocol.js';
+import { ChatMessageView, FilePageView, FolderView, FoundView, MergeCheckView, MergeView, TerminalView, TerminalsView, TurnView } from './protocol.js';
 
 /**
  * Every call the phone may make, typed: each `phone` method of coverage.ts with its arguments
@@ -99,6 +99,13 @@ export const PhoneCalls = {
   'companion.draftTask': entry('companion.draftTask', TaskDraftResult),
   'companion.addTask': entry('companion.addTask', z.object({ id: z.string(), key: z.string() })),
   'board.start': entry('board.start', z.string()),
+  // 1.7: a worktree's files (read-only) and terminals (shared with the Mac).
+  'companion.files.list': entry('companion.files.list', FolderView),
+  'companion.files.find': entry('companion.files.find', FoundView),
+  'companion.files.read': entry('companion.files.read', FilePageView),
+  'companion.terminals': entry('companion.terminals', TerminalsView),
+  'companion.termOpen': entry('companion.termOpen', TerminalView),
+  'companion.termClose': entry('companion.termClose', z.object({ closed: z.boolean() })),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;
