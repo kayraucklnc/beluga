@@ -213,6 +213,7 @@ The default series colors are eight hues in a fixed order, checked for color-bli
   - `Controls.tsx`: the controls bar
   - `md-table.ts`: plain Markdown tables as views
   - `Inline.tsx` and `inline-model.ts`: the inline elements
-  - `format.ts`, `chart-model.ts`, `inline-model.ts`: the pure parts, tested in `tests/mac-views.test.ts`
+  - `format.ts`, `chart-model.ts`, `inline-model.ts`, `md-table.ts` (and the graph's `graph-model.ts`): the pure parts, kept in `src/shared/render/` so the phone draws with the same code (the Mac's files re-export them), tested in `tests/mac-views.test.ts`
+- **On the phone:** the same blocks are drawn natively (`packages/companion/components/render/`); a source's rows come through the Mac (`companion.viewFetch`, docs/companion.md).
 - **Tests:** `tests/view-spec.test.ts`, `tests/view-sources.test.ts`, `packages/mac/e2e/views.spec.ts`.
 - **Demo:** `src/agent/mock-views.ts`.
