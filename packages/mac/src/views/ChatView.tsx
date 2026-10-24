@@ -103,12 +103,12 @@ export function ChatView() {
   const empty =
     view.kind === 'draft' ? (
       projectName ? (
-        <Empty icon="eye" title={`Ask about ${projectName}`} detail="Questions only: Claude reads the main folder and changes nothing there. Ask for a change and it continues in a new worktree." />
+        <Empty icon="eye" title={`Ask about ${projectName}`} detail="Questions only: Claude reads the main folder and changes nothing there. Ask for a change and this chat becomes a worktree." />
       ) : (
         <Empty icon="chat" title="A new chat with Claude" detail="Nothing is created until you send your first message." />
       )
     ) : ws?.askOnly ? (
-      <Empty icon="eye" title={`Ask about ${projectName ?? 'this project'}`} detail="Claude reads the main folder and answers; it won’t change anything here. Ask for a change and it continues in a new worktree." action={<Starters />} />
+      <Empty icon="eye" title={`Ask about ${projectName ?? 'this project'}`} detail="Claude reads the main folder and answers; it won’t change anything here. Ask for a change and this chat becomes a worktree." action={<Starters />} />
     ) : view.kind === 'draft_worktree' ? (
       <Empty icon="branch" title="A new worktree" detail="Describe the task below. Beluga makes a branch and a folder for it from the branch you pick, and Claude starts right away." />
     ) : view.kind === 'assistant' ? (

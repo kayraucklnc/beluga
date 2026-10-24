@@ -806,6 +806,27 @@ export class WorkspaceManager {
   }
 
   /**
+   * Turn a chat in a project's main folder into a worktree, in place: a new branch from the latest
+   * origin (or `opts.base`) and its own folder, while the conversation keeps its id, its history
+   * and Claude's session. Returns the folder it ran in until now (its session is filed there).
+   */
+  async chatToWorktree(id: string, name: string, opts: { base?: string } = {}): Promise<{ ws: Workspace; was: string }> {
+    const source = this.require(id);
+    if (source.kind !== 'chat' || !source.projectRoot) throw new WorkspaceError('Only a chat in a project can become a worktree');
+    const project = this.projectOf(source);
+    const s = slug(name);
+    const dir = this.freeDir(project, s);
+    const from = opts.base ?? project.base;
+    const branch = await this.freeBranch(project.root, `${BRANCH_PREFIX}${s}`);
+    await g.addWorktree(project.root, dir, branch, from);
+    await g.excludeProjectDir(dir);
+    await copyEnvFiles(project.root, dir);
+    this.patchRecord(id, { name: s, path: dir, kind: 'worktree', branch, base: from, envSnapshot: await envSnapshot(dir) });
+    await this.refresh();
+    return { ws: this.require(id), was: source.path };
+  }
+
+  /**
    * Archive smartly: everything of yours in the worktree is kept (uncommitted changes, new files,
    * .env and other ignored files of yours), dependencies, builds and caches are thrown away, and
    * the folder goes. Its branch and conversation stay; `restore` brings it all back.
