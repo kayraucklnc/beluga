@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { demoPdf } from '../../../src/demo-pdf.js';
 import { expect, test, type Page } from './fixtures.js';
 
 /**
@@ -15,6 +16,8 @@ const tab = (page: Page, name: string) => panel(page).getByRole('tablist', { nam
 
 // 2×2 PNGs, red and blue.
 const RED = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==', 'base64');
+// A 16×16 WebM, a fifth of a second.
+const CLIP = Buffer.from('GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAIAEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggElTbuMU6uEHFO7a1OsggHq7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNjIuMTIuMTAxV0GNTGF2ZjYyLjEyLjEwMUSJiEBpAAAAAAAAFlSua8iuAQAAAAAAAD/XgQFzxYjuQWijPPoC35yBACK1nIN1bmSIgQCGhVZfVlA4g4EBI+ODhAvrwgDgkLCBELqBEJqBAlWwhFW5gQESVMNn/HNzoGPAgGfImkWjh0VOQ09ERVJEh41MYXZmNjIuMTIuMTAxc3PWY8CLY8WI7kFoozz6At9nyKFFo4dFTkNPREVSRIeUTGF2YzYyLjI4LjEwMSBsaWJ2cHhnyKFFo4hEVVJBVElPTkSHkzAwOjAwOjAwLjIwMDAwMDAwMAAfQ7Z1v+eBAKO6gQAAgPACAJ0BKhAAEAAARwiFhYiFhIgCAgJ1qgP4A/gCDU0YAP7+Rer/2Dpgy5/ivf+1oDg1X+jcABxTu2uRu4+zgQC3iveBAfGCAabwgQM=', 'base64');
 const BLUE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGNkYPjPwMDAxMAAAA0GAQOqgnhHAAAAAElFTkSuQmCC', 'base64');
 
 test('Scratch: .beluga/scratch/ live, newest first, followed by the preview', async ({ page }) => {
@@ -88,6 +91,18 @@ test('Scratch: .beluga/scratch/ live, newest first, followed by the preview', as
   await follow.click();
   await expect.poll(gap).toBeLessThan(10);
   await expect(follow).toHaveAttribute('aria-pressed', 'true');
+
+  // A PDF shows its pages, a video plays, and a file with no preview says so (BLG-96).
+  writeFileSync(path.join(dir, 'brief.pdf'), demoPdf());
+  await files.getByRole('option', { name: /brief\.pdf/ }).click();
+  await expect(panel(page).getByRole('region', { name: 'brief.pdf' }).getByRole('img', { name: 'Page 1' })).toBeVisible();
+  writeFileSync(path.join(dir, 'run.webm'), CLIP);
+  await files.getByRole('option', { name: /run\.webm/ }).click();
+  await expect(panel(page).getByRole('region', { name: 'run.webm' }).locator('video')).toBeVisible();
+  writeFileSync(path.join(dir, 'trace.bin'), Buffer.from([0, 1, 2, 0, 3]));
+  await files.getByRole('option', { name: /trace\.bin/ }).click();
+  await expect(panel(page).getByRole('region', { name: 'trace.bin' })).toContainText('No preview for this kind of file');
+  await panel(page).screenshot({ path: path.join(SHOTS, 'scratch-no-preview.png') });
 });
 
 const SHOTS = path.resolve(import.meta.dirname, '../../../.context/shots');

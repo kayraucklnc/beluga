@@ -29,7 +29,7 @@ import k from './scratch.module.css';
  */
 
 const POLL_MS = 1200;
-const ICONS: Record<ScratchKind, IconName> = { image: 'image', pdf: 'file', json: 'file', markdown: 'file', text: 'file' };
+const ICONS: Record<ScratchKind, IconName> = { image: 'image', pdf: 'file', video: 'play', json: 'file', markdown: 'file', text: 'file' };
 
 interface Listing {
   readonly root: string;
