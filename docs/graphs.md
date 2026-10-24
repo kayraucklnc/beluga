@@ -120,6 +120,7 @@ In a conversation, scrolling still scrolls the conversation: pinch to zoom, drag
   - `graph-model.ts`: the pure parts, tested in `tests/mac-graph.test.ts`
   - `nodes.tsx`, `edges.tsx`, `Inspector.tsx`, `Walkthrough.tsx`
 - **Load time:** React Flow and ELK load the first time a graph shows.
+- **Mermaid, drawn our way:** a ```` ```mermaid ```` block is read into this format (`src/shared/render/mermaid.ts`) and drawn as a graph: flowcharts (shapes become kinds: `[(db)]` a database, `{x}` a decision; names like "Postgres" or "User" pick a kind too; subgraphs become groups; `:::done` a status), state diagrams, ER diagrams (entities as tables with their fields), class diagrams and sequence diagrams (each message a numbered line and a step of the walkthrough). A `pie` becomes a donut chart and a `gantt` a gantt view (docs/views.md). Anything else (mindmaps, journeys…) is left to Mermaid itself on the Mac.
 - **Where blocks are found:** the chat's Markdown (`chat/Markdown.tsx`) and the document reader (`components/markdown/MarkdownDoc.tsx`) both hand ```` ```beluga-graph ```` blocks to `GraphBlock`.
 - **Demo:** the demo daemon (`npm run dev` at the repo root) answers "visualize…" with a payment-flow graph (`src/agent/mock-graphs.ts`).
 

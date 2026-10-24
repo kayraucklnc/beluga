@@ -10,6 +10,7 @@ import { openFull } from '../../lib/fullscreen';
 import { color, elevation, ink, radius, tint, type } from '../../lib/theme';
 import { haptic, Pill, Press, T, toneBg, toneInk } from '../ui';
 import { ChartView } from './Chart';
+import { CalendarView, GanttView, HeatmapView } from './Grids';
 import { type BlockAt, useViewData, type ViewData } from './data';
 import { Spark, badgeTone } from './Inline';
 
@@ -24,13 +25,15 @@ export function ViewCard({ view, at, warnings = 0, full }: { readonly view: View
   const [asChart, setAsChart] = useState(false);
   const chartable = view.type === 'table' && view.columns.some((c) => c.type === 'number' || c.type === 'percent' || c.type === 'currency');
   const chart = view.type === 'chart' || asChart;
-  const d = useViewData(view, at, { ...(chart ? { limit: Math.max(view.pageSize, 500) } : {}), ...(view.type === 'code' ? { text: true } : {}) });
+  // Gantt, heatmap and calendar draw every row at once, as a chart does.
+  const grid = view.type === 'gantt' || view.type === 'heatmap' || view.type === 'calendar';
+  const d = useViewData(view, at, { ...(chart || grid ? { limit: Math.max(view.pageSize, 500) } : {}), ...(view.type === 'code' ? { text: true } : {}) });
   return (
     <View style={{ borderRadius: radius.m, backgroundColor: elevation.raised.surface, borderWidth: 1, borderColor: elevation.raised.border, overflow: 'hidden' }}>
       <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8, gap: 2 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <T v="heading" numberOfLines={2} style={{ flex: 1, fontSize: 15.5 }}>
-            {view.title ?? (view.type === 'code' ? (view.filename ?? 'Code') : view.type === 'colors' ? 'Colors' : view.type === 'stats' ? 'Numbers' : 'Data')}
+            {view.title ?? (view.type === 'code' ? (view.filename ?? 'Code') : view.type === 'colors' ? 'Colors' : view.type === 'stats' ? 'Numbers' : view.type === 'gantt' ? 'Timeline' : view.type === 'calendar' ? 'Activity' : 'Data')}
           </T>
           {d.live && view.source?.refresh ? <Pill label="Live" tone="mint" /> : null}
           {chartable ? (
@@ -79,6 +82,12 @@ export function ViewCard({ view, at, warnings = 0, full }: { readonly view: View
           <View style={{ paddingHorizontal: 12 }}>
             <ChartView view={view} columns={d.columns} rows={d.rows} {...(full ? { tall: true } : {})} />
           </View>
+        ) : view.type === 'gantt' ? (
+          <GanttView view={view} rows={d.rows} columns={d.columns} />
+        ) : view.type === 'heatmap' ? (
+          <HeatmapView view={view} rows={d.rows} columns={d.columns} />
+        ) : view.type === 'calendar' ? (
+          <CalendarView view={view} rows={d.rows} columns={d.columns} />
         ) : view.type === 'stats' ? (
           <StatsView view={view} d={d} />
         ) : view.type === 'code' ? (

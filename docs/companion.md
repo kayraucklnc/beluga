@@ -156,6 +156,16 @@ that is only a table, and sends each as a table view block (the spec Markdown ta
 any phone since 1.3 reads it. One that only looks like a table goes as a `text` block (1.5), shown
 monospaced and never wrapped, scrolling sideways. Changes keep their signs ("+4.9%").
 
+**More blocks drawn (1.9, BLG-87).** `stripCode` also reads what a plain code block really is
+(`src/shared/render/rich-fence.ts`): a file tree (├── └──) goes as a `tree` block, ```` ```json ````
+as `json`, a shell session or command output as `terminal`, each as written, and the phone draws a
+tree that folds, a colored JSON tree, a terminal with its colors. A ```` ```mermaid ```` diagram goes as
+the `graph` or `view` it reads as (`mermaid.ts`), so any phone since 1.3 draws it. Math: display math
+(`$$…$$`, `\[…\]`, ```` ```math ````) is a `math` block; inline math stays `$…$` in the words. The Mac
+typesets both with MathJax (`src/companion/math-svg.ts`) into `ProseView.math`: SVG paths in
+`currentColor`, sized in ex, which the phone draws with `react-native-svg`. Prices ("$5 and $10")
+stay words (`src/shared/render/math.ts`). A phone before 1.9 shows a chip for the new kinds.
+
 **Outputs and data on a small screen (BLG-71).** A turn's outputs are one strip that swipes
 sideways: pictures as ~110 px thumbnails, text and logs as small cards (icon, name, size); a tap
 opens the viewer, which swipes through that turn's outputs. Every table, chart, view and graph has

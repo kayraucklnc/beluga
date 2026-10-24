@@ -34,6 +34,18 @@ describe('image chips', () => {
     expect(formatBytes(3 * 1024 * 1024)).toBe('3.0M');
   });
 
+  it('links the box’s own numbers: "[image 1]" is the image the box numbered 1, and says so', () => {
+    registerAttachment('/x/attachments/20260101-2.png', 1024);
+    const b = registerAttachment('/x/attachments/20260101-3.png', 2048);
+    // The session counted past 1, the box numbered its only image 1.
+    expect(b.n).toBeGreaterThan(1);
+    const out = expandChips('see [image 1], not [image 2]', 'me', undefined, [b.n], [1]);
+    expect(out.text).toBe('see [📎 image 1 (png, 2K)](klaud-attachment:me/20260101-3.png), not [image 2]');
+    expect(out.attachments).toEqual([b]);
+    // Its session number isn't one the box shows, so it stays words.
+    expect(expandChips(`[image ${b.n}]`, 'me', undefined, [b.n], [1]).text).toBe(`[image ${b.n}]`);
+  });
+
   it('recognizes dragged-in image paths', () => {
     const exists = (p: string) => p.startsWith('/img/');
     expect(droppedImagePaths('/img/My\\ Shot.png ', exists)).toEqual(['/img/My Shot.png']);

@@ -1,6 +1,7 @@
 import { createContext, memo, useContext, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import { ATTACHMENT_SCHEME } from '@beluga/core/attachment-share.js';
 import type { LinkTarget } from '@beluga/shared/link-target.js';
 import { parseAttachmentHref } from '@beluga/shared/attachment-links.js';
@@ -23,6 +24,10 @@ import { InlineCode } from '../components/views/Inline.js';
 import { viewFenceType } from '@beluga/shared/view-spec.js';
 import { TASKS_FENCE, TASK_LINK_SCHEME, linkTaskKeys } from '@beluga/shared/task-refs.js';
 import { TaskCards, TaskKeyChip } from '../tasks/TaskRef.js';
+import { prepareMath, splitInlineMath } from '@beluga/shared/render/math.js';
+import { MathTex } from '../components/markdown/MathTex.js';
+import { Diagram } from '../components/markdown/Diagram.js';
+import { RichBlock, useRichFence } from '../components/blocks/RichBlock.js';
 import s from './chat.module.css';
 
 /** Syntax colors load on demand (shiki is big), then stay. */
@@ -140,6 +145,22 @@ function MessageView({ code, type, local }: { code: string; type: NonNullable<Re
   return <ViewBlock code={code} type={type} live={live} local={local} />;
 }
 
+/**
+ * A fenced block that's really something else (shared/render/rich-fence.ts): a file tree, JSON, a
+ * terminal session, math, or a mermaid diagram drawn as our own graph or view. Otherwise code.
+ */
+function MessageFence({ code, lang, localImages }: { code: string; lang: string | undefined; localImages: boolean }) {
+  const { ui } = useBeluga();
+  const live = useContext(LiveText);
+  const fence = useRichFence(lang, code);
+  if (fence?.kind === 'math') return <MathTex tex={fence.tex} display />;
+  if (fence?.kind === 'mermaid') return fence.block.kind === 'graph' ? <GraphBlock code={fence.block.text} live={live} localImages={localImages} /> : <ViewBlock code={fence.block.text} type="any" live={live} local={localImages} />;
+  if (fence) return <RichBlock fence={fence} code={code} lang={lang} onQuote={(text) => quoteInBox(ui, text)} />;
+  // A kind of diagram we don't draw ourselves: Mermaid draws it, once it's all there.
+  if (lang === 'mermaid' && !live) return <Diagram code={code} />;
+  return <Code code={code} {...(lang ? { lang } : {})} />;
+}
+
 type HastNode = { type: string; tagName?: string; value?: string; children?: HastNode[] };
 
 /** How many images a paragraph holds when it's nothing but images (0 otherwise). */
@@ -168,6 +189,38 @@ function linkifyPaths(text: string): string {
 
 const keepUrl = (u: string): string => u;
 
+const REMARK = [remarkGfm, remarkMath];
+
+/**
+ * Math (after prepareMath) set aside while paths, mentions and task keys are linked, so `$a/b.c$`
+ * stays math: each `$…$` and each line of a `$$` block becomes a placeholder, put back after.
+ */
+function guardMath(text: string): { text: string; restore: (s: string) => string } {
+  if (!text.includes('$')) return { text, restore: (s) => s };
+  const kept: string[] = [];
+  const hold = (m: string): string => `\uE000${kept.push(m) - 1}\uE001`;
+  let fenced = false;
+  let display = false;
+  const out = text.split('\n').map((line) => {
+    if (!display && /^\s*(```|~~~)/.test(line)) fenced = !fenced;
+    if (fenced) return line;
+    // A `$$` that never closes stops at the paragraph's end.
+    if (display && !line.trim()) display = false;
+    else if (display || /^\s*\$\$/.test(line)) {
+      const t = line.trim();
+      // A block opens on "$$" and closes on a line ending in "$$" (or a one-line "$$…$$").
+      if (!display) display = !(t.length > 2 && t.endsWith('$$'));
+      else if (t.endsWith('$$')) display = false;
+      return hold(line);
+    }
+    if (!line.includes('$')) return line;
+    return splitInlineMath(line)
+      .map((p) => ('tex' in p ? hold(`$${p.tex}$`) : p.text))
+      .join('');
+  });
+  return { text: out.join('\n'), restore: (s) => (kept.length ? s.replace(/\uE000(\d+)\uE001/g, (_m, i: string) => kept[Number(i)] ?? '') : s) };
+}
+
 /**
  * `localImages`: pictures named by a path on this Mac are shown (your own messages and your own
  * Claude's only; anyone else's stay a chip). `mentions`: draw "@mia", "@bob-api", "@src/auth.ts"…
@@ -181,11 +234,13 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
   // The board's keys as one string, so a task changing doesn't draw every message again.
   const keys = useApp((st) => (tasks ? st.board.issues.map((i) => i.key).join(' ') : ''));
   const source = useMemo(() => {
+    // Math first (prices stay words), then set aside so the links below leave it alone.
+    const math = guardMath(prepareMath(text));
     // Tasks last: the other two leave a line with a link in it alone, and this one doesn't.
-    const withMentions = mentions ? linkMentions(text, mentions) : text;
+    const withMentions = mentions ? linkMentions(math.text, mentions) : math.text;
     const withPaths = paths ? linkifyPaths(withMentions) : withMentions;
     const known = new Set(keys.split(' '));
-    return keys ? linkTaskKeys(withPaths, (k) => known.has(k)) : withPaths;
+    return math.restore(keys ? linkTaskKeys(withPaths, (k) => known.has(k)) : withPaths);
   }, [text, keys, mentions, paths]);
   // Every local image in the message, so the lightbox steps from one to the next.
   const images = useMemo(() => (localImages ? messageImages(text) : []), [text, localImages]);
@@ -236,6 +291,9 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
     code: ({ className, children }) => {
       const lang = /language-([\w-]+)/.exec(className ?? '')?.[1];
       const code = String(children).replace(/\n$/, '');
+      // Math (remark-math): `$…$` in a line, a `$$` block on its own.
+      if (className?.includes('math-inline')) return <MathTex tex={code} display={false} />;
+      if (className?.includes('math-display')) return <MathTex tex={code} display />;
       // Inline code that stands for something (a color, a status, keys…) is drawn as it (views/inline-model.ts).
       if (!className && !code.includes('\n')) return <InlineCode text={code} fallback={<code className={s.inlineCode}>{children}</code>} />;
       // A diagram Claude drew (docs/graphs.md): only data, drawn with the window's own pieces.
@@ -245,7 +303,8 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
       // Tables, charts, stats, code and colors (docs/views.md): data, drawn live.
       const view = viewFenceType(lang);
       if (view) return <MessageView code={code} type={view} local={localImages} />;
-      return <Code code={code} {...(lang ? { lang } : {})} />;
+      // A tree, JSON, a terminal, math or mermaid (shared/render/rich-fence.ts), else code.
+      return <MessageFence code={code} lang={lang} localImages={localImages} />;
     },
     pre: ({ children }) => <>{children}</>,
     // A plain table (the kind Claude Code prints) sorts, searches and charts like a view; one with links stays as written.
@@ -264,7 +323,7 @@ export const Markdown = memo(function Markdown({ text, paths = false, localImage
     <LiveText.Provider value={live}>
       <MessageImages.Provider value={images}>
       <div className={`${s.markdown} selectable`}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={keepUrl}>
+        <ReactMarkdown remarkPlugins={REMARK} components={components} urlTransform={keepUrl}>
           {source}
         </ReactMarkdown>
       </div>

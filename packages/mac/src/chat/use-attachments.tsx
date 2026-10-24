@@ -6,7 +6,7 @@ import { toast, useApi, useBeluga } from '../lib/beluga.js';
 import { type Box, MAX_DROPPED, dropHits, droppedFiles, sameBox } from './drop-model.js';
 import { imageLinksIn } from '@beluga/shared/attachment-links.js';
 import { type RefKey, boxRef, plainRefs, refKey, referencedImages, withoutRef } from './image-refs.js';
-import { keepPreview, previewOf } from './images.js';
+import { keepPreview, openLightbox, pendingImage, previewOf } from './images.js';
 import { type ImageInText, type PathInfo, insertText, usePastePaths } from './paste-paths.js';
 import s from './composer.module.css';
 import img from './images.module.css';
@@ -16,6 +16,10 @@ import img from './images.module.css';
  * and a plan's): images pasted, dropped, or named by their path in pasted text wait as thumbnails,
  * with an "[image N]" in the words where they go; other files whose paths were pasted wait as
  * chips. Kept per conversation, so switching away and back keeps them.
+ *
+ * Beluga numbers images for the whole session; the box numbers its own from 1 (a removed one's
+ * number goes to the next image), and its "[image N]" say those. They go out with the session's
+ * numbers beside them (`take`), so the links say what the box did.
  *
  * Files dragged from Finder anywhere on the conversation (the element marked `data-drop-zone`
  * around the box) go in the same way: the app takes the drop and hands over their paths.
@@ -27,8 +31,31 @@ const waitingImages = new Map<string, readonly number[]>();
 const waitingFiles = new Map<string, readonly PathInfo[]>();
 /** The file name each image came with (the end of it shows on its chip in the words). */
 const imageNames = new Map<number, string>();
-/** How the words refer to a waiting image (it becomes a link to it when sent). */
-export const imageRef = (n: number): string => boxRef(n, imageNames.get(n));
+/** The name Beluga saved each image under (for opening it full size before it goes). */
+const imageFiles = new Map<number, string>();
+/** The number each waiting image has in its box (by Beluga's number), per conversation. */
+const boxNumbers = new Map<string, Map<number, number>>();
+const numbersOf = (channel: string): Map<number, number> => {
+  let m = boxNumbers.get(channel);
+  if (!m) boxNumbers.set(channel, (m = new Map()));
+  return m;
+};
+
+/**
+ * Image `n` waits in `channel`'s box: its number there (the one it has if it already waits, else
+ * the lowest that no waiting image has and no "[image N]" in the words says).
+ */
+function numberIn(channel: string, n: number, words: string): number {
+  const numbers = numbersOf(channel);
+  const waiting = waitingImages.get(channel) ?? [];
+  const had = numbers.get(n);
+  if (had !== undefined && waiting.includes(n)) return had;
+  const taken = new Set([...waiting.filter((x) => x !== n).map((x) => numbers.get(x)), ...referencedImages(words)]);
+  let k = 1;
+  while (taken.has(k)) k++;
+  numbers.set(n, k);
+  return k;
+}
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -52,9 +79,11 @@ export interface Attachments {
    * The message to send for what was typed: its images where their references are (those whose
    * reference was taken out go after it) and other files' paths. They leave the box; `putBack`
    * returns them if sending fails. Commands ("/…") go as typed, and attachments stay. `images`:
-   * the ones going (only their "[image N]" become links; one typed by hand stays words).
+   * the ones going (only their "[image N]" become links; one typed by hand stays words), and
+   * `shown` the number each has in the box, which its "[image N]" says (both for
+   * `attachments.expand`).
    */
-  readonly take: (typed: string) => { readonly text: string; readonly images: readonly number[]; readonly putBack: () => void };
+  readonly take: (typed: string) => { readonly text: string; readonly images: readonly number[]; readonly shown: readonly number[]; readonly putBack: () => void };
   /** For the text field's keydown: an "[image N]" goes whole (its picture too), and arrows step over it. True when it was handled. */
   readonly onRefKey: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
   /**
@@ -90,6 +119,19 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
   };
   const [dropping, setDropping] = useState(false);
 
+  /** The number image `n` has in this box. */
+  const shownOf = (n: number): number => numbersOf(channel).get(n) ?? n;
+  /** How the words refer to a waiting image (it becomes a link to it when sent). */
+  const imageRef = (n: number): string => boxRef(shownOf(n), imageNames.get(n));
+  /** The image whose "[image N]" says `shown` (undefined: none waits with that number). */
+  const imageShown = (shown: number): number | undefined => (waitingImages.get(channel) ?? []).find((n) => shownOf(n) === shown);
+  /** Image `n` waits too, numbered in this box (before its reference goes in the words). */
+  const addWaiting = (n: number): void => {
+    numberIn(channel, n, text());
+    const waiting = waitingImages.get(channel) ?? [];
+    if (!waiting.includes(n)) setImages([...waiting, n]);
+  };
+
   /** "[image N]" goes in the words where the cursor is (or `where`), so you can say what it shows. → where the cursor is after it. */
   const placeRef = (n: number, where?: number): number => {
     const now = text();
@@ -115,12 +157,13 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
         // A pasted picture is just "image.png": the name Beluga saved it under tells them apart.
         const named = file.name && !/^image\.\w+$/i.test(file.name) ? file.name : added.file;
         if (named) imageNames.set(added.n, named);
+        if (added.file) imageFiles.set(added.n, added.file);
         keepPreview(added.n, file);
       } catch (err) {
         toast(client, `Couldn't add ${file.name || 'the image'}: ${errorText(err)}`, 'error');
         continue;
       }
-      setImages([...(waitingImages.get(channel) ?? []), added.n]);
+      addWaiting(added.n);
       placeRef(added.n);
     }
   };
@@ -130,9 +173,10 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     try {
       const added = await api.attachments.addFile(f.path);
       imageNames.set(added.n, f.name);
+      imageFiles.set(added.n, added.file);
       const shown = await api.attachments.read(selfId, added.file);
       keepPreview(added.n, new Blob([Uint8Array.from(atob(shown.data), (c) => c.charCodeAt(0))], { type: shown.mime }));
-      setImages([...(waitingImages.get(channel) ?? []), added.n]);
+      addWaiting(added.n);
       return added.n;
     } catch (err) {
       toast(client, `Couldn't add ${f.name}: ${errorText(err)}`, 'error');
@@ -220,10 +264,21 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     },
   );
 
+  /** The waiting images full size (the lightbox: Esc or a click outside closes), from image `n`. */
+  const openImages = (n: number): void => {
+    const all = pendingImages.flatMap((x) => {
+      const file = imageFiles.get(x);
+      const shown = file ? pendingImage(x, selfId, file, `image ${shownOf(x)}`) : undefined;
+      return shown ? [{ n: x, shown }] : [];
+    });
+    const at = all.findIndex((x) => x.n === n);
+    if (at >= 0) openLightbox(all.map((x) => x.shown), at);
+  };
+
   const removeImage = (n: number): void => {
     setImages(images.filter((x) => x !== n));
     const now = text();
-    const next = withoutRef(now, n);
+    const next = withoutRef(now, shownOf(n));
     if (next !== now) setText(next, next.length);
     box.current?.focus();
   };
@@ -242,7 +297,7 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     // Through the field's own editing, so ⌘Z brings it back.
     insertText(el, '', { start: edit.start, end: edit.end });
     const left = referencedImages(el.value);
-    const gone = edit.images.filter((n) => !left.includes(n));
+    const gone = edit.images.filter((k) => !left.includes(k)).map(imageShown);
     if (gone.length) setImages((waitingImages.get(channel) ?? []).filter((n) => !gone.includes(n)));
     return true;
   };
@@ -260,10 +315,13 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
       try {
         const { n } = await api.attachments.reattach(link.file);
         if (!imageNames.has(n)) imageNames.set(n, link.file);
+        imageFiles.set(n, link.file);
         if (!previewOf(n)) {
           const shown = await api.attachments.read(selfId, link.file);
           keepPreview(n, new Blob([Uint8Array.from(atob(shown.data), (c) => c.charCodeAt(0))], { type: shown.mime }));
         }
+        // Numbered against what's in the box and what this message has put back so far.
+        numberIn(channel, n, text() + out);
         const waiting = waitingImages.get(channel) ?? [];
         if (!waiting.includes(n)) setImages([...waiting, n]);
         out += imageRef(n);
@@ -275,21 +333,22 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
     return out + sent.slice(at);
   };
 
-  const take = (typed: string): { text: string; images: readonly number[]; putBack: () => void } => {
-    if (typed.startsWith('/')) return { text: typed, images: [], putBack: () => undefined };
+  const take = (typed: string): { text: string; images: readonly number[]; shown: readonly number[]; putBack: () => void } => {
+    if (typed.startsWith('/')) return { text: typed, images: [], shown: [], putBack: () => undefined };
     const pictures = pendingImages;
     const placed = referencedImages(typed);
-    const unplaced = pictures.filter((n) => !placed.includes(n));
+    const unplaced = pictures.filter((n) => !placed.includes(shownOf(n)));
     // Other files go as their paths (Claude reads them from this Mac).
     const others = files;
     // The chips' names stay in the box: out they go as "[image N]".
     const words = plainRefs(typed);
-    const out = pictures.length || others.length ? [words, unplaced.map((n) => boxRef(n)).join(' '), others.map((f) => `\`${f.path}\``).join('\n')].filter(Boolean).join('\n\n') : words;
+    const out = pictures.length || others.length ? [words, unplaced.map((n) => boxRef(shownOf(n))).join(' '), others.map((f) => `\`${f.path}\``).join('\n')].filter(Boolean).join('\n\n') : words;
     if (pictures.length) setImages([]);
     if (others.length) setFiles([]);
     return {
       text: out,
       images: pictures,
+      shown: pictures.map(shownOf),
       putBack: () => {
         if (pictures.length) setImages(pictures);
         if (others.length) setFiles(others);
@@ -303,9 +362,11 @@ export function useAttachments({ channel, box, text, setText }: { channel: strin
         <div className={img.pending} role="group" aria-label="Images to send">
           {pendingImages.map((n) => (
             <div key={n} className={img.pendingItem}>
-              <img src={previewOf(n)} alt={`image ${n}`} />
-              <span className={img.pendingLabel}>{n}</span>
-              <button type="button" className={img.pendingRemove} aria-label={`Remove image ${n}`} onClick={() => removeImage(n)}>
+              <button type="button" className={img.pendingOpen} aria-label={`Open image ${shownOf(n)}`} onClick={() => openImages(n)}>
+                <img src={previewOf(n)} alt={`image ${shownOf(n)}`} draggable={false} />
+              </button>
+              <span className={img.pendingLabel}>{shownOf(n)}</span>
+              <button type="button" className={img.pendingRemove} aria-label={`Remove image ${shownOf(n)}`} onClick={() => removeImage(n)}>
                 <Icon name="x" size={9} />
               </button>
             </div>

@@ -3,6 +3,8 @@ import { TASKS_FENCE } from '../shared/task-refs.js';
 import { isViewFence } from '../shared/view-spec.js';
 import { tableSpec } from '../shared/render/md-table.js';
 import { findTextTables, looksLikeTable, readTextTable } from '../shared/render/text-table.js';
+import { displayMathAt, normalizeMathDelimiters } from '../shared/render/math.js';
+import { richFence } from '../shared/render/rich-fence.js';
 import type { ProseView, ToolKind } from './protocol.js';
 
 /**
@@ -50,9 +52,21 @@ function tableBlock(body: string, n: number): ProseView['code'][number] | undefi
   return undefined;
 }
 
+/**
+ * What else a block may be drawn as (BLG-87, src/shared/render/rich-fence.ts): a file tree, JSON
+ * or a terminal goes as it was written, display math as its TeX, a mermaid diagram as the graph or
+ * view it reads as. A phone before 1.9 shows a chip for the new kinds (a mermaid one draws).
+ */
+function richBlock(lang: string, body: string, n: number, rich = richFence(lang, body)): ProseView['code'][number] | undefined {
+  if (!rich || body.length > MAX_BLOCK) return undefined;
+  if (rich.kind === 'mermaid') return { lang: rich.block.kind === 'graph' ? 'beluga-graph' : 'beluga-view', lines: n, block: { kind: rich.block.kind, text: rich.block.text } };
+  if (rich.kind === 'math') return { lang: 'math', lines: n, block: { kind: 'math', text: rich.tex } };
+  return { ...(lang ? { lang } : {}), lines: n, block: { kind: rich.kind, text: body.replace(/\s+$/, '') } };
+}
+
 /** Claude's markdown with its code blocks taken out (and its tables written as text read as tables). */
 export function stripCode(markdown: string): ProseView {
-  const lines = markdown.split('\n');
+  const lines = normalizeMathDelimiters(markdown).split('\n');
   const out: string[] = [];
   const code: ProseView['code'][number][] = [];
   // Prose waits here until a code block or the end, so a table written in it is found whole.
@@ -74,6 +88,15 @@ export function stripCode(markdown: string): ProseView {
     prose = [];
   };
   for (let i = 0; i < lines.length; i++) {
+    // Display math ($$ … $$ on lines of their own) is drawn, as on the Mac.
+    const math = lines[i]!.trimStart().startsWith('$$') && code.length < MAX_CODE ? displayMathAt(lines, i) : undefined;
+    if (math && math.tex.length <= 4000) {
+      flush();
+      out.push(`[[code:${code.length}]]`);
+      code.push({ lang: 'math', lines: math.end - i + 1, block: { kind: 'math', text: math.tex } });
+      i = math.end;
+      continue;
+    }
     const open = FENCE.exec(lines[i]!);
     if (!open) {
       prose.push(lines[i]!.replace(ATTACHMENT_LINK, '$1'));
@@ -96,9 +119,13 @@ export function stripCode(markdown: string): ProseView {
       // (BLG-68); a phone before 1.3 still shows a chip. A block that's only a table is a table
       // (BLG-71). Any other code stays a chip.
       const kind = blockKind(lang);
-      const body = kind || TEXT_FENCE.test(lang) ? lines.slice(i + 1, i + 1 + n).join('\n') : '';
-      const table = !kind && body ? tableBlock(body, n) : undefined;
-      code.push(table ?? { ...(lang ? { lang } : {}), lines: n, ...(kind && body.length <= MAX_BLOCK ? { block: { kind, text: body } } : {}) });
+      const body = lines.slice(i + 1, i + 1 + n).join('\n');
+      // A file tree before a table (its rails can read as columns), a table before a terminal.
+      const rich = kind ? undefined : richFence(lang, body);
+      const tree = rich?.kind === 'tree' ? richBlock(lang, body, n, rich) : undefined;
+      const table = !kind && !tree && TEXT_FENCE.test(lang) ? tableBlock(body, n) : undefined;
+      const other = !kind && !tree && !table && rich ? richBlock(lang, body, n, rich) : undefined;
+      code.push(tree ?? table ?? other ?? { ...(lang ? { lang } : {}), lines: n, ...(kind && body.length <= MAX_BLOCK ? { block: { kind, text: body } } : {}) });
     } else out.push('[[code]]');
     i = j;
   }

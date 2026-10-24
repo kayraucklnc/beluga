@@ -1,17 +1,18 @@
 import { router } from 'expo-router';
-import { Bot, Check, ChevronRight, CircleAlert, Code, Hourglass, Images, MessageSquare } from 'lucide-react-native';
+import { Bot, Check, ChevronRight, CircleAlert, Hourglass, Images, MessageSquare } from 'lucide-react-native';
 import { ProjectMark } from './ProjectMark';
 import { Fragment, type ReactNode } from 'react';
 import { Image } from 'expo-image';
 import { Linking, Text, View } from 'react-native';
 import { Block } from './render/Block';
+import { CodeChip } from './render/CodeChip';
 import { InlineThing } from './render/Inline';
 import { ViewCard } from './render/ViewCard';
-import { readInline, tableView } from '../lib/render';
+import { readInline, splitInlineMath, tableView } from '../lib/render';
+import { InlineMath, type MathMap } from './render/MathBlock';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 import { ago } from '../lib/hooks';
 import type { ConvSummary, ProseView, SubAgentView, Topic } from '../lib/link/protocol';
-import { store } from '../lib/store';
 import { color, tint, type } from '../lib/theme';
 import { Card, IconBadge, Press, T, type Tone, toneInk } from './ui';
 
@@ -20,17 +21,33 @@ import { Card, IconBadge, Press, T, type Tone, toneInk } from './ui';
 export const convHref = (topic: string): string => `/conv/${encodeURIComponent(topic.replace(/^conv:/, ''))}`;
 export const chatHref = (topic: string): string => `/chat/${encodeURIComponent(topic.replace(/^chat:/, ''))}`;
 
-/** Inline: **bold**, `code` (an inline element when it reads as one: docs/views.md), [links](…). */
-function inline(s: string, base: object): ReactNode[] {
+/** Base text style the inline pieces build on. */
+type Base = { readonly fontSize: number; readonly color: string } & object;
+
+/**
+ * Words with their inline math (BLG-87): each `$…$` drawn as the Mac typeset it (or its TeX).
+ * Prices ("$5 and $10") stay words (splitInlineMath).
+ */
+function withMath(s: string, base: Base, math: MathMap | undefined, key: () => number, bold = false): ReactNode[] {
+  if (!s.includes('$')) return [s];
+  return splitInlineMath(s).map((p) => ('tex' in p ? <InlineMath key={key()} tex={p.tex} {...(math ? { math } : {})} size={base.fontSize} ink={bold ? color.text : base.color} /> : p.text.replace(/\\\$/g, () => '$')));
+}
+
+/**
+ * Inline: **bold**, `code` (an inline element when it reads as one: docs/views.md), [links](…),
+ * and `$math$` in the words and bold around them (never inside code).
+ */
+function inline(s: string, base: Base, math?: MathMap): ReactNode[] {
   const out: ReactNode[] = [];
   const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]\n]+\]\([^)\s]+\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
+  const key = () => i++;
   while ((m = re.exec(s))) {
-    if (m.index > last) out.push(s.slice(last, m.index));
+    if (m.index > last) out.push(...withMath(s.slice(last, m.index), base, math, key));
     const tok = m[0];
-    if (tok.startsWith('**')) out.push(<Text key={i++} style={[base, { fontWeight: '700', color: color.text }]}>{tok.slice(2, -2)}</Text>);
+    if (tok.startsWith('**')) out.push(<Text key={i++} style={[base, { fontWeight: '700', color: color.text }]}>{withMath(tok.slice(2, -2), base, math, key, true)}</Text>);
     else if (tok.startsWith('[')) {
       const lm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok)!;
       const href = lm[2]!;
@@ -52,21 +69,11 @@ function inline(s: string, base: object): ReactNode[] {
     }
     last = m.index + tok.length;
   }
-  if (last < s.length) out.push(s.slice(last));
+  if (last < s.length) out.push(...withMath(s.slice(last), base, math, key));
   return out;
 }
 
-/** A code block Claude wrote, folded to a chip: no code on the phone. */
-export function CodeChip({ lang, lines }: { readonly lang?: string; readonly lines: number }) {
-  return (
-    <Press onPress={() => store.toast({ text: 'Code stays on your Mac.', tone: 'info' })} style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, height: 32, paddingHorizontal: 12, borderRadius: 12, backgroundColor: color.code }}>
-      <Code color={color.text2} size={15} strokeWidth={2.2} />
-      <T v="caption" c={color.text2} style={{ fontWeight: '600' }}>
-        Code · {lines} {lines === 1 ? 'line' : 'lines'}
-      </T>
-    </Press>
-  );
-}
+export { CodeChip };
 
 /** A Markdown table's cells (`| a | b |`). */
 const cells = (line: string): string[] =>
@@ -117,7 +124,7 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at }: { re
       {shown.map((b, bi) => {
         if (b.kind === 'code') {
           const c = prose.code[b.n];
-          if (c?.block) return <Block key={bi} entry={c} {...(at ? { at: { ...at, block: b.n } } : {})} />;
+          if (c?.block) return <Block key={bi} entry={c} {...(at ? { at: { ...at, block: b.n } } : {})} {...(prose.math ? { math: prose.math } : {})} />;
           return <CodeChip key={bi} lang={c?.lang} lines={c?.lines ?? 0} />;
         }
         if (b.kind === 'table') {
@@ -129,7 +136,7 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at }: { re
         if (b.kind === 'h') {
           return (
             <Text key={bi} style={[base, { fontWeight: '700', marginTop: bi ? 4 : 0, marginBottom: -3 }]}>
-              {inline(b.text, base)}
+              {inline(b.text, base, prose.math)}
             </Text>
           );
         }
@@ -139,7 +146,7 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at }: { re
               {b.items.map((item, li) => (
                 <View key={li} style={{ flexDirection: 'row', gap: 10, paddingRight: 6 }}>
                   <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: color.text3, marginTop: size * 0.6 }} />
-                  <Text style={[base, { flex: 1 }]}>{inline(item, base)}</Text>
+                  <Text style={[base, { flex: 1 }]}>{inline(item, base, prose.math)}</Text>
                 </View>
               ))}
             </View>
@@ -150,7 +157,7 @@ export function Prose({ prose, color: tone = color.text, size = 15.5, at }: { re
             {b.lines.map((l, li) => (
               <Fragment key={li}>
                 {li > 0 ? '\n' : ''}
-                {inline(l.replace(/\[\[code:(\d+)\]\]/g, (_, n) => `‹code · ${prose.code[Number(n)]?.lines ?? 0} lines›`), base)}
+                {inline(l.replace(/\[\[code:(\d+)\]\]/g, (_, n) => `‹code · ${prose.code[Number(n)]?.lines ?? 0} lines›`), base, prose.math)}
               </Fragment>
             ))}
           </Text>
