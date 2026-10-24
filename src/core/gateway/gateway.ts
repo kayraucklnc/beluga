@@ -369,10 +369,13 @@ export class Gateway {
       return this.book.get(id) ?? task;
     }
     if (task.state === 'confirm') return this.confirm(id, false, undefined, 'Cancelled before it was sent');
-    const waiting = this.book.waiting(task.peerId).some((o) => 'm' in o.frame && o.frame.m.t === 'task_request' && o.frame.m.id === id);
-    if (waiting) this.book.dropTask(id);
-    else this.courier.send(task.peerId, { t: 'task_cancel', id, ts: this.now() }, true);
-    return this.finishLocal(task, 'cancelled', waiting ? 'Cancelled before it reached them' : 'Cancelled by you');
+    const request = this.book.waiting(task.peerId).find((o) => 'm' in o.frame && o.frame.m.t === 'task_request' && o.frame.m.id === id);
+    if (request) this.book.dropTask(id);
+    // Still in the outbox but handed over: it may have reached them (its ack not back yet), so they're
+    // told too (a cancel for a task they never got is ignored).
+    const unsent = request !== undefined && !request.sentAt;
+    if (!unsent) this.courier.send(task.peerId, { t: 'task_cancel', id, ts: this.now() }, true);
+    return this.finishLocal(task, 'cancelled', unsent ? 'Cancelled before it reached them' : 'Cancelled by you');
   }
 
   get(id: string): TaskView | undefined {
