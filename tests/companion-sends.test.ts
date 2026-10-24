@@ -46,7 +46,20 @@ function conv(...yours: { id: string; text: string }[]) {
   fake.store.emit(`view:${TOPIC}`);
 }
 
-async function fresh() {
+/** What the tests use of lib/sends.ts (the phone's code isn't in the root typecheck: it imports React Native). */
+type SendLike = { id: string; text: string; state: string; error?: string; topic?: string };
+interface Sends {
+  message(topic: string, text: string, call: Call): void;
+  start(start: { kind: string; label: string; target: string }, text: string, call: Call): string;
+  of(where: string): readonly SendLike[];
+  get(id: string): SendLike | undefined;
+  retry(id: string): void;
+  showing(id: string): () => void;
+  draft: unknown;
+}
+const SENDS = '../packages/companion/lib/sends.ts';
+
+async function fresh(): Promise<Sends> {
   vi.resetModules();
   fake.listeners.clear();
   fake.views.clear();
@@ -54,11 +67,11 @@ async function fresh() {
   fake.answers.length = 0;
   fake.toasts.length = 0;
   fake.store.linked = true;
-  return (await import('../packages/companion/lib/sends')).sends;
+  return ((await import(SENDS)) as { sends: Sends }).sends;
 }
 
 describe('a message', () => {
-  let sends: Awaited<ReturnType<typeof fresh>>;
+  let sends: Sends;
   beforeEach(async () => {
     sends = await fresh();
     conv({ id: 't0', text: 'earlier' });
