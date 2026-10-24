@@ -167,8 +167,11 @@ export const PHONE: Record<Method, Side> = {
   'terminals.global': 'mac',
   'terminals.close': 'mac',
   'terminals.rename': 'mac',
+  'terminals.restart': 'mac',
   'env.get': 'mac',
   'env.set': 'mac',
+  'env.claudeDotenv': 'mac',
+  'env.testDatabase': 'mac',
 
   // ---- images in a message: a photo from the phone goes in as bytes, never as a Mac path
   'attachments.add': 'phone',
@@ -176,6 +179,7 @@ export const PHONE: Record<Method, Side> = {
   'attachments.expand': 'phone',
   'attachments.read': 'phone',
   'attachments.open': 'mac',
+  'attachments.reattach': 'mac',
 
   'daemon.stop': 'mac',
   'projects.icon': 'mac',
@@ -270,6 +274,10 @@ export const PHONE: Record<Method, Side> = {
   'board.settleGone': 'mac',
   'board.setAutoTasks': 'mac',
   'board.setPrefix': 'mac',
+  'board.archive': 'mac',
+  'board.archiveDone': 'mac',
+  'board.unarchive': 'mac',
+  'board.emptyArchive': 'mac',
 
   // ---- plans: approve, decide at a milestone's gate, send back with words; never edit their structure
   'plans.create': 'mac',
