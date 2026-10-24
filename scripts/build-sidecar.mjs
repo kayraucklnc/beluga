@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Everything the Mac app needs to run klaud by itself (no Node or klaud installed):
-//   packages/mac/src-tauri/resources/daemon/   klaud compiled (dist/) + its production node_modules
+// Everything the Mac app needs to run Beluga by itself (no Node or Beluga installed):
+//   packages/mac/src-tauri/resources/daemon/   Beluga compiled (dist/) + its production node_modules
 //   packages/mac/src-tauri/binaries/node-<target>   an official Node binary (pinned below)
 // Usage: node scripts/build-sidecar.mjs [--arch arm64|x64]
 import { execFileSync } from 'node:child_process';
@@ -17,7 +17,7 @@ const arch = process.argv.includes('--arch') ? process.argv[process.argv.indexOf
 const triple = arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: 'inherit', ...opts });
 
-// 1. klaud itself.
+// 1. Beluga itself.
 run('npm', ['run', 'build'], { cwd: root });
 const out = path.join(tauri, 'resources/daemon');
 rmSync(out, { recursive: true, force: true });
@@ -58,7 +58,7 @@ rmSync(tmp, { recursive: true, force: true });
 writeFileSync(path.join(out, 'NODE_VERSION'), NODE_VERSION);
 
 // The daemon reports its package.json version, and the app restarts a kept-alive daemon whose
-// version isn't the one it bundles (after an update). klaud's own version doesn't change with
+// version isn't the one it bundles (after an update). Beluga's own version doesn't change with
 // every Mac release, so the bundled copy carries the app's too: 0.4.0+mac.0.5.1.
 {
   const appVersion = JSON.parse(readFileSync(path.join(tauri, 'tauri.conf.json'), 'utf8')).version;
@@ -67,4 +67,4 @@ writeFileSync(path.join(out, 'NODE_VERSION'), NODE_VERSION);
   pkg.version = `${String(pkg.version).split('+')[0]}+mac.${appVersion}`;
   writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + '\n');
 }
-console.log(`\nklaud sidecar ready for ${triple} (Node ${NODE_VERSION})`);
+console.log(`\nBeluga sidecar ready for ${triple} (Node ${NODE_VERSION})`);

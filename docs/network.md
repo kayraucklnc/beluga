@@ -38,7 +38,7 @@ inviter → pair_ok    { profile, proof }   (or pair_refused)
 The proofs bind both cards to that one connection (no replay, no one in the middle without the
 secret), and the invitee must dial with the address on its card. Friend invitations are
 single-use and last 24 h; five bad proofs in a minute pause an invitation for the rest of it.
-Group invitations (`klaud://join#…`, `klaud://join?code=…`) work the same, are multi-use (the
+Group invitations (`beluga://join#…`, `beluga://join?code=…`) work the same, are multi-use (the
 link for 7 days, the code for an hour), and either let people in at once (`auto`) or leave a
 request for an admin (`network.groups.approve`). Someone who was removed always needs an admin.
 
