@@ -82,7 +82,12 @@ function demoState(): DomainState {
   const run = (a: Action): void => store.dispatch(a);
   run({ type: 'identity', selfId: ME, isHost: true, home: '/Users/k' });
   run({ type: 'welcome', self: { peerId: ME, name: 'kayra', shares: [], agent: true, usage: { plan: 'max', fiveHour: { pct: 12, resetsAt: T0 + 3_600_000 }, week: { pct: 38 }, updatedAt: T0 } } });
-  run({ type: 'projects', projects: [{ id: 'p1', name: 'landing', root: '/Users/k/landing', base: 'main', workspaces: [workspace('w1', 'auth', '/Users/k/landing'), workspace('w2', 'tests', '/Users/k/landing')] }] as never });
+  run({ type: 'projects', projects: [{ id: 'p1', name: 'landing', root: '/Users/k/landing', base: 'main', workspaces: [{ ...workspace('p1:main', 'landing', '/Users/k/landing'), kind: 'main', path: '/Users/k/landing', askOnly: true }, workspace('w1', 'auth', '/Users/k/landing'), workspace('w2', 'tests', '/Users/k/landing')] }] as never });
+  // Your Mac (BLG-47): you asked for a screenshot and a worktree; its answer names what it started.
+  run({ type: 'chat', id: 'ca1', from: ME, text: 'Take a screenshot and start a worktree in landing for the login bug', ts: T0 + 7, byAgent: false, channel: 'mac:assistant' });
+  run({ type: 'agent_event', owner: ME, requestId: 'ra1', requester: ME, event: 'started', text: '', ts: T0 + 8, channel: 'mac:assistant', itemId: 'i-ra1' });
+  run({ type: 'agent_event', owner: ME, requestId: 'ra1', requester: ME, event: 'tool', text: 'mcp__beluga_mac__screenshot', ts: T0 + 8, channel: 'mac:assistant', itemId: 'i-ra1' });
+  run({ type: 'agent_event', owner: ME, requestId: 'ra1', requester: ME, event: 'done', text: 'Here’s your screen. I started `worktree:w1` for the login bug.', ts: T0 + 9, channel: 'mac:assistant', itemId: 'i-ra1' });
   // ws:w1: you asked, Claude answered with code in it.
   run({ type: 'chat', id: 'c1', from: ME, text: 'How do we protect the payment routes?', ts: T0 + 1, byAgent: false, channel: 'ws:w1' });
   const ev = (event: Extract<Action, { type: 'agent_event' }>['event'], text: string, ts: number, channel: string, requestId: string): void =>
@@ -207,7 +212,9 @@ function context(): ViewContext {
     mac: { name: 'Kayra’s Mac', version: '0.6.2' },
     icons: (id) => (id === 'p1' ? ICON : undefined),
     outputs: (channel) =>
-      channel === 'ws:w2'
+      channel === 'mac:assistant'
+        ? [{ path: '/Users/k/.beluga/assistant/work/.beluga/scratch/screens/screen-1.png', size: 4096, ts: T0 + 8, cwd: '/Users/k/.beluga/assistant/work' }]
+        : channel === 'ws:w2'
         ? [
             { path: '/Users/k/landing/.worktrees/w2/.beluga/scratch/shot.png', size: 2048, ts: T0 + 12, by: 'sa1', cwd: '/Users/k/landing/.worktrees/w2' },
             { path: '/Users/k/landing/.worktrees/w2/test-results/run.log', size: 300, ts: T0 + 13, cwd: '/Users/k/landing/.worktrees/w2' },
@@ -219,7 +226,7 @@ function context(): ViewContext {
 }
 
 const ICON = 'abcdef0123456789abcdef01';
-const TOPICS: Topic[] = ['home', 'work', 'plans', 'chats', 'people', 'tasks', 'conv:ws:w1', 'conv:ws:w2', 'plan:pl_auth', `chat:dm:${BOB}`, 'task:i1'];
+const TOPICS: Topic[] = ['home', 'work', 'plans', 'chats', 'people', 'tasks', 'conv:mac:assistant', 'conv:ws:w1', 'conv:ws:w2', 'plan:pl_auth', `chat:dm:${BOB}`, 'task:i1'];
 
 describe('the views of a known Mac', () => {
   const state = demoState();

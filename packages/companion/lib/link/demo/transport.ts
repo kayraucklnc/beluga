@@ -11,6 +11,7 @@ import {
   type OutputView,
   type PhoneFrame,
   type PlansView,
+  type PlanView,
   type TasksView,
   type Topic,
   type TurnView,
@@ -167,6 +168,7 @@ export class DemoTransport implements Transport {
   private view(topic: Topic): unknown {
     const w = this.world;
     if (topic === 'home') return this.home();
+    // Your Mac isn't a project: Home and the Ask sheet have it (1.5).
     if (topic === 'work') return { projects: w.projects.map((p) => ({ id: p.id, name: p.name, conversations: p.convs.map((t) => this.summary(w.convs.get(t)!)), ...(w.icons[p.id] ? { icon: w.icons[p.id]!.sum } : {}) })) };
     if (topic === 'tasks') return this.tasks();
     if (topic.startsWith('task:')) return w.tasks.find((t) => t.topic === topic);
@@ -194,9 +196,11 @@ export class DemoTransport implements Transport {
   private home(): HomeView {
     const w = this.world;
     const review = w.tasks.filter((t) => t.status === 'in_review');
+    const assistant = w.convs.get('conv:mac:assistant');
     return {
       mac: DEMO_MAC,
       me: DEMO_ME,
+      ...(assistant ? { assistant: this.summary(assistant) } : {}),
       usage: w.usage,
       needsYou: w.needs,
       running: [...w.convs.values()].filter((c) => c.working || w.needs.some((n) => n.topic === c.topic)).map((c) => this.summary(c)),
@@ -245,7 +249,7 @@ export class DemoTransport implements Transport {
       title: c.title,
       project: c.project,
       status: c.working ? 'working' : waiting ? 'waiting' : last?.status === 'failed' ? 'failed' : 'idle',
-      last: (c.working ? last?.step : undefined) ?? stripMarkers(last?.prose.text ?? ''),
+      last: (c.working ? last?.step : undefined) ?? stripMarkers((last?.prose.text ?? '').replace(/`(worktree|plan):([\w-]+)`/g, (_m, kind: string, id: string) => (kind === 'worktree' ? this.world.convs.get(`conv:ws:${id}`)?.title : this.world.plans.find((p) => p.id === id)?.title) ?? id)),
       lastAt: last?.ts,
       needsYou: waiting,
       agents: agents || undefined,
@@ -480,6 +484,36 @@ export class DemoTransport implements Transport {
         }
         return ok();
       }
+      // ---- asking in a project (1.5): a new worktree with Claude on it, or a plan to approve
+      case 'workspaces.startWorktree': {
+        const opts = (args[2] ?? {}) as { plan?: boolean };
+        const project = str(0);
+        const id = `wt-${++this.convSeq}${Math.random().toString(36).slice(2, 6)}`;
+        const topic = `conv:ws:${id}` as Topic;
+        const name = str(1).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'worktree';
+        w.convs.set(topic, { topic, title: name, project, turns: [], more: false, needsYou: [], canSend: true, working: false });
+        w.projects.find((x) => x.id === project)?.convs.unshift(topic);
+        this.submit(str(1), { topic }, [], opts.plan ? 'Here’s the plan: read the redirect, keep the deep link through sign-in, add a widget test. Approve it on your Mac or here and I’ll start.' : undefined);
+        return ok(id);
+      }
+      case 'plans.create': {
+        const a = args[0] as { projectId: string; goal: string };
+        const id = `pl-${++this.convSeq}`;
+        const title = a.goal.length > 48 ? `${a.goal.slice(0, 47)}…` : a.goal;
+        const plan: PlanView = { id, title, goal: a.goal, state: 'draft', milestones: [], needsYou: [] };
+        w.plans = [plan, ...w.plans];
+        this.touch(`plan:${id}` as Topic, 'plans');
+        // Claude drafts it: milestones and tasks arrive, then it waits for your approval.
+        this.later(2600, () => {
+          plan.milestones = [
+            { id: `${id}-m1`, title: 'Groundwork', state: 'todo', criteria: ['The tests pass'], tasks: [{ id: `${id}-t1`, title: 'Read how it works today', state: 'todo' }, { id: `${id}-t2`, title: 'The data model', state: 'todo' }] },
+            { id: `${id}-m2`, title: 'Ship it', state: 'todo', criteria: ['Works on a Pixel 7'], tasks: [{ id: `${id}-t3`, title: 'The screen', state: 'todo' }] },
+          ];
+          w.needs = [{ id: `plan:${id}:approve:1`, kind: 'plan', title: `Approve the plan “${title}”?`, detail: a.goal, topic: `plan:${id}` as Topic, actions: [{ label: 'Approve', tone: 'main', method: 'plans.approve', args: [id] }, { label: 'Discard', tone: 'danger', method: 'plans.discard', args: [id] }] } as NeedsYou, ...w.needs];
+          this.touch(`plan:${id}` as Topic, 'plans');
+        });
+        return ok({ id, home: `ws:${id}-home`, projectId: a.projectId, status: 'draft' });
+      }
       case 'board.start': {
         const t = w.tasks.find((x) => x.key === str(0) || x.id === str(0));
         if (!t) return this.frames.emit({ t: 'result', id, ok: false, error: 'No such task' });
@@ -615,7 +649,7 @@ export class DemoTransport implements Transport {
   }
 
   /** Your message (and photos) into a conversation, or a new one in a project; Claude gets to work. */
-  private submit(text: string, target: { project?: string; topic?: string }, files: OutputView[] = []): Topic {
+  private submit(text: string, target: { project?: string; topic?: string }, files: OutputView[] = [], said?: string): Topic {
     const w = this.world;
     let topic = (target.topic ?? '') as Topic;
     let conv = target.topic ? w.convs.get(target.topic) : undefined;
@@ -633,10 +667,22 @@ export class DemoTransport implements Transport {
     conv.turns = [...conv.turns, you, claude];
     conv.working = true;
     this.touch(topic, 'work');
-    const answer = files.length
+    const shot = topic === 'conv:mac:assistant' && /screenshot|screen/i.test(text);
+    const answer = said ?? (shot
+      ? 'Here’s your screen now: the radar build in the Simulator, and the login fix’s tests running in Terminal.'
+      : topic === 'conv:mac:assistant'
+        ? 'Nothing heavy: Xcode at 34% CPU, the Simulator at 12%, Beluga under 2%. 9.5 GB of 24 GB memory free.'
+        : files.length
       ? `Got your photo (${files[0]!.name}). It matches what I see in the radar build; nothing to change.`
-      : 'Done. The tests pass (40/40) and nothing else needed changing.';
-    this.work(topic, claude.id, 'Claude', ['Reading the code', 'Running the tests · 12/40', 'Running the tests · 40/40', 'Writing the answer'], answer);
+      : 'Done. The tests pass (40/40) and nothing else needed changing.');
+    let outputs: OutputView[] | undefined;
+    if (shot) {
+      const view: OutputView = { ref: ref('screen'), name: `screen-${new Date().toISOString().slice(11, 19).replace(/:/g, '-')}.png`, kind: 'image', size: 98_000, ts: Date.now() + 4000 };
+      w.files.set(view.ref, { view, mime: 'image/jpeg', image: 'desktop' });
+      outputs = [view];
+    }
+    const steps = topic === 'conv:mac:assistant' ? (shot ? ['Taking a screenshot', 'Writing the answer'] : ['Running ps -Ao pid,pcpu,pmem,comm', 'Writing the answer']) : ['Reading the code', 'Running the tests · 12/40', 'Running the tests · 40/40', 'Writing the answer'];
+    this.work(topic, claude.id, 'Claude', steps, answer, outputs);
     return topic;
   }
 

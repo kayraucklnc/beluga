@@ -42,6 +42,9 @@ export const PhoneCalls = {
   'invites.decline': entry('invites.decline', done),
   'workspaces.load': entry('workspaces.load', done),
   'workspaces.startChat': entry('workspaces.startChat', done),
+  // 1.5: asking in a project as a new worktree (its id comes back) or a plan (it comes back).
+  'workspaces.startWorktree': entry('workspaces.startWorktree', z.string().optional()),
+  'plans.create': entry('plans.create', z.object({ id: z.string() }).passthrough()),
   'attachments.add': entry('attachments.add', z.object({ n: z.number(), chip: z.string() })),
   'attachments.expand': entry('attachments.expand', z.string()),
   'attachments.read': entry('attachments.read', z.object({ mime: z.string(), size: z.number(), data: z.string() })),

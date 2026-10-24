@@ -507,7 +507,10 @@ export class CompanionHost {
       this.phoneRuns.set(typeof channel === 'string' ? channel : 'room', false);
     }
     const out = await this.opts.call(link.clientId, method, args);
-    if (method === 'workspaces.startChat' && out.ok && typeof out.value === 'string') this.phoneRuns.set(`ws:${out.value}`, false);
+    if ((method === 'workspaces.startChat' || method === 'workspaces.startWorktree') && out.ok && typeof out.value === 'string') this.phoneRuns.set(`ws:${out.value}`, false);
+    // A plan asked from the phone: its head Claude's draft is done (to approve) when its first run ends.
+    const home = method === 'plans.create' && out.ok ? (out.value as { home?: unknown } | null)?.home : undefined;
+    if (typeof home === 'string') this.phoneRuns.set(home, false);
     return out;
   }
 

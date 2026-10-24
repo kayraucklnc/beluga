@@ -291,7 +291,37 @@ export function makeWorld(now = Date.now()): DemoWorld {
     ],
   };
 
-  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now)].map((c) => [c.topic, c]));
+  // ---- Your Mac (1.5): your Claude for the whole Mac. A screenshot sent back, and a worktree it started.
+  const screen = img('screen-2026-10-24-09-41.png', 'desktop', undefined, 3 * MIN);
+  const loginBug: ConvView = {
+    topic: 'conv:ws:wt-login-bug',
+    title: 'login-redirect-bug',
+    project: 'pixel-weather',
+    more: false,
+    canSend: true,
+    working: true,
+    needsYou: [],
+    turns: [
+      { id: 'lb1', who: 'you', name: 'You', ts: now - 2 * MIN, prose: { text: 'Signing in from the widget lands on a blank page instead of the forecast. Find out why the redirect drops the deep link, fix it, and add a test.', code: [] } },
+      { id: 'lb2', who: 'claude', name: 'Claude', ts: now - 2 * MIN, status: 'working', step: 'Reading src/auth/redirect.ts', steps: 3, live: { phase: 'step', words: 'Reading src/auth/redirect.ts', tool: 'read', since: now - 20_000 }, trail: [{ tool: 'search', text: 'Searched for "returnTo"' }, { tool: 'read', text: 'Read src/widget/open.ts' }], prose: { text: '', code: [] } },
+    ],
+  };
+  const assistant: ConvView = {
+    topic: 'conv:mac:assistant',
+    title: 'Your Mac',
+    more: false,
+    canSend: true,
+    working: false,
+    needsYou: [],
+    turns: [
+      { id: 'a1', who: 'you', name: 'You', ts: now - 4 * MIN, prose: { text: 'Take a screenshot and send it to me', code: [] } },
+      { id: 'a2', who: 'claude', name: 'Claude', ts: now - 4 * MIN, endTs: now - 3 * MIN, status: 'done', steps: 1, trail: [{ tool: 'tool', text: 'Took a screenshot of the main display' }], outputs: [screen], prose: { text: 'Here’s your screen: Xcode on the left, the radar build running in the Simulator on the right.', code: [] } },
+      { id: 'a3', who: 'you', name: 'You', ts: now - 2 * MIN, prose: { text: 'Start a worktree in pixel-weather for the login bug', code: [] } },
+      { id: 'a4', who: 'claude', name: 'Claude', ts: now - 2 * MIN, endTs: now - 2 * MIN + 9000, status: 'done', steps: 2, trail: [{ tool: 'tool', text: 'Listed your projects' }, { tool: 'tool', text: 'Started a worktree' }], prose: { text: 'Started `worktree:wt-login-bug` in pixel-weather. Its Claude is reading the redirect code now; I’ll leave it to it.', code: [] } },
+    ],
+  };
+
+  const convs = new Map<string, ConvView>([onboarding, push, radar, flaky, dashboardConv(now), loginBug, assistant].map((c) => [c.topic, c]));
 
   // ---- what needs you, one of each kind (and one this phone doesn't know)
   // Shaped exactly as src/companion/views.ts makes them (the same methods, args and templates).
@@ -573,7 +603,7 @@ export function makeWorld(now = Date.now()): DemoWorld {
     convs,
     projects: [
       { id: 'beluga', name: 'beluga', convs: ['conv:beluga.onboarding', 'conv:beluga.push'] },
-      { id: 'pixel-weather', name: 'pixel-weather', convs: ['conv:weather.radar', 'conv:weather.ci'] },
+      { id: 'pixel-weather', name: 'pixel-weather', convs: ['conv:ws:wt-login-bug', 'conv:weather.radar', 'conv:weather.ci'] },
       { id: 'shop', name: 'shop', convs: ['conv:shop.dashboard'] },
       { id: 'asked', name: 'Asked of friends', convs: [] },
     ],

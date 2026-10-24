@@ -27,7 +27,7 @@ describe('what the phone may call', () => {
     // Answering someone at the door is the one exception: it's an answer, like an approval.
     expect(METHODS.filter((m) => macOnly.test(m) && PHONE[m] === 'phone')).toEqual(['invites.letIn', 'invites.decline']);
     for (const m of ['session.setPrefs', 'session.newInviteLink', 'session.setRoomOpen', 'workspaces.merge', 'workspaces.commit', 'agent.step', 'claudeCode.step', 'plans.edit', 'board.update', 'companion.pair.start', 'companion.devices.remove'] as const) expect(PHONE[m]).toBe('mac');
-    for (const m of ['companion.ask', 'companion.post', 'companion.askPerson', 'companion.signOut', 'network.groups.approve', 'session.submit', 'host.answerApproval', 'host.stopRun', 'questions.answer', 'gateway.decide', 'gateway.confirm', 'plans.approve', 'plans.pass', 'network.dm.send', 'network.post', 'workspaces.startChat', 'companion.older'] as const) expect(PHONE[m]).toBe('phone');
+    for (const m of ['companion.ask', 'companion.post', 'companion.askPerson', 'companion.signOut', 'network.groups.approve', 'session.submit', 'host.answerApproval', 'host.stopRun', 'questions.answer', 'gateway.decide', 'gateway.confirm', 'plans.approve', 'plans.pass', 'network.dm.send', 'network.post', 'workspaces.startChat', 'companion.older', 'workspaces.startWorktree', 'plans.create'] as const) expect(PHONE[m]).toBe('phone');
     expect(phoneMay('no.such')).toBe(false);
     expect(phoneMay('toString')).toBe(false);
   });

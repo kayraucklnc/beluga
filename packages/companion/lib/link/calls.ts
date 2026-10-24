@@ -34,6 +34,13 @@ export const calls = {
   send: (topic: Topic, text: string, files?: Files): Call => make('companion.ask', [{ target: { topic }, text, ...withFiles(files) }], `Send "${short(text)}"`),
   /** Ask your Mac in a project: a new conversation there (its topic comes back). */
   ask: (project: string, text: string, files?: Files): Call => make('companion.ask', [{ target: { project }, text, ...withFiles(files) }], `Ask "${short(text)}"`),
+  /**
+   * Since 1.5, in a project, what the Mac's project home offers besides a question: a new worktree
+   * with Claude on your words (`plan`: it plans first, as the Mac's Plan mode), → its id; or a plan
+   * Claude drafts for you to approve, → the plan.
+   */
+  startWorktree: (project: string, text: string, plan = false): Call => make('workspaces.startWorktree', [project, text, { quiet: true, ...(plan ? { plan: true } : {}) }], `Start "${short(text)}"`),
+  createPlan: (project: string, goal: string): Call => make('plans.create', [{ projectId: project, goal }], `Plan "${short(goal)}"`),
   stop: (topic: Topic): Call => make('host.stopRun', [channelOf(topic)], 'Stop'),
   /**
    * While Claude works, as the Mac's composer: Steer gives it your words now (at its next step; a

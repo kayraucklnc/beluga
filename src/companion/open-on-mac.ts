@@ -1,4 +1,5 @@
 import type { DomainState, View } from '../core/store.js';
+import { ASSISTANT_CHANNEL } from '../shared/assistant.js';
 
 /**
  * "Open on your Mac" from the phone (BLG-40): what the Mac app's window shows for something the
@@ -21,6 +22,7 @@ export function macViewFor(state: DomainState, target: OpenTarget): View | undef
     if (topic.startsWith('conv:')) {
       const channel = topic.slice(5);
       if (channel === 'room') return { kind: 'room' };
+      if (channel === ASSISTANT_CHANNEL) return { kind: 'assistant' };
       if (channel.startsWith('task:')) return { kind: 'requests' };
       if (channel.startsWith('ws:')) {
         const id = channel.slice(3);

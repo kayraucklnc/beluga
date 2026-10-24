@@ -213,7 +213,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.pair.cancel` | ✓ the Phone popover's Cancel while a pairing is open (a waiting phone hears no) |
 | `companion.devices.remove` | ✓ the Phone popover › a phone › Remove (its link drops at once, its key is refused from then on) |
 | `companion.older` | – the phone only: older turns of a conversation (or messages of a chat) as you scroll up (docs/companion.md) |
-| `companion.ask` | – the phone only: Ask your Mac (a new chat in a project, as New Chat does, or a message in a conversation), with photos and files the phone sent (`put`) |
+| `companion.ask` | – the phone only: Ask your Mac (a question in a project, as New Chat does, or a message in a conversation, Your Mac's `conv:mac:assistant` included), with photos and files the phone sent (`put`) |
 | `companion.post` | – the phone only: a message in a friends' chat with files from the phone |
 | `companion.askPerson` | – the phone only: ask a friend's Claude yourself, as from their card in Requests (their approval and trust rules apply) |
 | `companion.signOut` | – the phone only: Sign Out removes that phone's own certificate (the Mac's Remove is `companion.devices.remove`) |
@@ -231,7 +231,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workspaces.newWorktree` | ✓ |
 | `workspaces.newChat` | ✓ |
 | `workspaces.startChat` | ✓ |
-| `workspaces.startWorktree` | ✓ |
+| `workspaces.startWorktree` | ✓ (→ the new worktree's id; `plan`: its Claude plans first; `quiet`: the window stays put. The phone's Ask › a project › Worktree, with Plan first, since 1.5; Your Mac's `start_worktree`) |
 | `workspaces.branches` | New worktree › Based on popup |
 | `workspaces.fork` | ✓ |
 | `workspaces.continueInWorktree` | Continue in New Worktree… (toolbar and the ask banner) › sheet: Task, Based on, Name |
@@ -382,7 +382,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `board.emptyArchive` | ✓ Tasks › Archive › Empty Archive |
 | `board.setAutoTasks` | ✓ Tasks › ⋯ › Open a Task for Every New Worktree |
 | `board.setPrefix` | ✓ Tasks › ⋯ › Task Keys… |
-| `plans.create` | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder) |
+| `plans.create` | ✓ Plans › New Plan (a goal; Claude plans in a conversation of its own in the project's main folder); the phone's Ask › a project › Plan (1.5); Your Mac's `start_plan` (quietly) |
 | `plans.here` | ✓ the composer's mode menu › Plan with Tasks (Claude plans in the conversation you're in) |
 | `plans.approve` | ✓ Approve Plan / Apply Changes on a plan's page and its strip above the conversation |
 | `plans.discard` | ✓ Discard Draft / Discard Changes on a plan's page |
@@ -490,6 +490,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | Tasks between Claudes (the gateway): your Claude finds who can help (`who_can`), asks their Claude (`ask_person`) or runs one command on their Mac (`run_on`), waits (`wait_for`) or ends its turn and continues when the answer comes back; you're asked first for people you don't trust (a card in the conversation), their side approves with today's approval cards unless they trust you; results go only to the requester, as data. Task cards in conversations, the Requests view (Sent / Received) — the `gateway.*` API and the shared state's `gateway` | Mac (`src/core/gateway/`, the daemon runs it; `src/gateway/*` in the app) |
 | Tasks (the board): a Tasks place in the sidebar with My Tasks, Active, Backlog and All, by project; a list grouped by status, a board you drag cards across, and a graph of what waits on what (the graph engine); filtered by who or by the worktree doing or carrying them (a worktree's Info tab lists its tasks and opens the board filtered to it); a task's page (its title, properties, a brief in sections that Claude and you keep true with every version kept, sub-tasks, blockers, its worktree and pull request, proof, activity and comments); a task opens with every new worktree and follows its pull request (In Review when it opens, Done when it merges); Start on a task (or Start Worktree Only), Open Worktree when one already does or carries it; your Claude's runs in a task's worktree get its brief and the task tools (`mcp__beluga_board__*`) — the `board.*` API and the shared state's `board` | Mac (`src/core/board/`, the daemon runs it; `src/tasks/*` in the app) |
 | Plans: milestones with pass criteria and parallel tasks, drafted by Claude in a conversation and kept off the board until approved; a live plan graph and outline; Step by Step · Check-ins · Autopilot run by a scheduler that starts worktrees and asks Claude to check each milestone; the composer's Plan with Tasks — the `plans.*` API, Claude's `mcp__beluga_plan__*` tools and the shared state's `plans` | Mac (`src/core/plans/`, the daemon runs it; `src/plans/*` in the app) |
+| Your Mac (BLG-47): one conversation with your own Claude for the whole Mac, not one project, the same on the phone and the Mac (the `assistant` view, channel `mac:assistant`). It runs in ~/.beluga/assistant/work (its scratch folder's files are its outputs on the phone; its session and history beside it stay secret), with your usual approvals, and its tools (`mcp__beluga_mac__*`: `screenshot`, `device_info`, `list_work`, `start_worktree`, `start_task`, `start_plan`) plus the board's. What it starts it names as `worktree:<id>`, `task:<KEY>`, `plan:<id>`, drawn as links on both screens | Mac (the sidebar's top row, `layout/AssistantNav.tsx`; core: `src/core/assistant/`, `src/agent/mac-tools.ts`); phone (the Ask sheet's first target, Home's Ask your Mac) |
 | Graphs Claude draws (`beluga-graph` blocks: interactive diagrams laid out by ELK and drawn with React Flow, in answers, reports and Markdown files; hover, details, walkthrough, full window) | Mac (`components/graph/*`; the format is `src/shared/graph-spec.ts`, Claude learns it from `agent/graph-prompt.ts`) |
 | Views Claude shows (`beluga-view` blocks and the `show` tool: tables, charts, stats, code, colors; live from a file, folder, SQLite, Postgres, a web address or a command, paged, sorted and searched without Claude) | Mac (`components/views/*`; the format is `src/shared/view-spec.ts`, sources run in `core/views/sources.ts`, Claude learns it from `agent/view-prompt.ts`) |
 

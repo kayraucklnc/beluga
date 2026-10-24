@@ -35,6 +35,9 @@ const ALWAYS_OK = new Set([
   ...['plan_get', 'plan_write', 'plan_update', 'plan_gate', 'plan_start_task', 'plan_message_task', 'plan_stop_task', 'plan_pause'].map((n) => `mcp__beluga_plan__${n}`),
   // A friend's task only has these when its owner allowed them for that request (core/gateway/serve.ts).
   ...['screenshot', 'device_info'].map((n) => `mcp__beluga_task__${n}`),
+  // "Your Mac": only its own conversation has these, in your own runs (core/assistant). They look at
+  // this Mac or start work you asked for (a worktree, a task, a plan), the way the board's tools do.
+  ...['screenshot', 'device_info', 'list_work', 'start_worktree', 'start_task', 'start_plan'].map((n) => `mcp__beluga_mac__${n}`),
 ]);
 
 /**

@@ -86,6 +86,9 @@ export interface AgentRunInput {
   /** A plan (Plans): its tools for this run (its home conversation), and what Claude is told about it. */
   readonly planTools?: PlanTools;
   readonly planBrief?: string;
+  /** "Your Mac" (core/assistant): its tools (the screen, device info, starting work) and what Claude is told it is. */
+  readonly macTools?: MacTools;
+  readonly macBrief?: string;
 }
 
 /** What Claude writes down about a piece of work: the task in its own words, never the request pasted in. */
@@ -163,6 +166,18 @@ export interface BoardTools {
 export interface TaskTools {
   readonly screenshot?: (app?: string) => Promise<{ readonly text: string; readonly image?: { readonly data: string; readonly mimeType: string } }>;
   readonly deviceInfo?: () => Promise<string>;
+}
+
+/** "Your Mac"'s tools (agent/mac-tools.ts, server `beluga_mac`): each answers in words for Claude. */
+export interface MacTools {
+  /** A screenshot saved in its scratch folder (an output on both screens), with a copy for Claude to see. */
+  screenshot(app?: string): Promise<{ readonly text: string; readonly image?: { readonly data: string; readonly mimeType: string } }>;
+  deviceInfo(): Promise<string>;
+  /** Projects, their worktrees and chats, what's running, plans. */
+  listWork(): string;
+  startWorktree(input: { readonly project: string; readonly message: string; readonly name?: string; readonly plan?: boolean }): Promise<string>;
+  startTask(key: string): Promise<string>;
+  startPlan(input: { readonly project: string; readonly goal: string }): Promise<string>;
 }
 
 /** A message sent into a live run: while it waits on its background agents, or steering it. */

@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Bot, CircleCheck, CircleX, Clock, GitMerge, History, Images, Monitor, OctagonX, Send, Sparkles, Square } from 'lucide-react-native';
+import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, GitMerge, History, Images, Laptop, Monitor, OctagonX, Send, Sparkles, Square } from 'lucide-react-native';
 import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDots } from '../../components/Live';
 import { MergeBand, MergeSheet } from '../../components/Merge';
 import { ProjectMark } from '../../components/ProjectMark';
@@ -29,6 +29,37 @@ import { router } from 'expo-router';
  * step, sub-agents as chips (tap: a sheet with their steps and outputs), what it waits on you for,
  * and a composer with Send and Stop.
  */
+/** Your Mac's conversation (1.5): your Claude for the whole Mac. */
+const ASSISTANT = 'conv:mac:assistant' as Topic;
+
+/** An empty Your Mac: three first things to ask, one tap each (the composer is there too). */
+function MacStarters({ topic }: { readonly topic: Topic }) {
+  const starters = [
+    { label: 'Send me a screenshot', Icon: Camera, tone: 'sky' as Tone, text: 'Take a screenshot of my screen and send it to me.' },
+    { label: 'What’s using my CPU?', Icon: Cpu, tone: 'peach' as Tone, text: 'What’s using my CPU and memory right now?' },
+    { label: 'What’s running?', Icon: Activity, tone: 'mint' as Tone, text: 'What’s running in Beluga right now, across my projects?' },
+  ];
+  return (
+    <Animated.View entering={FadeIn.duration(260)} style={{ alignItems: 'center', gap: 14, marginTop: 40 }}>
+      <IconBadge Icon={Laptop} tone="sky" size={56} />
+      <T v="heading">Ask your Mac</T>
+      <T v="callout" style={{ textAlign: 'center', paddingHorizontal: 24 }}>
+        Your Claude for the whole Mac, not one project. The same conversation as on your Mac.
+      </T>
+      <View style={{ gap: 8, alignSelf: 'stretch', marginTop: 6 }}>
+        {starters.map((s) => (
+          <Press key={s.label} scaleTo={0.985} onPress={() => void store.call(calls.send(topic, s.text)).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }))}>
+            <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 }}>
+              <IconBadge Icon={s.Icon} tone={s.tone} size={30} />
+              <T v="body">{s.label}</T>
+            </Card>
+          </Press>
+        ))}
+      </View>
+    </Animated.View>
+  );
+}
+
 export default function Conversation() {
   const { scrolled, onScroll } = useScrolled();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -65,7 +96,7 @@ export default function Conversation() {
 
   return (
     <Screen>
-      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} lead={c?.project ? <ProjectMark name={c.project} icon={c.icon} size={30} /> : undefined} right={
+      <Header scrolled={scrolled} back eyebrow={c?.project} title={c?.title ?? 'Conversation'} at={conv?.at} lead={topic === ASSISTANT ? <IconBadge Icon={Laptop} tone="sky" size={30} /> : c?.project ? <ProjectMark name={c.project} icon={c.icon} size={30} /> : undefined} right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {c?.working && !all.length ? <Pill label="Working" tone="peach" /> : null}
             {all.length ? (
@@ -106,6 +137,7 @@ export default function Conversation() {
             </Press>
           ) : null}
           {!c ? <T v="callout" style={{ textAlign: 'center', marginTop: 40 }}>Opening the conversation…</T> : null}
+          {c && topic === ASSISTANT && !turns.length ? <MacStarters topic={topic} /> : null}
           {turns.map((t, i) => (
             <Animated.View key={t.id} entering={i > turns.length - 3 ? FadeInUp.springify().stiffness(200).damping(22) : undefined} layout={LinearTransition.springify().stiffness(220).damping(26)}>
               {t.who === 'you' ? <YourTurn t={t} onLongPress={t.steer?.waiting === 'next_step' ? () => setUnread(t) : undefined} /> : <ClaudeTurn t={t} all={all} onAgent={setAgent} topic={topic} />}
@@ -245,7 +277,7 @@ function ClaudeTurn({ t, all, onAgent, topic }: { t: TurnView; all: OutputView[]
           {t.name}
         </T>
         <T v="caption" style={{ flex: 1 }} numberOfLines={1}>
-          {t.steps ? `${t.steps} steps` : ''}
+          {t.steps ? `${t.steps} ${t.steps === 1 ? 'step' : 'steps'}` : ''}
           {mins ? ` · ${mins} min` : ''}
         </T>
         <T v="caption">{ago(t.ts)}</T>

@@ -451,13 +451,20 @@ export class WorkspaceController {
    * while a small model names it (then the worktree takes that name), and Claude starts on it.
    * With no message it just creates the worktree.
    */
-  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>, opts: { base?: string; name?: string } = {}): Promise<void> {
+  /**
+   * `plan`: its Claude plans first (plan mode is on in it before the message goes). `quiet`: made
+   * from elsewhere (the phone, Your Mac), so the Mac's window stays where it is. → the worktree,
+   * by the name the model gave it.
+   */
+  async startWorktree(projectId: string, firstMessage: string, nameTask: (prompt: string) => Promise<string>, opts: { base?: string; name?: string; plan?: boolean; quiet?: boolean } = {}): Promise<Workspace | undefined> {
     const text = firstMessage.trim();
     const named = opts.name?.trim();
     const proper = named || !text ? undefined : nameTask(firstMessage).catch(() => undefined);
-    const ws = await this.newWorktree(projectId, named || (text ? slugify(text) : 'worktree'), opts.base ? { base: opts.base } : {});
+    const ws = await this.newWorktree(projectId, named || (text ? slugify(text) : 'worktree'), { ...(opts.base ? { base: opts.base } : {}), ...(opts.quiet ? { quiet: true } : {}) });
+    if (ws && opts.plan) this.deps.store.dispatch({ type: 'plan_mode', channel: `${WS_PREFIX}${ws.id}`, on: true });
     if (ws && text) this.deps.askClaude(firstMessage, `${WS_PREFIX}${ws.id}`);
     if (ws && proper) await this.renameWhenNamed(ws.id, proper);
+    return ws ? (this.deps.manager.find(ws.id) ?? ws) : undefined;
   }
 
   /** The model's name for a worktree made under a quick one, once it arrives (never fails the start). */

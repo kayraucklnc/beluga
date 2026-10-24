@@ -105,7 +105,7 @@ export function claudeWorkingIn(state: AppState, channel: string): boolean {
 /** The conversation itself is showing (not a workspace's Files, Diff or Terminal tab). */
 const chatShowing = (state: AppState): boolean => {
   const v = state.view;
-  return v.kind === 'room' || v.kind === 'draft' || v.kind === 'draft_worktree' || ((v.kind === 'workspace' || v.kind === 'shared') && v.tab === 'chat');
+  return v.kind === 'room' || v.kind === 'assistant' || v.kind === 'draft' || v.kind === 'draft_worktree' || ((v.kind === 'workspace' || v.kind === 'shared') && v.tab === 'chat');
 };
 
 /** A workspace's run script is running. */

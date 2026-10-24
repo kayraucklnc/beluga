@@ -47,6 +47,7 @@ function Route() {
   if (making) return <MakingWorktree />;
   switch (view.kind) {
     case 'room':
+    case 'assistant':
     case 'draft':
     case 'draft_worktree':
       return <ChatView />;

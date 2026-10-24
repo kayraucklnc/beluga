@@ -16,7 +16,7 @@ two in step.
 | Live work: conversations, Claude's answers, sub-agents and their steps | Changes, review, merge, commit, terminals |
 | Outputs: screenshots, images, logs, test output, reports, PDFs (anything `isArtifact` calls an output) | The file browser of a project |
 | Plans as they're designed and run: milestones, tasks, decisions | Editing plans' structure (approve, decide and comment only) |
-| Asking your Mac to do anything (a new chat in a project, or a message in one), and getting the answer, images and files back | Settings beyond the phone's own (notifications, sign out) |
+| Asking your Mac to do anything (Your Mac, a new worktree, plan or question in a project, or a message in a conversation), and getting the answer, images and files back | Settings beyond the phone's own (notifications, sign out) |
 | Chats with friends (DMs, channels, files, Ask Claude); asking a friend's Claude (`ask_person`) | Hosting rooms, invites |
 | Your Claude allowance (5-hour and weekly windows), and your friends' | Billing |
 
@@ -116,10 +116,12 @@ show. The phone never sees it: `src/companion/views.ts` turns it into small view
 already cut down for the phone (code stripped, steps in words, paths as opaque refs):
 
 - `home`: the Mac (name, awake), your usage, what needs you, what's running now, unread counts, tasks
-  waiting for your review (1.3). Outputs aren't listed here any more (1.3: `outputs` is sent empty);
+  waiting for your review (1.3), and Your Mac's summary (`assistant`, 1.5). Outputs aren't listed here any more (1.3: `outputs` is sent empty);
   each running conversation says how many it made since its latest run began (`fresh`).
-- `work`: projects (with their icon's checksum, 1.3) and their conversations (title, status, last line).
-- `conv:<channel>`: one conversation: turns (your messages, Claude's answers), what a running turn
+- `work`: projects (with their icon's checksum, 1.3) and their conversations (title, status, last line):
+  the chats and worktrees you started. A project's own main-folder conversation isn't listed (BLG-70):
+  it still opens, and shows on Home while it works or needs you. Your Mac isn't a project either.
+- `conv:<channel>`: one conversation (`conv:mac:assistant` is Your Mac, 1.5): turns (your messages, Claude's answers), what a running turn
   is doing now (`live`: thinking, writing, the step with its tool, time and count) and its steps in
   words with their tools (`trail`), sub-agents (title, status, steps, their own live step, kind,
   outputs), everything its worktree made (`outputs`: scratch files, reports, its Claude's and
@@ -161,9 +163,9 @@ parsed. The type is `Record<Method, …>`, so a new API method doesn't compile u
 
 **Asking from the phone** (`src/ipc/companion-api.ts`, all `phone`):
 
-- `companion.ask {target: {project} | {topic}, text, files?}` → `{topic}`: a new chat in a project
+- `companion.ask {target: {project} | {topic}, text, files?}` → `{topic}`: a question in a project
   (what New Chat does on the Mac, then `session.submit`) or a message in a conversation you can
-  write in. `files` are `up:` refs from `put` (25 MB a file, 10 a message): pictures go where
+  write in (Your Mac too: `{topic: 'conv:mac:assistant'}`). `files` are `up:` refs from `put` (25 MB a file, 10 a message): pictures go where
   pasted images go (`attachments.ts`, made smaller if they're too big for Claude), other files are
   named by their path in `~/.beluga/attachments/phone`. A ref works only for the phone that sent it.
 - `companion.post {conversation, text, files?, ask?}`: a friends' chat message, files taken in as
@@ -180,6 +182,10 @@ parsed. The type is `Record<Method, …>`, so a new API method doesn't compile u
   Merge sheet's checks, the controller's merge, Solve merge conflict), followed in its `merge`.
 - `companion.draftTask` / `addTask` (1.3): a task described in words, Claude's draft shown first.
 - `companion.viewFetch` (1.3): a live view's rows (above).
+- `workspaces.startWorktree(project, text, {plan?, quiet: true})` → the worktree's id, and
+  `plans.create({projectId, goal})` → the plan (1.5): the Ask sheet's Worktree and Plan, the same
+  calls as the Mac's project home (`plan`: Plan first, the Mac's Plan mode, on in it before Claude
+  reads your words). A phone checks `SINCE.askModes` first; an older Mac gets a question.
 - Also `phone` since 1.3: `board.move` and `board.start` (a task moved along, or started in a new
   worktree with Claude), and `session.submit` with `urgent` (Steer) next to `host.promote` and
   `host.cancelQueued` for the queue.
@@ -324,7 +330,11 @@ Advanced at the bottom. Learn it once and it works everywhere.
   transition): pinch, swipe between them, swipe down to put back. Text files open in a reader with
   search, wrap and "follow" for logs.
 - **The Ask button** (in the middle of the tab bar, always there): "Ask your Mac…" with where it goes
-  (a project, an open conversation, or a friend's Claude) as chips above the keyboard. Attach a photo
+  as one pill: **Your Mac** first and by default (a laptop), then a project, an open conversation,
+  or a friend's Claude. A project offers three icon chips, as the Mac's project home: **Worktree**
+  (the default: a new worktree with Claude on your words, then it opens), **Plan** (Claude drafts
+  milestones and tasks; the draft opens to approve) and **Question** (a read-only chat in its main
+  folder), with a small **Plan first** toggle beside Worktree (its Claude plans before it acts). Attach a photo
   or a file from the phone. The answer comes back into that conversation, with a notification if you
   left.
 - **Plans** (in Work and on Home when one runs): milestones as a vertical timeline, tasks as rows
@@ -336,6 +346,35 @@ Advanced at the bottom. Learn it once and it works everywhere.
 
 Everything has a state for "your Mac is asleep": the last views stay (cached on the phone, marked
 "as of 10:42"), actions wait in a small outbox and go when the Mac answers (or you discard them).
+
+## Your Mac (BLG-47)
+
+One conversation with your own Claude for the whole Mac, not one project or worktree: "Take a
+screenshot and send it to me", "What's using my CPU?", "Start a worktree in beluga for the login
+bug", "Open a task to fix X". The same conversation on both screens: the Ask sheet's first target
+and Home's compact **Ask your Mac** row on the phone (`conv:mac:assistant`, live steps, Steer and
+Queue, outputs, as any conversation), the sidebar's top row on the Mac (the `assistant` view).
+
+- **Where it runs.** `~/.beluga/assistant/work/` is its Claude's folder; its scratch folder is
+  `work/.beluga/scratch/`. Its Claude session id (`state.json`) and its history (`history.json`) sit
+  beside it. Everything in Beluga's home is secret to the phone (`isSecretPath`) except the folders
+  Claude works in (`workspaces`, `chats`, `tasks/work`…): `assistant/work` joins them, narrowly, the
+  way friends' tasks' `tasks/work` did, and nothing beside it does. Credentials are secret anywhere,
+  so a `.env` in it still never leaves. Outside the home (`~/Beluga Assistant`) would have put a
+  folder in your home you didn't make; inside, it's with Beluga's own and goes with it.
+- **Whose Claude.** Yours, with your approvals as anywhere (commands ask unless you set never);
+  edits only in its own folder go without asking. Nobody else can write in it.
+- **Its tools** (`src/agent/mac-tools.ts`, server `beluga_mac`): `screenshot` (the main display or
+  an app's window, with the gateway's `captureScreen`: saved in its scratch folder, so it reaches
+  the phone as an output, and Claude sees a smaller copy; macOS's Screen Recording permission still
+  applies), `device_info` (the gateway's), `list_work` (projects, worktrees and chats with ids, what
+  runs, plans), `start_worktree` (a project, a first message, plan first), `start_task` (a board
+  task in its own worktree), `start_plan`; and the board's tools (`task_create` in a named project,
+  `task_update`…). Starting is quiet: the Mac's window stays where it is.
+- **Links.** What it starts it names as `worktree:<id>`, `task:<KEY>` or `plan:<id>` in inline code;
+  both screens draw a pill that opens it (`src/shared/render/inline-model.ts`).
+- **Versions.** 1.5 (`SINCE.assistant`): an older Mac never gets the topic subscribed, and the Ask
+  sheet doesn't offer Your Mac.
 
 ## On the Mac
 

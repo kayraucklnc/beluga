@@ -109,6 +109,8 @@ const PATHS = {
   chartBar: 'M2.5 2.5v11h11 M5 11.5V8.5 M8 11.5V5.5 M11 11.5V7.5',
   /** Your phone (the companion): the sidebar footer's mark, Settings › Phone. */
   phone: 'M5.5 1.75h5a1 1 0 0 1 1 1v10.5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1z M7.25 12.25h1.5',
+  /** Your Mac (core/assistant): a laptop. */
+  laptop: 'M3.5 3.5h9a1 1 0 0 1 1 1v6h-11v-6a1 1 0 0 1 1-1z M1.5 10.5h13l-.75 1.5a1 1 0 0 1-.9.5H3.15a1 1 0 0 1-.9-.5z',
   /** Supporting Beluga: a star on GitHub, a coffee, and the heart that goes with them. */
   star: 'M8 2.25l1.75 3.55 3.9.57-2.83 2.76.67 3.89L8 11.18l-3.49 1.84.67-3.89L2.35 6.37l3.9-.57z',
   cup: 'M3 6.5h7.5v3a3.5 3.5 0 0 1-3.5 3.5h-.5A3.5 3.5 0 0 1 3 9.5z M10.5 7.5h.75a1.75 1.75 0 0 1 0 3.5h-1.1 M5.5 2.5c-.4.6.4 1.1 0 1.75 M8 2.5c-.4.6.4 1.1 0 1.75',

@@ -9,16 +9,18 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 4 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 5 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
  * makes a call) only when the Mac's minor has it, since an older Mac drops a `sub` frame naming a
  * topic it doesn't know. 1.3: the relay (any network). 1.4: the tasks topics, `companion.openOnMac`, `companion.icon`, merging
  * from the phone (`companion.mergeCheck` / `merge` / `resolve`), describing a task
- * (`companion.draftTask` / `addTask`) and starting one (`board.start`).
+ * (`companion.draftTask` / `addTask`) and starting one (`board.start`). 1.5: "Your Mac" (the
+ * `conv:mac:assistant` topic, Home's `assistant`), and asking in a project as a new worktree
+ * (`workspaces.startWorktree`, with plan mode) or a plan (`plans.create`), besides a question.
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -256,6 +258,8 @@ export const HomeView = z.object({
    */
   outputs: z.array(OutputView.extend({ topic: Topic.optional() })).max(30),
   unread: z.object({ work: z.number().int().min(0), chats: z.number().int().min(0) }),
+  /** 1.5: "Your Mac" (`conv:mac:assistant`): its last line and whether it works, for Home's "Ask your Mac". */
+  assistant: ConvSummary.optional(),
   /** 1.3: tasks waiting for your review (Home links to them). */
   review: z.object({ count: z.number().int().min(0), first: z.object({ topic: Topic, key: z.string().max(40), title: z.string().max(300) }).optional() }).optional(),
 });
