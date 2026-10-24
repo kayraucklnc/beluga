@@ -580,6 +580,12 @@
   display: flex;
   flex-direction: column;
 }
+/* Scratch's file, held in one box that grows with it (so following its end can watch it grow). */
+.previewContent {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
 
 /* ---- Files */
 

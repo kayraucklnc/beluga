@@ -1,10 +1,10 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Location } from '@beluga/core/store.js';
 import { shareNameOf } from '@beluga/shared/share-names.js';
 import { SHOWN_SCRATCH_DIRS } from '@beluga/shared/scratch-dir.js';
 import { formatBytes } from '@beluga/shared/format.js';
 import { Icon, type IconName } from '../../components/Icon.js';
-import { Empty, IconButton, Segmented, cx } from '../../components/ui.js';
+import { Empty, IconButton, cx } from '../../components/ui.js';
 import { useApi, useApp, useBeluga } from '../../lib/beluga.js';
 import { openWithDefaultApp, revealInFinder } from '../../lib/files.js';
 import { openFocus } from '../../lib/panel.js';
@@ -12,17 +12,19 @@ import { SPLIT_DEFAULT, SPLIT_MAX, SPLIT_MIN, clampShare } from '../../lib/panel
 import { setPrefs, usePrefs } from '../../lib/prefs.js';
 import { mod } from '../../lib/system.js';
 import { ChangedFileView } from '../../views/ChangedFile.js';
+import { isVisualFile } from '../../views/reader/reader-model.js';
 import { signalOf } from '../attention-model.js';
 import { ResizeHandle } from './ResizeHandle.js';
 import { NextFileRow, ScratchEmpty, ScratchSkeleton } from './ScratchSkeleton.js';
-import { type ScratchEntry, type ScratchKind, fileKind, followed, foldersWithFiles, isFresh, scratchPlace, scratchState, timeAgo } from './scratch-model.js';
+import { type ScratchEntry, type ScratchKind, atEnd, fileKind, followed, foldersWithFiles, isFresh, scratchPlace, scratchState, timeAgo } from './scratch-model.js';
 import s from './panel.module.css';
 import k from './scratch.module.css';
 
 /**
  * The right panel's Scratch: what Claude saves to the workspace's `.beluga/scratch/` (or `.context/`,
  * when another tool runs it there) while it works: screenshots, JSON, logs, notes, newest first and
- * live. Following, the preview shows the newest file as it lands; pick one to stay on it. While
+ * live. The preview shows the newest file until you pick one, then stays on it. Scrolled to its end
+ * (or with the to-the-end button), it follows the file: what's written to it stays in sight. While
  * the first look is on its way it's drawn in outline; an empty folder says so, calmly.
  */
 
@@ -115,6 +117,50 @@ function useNow(): number {
   return now;
 }
 
+/**
+ * Following a file's end: on once you scroll to the bottom (or ask), off when you scroll up. While
+ * on, whatever is written to the file stays in sight: the content is updated in place and the view
+ * just kept at its end. Each file opens at its top, not following.
+ */
+function useFollowEnd(body: RefObject<HTMLDivElement | null>, content: RefObject<HTMLDivElement | null>, path: string) {
+  const [follow, setFollow] = useState(false);
+  const on = useRef(false);
+  const set = (v: boolean): void => {
+    on.current = v;
+    setFollow(v);
+  };
+  const toEnd = (): void => {
+    const el = body.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+  // Another file: back to its top.
+  useLayoutEffect(() => {
+    set(false);
+    if (body.current) body.current.scrollTop = 0;
+  }, [path]);
+  // It grew (or shrank): kept at the end while following.
+  useEffect(() => {
+    const el = content.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (on.current) toEnd();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const onScroll = (): void => {
+    const el = body.current;
+    if (!el) return;
+    const end = atEnd(el);
+    if (end !== on.current) set(end);
+  };
+  const followEnd = (): void => {
+    set(true);
+    toEnd();
+  };
+  return { follow, onScroll, followEnd };
+}
+
 function Preview({ wsId, file, root, onClose }: { wsId: string; file: ScratchEntry; root: string; onClose: () => void }) {
   const api = useApi();
   const { client } = useBeluga();
@@ -123,6 +169,9 @@ function Preview({ wsId, file, root, onClose }: { wsId: string; file: ScratchEnt
   const at: Location = { owner: selfId, share: shareNameOf(wsId), path: file.path };
   const name = file.path.split('/').pop() ?? file.path;
   const local = `${root}/${file.path}`;
+  const body = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const { follow, onScroll, followEnd } = useFollowEnd(body, content, file.path);
   return (
     <section className={s.preview} aria-label={name}>
       <div className={s.previewHead}>
@@ -132,12 +181,16 @@ function Preview({ wsId, file, root, onClose }: { wsId: string; file: ScratchEnt
         </span>
         <span className={s.previewDir}>{timeAgo(file.mtime, Math.max(now, Date.now()))}</span>
         <span className={s.flex} />
+        {isVisualFile(file.path) ? null : <IconButton icon="toEnd" label="Follow the End" active={follow} onClick={followEnd} />}
         <IconButton icon="external" label="Open With Its App" onClick={() => void openWithDefaultApp(client, local)} />
         <IconButton icon="expand" label="Open in full" keys={`${mod()}↩`} onClick={() => void api.files.open(at).then(() => openFocus('file', wsId))} />
         <IconButton icon="x" label="Close" keys="Esc" onClick={onClose} />
       </div>
-      <div className={cx(s.previewBody, s.previewFile, 'selectable')} tabIndex={0}>
-        <ChangedFileView key={file.path} at={at} variant="panel" version={file.mtime} />
+      <div ref={body} className={cx(s.previewBody, s.previewFile, 'selectable')} tabIndex={0} onScroll={onScroll}>
+        {/* Kept as it is while the file changes (its text updated in place), so following doesn't flicker. */}
+        <div ref={content} className={s.previewContent}>
+          <ChangedFileView key={file.path} at={at} variant="panel" version={file.mtime} />
+        </div>
       </div>
     </section>
   );
@@ -150,20 +203,20 @@ export function ScratchTab({ wsId }: { wsId: string }) {
   const working = useApp((st) => signalOf(st, `ws:${wsId}`, wsId).working);
   const list = useScratch(wsId);
   const now = useNow();
-  const [follow, setFollow] = useState(true);
   const [picked, setPicked] = useState<string>();
   const [closed, setClosed] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const files = list?.files ?? [];
-  const shown = closed ? undefined : followed(files, follow, picked);
+  // Nothing picked: the newest file, as each lands. Picked: that one, while it's there.
+  const shown = closed ? undefined : followed(files, !picked, picked);
   const file = files.find((f) => f.path === shown);
   const root = list?.root ?? '';
 
-  // Following: the newest file stays in sight as new ones arrive.
+  // Nothing picked: the newest file stays in sight as new ones arrive.
   useEffect(() => {
-    if (follow) listRef.current?.scrollTo({ top: 0 });
-  }, [follow, files[0]?.path, files[0]?.mtime]);
+    if (!picked) listRef.current?.scrollTo({ top: 0 });
+  }, [picked, files[0]?.path, files[0]?.mtime]);
 
   // The arrows move the highlight; the list scrolls to keep it in sight.
   useEffect(() => {
@@ -173,17 +226,13 @@ export function ScratchTab({ wsId }: { wsId: string }) {
   const pick = (path: string): void => {
     setClosed(false);
     setPicked(path);
-    setFollow(path === files[0]?.path && follow);
   };
   const onKey = (e: KeyboardEvent): void => {
     const i = files.findIndex((f) => f.path === shown);
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const next = files[Math.max(0, Math.min(files.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
-      if (next) {
-        pick(next.path);
-        setFollow(false);
-      }
+      if (next) pick(next.path);
     } else if (e.key === 'Escape' && shown) {
       e.preventDefault();
       e.stopPropagation();
@@ -206,18 +255,6 @@ export function ScratchTab({ wsId }: { wsId: string }) {
             </span>
             <span className={s.dim}>{foldersWithFiles(files, SHOWN_SCRATCH_DIRS).join(' · ')}</span>
             <span className={s.flex} />
-            <Segmented
-              label="Preview"
-              value={follow ? 'follow' : 'pinned'}
-              onChange={(v) => {
-                setFollow(v === 'follow');
-                setClosed(false);
-              }}
-              options={[
-                { value: 'follow', label: 'Latest', hint: 'Show each new file as it’s written' },
-                { value: 'pinned', label: 'Picked', hint: 'Stay on the file you picked' },
-              ]}
-            />
             <IconButton icon="folder" label="Show in Finder" onClick={() => void revealInFinder(client, list.dir)} />
           </div>
         </div>
@@ -229,15 +266,13 @@ export function ScratchTab({ wsId }: { wsId: string }) {
             const fresh = isFresh(f.mtime, Math.max(now, Date.now()));
             return (
               <div
-                key={`${f.path}:${f.mtime}`}
+                // By path: written again, the row moves up as it is (not drawn anew, sliding in again).
+                key={f.path}
                 role="option"
                 aria-selected={sel}
                 className={cx(s.row, sel && s.rowOn, fresh && k.arrived)}
                 title={f.path}
-                onClick={() => {
-                  pick(f.path);
-                  if (f.path !== files[0]?.path) setFollow(false);
-                }}
+                onClick={() => pick(f.path)}
               >
                 <Icon name={ICONS[fileKind(f.path)]} size={13} className={s.fileIcon} />
                 <span className={s.rowName}>
