@@ -113,16 +113,36 @@ export const ChatRow = memo(function ChatRow({ item, continued, mine, steer }: {
   const mentions = useMentionWorld(item.channel, { tasks: mine });
   // The message you just sent flies in from the box (see flight.ts).
   const row = useRef<HTMLDivElement>(null);
-  useFlightLanding(row, item.channel, 'chat', item.text, mine && !item.byAgent);
+  const own = mine && !item.byAgent;
+  useFlightLanding(row, item.channel, 'chat', item.text, own);
+  // Your own words: a tinted bubble on the right, no name or picture (it's plainly you).
+  if (own)
+    return (
+      <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
+        <div ref={row} className={cx(s.message, s.own, continued && s.continued, steer && s.unread)} data-mine="true" data-steer={steer ? 'waiting' : undefined}>
+          <div className={s.body}>
+            {text ? (
+              <div className={s.bubble} title={time(item.ts)}>
+                <Folding>
+                  <Markdown text={text} paths localImages mentions={mentions} tasks />
+                </Folding>
+              </div>
+            ) : null}
+            <ImageGrid images={images} />
+            {steer ? <SteerWaiting steer={steer} /> : null}
+          </div>
+        </div>
+      </ActionsContext>
+    );
   return (
     <ActionsContext items={() => messageItems({ ...menu, text, images, openImage: (img) => openLightbox(images, images.indexOf(img)) })}>
-      <div ref={row} className={cx(s.message, continued && s.continued, steer && s.unread)} data-mine={mine && !item.byAgent ? 'true' : undefined} data-steer={steer ? 'waiting' : undefined}>
+      <div ref={row} className={cx(s.message, continued && s.continued, steer && s.unread)} data-steer={steer ? 'waiting' : undefined}>
         <div className={s.gutter}>{continued ? null : <Avatar name={item.name} id={item.from} claude={item.byAgent} size={26} />}</div>
         <div className={s.body}>
           {continued ? null : (
             <div className={s.meta}>
               <span className={cx(s.author, item.byAgent && s.claudeName)} style={item.byAgent && claudeColor(item.from) ? { color: claudeColor(item.from) } : undefined}>
-                {mine && !item.byAgent ? 'You' : item.name}
+                {item.name}
               </span>
               {prefs.timestamps ? <span className={s.time}>{time(item.ts)}</span> : null}
             </div>
