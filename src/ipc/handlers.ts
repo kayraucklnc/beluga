@@ -239,13 +239,13 @@ export const HANDLERS = {
     if (!a) throw new Error('That image is gone from this computer');
     return { n: a.n, chip: chipText(a.n), file: path.basename(a.path) };
   },
-  'attachments.expand': (s, text, channel, only) => {
+  'attachments.expand': (s, text, channel, only, shown) => {
     if (!text.includes('[image ') || text.startsWith('/')) return text;
     const state = s.store.getState();
     const friends = state.peers.filter((p) => p.peerId !== s.selfId).map((p) => p.peerId);
     const toRoom = channel === 'room' && friends.length > 0;
     // Sent to the room with friends there, a copy goes where they (and only they) can fetch it.
-    const out = expandChips(text, s.selfId, toRoom ? (a) => publishForRoom(a) : (a) => path.basename(a.path), only);
+    const out = expandChips(text, s.selfId, toRoom ? (a) => publishForRoom(a) : (a) => path.basename(a.path), only, shown);
     if (toRoom && out.attachments.length) s.serveFolder(ATTACHMENT_SHARE, roomAttachmentsDir(), friends);
     return out.text;
   },

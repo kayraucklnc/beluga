@@ -107,6 +107,10 @@ const PATHS = {
   chartLine: 'M2.5 2.5v11h11 M4.5 10.5l2.5-3 2 1.5 3.5-4.5',
   chartArea: 'M2.5 2.5v11h11 M4.5 11.5V9l2.5-2.5 2 1.5 3.5-3.5v7z',
   chartBar: 'M2.5 2.5v11h11 M5 11.5V8.5 M8 11.5V5.5 M11 11.5V7.5',
+  /** A timeline (gantt): bars that start one after another. */
+  gantt: 'M2.5 2.5v11 M4.5 4.5h4.5 M6.5 8h6.5 M5.5 11.5h3.5',
+  /** A heatmap: a grid of cells, some filled. */
+  heat: 'M2.5 2.5h11v11h-11z M2.5 8h11 M8 2.5v11 M4.5 4.5h1.5v1.5h-1.5z M10 10h1.5v1.5H10z',
   /** Your phone (the companion): the sidebar footer's mark, Settings › Phone. */
   phone: 'M5.5 1.75h5a1 1 0 0 1 1 1v10.5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1z M7.25 12.25h1.5',
   /** Your Mac (core/assistant): a laptop. */

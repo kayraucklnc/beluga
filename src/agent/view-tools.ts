@@ -10,7 +10,7 @@ import { initialState, resolveControls } from '../shared/view-controls.js';
 import { fetchSource } from '../core/views/sources.js';
 
 /**
- * Claude's `show` tool (mcp__beluga_view__show): a table, chart, stat tiles, code, colors or a
+ * Claude's `show` tool (mcp__beluga_view__show): a table, chart, stat tiles, code, colors, gantt, heatmap, calendar or a
  * graph from JSON, checked, with its source run once here so it comes with its first rows. It
  * goes into the answer where Claude writes its token ([[view:1]]), or at the end. The window
  * fetches more pages, sorts, searches and refreshes it from then on (shared/view-spec.ts).
@@ -21,7 +21,7 @@ const TOKEN = /\[\[view:(\d+)\]\]/g;
 /** A token with the spaces around it: its block goes on lines of its own (a fence mid-sentence isn't one). */
 const PLACED = /[ \t]*\[\[view:(\d+)\]\][ \t]*:?/g;
 /** Rows a view carries in the answer (what everyone sees before, or without, fetching). */
-const SNAPSHOT_ROWS = { table: 50, chart: 500, stats: 50, colors: 64, code: 0 } as const;
+const SNAPSHOT_ROWS = { table: 50, chart: 500, stats: 50, colors: 64, code: 0, gantt: 200, heatmap: 500, calendar: 500 } as const;
 
 /** The views a run showed, and where they go in its answers. */
 export class ViewShelf {
@@ -86,7 +86,7 @@ export function createViewTools(shelf: ViewShelf, cwd: string) {
     tools: [
       tool(
         'show',
-        'Show data to the user as a live element in your answer: a table, chart (line, area, bar, pie, donut, scatter), stat tiles, code, a color palette (or picker), or a graph. Pass the element as JSON (the beluga-view format; for a graph, type "graph" with the beluga-graph fields). Give rows in "data", or a "source" the app fetches more from on its own (file, folder, sqlite, postgres, http, command): it runs once now and the first rows come back to you. Returns a token like [[view:1]]: put it on its own line in your answer where the element goes (else it is added at the end).',
+        'Show data to the user as a live element in your answer: a table, chart (line, area, bar, pie, donut, scatter), stat tiles, code, a color palette (or picker), a gantt (bars over time), a heatmap (x by y by value), a calendar (values by day), or a graph. Pass the element as JSON (the beluga-view format; for a graph, type "graph" with the beluga-graph fields). Give rows in "data", or a "source" the app fetches more from on its own (file, folder, sqlite, postgres, http, command): it runs once now and the first rows come back to you. Returns a token like [[view:1]]: put it on its own line in your answer where the element goes (else it is added at the end).',
         { view: z.record(z.string(), z.unknown()).describe('The element: {"type": "table"|"chart"|"stats"|"code"|"colors"|"graph", "title", ...}') },
         async (a) => {
           try {

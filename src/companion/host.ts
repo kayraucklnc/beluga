@@ -446,23 +446,28 @@ export class CompanionHost {
     return out.value;
   }
 
-  /** The files a phone attached: pictures as chips (as pasted images are), other files named by their path here. */
-  private async attach(caller: string, refs: readonly string[] | undefined): Promise<{ chips: string[]; paths: string[] }> {
-    if (!refs?.length) return { chips: [], paths: [] };
+  /**
+   * The files a phone attached: pictures as chips (as pasted images are), numbered from 1 in this
+   * message (`images`: theirs for the whole session, in that order), other files named by their path here.
+   */
+  private async attach(caller: string, refs: readonly string[] | undefined): Promise<{ chips: string[]; images: number[]; paths: string[] }> {
+    if (!refs?.length) return { chips: [], images: [], paths: [] };
     const device = this.deviceOf(caller);
     if (!device) throw new Error('Only the phone that sent a file can attach it');
     const ups = await this.uploads.resolve(device, refs);
     const chips: string[] = [];
+    const images: number[] = [];
     const paths: string[] = [];
     for (const up of ups) {
       if (up.image) {
         // Where pasted images go, made smaller when they're too big for Claude (a phone photo often is).
         const file = await importImageFitting(up.path);
         const { size } = await stat(file);
-        chips.push(chipText(registerAttachment(file, size).n));
+        images.push(registerAttachment(file, size).n);
+        chips.push(chipText(images.length));
       } else paths.push(up.path);
     }
-    return { chips, paths };
+    return { chips, images, paths };
   }
 
   /** Ask your Mac: a new chat in a project (as New Chat there), or a message in a conversation you can write in → its topic. */
@@ -478,9 +483,9 @@ export class CompanionHost {
       const conv = viewOf(this.state(), this.ctx, a.target.topic as Topic) as { canSend?: boolean } | undefined;
       if (!conv?.canSend) throw new Error('You can’t write in that conversation');
     }
-    const { chips, paths } = await this.attach(caller, a.files);
+    const { chips, images, paths } = await this.attach(caller, a.files);
     let text = [a.text.trim(), chips.join(' '), paths.length ? `Files from my phone:\n${paths.map((p) => `- ${p}`).join('\n')}` : ''].filter(Boolean).join('\n\n');
-    if (chips.length) text = String(await this.must(caller, 'attachments.expand', [text, channel]));
+    if (chips.length) text = String(await this.must(caller, 'attachments.expand', [text, channel, images, images.map((_, i) => i + 1)]));
     await this.must(caller, 'session.submit', [text, { channel }]);
     this.phoneRuns.set(channel, false);
     const topic = convTopic(channel);

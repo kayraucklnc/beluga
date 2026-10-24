@@ -286,13 +286,16 @@ function HomeComposer({ project }: { project: Project }) {
       return;
     }
     // Images go where their "[image N]" is (as links to them); they come back to the box if it fails.
-    const { text: typed, images, putBack } = att.take(task);
+    const { text: typed, images, shown, putBack } = att.take(task);
     let message = typed;
     if (images.length) {
       try {
-        message = await api.attachments.expand(typed, `home:${project.id}`, [
-          ...images,
-        ]);
+        message = await api.attachments.expand(
+          typed,
+          `home:${project.id}`,
+          [...images],
+          [...shown],
+        );
       } catch (err) {
         putBack();
         toast(client, `Couldn’t send the images: ${errorText(err)}`, "error");

@@ -16,6 +16,9 @@ import { StatTiles } from './Stats.js';
 import { CodeView } from './Code.js';
 import { ColorsView } from './Colors.js';
 import { ControlsBar } from './Controls.js';
+import { GanttView } from './Gantt.js';
+import { HeatmapView } from './Heatmap.js';
+import { CalendarView } from './Calendar.js';
 import { tableRows, tableView } from './md-table.js';
 import v from './views.module.css';
 
@@ -28,8 +31,10 @@ import v from './views.module.css';
 
 const Chart = lazy(() => import('./Chart.js'));
 
-const ICON: Record<ViewType, IconName> = { table: 'table', chart: 'chartLine', stats: 'gauge', code: 'command', colors: 'palette' };
-const NOUN: Record<ViewType, string> = { table: 'a table', chart: 'a chart', stats: 'stats', code: 'code', colors: 'colors' };
+const ICON: Record<ViewType, IconName> = { table: 'table', chart: 'chartLine', stats: 'gauge', code: 'command', colors: 'palette', gantt: 'gantt', heatmap: 'heat', calendar: 'calendar' };
+const NOUN: Record<ViewType, string> = { table: 'a table', chart: 'a chart', stats: 'stats', code: 'code', colors: 'colors', gantt: 'a timeline', heatmap: 'a heatmap', calendar: 'a calendar' };
+/** Views drawn from all their rows at once (not a page of them). */
+const WHOLE: ReadonlySet<ViewType> = new Set(['chart', 'gantt', 'heatmap', 'calendar']);
 
 export const ViewBlock = memo(function ViewBlock({ code, type, live = false, local = false }: { code: string; type?: ViewType | 'any'; live?: boolean; local?: boolean }) {
   const parsed = useMemo(() => parseView(code, type === 'any' ? undefined : type), [code, type]);
@@ -67,7 +72,7 @@ function ViewCard({ view, code, warnings, local, bare = false }: { view: View; c
   const [shape, setShape] = useState<Shape>(view.type === 'chart' ? view.chart : 'table');
   const [full, setFull] = useState(false);
   const asChart = view.type === 'chart' || (view.type === 'table' && shape !== 'table');
-  const data = useViewData(view, { local, visible, ...(asChart ? { limit: Math.max(view.pageSize, 500) } : {}), ...(view.type === 'code' ? { text: true } : {}) });
+  const data = useViewData(view, { local, visible, ...(asChart || WHOLE.has(view.type) ? { limit: Math.max(view.pageSize, 500) } : {}), ...(view.type === 'code' ? { text: true } : {}) });
   const copyJson = (): void => void copyText(JSON.stringify(JSON.parse(code), null, 2)).then(() => toast(client, 'Copied as JSON', 'success'));
   const copyCsv = (): void => void copyText(toCsv(data.rows, data.columns)).then(() => toast(client, `Copied ${data.rows.length} ${data.rows.length === 1 ? 'row' : 'rows'} as CSV`, 'success'));
   const items: ActionItem[] = [
@@ -117,7 +122,8 @@ function ViewCard({ view, code, warnings, local, bare = false }: { view: View; c
   );
 }
 
-const label = (t: ViewType): string => ({ table: 'Table', chart: 'Chart', stats: 'Stats', code: 'Code', colors: 'Colors' })[t];
+const LABEL: Record<ViewType, string> = { table: 'Table', chart: 'Chart', stats: 'Stats', code: 'Code', colors: 'Colors', gantt: 'Timeline', heatmap: 'Heatmap', calendar: 'Calendar' };
+const label = (t: ViewType): string => LABEL[t];
 
 function Body({ view, data, shape, full }: { view: View; data: ViewData; shape: Shape; full: boolean }) {
   switch (view.type) {
@@ -127,6 +133,12 @@ function Body({ view, data, shape, full }: { view: View; data: ViewData; shape: 
       return <CodeView view={view} data={data} />;
     case 'colors':
       return <ColorsView view={view} />;
+    case 'gantt':
+      return <GanttView view={view} data={data} full={full} />;
+    case 'heatmap':
+      return <HeatmapView view={view} data={data} />;
+    case 'calendar':
+      return <CalendarView view={view} data={data} />;
     default:
       if (shape === 'table') return <DataTable view={view} data={data} full={full} />;
       return (

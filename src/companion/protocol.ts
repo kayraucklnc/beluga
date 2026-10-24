@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 8 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 9 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -24,6 +24,8 @@ export const COMPANION_PROTO = { major: 1, minor: 8 } as const;
  * files, read-only (`companion.files.list` / `find` / `read`), and its terminals, shared with the
  * Mac (`companion.terminals` / `termOpen` / `termClose`, the `term_*` frames). 1.8: a branch's every
  * step from the phone, as the Mac's toolbar has them (`BranchView.steps`, `companion.branchStep`).
+ * 1.9 (BLG-87): more of Claude's blocks drawn (`tree`, `json`, `terminal`, `math` blocks, mermaid as
+ * a graph or view) and its math typeset (`ProseView.math`).
  */
 export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8 } as const;
 
@@ -204,12 +206,21 @@ export const ProseView = z.object({
          * phone reads it with the Mac's own parsers (src/shared) and draws it; its source's rows
          * come through the Mac (companion.viewFetch). A phone before 1.3 shows the chip. A table
          * Claude wrote as text is a `view` (a table) too; 1.5: one that only looks like a table
-         * is `text`, shown monospaced and never wrapped.
+         * is `text`, shown monospaced and never wrapped. 1.9 (BLG-87): a file tree (`tree`), JSON
+         * (`json`) or terminal output (`terminal`) as written, display math as its TeX (`math`), and
+         * a mermaid diagram as the `graph` or `view` it reads as (src/shared/render/rich-fence.ts).
          */
-        block: z.object({ kind: z.union([z.enum(['view', 'graph', 'tasks', 'text']), z.string().max(20)]), text: z.string().max(200_000) }).optional(),
+        block: z.object({ kind: z.union([z.enum(['view', 'graph', 'tasks', 'text', 'tree', 'json', 'terminal', 'math']), z.string().max(20)]), text: z.string().max(200_000) }).optional(),
       }),
     )
     .max(200),
+  /**
+   * 1.9: the math in it typeset on the Mac (MathJax, src/companion/math-svg.ts), by `I<tex>` (inline,
+   * `$…$` in the text) or `D<tex>` (a `math` block): an SVG drawn in the text's color
+   * (`currentColor`), its size and baseline in ex. Math the Mac couldn't typeset isn't here: the
+   * phone shows its TeX.
+   */
+  math: z.record(z.string().max(4001), z.object({ svg: z.string().max(200_000), w: z.number(), h: z.number(), v: z.number() })).optional(),
 });
 export type ProseView = z.infer<typeof ProseView>;
 

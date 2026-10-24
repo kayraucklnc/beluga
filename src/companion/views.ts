@@ -39,8 +39,12 @@ import {
   type WorkView,
 } from './protocol.js';
 import { HIDDEN_STEP, humanizeDoing, humanizeStep, plainLine, stepWords, stripCode } from './strip.js';
+import { withMath } from './math-svg.js';
 import { ASSISTANT_CHANNEL, ASSISTANT_TITLE } from '../shared/assistant.js';
 import { STEERED_IN, type SteeredMessage, steeredMessages, steerWaiting } from '../shared/claude-notices.js';
+
+/** Words for a turn: code taken out (strip.ts), math typeset (math-svg.ts). */
+const proseOf = (markdown: string) => withMath(stripCode(markdown));
 
 /**
  * What the phone sees: small, finished views of the Mac's shared state, one per topic
@@ -429,12 +433,12 @@ function taskTurns(state: DomainState, ctx: ViewContext, t: GwTask): TurnView[] 
     return v ? [v] : [];
   });
   return [
-    { id: `${t.id}:ask`, who: 'you', name: clip(myName(state), 100), prose: stripCode(t.ask), ts: t.createdAt },
+    { id: `${t.id}:ask`, who: 'you', name: clip(myName(state), 100), prose: proseOf(t.ask), ts: t.createdAt },
     {
       id: `${t.id}:answer`,
       who: 'friend',
       name: clip(`${t.peerName}'s Claude`, 100),
-      prose: stripCode(said),
+      prose: proseOf(said),
       ts: t.startedAt ?? t.updatedAt,
       status,
       ...(step ? { step: clip(step, 300) } : {}),
@@ -578,13 +582,13 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
   const me = myId(state);
   if (item.type === 'chat') {
     const who = item.byAgent ? 'claude' : item.from === me ? 'you' : 'friend';
-    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), prose: stripCode(item.text), ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}) };
+    return { id: item.id, who, name: clip(who === 'you' ? myName(state) : item.name, 100), prose: proseOf(item.text), ts: item.ts, ...(steer && who === 'you' ? { steer: { request: clip(steer.request, 200), waiting: steer.waiting } } : {}) };
   }
   if (item.type === 'system') {
     // Earlier lines of a shared workspace's conversation ("bob: …") read as that person's turn.
-    if (item.said) return { id: item.id, who: item.said.byAgent ? 'claude' : item.said.from === me ? 'you' : 'friend', name: clip(item.said.name, 100), prose: stripCode(item.said.text), ts: item.said.ts };
+    if (item.said) return { id: item.id, who: item.said.byAgent ? 'claude' : item.said.from === me ? 'you' : 'friend', name: clip(item.said.name, 100), prose: proseOf(item.said.text), ts: item.said.ts };
     if (item.level === 'info') return undefined;
-    return { id: item.id, who: 'system', name: 'Beluga', prose: stripCode(item.text), ts: item.ts };
+    return { id: item.id, who: 'system', name: 'Beluga', prose: proseOf(item.text), ts: item.ts };
   }
   if (item.type === 'shell') {
     // A command on a friend's Mac: that it ran and how it went, not the command or its output.
@@ -607,7 +611,7 @@ function turnOf(state: DomainState, item: LogItem, outputs: readonly OutputView[
     id: item.id,
     who: 'claude',
     name: clip(item.owner === me || !item.owner ? 'Claude' : `${item.ownerName}'s Claude`, 100),
-    prose: stripCode(item.text),
+    prose: proseOf(item.text),
     ts: item.ts,
     ...(status ? { status } : {}),
     ...(step ? { step } : {}),

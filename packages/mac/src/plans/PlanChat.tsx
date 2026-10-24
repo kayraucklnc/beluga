@@ -119,10 +119,10 @@ export function PlanChat({
   };
   /** While Claude works, your message reaches it now unless you queue it (⌥↩). */
   const send = (queue = false): void => {
-    const { text: message, images } = att.take(text.trim());
+    const { text: message, images, shown } = att.take(text.trim());
     if (!message) return;
     setText("");
-    deliver(planMessage(message, images), busy && !queue);
+    deliver(planMessage(message, images, shown), busy && !queue);
   };
   const stop = (): void => {
     api.host.stopRun(channel).then(

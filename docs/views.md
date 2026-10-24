@@ -8,9 +8,23 @@ Claude can show you data, not just tell you about it. Tables, charts, stat tiles
 
 ## When Claude uses them
 
-These are optional, and Claude is told to use them sparingly. Most answers are words. A view is for when you asked to see something, or when the data is the answer and you'll want to look around in it. Claude adds at most one or two per answer, and never one just for decoration.
+Most answers are words. Claude reaches for a view without being asked whenever what it's saying has that shape: rows (a table), a trend (a chart), work over time (a gantt), a grid of counts (a heatmap), activity by day (a calendar). It adds at most one or two per answer, and never one just for decoration.
 
 **Plain Markdown tables already look like this.** Claude Code writes tables all the time. Any plain one in an answer (text, numbers, bold, code: no links or pictures) is drawn as a table view without Claude doing anything: sort by a heading, search a long one, switch it to a chart (`97.7%`, `$0.30` and `412 ms` read as numbers). Its tools show on hover.
+
+### Drawn from what Claude already writes (BLG-87)
+
+Claude doesn't have to know about these: a code block is drawn as what it is (`src/shared/render/rich-fence.ts`), in answers and documents, on the Mac and the phone.
+
+| Claude writes | You see |
+|---|---|
+| A file tree (`├──`, `└──`, `│`, or `tree`'s output) in a code block | A compact tree: folders fold, notes after a name stay beside it, Copy keeps the text |
+| ```` ```json ```` (or JSONC) | A colored tree that folds, each object and array with what it holds; Tree / Raw, Copy, Copy Beautified, Copy Minified, Copy Path |
+| A shell session (`$ npm test` and what it printed), ```` ```console ````, ```` ```output ````, or text with ANSI colors | A terminal: prompts apart, ANSI colors drawn, errors and warnings tinted, long output folded to its last lines; Copy Output, Copy Commands |
+| `$…$`, `$$…$$`, `\(…\)`, `\[…\]`, ```` ```math ```` | Typeset math (KaTeX on the Mac, MathJax SVG on the phone). "$5 and $10" stays words |
+| ```` ```mermaid ```` | Our own graph (flowchart, sequence, state, ER, class: docs/graphs.md), a donut chart (pie) or a gantt; other kinds drawn by Mermaid |
+
+A JSON block still being written shows as code until it's whole.
 
 ## The elements
 
@@ -21,6 +35,9 @@ These are optional, and Claude is told to use them sparingly. Most answers are w
 | `stats` | a row of big numbers | each tile has its change (green when it's good) and a sparkline |
 | `code` | a snippet or a whole file | line numbers from where it starts, highlighted lines, wrap, Copy; long code folds |
 | `colors` | swatches, or pickers with `"pick": true` | copy a value, check contrast with white and black text, change and add colors, copy as CSS or JSON, *Use These Colors* puts them in the message box |
+| `gantt` | a bar per row along time, in lanes | hover (tap on the phone) for dates, progress and status; a line at today |
+| `heatmap` | an x × y grid colored by a value | hover for the cell's value; a scale from least to most |
+| `calendar` | days in week columns, colored by a value | hover for the day; how many days had any, and the total |
 
 ### Inline elements
 
@@ -145,7 +162,7 @@ Without the tool, the same JSON works in a fenced `beluga-view` block (or `belug
 
 | Field | Meaning |
 |---|---|
-| `type` | `table` (the default), `chart`, `stats`, `code`, `colors` |
+| `type` | `table` (the default), `chart`, `stats`, `code`, `colors`, `gantt`, `heatmap`, `calendar` |
 | `title`, `summary` | shown at the top |
 | `data` | rows: objects, arrays (with `columns`), or CSV/TSV text (up to 500) |
 | `source` | where to fetch rows from (below) |
@@ -187,6 +204,18 @@ The default series colors are eight hues in a fixed order, checked for color-bli
 ### Stats
 
 `items`: up to 12 `{label, value, delta?, deltaLabel?, invert?, trend?, hint?, status?, type?, unit?, currency?}`. `delta` is a number or text ("+12%"); up is good unless `invert` (latency). `status` is `good`, `warning`, `serious` or `critical`. Without `items`, a source's rows become tiles: a `label` and `value` column, or each numeric column's latest value with its history as the sparkline.
+
+### Gantt, heatmap and calendar
+
+Only data: Claude gives the rows, the window draws them. Columns are found by name when not given.
+
+| View | Fields | Found by name |
+|---|---|---|
+| `gantt` | `label`, `start`, `end` (the last day; or a `days`/`duration` column), `group` (lanes), `progress` (0–1 or a percent), `today` (false hides the line) | `task`/`name`/`title`; `start`/`from`; `end`/`to`/`due`; `group`/`section`/`team`; `status` tints a bar (done mint, active sky, blocked rose); a row without an end, or `"milestone": true`, is a milestone |
+| `heatmap` | `x`, `y`, `value` (long rows, `{hour, day, errors}`), or wide rows (one per `y`, each number column an `x`); `min`, `max` | `value`/`count`/`total` |
+| `calendar` | `x` (the date), `value`, `label` (words for a day); `min`, `max` | `date`/`day`; `value`/`count`; without a value each row counts once |
+
+`colors: [low, high]` picks the scale (hex); the default is a soft blue (heatmap) or green (calendar), light and dark. A chart with `"chart": "heatmap"` (or gantt, calendar) is read as that view. The plans are `src/shared/render/grid-model.ts`.
 
 ### Code and colors
 

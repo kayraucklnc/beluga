@@ -40,6 +40,15 @@ describe('plan chat send (KLD-66)', () => {
     expect(api.sent).toEqual(['look at ![image 3](/tmp/3.png)']);
   });
 
+  it('passes the numbers the box showed along with the images', async () => {
+    const api = fakeApi();
+    const seen: unknown[][] = [];
+    const expand = api.attachments.expand;
+    api.attachments.expand = async (text, channel, only, shown) => (seen.push([only, shown]), expand(text, channel));
+    await sendPlanMessage(api, planMessage('look at [image 1]', [7], [1]), 'ws:plan');
+    expect(seen).toEqual([[[7], [1]]]);
+  });
+
   it('a send that resolves but did not go is an error', async () => {
     await expect(sendPlanMessage(fakeApi({ went: false }), planMessage('hi'), 'ws:plan')).rejects.toThrow("Claude can't be asked here");
     // Older daemons answer nothing: that's a send.

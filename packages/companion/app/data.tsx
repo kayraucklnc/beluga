@@ -23,7 +23,8 @@ export default function Data() {
     return () => allowTurning(false);
   }, []);
   const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
-  const title = f?.kind === 'view' ? (f.view.title ?? (f.view.type === 'chart' ? 'Chart' : 'Table')) : f?.kind === 'graph' ? (f.graph.title ?? 'Graph') : 'Table';
+  const viewName: Record<string, string> = { chart: 'Chart', gantt: 'Timeline', heatmap: 'Heatmap', calendar: 'Activity', stats: 'Numbers', code: 'Code', colors: 'Colors' };
+  const title = f?.kind === 'view' ? (f.view.title ?? viewName[f.view.type] ?? 'Table') : f?.kind === 'graph' ? (f.graph.title ?? 'Graph') : 'Table';
   return (
     <Screen>
       <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: color.bg }}>

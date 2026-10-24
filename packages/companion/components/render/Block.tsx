@@ -5,21 +5,27 @@ import { Maximize2 } from 'lucide-react-native';
 import { openFull } from '../../lib/fullscreen';
 import { useView } from '../../lib/hooks';
 import type { ProseView, TasksView } from '../../lib/link/protocol';
-import { parseGraph, parseView, readTaskKeys, viewFenceType } from '../../lib/render';
+import { parseGraph, parseView, readFileTree, readJson, readTaskKeys, viewFenceType } from '../../lib/render';
 import { store } from '../../lib/store';
 import { color, type } from '../../lib/theme';
 import { statusOf, taskHref } from '../Tasks';
 import { Card, Press, T, toneBg, toneInk } from '../ui';
+import { CodeChip } from './CodeChip';
 import type { BlockAt } from './data';
+import { FileTreeView } from './FileTree';
 import { GraphCard } from './Graph';
+import { JsonTree } from './JsonTree';
+import { MathBlock, type MathMap } from './MathBlock';
+import { TerminalView } from './Terminal';
 import { ViewCard } from './ViewCard';
 
 /**
  * What Claude drew in an answer, on the phone: a view, a graph or tasks, read by the Mac's own
  * parsers (src/shared). A block that's still being written, or can't be read, says so (as the
- * Mac's card does), never its JSON's code.
+ * Mac's card does), never its JSON's code. 1.9 (BLG-87): a file tree, JSON, terminal output or
+ * display math (`math`: the prose's typeset formulas). A kind this phone doesn't know yet is a chip.
  */
-export function Block({ entry, at }: { readonly entry: ProseView['code'][number]; readonly at?: BlockAt }) {
+export function Block({ entry, at, math }: { readonly entry: ProseView['code'][number]; readonly at?: BlockAt; readonly math?: MathMap }) {
   const block = entry.block!;
   const graph = useMemo(() => (block.kind === 'graph' ? parseGraph(block.text) : undefined), [block.text, block.kind]);
   const view = useMemo(() => {
@@ -27,11 +33,18 @@ export function Block({ entry, at }: { readonly entry: ProseView['code'][number]
     const t = viewFenceType(entry.lang);
     return parseView(block.text, t && t !== 'any' ? t : undefined);
   }, [block.text, block.kind, entry.lang]);
+  const tree = useMemo(() => (block.kind === 'tree' ? (readFileTree(block.text) ?? null) : undefined), [block.text, block.kind]);
+  const json = useMemo(() => (block.kind === 'json' ? (readJson(block.text) ?? null) : undefined), [block.text, block.kind]);
   if (graph) return graph.ok ? <GraphCard graph={graph.graph} /> : <Problem incomplete={graph.incomplete} error={graph.error} what="graph" />;
   if (view) return view.ok ? <ViewCard view={view.view} {...(at ? { at } : {})} warnings={view.warnings.length} /> : <Problem incomplete={view.incomplete} error={view.error} what="view" />;
   if (block.kind === 'tasks') return <TaskCards keys={readTaskKeys(block.text)} />;
   if (block.kind === 'text') return <TextTable text={block.text} />;
-  return null;
+  // Text that doesn't read as a tree or JSON after all: as it is, monospaced.
+  if (tree !== undefined) return tree ? <FileTreeView tree={tree} text={block.text} /> : <TextTable text={block.text} />;
+  if (json !== undefined) return json ? <JsonTree doc={json} text={block.text} /> : <TextTable text={block.text} />;
+  if (block.kind === 'terminal') return <TerminalView text={block.text} />;
+  if (block.kind === 'math') return <MathBlock tex={block.text} {...(math ? { math } : {})} />;
+  return <CodeChip {...(entry.lang ? { lang: entry.lang } : {})} lines={entry.lines} />;
 }
 
 /**

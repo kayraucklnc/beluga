@@ -1,0 +1,480 @@
+/*
+ * Fenced blocks Claude wrote that are really something else (shared/render/rich-fence.ts): a file
+ * tree, JSON, a terminal session. They sit where a code block would and look like one (the same
+ * surface, radius and hairline), with their tools on hover and the rest on right-click.
+ */
+
+.block {
+  --block-surface: var(--code-bg);
+  position: relative;
+  max-width: 100%;
+  margin: 0.4em 0 0.7em;
+  border-radius: 8px;
+  background: var(--block-surface);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+/* In a document: the doc's own spacing for blocks. */
+:global([data-markdown-doc]) .block {
+  margin: 0 0 1.15em;
+}
+
+/* ---------- tools on hover */
+
+.tools {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.block:hover .tools,
+.block:focus-within .tools {
+  opacity: 1;
+}
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 0.5px var(--hairline-strong),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+  color: var(--text-2);
+  font: inherit;
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: default;
+}
+.tool:hover {
+  color: var(--text);
+}
+.toolOn {
+  color: var(--accent);
+}
+.segment {
+  display: inline-flex;
+  padding: 2px;
+  gap: 1px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 0.5px var(--hairline-strong),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.segmentItem {
+  height: 18px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  cursor: default;
+}
+.segmentItem:hover {
+  color: var(--text);
+}
+.segmentOn {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+/* A row that does something: "Show 12 earlier lines", "Show 40 more". */
+.moreRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-family: var(--font);
+  font-size: 11.5px;
+  color: var(--accent);
+  text-align: left;
+  cursor: default;
+}
+.moreRow:hover {
+  background: var(--bg-hover);
+}
+
+/* ---------- file tree */
+
+.tree {
+  --tree-folder: #5b8fd6;
+  --tree-file: var(--text-3);
+  --tree-indent: 16px;
+  padding: 6px 0 4px;
+}
+:global([data-theme='dark']) .tree {
+  --tree-folder: #82abe6;
+}
+.treeRows {
+  overflow-x: auto;
+}
+.treeRow {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  min-width: max-content;
+  padding: 0 12px 0 8px;
+  white-space: nowrap;
+  user-select: text;
+}
+.treeRow:hover {
+  background: var(--bg-hover);
+}
+.treeDir {
+  cursor: default;
+}
+.guide {
+  flex: none;
+  align-self: stretch;
+  width: var(--tree-indent);
+  position: relative;
+}
+.guide::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 7px;
+  border-left: 1px solid var(--hairline-strong);
+  opacity: 0.8;
+}
+.chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 1px;
+  color: var(--text-3);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.chevronOpen {
+  transform: rotate(90deg);
+}
+.chevronSpace {
+  flex: none;
+  width: 17px;
+}
+.treeIcon {
+  flex: none;
+  margin-right: 6px;
+  color: var(--tree-file);
+}
+.treeDir .treeIcon {
+  color: var(--tree-folder);
+}
+.treeName {
+  color: var(--text);
+}
+.treeDir .treeName {
+  font-weight: 500;
+}
+.treeNote {
+  margin-left: 10px;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.treeMore {
+  color: var(--text-3);
+  letter-spacing: 0.08em;
+}
+.treeSummary {
+  margin: 4px 12px 2px;
+  padding-top: 5px;
+  border-top: 1px solid var(--hairline);
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+/* ---------- JSON */
+
+.json {
+  --json-key: #7a5cc4;
+  --json-string: #2f8a5b;
+  --json-number: #2f6fb8;
+  --json-bool: #b8692a;
+  --json-null: #a8708e;
+  --json-punct: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+:global([data-theme='dark']) .json {
+  --json-key: #b9a3f0;
+  --json-string: #8fd1a5;
+  --json-number: #8ab8f0;
+  --json-bool: #eab184;
+  --json-null: #d9a1bf;
+}
+.jsonRows {
+  padding: 8px 0;
+  overflow-x: auto;
+  max-height: 560px;
+  overflow-y: auto;
+}
+.jsonRow {
+  display: flex;
+  align-items: baseline;
+  min-height: 19px;
+  padding: 0 14px 0 6px;
+  white-space: pre;
+}
+.jsonRow:hover {
+  background: var(--bg-hover);
+}
+.jsonIndent {
+  flex: none;
+  display: inline-block;
+  width: calc(var(--depth) * 16px);
+  align-self: stretch;
+  background-image: repeating-linear-gradient(to right, transparent 0 7px, var(--hairline) 7px 8px, transparent 8px 16px);
+}
+.jsonToggle {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-right: 2px;
+  align-self: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-3);
+  cursor: default;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.jsonToggle:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.jsonToggleOpen {
+  transform: rotate(90deg);
+}
+.jsonSpace {
+  flex: none;
+  display: inline-block;
+  width: 16px;
+}
+.jKey {
+  color: var(--json-key);
+}
+.jValue {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.jString {
+  color: var(--json-string);
+}
+.jNumber {
+  color: var(--json-number);
+}
+.jBool {
+  color: var(--json-bool);
+}
+.jNull {
+  color: var(--json-null);
+  font-style: italic;
+}
+.jPunct {
+  color: var(--json-punct);
+}
+.jPreview {
+  color: var(--text-3);
+}
+.jSize {
+  margin-left: 8px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 10.5px;
+  color: var(--text-3);
+  background: var(--bg-hover);
+}
+.jClip {
+  border: 0;
+  padding: 0 4px;
+  margin-left: 2px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  font-family: var(--font);
+  font-size: 10.5px;
+  color: var(--text-2);
+  cursor: default;
+}
+.jClip:hover {
+  color: var(--text);
+}
+.jMore {
+  height: 19px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font-family: var(--font);
+  font-size: 11.5px;
+  color: var(--accent);
+  cursor: default;
+}
+.jMore:hover {
+  background: var(--bg-hover);
+}
+.jsonFold {
+  cursor: default;
+}
+.jsonRaw {
+  padding: 10px 14px;
+  max-height: 560px;
+  overflow: auto;
+}
+
+/* ---------- terminal */
+
+.term {
+  --block-surface: color-mix(in srgb, var(--code-bg) 82%, var(--bg-sunken));
+  /* A soft palette for the 16 colors: readable on the light surface, never neon. */
+  --ansi-black: #3b3d42;
+  --ansi-red: #c84b4b;
+  --ansi-green: #3d8f5a;
+  --ansi-yellow: #a87711;
+  --ansi-blue: #3f72c0;
+  --ansi-magenta: #9a55b8;
+  --ansi-cyan: #2b8a95;
+  --ansi-white: #8a8d93;
+  --ansi-brightBlack: #80838a;
+  --ansi-brightRed: #dd6a64;
+  --ansi-brightGreen: #4fa86d;
+  --ansi-brightYellow: #c28f22;
+  --ansi-brightBlue: #5a8ee0;
+  --ansi-brightMagenta: #b673d2;
+  --ansi-brightCyan: #3aa3ae;
+  --ansi-brightWhite: #5c5f66;
+  box-shadow:
+    inset 0 0 0 0.5px var(--hairline),
+    inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+:global([data-theme='dark']) .term {
+  --block-surface: color-mix(in srgb, var(--code-bg) 60%, var(--bg-sunken));
+  --ansi-black: #5a5d64;
+  --ansi-red: #ec8a84;
+  --ansi-green: #8fd19f;
+  --ansi-yellow: #e6c47a;
+  --ansi-blue: #8ab4f0;
+  --ansi-magenta: #d1a3e6;
+  --ansi-cyan: #86d0d6;
+  --ansi-white: #c9cbd0;
+  --ansi-brightBlack: #8b8e95;
+  --ansi-brightRed: #f4a19b;
+  --ansi-brightGreen: #a8e0b4;
+  --ansi-brightYellow: #f0d495;
+  --ansi-brightBlue: #a6c7f5;
+  --ansi-brightMagenta: #dfb9ef;
+  --ansi-brightCyan: #a3dde2;
+  --ansi-brightWhite: #ececee;
+  box-shadow:
+    inset 0 0 0 0.5px var(--hairline),
+    inset 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.termHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--text-3);
+  font-size: 11px;
+}
+.termChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px 0 5px;
+  border-radius: 5px;
+  color: var(--text-2);
+  background: var(--bg-hover);
+}
+.term .tools {
+  top: 3px;
+}
+.termBody {
+  margin: 0;
+  padding: 7px 0 8px;
+  overflow-x: auto;
+  max-height: 560px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  tab-size: 8;
+}
+.termLine {
+  display: block;
+  min-width: max-content;
+  min-height: 1.55em;
+  padding: 0 14px;
+  white-space: pre;
+  color: var(--text-2);
+}
+.wrap .termLine {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.termLine[data-kind='prompt'] {
+  color: var(--text);
+}
+.termLine[data-kind='error'] {
+  background: color-mix(in srgb, #e57373 11%, transparent);
+  color: var(--text);
+}
+.termLine[data-kind='warning'] {
+  background: color-mix(in srgb, #f0c75e 14%, transparent);
+  color: var(--text);
+}
+.termLine[data-kind='ok'] {
+  color: color-mix(in srgb, var(--ok) 80%, var(--text));
+}
+:global([data-theme='dark']) .termLine[data-kind='error'] {
+  background: color-mix(in srgb, #ec8a84 12%, transparent);
+}
+:global([data-theme='dark']) .termLine[data-kind='warning'] {
+  background: color-mix(in srgb, #e6c47a 10%, transparent);
+}
+.prompt {
+  color: var(--text-3);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.command {
+  font-weight: 500;
+  color: var(--text);
+}
+.termMore {
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--hairline);
+}

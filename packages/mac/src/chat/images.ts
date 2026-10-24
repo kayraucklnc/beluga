@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { ATTACHMENT_SCHEME } from '@beluga/core/attachment-share.js';
 import type { LinkedImage } from '@beluga/shared/attachment-links.js';
 import type { SocketClient } from '@beluga/ipc/socket-client.js';
 
@@ -71,6 +72,18 @@ export function keepPreview(n: number, file: Blob): void {
 }
 
 export const previewOf = (n: number): string | undefined => pending.get(n);
+
+/**
+ * A pasted image as the lightbox shows it, before it's sent (`file`: the name Beluga saved it
+ * under, so Open finds it): its picture is the one kept here, nothing to fetch.
+ */
+export function pendingImage(n: number, owner: string, file: string, label: string): ChatImage | undefined {
+  const url = pending.get(n);
+  if (!url) return undefined;
+  const href = `${ATTACHMENT_SCHEME}${owner}/${file}`;
+  if (!cache.has(href)) cache.set(href, Promise.resolve(url));
+  return { href, owner, file, label };
+}
 
 // ---- the lightbox: one per window, opened from any message
 

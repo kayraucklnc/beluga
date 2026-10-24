@@ -238,7 +238,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     }
     secretWarned.current = undefined;
     // Images stay where you referenced them in the words; any you took the reference out of go after them.
-    const { text, images, putBack } = att.take(typed);
+    const { text, images, shown, putBack } = att.take(typed);
     if (!text && !(draftProject && worktree.name.trim())) {
       if (draftProject) toast(client, 'Describe the task, or give the worktree a name', 'info');
       return;
@@ -253,7 +253,7 @@ export function Composer({ autoFocus = true }: { autoFocus?: boolean }) {
     ui.patch({ buffer: '', cursor: 0, history: [...ui.get().history, typed].slice(-200), historyIndex: -1 });
     // Image chips become links to the images (Beluga keeps them) before the message goes.
     if (text.includes('[image ') && !text.startsWith('/')) {
-      api.attachments.expand(text, channel, [...images]).then(
+      api.attachments.expand(text, channel, [...images], [...shown]).then(
         (expanded) => deliver(expanded, urgent),
         (err: unknown) => {
           // Put the message and its images back so nothing is lost.

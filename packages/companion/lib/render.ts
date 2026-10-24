@@ -12,4 +12,9 @@ export { SERIES_DARK, SERIES_LIGHT, alignOf, contrast, formatCell, formatNumber,
 export { type InlineElement, readInline, relative } from '../../../src/shared/render/inline-model';
 export { tableView } from '../../../src/shared/render/md-table';
 export { EDGE_VERB, type ElkInput, type ElkOutput, KIND_ICON, KIND_NAME, STATUS_INFO, connections, elkGraph, inlineAspect, neighborhood, nodeBoxes, placesOf, roundedPath, routesOf, stepFocus } from '../../../src/shared/render/graph-model';
+export { type FileTree, type TreeNode, readFileTree } from '../../../src/shared/render/file-tree';
+export { type Json, type JsonDoc, jsonPreview, jsonSize, openDepth, readJson } from '../../../src/shared/render/json-tree';
+export { type AnsiName, type Span, type TermLine, type Terminal, TERMINAL_FOLD, readTerminal } from '../../../src/shared/render/terminal';
+export { type MathPiece, splitInlineMath } from '../../../src/shared/render/math';
+export { type CalendarDay, type CalendarPlan, type GanttBar, type GanttPlan, type HeatPlan, along, barTone, planCalendar, planGantt, planHeatmap, scaleColor, scaleOf } from '../../../src/shared/render/grid-model';
 export { stripCode } from '../../../src/companion/strip';
