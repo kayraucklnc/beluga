@@ -7,6 +7,7 @@ import { Platform, ScrollView, View } from 'react-native';
 import Animated, { FadeInUp, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Composer } from '../../components/Composer';
+import { SendStatus } from '../../components/SendStatus';
 import { Thumb } from '../../components/Outputs';
 import { Header, Screen, useScrolled } from '../../components/Screen';
 import { Avatar, Press, T } from '../../components/ui';
@@ -14,6 +15,7 @@ import { ago, useView } from '../../lib/hooks';
 import { calls } from '../../lib/link/calls';
 import type { ChatMessageView, ChatView, OutputView, Topic } from '../../lib/link/protocol';
 import { pickPhoto, upload } from '../../lib/pick';
+import { sends, useSends } from '../../lib/sends';
 import { store } from '../../lib/store';
 import { color, ink, tint } from '../../lib/theme';
 
@@ -28,6 +30,8 @@ export default function Chat() {
   const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const [ask, setAsk] = useState<AskTarget | undefined>();
   const [picking, setPicking] = useState(false);
+  /** What you sent that the Mac's view doesn't show yet. */
+  const pending = useSends(topic);
   const targets = askTargets(c?.members, c?.kind ?? 'dm', c?.name ?? '');
   const pics: OutputView[] = c?.messages.flatMap((m) => (m.files ?? []).filter((f) => f.kind === 'image')) ?? [];
 
@@ -38,13 +42,8 @@ export default function Chat() {
   const sendPhoto = async () => {
     const photo = await pickPhoto().catch(() => undefined);
     if (!photo) return;
-    store.toast({ text: `Sending ${photo.name}…`, tone: 'info' });
-    try {
-      const ref = await upload(photo);
-      await store.call(calls.chat(topic, '', { files: [ref] }));
-    } catch (e) {
-      store.toast({ text: `Couldn't send the photo: ${(e as Error).message}`, tone: 'error' });
-    }
+    // Shown at once as yours; it goes up, then the message names it (lib/sends.ts).
+    sends.message(topic, '', async () => calls.chat(topic, '', { files: [await upload(photo)] }), { photo: true });
   };
 
   return (
@@ -61,6 +60,16 @@ export default function Chat() {
               </Animated.View>
             );
           })}
+          {pending.map((p) => (
+            <Animated.View key={p.id} entering={FadeInUp.springify().stiffness(220).damping(22)} layout={LinearTransition.springify()} style={{ alignItems: 'flex-end', marginTop: 6 }}>
+              <View style={{ maxWidth: '78%', paddingVertical: 9, paddingHorizontal: 13, borderRadius: 19, borderBottomRightRadius: 6, backgroundColor: tint.sky, opacity: p.state === 'failed' ? 1 : 0.6, borderWidth: p.state === 'failed' ? 1 : 0, borderColor: color.error }}>
+                <T v="body" c={ink.sky} style={{ fontSize: 15.5 }}>
+                  {p.text || 'Photo'}
+                </T>
+              </View>
+              <SendStatus s={p} />
+            </Animated.View>
+          ))}
         </ScrollView>
         {ask ? (
           <Animated.View entering={FadeInUp.duration(180)} style={{ flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 2 }}>
@@ -79,7 +88,7 @@ export default function Chat() {
           placeholder={ask ? `Ask ${ask.label}…` : `Message ${c?.name ?? ''}`}
           bottom={insets.bottom}
           onSend={(text) => {
-            void store.call(calls.chat(topic, text, ask ? { ask: ask.ask } : {}));
+            sends.message(topic, text, calls.chat(topic, text, ask ? { ask: ask.ask } : {}));
             setAsk(undefined);
           }}
           left={

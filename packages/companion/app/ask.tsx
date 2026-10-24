@@ -12,6 +12,7 @@ import { useView } from '../lib/hooks';
 import { type Call, calls } from '../lib/link/calls';
 import type { HomeView, PeopleView, Topic, WorkView } from '../lib/link/protocol';
 import { pickPhoto, upload } from '../lib/pick';
+import { sends } from '../lib/sends';
 import { store } from '../lib/store';
 import { color } from '../lib/theme';
 
@@ -38,16 +39,18 @@ const MODES: ReadonlyArray<{ mode: Mode; label: string; Icon: typeof Folder; ton
 ];
 
 export default function Ask() {
-  const params = useLocalSearchParams<{ friend?: string; topic?: string }>();
+  const params = useLocalSearchParams<{ friend?: string; topic?: string; text?: string; to?: string; how?: string }>();
+  // A start that didn't go gives its words back (and where they were going): from its screen, or left for here.
+  const [back] = useState(() => (params.text !== undefined ? { text: params.text, target: params.to, how: params.how } : sends.draft));
   const [visible, setVisible] = useState(true);
   const work = useView<WorkView>('work');
   const home = useView<HomeView>('home');
   const people = useView<PeopleView>('people');
-  const [text, setText] = useState('');
+  const [text, setText] = useState(back?.text ?? '');
+  useEffect(() => void (sends.draft = undefined), []);
   const [photo, setPhoto] = useState<{ name: string; mime: string; b64: string; uri: string } | undefined>();
-  const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
-  const [mode, setMode] = useState<Mode>('worktree');
+  const [mode, setMode] = useState<Mode>(() => MODES.find((m) => m.mode === back?.how)?.mode ?? 'worktree');
   const [planFirst, setPlanFirst] = useState(false);
   // An older Mac (before 1.5) has neither Your Mac nor worktrees and plans from here.
   const modes = store.supports('askModes');
@@ -67,11 +70,14 @@ export default function Ask() {
   useEffect(() => {
     // Wait for the list the default comes from (projects, unless aimed at a friend or a conversation).
     if (sel || !targets.length || (!params.friend && !params.topic && !work)) return;
-    const want = params.friend
-      ? targets.find((t) => t.kind === 'friend' && t.id === params.friend)
-      : params.topic
-        ? targets.find((t) => (t.kind === 'conv' || t.kind === 'mac') && t.topic === params.topic)
-        : (targets.find((t) => t.kind === 'mac') ?? targets.find((t) => t.kind === 'project'));
+    const again = back?.target ? targets.find((t) => keyOf(t) === back.target) : undefined;
+    const want =
+      again ??
+      (params.friend
+        ? targets.find((t) => t.kind === 'friend' && t.id === params.friend)
+        : params.topic
+          ? targets.find((t) => (t.kind === 'conv' || t.kind === 'mac') && t.topic === params.topic)
+          : (targets.find((t) => t.kind === 'mac') ?? targets.find((t) => t.kind === 'project')));
     setSel(keyOf(want ?? targets[0]!));
   }, [targets]);
   const target = targets.find((t) => keyOf(t) === sel);
@@ -85,47 +91,37 @@ export default function Ask() {
     setTimeout(() => (router.canGoBack() ? router.back() : router.replace('/')), 230);
   };
 
-  const send = async () => {
-    if (!text.trim() || !target || busy) return;
+  const send = () => {
+    if (!text.trim() || !target) return;
     haptic.commit();
-    setBusy(true);
     const words = text.trim();
-    let files: string[] = [];
-    try {
-      // The photo goes first (`put`), then the message names it.
-      if (photo && photos) files = [await upload(photo)];
-    } catch (e) {
-      store.toast({ text: `The photo didn't go: ${(e as Error).message}`, tone: 'error' });
-      setBusy(false);
-      return;
-    }
-    const call: Call =
-      target.kind === 'conv' || target.kind === 'mac'
-        ? calls.send(target.topic, words, files)
-        : target.kind === 'friend'
-          ? calls.askPerson(target.id, target.name, words)
+    const pic = photo && photos ? photo : undefined;
+    // The photo goes first (`put`), then the message names it: both after the sheet has closed.
+    const make = (c: (files: string[]) => Call): Call | (() => Promise<Call>) => (pic ? async () => c([await upload(pic)]) : c([]));
+    const opts = pic ? { photo: true } : {};
+    // Shown at once, confirmed by the Mac (lib/sends.ts): a message in its conversation, a start on its own screen.
+    let href: string;
+    if (target.kind === 'conv' || target.kind === 'mac') {
+      sends.message(target.topic, words, make((files) => calls.send(target.topic, words, files)), opts);
+      href = convHref(target.topic);
+    } else {
+      const kind = target.kind === 'friend' ? 'friend' : how;
+      const call =
+        target.kind === 'friend'
+          ? make(() => calls.askPerson(target.id, target.name, words))
           : how === 'worktree'
-            ? calls.startWorktree(target.id, words, planFirst)
+            ? make(() => calls.startWorktree(target.id, words, planFirst))
             : how === 'plan'
-              ? calls.createPlan(target.id, words)
-              : calls.ask(target.id, words, files);
-    const r = await store.call<unknown>(call).catch((e: Error) => (store.toast({ text: e.message, tone: 'error' }), undefined));
-    setBusy(false);
+              ? make(() => calls.createPlan(target.id, words))
+              : make((files) => calls.ask(target.id, words, files));
+      const id = sends.start({ kind, label: target.label, target: keyOf(target), ...(target.kind === 'project' ? { project: target.label, ...(target.icon ? { icon: target.icon } : {}) } : {}), ...(kind === 'worktree' && planFirst ? { plan: true } : {}) }, words, call, opts);
+      href = `/starting/${id}`;
+    }
     setVisible(false);
-    // Where to go: the conversation (a new worktree's by its id), or the plan's page.
-    const back = r as { topic?: Topic; id?: string } | string | undefined;
-    const href =
-      target.kind === 'project' && how === 'worktree'
-        ? typeof back === 'string' ? convHref(`conv:ws:${back}`) : undefined
-        : target.kind === 'project' && how === 'plan'
-          ? typeof back === 'object' && back?.id ? `/plan/${encodeURIComponent(back.id)}` : undefined
-          : (typeof back === 'object' && back?.topic) || target.kind === 'conv' || target.kind === 'mac'
-            ? convHref((typeof back === 'object' && back?.topic) || (target as { topic: Topic }).topic)
-            : undefined;
     setTimeout(() => {
       (router.canGoBack() ? router.back() : router.replace('/'));
-      if (href) setTimeout(() => router.push(href as never), 60);
-    }, 220);
+      setTimeout(() => router.push(href as never), 60);
+    }, 200);
   };
 
   const mark = (t: Target, size: number) => (t.kind === 'friend' ? <Avatar name={t.name} size={size} /> : t.kind === 'project' ? <ProjectMark name={t.label} icon={t.icon} size={size} /> : t.kind === 'conv' && t.project ? <ProjectMark name={t.project} icon={t.icon} size={size} /> : <IconBadge Icon={ICON[t.kind].Icon} tone={ICON[t.kind].tone} size={size} />);
@@ -220,7 +216,7 @@ export default function Ask() {
               </Press>
               )}
               <View style={{ flex: 1 }} />
-              <Press disabled={!text.trim() || busy} onPress={() => void send()} accessibilityLabel="Send" style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: text.trim() ? color.primary : color.sunken }}>
+              <Press disabled={!text.trim()} onPress={send} accessibilityLabel="Send" style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: text.trim() ? color.primary : color.sunken }}>
                 <ArrowUp color={text.trim() ? color.onPrimary : color.text3} size={22} strokeWidth={2.6} />
               </Press>
             </View>

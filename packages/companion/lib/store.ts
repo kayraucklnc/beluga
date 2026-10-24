@@ -103,6 +103,8 @@ class Store {
   private latest = new Map<string, OutputView>();
   private toasts: Toast[] = [];
   private seq = 1;
+  /** The Mac said welcome on this link (calls may go; they're answered). */
+  private welcomed = false;
   private grace: ReturnType<typeof setTimeout> | undefined;
   private listeners = new Map<string, Set<() => void>>();
   private snapshots = new Map<string, unknown>();
@@ -325,8 +327,10 @@ class Store {
       const d = phase === 'refused' ? diagnose({ stage: 'link', ...(info?.code !== undefined ? { closeCode: info.code } : {}), ...(detail ? { reason: detail } : {}) }) : undefined;
       this.setState({ phase, detail, path: phase === 'closed' ? this.state.path : undefined, diagnosis: d && d.problem !== 'unknown' ? d : undefined });
     }
-    // Calls in flight won't be answered: back to the outbox they go.
-    for (const [, p] of this.pending) p.reject(new Error('The link closed.'));
+    this.welcomed = false;
+    // Calls in flight won't be answered. Marked `lost`: the Mac may or may not have done it
+    // (lib/sends.ts checks the Mac's view before it says either).
+    for (const [, p] of this.pending) p.reject(Object.assign(new Error('The link closed.'), { lost: true }));
     this.pending.clear();
     for (const [id, f] of this.fetches) {
       this.fetches.delete(id);
@@ -347,7 +351,9 @@ class Store {
         this.keepRelay(f.relay);
         // What's on screen again, now that it's known what this Mac has (an older one drops a `sub` naming a topic it doesn't know).
         if (older) this.transport?.send({ t: 'sub', topics: this.topics() });
+        this.welcomed = !outdated;
         if (!outdated) this.flushOutbox();
+        this.emit('linked');
         return;
       }
       case 'view': {
@@ -393,6 +399,11 @@ class Store {
         this.setState({ phase: 'closed', detail: f.reason });
         return;
     }
+  }
+
+  /** Linked and welcomed: a call now goes, and is answered (unless the link drops). */
+  get linked(): boolean {
+    return this.welcomed && this.state.phase === 'open' && Boolean(this.transport);
   }
 
   // ---- views

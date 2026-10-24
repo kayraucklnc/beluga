@@ -11,6 +11,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Toasts } from '../components/Screen';
 import { useScheme } from '../lib/appearance';
 import { store } from '../lib/store';
+// Loaded at once: sends that waited while your Mac was away go when it answers, whatever is on screen.
+import '../lib/sends';
 import { allowTurning } from '../lib/fullscreen';
 import { color } from '../lib/theme';
 

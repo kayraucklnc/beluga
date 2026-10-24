@@ -99,9 +99,13 @@ describe('the right panel’s tabs', () => {
     expect(['changes', 'files', 'terminal', 'info', 'history', 'scratch', 'background'].map((t) => panelDigit(t as 'changes'))).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
-  it('is never narrower than the minimum nor wider than 60% of the window', () => {
+  it('is never narrower than the minimum nor wider than 60% of the window, and leaves the center its room', () => {
     expect(clampPanelWidth(100, 1440)).toBe(PANEL_MIN);
-    expect(clampPanelWidth(2000, 1440)).toBe(864);
+    // A wide window: 60% of it.
+    expect(clampPanelWidth(4000, 2560)).toBe(1536);
+    // Narrower: the center keeps its 690 (CENTER_MIN) first, beside the sidebar too.
+    expect(clampPanelWidth(2000, 1440)).toBe(750);
+    expect(clampPanelWidth(2000, 1440, 240)).toBe(510);
     expect(clampPanelWidth(400, 1440)).toBe(400);
     // A tiny window still gets the minimum.
     expect(clampPanelWidth(400, 400)).toBe(PANEL_MIN);

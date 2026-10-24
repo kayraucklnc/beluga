@@ -543,10 +543,14 @@ export class DemoTransport implements Transport {
         const id = `wt-${++this.convSeq}${Math.random().toString(36).slice(2, 6)}`;
         const topic = `conv:ws:${id}` as Topic;
         const name = str(1).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'worktree';
-        w.convs.set(topic, { topic, title: name, project, turns: [], more: false, needsYou: [], canSend: true, working: false });
-        w.projects.find((x) => x.id === project)?.convs.unshift(topic);
-        this.submit(str(1), { topic }, [], opts.plan ? 'Here’s the plan: read the redirect, keep the deep link through sign-in, add a widget test. Approve it on your Mac or here and I’ll start.' : undefined);
-        return ok(id);
+        // A real Mac takes a moment to make a worktree: the phone's Starting screen shows meanwhile.
+        this.later(1400, () => {
+          w.convs.set(topic, { topic, title: name, project, turns: [], more: false, needsYou: [], canSend: true, working: false });
+          w.projects.find((x) => x.id === project)?.convs.unshift(topic);
+          this.submit(str(1), { topic }, [], opts.plan ? 'Here’s the plan: read the redirect, keep the deep link through sign-in, add a widget test. Approve it on your Mac or here and I’ll start.' : undefined);
+          ok(id);
+        });
+        return;
       }
       case 'plans.create': {
         const a = args[0] as { projectId: string; goal: string };
