@@ -123,6 +123,41 @@ export interface Status {
   readonly behind: number;
   /** Without a base (the main checkout): the branch it tracks and how it compares, as of the last fetch. */
   readonly upstream?: { readonly name: string; readonly ahead: number; readonly behind: number };
+  /**
+   * Its commits are already in the base (or what the base tracks, e.g. origin/main): merged
+   * there by a pull request, squashed, or merged by hand outside Beluga.
+   */
+  readonly landed?: true;
+}
+
+/** Whether a branch's work is in a base, by (HEAD, base) commit: the answer never changes for the same two. */
+const landedCache = new Map<string, boolean>();
+
+/**
+ * Whether HEAD's work is already in `into`: HEAD is part of it, or every file the branch changed
+ * reads the same there (a squash merge). Read-only git calls.
+ */
+async function landedIn(dir: string, head: string, into: string): Promise<boolean> {
+  const key = `${head}:${into}`;
+  const known = landedCache.get(key);
+  if (known !== undefined) return known;
+  let landed = await git(dir, ['merge-base', '--is-ancestor', head, into], 15_000).then(() => true, () => false);
+  if (!landed) {
+    const files = (await tryGit(dir, ['diff', '--name-only', '--no-renames', `${into}...${head}`]))?.split('\n').filter(Boolean) ?? [];
+    if (files.length && files.length <= 2000) landed = await git(dir, ['diff', '--quiet', '--no-renames', into, head, '--', ...files], 15_000).then(() => true, () => false);
+  }
+  if (landedCache.size > 2000) landedCache.clear();
+  landedCache.set(key, landed);
+  return landed;
+}
+
+/** Whether a branch ahead of `base` has already landed in it, or in what it tracks. */
+async function hasLanded(dir: string, base: string): Promise<boolean> {
+  const sha = (ref: string): Promise<string | undefined> => tryGit(dir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).then((s) => s?.trim() || undefined);
+  const [head, ...intos] = await Promise.all(['HEAD', base, `${base}@{upstream}`].map(sha));
+  if (!head) return false;
+  for (const into of new Set(intos)) if (into && (await landedIn(dir, head, into))) return true;
+  return false;
 }
 
 /** Status reads run a few at a time (each is one or two git processes): a refresh of many worktrees never forks dozens at once. */
@@ -144,7 +179,8 @@ async function readStatus(dir: string, base?: string): Promise<Status> {
     const counts = (await tryGit(dir, ['rev-list', '--left-right', '--count', `${base}...HEAD`]))?.trim().split(/\s+/);
     behind = Number(counts?.[0] ?? 0) || 0;
     ahead = Number(counts?.[1] ?? 0) || 0;
-    return { branch, changed: files.length, ahead, behind };
+    const landed = ahead > 0 && (await hasLanded(dir, base));
+    return { branch, changed: files.length, ahead, behind, ...(landed ? { landed: true as const } : {}) };
   }
   // "## main...origin/main [ahead 1, behind 2]": how the checkout compares to what it tracks.
   const name = /^## [^.\s]+\.\.\.(\S+)/.exec(head)?.[1];

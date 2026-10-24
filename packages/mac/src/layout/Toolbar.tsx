@@ -10,6 +10,7 @@ import { Button, Dot, IconButton, Segmented, Tip, cx } from '../components/ui.js
 import { useActions } from '../lib/actions.js';
 import { toast, useApp, useBeluga } from '../lib/beluga.js';
 import { type ToolAction, isPrStep, toolbarActions } from './toolbar-actions.js';
+import { BranchControl } from './BranchControl.js';
 import { isPlanAction, runPlanAction } from '../lib/plan-task.js';
 import { askBeforeWork } from '../lib/work-confirm.js';
 import { setPrefs, usePrefs } from '../lib/prefs.js';
@@ -116,9 +117,10 @@ export function Toolbar() {
       );
     }
     const st = stateOf(state, ws, 0);
-    const { primary, icons, more } = toolbarActions(state, ws);
-    // A narrow window: the icons that don't fit move under ⋯ (the everyday action keeps its place).
-    const fixed = TITLE_MIN + RIGHT_FIXED + (primary ? primary.label.length * 7.4 + 48 : 0) + 34;
+    const { branch, primary, icons, more } = toolbarActions(state, ws);
+    // A narrow window: the icons that don't fit move under ⋯ (the everyday action and the branch keep their place).
+    const lead = branch ? branch.label.length * 6.6 + 40 + (branch.steps[0] ? branch.steps[0].label.length * 7.4 + 76 : 0) : 0;
+    const fixed = TITLE_MIN + RIGHT_FIXED + lead + (primary ? primary.label.length * 7.4 + 48 : 0) + 34;
     const fit = Math.max(0, Math.min(icons.length, Math.floor((width - fixed) / 30)));
     // Icons that don't fit lead ⋯ as a section of their own.
     const overflow = [...(fit < icons.length ? [icons.slice(fit)] : []), ...more];
@@ -165,6 +167,7 @@ export function Toolbar() {
         }
         right={
           <>
+            {branch ? <BranchControl wsId={ws.id} branch={branch} /> : null}
             {/* A main folder is questions only: what it needs next is a worktree to work in. */}
             {ws.askOnly && !planForHome(state.plans, `ws:${ws.id}`) ? (
               <span className={s.primaryWrap}>

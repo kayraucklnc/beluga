@@ -1,0 +1,187 @@
+import type { DomainState } from './store.js';
+import type { Workspace } from '../workspaces/types.js';
+
+/**
+ * Where a worktree's branch stands, in one word you can see at the top (Merged, Ready to merge,
+ * Conflicts…), and its next steps: the first is the one to take, the rest go in its menu. Steps
+ * Claude does are marked `claude`; the others are one click (git or GitHub does them). The Mac's
+ * toolbar and the phone both draw it, so the two never disagree. It reads what Beluga knows: the
+ * pull request GitHub reports, a merge here that stopped on conflicts, and git's status (which
+ * also notices work merged outside Beluga, see `Status.landed`).
+ */
+export type BranchKind =
+  | 'merged'
+  | 'merge_conflict'
+  | 'conflicts'
+  | 'checks_failing'
+  | 'draft'
+  | 'behind'
+  | 'changes_requested'
+  | 'auto_merge'
+  | 'checks_running'
+  | 'review'
+  | 'blocked'
+  | 'ready'
+  | 'closed'
+  | 'uncommitted'
+  | 'unshipped'
+  | 'clean';
+
+/** merged: purple, as GitHub draws it. */
+export type BranchTone = 'merged' | 'ok' | 'error' | 'warn' | 'wait' | 'info' | 'muted';
+
+export type BranchStepId =
+  | 'merge_pr'
+  | 'merge_auto'
+  | 'merge_admin'
+  | 'update_branch'
+  | 'mark_ready'
+  | 'open_pr'
+  | 'resolve_pr'
+  | 'fix_checks'
+  | 'merge_claude'
+  | 'review_claude'
+  | 'commit'
+  | 'pr'
+  | 'merge'
+  | 'continue_after_merge'
+  | 'archive'
+  | 'delete';
+
+export interface BranchStep {
+  readonly id: BranchStepId;
+  readonly label: string;
+  readonly hint: string;
+  /** Claude does it, in the worktree's conversation (it asks first). */
+  readonly claude?: true;
+  readonly danger?: true;
+}
+
+export interface BranchState {
+  readonly kind: BranchKind;
+  /** The pill: "Merged", "Ready to merge", "Conflicts". */
+  readonly label: string;
+  readonly tone: BranchTone;
+  /** One line on why: "PR #12 merged into main on GitHub". */
+  readonly detail: string;
+  readonly branch: string;
+  /** What it merges into ("main"). */
+  readonly into: string;
+  readonly pr?: { readonly number: number; readonly state: 'OPEN' | 'CLOSED' | 'MERGED' };
+  /** The first is the main one. Empty: nothing to do (or the plan does it). */
+  readonly steps: readonly BranchStep[];
+}
+
+export interface BranchOptions {
+  /** Doing a plan's task: the plan merges it, so no merge or PR steps of its own. */
+  readonly planned?: boolean;
+}
+
+/** "origin/main" → "main". */
+const short = (ref: string): string => ref.replace(/^(refs\/heads\/|refs\/remotes\/)?origin\//, '');
+
+/** Its project pushes somewhere and the GitHub CLI isn't known to be missing: PRs are the way to merge. */
+export function onGitHub(state: Pick<DomainState, 'projects' | 'gh'>, ws: Workspace): boolean {
+  const sync = state.projects.find((p) => p.id === ws.projectId)?.sync;
+  return state.gh !== false && (!sync || Boolean(sync.upstream));
+}
+
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** A worktree's branch, or undefined for what has none (chats, the main folder, archived ones, a detached HEAD). */
+export function branchState(state: Pick<DomainState, 'projects' | 'gh' | 'prs' | 'conflicts'>, ws: Workspace, opts: BranchOptions = {}): BranchState | undefined {
+  if (ws.kind !== 'worktree' || ws.archived || ws.pending || !ws.branch) return undefined;
+  const project = state.projects.find((p) => p.id === ws.projectId);
+  const into = short(ws.base ?? project?.base ?? 'main');
+  const pr = state.prs[ws.id];
+  const st = ws.status;
+  const changed = st?.changed ?? 0;
+  const planned = Boolean(opts.planned);
+  const github = onGitHub(state, ws);
+  const at = (kind: BranchKind, label: string, tone: BranchTone, detail: string, steps: ReadonlyArray<BranchStep | false | undefined>): BranchState => ({
+    kind,
+    label,
+    tone,
+    detail,
+    branch: ws.branch!,
+    into,
+    ...(pr ? { pr: { number: pr.number, state: pr.state } } : {}),
+    steps: steps.filter((x): x is BranchStep => Boolean(x)),
+  });
+
+  const commit: BranchStep | false = changed > 0 && { id: 'commit', label: 'Commit…', hint: `Claude commits the ${plural(changed, 'uncommitted change')} with a message`, claude: true };
+  const finish: BranchStep[] = [
+    { id: 'continue_after_merge', label: 'Continue After Merge…', hint: `Start ${ws.branch} again from the latest ${into} and keep the conversation; the next change gets a new PR` },
+    { id: 'archive', label: 'Archive Worktree', hint: 'Put it away: the branch and the conversation are kept' },
+    { id: 'delete', label: 'Delete Worktree…', hint: 'Remove the folder and its branch for good', danger: true },
+  ];
+  const auto: BranchStep = { id: 'merge_auto', label: 'Merge When Ready', hint: `GitHub merges PR #${pr?.number} as soon as its checks and reviews pass` };
+  const admin: BranchStep = { id: 'merge_admin', label: 'Merge Now, Skipping Checks', hint: 'Past its checks and reviews (needs admin rights on the repository)', danger: true };
+  const openPr: BranchStep | false = Boolean(pr) && { id: 'open_pr', label: `Open PR #${pr?.number}`, hint: 'Its checks, review and every way to merge' };
+
+  const conflicts = state.conflicts[ws.id] ?? [];
+  if (conflicts.length) {
+    return at('merge_conflict', 'Merge conflict', 'error', `Merging into ${into} stopped: ${plural(conflicts.length, 'file')} conflict${conflicts.length === 1 ? 's' : ''}`, [
+      { id: 'merge_claude', label: 'Resolve with Claude…', hint: 'Claude finishes the merge: it resolves each conflict and commits', claude: true },
+    ]);
+  }
+
+  if (pr?.state === 'MERGED') {
+    return at('merged', 'Merged', 'merged', `PR #${pr.number} merged into ${into} on GitHub${changed ? ` · ${plural(changed, 'change')} since` : ''}`, planned ? [] : finish);
+  }
+  // Merged outside Beluga (on GitHub with no PR it knows of, squashed, or by hand).
+  if (st?.landed && pr?.state !== 'OPEN' && !changed) {
+    return at('merged', 'Merged', 'merged', `Its commits are already in ${into}`, planned ? [] : finish);
+  }
+
+  if (pr?.state === 'OPEN') {
+    const n = `PR #${pr.number}`;
+    if (pr.conflicts) {
+      return at('conflicts', 'Conflicts', 'error', `${n} conflicts with ${into}: GitHub can’t merge it until they’re resolved`, [
+        { id: 'resolve_pr', label: 'Resolve with Claude…', hint: `Claude merges ${into} in here, resolves the conflicts and pushes`, claude: true },
+        openPr,
+      ]);
+    }
+    if (pr.checks === 'failing') {
+      return at('checks_failing', 'Checks failed', 'error', `${n}’s checks are failing`, [
+        { id: 'fix_checks', label: 'Fix with Claude…', hint: 'Claude reads the failing logs, fixes them and pushes', claude: true },
+        openPr,
+        admin,
+      ]);
+    }
+    if (pr.draft) {
+      return at('draft', 'Draft', 'muted', `${n} is a draft: mark it ready for review to merge it`, [{ id: 'mark_ready', label: 'Mark Ready for Review', hint: `${n} leaves draft on GitHub` }, openPr, commit]);
+    }
+    if (pr.mergeState === 'behind') {
+      return at('behind', `Behind ${into}`, 'warn', `${n} needs the latest ${into} before it can merge`, [
+        { id: 'update_branch', label: 'Update Branch', hint: `GitHub merges the latest ${into} into ${ws.branch}` },
+        { id: 'resolve_pr', label: 'Update with Claude…', hint: `Claude merges ${into} in here, resolving anything in the way, and pushes`, claude: true },
+        openPr,
+      ]);
+    }
+    if (pr.review === 'CHANGES_REQUESTED') {
+      return at('changes_requested', 'Changes requested', 'warn', `A reviewer asked for changes on ${n}`, [openPr, { id: 'review_claude', label: 'Ask Claude to Review…', hint: 'Claude reviews the branch and suggests what to change', claude: true }, commit, admin]);
+    }
+    if (pr.autoMerge) {
+      return at('auto_merge', 'Merging when ready', 'wait', `GitHub merges ${n} once its checks and reviews pass`, [openPr, commit]);
+    }
+    if (pr.checks === 'pending') return at('checks_running', 'Checks running', 'wait', `${n}’s checks are running`, [auto, admin, openPr, commit]);
+    if (pr.review === 'REVIEW_REQUIRED') return at('review', 'Waiting for review', 'wait', `${n} needs an approving review`, [auto, admin, openPr, commit]);
+    if (pr.mergeState === 'blocked') return at('blocked', 'Blocked', 'warn', `${into}’s rules don’t let ${n} merge yet`, [auto, admin, openPr, commit]);
+    return at('ready', 'Ready to merge', 'ok', `${n} can merge into ${into}${changed ? ` · ${plural(changed, 'uncommitted change')} aren’t in it` : ''}`, [
+      { id: 'merge_pr', label: 'Squash and Merge', hint: `One commit on ${into}, on GitHub` },
+      openPr,
+      commit,
+      { id: 'review_claude', label: 'Ask Claude to Review…', hint: 'Claude reviews the branch before you merge', claude: true },
+    ]);
+  }
+
+  const ahead = st?.ahead ?? 0;
+  const ship: BranchStep | false = !planned && (github
+    ? { id: 'pr', label: 'Create PR…', hint: `Claude commits what’s left, pushes ${ws.branch} and opens a pull request into ${into}`, claude: true }
+    : { id: 'merge', label: `Merge into ${into}…`, hint: `Shows what would merge into ${into} on this Mac and checks it first` });
+  if (pr?.state === 'CLOSED' && !changed && !ahead) return at('closed', 'PR closed', 'muted', `PR #${pr.number} was closed without merging`, planned ? [] : finish.slice(1));
+  if (changed) return at('uncommitted', plural(changed, 'change'), 'warn', `${plural(changed, 'uncommitted change')}${ahead ? ` and ${plural(ahead, 'commit')}` : ''} not in ${into} yet`, [github ? ship : commit, github ? commit : ship]);
+  if (ahead) return at('unshipped', github ? `${plural(ahead, 'commit')} · no PR` : 'Ready to merge', github ? 'info' : 'ok', `${plural(ahead, 'commit')} on ${ws.branch} not in ${into} yet`, [ship]);
+  return at('clean', 'No changes', 'muted', `Nothing on ${ws.branch} that isn’t in ${into}`, []);
+}

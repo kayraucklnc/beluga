@@ -63,6 +63,8 @@ export interface PullRequest {
   readonly conflicts?: boolean;
   /** Auto-merge is on: GitHub merges it once its checks and reviews pass. */
   readonly autoMerge?: boolean;
+  /** GitHub's merge state, when it stands in the way (open PRs only): behind its base (the base needs merging in first), or blocked by the base's rules. */
+  readonly mergeState?: 'behind' | 'blocked';
 }
 
 export interface SetupRun {

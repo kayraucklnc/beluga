@@ -199,6 +199,7 @@ export const HANDLERS = {
   'workbench.continueAfterMerge': (s, id) => bench(s)?.continueAfterMerge(id),
   'workbench.openPr': (s, id) => bench(s)?.openPr(id),
   'workbench.mergePr': (s, id, opts) => bench(s)?.mergePr(id, opts),
+  'workbench.prStep': (s, id, step) => bench(s)?.prStep(id, step),
   'workbench.refreshPrs': (s, only, recheckGh) => (typeof only === 'object' ? bench(s)?.pollPrs(only.reason, only.id) : bench(s)?.refreshPrs(only, recheckGh)),
   'workbench.editPrPrompt': (s) => bench(s)?.editPrPrompt(),
   'workbench.resetPrPrompt': (s) => bench(s)?.resetPrPrompt(),

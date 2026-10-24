@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 5 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 6 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -19,7 +19,8 @@ export const COMPANION_PROTO = { major: 1, minor: 5 } as const;
  * (`companion.draftTask` / `addTask`) and starting one (`board.start`). 1.5: "Your Mac" (the
  * `conv:mac:assistant` topic, Home's `assistant`), and asking in a project as a new worktree
  * (`workspaces.startWorktree`, with plan mode) or a plan (`plans.create`), besides a question;
- * a plan's dependencies, criteria and autonomy (`PlanView`, `plans.setAutonomy`).
+ * a plan's dependencies, criteria and autonomy (`PlanView`, `plans.setAutonomy`). 1.6: a
+ * worktree's branch state in its conversation (`ConvView.branch`).
  */
 export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5 } as const;
 
@@ -282,6 +283,21 @@ export const MergeView = z.object({
 });
 export type MergeView = z.infer<typeof MergeView>;
 
+/** 1.6: where a worktree's branch stands, as the Mac's toolbar shows it (core/branch-state.ts), and its next step in words. */
+export const BranchView = z.object({
+  kind: z.string().max(40),
+  /** "Merged", "Ready to merge", "Conflicts". */
+  label: z.string().max(80),
+  tone: z.union([z.enum(['merged', 'ok', 'error', 'warn', 'wait', 'info', 'muted']), z.string().max(10)]),
+  detail: z.string().max(300),
+  branch: z.string().max(250),
+  into: z.string().max(250),
+  pr: z.object({ number: z.number().int().min(0), state: z.string().max(10) }).optional(),
+  /** The Mac's next step: "Squash and Merge", and whether Claude does it. */
+  next: z.object({ id: z.string().max(40), label: z.string().max(80), claude: z.boolean().optional() }).optional(),
+});
+export type BranchView = z.infer<typeof BranchView>;
+
 /** What a merge would do and what stands in the way (companion.mergeCheck): the Mac's own checks, in words. */
 export const MergeCheckView = z.object({
   from: z.string().max(200),
@@ -319,6 +335,8 @@ export const ConvView = z.object({
   mergeable: z.boolean().optional(),
   /** 1.3: where its merge stands: merging, conflicts (files by name), Claude resolving them, Claude done (check again), merged, or blocked (why). */
   merge: MergeView.optional(),
+  /** 1.6: a worktree's branch: merged, ready to merge, conflicts, checks… (BranchView). */
+  branch: BranchView.optional(),
 });
 export type ConvView = z.infer<typeof ConvView>;
 

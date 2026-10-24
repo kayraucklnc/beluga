@@ -59,6 +59,8 @@
   --claude: #b4693f;
   --ok: #2f8a4c;
   --merge: #1a7f37;
+  /* A merged branch: GitHub's purple, softened. */
+  --merged: #8a63d2;
   --warn: #b36b00;
   --error: #c4352e;
   --info: #2f6cb3;
@@ -88,6 +90,7 @@
   --claude: #df946a;
   --ok: #6cc187;
   --merge: #238636;
+  --merged: #b294f0;
   --warn: #e3a64a;
   --error: #ef7a72;
   --info: #79aef0;

@@ -2,7 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
 import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, GitMerge, History, Images, Laptop, Monitor, OctagonX, Send, Sparkles, Square } from 'lucide-react-native';
 import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDots } from '../../components/Live';
-import { MergeBand, MergeSheet } from '../../components/Merge';
+import { BranchBand, MergeBand, MergeSheet } from '../../components/Merge';
 import { ProjectMark } from '../../components/ProjectMark';
 import { openOnMac } from '../../lib/mac';
 import { useRef, useState } from 'react';
@@ -113,7 +113,16 @@ export default function Conversation() {
       />
       <KeyboardLift>
         {/* Where a merge stands stays in view while the conversation scrolls under it. */}
-        {c?.merge ? <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}><MergeBand topic={topic} merge={c.merge} onCheck={() => setMergeOpen(true)} /></View> : null}
+        {c?.merge ? (
+          <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}>
+            <MergeBand topic={topic} merge={c.merge} onCheck={() => setMergeOpen(true)} />
+          </View>
+        ) : c?.branch ? (
+          // Where its branch stands (the Mac toolbar's state), unless a merge from here is under way.
+          <View style={{ paddingHorizontal: 14, paddingBottom: 8 }}>
+            <BranchBand topic={topic} branch={c.branch} canMerge={Boolean(c.mergeable) && store.supports('merge')} onMerge={() => setMergeOpen(true)} />
+          </View>
+        ) : null}
         <ScrollView
           ref={scroll}
           onContentSizeChange={follow}

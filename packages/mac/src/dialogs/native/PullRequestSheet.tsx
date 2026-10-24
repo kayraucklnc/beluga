@@ -27,12 +27,20 @@ const REVIEW = { APPROVED: { label: 'Approved', tone: s.pillOk }, CHANGES_REQUES
 
 /** The way you last merged (squash until you pick another). */
 const METHOD_KEY = 'beluga.mergeMethod';
-function lastMethod(): MergeMethod {
+export function lastMethod(): MergeMethod {
   try {
     const m = localStorage.getItem(METHOD_KEY);
     return m === 'merge' || m === 'rebase' ? m : 'squash';
   } catch {
     return 'squash';
+  }
+}
+
+export function rememberMethod(how: MergeMethod): void {
+  try {
+    localStorage.setItem(METHOD_KEY, how);
+  } catch {
+    // No storage: squash next time.
   }
 }
 
@@ -85,11 +93,7 @@ export function MergeButton({ wsId, pr, onError, size }: { wsId: string; pr: Pul
   const merge = async (how: MergeMethod, mode?: 'auto' | 'admin'): Promise<void> => {
     if (busy) return;
     setMethod(how);
-    try {
-      localStorage.setItem(METHOD_KEY, how);
-    } catch {
-      // No storage: squash next time.
-    }
+    rememberMethod(how);
     setBusy(true);
     onError(undefined);
     try {

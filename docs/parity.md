@@ -281,6 +281,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `workbench.openPr` | ✓ |
 | `workbench.refreshPrs` | ✓ |
 | `workbench.mergePr` | ✓ the PR sheet › Merge on GitHub (squash, merge or rebase; Merge When Checks Pass; Merge Now, Skipping Checks), also in the PR strip above the chat |
+| `workbench.prStep` | ✓ the toolbar's branch state › Update Branch (the PR is behind its base), Mark Ready for Review (a draft) |
 | `workbench.editPrPrompt` | ✓ |
 | `workbench.resetPrPrompt` | ✓ |
 | `workbench.measureDisk` | ✓ |

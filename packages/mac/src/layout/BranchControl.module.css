@@ -1,0 +1,86 @@
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 6px;
+}
+
+/* Soft pastel: the tone's colour as text on a light wash of itself, never a glow. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--pill);
+  background: color-mix(in srgb, var(--pill) 13%, transparent);
+  --pill: var(--text-3);
+}
+.pill_merged {
+  --pill: var(--merged);
+}
+.pill_ok {
+  --pill: var(--ok);
+}
+.pill_error {
+  --pill: var(--error);
+}
+.pill_warn {
+  --pill: var(--warn);
+}
+.pill_wait {
+  --pill: var(--warn);
+}
+.pill_info {
+  --pill: var(--info);
+}
+.pill_muted {
+  --pill: var(--text-2);
+}
+.pillButton {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 999px;
+}
+.pillButton:hover .pill {
+  background: color-mix(in srgb, var(--pill) 22%, transparent);
+}
+
+.split {
+  display: inline-flex;
+}
+.main {
+  height: 26px;
+  padding: 0 11px 0 9px;
+  font-weight: 600;
+}
+.mainSplit {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.more {
+  height: 26px;
+  padding-inline: 7px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.28);
+}
+.mainError {
+  background: var(--error);
+}
+.mainError:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 88%, black);
+}
+.mainMerged {
+  background: var(--merged);
+}
+.mainMerged:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--merged) 88%, black);
+}

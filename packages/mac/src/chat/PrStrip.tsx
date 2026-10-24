@@ -32,14 +32,14 @@ export function PrStrip({ workspaceId }: { workspaceId: string }) {
       <div className={s.row}>
         <Tip label="Open the pull request: its checks, review and every way to merge">
           <button type="button" className={s.main} onClick={() => actions.run({ type: 'ws', id: workspaceId, action: 'pr' })}>
-            <Icon name={pr.state === 'MERGED' ? 'merge' : 'pr'} size={13} className={pr.state === 'MERGED' ? s.ok : undefined} />
+            <Icon name={pr.state === 'MERGED' ? 'merge' : 'pr'} size={13} className={pr.state === 'MERGED' ? s.merged : undefined} />
             <span className={s.number}>#{pr.number}</span>
             <span className={s.title}>{pr.title}</span>
           </button>
         </Tip>
         {pr.state === 'MERGED' ? (
           <>
-            <span className={cx(s.status, s.ok)}>Merged · done</span>
+            <span className={cx(s.status, s.merged)}>Merged · done</span>
             <AfterMergeButton wsId={workspaceId} size="small" />
           </>
         ) : (

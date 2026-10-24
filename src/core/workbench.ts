@@ -8,7 +8,7 @@ import type { Workspace } from '../workspaces/types.js';
 import { worktreeOrigin } from '../workspaces/origin.js';
 import { formatBytes, measureAll } from '../workspaces/disk.js';
 import { contentIn, fetchRemote, resetTo } from '../workspaces/git.js';
-import { type MergeOptions, type MergeProblem, buildPrPrompt, catchUpPrompt, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
+import { type MergeOptions, type MergeProblem, type PrStepKind, buildPrPrompt, catchUpPrompt, resolvePrConflictsPrompt, customPrPrompt, deleteRemoteBranch, ensurePrPromptFile, explainMergeError, findPr, fixChecksPrompt, hasGh, listPrs, mergePr, prStep, remoteRef, resetPrPrompt } from '../workspaces/pr.js';
 import { PROJECT_FILES, checkSetup, projectFileName, scriptEnv } from '../workspaces/scripts.js';
 import type { SetupFix } from '../agent/setup-fixer.js';
 import type { NoticeEvent } from './notify.js';
@@ -45,6 +45,8 @@ export interface WorkbenchDeps {
   readonly mergePr?: (dir: string, number: number, opts: MergeOptions) => Promise<void>;
   /** Delete a merged branch on GitHub (injected in tests). */
   readonly deleteRemoteBranch?: (dir: string, branch: string) => Promise<void>;
+  /** A PR's one-click step on GitHub (injected in tests; throws gh's error). */
+  readonly prStep?: (dir: string, number: number, step: PrStepKind) => Promise<void>;
   /** Where a branch was last pushed to (its remote-tracking ref), to notice pushes. */
   readonly remoteRef?: (dir: string, branch: string) => string | undefined;
   /** The clock (injected in tests). */
@@ -332,6 +334,28 @@ export class Workbench {
     } finally {
       this.merging.delete(id);
     }
+  }
+
+  /** A PR's one-click step on GitHub (update its branch from the base, or mark a draft ready), then its state again. */
+  async prStep(id: string, step: PrStepKind): Promise<{ ok: boolean; message: string }> {
+    const ws = this.worktree(id);
+    const pr = this.deps.store.getState().prs[id];
+    if (!ws || !pr || pr.state !== 'OPEN') {
+      this.deps.toast('This worktree has no open pull request', 'error');
+      return { ok: false, message: 'This worktree has no open pull request' };
+    }
+    try {
+      await (this.deps.prStep ?? prStep)(ws.path, pr.number, step);
+    } catch (err) {
+      const message = `GitHub didn’t ${step === 'ready' ? 'mark it ready' : 'update the branch'}: ${(err instanceof Error ? err.message : String(err)).split('\n').find((l) => l.trim())?.trim() ?? 'no reason given'}`;
+      this.deps.toast(message, 'error');
+      return { ok: false, message };
+    }
+    if (step === 'update_branch') this.pushedAt.set(id, this.now());
+    await this.refreshPrs(id);
+    const message = step === 'ready' ? `PR #${pr.number} is ready for review` : `PR #${pr.number} has the latest ${(ws.base ?? 'base').replace(/^origin\//, '')} now`;
+    this.deps.toast(message, 'success');
+    return { ok: true, message };
   }
 
   openPr(id: string): void {

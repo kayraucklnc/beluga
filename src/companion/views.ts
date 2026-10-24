@@ -6,10 +6,14 @@ import type { PendingQuestion } from '../core/collab-store.js';
 import { type TaskView as GwTask, isFinal } from '../core/gateway/model.js';
 import { parseDecisionQid } from '../core/plans/decisions.js';
 import { type Plan, planTitle } from '../core/plans/model.js';
+import { planOwnerOf } from '../core/plans/owner.js';
+import { branchState } from '../core/branch-state.js';
+import type { Workspace } from '../workspaces/types.js';
 import { type PlanView as PlanProgress, planView } from '../core/plans/progress.js';
 import type { MessageView } from '../net/mesh/views.js';
 import type { Usage } from '../protocol.js';
 import {
+  type BranchView,
   type ChatMessageView,
   type ChatsView,
   type ChatView,
@@ -811,7 +815,7 @@ const base = (p: string): string => p.split('/').at(-1) ?? p;
  * A worktree's merge as the phone follows it: what the phone started (merging, Claude resolving),
  * or conflicts the Mac's own Merge found. Claude resolving reads as done once its run there ends.
  */
-function mergeOf(state: DomainState, ctx: ViewContext, channel: string): Pick<ConvView, 'mergeable' | 'merge'> {
+function mergeOf(state: DomainState, ctx: ViewContext, channel: string): Pick<ConvView, 'mergeable' | 'merge' | 'branch'> {
   const id = channel.startsWith('ws:') ? channel.slice(3) : undefined;
   const ws = id ? state.projects.flatMap((p) => p.workspaces).find((w) => w.id === id) : undefined;
   if (!id || !ws || ws.kind !== 'worktree' || !ws.branch || ws.archived) return {};
@@ -824,7 +828,25 @@ function mergeOf(state: DomainState, ctx: ViewContext, channel: string): Pick<Co
   }
   // (No time: the Mac's merge doesn't say when; a view must hash the same while nothing changes.)
   if (!merge && conflicts.length) merge = { phase: 'conflicts', at: 0, conflicts };
-  return { mergeable: true, ...(merge ? { merge } : {}) };
+  const branch = branchViewOf(state, ws);
+  return { mergeable: true, ...(merge ? { merge } : {}), ...(branch ? { branch } : {}) };
+}
+
+/** The branch's state, the Mac toolbar's own (core/branch-state.ts), in words. */
+function branchViewOf(state: DomainState, ws: Workspace): BranchView | undefined {
+  const b = branchState(state, ws, { planned: Boolean(planOwnerOf(state.plans, state.board, ws.id)) });
+  if (!b) return undefined;
+  const next = b.steps[0];
+  return {
+    kind: b.kind,
+    label: clip(b.label, 80),
+    tone: b.tone,
+    detail: clip(plainLine(b.detail, 300), 300),
+    branch: clip(b.branch, 250),
+    into: clip(b.into, 250),
+    ...(b.pr ? { pr: b.pr } : {}),
+    ...(next ? { next: { id: next.id, label: clip(next.label, 80), ...(next.claude ? { claude: true } : {}) } } : {}),
+  };
 }
 
 /** Your messages waiting for your Claude in a conversation, in run order (the Mac's queue tray, src/ui/compose.ts queueIn). */
