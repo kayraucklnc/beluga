@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { AtSign, Bell, ChevronDown, ChevronUp, CircleCheck, Hand, Info, LogOut, Monitor, Moon, MoonStar, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
+import { AtSign, Bell, ChevronDown, ChevronUp, CircleCheck, Hand, Info, LogOut, Monitor, Moon, MoonStar, Network, SlidersHorizontal, Smartphone, Sun } from 'lucide-react-native';
 import { Segments } from '../components/Segments';
 import { useEffect, useState } from 'react';
 import { Platform, ScrollView, Switch, View } from 'react-native';
@@ -11,6 +11,7 @@ import { appearance, type Choice } from '../lib/appearance';
 import { useLink } from '../lib/hooks';
 import { COMPANION_PROTO } from '../lib/link/protocol';
 import { type NotifyPrefs, permission, prefs, setPrefs } from '../lib/notifications';
+import { pathLabel } from '../lib/link/diagnose';
 import { store } from '../lib/store';
 import { color, ink } from '../lib/theme';
 
@@ -96,6 +97,23 @@ export default function Settings() {
 
         {advanced ? (
           <Animated.View entering={FadeIn.duration(250)} style={{ gap: 20 }}>
+            {link.mode === 'bare' ? (
+              <View style={{ gap: 8 }}>
+                <T v="eyebrow" style={{ paddingHorizontal: 6 }}>
+                  Connection
+                </T>
+                <Card>
+                  <Row
+                    first
+                    Icon={Network}
+                    tone={link.path === 'relay' ? 'lavender' : 'mint'}
+                    label={link.phase === 'open' && link.path ? pathLabel(link.path) : link.diagnosis?.title ?? 'Not linked right now'}
+                    sub={link.phase === 'open' && link.path === 'relay' ? 'A direct connection didn’t work on this network; the relay carries only encrypted bytes.' : undefined}
+                    chevron={false}
+                  />
+                </Card>
+              </View>
+            ) : null}
             <View style={{ gap: 8 }}>
               <T v="eyebrow" style={{ paddingHorizontal: 6 }}>
                 Notify me about

@@ -8,6 +8,7 @@ import { asOf, useLink, useOutbox, useToasts } from '../lib/hooks';
 import { store } from '../lib/store';
 import { color, spring } from '../lib/theme';
 import { Card, IconBadge, Press, T, type Tone } from './ui';
+import { WhySheet } from './WhySheet';
 
 /**
  * Has the content scrolled under the header? For the header's hairline: a solid header, and a
@@ -78,6 +79,7 @@ export function AwayBand({ at }: { readonly at?: number }) {
   const link = useLink();
   const outbox = useOutbox();
   const [open, setOpen] = useState(false);
+  const [why, setWhy] = useState(false);
   if (link.outdated) {
     return (
       <Animated.View entering={FadeInDown.springify()} style={{ marginTop: 12 }}>
@@ -90,8 +92,10 @@ export function AwayBand({ at }: { readonly at?: number }) {
       </Animated.View>
     );
   }
-  const away = link.phase === 'asleep' || (link.phase === 'closed' && outbox.length > 0);
+  const away = link.phase === 'asleep' || (link.phase === 'closed' && outbox.length > 0) || (link.phase === 'refused' && link.diagnosis !== undefined);
   if (!away) return null;
+  // Said in words when we know why (no internet, a network that won't connect, the Mac away…).
+  const d = link.phase === 'closed' ? undefined : link.diagnosis;
   return (
     <Animated.View entering={FadeInDown.springify().stiffness(spring.snappy.stiffness).damping(spring.snappy.damping)} exiting={FadeOutUp} layout={LinearTransition.springify()} style={{ marginTop: 12 }}>
       <Card tone="sky" r={18} style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
@@ -99,12 +103,19 @@ export function AwayBand({ at }: { readonly at?: number }) {
           <MoonStar color={color.info} size={18} />
           <View style={{ flex: 1 }}>
             <T v="callout" c={color.info} style={{ fontWeight: '600' }}>
-              Mac asleep
+              {d?.title ?? 'Mac asleep'}
             </T>
             <T v="caption" c={color.info} style={{ opacity: 0.8 }}>
               {[at ? asOf(at) : undefined, outbox.length ? `${outbox.length} waiting` : undefined].filter(Boolean).join(' · ') || 'Last views'}
             </T>
           </View>
+          {d ? (
+            <Press onPress={() => setWhy(true)} accessibilityLabel="Why?" hitSlop={8} style={{ height: 32, paddingHorizontal: 10, justifyContent: 'center' }}>
+              <T v="caption" c={color.info} style={{ fontWeight: '600' }}>
+                Why?
+              </T>
+            </Press>
+          ) : null}
           <Press onPress={() => store.retry()} accessibilityLabel="Try again" hitSlop={8} style={{ height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: color.card, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <RefreshCw color={color.info} size={14} />
             <T v="caption" c={color.info} style={{ fontWeight: '600' }}>
@@ -127,6 +138,7 @@ export function AwayBand({ at }: { readonly at?: number }) {
           </Animated.View>
         ) : null}
       </Card>
+      <WhySheet diagnosis={d} visible={why} onDismiss={() => setWhy(false)} onRetry={() => store.retry()} window />
     </Animated.View>
   );
 }

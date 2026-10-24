@@ -2,6 +2,7 @@
 /// <reference path="../net/mesh/modules.d.ts" />
 import b4a from 'b4a';
 import type DHT from 'hyperdht';
+import { DialError, type DialReport, type NoiseStream, type OpenRelay, dialMac } from './dial.js';
 import { type DeviceKeys, type DeviceTicket, canonical, checkDevProof, devProof, deviceSecrets, fingerprint, hex, parseDeviceTicket, signKeyPair, verifyCert } from './device-crypto.js';
 import {
   COMPANION_PIECE,
@@ -35,18 +36,33 @@ import {
 type Bytes = Uint8Array;
 
 /** What the client needs of a hyperdht node (the phone makes one when the app comes to the front). */
-export type DhtNode = Pick<DHT, 'connect'>;
+export type DhtNode = Pick<DHT, 'connect'> & Partial<Pick<DHT, 'mutableGet'>>;
 
-interface NoiseStream {
-  readonly remotePublicKey: Bytes | null;
-  readonly handshakeHash: Bytes | null;
-  write(data: Bytes): boolean;
-  end(): void;
-  destroy(err?: Error): void;
-  on(event: 'open' | 'connect' | 'end' | 'close', fn: () => void): unknown;
-  on(event: 'data', fn: (data: Bytes) => void): unknown;
-  on(event: 'error', fn: (err: Error) => void): unknown;
+/** How to reach the Mac besides hyperdht (dial.ts): the relay, and what worked last time. */
+export interface DialHints {
+  /** Opens WebSockets (the app's native one, via the worklet's IPC; `ws` in Node). Without it, no relay. */
+  readonly openRelay?: OpenRelay;
+  /** Relay URLs already known, best first (the pairing link's, the last welcome's). */
+  readonly relays?: readonly string[];
+  /** The way that worked last time on this network. */
+  readonly prefer?: 'p2p' | 'relay';
+  readonly staggerMs?: number;
+  readonly dialTimeoutMs?: number;
+  readonly probeDht?: () => DialReport['dht'];
+  /** Tests: never dial hyperdht. */
+  readonly noP2p?: boolean;
 }
+
+const dialOpts = (h: DialHints) => ({
+  ...(h.openRelay ? { openRelay: h.openRelay } : {}),
+  ...(h.prefer ? { prefer: h.prefer } : {}),
+  ...(h.staggerMs !== undefined ? { staggerMs: h.staggerMs } : {}),
+  ...(h.dialTimeoutMs !== undefined ? { timeoutMs: h.dialTimeoutMs } : {}),
+  ...(h.probeDht ? { probeDht: h.probeDht } : {}),
+  ...(h.noP2p ? { noP2p: true } : {}),
+});
+
+export { DialError, type DialReport } from './dial.js';
 
 // ---- a tiny emitter (Bare has no node:events)
 
@@ -94,8 +110,11 @@ class Framed extends Emitter<FramedEvents> {
   constructor(
     readonly stream: NoiseStream,
     private readonly maxBytes: number,
+    /** The stream's Noise handshake is already done (dialMac hands over open streams). */
+    alreadyOpen = false,
   ) {
     super();
+    this.opened = alreadyOpen;
     stream.on('open', () => this.onOpen());
     stream.on('connect', () => this.onOpen());
     stream.on('data', (d) => this.onData(d));
@@ -198,6 +217,20 @@ export interface Paired {
   readonly macName: string;
   /** The four pictures both screens showed. */
   readonly fingerprint: string;
+  /** The Mac's relay (keep it: the next link tries it when the direct way fails). */
+  readonly relay?: string;
+  /** How the pairing reached the Mac. */
+  readonly path: import('./protocol.js').LinkPath;
+}
+
+/** The Mac turned the pairing away; `why` says it for the explanation (diagnose.ts). */
+export class PairRefused extends Error {
+  constructor(
+    message: string,
+    readonly why?: import('./diagnose.js').PairRefusal,
+  ) {
+    super(message);
+  }
 }
 
 const NOT_FOUND = 'Your Mac isn’t answering that pairing. Check the code, or start a new one on your Mac (they work for 10 minutes).';
@@ -206,14 +239,22 @@ const NOT_FOUND = 'Your Mac isn’t answering that pairing. Check the code, or s
  * Pair with your Mac: find it by the pairing's secret (or code), prove we hold it, show the
  * fingerprint (`onWait`) while you click Pair on the Mac, and keep what it signs for us.
  */
-export async function pairDevice(node: DhtNode, ticket: DeviceTicket | string, device: PhoneDevice, opts: { timeoutMs?: number; onWait?: (fingerprint: string) => void } = {}): Promise<Paired> {
+export async function pairDevice(node: DhtNode, ticket: DeviceTicket | string, device: PhoneDevice, opts: { timeoutMs?: number; onWait?: (fingerprint: string) => void } & DialHints = {}): Promise<Paired> {
   const parsed = typeof ticket === 'string' ? parseDeviceTicket(ticket) : ticket;
   if (!parsed) throw new Error('That isn’t a Beluga pairing code or link');
   const secrets = await deviceSecrets(parsed);
   const target = signKeyPair(secrets.seed).publicKey;
   const link = device.keys.link;
-  const stream = node.connect(target as never, { keyPair: { publicKey: link.publicKey, secretKey: link.secretKey } as never }) as unknown as NoiseStream;
-  const sock = new Framed(stream, 64 * 1024);
+  const hinted = parsed.via === 'link' && parsed.relay ? [parsed.relay] : [];
+  let dialed;
+  try {
+    dialed = await dialMac({ node, target, keyPair: link, relays: [...hinted, ...(opts.relays ?? [])], ...dialOpts({ dialTimeoutMs: 25_000, ...opts }) });
+  } catch (err) {
+    if (err instanceof DialError) throw new DialError(NOT_FOUND, err.report);
+    throw err;
+  }
+  const stream = dialed.stream;
+  const sock = new Framed(stream, 64 * 1024, true);
   return new Promise<Paired>((resolve, reject) => {
     let settled = false;
     let fp = '';
@@ -227,17 +268,17 @@ export async function pairDevice(node: DhtNode, ticket: DeviceTicket | string, d
     // Long enough to find the Mac and for you to click Pair (the pairing itself lasts 10 minutes).
     const timer = setTimeout(() => settle(() => reject(new Error(fp ? 'Nobody clicked Pair on the Mac in time' : NOT_FOUND))), opts.timeoutMs ?? 10 * 60_000);
     const send = (msg: DevicePair): void => sock.send(JSON.stringify(msg));
-    sock.on('open', () => {
+    {
       const hh = stream.handshakeHash;
       if (!hh || !sameBytes(stream.remotePublicKey, target)) return settle(() => reject(new Error(NOT_FOUND)));
       const hello = { t: 'dev_hello' as const, proto: COMPANION_PROTO.major, device: hex(device.keys.device.publicKey), box: hex(device.keys.box.publicKey), name: device.name.slice(0, 64), platform: device.platform, app: device.app.slice(0, 40) };
       send({ ...hello, mac: devProof(secrets.auth, 'phone', hh, canonical(hello)) });
-    });
+    }
     sock.on('text', (text) => {
       const msg = parseDevicePair(text);
       const hh = stream.handshakeHash;
       if (!msg || !hh) return settle(() => reject(new Error('Your Mac answered something this app doesn’t understand: update it')));
-      if (msg.t === 'dev_refused') return settle(() => reject(new Error(msg.reason)));
+      if (msg.t === 'dev_refused') return settle(() => reject(new PairRefused(msg.reason, msg.why)));
       if (msg.t === 'dev_wait') {
         fp = fingerprint(hh, link.publicKey, target);
         // The Mac shows the same four pictures: different ones mean someone is in the middle.
@@ -252,7 +293,8 @@ export async function pairDevice(node: DhtNode, ticket: DeviceTicket | string, d
       if (!verifyCert(c) || c.link !== hex(link.publicKey) || c.device !== hex(device.keys.device.publicKey) || c.box !== hex(device.keys.box.publicKey)) {
         return settle(() => reject(new Error('The certificate from your Mac doesn’t check out')));
       }
-      settle(() => resolve({ cert: c, address: msg.address, macName: msg.macName, fingerprint: fp }));
+      const relay = msg.relay ?? dialed.relay;
+      settle(() => resolve({ cert: c, address: msg.address, macName: msg.macName, fingerprint: fp, path: dialed.path, ...(relay ? { relay } : {}) }));
     });
     sock.on('close', () => settle(() => reject(new Error(fp ? 'The pairing was closed on your Mac' : NOT_FOUND))));
   });
@@ -264,6 +306,8 @@ export interface Welcome {
   readonly mac: { readonly name: string; readonly version: string };
   readonly me: { readonly name: string; readonly peerId: string };
   readonly v: { readonly major: number; readonly minor: number };
+  /** The Mac's relay now (keep it for next time). */
+  readonly relay?: string;
 }
 
 export interface Chunk {
@@ -293,12 +337,20 @@ export interface CompanionClientOptions {
   readonly topics?: readonly Topic[];
   readonly keepAliveMs?: number;
   readonly timeoutMs?: number;
+  /** The relay and what worked last time (dial.ts). */
+  readonly hints?: DialHints;
 }
 
 /** One link to your Mac, open while you look. */
 export class CompanionClient extends Emitter<ClientEvents> {
   welcome?: Welcome;
+  /** How the open link came, and what was tried (also sent to the Mac in hello). */
+  path?: import('./protocol.js').LinkPath;
+  tried: import('./protocol.js').DialAttempt[] = [];
+  /** The relay that worked, or the one the Mac's record named. */
+  relay?: string;
   private sock?: Framed;
+  private dialing = 0;
   private nextId = 1;
   private topics: Topic[];
   private readonly calls = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; chunk?: (c: Chunk) => void }>();
@@ -315,12 +367,23 @@ export class CompanionClient extends Emitter<ClientEvents> {
   }
 
   /** Dial the Mac and say hello: resolves with its welcome, rejects when it can't be reached or turns us away. */
-  connect(): Promise<Welcome> {
+  async connect(): Promise<Welcome> {
     this.close();
-    const stream = this.opts.node.connect(b4a.from(this.opts.address, 'hex') as never, { keyPair: this.opts.link as never }) as unknown as NoiseStream;
-    const sock = new Framed(stream, MAX_COMPANION_FRAME + 1024);
-    this.sock = sock;
     this.welcome = undefined;
+    const attempt = ++this.dialing;
+    const target = b4a.from(this.opts.address, 'hex');
+    const hints = this.opts.hints ?? {};
+    const dialed = await dialMac({ node: this.opts.node, target, keyPair: this.opts.link, relays: hints.relays ?? [], ...dialOpts(hints) });
+    if (attempt !== this.dialing) {
+      dialed.stream.destroy();
+      throw new Error('Superseded by a newer connect');
+    }
+    this.path = dialed.path;
+    this.tried = dialed.tried;
+    if (dialed.relay) this.relay = dialed.relay;
+    const stream = dialed.stream;
+    const sock = new Framed(stream, MAX_COMPANION_FRAME + 1024, true);
+    this.sock = sock;
     return new Promise<Welcome>((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
@@ -330,16 +393,19 @@ export class CompanionClient extends Emitter<ClientEvents> {
           sock.terminate();
         }
       }, this.opts.timeoutMs ?? 20_000);
-      sock.on('open', () => {
-        if (!sameBytes(stream.remotePublicKey, b4a.from(this.opts.address, 'hex'))) return sock.terminate();
+      {
+        if (!sameBytes(stream.remotePublicKey, target)) {
+          sock.terminate();
+          return reject(new Error('Reached something that isn’t your Mac'));
+        }
         this.heard = Date.now();
-        this.send({ t: 'hello', v: { ...COMPANION_PROTO }, app: this.opts.app.slice(0, 40), platform: this.opts.platform, topics: this.topics });
+        this.send({ t: 'hello', v: { ...COMPANION_PROTO }, app: this.opts.app.slice(0, 40), platform: this.opts.platform, topics: this.topics, via: { path: dialed.path, tried: dialed.tried.slice(-8) } });
         const every = this.opts.keepAliveMs ?? KEEPALIVE_MS;
         this.beat = setInterval(() => {
           if (Date.now() - this.heard > every * 3) sock.terminate();
           else sock.ping();
         }, every);
-      });
+      }
       sock.on('pong', () => (this.heard = Date.now()));
       sock.on('text', (text) => {
         this.heard = Date.now();
@@ -355,7 +421,8 @@ export class CompanionClient extends Emitter<ClientEvents> {
             }
             return;
           }
-          this.welcome = { mac: f.mac, me: f.me, v: f.v };
+          this.welcome = { mac: f.mac, me: f.me, v: f.v, ...(f.relay ? { relay: f.relay } : {}) };
+          if (f.relay) this.relay = f.relay;
           if (!settled) {
             settled = true;
             clearTimeout(timer);
@@ -462,6 +529,8 @@ export class CompanionClient extends Emitter<ClientEvents> {
   }
 
   close(): void {
+    // A dial still racing is dropped when it finishes.
+    this.dialing++;
     clearInterval(this.beat);
     this.sock?.terminate();
     this.sock = undefined;

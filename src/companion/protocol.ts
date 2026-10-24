@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 2 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 3 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -257,10 +257,51 @@ export const PeopleView = z.object({
 });
 export type PeopleView = z.infer<typeof PeopleView>;
 
+// ---- paths (docs/companion.md, "Any network")
+
+/**
+ * How a link reached the Mac: `lan` (directly, on the same network), `direct` (directly over the
+ * internet: hyperdht's hole-punch), or `relay` (through the Mac's Cloudflare tunnel, with the same
+ * Noise handshake inside, so the relay sees only ciphertext).
+ */
+export const LinkPath = z.enum(['lan', 'direct', 'relay']);
+export type LinkPath = z.infer<typeof LinkPath>;
+
+/** One way the phone tried (`p2p`: hyperdht, LAN first then hole-punching; `relay`: the tunnel). */
+export const DialAttempt = z.object({
+  way: z.enum(['p2p', 'relay']),
+  outcome: z.enum(['ok', 'timeout', 'refused', 'unreachable', 'not-found', 'failed', 'skipped', 'lost']),
+  /** `lost`: still trying when another way connected (it was dropped). `code`: hyperdht's error code (HOLEPUNCH_ABORTED, PEER_NOT_FOUND…), or the relay's close code. */
+  code: z.string().max(60).optional(),
+  ms: z.number().int().min(0).optional(),
+});
+export type DialAttempt = z.infer<typeof DialAttempt>;
+
+/** A relay URL: wss:// (the tunnel), or ws:// (a local relay in tests). */
+export const RelayUrl = z.string().max(300).regex(/^wss?:\/\/[\w.:-]+(\/[\w./-]*)?$/);
+/** Where a key's relay is: the URL path ends with the key it reaches (hex). */
+export const relayUrlFor = (base: string, keyHex: string): string => `${base.replace(/\/+$/, '')}/${keyHex}`;
+
+/**
+ * What the Mac publishes on the DHT under its companion key (and each open pairing's key), signed
+ * with that key (hyperdht mutablePut): its current relay. The DHT lookup works on networks where
+ * peer connections don't, so a phone finds the relay there.
+ */
+export const RelayRecord = z.object({ v: z.literal(1), relay: RelayUrl.optional(), at: ts });
+export type RelayRecord = z.infer<typeof RelayRecord>;
+
 // ---- frames
 
 export const PhoneFrame = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('hello'), v: z.object({ major: z.number().int(), minor: z.number().int() }), app: z.string().max(40), platform: z.enum(['android', 'ios']), topics: z.array(Topic).max(16) }),
+  z.object({
+    t: z.literal('hello'),
+    v: z.object({ major: z.number().int(), minor: z.number().int() }),
+    app: z.string().max(40),
+    platform: z.enum(['android', 'ios']),
+    topics: z.array(Topic).max(16),
+    /** How this link got here, and what was tried first (the Mac's Settings › Phone says it in words). */
+    via: z.object({ path: LinkPath, tried: z.array(DialAttempt).max(8) }).optional(),
+  }),
   z.object({ t: z.literal('sub'), topics: z.array(Topic).max(16) }),
   z.object({ t: z.literal('call'), id: z.number().int().min(0), method: z.string().max(80), args: z.array(z.unknown()).max(16) }),
   z.object({ t: z.literal('get'), id: z.number().int().min(0), ref: OutputView.shape.ref, variant: z.enum(['thumb', 'full', 'text']), off: z.number().int().min(0) }),
@@ -285,6 +326,8 @@ export const MacFrame = z.discriminatedUnion('t', [
     min: z.object({ major: z.number().int(), minor: z.number().int() }),
     mac: z.object({ name: z.string().max(100), version: z.string().max(40) }),
     me: z.object({ name: z.string().max(64), peerId: id }),
+    /** The Mac's relay now (the phone keeps it for next time). */
+    relay: RelayUrl.optional(),
   }),
   z.object({ t: z.literal('view'), topic: Topic, rev: z.number().int().min(0), data: z.unknown() }),
   z.object({ t: z.literal('result'), id: z.number().int().min(0), ok: z.boolean(), value: z.unknown().optional(), error: z.string().max(2000).optional() }),
@@ -323,7 +366,8 @@ export const parseMacFrame = (raw: string): MacFrame | undefined => parse(MacFra
 // ---- pairing (docs/companion.md, "Signing in")
 
 /** What the pairing QR holds: `beluga://device#<22 chars>`; a code is typed as for friends. */
-export const DEVICE_LINK = /^(?:beluga|klaud):\/\/device#([\w-]{22})$/;
+/** `?r=` (additive): the Mac's relay, URL-encoded, so pairing works where the DHT doesn't. */
+export const DEVICE_LINK = /^(?:beluga|klaud):\/\/device#([\w-]{22})(?:\?r=([\w%.-]+))?$/;
 
 export const DeviceCert = z.object({
   v: z.literal(1),
@@ -351,8 +395,9 @@ export const DevicePair = z.discriminatedUnion('t', [
   z.object({ t: z.literal('dev_hello'), proto: z.number().int(), mac: z.string().max(100), device: z.string().regex(/^[0-9a-f]{64}$/), box: z.string().regex(/^[0-9a-f]{64}$/), name: z.string().min(1).max(64), platform: z.enum(['android', 'ios']), app: z.string().max(40) }),
   /** The Mac is showing "Pair this phone?" with the fingerprint; waits for your click. */
   z.object({ t: z.literal('dev_wait'), fingerprint: z.string().max(40) }),
-  z.object({ t: z.literal('dev_ok'), mac: z.string().max(100), cert: DeviceCert, address: z.string().regex(/^[0-9a-f]{64}$/), macName: z.string().max(100) }),
-  z.object({ t: z.literal('dev_refused'), reason: z.string().max(200) }),
+  z.object({ t: z.literal('dev_ok'), mac: z.string().max(100), cert: DeviceCert, address: z.string().regex(/^[0-9a-f]{64}$/), macName: z.string().max(100), relay: RelayUrl.optional() }),
+  /** `why` (additive) says it for the phone's explanation (diagnose.ts); `reason` is the Mac's words. */
+  z.object({ t: z.literal('dev_refused'), reason: z.string().max(200), why: z.enum(['expired', 'used', 'cancelled', 'unverified', 'tries', 'busy', 'full', 'version-mac', 'version-app']).optional() }),
 ]);
 export type DevicePair = z.infer<typeof DevicePair>;
 export const parseDevicePair = (raw: string): DevicePair | undefined => parse(DevicePair, raw);
@@ -369,6 +414,10 @@ export interface DeviceView {
   readonly linked: boolean;
   /** It can be told things while closed (Beluga Push is set up for it). */
   readonly push: boolean;
+  /** How its last link came: on the same network, directly over the internet, or through the relay. */
+  readonly path?: LinkPath;
+  /** That in words, when it's worth saying ("couldn't connect directly on its network; it used the relay"). */
+  readonly note?: string;
 }
 
 export interface CompanionSlice {

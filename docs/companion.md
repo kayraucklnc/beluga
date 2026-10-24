@@ -164,6 +164,60 @@ run: `network.groups.approve` / `decline`. Nothing appears without a way to answ
 **Typed calls.** `src/companion/calls.ts` `PhoneCalls`: every `phone` method with its argument
 tuple (the API's own zod) and its result; the app imports it rather than keeping a list.
 
+## Any network
+
+Kayra's dorm Wi-Fi put the phone and the Mac behind one public IP with client isolation: the DHT
+lookup worked, the peer connection didn't. So the phone tries every way, quickly, and remembers
+which one worked (`src/companion/dial.ts`):
+
+| Way | How | Path shown |
+|---|---|---|
+| hyperdht | LAN address first when both share a public IP, then hole-punching | `lan` or `direct` |
+| Relay | A WebSocket to the Mac's Cloudflare quick tunnel, Noise inside | `relay` |
+
+- **Raced, not queued.** The way that worked last time on this network (kept per local subnet,
+  `link-hints` in the app's storage) starts at once; the other starts 1.5 s later, or as soon as the
+  first one fails. The first Noise handshake that opens with the Mac's key wins; the other is dropped.
+- **The relay keeps end-to-end security.** The Mac's relay server (`src/companion/relay.ts`) listens
+  on 127.0.0.1 and takes WebSockets at `/companion/<key>`; cloudflared (as rooms use it) makes it
+  `wss://<name>.trycloudflare.com/companion`. Inside the socket runs the same Noise handshake as
+  over hyperdht (secret-stream over the socket), the Mac answering as the key the phone dialed (its
+  companion key, or an open pairing's). Both keys stay pinned, the frames, proofs and firewall are
+  the same, and Cloudflare carries ciphertext only (`tests/companion-relay.test.ts` checks a tapping
+  relay never sees plaintext). A removed phone is told 4010 inside the link, as over hyperdht.
+- **Finding the relay.** Its URL changes whenever cloudflared restarts, so the Mac publishes it as
+  a signed mutable record on the DHT (`RelayRecord`, hyperdht `mutablePut`) under its companion
+  key and under each open pairing's keys, again every 10 minutes (`src/companion/reach.ts`). Pairing
+  links carry it too (`beluga://device#<secret>?r=<url>`), so a QR works even where the DHT doesn't;
+  a typed code finds it through the record. Each welcome says the current one; the phone keeps the
+  last three.
+- **On the phone**, Bare has no WebSocket, so the worklet asks the app's (React Native's, with the
+  OS's TLS) through its IPC and passes ciphertext both ways in base64.
+- **Only while needed.** The relay server and its tunnel run only while a phone is paired or a
+  pairing is open, and not at all with Remote access set to direct only (`p2p`) or `none`, or in the demo.
+
+## When it can't connect
+
+The phone says what's wrong in plain words and what to do; a "Why?" sheet holds the detail (what
+was tried, how each went) and Try again (`src/companion/diagnose.ts`, shared with the Mac). Before
+blaming anything else it checks the phone is online at all (one look, only after a failure).
+
+| Problem | Said |
+|---|---|
+| `offline` | This phone is offline |
+| `dht-blocked` | This network blocks Beluga's connection (UDP blocked, and no relay) |
+| `no-path` | Your Mac is there, but this network won't connect you: try mobile data |
+| `mac-offline` | Your Mac isn't online: asleep, Beluga closed, or its network off |
+| `pairing-gone`, `pairing-wrong`, `pairing-busy`, `pairing-full` | The pairing closed, ran out, was used; the code was off; another phone is pairing; 4 phones already |
+| `update-mac`, `update-app` | Whose update would fix it |
+| `removed` | This phone was removed: pair it again |
+
+Pairing refusals carry a `why` for this (`dev_refused`), and the phone's `hello` says how it came
+(`via {path, tried}`), so the Mac's Settings › Phone and the footer popover can say "Your phone found
+this Mac but couldn't connect directly on its network, so it used the relay." The phone's
+Settings › Advanced shows "Connected directly · same network / over the internet" or "Connected
+through the relay (end-to-end encrypted)". Raw codes never reach the surface.
+
 ## Battery
 
 The phone holds no connection it isn't using.
@@ -173,6 +227,9 @@ The phone holds no connection it isn't using.
   destroyed: no UDP, no keepalives, no wakeups. Coming back is about one second (the DHT lookup and
   the handshake; the Mac's last direct address is tried first, and on the same Wi-Fi hyperdht
   connects over the LAN).
+- **The relay costs nothing extra.** It's one more way to open the same link, open only while the
+  app is in front and closed with it; the keepalives and views over it are the same. The phone
+  never holds a relay socket in the background.
 - **Quiet while open.** One keepalive every 20 s (UDP NAT mappings on mobile networks last about
   30 s). The Mac only sends the topics on screen, coalesced to one view per 500 ms; nothing is
   streamed character by character. Thumbnails before full images, cached by checksum.
@@ -287,9 +344,10 @@ The Mac app changes quickly; the phone must not fall behind silently.
 ## Risks
 
 - **Bare on Android.** The worklet runs Holepunch's Bare runtime (`react-native-bare-kit`, as Keet
-  does) so hyperdht and its native UDP run unchanged on the phone. If that fails on a device, the
-  fallback is the Mac's Cloudflare relay (already in `auto`): the phone dials it over WSS with the
-  same frames, sealed with the device keys.
+  does) so hyperdht and its native UDP run unchanged on the phone. Where UDP or hole-punching
+  fails, the relay (see "Any network") carries the same Noise link over a WebSocket.
+- **The relay is Cloudflare's quick tunnel.** It has no uptime promise; when it's down the record
+  says no relay and the phone explains. It only ever sees ciphertext.
 - **A sleeping Mac can't answer.** The phone shows the last views and queues actions. Keeping the
   Mac awake while plugged in and Claude is working is already the Mac's choice to make, not the
   phone's.

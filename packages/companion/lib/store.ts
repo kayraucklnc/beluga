@@ -5,8 +5,10 @@ import { BareTransport } from './link/bare';
 import { type Call, calls } from './link/calls';
 import { DemoTransport } from './link/demo/transport';
 import { BACKGROUND_GRACE_MS, COMPANION_PIECE, COMPANION_PROTO, compatible, MAX_UPLOAD_BYTES, type MacFrame, type NeedsYou, type OutputView, type Topic, viewSchema } from './link/protocol';
-import type { DeviceSecret, LinkPhase, Pairing } from './link/rpc';
-import type { PairInput, PairStep, Transport } from './link/transport';
+import { type Diagnosis, type PairRefusal, diagnose } from './link/diagnose';
+import { checkOnline } from './link/online';
+import type { Attempt, DeviceSecret, LinkHints, LinkPathName, LinkPhase, Pairing } from './link/rpc';
+import type { PairInput, PairStep, PathInfo, PhaseInfo, Transport } from './link/transport';
 import { secure } from './secure';
 
 /**
@@ -30,7 +32,15 @@ export interface LinkState {
   readonly outdated?: 'mac' | 'app';
   readonly pairing?: Pairing;
   readonly ready: boolean;
+  /** Why it can't connect, in plain words (the away band and its "Why?" sheet). */
+  readonly diagnosis?: Diagnosis;
+  /** How the open link got through, and what was tried (Settings › Advanced). */
+  readonly path?: LinkPathName;
+  readonly tried?: readonly Attempt[];
 }
+
+/** Relay URLs kept (newest first). */
+const RELAYS_KEPT = 3;
 
 export interface CachedView<T = unknown> {
   readonly data: T;
@@ -147,7 +157,7 @@ class Store {
     });
     this.transport = t;
     if (t instanceof DemoTransport && kv.get<boolean>('demo-asleep')) t.setAsleep(true);
-    this.unsubs = [t.onFrame((f) => this.onFrame(f)), t.onPhase((p, d) => this.onPhase(p, d))];
+    this.unsubs = [t.onFrame((f) => this.onFrame(f)), t.onPhase((p, d, i) => this.onPhase(p, d, i)), (t as Transport).onPath?.((i: PathInfo) => this.onPath(i)) ?? (() => {})];
     this.setState({ mode, pairing, phase: 'closed' });
   }
 
@@ -161,7 +171,16 @@ class Store {
   /** Pair with a Mac (or start the demo, `mode: 'demo'`). */
   pair(mode: Mode, input: Omit<PairInput, 'platform'>, onStep: (step: PairStep) => void): { cancel(): void } {
     const t: Transport = mode === 'demo' ? new DemoTransport() : new BareTransport(async () => undefined);
-    const run = t.pair({ ...input, platform: PLATFORM }, (step) => {
+    const offPath = t.onPath?.((i) => this.onPath(i));
+    const run = t.pair({ ...input, platform: PLATFORM, hints: this.hints() }, (step) => {
+      if (step.step === 'failed' && !step.diagnosis) {
+        // Say what went wrong in words: check the phone is online first, so nothing else is blamed for that.
+        const known = step.refusal ? undefined : step.report;
+        void (known ? checkOnline() : Promise.resolve(undefined)).then((online) =>
+          onStep({ ...step, diagnosis: diagnose({ stage: 'pair', ...(online !== undefined ? { online } : {}), ...(step.report ? { report: step.report } : {}), ...(step.refusal ? { refusal: step.refusal as PairRefusal } : {}), reason: step.reason }) }),
+        );
+        return;
+      }
       if (step.step === 'paired') {
         void (async () => {
           if (mode === 'bare') {
@@ -169,6 +188,7 @@ class Store {
             await secure.set('device-secret', step.secret);
           }
           kv.set('mode', mode);
+          offPath?.();
           t.dispose();
           this.use(mode, step.pairing);
           this.foreground();
@@ -231,7 +251,29 @@ class Store {
       t.send({ t: 'focus', on: true });
       return;
     }
-    t.open({ t: 'hello', v: { ...COMPANION_PROTO }, app: APP, platform: PLATFORM, topics: this.topics() });
+    t.open({ t: 'hello', v: { ...COMPANION_PROTO }, app: APP, platform: PLATFORM, topics: this.topics() }, this.hints());
+  }
+
+  // ---- reaching the Mac on any network (docs/companion.md, "Any network")
+
+  /** The relays seen and the way that worked per network (kv: nothing secret). */
+  private hints(): LinkHints {
+    const h = kv.get<LinkHints>('link-hints') ?? { relays: [], prefer: {} };
+    const paired = this.state.pairing?.relay;
+    return paired && !h.relays.includes(paired) ? { ...h, relays: [...h.relays, paired] } : h;
+  }
+
+  private keepRelay(relay: string | undefined): void {
+    if (!relay) return;
+    const h = this.hints();
+    if (h.relays[0] === relay) return;
+    kv.set('link-hints', { ...h, relays: [relay, ...h.relays.filter((r) => r !== relay)].slice(0, RELAYS_KEPT) });
+  }
+
+  private onPath(i: PathInfo): void {
+    const h = this.hints();
+    kv.set('link-hints', { relays: i.relay ? [i.relay, ...h.relays.filter((r) => r !== i.relay)].slice(0, RELAYS_KEPT) : h.relays, prefer: i.network ? { ...h.prefer, [i.network]: i.way } : h.prefer });
+    this.setState({ path: i.path, tried: i.tried });
   }
 
   background(): void {
@@ -249,9 +291,9 @@ class Store {
     this.foreground();
   }
 
-  private onPhase(phase: LinkPhase, detail?: string): void {
+  private onPhase(phase: LinkPhase, detail?: string, info?: PhaseInfo): void {
     if (phase === 'open') {
-      this.setState({ phase, detail: undefined });
+      this.setState({ phase, detail: undefined, diagnosis: undefined });
       // Screens may have changed while dialing: say what's on screen now.
       this.transport?.send({ t: 'sub', topics: this.topics() });
       const wanted = [...this.deferred.values()];
@@ -265,8 +307,17 @@ class Store {
       }
       return;
     }
-    if (phase === 'unreachable') this.setState({ phase: 'asleep', detail });
-    else this.setState({ phase, detail });
+    if (phase === 'unreachable') {
+      this.setState({ phase: 'asleep', detail, path: undefined });
+      // In words, once we know whether the phone itself is online.
+      void checkOnline().then((online) => {
+        if (this.state.phase !== 'asleep') return;
+        this.setState({ diagnosis: diagnose({ stage: 'link', online, ...(info?.report ? { report: info.report } : {}), ...(detail ? { reason: detail } : {}) }) });
+      });
+    } else {
+      const d = phase === 'refused' ? diagnose({ stage: 'link', ...(info?.code !== undefined ? { closeCode: info.code } : {}), ...(detail ? { reason: detail } : {}) }) : undefined;
+      this.setState({ phase, detail, path: phase === 'closed' ? this.state.path : undefined, diagnosis: d && d.problem !== 'unknown' ? d : undefined });
+    }
     // Calls in flight won't be answered: back to the outbox they go.
     for (const [, p] of this.pending) p.reject(new Error('The link closed.'));
     this.pending.clear();
@@ -285,6 +336,7 @@ class Store {
         const ok = compatible(COMPANION_PROTO, f.v, f.min);
         const outdated = ok ? undefined : COMPANION_PROTO.major < f.min.major ? ('app' as const) : ('mac' as const);
         this.setState({ mac: f.mac, me: f.me, outdated });
+        this.keepRelay(f.relay);
         if (!outdated) this.flushOutbox();
         return;
       }

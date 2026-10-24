@@ -14,9 +14,13 @@ import { type DeviceBook, type DeviceRecord, deviceId } from './devices.js';
 import { FileServer, RefTable, type Thumbnailer } from './files.js';
 import { DevicePairing, type PairingInfo } from './pair.js';
 import { Uploads } from './uploads.js';
+import { Reach, type RelayTunnel } from './reach.js';
+import { pathNote } from './diagnose.js';
 import {
   COMPANION_PROTO,
   type CompanionSlice,
+  type DialAttempt,
+  type LinkPath,
   KEEPALIVE_MS,
   type MacFrame,
   MAX_COMPANION_FRAME,
@@ -73,7 +77,9 @@ export interface CompanionHostOptions {
   /** How long since the Mac was last used (ms), when known. */
   readonly idleMs?: () => Promise<number | undefined>;
   /** Tests: a local testnet instead of the public DHT. */
-  readonly dht?: { readonly bootstrap?: readonly BootstrapNode[]; readonly host?: string };
+  readonly dht?: { readonly bootstrap?: readonly BootstrapNode[]; readonly host?: string; /** Tests: turn away every direct connection (as a network with client isolation does). */ readonly refuseDirect?: boolean };
+  /** The relay's tunnel (reach.ts): 'cloudflared' (the daemon's), a function (tests), or 'off' (the default). */
+  readonly relay?: RelayTunnel;
   readonly coalesceMs?: number;
   readonly pairTtlMs?: number;
   readonly log?: (line: string) => void;
@@ -104,6 +110,8 @@ class PhoneLink {
   topics = new Map<Topic, TopicState>();
   inFront = true;
   heard = Date.now();
+  /** It came through the relay (an older app doesn't say how it came). */
+  overRelay = false;
   private readonly beat: NodeJS.Timeout;
   private readonly helloTimer: NodeJS.Timeout;
   private closed = false;
@@ -172,8 +180,9 @@ class PhoneLink {
       if (frame.v.major < COMPANION_MIN.major) return this.close(COMPANION_CLOSE.version, 'Update the Beluga app');
       this.hello = frame;
       const state = this.host.state();
-      this.send({ t: 'welcome', v: { ...COMPANION_PROTO }, min: { ...COMPANION_MIN }, mac: this.host.macInfo(), me: { name: (state.self?.name ?? state.network.self?.name ?? 'me').slice(0, 64), peerId: state.selfId || 'me' } });
-      this.host.helloed(this, frame.app);
+      const relay = this.host.relayUrl();
+      this.send({ t: 'welcome', v: { ...COMPANION_PROTO }, min: { ...COMPANION_MIN }, mac: this.host.macInfo(), me: { name: (state.self?.name ?? state.network.self?.name ?? 'me').slice(0, 64), peerId: state.selfId || 'me' }, ...(relay ? { relay } : {}) });
+      this.host.helloed(this, frame.app, frame.via);
       this.subscribe(frame.topics);
       return;
     }
@@ -261,8 +270,15 @@ export class CompanionHost {
   private seenNeeds?: Set<string>;
   private phoneRuns = new Map<string, boolean>();
   private changeTimer?: NodeJS.Timeout;
+  readonly reach: Reach;
 
   constructor(private readonly opts: CompanionHostOptions) {
+    this.reach = new Reach({
+      tunnel: opts.relay ?? 'off',
+      ...(opts.log ? { log: opts.log } : {}),
+      // The relay's URL goes in the pairing link (its QR redraws) and in each welcome.
+      onChange: () => this.publish(),
+    });
     this.coalesceMs = opts.coalesceMs ?? VIEW_COALESCE_MS;
     this.refs = opts.refs ?? new RefTable();
     this.uploads = new Uploads(opts.uploadsDir ?? path.join(attachmentsDir(), 'phone'));
@@ -279,7 +295,15 @@ export class CompanionHost {
         void this.sync();
       },
       ...(opts.pairTtlMs ? { ttlMs: opts.pairTtlMs } : {}),
+      relay: this.reach.server,
+      relayUrl: () => this.reach.relayUrl(),
+      ...(opts.dht?.refuseDirect ? { refuseDirect: true } : {}),
     });
+  }
+
+  /** The relay's URL now, if its tunnel is up. */
+  relayUrl(): string | undefined {
+    return this.reach.relayUrl();
   }
 
   /** Start following the state and the paired phones (a DHT node only runs when there's a phone or a pairing). */
@@ -480,8 +504,11 @@ export class CompanionHost {
     return data;
   }
 
-  helloed(link: PhoneLink, app: string): void {
-    this.opts.devices.update(link.deviceId, { lastSeen: Date.now(), app: app.slice(0, 40) });
+  helloed(link: PhoneLink, app: string, via?: { path: LinkPath; tried: readonly DialAttempt[] }): void {
+    // How it came, in words for Settings › Phone (kept with the device until its next link).
+    const path = via?.path ?? (link.overRelay ? 'relay' : undefined);
+    const note = path ? pathNote(path, via?.tried ?? []) : undefined;
+    this.opts.devices.update(link.deviceId, { lastSeen: Date.now(), app: app.slice(0, 40), ...(path ? { path } : {}), ...(note ? { note } : {}) });
     this.publish();
   }
 
@@ -506,12 +533,13 @@ export class CompanionHost {
     this.opts.watching?.([...channels], [...this.links].some((l) => l.isOpen));
   }
 
-  private accept(stream: NoiseSocket): void {
+  private accept(stream: NoiseSocket, overRelay = false): void {
     const socket = fromStream(stream, { maxBytes: MAX_IN_BYTES, open: true });
     socket.on('error', () => undefined);
     const device = this.opts.devices.byLink(stream.remotePublicKey.toString('hex'));
     if (!device || this.stopped) return socket.terminate();
     const link = new PhoneLink(device, socket, this);
+    link.overRelay = overRelay;
     this.links.add(link);
     this.publish();
   }
@@ -597,8 +625,11 @@ export class CompanionHost {
   private async sync(): Promise<void> {
     if (this.stopped) return;
     const wanted = this.opts.devices.size > 0 || this.pairing.isOpen;
-    if (wanted) await this.ensureNode().catch((err: unknown) => this.logLine(`could not start: ${String(err)}`));
-    else if (this.node) await this.shutdownNode();
+    if (wanted) {
+      await this.ensureNode().catch((err: unknown) => this.logLine(`could not start: ${String(err)}`));
+      // A pairing that just opened gets its relay record too.
+      void this.reach.publish();
+    } else if (this.node) await this.shutdownNode();
   }
 
   private ensureNode(): Promise<DHT> {
@@ -610,8 +641,13 @@ export class CompanionHost {
       const node = new DHTClass({ ...(this.opts.dht?.bootstrap ? { bootstrap: this.opts.dht.bootstrap } : {}), ...(this.opts.dht?.host ? { host: this.opts.dht.host } : {}) });
       await node.ready();
       // Only phones you paired (and haven't removed) get through; `true` turns a connection away.
-      const server = node.createServer({ firewall: (remote: Buffer) => !this.opts.devices.byLink(remote.toString('hex')) }, (stream: NoiseSocket) => this.accept(stream));
+      const firewall = (remote: Buffer): boolean => !this.opts.devices.byLink(remote.toString('hex'));
+      const server = node.createServer({ firewall: this.opts.dht?.refuseDirect ? () => true : firewall }, (stream: NoiseSocket) => this.accept(stream));
       await server.listen(keyPair);
+      // The same, through the relay: the companion key answers there behind the same firewall.
+      this.reach.server.add({ keyPair, firewall, accept: (stream) => this.accept(stream, true) });
+      await this.reach.start().catch((err: unknown) => this.logLine(`no relay: ${String(err)}`));
+      this.reach.publishOn(node, () => [keyPair, ...this.pairing.keyPairs()]);
       this.node = node;
       this.server = server;
       return node;
@@ -626,6 +662,7 @@ export class CompanionHost {
     const { node, server } = this;
     this.node = undefined;
     this.server = undefined;
+    await this.reach.stop().catch(() => undefined);
     await server?.close().catch(() => undefined);
     await node?.destroy().catch(() => undefined);
   }

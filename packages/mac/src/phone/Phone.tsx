@@ -9,6 +9,7 @@ import { useClock } from '../lib/window-active.js';
 import { QrCode } from '../network/QrCode.js';
 import { errorText, quietly } from '../network/use-net.js';
 import { Group, Row } from '../dialogs/settings-controls.js';
+import { pathLabel } from '../../../../src/companion/diagnose.js';
 import { leftText, markOf, seenText } from './phone-model.js';
 import p from '../dialogs/native/person.module.css';
 import s from './phone.module.css';
@@ -43,6 +44,11 @@ function DeviceList({ now }: { now: number }) {
               {d.platform === 'ios' ? 'iPhone' : 'Android'}
               {d.app ? ` · app ${d.app}` : ''} · {seenText(d, now)}
             </span>
+            {d.path ? (
+              <span className={s.path} title={d.note}>
+                {d.path === 'relay' ? (d.note ?? pathLabel(d.path)) : pathLabel(d.path)}
+              </span>
+            ) : null}
           </span>
           <Button size="small" variant="quiet" onClick={() => void client.api.companion['devices.remove'](d.id)}>
             Remove

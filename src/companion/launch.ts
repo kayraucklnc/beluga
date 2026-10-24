@@ -148,6 +148,9 @@ export function launchCompanion(opts: CompanionLaunch): () => Promise<void> {
     outputs: outputs.get,
     watching: (channels, linked) => outputs.watch(channels, linked),
     idleMs: macIdleMs,
+    // The relay through Cloudflare, unless Remote access is set to direct only (or the network only),
+    // or it's the demo (nothing leaves the computer).
+    relay: opts.demo || ['p2p', 'none'].includes(opts.store.getState().prefs.tunnel) ? 'off' : 'cloudflared',
     ...(opts.log ? { log: opts.log } : {}),
   });
   attachCompanion(opts.session, host);
