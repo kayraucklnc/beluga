@@ -92,21 +92,32 @@ function NeedsYou() {
   );
 }
 
-/** The board's tasks this worktree is doing or carrying: each opens its page. */
-function WorkspaceTasks({ id }: { id: string }) {
+/** The board's tasks this worktree is doing or carrying: each opens its page, and the board opens filtered to them. */
+function WorkspaceTasks({ id, projectId }: { id: string; projectId: string }) {
   const actions = useActions();
   const board = useApp((st) => st.board);
+  if (!board.enabled) return null;
   const tasks = issuesOfWorkspace(board, id);
-  if (!tasks.length) return null;
+  const toBoard = (
+    <Tip label="The board, with only this worktree’s tasks">
+      <Button size="small" variant="quiet" icon="task" onClick={() => actions.run({ type: 'view', view: { kind: 'tasks', projectId, worktree: id } })}>
+        Board
+      </Button>
+    </Tip>
+  );
   return (
-    <Panel title={tasks.length === 1 ? 'Task' : `Tasks · ${tasks.length}`}>
-      {tasks.map((t) => (
-        <button key={t.id} type="button" className={s.taskLink} title={`${t.key} ${t.title}`} onClick={() => actions.run({ type: 'view', view: { kind: 'task', id: t.id } })}>
-          <StatusIcon status={t.status} size={13} />
-          <span className={s.taskKey}>{t.key}</span>
-          <span className={s.taskTitle}>{t.title}</span>
-        </button>
-      ))}
+    <Panel title={tasks.length > 1 ? `Tasks · ${tasks.length}` : 'Tasks'} action={toBoard}>
+      {tasks.length ? (
+        tasks.map((t) => (
+          <button key={t.id} type="button" className={s.taskLink} title={`${t.key} ${t.title}`} onClick={() => actions.run({ type: 'view', view: { kind: 'task', id: t.id } })}>
+            <StatusIcon status={t.status} size={13} />
+            <span className={s.taskKey}>{t.key}</span>
+            <span className={s.taskTitle}>{t.title}</span>
+          </button>
+        ))
+      ) : (
+        <div className={s.dim}>No task yet. Claude links the ones it opens or moves from here.</div>
+      )}
     </Panel>
   );
 }
@@ -163,7 +174,7 @@ function WorkspaceDetails({ id }: { id: string }) {
           ) : null}
         </div>
       </Panel>
-      <WorkspaceTasks id={ws.id} />
+      {project?.root ? <WorkspaceTasks id={ws.id} projectId={ws.projectId} /> : null}
       {pr ? (
         <Panel title={`Pull request #${pr.number}`} action={<Button size="small" variant="quiet" icon="refresh" onClick={() => void api.workbench.refreshPrs(ws.id)} />}>
           <div className={s.prTitle}>{pr.title}</div>

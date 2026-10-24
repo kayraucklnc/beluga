@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { isOpen } from '@beluga/core/board/model.js';
+import { isOpen, worksOn, worktreeOf } from '@beluga/core/board/model.js';
 import { Icon } from '../components/Icon.js';
 import { Select } from '../components/Select.js';
 import { ActionsDropdown } from '../components/SpecMenu.js';
@@ -32,13 +32,23 @@ export function TasksView() {
   const projects = useMemo(() => allProjects.filter((p) => p.root && !p.error), [allProjects]);
   const [query, setQuery] = useState('');
   const find = useRef<HTMLInputElement>(null);
-  const { api, act, open, openList } = useTaskActions();
+  const { api, act, open, openList, openWorktreeTasks } = useTaskActions();
   const project = projectToShow(board, projects, view.kind === 'tasks' ? view.projectId : undefined, prefs.project);
   const solo = useSolo(project);
   const people = useMemo(() => (solo ? [] : assigneesIn(board, project, selfId)), [solo, board, project, selfId]);
   // A filter for someone who has no tasks here any more shows everyone's.
   const who = !solo && (prefs.who === 'nobody' || people.some((p) => p.key === prefs.who)) ? prefs.who : '';
-  const issues = useMemo(() => (project ? scoped(board, { scope: prefs.scope, project, who }, selfId, query) : []), [board, prefs.scope, project, who, selfId, query]);
+  // The worktrees doing or carrying this project's tasks, to filter by (one asked for that's gone: every task).
+  const worktrees = useMemo(() => {
+    const ids = new Set(board.issues.filter((i) => i.projectId === project && !i.archivedAt).flatMap((i) => [worktreeOf(i), i.worktrees.at(-1)]).filter((w): w is string => Boolean(w)));
+    return (allProjects.find((p) => p.id === project)?.workspaces ?? []).filter((w) => ids.has(w.id) && !w.archived).map((w) => ({ id: w.id, name: w.name }));
+  }, [board, project, allProjects]);
+  const asked = view.kind === 'tasks' ? view.worktree : undefined;
+  const worktree = asked && worktrees.some((w) => w.id === asked) ? asked : '';
+  const issues = useMemo(() => {
+    const all = project ? scoped(board, { scope: prefs.scope, project, who }, selfId, query) : [];
+    return worktree ? all.filter((i) => worksOn(i, worktree)) : all;
+  }, [board, prefs.scope, project, who, selfId, query, worktree]);
   const counts = useMemo(() => (project ? scopeCounts(board, project, who, selfId) : { active: 0, backlog: 0, all: 0, archived: 0 }), [board, project, who, selfId]);
   const statuses = statusesFor(prefs.scope);
   const archive = prefs.scope === 'archived';
@@ -106,6 +116,16 @@ export function TasksView() {
             value={who}
             onChange={(w) => setTasksPrefs({ who: w })}
             options={[{ value: '', label: 'Everyone' }, ...people.map((p) => ({ value: p.key, label: p.label })), { value: 'nobody', label: 'No one yet' }]}
+          />
+        ) : null}
+        {/* Which worktree works on what: only its tasks. */}
+        {worktrees.length ? (
+          <Select
+            label="Worktree"
+            size="small"
+            value={worktree}
+            onChange={(w) => openWorktreeTasks(project, w || undefined)}
+            options={[{ value: '', label: 'Every worktree' }, ...worktrees.map((w) => ({ value: w.id, label: w.name }))]}
           />
         ) : null}
         </div>
@@ -183,7 +203,7 @@ export function TasksView() {
           archive && !query ? (
             <Empty icon="archive" title="The Archive is empty" detail="Archive Done tasks from the Done group: they come here, their words kept and their screenshots kept small." />
           ) : (
-            <Empty icon="task" title={query ? 'Nothing matches' : who ? 'Nothing for them here' : 'Nothing here'} detail={query ? 'Try fewer words.' : SCOPES.find((s) => s.value === prefs.scope)?.hint} />
+            <Empty icon="task" title={query ? 'Nothing matches' : worktree ? 'Nothing from this worktree here' : who ? 'Nothing for them here' : 'Nothing here'} detail={query ? 'Try fewer words.' : SCOPES.find((s) => s.value === prefs.scope)?.hint} />
           )
         ) : display === 'board' ? (
           <TaskBoard issues={issues} statuses={statuses} projectId={project} />
