@@ -88,8 +88,20 @@ const PAGE_JS = String.raw`(function (boot) {
     var fit = boot.size === 'fit';
     var size = fit ? boot.def : clamp(boot.size);
     var sizeNow = function () { return fit ? fitSize() : size; };
-    var term = new w.Terminal({ cols: cols, rows: rows, fontFamily: boot.font, fontSize: sizeNow(), lineHeight: boot.lineHeight, letterSpacing: 0, fontWeight: '400', fontWeightBold: '700', minimumContrastRatio: 4.5, theme: boot.theme, scrollback: 5000, allowProposedApi: true, cursorBlink: false, macOptionIsMeta: true, drawBoldTextInBrightColors: false });
+    var term = new w.Terminal({ cols: cols, rows: rows, fontFamily: boot.font, fontSize: sizeNow(), lineHeight: boot.lineHeight, letterSpacing: 0, fontWeight: '400', fontWeightBold: '700', minimumContrastRatio: 4.5, customGlyphs: true, rescaleOverlappingGlyphs: true, theme: boot.theme, scrollback: 5000, allowProposedApi: true, cursorBlink: false, macOptionIsMeta: true, drawBoldTextInBrightColors: false });
     term.open(box);
+    // WebGL draws box drawing, blocks and braille itself, lined up to the cell (the bundled font
+    // has none of them); without WebGL, or when its context is lost, xterm's DOM renderer draws.
+    var renderer = 'dom';
+    try {
+      var gl = new w.WebglAddon.WebglAddon();
+      gl.onContextLoss(function () { gl.dispose(); });
+      term.loadAddon(gl);
+      renderer = 'webgl';
+    } catch (e) {
+      // no WebGL here: the DOM renderer it is
+    }
+    document.documentElement.setAttribute('data-renderer', renderer);
     // The app is told the size drawn (for A-/A+ and to keep it), when it changes.
     var told;
     var tell = function () {
@@ -307,7 +319,8 @@ const PAGE_JS = String.raw`(function (boot) {
 /** The whole page, self-contained: xterm.js, its CSS and its font inline. */
 export function terminalPage(opts: { scheme: 'light' | 'dark'; cols: number; rows: number; font?: TermFont }): string {
   const theme = TERM_THEMES[opts.scheme];
-  // JetBrains Mono (bundled) first; what it lacks (box drawing, CJK) comes from the system's monospace.
+  // JetBrains Mono (bundled) first; what it lacks (CJK, emoji) comes from the system's monospace.
+  // Box drawing, blocks and braille are drawn by the WebGL renderer, not taken from a font.
   const family = `"${TERM_FONT_FAMILY}"`;
   const font = `${family}, ui-monospace, Menlo, "Droid Sans Mono", "Roboto Mono", monospace`;
   const boot = { theme: xtermTheme(theme), cols: opts.cols, rows: opts.rows, size: opts.font ?? FONT_DEFAULT, font, family, min: FONT_MIN, max: FONT_MAX, def: FONT_DEFAULT, fitMin: FIT_MIN, lineHeight: LINE_HEIGHT, pad: PAD };

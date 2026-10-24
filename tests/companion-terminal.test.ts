@@ -151,6 +151,9 @@ describe('the phone’s terminal page', () => {
     expect(html).toContain('font-weight:700');
     expect(html).toContain('font-variant-ligatures:none');
     expect(scripts[1]).toContain('"size":13');
+    // Box drawing, blocks and braille lined up by the WebGL renderer (bundled, with a DOM fallback).
+    expect(scripts[0]).toContain('window.WebglAddon={WebglAddon:');
+    expect(scripts[1]).toContain('new w.WebglAddon.WebglAddon()');
     expect(terminalPage({ scheme: 'light', cols: 80, rows: 24, font: 'fit' } as never)).toContain('"size":"fit"');
   });
 });

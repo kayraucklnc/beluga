@@ -300,8 +300,9 @@ the same output live, and either can type.
   scrolls back; output keeps the cursor in view.
 - **Drawn by xterm.js in a WebView** (`react-native-webview`, an iframe in the web build), bundled
   with the app (`lib/terminal/xterm.generated.ts`, `npm run terminal:bundle`), in JetBrains Mono
-  (OFL, Latin subsets inline as `lib/terminal/font.generated.ts`, no ligatures): no CDN, nothing
-  fetched. Raw PTY bytes go in, so colours, cursor moves and full-screen programs draw as on the Mac.
+  (OFL, Latin subsets inline as `lib/terminal/font.generated.ts`, no ligatures) and xterm's WebGL
+  renderer (`@xterm/addon-webgl`, in the same bundle), which draws box drawing, blocks and braille
+  itself, lined up to the cell; without WebGL the DOM renderer draws. No CDN, nothing fetched. Raw PTY bytes go in, so colours, cursor moves and full-screen programs draw as on the Mac.
   The page drops xterm's answers to the program's own queries (cursor position, device
   attributes): the Mac's screen answers those, once.
 - **Keys.** A key bar above the keyboard: Esc, Tab, Ctrl (for the next key), ↑ ↓ ← → (in the
