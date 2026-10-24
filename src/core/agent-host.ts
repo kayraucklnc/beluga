@@ -976,7 +976,12 @@ export class AgentHost {
     // In a main folder, a change request carries the conversation into a new worktree.
     const move = place?.askOnly && !place.syncMain && body.channel !== 'room' ? (task: string) => this.moveToWorktree(from, requesterName, body.channel, task, finished) : undefined;
     if (body.channel !== 'room' && !place) {
-      this.emitAgent(body.requestId, from, 'error', isAssistant(body.channel) ? 'Your Mac’s assistant needs the Beluga app.' : 'That workspace is archived or missing.', body.channel);
+      const why = isAssistant(body.channel)
+        ? 'Your Mac’s assistant needs the Beluga app.'
+        : this.deps.workspaces?.inChannel(body.channel)?.kind === 'main'
+          ? 'The main folder has no conversation of its own: start a new chat in the project.'
+          : 'That workspace is archived or missing.';
+      this.emitAgent(body.requestId, from, 'error', why, body.channel);
       if (lane.current === controller) lane.current = undefined;
       return;
     }

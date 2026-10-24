@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { KeyboardLift } from '../../components/KeyboardLift';
-import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, GitMerge, History, Images, Laptop, Monitor, OctagonX, Send, Sparkles, Square } from 'lucide-react-native';
+import { Activity, Bot, Camera, CircleCheck, CircleX, Clock, Cpu, FolderTree, GitMerge, History, Images, Laptop, Monitor, OctagonX, Send, Sparkles, Square, SquareTerminal } from 'lucide-react-native';
 import { AgentList, Breathe, LivePanel, StepList, StepsFold, ToolBadge, TypingDots } from '../../components/Live';
 import { BranchBand, MergeBand, MergeSheet } from '../../components/Merge';
 import { ProjectMark } from '../../components/ProjectMark';
@@ -93,6 +93,8 @@ export default function Conversation() {
   const [mergeOpen, setMergeOpen] = useState(false);
   // What waits its turn is in the queue above the composer, not a turn of its own.
   const turns = c ? c.turns.filter((t) => !(c.queue && t.who === 'claude' && t.status === 'queued')) : [];
+  // A worktree (or chat folder) of yours has files to read and terminals to share with the Mac (1.7).
+  const hasFolder = topic.startsWith('conv:ws:') || Boolean(c?.mergeable);
 
   return (
     <Screen>
@@ -241,6 +243,8 @@ export default function Conversation() {
           { Icon: Square, label: 'Stop Claude', tone: 'rose', hidden: !c?.working, onPress: () => void store.call(calls.stop(topic)) },
           { Icon: Images, label: 'Outputs', sub: all.length ? `${all.length} from this worktree` : 'Nothing yet', tone: 'sky', hidden: !all.length, onPress: () => setOutputsOpen(true) },
           { Icon: GitMerge, label: 'Merge…', sub: 'Into your main folder, checked first', tone: 'lavender', hidden: !c?.mergeable || !store.supports('merge'), onPress: () => setMergeOpen(true) },
+          { Icon: FolderTree, label: 'Files', sub: 'Browse and read this worktree, read only', tone: 'sky', hidden: !hasFolder || !store.supports('files'), onPress: () => router.push({ pathname: '/files', params: { topic, name: c?.title ?? 'Worktree' } }) },
+          { Icon: SquareTerminal, label: 'Terminal', sub: 'The same terminal as on your Mac', tone: 'lavender', hidden: !hasFolder || !store.supports('terminal'), onPress: () => router.push({ pathname: '/terminal', params: { topic, title: c?.title ?? '' } }) },
           { Icon: Sparkles, label: 'Ask with a photo', sub: 'Opens Ask, aimed here', tone: 'peach', onPress: () => router.push({ pathname: '/ask', params: { topic } }) },
           { Icon: History, label: 'Earlier messages', tone: 'sky', hidden: !c?.more, onPress: () => void older() },
           { Icon: Monitor, label: 'Open on your Mac', sub: 'Code, changes and the full history', tone: 'plain', onPress: () => void openOnMac({ topic }) },

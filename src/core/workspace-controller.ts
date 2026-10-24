@@ -232,9 +232,17 @@ export class WorkspaceController {
   open(id: string, tab: WorkspaceTab = 'chat', req?: string): void {
     const ws = this.deps.manager.find(id);
     if (!ws) return this.deps.toast('That workspace no longer exists', 'warn');
+    // A project's main checkout is no conversation (BLG-70): the chat its old one became, else the project's home.
+    if (ws.kind === 'main') {
+      const chat = ws.movedTo ? this.deps.manager.find(ws.movedTo) : undefined;
+      if (chat && !chat.archived) return this.open(chat.id, tab, req);
+      return this.deps.intend({ type: 'navigate', view: { kind: 'project', id: ws.projectId } });
+    }
     const fresh = this.ensureLoaded(id);
     // A worktree from another tool re-reads its conversation each time (it may have gone on there) until you talk in it here.
     if (fresh && !ws.sessionId && (!fresh.saved || (ws.external && this.onlyImported(`${WS_PREFIX}${id}`)))) void this.importConversation(ws.id, ws.path, `${WS_PREFIX}${id}`);
+    // A chat with a Claude session but nothing saved here (a main folder's conversation that was only Claude Code's): its transcript.
+    else if (fresh && !fresh.saved && ws.kind === 'chat' && ws.sessionId && ws.projectRoot) void this.importConversation(ws.id, ws.path, `${WS_PREFIX}${id}`, ws.sessionId);
     this.deps.intend({ type: 'navigate', view: { kind: 'workspace', id, tab }, ...(req ? { req } : {}) });
     if (tab === 'review') void this.loadReview(id);
   }
@@ -246,7 +254,8 @@ export class WorkspaceController {
    */
   ensureLoaded(id: string): { saved: number } | undefined {
     const channel = `${WS_PREFIX}${id}`;
-    if (this.loaded.has(channel) || !this.deps.manager.find(id)) return undefined;
+    // A main checkout has no conversation to load or save (BLG-70).
+    if (this.loaded.has(channel) || !this.deps.manager.find(id) || this.deps.manager.find(id)?.kind === 'main') return undefined;
     this.loaded.add(channel);
     const saved = this.deps.manager.loadHistory<LogItem>(id);
     const live = this.deps.store.getState().log.filter((l) => l.channel === channel);
@@ -314,7 +323,8 @@ export class WorkspaceController {
     const id = workspaceIdOf(channel);
     const ws = id ? this.deps.manager.find(id) : undefined;
     // A folder deleted behind Beluga's back: say so instead of Claude failing to start.
-    if (!ws || ws.archived || !existsSync(ws.path)) return undefined;
+    // A project's main checkout is no conversation (BLG-70): Claude runs in its chats and worktrees.
+    if (!ws || ws.archived || ws.kind === 'main' || !existsSync(ws.path)) return undefined;
     // "Let Claude handle it": this one run may sync git in the main folder (and nothing else).
     const syncMain = ws.askOnly ? this.syncRuns.get(ws.id) : undefined;
     if (syncMain) this.syncRuns.delete(ws.id);

@@ -128,6 +128,8 @@ export interface CompanionLaunch {
   readonly identity: Identity;
   readonly demo: boolean;
   readonly log?: (line: string) => void;
+  /** The daemon's terminals: a worktree's, shared with the phone. */
+  readonly terminals?: import('../terminal/pty-host.js').TerminalManager;
 }
 
 /** The Mac's name as people know it ("Kayra’s MacBook Pro"): its Sharing name, else its host name. */
@@ -159,6 +161,7 @@ export function launchCompanion(opts: CompanionLaunch): () => Promise<void> {
     outputs: outputs.get,
     watching: (channels, linked) => outputs.watch(channels, linked),
     idleMs: macIdleMs,
+    ...(opts.terminals ? { terminals: opts.terminals } : {}),
     // The relay through Cloudflare, unless Remote access is set to direct only (or the network only),
     // or it's the demo (nothing leaves the computer).
     relay: opts.demo || ['p2p', 'none'].includes(opts.store.getState().prefs.tunnel) ? 'off' : 'cloudflared',

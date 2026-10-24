@@ -14,7 +14,7 @@ import { ASSISTANT_CHANNEL } from '../src/shared/assistant.js';
 /**
  * "Your Mac" on the phone (BLG-47): its topic, its view (you can write in it, its outputs), Home's
  * entry, and that it isn't a project in Work. Asking in a project (BLG-69): a worktree, a plan or a
- * question. A project's own main conversation isn't listed (BLG-70).
+ * question. A project has no main conversation of its own (BLG-70).
  */
 
 const ME = 'me';
@@ -74,16 +74,36 @@ describe('Your Mac on the phone', () => {
   });
 });
 
-describe('a project’s main conversation (BLG-70)', () => {
-  it('isn’t listed in Work, but still opens and shows on Home while it works', () => {
+describe('no main conversation in a project (BLG-70)', () => {
+  it('the main checkout is no conversation: not in Work, not on Home, nothing to send to', () => {
     const store = state();
     const s0 = store.getState();
     expect(workView(s0, ctx()).projects.flatMap((p) => p.conversations.map((c) => c.topic))).toEqual(['conv:ws:w1']);
     store.dispatch({ type: 'agent_event', owner: ME, requestId: 'r2', requester: ME, event: 'started', text: '', ts: T0 + 5, channel: 'ws:p1:main', itemId: 'i2' });
     const s = store.getState();
-    expect(homeView(s, ctx()).running.map((r) => r.topic)).toContain('conv:ws:p1:main');
-    expect((viewOf(s, ctx(), 'conv:ws:p1:main') as ConvView).canSend).toBe(true);
+    expect(homeView(s, ctx()).running.map((r) => r.topic)).not.toContain('conv:ws:p1:main');
+    expect((viewOf(s, ctx(), 'conv:ws:p1:main') as ConvView).canSend).toBe(false);
     expect(workView(s, ctx()).projects.flatMap((p) => p.conversations.map((c) => c.topic))).toEqual(['conv:ws:w1']);
+  });
+
+  it('a main conversation that became a chat is listed as a normal chat, and Open on your Mac goes there', () => {
+    const store = state();
+    const s0 = store.getState();
+    const projects = s0.projects.map((p) =>
+      p.id === 'p1'
+        ? { ...p, workspaces: [...p.workspaces.map((w) => (w.kind === 'main' ? { ...w, movedTo: 'chat-old' } : w)), { id: 'chat-old', projectRoot: p.root, name: 'Where are the routes?', path: p.root, kind: 'chat' as const, createdAt: T0 - 10, projectId: p.id, external: false, askOnly: true }] }
+        : p,
+    );
+    store.dispatch({ type: 'projects', projects, groups: s0.projectGroups, order: s0.projectOrder, hidden: [] });
+    const s = store.getState();
+    const listed = workView(s, ctx()).projects.flatMap((p) => p.conversations.map((c) => [c.topic, c.title]));
+    expect(listed).toContainEqual(['conv:ws:chat-old', 'Where are the routes?']);
+    expect(listed.map(([t]) => t)).not.toContain('conv:ws:p1:main');
+    expect(macViewFor(s, { topic: 'conv:ws:p1:main' })).toEqual({ kind: 'workspace', id: 'chat-old', tab: 'chat' });
+  });
+
+  it('Open on your Mac for a main checkout with no old conversation opens the project’s home', () => {
+    expect(macViewFor(state().getState(), { topic: 'conv:ws:p1:main' })).toEqual({ kind: 'project', id: 'p1' });
   });
 });
 

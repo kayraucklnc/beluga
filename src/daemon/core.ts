@@ -329,7 +329,7 @@ export async function buildCore(input: Config, hooks: CoreHooks, opts: { readonl
     if (opts.network) stopAssistant = launchAssistant({ session, store, demo: Boolean(demo) });
     if (opts.network) stopClaudeCode = launchClaudeCode({ session, store, demo: Boolean(demo), notify: (e) => session.notifier.notify(e) });
     // Your phone (docs/companion.md): pairing it, and its link. Its DHT node runs only while a phone is paired or a pairing is open.
-    if (opts.network) stopCompanion = launchCompanion({ session, store, identity, demo: Boolean(demo), log: (line) => console.warn(line) });
+    if (opts.network) stopCompanion = launchCompanion({ session, store, identity, terminals, demo: Boolean(demo), log: (line) => console.warn(line) });
     if (config.mode === 'host' && config.inviteNow) void publish(config, room, session, () => closing);
     if (!demo) return;
     // A pretend friend and a fake invite so every part of the UI has something to show.

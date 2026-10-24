@@ -28,6 +28,9 @@ describe('what the phone may call', () => {
     expect(METHODS.filter((m) => macOnly.test(m) && PHONE[m] === 'phone')).toEqual(['invites.letIn', 'invites.decline']);
     for (const m of ['session.setPrefs', 'session.newInviteLink', 'session.setRoomOpen', 'workspaces.merge', 'workspaces.commit', 'agent.step', 'claudeCode.step', 'plans.edit', 'board.update', 'companion.pair.start', 'companion.devices.remove'] as const) expect(PHONE[m]).toBe('mac');
     for (const m of ['companion.ask', 'companion.post', 'companion.askPerson', 'companion.signOut', 'network.groups.approve', 'session.submit', 'host.answerApproval', 'host.stopRun', 'questions.answer', 'gateway.decide', 'gateway.confirm', 'plans.approve', 'plans.pass', 'network.dm.send', 'network.post', 'workspaces.startChat', 'companion.older', 'workspaces.startWorktree', 'plans.create'] as const) expect(PHONE[m]).toBe('phone');
+    // BLG-42: a worktree's files (read-only, through the file gate) and terminals (shared with the Mac) are the phone's own methods; the Mac's own stay the Mac's.
+    for (const m of ['companion.files.list', 'companion.files.find', 'companion.files.read', 'companion.terminals', 'companion.termOpen', 'companion.termClose'] as const) expect(PHONE[m]).toBe('phone');
+    for (const m of ['terminals.shell', 'terminals.global', 'terminals.close', 'files.save', 'files.format', 'files.read', 'files.open'] as const) expect(PHONE[m]).toBe('mac');
     expect(phoneMay('no.such')).toBe(false);
     expect(phoneMay('toString')).toBe(false);
   });

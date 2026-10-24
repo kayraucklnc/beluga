@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 6 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 7 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -20,9 +20,11 @@ export const COMPANION_PROTO = { major: 1, minor: 6 } as const;
  * `conv:mac:assistant` topic, Home's `assistant`), and asking in a project as a new worktree
  * (`workspaces.startWorktree`, with plan mode) or a plan (`plans.create`), besides a question;
  * a plan's dependencies, criteria and autonomy (`PlanView`, `plans.setAutonomy`). 1.6: a
- * worktree's branch state in its conversation (`ConvView.branch`).
+ * worktree's branch state in its conversation (`ConvView.branch`). 1.7 (BLG-42): a worktree's
+ * files, read-only (`companion.files.list` / `find` / `read`), and its terminals, shared with the
+ * Mac (`companion.terminals` / `termOpen` / `termClose`, the `term_*` frames).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -39,6 +41,11 @@ export const MAX_DEVICES = 4;
 /** What the phone may send the Mac (photos, files): this big a file, this many in one message. */
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const MAX_UPLOADS = 10;
+/** A worktree's file is read in pages of this many bytes (companion.files.read). */
+export const FILE_PAGE = 512 * 1024;
+/** A terminal's output is sent to the phone at most this often (about 30 frames a second), and in pieces of at most this many characters. */
+export const TERM_COALESCE_MS = 33;
+export const TERM_PIECE = 128 * 1024;
 
 const id = z.string().min(1).max(200);
 const text = z.string().max(64_000);
@@ -485,6 +492,58 @@ export const PeopleView = z.object({
 });
 export type PeopleView = z.infer<typeof PeopleView>;
 
+// ---- a worktree's files and terminals (1.7, BLG-42)
+
+/**
+ * One entry of a worktree's folder (companion.files.list). `ref`: a picture, openable in the
+ * image viewer as an output. Secrets (`isSecretPath`), `.git` and links that lead out of the
+ * worktree are never listed.
+ */
+export const FileEntryView = z.object({
+  name: z.string().max(256),
+  dir: z.boolean(),
+  size: z.number().int().min(0).optional(),
+  ref: OutputView.shape.ref.optional(),
+});
+export type FileEntryView = z.infer<typeof FileEntryView>;
+/** A folder of a worktree: its path inside it ('' is the top), folders first. */
+export const FolderView = z.object({ path: z.string().max(4096), entries: z.array(FileEntryView).max(5000), more: z.boolean().optional() });
+export type FolderView = z.infer<typeof FolderView>;
+/** Files and folders whose names match (companion.files.find), by their paths inside the worktree. */
+export const FoundView = z.object({ hits: z.array(z.object({ path: z.string().max(4096), dir: z.boolean() })).max(200), more: z.boolean().optional() });
+export type FoundView = z.infer<typeof FoundView>;
+/**
+ * A page of a worktree's file, read-only (companion.files.read): `text` from byte `off` (secrets a
+ * file holds are redacted), the file's `size`, `eof`, and its language for colours (`lang`, from
+ * its name). `binary`: not text; nothing is sent.
+ */
+export const FilePageView = z.object({
+  path: z.string().max(4096),
+  text: z.string().max(FILE_PAGE * 2),
+  off: z.number().int().min(0),
+  next: z.number().int().min(0),
+  size: z.number().int().min(0),
+  eof: z.boolean(),
+  lang: z.string().max(20).optional(),
+  binary: z.boolean().optional(),
+});
+export type FilePageView = z.infer<typeof FilePageView>;
+/** A terminal session of a worktree (companion.terminals): the same session the Mac's terminal dock shows. */
+export const TerminalView = z.object({
+  key: z.string().min(1).max(200),
+  label: z.string().max(80),
+  running: z.boolean(),
+  exit: z.number().int().nullable().optional(),
+  /** The session's size: the Mac's. The phone draws that grid rather than resizing it. */
+  cols: z.number().int().min(1).max(1000),
+  rows: z.number().int().min(1).max(500),
+});
+export type TerminalView = z.infer<typeof TerminalView>;
+export const TerminalsView = z.object({ terminals: z.array(TerminalView).max(40) });
+export type TerminalsView = z.infer<typeof TerminalsView>;
+
+const termKey = z.string().min(1).max(200);
+
 // ---- paths (docs/companion.md, "Any network")
 
 /**
@@ -542,6 +601,15 @@ export const PhoneFrame = z.discriminatedUnion('t', [
   z.object({ t: z.literal('push'), platform: z.enum(['fcm', 'apns']), token: z.string().max(4096), relayKey: z.string().max(200) }),
   /** The app went to the background (the link closes after the grace) or came back. */
   z.object({ t: z.literal('focus'), on: z.boolean() }),
+  /**
+   * 1.7: a terminal on the phone's screen (a key companion.terminals or termOpen gave). The Mac
+   * sends what it wrote lately, then its output as it comes (coalesced, TERM_COALESCE_MS), until
+   * `term_detach` or the link closes. `term_input`: keys typed on the phone, written to the very
+   * session the Mac shows.
+   */
+  z.object({ t: z.literal('term_attach'), term: termKey }),
+  z.object({ t: z.literal('term_detach'), term: termKey }),
+  z.object({ t: z.literal('term_input'), term: termKey, data: z.string().min(1).max(64_000) }),
   z.object({ t: z.literal('bye') }),
 ]);
 export type PhoneFrame = z.infer<typeof PhoneFrame>;
@@ -561,6 +629,10 @@ export const MacFrame = z.discriminatedUnion('t', [
   z.object({ t: z.literal('result'), id: z.number().int().min(0), ok: z.boolean(), value: z.unknown().optional(), error: z.string().max(2000).optional() }),
   z.object({ t: z.literal('chunk'), id: z.number().int().min(0), off: z.number().int().min(0), b64: z.string().max(Math.ceil(COMPANION_PIECE / 3) * 4 + 4), eof: z.boolean(), size: z.number().int().min(0), mime: z.string().max(100) }),
   z.object({ t: z.literal('nudge'), kind: z.enum(['needsYou', 'done', 'mentions']), title: z.string().max(200), body: z.string().max(1000), topic: Topic.optional() }),
+  /** 1.7: a terminal's output (raw, as the program wrote it). `reset`: what follows is the whole screen again (clear first). */
+  z.object({ t: z.literal('term_data'), term: termKey, data: z.string().max(TERM_PIECE), reset: z.boolean().optional() }),
+  /** 1.7: whether it runs, how it ended, and its size (the Mac's: when the Mac resizes it, this comes again). */
+  z.object({ t: z.literal('term_status'), term: termKey, running: z.boolean(), exit: z.number().int().nullable().optional(), cols: z.number().int().min(1).max(1000), rows: z.number().int().min(1).max(500), gone: z.boolean().optional() }),
   z.object({ t: z.literal('bye'), reason: z.string().max(200) }),
 ]);
 export type MacFrame = z.infer<typeof MacFrame>;

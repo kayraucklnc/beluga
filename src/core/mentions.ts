@@ -80,14 +80,14 @@ export interface WorkspaceMention {
  * Names used twice get their project in front: "@api/add-auth".
  */
 export function workspaceMentions(projects: readonly Project[]): WorkspaceMention[] {
-  const all = projects.flatMap((p) => p.workspaces.filter((w) => !w.archived && worktreeOrigin(w) !== 'agent').map((w) => ({ p, w })));
+  const all = projects.flatMap((p) => p.workspaces.filter((w) => !w.archived && w.kind !== 'main' && worktreeOrigin(w) !== 'agent').map((w) => ({ p, w })));
   const slug = (s: string) => s.toLowerCase().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'workspace';
   const counts = new Map<string, number>();
   for (const { w } of all) counts.set(slug(w.name), (counts.get(slug(w.name)) ?? 0) + 1);
   return all.map(({ p, w }) => {
     const name = slug(w.name);
     const label = (counts.get(name) ?? 0) > 1 && p.root ? `@${slug(p.name)}/${name}` : `@${name}`;
-    const where = p.root ? `${p.name} · ${w.kind === 'main' ? 'main folder' : w.kind === 'chat' ? 'chat' : 'worktree'}` : 'chat';
+    const where = p.root ? `${p.name} · ${w.kind === 'chat' ? 'chat' : 'worktree'}` : 'chat';
     return { label, id: w.id, hint: `message the Claude in ${where}` };
   });
 }

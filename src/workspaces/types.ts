@@ -59,6 +59,11 @@ export interface WorkspaceRecord {
   readonly purpose?: 'sync_main';
   /** You carried on after this PR merged (Continue After Merge): it and older ones are done, so the branch can have a new one. */
   readonly prDone?: number;
+  /**
+   * A project's main checkout only: the chat its conversation from before became (BLG-70). The main
+   * checkout is no conversation of its own; opening it opens that chat, or the project's home.
+   */
+  readonly movedTo?: string;
 }
 
 /** A workspace as shown in the UI: record + live git status. */

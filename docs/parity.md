@@ -12,7 +12,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `/overview` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Overview · Go › Overview (⌥2) |
 | `/room` | `session.submit` → `runCommand` | typed in the composer · Sidebar › Chat (⌥1) |
 | `/new` | `session.submit` → `runCommand` | typed in the composer · Sidebar project ⌥ button · File › New Worktree… (⌘⇧N) · ⌘K · empty Overview / chat › New Worktree |
-| `/chat` | `session.submit` → `runCommand` | typed in the composer · Sidebar + · File › New Chat (⌘N) |
+| `/chat` | `session.submit` → `runCommand` | typed in the composer · Sidebar project + · File › New Chat (⌘N: in a project, a new chat on its main folder; elsewhere a chat of its own) · ⌘K › New chat in … |
 | `/review` | `session.submit` → `runCommand` | typed in the composer · the right panel's Changes tab (⌥⌘1; a diff opens in full with ⌘↩) |
 | `/pr` | `session.submit` → `runCommand` | typed in the composer · Toolbar PR · ⌘K |
 | `/run` | `session.submit` → `runCommand` | typed in the composer · Toolbar Run (shows the terminal, keeps the keyboard in the message box) · the panel's Terminal tab ▶ · person sheet “Run a command…” |
@@ -65,7 +65,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 
 | Action | Mac |
 |---|---|
-| `open_ws` | click (`runUiActionWith`) |
+| `open_ws` | click (`runUiActionWith`); a project's main checkout opens its home instead (or the chat its old conversation became) |
 | `toggle_project` | click (`runUiActionWith`) |
 | `toggle_fold` | click (`runUiActionWith`) |
 | `agents_menu` | click (`runUiActionWith`) |
@@ -74,7 +74,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `project_menu` | click (`runUiActionWith`) |
 | `archived_menu` | click (`runUiActionWith`) |
 | `new_worktree` | click (`runUiActionWith`) |
-| `new_chat` | click (`runUiActionWith`) |
+| `new_chat` | click (`runUiActionWith`): a new, separate chat every time (in a project, on its main folder) |
 | `add_project` | click (`runUiActionWith`) |
 | `view` | click (`runUiActionWith`) |
 | `close_tab` | click (`runUiActionWith`) |
@@ -225,6 +225,12 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | `companion.viewFetch` | – the phone only: a live view's rows in a conversation, run here as `view.fetch` runs them for the window |
 | `companion.draftTask` | – the phone only: New task by describing it, Claude's draft shown before it's added (the Mac's describe-to-create is `board.create`) |
 | `companion.addTask` | – the phone only: the draft added as a task |
+| `companion.files.list` | – the phone only: a worktree's folder, read-only, through the companion's file gate (the Mac's Files tab reads the folder itself) |
+| `companion.files.find` | – the phone only: a worktree's files by name (the Mac's Files tab filters its tree) |
+| `companion.files.read` | – the phone only: a page of a worktree's file, read-only, secrets refused |
+| `companion.terminals` | – the phone only: a worktree's terminals, as the terminal dock's tabs list them |
+| `companion.termOpen` | – the phone only: a worktree's shell (or a new one) for the phone to stream, the session the dock shows (`terminals.shell`, `terminals.global`) |
+| `companion.termClose` | – the phone only: ends a worktree's terminal for every screen, as the dock's × (`terminals.close`) |
 | `workspaces.open` | ✓ |
 | `workspaces.load` | Overview › Archived › Read Conversation (read-only, stays in the Overview) |
 | `workspaces.refresh` | ✓ |
@@ -479,6 +485,7 @@ Columns: **Core** is the API method or intent it uses; **Mac** is where you find
 | Right-click menus: messages (Copy, Copy as Markdown, Quote in Reply, Ask Claude About This, Open Image), code blocks, files (Open, Show in Finder, Copy Path, Mention in Chat, Save a Copy…), changed files and commits in Diff, search results, Usage rows, notifications | Mac |
 | Save a shared file where you choose (`files.download` with `to`, the Save panel) | Mac |
 | A new worktree's form: Based on (`workspaces.branches`), Name, Create Worktree (`workspaces.startWorktree` with `base` / `name`) | Mac |
+| No standing main conversation per project (BLG-70): a project's conversations are the chats and worktrees you start; the main checkout is the project's home (Update main, Fetch, Merge into main, its terminal), not a conversation. Nothing lists or opens it as one (sidebar, Overview, ⌘K, @mentions, the project menu, notifications, the phone's Work and Open on your Mac go to its home or the chat it became), and Claude never runs in it on its own. Once, at startup, a main conversation from before becomes an ordinary chat in its project with its history, Claude session, model and usage, named after its first message (`workspaces/main-migration.ts`; an empty one goes) | both (core: `workspaces/main-migration.ts`, `client/screen.ts` `viewFor`, `core/workspace-controller.ts`; Mac: `lib/project-home.ts` `newChatProject`) |
 | Never change main: every Claude run in a project's main folder (the main checkout, or a chat there) is questions only. Edits, writes and shell commands that aren't clearly read-only are denied (`agent/policy.ts` `askOnly`, `agent/read-only.ts`), Claude is told so, and a change request makes it call `continue_in_worktree`: a new worktree from the latest origin, named after the task, with the conversation carried over (history copied, Claude's session forked), and the work goes on there (your own requests move right away; someone else's ask you first) | both (core) |
 | A project's home (`project` view): icon, name, main's branch and how it compares with origin, counts (active / ready to merge / archived, earnings), “What do you want to do in …?” with New Worktree (Based on, Name) or Just Ask, then its worktrees, questions and recently archived (Show All in Overview). Clicking a project opens it | Mac (`views/ProjectHome.tsx`, `lib/project-home.ts`) |
 | Keeping main current and seeing history: the project home is about the default branch (main or master, “3 behind origin/main”, and “The main folder is on feat/…” with Switch to main), Update main and Fetch with when it last fetched, a quiet fetch of every project every ~15 min (never a password prompt: GIT_TERMINAL_PROMPT=0), uncommitted changes in the way (stash and put back, or move to a worktree), anything else to Claude in a run whose only permission beyond reading is syncing git (`agent/sync-main.ts`; never push, never discard), the GitHub row, and History (a commit graph with lanes and merges, authors as initials, refs as pills, filters, a commit's diffs; `views/history/*`) | Mac (`views/project/MainSyncBar.tsx`, `views/project/GitHubRow.tsx`, `views/history/*`, `layout/panel/HistoryTab.tsx`; core: `core/main-sync.ts`, `workspaces/sync.ts`, `workspaces/history.ts`, `workspaces/github.ts`) |

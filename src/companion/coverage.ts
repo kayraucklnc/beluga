@@ -8,8 +8,12 @@ import type { Method } from '../ipc/api.js';
  * `phone` only for what fits the phone (docs/companion.md, "What it is for"): reading, answering
  * (approvals, Claude's questions, friends' requests, plan decisions), asking your Mac (a message in
  * a conversation, a new chat in a project, a friend's Claude), stopping a run, and chatting with
- * friends. Never code, diffs, git, terminals, files on the Mac by path, settings, projects,
- * invitations or hosting. The host refuses a `mac` method before its arguments are even parsed.
+ * friends. Since BLG-42 also a worktree's files, read-only (`companion.files.*`, through the
+ * companion's file gate: inside that worktree, never a secret), and its terminals, interactive and
+ * shared with the Mac (`companion.terminals` / `termOpen` / `termClose`). Never editing, diffs, git
+ * beyond Merge, files on the Mac by path, settings, projects, invitations or hosting; the Mac's own
+ * `terminals.*` and `files.*` stay the Mac's. The host refuses a `mac` method before its arguments
+ * are even parsed.
  */
 export type Side = 'phone' | 'mac';
 
@@ -360,6 +364,15 @@ export const PHONE: Record<Method, Side> = {
   // A task described in words: Claude's draft shown first, then added.
   'companion.draftTask': 'phone',
   'companion.addTask': 'phone',
+  // A worktree's files, read-only, through the file gate (worktree-files.ts): inside it, never secrets.
+  'companion.files.list': 'phone',
+  'companion.files.find': 'phone',
+  'companion.files.read': 'phone',
+  // A worktree's terminals, the same sessions as the Mac's (terminals.ts): your own paired phone
+  // types into them; who attached and how much they typed is logged.
+  'companion.terminals': 'phone',
+  'companion.termOpen': 'phone',
+  'companion.termClose': 'phone',
 };
 
 /** A method the phone may call (unknown names are not). */

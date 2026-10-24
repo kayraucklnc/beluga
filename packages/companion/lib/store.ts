@@ -80,6 +80,8 @@ export interface Toast {
 }
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
+/** A terminal's output or status, as the Mac sends it (1.7). */
+export type TermFrame = Extract<MacFrame, { t: 'term_data' | 'term_status' }>;
 type Fetch = { key: string; ref: string; variant: 'thumb' | 'full' | 'text'; parts: string[]; base: string; got: number };
 
 const APP = 'beluga-companion/0.15.0';
@@ -251,6 +253,8 @@ class Store {
     if (!t) return;
     if (this.state.phase === 'open') {
       t.send({ t: 'focus', on: true });
+      // The Mac stops a terminal's stream while the app is away: its screen draws afresh now.
+      this.reattachTerms();
       return;
     }
     t.open({ t: 'hello', v: { ...COMPANION_PROTO }, app: APP, platform: PLATFORM, topics: this.topics() }, this.hints());
@@ -298,6 +302,7 @@ class Store {
       this.setState({ phase, detail: undefined, diagnosis: undefined });
       // Screens may have changed while dialing: say what's on screen now.
       this.transport?.send({ t: 'sub', topics: this.topics() });
+      this.reattachTerms();
       const wanted = [...this.deferred.values()];
       this.deferred.clear();
       for (const w of wanted) {
@@ -376,6 +381,10 @@ class Store {
       }
       case 'chunk':
         this.onChunk(f);
+        return;
+      case 'term_data':
+      case 'term_status':
+        for (const fn of [...(this.termListeners.get(f.term) ?? [])]) fn(f);
         return;
       case 'nudge':
         this.toast({ text: `${f.title} · ${f.body}`, tone: f.kind === 'needsYou' ? 'warn' : 'info', topic: f.topic });
@@ -626,6 +635,41 @@ class Store {
   private setFile(key: string, s: FileState): void {
     this.files.set(key, s);
     this.emit(`file:${key}`);
+  }
+
+  // ---- a worktree's terminals (1.7): streamed only while their screen is open
+
+  private termListeners = new Map<string, Set<(f: TermFrame) => void>>();
+  private termsOn = new Map<string, number>();
+
+  /**
+   * Show a terminal: its output and status come to `fn` (from a clean screen first) until the
+   * returned function is called. Attached again when the link opens or the app comes back.
+   */
+  attachTerm(key: string, fn: (f: TermFrame) => void): () => void {
+    let set = this.termListeners.get(key);
+    if (!set) this.termListeners.set(key, (set = new Set()));
+    set.add(fn);
+    this.termsOn.set(key, (this.termsOn.get(key) ?? 0) + 1);
+    if (this.state.phase === 'open') this.transport?.send({ t: 'term_attach', term: key });
+    return () => {
+      set!.delete(fn);
+      const n = (this.termsOn.get(key) ?? 1) - 1;
+      if (n > 0) return void this.termsOn.set(key, n);
+      this.termsOn.delete(key);
+      if (this.state.phase === 'open') this.transport?.send({ t: 'term_detach', term: key });
+    };
+  }
+
+  /** Keys typed on the phone, into the session the Mac shows too (dropped while the Mac is away). */
+  termInput(key: string, data: string): boolean {
+    if (this.state.phase !== 'open' || !this.transport || !data) return false;
+    for (let at = 0; at < data.length; at += 64_000) this.transport.send({ t: 'term_input', term: key, data: data.slice(at, at + 64_000) });
+    return true;
+  }
+
+  private reattachTerms(): void {
+    for (const key of this.termsOn.keys()) this.transport?.send({ t: 'term_attach', term: key });
   }
 
   // ---- toasts

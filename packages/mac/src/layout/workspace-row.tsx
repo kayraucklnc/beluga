@@ -97,6 +97,7 @@ export const WorkspaceRow = memo(function WorkspaceRow({ ws, indent }: { ws: Wor
         selected={selected}
         className={signalClass(signal, selected)}
         data-signal-row={signal.level}
+        data-kind={ws.kind}
         // Named for itself alone (so it's found by name whatever it waits on); the tooltip says the rest.
         aria-label={ws.name}
         icon={<Icon name={icon} size={14} />}

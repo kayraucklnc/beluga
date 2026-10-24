@@ -12,19 +12,22 @@ two in step.
 
 | On the phone | Not on the phone |
 |---|---|
-| What needs you: approvals, Claude's questions, friends' requests, plan decisions, with a push notification | Code: no source files, no diffs, no code blocks (they show as a "code · 24 lines" chip) |
-| Live work: conversations, Claude's answers, sub-agents and their steps | Changes, review, merge, commit, terminals |
-| Outputs: screenshots, images, logs, test output, reports, PDFs (anything `isArtifact` calls an output) | The file browser of a project |
+| What needs you: approvals, Claude's questions, friends' requests, plan decisions, with a push notification | Code in conversations: no diffs, no code blocks in answers (they show as a "code · 24 lines" chip) |
+| Live work: conversations, Claude's answers, sub-agents and their steps | Changes, review, commit; git writes beyond Merge |
+| Outputs: screenshots, images, logs, test output, reports, PDFs (anything `isArtifact` calls an output) | Editing any file, from anywhere |
+| A worktree's **Files**, read-only: browse, search by name, read source with colours (BLG-42) | Secrets (`isSecretPath`), whatever the screen |
+| A worktree's **Terminal**, interactive: the same session as the Mac's terminal dock, both typing (BLG-42) | The Mac's other shells, or files outside a worktree |
 | Plans as they're designed and run: milestones, tasks, decisions | Editing plans' structure (approve, decide and comment only) |
 | Asking your Mac to do anything (Your Mac, a new worktree, plan or question in a project, or a message in a conversation), and getting the answer, images and files back | Settings beyond the phone's own (notifications, sign out) |
 | Chats with friends (DMs, channels, files, Ask Claude); asking a friend's Claude (`ask_person`) | Hosting rooms, invites |
 | Your Claude allowance (5-hour and weekly windows), and your friends' | Billing |
 
 Text is never blocked: a `.log`, `.txt`, `.json`, `.md`, `.csv` an agent wrote or a test produced
-opens in the text viewer. Only source code is held back, with the same rule the Mac's Outputs tab
+opens in the text viewer. In a conversation's outputs, source code is held back, with the same rule the Mac's Outputs tab
 already uses (`src/core/claude-code/outputs.ts` `isArtifact`: pictures anywhere; text outside the
 project or in the folders outputs go to, like `.beluga/scratch`, `test-results`, `coverage`).
-Secrets (`isSecretPath`) are never sent, whatever the file.
+Secrets (`isSecretPath`) are never sent, whatever the file. Source code reaches the phone in one
+place only: a worktree's Files, read-only ("Files and Terminal" below).
 
 ```beluga-graph
 {"title": "How the phone reaches your Mac", "summary": "One encrypted link, opened only while you look", "direction": "right",
@@ -109,6 +112,8 @@ One Noise stream (`@hyperswarm/secret-stream` over hyperdht's UDX), framed as to
 | `get {id, ref, variant: thumb \| full \| text, off}` | `chunk {id, off, b64, eof, size, mime}` |
 | `push {platform, token, relayKey}` (register for notifications) | `nudge {kind, title, body, topic}` (while linked, in place of a push) |
 | `put {id, name, mime, size, off, b64, eof}`: a photo or file for the Mac, in pieces | `result {id, value: {received} \| {ref}}`: the last piece's `up:` ref |
+| `term_attach {term}` / `term_detach {term}` (1.7): a terminal on screen | `term_status {term, running, exit?, cols, rows, gone?}`, then `term_data {term, data, reset?}` as it comes (~30 a second) |
+| `term_input {term, data}` (1.7): keys typed on the phone | (the session's own echo, in `term_data`) |
 | `bye` | `bye {reason}` |
 
 **Views, not state.** The Mac's shared state is several MB and full of things the phone mustn't
@@ -119,8 +124,9 @@ already cut down for the phone (code stripped, steps in words, paths as opaque r
   waiting for your review (1.3), and Your Mac's summary (`assistant`, 1.5). Outputs aren't listed here any more (1.3: `outputs` is sent empty);
   each running conversation says how many it made since its latest run began (`fresh`).
 - `work`: projects (with their icon's checksum, 1.3) and their conversations (title, status, last line):
-  the chats and worktrees you started. A project's own main-folder conversation isn't listed (BLG-70):
-  it still opens, and shows on Home while it works or needs you. Your Mac isn't a project either.
+  the chats and worktrees you started. A project's main checkout has no conversation of its own
+  (BLG-70): one from before became an ordinary chat in its project, listed like any other, and
+  `conv:ws:<main>` isn't a conversation the phone can send to. Your Mac isn't a project either.
 - `conv:<channel>`: one conversation (`conv:mac:assistant` is Your Mac, 1.5): turns (your messages, Claude's answers), what a running turn
   is doing now (`live`: thinking, writing, the step with its tool, time and count) and its steps in
   words with their tools (`trail`), sub-agents (title, status, steps, their own live step, kind,
@@ -159,7 +165,7 @@ sideways, or cards (one per row, its columns as label and value).
 
 **What came when.** A phone checks the Mac's minor (`welcome.v`, `SINCE` in protocol.ts) before it
 subscribes to a newer topic or makes a newer call: an older Mac drops a whole `sub` frame that names a
-topic it doesn't know.
+topic it doesn't know. 1.7 brought a worktree's Files and Terminal (`SINCE.files`, `SINCE.terminal`).
 - `chats` and `chat:<conversation>`: friends' DMs and channels.
 - `people`: friends, presence, their usage and what they let your Claude do.
 
@@ -175,8 +181,9 @@ Everything is cached on the phone by checksum, so nothing is fetched twice.
 
 **Calls.** The phone calls the daemon's own API (`src/ipc/api.ts`), validated by the same zod
 schemas, through one allowlist: `src/companion/coverage.ts` classifies **every** API method as
-`phone` or `mac`. Anything `mac` (git, terminals, files editing, settings…) is refused before it is
-parsed. The type is `Record<Method, …>`, so a new API method doesn't compile until someone decides.
+`phone` or `mac`. Anything `mac` (git, the Mac's own `terminals.*` and `files.*`, editing,
+settings…) is refused before it is parsed; a worktree's files and terminals reach the phone only
+through `companion.files.*` and `companion.terminals` / `termOpen` / `termClose`. The type is `Record<Method, …>`, so a new API method doesn't compile until someone decides.
 
 **Asking from the phone** (`src/ipc/companion-api.ts`, all `phone`):
 
@@ -217,6 +224,55 @@ run: `network.groups.approve` / `decline`. Nothing appears without a way to answ
 
 **Typed calls.** `src/companion/calls.ts` `PhoneCalls`: every `phone` method with its argument
 tuple (the API's own zod) and its result; the app imports it rather than keeping a list.
+
+## Files and Terminal (BLG-42)
+
+A worktree's ••• menu has **Files** and **Terminal** next to Outputs and Merge (1.7, `SINCE.files`
+and `SINCE.terminal`: a Mac too old just doesn't offer them).
+
+**Files, read-only.** `companion.files.list(topic, path)` → a folder (folders first, pictures with a
+`ref` for the image viewer), `companion.files.find(topic, query)` → names that match anywhere in the
+worktree, `companion.files.read(topic, path, {off})` → a page of a file (512 KB of whole lines, its
+language for colours). Everything goes through the companion's file gate
+(`src/companion/worktree-files.ts`): the path stays inside that worktree (no absolute paths, no
+`..`, nothing in `.git`); links are followed and where they really lead is checked again (out of
+the worktree, or onto a secret under another name: refused, and not listed); `isSecretPath` (dotenv
+files, keys, credential stores, Beluga's own files) is refused by name and by real path; secrets a
+file holds are redacted as logs are. On the phone: a folder browser (breadcrumbs, folder and file
+icons, search by name) and a viewer (monospace, line numbers, colours by language from a cheap
+per-line tokenizer, wrap, find). There is no way to change a file. Claude's answers still go
+through `stripCode`.
+
+**Terminal, shared with the Mac.** The daemon runs one PTY per terminal (`src/terminal/pty-host.ts`);
+the Mac app attaches to it over its local socket (`term_*` frames, `src/daemon/server.ts`), the
+phone over the companion link (`src/companion/terminals.ts`). It's the very same session: both see
+the same output live, and either can type.
+
+- `companion.terminals(topic)` lists a worktree's terminals (its shell, setup and run, and shells
+  started in its folder); `companion.termOpen(topic, {key? | fresh?})` opens one, its shell (started
+  as the Mac's dock starts it, `terminals.shell`) or a new shell in its folder (`terminals.global`);
+  `companion.termClose(key)` ends it for every screen (the phone asks first). Then `term_attach`,
+  `term_input`, `term_detach` frames. Only terminals of your worktrees, never another of the Mac's
+  shells by key.
+- **Size: the Mac's.** The session keeps the Mac's grid (`cols × rows`, told in `term_status`, again
+  when the Mac resizes it). The phone never resizes it: with two screens on one PTY the last resize
+  wins, and the Mac's terminal would reflow under you each time you looked from the phone. The phone
+  draws that grid fitted to its width; a pinch zooms in (then it pans sideways), one finger scrolls
+  back, and the zoom is remembered.
+- **Drawn by xterm.js in a WebView** (`react-native-webview`, an iframe in the web build), bundled
+  with the app (`lib/terminal/xterm.generated.ts`, `npm run terminal:bundle`): no CDN, nothing
+  fetched. Raw PTY bytes go in, so colours, cursor moves and full-screen programs draw as on the Mac.
+  The page drops xterm's answers to the program's own queries (cursor position, device
+  attributes): the Mac's screen answers those, once.
+- **Keys.** A key bar above the keyboard: Esc, Tab, Ctrl (for the next key), ↑ ↓ ← → (in the
+  program's cursor mode), |, ~, / and paste. No "Mac is typing": both just show.
+- **Battery.** Output is coalesced on the Mac to one frame per ~33 ms, and streams only while the
+  terminal screen is open: leaving it detaches, and the app going to the background (`focus
+  {on: false}`) stops every stream; coming back attaches again and draws the screen afresh.
+- **Safety.** This is running commands from the phone. It's allowed because it's your own paired
+  device (the firewall, the pinned keys, the certificate you issued and can revoke), and it's
+  logged on the Mac: which phone opened, started or closed which terminal, and how many characters
+  it typed, never what.
 
 ## Any network
 
@@ -343,7 +399,8 @@ Advanced at the bottom. Learn it once and it works everywhere.
   before it sliding in. Sub-agents are rows with their own live step; tap one for a sheet with its
   steps and its outputs. While Claude works the composer offers Steer (now) and Queue (after), and
   what's queued sits above it. The header's outputs button (and ••• › Outputs) shows everything the
-  worktree made; ••• › Merge… checks, merges and gets conflicts resolved. Images open full screen from where they are (shared
+  worktree made; ••• › Merge… checks, merges and gets conflicts resolved; ••• › Files reads the
+  worktree's files and ••• › Terminal is its terminal, shared with the Mac (BLG-42). Images open full screen from where they are (shared
   transition): pinch, swipe between them, swipe down to put back. Text files open in a reader with
   search, wrap and "follow" for logs.
 - **The Ask button** (in the middle of the tab bar, always there): "Ask your Mac…" with where it goes

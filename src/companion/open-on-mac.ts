@@ -1,5 +1,6 @@
 import type { DomainState, View } from '../core/store.js';
 import { ASSISTANT_CHANNEL } from '../shared/assistant.js';
+import { viewFor } from '../client/screen.js';
 
 /**
  * "Open on your Mac" from the phone (BLG-40): what the Mac app's window shows for something the
@@ -26,7 +27,8 @@ export function macViewFor(state: DomainState, target: OpenTarget): View | undef
       if (channel.startsWith('task:')) return { kind: 'requests' };
       if (channel.startsWith('ws:')) {
         const id = channel.slice(3);
-        if (state.projects.some((p) => p.workspaces.some((w) => w.id === id))) return { kind: 'workspace', id, tab: 'chat' };
+        // A project's main checkout: the chat its old conversation became, else the project's home (BLG-70).
+        if (state.projects.some((p) => p.workspaces.some((w) => w.id === id))) return viewFor({ kind: 'workspace', id, tab: 'chat' }, state);
         const shared = state.shared.find((w) => w.id === id);
         return shared ? { kind: 'shared', owner: shared.owner, id, tab: 'chat' } : undefined;
       }

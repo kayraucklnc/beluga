@@ -12,6 +12,7 @@ import { mod } from '../lib/system.js';
 import { showPanelTab, tabsOf, togglePanel, toggleTerminal } from '../lib/panel.js';
 import { PANEL_LABELS, panelDigit, panelFits } from '../lib/panel-model.js';
 import { paletteCommands } from './palette-commands.js';
+import { newChatProject } from '../lib/project-home.js';
 import { networkPaletteItems } from '../network/net-palette.js';
 import s from './palette.module.css';
 
@@ -46,10 +47,13 @@ export function Palette() {
 
   const nav: Item[] = macTabs(state).map((t) => ({ id: `view:${t.kind}`, label: t.label, hint: t.hint.split(' · ')[0], keys: `⌥${t.key}`, icon: VIEW_ICONS[t.kind] ?? 'grid', run: () => actions.run({ type: 'view', view: { kind: t.kind } }) }));
   const places: Item[] = [
+    // Each project's home (its main folder: Update main, its worktrees and chats).
+    ...state.projects.filter((p) => p.root).map((p) => ({ id: `project:${p.id}`, label: p.name, hint: 'project home', icon: 'folder' as IconName, run: () => actions.run({ type: 'view', view: { kind: 'project', id: p.id } }) })),
     ...state.projects.flatMap((p) =>
       p.workspaces
-        .filter((w) => !w.archived && worktreeOrigin(w) !== 'agent')
-        .map((w) => ({ id: `ws:${w.id}`, label: p.root ? `${p.name} › ${w.name}` : w.name, hint: w.branch ?? (w.kind === 'chat' ? 'chat' : ''), icon: (w.kind === 'chat' ? 'chat' : w.kind === 'main' ? 'folder' : 'branch') as IconName, run: () => actions.run({ type: 'open_ws', id: w.id }) })),
+        // A project's main checkout is no conversation (BLG-70): the project itself is listed instead.
+        .filter((w) => !w.archived && w.kind !== 'main' && worktreeOrigin(w) !== 'agent')
+        .map((w) => ({ id: `ws:${w.id}`, label: p.root ? `${p.name} › ${w.name}` : w.name, hint: w.branch ?? (w.kind === 'chat' ? 'chat' : ''), icon: (w.kind === 'chat' ? 'chat' : 'branch') as IconName, run: () => actions.run({ type: 'open_ws', id: w.id }) })),
     ),
     ...state.shared.map((w) => ({ id: `shared:${w.id}`, label: w.name, hint: `shared by ${state.peers.find((p) => p.peerId === w.owner)?.name ?? 'someone'}`, icon: 'share' as IconName, run: () => actions.run({ type: 'open_shared', owner: w.owner, id: w.id, tab: 'chat' }) })),
   ];
@@ -63,11 +67,12 @@ export function Palette() {
           .map((b) => ({ id: `ws-action:${b.action}`, label: asksBeforeWork(b.action) ? `${b.label}…` : b.label, hint: b.hint, icon: (b.action === 'merge' ? 'merge' : b.action === 'pr' ? 'pr' : b.action === 'run' ? 'play' : b.action === 'archive' ? 'archive' : b.action === 'share' ? 'share' : b.action === 'handoff' ? 'hand' : b.action === 'review_claude' ? 'review' : b.action === 'commit' ? 'commit' : 'claude') as IconName, run: () => actions.run({ type: 'ws', id: ws.id, action: b.action }) })),
       ]
     : [];
+  const chatHere = newChatProject(state);
   const create: Item[] = [
-    { id: 'new-chat', label: 'New chat', hint: 'Talk to Claude about anything', keys: `${mod()}N`, icon: 'chat', run: () => actions.run({ type: 'new_chat', projectId: 'chats' }) },
+    { id: 'new-chat', label: 'New chat', hint: chatHere === 'chats' ? 'Talk to Claude about anything' : `in ${state.projects.find((p) => p.id === chatHere)?.name ?? 'this project'}`, keys: `${mod()}N`, icon: 'chat', run: () => actions.run({ type: 'new_chat', projectId: chatHere }) },
     ...state.projects.filter((p) => p.root).flatMap((p) => [
       { id: `new-wt:${p.id}`, label: `New worktree in ${p.name}`, hint: 'from the latest origin', icon: 'branch' as IconName, run: () => actions.run({ type: 'new_worktree', projectId: p.id }) },
-      { id: `new-chat:${p.id}`, label: `New chat in ${p.name}`, hint: 'in its main folder', icon: 'chat' as IconName, run: () => actions.run({ type: 'new_chat', projectId: p.id }) },
+      { id: `new-chat:${p.id}`, label: `New chat in ${p.name}`, hint: 'a new one, in its main folder', icon: 'chat' as IconName, run: () => actions.run({ type: 'new_chat', projectId: p.id }) },
     ]),
     { id: 'add-project', label: 'Add a project…', icon: 'plus', run: () => actions.run({ type: 'add_project' }) },
     { id: 'share-folder', label: 'Share a folder…', icon: 'share', run: () => ui.openMenu({ kind: 'share_folder', launchDir: state.home, mine: state.myShares }) },
