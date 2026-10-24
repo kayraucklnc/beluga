@@ -10,6 +10,7 @@ import { type CollabAction, type CollabState, initialCollab, reduceCollab } from
 import { type SearchState, type WorkAction, type WorkState, initialWork, reduceWork } from './work-store.js';
 import { type NetworkAction, type NetworkSlice, initialNetwork, reduceNetwork } from './network-store.js';
 import { type EarningsAction, type EarningsSlice, initialEarnings, reduceEarnings } from './earnings-store.js';
+import { type SupportAction, type SupportSlice, initialSupport } from './support-store.js';
 import { type ClaudeCodeAction, type ClaudeCodeSlice, initialClaudeCode, reduceClaudeCode } from './claude-code/model.js';
 import { type GatewayAction, type GatewaySlice, initialGateway, reduceGateway } from './gateway/model.js';
 import { type BoardAction, type BoardSlice, initialBoard, reduceBoard } from './board/model.js';
@@ -345,7 +346,7 @@ export interface MyShare {
  * Everything Beluga knows that isn't about a screen: the room, people, projects, conversations,
  * approvals… The core (the daemon) owns it and every client sees the same.
  */
-export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice, CompanionSlice {
+export interface DomainState extends CollabState, WorkState, NetworkSlice, EarningsSlice, SupportSlice, ClaudeCodeSlice, GatewaySlice, BoardSlice, PlansSlice, CompanionSlice {
   readonly room: string;
   readonly projects: readonly Project[];
   readonly projectGroups: readonly ProjectGroup[];
@@ -500,7 +501,8 @@ export type Action =
   | ClaudeCodeAction
   | GatewayAction
   | BoardAction
-  | PlansAction;
+  | PlansAction
+  | SupportAction;
 
 const LOG_LIMIT = 1000;
 const TRANSFER_LIMIT = 20;
@@ -570,6 +572,7 @@ export function initialState(room: string, policy: Policy = 'ask', prefs: Partia
     ...initialWork,
     ...initialNetwork,
     ...initialEarnings,
+    ...initialSupport,
     ...initialClaudeCode,
     ...initialGateway,
     ...initialBoard,
@@ -974,6 +977,8 @@ export function reduceDomain(state: DomainState, action: Action): DomainState {
     case 'net_main':
     case 'net_off':
       return { ...state, ...reduceNetwork(state, action) };
+    case 'support':
+      return { ...state, support: action.support };
     case 'earnings':
     case 'fx_rates':
       return { ...state, ...reduceEarnings(state, action) };

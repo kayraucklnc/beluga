@@ -1,0 +1,91 @@
+/* The Star and coffee sheets (SupportSheets.tsx): soft pastel tints, no glow. */
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: 9px;
+  background: color-mix(in srgb, #f3b7c4 16%, var(--bg-raised));
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  line-height: 1.5;
+}
+.note p {
+  margin: 0;
+}
+.noteIcon {
+  flex: none;
+  margin-top: 2px;
+  color: #d97f95;
+}
+:global([data-theme='dark']) .note {
+  background: color-mix(in srgb, #f3b7c4 9%, var(--bg-raised));
+}
+:global([data-theme='dark']) .noteIcon {
+  color: #eea7b7;
+}
+.amounts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr) 1.6fr;
+  gap: 8px;
+}
+.amount,
+.other {
+  height: 40px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--tint) 16%, var(--bg-raised));
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--tint) 55%, var(--hairline));
+  transition:
+    background var(--dur-fast),
+    box-shadow var(--dur-fast);
+}
+.amount {
+  font-size: 1.08rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.other {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.amount:nth-child(1) {
+  --tint: #f7c9a8;
+}
+.amount:nth-child(2) {
+  --tint: #f5dc8e;
+}
+.amount:nth-child(3) {
+  --tint: #a9dcbb;
+}
+.amount:nth-child(4) {
+  --tint: #b9d4f2;
+}
+.other {
+  --tint: #cfc4f0;
+}
+.amount:hover,
+.other:hover {
+  background: color-mix(in srgb, var(--tint) 32%, var(--bg-raised));
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--tint) 85%, var(--hairline-strong));
+}
+.amount:active,
+.other:active {
+  background: color-mix(in srgb, var(--tint) 46%, var(--bg-raised));
+}
+:global([data-theme='dark']) .amount,
+:global([data-theme='dark']) .other {
+  background: color-mix(in srgb, var(--tint) 10%, var(--bg-raised));
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--tint) 30%, var(--hairline));
+}
+:global([data-theme='dark']) .amount:hover,
+:global([data-theme='dark']) .other:hover {
+  background: color-mix(in srgb, var(--tint) 20%, var(--bg-raised));
+}
+.amount:focus-visible,
+.other:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.fine {
+  color: var(--text-3);
+  font-size: 0.86rem;
+}
