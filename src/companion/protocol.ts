@@ -9,7 +9,7 @@ import { z } from 'zod';
  * ignores what it doesn't know. A breaking change bumps the major, and the Mac keeps answering the
  * previous major for a release.
  */
-export const COMPANION_PROTO = { major: 1, minor: 9 } as const;
+export const COMPANION_PROTO = { major: 1, minor: 10 } as const;
 
 /**
  * What came in which minor, for a phone talking to an older Mac: it subscribes to a topic (and
@@ -25,9 +25,10 @@ export const COMPANION_PROTO = { major: 1, minor: 9 } as const;
  * Mac (`companion.terminals` / `termOpen` / `termClose`, the `term_*` frames). 1.8: a branch's every
  * step from the phone, as the Mac's toolbar has them (`BranchView.steps`, `companion.branchStep`).
  * 1.9 (BLG-87): more of Claude's blocks drawn (`tree`, `json`, `terminal`, `math` blocks, mermaid as
- * a graph or view) and its math typeset (`ProseView.math`).
+ * a graph or view) and its math typeset (`ProseView.math`). 1.10 (BLG-110): a sub-agent opened on
+ * the phone, its whole activity and the report it gave back (`companion.subAgent`).
  */
-export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8 } as const;
+export const SINCE = { tasks: 4, openOnMac: 4, icon: 4, merge: 4, draftTask: 4, viewFetch: 4, assistant: 5, askModes: 5, files: 7, terminal: 7, branchSteps: 8, subAgent: 10 } as const;
 
 /** One frame's biggest payload, and a file piece. */
 export const MAX_COMPANION_FRAME = 1024 * 1024;
@@ -223,6 +224,24 @@ export const ProseView = z.object({
   math: z.record(z.string().max(4001), z.object({ svg: z.string().max(200_000), w: z.number(), h: z.number(), v: z.number() })).optional(),
 });
 export type ProseView = z.infer<typeof ProseView>;
+
+/**
+ * 1.10 (BLG-110): one sub-agent opened on the phone (`companion.subAgent`): its activity, every
+ * step in words with when it began (newest last), and once it ended the report it gave back, code
+ * stripped as Claude's answers are (`stripCode`). `missing`: the Mac keeps no details of it
+ * (someone else's Claude, or gone); the phone shows what the view had.
+ */
+export const SubAgentStepView = StepView.extend({ at: ts.optional() });
+export type SubAgentStepView = z.infer<typeof SubAgentStepView>;
+export const SubAgentDetailView = z.object({
+  id,
+  timeline: z.array(SubAgentStepView).max(200),
+  /** Steps it took in all (the timeline keeps the last 200). */
+  count: z.number().int().min(0).optional(),
+  result: ProseView.optional(),
+  missing: z.boolean().optional(),
+});
+export type SubAgentDetailView = z.infer<typeof SubAgentDetailView>;
 
 export const TurnView = z.object({
   id,

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { API, type Method } from '../ipc/api.js';
-import { ChatMessageView, FilePageView, FolderView, FoundView, MergeCheckView, MergeView, TerminalView, TerminalsView, TurnView } from './protocol.js';
+import { ChatMessageView, FilePageView, FolderView, FoundView, MergeCheckView, MergeView, SubAgentDetailView, TerminalView, TerminalsView, TurnView } from './protocol.js';
 
 /**
  * Every call the phone may make, typed: each `phone` method of coverage.ts with its arguments
@@ -108,6 +108,8 @@ export const PhoneCalls = {
   'companion.terminals': entry('companion.terminals', TerminalsView),
   'companion.termOpen': entry('companion.termOpen', TerminalView),
   'companion.termClose': entry('companion.termClose', z.object({ closed: z.boolean() })),
+  // 1.10 (BLG-110): a sub-agent's activity and report.
+  'companion.subAgent': entry('companion.subAgent', SubAgentDetailView),
 } as const;
 
 export type PhoneMethod = keyof typeof PhoneCalls;
