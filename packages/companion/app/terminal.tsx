@@ -1,10 +1,11 @@
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams } from 'expo-router';
-import { ArrowDown, ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUp, ClipboardPaste, Maximize2, Plus, RotateCcw, SquareTerminal, Trash2 } from 'lucide-react-native';
+import { Maximize2, Plus, RotateCcw, SquareTerminal, Trash2 } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyBar } from '../components/KeyBar';
 import { KeyboardLift } from '../components/KeyboardLift';
 import { Options } from '../components/Options';
 import { Header, Screen } from '../components/Screen';
@@ -22,23 +23,9 @@ import { color, scheme, tint } from '../lib/theme';
  * A worktree's terminal on the phone (BLG-42): the very session the Mac's terminal dock shows.
  * Both see the same output as it comes, and either can type. xterm.js draws it (bundled, in a
  * WebView) at the Mac's size: fitted to the screen's width, a pinch zooms in, one finger scrolls
- * back. Above the keyboard, a key bar for what a phone keyboard lacks (Esc, Tab, Ctrl, arrows, |, ~,
- * /, paste). Output streams only while this screen is open, coalesced on the Mac to ~30 a second.
+ * back. Above the keyboard, what a phone keyboard lacks: Esc, Tab, Ctrl and the arrows, and ••• for
+ * |, ~, / and paste. Output streams only while this screen is open, coalesced on the Mac to ~30 a second.
  */
-
-type Key = { readonly label?: string; readonly Icon?: typeof ArrowUp; readonly key: string; readonly a11y: string };
-const KEYS: readonly Key[] = [
-  { label: 'Esc', key: 'esc', a11y: 'Escape' },
-  { label: 'Tab', key: 'tab', a11y: 'Tab' },
-  { label: 'Ctrl', key: 'ctrl', a11y: 'Control' },
-  { Icon: ArrowUp, key: 'up', a11y: 'Up' },
-  { Icon: ArrowDown, key: 'down', a11y: 'Down' },
-  { Icon: ArrowLeft, key: 'left', a11y: 'Left' },
-  { Icon: ArrowRight, key: 'right', a11y: 'Right' },
-  { label: '|', key: '|', a11y: 'Pipe' },
-  { label: '~', key: '~', a11y: 'Tilde' },
-  { label: '/', key: '/', a11y: 'Slash' },
-];
 
 export default function Terminal() {
   const { topic, key: wanted, title } = useLocalSearchParams<{ topic: string; key?: string; title?: string }>();
@@ -114,14 +101,9 @@ export default function Terminal() {
     if (m.t === 'zoom') kv.set('term-zoom', m.zoom);
   };
 
-  const press = (k: Key) => {
-    haptic.tap();
-    if (k.key === 'ctrl') {
-      send({ t: 'ctrl', on: !ctrl });
-      setCtrl(!ctrl);
-      return;
-    }
-    send({ t: 'key', key: k.key });
+  const toggleCtrl = () => {
+    send({ t: 'ctrl', on: !ctrl });
+    setCtrl(!ctrl);
   };
   const paste = async () => {
     const text = await Clipboard.getStringAsync().catch(() => '');
@@ -184,26 +166,8 @@ export default function Terminal() {
             ) : null}
           </Animated.View>
         ) : null}
-        {/* What a phone keyboard lacks, above it. */}
-        <View style={{ flexDirection: 'row', gap: 4, paddingHorizontal: 8, paddingTop: 8, paddingBottom: Math.max(8, insets.bottom) }}>
-          {KEYS.map((k) => {
-            const on = k.key === 'ctrl' && ctrl;
-            return (
-              <Press key={k.key} onPress={() => press(k)} haptics={false} scaleTo={0.92} accessibilityLabel={k.a11y} style={{ flex: k.label && k.label.length > 1 ? 1.35 : 1, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? tint.lavender : color.card, borderWidth: 0.5, borderColor: on ? 'transparent' : color.hairline }}>
-                {k.Icon ? (
-                  <k.Icon color={color.text} size={17} />
-                ) : (
-                  <T v="callout" c={on ? color.subagent : color.text} numberOfLines={1} style={{ fontWeight: '600', fontSize: k.label && k.label.length > 1 ? 13.5 : 16 }}>
-                    {k.label}
-                  </T>
-                )}
-              </Press>
-            );
-          })}
-          <Press onPress={() => void paste()} scaleTo={0.92} accessibilityLabel="Paste" style={{ flex: 1, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: color.card, borderWidth: 0.5, borderColor: color.hairline }}>
-            <ClipboardPaste color={color.text} size={17} />
-          </Press>
-        </View>
+        {/* What a phone keyboard lacks, above it: the essentials, and ••• for the rest. */}
+        <KeyBar ctrl={ctrl} onKey={(key) => send({ t: 'key', key })} onCtrl={toggleCtrl} onPaste={() => void paste()} bottom={insets.bottom} />
       </KeyboardLift>
       <Options
         visible={menu}
@@ -212,20 +176,18 @@ export default function Terminal() {
         options={[
           ...others
             .filter((o) => o.key !== term?.key)
-            .map((o) => ({ Icon: SquareTerminal, label: o.label, sub: o.running ? 'Running · shared with your Mac' : 'Ended', tone: 'lavender' as const, onPress: () => open({ key: o.key }) })),
-          { Icon: Plus, label: 'New terminal', sub: 'A new shell in this worktree, on your Mac too', tone: 'mint', onPress: () => open({ fresh: true }) },
-          { Icon: ArrowDownToLine, label: 'Jump to the end', tone: 'sky', onPress: () => send({ t: 'bottom' }) },
+            .map((o) => ({ Icon: SquareTerminal, label: o.label, sub: o.running ? undefined : 'Ended', tone: 'lavender' as const, onPress: () => open({ key: o.key }) })),
+          { Icon: Plus, label: 'New terminal', tone: 'mint', onPress: () => open({ fresh: true }) },
           {
             Icon: Maximize2,
             label: 'Fit to the screen',
-            sub: 'Pinch to zoom in',
-            tone: 'plain',
+            tone: 'sky',
             onPress: () => {
               kv.set('term-zoom', 1);
               send({ t: 'zoom', zoom: 1 });
             },
           },
-          { Icon: Trash2, label: 'Close terminal…', sub: 'Ends it on your Mac too', tone: 'rose', hidden: !term || !status?.running, onPress: () => setConfirm(true) },
+          { Icon: Trash2, label: 'Close terminal…', tone: 'rose', hidden: !term || !status?.running, onPress: () => setConfirm(true) },
         ]}
       />
       <Options
