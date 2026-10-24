@@ -1,3 +1,4 @@
+import { type BranchState, branchState, onGitHub } from '@beluga/core/branch-state.js';
 import type { AppState } from '@beluga/core/store.js';
 import { type PlanOwner, planOwnerOf } from '@beluga/core/plans/owner.js';
 import { planTitle } from '@beluga/core/plans/model.js';
@@ -39,6 +40,8 @@ export type PrStep = 'fix_checks' | 'resolve_pr' | 'continue_after_merge';
 export const isPrStep = (a: string): a is PrStep => a === 'fix_checks' || a === 'resolve_pr' || a === 'continue_after_merge';
 
 export interface ToolbarActions {
+  /** Where its branch stands, and its steps: when it has any, they lead instead of `primary` (BranchControl). */
+  readonly branch?: BranchState;
   readonly primary?: ToolAction;
   /** Icon buttons, in order (some may move under ⋯ when the window is narrow). */
   readonly icons: readonly ToolAction[];
@@ -130,12 +133,6 @@ const toAction = (b: WorkspaceButton, pr: boolean): ToolAction => ({
   ...(b.action === 'archive' || b.action === 'delete' ? { danger: true } : {}),
 });
 
-/** Its project pushes somewhere and the GitHub CLI isn't known to be missing: PRs are the way to merge. */
-function onGitHub(state: AppState, ws: Workspace): boolean {
-  const sync = state.projects.find((p) => p.id === ws.projectId)?.sync;
-  return state.gh !== false && (!sync || Boolean(sync.upstream));
-}
-
 /** What this workspace needs next, in the order it matters. */
 function pickPrimary(state: AppState, ws: Workspace, all: readonly ToolAction[]): ToolAction | undefined {
   const by = (a: WorkspaceAction): ToolAction | undefined => all.find((x) => x.action === a && !x.disabled);
@@ -208,14 +205,16 @@ export function toolbarActions(state: AppState, ws: Workspace): ToolbarActions {
   }), ...(withDelete ? [ws.kind === 'worktree' ? DELETE : { ...DELETE, hint: 'Remove it from Beluga and delete the conversation' }] : [])];
   const owner = ws.archived ? undefined : planOwnerOf(state.plans, state.board, ws.id);
   const all = owner ? asPlanTask(own, owner, pr) : own;
-  const primary = pickPrimary(state, ws, all);
+  const branch = branchState(state, ws, { planned: Boolean(owner) });
+  // The branch's own steps lead (Squash and Merge, Resolve with Claude, Continue After Merge…); a plan's task keeps Open Plan.
+  const primary = branch?.steps.length ? undefined : pickPrimary(state, ws, all);
   const shown = (a: ToolAction): boolean => a.action !== primary?.action || isPrStep(primary.action);
   const icons = ICONS.flatMap((id) => all.filter((a) => a.action === id && shown(a)));
   // A merged PR: archive it, delete it, or carry on here with a new one.
   const merged = state.prs[ws.id]?.state === 'MERGED' && !ws.archived && !owner;
   const after: ToolAction[] = merged ? [{ id: 'continue_after_merge', label: 'Continue After Merge…', hint: `PR #${state.prs[ws.id]!.number} is done: start this branch again from the latest base and keep the conversation; the next change gets a new PR`, icon: 'branch', action: 'continue_after_merge' }] : [];
   const more = inSections([...all.filter((a) => !icons.includes(a) && shown(a)), ...after]);
-  return { ...(primary ? { primary } : {}), icons, more };
+  return { ...(branch ? { branch } : {}), ...(primary ? { primary } : {}), icons, more };
 }
 
 /** Actions in ⋯'s sections, in their order there (any section left empty is dropped). */

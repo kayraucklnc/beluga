@@ -72,6 +72,9 @@
 .ok {
   color: var(--ok);
 }
+.merged {
+  color: var(--merged);
+}
 .bad {
   color: var(--error);
 }

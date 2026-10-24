@@ -180,6 +180,7 @@ interface GhPr {
   reviewDecision?: string;
   headRefName?: string;
   mergeable?: string;
+  mergeStateStatus?: string;
   autoMergeRequest?: unknown;
 }
 
@@ -200,6 +201,7 @@ function toPr(raw: GhPr): PullRequest | undefined {
     ...(review ? { review } : {}),
     ...(open && raw.mergeable === 'CONFLICTING' ? { conflicts: true } : {}),
     ...(open && raw.autoMergeRequest ? { autoMerge: true } : {}),
+    ...(open && raw.mergeStateStatus === 'BEHIND' ? { mergeState: 'behind' as const } : open && raw.mergeStateStatus === 'BLOCKED' ? { mergeState: 'blocked' as const } : {}),
   };
 }
 
@@ -235,7 +237,7 @@ export function parsePrList(json: string): Map<string, PullRequest> | undefined 
   return out;
 }
 
-const PR_FIELDS = 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision,mergeable,autoMergeRequest';
+const PR_FIELDS = 'number,url,state,title,isDraft,statusCheckRollup,reviewDecision,mergeable,mergeStateStatus,autoMergeRequest';
 /** How many PRs one `gh pr list` asks for. */
 export const PR_LIST_LIMIT = 60;
 
@@ -300,6 +302,14 @@ export function explainMergeError(error: string, method: MergeMethod = 'squash')
 /** Merge a pull request on GitHub (`gh pr merge`), or ask GitHub to once its requirements pass (`auto`), or now past them (`admin`). Throws gh's error. */
 export async function mergePr(dir: string, number: number, opts: MergeOptions): Promise<void> {
   await run(gh(), ['pr', 'merge', String(number), `--${opts.method}`, ...(opts.admin ? ['--admin'] : opts.auto ? ['--auto'] : [])], dir, 60_000);
+}
+
+/** A PR's one-click steps on GitHub: merge its base in (`gh pr update-branch`), or mark a draft ready for review. */
+export type PrStepKind = 'update_branch' | 'ready';
+
+/** Take one of those steps. Throws gh's error. */
+export async function prStep(dir: string, number: number, step: PrStepKind): Promise<void> {
+  await run(gh(), step === 'ready' ? ['pr', 'ready', String(number)] : ['pr', 'update-branch', String(number)], dir, 60_000);
 }
 
 /**

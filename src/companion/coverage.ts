@@ -157,6 +157,7 @@ export const PHONE: Record<Method, Side> = {
   'workbench.continueAfterMerge': 'mac',
   'workbench.openPr': 'mac',
   'workbench.mergePr': 'mac',
+  'workbench.prStep': 'mac',
   'workbench.refreshPrs': 'mac',
   'workbench.editPrPrompt': 'mac',
   'workbench.resetPrPrompt': 'mac',

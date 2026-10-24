@@ -71,7 +71,7 @@
 }
 .metaMerged {
   flex: none;
-  color: var(--ok);
+  color: var(--merged);
 }
 .ellipsis {
   min-width: 0;

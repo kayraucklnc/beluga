@@ -1,9 +1,9 @@
-import { ArrowRight, Check, CircleAlert, FileWarning, GitMerge, Info, RefreshCw, Sparkles, TriangleAlert } from 'lucide-react-native';
+import { ArrowRight, Check, CircleAlert, Clock, FileWarning, GitBranch, GitMerge, Info, RefreshCw, Sparkles, TriangleAlert } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { calls } from '../lib/link/calls';
-import type { MergeCheckView, MergeView, Topic } from '../lib/link/protocol';
+import type { BranchView, MergeCheckView, MergeView, Topic } from '../lib/link/protocol';
 import { store } from '../lib/store';
 import { color } from '../lib/theme';
 import { Breathe, TypingDots } from './Live';
@@ -180,6 +180,51 @@ export function MergeBand({ topic, merge, onCheck }: { readonly topic: Topic; re
               Check again
             </T>
           </Press>
+        ) : null}
+      </Card>
+    </Animated.View>
+  );
+}
+
+const BRANCH_TONE: Record<string, { tone: Tone; Icon: typeof Check }> = {
+  merged: { tone: 'lavender', Icon: GitMerge },
+  ok: { tone: 'mint', Icon: Check },
+  error: { tone: 'rose', Icon: CircleAlert },
+  warn: { tone: 'butter', Icon: TriangleAlert },
+  wait: { tone: 'butter', Icon: Clock },
+  info: { tone: 'sky', Icon: GitBranch },
+  muted: { tone: 'plain', Icon: GitBranch },
+};
+
+/**
+ * Where a worktree's branch stands, as the Mac's toolbar shows it: Merged (lavender), Ready to
+ * merge, Conflicts, checks… with why, and its next step. Merging it into the main folder and
+ * Claude resolving a conflict happen here; a pull request's steps are the Mac's.
+ */
+export function BranchBand({ topic, branch, canMerge, onMerge }: { readonly topic: Topic; readonly branch: BranchView; readonly canMerge: boolean; readonly onMerge: () => void }) {
+  const t = BRANCH_TONE[branch.tone] ?? BRANCH_TONE.muted!;
+  const resolve = () => {
+    haptic.commit();
+    void store.call(calls.resolve(topic), { queue: false }).catch((e: Error) => store.toast({ text: e.message, tone: 'error' }));
+  };
+  const next = branch.next;
+  const here = next?.id === 'merge' && canMerge ? 'merge' : next?.id === 'merge_claude' ? 'resolve' : undefined;
+  return (
+    <Animated.View key={branch.kind} entering={FadeIn.duration(200)} layout={LinearTransition.springify()}>
+      <Card style={{ paddingVertical: 10, paddingHorizontal: 12, gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pill label={branch.label} tone={t.tone} Icon={t.Icon} />
+          <T v="caption" numberOfLines={2} style={{ flex: 1 }}>
+            {branch.detail}
+          </T>
+        </View>
+        {here === 'merge' ? <Button label={next!.label.replace(/…$/, '')} Icon={GitMerge} quiet onPress={onMerge} /> : null}
+        {here === 'resolve' ? <Button label="Ask Claude to resolve" Icon={Sparkles} onPress={resolve} /> : null}
+        {next && !here ? (
+          <T v="caption" c={color.text3}>
+            Next, on your Mac: {next.label.replace(/…$/, '')}
+            {next.claude ? ' (Claude does it)' : ''}
+          </T>
         ) : null}
       </Card>
     </Animated.View>
